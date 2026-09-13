@@ -51,6 +51,8 @@
   - 訂正:
 
 - **REP-07** 書き出しの前後で Target／Source の `modified` は変えない（`SaveRestoreModifiedState`）。実測＝2文書とも false のまま。
+  ⚠**Source が貸し DB（KIDMCP のクローン）のときは断る**（`the Source is a lent copy ...`）＝クローンへの書き出しは落ちる恐れがあり試さない（09-13 再検査で追加）。
+  保存ダイアログは**書き出しの前**に出す（キャンセルが無料）。配置設定の復元は `PlacePrefsRestorer` のデストラクタ＝途中で失敗しても戻る。
   - 訂正:
 
 ## 3. やっていないこと

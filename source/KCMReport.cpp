@@ -106,6 +106,18 @@ PMString Ascii(const char* ascii)
 	return s;
 }
 
+/** Is db one of the session's open documents (the rehydrated copy included)? A lent database
+    clone is not, and must not be exported. Pointer comparison only, nothing dereferenced. */
+bool16 IsSessionDocument(IDataBase* db)
+{
+	if (db == nil)
+		return kFalse;
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
+	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
+	return (docList != nil && docList->FindDocByDataBase(db) != nil) ? kTrue : kFalse;
+}
+
 /** The document's name as the panel shows it, or the lent Source's label. */
 PMString NameOf(IDataBase* db)
 {
@@ -303,6 +315,33 @@ bool16 SetPlacePage(int32 page1, IPDFPlacePrefs* current, PMString& why)
 	return kTrue;
 }
 
+/** Holds the PDF place preferences as they were, in a command made on construction, and
+    processes it on destruction - so the user's setting comes back whichever way BuildReport
+    leaves (a failed SetPlacePage used to leave the page number changed). */
+class PlacePrefsRestorer
+{
+public:
+	explicit PlacePrefsRestorer(IPDFPlacePrefs* current)
+		: fRestore(CmdUtils::CreateCommand(kSetPDFPlacePrefsCmdBoss))
+	{
+		InterfacePtr<IPDFPlacePrefs> keep(fRestore, UseDefaultIID());
+		if (keep != nil && current != nil)
+			keep->CopyData(current);
+	}
+	~PlacePrefsRestorer()
+	{
+		if (fRestore != nil)
+		{
+			GlobalErrorStatePreserver errorState;		// a destructor must not change the error the caller is reporting
+			CmdUtils::ProcessCommand(fRestore);
+		}
+	}
+private:
+	InterfacePtr<ICommand> fRestore;
+	PlacePrefsRestorer(const PlacePrefsRestorer&);
+	PlacePrefsRestorer& operator=(const PlacePrefsRestorer&);
+};
+
 /** Type `text` into a new text frame at `bounds` (spread coordinates) on `layer`. */
 void TypeAt(SDKLayoutHelper& helper, const UIDRef& layer, const PMRect& bounds, const PMString& text)
 {
@@ -372,16 +411,12 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 	SDKLayoutHelper helper;
 	const PMString targetName = NameOf(targetDB);
 
-	// The user's PDF place preferences, kept in a command that puts them back at the end.
+	// The user's PDF place preferences, kept in a command that puts them back when this function
+	// returns - by ANY path, a failed SetPlacePage included (the restorer's destructor).
 	ISession* const session = GetExecutionContextSession();
 	InterfacePtr<IWorkspace> workspace(session != nil ? session->QueryWorkspace() : nil);
 	InterfacePtr<IPDFPlacePrefs> currentPlace(workspace, UseDefaultIID());
-	InterfacePtr<ICommand> restorePlace(CmdUtils::CreateCommand(kSetPDFPlacePrefsCmdBoss));
-	{
-		InterfacePtr<IPDFPlacePrefs> keep(restorePlace, UseDefaultIID());
-		if (keep != nil && currentPlace != nil)
-			keep->CopyData(currentPlace);
-	}
+	PlacePrefsRestorer restorePlace(currentPlace);
 
 	// ---- the summary page --------------------------------------------------------------
 	{
@@ -520,10 +555,7 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 		TypeAt(helper, layer, PMRect(rightBox.Left(), rightBox.Bottom() + 2, rightBox.Right(), rightBox.Bottom() + kCaptionH), Ascii("After"));
 	}
 
-	// the user's place preferences, back as they were
-	if (restorePlace != nil)
-		CmdUtils::ProcessCommand(restorePlace);
-	return kTrue;
+	return kTrue;		// the place preferences go back as restorePlace leaves scope
 }
 
 PMString SuggestedReportName(IDataBase* targetDB);
@@ -619,12 +651,33 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 		return kFalse;
 	}
 
+	// ⚠A DATABASE THAT IS NOT A SESSION DOCUMENT IS NOT EXPORTED. A Source lent by Kohaku InDesign
+	//   MCP is a database CLONE, and ExportINX on a clone was measured to kill InDesign outright
+	//   (kcm-clone-export-and-compression-2026-09-09.md); the PDF export has not been tried on one
+	//   and is not going to be tried here. The rehydrated task-start copy IS a session document.
+	if (!IsSessionDocument(sourceDB))
+	{
+		outMessage = Ascii("the Source is a lent copy (not an open document), so it cannot be exported for the Before side.");
+		return kFalse;
+	}
+
 	std::vector<Pair> pairs;
 	CollectPairs(targetDB, sourceDB, pairs);
 	if (pairs.empty())
 	{
 		outMessage = Ascii("No changed pages - nothing to report.");
 		return kFalse;
+	}
+
+	// Where it goes - asked FIRST, so a cancel costs nothing (no export, no rehydration wasted).
+	IDFile reportFile;
+	{
+		PMString why;
+		if (!ReportPath(targetDB, reportFile, why))
+		{
+			outMessage = why.IsEmpty() ? Ascii("Report cancelled.") : why;
+			return kFalse;
+		}
 	}
 
 	// The export orders (and so the PDF page numbers): every pair's Source page, every pair's
@@ -712,10 +765,7 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	}
 
 	// ---- the report document ---------------------------------------------------------------
-	IDFile reportFile;
 	UIDRef reportDoc = UIDRef::gNull;
-	if (ok)
-		ok = ReportPath(targetDB, reportFile, why);
 	if (ok)
 	{
 		SDKLayoutHelper helper;
@@ -742,13 +792,8 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 
 	if (!ok)
 	{
-		if (why.IsEmpty())
-			outMessage = Ascii("Report cancelled.");		// the save dialog was dismissed
-		else
-		{
-			outMessage = Ascii("Report failed: ");
-			outMessage.Append(why);
-		}
+		outMessage = Ascii("Report failed: ");
+		outMessage.Append(why);
 		return kFalse;
 	}
 
