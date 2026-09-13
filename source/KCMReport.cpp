@@ -45,8 +45,10 @@
 #include "ITextAttrUtils.h"		// BuildApplyTextAttrCmd
 #include "ICompositionStyle.h"		// kTextAlignLeft
 #include "CreateObject.h"			// CreateObject2 - the attribute boss
-#include "TextAttrID.h"			// kTextAttrAlignmentBoss
-#include "TextID.h"				// kParaAttrStrandBoss
+#include "ITextAttrRealNumber.h"	// the point size of the captions
+#include "TextAttrID.h"			// kTextAttrAlignmentBoss / kTextAttrPointSizeBoss
+#include "TextID.h"				// kParaAttrStrandBoss / kCharAttrStrandBoss
+#include "SDKFileHelper.h"			// SDKFileSaveChooser - where the report goes is the user's choice
 #include "IUIFlagData.h"
 #include "IWorkspace.h"
 #include "CmdUtils.h"
@@ -80,9 +82,10 @@ namespace
 
 // ---- layout constants (points) ------------------------------------------------------------
 const PMReal kGutter     = 24.0;	// between the two pictures, and to the page edges
-const PMReal kHeaderBand = 48.0;	// the heading above the pictures
-const PMReal kCaptionH   = 18.0;	// the caption line under each picture
+const PMReal kHeaderBand = 56.0;	// the heading above the pictures (room for 18pt)
+const PMReal kCaptionH   = 26.0;	// the caption line under each picture (18pt plus leading)
 const int32  kMaxStoryRows = 40;	// Story Edits rows on the summary page before "... and N more"
+const PMReal kTextPt     = 18.0;	// the captions' size: 1.5 x the 12pt default (the user's ask, 2026-09-13)
 
 /** One report page: a Target page (kInvalidUID for a removed page) and its partner on the
     report's Source (kInvalidUID for an added page). fBefore/fAfter are the 1-based page numbers
@@ -328,6 +331,15 @@ void TypeAt(SDKLayoutHelper& helper, const UIDRef& layer, const PMRect& bounds, 
 		if (apply != nil)
 			CmdUtils::ProcessCommand(apply);
 	}
+	// And at kTextPt, as a character override over the whole story.
+	InterfacePtr<ITextAttrRealNumber> size(::CreateObject2<ITextAttrRealNumber>(kTextAttrPointSizeBoss));
+	if (size != nil && data->Length() > 0)
+	{
+		size->Set(kTextPt);
+		InterfacePtr<ICommand> apply(Utils<ITextAttrUtils>()->BuildApplyTextAttrCmd(model, 0, static_cast<uint32>(data->Length()), size, kCharAttrStrandBoss));
+		if (apply != nil)
+			CmdUtils::ProcessCommand(apply);
+	}
 }
 
 /** The rectangle of the n-th page of the report document, in its spread's coordinates, and
@@ -504,8 +516,8 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 			TypeAt(helper, layer, PMRect(rightBox.Left(), rightBox.Top() + pageH / 2 - 12, rightBox.Right(), rightBox.Top() + pageH / 2 + 12), Ascii("(removed - nothing on the After side)"));
 
 		// the captions
-		TypeAt(helper, layer, PMRect(leftBox.Left(),  leftBox.Bottom() + 2,  leftBox.Right(),  leftBox.Bottom() + kCaptionH),  Ascii("Before"));
-		TypeAt(helper, layer, PMRect(rightBox.Left(), rightBox.Bottom() + 2, rightBox.Right(), rightBox.Bottom() + kCaptionH), Ascii("After (comparison marks printed)"));
+		TypeAt(helper, layer, PMRect(leftBox.Left(),  leftBox.Bottom() + 2,  leftBox.Right(),  leftBox.Bottom() + kCaptionH),  Ascii("Before (comparison marks printed)"));
+		TypeAt(helper, layer, PMRect(rightBox.Left(), rightBox.Bottom() + 2, rightBox.Right(), rightBox.Bottom() + kCaptionH), Ascii("After"));
 	}
 
 	// the user's place preferences, back as they were
@@ -514,8 +526,30 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 	return kTrue;
 }
 
-/** Where the report goes: next to the Target, or on the Desktop for a document never saved. */
+PMString SuggestedReportName(IDataBase* targetDB);
+
+/** Where the report goes: the user chooses (a save dialog, as the TSV export raises one), with
+    "<Target name>.compare-report.pdf" offered as the name. kFalse with an empty `why` when the
+    dialog was cancelled - the caller says "cancelled" and nothing else.
+    **This is a file dialog raised from the model half**, on the same grounds as the TSV export's
+    (KCMChangedPagesTSV.cpp): SDKFileSaveChooser is a helper from sdksamples/common, not a boss of
+    a UI plug-in, and this path is entered from the flyout only, never from a drawing thread. */
 bool16 ReportPath(IDataBase* targetDB, IDFile& outFile, PMString& why)
+{
+	why.Clear();
+	SDKFileSaveChooser chooser;
+	chooser.SetTitle(Ascii("Export Before/After Report"));
+	chooser.SetFilename(SuggestedReportName(targetDB));
+	chooser.AddFilter('CARO', 'PDF ', "pdf", Ascii("PDF (pdf)"));
+	chooser.ShowDialog();
+	if (!chooser.IsChosen())
+		return kFalse;
+	outFile = chooser.GetIDFile();
+	return kTrue;
+}
+
+/** "<Target name>.compare-report.pdf" - the name the save dialog opens with. */
+PMString SuggestedReportName(IDataBase* targetDB)
 {
 	PMString stem = NameOf(targetDB);
 	// drop the extension
@@ -535,20 +569,7 @@ bool16 ReportPath(IDataBase* targetDB, IDFile& outFile, PMString& why)
 		stem = Ascii("Untitled");
 	stem.Append(".compare-report.pdf");
 	stem.SetTranslatable(kFalse);
-
-	const IDFile* saved = targetDB->GetSysFile();
-	IDFile folder;
-	if (saved != nil && FileUtils::GetParentDirectory(*saved, folder))
-	{
-		outFile = folder;
-	}
-	else if (FileUtils::CoverSHGetFolderPath(CSIDL_DESKTOPDIRECTORY, &outFile) != kSuccess)
-	{
-		why = Ascii("neither the document's folder nor the Desktop could be found");
-		return kFalse;
-	}
-	FileUtils::AppendPath(&outFile, stem);
-	return kTrue;
+	return stem;
 }
 
 void CloseReportDocument(const UIDRef& doc)
@@ -636,18 +657,55 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	const IDFile afterPDF  = TempPDF("after");
 	PMString why;
 	bool16 ok = kTrue;
+	// THE MARKS GO ON THE BEFORE SIDE (the user's ask, 2026-09-13): the older version carries the
+	// rings of the changed pages and the "/" of the removed ones, the newer version is shown clean.
+	// The drawing marks a Source page only when the document is the one it knows as sSrcDB and the
+	// page is in sSrcPageToTarget - which a task-start copy is not, having been detached and closed
+	// right after the comparison. So for the copy rehydrated here, the two (and the Source-side
+	// overflow set) are LENT for the length of the Before export and put back to the detached state
+	// afterwards. The overflow cache is stamped as built for this Source first, so no draw rebuilds
+	// it against the copy and then empties it against nil (which would cost the Target its "/").
 	const bool16 printMarksWas = KCMDrawEventHandler::sPrintMarks;
 	{
 		IDataBase::SaveRestoreModifiedState targetGuard(targetDB);
 		IDataBase::SaveRestoreModifiedState sourceGuard(sourceDB);
+
+		const bool16 lend = (KCMDrawEventHandler::sSrcDB == nil) ? kTrue : kFalse;
+		if (lend)
+		{
+			std::vector<UID> tp, sp, tov, sov;
+			KCMBuildPairing(targetDB, sourceDB, tp, sp, &tov, &sov);
+			KCMMarkStateLock lock(KCMMarkStateMutex());
+			KCMDrawEventHandler::sSrcDB = sourceDB;
+			KCMDrawEventHandler::sOverflowCacheSrcDB = sourceDB;
+			KCMDrawEventHandler::sSrcPageToTarget.clear();
+			for (size_t i = 0; i < sp.size() && i < tp.size(); ++i)
+				KCMDrawEventHandler::sSrcPageToTarget[sp[i]] = tp[i];
+			KCMDrawEventHandler::sOverflowS.clear();
+			KCMDrawEventHandler::sOverflowS.insert(sov.begin(), sov.end());
+		}
 		if (!beforePages.empty())
 		{
-			KCMDrawEventHandler::sPrintMarks = kFalse;		// the older version plain
+			// The marks, without the frame along the page edge (the user's ask, 2026-09-13): only
+			// the rings around what changed. The ring images are cached, so both flips invalidate.
+			KCMDrawEventHandler::sPrintMarks = kTrue;		// the older version with the marks
+			KCMDrawEventHandler::sRingFrameOff = kTrue;
+			KCMDrawEventHandler::InvalidateRingCache();
 			ok = ExportPagesToPDF(sourceDB, beforePages, beforePDF, why);
+			KCMDrawEventHandler::sRingFrameOff = kFalse;
+			KCMDrawEventHandler::InvalidateRingCache();
+		}
+		if (lend)
+		{
+			KCMMarkStateLock lock(KCMMarkStateMutex());
+			KCMDrawEventHandler::sSrcDB = nil;
+			KCMDrawEventHandler::sOverflowCacheSrcDB = nil;
+			KCMDrawEventHandler::sSrcPageToTarget.clear();
+			KCMDrawEventHandler::sOverflowS.clear();
 		}
 		if (ok && !afterPages.empty())
 		{
-			KCMDrawEventHandler::sPrintMarks = kTrue;		// the newer version with its rings
+			KCMDrawEventHandler::sPrintMarks = kFalse;		// the newer version clean
 			ok = ExportPagesToPDF(targetDB, afterPages, afterPDF, why);
 		}
 		KCMDrawEventHandler::sPrintMarks = printMarksWas;
@@ -684,8 +742,13 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 
 	if (!ok)
 	{
-		outMessage = Ascii("Report failed: ");
-		outMessage.Append(why);
+		if (why.IsEmpty())
+			outMessage = Ascii("Report cancelled.");		// the save dialog was dismissed
+		else
+		{
+			outMessage = Ascii("Report failed: ");
+			outMessage.Append(why);
+		}
 		return kFalse;
 	}
 

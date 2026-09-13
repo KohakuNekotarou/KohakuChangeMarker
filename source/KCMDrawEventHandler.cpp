@@ -87,6 +87,7 @@ bool16 KCMDrawEventHandler::sMarkOpacity25 = kTrue;	// default 25%, matching the
 bool16 KCMDrawEventHandler::sMarkColorCyan = kFalse;	// default red. kTrue = cyan
 bool16 KCMDrawEventHandler::sShowOldNumbers = kFalse;	// default off (the flyout's "Show Original Page Numbers")
 bool16 KCMDrawEventHandler::sMarksTempHidden = kFalse;	// with "Always Show Marks on Target" on, kTrue only while the tool's left button is held over the Target window
+bool16 KCMDrawEventHandler::sRingFrameOff = kFalse;	// the report's switch (the header); off = the page frame is part of every ring image
 bool16 KCMDrawEventHandler::sSrcMarksPressed = kFalse;	// kTrue only while the button is held over the Source window. It records "pressed", not "hidden" -- the drawing XORs it with sSrcMarksOn (see the declaration)
 bool16 KCMDrawEventHandler::sSrcMarksOn = kFalse;	// default off (the flyout's "Always Show Marks on Source"). Start does not touch it: the setting is saved in the panel state and restored at start-up, so a Start that overwrote it would wipe the reader's choice
 bool16 KCMDrawEventHandler::sTgtMarksOn = kFalse;	// the Target counterpart. Screen only -- print and PDF are decided by sPrintMarks. Start does not touch it either
@@ -176,6 +177,16 @@ void KCMDrawEventHandler::RebuildOverflowCache()
 	}
 }
 
+void KCMDrawEventHandler::InvalidateRingCache()
+{
+	// lastRadius is what KCMDrawEntryOnPage compares the wanted radius against; -1 matches nothing,
+	// so the next draw of every entry runs BuildRing again (with sRingFrameOff as it now stands).
+	KCMMarkStateLock lock(KCMMarkStateMutex());
+	for (std::map<UID, KCMOverlayEntry*>::iterator it = sEntries.begin(); it != sEntries.end(); ++it)
+		if (it->second != nil)
+			it->second->lastRadius = -1;
+}
+
 void KCMDrawEventHandler::EnsureOverflowCache()
 {
 	// Rebuild only when the (sDB, sSrcDB) the cache was built for differs from the current pair --
@@ -240,7 +251,9 @@ void KCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt, i
 			// same radius as the ring, which is recomputed at every zoom -- so it stays a constant
 			// number of screen pixels. Colour and alpha are the ring's (the density is applied by
 			// the blit's opacity).
-			const bool16 frame = (x < radius || (wt - 1 - x) < radius ||
+			// ★Unless sRingFrameOff (the Before/After report's PDF wants the rings alone).
+			const bool16 frame = !sRingFrameOff &&
+			                     (x < radius || (wt - 1 - x) < radius ||
 			                      y < radius || (ht - 1 - y) < radius);
 			if (ring || frame)
 			{

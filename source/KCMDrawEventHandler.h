@@ -192,6 +192,15 @@ public:
 	// Default kFalse (screen only). While it is on they are also shown on screen at all times,
 	// regardless of the tool's left button (WYSIWYG). Held independently of the mark data.
 	static bool16 sPrintMarks;
+	// While kTrue, BuildRing leaves out the band along the page edge (the "page frame") and draws
+	// only the rings around the changed cells. Off by default; the Before/After report turns it on
+	// for the length of its Before export (the user's ask, 2026-09-13: the PDF without the frame
+	// around the page) and off again. Whoever flips it calls InvalidateRingCache() on both sides,
+	// because the ring images are cached per entry and rebuilt only when the radius changes.
+	static bool16 sRingFrameOff;
+	// Force every entry's ring image to be rebuilt on its next draw (lastRadius = -1, under the
+	// mark-state lock). Main thread only, like the other writers of sEntries' contents.
+	static void InvalidateRingCache();
 	// The frame opacity chosen by the panel radio "Marks opacity 25% / 75%". kTrue = 25%,
 	// kFalse = 75%. Default kTrue (25%).
 	// The tool's left-hold display, the always-on display while printing is on

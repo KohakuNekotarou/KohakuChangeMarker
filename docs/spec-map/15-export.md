@@ -20,7 +20,9 @@
   - 訂正:
 
 - **REP-03** 変更ページごとに横長 1 ページ＝上に見出し `p.N   Before: <名前> p.M   After: <名前> p.N`、左に旧版、右に新版。
-  **右側は「Print comparison marks」を一時的に ON にして書き出す**ので、リングと赤「/」が載る。左は素のまま。
+  **左（旧版）は「Print comparison marks」を一時的に ON にして書き出す**ので、リングと削除ページの赤「/」が載る。右（新版）は素のまま
+  （2026-09-13 ユーザー要望「マークはソースの方のみ」。最初の実装は逆だった）。
+  ⚠Task Start の写しは比較後に離してあるので、書き出しの間だけ `sSrcDB`／`sSrcPageToTarget`／`sOverflowS` を写しに貸し、終わったら離した状態に戻す。
   追加ページは左が空で `(added - nothing on the Before side)`、削除ページは右が空で `(removed - ...)`。
   - 訂正:
 
@@ -35,8 +37,17 @@
   ⚠Task Start の写しは報告書のために**もう一度再水和**する（比較のときの写しは離して閉じてある）。ページの対応は写しのラベルで取れる（第3章 CMP-04）。
   - 訂正:
 
-- **REP-06** 出力先＝Target の隣に `<Target 名>.compare-report.pdf`（未保存の文書ならデスクトップ）。書けたら**既定の PDF ビューアで開く**。
-  ステータス行に `Report: N pages -> <パス>`。失敗は `Report failed: <理由>`。
+- **REP-06** 出力先＝**保存ダイアログで選ぶ**（2026-09-13 ユーザー要望「保存場所と名前をつけられるように」。最初は Target の隣に固定だった）。
+  初期名は `<Target 名>.compare-report.pdf`。書けたら**既定の PDF ビューアで開く**。
+  ステータス行に `Report: N pages -> <パス>`。キャンセルは `Report cancelled.`、失敗は `Report failed: <理由>`。
+  - 訂正:
+
+- **REP-08** ★**左側のマークにはページの縁の枠（frame）を付けない**（2026-09-13 ユーザー要望）＝変わった箇所のリングだけ。
+  実装＝`KCMDrawEventHandler::sRingFrameOff` を Before の書き出しの間だけ立て、リング画像のキャッシュを前後で無効化（`InvalidateRingCache`）。
+  画面・印刷・サムネイルの枠は従来どおり。
+  - 訂正:
+
+- **REP-09** 報告書に足す文字（見出し・注記・要約）は **18pt**（既定 12pt の 1.5 倍。2026-09-13 ユーザー要望「2倍」→「1.5 でいい」）、左揃え。
   - 訂正:
 
 - **REP-07** 書き出しの前後で Target／Source の `modified` は変えない（`SaveRestoreModifiedState`）。実測＝2文書とも false のまま。
