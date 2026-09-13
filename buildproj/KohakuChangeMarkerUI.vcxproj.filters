@@ -254,6 +254,9 @@
       <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceShortValue.h">
          <Filter>Header Files</Filter>
       </ClInclude>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceUnits.h">
+         <Filter>Header Files</Filter>
+      </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryJump.h">
          <Filter>Header Files</Filter>
       </ClInclude>

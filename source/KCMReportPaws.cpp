@@ -37,10 +37,13 @@
 namespace
 {
 
-const int32  kPawCount = 7;			// paws on the trail
+// (2026-09-13, the user's second look: "a little more winding, the stance a little wider, and a
+//  few more stamps" - 7 -> 10 paws, the stance 0.32 -> 0.55, and a wave along the trail.)
+const int32  kPawCount = 10;		// paws on the trail
 const PMReal kPawSize  = 44.0;		// one paw's size (the outlines are in units of it)
-const PMReal kPawStride = 0.55;		// how far the trail advances per paw, as a fraction of the page's height
-const PMReal kPawSideways = 0.32;	// a left / right paw's offset from the trail's line, in paw sizes
+const PMReal kPawSideways = 0.55;	// a left / right paw's offset from the trail's line, in paw sizes
+const double kPawWaves = 1.5;		// how many times the trail winds from side to side over its length
+const PMReal kPawWaveAmp = 1.1;		// how far it winds, in paw sizes
 
 /** An RGB swatch in the report document, at the paw's FILL shade for `colour`. kInvalidUID
     when the swatch could not be made. */
@@ -164,30 +167,38 @@ void KCMReportDrawPawTrail(IDataBase* reportDB, const UIDRef& layer, const PMRec
 	}
 
 	// The trail: from a point above the foot's labels at the lower left, up and to the right,
-	// through the middle of the page. Each paw steps forward by a fixed share of the page's
-	// height, and alternates left / right of the line.
-	const PMReal x0 = page.Left() + page.Width() * 0.18;
-	const PMReal y0 = page.Bottom() - page.Height() * 0.22;
-	const PMReal x1 = page.Right() - page.Width() * 0.18;
-	const PMReal y1 = page.Top() + page.Height() * 0.16;
+	// through the middle of the page, winding from side to side on its way. The paws are spread
+	// evenly along it, alternating left / right of the line (the stance) on top of the winding.
+	// (10pt lower than first drawn - the user's ask, 2026-09-13: "the whole trail 10px down".)
+	const PMReal kDown = 10.0;
+	const PMReal x0 = page.Left() + page.Width() * 0.14;
+	const PMReal y0 = page.Bottom() - page.Height() * 0.22 + kDown;
+	const PMReal x1 = page.Right() - page.Width() * 0.14;
+	const PMReal y1 = page.Top() + page.Height() * 0.16 + kDown;
 	const double dx = ::ToDouble(x1 - x0), dy = ::ToDouble(y1 - y0);
 	const double len = std::sqrt(dx * dx + dy * dy);
 	if (len <= 0.0)
 		return;
 	const double ux = dx / len, uy = dy / len;			// along the trail
 	const double nx = -uy, ny = ux;						// across it
-	// A paw's toes point to -y in the table; turning by (heading + 90 degrees) points them along
-	// the trail (check: (0,-1) turned by heading + pi/2 is (cos heading, sin heading)).
-	const double angle = std::atan2(dy, dx) + 3.14159265358979323846 / 2.0;
+	const double kPi = 3.14159265358979323846;
 
-	const PMReal step = page.Height() * kPawStride / PMReal(kPawCount);
 	for (int32 i = 0; i < kPawCount; ++i)
 	{
-		const double along = ::ToDouble(step) * i + ::ToDouble(kPawSize) * 0.5;
-		const double side = (i % 2 == 0 ? -1.0 : 1.0) * ::ToDouble(kPawSize * kPawSideways);
+		const double t = (i + 0.5) / kPawCount;				// 0..1 along the trail
+		const double along = t * len;
+		// The winding: a sine across the trail, and each paw turned to face the way the trail
+		// runs THERE (the sine's slope), so the cat walks the curve rather than the chord.
+		const double wave = std::sin(t * kPawWaves * 2.0 * kPi) * ::ToDouble(kPawSize * kPawWaveAmp);
+		const double slope = std::cos(t * kPawWaves * 2.0 * kPi) * ::ToDouble(kPawSize * kPawWaveAmp) * (kPawWaves * 2.0 * kPi) / len;
+		const double stance = (i % 2 == 0 ? -1.0 : 1.0) * ::ToDouble(kPawSize * kPawSideways);
+		const double side = wave + stance;
 		const PMReal cx = x0 + PMReal(ux * along + nx * side);
 		const PMReal cy = y0 + PMReal(uy * along + ny * side);
-		MakePaw(helper, reportDB, layer, cx, cy, angle, (i % 2 == 0) ? red : blue, none);
+		// A paw's toes point to -y in the table; turning by (heading + 90 degrees) points them
+		// along the trail (check: (0,-1) turned by heading + pi/2 is (cos heading, sin heading)).
+		const double heading = std::atan2(uy + ny * slope, ux + nx * slope);
+		MakePaw(helper, reportDB, layer, cx, cy, heading + kPi / 2.0, (i % 2 == 0) ? red : blue, none);
 	}
 }
 

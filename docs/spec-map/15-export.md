@@ -83,6 +83,22 @@
 - **REP-16** 表の作り方＝`KCMReportTable.cpp`。節の先頭ページに見出し（18pt）と全幅のテキストフレーム → `ITableUtils::InsertTable`（2列・行の高さ 0＝自動）→ セルは `ITableModel::QueryCellContentBoss`→`ITextStoryThread::GetTextStart` の位置に `ITextModelCmds::InsertCmd`、属性は範囲ごとに（14pt・左揃え・tint・上付き・ルビ・圏点）→ `ITextUtils::IsOverset` の間、`kNewSpreadCmdBoss` でページを足し `kTextLinkCmdBoss` で連結（上限 200 ページ）。表の行数は節ごと 400 行で打ち切り（`... (the table stops here)`）。
   - 訂正:
 
+- **REP-17** 表は **4列「ID（Resources は Kind）｜Δ｜Before｜After」**、1行目は表のヘッダー行（ページをまたぐと繰り返す）。Δ はパネルと同じ4記号（`+` 新側だけ／`-` 旧側だけ／`=` 比べて同じ／`≠` 違う）。
+  ストーリーの親行＝ID・Δ・`p.N  冒頭の語句`（Before/After のセルは結合して1つ）。子行＝Δ と左右の文。Resources の親行＝Kind・Δ・キー（結合）。属性行＝属性名・Δ・旧値／新値。
+  - 訂正:
+
+- **REP-18** ★**Story の ID セルは、同じストーリーの子行と縦に結合**する。⚠結合セルはページをまたげない（実測＝80 件を1セルにすると永遠に収まらず 200 ページ超えで止まった）ので、**表を全ページに流してから、各行の載ったフレーム（`ICellContent::GetParcelFrameUID`）が同じ範囲だけ結合し、ページの先頭の塊に ID を再記入**する（`MergeLabelRunsByPage`）。
+  - 訂正:
+
+- **REP-19** ルビは本文と同じ大きさ（14pt・`kTARubyPointSizeBoss`）の本物のルビで2行、圏点は 0.6 倍の本物の圏点。セルの余白 4pt（`kCellAttr*InsetBoss`）、上の行を持つ行は上の余白を広げる。1列目は 180pt・12pt（⚠長い属性名は折れないので狭いと空欄になる＝`SwatchColorGroupReference` で実測）。
+  - 訂正:
+
+- **REP-20** 1P目＝3行を 36pt、**猫の足あと 10 個**（赤・青交互、蛇行、`kKCMPawOutlines` からのスプライン＋報告書文書の RGB スウォッチ＝`KCMReportPaws.cpp`）、最下部に `Exported: YYYY-MM-DD HH:MM:SS`。Before／After の語は **Pixel の各ページの絵の上**（1P目の足には置かない）。
+  - 訂正:
+
+- **REP-21** ★**Resources の値に文書の単位を添える**＝`8.503937007874015 (12 Q)`（`KCMResourceUnits.h`）。属性名で振り分け＝`PointSize`／`…FontSize`→文字サイズ単位、`…Weight`→線の単位、`Leading`／`BaselineShift`／`Space*`／`…Indent`／`…Offset`→テキスト単位（J 以外は水平単位）、`Left/RightInset`／`…Gutter`／`…Width`→水平、`Top/BottomInset`／`…Height`→垂直。知らない名前・数でない値・単位が pt のときは添えない。**PDF・パネルの行・パネルの帯の3か所が同じ inline 関数**。
+  - 訂正:
+
 ## 3. やっていないこと
 
 ページの中の差分行（Story Edits をページ別に振る）／全ページ出力／プリセットの選択 UI／ページ内の変更領域の枠（右側のリングで代替）／Story／Resources モードで Pixel の絵を出すこと（REP-15）。

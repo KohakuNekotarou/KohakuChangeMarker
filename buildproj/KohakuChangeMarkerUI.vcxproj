@@ -323,6 +323,7 @@
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMResourceXml.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMXmlPretty.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceShortValue.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceUnits.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryJump.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryNav.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryRefresh.h"/>

@@ -25,6 +25,7 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <ctime>					// the export time stamp on the first page
 
 #include "IApplication.h"
 #include "IBoolData.h"
@@ -71,6 +72,7 @@
 #include "KCMStoryRestore.h"		// KCMKentenKindOf - a kenten name to its kind
 #include "KCMResourceStore.h"		// the Resources result, borrowed when the mode did not produce it
 #include "KCMResourceShortValue.h"	// KCMShortResourceValue - what a value reads as, the same as the panel
+#include "KCMResourceUnits.h"		// KCMResourceValueWithUnit - and the document's own unit beside it
 #include "KCMXmlPretty.h"			// KCMDecodePercentEscapes - a definition's key, readable
 #include "KCMModelNotify.h"		// KCMNotify - the panel is told when the borrowed Resources result goes
 #include "KCMBoundaryID.h"			// kKCMStoryEditsRebuiltMessage
@@ -466,6 +468,7 @@ void BuildStoryRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KCMRep
 		if (unpaired)
 		{
 			KCMReportRow r;
+			r.fJoinLabel = kTrue;		// under its story's ID
 			r.fSign = head.fSign;
 			if (removed) { r.fLeft.fMid = row->fText; r.fRight.fMid = Ascii("(removed story)"); }
 			else         { r.fLeft.fMid = Ascii("(added story)"); r.fRight.fMid = row->fText; }
@@ -477,6 +480,7 @@ void BuildStoryRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KCMRep
 			const KCMStoryChange& ch = row->fChanges[c];
 			++outEdits;
 			KCMReportRow r;
+			r.fJoinLabel = kTrue;		// under its story's ID: one ID cell for the story and its edits
 			// The change's sign, as the panel's child rows carry it: + inserted, - deleted, ≠ replaced.
 			r.fSign = (ch.fKind == KCMStoryChange::kInsert) ? KCMReportSign::Plus()
 					: (ch.fKind == KCMStoryChange::kDelete) ? KCMReportSign::Minus()
@@ -537,7 +541,7 @@ void BuildStoryRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KCMRep
 /** The Resources rows as table rows: a heading row per definition, then one row per differing
     attribute - the older value on the left, the newer on the right, shortened as the panel
     shortens them. */
-void BuildResourceRows(std::vector<KCMReportRow>& out)
+void BuildResourceRows(IDataBase* targetDB, std::vector<KCMReportRow>& out)
 {
 	out.clear();
 	const int32 n = KCMResourceStore::GetChangeCount();
@@ -580,8 +584,9 @@ void BuildResourceRows(std::vector<KCMReportRow>& out)
 			r.fSign = source.IsEmpty() ? KCMReportSign::Plus()
 					: target.IsEmpty() ? KCMReportSign::Minus()
 					: KCMReportSign::NotEqual();
-			r.fLeft.fMid  = source.IsEmpty() ? Ascii("-") : KCMShortResourceValue(source);
-			r.fRight.fMid = target.IsEmpty() ? Ascii("-") : KCMShortResourceValue(target);
+			// The value as the panel shows it, then the document's own unit beside it (Q, mm ...).
+			r.fLeft.fMid  = source.IsEmpty() ? Ascii("-") : KCMResourceValueWithUnit(name, KCMShortResourceValue(source), targetDB);
+			r.fRight.fMid = target.IsEmpty() ? Ascii("-") : KCMResourceValueWithUnit(name, KCMShortResourceValue(target), targetDB);
 			out.push_back(r);
 			if (static_cast<int32>(out.size()) >= kMaxTableRows)
 				break;
@@ -618,7 +623,7 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 	InterfacePtr<IPDFPlacePrefs> currentPlace(workspace, UseDefaultIID());
 	PlacePrefsRestorer restorePlace(currentPlace);
 
-	// ---- the first page: three lines, and Before / After at the foot (the user's ask) ----------
+	// ---- the first page: three lines, and the cat's trail (the user's asks) ---------------------
 	{
 		PMRect page;
 		UIDRef layer;
@@ -640,18 +645,28 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 			text.Append("Pixel: not compared in this mode (only added / removed pages are shown)");
 			EndParagraph(text);
 		}
-		KCMReportTypeAt(helper, layer, PMRect(page.Left() + kKCMReportGutter, page.Top() + kKCMReportGutter, page.Right() - kKCMReportGutter, page.Bottom() - kKCMReportGutter - kKCMReportCaptionH - 8), text, kKCMReportHeadingPt);
+		// At twice the heading size (the user's ask, 2026-09-13: "only the first page's words, twice").
+		KCMReportTypeAt(helper, layer, PMRect(page.Left() + kKCMReportGutter, page.Top() + kKCMReportGutter, page.Right() - kKCMReportGutter, page.Top() + kKCMReportGutter + 6 * kKCMReportHeadingPt * 3.2), text, kKCMReportHeadingPt * 2);
 
-		// Left "Before", right "After", where the two pictures stand on the pages that follow.
-		const PMReal footTop = page.Bottom() - kKCMReportGutter - kKCMReportCaptionH;
-		KCMReportTypeAt(helper, layer, PMRect(page.Left() + kKCMReportGutter,              footTop, page.Left() + kKCMReportGutter + pageW,          page.Bottom() - kKCMReportGutter), Ascii("Before"), kKCMReportHeadingPt);
-		KCMReportTypeAt(helper, layer, PMRect(page.Left() + 2 * kKCMReportGutter + pageW,  footTop, page.Left() + 2 * kKCMReportGutter + 2 * pageW,  page.Bottom() - kKCMReportGutter), Ascii("After"),  kKCMReportHeadingPt);
-
-		// And the cat's trail across the page (the user's ask, 2026-09-13).
+		// And the cat's trail across the page (the user's ask, 2026-09-13). (A "Before" / "After"
+		// stood at the foot of this page for an hour that day; the user moved the two words to
+		// the top of every picture page instead.)
 		KCMReportDrawPawTrail(reportDB, layer, page);
+
+		// When the report was written, at the very foot (the user's ask, 2026-09-13).
+		{
+			char stamp[64] = { 0 };
+			time_t now = ::time(nil);
+			struct tm local;
+			::localtime_s(&local, &now);
+			::strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S", &local);
+			PMString made = Ascii("Exported: ");
+			made.Append(stamp);
+			KCMReportTypeAt(helper, layer, PMRect(page.Left() + kKCMReportGutter, page.Bottom() - kKCMReportGutter - kKCMReportCaptionH, page.Right() - kKCMReportGutter, page.Bottom() - kKCMReportGutter), made, kKCMReportHeadingPt);
+		}
 	}
 
-	// ---- one page per pair: the two pictures and NOTHING ELSE (the user's ask, 2026-09-13) ------
+	// ---- one page per pair: "Before" / "After" over the two pictures, and nothing else --------
 	const IDFile beforeFile = beforePDF;
 	const IDFile afterFile = afterPDF;
 	for (size_t i = 0; i < pairs.size(); ++i)
@@ -667,6 +682,8 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 		const PMReal top = page.Top() + kKCMReportHeaderBand;
 		const PMRect leftBox (page.Left() + kKCMReportGutter,              top, page.Left() + kKCMReportGutter + pageW,              top + pageH);
 		const PMRect rightBox(page.Left() + 2 * kKCMReportGutter + pageW,  top, page.Left() + 2 * kKCMReportGutter + 2 * pageW,      top + pageH);
+		KCMReportTypeAt(helper, layer, PMRect(leftBox.Left(),  page.Top() + 12, leftBox.Right(),  page.Top() + kKCMReportHeaderBand - 4), Ascii("Before"), kKCMReportHeadingPt);
+		KCMReportTypeAt(helper, layer, PMRect(rightBox.Left(), page.Top() + 12, rightBox.Right(), page.Top() + kKCMReportHeaderBand - 4), Ascii("After"),  kKCMReportHeadingPt);
 		if (pair.fSource != kInvalidUID && pair.fBefore > 0)
 		{
 			if (!SetPlacePage(pair.fBefore, currentPlace, why))
@@ -832,7 +849,7 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 		}
 
 		ResourceLoan resourceLoan(targetDB, sourceDB);
-		BuildResourceRows(resourceRows);
+		BuildResourceRows(targetDB, resourceRows);	// the Target's units name the brackets
 		resourceHeading = Ascii("Resources Changes: ");
 		{
 			PMString summary;

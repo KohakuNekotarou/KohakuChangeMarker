@@ -65,7 +65,8 @@ namespace
 
 const int32  kMaxSectionPages = 200;	// a runaway stop for the overflow loop
 const PMReal kContextTint = 40.0;		// the unchanged text, in percent of the text colour
-const PMReal kLabelColW = 130.0;		// the first column: a story ID, a kind, an attribute's name
+const PMReal kLabelColW = 180.0;		// the first column: a story ID, a kind, an attribute's name (⚠a long name has no break in it: too narrow and the cell shows NOTHING - measured with SwatchColorGroupReference at 130)
+const PMReal kLabelPt   = 12.0;			// the first column's size, a little under the body's, for the same reason
 const PMReal kSignColW  = 28.0;			// the Δ column: one sign
 const int32  kColumns   = 4;			// label | Δ | Before | After
 const PMReal kCellInset = 4.0;			// the padding between a cell's rules and its text (the user's ask)
@@ -146,7 +147,8 @@ bool16 InsertText(ITextModel* model, TextIndex at, const PMString& text)
 
 /** Type one cell: the pieces, then the attributes by range. The cell's thread is looked up
     fresh each time - every insertion moves the threads after it. */
-bool16 FillCell(ITextModel* model, ITableModel* table, int32 row, int32 col, const KCMReportCell& cell, bool16 heading, PMString& why)
+bool16 FillCell(ITextModel* model, ITableModel* table, int32 row, int32 col, const KCMReportCell& cell, bool16 heading, PMString& why,
+				const PMReal& pointSize = kKCMReportBodyPt)
 {
 	const int32 preLen  = Len(cell.fPre);
 	const int32 midLen  = Len(cell.fMid);
@@ -176,8 +178,8 @@ bool16 FillCell(ITextModel* model, ITableModel* table, int32 row, int32 col, con
 		return kFalse;
 	}
 
-	// The cell as a whole: the body size, left-aligned.
-	ApplyReal(model, start, total, kTextAttrPointSizeBoss, kKCMReportBodyPt, kCharAttrStrandBoss);
+	// The cell as a whole: its size, left-aligned.
+	ApplyReal(model, start, total, kTextAttrPointSizeBoss, pointSize, kCharAttrStrandBoss);
 	ApplyAlignLeft(model, start, total);
 
 	// The context pale, the change at full strength (the user's ask). A heading row is all one
@@ -263,13 +265,76 @@ bool16 FillRow(ITextModel* model, ITableModel* table, int32 row, const KCMReport
 	label.fMid = spec.fLabel;
 	KCMReportCell sign;
 	sign.fMid = spec.fSign;
-	if (!FillCell(model, table, row, 0, label, kTrue, why)
-		|| !FillCell(model, table, row, 1, sign, kTrue, why)
+	// A row whose first cell was merged into the row above's has no cell of its own there.
+	if (!spec.fJoinLabel && !FillCell(model, table, row, 0, label, kTrue, why, kLabelPt))
+		return kFalse;
+	if (!FillCell(model, table, row, 1, sign, kTrue, why)
 		|| !FillCell(model, table, row, 2, spec.fLeft, spec.fHeading, why))
 		return kFalse;
 	if (spec.fHeading && mergeSides)
 		return kTrue;		// the merged cell holds the heading; there is no column 3 on this row
 	return FillCell(model, table, row, 3, spec.fRight, spec.fHeading, why);
+}
+
+/** The text frame (column) a table row was composed into - which PAGE it landed on, in effect -
+    read off the row's first cell's parcel. kInvalidUID for a row that is overset or not composed. */
+UID FrameOfRow(ITableModel* table, int32 row)
+{
+	InterfacePtr<ICellContent> content(table->QueryCellContentBoss(GridAddress(row, 0)));
+	if (content == nil || content->GetParcelCount() < 1)
+		return kInvalidUID;
+	return content->GetParcelFrameUID(content->GetNthParcelKey(0));
+}
+
+/** One first cell for a row and the rows that join it (a story's ID over its edits), PER PAGE:
+    a run is merged as far as it stays on one page, and starts a new merged cell - with the label
+    typed again - where the page breaks (the user's ask, 2026-09-13: "one cell for the same ID,
+    except across a page").
+
+    ⚠**A MERGED CELL CANNOT BREAK ACROSS PAGES** (measured 2026-09-13: one story with 80 edits
+      merged into one cell never fitted, the overflow loop added 200 pages and gave up), which is
+      why this runs AFTER the table has been flowed through its pages and composed: only then
+      does a row know its page. Merging afterwards moves nothing - the first column holds a short
+      ID, and a row's height comes from its side cells - so the pages stay as they were.
+    The joining rows' first cells are empty (FillRow typed nothing there), so a merge concatenates
+    nothing; the label is typed into the anchor of every piece after the first. */
+bool16 MergeLabelRunsByPage(const UIDRef& story, const std::vector<KCMReportRow>& rows, PMString& why)
+{
+	InterfacePtr<ITextModel> model(story, UseDefaultIID());
+	InterfacePtr<ITableModelList> tables(model, UseDefaultIID());
+	InterfacePtr<ITableModel> table(tables != nil && tables->GetModelCount() > 0 ? tables->QueryNthModel(0) : nil);
+	InterfacePtr<ITableCommands> cmds(table, UseDefaultIID());
+	if (model == nil || table == nil || cmds == nil)
+	{
+		why = Ascii("the table could not be reopened to merge its first column");
+		return kFalse;
+	}
+	const int32 bodyRows = static_cast<int32>(rows.size());
+	for (int32 r = 0; r < bodyRows; )
+	{
+		int32 end = r + 1;
+		while (end < bodyRows && rows[end].fJoinLabel)
+			++end;
+		for (int32 piece = r; piece < end; )
+		{
+			const UID frame = FrameOfRow(table, piece + 1);		// body row r is table row r + 1 (the header row is 0)
+			int32 pieceEnd = piece + 1;
+			while (pieceEnd < end && frame != kInvalidUID && FrameOfRow(table, pieceEnd + 1) == frame)
+				++pieceEnd;
+			if (pieceEnd - piece > 1)
+				cmds->MergeCells(GridArea(piece + 1, 0, pieceEnd + 1, 1));
+			if (piece != r)
+			{
+				KCMReportCell label;
+				label.fMid = rows[r].fLabel;
+				if (!FillCell(model, table, piece + 1, 0, label, kTrue, why, kLabelPt))
+					return kFalse;
+			}
+			piece = pieceEnd;
+		}
+		r = end;
+	}
+	return kTrue;
 }
 
 /** The frame list behind a text frame (its kMultiColumnItemBoss), composed up to date. */
@@ -478,6 +543,7 @@ bool16 KCMReportWriteTable(IDataBase* reportDB, int32 firstPage, const PMString&
 		// The padding, over the whole table; rows with an upper line get more at the top (FillRow).
 		ApplyInsets(table, GridArea(0, 0, bodyRows + 1, kColumns), kCellInset, kCellInset, kCellInset);
 
+
 		// The header row: the panel's own headings (ID / Kind, Δ) and the report's two sides.
 		{
 			KCMReportRow header;
@@ -526,6 +592,11 @@ bool16 KCMReportWriteTable(IDataBase* reportDB, int32 firstPage, const PMString&
 		}
 		frame = next;
 	}
+
+	// Now that every row has its page: one first cell per story per page.
+	if (!MergeLabelRunsByPage(story, rows, why))
+		return kFalse;
+
 	outNextPage = pageIndex + 1;
 	return kTrue;
 }

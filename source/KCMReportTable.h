@@ -69,11 +69,14 @@ struct KCMReportCell
 struct KCMReportRow
 {
 	bool16			fHeading;
+	bool16			fJoinLabel;	// kTrue: this row's first cell is MERGED into the row above's (a story's
+								// edits under their story's ID - the user's ask, 2026-09-13: "one ID for
+								// the parent and its children"); fLabel is then not written
 	PMString		fLabel;		// the first column: ID / Kind / an attribute's name
 	PMString		fSign;		// the Δ column: one of KCMReportSign's strings
 	KCMReportCell	fLeft;
 	KCMReportCell	fRight;
-	KCMReportRow() : fHeading(kFalse) {}
+	KCMReportRow() : fHeading(kFalse), fJoinLabel(kFalse) {}
 };
 
 /** The four signs of the Δ column, spelled once. ⚠`≠` and `Δ` are in CP932, so they are set as

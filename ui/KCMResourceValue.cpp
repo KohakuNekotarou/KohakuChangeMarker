@@ -20,6 +20,8 @@
 #include "IKCMResourcesFacade.h"	// GetNthChange / GetNthAttrCount / GetNthAttr
 #include "KCMUIShared.h"			// KCMFindPanelWidget
 #include "KCMResourceValue.h"		// (brings KCMShortResourceValue from the shared header)
+#include "KCMResourceUnits.h"		// KCMResourceValueWithUnit - the document's unit beside the points
+#include "IKCMCompareFacade.h"		// GetArmedTargetDB - whose units
 
 namespace
 {
@@ -170,6 +172,12 @@ bool16 KCMShowSelectedResource(int32 row, int32 attrIndex)
 			// ★Shortened the same way the row below it is, so the two never disagree about what the
 			//   value "is" (KCMShortResourceValue carries the rule and the reason).
 			body = KCMShortResourceValue(source);
+			// ★With the document's own unit beside the points (2026-09-13), the same way the row
+			//   below and the PDF report bracket it - read off the Target's settings.
+			{
+				Utils<IKCMCompareFacade> compare;
+				body = KCMResourceValueWithUnit(name, body, compare ? compare->GetArmedTargetDB() : nil);
+			}
 			body.SetTranslatable(kFalse);
 		}
 	}

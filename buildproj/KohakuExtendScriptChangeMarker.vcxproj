@@ -315,6 +315,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReportPaws.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMXmlPretty.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceShortValue.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceUnits.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryRestore.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.h" />

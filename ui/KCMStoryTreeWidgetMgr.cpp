@@ -59,6 +59,7 @@
 #include "IKCMCompareFacade.h"		// GetCompareMode - asked in ONE function, KCMListShowsResources
 #include "IKCMResourcesFacade.h"	// the definition rows, when that is what the list is showing
 #include "KCMResourceValue.h"		// KCMShortResourceValue - what a `$ID/...` value reads as
+#include "KCMResourceUnits.h"		// KCMResourceValueWithUnit - the document's unit beside the points
 #include "KCMXmlPretty.h"			// KCMDecodePercentEscapes - `%3a` in a group's name is a colon
 #include "KCMStoryKinds.h"		// KCMStoryChangeKind - the bits KindLabel names. A header of types
 									// only, which is why it may be included from either side of the
@@ -622,6 +623,13 @@ private:
 			//   in KCMResourceValue.h, because the band above this list has to shorten the other
 			//   side the same way.
 			value = KCMShortResourceValue(target);
+			// ★And the document's own unit beside the points (2026-09-13, the user's ask): a text
+			//   size in Q, a length in mm, a stroke in the stroke unit - read off the Target's
+			//   settings (KCMResourceUnits.h; the report brackets the same way).
+			{
+				Utils<IKCMCompareFacade> compare;
+				value = KCMResourceValueWithUnit(name, value, compare ? compare->GetArmedTargetDB() : nil);
+			}
 			value.SetTranslatable(kFalse);
 
 			// ⚠NOT AN ASCII CHARACTER, so `≠` is set as UTF-16 rather than written as a narrow
