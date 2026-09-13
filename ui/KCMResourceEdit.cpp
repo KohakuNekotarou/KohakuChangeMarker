@@ -29,14 +29,14 @@
 
 // ----- General -----
 #include "NodeID.h"					// NodeID / kInvalidNodeID
-#include "PersistUtils.h"			// ::GetClass - is the front modal really OUR dialog?
+#include "PersistUtils.h"			// ::GetClass - which page a dialog panel IS
 // The bosses that supply the dialog's pages. Published under source/open, reached by a relative
 // path rather than by adding an include directory - the same reasoning, and the same route, as
 // KCMStoryRowEH.cpp's TreeNodeEventHandler.h: the build files that would carry such a directory
 // live outside this plug-in's repository, so a path added there would not survive a fresh checkout.
-#include "../../open/interfaces/text/CharPanelID.h"	// kCharDialogHookBoss - the Basic Character Formats page
+#include "../../open/interfaces/text/CharPanelID.h"	// kCharDialogWidget - the Basic Character Formats page
 #include "StylePanelID.h"			// the Character Styles panel, its tree, and its action
-#include "TextStylePanelID.h"		// kTextSelectableCharDialogBoss - what that dialog's panel is
+#include "TextStylePanelID.h"		// kStyleCharParentWidgetID - the panel that switches the pages
 #include "Utils.h"
 
 #include <windows.h>
@@ -201,17 +201,42 @@ NodeID FindNodeByPath(ITreeViewHierarchyAdapter* adapter, ITreeViewTypeAhead* ty
 	which is exactly the kind of coincidence that makes a positional table look right until the day
 	it is not.
 
-	★★WHAT A PAGE IS, INSTEAD: the boss of the panel that supplies it. Measured in the service
-	registry - the pages register under service kTextStyleCharDialogBoss (0x5b09):
+	★★WHAT A PAGE IS, INSTEAD: the boss of the VIEW the switcher hands back for it. Read off the
+	open dialog on 2026-09-13 (KT's app.ktStyleDlgProbe, Japanese InDesign, seventeen pages, all
+	seventeen views already built while the dialog was up - none of them is created lazily):
 
-	    kTextStyleCharGeneralPanelBoss   General                    TEXT STYLE PANEL
-	    kCharDialogHookBoss              Basic Character Formats    CHARACTER PANEL
-	    kCharDialog2HookBoss             Advanced Character Formats CHARACTER PANEL
-	    kTextColorDialogHookBoss         Character Color            TEXT COLOR PANEL
-	    kCharOpenTypeDialogHookBoss      OpenType Features          CHARACTER PANEL
-	    kCharUnderlineDialogHookBoss     Underline Options          CHARACTER PANEL
-	    kCharStrikeThroughDialogHookBoss Strikethrough Options      CHARACTER PANEL
-	    kStyleToTagMapDialogBoss         Export Tagging             TEXT STYLE PANEL
+	    [ 0] 0x5bfd kTextStyleCharGeneralPanelBoss  General                     TEXT STYLE PANEL
+	    [ 1] 0x6908 kCharDialogWidget               Basic Character Formats     CHARACTER PANEL
+	    [ 2] 0x6909 kCharDialog2Widget              Advanced Character Formats  CHARACTER PANEL
+	    [ 3] 0x5c05 kTextColorDialogWidget          Character Colour            TEXT COLOR PANEL
+	    [ 4] 0x69a3 kCharOpenTypePanelBoss          OpenType Features           CHARACTER PANEL
+	    [ 5] 0x69bb kCharUnderlinePanelBoss         Underline Options           CHARACTER PANEL
+	    [ 6] 0x69be kCharStrikeThroughPanelBoss     Strikethrough Options       CHARACTER PANEL
+	    [ 7] 0xc804 (no public name)                                 Japanese feature set only
+	    [ 8] 0xc664 (no public name)                                 Japanese feature set only
+	    [ 9] 0xc665 (no public name)                                 Japanese feature set only
+	    [10] 0xc666 (no public name)                                 Japanese feature set only
+	    [11] 0xc667 (no public name)                                 Japanese feature set only
+	    [12] 0xc764 (no public name)                                 Japanese feature set only
+	    [13] 0xc765 (no public name)                                 Japanese feature set only
+	    [14] 0xcf04 (no public name)                                 Japanese feature set only
+	    [15] 0x5b1e kStyleToTagMapDialogBoss        Export Tagging              TEXT STYLE PANEL
+	    [16] 0xc836 (no public name)                                 Japanese feature set only
+
+	⚠★★★THE HOOK BOSS IS NOT THE PAGE (this table said it was for a day, and the page never
+	  switched). kCharDialogHookBoss (0x6904) is the SERVICE PROVIDER that registers the Basic
+	  Character Formats page; the view it then creates is a different boss, kCharDialogWidget
+	  (0x6908), and the view is what GetDialogPanel hands back. They sit FOUR LINES APART in
+	  CharPanelID.h (215 and 219), and line 215 says so in its own comment - "hooks the
+	  CharStyleDialog into the CharDialog and the StyleDialog". It was read as an answer to "which
+	  boss supplies this page" when it answers "which boss puts this page there", and nothing after
+	  that could tell the difference. The General and Export Tagging pages hide the distinction
+	  entirely, because for those two the supplier IS the view.
+	  ⇒ ★**A page boss in this table has to come from the open dialog, never from the registry.**
+
+	⚠★★The eight pages with no public name are the J feature set's own (縦中横, ruby, kenten): their
+	  plug-in prefixes are not in the SDK at all, so an attribute of theirs can only be written here
+	  as the measured number, with a comment saying where it came from.
 
 	A ClassID is the same number in every language and stays put when a page is inserted above it.
 	★One line per attribute. An attribute not in the table, and a definition row, leave the dialog
@@ -233,8 +258,20 @@ struct KCMAttributePage
 
 const KCMAttributePage kKCMAttributePages[] =
 {
-	{ "AppliedFont",				kCharDialogHookBoss },				// 基本文字形式 / Basic Character Formats
-	{ "ExtendedKeyboardShortcut",	kTextStyleCharGeneralPanelBoss },	// 一般 / General - the shortcut field
+	// 一般 / General
+	// ⚠★★THESE TWO CANNOT BE SEEN TO WORK. The dialog opens on page 0 and General IS page 0
+	//   (measured: current=0), so the switch is a no-op and the reader sees the same thing whether
+	//   the table is right, wrong, or missing the attribute. They are kept because they say what
+	//   the page IS, and because the day a page is inserted above General they start to matter.
+	//   ⇒ ★A change to this table has to be tested on an attribute whose page is NOT General.
+	{ "BasedOn",					kTextStyleCharGeneralPanelBoss },
+	{ "ExtendedKeyboardShortcut",	kTextStyleCharGeneralPanelBoss },
+	// 基本文字形式 / Basic Character Formats
+	// ⚠kCharDialogWidget, NOT kCharDialogHookBoss - see the note above the table.
+	{ "AppliedFont",				kCharDialogWidget },
+	{ "FontStyle",					kCharDialogWidget },
+	{ "PointSize",					kCharDialogWidget },
+	{ "Leading",					kCharDialogWidget },
 };
 
 /** The page boss for `attributeName`, or kInvalidClass when the table does not know it. */
@@ -263,7 +300,11 @@ ClassID		gWantedPageBoss	= kInvalidClass;
 UINT_PTR	gPageTimer		= 0;
 int			gPageTicks		= 0;
 const UINT	kPageTimerMs	= 100;
-const int	kPageGiveUpTicks = 50;		// five seconds, then stop by itself
+const int	kPageGiveUpTicks = 100;		// ten seconds, then stop by itself
+// ★TEN AND NOT FIVE: a page of this dialog is built when it is first needed, so a tick that finds
+//   the switcher but not yet the page is early rather than wrong, and the count has to cover the
+//   whole of the dialog's assembly on a machine slower than this one. Nothing is spent waiting -
+//   the timer stops the moment the page is found.
 
 void StopPageTimer()
 {
@@ -312,25 +353,38 @@ void CALLBACK KCMSwitchPageProc(HWND, UINT, UINT_PTR, DWORD)
 		return;
 
 	InterfacePtr<IPanelControlData> windowData(window, UseDefaultIID());
-	if (windowData == nil || windowData->Length() == 0)
-		return;
-	IControlView* panel = windowData->GetWidget(0);
-	if (panel == nil)
+	if (windowData == nil)
 		return;
 
-	// ⚠★★★IS IT REALLY OUR DIALOG. This timer fires inside WHATEVER modal loop is running, and the
-	//   reader may have raised something else in the meantime. Switching a page on a dialog that
-	//   merely happens to be in front would be acting on a stranger - so the panel's boss is
-	//   checked, which is the one thing that says what this window IS.
-	if (::GetClass(panel) != kTextSelectableCharDialogBoss)
-		return;
+	// ⚠★★★IS IT REALLY OUR DIALOG, AND WHERE IN IT IS THE SWITCHER. Both questions are answered by
+	//   ONE LOOKUP: the widget kStyleCharParentWidgetID, searched through the whole window. It is
+	//   declared in TextStylePanelID.h and belongs to the CHARACTER style options dialog and
+	//   nothing else, so finding it identifies the window; and it is the panel that carries
+	//   ISelectableDialogSwitcher, so it is also the thing we came for.
+	//
+	//   ★★★THIS REPLACES TWO ASSUMPTIONS, EACH OF WHICH WAS WRONG OR UNMEASURED (2026-09-13, after
+	//   the page switch failed for every attribute in the table while the menu item itself worked):
+	//     - "the switcher is the window's FIRST widget" (windowData->GetWidget(0)). Never measured.
+	//       ISelectableDialogSwitcher.h's own usage example does not do it that way, and neither
+	//       does the product: SpellMenuComponent.cpp:212-214 and this plug-in's own proven reach
+	//       into the shortcut editor (KESCLShortcutSetup.cpp:117-126) both do FindWidget with
+	//       kSearchLevel_AllDescendants. A dialog's window hands back the dialog's outer panel,
+	//       and the selectable panel is a CHILD of it.
+	//     - "the panel's class is kTextSelectableCharDialogBoss". TextStylePanelID.h:109-110 says
+	//       in so many words that kTextSelectableParaDialogBoss and kTextSelectableCharDialogBoss
+	//       are "empty ... used because the CSelectableDialogSwitcher of the
+	//       kTextSelectableDialogWidgetBoss sets the bosses classid as the default service id" -
+	//       i.e. that ClassID names the SERVICE, and the widget in the window is a different boss.
+	//       A test that can never pass costs nothing and reports nothing, which is why this failed
+	//       in silence for a day.
+	IControlView* panel = windowData->FindWidget(kStyleCharParentWidgetID,
+												 IPanelControlData::kSearchLevel_AllDescendants);
+	if (panel == nil)
+		return;						// another modal dialog, or ours is still being built
 
 	InterfacePtr<ISelectableDialogSwitcher> switcher(panel, UseDefaultIID());
 	if (switcher == nil)
-	{
-		StopPageTimer();
-		return;
-	}
+		return;						// ⚠wait, do not give up: the dialog may still be assembling
 	// ⚠Wait rather than give up: the pages arrive as the dialog builds, so a tick that finds none
 	//   is early rather than wrong. ★The give-up count above is what stops this waiting for ever
 	//   on an InDesign whose page this build does not know.
