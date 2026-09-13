@@ -103,9 +103,11 @@ bool16	KCMReportAddPage(IDataBase* reportDB);
     content layer. kFalse when the document has no such page. */
 bool16	KCMReportPageAt(SDKLayoutHelper& helper, IDataBase* reportDB, int32 n, PMRect& outPageRect, UIDRef& outLayer);
 
-/** Type `text` into a new text frame at `bounds` (spread coordinates) on `layer`, left-aligned,
-    at `pointSize`. */
-void	KCMReportTypeAt(SDKLayoutHelper& helper, const UIDRef& layer, const PMRect& bounds, const PMString& text, const PMReal& pointSize);
+/** Type `text` into a new text frame at `bounds` (spread coordinates) on `layer`, at `pointSize`,
+    left-aligned unless `alignRight` (the export time stamp sits at the right of the first page -
+    the user's ask, 2026-09-13). */
+void	KCMReportTypeAt(SDKLayoutHelper& helper, const UIDRef& layer, const PMRect& bounds, const PMString& text, const PMReal& pointSize,
+						bool16 alignRight = kFalse);
 
 // ---- a table section ---------------------------------------------------------------------------
 

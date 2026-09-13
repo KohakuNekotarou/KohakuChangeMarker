@@ -107,16 +107,16 @@ bool16 ApplyReal(ITextModel* model, TextIndex start, int32 len, const ClassID& b
 	return (cmd != nil && CmdUtils::ProcessCommand(cmd) == kSuccess) ? kTrue : kFalse;
 }
 
-/** Left-aligned, explicitly: the report document is made from the application's defaults, and on
-    the machine this was written on those justify every line (measured 2026-09-13). */
-bool16 ApplyAlignLeft(ITextModel* model, TextIndex start, int32 len)
+/** Left-aligned (or right), explicitly: the report document is made from the application's
+    defaults, and on the machine this was written on those justify every line (measured 2026-09-13). */
+bool16 ApplyAlignLeft(ITextModel* model, TextIndex start, int32 len, bool16 right = kFalse)
 {
 	if (len <= 0)
 		return kTrue;
 	InterfacePtr<ITextAttrAlign> align(::CreateObject2<ITextAttrAlign>(kTextAttrAlignmentBoss));
 	if (align == nil)
 		return kFalse;
-	align->SetAlignment(ICompositionStyle::kTextAlignLeft);
+	align->SetAlignment(right ? ICompositionStyle::kTextAlignRight : ICompositionStyle::kTextAlignLeft);
 	InterfacePtr<ICommand> cmd(Utils<ITextAttrUtils>()->BuildApplyTextAttrCmd(model, start, static_cast<uint32>(len), align, kParaAttrStrandBoss));
 	return (cmd != nil && CmdUtils::ProcessCommand(cmd) == kSuccess) ? kTrue : kFalse;
 }
@@ -446,7 +446,8 @@ bool16 KCMReportPageAt(SDKLayoutHelper& helper, IDataBase* db, int32 n, PMRect& 
 	return (outLayer != UIDRef::gNull) ? kTrue : kFalse;
 }
 
-void KCMReportTypeAt(SDKLayoutHelper& helper, const UIDRef& layer, const PMRect& bounds, const PMString& text, const PMReal& pointSize)
+void KCMReportTypeAt(SDKLayoutHelper& helper, const UIDRef& layer, const PMRect& bounds, const PMString& text, const PMReal& pointSize,
+					 bool16 alignRight)
 {
 	UIDRef story;
 	const UIDRef frame = helper.CreateTextFrame(layer, bounds, 1, kFalse, &story);
@@ -458,9 +459,9 @@ void KCMReportTypeAt(SDKLayoutHelper& helper, const UIDRef& layer, const PMRect&
 	const int32 len = Len(text);
 	if (!InsertText(model, 0, text) || len <= 0)
 		return;
-	// Left-aligned as a paragraph override over the whole story (the way SnpManipulateTextModel
+	// Aligned as a paragraph override over the whole story (the way SnpManipulateTextModel
 	// does), and at pointSize as a character override.
-	ApplyAlignLeft(model, 0, len);
+	ApplyAlignLeft(model, 0, len, alignRight);
 	ApplyReal(model, 0, len, kTextAttrPointSizeBoss, pointSize, kCharAttrStrandBoss);
 }
 

@@ -653,7 +653,7 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 		// the top of every picture page instead.)
 		KCMReportDrawPawTrail(reportDB, layer, page);
 
-		// When the report was written, at the very foot (the user's ask, 2026-09-13).
+		// When the report was written, at the very foot, on the right (the user's asks, 2026-09-13).
 		{
 			char stamp[64] = { 0 };
 			time_t now = ::time(nil);
@@ -662,7 +662,7 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 			::strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S", &local);
 			PMString made = Ascii("Exported: ");
 			made.Append(stamp);
-			KCMReportTypeAt(helper, layer, PMRect(page.Left() + kKCMReportGutter, page.Bottom() - kKCMReportGutter - kKCMReportCaptionH, page.Right() - kKCMReportGutter, page.Bottom() - kKCMReportGutter), made, kKCMReportHeadingPt);
+			KCMReportTypeAt(helper, layer, PMRect(page.Left() + kKCMReportGutter, page.Bottom() - kKCMReportGutter - kKCMReportCaptionH, page.Right() - kKCMReportGutter, page.Bottom() - kKCMReportGutter), made, kKCMReportHeadingPt, kTrue /*right*/);
 		}
 	}
 
