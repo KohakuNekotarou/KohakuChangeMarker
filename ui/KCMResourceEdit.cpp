@@ -20,12 +20,17 @@
 #include "ISession.h"
 #include "ITextControlData.h"		// what the row the search found actually says
 #include "ITreeViewController.h"	// DeselectAll / Select - WITHOUT notifying
-#include "ITreeViewMgr.h"			// Search(name) / ScrollToNode
+#include "ITreeViewHierarchyAdapter.h"	// the tree's own rows, open or closed
+#include "ITreeViewMgr.h"			// ScrollToNode
+#include "ITreeViewTypeAhead.h"		// GetStringForNode - a node's name without its row
 
 // ----- General -----
 #include "NodeID.h"					// NodeID / kInvalidNodeID
 #include "StylePanelID.h"			// the Character Styles panel, its tree, and its action
 #include "Utils.h"
+
+#include <string>
+#include <vector>
 
 // ----- Project -----
 #include "KCMUIID.h"
@@ -44,32 +49,43 @@ namespace
 	(IKCMResourcesFacade.h: "Color/Black"). */
 const char* const kKCMCharStyleKind = "CharacterStyle";
 
-/** The style's name AS THE PANEL SPELLS IT, from the row's key.
+/** The style's FULL PATH as the panel spells it, from the row's key: `group:group:name`.
 
-	★★TWO SPELLINGS MEET HERE, AND THE PANEL'S IS THE SHORTER ONE. The exporter writes a style
-	inside a group as `CharacterStyle/グループ%3a名前` (KCMXmlPretty.h measured the escape); the
-	Character Styles panel draws that style as a row saying `名前` UNDER a row saying `グループ`.
-	So the kind prefix comes off, the escapes are decoded, and what is left after the LAST colon is
-	what the panel's own search will match.
+	★★TWO SPELLINGS MEET HERE. The exporter writes a style inside a group as
+	`CharacterStyle/グループ%3a名前` (KCMXmlPretty.h measured the escape); the Character Styles panel
+	draws that style as a row saying `名前` UNDER a row saying `グループ`. So the kind prefix comes
+	off and the escapes are decoded, which leaves the colon-separated path the panel's own rows
+	spell out between them.
 	⚠Percent-decoding works on bytes, so the round trip is UTF-8 both ways, never the platform
 	  string - a style really is called `段落スタイル 1` here.
 	⚠A `/` INSIDE a name arrives as `%2f` and survives, because only the exporter's own separator
 	  is written plain.
+	⚠★A COLON INSIDE A NAME IS ESCAPED THE SAME WAY THE SEPARATOR IS, so a style literally called
+	  `A:B` and a style `B` inside a group `A` produce the same path here. Nothing in the key can
+	  tell them apart - and neither can the panel's rows, which spell both the same way - so the
+	  check below cannot either. It is written down rather than guarded against: a document holding
+	  both at once is the only case it could matter in.
 */
-PMString PanelNameFromKey(const PMString& key)
+std::string DecodedKeyPath(const PMString& key)
 {
 	std::string utf8 = key.GetUTF8String();
 	const std::string prefix = std::string(kKCMCharStyleKind) + "/";
 	if (utf8.compare(0, prefix.size(), prefix) == 0)
 		utf8.erase(0, prefix.size());
+	return KCMDecodePercentEscapes(utf8);
+}
 
-	utf8 = KCMDecodePercentEscapes(utf8);
-	const std::string::size_type colon = utf8.rfind(':');
+/** The last segment of that path - the name the panel's own search matches, since a row says only
+	its own name and leaves the groups to the rows above it. */
+PMString LeafOfPath(const std::string& path)
+{
+	std::string leaf = path;
+	const std::string::size_type colon = leaf.rfind(':');
 	if (colon != std::string::npos)
-		utf8.erase(0, colon + 1);
+		leaf.erase(0, colon + 1);
 
 	PMString name;
-	name.SetUTF8String(utf8);
+	name.SetUTF8String(leaf);
 	name.SetTranslatable(kFalse);
 	return name;
 }
@@ -94,44 +110,67 @@ void ShowCharacterStylesPanel()
 		panelMgr->ShowPanelByMenuID(kCharacterStylesPanelActionID, kFalse);
 }
 
-/** The row text of the node the search landed on, or empty when that row is not built.
-
-	★WHY IT IS CHECKED. ITreeViewMgr::Search matches a node whose text STARTS WITH what is given
-	(ITreeViewMgr.h:162-165), so a document holding both `Body` and `BodyText` can answer the wrong
-	one. The row itself is the only thing that can settle it.
-	⚠QueryWidgetFromNode answers nil for a row that is not built - one scrolled out of view, or
-	  inside a closed group (ITreeViewMgr.h:184-187) - which is why ScrollToNode runs before this
-	  and why an empty answer is treated as "cannot tell" rather than as "wrong row".
-	★The name is in the SECOND cell; the first and third are the style's icons and came back empty
-	  when this was measured (2026-09-13). So every cell is read and the first non-empty one wins,
-	  rather than an index being written down that the next version of the panel could move.
-*/
-PMString RowTextOf(ITreeViewMgr* treeMgr, const NodeID& node)
+/** The path split at its colons: `KCMOuter:KCMInner:KCMDeep` -> three segments. */
+std::vector<std::string> SplitPath(const std::string& path)
 {
-	PMString text;
-	text.SetTranslatable(kFalse);
-	if (treeMgr == nil)
-		return text;
-
-	// ⚠QueryWidgetFromNode hands back a reference; InterfacePtr takes ownership of it.
-	InterfacePtr<IControlView> rowWidget(treeMgr->QueryWidgetFromNode(node));
-	if (rowWidget == nil)
-		return text;
-
-	InterfacePtr<IPanelControlData> cells(rowWidget, UseDefaultIID());
-	if (cells == nil)
-		return text;
-	for (int32 i = 0; i < cells->Length(); ++i)
+	std::vector<std::string> parts;
+	std::string::size_type at = 0;
+	for (;;)
 	{
-		InterfacePtr<ITextControlData> cellText(cells->GetWidget(i), UseDefaultIID());
-		if (cellText == nil)
-			continue;
-		PMString candidate = cellText->GetString();
-		candidate.SetTranslatable(kFalse);
-		if (!candidate.IsEmpty())
-			return candidate;
+		const std::string::size_type colon = path.find(':', at);
+		if (colon == std::string::npos)
+		{
+			parts.push_back(path.substr(at));
+			break;
+		}
+		parts.push_back(path.substr(at, colon - at));
+		at = colon + 1;
 	}
-	return text;
+	return parts;
+}
+
+/** The one node whose path down the tree is exactly `segments`, or kInvalidNodeID.
+
+	★★★WHY A WALK AND NOT ITreeViewMgr::Search. Search takes a NAME, so it cannot tell two styles
+	of the same name in different groups apart - and it answers a row whose text merely STARTS WITH
+	what it was given (ITreeViewMgr.h:162-165). **Measured 2026-09-13: a row reading `ZZZ:Same`
+	opened `AAA:Same`** - the wrong style, silently, with its own settings shown as though they were
+	the ones the reader had just been looking at. That is exactly the failure a comparison tool must
+	not have.
+	★★WHAT MAKES THE WALK POSSIBLE is ITreeViewTypeAhead::GetStringForNode, which names a node
+	WITHOUT its row being built - so a group nobody has opened is walked through just the same, and
+	nothing has to be expanded or scrolled to find the style. (The nodes themselves cannot be built
+	from outside: measured, they are not the public UIDNodeID but a class of the styles panel's own.)
+	⚠A name containing a colon is indistinguishable from a group separator here - the exporter
+	  escapes both as `%3a` - so the caller tries the whole path as one name when this fails.
+*/
+NodeID FindNodeByPath(ITreeViewHierarchyAdapter* adapter, ITreeViewTypeAhead* typeAhead,
+					  const std::vector<std::string>& segments)
+{
+	if (adapter == nil || typeAhead == nil || segments.empty())
+		return kInvalidNodeID;
+
+	NodeID node = adapter->GetRootNode();
+	for (size_t level = 0; level < segments.size(); ++level)
+	{
+		const int32 count = adapter->GetNumChildren(node);
+		NodeID next = kInvalidNodeID;
+		for (int32 i = 0; i < count; ++i)
+		{
+			const NodeID child = adapter->GetNthChild(node, i);
+			PMString name = typeAhead->GetStringForNode(child);
+			name.SetTranslatable(kFalse);
+			if (name.GetUTF8String() == segments[level])
+			{
+				next = child;
+				break;
+			}
+		}
+		if (next == kInvalidNodeID)
+			return kInvalidNodeID;
+		node = next;
+	}
+	return node;
 }
 
 }	// anonymous namespace
@@ -141,6 +180,26 @@ PMString RowTextOf(ITreeViewMgr* treeMgr, const NodeID& node)
 //----------------------------------------------------------------------------------------
 bool16 KCMEditSelectedResource(int32 row)
 {
+	// ***** NOT WHILE ONE IS ALREADY UP. *****
+	//
+	// ⚠MEASURED 2026-09-13: a second Character Style Options dialog appeared behind the first. The
+	//   dialog opened below is MODAL and runs a message loop of its own, and that loop goes on
+	//   delivering the mouse messages still queued for the panel - so the row's handler can be
+	//   entered again while this call has not returned, and open another dialog on top of its own.
+	// ★A file static rather than a member: this is about "an edit dialog is open right now", which
+	//   belongs to the plug-in and not to any one row widget (the row widgets are recycled). The
+	//   same shape as the double-click flag in KCMStoryRowEH.cpp.
+	// ★Cleared on every path out, including the refusals, by the guard object.
+	static bool sOpening = false;
+	if (sOpening)
+		return kFalse;
+	struct Guard
+	{
+		bool& fFlag;
+		Guard(bool& f) : fFlag(f) { fFlag = true; }
+		~Guard() { fFlag = false; }
+	} guard(sOpening);
+
 	// ⚠★★THE GUARD GOES ON THE Utils OBJECT, NOT ON WHAT IT HANDS BACK. `Utils<T>()->M()`
 	//  dereferences before there is anything to test, so a facade that is not registered takes the
 	//  panel down with it rather than returning nil ([[utils-boss-facade-access]]). This very
@@ -182,9 +241,20 @@ bool16 KCMEditSelectedResource(int32 row)
 		return kFalse;
 	}
 
-	const PMString panelName = PanelNameFromKey(key);
+	const std::string wantedPath = DecodedKeyPath(key);
+	const PMString panelName = LeafOfPath(wantedPath);
 	if (panelName.IsEmpty())
 		return kFalse;
+
+	// ★A BUILT-IN STYLE HAS NO OPTIONS TO EDIT, and it is refused by its spelling rather than by
+	//   being hunted for and not found: the export writes `[None]` as a `$ID/` key, and the panel
+	//   draws it under the translated name, so a search for the key's own text would fail and the
+	//   reader would be told to refresh a comparison that is perfectly fine.
+	if (wantedPath.compare(0, 4, "$ID/") == 0)
+	{
+		KCMSetStatus("That is a built-in style and has no options to edit.");
+		return kFalse;
+	}
 
 	// ***** THE TARGET GOES TO THE FRONT FIRST. ***** The Character Styles panel shows the ACTIVE
 	// document's styles, and the action below edits the style selected in it - so with the Source
@@ -212,38 +282,23 @@ bool16 KCMEditSelectedResource(int32 row)
 
 	InterfacePtr<ITreeViewMgr> treeMgr(treeView, UseDefaultIID());
 	InterfacePtr<ITreeViewController> controller(treeView, UseDefaultIID());
-	if (treeMgr == nil || controller == nil)
+	InterfacePtr<ITreeViewHierarchyAdapter> adapter(treeView, UseDefaultIID());
+	InterfacePtr<ITreeViewTypeAhead> typeAhead(treeView, UseDefaultIID());
+	if (treeMgr == nil || controller == nil || adapter == nil || typeAhead == nil)
 		return kFalse;
 
-	// ***** ASK THE TREE FOR THE ROW BY NAME. *****
-	//
-	// ★★★THIS IS THE ONLY WAY IN, AND IT IS NOT A CONVENIENCE. Measured 2026-09-13: the nodes of
-	//   the Character Styles tree are NOT the public UIDNodeID but a class of the styles panel's
-	//   own, so nothing outside that plug-in can build a NodeID for a style. Search() takes a NAME
-	//   and needs the tree to carry ITreeViewTypeAhead - which this one does
-	//   (kCharStyleTreeViewTypeAheadImpl, in the boss dump).
-	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
-	InterfacePtr<IActionManager> actionMgr(app == nil ? nil : app->QueryActionManager());
-	if (actionMgr == nil)
-		return kFalse;
-
-	NodeID found = treeMgr->Search(panelName);
+	// ***** WALK THE TREE DOWN THE PATH, NAMING EACH STEP. ***** See FindNodeByPath for why this
+	// is a walk and not ITreeViewMgr::Search, and for the measurement that made the difference
+	// visible: a row reading `ZZZ:Same` opened `AAA:Same`.
+	NodeID found = FindNodeByPath(adapter, typeAhead, SplitPath(wantedPath));
 	if (found == kInvalidNodeID)
 	{
-		// ***** A STYLE INSIDE A CLOSED GROUP IS NOT THERE TO BE FOUND. *****
-		//
-		// ⚠MEASURED 2026-09-13: `KCMGroup:KCMGrouped` came back kInvalidNodeID while the plain
-		//   `KCMEditProbe` was found at once. Search works through ITreeViewTypeAhead, which reads
-		//   the rows the tree has BUILT, and a closed group has built none of its children. (This
-		//   is also why ScrollToNode cannot be the answer: its "ancestors will be expanded" needs
-		//   the node, which is the thing we have not got.)
-		// ★So the panel is asked to open its groups, using its own menu item, and the search is
-		//   repeated. This changes what the PANEL shows and nothing in the document - the same
-		//   kind of change as scrolling it.
-		// ★Only on failure. A style that is not in a group never disturbs the reader's groups.
-		actionMgr->PerformAction(GetExecutionContextSession()->GetActiveContext(),
-								 kCharOpenAllStyleGroupsActionID);
-		found = treeMgr->Search(panelName);
+		// ★THE WHOLE PATH AS ONE NAME. A colon inside a style's own name is escaped exactly as the
+		//   group separator is, so `A:B` may be one style rather than a style in a group. Tried
+		//   second, because a group is by far the commoner reading of the same characters.
+		std::vector<std::string> whole;
+		whole.push_back(wantedPath);
+		found = FindNodeByPath(adapter, typeAhead, whole);
 	}
 	if (found == kInvalidNodeID)
 	{
@@ -252,20 +307,10 @@ bool16 KCMEditSelectedResource(int32 row)
 		return kFalse;
 	}
 
-	// ★Into view before anything else: ScrollToNode opens the groups above it (ITreeViewMgr.h:114),
-	//   which is both what the reader asked for - the panel showing the thing the row names - and
-	//   what makes the row below readable.
+	// ★Into view: ScrollToNode opens the groups above it (ITreeViewMgr.h:114), which is the half of
+	//   this feature the reader asked for in so many words - the panel showing the thing the row
+	//   names. ⚠It is not needed to FIND anything; the walk above works through closed groups.
 	treeMgr->ScrollToNode(found, ITreeViewMgr::eScrollIntoView);
-
-	// ★The search is a PREFIX match, so the row it landed on is read back. An empty answer means
-	//   the row is not built and the check simply cannot be made; a different answer means the
-	//   search found somebody else's style and this must not go on to open a dialog on it.
-	const PMString rowText = RowTextOf(treeMgr, found);
-	if (!rowText.IsEmpty() && !rowText.IsEqual(panelName))
-	{
-		KCMSetStatus("The panel matched a different style. Not opening it.");
-		return kFalse;
-	}
 
 	// ***** SELECT IT - AND TELL NOBODY. *****
 	//
@@ -300,6 +345,10 @@ bool16 KCMEditSelectedResource(int32 row)
 	//   which row that was.
 	// ★PerformAction with the session's active context, the form every product caller uses
 	//   (LinksUIButtonObserver.cpp:175-177 and three more in dynamicdocumentsui).
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	InterfacePtr<IActionManager> actionMgr(app == nil ? nil : app->QueryActionManager());
+	if (actionMgr == nil)
+		return kFalse;
 	actionMgr->PerformAction(GetExecutionContextSession()->GetActiveContext(),
 							 kCharStyleOptionsActionID);
 	return kTrue;
