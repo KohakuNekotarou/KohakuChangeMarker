@@ -105,10 +105,17 @@ inline ClassID KCMDocumentUnitFor(IDataBase* db, KCMUnitKind kind)
 	}
 }
 
-/** `value` (a Resources attribute's value, in points, as the panel shows it) with the same
-    measure in the document's own unit appended in brackets - "8.503937007874015 (24 Q)" -
-    when the attribute is a length the table knows, the value is a plain number, and the
-    document's unit for it is not points. Otherwise `value` unchanged. */
+/** A Resources attribute's value IN THE DOCUMENT'S OWN UNIT - "24 Q" - when the attribute is a
+    length the table knows, the value is a plain number, and the document's unit for it is not
+    points. Otherwise `value` unchanged.
+
+    ★★★THE POINTS ARE NOT SHOWN BESIDE IT (2026-09-13, the user's call: "just the 7 Q"). It read
+    "17.00787401574803 (24 Q)" for a day - the export's own number with the readable one in
+    brackets - and the export's number is the one nobody asked for: it is a conversion artefact
+    fifteen digits long, and the reader set the document to Q precisely so as not to see it.
+    ⚠**A value the table does not know is still shown exactly as the export wrote it**, points and
+      all, because a length in unknown units is better read raw than labelled wrongly. So a column
+      of these is not uniformly in the document's unit, and that is deliberate. */
 inline PMString KCMResourceValueWithUnit(const PMString& attrName, const PMString& value, IDataBase* db)
 {
 	const KCMUnitKind kind = KCMUnitKindForAttribute(attrName.GetUTF8String());
@@ -141,12 +148,8 @@ inline PMString KCMResourceValueWithUnit(const PMString& attrName, const PMStrin
 	// 2026-09-13; appending GetName as well read "12 Q 級").
 	PMString formatted;
 	unit->Format(unit->PointsToUnits(PMReal(points)), formatted);
-	PMString out(value);
-	out.Append(" (");
-	out.Append(formatted);
-	out.Append(")");
-	out.SetTranslatable(kFalse);
-	return out;
+	formatted.SetTranslatable(kFalse);
+	return formatted;
 }
 
 #endif // __KCMResourceUnits_h__
