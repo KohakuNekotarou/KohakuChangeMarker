@@ -22,7 +22,9 @@
 //      (★the two were renamed from "Show Marks on Target" / "Show Marks on Source", and **the
 //       saved keys were not changed**, so an older settings file still reads)
 //    - Show Original Page Numbers        key "showOldNumbers"
-//    - Show Frame UIDs                   key "showFrameUids" (default OFF; 2026-09-13)
+//    - Show Story IDs                    key "showStoryIds" (default OFF; 2026-09-13. A file
+//                                        saved that afternoon may carry "showFrameUids", the
+//                                        key of its first name; it is simply never read)
 //    - Sync Layout Views                 key "syncLayoutViews" (default ON. What actually fires
 //      a sync is Target<->Source while Started, or every document while stopped with the KCM
 //      tool active ＝ see the guard in KCMSyncOtherDocViewportsTo)

@@ -455,16 +455,16 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
-		// The "Show Frame UIDs" toggle (2026-09-13): flip the flag and repaint, nothing more. The
+		// The "Show Story IDs" toggle (2026-09-13): flip the flag and repaint, nothing more. The
 		// labels are drawn by the model's global adornment (KCMRingAdornment.cpp §1.5) on every
 		// document, so the repaint covers what is most likely on screen - the active document and
 		// the compared pair; any other open document catches up on its next natural repaint (the
 		// badge above does the same). KCMInvalidateDB(nil) is harmless.
-		case kKCMPopupShowFrameUidsActionID:
+		case kKCMPopupShowStoryIdsActionID:
 		{
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-			const bool16 showUids = !compare->GetShowFrameUids();
-			compare->SetShowFrameUids(showUids);
+			const bool16 showUids = !compare->GetShowStoryIds();
+			compare->SetShowStoryIds(showUids);
 			IDataBase* const activeDB = compare->GetActiveDocDB();
 			IDataBase* const markedDB = Utils<IKCMMarkData>()->GetMarkedTargetDB();
 			IDataBase* const srcDB    = compare->GetArmedSourceDB();
@@ -473,7 +473,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				compare->InvalidateDB(markedDB);
 			if (srcDB != activeDB && srcDB != markedDB)
 				compare->InvalidateDB(srcDB);
-			KCMSayToggle("Show frame UIDs", showUids);
+			KCMSayToggle("Show story IDs", showUids);
 			break;
 		}
 
@@ -1260,9 +1260,9 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		{
 			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowOldPageNumbers());
 		}
-		else if (action == kKCMPopupShowFrameUidsActionID)
+		else if (action == kKCMPopupShowStoryIdsActionID)
 		{
-			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowFrameUids());
+			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowStoryIds());
 		}
 		else if (action == kKCMPopupSyncViewsActionID)
 		{

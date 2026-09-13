@@ -50,6 +50,7 @@
 #include "KCMID.h"
 #include "KCMConstants.h"
 #include "KCMDrawEventHandler.h"   // the engine's shared statics
+#include "KCMRingAdornment.h"      // KCMForgetStoryHolders - the story ID labels' tables go when documents close
 #include "KCMCore.h"               // the arm/disarm/state declarations
 #include "KCMComparisonRun.h"      // KCMForgetChosenDocsThatClosed -- the chosen Target/Source lose whichever document closed
 #include "KCMExternalSource.h"     // KCMIsDbAlive (the lent Source counts as alive)
@@ -961,6 +962,12 @@ void KCMHandleDocsClosed()
 	//     there too. The background one is a different event entirely -- a clone being finished with.
 	if (!KCMIsMainThread())
 		return;
+
+	// The story ID labels' tables are keyed by IDataBase* and a closed document's pointer may be
+	// handed to the next one opened, so every table goes on every close; the next draw rebuilds
+	// the ones still wanted (KCMRingAdornment.cpp section 1.5). Before the session test below:
+	// dropping a table needs no session.
+	KCMForgetStoryHolders(nil);
 
 	// The session can be nil during the shutdown sequence. Without it there is no way to judge
 	// liveness at all, so nothing is cleaned up here and Shutdown disposes of the state instead.

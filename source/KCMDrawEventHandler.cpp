@@ -88,6 +88,7 @@ bool16 KCMDrawEventHandler::sMarkColorCyan = kFalse;	// default red. kTrue = cya
 bool16 KCMDrawEventHandler::sShowOldNumbers = kFalse;	// default off (the flyout's "Show Original Page Numbers")
 bool16 KCMDrawEventHandler::sMarksTempHidden = kFalse;	// with "Always Show Marks on Target" on, kTrue only while the tool's left button is held over the Target window
 bool16 KCMDrawEventHandler::sRingFrameOff = kFalse;	// the report's switch (the header); off = the page frame is part of every ring image
+bool16 KCMDrawEventHandler::sReportExport = kFalse;	// the report's other switch (the header): its exports are running
 bool16 KCMDrawEventHandler::sSrcMarksPressed = kFalse;	// kTrue only while the button is held over the Source window. It records "pressed", not "hidden" -- the drawing XORs it with sSrcMarksOn (see the declaration)
 bool16 KCMDrawEventHandler::sSrcMarksOn = kFalse;	// default off (the flyout's "Always Show Marks on Source"). Start does not touch it: the setting is saved in the panel state and restored at start-up, so a Start that overwrote it would wipe the reader's choice
 bool16 KCMDrawEventHandler::sTgtMarksOn = kFalse;	// the Target counterpart. Screen only -- print and PDF are decided by sPrintMarks. Start does not touch it either

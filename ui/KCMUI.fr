@@ -983,14 +983,14 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMShowOldNumsMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Show Frame UIDs" on the panel flyout (popup) menu. Check-mark toggle (default OFF, see
-		// sShowFrameUids in KCMRingAdornment.cpp): while ON, every page item that holds a story
-		// (a text frame, text on a path, an anchored frame) is labelled at its top left with
-		// "ID:<its UID>" and "Story:<its story's UID>" - the numbers a script reads as textFrame.id
-		// and story.id. On screen always; in print and PDF with "Print comparison marks" ON.
-		kKCMPopupShowFrameUidsActionID,
+		// "Show Story IDs" on the panel flyout (popup) menu. Check-mark toggle (default OFF, see
+		// sShowStoryIds in KCMRingAdornment.cpp): while ON, every page item that holds a story
+		// (a text frame, text on a path, an anchored frame) has its story's UID - the number a
+		// script reads as story.id - written above its box. On screen always; in print and PDF
+		// with "Print comparison marks" ON.
+		kKCMPopupShowStoryIdsActionID,
 		kKCMPopupMenuPath,
-		kKCMShowFrameUidsMenuItemPosition,
+		kKCMShowStoryIdsMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Sync Layout Views" on the panel flyout (popup) menu. Check-mark toggle: while ON,
@@ -1551,8 +1551,8 @@ resource ActionDef (kSDKDefActionResourceID)
 		kSDKDefInvisibleInKBSCEditorFlag,
 
 		kKCMActionComponentBoss,
-		kKCMPopupShowFrameUidsActionID,
-		kKCMShowFrameUidsMenuKey,
+		kKCMPopupShowStoryIdsActionID,
+		kKCMShowStoryIdsMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)

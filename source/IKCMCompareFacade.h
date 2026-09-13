@@ -631,15 +631,15 @@ public:
 
 	virtual bool16		ExportBeforeAfterReport(PMString& outMessage) = 0;
 
-	// ---- the story UID labels ("Show Frame UIDs") ------------------------------------------
+	// ---- the story ID labels ("Show Story IDs") --------------------------------------------
 	//
-	// Whether every page item that holds a story is labelled with its own UID and its story's
+	// Whether every page item that holds a story has its story's UID written above it
 	// (KCMRingAdornment.h, the section of the same name). Default OFF. A flyout check toggle
 	// flips it and the saved panel state reads and writes it, both UI-side; the drawing is the
 	// model's. Appended 2026-09-13 (the warning above: at the end, and the stamp bumped).
 
-	virtual bool16		GetShowFrameUids() = 0;
-	virtual void		SetShowFrameUids(bool16 on) = 0;
+	virtual bool16		GetShowStoryIds() = 0;
+	virtual void		SetShowStoryIds(bool16 on) = 0;
 };
 
 /** THE ABI STAMP OF THE CLASS ABOVE. ★BUMP IT (the date, YYYYMMDD) EVERY TIME A VIRTUAL IS ADDED,
@@ -648,6 +648,6 @@ public:
 	compares it with the value ITS build saw in this header before it calls anything here
 	(KIDMCPKcmBridge::AbiState). Two binaries built from different versions of this class then
 	refuse each other instead of running the wrong method (2026-09-13: the header's warning). */
-const int32 kKCMCompareFacadeAbi = 2026091303;	// 03 = the third change of the day (Get/SetShowFrameUids)
+const int32 kKCMCompareFacadeAbi = 2026091304;	// 04 = the fourth change of the day (Get/SetShowStoryIds, renamed from ...FrameUids the same afternoon)
 
 #endif // __IKCMCompareFacade_h__

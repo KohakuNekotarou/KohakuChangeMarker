@@ -39,7 +39,7 @@
 // CLONE rather than the document itself (end of this file).
 #include "IPDFExportSetupProvider.h"	// PDFProcessEvent (pulls in IPDFExportController.h = PDFExportEvent)
 #include "IDThreading.h"				// IDThreading::ThreadLocal, holding the db being exported
-// The story UID labels ("Show Frame UIDs", section 1.5):
+// The story ID labels ("Show Story IDs", section 1.5):
 #include "IStoryList.h"					// the document's stories - where the labels START (the user's instruction: from the story to its holder)
 #include "ITextModel.h"					// QueryFrameList
 #include "IFrameList.h"					// the story's columns
@@ -49,6 +49,8 @@
 #include "IGraphicsPort.h"				// selectfont / show / the stroke settings of the outline
 #include "GraphicTypes.h"				// kPMRoundJoin / kPMRoundCap
 #include "IControlView.h"				// GetContentToWindowMatrix - the zoom, for a label of fixed pixel size
+#include "IViewPortAttributes.h"		// is this draw an overprint preview (the label follows the marks' rule there)
+#include "OutPrvID.h"					// kSepPrvOPPEnabledVPAttr
 #include "IPMFont.h"
 #include "AutoGSave.h"
 #include "TransformUtils.h"				// ::InnerToSpreadMatrix - the label is written in spread coordinates, upright
@@ -67,7 +69,7 @@
 
 // Project includes:
 #include "KCMID.h"
-#include "KCMConstants.h"				// kKCMFrameUid* - the labels' sizes
+#include "KCMConstants.h"				// kKCMStoryId* - the labels' sizes and reach
 #include "KCMRingAdornment.h"
 #include "KCMDrawEventHandler.h"		// DrawSpreadMarks (the drawing) / the mark-state statics / KCMQueryMarkFont
 #include "KCMThreadSafety.h"			// KCMMarkStateMutex/Lock, taken to read sEntries and the story holder tables
@@ -96,58 +98,79 @@ static bool16 KCMMarksCouldBeTranslucent();
 static bool16 KCMMarksDeclareTransparency();
 
 //========================================================================================
-// 1.5) The story UID labels ("Show Frame UIDs", 2026-09-13)
+// 1.5) The story ID labels ("Show Story IDs", 2026-09-13)
 //
-//  "ID:<item UID>" and under it "Story:<story UID>", at the top left of every page item that
-//  carries a story. **Found from the story, not from the item's kind** (the user's instruction:
-//  "trace from the story and put the story's ID on its parent"): the document's stories -> each
-//  story's frame columns -> two steps up the hierarchy -> the item. A text frame is
+//  "StoryID:<the story's UID>" ABOVE every page item that carries a story - outside the item, on
+//  its top edge at the left (the user's asks, after seeing a first version inside the frame: "the
+//  story's number alone, outside, above, so it never lies over the text", then "StoryID:" in
+//  front of it). Two stories on one item are two such labels on the one line.
+//  **Found from the story, not from the item's kind** (the user's instruction: "trace from the
+//  story and put the story's ID on its parent"): the document's stories -> each story's frame
+//  columns -> two steps up the hierarchy -> the item. A text frame is
 //  kSplineItemBoss -> kMultiColumnItemBoss -> kFrameItemBoss and text on a path is
 //  kTOPSplineItemBoss -> kMulticolumnItemBoss -> kTOPFrameItemBoss (ITOPSplineData.h:52, "the
 //  grand children of the main spline item"), so **the same two steps reach both**, and an anchored
-//  frame stops at its own spline rather than climbing on to the frame that holds it. A spline whose
-//  path carries text as well as its inside holds two stories and gets two Story lines.
+//  frame stops at its own spline rather than climbing on to the frame that holds it. Text on a
+//  path needs one more link, from kTOPSplineItemBoss to the main spline (KCMRebuildStoryHolders).
 //
 //  The table (item UID -> story UIDs) is one per database, rebuilt on every draw of a spread and
 //  read on every draw of an item, so the labels follow a frame that was threaded or added a
 //  moment ago. The first item drawn before any spread builds it on the spot. A background export
 //  is handed a clone with a pointer of its own, so it gets a table of its own; the tables are
 //  under the mark-state lock like everything else the export thread reads.
+//  @warning **a table is keyed by a pointer, and a pointer outlives what it pointed at.** A
+//    document closed and another opened may put the new one at the old address, and its first
+//    items would then be looked up in the old document's table (the same trap as
+//    [[uidref-reuse-after-close]]). So the tables are dropped when documents close
+//    (KCMHandleDocsClosed -> KCMForgetStoryHolders) and when an export begins on a clone
+//    (KCMBeginExportOn), and the toggle going off drops them all.
 //
-//  Screen: always while the toggle is on, at a fixed number of pixels whatever the zoom.
+//  Screen: always while the toggle is on, at a fixed number of pixels whatever the zoom -
+//  except in overprint preview with the marks not printing, where nothing of KCM's is shown
+//  (2026-09-07, DrawSpreadMarks: the preview is a picture of the sheet).
 //  Print and PDF: only with "Print comparison marks" on (the old-folio badge's rule), at a fixed
-//  size in points. Thumbnails (no view, not printing): nothing - unreadable at that size.
+//  size in points. The Before/After report takes them on both of its sides whenever the toggle
+//  is on (the user's call), which it signals with sReportExport (KCMReport.cpp) - its After side
+//  is exported with sPrintMarks off, so that side would otherwise have none.
+//  Thumbnails (no view, not printing): nothing - unreadable at that size.
 //  **Written in spread coordinates**, upright: the port is in the item's inner coordinates when
 //  an item's adornment is drawn, and a vertical text frame's inner axes stand at 90 degrees to
 //  the page ([[vertical-frame-inner-axes-rotated]]), so a label written in inner coordinates would
-//  lie on its side there. Concatenating spread->inner puts the label at the top left of the item's
+//  lie on its side there. Concatenating spread->inner puts the label above the item's
 //  spread-aligned box, the way the reader sees the frame.
+//  **The label lies outside the item's box, so the adornment widens the item's painted bounds**
+//  (GetPaintedAdornmentBounds): what InDesign repaints when the item moves or is redrawn is
+//  computed from those bounds, and a label outside them would be left behind on the screen.
 //  Opaque black with a white outline (the paw's note's two passes), so no transparency group and
 //  nothing for the flattener to be told.
 //========================================================================================
 
-static bool16 sShowFrameUids = kFalse;	// default off (the flyout's "Show Frame UIDs")
+static bool16 sShowStoryIds = kFalse;	// default off (the flyout's "Show Story IDs")
 
 /** item UID -> the UIDs of the stories it holds. */
 typedef std::map<UID, std::vector<UID> > KCMStoryHolderTable;
 /** One table per database. Read and written under KCMMarkStateMutex (recursive). */
 static std::map<IDataBase*, KCMStoryHolderTable> sStoryHolders;
 
-bool16 KCMGetShowFrameUids()
+bool16 KCMGetShowStoryIds()
 {
-	return sShowFrameUids;
+	return sShowStoryIds;
 }
 
-void KCMSetShowFrameUids(bool16 on)
+void KCMForgetStoryHolders(IDataBase* db)
 {
-	sShowFrameUids = on;
-	if (!on)
-	{
-		// Nothing reads the tables while the toggle is off; drop them so a document closed in the
-		// meantime leaves no entry keyed by a pointer that may be reused.
-		KCMMarkStateLock lock(KCMMarkStateMutex());
+	KCMMarkStateLock lock(KCMMarkStateMutex());
+	if (db == nil)
 		sStoryHolders.clear();
-	}
+	else
+		sStoryHolders.erase(db);
+}
+
+void KCMSetShowStoryIds(bool16 on)
+{
+	sShowStoryIds = on;
+	if (!on)
+		KCMForgetStoryHolders(nil);	// nothing reads the tables while the toggle is off; drop them (the warning in the header)
 }
 
 /** Rebuild db's table from its stories. **From the story side** (the header of this section). */
@@ -207,45 +230,66 @@ static void KCMRebuildStoryHolders(IDataBase* db)
 	sStoryHolders[db].swap(table);
 }
 
-/** The label of one item, if it holds a story. Called for every item the global list reaches. */
-static void KCMDrawStoryUidLabels(IShape* iShape, GraphicsData* gd, int32 flags)
+/** The stories iShape's item holds, copied out from under the lock; empty when it holds none
+	(the ordinary answer for most items). With `buildIfMissing`, a database with no table yet (the
+	first item drawn before any spread was) gets one here - the mutex is recursive, so the
+	rebuild's own lock nests. The painted-bounds question passes kFalse: it is asked at
+	invalidation time, and a table missing there is only ever the one the next draw is about to
+	build. */
+static void KCMStoriesHeldBy(IShape* iShape, bool16 buildIfMissing, std::vector<UID>& outStoryUIDs)
 {
-	if (!sShowFrameUids)
-		return;
-	// Print and PDF only with "Print comparison marks" on (kPrinting is set for both:
-	// DrawSpreadMarks). Without a view and not printing this is a thumbnail, or some other
-	// viewless draw - nothing is readable at that size, and there is no zoom to size the text by.
-	const bool16 printing = (flags & IShape::kPrinting) != 0;
-	if (printing && !KCMDrawEventHandler::sPrintMarks)
-		return;
-	IControlView* const view = gd->GetView();
-	if (!printing && view == nil)
-		return;
-
+	outStoryUIDs.clear();
 	IDataBase* const db = ::GetDataBase(iShape);
 	const UID itemUID = ::GetUID(iShape);
 	if (db == nil || itemUID == kInvalidUID)
 		return;
 
-	// The stories this item holds, copied out from under the lock. A database with no table yet
-	// (the first item drawn before any spread was) gets one here; the mutex is recursive, so the
-	// rebuild's own lock nests.
-	std::vector<UID> storyUIDs;
+	KCMMarkStateLock lock(KCMMarkStateMutex());
+	std::map<IDataBase*, KCMStoryHolderTable>::const_iterator t = sStoryHolders.find(db);
+	if (t == sStoryHolders.end())
 	{
-		KCMMarkStateLock lock(KCMMarkStateMutex());
-		std::map<IDataBase*, KCMStoryHolderTable>::const_iterator t = sStoryHolders.find(db);
+		if (!buildIfMissing)
+			return;
+		KCMRebuildStoryHolders(db);
+		t = sStoryHolders.find(db);
 		if (t == sStoryHolders.end())
-		{
-			KCMRebuildStoryHolders(db);
-			t = sStoryHolders.find(db);
-			if (t == sStoryHolders.end())
-				return;
-		}
-		KCMStoryHolderTable::const_iterator h = t->second.find(itemUID);
-		if (h == t->second.end())
-			return;					// not a holder of any story - the ordinary answer for most items
-		storyUIDs = h->second;
+			return;
 	}
+	KCMStoryHolderTable::const_iterator h = t->second.find(itemUID);
+	if (h != t->second.end())
+		outStoryUIDs = h->second;
+}
+
+/** The label of one item, if it holds a story. Called for every item the global list reaches. */
+static void KCMDrawStoryIdLabel(IShape* iShape, GraphicsData* gd, int32 flags)
+{
+	if (!sShowStoryIds)
+		return;
+	// Print and PDF only with "Print comparison marks" on (kPrinting is set for both:
+	// DrawSpreadMarks) - or when the export is the Before/After report's, on either side (the
+	// user's call: with the toggle on, the report carries the numbers too; sReportExport is up
+	// for the length of its two exports, KCMReport.cpp).
+	const bool16 printing = (flags & IShape::kPrinting) != 0;
+	if (printing && !KCMDrawEventHandler::sPrintMarks && !KCMDrawEventHandler::sReportExport)
+		return;
+	// Without a view and not printing this is a thumbnail, or some other viewless draw - nothing
+	// is readable at that size, and there is no zoom to size the text by.
+	IControlView* const view = gd->GetView();
+	if (!printing && view == nil)
+		return;
+	// Overprint preview shows what will be printed, so only what would be printed is shown
+	// (2026-09-07, the user's decision, applied to every mark in DrawSpreadMarks): with the marks
+	// not printing, no label either. The viewport attribute is exact; kPreviewMode is not (it
+	// shares its bit with PDF export).
+	if (!printing)
+	{
+		IViewPortAttributes* const vpa = gd->GetViewPortAttributes();
+		if (vpa != nil && vpa->GetAttr(kSepPrvOPPEnabledVPAttr, 0) != 0 && !KCMDrawEventHandler::sPrintMarks)
+			return;
+	}
+
+	std::vector<UID> storyUIDs;
+	KCMStoriesHeldBy(iShape, kTrue, storyUIDs);
 	if (storyUIDs.empty())
 		return;
 
@@ -259,17 +303,15 @@ static void KCMDrawStoryUidLabels(IShape* iShape, GraphicsData* gd, int32 flags)
 
 	// The size: a fixed number of screen pixels on screen (points = pixels / the view's scale,
 	// the way the rings pick their radius), a fixed number of points in print and PDF.
-	PMReal size = kKCMFrameUidPrintPt;
+	PMReal size = kKCMStoryIdPrintPt;
 	if (!printing)
 	{
 		const PMReal sxr = abs(view->GetContentToWindowMatrix().GetXScale());	// can be negative (PMReal's abs)
 		if (sxr <= PMReal(0.0))
 			return;
-		size = kKCMFrameUidFontPx / sxr;
+		size = kKCMStoryIdFontPx / sxr;
 	}
-	const PMReal storySize = size * kKCMFrameUidStoryRatio;
-	const PMReal lineH     = size * kKCMFrameUidLineRatio;
-	const PMReal pad       = size * kKCMFrameUidPadRatio;
+	const PMReal pad = size * kKCMStoryIdPadRatio;
 
 	// The item's box in spread coordinates, and the port turned to spread coordinates to match
 	// (the header of this section: upright whatever the frame's own axes). concat is a
@@ -279,59 +321,41 @@ static void KCMDrawStoryUidLabels(IShape* iShape, GraphicsData* gd, int32 flags)
 	if (innerToSpread.IsSingular())
 		return;
 	PMRect box = geometry->GetPathBoundingBox();
-	innerToSpread.Transform(&box);		// a rotated frame's box becomes its spread-aligned bounds
+	innerToSpread.Transform(&box);		// the smallest spread-aligned rectangle around the item (PMMatrix.h:176)
 
-	// The lines: "ID:<item>" then one "Story:<uid>" per story it holds.
-	std::vector<PMString> lines;
-	std::vector<PMReal>   sizes;
+	// One line: "StoryID:<uid>", a space between two. Neither the prefix nor a digit has a
+	// descender that matters, so the baseline can sit the gap above the item's top edge and the
+	// whole label is outside the box.
+	PMString text;
+	text.SetTranslatable(kFalse);
+	for (size_t i = 0; i < storyUIDs.size(); ++i)
 	{
-		PMString id("ID:");
-		id.SetTranslatable(kFalse);
-		id.AppendNumber((int32)itemUID.Get());
-		lines.push_back(id);
-		sizes.push_back(size);
-		for (size_t i = 0; i < storyUIDs.size(); ++i)
-		{
-			PMString story("Story:");
-			story.SetTranslatable(kFalse);
-			story.AppendNumber((int32)storyUIDs[i].Get());
-			lines.push_back(story);
-			sizes.push_back(storySize);
-		}
+		if (i > 0)
+			text.Append(" ");
+		text.Append(kKCMStoryIdPrefix);
+		text.AppendNumber((int32)storyUIDs[i].Get());
 	}
-	const PMReal x = box.Left() + pad;
-	const PMReal y = box.Top() + pad + size;		// the first baseline: the ID line's full size down from the corner (its ascent, with a little to spare)
+	int32 n16 = 0;
+	const UTF16TextChar* const buf16 = text.GrabUTF16Buffer(&n16);
+	if (buf16 == nil || n16 <= 0)
+		return;
+	const PMReal x = box.Left();
+	const PMReal y = box.Top() - pad;
 
 	AutoGSave ag(gPort);
 	gPort->concat(innerToSpread.Inverse());
+	gPort->selectfont(font, size);
 
-	// Pass one, the white outline of every line; pass two, the black letters over them. All the
-	// outlines before any letters, or an outline bites the neighbouring line (KCMDrawPawWord); a
-	// round join and cap, or the outline grows horns at a glyph's sharp corners (the same). Two
-	// show calls, never one with the flags combined (the same, measured). Print and PDF are CMYK.
+	// The white outline first, the black digits over it. A round join and cap, or the outline
+	// grows horns at a glyph's sharp corners (KCMDrawPawWord). Two show calls, never one with
+	// the flags combined (the same, measured). Print and PDF are CMYK.
 	KCMSetOutputColor(gPort, 255, 255, 255, printing);
 	gPort->setlinejoin(kPMRoundJoin);
 	gPort->setlinecap(kPMRoundCap);
-	for (size_t i = 0; i < lines.size(); ++i)
-	{
-		int32 n16 = 0;
-		const UTF16TextChar* const buf16 = lines[i].GrabUTF16Buffer(&n16);
-		if (buf16 == nil || n16 <= 0)
-			continue;
-		gPort->selectfont(font, sizes[i]);
-		gPort->setlinewidth(sizes[i] * kKCMFrameUidHaloRatio);
-		gPort->show(x, y + lineH * PMReal((double)i), (uint32)n16, buf16, IGraphicsPort::kStrokeText);
-	}
+	gPort->setlinewidth(size * kKCMStoryIdHaloRatio);
+	gPort->show(x, y, (uint32)n16, buf16, IGraphicsPort::kStrokeText);
 	KCMSetOutputColor(gPort, 0, 0, 0, printing);
-	for (size_t i = 0; i < lines.size(); ++i)
-	{
-		int32 n16 = 0;
-		const UTF16TextChar* const buf16 = lines[i].GrabUTF16Buffer(&n16);
-		if (buf16 == nil || n16 <= 0)
-			continue;
-		gPort->selectfont(font, sizes[i]);
-		gPort->show(x, y + lineH * PMReal((double)i), (uint32)n16, buf16, IGraphicsPort::kFillText);
-	}
+	gPort->show(x, y, (uint32)n16, buf16, IGraphicsPort::kFillText);
 }
 
 //========================================================================================
@@ -363,9 +387,8 @@ public:
 		@warning applying `innertoview` here transforms it a second time. framelabel's
 		  GetPaintedAdornmentBounds does exactly that (the other way round, with the inverse).
 		  **The authority is the calling code** - the side that does the Union. */
-	virtual PMRect GetPaintedAdornmentBounds(IShape* /*iShape*/, AdornmentDrawOrder /*drawOrder*/,
-											 const PMRect& itemBounds, const PMMatrix& /*innertoview*/)
-		{ return itemBounds; }
+	virtual PMRect GetPaintedAdornmentBounds(IShape* iShape, AdornmentDrawOrder /*drawOrder*/,
+											 const PMRect& itemBounds, const PMMatrix& /*innertoview*/);
 
 	/** The same contract. This one is only reached when WillPrint() is kTrue (CShape.cpp:93). */
 	virtual PMRect GetPrintedAdornmentBounds(IShape* /*iShape*/, AdornmentDrawOrder /*drawOrder*/,
@@ -423,6 +446,31 @@ public:
 
 CREATE_PMINTERFACE(KCMRingAdornmentShape, kKCMRingAdornmentImpl)
 
+PMRect KCMRingAdornmentShape::GetPaintedAdornmentBounds(IShape* iShape, AdornmentDrawOrder /*drawOrder*/,
+														const PMRect& itemBounds, const PMMatrix& /*innertoview*/)
+{
+	// The marks are drawn inside the page or the spread, so for them the untouched itemBounds is
+	// the right answer (the declaration). **The story ID label is the exception**: it is written
+	// ABOVE the item's box (section 1.5), so the item's painted bounds are widened by the band the
+	// label occupies - upwards, and to the right for an item narrower than the label. Without
+	// this, moving the item leaves its label behind on the screen, and a repaint of the region
+	// above it alone does not reach the item and loses the label there. itemBounds is in the
+	// view's pixels (the caller has transformed it), which is why the band is in pixels too.
+	// Asked for every item on every invalidation, so the answer for an item holding no story is
+	// found in the table without building one (KCMStoriesHeldBy, kFalse).
+	if (!sShowStoryIds || iShape == nil)
+		return itemBounds;
+	std::vector<UID> storyUIDs;
+	KCMStoriesHeldBy(iShape, kFalse, storyUIDs);
+	if (storyUIDs.empty())
+		return itemBounds;
+	PMRect widened = itemBounds;
+	widened.Top(widened.Top() - kKCMStoryIdBandAbovePx);
+	if (widened.Right() < widened.Left() + kKCMStoryIdReachRightPx)
+		widened.Right(widened.Left() + kKCMStoryIdReachRightPx);
+	return widened;
+}
+
 void KCMRingAdornmentShape::DrawAdornment(IShape* iShape, AdornmentDrawOrder drawOrder,
 											GraphicsData* gd, int32 flags)
 {
@@ -440,13 +488,13 @@ void KCMRingAdornmentShape::DrawAdornment(IShape* iShape, AdornmentDrawOrder dra
 	InterfacePtr<ISpread> spread(iShape, UseDefaultIID());
 	if (spread == nil)
 	{
-		KCMDrawStoryUidLabels(iShape, gd, flags);
+		KCMDrawStoryIdLabel(iShape, gd, flags);
 		return;
 	}
 
 	// A spread's draw is where the story holder table of its document is brought up to date
 	// (section 1.5): the items drawn after this read it.
-	if (sShowFrameUids)
+	if (sShowStoryIds)
 		KCMRebuildStoryHolders(::GetDataBase(iShape));
 
 	// Build the shape the drawing takes its input in. changedBy is the iShape as it stands: the
@@ -857,6 +905,10 @@ static void KCMBeginExportOn(IDataBase* db)
 
 	if (db == nil)
 		return;
+	// The story ID labels' table of this db, if one is lying about from an earlier export whose
+	// clone stood at the same address, is dropped here so the first page drawn does not read it
+	// (section 1.5, the warning on pointers). The first item drawn builds a fresh one.
+	KCMForgetStoryHolders(db);
 	// Whether to join is decided by "could the marks be translucent".
 	// @warning **not by `KCMMarksDeclareTransparency()`**: that one includes "is an export running",
 	//   and since tl_ExportingDB is not set yet at this point it is always kFalse there, so **nothing

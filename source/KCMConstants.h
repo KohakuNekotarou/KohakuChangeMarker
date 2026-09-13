@@ -265,19 +265,27 @@ static const PMReal kKCMOldNumR = 0.0, kKCMOldNumG = 0.0, kKCMOldNumB = 0.0;
 static const PMReal kKCMOldNumHaloEm = 0.06;	// halo thickness (em)
 static const PMReal kKCMOldNumPadEm  = 0.20;	// padding of the transparency group bbox (em), wide enough for the halo to fit
 
-// Story UID labels (flyout "Show Frame UIDs", 2026-09-13). "ID:<item UID>" and under it
-// "Story:<story UID>" at the top left of every page item that carries a story, in the same default
-// font as the badge above, black with a white outline (the paw's note's method: stroke pass first,
-// fill pass second). On screen the size is a fixed number of pixels, whatever the zoom (the size in
+// Story ID labels (flyout "Show Story IDs", 2026-09-13). "StoryID:<the story's UID>", written ABOVE
+// every page item that carries a story - outside the item, sitting on its top edge at the left (the
+// user's asks, in order: the number only, outside the frame so it never lies over the text; twice
+// the size; then three quarters of that, with "StoryID:" in front). Two stories on one item (a frame
+// whose path carries text as well) are two such labels on the one line. The same default font as
+// the badge above, black with a white outline (the paw's note's method: stroke pass first, fill
+// pass second). On screen the size is a fixed number of pixels, whatever the zoom (the size in
 // points is this / the view's scale, the way the rings pick their radius); in print and PDF, where
 // there is no view, it is a fixed size in points. Opaque - no transparency group, so nothing here
 // touches the flattener.
-static const PMReal kKCMFrameUidFontPx     = 11.0;	// on screen: the ID line, in screen pixels
-static const PMReal kKCMFrameUidPrintPt    = 7.0;	// in print and PDF: the ID line, in points
-static const PMReal kKCMFrameUidStoryRatio = 0.85;	// the Story line's size, as a fraction of the ID line's
-static const PMReal kKCMFrameUidLineRatio  = 1.20;	// line pitch, as a fraction of the size
-static const PMReal kKCMFrameUidPadRatio   = 0.30;	// inset from the item's top-left corner, as a fraction of the size
-static const PMReal kKCMFrameUidHaloRatio  = 0.14;	// the white outline's stroke width, as a fraction of the size
+static const char* const kKCMStoryIdPrefix = "StoryID:";	// in front of every number (the user's ask)
+static const PMReal kKCMStoryIdFontPx    = 16.5;	// on screen, in screen pixels (11 -> 22 -> 75% of 22, the user's asks)
+static const PMReal kKCMStoryIdPrintPt   = 10.5;	// in print and PDF, in points (the same steps)
+static const PMReal kKCMStoryIdPadRatio  = 0.25;	// the gap between the item's top edge and the bottom of the digits, as a fraction of the size
+static const PMReal kKCMStoryIdHaloRatio = 0.14;	// the white outline's stroke width, as a fraction of the size
+// How far the label reaches beyond the item's own box, in SCREEN PIXELS: the band above it (one
+// line plus the gap) and how far right it can run (two "StoryID:12345" and the space between). This
+// is what the adornment adds to the item's painted bounds, so the label is repainted with the
+// item: a label drawn outside the box would otherwise be left behind when the item moves.
+static const PMReal kKCMStoryIdBandAbovePx = 26.0;	// kKCMStoryIdFontPx * (1 + pad) with room for the halo
+static const PMReal kKCMStoryIdReachRightPx = 260.0;
 
 // ⚠ THE UI HALF'S TUNING CONSTANTS ARE NOT HERE. The translucent panel's alpha and its delayed
 // re-apply (kKCMPanelAlphaValue / ...ReapplyTries / ...ReapplyDelayMillis) and the CMYK cursor's
