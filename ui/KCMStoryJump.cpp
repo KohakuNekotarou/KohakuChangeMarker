@@ -374,6 +374,16 @@ bool16 SelectRangeIn(IDataBase* db, UID storyUID, TextIndex from, TextIndex to)
 }	// anonymous namespace
 
 //----------------------------------------------------------------------------------------
+// KCMActivateDocument (declared in KCMStoryJump.h)
+//----------------------------------------------------------------------------------------
+void KCMActivateDocument(IDataBase* db)
+{
+	// The definition stays in the anonymous namespace above, with the notes that explain it; this
+	// is the one door out of this file for it (2026-09-13, the Resources editor).
+	ActivateDocument(db);
+}
+
+//----------------------------------------------------------------------------------------
 // KCMStoryJumpToRow (declared in KCMStoryJump.h)
 //----------------------------------------------------------------------------------------
 bool16 KCMStoryJumpToRow(int32 rowIndex)

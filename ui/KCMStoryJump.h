@@ -159,6 +159,19 @@ bool16 KCMStorySelectChange(int32 rowIndex, int32 changeIndex);
 */
 bool16 KCMStorySelectWholeStory(int32 rowIndex);
 
+class IDataBase;
+
+/** Make this document the active one - the presentation the application points at.
+
+	★Exposed on 2026-09-13 for the Resources mode's editor (KCMResourceEdit.cpp), which has to put
+	the Target in front before opening a style dialog that edits the ACTIVE document. Until then
+	this was private to the Deleted row's double click, and the reasoning - why it is a
+	presentation and not a window, and the two calls measured wrong before it - stays with the
+	definition in KCMStoryJump.cpp.
+	@param db the document to activate. nil, or one with no presentation, does nothing.
+*/
+void KCMActivateDocument(IDataBase* db);
+
 #endif // __KCMStoryJump_h__
 
 // End, KCMStoryJump.h.
