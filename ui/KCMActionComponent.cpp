@@ -455,6 +455,28 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
+		// The "Show Frame UIDs" toggle (2026-09-13): flip the flag and repaint, nothing more. The
+		// labels are drawn by the model's global adornment (KCMRingAdornment.cpp §1.5) on every
+		// document, so the repaint covers what is most likely on screen - the active document and
+		// the compared pair; any other open document catches up on its next natural repaint (the
+		// badge above does the same). KCMInvalidateDB(nil) is harmless.
+		case kKCMPopupShowFrameUidsActionID:
+		{
+			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+			const bool16 showUids = !compare->GetShowFrameUids();
+			compare->SetShowFrameUids(showUids);
+			IDataBase* const activeDB = compare->GetActiveDocDB();
+			IDataBase* const markedDB = Utils<IKCMMarkData>()->GetMarkedTargetDB();
+			IDataBase* const srcDB    = compare->GetArmedSourceDB();
+			compare->InvalidateDB(activeDB);
+			if (markedDB != activeDB)
+				compare->InvalidateDB(markedDB);
+			if (srcDB != activeDB && srcDB != markedDB)
+				compare->InvalidateDB(srcDB);
+			KCMSayToggle("Show frame UIDs", showUids);
+			break;
+		}
+
 		// The "Sync Layout Views" toggle: layout view syncing on or off (default ON). The work is
 		// KCMSetLayoutSync (attach or detach the subscription; on ON, line them up once immediately).
 		// It fires in two situations (the guard is in KCMSyncOtherDocViewportsTo):
@@ -1237,6 +1259,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		else if (action == kKCMPopupShowOldNumsActionID)
 		{
 			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowOldPageNumbers());
+		}
+		else if (action == kKCMPopupShowFrameUidsActionID)
+		{
+			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowFrameUids());
 		}
 		else if (action == kKCMPopupSyncViewsActionID)
 		{

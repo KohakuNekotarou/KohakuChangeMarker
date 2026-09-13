@@ -1551,7 +1551,8 @@ static const double kKCMPawOutlines[5][kKCMPawPoints][2] =
 //  ★The cached font INSTANCE is at the badge's own fixed size, so only the badge may use it; the
 //    paw's word is a different size and asks selectfont for it directly.
 //========================================================================================
-static IPMFont* KCMQueryMarkFont()
+// Not static: the story UID labels (KCMRingAdornment.cpp) share it (declared in KCMDrawEventHandler.h).
+IPMFont* KCMQueryMarkFont()
 {
 	if (!sOldNumFontTried && KCMIsMainThread())
 	{

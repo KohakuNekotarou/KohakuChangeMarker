@@ -983,6 +983,16 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMShowOldNumsMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Show Frame UIDs" on the panel flyout (popup) menu. Check-mark toggle (default OFF, see
+		// sShowFrameUids in KCMRingAdornment.cpp): while ON, every page item that holds a story
+		// (a text frame, text on a path, an anchored frame) is labelled at its top left with
+		// "ID:<its UID>" and "Story:<its story's UID>" - the numbers a script reads as textFrame.id
+		// and story.id. On screen always; in print and PDF with "Print comparison marks" ON.
+		kKCMPopupShowFrameUidsActionID,
+		kKCMPopupMenuPath,
+		kKCMShowFrameUidsMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Sync Layout Views" on the panel flyout (popup) menu. Check-mark toggle: while ON,
 		// scrolling/zooming any layout view mirrors its viewport (position + zoom) to all layout
 		// views of the other documents, live. Works without Start.
@@ -1534,6 +1544,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKCMActionComponentBoss,
 		kKCMPopupHideUnchangedActionID,
 		kKCMHideUnchangedMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMPopupShowFrameUidsActionID,
+		kKCMShowFrameUidsMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)

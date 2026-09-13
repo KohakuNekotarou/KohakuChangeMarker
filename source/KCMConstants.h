@@ -265,6 +265,20 @@ static const PMReal kKCMOldNumR = 0.0, kKCMOldNumG = 0.0, kKCMOldNumB = 0.0;
 static const PMReal kKCMOldNumHaloEm = 0.06;	// halo thickness (em)
 static const PMReal kKCMOldNumPadEm  = 0.20;	// padding of the transparency group bbox (em), wide enough for the halo to fit
 
+// Story UID labels (flyout "Show Frame UIDs", 2026-09-13). "ID:<item UID>" and under it
+// "Story:<story UID>" at the top left of every page item that carries a story, in the same default
+// font as the badge above, black with a white outline (the paw's note's method: stroke pass first,
+// fill pass second). On screen the size is a fixed number of pixels, whatever the zoom (the size in
+// points is this / the view's scale, the way the rings pick their radius); in print and PDF, where
+// there is no view, it is a fixed size in points. Opaque - no transparency group, so nothing here
+// touches the flattener.
+static const PMReal kKCMFrameUidFontPx     = 11.0;	// on screen: the ID line, in screen pixels
+static const PMReal kKCMFrameUidPrintPt    = 7.0;	// in print and PDF: the ID line, in points
+static const PMReal kKCMFrameUidStoryRatio = 0.85;	// the Story line's size, as a fraction of the ID line's
+static const PMReal kKCMFrameUidLineRatio  = 1.20;	// line pitch, as a fraction of the size
+static const PMReal kKCMFrameUidPadRatio   = 0.30;	// inset from the item's top-left corner, as a fraction of the size
+static const PMReal kKCMFrameUidHaloRatio  = 0.14;	// the white outline's stroke width, as a fraction of the size
+
 // ⚠ THE UI HALF'S TUNING CONSTANTS ARE NOT HERE. The translucent panel's alpha and its delayed
 // re-apply (kKCMPanelAlphaValue / ...ReapplyTries / ...ReapplyDelayMillis) and the CMYK cursor's
 // settle wait (kKCMCursorSettleMillis) lived in this header until 2026-08-30. The API re-audit of

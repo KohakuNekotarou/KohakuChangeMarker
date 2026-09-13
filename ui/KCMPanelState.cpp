@@ -174,6 +174,7 @@ void KCMSavePanelState()
 	json += "  \"showTgtMarks\": ";           json += KCMBoolLiteral(compare->GetShowTargetMarks());              json += ",\n";
 	json += "  \"showSrcMarks\": ";           json += KCMBoolLiteral(compare->GetShowSourceMarks());              json += ",\n";
 	json += "  \"showOldNumbers\": ";         json += KCMBoolLiteral(compare->GetShowOldPageNumbers());           json += ",\n";
+	json += "  \"showFrameUids\": ";          json += KCMBoolLiteral(compare->GetShowFrameUids());                json += ",\n";
 	json += "  \"syncLayoutViews\": ";        json += KCMBoolLiteral(KCMGetLayoutSync());                       json += ",\n";
 	json += "  \"scrollbarMap\": ";           json += KCMBoolLiteral(KCMGetScrollMapEnabled());                 json += ",\n";
 	json += "  \"ignorePageNumberMarker\": "; json += KCMBoolLiteral(compare->GetIgnorePageNumberMarker());               json += ",\n";
@@ -302,6 +303,10 @@ void KCMLoadPanelStateIfPresent()
 		KCMJsonReadBool(text, "ignorePageNumberMarker", compare->GetIgnorePageNumberMarker()));
 	compare->SetPairPagesByUid(
 		KCMJsonReadBool(text, "pairPagesByUid", compare->GetPairPagesByUid()));	// absent in a file saved before 2026-09-13 = the default stands
+	// A flag alone at startup, like the rest: nothing is drawn until a document is, and the first
+	// draw of a spread builds the table of story holders (KCMRingAdornment.cpp §1.5).
+	compare->SetShowFrameUids(
+		KCMJsonReadBool(text, "showFrameUids", compare->GetShowFrameUids()));	// absent in a file saved before 2026-09-13 = the default (OFF) stands
 
 	// ★No window is touched here, and none could be: this restore runs at startup
 	//   (KCMUIStartup::Startup), when the panel does not exist yet. What actually applies the

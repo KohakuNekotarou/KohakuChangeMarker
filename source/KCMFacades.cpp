@@ -54,6 +54,7 @@
 #include "KCMPageNumberMarker.h"	// the folio exclusion toggle
 #include "KCMChangedPagesTSV.h"	// the TSV export
 #include "KCMReport.h"			// the Before/After report
+#include "KCMRingAdornment.h"	// the story UID labels' toggle (Get/SetShowFrameUids)
 #include "KCMExternalSource.h"	// KCMExternalSourceLabel -- the lent Source's words for the panel
 #include "KCMOrigin.h"			// Task Start: the origin slot the five methods at the end forward to
 #include "KCMOriginCompare.h"	// KCMOriginArmed / KCMOriginScopedCopy - armed with the origin as the Source; RefreshRow's temporary Source
@@ -212,6 +213,9 @@ public:
 
 	virtual bool16		ExportBeforeAfterReport(PMString& outMessage)
 													{ return KCMExportBeforeAfterReport(outMessage); }
+
+	virtual bool16		GetShowFrameUids()			{ return KCMGetShowFrameUids(); }
+	virtual void		SetShowFrameUids(bool16 on)	{ KCMSetShowFrameUids(on); }
 
 	virtual void		ExportChangedPagesTSV(PMString& outMessage)
 													{ KCMExportChangedPagesTSV(outMessage); }

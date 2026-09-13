@@ -131,6 +131,23 @@ void KCMRingAdornmentUnregister();
 // whether anything was written.
 int32 KCMGetNumItemsWithXP(IDataBase* db);
 
+// ---- the story UID labels ("Show Frame UIDs", 2026-09-13) --------------------------------
+//
+// While ON, every page item that carries a story - an ordinary text frame, a path with text on
+// it, an anchored frame - is labelled at the top left of its own box with "ID:<item UID>" and,
+// under it, "Story:<story UID>" (the number the script DOM's textFrame.id / story.id answer, and
+// the number in the Story Edits list's ID column). **Found from the story side**, not from the
+// item's kind (the user's instruction): the document's stories -> each story's frame columns ->
+// two steps up the hierarchy -> the item. That is what makes text on a path come out the same as a
+// frame without a test for either. The drawing is the same adornment that draws the marks
+// (KCMRingAdornmentShape::DrawAdornment, the non-spread branch); the table of holders is rebuilt
+// on every draw of a spread and read on every draw of an item (KCMStoryHolders in the .cpp).
+// Screen always; print and PDF only with "Print comparison marks" on (the badge's rule). Default
+// OFF; saved with the panel settings ("showFrameUids"). The flyout toggle flips it through
+// IKCMCompareFacade::SetShowFrameUids and repaints.
+bool16 KCMGetShowFrameUids();
+void KCMSetShowFrameUids(bool16 on);
+
 // **The insurance: put the item-has-transparency list back to what the document itself says.**
 // Every item the list holds now is sent `ItemXPChanged(kXPC_RemovedSomeXP)` in one call, which
 // is not "take it off" but "ask again" (IXPManager.h) -- an item with real transparency (a drop

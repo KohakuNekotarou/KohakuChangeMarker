@@ -585,4 +585,14 @@ class IGraphicsPort;
 // would drift.
 void KCMSetOutputColor(IGraphicsPort* gPort, uint8 r, uint8 g, uint8 b, bool16 useCMYK);
 
+class IPMFont;
+
+// The application's default font, fetched once (on the main thread) and kept until Shutdown
+// (KCMReleaseOldNumFontCache). It is what the old-folio badge and the paw's note are written in.
+// Not static since 2026-09-13: the story UID labels (KCMRingAdornment.cpp) write in the same
+// font, and a second cache of the same font would be a second place to release it.
+// @warning nil on a background thread that arrives before the main thread has fetched it (the
+//   fetch is main-thread only; the reason is at the definition). Callers skip their text then.
+IPMFont* KCMQueryMarkFont();
+
 #endif // __KCMDrawEventHandler_h__
