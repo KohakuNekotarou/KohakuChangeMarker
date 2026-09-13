@@ -71,8 +71,7 @@
 #include "KCMStoryDiffRun.h"		// Run - the Story detail, borrowed when the mode did not produce it
 #include "KCMStoryRestore.h"		// KCMKentenKindOf - a kenten name to its kind
 #include "KCMResourceStore.h"		// the Resources result, borrowed when the mode did not produce it
-#include "KCMResourceShortValue.h"	// KCMShortResourceValue - what a value reads as, the same as the panel
-#include "KCMResourceUnits.h"		// KCMResourceValueWithUnit - and the document's own unit beside it
+#include "KCMResourceDisplay.h"		// KCMResourceDisplayValue - what a value reads as, the same as the panel
 #include "KCMXmlPretty.h"			// KCMDecodePercentEscapes - a definition's key, readable
 #include "KCMModelNotify.h"		// KCMNotify - the panel is told when the borrowed Resources result goes
 #include "KCMBoundaryID.h"			// kKCMStoryEditsRebuiltMessage
@@ -584,9 +583,11 @@ void BuildResourceRows(IDataBase* targetDB, std::vector<KCMReportRow>& out)
 			r.fSign = source.IsEmpty() ? KCMReportSign::Plus()
 					: target.IsEmpty() ? KCMReportSign::Minus()
 					: KCMReportSign::NotEqual();
-			// The value as the panel shows it, then the document's own unit beside it (Q, mm ...).
-			r.fLeft.fMid  = source.IsEmpty() ? Ascii("-") : KCMResourceValueWithUnit(name, KCMShortResourceValue(source), targetDB);
-			r.fRight.fMid = target.IsEmpty() ? Ascii("-") : KCMResourceValueWithUnit(name, KCMShortResourceValue(target), targetDB);
+			// The value as the panel shows it - shortened, in the document's own unit, and a
+			// keyboard shortcut spelled the way InDesign spells it. ★ONE call rather than a chain
+			// repeated here and in the panel: KCMResourceDisplay.h carries why.
+			r.fLeft.fMid  = source.IsEmpty() ? Ascii("-") : KCMResourceDisplayValue(name, source, targetDB);
+			r.fRight.fMid = target.IsEmpty() ? Ascii("-") : KCMResourceDisplayValue(name, target, targetDB);
 			out.push_back(r);
 			if (static_cast<int32>(out.size()) >= kMaxTableRows)
 				break;

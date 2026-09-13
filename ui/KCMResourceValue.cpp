@@ -20,7 +20,7 @@
 #include "IKCMResourcesFacade.h"	// GetNthChange / GetNthAttrCount / GetNthAttr
 #include "KCMUIShared.h"			// KCMFindPanelWidget
 #include "KCMResourceValue.h"		// (brings KCMShortResourceValue from the shared header)
-#include "KCMResourceUnits.h"		// KCMResourceValueWithUnit - the document's unit beside the points
+#include "KCMResourceDisplay.h"		// KCMResourceDisplayValue - what a value reads as, here and everywhere else
 #include "IKCMCompareFacade.h"		// GetArmedTargetDB - whose units
 
 namespace
@@ -169,14 +169,13 @@ bool16 KCMShowSelectedResource(int32 row, int32 attrIndex)
 			&& resources->GetNthAttr(row, attrIndex, name, source, target)
 			&& !source.IsEmpty())
 		{
-			// ★Shortened the same way the row below it is, so the two never disagree about what the
-			//   value "is" (KCMShortResourceValue carries the rule and the reason).
-			body = KCMShortResourceValue(source);
-			// ★With the document's own unit beside the points (2026-09-13), the same way the row
-			//   below and the PDF report bracket it - read off the Target's settings.
+			// ★Read the same way the row below it is, so the two never disagree about what the value
+			//   "is" - shortened, in the document's own unit, a shortcut spelled as InDesign spells
+			//   it. ONE call for all of it, which is what makes "the same way" true rather than
+			//   agreed (KCMResourceDisplay.h).
 			{
 				Utils<IKCMCompareFacade> compare;
-				body = KCMResourceValueWithUnit(name, body, compare ? compare->GetArmedTargetDB() : nil);
+				body = KCMResourceDisplayValue(name, source, compare ? compare->GetArmedTargetDB() : nil);
 			}
 			body.SetTranslatable(kFalse);
 		}

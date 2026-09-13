@@ -58,8 +58,8 @@
 #include "IKCMStoryEditsFacade.h"	// the rows themselves (Facade since 2026-08-13, Task 14)
 #include "IKCMCompareFacade.h"		// GetCompareMode - asked in ONE function, KCMListShowsResources
 #include "IKCMResourcesFacade.h"	// the definition rows, when that is what the list is showing
-#include "KCMResourceValue.h"		// KCMShortResourceValue - what a `$ID/...` value reads as
-#include "KCMResourceUnits.h"		// KCMResourceValueWithUnit - the document's unit beside the points
+#include "KCMResourceValue.h"		// the band beside this list
+#include "KCMResourceDisplay.h"		// KCMResourceDisplayValue - what a value reads as, here and everywhere else
 #include "KCMXmlPretty.h"			// KCMDecodePercentEscapes - `%3a` in a group's name is a colon
 #include "KCMStoryKinds.h"		// KCMStoryChangeKind - the bits KindLabel names. A header of types
 									// only, which is why it may be included from either side of the
@@ -622,13 +622,14 @@ private:
 			//   "[No paragraph style]" (the user's call, 2026-09-09). The rule and its guard live
 			//   in KCMResourceValue.h, because the band above this list has to shorten the other
 			//   side the same way.
-			value = KCMShortResourceValue(target);
-			// ★And the document's own unit beside the points (2026-09-13, the user's ask): a text
-			//   size in Q, a length in mm, a stroke in the stroke unit - read off the Target's
-			//   settings (KCMResourceUnits.h; the report brackets the same way).
+			// ★And in the document's own unit (2026-09-13, the user's ask): a text size in Q, a
+			//   length in mm, a stroke in the stroke unit - read off the Target's settings. A
+			//   keyboard shortcut is spelled the way InDesign spells it ("Shift+Alt+Z").
+			//   ★ONE call for all of it (KCMResourceDisplay.h), because the band beside this list
+			//   and the PDF report have to read the same value the same way.
 			{
 				Utils<IKCMCompareFacade> compare;
-				value = KCMResourceValueWithUnit(name, value, compare ? compare->GetArmedTargetDB() : nil);
+				value = KCMResourceDisplayValue(name, target, compare ? compare->GetArmedTargetDB() : nil);
 			}
 			value.SetTranslatable(kFalse);
 

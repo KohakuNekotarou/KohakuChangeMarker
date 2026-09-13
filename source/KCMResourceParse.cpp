@@ -201,6 +201,17 @@ bool16 KCMIsExcludedResource(const PMString& elementName)
 	//     documents built this way. If a phantom Added ever appears under another name, the fault
 	//     is this same one wearing a different coat - do not read this line as "handled".
 	//
+	// ★★★Font AND FontFamily, added 2026-09-13 (the user's call: "changing AppliedFont brings out
+	//   Font and FontFamily as well - blacklist them"). **They are not a change the reader made;
+	//   they are the document's inventory of the fonts it happens to use.** Pick a different
+	//   typeface in one character style and the list shows THREE rows: the style, whose AppliedFont
+	//   really did change, plus a FontFamily and a Font that appeared because the document now
+	//   carries that face. The reader made one edit and is shown three, and the two extra ones say
+	//   nothing about what was edited - they do not even name the style.
+	//   ⚠What is lost with them: a change to a font's own entry with no style pointing at it - a
+	//     face becoming missing, say. Not measured either way. ★The AppliedFont row is untouched,
+	//     so the edit itself is still reported, which is what makes this a safe thing to drop.
+	//
 	// ⚠★★★Spread AND MasterSpread ARE NO LONGER HERE (2026-09-10, the user's request: "I want to
 	//   see a page item's lock change too"). They are not compared as themselves either - what
 	//   happens to them now is a FILTERED DESCENT rather than a skip, and the rule is
@@ -209,6 +220,8 @@ bool16 KCMIsExcludedResource(const PMString& elementName)
 	return elementName == "Story"
 		|| elementName == "TextDefault"
 		|| elementName == "Language"
+		|| elementName == "Font"
+		|| elementName == "FontFamily"
 		|| elementName == "MetadataPacketPreference";
 }
 
