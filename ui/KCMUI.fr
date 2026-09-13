@@ -1149,6 +1149,16 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMExportChangedPagesMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Export Before/After Report" on the panel flyout (popup) menu. Plain command: writes one
+		// PDF - a summary page, then every changed page of the running comparison with the older
+		// version on the left and the newer (comparison marks printed) on the right - next to the
+		// Target document, and opens it. Enabled only while a comparison is active. Work in
+		// KCMReport.cpp (2026-09-13).
+		kKCMPopupExportReportActionID,
+		kKCMPopupMenuPath,
+		kKCMExportReportMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Compare Books" on the panel flyout. Plain command. Compares TWO OPEN BOOKS chapter by
 		// chapter and reports, per chapter, whether anything changed - it does not draw rings and
 		// does not arm anything, so it can be run while a document comparison is active.
@@ -1653,6 +1663,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates enables only while a comparison is active (sDB != nil)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMPopupExportReportActionID,
+		kKCMExportReportMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates enables only while a comparison is active
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

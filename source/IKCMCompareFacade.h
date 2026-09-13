@@ -621,6 +621,15 @@ public:
 
 	virtual bool16		GetPairPagesByUid() = 0;
 	virtual void		SetPairPagesByUid(bool16 on) = 0;
+
+	// ---- the Before/After report ---------------------------------------------------------
+	//
+	// One PDF: a summary page, then every changed page of the running comparison with the
+	// older version on the left and the newer (rings printed) on the right (KCMReport.h). kTrue
+	// when written; outMessage names the file, or says why not. The flyout item calls it and
+	// shows the message.
+
+	virtual bool16		ExportBeforeAfterReport(PMString& outMessage) = 0;
 };
 
 /** THE ABI STAMP OF THE CLASS ABOVE. ★BUMP IT (the date, YYYYMMDD) EVERY TIME A VIRTUAL IS ADDED,
@@ -629,6 +638,6 @@ public:
 	compares it with the value ITS build saw in this header before it calls anything here
 	(KIDMCPKcmBridge::AbiState). Two binaries built from different versions of this class then
 	refuse each other instead of running the wrong method (2026-09-13: the header's warning). */
-const int32 kKCMCompareFacadeAbi = 20260913;
+const int32 kKCMCompareFacadeAbi = 2026091302;	// 02 = the second change of the day (ExportBeforeAfterReport)
 
 #endif // __IKCMCompareFacade_h__

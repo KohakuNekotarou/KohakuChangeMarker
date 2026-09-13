@@ -234,6 +234,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMCore.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDrawEventHandler.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReport.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMarksDoc.cpp" />
@@ -262,6 +263,7 @@
     <ClCompile Include="$(id_sdk_dir)\source\public\libs\publiclib\statics\PlugInStatics.cpp" />
     <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKPlugInEntrypoint.cpp" />
     <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKFileHelper.cpp" />
+    <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKLayoutHelper.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMID.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMNoStrip.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\TriggerResourceDeps.cpp" />
@@ -304,6 +306,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageFlagState.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPagePairRule.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReport.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageMarksDoc.h" />

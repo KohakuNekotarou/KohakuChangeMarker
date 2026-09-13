@@ -52,6 +52,7 @@
 #include "KCMBookCompare.h"		// the book comparison itself
 #include "KCMPageNumberMarker.h"	// the folio exclusion toggle
 #include "KCMChangedPagesTSV.h"	// the TSV export
+#include "KCMReport.h"			// the Before/After report
 #include "KCMExternalSource.h"	// KCMExternalSourceLabel -- the lent Source's words for the panel
 #include "KCMOrigin.h"			// Task Start: the origin slot the five methods at the end forward to
 #include "KCMOriginCompare.h"	// KCMOriginArmed / KCMOriginScopedCopy - armed with the origin as the Source; RefreshRow's temporary Source
@@ -207,6 +208,9 @@ public:
 
 	virtual bool16		GetPairPagesByUid()			{ return KCMGetPairPagesByUid(); }
 	virtual void		SetPairPagesByUid(bool16 on)	{ KCMSetPairPagesByUid(on); }
+
+	virtual bool16		ExportBeforeAfterReport(PMString& outMessage)
+													{ return KCMExportBeforeAfterReport(outMessage); }
 
 	virtual void		ExportChangedPagesTSV(PMString& outMessage)
 													{ KCMExportChangedPagesTSV(outMessage); }

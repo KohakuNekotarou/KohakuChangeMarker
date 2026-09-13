@@ -957,6 +957,18 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			}
 			break;
 
+		// Flyout "Export Before/After Report": the changed pages side by side as one PDF, written
+		// next to the Target and opened (KCMReport.cpp). The model builds it and says where it went,
+		// or why it could not; either way the words go to the status line.
+		case kKCMPopupExportReportActionID:
+			{
+				PMString reportMsg;
+				Utils<IKCMCompareFacade>()->ExportBeforeAfterReport(reportMsg);
+				if (reportMsg.CharCount() > 0)
+					KCMSetStatus(reportMsg);
+			}
+			break;
+
 		// Flyout "Compare Books": the book whose tab is in front in the Book panel is the Target, the
 		// first other open book is the Source, and every chapter (document) is judged changed or
 		// unchanged.
@@ -1343,10 +1355,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 				(Utils<IKCMCompareFacade>()->IsArmed() && Utils<IKCMCompareFacade>()->ArmedDocsAlive())
 					? kEnabledAction : kDisabled_Unselected);
 		}
-		else if (action == kKCMPopupExportChangedPagesActionID)
+		else if (action == kKCMPopupExportChangedPagesActionID || action == kKCMPopupExportReportActionID)
 		{
 			// Live only while comparing (a marked Target document exists) ＝ when there can be changes to
-			// write out. Greyed before a Start.
+			// write out. Greyed before a Start. The report shares the rule: it is made of the same marks.
 			listToUpdate->SetNthActionState(i, (Utils<IKCMMarkData>()->GetMarkedTargetDB() != nil) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMClearChecksActionID)
