@@ -63,11 +63,21 @@ inline bool KCMNameEndsWith(const std::string& s, const char* suffix)
       "...FontSize" a text size, every "...Indent" / "...Offset" a text measure. */
 inline KCMUnitKind KCMUnitKindForAttribute(const std::string& name)
 {
-	if (name == "PointSize" || KCMNameEndsWith(name, "FontSize"))
+	// ★★Leading IS A TEXT SIZE, NOT A TEXT MEASURE (2026-09-13, the user reading the list: "the Q
+	//   is coming out as H"). It sat with the indents until then, on the reasoning that a leading
+	//   is a spacing - which is **reasoning, not measurement**, and it was wrong. The two J units
+	//   are the same length (1Q = 1H = 0.25mm), so the NUMBER was right all along and only the
+	//   letter beside it was not: the kind of mistake that survives every check except a reader
+	//   who knows what the document says.
+	if (name == "PointSize" || name == "Leading" || KCMNameEndsWith(name, "FontSize"))
 		return kKCMUnitTextSize;
 	if (KCMNameEndsWith(name, "Weight"))				// StrokeWeight, RuleAboveLineWeight, UnderlineWeight ...
 		return kKCMUnitLine;
-	if (name == "Leading" || name == "BaselineShift" || name == "SpaceBefore" || name == "SpaceAfter"
+	// ⚠THE REST OF THIS LINE IS STILL UNMEASURED, and Leading is the reason to say so out loud:
+	//   BaselineShift, the spaces and the indents are here for the same reasoning that put Leading
+	//   here, and nobody has read them against the document yet. If one of them shows the wrong
+	//   letter, it is this line and not a new fault.
+	if (name == "BaselineShift" || name == "SpaceBefore" || name == "SpaceAfter"
 		|| name == "SpaceBetweenSameParagraphStyle"
 		|| KCMNameEndsWith(name, "Indent") || KCMNameEndsWith(name, "Offset"))
 		return kKCMUnitText;
