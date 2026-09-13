@@ -73,7 +73,6 @@
 #include "KCMStoryRefresh.h"		// where the right-click menu's row is stashed for the action to read
 #include "KCMStoryCopy.h"			// the same, for a CHANGE row's menu: row AND change (2026-09-12)
 #include "KCMStoryTree.h"			// KCMListShowsResources - which kind of row the double click landed on
-#include "KCMResourceEdit.h"		// KCMEditSelectedResource - what a Resources row's double click does (2026-09-13)
 
 namespace
 {
@@ -231,22 +230,15 @@ bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 	//     made this selection. The single click is a mark now, so the selection moved here.
 	if (selectRatherThanJump)
 	{
-		// ***** A RESOURCES ROW HAS NOTHING TO SELECT, AND OPENS ITS EDITOR INSTEAD (2026-09-13,
-		// the user's request). ***** A definition is not text; what a reader wants after seeing
-		// that it changed is the dialog that edits it. Only the DEFINITION row does this - an
-		// attribute row names one value of it, and a value has no editor of its own.
-		// ★The keyboard stays with the list. There is no selection in the document to hand it to,
-		//   and the dialog is modal: when it closes, the reader is back at the list with the arrows
-		//   still walking it. (The Story mode below gives the keyboard back because it has just
-		//   put a selection in the document; that reason does not exist here.)
+		// ***** A RESOURCES ROW HAS NOTHING TO SELECT, AND A DOUBLE CLICK DOES NOTHING. *****
+		// A definition is not text, so there is no "select the words this names". Opening its
+		// editor lived here for a few hours on 2026-09-13 and was moved to the row menu the same
+		// day (the user's call): **a double click is silent about what it is going to do, and a
+		// menu saying "Edit..." is not.** ⇒ KCMResourceEdit.h, the two menu items.
 		// ⚠BEFORE the story path, for the reason KCMStoryJumpToRow gives: the story facade's list
 		//   is a different list, and reading a Resources row out of it answers about nothing.
 		if (KCMListShowsResources())
-		{
-			if (changeIndex < 0)
-				KCMEditSelectedResource(rowIndex);
 			return result;
-		}
 
 		const bool16 selected = (changeIndex >= 0)
 								? KCMStorySelectChange(rowIndex, changeIndex)

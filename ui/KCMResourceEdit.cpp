@@ -14,6 +14,9 @@
 #include "IActionManager.h"			// PerformAction - the product's own "Style Options..."
 #include "IApplication.h"
 #include "IControlView.h"
+#include "IDialogMgr.h"				// GetFrontmostDialogWindow - reaching INTO the modal dialog
+#include "ISelectableDialogSwitcher.h"	// SwitchDialogPanel - which of its sixteen pages to show
+#include "IWindow.h"
 #include "IPalettePanelUtils.h"		// QueryPanelByWidgetID - reaching somebody else's panel
 #include "IPanelControlData.h"		// FindWidget - down to the tree inside it
 #include "IPanelMgr.h"				// ShowPanelByMenuID / IsPanelWithMenuIDShown
@@ -26,9 +29,17 @@
 
 // ----- General -----
 #include "NodeID.h"					// NodeID / kInvalidNodeID
+#include "PersistUtils.h"			// ::GetClass - is the front modal really OUR dialog?
+// The bosses that supply the dialog's pages. Published under source/open, reached by a relative
+// path rather than by adding an include directory - the same reasoning, and the same route, as
+// KCMStoryRowEH.cpp's TreeNodeEventHandler.h: the build files that would carry such a directory
+// live outside this plug-in's repository, so a path added there would not survive a fresh checkout.
+#include "../../open/interfaces/text/CharPanelID.h"	// kCharDialogHookBoss - the Basic Character Formats page
 #include "StylePanelID.h"			// the Character Styles panel, its tree, and its action
+#include "TextStylePanelID.h"		// kTextSelectableCharDialogBoss - what that dialog's panel is
 #include "Utils.h"
 
+#include <windows.h>
 #include <string>
 #include <vector>
 
@@ -37,6 +48,9 @@
 #include "IKCMCompareFacade.h"		// GetArmedTargetDB / IsDocDBOpen / GetActiveDocDB
 #include "IKCMResourcesFacade.h"	// GetNthChange
 #include "KCMUIShared.h"			// KCMSetStatus
+#include "KCMStoryTree.h"			// KCMListShowsResources - which list the stashed row belongs to
+#include "KCMStoryRefresh.h"		// KCMStoryMenuRow - the definition row the menu was popped over
+#include "KCMStoryCopy.h"			// KCMStoryGetMenuChange - the attribute row, the same way
 #include "KCMStoryJump.h"			// KCMActivateDocument - the Target to the front
 #include "KCMXmlPretty.h"			// KCMDecodePercentEscapes - `%3a` is the group separator
 #include "KCMResourceEdit.h"
@@ -173,12 +187,183 @@ NodeID FindNodeByPath(ITreeViewHierarchyAdapter* adapter, ITreeViewTypeAhead* ty
 	return node;
 }
 
+//========================================================================================
+// Opening the dialog AT THE PAGE that holds the attribute the reader double-clicked
+//========================================================================================
+
+/** Which of the dialog's pages holds a given IDML attribute, BY THE BOSS THAT SUPPLIES THE PAGE.
+
+	★★★NOT BY POSITION, AND THE REASON IS THE LANGUAGE (2026-09-13, the user's question: "I am
+	testing on the Japanese version - will the English one pick the right item too?"). **The set of
+	pages differs by feature set.** A Japanese InDesign shows seven pages the Roman one has not -
+	縦中横, five ruby pages and two kenten pages - so every position below them means a different
+	page in the two. The Basic Character Formats page happens to be second from the top in both,
+	which is exactly the kind of coincidence that makes a positional table look right until the day
+	it is not.
+
+	★★WHAT A PAGE IS, INSTEAD: the boss of the panel that supplies it. Measured in the service
+	registry - the pages register under service kTextStyleCharDialogBoss (0x5b09):
+
+	    kTextStyleCharGeneralPanelBoss   General                    TEXT STYLE PANEL
+	    kCharDialogHookBoss              Basic Character Formats    CHARACTER PANEL
+	    kCharDialog2HookBoss             Advanced Character Formats CHARACTER PANEL
+	    kTextColorDialogHookBoss         Character Color            TEXT COLOR PANEL
+	    kCharOpenTypeDialogHookBoss      OpenType Features          CHARACTER PANEL
+	    kCharUnderlineDialogHookBoss     Underline Options          CHARACTER PANEL
+	    kCharStrikeThroughDialogHookBoss Strikethrough Options      CHARACTER PANEL
+	    kStyleToTagMapDialogBoss         Export Tagging             TEXT STYLE PANEL
+
+	A ClassID is the same number in every language and stays put when a page is inserted above it.
+	★One line per attribute. An attribute not in the table, and a definition row, leave the dialog
+	  on whichever page it opens itself at.
+
+	★★WHY A PLAIN ARRAY AND NOT A MAP (2026-09-13, the user's question). A std::map would run a
+	constructor at plug-in load, allocate, and bring the static initialisation order of two
+	translation units into it; this array has no constructor at all and lives in the binary's
+	read-only data. What it costs is a linear scan - of string compares, on a gesture the reader
+	made, immediately before a modal dialog is built. **The array IS the map**; a container would
+	change where it is kept and nothing about what it says. A map would start to earn its keep at
+	hundreds of entries consulted inside a loop, which is not what this is.
+*/
+struct KCMAttributePage
+{
+	const char*	fAttribute;
+	ClassID		fPageBoss;
+};
+
+const KCMAttributePage kKCMAttributePages[] =
+{
+	{ "AppliedFont",				kCharDialogHookBoss },				// 基本文字形式 / Basic Character Formats
+	{ "ExtendedKeyboardShortcut",	kTextStyleCharGeneralPanelBoss },	// 一般 / General - the shortcut field
+};
+
+/** The page boss for `attributeName`, or kInvalidClass when the table does not know it. */
+ClassID KCMPageBossForAttribute(const PMString& attributeName)
+{
+	const std::string name = attributeName.GetUTF8String();
+	for (size_t i = 0; i < sizeof(kKCMAttributePages) / sizeof(kKCMAttributePages[0]); ++i)
+	{
+		if (name == kKCMAttributePages[i].fAttribute)
+			return kKCMAttributePages[i].fPageBoss;
+	}
+	return kInvalidClass;
+}
+
+// ***** THE SWITCH HAS TO HAPPEN FROM INSIDE SOMEBODY ELSE'S MODAL LOOP. *****
+//
+// PerformAction does not return until the dialog is dismissed, so there is no "after it opened"
+// for this code. What runs in there is a WIN32 THREAD TIMER: a modal loop is an ordinary
+// GetMessage / DispatchMessage pump, so WM_TIMER still arrives ([[modal-dialog-reach-via-timer]],
+// proved on the Keyboard Shortcuts editor and used by KT's dialog watcher ever since).
+// ⚠★★AN IDLE TASK WOULD NOT DO - not ICallbackTimer either, which is this plug-in's usual answer
+//   ([[avoid-timers-and-idle-tasks]]). Idle tasks are serviced by the APPLICATION's event loop,
+//   and a modal dialog is not running it. ::SetTimer is not a preference here; it is the only
+//   thing that fires.
+ClassID		gWantedPageBoss	= kInvalidClass;
+UINT_PTR	gPageTimer		= 0;
+int			gPageTicks		= 0;
+const UINT	kPageTimerMs	= 100;
+const int	kPageGiveUpTicks = 50;		// five seconds, then stop by itself
+
+void StopPageTimer()
+{
+	if (gPageTimer != 0)
+	{
+		::KillTimer(nullptr, gPageTimer);
+		gPageTimer = 0;
+	}
+	gWantedPageBoss = kInvalidClass;
+}
+
+/** Which of the switcher's pages is supplied by `wanted`, or -1.
+
+	★The switcher names its pages by WidgetID and hands the view back for one
+	(ISelectableDialogSwitcher::GetPanelWidgetID / GetDialogPanel), and the view's boss is what says
+	which page it IS - see the table above for why that and not the position.
+*/
+int32 PageIndexOfBoss(ISelectableDialogSwitcher* switcher, ClassID wanted)
+{
+	if (switcher == nil || wanted == kInvalidClass)
+		return -1;
+	const int32 count = switcher->GetNumDialogPanels();
+	for (int32 i = 0; i < count; ++i)
+	{
+		IControlView* page = switcher->GetDialogPanel(switcher->GetPanelWidgetID(i));
+		if (page != nil && ::GetClass(page) == wanted)
+			return i;
+	}
+	return -1;
+}
+
+void CALLBACK KCMSwitchPageProc(HWND, UINT, UINT_PTR, DWORD)
+{
+	if (++gPageTicks > kPageGiveUpTicks || gWantedPageBoss == kInvalidClass)
+	{
+		StopPageTimer();
+		return;
+	}
+
+	InterfacePtr<IApplication> app(GetExecutionContextSession()->QueryApplication());
+	InterfacePtr<IDialogMgr> dialogMgr(app, UseDefaultIID());
+	if (dialogMgr == nil || !dialogMgr->IsModalDialogOpen())
+		return;						// not up yet - the dialog is built while this ticks
+	IWindow* window = dialogMgr->GetFrontmostDialogWindow();	// raw: not a Query
+	if (window == nil)
+		return;
+
+	InterfacePtr<IPanelControlData> windowData(window, UseDefaultIID());
+	if (windowData == nil || windowData->Length() == 0)
+		return;
+	IControlView* panel = windowData->GetWidget(0);
+	if (panel == nil)
+		return;
+
+	// ⚠★★★IS IT REALLY OUR DIALOG. This timer fires inside WHATEVER modal loop is running, and the
+	//   reader may have raised something else in the meantime. Switching a page on a dialog that
+	//   merely happens to be in front would be acting on a stranger - so the panel's boss is
+	//   checked, which is the one thing that says what this window IS.
+	if (::GetClass(panel) != kTextSelectableCharDialogBoss)
+		return;
+
+	InterfacePtr<ISelectableDialogSwitcher> switcher(panel, UseDefaultIID());
+	if (switcher == nil)
+	{
+		StopPageTimer();
+		return;
+	}
+	// ⚠Wait rather than give up: the pages arrive as the dialog builds, so a tick that finds none
+	//   is early rather than wrong. ★The give-up count above is what stops this waiting for ever
+	//   on an InDesign whose page this build does not know.
+	const int32 index = PageIndexOfBoss(switcher, gWantedPageBoss);
+	if (index < 0)
+		return;
+
+	// ★validate = kFalse. The page being left is the one the dialog just opened on and the reader
+	//   has not touched it, so there is nothing to validate and nothing to refuse the move.
+	if (switcher->GetCurrentPanelIndex() != index)
+		switcher->SwitchDialogPanel(index, kFalse);
+	StopPageTimer();
+}
+
+/** Arm the page switch, to happen once the dialog is up. Does nothing for kInvalidClass. */
+void ArmPageSwitch(ClassID pageBoss)
+{
+	StopPageTimer();
+	if (pageBoss == kInvalidClass)
+		return;
+	gWantedPageBoss = pageBoss;
+	gPageTicks = 0;
+	gPageTimer = ::SetTimer(nullptr, 0, kPageTimerMs, KCMSwitchPageProc);
+	if (gPageTimer == 0)
+		gWantedPageBoss = kInvalidClass;	// no timer, no switch - the dialog still opens
+}
+
 }	// anonymous namespace
 
 //----------------------------------------------------------------------------------------
 // KCMEditSelectedResource (declared in KCMResourceEdit.h)
 //----------------------------------------------------------------------------------------
-bool16 KCMEditSelectedResource(int32 row)
+bool16 KCMEditSelectedResource(int32 row, int32 attrIndex)
 {
 	// ***** NOT WHILE ONE IS ALREADY UP. *****
 	//
@@ -349,9 +534,93 @@ bool16 KCMEditSelectedResource(int32 row)
 	InterfacePtr<IActionManager> actionMgr(app == nil ? nil : app->QueryActionManager());
 	if (actionMgr == nil)
 		return kFalse;
+
+	// ***** AND OPEN IT AT THE PAGE THAT HOLDS THE ATTRIBUTE. ***** Armed BEFORE the action,
+	// because PerformAction does not come back until the dialog is dismissed - see the timer's own
+	// note for why a thread timer is the only thing that runs in there.
+	// ★An attribute the table does not know, and a DEFINITION row (attrIndex < 0), arm nothing and
+	//   the dialog opens on its own first page.
+	if (attrIndex >= 0)
+	{
+		PMString attrName, attrSource, attrTarget;
+		if (resources->GetNthAttr(row, attrIndex, attrName, attrSource, attrTarget))
+			ArmPageSwitch(KCMPageBossForAttribute(attrName));
+	}
+
 	actionMgr->PerformAction(GetExecutionContextSession()->GetActiveContext(),
 							 kCharStyleOptionsActionID);
+
+	// ★The timer stops itself once it has switched, and again after five seconds if it never found
+	//   the dialog - but the dialog has certainly gone by the time PerformAction returns, so this
+	//   is the honest place to be sure nothing is left ticking.
+	StopPageTimer();
 	return kTrue;
+}
+
+//========================================================================================
+// The two "Edit..." items on the row menus
+//========================================================================================
+
+namespace
+{
+
+/** Whether row `row` of the Resources list is one this can open an editor for.
+
+	★THE SAME QUESTION THE ACTION ASKS ITSELF, so the menu and the outcome cannot part company -
+	the shape every other item on these menus follows (KCMResourceRowHasXml,
+	KCMChangeRowCanCopySource).
+	⚠The MODE is asked first: the stashed row is an index into whichever list was on screen, so in
+	  the Story mode it names a story and reading it as a definition would answer about whatever
+	  definition happens to sit at that number.
+*/
+bool16 CanEditResourceRow(int32 row)
+{
+	if (!KCMListShowsResources() || row < 0)
+		return kFalse;
+
+	Utils<IKCMCompareFacade> compare;
+	if (!compare || !compare->IsArmed())
+		return kFalse;
+
+	Utils<IKCMResourcesFacade> resources;
+	if (!resources)
+		return kFalse;
+
+	PMString kind, key;
+	KCMResourceChangeKind what = kKCMResourceChanged;
+	if (!resources->GetNthChange(row, kind, key, what))
+		return kFalse;		// the list was rebuilt shorter, or this is the placeholder row
+
+	// Only what there is an editor for, and only what the Target still has.
+	return (kind.IsEqual(PMString(kKCMCharStyleKind)) && what != kKCMResourceRemoved) ? kTrue : kFalse;
+}
+
+}	// anonymous namespace
+
+bool16 KCMResourceRowCanEdit()
+{
+	return CanEditResourceRow(KCMStoryMenuRow());
+}
+
+void KCMEditMenuResourceRow()
+{
+	KCMEditSelectedResource(KCMStoryMenuRow(), -1);
+}
+
+bool16 KCMResourceAttrCanEdit()
+{
+	int32 row = -1, attr = -1;
+	if (!KCMStoryGetMenuChange(row, attr))
+		return kFalse;
+	return CanEditResourceRow(row);
+}
+
+void KCMEditMenuResourceAttr()
+{
+	int32 row = -1, attr = -1;
+	if (!KCMStoryGetMenuChange(row, attr))
+		return;
+	KCMEditSelectedResource(row, attr);
 }
 
 // End, KCMResourceEdit.cpp.

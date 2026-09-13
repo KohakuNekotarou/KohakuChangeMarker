@@ -180,6 +180,17 @@ void KCMStorySetMenuChange(int32 rowIndex, int32 changeIndex)
 }
 
 //----------------------------------------------------------------------------------------
+// KCMStoryGetMenuChange
+//----------------------------------------------------------------------------------------
+
+bool16 KCMStoryGetMenuChange(int32& outRow, int32& outChange)
+{
+	outRow = gMenuRow;
+	outChange = gMenuChange;
+	return (gMenuRow >= 0 && gMenuChange >= 0) ? kTrue : kFalse;
+}
+
+//----------------------------------------------------------------------------------------
 // KCMChangeRowCanCopySource
 //----------------------------------------------------------------------------------------
 

@@ -52,6 +52,21 @@
 */
 void KCMStorySetMenuChange(int32 rowIndex, int32 changeIndex);
 
+/** Read that stash back.
+
+	★Exposed on 2026-09-13 for the Resources mode's "Edit..." item, which hangs on the same
+	child-row menu and has to know which attribute the menu was popped over. Until then the stash
+	was read only inside this file, by the copy and restore items.
+	⚠**It says nothing about which MODE the list is in** - the same two numbers name a Story change
+	  or a Resources attribute depending on that, and the caller must ask
+	  (KCMListShowsResources) before reading them as either.
+
+	@param outRow [out] the row, or -1.
+	@param outChange [out] the change / attribute under it, or -1.
+	@return kTrue when both are >= 0.
+*/
+bool16 KCMStoryGetMenuChange(int32& outRow, int32& outChange);
+
 /** Whether "Copy Source Text" may be offered for the stashed change.
 
 	Answers kFalse in every case where there is nothing on the older side to copy:

@@ -1307,6 +1307,16 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMStoryRowRefreshMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// ----- The Resources rows: "Edit..." (2026-09-13), at the TOP of the menu -----
+		// ★It selects the definition in the panel that edits it and opens the product's own editor
+		// (KCMResourceEdit.h carries the route and the three that were measured and rejected).
+		// ★Live only in the Resources mode, on a row the Target still has
+		// (kCustomEnabling -> KCMResourceRowCanEdit), so the Story mode's menu is unchanged.
+		kKCMResourceRowEditActionID,
+		kKCMStoryRowMenuName,
+		kKCMResourceRowEditMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// ----- The Resources rows: "Show as XML" (2026-09-09) -----
 		// ★THE SAME SUBTREE AS THE ITEM ABOVE, on purpose. The list is shared between the two
 		// modes, so one right-click menu serves both, and **the two items are enabled in opposite
@@ -1332,6 +1342,15 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// in the Story mode on a change with something on the older side (kCustomEnabling ->
 		// KCMChangeRowCanCopySource): an insertion, a ruby added, kenten and footnote rows are
 		// greyed, and being the only item, greyed means the menu does not appear.
+		// "Edit..." (2026-09-13), at the TOP of this menu too. An ATTRIBUTE row's editor is the same
+		// dialog its definition row opens, shown AT THE PAGE THAT HOLDS THAT ATTRIBUTE. ★Live only
+		// in the Resources mode (kCustomEnabling -> KCMResourceAttrCanEdit), so a Story change row
+		// still sees only the two items below.
+		kKCMResourceAttrEditActionID,
+		kKCMChangeRowMenuName,
+		kKCMResourceAttrEditMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		kKCMChangeRowCopySourceActionID,
 		kKCMChangeRowMenuName,
 		kKCMChangeRowCopySourceMenuItemPosition,
@@ -1752,6 +1771,27 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it outside the Resources mode (KCMResourceRowHasXml)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Edit..." on a DEFINITION row's context menu (2026-09-13), and the same words on an
+		// ATTRIBUTE row's. ⚠Not on the flyout, for the same reason as every item above: they act on
+		// the row the menu was popped over, which a flyout has no way of naming.
+		kKCMActionComponentBoss,
+		kKCMResourceRowEditActionID,
+		kKCMResourceRowEditMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it outside the Resources mode (KCMResourceRowCanEdit)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMResourceAttrEditActionID,
+		kKCMResourceAttrEditMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it outside the Resources mode (KCMResourceAttrCanEdit)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

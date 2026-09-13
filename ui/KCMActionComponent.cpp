@@ -54,6 +54,7 @@
 #include "KCMChangeNav.h"			// KCMRefreshNavPosition (the overset toggle changes what Prev/Next walks)
 #include "KCMStoryRefresh.h"		// KCMStoryRowCanRefresh / KCMStoryRefreshMenuRow (the "Refresh Story Comparison" row item)
 #include "KCMResourceXml.h"			// KCMResourceRowHasXml / KCMShowResourceXml (the "Show as XML" row item)
+#include "KCMResourceEdit.h"			// KCMResourceRowCanEdit / KCMEditMenuResourceRow and the attribute pair (the "Edit..." row items)
 #include "KCMStoryCopy.h"			// KCMChangeRowCanCopySource / KCMChangeRowCopySource (the "Copy Source Text" change-row item)
 #include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / Set / Apply (the "Translucent Panel" flyout item)
 #include "KCMStoryPressMarks.h"	// KCMStoryMarksRefresh (rebuild the always-on marks of Story mode)
@@ -1035,6 +1036,21 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMShowResourceXml();
 			break;
 
+		// "Edit..." at the top of a DEFINITION row's context menu (2026-09-13): select that
+		// definition in the panel that edits it and open the product's own editor. ★Which row it
+		// was is noted by KCMStorySetMenuRow at the right click, the same stash the two items above
+		// read.
+		case kKCMResourceRowEditActionID:
+			KCMEditMenuResourceRow();
+			break;
+
+		// The same on an ATTRIBUTE row, opening the dialog AT THE PAGE that holds that attribute.
+		// ★A stash of its own (KCMStorySetMenuChange), which is why it is a second action and not
+		//   the one above with an argument.
+		case kKCMResourceAttrEditActionID:
+			KCMEditMenuResourceAttr();
+			break;
+
 		// "Copy Source Text" on a CHANGE row's context menu (2026-09-12): the older side's text of
 		// that one change - or its older ruby reading - on the clipboard as plain text. ★Which
 		// change it was is noted by KCMStorySetMenuChange at the right click, in a stash of its own.
@@ -1496,6 +1512,19 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//   comparing, on a definition the list still holds**.
 			listToUpdate->SetNthActionState(i, KCMResourceRowHasXml() ? kEnabledAction
 			                                                          : kDisabled_Unselected);
+		}
+		else if (action == kKCMResourceRowEditActionID)
+		{
+			// ★The same test the action runs (KCMResourceRowCanEdit). Live only in the Resources
+			//   mode, while comparing, on a definition the Target still has and this knows an
+			//   editor for - character styles so far.
+			listToUpdate->SetNthActionState(i, KCMResourceRowCanEdit() ? kEnabledAction
+			                                                           : kDisabled_Unselected);
+		}
+		else if (action == kKCMResourceAttrEditActionID)
+		{
+			listToUpdate->SetNthActionState(i, KCMResourceAttrCanEdit() ? kEnabledAction
+			                                                            : kDisabled_Unselected);
 		}
 		else if (action == kKCMChangeRowCopySourceActionID)
 		{

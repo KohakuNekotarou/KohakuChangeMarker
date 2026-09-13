@@ -85,6 +85,8 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMBookRowStartMenuKey,			"Start Change Marker",
                 kKCMStoryRowRefreshMenuKey,		"Refresh Story Comparison",
                 kKCMResourceRowXmlMenuKey,		"Show as XML",
+                kKCMResourceRowEditMenuKey,		"Edit...",
+                kKCMResourceAttrEditMenuKey,		"Edit...",
                 kKCMChangeRowCopySourceMenuKey,	"Copy Source Text",
                 kKCMChangeRowRestoreMenuKey,		"Restore Source Text",
                 kKCMIgnorePageNumMenuKey,			"Ignore Page Number Marker",

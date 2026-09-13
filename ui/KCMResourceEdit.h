@@ -72,12 +72,50 @@
 	     one (the search is a prefix match), selected without notifying, and the product's
 	     "Style Options..." action is fired.
 
-	@param row  0 .. IKCMResourcesFacade::GetChangeCount()-1, the DEFINITION row (never an
-	            attribute row - those name a value, not a thing that has an editor).
+	★★AN ATTRIBUTE ROW OPENS THE DIALOG AT THE PAGE THAT HOLDS IT (2026-09-13, the user's request:
+	"after the panel opens, the place in the list on the left that holds that Kind should be
+	selected - AppliedFont first, second from the top, Basic Character Formats"). The dialog is the
+	same one either way; the child row only says which of its sixteen pages to show.
+	⚠**The page is chosen by POSITION**, from a table this file carries, because the pages come from
+	  twelve different plug-ins and their widget ids are not published. One line per attribute, and
+	  an attribute the table does not know simply opens the dialog at its own first page.
+
+	@param row  0 .. IKCMResourcesFacade::GetChangeCount()-1, the DEFINITION row.
+	@param attrIndex  which of that definition's differing attributes was double-clicked, or -1 for
+	            the definition row itself. Only decides the page the dialog opens at.
 	@return kTrue when the action was fired. kFalse for every refusal, each of which has already
 	        been written to the status line - except the silent ones listed under 1.
 */
-bool16 KCMEditSelectedResource(int32 row);
+bool16 KCMEditSelectedResource(int32 row, int32 attrIndex = -1);
+
+//----------------------------------------------------------------------------------------
+// The two "Edit..." items on the row menus
+//----------------------------------------------------------------------------------------
+//
+// ★★★IT IS A RIGHT-CLICK ITEM AND NOT A DOUBLE CLICK (2026-09-13, the user's call, reversing the
+// morning's design). A double click is silent about what it is going to do; a menu says "Edit...",
+// and the reader chooses it. ⇒ **The double click on a Resources row does nothing again.**
+//
+// ★TWO ITEMS, ONE PER MENU, BECAUSE THERE ARE TWO STASHES. The right click on a definition row
+// records the row (KCMStorySetMenuRow) and pops kKCMStoryRowMenuName; the right click on an
+// attribute row records the row AND the attribute (KCMStorySetMenuChange) and pops
+// kKCMChangeRowMenuName. Each item reads its own stash, which is what stops a stale value in one
+// from pointing the other at the wrong thing - the rule the existing items on those menus already
+// follow.
+//
+// Both sit at the TOP of their menu (the user's call).
+
+/** Whether "Edit..." may be offered for the DEFINITION row the menu was popped over. */
+bool16 KCMResourceRowCanEdit();
+
+/** Open the editor for that definition. */
+void KCMEditMenuResourceRow();
+
+/** Whether "Edit..." may be offered for the ATTRIBUTE row the menu was popped over. */
+bool16 KCMResourceAttrCanEdit();
+
+/** Open the editor for that definition, at the page that holds that attribute. */
+void KCMEditMenuResourceAttr();
 
 #endif // __KCMResourceEdit_h__
 
