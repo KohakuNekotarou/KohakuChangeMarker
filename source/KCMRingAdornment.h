@@ -142,9 +142,9 @@ int32 KCMGetNumItemsWithXP(IDataBase* db);
 // holders is one per database, rebuilt on every draw of a spread, built on the spot by the first
 // item drawn without one, and dropped when documents close (KCMStoryHolders in the .cpp).
 // Screen always (not in overprint preview with the marks not printing); print and PDF only with
-// "Print comparison marks" on (the badge's rule), and into the Before/After report on both sides
-// (KCMDrawEventHandler::sReportExport). Every open document, since the adornment is the
-// session's. Default OFF; saved with the panel settings ("showStoryIds"). The flyout toggle
+// "Print comparison marks" on (the badge's rule), and into the Before/After report on its After
+// side only (KCMDrawEventHandler::sReportExport / sRingFrameOff). Every open document, since the
+// adornment is the session's. Default OFF; saved with the panel settings ("showStoryIds"). The flyout toggle
 // flips it through IKCMCompareFacade::SetShowStoryIds and repaints.
 bool16 KCMGetShowStoryIds();
 void KCMSetShowStoryIds(bool16 on);

@@ -160,7 +160,7 @@ namespace KCMJa
 		u"テキストを持つフレーム(テキストフレーム・パス上テキスト・アンカー付きフレーム)の上に、載っているストーリーの ID を「StoryID:番号」の形で表示します。"
 		u"番号はスクリプトの story.id で、Story Edits 一覧の ID 列と同じです。フレームの外(上辺の左)に出るので、本文に重なりません。\n"
 		u"・使い方: パネルのフライアウトメニューの「Show Story IDs」を ON にします(既定は OFF。パネル設定に保存されます)\n"
-		u"・画面では常に、ズームによらず同じ大きさで表示します。印刷・PDF には「Print comparison marks」が ON のときだけ出ます(Before/After 報告書には両側に出ます)\n"
+		u"・画面では常に、ズームによらず同じ大きさで表示します。印刷・PDF には「Print comparison marks」が ON のときだけ出ます(Before/After 報告書には After 側だけに出ます。Task Start の写しは ID が振り直されるため Before 側には出しません)\n"
 		u"・パスにもテキストが載っているフレームはラベルが2つ並びます\n\n"
 		u"【ブックの比較(Compare Books)】\n"
 		u"ブック(.indb)どうしを章(ドキュメント)単位で比べ、どの章が変わったかを一覧します。\n"

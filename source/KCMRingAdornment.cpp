@@ -129,9 +129,10 @@ static bool16 KCMMarksDeclareTransparency();
 //  except in overprint preview with the marks not printing, where nothing of KCM's is shown
 //  (2026-09-07, DrawSpreadMarks: the preview is a picture of the sheet).
 //  Print and PDF: only with "Print comparison marks" on (the old-folio badge's rule), at a fixed
-//  size in points. The Before/After report takes them on both of its sides whenever the toggle
-//  is on (the user's call), which it signals with sReportExport (KCMReport.cpp) - its After side
-//  is exported with sPrintMarks off, so that side would otherwise have none.
+//  size in points. The Before/After report takes them on its After side only, whenever the
+//  toggle is on (the user's call: the Before side of a Task Start comparison is a copy with
+//  renumbered UIDs, and two sets of numbers side by side confuse). The report signals its
+//  exports with sReportExport and its Before export with sRingFrameOff (KCMReport.cpp).
 //  Thumbnails (no view, not printing): nothing - unreadable at that size.
 //  **Written in spread coordinates**, upright: the port is in the item's inner coordinates when
 //  an item's adornment is drawn, and a vertical text frame's inner axes stand at 90 degrees to
@@ -266,12 +267,21 @@ static void KCMDrawStoryIdLabel(IShape* iShape, GraphicsData* gd, int32 flags)
 	if (!sShowStoryIds)
 		return;
 	// Print and PDF only with "Print comparison marks" on (kPrinting is set for both:
-	// DrawSpreadMarks) - or when the export is the Before/After report's, on either side (the
-	// user's call: with the toggle on, the report carries the numbers too; sReportExport is up
-	// for the length of its two exports, KCMReport.cpp).
+	// DrawSpreadMarks) - or when the export is the Before/After report's AFTER side (the user's
+	// call, 2026-09-13: with the toggle on the report carries the numbers, **but on the After
+	// side only** - the Before side of a Task Start comparison is a rehydrated copy whose UIDs
+	// are renumbered, and two sets of numbers side by side only confuse). sReportExport is up
+	// for the length of the report's two exports and sRingFrameOff for its Before export alone
+	// (KCMReport.cpp), and the Before export raises sPrintMarks itself, which is why the Before
+	// side has to be excluded by name rather than left to the print rule.
 	const bool16 printing = (flags & IShape::kPrinting) != 0;
-	if (printing && !KCMDrawEventHandler::sPrintMarks && !KCMDrawEventHandler::sReportExport)
-		return;
+	if (printing)
+	{
+		if (KCMDrawEventHandler::sRingFrameOff)
+			return;		// the report's Before side
+		if (!KCMDrawEventHandler::sPrintMarks && !KCMDrawEventHandler::sReportExport)
+			return;
+	}
 	// Without a view and not printing this is a thumbnail, or some other viewless draw - nothing
 	// is readable at that size, and there is no zoom to size the text by.
 	IControlView* const view = gd->GetView();

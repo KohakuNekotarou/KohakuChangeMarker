@@ -719,9 +719,10 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	// afterwards. The overflow cache is stamped as built for this Source first, so no draw rebuilds
 	// it against the copy and then empties it against nil (which would cost the Target its "/").
 	const bool16 printMarksWas = KCMDrawEventHandler::sPrintMarks;
-	// The story ID labels follow the report on both sides while their toggle is on (the user's
-	// call, 2026-09-13): this flag is what tells them an export is the report's, since the After
-	// side is exported with sPrintMarks off. Reset below, next to sPrintMarks.
+	// The story ID labels follow the report on its After side while their toggle is on (the user's
+	// call, 2026-09-13; the Before side, marked by sRingFrameOff, gets none - a Task Start copy's
+	// UIDs are renumbered): this flag is what tells them an export is the report's, since the
+	// After side is exported with sPrintMarks off. Reset below, next to sPrintMarks.
 	KCMDrawEventHandler::sReportExport = kTrue;
 	{
 		IDataBase::SaveRestoreModifiedState targetGuard(targetDB);
