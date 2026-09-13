@@ -35,8 +35,6 @@
 
 // Project includes:
 #include "KCMCore.h"			// KCMArmedTargetDB / KCMArmedSourceDB - the panel's own two documents
-#include "KCMOrigin.h"			// KCMOriginBytes - Task Start: the older side when the origin is the Source
-#include "KCMOriginCompare.h"	// KCMOriginArmed
 #include "KCMResourceDiff.h"
 #include "KCMResourceLog.h"		// the mode's step log, off by default - and why it is kept
 #include "KCMResourceStore.h"	// the reading port goes through the store, as the panel will
@@ -311,11 +309,10 @@ void KCMDescribeResourceDiff(PMString& out)
 
 	PMString whyNot;
 	const uint32 began = ::GetTickCount();
-	// Task Start: an armed origin pair has no Source database; the older side is the origin's
-	// own bytes, exactly as the comparison run reads them (KCMDoMarkChangesDoc).
-	const bool16 built = (KCMOriginArmed() && KCMOriginBytes() != nil)
-		? KCMResourceStore::RebuildWithSourceBytes(KCMArmedTargetDB(), *KCMOriginBytes(), whyNot)
-		: KCMResourceStore::Rebuild(KCMArmedTargetDB(), KCMArmedSourceDB(), whyNot);
+	// Task Start (an armed origin pair has no Source database; the older side is the origin's own
+	// bytes) or not: the store decides, exactly as the comparison run has it decide
+	// (KCMResourceStore::RebuildForPair, one place since 2026-09-13).
+	const bool16 built = KCMResourceStore::RebuildForPair(KCMArmedTargetDB(), KCMArmedSourceDB(), whyNot);
 	const uint32 took = ::GetTickCount() - began;
 
 	if (!built)

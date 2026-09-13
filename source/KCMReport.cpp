@@ -7,18 +7,24 @@
 //  discipline KCMRehydrate.cpp keeps, and for the same reason: a document closed while an
 //  InterfacePtr still stands on it is a protective shutdown, not an error.
 //
+//  THE THREE SECTIONS (2026-09-13, the user's ask): the Pixel pages (pictures only), then the
+//  Story table, then the Resources table. Whatever mode the comparison ran in, the two tables are
+//  filled: the Story detail and the Resources result are BORROWED for the report when the mode
+//  did not produce them, and put back exactly as they were (StoryDetailLoan / ResourceLoan below).
+//  The Pixel pages alone cannot be borrowed - rasterising rewrites the rings, the pairing and the
+//  overflow cache the screen is showing - so outside the Pixel mode the report says so on its
+//  first page and shows the added / removed pages only.
+//
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
 #include <windows.h>				// GetTempPathW / DeleteFileW / ShellExecuteW - Windows only, like the rest of KCM's file work
 #include <shellapi.h>
-#include <shlobj.h>				// CSIDL_DESKTOPDIRECTORY (KCMOrigin.cpp does the same for the raw XML)
 #include <string>
 #include <vector>
 #include <map>
 #include <set>
-#include <ctime>
 
 #include "IApplication.h"
 #include "IBoolData.h"
@@ -26,8 +32,6 @@
 #include "IDataBase.h"
 #include "IDocument.h"
 #include "IDocumentList.h"
-#include "IDocumentUtils.h"		// QueryDocFileHandler
-#include "IDocFileHandler.h"
 #include "IGeometry.h"
 #include "IOutputPages.h"
 #include "IPageList.h"
@@ -36,27 +40,14 @@
 #include "IPDFPostProcessPrefs.h"
 #include "IPDFSecurityPrefs.h"
 #include "ISession.h"
-#include "ISpread.h"
-#include "ISpreadList.h"
 #include "ISysFileData.h"
-#include "ITextModel.h"
-#include "ITextModelCmds.h"
-#include "ITextAttrAlign.h"		// the captions are typed LEFT-ALIGNED, whatever the application's default paragraph says
-#include "ITextAttrUtils.h"		// BuildApplyTextAttrCmd
-#include "ICompositionStyle.h"		// kTextAlignLeft
-#include "CreateObject.h"			// CreateObject2 - the attribute boss
-#include "ITextAttrRealNumber.h"	// the point size of the captions
-#include "TextAttrID.h"			// kTextAttrAlignmentBoss / kTextAttrPointSizeBoss
-#include "TextID.h"				// kParaAttrStrandBoss / kCharAttrStrandBoss
 #include "SDKFileHelper.h"			// SDKFileSaveChooser - where the report goes is the user's choice
 #include "IUIFlagData.h"
 #include "IWorkspace.h"
 #include "CmdUtils.h"
 #include "ErrorUtils.h"
 #include "FileUtils.h"
-#include "PersistUtils.h"			// ::GetUIDRef
 #include "PreferenceUtils.h"		// ::QuerySessionPreferences
-#include "TransformUtils.h"		// ::InnerToParentMatrix - a page's rectangle in spread coordinates
 #include "SDKLayoutHelper.h"
 #include "UIDList.h"
 #include "Utils.h"
@@ -66,26 +57,29 @@
 #include "TextChar.h"				// kTextChar_CR
 
 #include "KCMReport.h"
+#include "KCMReportTable.h"		// the page helpers and the table sections
+#include "KCMReportPaws.h"			// the cat's trail on the first page
 #include "KCMCore.h"				// KCMIsArmed / KCMArmedTargetDB / KCMArmedSourceDB / KCMCollectPageUIDs / KCMGetCompareMode
 #include "KCMDrawEventHandler.h"	// sEntries / sOverflowT / sPrintMarks - what "changed" means, and the rings
 #include "KCMPageMap.h"			// KCMBuildPairing / KCMMapTargetToSource - the partner of a changed page
 #include "KCMOriginCompare.h"		// KCMOriginArmed / KCMOriginScopedCopy - the task-start copy, rehydrated for the report
 #include "KCMOrigin.h"				// KCMOriginLabel - "Task Start HH:MM:SS"
 #include "KCMRehydrate.h"			// KCMMarkRehydratedClean - the report document is closed without a save prompt
-#include "KCMStoryList.h"			// the Story Edits rows for the summary page
+#include "KCMStoryList.h"			// the Story Edits rows and their changes
 #include "KCMStoryKinds.h"
-#include "KCMResourceStore.h"		// GetSummary - the Resources line for the summary page
+#include "KCMStoryDiffRun.h"		// Run - the Story detail, borrowed when the mode did not produce it
+#include "KCMStoryRestore.h"		// KCMKentenKindOf - a kenten name to its kind
+#include "KCMResourceStore.h"		// the Resources result, borrowed when the mode did not produce it
+#include "KCMResourceShortValue.h"	// KCMShortResourceValue - what a value reads as, the same as the panel
+#include "KCMXmlPretty.h"			// KCMDecodePercentEscapes - a definition's key, readable
+#include "KCMModelNotify.h"		// KCMNotify - the panel is told when the borrowed Resources result goes
+#include "KCMBoundaryID.h"			// kKCMStoryEditsRebuiltMessage
 #include "KCMExternalSource.h"		// KCMExternalSourceLabel - a lent Source's name
 
 namespace
 {
 
-// ---- layout constants (points) ------------------------------------------------------------
-const PMReal kGutter     = 24.0;	// between the two pictures, and to the page edges
-const PMReal kHeaderBand = 56.0;	// the heading above the pictures (room for 18pt)
-const PMReal kCaptionH   = 26.0;	// the caption line under each picture (18pt plus leading)
-const int32  kMaxStoryRows = 40;	// Story Edits rows on the summary page before "... and N more"
-const PMReal kTextPt     = 18.0;	// the captions' size: 1.5 x the 12pt default (the user's ask, 2026-09-13)
+const int32 kMaxTableRows = 400;	// rows of one table section before "... and N more"
 
 /** One report page: a Target page (kInvalidUID for a removed page) and its partner on the
     report's Source (kInvalidUID for an added page). fBefore/fAfter are the 1-based page numbers
@@ -342,70 +336,276 @@ private:
 	PlacePrefsRestorer& operator=(const PlacePrefsRestorer&);
 };
 
-/** Type `text` into a new text frame at `bounds` (spread coordinates) on `layer`. */
-void TypeAt(SDKLayoutHelper& helper, const UIDRef& layer, const PMRect& bounds, const PMString& text)
-{
-	UIDRef story;
-	const UIDRef frame = helper.CreateTextFrame(layer, bounds, 1, kFalse, &story);
-	if (frame == UIDRef::gNull || story == UIDRef::gNull)
-		return;
-	InterfacePtr<ITextModel> model(story, UseDefaultIID());
-	InterfacePtr<ITextModelCmds> cmds(model, UseDefaultIID());
-	if (model == nil || cmds == nil)
-		return;
-	boost::shared_ptr<WideString> data(new WideString(text));
-	InterfacePtr<ICommand> insert(cmds->InsertCmd(0, data));
-	if (insert != nil)
-		CmdUtils::ProcessCommand(insert);
+// ---- the Story detail, borrowed ------------------------------------------------------------------
 
-	// Left-aligned, explicitly. Measured 2026-09-13: the report document is made from the
-	// application's defaults, and on this machine those spread every line across the frame
-	// (justified), which made the headings unreadable. The paragraph attribute is applied as an
-	// override over the whole story (kParaAttrStrandBoss), the way SnpManipulateTextModel does.
-	InterfacePtr<ITextAttrAlign> align(::CreateObject2<ITextAttrAlign>(kTextAttrAlignmentBoss));
-	if (align != nil && data->Length() > 0)
+/** Runs the text diff over the Story Edits rows for the report when the comparison's mode did
+    not (Pixel and Resources leave the rows without children), and puts every row back as it was
+    on the way out - what a row held, whether it was compared, its text counter. The panel is
+    never told, because from its point of view nothing changed.
+    ⚠Outside the Story mode the rows have already been through DropRowsWithNoContentChange, so a
+      story whose only edit is a ruby or a kenten has no row to diff; that is the Pixel mode's
+      known limit, not the report's. */
+class StoryDetailLoan
+{
+public:
+	StoryDetailLoan(IDataBase* targetDB, IDataBase* sourceDB, bool16 needed)
+		: fLent(kFalse), fCancelled(kFalse)
 	{
-		align->SetAlignment(ICompositionStyle::kTextAlignLeft);
-		InterfacePtr<ICommand> apply(Utils<ITextAttrUtils>()->BuildApplyTextAttrCmd(model, 0, static_cast<uint32>(data->Length()), align, kParaAttrStrandBoss));
-		if (apply != nil)
-			CmdUtils::ProcessCommand(apply);
+		if (!needed || targetDB == nil || sourceDB == nil)
+			return;
+		const int32 n = KCMStoryList::GetRowCount();
+		fKeep.resize(static_cast<size_t>(n));
+		for (int32 i = 0; i < n; ++i)
+		{
+			const KCMStoryRow* row = KCMStoryList::GetRow(i);
+			if (row == nil)
+				continue;
+			fKeep[i].fChanges = row->fChanges;
+			fKeep[i].fTextCompared = row->fTextCompared;
+			fKeep[i].fTargetTextCount = row->fTargetTextCount;
+		}
+		fLent = kTrue;
+		KCMStoryDiffRun::Run(targetDB, sourceDB, &fCancelled);
 	}
-	// And at kTextPt, as a character override over the whole story.
-	InterfacePtr<ITextAttrRealNumber> size(::CreateObject2<ITextAttrRealNumber>(kTextAttrPointSizeBoss));
-	if (size != nil && data->Length() > 0)
+	~StoryDetailLoan()
 	{
-		size->Set(kTextPt);
-		InterfacePtr<ICommand> apply(Utils<ITextAttrUtils>()->BuildApplyTextAttrCmd(model, 0, static_cast<uint32>(data->Length()), size, kCharAttrStrandBoss));
-		if (apply != nil)
-			CmdUtils::ProcessCommand(apply);
+		if (!fLent)
+			return;
+		const int32 n = KCMStoryList::GetRowCount();
+		for (int32 i = 0; i < n && i < static_cast<int32>(fKeep.size()); ++i)
+		{
+			KCMStoryList::SetRowChanges(i, fKeep[i].fChanges, fKeep[i].fTextCompared);
+			KCMStoryList::SetRowTargetTextCount(i, fKeep[i].fTargetTextCount);
+		}
+	}
+	bool16 WasCancelled() const { return fCancelled; }
+private:
+	struct Keep
+	{
+		std::vector<KCMStoryChange>	fChanges;
+		bool16						fTextCompared;
+		uint32						fTargetTextCount;
+		Keep() : fTextCompared(kFalse), fTargetTextCount(0) {}
+	};
+	std::vector<Keep>	fKeep;
+	bool16				fLent;
+	bool16				fCancelled;
+	StoryDetailLoan(const StoryDetailLoan&);
+	StoryDetailLoan& operator=(const StoryDetailLoan&);
+};
+
+// ---- the Resources result, borrowed -----------------------------------------------------------------
+
+/** Fills the Resources store for the report when the comparison's mode did not, and empties it
+    again on the way out. The rebuild tells the panel (FinishRebuild notifies), so the emptying
+    tells it too - a heading reading "(0)" over rows that are still drawn is the very defect that
+    notification was written for. */
+class ResourceLoan
+{
+public:
+	ResourceLoan(IDataBase* targetDB, IDataBase* sourceDB)
+		: fBorrowed(kFalse)
+	{
+		if (KCMResourceStore::HasResult())
+			return;
+		fBorrowed = kTrue;
+		KCMResourceStore::RebuildForPair(targetDB, sourceDB, fWhyNot);
+	}
+	~ResourceLoan()
+	{
+		if (!fBorrowed)
+			return;
+		KCMResourceStore::Clear();
+		KCMNotify(kKCMStoryEditsRebuiltMessage);
+	}
+	const PMString& WhyNot() const { return fWhyNot; }
+private:
+	bool16		fBorrowed;
+	PMString	fWhyNot;
+	ResourceLoan(const ResourceLoan&);
+	ResourceLoan& operator=(const ResourceLoan&);
+};
+
+// ---- the rows of the two tables ------------------------------------------------------------------
+
+/** The Story Edits rows as table rows: a heading row per story, then one row per change - the
+    older side on the left, the newer on the right, in the three pieces the panel shows. */
+void BuildStoryRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KCMReportRow>& out, int32& outStories, int32& outEdits)
+{
+	out.clear();
+	outStories = 0;
+	outEdits = 0;
+	const int32 n = KCMStoryList::GetRowCount();
+	for (int32 i = 0; i < n; ++i)
+	{
+		const KCMStoryRow* row = KCMStoryList::GetRow(i);
+		if (row == nil)
+			continue;
+		++outStories;
+		const bool16 removed = (row->fKinds & kKCMStoryKindRemoved) ? kTrue : kFalse;
+		const bool16 unpaired = (row->fKinds & kKCMStoryKindUnpaired) ? kTrue : kFalse;
+		IDataBase* const db = removed ? sourceDB : targetDB;
+
+		// The story row as the panel shows it: ID | Δ | the story's first words (with its page).
+		KCMReportRow head;
+		head.fHeading = kTrue;
+		head.fLabel.AppendNumber(static_cast<int32>(row->fStoryUID.Get()));
+		head.fLabel.SetTranslatable(kFalse);
+		if (row->fKinds & kKCMStoryKindAdded)                 head.fSign = KCMReportSign::Plus();
+		else if (removed)                                     head.fSign = KCMReportSign::Minus();
+		else if (row->fTextCompared && row->fChanges.empty()) head.fSign = KCMReportSign::Equal();
+		else                                                  head.fSign = KCMReportSign::NotEqual();
+		PMString& h = head.fLeft.fMid;
+		h.SetTranslatable(kFalse);
+		h.Append("p.");
+		h.Append(PageLabel(db, row->fPageUID));
+		h.Append("  ");
+		h.Append(row->fText);
+		out.push_back(head);
+
+		if (unpaired)
+		{
+			KCMReportRow r;
+			r.fSign = head.fSign;
+			if (removed) { r.fLeft.fMid = row->fText; r.fRight.fMid = Ascii("(removed story)"); }
+			else         { r.fLeft.fMid = Ascii("(added story)"); r.fRight.fMid = row->fText; }
+			out.push_back(r);
+			continue;
+		}
+		for (size_t c = 0; c < row->fChanges.size(); ++c)
+		{
+			const KCMStoryChange& ch = row->fChanges[c];
+			++outEdits;
+			KCMReportRow r;
+			// The change's sign, as the panel's child rows carry it: + inserted, - deleted, ≠ replaced.
+			r.fSign = (ch.fKind == KCMStoryChange::kInsert) ? KCMReportSign::Plus()
+					: (ch.fKind == KCMStoryChange::kDelete) ? KCMReportSign::Minus()
+					: KCMReportSign::NotEqual();
+			r.fLeft.fPre   = ch.fOtherTextPre;
+			r.fLeft.fMid   = ch.fOtherText;
+			r.fLeft.fPost  = ch.fOtherTextPost;
+			r.fRight.fPre  = ch.fTextPre;
+			r.fRight.fMid  = ch.fText;
+			r.fRight.fPost = ch.fTextPost;
+			// An empty middle on one side is a PLACE (the words were typed in here / taken out
+			// from here): a bar marks it, as the panel's caret does.
+			if (ch.fWhat == KCMStoryChange::kText)
+			{
+				if (r.fLeft.fMid.IsEmpty() && !r.fRight.fMid.IsEmpty())  r.fLeft.fMid = Ascii("|");
+				if (r.fRight.fMid.IsEmpty() && !r.fLeft.fMid.IsEmpty()) r.fRight.fMid = Ascii("|");
+			}
+			else if (ch.fAttrKind == kKCMStoryAttrRuby)
+			{
+				r.fLeft.fRuby = ch.fOtherRuby;   r.fLeft.fRubyGroup = ch.fOtherRubyGroup;
+				r.fRight.fRuby = ch.fRuby;       r.fRight.fRubyGroup = ch.fRubyGroup;
+			}
+			else if (ch.fAttrKind == kKCMStoryAttrKenten)
+			{
+				// The value is a KIND NAME ("BlackCircle"); a kind this build can write is drawn
+				// as the mark itself, any other (a custom mark) is named after the text.
+				int16 kind = 0;
+				if (!ch.fOtherRuby.IsEmpty())
+				{
+					if (KCMKentenKindOf(ch.fOtherRuby, kind)) r.fLeft.fKentenKind = kind;
+					else { r.fLeft.fNote = Ascii(" ["); r.fLeft.fNote.Append(ch.fOtherRuby); r.fLeft.fNote.Append("]"); }
+				}
+				if (!ch.fRuby.IsEmpty())
+				{
+					if (KCMKentenKindOf(ch.fRuby, kind)) r.fRight.fKentenKind = kind;
+					else { r.fRight.fNote = Ascii(" ["); r.fRight.fNote.Append(ch.fRuby); r.fRight.fNote.Append("]"); }
+				}
+			}
+			else	// footnote / endnote: the value is the number the page prints
+			{
+				r.fLeft.fNote = ch.fOtherRuby;
+				r.fRight.fNote = ch.fRuby;
+			}
+			out.push_back(r);
+			if (static_cast<int32>(out.size()) >= kMaxTableRows)
+				break;
+		}
+		if (static_cast<int32>(out.size()) >= kMaxTableRows)
+		{
+			KCMReportRow more;
+			more.fLeft.fMid = Ascii("... (the table stops here)");
+			out.push_back(more);
+			break;
+		}
 	}
 }
 
-/** The rectangle of the n-th page of the report document, in its spread's coordinates, and
-    the spread's content layer. kFalse when the document has no such page. */
-bool16 ReportPageAt(SDKLayoutHelper& helper, IDataBase* db, int32 n, PMRect& outPageRect, UIDRef& outLayer)
+/** The Resources rows as table rows: a heading row per definition, then one row per differing
+    attribute - the older value on the left, the newer on the right, shortened as the panel
+    shortens them. */
+void BuildResourceRows(std::vector<KCMReportRow>& out)
 {
-	InterfacePtr<ISpreadList> spreads(db, db->GetRootUID(), UseDefaultIID());
-	if (spreads == nil || n < 0 || n >= spreads->GetSpreadCount())
-		return kFalse;
-	const UIDRef spreadRef(db, spreads->GetNthSpreadUID(n));
-	InterfacePtr<ISpread> spread(spreadRef, UseDefaultIID());
-	if (spread == nil || spread->GetNumPages() < 1)
-		return kFalse;
-	const UIDRef pageRef(db, spread->GetNthPageUID(0));
-	InterfacePtr<IGeometry> geometry(pageRef, UseDefaultIID());
-	if (geometry == nil)
-		return kFalse;
-	outPageRect = geometry->GetStrokeBoundingBox(::InnerToParentMatrix(geometry));
-	outLayer = helper.GetActiveSpreadLayerRef(spreadRef);
-	return (outLayer != UIDRef::gNull) ? kTrue : kFalse;
+	out.clear();
+	const int32 n = KCMResourceStore::GetChangeCount();
+	for (int32 i = 0; i < n; ++i)
+	{
+		PMString kind, key;
+		KCMResourceChangeKind what = kKCMResourceChanged;
+		if (!KCMResourceStore::GetNthChange(i, kind, key, what))
+			continue;
+		// The definition row as the panel shows it: Kind | Δ | the key (its escapes read).
+		KCMReportRow head;
+		head.fHeading = kTrue;
+		head.fLabel = kind;
+		head.fSign = (what == kKCMResourceAdded) ? KCMReportSign::Plus()
+				   : (what == kKCMResourceRemoved) ? KCMReportSign::Minus()
+				   : KCMReportSign::NotEqual();
+		head.fLeft.fMid.SetUTF8String(KCMDecodePercentEscapes(key.GetUTF8String()));
+		head.fLeft.fMid.SetTranslatable(kFalse);
+		out.push_back(head);
+
+		const int32 attrs = KCMResourceStore::GetNthAttrCount(i);
+		if (attrs == 0)
+		{
+			KCMReportRow r;
+			r.fSign = head.fSign;
+			if (what == kKCMResourceAdded)        { r.fLeft.fMid = Ascii("-"); r.fRight.fMid = Ascii("(new definition)"); }
+			else if (what == kKCMResourceRemoved) { r.fLeft.fMid = Ascii("(definition removed)"); r.fRight.fMid = Ascii("-"); }
+			else                                  { r.fLeft.fMid = Ascii("(the difference is inside a child element)"); }
+			out.push_back(r);
+		}
+		for (int32 j = 0; j < attrs; ++j)
+		{
+			PMString name, source, target;
+			if (!KCMResourceStore::GetNthAttr(i, j, name, source, target))
+				continue;
+			// The attribute row as the panel's child rows: the name in the first column, then the
+			// sign (+ the Source lacks it, - the Target lacks it, ≠ both have it and differ).
+			KCMReportRow r;
+			r.fLabel = name;
+			r.fSign = source.IsEmpty() ? KCMReportSign::Plus()
+					: target.IsEmpty() ? KCMReportSign::Minus()
+					: KCMReportSign::NotEqual();
+			r.fLeft.fMid  = source.IsEmpty() ? Ascii("-") : KCMShortResourceValue(source);
+			r.fRight.fMid = target.IsEmpty() ? Ascii("-") : KCMShortResourceValue(target);
+			out.push_back(r);
+			if (static_cast<int32>(out.size()) >= kMaxTableRows)
+				break;
+		}
+		if (static_cast<int32>(out.size()) >= kMaxTableRows)
+		{
+			KCMReportRow more;
+			more.fLeft.fMid = Ascii("... (the table stops here)");
+			out.push_back(more);
+			break;
+		}
+	}
 }
 
-/** Lay the report out: the summary page, then one page per pair. Every interface on the
-    report document is released when this returns; the caller then exports and closes it. */
+// ---- the pages ---------------------------------------------------------------------------------
+
+/** Lay the report out: the first page, the picture pages, the Story table, the Resources table.
+    Every interface on the report document is released when this returns; the caller then
+    exports and closes it. */
 bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB,
 				   const std::vector<Pair>& pairs, const IDFile& beforePDF, const IDFile& afterPDF,
 				   const PMReal& pageW, const PMReal& pageH, const PMString& sourceName,
+				   const std::vector<KCMReportRow>& storyRows, const PMString& storyHeading,
+				   const std::vector<KCMReportRow>& resourceRows, const PMString& resourceHeading,
 				   PMString& why)
 {
 	SDKLayoutHelper helper;
@@ -418,142 +618,75 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 	InterfacePtr<IPDFPlacePrefs> currentPlace(workspace, UseDefaultIID());
 	PlacePrefsRestorer restorePlace(currentPlace);
 
-	// ---- the summary page --------------------------------------------------------------
+	// ---- the first page: three lines, and Before / After at the foot (the user's ask) ----------
 	{
 		PMRect page;
 		UIDRef layer;
-		if (!ReportPageAt(helper, reportDB, 0, page, layer))
+		if (!KCMReportPageAt(helper, reportDB, 0, page, layer))
 		{
 			why = Ascii("the report document has no first page");
 			return kFalse;
 		}
 		PMString text;
 		text.SetTranslatable(kFalse);
-		text.Append("Kohaku Change Marker - Before / After report");
+		text.Append("Kohaku Change Marker - Before / After PDF Report");
 		EndParagraph(text);
 		text.Append("Before (Source): "); text.Append(sourceName); EndParagraph(text);
 		text.Append("After (Target): ");  text.Append(targetName); EndParagraph(text);
+		if (KCMGetCompareMode() != kKCMModePixel)
 		{
-			const KCMCompareMode mode = KCMGetCompareMode();
-			text.Append("Mode: ");
-			text.Append(mode == kKCMModePixel ? "Pixel Changes" : (mode == kKCMModeStory ? "Story Changes" : "Resources Changes"));
+			// The pictures cannot be borrowed the way the two tables are (the file comment says why).
+			EndParagraph(text);
+			text.Append("Pixel: not compared in this mode (only added / removed pages are shown)");
 			EndParagraph(text);
 		}
-		{
-			int32 ringed = 0, added = 0, removed = 0;
-			for (size_t i = 0; i < pairs.size(); ++i)
-			{
-				if (pairs[i].fTarget == kInvalidUID)      ++removed;
-				else if (pairs[i].fSource == kInvalidUID) ++added;
-				else                                      ++ringed;
-			}
-			text.Append("Pages: changed="); text.AppendNumber(ringed);
-			text.Append("  added=");        text.AppendNumber(added);
-			text.Append("  removed=");      text.AppendNumber(removed);
-			EndParagraph(text);
-		}
-		{
-			char stamp[64] = { 0 };
-			time_t now = ::time(nil);
-			struct tm local;
-			::localtime_s(&local, &now);
-			::strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S", &local);
-			text.Append("Made: "); text.Append(stamp); EndParagraph(text);
-		}
-		EndParagraph(text);
+		KCMReportTypeAt(helper, layer, PMRect(page.Left() + kKCMReportGutter, page.Top() + kKCMReportGutter, page.Right() - kKCMReportGutter, page.Bottom() - kKCMReportGutter - kKCMReportCaptionH - 8), text, kKCMReportHeadingPt);
 
-		// Story Edits, as the panel lists them: the story's first words and what kind of change.
-		const int32 rows = KCMStoryList::GetRowCount();
-		text.Append("Story Edits: "); text.AppendNumber(rows); EndParagraph(text);
-		for (int32 i = 0; i < rows && i < kMaxStoryRows; ++i)
-		{
-			const KCMStoryRow* row = KCMStoryList::GetRow(i);
-			if (row == nil)
-				continue;
-			text.Append("  ");
-			if (row->fKinds & kKCMStoryKindAdded)        text.Append("+ ");
-			else if (row->fKinds & kKCMStoryKindRemoved) text.Append("- ");
-			else                                         text.Append("* ");
-			text.Append(row->fText);
-			text.Append("  [");
-			bool16 first = kTrue;
-			if (row->fKinds & kKCMStoryKindText)    { text.Append("text"); first = kFalse; }
-			if (row->fKinds & kKCMStoryKindAttr)    { text.Append(first ? "attr" : ", attr"); first = kFalse; }
-			if (row->fKinds & kKCMStoryKindOther)   { text.Append(first ? "other" : ", other"); first = kFalse; }
-			if (row->fKinds & kKCMStoryKindAdded)   { text.Append(first ? "added" : ", added"); first = kFalse; }
-			if (row->fKinds & kKCMStoryKindRemoved) { text.Append(first ? "removed" : ", removed"); first = kFalse; }
-			text.Append("]");
-			EndParagraph(text);
-		}
-		if (rows > kMaxStoryRows)
-		{
-			text.Append("  ... and "); text.AppendNumber(rows - kMaxStoryRows); text.Append(" more");
-			EndParagraph(text);
-		}
-		EndParagraph(text);
-		{
-			PMString resources;
-			KCMResourceStore::GetSummary(resources);
-			text.Append("Resources: "); text.Append(resources); EndParagraph(text);
-		}
-		const PMRect box(page.Left() + kGutter, page.Top() + kGutter, page.Right() - kGutter, page.Bottom() - kGutter);
-		TypeAt(helper, layer, box, text);
+		// Left "Before", right "After", where the two pictures stand on the pages that follow.
+		const PMReal footTop = page.Bottom() - kKCMReportGutter - kKCMReportCaptionH;
+		KCMReportTypeAt(helper, layer, PMRect(page.Left() + kKCMReportGutter,              footTop, page.Left() + kKCMReportGutter + pageW,          page.Bottom() - kKCMReportGutter), Ascii("Before"), kKCMReportHeadingPt);
+		KCMReportTypeAt(helper, layer, PMRect(page.Left() + 2 * kKCMReportGutter + pageW,  footTop, page.Left() + 2 * kKCMReportGutter + 2 * pageW,  page.Bottom() - kKCMReportGutter), Ascii("After"),  kKCMReportHeadingPt);
+
+		// And the cat's trail across the page (the user's ask, 2026-09-13).
+		KCMReportDrawPawTrail(reportDB, layer, page);
 	}
 
-	// ---- one page per pair ---------------------------------------------------------------
+	// ---- one page per pair: the two pictures and NOTHING ELSE (the user's ask, 2026-09-13) ------
 	const IDFile beforeFile = beforePDF;
 	const IDFile afterFile = afterPDF;
 	for (size_t i = 0; i < pairs.size(); ++i)
 	{
 		PMRect page;
 		UIDRef layer;
-		if (!ReportPageAt(helper, reportDB, static_cast<int32>(i) + 1, page, layer))
+		if (!KCMReportPageAt(helper, reportDB, static_cast<int32>(i) + 1, page, layer))
 		{
 			why = Ascii("the report document ran out of pages");
 			return kFalse;
 		}
 		const Pair& pair = pairs[i];
-		const PMReal top = page.Top() + kHeaderBand;
-		const PMRect leftBox (page.Left() + kGutter,              top, page.Left() + kGutter + pageW,              top + pageH);
-		const PMRect rightBox(page.Left() + 2 * kGutter + pageW,  top, page.Left() + 2 * kGutter + 2 * pageW,      top + pageH);
-
-		// the heading: "p.5   Before: old.indd p.3   After: new.indd p.5"
-		PMString head;
-		head.SetTranslatable(kFalse);
-		head.Append("p.");
-		head.Append(PageLabel(pair.fTarget != kInvalidUID ? targetDB : sourceDB,
-							  pair.fTarget != kInvalidUID ? pair.fTarget : pair.fSource));
-		head.Append("     Before: "); head.Append(sourceName);
-		if (pair.fSource != kInvalidUID) { head.Append(" p."); head.Append(PageLabel(sourceDB, pair.fSource)); }
-		else                             head.Append(" - (added: no page there)");
-		head.Append("     After: "); head.Append(targetName);
-		if (pair.fTarget != kInvalidUID) { head.Append(" p."); head.Append(PageLabel(targetDB, pair.fTarget)); }
-		else                             head.Append(" - (removed: no page here)");
-		TypeAt(helper, layer, PMRect(page.Left() + kGutter, page.Top() + 12, page.Right() - kGutter, page.Top() + kHeaderBand - 4), head);
-
-		// the two pictures
+		const PMReal top = page.Top() + kKCMReportHeaderBand;
+		const PMRect leftBox (page.Left() + kKCMReportGutter,              top, page.Left() + kKCMReportGutter + pageW,              top + pageH);
+		const PMRect rightBox(page.Left() + 2 * kKCMReportGutter + pageW,  top, page.Left() + 2 * kKCMReportGutter + 2 * pageW,      top + pageH);
 		if (pair.fSource != kInvalidUID && pair.fBefore > 0)
 		{
 			if (!SetPlacePage(pair.fBefore, currentPlace, why))
 				return kFalse;
 			helper.PlaceFileInFrame(beforeFile, layer, leftBox, kSuppressUI);
 		}
-		else
-			TypeAt(helper, layer, PMRect(leftBox.Left(), leftBox.Top() + pageH / 2 - 12, leftBox.Right(), leftBox.Top() + pageH / 2 + 12), Ascii("(added - nothing on the Before side)"));
-
 		if (pair.fTarget != kInvalidUID && pair.fAfter > 0)
 		{
 			if (!SetPlacePage(pair.fAfter, currentPlace, why))
 				return kFalse;
 			helper.PlaceFileInFrame(afterFile, layer, rightBox, kSuppressUI);
 		}
-		else
-			TypeAt(helper, layer, PMRect(rightBox.Left(), rightBox.Top() + pageH / 2 - 12, rightBox.Right(), rightBox.Top() + pageH / 2 + 12), Ascii("(removed - nothing on the After side)"));
-
-		// the captions
-		TypeAt(helper, layer, PMRect(leftBox.Left(),  leftBox.Bottom() + 2,  leftBox.Right(),  leftBox.Bottom() + kCaptionH),  Ascii("Before (comparison marks printed)"));
-		TypeAt(helper, layer, PMRect(rightBox.Left(), rightBox.Bottom() + 2, rightBox.Right(), rightBox.Bottom() + kCaptionH), Ascii("After"));
 	}
+
+	// ---- the Story table, then the Resources table ----------------------------------------------
+	int32 next = static_cast<int32>(pairs.size()) + 1;
+	if (!KCMReportWriteTable(reportDB, next, storyHeading, Ascii("ID"), storyRows, next, why))
+		return kFalse;
+	if (!KCMReportWriteTable(reportDB, next, resourceHeading, Ascii("Kind"), resourceRows, next, why))
+		return kFalse;
 
 	return kTrue;		// the place preferences go back as restorePlace leaves scope
 }
@@ -570,7 +703,7 @@ bool16 ReportPath(IDataBase* targetDB, IDFile& outFile, PMString& why)
 {
 	why.Clear();
 	SDKFileSaveChooser chooser;
-	chooser.SetTitle(Ascii("Export Before/After Report"));
+	chooser.SetTitle(Ascii("Export Before/After PDF Report"));
 	chooser.SetFilename(SuggestedReportName(targetDB));
 	chooser.AddFilter('CARO', 'PDF ', "pdf", Ascii("PDF (pdf)"));
 	chooser.ShowDialog();
@@ -627,7 +760,8 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	}
 
 	// The Source for the report: the armed Source, or the task-start copy rehydrated for the
-	// occasion (its page pairing works through the labels the copy's pages carry).
+	// occasion (its page pairing works through the labels the copy's pages carry; while the copy
+	// stands, the uid translators know it, so the borrowed story diff reads it as the run did).
 	KCMOriginScopedCopy copy;
 	IDataBase* sourceDB = KCMArmedSourceDB();
 	PMString sourceName;
@@ -663,13 +797,8 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 
 	std::vector<Pair> pairs;
 	CollectPairs(targetDB, sourceDB, pairs);
-	if (pairs.empty())
-	{
-		outMessage = Ascii("No changed pages - nothing to report.");
-		return kFalse;
-	}
 
-	// Where it goes - asked FIRST, so a cancel costs nothing (no export, no rehydration wasted).
+	// Where it goes - asked FIRST, so a cancel costs nothing (no export, no diff, no rehydration wasted).
 	IDFile reportFile;
 	{
 		PMString why;
@@ -677,6 +806,38 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 		{
 			outMessage = why.IsEmpty() ? Ascii("Report cancelled.") : why;
 			return kFalse;
+		}
+	}
+
+	// ---- the two tables' rows, read while the borrowed results stand --------------------------
+	// (Both loans give back on leaving this block, before any document is exported or closed.)
+	std::vector<KCMReportRow> storyRows, resourceRows;
+	PMString storyHeading, resourceHeading;
+	{
+		StoryDetailLoan storyLoan(targetDB, sourceDB, (KCMGetCompareMode() != kKCMModeStory) ? kTrue : kFalse);
+		int32 stories = 0, edits = 0;
+		if (storyLoan.WasCancelled())
+		{
+			KCMReportRow r;
+			r.fLeft.fMid = Ascii("(the story comparison was cancelled)");
+			storyRows.push_back(r);
+			storyHeading = Ascii("Story Changes (cancelled)");
+		}
+		else
+		{
+			BuildStoryRows(targetDB, sourceDB, storyRows, stories, edits);
+			storyHeading = Ascii("Story Changes: ");
+			storyHeading.AppendNumber(stories); storyHeading.Append(stories == 1 ? " story, " : " stories, ");
+			storyHeading.AppendNumber(edits);   storyHeading.Append(edits == 1 ? " edit" : " edits");
+		}
+
+		ResourceLoan resourceLoan(targetDB, sourceDB);
+		BuildResourceRows(resourceRows);
+		resourceHeading = Ascii("Resources Changes: ");
+		{
+			PMString summary;
+			KCMResourceStore::GetSummary(summary);
+			resourceHeading.Append(summary);
 		}
 	}
 
@@ -771,12 +932,13 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	KCMDrawEventHandler::sReportExport = kFalse;
 
 	// ---- the report document ---------------------------------------------------------------
+	// Made with the first page and the picture pages; the two tables append their own.
 	UIDRef reportDoc = UIDRef::gNull;
 	if (ok)
 	{
 		SDKLayoutHelper helper;
-		const PMReal reportW = 2 * pageW + 3 * kGutter;
-		const PMReal reportH = pageH + kHeaderBand + kCaptionH + 2 * kGutter;
+		const PMReal reportW = 2 * pageW + 3 * kKCMReportGutter;
+		const PMReal reportH = pageH + kKCMReportHeaderBand + kKCMReportCaptionH + 2 * kKCMReportGutter;
 		reportDoc = helper.CreateDocument(kSuppressUI, reportW, reportH, static_cast<int32>(pairs.size()) + 1, 1, 0);
 		if (reportDoc == UIDRef::gNull)
 		{
@@ -785,11 +947,14 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 		}
 	}
 	if (ok)
-		ok = BuildReport(reportDoc.GetDataBase(), targetDB, sourceDB, pairs, beforePDF, afterPDF, pageW, pageH, sourceName, why);
+		ok = BuildReport(reportDoc.GetDataBase(), targetDB, sourceDB, pairs, beforePDF, afterPDF, pageW, pageH, sourceName,
+						 storyRows, storyHeading, resourceRows, resourceHeading, why);
+	int32 pageCount = 0;
 	if (ok)
 	{
 		std::vector<UID> all;
 		KCMCollectPageUIDs(reportDoc.GetDataBase(), all);
+		pageCount = static_cast<int32>(all.size());
 		ok = ExportPagesToPDF(reportDoc.GetDataBase(), all, reportFile, why);
 	}
 	CloseReportDocument(reportDoc);
@@ -807,7 +972,7 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	::ShellExecuteW(nil, L"open", WidePath(reportFile).c_str(), nil, nil, SW_SHOWNORMAL);
 
 	outMessage = Ascii("Report: ");
-	outMessage.AppendNumber(static_cast<int32>(pairs.size()) + 1);
+	outMessage.AppendNumber(pageCount);
 	outMessage.Append(" pages -> ");
 	{
 		PMString path;

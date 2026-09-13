@@ -15,9 +15,12 @@
 //  reason: laying out text is the one part of this feature that can be built and run OUTSIDE
 //  InDesign, so it is kept free of them and the offline harness (work/kcm-attrdiff-test) tests it.
 //
-//  ★IT LIVES IN THE UI HALF even though it uses no UI at all. The model and the UI are separate
-//  plug-ins, so a UI file cannot call a model function - the boundary is the Facade. A copy in the
-//  model would be a second copy of the same rules.
+//  ★IT LIVES IN source/ AND IS COMPILED INTO BOTH PLUG-INS (moved from ui/ on 2026-09-13, when
+//  the PDF report - model side - needed KCMDecodePercentEscapes for the Resources section). The
+//  model and the UI are separate plug-ins, so a UI file cannot call a model function - the
+//  boundary is the Facade; but a file that uses no SDK type and no plug-in state can be built
+//  into each of them from ONE source, which is not a second copy of the rules. Both vcxprojs
+//  (real and mirror) list this .cpp; the offline harness work/kcm-attrdiff-test builds it too.
 //
 //  ⚠**UTF-8 IN, UTF-8 OUT.** Every character it inserts or tests for is ASCII (`<`, `>`, `/`,
 //  spaces, newlines), and no ASCII byte can occur inside a multi-byte UTF-8 sequence - so a

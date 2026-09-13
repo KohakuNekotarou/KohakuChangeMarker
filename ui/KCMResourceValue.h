@@ -73,21 +73,10 @@
 */
 bool16 KCMShowSelectedResource(int32 row, int32 attrIndex);
 
-/** What a reader sees of one attribute value: everything after the last `/`.
-
-	★★IDML writes a reference to another definition as a PATH, and the part that identifies it is
-	the tail: `$ID/[No paragraph style]` is read as **[No paragraph style]**, `ParagraphStyle/aaa`
-	as **aaa** (2026-09-09, the user: "for the Dif side, if there is a `/`, show the last one").
-	The head is the namespace and the kind, and the Kind column already says the kind.
-
-	⚠**A DISPLAY RULE, NOT A MODEL ONE.** IKCMResourcesFacade still hands out the whole value:
-	that string is the document's own, and it is what pairs the two sides. This shortens one cell.
-	⚠**Nothing without a `/` is touched**, and a value ENDING in `/` is left whole rather than
-	  shortened to nothing.
-
-	Used by the list's attribute rows and by the band above them, so the two never disagree.
-*/
-PMString KCMShortResourceValue(const PMString& value);
+// KCMShortResourceValue (what a reader sees of one attribute value) moved to the shared header
+// source/KCMResourceShortValue.h on 2026-09-13, when the PDF report (model side) needed the same
+// rule. The callers here keep including this file and get it through this line.
+#include "KCMResourceShortValue.h"
 
 /** Empty the band.
 

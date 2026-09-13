@@ -55,6 +55,34 @@
   保存ダイアログは**書き出しの前**に出す（キャンセルが無料）。配置設定の復元は `PlacePrefsRestorer` のデストラクタ＝途中で失敗しても戻る。
   - 訂正:
 
+## 2b. 3部構成への拡張（Export Before/After **PDF** Report・2026-09-13 午後）
+
+- **REP-10** メニュー名は「Export Before/After PDF Report」（ユーザー指示「Report の前に PDF を。メニュー名も」）。1P目のタイトルも `Before / After PDF Report`。
+  - 訂正:
+
+- **REP-11** 1P目は**3行だけ**（タイトル／`Before (Source): 名前`／`After (Target): 名前`）。**最下部に、左の絵の位置に「Before」、右の絵の位置に「After」**。
+  旧 REP-02 の Mode・Pages・Made・Story Edits の行・Resources の行は撤去。Pixel モード以外では 4 行目に `Pixel: not compared in this mode (only added / removed pages are shown)`。
+  - 訂正:
+
+- **REP-12** Pixel の変更ページ（REP-03）には**文字を一切入れない**＝見出し・注記・キャプションを撤去。追加／削除ページの空側も白紙のまま（ユーザー指示「実際のレイアウト画面が配置されているほうには文字情報なにもいりません」）。
+  - 訂正:
+
+- **REP-13** ★**Story の表**＝Pixel のページの後に、見出し `Story Changes: N stories, M edits` と**2列の表**（左＝Source、右＝Target）。ストーリーごとに見出し行 `p.<番号>  <冒頭の語句>  [text / attr / added story / removed story / text agrees]`、変更1件ごとに1行。
+  セルは**パネルの3片**（前の文脈・変わった部分・後の文脈）で、**文脈は 40% tint・変わった部分は 100%**。挿入で左が空／削除で右が空の中央片は `|`（パネルのキャレットと同じ「場所」の印）。
+  **ルビ**＝中央片に本物のルビ（`KCMApplyRuby`）、**圏点**＝本物の圏点（`KCMApplyKentenKind`。書けない種類は `[名前]` を上付きで）、**脚注／文末脚注**＝番号を上付きで中央片の直後に。アンカー付きオブジェクトは抜粋の ⚓ のまま。追加／削除ストーリーは1行（無い側に `(added story)`／`(removed story)`）。
+  - 訂正:
+
+- **REP-14** ★**Resources の表**＝Story の後に、見出し `Resources Changes: <要約>` と同じ2列の表。定義ごとに見出し行 `<Kind>  <Key（%エスケープ復号）>  [added / removed / changed]`、差のある属性ごとに1行（左＝`名前: 旧値`／右＝`名前: 新値`・片側に無ければ `-`・値はパネルと同じ短縮 `KCMShortResourceValue`）。属性差 0 の Changed は `(the difference is inside a child element)`。
+  - 訂正:
+
+- **REP-15** ★**どのモードで比較していても表2つは出る**＝Story モード以外では `KCMStoryDiffRun::Run` を報告書のために回し、終わったら各行の子・fTextCompared・fTargetTextCount を元に戻す（`StoryDetailLoan`）。Resources の結果が無ければ `KCMResourceStore::RebuildForPair` で作り、終わったら `Clear`＋通知（`ResourceLoan`）。
+  ⚠Pixel のページだけは借りられない（ラスタ化は画面のリング・対応表・あふれキャッシュを作り替える）＝Pixel モード以外では出さず、1P目に書く。
+  ⚠Pixel モードの Story 行は `DropRowsWithNoContentChange` を通った後なので、ルビだけ・圏点だけのストーリーは行が無い（Pixel モードの既知の限界）。
+  - 訂正:
+
+- **REP-16** 表の作り方＝`KCMReportTable.cpp`。節の先頭ページに見出し（18pt）と全幅のテキストフレーム → `ITableUtils::InsertTable`（2列・行の高さ 0＝自動）→ セルは `ITableModel::QueryCellContentBoss`→`ITextStoryThread::GetTextStart` の位置に `ITextModelCmds::InsertCmd`、属性は範囲ごとに（14pt・左揃え・tint・上付き・ルビ・圏点）→ `ITextUtils::IsOverset` の間、`kNewSpreadCmdBoss` でページを足し `kTextLinkCmdBoss` で連結（上限 200 ページ）。表の行数は節ごと 400 行で打ち切り（`... (the table stops here)`）。
+  - 訂正:
+
 ## 3. やっていないこと
 
-ページの中の差分行（Story Edits をページ別に振る）／全ページ出力／プリセットの選択 UI／ページ内の変更領域の枠（右側のリングで代替）。
+ページの中の差分行（Story Edits をページ別に振る）／全ページ出力／プリセットの選択 UI／ページ内の変更領域の枠（右側のリングで代替）／Story／Resources モードで Pixel の絵を出すこと（REP-15）。

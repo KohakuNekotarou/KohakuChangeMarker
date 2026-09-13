@@ -1502,8 +1502,9 @@ static void KCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 //    there and paste them here, never the other way round** -- edited on one side alone, the tool
 //    stamps one paw while its own icon shows a different one ([[one-question-one-place]]).
 //========================================================================================
-static const int32 kKCMPawPoints = 16;
-static const double kKCMPawOutlines[5][kKCMPawPoints][2] =
+// Not static since 2026-09-13: the PDF report's first page walks a trail of these paws as real
+// spline items (KCMReportPaws.cpp), from this table and no other (declared in the header).
+const double kKCMPawOutlines[kKCMPawOutlineCount][kKCMPawPoints][2] =
 {
 	{	// the pad
 		{  0.0000, -0.0085 }, {  0.0932,  0.0014 }, {  0.1645,  0.0618 }, {  0.2189,  0.1356 },
@@ -1588,7 +1589,8 @@ IPMFont* KCMQueryMarkFont()
 //    a shade and both be right.
 //  ⚠ONE PLACE ANSWERS "what colour is this paw", so the layout and the thumbnail cannot drift.
 //========================================================================================
-static void KCMPawColours(int32 colour,
+// Not static since 2026-09-13: the report's paw trail (KCMReportPaws.cpp) asks it too.
+void KCMPawColours(int32 colour,
 	uint8& inkR, uint8& inkG, uint8& inkB,
 	uint8& fillR, uint8& fillG, uint8& fillB)
 {

@@ -601,4 +601,18 @@ class IPMFont;
 //   fetch is main-thread only; the reason is at the definition). Callers skip their text then.
 IPMFont* KCMQueryMarkFont();
 
+// ---- the cat paw's shape and shades, shared with the PDF report (2026-09-13) -----------------
+// The paw is a TABLE of five closed outlines (a pad and four toes), sixteen points each, in units
+// of the paw's size and measured from its centre; the drawing turns each into a closed Catmull-Rom
+// spline. The table's story and its one source of truth (work/kcm-make-paw-icons.ps1) are at its
+// definition. The report walks a trail of paws over its first page as real spline items
+// (KCMReportPaws.cpp) - from THIS table, so the report's paw and the tool's are one shape.
+const int32 kKCMPawPoints = 16;
+const int32 kKCMPawOutlineCount = 5;
+extern const double kKCMPawOutlines[kKCMPawOutlineCount][kKCMPawPoints][2];
+
+/** The two shades one paw is drawn in: ink (the word beside it) and fill (the paw itself, the ink
+    mixed towards white). colour is kKCMPawColourRed or kKCMPawColourBlue (KCMConstants.h). */
+void KCMPawColours(int32 colour, uint8& inkR, uint8& inkG, uint8& inkB, uint8& fillR, uint8& fillG, uint8& fillB);
+
 #endif // __KCMDrawEventHandler_h__

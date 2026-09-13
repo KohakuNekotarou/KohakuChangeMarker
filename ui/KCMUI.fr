@@ -1159,11 +1159,11 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMExportChangedPagesMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Export Before/After Report" on the panel flyout (popup) menu. Plain command: writes one
-		// PDF - a summary page, then every changed page of the running comparison with the older
-		// version on the left and the newer (comparison marks printed) on the right - next to the
-		// Target document, and opens it. Enabled only while a comparison is active. Work in
-		// KCMReport.cpp (2026-09-13).
+		// "Export Before/After PDF Report" on the panel flyout (popup) menu. Plain command: writes
+		// one PDF - a first page, then every changed page of the pixel comparison with the older
+		// version (comparison marks printed) on the left and the newer on the right, then the Story
+		// table and the Resources table - where the save dialog says, and opens it. Enabled only
+		// while a comparison is active. Work in KCMReport.cpp / KCMReportTable.cpp (2026-09-13).
 		kKCMPopupExportReportActionID,
 		kKCMPopupMenuPath,
 		kKCMExportReportMenuItemPosition,

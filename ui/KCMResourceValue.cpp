@@ -19,8 +19,7 @@
 #include "Utils.h"					// Utils<IKCMResourcesFacade>()
 #include "IKCMResourcesFacade.h"	// GetNthChange / GetNthAttrCount / GetNthAttr
 #include "KCMUIShared.h"			// KCMFindPanelWidget
-#include "KCMXmlPretty.h"			// KCMDecodePercentEscapes - `%3a` is a colon, not a mojibake
-#include "KCMResourceValue.h"
+#include "KCMResourceValue.h"		// (brings KCMShortResourceValue from the shared header)
 
 namespace
 {
@@ -92,33 +91,8 @@ bool16 BandHoldsOurText()
 
 }	// anonymous namespace
 
-//----------------------------------------------------------------------------------------
-// KCMShortResourceValue (declared in KCMResourceValue.h)
-//----------------------------------------------------------------------------------------
-PMString KCMShortResourceValue(const PMString& value)
-{
-	// ★PMString's own search, not a loop over bytes: it counts CHARACTERS and is multibyte-safe,
-	//   which matters because a definition can be called "見出し/大". The product uses it the same
-	//   way to cut a suffix (MediaLocation.h:84, AnimationUIManagePresetsDialogObserver.cpp:308).
-	const CharCounter cut = value.LastIndexOfCharacter('/');
-
-	// No separator, or nothing after the last one: the value stands as it is (but still gets its
-	// escapes read - see below). ⚠The second case is the guard that matters: shortening "a/" to ""
-	// would replace a real value with a blank cell.
-	PMString shortened(value);
-	if (cut >= 0 && cut + 1 < value.CharCount())
-		shortened.Remove(0, cut + 1);
-
-	// ★★TRIMMED FIRST, DECODED SECOND, and the order is not arbitrary: the `/` this cut at is the
-	//   exporter's own separator, written plain, while a `/` INSIDE a name arrives as `%2f`.
-	//   Decoding first would manufacture a separator that the exporter deliberately escaped, and
-	//   the cut would then land inside somebody's style name.
-	// ★What this undoes: `スタイルグループ 1%3a段落スタイル 1` reads as `スタイルグループ 1:段落スタイル 1`
-	//   (KCMXmlPretty.h carries the measurement and why it is not an encoding fault).
-	shortened.SetUTF8String(KCMDecodePercentEscapes(shortened.GetUTF8String()));
-	shortened.SetTranslatable(kFalse);
-	return shortened;
-}
+// (KCMShortResourceValue stood here until 2026-09-13; it is now the inline function in
+//  source/KCMResourceShortValue.h, shared with the model's PDF report.)
 
 //----------------------------------------------------------------------------------------
 // KCMShowSelectedResource (declared in KCMResourceValue.h)

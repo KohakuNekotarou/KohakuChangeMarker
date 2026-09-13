@@ -979,9 +979,10 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			}
 			break;
 
-		// Flyout "Export Before/After Report": the changed pages side by side as one PDF, written
-		// next to the Target and opened (KCMReport.cpp). The model builds it and says where it went,
-		// or why it could not; either way the words go to the status line.
+		// Flyout "Export Before/After PDF Report": the changed pages side by side, then the Story
+		// and the Resources tables, as one PDF written where the save dialog says and opened
+		// (KCMReport.cpp). The model builds it and says where it went, or why it could not; either
+		// way the words go to the status line.
 		case kKCMPopupExportReportActionID:
 			{
 				PMString reportMsg;

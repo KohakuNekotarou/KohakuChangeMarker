@@ -65,8 +65,19 @@ namespace KCMResourceStore
 	    @param sourceXml the origin's export. Empty refuses. */
 	bool16	RebuildWithSourceBytes(IDataBase* targetDB, const KCMResourceBytes& sourceXml, PMString& whyNot);
 
+	/** Rebuild for a pair whose OLDER side may be the Task Start origin: the origin's own XML when
+	    an origin stands as the older side (a run in progress on its copy, or an armed origin
+	    pair), otherwise an export of sourceDB. ★ONE PLACE for that choice (2026-09-13): it stood
+	    in KCMCore.cpp (the comparison run) and KCMResourceDiff.cpp (app.kcmResourceDiff) as two
+	    copies of the same `if`, and the PDF report would have been the third. */
+	bool16	RebuildForPair(IDataBase* targetDB, IDataBase* sourceDB, PMString& whyNot);
+
 	/** Throws the held result away. Idempotent. Called when the comparison stops. */
 	void	Clear();
+
+	/** kTrue while a result is held (a rebuild succeeded and nothing cleared it since). The PDF
+	    report asks this to decide whether to rebuild for itself and clear afterwards. */
+	bool16	HasResult();
 
 	/** How many definitions differ. 0 is a real answer when a result is held - nothing differs -
 	    and GetSummary is what tells "held, nothing differs" from "nothing held" in words. */

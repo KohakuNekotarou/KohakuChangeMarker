@@ -61,11 +61,17 @@ PMString Ascii(const char* text)
 	return s;
 }
 
+}	// namespace
+
 // ---- ruby ----------------------------------------------------------------------------------
+// ★The four writers below (ruby strand, ruby, kenten kind, the kenten name table) are EXPORTED
+//   from this file since 2026-09-13: the PDF report's Story section (KCMReportTable.cpp) sets
+//   real ruby and real kenten over the changed characters of its table cells, and writing them a
+//   second time there would be the same recipe in two places. Declared in KCMStoryRestore.h.
 
 /** The ruby strand exists on a story only once something put ruby on it; a story that never had
     any needs it made first (kPrivateCreateStrandCmdBoss - KIDMCPRuby.cpp measured the shape). */
-ErrorCode CreateRubyStrandIfNeeded(ITextModel* model)
+ErrorCode KCMCreateRubyStrandIfNeeded(ITextModel* model)
 {
 	InterfacePtr<IRubyAttrStrand> existing(
 		(IRubyAttrStrand*)model->QueryStrand(kRubyAttrStrandBoss, IRubyAttrStrand::kDefaultIID));
@@ -83,7 +89,7 @@ ErrorCode CreateRubyStrandIfNeeded(ITextModel* model)
 
 /** One reading onto one range: the three attributes that ARE a reading (on, the string,
     mono/group), and none of the twenty-seven that are its look. ⚠kTAMojiRubyBoss kTrue IS MONO. */
-ErrorCode ApplyRuby(ITextModel* model, TextIndex at, int32 len, const PMString& reading, bool16 group)
+ErrorCode KCMApplyRuby(ITextModel* model, TextIndex at, int32 len, const PMString& reading, bool16 group)
 {
 	boost::shared_ptr<AttributeBossList> attrs(new AttributeBossList);
 	{
@@ -116,6 +122,9 @@ ErrorCode ApplyRuby(ITextModel* model, TextIndex at, int32 len, const PMString& 
 
 /** Ruby off a range by REMOVING the ruby attributes' overrides - all thirty, so that nothing is
     left for the diff to report as a residue (KIDMCPRuby.cpp's list and reasoning). */
+namespace
+{
+
 ErrorCode ClearRuby(ITextModel* model, TextIndex at, int32 len)
 {
 	static const ClassID kRubyAttrs[] =
@@ -147,12 +156,14 @@ ErrorCode ClearRuby(ITextModel* model, TextIndex at, int32 len)
 	return (clear != nil) ? CmdUtils::ProcessCommand(clear) : kFailure;
 }
 
+}	// namespace
+
 // ---- kenten --------------------------------------------------------------------------------
 
 /** The inverse of KCMTextRead's KentenKindName (the official spelling from
     SnpPerformTextAttrKenten). kFalse for a name this build cannot write - "Custom" among them:
     a custom mark needs its character too, which the row does not carry. */
-bool16 KentenKindOf(const PMString& name, int16& outKind)
+bool16 KCMKentenKindOf(const PMString& name, int16& outKind)
 {
 	const std::string n = name.GetUTF8String();
 	struct Entry { const char* fName; int16 fKind; };
@@ -179,7 +190,7 @@ bool16 KentenKindOf(const PMString& name, int16& outKind)
 }
 
 /** The kenten KIND onto a range (Kenten_None = off; the look is left alone). */
-ErrorCode ApplyKentenKind(ITextModel* model, TextIndex at, int32 len, int16 kind)
+ErrorCode KCMApplyKentenKind(ITextModel* model, TextIndex at, int32 len, int16 kind)
 {
 	boost::shared_ptr<AttributeBossList> attrs(new AttributeBossList);
 	InterfacePtr<ITextAttrInt16> attr(::CreateObject2<ITextAttrInt16>(kTAKentenKindBoss));
@@ -194,6 +205,9 @@ ErrorCode ApplyKentenKind(ITextModel* model, TextIndex at, int32 len, int16 kind
 	InterfacePtr<ICommand> apply(cmds->ApplyCmd(RangeData(at, at + len), attrs, kCharAttrStrandBoss));
 	return (apply != nil) ? CmdUtils::ProcessCommand(apply) : kFailure;
 }
+
+namespace
+{
 
 /** One undo step around whatever the restore writes, named for the Edit menu. */
 class RestoreSequence
@@ -364,7 +378,7 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 			{
 				// ruby REMOVED or CHANGED: the older reading back, over the older span. A span that
 				// grew or shrank is cleared first, then written at the older length from its start.
-				err = CreateRubyStrandIfNeeded(target);
+				err = KCMCreateRubyStrandIfNeeded(target);
 				int32 len = targetCount;
 				if (err == kSuccess && sourceCount > 0 && sourceCount != targetCount)
 				{
@@ -374,7 +388,7 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 						len = targetLength - change.fTargetStart;
 				}
 				if (err == kSuccess)
-					err = ApplyRuby(target, change.fTargetStart, len, change.fOtherRuby, change.fOtherRubyGroup);
+					err = KCMApplyRuby(target, change.fTargetStart, len, change.fOtherRuby, change.fOtherRubyGroup);
 				outMessage = Ascii("Restored the ");
 				outMessage.Append(change.fOtherRubyGroup ? "group" : "mono");
 				outMessage.Append(" ruby \"");
@@ -387,13 +401,13 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 		else if (change.fAttrKind == kKCMStoryAttrKenten)
 		{
 			int16 kind = IKentenStyle::Kenten_None;
-			if (!change.fOtherRuby.IsEmpty() && !KentenKindOf(change.fOtherRuby, kind))
+			if (!change.fOtherRuby.IsEmpty() && !KCMKentenKindOf(change.fOtherRuby, kind))
 			{
 				outMessage = Ascii("restore: this kenten kind cannot be written back (a custom mark carries a character the row does not hold).");
 				return kFalse;
 			}
 			RestoreSequence undo;
-			err = ApplyKentenKind(target, change.fTargetStart, targetCount, kind);
+			err = KCMApplyKentenKind(target, change.fTargetStart, targetCount, kind);
 			outMessage = (kind == IKentenStyle::Kenten_None) ? Ascii("Took the kenten off ") : Ascii("Restored the kenten \"");
 			if (kind != IKentenStyle::Kenten_None) { outMessage.Append(change.fOtherRuby); outMessage.Append("\" over "); }
 			outMessage.AppendNumber(targetCount);

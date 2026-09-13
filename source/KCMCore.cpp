@@ -862,12 +862,9 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		// ★**The two documents this run is about, not the armed pair** -- they are not armed yet at
 		//   this point in the run, which is exactly what the store's own note describes.
 		PMString whyNot;
-		// Task Start: the older side is the origin's own XML, not an export of the copy - a new
-		// document is born with app defaults (fonts, quotes, an object style) that are not changes.
-		if (KCMOriginRunInProgress() && KCMOriginBytes() != nil)
-			KCMResourceStore::RebuildWithSourceBytes(targetDB, *KCMOriginBytes(), whyNot);
-		else
-			KCMResourceStore::Rebuild(targetDB, sourceDB, whyNot);
+		// Task Start (the older side is the origin's own XML) or not: the store decides, in the one
+		// place that choice is written (KCMResourceStore::RebuildForPair, 2026-09-13).
+		KCMResourceStore::RebuildForPair(targetDB, sourceDB, whyNot);
 	}
 
 	if (cancelled)

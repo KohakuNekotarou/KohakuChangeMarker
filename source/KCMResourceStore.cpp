@@ -29,6 +29,8 @@
 
 // Project includes:
 #include "KCMCore.h"				// KCMArmedTargetDB / KCMArmedSourceDB
+#include "KCMOrigin.h"				// KCMOriginBytes - Task Start: the older side kept in memory (RebuildForPair)
+#include "KCMOriginCompare.h"		// KCMOriginRunInProgress / KCMOriginArmed - is an origin the older side?
 #include "KCMResourceBytes.h"		// the origin's bytes, the older side of RebuildWithSourceBytes (Task Start, 2026-09-12)
 #include "KCMResourceParse.h"		// KCMParseResources - reading a list straight from those bytes
 #include "KCMResourceDiff.h"
@@ -259,6 +261,23 @@ bool16 KCMResourceStore::RebuildWithSourceBytes(IDataBase* targetDB, const KCMRe
 	}
 
 	return FinishRebuild(targetDB, sourceItems, progress, whyNot);
+}
+
+bool16 KCMResourceStore::RebuildForPair(IDataBase* targetDB, IDataBase* sourceDB, PMString& whyNot)
+{
+	// Task Start: the older side is the origin's own bytes, not an export of the copy - a new
+	// document is born with app defaults (fonts, quotes, an object style) that are not changes.
+	// ⚠Two different questions say "an origin is the older side": during the comparison run the
+	//   pair is not armed yet (KCMOriginRunInProgress), and afterwards there is no run
+	//   (KCMOriginArmed). Either one means the origin's XML is what to compare against.
+	if ((KCMOriginRunInProgress() || KCMOriginArmed()) && KCMOriginBytes() != nil)
+		return RebuildWithSourceBytes(targetDB, *KCMOriginBytes(), whyNot);
+	return Rebuild(targetDB, sourceDB, whyNot);
+}
+
+bool16 KCMResourceStore::HasResult()
+{
+	return gHasResult;
 }
 
 void KCMResourceStore::Clear()

@@ -26,12 +26,34 @@
 #ifndef __KCMStoryRestore_h__
 #define __KCMStoryRestore_h__
 
-#include "BaseType.h"
+#include "BaseType.h"		// bool16 / int32 / TextIndex / ErrorCode
 #include "PMString.h"
+
+class ITextModel;
 
 /** Restore change `which` of Story Edits row `nth`. kTrue when the words were written (outMessage
     says how many); kFalse with the reason in outMessage. */
 bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage);
+
+// ---- the attribute writers, shared with the PDF report (2026-09-13) ------------------------
+// The report's Story section (KCMReportTable.cpp) sets real ruby and real kenten over the changed
+// characters of a table cell, with exactly the recipe the restore uses on the user's document.
+// One recipe, two callers; the report document is a throwaway, so no undo step is wanted there.
+
+/** The ruby strand exists on a story only once something put ruby on it; a story that never had
+    any needs it made first. kSuccess when it exists afterwards. */
+ErrorCode KCMCreateRubyStrandIfNeeded(ITextModel* model);
+
+/** One reading onto [at, at+len): the three attributes that ARE a reading (on, the string,
+    mono-or-group). ⚠Call KCMCreateRubyStrandIfNeeded first on a story that never had ruby. */
+ErrorCode KCMApplyRuby(ITextModel* model, TextIndex at, int32 len, const PMString& reading, bool16 group);
+
+/** The kenten KIND onto [at, at+len) (IKentenStyle::Kenten_None = off; the look is left alone). */
+ErrorCode KCMApplyKentenKind(ITextModel* model, TextIndex at, int32 len, int16 kind);
+
+/** The kenten kind for the name the comparison reports ("BlackCircle" ...). kFalse for a name
+    this build cannot write ("Custom" among them). */
+bool16 KCMKentenKindOf(const PMString& name, int16& outKind);
 
 #endif // __KCMStoryRestore_h__
 

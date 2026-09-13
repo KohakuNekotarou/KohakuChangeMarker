@@ -235,6 +235,9 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDrawEventHandler.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReport.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReportTable.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReportPaws.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMXmlPretty.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryRestore.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.cpp" />
@@ -308,6 +311,10 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPagePairRule.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReport.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReportTable.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReportPaws.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMXmlPretty.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceShortValue.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryRestore.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.h" />
