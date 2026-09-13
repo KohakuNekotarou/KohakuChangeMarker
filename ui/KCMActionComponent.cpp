@@ -1137,7 +1137,7 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//   which is what the other branches of this file already do.
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
-			PMString name(armed ? "Stop" : "Start");
+			PMString name(armed ? kKCMStopMenuText : kKCMStartMenuText);
 			name.SetTranslatable(kFalse);
 			listToUpdate->SetNthActionName(i, name);
 			// ★Stop is always live: clearing the marks and ending a peek must work even with no document

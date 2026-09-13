@@ -56,9 +56,9 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMSyncViewsMenuKey,				"Sync Layout Views",
                 kKCMAlignViewsMenuKey,			"Align Other Views to Active",
                 kKCMScrollMapMenuKey,				"Show Scrollbar Map",
-                kKCMTranslucentPanelMenuKey,		"Translucent Panel",
+                kKCMTranslucentPanelMenuKey,		"Translucent Kohaku Change Marker Panel",
                 kKCMTranslucentPagesPanelMenuKey,	"Translucent Pages Panel",
-                kKCMTranslucentBookDialogMenuKey,	"Translucent Dialog",
+                kKCMTranslucentBookDialogMenuKey,	"Translucent Compare Books Dialog",
                 kKCMSavePanelStateMenuKey,			"Save Panel Settings",
                 kKCMClearMarksMenuKey,			"Clear Marks from Document",
                 kKCMClearChecksMenuKey,			"Clear Checks in This Document",
@@ -108,7 +108,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMPawToolStringKey,		"Kohaku Cat Paw Tool",		// the stamp tool's name in the KCM tool's flyout (its tooltip); English in every locale, as the line above
                 kKCMTargetLabelKey,			"Target:",
                 kKCMSourceLabelKey,			"Source:",
-                kKCMStartButtonKey,			"Start",
+                kKCMStartButtonKey,			kKCMStartMenuText,
                 kKCMPrintCheckKey,			"Print comparison marks",
                 // An alert, shown every time the toggle above is switched ON (never when it is
                 // switched OFF). English in every locale - see the note on the key in KCMUIID.h.

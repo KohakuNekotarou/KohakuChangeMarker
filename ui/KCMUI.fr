@@ -816,29 +816,6 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMTaskStartMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Open Task Start XML (raw)" (2026-09-12, a test instrument): the held origin's XML
-		// imported untouched into a new document with a window, so the import's own behaviour can
-		// be seen. Live while an origin is held (UpdateActionStates, kCustomEnabling).
-		kKCMPopupOpenOriginRawActionID,
-		kKCMPopupMenuPath,
-		kKCMOpenOriginRawMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
-		// "Open Task Start Copy (as compared)" (2026-09-12): its twin - the copy exactly as the
-		// comparison rehydrates it, with a window, so the reader can look at what is compared.
-		kKCMPopupOpenOriginCopyActionID,
-		kKCMPopupMenuPath,
-		kKCMOpenOriginCopyMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
-		// "Save Task Start XML to Desktop" (2026-09-12): the third instrument - the held origin's
-		// XML written to the Desktop exactly as Task Start took it. Live while an origin is held
-		// (UpdateActionStates, kCustomEnabling).
-		kKCMPopupSaveOriginRawActionID,
-		kKCMPopupMenuPath,
-		kKCMSaveOriginRawMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
 		// "Clear Target and Source" on the panel flyout (popup) menu. Plain command: stops a running
 		// comparison and drops both chosen documents, so the next Start falls back to the automatic
 		// rule (active = Target, the earliest-opened other document = Source). Directly below the two
@@ -1033,8 +1010,9 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// "Translucent Dialog" on the flyout - the same toggle again, pointed at THIS plug-in's book
 		// comparison dialog (user request, 2026-08-13: "make it so the dialog can be translucent too").
 		// ⚠The ID and this file's identifiers say "BookDialog", but the LABEL the user reads is
-		//  "Translucent Dialog" (KCMUI_enUS.fr:50) - it was shortened and the names were not. Do not
-		//  quote the identifier as the menu text (checked 2026-08-16, audit B-U1).
+		//  "Translucent Compare Books Dialog" (kKCMTranslucentBookDialogMenuKey in the string
+		//  table) - named after the dialog's own title on 2026-09-14. Do not quote the identifier
+		//  as the menu text (checked 2026-08-16, audit B-U1).
 		// ★What is shared: the alpha value, the "opaque again while the pointer is over it" behaviour,
 		//   the delayed re-apply and the Win32 hook. All of it, unchanged.
 		// ★What is different, and it is only this: WHERE THE WINDOW COMES FROM. The two toggles above
@@ -1061,14 +1039,6 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMPopupAlignViewsActionID,
 		kKCMPopupMenuPath,
 		kKCMAlignViewsMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
-		// "Show Scrollbar Map" on the panel flyout (popup) menu. Check-mark toggle (default ON):
-		// while ON, a thin strip beside each document window's vertical scrollbar maps the positions
-		// of changed / registered pages. Turn it OFF to remove the strip from all windows.
-		kKCMPopupScrollMapActionID,
-		kKCMPopupMenuPath,
-		kKCMScrollMapMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// ("Show HUD" was removed together with the on-press HUD itself on 2026-08-06.)
@@ -1119,18 +1089,6 @@ resource MenuDef (kSDKDefMenuResourceID)
 		//  comparison and are not worth keeping past one. ⚠**Their ActionIDs are not reused**
 		//  (kKCMUIPrefix + 25 / + 26 are dead numbers -- see KCMUIID.h).)
 
-		// "Clear Marks from Document" (2026-09-07): takes the ticks and cat paws out of the document
-		// itself, where they live as script labels on the pages that carry them (KCMPageMarksDoc.h).
-		// ⚠There is no "save" beside it and no "load" either. Writing is not something the reader
-		//   asks for any more -- a tick or a paw goes into the document at the moment it is made and
-		//   comes out again with Ctrl+Z -- and putting them back happens on its own when a document
-		//   opens. ★"Save Marks to Document" stood here for one morning; its ActionID
-		//   (kKCMUIPrefix + 55) stays retired and is never reused, the way kKCMUIPrefix + 38 is.
-		kKCMClearMarksFromDocActionID,
-		kKCMPopupMenuPath,
-		kKCMClearMarksMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
 		// "Clear Checks in This Document" on the panel flyout (popup) menu. Plain command that drops
 		// the active document's checks, and the checks on its Pages panel thumbnails with them.
 		// ★It exists because **Stop no longer clears the checks** (2026-09-04): Stop used to double
@@ -1147,16 +1105,6 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMClearPawsActionID,
 		kKCMPopupMenuPath,
 		kKCMClearPawsMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
-		// "Export Changed Pages..." on the panel flyout (popup) menu. Plain command (not a toggle):
-		// writes the current comparison's changed-page list to a tab-separated UTF-8 text file
-		// (2 columns: Page / Type, where Type = Changed / Inserted / Deleted) for pasting into
-		// Excel. Overset is never included. Enabled only while a comparison is active (sDB != nil);
-		// UpdateActionStates supplies the enable state (kCustomEnabling). Work in KCMChangedPagesTSV.cpp.
-		kKCMPopupExportChangedPagesActionID,
-		kKCMPopupMenuPath,
-		kKCMExportChangedPagesMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Export Before/After PDF Report" on the panel flyout (popup) menu. Plain command: writes
@@ -1427,36 +1375,6 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// "Open Task Start XML (raw)" (2026-09-12): greyed while no origin is held (UpdateActionStates).
-		kKCMActionComponentBoss,
-		kKCMPopupOpenOriginRawActionID,
-		kKCMOpenOriginRawMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		// "Open Task Start Copy (as compared)" (2026-09-12): the same enabling as its raw twin.
-		kKCMActionComponentBoss,
-		kKCMPopupOpenOriginCopyActionID,
-		kKCMOpenOriginCopyMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		// "Save Task Start XML to Desktop" (2026-09-12): the same enabling as the two above.
-		kKCMActionComponentBoss,
-		kKCMPopupSaveOriginRawActionID,
-		kKCMSaveOriginRawMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
 		// "Clear Target and Source". It undoes the two "Set as" items above, but NOT their "not
 		// while a comparison is armed" gate (2026-09-07): it STOPS a running comparison first, so it
 		// is live whenever there is a comparison or a choice to clear (UpdateActionStates).
@@ -1612,15 +1530,6 @@ resource ActionDef (kSDKDefActionResourceID)
 		kSDKDefVisibleInKBSCEditorFlag,
 
 		kKCMActionComponentBoss,
-		kKCMPopupScrollMapActionID,
-		kKCMScrollMapMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates supplies the check mark (kSelectedAction)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		kKCMActionComponentBoss,
 		kKCMPopupTranslucentPanelActionID,
 		kKCMTranslucentPanelMenuKey,
 		kOtherActionArea,
@@ -1677,18 +1586,6 @@ resource ActionDef (kSDKDefActionResourceID)
 		// (The ActionDefs for "Save Check & Register" and "Load Check & Register" stood here and
 		//  went with their menu items on 2026-09-07 -- the MenuDef above says why.)
 
-		// ★The document-side marks item. kCustomEnabling: UpdateActionStates greys "Clear" when
-		//   there is no active document at all. (Its "Save" twin went on 2026-09-07 -- see the
-		//   MenuDef above for why, and why its ActionID is not reused.)
-		kKCMActionComponentBoss,
-		kKCMClearMarksFromDocActionID,
-		kKCMClearMarksMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
 		kKCMActionComponentBoss,
 		kKCMClearChecksActionID,
 		kKCMClearChecksMenuKey,
@@ -1704,15 +1601,6 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// the same, asked of the paws instead
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		kKCMActionComponentBoss,
-		kKCMPopupExportChangedPagesActionID,
-		kKCMExportChangedPagesMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates enables only while a comparison is active (sDB != nil)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

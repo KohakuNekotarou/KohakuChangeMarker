@@ -797,6 +797,15 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMTargetLabelKey	kKCMStringPrefix "kKCMTargetLabelKey"	// the panel's "Target:" label. A literal would collide with the system translation, so it has a key of its own
 #define kKCMSourceLabelKey	kKCMStringPrefix "kKCMSourceLabelKey"	// the panel's "Source:" label. The literal "Source:" turns into a style-source phrase in a Japanese locale, so this one needs a key of its own too
 #define kKCMStartButtonKey	kKCMStringPrefix "kKCMStartButtonKey"	// the default menu name of the "Start / Stop" flyout item (Start when not running). While it is shown, UpdateActionStates swaps Start and Stop by the armed state (the key is inherited from the old toggle button caption)
+// ★★THE TWO MENU TEXTS THEMSELVES, in one place. Until 2026-09-14 the word "Start" was a
+//   literal in KCMUI_enUS.fr AND "Start"/"Stop" were literals in KCMActionComponent.cpp:
+//   two copies of one decision, which is the shape that survives a rename in one file only
+//   ([[one-question-one-place]]). The string table and the C++ both read these now.
+// ★The names say WHAT is started (2026-09-14, the user): "Start" alone said nothing in the
+//   shortcut editor's flat list, and the product already speaks of a "Comparison" in
+//   Refresh Comparison / Refresh Story Comparison / Refresh Page Comparison.
+#define kKCMStartMenuText	"Start Comparison"
+#define kKCMStopMenuText	"Stop Comparison"
 #define kKCMPrintCheckKey		kKCMStringPrefix "kKCMPrintCheckKey"	// the menu name of the "Print comparison marks" toggle on the flyout (inherited from the old panel checkbox caption)
 // ★The body of the alert shown **only when "Print comparison marks" is switched ON**
 //   (user's instruction).
@@ -1066,60 +1075,57 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 //   #defines below decide cannot be kept true ([[one-question-one-place]]).
 //   ⇒ **Read the values below in ascending order: that IS the flyout.**
 // ※Menu names are English in every locale. The separators are Sep1 / OversetSep / Sep3 / Sep2.
-#define kKCMStartStopMenuItemPosition		9.0	// "Start / Stop" at the head of the flyout. Its name follows the armed state between Start and Stop
-#define kKCMRefreshCompareMenuItemPosition	9.01	// ★plain command "Refresh Comparison" -- **directly under Start**, above the two "Set as" items (2026-09-04, user's call). Start and Refresh are both VERBS that run the comparison; Set as Target / Source are the CHOICES it runs on. ⚠**Compare mode came between them on 2026-09-10** (the user asked for it directly under Refresh), so the group now reads run / run / WHAT-KIND / choose / choose - the kind of comparison sits with the verbs that run it rather than down among the display toggles
-#define kKCMSetTargetMenuItemPosition		9.02	// ★"Set as Target" -- **directly under Start, above Compare Books**: choosing the two documents is part of starting a comparison, so it reads Start / choose / choose
-#define kKCMSetSourceMenuItemPosition		9.03	// ★"Set as Source", right below its Target counterpart (the pair reads new-then-old, as the two "Always Show Marks on" toggles do)
-#define kKCMTaskStartMenuItemPosition	9.035	// ★"Task Start", between Set as Source (9.03) and Clear (9.04): a choice of the pair too, one whose Source is a moment rather than a document
-#define kKCMOpenOriginRawMenuItemPosition	9.036	// "Open Task Start XML (raw)", right under Task Start: it acts on what Task Start took
-#define kKCMOpenOriginCopyMenuItemPosition	9.037	// "Open Task Start Copy (as compared)", right under its raw twin
-#define kKCMSaveOriginRawMenuItemPosition	9.038	// "Save Task Start XML to Desktop", last of the three instruments (the two above open a document; this one writes a file)
-#define kKCMClearChosenMenuItemPosition	9.04	// ★"Clear Target and Source", directly below the two "Set as" items it undoes and still above Sep1 (9.1), so the group reads run / run / choose / choose / clear
-#define kKCMSep1MenuItemPosition			9.1	// the separator below Start (a path ending in ":-")
-#define kKCMCompareModeSubmenuMenuItemPosition	9.015	// ★the "Compare mode" submenu (Pixel / Story / Resources Changes). **Directly under Refresh Comparison** (2026-09-10, the user's call; it was 9.15, right after Sep1): what is compared is settled before how it is shown, and the order carries that
+// -- run the comparison, and choose what it runs on --
+#define kKCMStartStopMenuItemPosition		9.0	// "Start Comparison" at the head of the flyout; UpdateActionStates swaps the name to "Stop Comparison" once armed
+#define kKCMRefreshCompareMenuItemPosition	9.01	// "Refresh Comparison", directly under it: both are VERBS that run the comparison on the pair already chosen
+#define kKCMCompareModeSubmenuMenuItemPosition	9.015	// the "Compare mode" submenu (Pixel / Story / Resources Changes). ★Under the two verbs: WHAT is compared is settled before how it is shown
 #define kKCMModePixelSubMenuItemPosition		1.0	// inside "Compare mode": Pixel Changes (checked when selected)
 #define kKCMModeStorySubMenuItemPosition		2.0	// inside "Compare mode": Story Changes (exclusive with Pixel)
 #define kKCMModeResourcesSubMenuItemPosition	3.0	// inside "Compare mode": Resources Changes (exclusive with the two above). ★Last of the three because it is the widest net: pixels answer "which page looks different", stories "which words changed", and this one "which definition changed" - which includes definitions nothing on any page uses
+// -- the pair those verbs run on (2026-09-14: the user moved Task Start to the head of this group) --
+#define kKCMTaskStartMenuItemPosition	9.02	// "Task Start": a Source that is a moment rather than a document, which is why it heads the group that chooses the pair
+#define kKCMSetTargetMenuItemPosition		9.03	// "Set as Target"
+#define kKCMSetSourceMenuItemPosition		9.04	// "Set as Source", right below its Target counterpart (the pair reads new-then-old, as the two "Always Show Marks on" toggles do)
+#define kKCMClearChosenMenuItemPosition	9.05	// "Clear Target and Source", directly below the items it undoes
+#define kKCMCompareBooksMenuItemPosition	9.06	// "Compare Books" (chapter by chapter), still above Sep1 so that everything which BEGINS a comparison reads as one group
+#define kKCMExportReportMenuItemPosition	9.07	// "Export Before/After PDF Report", last of the group because it writes out what the comparison found (2026-09-14: moved up from 9.535, out of the plain commands)
+#define kKCMSep1MenuItemPosition			9.1	// the separator below that group (a path ending in ":-")
+// (9.035 - 9.038 are free: they held Task Start's three XML instruments - Open raw / Open copy /
+//  Save to Desktop - removed 2026-09-14. Their ActionIDs stay retired and are not reused.)
 // -- the display toggles --
 // (9.20 is free: it belonged to "Hold to Hide Marks", which was removed.)
-#define kKCMPairByUidMenuItemPosition		9.21	// check toggle "Pair Pages by UID" (default ON). ★Directly above Ignore Page Number Marker: which pages meet is settled before what is left out of the pixels they are compared by
-#define kKCMIgnorePageNumMenuItemPosition	9.22	// check toggle "Ignore Page Number Marker"
-#define kKCMOpacitySubmenuMenuItemPosition	9.24	// the "Marks opacity" submenu (25% / 75% inside it)
-#define kKCMPrintMarksMenuItemPosition	9.26	// check toggle "Print comparison marks"
-#define kKCMOpacity25SubMenuItemPosition	1.0	// inside "Marks opacity": 25% (checked when selected)
-#define kKCMOpacity75SubMenuItemPosition	2.0	// inside "Marks opacity": 75% (exclusive with 25%)
-
-#define kKCMColorSubmenuMenuItemPosition	9.25	// the "Mark colour" submenu (Red / Cyan). ★Directly below Marks opacity and above Print ＝ **colour and strength sit together** (both are how a mark looks)
+#define kKCMShowTgtMarksMenuItemPosition	9.21	// "Always Show Marks on Target" (★directly above the Source one, so the pair reads new-then-old)
+#define kKCMShowSrcMarksMenuItemPosition	9.22	// "Always Show Marks on Source"
+#define kKCMIgnorePageNumMenuItemPosition	9.23	// "Ignore Page Number Marker"
+#define kKCMColorSubmenuMenuItemPosition	9.24	// the "Mark colour" submenu (Red / Cyan)
 #define kKCMColorRedSubMenuItemPosition	1.0	// inside "Mark colour": Red (the default; checked when selected)
 #define kKCMColorCyanSubMenuItemPosition	2.0	// inside "Mark colour": Cyan (exclusive with Red)
-// (9.27 is free: it belonged to "Show HUD", which went with its feature.)
-#define kKCMShowOldNumsMenuItemPosition	9.28	// check toggle "Show Original Page Numbers"
-#define kKCMShowStoryIdsMenuItemPosition	9.285	// check toggle "Show Story IDs", directly under the page-number badge: both put a number on the page that is not part of the page
-#define kKCMShowTgtMarksMenuItemPosition	9.29	// check toggle "Always Show Marks on Target" (★directly above the Source one, so the pair reads new-then-old)
-#define kKCMShowSrcMarksMenuItemPosition	9.30	// check toggle "Always Show Marks on Source"
-#define kKCMScrollMapMenuItemPosition		9.32	// check toggle "Show Scrollbar Map"
-#define kKCMSyncViewsMenuItemPosition		9.34	// check toggle "Sync Layout Views"
-#define kKCMTranslucentPagesPanelMenuItemPosition	9.36	// check toggle "Translucent Pages Panel" (★Windows only; it makes InDesign's OWN Pages panel translucent while floating)
+#define kKCMOpacitySubmenuMenuItemPosition	9.25	// the "Marks opacity" submenu (25% / 75%). ★Beside Mark colour ＝ colour and strength sit together (both are how a mark looks)
+#define kKCMOpacity25SubMenuItemPosition	1.0	// inside "Marks opacity": 25% (checked when selected)
+#define kKCMOpacity75SubMenuItemPosition	2.0	// inside "Marks opacity": 75% (exclusive with 25%)
+#define kKCMPairByUidMenuItemPosition		9.26	// "Pair Pages by UID" (default ON)
+#define kKCMPrintMarksMenuItemPosition	9.27	// "Print comparison marks"
+#define kKCMShowOldNumsMenuItemPosition	9.28	// "Show Original Page Numbers"
+#define kKCMShowStoryIdsMenuItemPosition	9.285	// "Show Story IDs", directly under the page-number badge: both put a number on the page that is not part of the page
+// (9.29 - 9.32 are free: 9.29 / 9.30 held the two "Always Show Marks on" toggles, now 9.21 / 9.22,
+//  and 9.32 held "Show Scrollbar Map", removed 2026-09-14 - the map is always on from now on.)
+#define kKCMSyncViewsMenuItemPosition		9.34	// "Sync Layout Views"
+#define kKCMTranslucentPagesPanelMenuItemPosition	9.36	// "Translucent Pages Panel" (★Windows only; it makes InDesign's OWN Pages panel translucent while floating)
 // (9.37 is free: it belonged to "Translucent Toolbox", which went with its feature.)
-#define kKCMTranslucentPanelMenuItemPosition	9.38	// check toggle "Translucent Panel", the last of the display toggles (★Windows only; the panel itself while floating)
-#define kKCMTranslucentBookDialogMenuItemPosition	9.39	// check toggle "Translucent Dialog" (★Windows only; the book comparison dialog). The last of the three Translucent items
-// -- the Overset group --
+#define kKCMTranslucentPanelMenuItemPosition	9.38	// "Translucent Kohaku Change Marker Panel" (★Windows only; this plug-in's own panel while floating). ⚠The name says WHICH panel since 2026-09-14: "Translucent Panel" standing beside "Translucent Pages Panel" did not say whose
+#define kKCMTranslucentBookDialogMenuItemPosition	9.39	// "Translucent Compare Books Dialog" (★Windows only), named after the dialog's own title. The last of the three Translucent items
 // -- the plain commands --
-#define kKCMSep3MenuItemPosition			9.50	// the separator that used to sit below Refresh Overset (removed 2026-09-08) (a path ending in ":-"); the plain commands go below it
-#define kKCMAlignViewsMenuItemPosition	9.52	// plain command "Align Other Views to Active", first of the group
-#define kKCMHideUnchangedMenuItemPosition	9.54	// check toggle "Hide Unchanged Spreads". ⚠It once shared 9.54 with Compare Books, and **two items at one value leave the order to the MenuDef registration order alone**; Compare Books has since moved up under Start
-#define kKCMSavePanelStateMenuItemPosition	9.56	// plain command "Save Panel Settings"
-#define kKCMClearChecksMenuItemPosition	9.62	// plain command "Clear Checks in This Document", directly under the Save/Load pair it undoes
-#define kKCMClearPawsMenuItemPosition	9.64	// plain command "Clear Cat Paws in This Document". ★Two items rather than one: a tick records progress and a paw is a landmark, so they are wanted gone at different moments
-#define kKCMClearMarksMenuItemPosition	9.66	// plain command "Clear Marks from Document", last of the three because it is the other two together. ⚠★**It shared 9.64 with Clear Cat Paws until 2026-09-07**, and two items at one value leave the order to the MenuDef registration order alone -- the very trap the Hide Unchanged line above records. (9.62 was likewise shared, with the now-retired "Save Marks to Document".)
-#define kKCMExportChangedPagesMenuItemPosition	9.53	// plain command "Export Changed Pages..." (the list of changed pages as TSV), directly below Align
-#define kKCMExportReportMenuItemPosition	9.535	// plain command "Export Before/After PDF Report" (the changed pages, the Story table and the Resources table as one PDF), directly below the TSV export it complements
-// ★★Compare Books sits at 9.05, **between Start (9.0) and the separator Sep1 (9.1)** ＝ no rule
-//   falls between it and Start, so the two items that **begin** a comparison read as one group
-//   (user's instruction: "one higher" and then "just below Start").
-//   ⚠The older reasoning -- "it is a route independent of the document comparison, so it belongs
-//     with the plain commands rather than with Start" -- **was withdrawn** by that call.
-#define kKCMCompareBooksMenuItemPosition	9.05	// plain command "Compare Books" (compare two books chapter by chapter), directly below Start
+#define kKCMSep3MenuItemPosition			9.50	// the separator above the plain commands (a path ending in ":-")
+#define kKCMAlignViewsMenuItemPosition	9.52	// "Align Other Views to Active", first of the group
+#define kKCMHideUnchangedMenuItemPosition	9.54	// "Hide Unchanged Spreads"
+#define kKCMSavePanelStateMenuItemPosition	9.56	// "Save Panel Settings"
+#define kKCMClearChecksMenuItemPosition	9.62	// "Clear Checks in This Document"
+#define kKCMClearPawsMenuItemPosition	9.64	// "Clear Cat Paws in This Document". ★Two items rather than one: a tick records progress and a paw is a landmark, so they are wanted gone at different moments
+// (9.53 / 9.535 / 9.66 are free: 9.53 held "Export Changed Pages..." (the TSV, removed 2026-09-14
+//  now the PDF report carries the same list), 9.535 held that report before it moved up to 9.07,
+//  and 9.66 held "Clear Marks from Document" (removed the same day - the two items above are the
+//  whole of it). ⚠Two items at one value leave their order to the MenuDef registration order
+//  alone, which this plug-in has been bitten by twice; every value above is unique.)
 // Positions inside the chapter row context menu of the book comparison dialog. ★That menu holds
 // one item, so the value itself carries no meaning (it is a different tree from the panel
 // flyout, under kKCMBookRowMenuName).
