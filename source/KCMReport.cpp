@@ -632,6 +632,11 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 			why = Ascii("the report document has no first page");
 			return kFalse;
 		}
+		// The cat's trail goes down FIRST, so that everything typed after it lies on top - the
+		// user's call (2026-09-13): "the paws at the very bottom, the words over them, then an
+		// overlap does no harm".
+		KCMReportDrawPawTrail(reportDB, layer, page);
+
 		PMString text;
 		text.SetTranslatable(kFalse);
 		text.Append("Kohaku Change Marker - Before / After PDF Report");
@@ -648,10 +653,8 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 		// At twice the heading size (the user's ask, 2026-09-13: "only the first page's words, twice").
 		KCMReportTypeAt(helper, layer, PMRect(page.Left() + kKCMReportGutter, page.Top() + kKCMReportGutter, page.Right() - kKCMReportGutter, page.Top() + kKCMReportGutter + 6 * kKCMReportHeadingPt * 3.2), text, kKCMReportHeadingPt * 2);
 
-		// And the cat's trail across the page (the user's ask, 2026-09-13). (A "Before" / "After"
-		// stood at the foot of this page for an hour that day; the user moved the two words to
-		// the top of every picture page instead.)
-		KCMReportDrawPawTrail(reportDB, layer, page);
+		// (A "Before" / "After" stood at the foot of this page for an hour that day; the user
+		//  moved the two words to the top of every picture page instead.)
 
 		// When the report was written, at the very foot, on the right (the user's asks, 2026-09-13).
 		{

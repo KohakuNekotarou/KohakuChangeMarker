@@ -12,6 +12,8 @@
 #include "VCPlugInHeaders.h"
 
 #include <cmath>
+#include <ctime>					// the seed of the walk
+#include <windows.h>				// GetTickCount64 - the other half of the seed
 
 #include "IColorData.h"
 #include "ICommand.h"
@@ -37,13 +39,28 @@
 namespace
 {
 
-// (2026-09-13, the user's second look: "a little more winding, the stance a little wider, and a
-//  few more stamps" - 7 -> 10 paws, the stance 0.32 -> 0.55, and a wave along the trail.)
-const int32  kPawCount = 10;		// paws on the trail
+// (2026-09-13, the user's looks: "a little more winding, the stance a little wider, a few more
+//  stamps" - and then "some randomness: diagonal, vertical, the other diagonal, downwards". The
+//  count, the winding and the stance are drawn by Dice each time now; only the size is fixed.)
 const PMReal kPawSize  = 44.0;		// one paw's size (the outlines are in units of it)
-const PMReal kPawSideways = 0.55;	// a left / right paw's offset from the trail's line, in paw sizes
-const double kPawWaves = 1.5;		// how many times the trail winds from side to side over its length
-const PMReal kPawWaveAmp = 1.1;		// how far it winds, in paw sizes
+
+/** A small deterministic generator (a 32-bit LCG), seeded from the clock by the caller. Enough
+    for a cat's walk; nothing here needs more than "different every time". */
+class Dice
+{
+public:
+	explicit Dice(uint32 seed) : fState(seed ? seed : 0x9E3779B9u) {}
+	/** 0.0 .. 1.0 (never quite 1.0). */
+	double Unit()
+	{
+		fState = fState * 1664525u + 1013904223u;
+		return (fState >> 8) / 16777216.0;
+	}
+	/** 0 .. n-1. */
+	int32 Below(int32 n) { return static_cast<int32>(Unit() * n) % n; }
+private:
+	uint32 fState;
+};
 
 /** An RGB swatch in the report document, at the paw's FILL shade for `colour`. kInvalidUID
     when the swatch could not be made. */
@@ -166,39 +183,61 @@ void KCMReportDrawPawTrail(IDataBase* reportDB, const UIDRef& layer, const PMRec
 			none = swatches->GetNoneSwatchUID();
 	}
 
-	// The trail: from a point above the foot's labels at the lower left, up and to the right,
-	// through the middle of the page, winding from side to side on its way. The paws are spread
-	// evenly along it, alternating left / right of the line (the stance) on top of the winding.
-	// (10pt lower than first drawn - the user's ask, 2026-09-13: "the whole trail 10px down".)
-	const PMReal kDown = 10.0;
-	const PMReal x0 = page.Left() + page.Width() * 0.14;
-	const PMReal y0 = page.Bottom() - page.Height() * 0.22 + kDown;
-	const PMReal x1 = page.Right() - page.Width() * 0.14;
-	const PMReal y1 = page.Top() + page.Height() * 0.16 + kDown;
-	const double dx = ::ToDouble(x1 - x0), dy = ::ToDouble(y1 - y0);
-	const double len = std::sqrt(dx * dx + dy * dy);
+	// THE TRAIL IS DIFFERENT EVERY TIME (the user's ask, 2026-09-13: "some randomness - diagonal,
+	// vertical, the other diagonal, downwards..." - "the playful part"). A small generator seeded
+	// from the clock picks the two ends of the walk anywhere on the page (the trail is laid down
+	// BEFORE the words, so it may run under them - the user's call), far enough apart to be a
+	// walk; then how many paws, how much the trail winds and how wide the stance is. Everything
+	// else - the paw itself, the two colours alternating, the toes facing the way the cat goes -
+	// stays as it was.
+	Dice dice(static_cast<uint32>(::time(nil)) ^ static_cast<uint32>(::GetTickCount64()));
+	const PMRect area(page.Left() + page.Width() * 0.06, page.Top() + page.Height() * 0.06,
+					  page.Right() - page.Width() * 0.06, page.Bottom() - page.Height() * 0.06);
+	PMReal x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+	double dx = 0, dy = 0, len = 0;
+	const double kMinWalk = ::ToDouble(area.Height()) * 0.9;		// at least most of the free height
+	for (int32 attempt = 0; attempt < 32; ++attempt)
+	{
+		x0 = area.Left() + area.Width()  * dice.Unit();
+		y0 = area.Top()  + area.Height() * dice.Unit();
+		x1 = area.Left() + area.Width()  * dice.Unit();
+		y1 = area.Top()  + area.Height() * dice.Unit();
+		dx = ::ToDouble(x1 - x0);
+		dy = ::ToDouble(y1 - y0);
+		len = std::sqrt(dx * dx + dy * dy);
+		if (len >= kMinWalk)
+			break;
+	}
 	if (len <= 0.0)
 		return;
+	const int32  pawCount = 8 + dice.Below(5);							// 8 .. 12 paws
+	const double waves    = 0.8 + 1.4 * dice.Unit();						// how many times it winds
+	const double waveAmp  = ::ToDouble(kPawSize) * (0.5 + 0.9 * dice.Unit());	// how far
+	const double phase    = dice.Unit() * 2.0 * 3.14159265358979323846;		// where the winding starts
+	const double stanceW  = ::ToDouble(kPawSize) * (0.4 + 0.3 * dice.Unit());	// the stance
+	const bool16 redFirst = (dice.Below(2) == 0) ? kTrue : kFalse;
+
 	const double ux = dx / len, uy = dy / len;			// along the trail
 	const double nx = -uy, ny = ux;						// across it
 	const double kPi = 3.14159265358979323846;
 
-	for (int32 i = 0; i < kPawCount; ++i)
+	for (int32 i = 0; i < pawCount; ++i)
 	{
-		const double t = (i + 0.5) / kPawCount;				// 0..1 along the trail
+		const double t = (i + 0.5) / pawCount;				// 0..1 along the trail
 		const double along = t * len;
 		// The winding: a sine across the trail, and each paw turned to face the way the trail
 		// runs THERE (the sine's slope), so the cat walks the curve rather than the chord.
-		const double wave = std::sin(t * kPawWaves * 2.0 * kPi) * ::ToDouble(kPawSize * kPawWaveAmp);
-		const double slope = std::cos(t * kPawWaves * 2.0 * kPi) * ::ToDouble(kPawSize * kPawWaveAmp) * (kPawWaves * 2.0 * kPi) / len;
-		const double stance = (i % 2 == 0 ? -1.0 : 1.0) * ::ToDouble(kPawSize * kPawSideways);
+		const double wave = std::sin(phase + t * waves * 2.0 * kPi) * waveAmp;
+		const double slope = std::cos(phase + t * waves * 2.0 * kPi) * waveAmp * (waves * 2.0 * kPi) / len;
+		const double stance = (i % 2 == 0 ? -1.0 : 1.0) * stanceW;
 		const double side = wave + stance;
 		const PMReal cx = x0 + PMReal(ux * along + nx * side);
 		const PMReal cy = y0 + PMReal(uy * along + ny * side);
 		// A paw's toes point to -y in the table; turning by (heading + 90 degrees) points them
 		// along the trail (check: (0,-1) turned by heading + pi/2 is (cos heading, sin heading)).
 		const double heading = std::atan2(uy + ny * slope, ux + nx * slope);
-		MakePaw(helper, reportDB, layer, cx, cy, heading + kPi / 2.0, (i % 2 == 0) ? red : blue, none);
+		const bool16 evenIsRed = redFirst;
+		MakePaw(helper, reportDB, layer, cx, cy, heading + kPi / 2.0, ((i % 2 == 0) == (evenIsRed != kFalse)) ? red : blue, none);
 	}
 }
 

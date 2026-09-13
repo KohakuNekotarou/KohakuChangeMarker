@@ -23,10 +23,11 @@
 
 class IDataBase;
 
-/** Walk a trail of paws from the lower left of `page` (spread coordinates) to its upper right,
-    left and right paws alternating on either side of the line, red and blue alternating too, each
-    paw turned to face the way the trail goes. `layer` is the page's content layer. Quietly does
-    less when a shape or a swatch cannot be made - the report is still written. */
+/** Walk a trail of paws across `page` (spread coordinates) - a different walk every time: its
+    two ends, its winding, its count and which colour leads are drawn from the clock, inside the
+    page's free area. Left and right paws alternate on either side of the line, red and blue
+    alternate too, and each paw faces the way the trail goes. `layer` is the page's content layer.
+    Quietly does less when a shape or a swatch cannot be made - the report is still written. */
 void KCMReportDrawPawTrail(IDataBase* reportDB, const UIDRef& layer, const PMRect& page);
 
 #endif // __KCMReportPaws_h__
