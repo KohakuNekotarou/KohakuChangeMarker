@@ -62,6 +62,7 @@
 #include "KCMReportTable.h"		// the page helpers and the table sections
 #include "KCMReportPaws.h"			// the cat's trail on the first page
 #include "KCMCore.h"				// KCMIsArmed / KCMArmedTargetDB / KCMArmedSourceDB / KCMCollectPageUIDs / KCMGetCompareMode
+#include "KCMComparisonRun.h"		// KCMToggleStartStop / KCMCanStartComparison - the report runs the comparison it needs
 #include "KCMDrawEventHandler.h"	// sEntries / sOverflowT / sPrintMarks - what "changed" means, and the rings
 #include "KCMPageMap.h"			// KCMBuildPairing / KCMMapTargetToSource - the partner of a changed page
 #include "KCMOriginCompare.h"		// KCMOriginArmed / KCMOriginScopedCopy - the task-start copy, rehydrated for the report
@@ -805,10 +806,36 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
 
+	// ★★**Not comparing yet? Run the comparison first** (the user's instruction, 2026-09-14: "let it
+	//   be pressed whenever a Target and a Source are there, and run whatever comparison it needs" -
+	//   before that this said "Start a comparison first." and gave up).
+	//   KCMToggleStartStop IS the flyout's own Start while nothing is armed, so the pair this report
+	//   ends up describing is exactly the pair a Start would have chosen - chosen Target/Source
+	//   where the reader set them, the automatic rule where they did not.
+	// ⚠★★**The comparison it runs STAYS ARMED.** It is not borrowed and given back the way the Story
+	//   and the Resources results are further down: a pixel comparison rebuilds the rings, the page
+	//   pairing and the overflow caches, and there is no earlier state to put back (the same reason
+	//   the report cannot show pixel pages in the other two modes). So pressing this before a Start
+	//   leaves the marks on screen, which is also what a reader who asked for a Before/After report
+	//   would expect to see.
+	if (!KCMIsArmed() || KCMArmedTargetDB() == nil)
+	{
+		// ⚠Asked through the resolver, not by counting documents: KCMComparisonRun.h promises this
+		//   goes through the same one as the toggle's start branch, so "the item was live" and "the
+		//   start found a pair" cannot disagree ([[one-question-one-place]]).
+		if (!KCMCanStartComparison())
+		{
+			outMessage = Ascii("Two open documents are needed for a report.");
+			return kFalse;
+		}
+		KCMToggleStartStop();		// nothing is armed, so this is the START branch
+	}
 	IDataBase* const targetDB = KCMArmedTargetDB();
 	if (!KCMIsArmed() || targetDB == nil)
 	{
-		outMessage = Ascii("Start a comparison first.");
+		// The start did not arm: it was cancelled at its progress bar, or it refused the pair.
+		// Its own words are already on the status line, so this says only what did not happen.
+		outMessage = Ascii("Report cancelled.");
 		return kFalse;
 	}
 

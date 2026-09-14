@@ -1301,9 +1301,18 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		}
 		else if (action == kKCMPopupExportReportActionID)
 		{
-			// Live only while comparing (a marked Target document exists) ＝ when there is something to
-			// write out. Greyed before a Start. ⚠The TSV export shared this branch until 2026-09-14.
-			listToUpdate->SetNthActionState(i, (Utils<IKCMMarkData>()->GetMarkedTargetDB() != nil) ? kEnabledAction : kDisabled_Unselected);
+			// ★★**Live while comparing OR while a comparison could be started** (2026-09-14, the
+			//   user's instruction: "let it be pressed whenever a Target and a Source are there, and
+			//   run whatever comparison it needs"). It used to be the first half alone - a marked
+			//   Target document - so the item was greyed until the reader had pressed Start.
+			// ⚠The second half is asked through CanStartComparison, which KCMComparisonRun.h promises
+			//   goes through THE SAME RESOLVER as the toggle's start branch. Counting open documents
+			//   here instead would be a second copy of that decision, and it would drift.
+			// ★The model runs the start itself (KCMReport.cpp); this branch only decides the grey.
+			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+			const bool16 haveMarks = (Utils<IKCMMarkData>()->GetMarkedTargetDB() != nil);
+			listToUpdate->SetNthActionState(i, (haveMarks || compare->CanStartComparison())
+												? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMClearChecksActionID)
 		{
