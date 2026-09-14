@@ -9,7 +9,7 @@
 //
 //   1. A SACRIFICIAL FIRST RANGE. ImportINX drops the first <ParagraphStyleRange> of a story
 //      whole (13,106 characters came back as 6,298; a five-paragraph story lost exactly its first
-//      paragraph), so a range that says KCMDUMMY is put first and is what goes.
+//      paragraph), so a range of throwaway text is put first and is what goes.
 //      ★WHAT IS ACTUALLY DROPPED (measured 2026-09-12 evening, 13 variants through a throwaway
 //      app.kcmInxFileProbe; docs/ai-notes/kcm-inx-first-range-drop-cause-2026-09-12.md):
 //      **EXACTLY ONE range per import - the SECOND text insertion in file order, counted ACROSS
@@ -23,7 +23,8 @@
 //      insertion is inside the application and was not pursued.
 //      !NOT OF EVERY STORY - and now the count says why. That was measured on one-story
 //      documents. With TWO stories one of them kept its sacrificial range (2026-09-12: the
-//      copy came back "KCMDUMMY" + a return = 9 characters longer than the origin, and the shape
+//      copy came back "KCMDUMMY" + a return = 9 characters longer than the origin - ⚠that WAS the
+//      token on the day; it is 32 hex digits now - and the shape
 //      check refused it): only one range is ever lost, so only the first story's dummy goes. So
 //      the injection is only half of the rule: after the import, a story whose first paragraph
 //      is exactly the sacrificial token loses that paragraph (KCMRehydrate.cpp,
@@ -69,18 +70,29 @@ extern const char* const kKCMOriginUidLabelKey;
 
 /** The words of the sacrificial first range: ONE token, so that a paragraph made of exactly this
     can be recognised after the import and deleted if the import left it standing (see 1. above).
-    ★THE TOKEN IS MADE FRESH FOR EVERY REHYDRATION (the user's ask, 2026-09-12): this prefix
-    followed by 32 hex digits of a random nonce (KCMRehydrate.cpp, NewSacrificialToken). A
-    constant "KCMDUMMY" could be a paragraph of the reader's own - a document ABOUT this plug-in
-    is the obvious one - and the deletion would then take a real paragraph (the shape check would
-    refuse the copy, but the comparison would be lost). A nonce nobody has seen cannot be typed.
-    The same string is handed to the injection and to the deletion, so the two cannot disagree. */
-#define kKCMSacrificialPrefix "KCMDUMMY-"
+    ★THE TOKEN IS MADE FRESH FOR EVERY REHYDRATION (the user's ask, 2026-09-12): 32 hex digits of
+    a random nonce, and nothing else (KCMRehydrate.cpp, NewSacrificialToken).
+
+    ⚠★★★THE NAME CAME OFF ON 2026-09-15 (the user's ask: "just the random part"), and the reason
+    was already written here: a token with a WORD in it can be a paragraph of the reader's own. The
+    earlier text said that about a constant "KCMDUMMY" and then kept "KCMDUMMY-" as a prefix, which
+    left the same objection standing in a smaller form - a document ABOUT this plug-in is exactly
+    where "KCMDUMMY-" gets typed. **32 hex digits nobody has seen cannot be typed at all**, so
+    dropping the name makes the token strictly safer, not merely tidier.
+    ★And nothing depended on the prefix: the deletion compares the WHOLE token character by
+      character (KCMRehydrate.cpp, DeleteSurvivingDummies), never its first nine characters.
+
+    The same string is handed to the injection and to the deletion, so the two cannot disagree.
+
+    ⚠There is no constant here any more. It was #define kKCMSacrificialPrefix "KCMDUMMY-"; emptying
+      it would have left a macro that expands to nothing, which is a thing to read and wonder about
+      rather than a thing that does work. The token is built in one place and that place is named
+      above. */
 
 /** Copy xml[0..size) into out with the two injections above.
 
     @param sacrificialText  the token of the sacrificial range (ASCII, non-empty, no XML
-                            specials - the caller makes it from kKCMSacrificialPrefix + hex).
+                            specials - the caller makes it of hex digits: NewSacrificialToken).
     @param outStories  how many <Story> elements were labelled (and given a sacrificial range).
     @param outSpreads  how many <Spread> elements were labelled.
     @param outPages    (optional) how many <Page> elements were labelled - the pages of the master

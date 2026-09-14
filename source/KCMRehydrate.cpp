@@ -87,11 +87,12 @@ void AppendShape(PMString& out, const KCMOriginShape& s)
 	out.AppendNumber(s.fTextLen);
 }
 
-/** The sacrificial token of ONE rehydration: kKCMSacrificialPrefix + 32 hex digits of a random
-	nonce (the user's ask, 2026-09-12 - see KCMXmlInject.h). std::random_device may throw on a
-	platform with no entropy source; that is caught here, and the fallback mixes the clock with
-	the address of a local, which is still a value nobody has typed. ASCII only, so the token can
-	go into XML text and be compared char by char after the import. */
+/** The sacrificial token of ONE rehydration: **32 hex digits of a random nonce, and nothing else**
+	(2026-09-12 the nonce, 2026-09-15 the name coming off - the user's asks; the reasoning is in
+	KCMXmlInject.h). std::random_device may throw on a platform with no entropy source; that is
+	caught here, and the fallback mixes the clock with the address of a local, which is still a
+	value nobody has typed. ASCII only, so the token can go into XML text and be compared char by
+	char after the import. */
 std::string NewSacrificialToken()
 {
 	uint32 words[4] = { 0, 0, 0, 0 };
@@ -116,15 +117,15 @@ std::string NewSacrificialToken()
 	}
 	char hex[40];
 	::sprintf_s(hex, sizeof(hex), "%08x%08x%08x%08x", words[0], words[1], words[2], words[3]);
-	std::string token(kKCMSacrificialPrefix);
-	token += hex;
-	return token;
+	return std::string(hex);
 }
 
 /** The sacrificial first range (KCMXmlInject.h) is put in for ImportINX to drop - and on a
 	one-story document it always was. WITH TWO STORIES ONE OF THEM KEPT IT (2026-09-12: the copy
 	came back 9 characters longer than the origin = "KCMDUMMY" + its return, and the shape check
-	refused it, which is what the check is for). So whatever survived is deleted here BY CONTENT:
+	refused it, which is what the check is for. ⚠"KCMDUMMY" was the token on that day - it is 32
+	hex digits and nothing else now, so the number 9 belongs to the story and not to the code).
+	So whatever survived is deleted here BY CONTENT:
 	a story whose first paragraph is exactly the sacrificial text loses that paragraph. Through a
 	command, because the text model takes no other route; the copy is ours and windowless, so the
 	undo step lands on nobody's stack.
