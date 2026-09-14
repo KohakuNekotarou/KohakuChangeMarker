@@ -12,6 +12,7 @@
 #include "VCPlugInHeaders.h"
 
 #include <windows.h>				// GetTempPathW - the crash trace, and nothing else
+#include <cstring>					// memset - the event structure before each GetNextPDFExportEvent
 #include <fstream>
 #include <string>
 #include <vector>
@@ -28,6 +29,7 @@
 #include "IK2ServiceProvider.h"
 #include "IK2ServiceRegistry.h"
 #include "IMasterSpreadUtils.h"		// AppendMasterPageItems - the page's furniture, which GetItemsOnPage leaves out
+#include "IPDFExportController.h"	// ★StartUp(bExportPageItems) - "is the item list PAGES or page items?"
 #include "IPDFExportPrefs.h"
 #include "IPDFSecurityPrefs.h"
 #include "IPMStream.h"
@@ -37,6 +39,8 @@
 #include "ISnippetImport.h"
 #include "ISpread.h"
 #include "ISpreadList.h"
+#include "ISwatchList.h"			// what the report's swatch list looks like after both sides arrive
+#include "ISwatchUtils.h"
 #include "IUIFlagData.h"
 #include "CmdUtils.h"
 #include "ErrorUtils.h"
@@ -55,6 +59,7 @@
 #include "KCMCore.h"				// KCMActiveDocDB / KCMCollectPageUIDs
 #include "KCMDrawEventHandler.h"	// sPrintMarks - what carries the marks into output
 #include "KCMMemXferBytes.h"		// where the PDF lands instead of a file
+#include "KCMRingAdornment.h"		// KCMBeginExportOn / KCMEndExportOnThisThread - announcing the export
 #include "KCMRehydrate.h"			// KCMMarkRehydratedClean / KCMCloseRehydrated - the throwaway document
 
 namespace
@@ -138,7 +143,8 @@ void DropForTheEye(KCMMemXferBytes& bytes, const wchar_t* name)
       IID_IPMUNKNOWNDATA on kPMUnknownData_SoftReference_Impl, and that is what is used here.
     ⚠**SOFT reference**: that implementation does not AddRef what it is given, so the stream
       has to outlive the command. It does - both live in this function. */
-bool16 ExportToMemory(IDataBase* db, const UIDList& items, KCMMemXferBytes& bytes, PMString& why)
+bool16 ExportToMemory(IDataBase* db, const UIDList& items, KCMMemXferBytes& bytes, PMString& why,
+					  bool16 useExportPrefs = kFalse, bool16 announce = kFalse)
 {
 	if (db == nil || items.Length() == 0)
 	{
@@ -162,7 +168,13 @@ bool16 ExportToMemory(IDataBase* db, const UIDList& items, KCMMemXferBytes& byte
 	// The CLIPBOARD PDF preferences, which is what the guide's example copies for this command -
 	// this boss exists to put PDF on the clipboard - rather than the export preferences the
 	// report's file route takes.
-	InterfacePtr<IPDFExportPrefs> appPrefs((IPDFExportPrefs*)::QuerySessionPreferences(IID_IPDFCLIPBOARDEXPORTPREFS));
+	// ⚠**WHICH PREFERENCES.** The guide's example for this command copies the CLIPBOARD ones,
+	//   because the command exists to put PDF on the clipboard - and a clipboard PDF is allowed
+	//   to be a flattened approximation. The ordinary EXPORT preferences are what a real PDF is
+	//   made with. Measured both ways here (2026-09-14) because the picture came out with its
+	//   transparency gone and its stacking order reversed.
+	InterfacePtr<IPDFExportPrefs> appPrefs((IPDFExportPrefs*)::QuerySessionPreferences(
+		useExportPrefs ? IID_IPDFEXPORTPREFS : IID_IPDFCLIPBOARDEXPORTPREFS));
 	InterfacePtr<IPDFExportPrefs> prefs(cmd, IID_IPDFEXPORTPREFS);
 	if (prefs != nil && appPrefs != nil)
 		prefs->CopyPrefs(appPrefs);
@@ -184,9 +196,16 @@ bool16 ExportToMemory(IDataBase* db, const UIDList& items, KCMMemXferBytes& byte
 	}
 	streamData->SetPMUnknown(stream);
 
+	// ⚠**ANNOUNCING THE EXPORT** puts a representative item on the transparency list, which is
+	//   what makes the flattener run. kPDFExportItemsCmdBoss raises no kPDFExportSetupService
+	//   event, so nothing announces it by itself.
+	if (announce)
+		KCMBeginExportOn(db);
 	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 	const ErrorCode err = CmdUtils::ProcessCommand(cmd);
 	stream->Flush();
+	if (announce)
+		KCMEndExportOnThisThread();
 	const ErrorCode global = ErrorUtils::PMGetGlobalErrorCode();
 	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 	if (err != kSuccess || global != kSuccess)
@@ -250,6 +269,126 @@ void MarkTest(IDataBase* db, const UIDList& list, PMString& line, KCMMemXferByte
 	// Two conditions, and both earn their place: beating the noise of THIS run, and a floor so
 	// that a run which happens to be quiet does not turn 50 bytes into a discovery.
 	line.Append((signal > noise * 2 && signal > 500) ? "MARKS REACHED IT" : "NO - that is noise");
+}
+
+/** What one of IPDFExportController's eight event IDs reads as. */
+const char* EventName(PDFExportEventID id)
+{
+	switch (id)
+	{
+		case kPDFExportEventBeginExport:	return "Begin";
+		case kPDFExportEventDrawPage:		return "DrawPage";
+		case kPDFExportEventDrawSpread:		return "DrawSpread";
+		case kPDFExportEventDrawItem:		return "DrawItem";
+		case kPDFExportEventPreserveInDesignEditingDetails:	return "PreserveIDML";
+		case kPDFExportEventEndExport:		return "End";
+		case kPDFExportEventNewDocument:	return "NewDocument";
+		case kPDFExportEventDrawGalleyPage:	return "DrawGalleyPage";
+	}
+	return "?";
+}
+
+/** What one of the eight PDFExportErr values reads as. */
+const char* ExportErrName(PDFExportErr e)
+{
+	switch (e)
+	{
+		case kPDFExportErrSuccess:				return " (success)";
+		case kPDFExportErrAlreadyStartedUp:		return " (already started up)";
+		case kPDFExportErrAlreadyShutDown:		return " (already shut down / not started)";
+		case kPDFExportErrNoViewPort:			return " (the export view port could not be created)";
+		case kPDFExportErrFileAlreadyOpen:		return " (the destination file is already open)";
+		case kPDFExportErrFileLocked:			return " (the destination file is locked)";
+		case kPDFExportErrUnknownFailure:		return " (unknown failure)";
+		case kPDFExportErrStreamCreationFailure:	return " (the output stream could not be created)";
+	}
+	return " (an unlisted code)";
+}
+
+// Defined below; used by the snippet helper that follows.
+bool16 PagePosition(IDataBase* db, UID pageUID, InterfacePtr<ISpread>& spread, int32& pgPos);
+
+/** Carry page 1 of `from` into `into`'s first spread as a SNIPPET - real page items, not a
+	picture - and answer how many arrived. ⚠Styles and swatches travel BY NAME, which is the whole
+	question S14 asks. */
+int32 SnippetOnePageInto(IDataBase* from, const UIDRef& into)
+{
+	if (from == nil || into == UIDRef::gNull)
+		return -1;
+	std::vector<UID> pages;
+	KCMCollectPageUIDs(from, pages);
+	if (pages.empty())
+		return -1;
+
+	KCMMemXferBytes snippet;
+	{
+		InterfacePtr<ISpread> spread;
+		int32 pgPos = -1;
+		if (!PagePosition(from, pages[0], spread, pgPos))
+			return -1;
+		UIDList onPage(from);
+		spread->GetItemsOnPage(pgPos, &onPage, kFalse, kFalse, kTrue);
+		if (onPage.Length() == 0)
+			return 0;
+		InterfacePtr<IPMStream> write(StreamUtil::CreateMemoryStreamWrite(&snippet, kFalse, kFalse));
+		Utils<ISnippetExport> exporter;
+		if (write == nil || !exporter)
+			return -1;
+		if (exporter->ExportPageitems(write, onPage) != kSuccess)
+			return -1;
+		write->Flush();
+	}
+	if (snippet.GetSize() == 0)
+		return -1;
+
+	InterfacePtr<IDocument> doc(into, UseDefaultIID());
+	InterfacePtr<ISpreadList> spreads(doc, UseDefaultIID());
+	const UID spreadUID = (spreads != nil && spreads->GetSpreadCount() > 0) ? spreads->GetNthSpreadUID(0) : kInvalidUID;
+	InterfacePtr<ISpread> spread(into.GetDataBase(), spreadUID, UseDefaultIID());
+	InterfacePtr<IDOMElement> frag(into.GetDataBase(), spreadUID, UseDefaultIID());
+	InterfacePtr<IPMStream> read(StreamUtil::CreateMemoryStreamRead(&snippet, kFalse, kFalse));
+	Utils<ISnippetImport> importer;
+	if (spread == nil || frag == nil || read == nil || !importer)
+		return -1;
+
+	int32 had = 0;
+	{
+		UIDList before(into.GetDataBase());
+		spread->GetItemsOnPage(0, &before, kFalse, kTrue, kTrue);
+		had = before.Length();
+	}
+	const ErrorCode err = importer->ImportFromStream(read, frag, kInvalidClass, kSuppressUI, nil);
+	read->Close();
+	if (err != kSuccess)
+		return -1;
+	UIDList after(into.GetDataBase());
+	spread->GetItemsOnPage(0, &after, kFalse, kTrue, kTrue);
+	return after.Length() - had;
+}
+
+/** How many swatches the document has, and the first few names - enough to see whether a
+	same-named swatch arrived as itself, as a copy, or not at all. */
+void DescribeSwatches(IDataBase* db, PMString& into)
+{
+	Utils<ISwatchUtils> swatchUtils;
+	InterfacePtr<ISwatchList> swatches(swatchUtils ? swatchUtils->QuerySwatchList(db) : nil);
+	if (swatches == nil)
+	{
+		into.Append("(no swatch list)");
+		return;
+	}
+	const int32 n = swatches->GetNumSwatches();
+	into.AppendNumber(n);
+	into.Append(" swatches:");
+	for (int32 i = 0; i < n && i < 40; ++i)
+	{
+		const UIDRef swatch = swatches->GetNthSwatch(i);
+		const PMString name = swatchUtils->GetSwatchName(swatch.GetDataBase(), swatch.GetUID());
+		if (name.IsEmpty())
+			continue;
+		into.Append(" ");
+		into.Append(name);
+	}
 }
 
 /** The page's index inside its own spread, and the spread, which GetItemsOnPage wants. */
@@ -1186,6 +1325,237 @@ void KCMProbePdfRoute(PMString& out)
 			}
 		}
 		Say(out, line);
+	}
+
+	// ---- S12: ★★★THE USER'S QUESTION - can this command export PAGES instead of items? -------
+	// "Fundamentally, what we want is to export the DOCUMENT's PDF internally, isn't it - and you
+	//  found no way to do that anywhere?" (2026-09-14). There is one place left that says
+	//  otherwise, and it is on this very boss:
+	//
+	//    IPDFExportController::StartUp(bool16 bExportPageItems = kFalse)
+	//    "If bExportPageItems is kTrue, the ItemList contains page items, and is NOT a list of
+	//     pages."                                        (IPDFExportController.h:118-124)
+	//
+	// ⇒ kFalse means THE LIST IS PAGES. If the command can be run that way while still writing to
+	//   the stream, the report gets the ORDINARY page export - flattener, transparency, stacking
+	//   order, and marks at their real opacity - with no file. That would answer, in one stroke,
+	//   the opacity problem AND the two questions asked of the items route ("what about stacking
+	//   order, what about items that are themselves semi-transparent?").
+	// ⚠THIS STEP ONLY ASKS. It calls StartUp, reads which events the controller offers, and shuts
+	//   down again. It does NOT try to draw: the drawing is the command's own job, and stepping
+	//   into that without knowing the shape of the session is how InDesign gets taken down.
+	// ⚠⚠⚠**MEASURED 2026-09-14: THIS TAKES INDESIGN DOWN. DO NOT RUN IT AGAIN.**
+	//   The trace ended on "S12.1 calling StartUp" and the crash report named
+	//   KCMProbePdfRoute -> NormalizeFixedQuadDef (Adobe's own), EXCEPTION_ACCESS_VIOLATION.
+	//   ⇒ **IPDFExportController::StartUp cannot be called from outside.** The controller belongs
+	//     to the export command and is initialised BY it - reaching in before ProcessCommand has
+	//     run hands it a session that does not exist yet. The interface is published so that a
+	//     client can READ an export in progress (that is how kPDFExportSetupService's events are
+	//     produced), not so that a caller can start one.
+	//   ⇒ **So there is no public way to make kPDFExportCmdBoss - the PAGE exporter - write into a
+	//     stream.** Its 35 interfaces carry IID_ISYSFILEDATA and no IID_IPMUNKNOWNDATA, and the
+	//     controller cannot be driven by hand. The items command is the only stream door there is.
+	//   The step is kept, disabled, because "we already tried that" is worth more than the four
+	//   lines it costs - and because the next reader will have the same idea.
+	const bool16 kS12WouldCrash = kTrue;
+	Trace(kS12WouldCrash ? "S12 skipped - StartUp() crashes when called from outside (measured)" : "S12 begin");
+	if (!kS12WouldCrash)
+	{
+		PMString line(Ascii("S12 StartUp(bExportPageItems=kFalse): "));
+		KCMMemXferBytes pageModeBytes;
+		InterfacePtr<ICommand> cmd(CmdUtils::CreateCommand(kPDFExportItemsCmdBoss));
+		InterfacePtr<IPMUnknownData> streamData(cmd, IID_IPMUNKNOWNDATA);
+		InterfacePtr<IPDFExportController> controller(cmd, IID_IPDFEXPORTCONTROLLER);
+		if (cmd == nil || controller == nil)
+		{
+			line.Append("FAILED - ");
+			line.Append(cmd == nil ? "no command" : "no IPDFExportController on this boss");
+			Say(out, line);
+		}
+		else
+		{
+			UIDList pages(db);
+			pages.Append(pageUID);			// ★A LIST OF PAGES, which is what kFalse says it is
+			cmd->SetItemList(pages);
+			InterfacePtr<IPDFExportPrefs> appPrefs((IPDFExportPrefs*)::QuerySessionPreferences(IID_IPDFCLIPBOARDEXPORTPREFS));
+			InterfacePtr<IPDFExportPrefs> prefs(cmd, IID_IPDFEXPORTPREFS);
+			if (prefs != nil && appPrefs != nil)
+				prefs->CopyPrefs(appPrefs);
+			InterfacePtr<IBoolData> progress(cmd, IID_IUSEPROGRESSINDICATOR);
+			if (progress != nil)
+				progress->Set(kFalse);
+			InterfacePtr<IUIFlagData> ui(cmd, IID_IUIFLAGDATA);
+			if (ui != nil)
+				ui->Set(kSuppressUI);
+			InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamWrite(&pageModeBytes, kFalse, kFalse));
+			if (stream != nil && streamData != nil)
+				streamData->SetPMUnknown(stream);
+
+			Trace("S12.1 calling StartUp");
+			const PDFExportErr started = controller->StartUp(kFalse);
+			Trace("S12.2 StartUp came back");
+			line.Append("StartUp -> ");
+			line.AppendNumber(static_cast<int32>(started));
+			line.Append(ExportErrName(started));
+
+			if (started == kPDFExportErrSuccess)
+			{
+				line.Append(", events:");
+				int32 guard = 0;
+				for (; guard < 24; ++guard)
+				{
+					PDFExportEvent ev;
+					std::memset(&ev, 0, sizeof(ev));
+					Trace("S12.3 GetNextPDFExportEvent");
+					const PDFExportErr got = controller->GetNextPDFExportEvent(&ev);
+					if (got != kPDFExportErrSuccess)
+					{
+						line.Append(" [stopped: ");
+						line.AppendNumber(static_cast<int32>(got));
+						line.Append("]");
+						break;
+					}
+					line.Append(" ");
+					line.Append(EventName(ev.id));
+					if (ev.targetPort == nil)
+						line.Append("(no port)");
+					if (ev.id == kPDFExportEventEndExport)
+						break;
+				}
+				Trace("S12.4 calling ShutDown");
+				const PDFExportErr ended = controller->ShutDown(kFalse);
+				Trace("S12.5 ShutDown came back");
+				line.Append(", ShutDown -> ");
+				line.AppendNumber(static_cast<int32>(ended));
+				line.Append(", ");
+				line.AppendNumber(static_cast<int32>(pageModeBytes.GetSize()));
+				line.Append(" bytes");
+			}
+			Say(out, line);
+		}
+	}
+	if (kS12WouldCrash)
+		Say(out, "S12 the page-export door: CLOSED - IPDFExportController::StartUp crashes when called from outside (measured 2026-09-14, crash report: NormalizeFixedQuadDef)");
+
+	// ---- S13: ★★★DOES THE PICTURE COME OUT RIGHT AT ALL? ------------------------------------
+	// The user asked the question that matters more than any of the above (2026-09-14): "handing
+	// it the items one by one - what about the stacking order, what about items that are
+	// themselves semi-transparent?" Measured on a page built for it: **the stacking order came
+	// out REVERSED and the transparency was GONE.** A report whose pictures are wrong is worse
+	// than a report with a temporary file, so the route cannot be used until this is understood.
+	//
+	// Three things the route had never been given, measured here one at a time:
+	//   (a) the ordinary EXPORT preferences instead of the CLIPBOARD ones,
+	//   (b) the export ANNOUNCED, so the flattener runs,
+	//   (c) the list in REVERSE, in case the command draws it back to front.
+	Trace("S13 begin - preferences, announcement, order");
+	{
+		UIDList pageAndItems(db);
+		pageAndItems.Append(pageUID);
+		{
+			InterfacePtr<ISpread> spread;
+			int32 pgPos = -1;
+			if (PagePosition(db, pageUID, spread, pgPos))
+				spread->GetItemsOnPage(pgPos, &pageAndItems, kFalse, kFalse, kTrue);
+		}
+
+		PMString line(Ascii("S13 "));
+		line.AppendNumber(pageAndItems.Length());
+		line.Append(" in the list. ");
+
+		// (a) + (b): the export preferences, announced.
+		{
+			KCMMemXferBytes bytes4;
+			PMString why;
+			if (ExportToMemory(db, pageAndItems, bytes4, why, kTrue /*export prefs*/, kTrue /*announce*/))
+			{
+				line.Append("[a+b export-prefs+announced ");
+				line.AppendNumber(static_cast<int32>(bytes4.GetSize()));
+				line.Append(" bytes -> kcm-spike-xp-ab.pdf] ");
+				DropForTheEye(bytes4, L"kcm-spike-xp-ab.pdf");
+			}
+			else
+			{
+				line.Append("[a+b FAILED: ");
+				line.Append(why);
+				line.Append("] ");
+			}
+		}
+
+		// (c): the same, with the list reversed.
+		{
+			UIDList reversed(db);
+			for (int32 i = pageAndItems.Length() - 1; i >= 0; --i)
+				reversed.Append(pageAndItems[i]);
+			KCMMemXferBytes bytes5;
+			PMString why;
+			if (ExportToMemory(db, reversed, bytes5, why, kTrue, kTrue))
+			{
+				line.Append("[c reversed ");
+				line.AppendNumber(static_cast<int32>(bytes5.GetSize()));
+				line.Append(" bytes -> kcm-spike-xp-rev.pdf]");
+				DropForTheEye(bytes5, L"kcm-spike-xp-rev.pdf");
+			}
+			else
+			{
+				line.Append("[c FAILED: ");
+				line.Append(why);
+				line.Append("]");
+			}
+		}
+		Say(out, line);
+	}
+
+	// ---- S14: ★★★THE QUESTION THAT DECIDES THE SNIPPET ROUTE --------------------------------
+	// The items route cannot be used: measured 2026-09-14, it reverses the stacking order and
+	// loses transparency (kPDFExportItemsCmdBoss is the CLIPBOARD exporter, and a clipboard PDF
+	// is allowed to be an approximation). The snippet route carries the OBJECTS instead, so
+	// stacking and transparency come with them by construction.
+	//
+	// ⚠**BUT THE REPORT HOLDS BOTH SIDES AT ONCE**, and the user named the hazard before any of
+	//   this was written: "a style of the same name could hold different values in the two
+	//   documents". Snippets carry styles BY NAME. So: does the second side's "Body" arrive as a
+	//   copy, silently take the first side's values, or overwrite them?
+	//
+	// ★THE ANSWER IS WHAT IT LOOKS LIKE, so the document is LEFT OPEN for capture to photograph.
+	Trace("S14 begin - both sides as snippets in one document");
+	{
+		PMString line(Ascii("S14 both sides as snippets in one document: "));
+		IDataBase* const tgt = KCMArmedTargetDB();
+		IDataBase* const src = KCMArmedSourceDB();
+		if (tgt == nil || src == nil)
+		{
+			line.Append("skipped - no comparison is armed (press Start first)");
+			Say(out, line);
+		}
+		else
+		{
+			SDKLayoutHelper helper;
+			UIDRef temp = helper.CreateDocument(kSuppressUI, PMReal(1200), PMReal(900), 1, 1, 0);
+			if (temp == UIDRef::gNull)
+			{
+				line.Append("FAILED - the document could not be created");
+				Say(out, line);
+			}
+			else
+			{
+				Trace("S14.1 snippet the SOURCE page in");
+				const int32 fromSource = SnippetOnePageInto(src, temp);
+				Trace("S14.2 snippet the TARGET page in");
+				const int32 fromTarget = SnippetOnePageInto(tgt, temp);
+				Trace("S14.3 both in");
+				line.Append("Source brought ");
+				line.AppendNumber(fromSource);
+				line.Append(" items, Target brought ");
+				line.AppendNumber(fromTarget);
+				line.Append(". Report now has ");
+				DescribeSwatches(temp.GetDataBase(), line);
+				// ★LEFT OPEN ON PURPOSE - the answer is visual. It is a windowless document, so it
+				//   does not appear on screen, but capture draws it and app.documents lists it.
+				line.Append(" ★LEFT OPEN for capture");
+				Say(out, line);
+			}
+		}
 	}
 
 	Trace("=== run ends, every step came back ===");
