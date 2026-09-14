@@ -329,6 +329,13 @@ DECLARE_PMID(kScriptInfoIDSpace, kKCMOriginStatusPropertyScriptElement, kKCMPref
 //   ⚠Unlike the properties, this needs NO line in KCM.fr's second (INX-only) resource: methods are
 //   not serialised into IDML, so there is nothing to take back out.
 DECLARE_PMID(kScriptInfoIDSpace, kKCMSaveOriginXmlMethodScriptElement, kKCMPrefix + 24)	// app.kcmSaveOriginXml(file) -> 0 written / 1 no origin held / 2 could not create / 3 could not write / 4 bad argument
+// ★A MEASURING DOOR (2026-09-14), taken from +25 for the same reason +24 was: never from the graves
+//   at +1..+12. app.kcmProbePdfRoute() runs KCMPdfSpike.cpp and returns the reading as a string.
+//   ⚠It is here to answer whether the Before/After report can stop writing temporary PDFs to disk
+//   while staying VECTOR (the user: "raster is hard to read when you zoom in"). If the answer sends
+//   the report down one of those routes and nothing needs to measure it again, retire this element
+//   and its ScriptID rather than reusing either.
+DECLARE_PMID(kScriptInfoIDSpace, kKCMProbePdfRouteMethodScriptElement, kKCMPrefix + 25)	// app.kcmProbePdfRoute() -> one line per step of the experiment
 // (The tool's enumerator goes on the application's own kToolBoxEnumScriptElement, so this side
 //  needs no ID for it.)
 

@@ -135,6 +135,7 @@
 // of the widget-touching functions in it -- a dead dependency. What it reads is
 // KCMGetSessionStatus (declared in KCMModelNotify.h), which is not a reverse dependency.
 #include "KCMOrigin.h"			// KCMOriginStatusLine - the Task Start origin, read from outside
+#include "KCMPdfSpike.h"		// KCMProbePdfRoute - the measuring door for the report's temp-file question
 #include "KCMResourceSnapshot.h"	// KCMDescribeResourceSnapshot - the Resources mode's export
 #include "KCMResourceDiff.h"	// KCMDescribeResourceDiff - the same mode's comparison of the two
 								// armed documents, which is the reading the engine is checked by
@@ -258,6 +259,21 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 
 ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData* data, IScript* script)
 {
+	// ★A MEASURING DOOR (2026-09-14), and the only method here that takes no argument: it reads
+	// the active document's first page and answers with the whole experiment, a line per step.
+	// ⚠**kSuccess with the reading in the return data, even when every step failed** - the same
+	//   shape as the status number below, and for the same reason: "the route does not work" is
+	//   an answer to the question asked, not an error in the scripting sense.
+	if (methodID.Get() == e_KCMProbePdfRoute)
+	{
+		PMString reading;
+		KCMProbePdfRoute(reading);
+		ScriptData returnData;
+		returnData.SetWideString(WideString(reading));
+		data->AppendReturnData(script, methodID, returnData);
+		return kSuccess;
+	}
+
 	if (methodID.Get() != e_KCMSaveOriginXml)
 		return CScriptProvider::HandleMethod(methodID, data, script);
 

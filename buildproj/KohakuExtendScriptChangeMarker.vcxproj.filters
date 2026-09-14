@@ -82,6 +82,9 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpike.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReport.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -241,6 +244,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPagePairRule.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpike.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReport.h">

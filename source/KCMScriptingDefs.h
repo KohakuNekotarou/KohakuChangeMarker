@@ -186,7 +186,24 @@ enum KCMScriptProperties
 */
 enum KCMScriptMethods
 {
-	e_KCMSaveOriginXml = 'eKGs'		// s = save. app.kcmSaveOriginXml(file)
+	e_KCMSaveOriginXml = 'eKGs',	// s = save. app.kcmSaveOriginXml(file)
+
+	// ★A MEASURING DOOR, not a feature (2026-09-14). app.kcmProbePdfRoute() runs the experiment
+	// in KCMPdfSpike.cpp on the active document's first page and returns the whole reading as one
+	// string, a line per step. It exists because the Before/After report has to stop writing
+	// temporary PDFs to disk (the user's ask that day), and the two routes that could replace
+	// them - a PDF made in memory, and the page's items carried across as a snippet - are both
+	// things the SDK describes but neither the SDK nor this plug-in has ever run.
+	// ⚠**It reads; it does not change the active document.** What it imports goes into a
+	//   windowless document of its own, which is closed again before the answer comes back.
+	// ⚠**'eKGv' is free, and that was measured rather than assumed** (2026-09-14), the same way
+	//   'eKGs' was earlier the same day: 0 hits in source/, and the registry
+	//   (docs/ai-notes/kes-scriptid-registry.md) has no row for it - ITS RETIRED ROWS READ TOO,
+	//   which is what caught 'eKGp' (KESCM's old kescmSetPrintMarks) on the first try here. The
+	//   search was validated on 'eKGs', which does exist and was found.
+	// ⚠**Registered with Adobe? NOT YET** - it goes in with the next submission if it is still
+	//   here. If the report ends up not needing it, retire the row rather than reusing the code.
+	e_KCMProbePdfRoute = 'eKGv'		// v = vector: is there a route that keeps the pages vector without a file?
 };
 
 /** Properties KCM adds to the STORY object (at the user's request).
