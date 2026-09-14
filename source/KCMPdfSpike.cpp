@@ -3131,8 +3131,17 @@ void IdmlPolicyProbe(IDataBase* db, PMString& out)
 //    ⇒ **if anything else is open and modified, S24 does not run.** It cannot be forgotten.
 //========================================================================================
 
+/** ★The documents THIS RUN's imports made and deliberately left open. They are unsaved by
+    definition, so without this the guard counts the spike's own leavings as work at risk and
+    refuses to go on - which is exactly what happened on the first S25 run.
+    ⚠Cleared at the top of every run: a pointer to a closed database must never be compared against
+      a live one, because the address gets reused ([[uidref-reuse-after-close]] is the same trap).
+      Nothing here is ever DEREFERENCED - it is an identity list, not a handle list. */
+std::vector<IDataBase*> sSpikeMade;
+
 /** ★Is it safe to risk taking InDesign down right now? Only when nothing ELSE is open with unsaved
-    work in it. `mine` is the database this step made for itself and is not counted. */
+    work in it. `mine` is the database this step made for itself and is not counted, and neither is
+    anything this run left open on purpose. */
 bool16 NothingElseAtRisk(IDataBase* mine, PMString& why)
 {
 	// ⚠IDocumentList has no kDefaultIID, so UseDefaultIID() will not compile against it. The route
@@ -3153,6 +3162,11 @@ bool16 NothingElseAtRisk(IDataBase* mine, PMString& why)
 			continue;
 		IDataBase* const db = ::GetDataBase(d);
 		if (db == mine)
+			continue;
+		bool16 ours = kFalse;
+		for (size_t k = 0; k < sSpikeMade.size() && !ours; ++k)
+			ours = (sSpikeMade[k] == db) ? kTrue : kFalse;
+		if (ours)
 			continue;
 		if (d->IsModified())
 			++atRisk;
@@ -3199,6 +3213,9 @@ void ImportOneInto(const char* label, const std::string& xml, PMString& line)
 		line.Append("could not make a document to import into] ");
 		return;
 	}
+	// ★Remember it, so the guard does not later mistake this run's own leavings for the user's work.
+	if (docRef.GetDataBase() != nil)
+		sSpikeMade.push_back(docRef.GetDataBase());
 
 	ErrorCode err = kFailure;
 	int32 pages = 0, spreads = 0, stories = 0, swatches = 0;
@@ -3300,9 +3317,164 @@ void ImportDesignmapProbe(IDataBase* db, PMString& out)
 
 	// ★The control FIRST. If the known-good row fails, the harness is at fault and row B is noise.
 	ImportOneInto("A control: INX type=action", inxXml, line);
-	ImportOneInto("B ★designmap type=document", mapXml, line);
+	ImportOneInto("B designmap type=document", mapXml, line);
 	line.Append("(both documents are LEFT OPEN on purpose - close them by name)");
 	Say(out, line);
+}
+
+//========================================================================================
+//  ★★★S25 - AND WHAT ABOUT A **REAL** IDML's designmap.xml?
+//
+//  THE USER'S QUESTION, and it is the right one: "so you can hand ImportINX an IDML?"
+//  S24 says a designmap goes in untouched - but THE ONE I HANDED IT IS NOT SHAPED LIKE A REAL
+//  ONE, and that difference is the whole question:
+//      mine  : the WHOLE DOCUMENT in one XML (S21's INX + two edits). No references at all.
+//      real  : nearly EMPTY - a StoryList attribute and nine <idPkg:Spread src="Spreads/..."/>
+//              references, with every piece of content in a SEPARATE FILE inside the zip.
+//
+//  ★WHAT THE HEADER ALREADY SAYS: ImportINX takes ONE stream. No package, no folder, no callback
+//    for resolving anything (IINXManager.h:120-121). So there is no route by which "Spreads/
+//    Spread_uee.xml" could be fetched - the honest prediction is that a real designmap imports as
+//    an EMPTY document rather than failing outright.
+//  ⚠But the prediction is only a reading: IINXImportPolicy is FORWARD-DECLARED ONLY, so what a
+//    policy does inside is not visible from here. Measure it.
+//
+//  ★ROW C IS THE ONE THAT DECIDES THE DESIGN. A single part (Stories/Story_uXXX.xml) is a
+//   <idPkg:Story> wrapping one <Story> - no references, everything present. If THAT goes in, then
+//   "hold the origin as IDML parts" can put a part back on its own. If it does not, the parts have
+//   to be joined into one designmap before anything can be returned - which is a different design,
+//   and better to know now than after it is built.
+//========================================================================================
+/** ⛔OFF because the answer is in (see the block beside the row itself). Not a caution - a measured
+    result: there is nothing left to learn from running it again. */
+static const bool16 kProbeTheRealDesignmap = kFalse;
+
+void RealIdmlPartsProbe(IDataBase* db, PMString& out)
+{
+	PMString line(Ascii("S25 a REAL IDML through ImportINX: "));
+
+	Utils<IUCFPackageUtils> ucf;
+	if (!ucf)
+	{
+		line.Append("no IUCFPackageUtils");
+		Say(out, line);
+		return;
+	}
+	wchar_t tempDir[MAX_PATH] = { 0 };
+	::GetTempPathW(MAX_PATH, tempDir);
+	std::wstring srcPath(tempDir);
+	srcPath += L"kcm-spike-real.idml";			// written by S17.2 earlier in this same run
+
+	IUCFPackageUtils::UCFErrorCode err = IUCFPackageUtils::kSuccess;
+	IUCFPackageUtils::PackageRefPtr ref = ucf->OpenPackage(PipeAsFile(srcPath.c_str()), err);
+	if (ref == nil)
+	{
+		line.Append("the real IDML could not be opened (err ");
+		line.AppendNumber(static_cast<int32>(err));
+		line.Append(") - S17.2 has to have run first");
+		Say(out, line);
+		return;
+	}
+
+	// ---- the real designmap, and what shape it is ------------------------------------------
+	KCMMemXferBytes mapBytes;
+	const int32 mapLen = ReadPackageEntry(ref, "designmap.xml", mapBytes);
+	if (mapLen <= 0)
+	{
+		line.Append("designmap.xml did not read back");
+		Say(out, line);
+		ucf->ClosePackage(ref);
+		return;
+	}
+	line.Append("[the real designmap: ");
+	DescribeInxBytes(mapBytes, line);
+	line.Append("] ");
+
+	// ---- find the first Stories/ part named in it -------------------------------------------
+	// ★UCF has no enumerate, so the names come from designmap.xml itself - the same route S18 uses.
+	std::string partName;
+	{
+		const char* const d = mapBytes.GetData();
+		const uint32 dl = mapBytes.GetSize();
+		const char* const needle = "src=\"Stories/";
+		const uint32 nlen = static_cast<uint32>(std::strlen(needle));
+		for (uint32 i = 0; i + nlen < dl && partName.empty(); ++i)
+		{
+			if (std::memcmp(d + i, needle, nlen) != 0)
+				continue;
+			// ⚠OFF BY ONE, measured: `from` already points AT the 'S' of "Stories/", so starting the
+			//   copy at from+1 dropped it and the probe asked for "tories/Story_u101.xml".
+			//   ★It failed loudly (OpenStream returned nil) rather than reading the wrong entry -
+			//   but that was luck, not design: a name that slipped by one INTO another valid name
+			//   would have been read and believed.
+			const uint32 from = i + 5;			// past src="
+			for (uint32 j = from; j < dl; ++j)
+			{
+				if (d[j] == '"')
+				{
+					partName.assign(d + from, j - from);
+					break;
+				}
+			}
+		}
+	}
+
+	KCMMemXferBytes partBytes;
+	int32 partLen = -1;
+	if (!partName.empty())
+	{
+		partLen = ReadPackageEntry(ref, partName.c_str(), partBytes);
+		line.Append("[the part ");
+		line.Append(Ascii(partName.c_str()));
+		line.Append(": ");
+		if (partLen > 0)
+			DescribeInxBytes(partBytes, line);
+		else
+			line.Append("did not read back");
+		line.Append("] ");
+	}
+	else
+	{
+		line.Append("[no Stories/ reference in the real designmap] ");
+	}
+	ucf->ClosePackage(ref);
+	Say(out, line);
+
+	// ---- and now hand both of them to the import door ---------------------------------------
+	PMString go(Ascii("S25 ImportINX on the real thing: "));
+	PMString why;
+	if (!NothingElseAtRisk(db, why))		// ⚠the material document is MINE - do not count it
+	{
+		go.Append(why);
+		Say(out, go);
+		return;
+	}
+	// ⛔★★★MEASURED 2026-09-14, AND IT TAKES INDESIGN DOWN. Handing ImportINX a REAL designmap -
+	//   the one carrying <idPkg:* src="..."/> - crashes with EXCEPTION_ACCESS_VIOLATION, and the
+	//   report names the road exactly: INXCORE -> XMLPARSER -> AXE8SharedExpat -> **JBX.APLN**,
+	//   which is the plug-in whose bosses are kJBXResourceImportPolicyBoss and
+	//   kJBXResTargetImportPolicyBoss - the RESOURCE REFERENCE resolver.
+	//   ★The prediction from the header was right, and right for the right reason: ImportINX takes
+	//   ONE stream and has no way to fetch "Spreads/Spread_uee.xml", so the reference cannot be
+	//   resolved - and the resolver does not check before it tries.
+	//   ⇒ Report saved at work/kcm-crash-2026-09-14-s25.xml (69,714 chars).
+	if (kProbeTheRealDesignmap)
+	{
+		const std::string realMap(mapBytes.GetData(), mapBytes.GetSize());
+		ImportOneInto("B2 the REAL designmap (references, no content)", realMap, go);
+	}
+	else
+	{
+		go.Append("[B2 the REAL designmap: NOT RUN - measured and it CRASHES InDesign inside "
+		          "JBX.APLN, the resource-reference resolver. kProbeTheRealDesignmap] ");
+	}
+	if (partLen > 0)
+	{
+		const std::string part(partBytes.GetData(), partBytes.GetSize());
+		ImportOneInto("C ONE REAL PART (idPkg:Story)", part, go);
+	}
+	go.Append("(left open on purpose - close by name)");
+	Say(out, go);
 }
 
 }	// namespace
@@ -3312,6 +3484,9 @@ void KCMProbePdfRoute(PMString& out)
 	out.Clear();
 	out.SetTranslatable(kFalse);
 	Trace("=== run begins ===");
+	// ★A run's own leavings are only meaningful within that run: a pointer to a database closed
+	//   since then must never be compared against a live one, because addresses get reused.
+	sSpikeMade.clear();
 
 	IDataBase* db = KCMActiveDocDB();
 	if (db == nil)
@@ -4689,6 +4864,12 @@ void KCMProbePdfRoute(PMString& out)
 	// ★It guards itself: nothing else open and unsaved, or it does not run.
 	Trace("S24 begin - ImportINX on a designmap");
 	ImportDesignmapProbe(db, out);
+
+	// ---- S25: the same door, but a REAL IDML's designmap and one of its parts ---------------
+	// S24's designmap was not shaped like a real one (no references, everything inside). This asks
+	// the question the user actually asked: can ImportINX be handed an IDML?
+	Trace("S25 begin - a real IDML's designmap and one part");
+	RealIdmlPartsProbe(db, out);
 
 	Trace("=== run ends, every step came back ===");
 }

@@ -38,6 +38,7 @@
 #include "KCMOriginPeek.h"			// KCMOriginPeekDrop / KCMOriginPeekDescribe
 #include "KCMRehydrate.h"			// KCMRehydrateRaw - the test instrument's import
 #include "KCMResourceBytes.h"
+#include "KCMOriginIdml.h"			// KCMInxToDesignmap - the snapshot is kept as an IDML's designmap
 #include "KCMResourceSnapshot.h"	// KCMTakeResourceSnapshot - the export, as the Resources mode does it
 
 namespace
@@ -141,6 +142,25 @@ bool16 KCMTakeTaskStart(PMString& whyNot)
 	}
 	if (!KCMTakeResourceSnapshot(doc, *bytes, whyNot))
 		return kFalse;					// whyNot names the step
+
+	// ★★★THE SNAPSHOT IS KEPT AS AN IDML's designmap, not as a bare INX (2026-09-15, the user's
+	//   call). Two edits, and the XML tree between them is untouched - see KCMOriginIdml.h for what
+	//   was checked before this line went in, and why none of the three readers below had to change.
+	//   ⚠A FAILURE HERE FAILS TASK START. KCMInxToDesignmap leaves the bytes alone unless both
+	//     anchors were found, so the only way it can fail after touching them is an allocation that
+	//     gave out mid-write - and then the snapshot is SHORT. A short origin must never reach a
+	//     comparison, which would read it as a smaller document rather than as a broken one
+	//     (the same rule KCMRehydrate states for a short rehydration).
+	{
+		PMString labelWhy;
+		if (!KCMInxToDesignmap(*bytes, labelWhy))
+		{
+			whyNot = "the snapshot could not be labelled as a designmap: ";
+			whyNot.SetTranslatable(kFalse);
+			whyNot.Append(labelWhy);
+			return kFalse;
+		}
+	}
 
 	IDataBase* const db = ::GetDataBase(doc);
 	KCMMeasureShape(db, sShape);

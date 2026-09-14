@@ -353,6 +353,23 @@ void AppendOpenTag(PMString& body, const PMString& name, ISAXAttributes* attrs)
 			if (attrName == "StyleUniqueId")
 				continue;
 
+			// ★★★A NAMESPACE DECLARATION IS NOT CONTENT (2026-09-15). The origin is now kept as a
+			//   DESIGNMAP rather than as a bare INX, and the two differ in exactly two places: the
+			//   processing instruction - which never reaches a SAX content handler at all, so it
+			//   cannot arrive here - and xmlns:idPkg on <Document>. Comparing that declaration
+			//   would put one permanent row in every Resources result, about a line that says
+			//   nothing whatever about the document.
+			//   ⚠MEASURED BEFORE THIS WAS WRITTEN: an INX carries NO xmlns of any kind (S23.2
+			//     counted xmlns:idPkg 0 in 183,218 bytes), so nothing that used to be compared is
+			//     being dropped here - this excludes something that never used to arrive.
+			//   ★Written as a SHAPE and not as the one name: xmlns="..." and xmlns:anything="..."
+			//     are the same kind of thing, and the next one to appear should be excluded too.
+			{
+				const std::string an(attrName.GetUTF8String());
+				if (an.size() >= 5 && an.compare(0, 5, "xmlns") == 0)
+					continue;
+			}
+
 			// ★★★KerningValue RIDES ALONG WITH KerningMethod, added 2026-09-13 (the user's call, on
 			//   their own observation: "it is in the XML but it does not change - it comes out when
 			//   you touch kerning, and kerning itself is KerningMethod"). ONE EDIT, TWO ROWS, and
