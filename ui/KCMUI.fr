@@ -1518,14 +1518,19 @@ resource ActionDef (kSDKDefActionResourceID)
 		// "Align Other Views to Active": shortcut-assignable one-shot. kKCMPanelMenuActionArea +
 		// kSDKDefVisibleInKBSCEditorFlag file it in the Keyboard Shortcuts editor under Product Area
 		// "Palette Menus" as "Kohaku Change Marker: Align Other Views to Active" (same treatment as KESCL's
-		// searches). No default shortcut ships; the user assigns one. Plain kDisableIfLowMem = always
-		// available (no UpdateActionStates entry needed).
+		// searches). No default shortcut ships; the user assigns one.
+		// ★**kCustomEnabling since 2026-09-14** (the user's instruction: grey it while fewer than two
+		//   documents are open). It was plain kDisableIfLowMem, and this comment said "always available
+		//   (no UpdateActionStates entry needed)" - so with a single document the item was pressable and
+		//   did nothing. ⚠**kCustomEnabling is what makes UpdateActionStates run at all**
+		//   (ActionDefs.h:40); the branch sits beside the Sync Layout Views one in
+		//   ui/KCMActionComponent.cpp.
 		kKCMActionComponentBoss,
 		kKCMPopupAlignViewsActionID,
 		kKCMAlignViewsMenuKey,
 		kKCMPanelMenuActionArea,
 		kNormalAction,
-		kDisableIfLowMem,
+		kCustomEnabling|kDisableIfLowMem,
 		kInvalidInterfaceID,
 		kSDKDefVisibleInKBSCEditorFlag,
 
@@ -1708,14 +1713,20 @@ resource ActionDef (kSDKDefActionResourceID)
 
 		// (The ActionDef for "Find Overset" stood here and went with its menu item on 2026-09-08.)
 
+		// ★**Shortcut-assignable since 2026-09-14** (the user's request). kKCMPanelMenuActionArea +
+		//   kSDKDefVisibleInKBSCEditorFlag file it in the Keyboard Shortcuts editor under Product Area
+		//   "Palette Menus" as "Kohaku Change Marker: Refresh Comparison"; no default shortcut ships.
+		//   ⚠**The area had to change with the flag**: kOtherActionArea is the right answer only for
+		//   items that never appear in that editor, and this one now does (the same pair of fields as
+		//   Align Other Views to Active above).
 		kKCMActionComponentBoss,
 		kKCMPopupRefreshCompareActionID,
 		kKCMRefreshCompareMenuKey,
-		kOtherActionArea,
+		kKCMPanelMenuActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates enables it only while a comparison is armed and both documents are alive
 		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
+		kSDKDefVisibleInKBSCEditorFlag,
 
 		// (The ActionDef for "Refresh Overset" stood here and went with its menu item on 2026-09-08.)
 
@@ -3076,9 +3087,12 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		//     **as many whole lines as its height allows**, which is 4 on a Japanese UI (17.9px lines
 		//     in a 74px box) and 6 on an English one. The stock widget left the remainder empty.
 		// ★Ampersand conversion is off (see the Target line). This is the row that prints **full save
-		//   paths** for Save Panel Settings / Save Check & Register / Export Changed Pages, so a
-		//   folder named "Q&A資料" was losing its ampersand. The drawing code states the same kFalse
-		//   (KCMStatusTextView.cpp).
+		//   paths** - Save Panel Settings, and the Before/After PDF report's `Report: N pages -> <path>`
+		//   - so a folder named "Q&A資料" was losing its ampersand. The drawing code states the same
+		//   kFalse (KCMStatusTextView.cpp).
+		//   ⚠The list read "Save Panel Settings / Save Check & Register / Export Changed Pages" until
+		//     2026-09-14. The second went on 09-07 and the third with its menu item on 09-14 -- **a
+		//     list of examples goes stale exactly like a count does**.
 		KCMStatusTextWidget
 		(
 			kKCMStatusTextWidgetID,

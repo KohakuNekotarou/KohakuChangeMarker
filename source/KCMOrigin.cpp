@@ -97,10 +97,14 @@ void KCMMeasureShape(IDataBase* db, KCMOriginShape& out)
 
 bool16 KCMCanTakeTaskStart()
 {
-	if (sBytes.get() != nil)
-		return kFalse;					// one slot
-	if (KCMIsArmed() && KCMArmedTargetDB() != nil)
-		return kFalse;					// not under a running comparison (as Set as Target / Source)
+	// ★★**2026-09-14: an active document is the whole condition.** Until then this also refused
+	//   while an origin was held ("one slot") and while a comparison was running, and the item was
+	//   greyed in both cases - the user had to press Clear Target and Source first. The user's
+	//   instruction that day was to let it be pressed at any time and have it **do that clearing
+	//   itself** (below), which is the same move Clear Target and Source made on 2026-09-07 when it
+	//   stopped being greyed while armed.
+	// ⚠**The ONE SLOT rule itself is not gone**: two origins still cannot be held at once. What
+	//   changed is who ends the first one - the user by a separate press, or this function.
 	return (KCMActiveDoc() != nil) ? kTrue : kFalse;
 }
 
@@ -110,10 +114,24 @@ bool16 KCMTakeTaskStart(PMString& whyNot)
 	whyNot.SetTranslatable(kFalse);
 	if (!KCMCanTakeTaskStart())
 	{
-		whyNot = (sBytes.get() != nil) ? "an origin is already held - Clear Target and Source first"
-									   : "Task Start needs an active document and no running comparison";
+		whyNot = "Task Start needs an active document";
 		return kFalse;
 	}
+
+	// ★**Clear the way first** (the user's instruction, 2026-09-14: "if it is started, Stop, then
+	//   Clear Target and Source, then Task Start"). These are exactly the two steps the flyout's
+	//   Clear Target and Source runs, in the same order (KCMActionComponent.cpp) - not a second
+	//   copy of that decision, but the same two model calls.
+	// ★KCMClearChosenDocs drops the held origin as well (KCMReleaseOrigin inside it, "the user's
+	//   rule, 2026-09-12"), so nothing else is needed to empty the slot.
+	// ⚠Order matters: stopping AFTER clearing would leave the marks of a comparison whose pair has
+	//   already been forgotten.
+	if (KCMIsArmed() && KCMArmedTargetDB() != nil)
+		KCMStopComparison();
+	KCMClearChosenDocs();
+
+	// Asked again AFTER the two calls above: the active document is what this takes the origin
+	// from, and stopping a comparison can put a different window in front.
 	IDocument* const doc = KCMActiveDoc();
 	K2::scoped_ptr<KCMResourceBytes> bytes(new (std::nothrow) KCMResourceBytes());
 	if (bytes.get() == nil)
@@ -162,8 +180,10 @@ int32 KCMOriginSaveRaw(const IDFile& file, PMString& whyNot)
 	// ⚠That is also why this function is no longer Windows-only. Nothing in it asks the shell
 	//   anything now, and the stream below is the same one the TSV export uses on either platform.
 
-	// The same three steps as the TSV export (KCMChangedPagesTSV.cpp): write, Flush, THEN read
-	// the state - XferByte may only reach the buffer, so a failed write can surface at the Flush.
+	// Three steps: write, Flush, THEN read the state - XferByte may only reach the buffer, so a
+	// failed write can surface at the Flush. ⚠(The TSV export used to be cited here as the place
+	// that established the pattern; KCMChangedPagesTSV.cpp went on 2026-09-14, so the reason is
+	// spelled out rather than pointed at a file that is no longer there.)
 	InterfacePtr<IPMStream> stream(StreamUtil::CreateFileStreamWrite(file, kOpenOut | kOpenTrunc, 'TEXT', 'CWIE'));
 	if (stream == nil)
 	{

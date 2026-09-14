@@ -120,10 +120,11 @@ static const PMReal kKCMScrollMapOverflowAlpha = 0.15;	// mixed well into the ba
 // trackTop and trackBottom alike -- so the pull-in is always symmetrical.
 static const PMReal kKCMScrollMapTrackInset = 8.0;
 
-// Whether the scrollbar map is on: the "Show Scrollbar Map" toggle in the flyout, on by default.
-// While it is off, Attach and NoticeDrawEvent return at once, so no strip is injected and no
-// fingerprint is computed on every draw. Removing the strips that already exist when the toggle
-// goes off is the caller's job (KCMActionComponent calls DetachAll).
+// ⚠(This paragraph used to describe a flag - "whether the scrollbar map is on" - fed by the
+//  "Show Scrollbar Map" flyout toggle. **Both went on 2026-09-14**, when the map became
+//  unconditional at the user's instruction; the flag was deleted and its comment was not, so what
+//  stood here described a switch that no longer existed. The retired ActionID is recorded, and
+//  deliberately not reused, in KCMUIID.h.)
 
 //========================================================================================
 // KCMScrollMapView -- the strip draws itself (an IControlView implementation)

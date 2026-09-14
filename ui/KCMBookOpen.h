@@ -75,13 +75,11 @@ void	KCMBookOpenChapterForRow(int32 rowIndex);
     plug-in must never be in. */
 void	KCMBookStartComparisonForRow(int32 rowIndex);
 
-class UIDRef;
-
-/** Bring a document IN FRONT - and give it a window if it has none (kOpenLayoutCmdBoss). kTrue
-    when a window is there afterwards. The chapter rows' own route (BringChapterToFront, inside
-    this file), opened up on 2026-09-12 for the flyout's "Open Task Start XML (raw)": the document
-    the model rehydrated windowless is in the same situation a windowless chapter is in. */
-bool16	KCMBringDocumentToFront(const UIDRef& docRef);
+// (KCMBringDocumentToFront went on 2026-09-14, taking the forward declaration of UIDRef it needed
+//  with it. It was opened up on 2026-09-12 for exactly one caller - the flyout's "Open Task Start
+//  XML (raw)" - and that item was removed two days later, which left a published function with no
+//  caller anywhere in either plug-in. ⚠BringChapterToFront, the file-static route it forwarded to,
+//  is very much alive: three callers inside this file still use it.)
 
 #endif // __KCMBookOpen_h__
 

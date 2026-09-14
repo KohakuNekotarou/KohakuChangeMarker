@@ -805,11 +805,26 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// ([[one-question-one-place]]: the facade changes the state, the UI decides what it shows).
 		case kKCMPopupTaskStartActionID:
 		{
+			// ★**It can be pressed while an origin is already held, or while a comparison runs**
+			//   (the user's instruction, 2026-09-14): the model stops and clears first and then
+			//   takes a fresh origin (KCMTakeTaskStart).
+			// ⚠**What is observed here is only what to SAY.** Both facts have to be read BEFORE the
+			//   call, because afterwards the state looks identical whether anything was dropped or
+			//   not - and a reader who pressed this by accident needs the status line to tell them
+			//   that a comparison ended.
+			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+			const bool16 wasArmed  = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+			const bool16 hadOrigin = compare->HasOrigin();
 			PMString whyNot;
-			if (Utils<IKCMCompareFacade>()->TakeTaskStart(whyNot))
+			if (compare->TakeTaskStart(whyNot))
 			{
 				KCMRefreshPanel();
-				KCMSetStatus("Task Start taken. Edit, then Start to compare against it.");
+				if (wasArmed)
+					KCMSetStatus("Stopped and cleared, then Task Start taken. Edit, then Start to compare against it.");
+				else if (hadOrigin)
+					KCMSetStatus("The earlier Task Start was dropped and a new one taken. Edit, then Start to compare against it.");
+				else
+					KCMSetStatus("Task Start taken. Edit, then Start to compare against it.");
 			}
 			else
 			{
@@ -1105,7 +1120,8 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			// ★Greyed unless Started (armed), by the user’s instruction. This feature picks "the spreads
 			//   with no change" from the comparison marks (sEntries), so with nothing Started there is
 			//   nothing to pick (the work has a guard at its head for the same reason). It uses the same
-			//   kDisabled_Unselected as the other plain commands (Refresh Overset, Export Changed Pages).
+			//   kDisabled_Unselected as the other plain commands (Refresh Overset; "Export Changed
+			//   Pages" was one of them until it was removed on 2026-09-14).
 			// ★There is no way to end up "ON and greyed and unable to get back": a Stop
 			//   (**KCMDoClearMarks**) always calls ResetHideUnchanged(kTrue), which shows the hidden
 			//   spreads again and turns the toggle off. So do a recomparison (**KCMDoMarkChangesDoc**) and
@@ -1146,6 +1162,22 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		else if (action == kKCMPopupShowStoryIdsActionID)
 		{
 			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowStoryIds());
+		}
+		else if (action == kKCMPopupAlignViewsActionID)
+		{
+			// ★**Greyed while fewer than two documents are open** (the user's instruction, 2026-09-14).
+			//   With one document there is nowhere to line anything up, and the item used to be
+			//   pressable and then say "Aligned other views to the active view." having done nothing --
+			//   measured, the same wording for one document as for two.
+			// ⚠The number of open documents is the ONLY thing asked here. KCMOpenDocumentCount's header
+			//   says why this deliberately does NOT look ahead at the engine's three-way answer: a
+			//   hand-copied look-ahead of exactly that kind lived in KCMViewSync.cpp, drifted out of
+			//   step with the engine and was removed. ⇒ The item can still be enabled and align
+			//   nothing (a third document in front while armed); it can no longer be enabled with
+			//   nowhere to align to.
+			// ★No check mark - this is a plain command, not a toggle.
+			listToUpdate->SetNthActionState(i, (KCMOpenDocumentCount() >= 2) ? kEnabledAction
+																			: kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupSyncViewsActionID)
 		{

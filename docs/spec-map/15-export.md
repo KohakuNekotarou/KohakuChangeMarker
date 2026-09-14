@@ -1,12 +1,16 @@
-# 15. 書き出し ― 変更ページの TSV と Before/After 報告書
+# 15. 書き出し ― Before/After 報告書
 
-> コード地図での位置: `source/KCMChangedPagesTSV.{h,cpp}`（TSV）／**`source/KCMReport.{h,cpp}`（報告書・2026-09-13 新設）**。
-> どちらも model 側で、フライアウトの項目は UI（`ui/KCMActionComponent.cpp`）が facade を呼ぶ。
+> コード地図での位置: **`source/KCMReport.{h,cpp}`（報告書・2026-09-13 新設）**。model 側で、
+> フライアウトの項目は UI（`ui/KCMActionComponent.cpp`）が facade を呼ぶ。
 
-## 1. 変更ページの TSV（Export Changed Pages...）
+## 1. 変更ページの TSV（Export Changed Pages...）― ❌**2026-09-14 に廃止**
 
-- **EXP-01** 比較中に、変更ページの一覧（Page／Type＝Changed・Inserted・Deleted）をタブ区切りで保存する。保存先はファイルダイアログで選ぶ。
-  Inserted／Deleted は画面の赤「/」と同じ集合（あふれキャッシュ）から取る。第3章 CMP-06。
+- **EXP-01** ~~比較中に、変更ページの一覧（Page／Type＝Changed・Inserted・Deleted）をタブ区切りで保存する。~~
+  ❌**メニュー項目も実装（`source/KCMChangedPagesTSV.{h,cpp}`）も削除した**（2026-09-14 ユーザー指示）。
+  理由＝**同じ一覧を下の PDF 報告書が持つ**から。
+  ⚠**公開版 1.5.0 に在った機能**なので、利用者から見て消える＝リリースノートに書く（正本＝`KCMID.h` の増分㊳）。
+  ⚠ページの綴り方（`(Hide)` の付け方）は `KCMChangeNav.cpp`／`KCMStoryJump.cpp` の**2か所**に残っている
+  （この TSV が3つ目だった）。
   - 訂正:
 
 ## 2. Before/After 報告書（Export Before/After Report・2026-09-13）

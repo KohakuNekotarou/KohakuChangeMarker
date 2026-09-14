@@ -700,10 +700,12 @@ static PMString KCMFormatChangeRatio(int32 changed, int32 total)
 // which counts past hidden spreads. This label is where a human is told which page to look at
 // next, and they will go and find it in the Pages panel -- so it is spelled the way the Pages
 // panel spells it (kTrue).
-//   The TSV export (PageDisplay in KCMChangedPagesTSV.cpp) and the Story Edits label (PageLabel in
-//   KCMStoryJump.cpp) were brought into line for the same reason. THE THREE ARE ONE QUESTION --
-//   "how is this page spelled to a human" -- so fixing one alone makes the panel and the export
-//   disagree while anything is hidden.
+//   The Story Edits label (PageLabel in KCMStoryJump.cpp) was brought into line for the same
+//   reason. ★**THE TWO ARE ONE QUESTION** -- "how is this page spelled to a human" -- so fixing
+//   one alone makes the panel and the list disagree while anything is hidden.
+//   ⚠**This said THREE until 2026-09-14**, when the TSV export (PageDisplay in
+//     KCMChangedPagesTSV.cpp) was deleted along with its menu item. ★A number written into a
+//     comment does not follow the thing it counts: the list itself is the count.
 // @warning the folio exclusion rectangle (KCMPageNumberMarker.cpp) is right to stay kFalse: that
 //   one measures the ink of the digits actually printed. It is a different question and must not
 //   be brought into line.
@@ -753,8 +755,9 @@ static PMString KCMStopLabel(IDataBase* db, const KCMNavStop& stop)
 	//   why, all that is left is a button that appears to do nothing.
 	// The status line is English in every locale (the display policy is in KCMID.h; the only two
 	// things shown in Japanese are How to Use and the Hide Unchanged confirmation).
-	// The mark is spelled "(Hide)", the same as in the TSV's Page column (PageDisplay in
-	// KCMChangedPagesTSV.cpp) -- one state is not spelled two ways.
+	// The mark is spelled "(Hide)", the same as in the Story Edits label (PageLabel in
+	// KCMStoryJump.cpp) -- one state is not spelled two ways. (It named the TSV's Page column until
+	// that export was deleted on 2026-09-14.)
 	if (db != nil && Utils<IKCMMarkData>()->IsPageOnHiddenSpread(db, stop.pageUID))
 		label.Append(" (Hide)");
 

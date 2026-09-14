@@ -58,6 +58,7 @@
 #include "TextChar.h"				// kTextChar_CR
 
 #include "KCMReport.h"
+#include "KCMProgressBar.h"		// KCMDeferredProgressBar - the bar that appears only after three seconds
 #include "KCMReportTable.h"		// the page helpers and the table sections
 #include "KCMReportPaws.h"			// the cat's trail on the first page
 #include "KCMCore.h"				// KCMIsArmed / KCMArmedTargetDB / KCMArmedSourceDB / KCMCollectPageUIDs / KCMGetCompareMode
@@ -612,7 +613,7 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 				   const PMReal& pageW, const PMReal& pageH, const PMString& sourceName,
 				   const std::vector<KCMReportRow>& storyRows, const PMString& storyHeading,
 				   const std::vector<KCMReportRow>& resourceRows, const PMString& resourceHeading,
-				   PMString& why)
+				   KCMDeferredProgressBar& bar, int32& units, PMString& why)
 {
 	SDKLayoutHelper helper;
 	const PMString targetName = NameOf(targetDB);
@@ -675,6 +676,22 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 	const IDFile afterFile = afterPDF;
 	for (size_t i = 0; i < pairs.size(); ++i)
 	{
+		// ★The bar's page units, and **the only place a cancel is read during the placing**: a page
+		//   goes down as two PlaceFileInFrame calls and nothing inside them can be interrupted, so
+		//   the question is asked between pages (the same rule as the comparison's own loop).
+		{
+			PMString step(Ascii("Page "));
+			step.SetTranslatable(kFalse);
+			step.AppendNumber(static_cast<int32>(i) + 1);
+			step.Append(" of ");
+			step.AppendNumber(static_cast<int32>(pairs.size()));
+			bar.Step(units++, step);
+			if (bar.WasCancelled())
+			{
+				why = Ascii("cancelled");	// the caller asks the bar itself, not this word
+				return kFalse;
+			}
+		}
 		PMRect page;
 		UIDRef layer;
 		if (!KCMReportPageAt(helper, reportDB, static_cast<int32>(i) + 1, page, layer))
@@ -704,8 +721,22 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 
 	// ---- the Story table, then the Resources table ----------------------------------------------
 	int32 next = static_cast<int32>(pairs.size()) + 1;
+	// ⚠One unit per TABLE, not per row: a table is written in one call that flows its own pages, so
+	//   there is no safe point inside it to step or to ask about a cancel.
+	bar.Step(units++, Ascii("Story changes table"));
+	if (bar.WasCancelled())
+	{
+		why = Ascii("cancelled");
+		return kFalse;
+	}
 	if (!KCMReportWriteTable(reportDB, next, storyHeading, Ascii("ID"), storyRows, next, why))
 		return kFalse;
+	bar.Step(units++, Ascii("Resources changes table"));
+	if (bar.WasCancelled())
+	{
+		why = Ascii("cancelled");
+		return kFalse;
+	}
 	if (!KCMReportWriteTable(reportDB, next, resourceHeading, Ascii("Kind"), resourceRows, next, why))
 		return kFalse;
 
@@ -717,9 +748,10 @@ PMString SuggestedReportName(IDataBase* targetDB);
 /** Where the report goes: the user chooses (a save dialog, as the TSV export raises one), with
     "<Target name>.compare-report.pdf" offered as the name. kFalse with an empty `why` when the
     dialog was cancelled - the caller says "cancelled" and nothing else.
-    **This is a file dialog raised from the model half**, on the same grounds as the TSV export's
-    (KCMChangedPagesTSV.cpp): SDKFileSaveChooser is a helper from sdksamples/common, not a boss of
-    a UI plug-in, and this path is entered from the flyout only, never from a drawing thread. */
+    **This is a file dialog raised from the model half**, and the grounds are these: SDKFileSaveChooser
+    is a helper from sdksamples/common, not a boss of a UI plug-in, and this path is entered from the
+    flyout only, never from a drawing thread. ⚠(The TSV export was named here as the precedent for the
+    same move. It went on 2026-09-14, and this is now the only place the reasoning lives.) */
 bool16 ReportPath(IDataBase* targetDB, IDFile& outFile, PMString& why)
 {
 	why.Clear();
@@ -887,11 +919,28 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 		}
 	}
 
+	// ---- the progress bar, from here to the end ---------------------------------------------
+	// ★★**It covers the PDF work only, and that is the whole of the design.** The two loans above
+	//   raise a bar of their own (the Story comparison's), and **two KCMDeferredProgressBars must
+	//   not be alive at once**: the second one's bar is refused registration and, worse, the first
+	//   one's Cancel stops being readable (KCMProgressBar.h's warning, measured 2026-09-05). So this
+	//   one is created only after those loans have given back - the reader sees at most two bars in
+	//   sequence, never two at a time.
+	// ★Three seconds before it appears, like the comparison's (kKCMProgressBarDelayMs): a report of
+	//   two changed pages is over before anything is drawn.
+	// Units: the Before export, the After export, the report document, one per report page, the two
+	//   tables, and the final write.
+	PMString barTitle(Ascii("Export Before/After PDF Report"));
+	barTitle.SetTranslatable(kFalse);
+	KCMDeferredProgressBar bar(barTitle, static_cast<int32>(pairs.size()) + 5);
+	int32 units = 0;
+
 	// ---- the two temporary PDFs ------------------------------------------------------------
 	const IDFile beforePDF = TempPDF("before");
 	const IDFile afterPDF  = TempPDF("after");
 	PMString why;
 	bool16 ok = kTrue;
+	bar.Step(units++, Ascii("Exporting the Before pages"));
 	// THE MARKS GO ON THE BEFORE SIDE (the user's ask, 2026-09-13): the older version carries the
 	// rings of the changed pages and the "/" of the removed ones, the newer version is shown clean.
 	// The drawing marks a Source page only when the document is the one it knows as sSrcDB and the
@@ -943,6 +992,12 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 			KCMDrawEventHandler::sSrcPageToTarget.clear();
 			KCMDrawEventHandler::sOverflowS.clear();
 		}
+		bar.Step(units++, Ascii("Exporting the After pages"));
+		if (ok && bar.WasCancelled())
+		{
+			ok = kFalse;
+			why = Ascii("cancelled");
+		}
 		if (ok && !afterPages.empty())
 		{
 			KCMDrawEventHandler::sPrintMarks = kFalse;		// the newer version clean
@@ -957,6 +1012,7 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	UIDRef reportDoc = UIDRef::gNull;
 	if (ok)
 	{
+		bar.Step(units++, Ascii("Building the report document"));
 		SDKLayoutHelper helper;
 		const PMReal reportW = 2 * pageW + 3 * kKCMReportGutter;
 		const PMReal reportH = pageH + kKCMReportHeaderBand + kKCMReportCaptionH + 2 * kKCMReportGutter;
@@ -969,13 +1025,16 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	}
 	if (ok)
 		ok = BuildReport(reportDoc.GetDataBase(), targetDB, sourceDB, pairs, beforePDF, afterPDF, pageW, pageH, sourceName,
-						 storyRows, storyHeading, resourceRows, resourceHeading, why);
+						 storyRows, storyHeading, resourceRows, resourceHeading, bar, units, why);
 	int32 pageCount = 0;
 	if (ok)
 	{
 		std::vector<UID> all;
 		KCMCollectPageUIDs(reportDoc.GetDataBase(), all);
 		pageCount = static_cast<int32>(all.size());
+		// The last unit. ⚠No cancel is read after this one: the write is a single call, and once it
+		//   has run the file exists - stopping "after" it would only mean not opening the viewer.
+		bar.Step(units++, Ascii("Writing the PDF"));
 		ok = ExportPagesToPDF(reportDoc.GetDataBase(), all, reportFile, why);
 	}
 	CloseReportDocument(reportDoc);
@@ -984,10 +1043,22 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 
 	if (!ok)
 	{
-		outMessage = Ascii("Report failed: ");
-		outMessage.Append(why);
+		// ★**The bar itself is asked, never the word in `why`.** A cancel can come from four places
+		//   (the two exports here, and the page loop or either table inside BuildReport), and having
+		//   each of them spell the same word is exactly the kind of agreement that drifts. The bar
+		//   knows whether the button was pressed.
+		if (bar.WasCancelled())
+			outMessage = Ascii("Report cancelled.");
+		else
+		{
+			outMessage = Ascii("Report failed: ");
+			outMessage.Append(why);
+		}
 		return kFalse;
 	}
+	// (The bar comes down as this function returns, a moment after the viewer is asked to open the
+	//  file. Taking it down first would mean scoping it away from the message above, which is where
+	//  the cancel is read.)
 
 	// The reader wants to see it now.
 	::ShellExecuteW(nil, L"open", WidePath(reportFile).c_str(), nil, nil, SW_SHOWNORMAL);

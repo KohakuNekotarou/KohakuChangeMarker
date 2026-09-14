@@ -45,6 +45,21 @@ void	KCMSetLayoutSync(bool16 on);
 //       Target and Source are the same document
 bool16	KCMAlignOtherViewsToActiveNow();
 
+/** How many documents are open. The flyout's "Align Other Views to Active" is greyed while this
+    is fewer than two (the user's instruction, 2026-09-14): with one document there is nothing to
+    line up, and the item used to be pressable and then do nothing at all.
+
+    ⚠★★**This is NOT a look-ahead at what the action will do**, and the difference matters.
+    KCMAlignOtherViewsToActiveNow answers kFalse for three different reasons - no frontmost layout
+    view, a third document in front while armed, or nothing to align to - and a hand-copied
+    look-ahead of exactly that kind lived above its return once, drifted out of step with the
+    engine, and was removed (the comment there tells the story: hold the same decision in two
+    places and they drift). What is asked here is the ONE fact the user named, the number of open
+    documents, which has a single definition and cannot drift.
+    ⇒ The item can still be enabled and align nothing (a third document in front while armed).
+      It can no longer be enabled when there is nowhere to align to at all. */
+int32	KCMOpenDocumentCount();
+
 // Shutdown: drop the toggle so any notification still in flight is ignored by the observer's
 // leading guard. Called from KCMUIStartup::Shutdown.
 //

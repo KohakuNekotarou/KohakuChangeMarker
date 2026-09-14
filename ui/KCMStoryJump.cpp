@@ -101,8 +101,9 @@ PMString PageLabel(IDataBase* db, UID pageUID)
 		label.Append("?");	// a page whose number cannot be had (does not normally happen; the same catch-all as KCMStopLabel)
 
 	// ★★A page on a hidden spread gets "(Hide)" after it ---- the same spelling as the Prev/Next
-	//   label (KCMStopLabel) and the Page column of the export (PageDisplay in KCMChangedPagesTSV).
-	//   **Do not spell one state three ways in three places** ([[one-question-one-place]]).
+	//   label (KCMStopLabel). **Do not spell one state two ways in two places**
+	//   ([[one-question-one-place]]). ⚠It read "three ways in three places" until 2026-09-14: the
+	//   third was the TSV export's Page column, deleted together with its menu item.
 	//   ⚠This mark IS the reason KCMGotoStoryFrame decided not to move the layout, so putting in one
 	//     without the other makes a row that does not move and does not say why.
 	if (db != nil && Utils<IKCMMarkData>()->IsPageOnHiddenSpread(db, pageUID))

@@ -6,8 +6,12 @@
 //
 //  THE ORIGIN: one document's INX, taken when the user pressed Task Start, held in memory.
 //
-//  ONE SLOT (the user's rule, 2026-09-12): while an origin is held, Task Start cannot be pressed
-//  again. What ends it is "Clear Target and Source" or the document it was taken from closing.
+//  ONE SLOT (the user's rule, 2026-09-12): only ONE origin is held at a time.
+//  ★★**Since 2026-09-14 that no longer greys the menu item.** Pressing Task Start while an origin
+//  is held - or while a comparison is running - stops, clears, and takes a fresh one (the user's
+//  instruction: "if it is started, Stop, then Clear Target and Source, then Task Start"). The slot
+//  is still one; what changed is who empties it.
+//  What else ends an origin: "Clear Target and Source", or the document it was taken from closing.
 //  A Stop keeps it - the usual shape of the work is start, stop, edit, start again.
 //
 //  WHAT IS KEPT WITH THE BYTES. The document's shape (a rehydration is checked against it), and
@@ -51,8 +55,10 @@ struct KCMOriginShape
 /** Counts db's spreads, pages, user stories and their text. nil db yields zeros. */
 void KCMMeasureShape(IDataBase* db, KCMOriginShape& out);
 
-/** Whether Task Start may be pressed: no origin held, no comparison armed, an active document.
-    ★THE ONE PLACE. The menu's grey state and the command both ask this. */
+/** Whether Task Start may be pressed: **an active document, and nothing else** (2026-09-14).
+    ★THE ONE PLACE. The menu's grey state and the command both ask this.
+    ⚠It used to add "no origin held, no comparison armed"; those two are now cleared by
+    KCMTakeTaskStart itself rather than refused here. */
 bool16 KCMCanTakeTaskStart();
 
 /** Take the origin from the ACTIVE document and choose the pair (Target = that document,

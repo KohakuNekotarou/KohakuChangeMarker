@@ -38,7 +38,9 @@
 // General includes:
 #include "PMString.h"
 #include "PMReal.h"		// GetBaseScreenOpacity
-#include "UIDRef.h"		// RehydrateOriginRaw
+// (UIDRef.h went on 2026-09-14 with the three virtuals that used it - RehydrateOriginRaw and its
+//  twin, removed with their menu items. Nothing in this header names the type any more; measured
+//  rather than assumed, by grepping this file for UIDRef and finding only the include itself.)
 
 // Project includes:
 // The BOUNDARY header, not KCMID.h. All that is needed here is this interface's own IID

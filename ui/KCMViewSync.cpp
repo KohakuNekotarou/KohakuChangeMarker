@@ -1028,6 +1028,19 @@ bool16 KCMAlignOtherViewsToActiveNow()
 	return KCMSyncOtherDocViewportsTo(front, pano, db, kTrue /*applyPageOffset: corrected only while armed; the engine forces kFalse otherwise*/);
 }
 
+// KCMOpenDocumentCount (declared in KCMViewSync.h) -- what greys "Align Other Views to Active"
+// while fewer than two documents are open. The header says why this counts documents rather than
+// asking the engine what it would do.
+int32 KCMOpenDocumentCount()
+{
+	// Same three steps as the engine above (KCMSyncOtherDocViewportsTo): the session can be nil
+	// while the application is quitting, and UpdateActionStates does run during teardown.
+	ISession* session = GetExecutionContextSession();
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
+	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
+	return (docList != nil) ? docList->GetDocCount() : 0;
+}
+
 // KCMViewSyncShutdown (declared in KCMViewSync.h) -- the teardown clean-up.
 void KCMViewSyncShutdown()
 {

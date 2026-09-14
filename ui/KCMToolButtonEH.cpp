@@ -487,7 +487,8 @@ static void KCMRaiseToolFlyout()
 
 	// ⚠The cast is sound HERE and only here: wchar_t is 16 bits on Windows, and this whole
 	//   function is inside #ifdef WINDOWS. (On the Mac it is 32 and the same cast would read past
-	//   the buffer -- the mistake KCMChangedPagesTSV.cpp records having made once.)
+	//   the buffer -- a mistake this plug-in made once, in the TSV export. ⚠That file went on
+	//   2026-09-14, so the warning is kept here rather than pointed at it.)
 	const wchar_t* const text1 = reinterpret_cast<const wchar_t*>(w1.GrabUTF16Buffer(nil));
 	const wchar_t* const text2 = reinterpret_cast<const wchar_t*>(w2.GrabUTF16Buffer(nil));
 
