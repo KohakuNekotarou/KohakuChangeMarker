@@ -310,6 +310,14 @@ public:
 	bool16 EverConnected() const { return fState != nil && fState->connected != 0 ? kTrue : kFalse; }
 	DWORD LastReadError() const { return fState != nil ? fState->lastErr : 0; }
 
+	/** ★The bytes themselves, for code that has to work ON what arrived rather than count it
+	    (S22 repairs the zip index in place, here, without a file anywhere in the story).
+	    ⚠Answers nil unless the catcher was built with keepContent, and KeepLen() can be SHORTER
+	      than Bytes() when the buffer filled up - so "we have all of it" is one comparison, and
+	      a caller that does not make it is working on a truncated zip. */
+	char* Keep() const { return fState != nil ? fState->keep : nil; }
+	int32 KeepLen() const { return fState != nil ? static_cast<int32>(fState->keepLen) : 0; }
+
 	/** Everything this pipe knows, in one phrase - ★so that every stage reports the SAME facts
 	    and none of them can quietly leave out the one that would have shown the flaw. */
 	void Describe(PMString& into) const
@@ -2223,58 +2231,64 @@ IImportProvider* QueryProviderBySweep(KCMMemXferBytes& bytes, PMString& out)
 //  ⚠What a real designmap has and this will not: a StoryList attribute, and the nine idPkg
 //    references. Whether either is required is exactly what this step measures.
 //========================================================================================
-void MinimalIdml(IDataBase* db, PMString& out)
+/** ★S21's first half, in the form BOTH S21 and S22 need: the whole document as one XML, already
+    dressed as a designmap. Nothing in the tree is EDITED - the processing instruction is replaced
+    and one attribute is inserted, and every byte between them is what ExportINX wrote.
+    ⚠★★One question, one place: S22 aims this very recipe at a pipe, and if the two edits lived in
+      both functions they would drift apart the first time either one was corrected.
+    @return kFalse with `why` filled in, and then `xml` must not be looked at. */
+bool16 BuildDesignmapXml(IDataBase* db, std::string& xml, int32& rawInxBytes, PMString& why)
 {
-	Utils<IUCFPackageUtils> ucf;
+	rawInxBytes = 0;
 	InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
 	InterfacePtr<IDOMElement> docElement(doc, UseDefaultIID());
-	PMString line(Ascii("S21 the smallest IDML we can build: "));
-	if (!ucf || docElement == nil)
+	if (docElement == nil)
 	{
-		line.Append("no IUCFPackageUtils, or the document has no IDOMElement");
-		Say(out, line);
-		return;
+		why.Append("the document has no IDOMElement");
+		return kFalse;
 	}
-
-	// ---- the whole document, as one XML, in memory ----------------------------------------
 	KCMMemXferBytes inx;
 	if (!ExportElementAsInx(docElement, inx) || inx.GetSize() == 0)
 	{
-		line.Append("ExportINX gave nothing");
-		Say(out, line);
-		return;
+		why.Append("ExportINX gave nothing");
+		return kFalse;
 	}
-	line.AppendNumber(static_cast<int32>(inx.GetSize()));
-	line.Append(" B of document XML; ");
+	rawInxBytes = static_cast<int32>(inx.GetSize());
+	xml.assign(inx.GetData(), inx.GetSize());
 
-	// ---- the two edits --------------------------------------------------------------------
-	std::string xml(inx.GetData(), inx.GetSize());
 	const std::string fromPI("type=\"action\"");
-	const std::string toPI("type=\"document\"");
 	const size_t atPI = xml.find(fromPI);
 	if (atPI == std::string::npos)
 	{
-		line.Append("★the processing instruction does not say type=\"action\" - not touching it");
-		Say(out, line);
-		return;
+		why.Append("★the processing instruction does not say type=\"action\" - not touching it");
+		return kFalse;
 	}
-	xml.replace(atPI, fromPI.size(), toPI);
+	xml.replace(atPI, fromPI.size(), "type=\"document\"");
 
 	const std::string anchor("<Document ");
 	const size_t atDoc = xml.find(anchor);
 	if (atDoc == std::string::npos)
 	{
-		line.Append("★no <Document> element to dress");
-		Say(out, line);
-		return;
+		why.Append("★no <Document> element to dress");
+		return kFalse;
 	}
 	xml.insert(atDoc + anchor.size(),
 	           "xmlns:idPkg=\"http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging\" ");
-	line.Append("PI and namespace rewritten, ");
-	line.AppendNumber(static_cast<int32>(xml.size()));
-	line.Append(" B; ");
+	return kTrue;
+}
 
-	// ---- three entries, and two of them are fixed text -------------------------------------
+/** ★S21's second half: a whole IDML's three entries, into whatever stream it is handed.
+    ⚠The mimetype entry is NOT written here - UCF writes it itself out of the mime argument, and
+      writing it again would put two of them in the package.
+    ⚠createManifest is kFalse on purpose: a real IDML has no manifest.xml. */
+bool16 WriteMinimalIdml(IPMStream* zipOut, const std::string& xml, PMString& into)
+{
+	Utils<IUCFPackageUtils> ucf;
+	if (!ucf || zipOut == nil)
+	{
+		into.Append("no IUCFPackageUtils, or no stream to write into");
+		return kFalse;
+	}
 	// ★Read out of a real package, byte for byte (2026-09-14).
 	static const char* const kContainer =
 		"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
@@ -2285,24 +2299,14 @@ void MinimalIdml(IDataBase* db, PMString& out)
 		"\t</rootfiles>\n"
 		"</container>\n";
 
-	wchar_t tempDir[MAX_PATH] = { 0 };
-	::GetTempPathW(MAX_PATH, tempDir);
-	std::wstring dstPath(tempDir);
-	dstPath += L"kcm-spike-minimal.idml";
-	::DeleteFileW(dstPath.c_str());
-
 	const AString kIdmlMime("application/vnd.adobe.indesign-idml-package");
-	InterfacePtr<IPMStream> zipOut(StreamUtil::CreateFileStreamWriteLazy(
-		PipeAsFile(dstPath.c_str()), kOpenOut | kOpenTrunc));
 	IUCFPackageUtils::UCFErrorCode err = IUCFPackageUtils::kSuccess;
-	IUCFPackageUtils::PackageRefPtr ref = (zipOut != nil)
-		? ucf->CreatePackage(zipOut, kIdmlMime, kFalse, err) : nil;
+	IUCFPackageUtils::PackageRefPtr ref = ucf->CreatePackage(zipOut, kIdmlMime, kFalse, err);
 	if (ref == nil)
 	{
-		line.Append("CreatePackage nil, err ");
-		line.AppendNumber(static_cast<int32>(err));
-		Say(out, line);
-		return;
+		into.Append("CreatePackage nil, err ");
+		into.AppendNumber(static_cast<int32>(err));
+		return kFalse;
 	}
 	Trace("S21.1 writing the two entries");
 	{
@@ -2325,9 +2329,41 @@ void MinimalIdml(IDataBase* db, PMString& out)
 	}
 	Trace("S21.2 ClosePackage");
 	const IUCFPackageUtils::UCFErrorCode closed = ucf->ClosePackage(ref);
+	into.Append("Close -> ");
+	into.AppendNumber(static_cast<int32>(closed));
+	return (closed == IUCFPackageUtils::kSuccess) ? kTrue : kFalse;
+}
+
+void MinimalIdml(IDataBase* db, PMString& out)
+{
+	PMString line(Ascii("S21 the smallest IDML we can build: "));
+	std::string xml;
+	int32 rawInx = 0;
+	if (!BuildDesignmapXml(db, xml, rawInx, line))
+	{
+		Say(out, line);
+		return;
+	}
+	line.AppendNumber(rawInx);
+	line.Append(" B of document XML; PI and namespace rewritten, ");
+	line.AppendNumber(static_cast<int32>(xml.size()));
+	line.Append(" B; ");
+
+	wchar_t tempDir[MAX_PATH] = { 0 };
+	::GetTempPathW(MAX_PATH, tempDir);
+	std::wstring dstPath(tempDir);
+	dstPath += L"kcm-spike-minimal.idml";
+	::DeleteFileW(dstPath.c_str());
+
+	InterfacePtr<IPMStream> zipOut(StreamUtil::CreateFileStreamWriteLazy(
+		PipeAsFile(dstPath.c_str()), kOpenOut | kOpenTrunc));
+	const bool16 wrote = WriteMinimalIdml(zipOut, xml, line);
 	zipOut.reset(nil);
-	line.Append("Close -> ");
-	line.AppendNumber(static_cast<int32>(closed));
+	if (!wrote)
+	{
+		Say(out, line);
+		return;
+	}
 
 	WIN32_FILE_ATTRIBUTE_DATA fad;
 	std::memset(&fad, 0, sizeof(fad));
@@ -2342,6 +2378,435 @@ void MinimalIdml(IDataBase* db, PMString& out)
 		line.Append(", ★NO FILE WAS WRITTEN");
 	}
 	Say(out, line);
+}
+
+//========================================================================================
+//  ★★★S22 - THE CONTAINER AIMED AT A PIPE, AND THE ZIP INDEX REPAIRED IN MEMORY.
+//
+//  Everything else was already in hand on 2026-09-14:
+//      the document's XML   - in memory from the start (ExportINX)
+//      the two edits        - in memory (S21)
+//      the container        - UCF writes to \\.\pipe\ without complaint (S16: 36,509 bytes caught)
+//      the gate is not here - 9491 "already open" is the IDML EXPORTER's gate; UCF has none
+//  ...and ONE thing was not: WHAT ARRIVES THROUGH A PIPE IS A BROKEN ZIP. A zip writer goes back
+//  and fills in numbers it could not know while it was writing, and a pipe cannot seek - so those
+//  numbers arrive as zeroes.
+//
+//  ★★★WHY THAT IS REPAIRABLE AND NOT A LOSS: **not one byte is missing.** The central directory
+//    is written LAST, when the writer knows everything, and it carries a correct copy of every
+//    number the local headers lost. The repair is copying and arithmetic; nothing is invented.
+//
+//  ★THE MEASUREMENT THAT SAYS THE DAMAGE IS EXACTLY THIS: S16 built the same package twice, to a
+//    file and to a pipe, and the pipe version was **36 bytes LONGER** - 12 per entry, three
+//    entries. That is the DATA DESCRIPTOR a zip writes behind each entry when it cannot go back
+//    and patch the header. So the pipe version is not a damaged file; it is the OTHER legal way of
+//    writing a zip, with the offsets left unfilled because nobody could seek back to them.
+//    ⇒ The control row below repeats that subtraction, so this run either confirms it or says so.
+//
+//  WHAT GOES BACK IN (four things, none of them guessed):
+//    1. the EOCD's "offset of the central directory"       ARITHMETIC: eocdPos - dirSize
+//    2. every local header's CRC and its two sizes         COPIED from the directory entry
+//    3. every directory entry's "offset of the local header"  ARITHMETIC: walked forward
+//    4. nothing else. No payload byte is touched.
+//
+//  ⚠★★★THE TRAP - and it is why this was written down rather than remembered: THE GENERAL PURPOSE
+//    FLAG DISAGREES WITH ITSELF. Bit 3 ("the sizes are in a descriptor behind the data") is
+//    corrected in the central directory and stale in the local header. Believe either one and the
+//    next entry is looked for 12 bytes off.
+//  ⇒ **THE FLAG IS NOT ASKED.** Look for a signature at end, end+12 and end+16 and take the one
+//    that is really there - then check the NAME matches, so two walks that fell out of step STOP
+//    instead of writing numbers into the wrong headers.
+//========================================================================================
+
+const uint32 kSigLocal   = 0x04034b50;		// PK\3\4 - a local file header
+const uint32 kSigCentral = 0x02014b50;		// PK\1\2 - a central directory entry
+const uint32 kSigEocd    = 0x06054b50;		// PK\5\6 - the end of the central directory
+
+uint16 Le16(const char* p)
+{
+	const uchar* const b = reinterpret_cast<const uchar*>(p);
+	return static_cast<uint16>(b[0] | (b[1] << 8));
+}
+
+uint32 Le32(const char* p)
+{
+	const uchar* const b = reinterpret_cast<const uchar*>(p);
+	return static_cast<uint32>(b[0]) | (static_cast<uint32>(b[1]) << 8)
+	     | (static_cast<uint32>(b[2]) << 16) | (static_cast<uint32>(b[3]) << 24);
+}
+
+void PutLe32(char* p, uint32 v)
+{
+	p[0] = static_cast<char>(v & 0xff);
+	p[1] = static_cast<char>((v >> 8) & 0xff);
+	p[2] = static_cast<char>((v >> 16) & 0xff);
+	p[3] = static_cast<char>((v >> 24) & 0xff);
+}
+
+/** What one repair did, IN NUMBERS - so the reading says what was put back and not merely "ok".
+    A repair that reports only success is a repair nobody can check afterwards. */
+struct ZipRepairReport
+{
+	bool16		ok;
+	const char*	why;				// nil when ok
+	int32		entries;			// as the EOCD counts them
+	int32		headersPatched;
+	int32		withDescriptor;		// entries that carried a data descriptor behind the payload
+	uint32		eocdAt;
+	uint32		dirOffset;
+	bool16		landedOnTheDirectory;
+};
+
+/** Put the four missing numbers back, in place. `zip` is modified; the payload is not.
+    ★Every failure path leaves `why` naming WHICH check refused, because "the repair failed" and
+    "the bytes are not what this code assumes" are different findings. */
+void RepairZipIndex(char* zip, uint32 len, ZipRepairReport& r)
+{
+	std::memset(&r, 0, sizeof(r));
+	r.why = "not attempted";
+	if (zip == nil || len < 22)
+	{
+		r.why = "too short to be a zip at all";
+		return;
+	}
+
+	// ---- 1. the end-of-central-directory record ---------------------------------------------
+	// ★Searched for rather than assumed at len-22: an EOCD can carry a comment behind it, and a
+	//   wrong guess here would make every number below wrong in the same direction.
+	bool16 found = kFalse;
+	for (uint32 i = len - 22 + 1; i-- > 0; )
+	{
+		if (Le32(zip + i) == kSigEocd)
+		{
+			r.eocdAt = i;
+			found = kTrue;
+			break;
+		}
+	}
+	if (!found)
+	{
+		r.why = "no end-of-central-directory record";
+		return;
+	}
+	r.entries = static_cast<int32>(Le16(zip + r.eocdAt + 10));
+	const uint32 dirSize = Le32(zip + r.eocdAt + 12);
+	if (r.entries <= 0 || dirSize == 0 || dirSize > r.eocdAt)
+	{
+		r.why = "the central directory does not fit in front of the EOCD";
+		return;
+	}
+	r.dirOffset = r.eocdAt - dirSize;
+	// ★★THE CHECK THAT TURNS ARITHMETIC INTO EVIDENCE: the computed place has to actually hold a
+	//   directory header. Without it a wrong subtraction would be written into the EOCD and the
+	//   package would fail somewhere else entirely, with nothing pointing back to here.
+	if (Le32(zip + r.dirOffset) != kSigCentral)
+	{
+		r.why = "eocd - dirSize does not land on a central directory header";
+		return;
+	}
+	PutLe32(zip + r.eocdAt + 16, r.dirOffset);
+
+	// ---- 2 and 3. the two walks, kept in step -----------------------------------------------
+	uint32 cd = r.dirOffset;
+	uint32 lh = 0;
+	for (int32 n = 0; n < r.entries; ++n)
+	{
+		if (cd + 46 > r.eocdAt || Le32(zip + cd) != kSigCentral)
+		{
+			r.why = "the central directory ran out before its own count did";
+			return;
+		}
+		const uint16 nameLen  = Le16(zip + cd + 28);
+		const uint16 extraLen = Le16(zip + cd + 30);
+		const uint16 cmtLen   = Le16(zip + cd + 32);
+		const uint32 crc      = Le32(zip + cd + 16);
+		const uint32 cSize    = Le32(zip + cd + 20);
+		const uint32 uSize    = Le32(zip + cd + 24);
+
+		if (lh + 30 > len || Le32(zip + lh) != kSigLocal)
+		{
+			r.why = "no local header where the walk expected one";
+			return;
+		}
+		const uint16 lNameLen  = Le16(zip + lh + 26);
+		const uint16 lExtraLen = Le16(zip + lh + 28);
+		// ★The two walks are independent, so they are made to agree out loud. A mismatch here means
+		//   the step BEFORE it was wrong, and writing numbers on would corrupt a package that had
+		//   arrived whole.
+		if (lNameLen != nameLen || lh + 30 + nameLen > len || cd + 46 + nameLen > r.eocdAt
+		    || std::memcmp(zip + lh + 30, zip + cd + 46, nameLen) != 0)
+		{
+			r.why = "the local header and the directory entry name different files";
+			return;
+		}
+		PutLe32(zip + lh + 14, crc);
+		PutLe32(zip + lh + 18, cSize);
+		PutLe32(zip + lh + 22, uSize);
+		PutLe32(zip + cd + 42, lh);
+		++r.headersPatched;
+
+		const uint32 dataEnd = lh + 30 + lNameLen + lExtraLen + cSize;
+		if (dataEnd > len)
+		{
+			r.why = "an entry claims more bytes than arrived";
+			return;
+		}
+		// ⚠THE FLAG IS NOT ASKED - see the block above, it disagrees with itself. The candidates
+		//   are "no descriptor", "a descriptor without its signature" and "a descriptor with one".
+		const uint32 candidates[3] = { dataEnd, dataEnd + 12, dataEnd + 16 };
+		bool16 stepped = kFalse;
+		for (int32 t = 0; t < 3 && !stepped; ++t)
+		{
+			const uint32 p = candidates[t];
+			if (p + 4 > len)
+				continue;
+			const uint32 sig = Le32(zip + p);
+			if (sig == kSigLocal || (p == r.dirOffset && sig == kSigCentral))
+			{
+				if (t != 0)
+					++r.withDescriptor;
+				lh = p;
+				stepped = kTrue;
+			}
+		}
+		if (!stepped)
+		{
+			r.why = "nothing recognisable follows an entry's data";
+			return;
+		}
+		cd += 46 + nameLen + extraLen + cmtLen;
+	}
+
+	// ★★THE ARITHMETIC HAS TO CLOSE: the last step must land exactly where the directory begins,
+	//   and the directory walk must end exactly at the EOCD. Either being off by a byte means the
+	//   numbers just written are not to be trusted, however healthy the package might look.
+	r.landedOnTheDirectory = (lh == r.dirOffset && cd == r.eocdAt) ? kTrue : kFalse;
+	r.ok = r.landedOnTheDirectory;
+	r.why = r.ok ? nil : "the walk did not end on the central directory";
+}
+
+/** Write `len` bytes into %TEMP%\<leaf> and answer where they went.
+    ⚠Diagnostic, like Trace and DropForTheEye: it exists so something that is NOT this code can
+      judge the result, and it goes when the spike goes. */
+bool16 DropBytes(const char* data, int32 len, const wchar_t* leaf, std::wstring& path)
+{
+	if (data == nil || len <= 0)
+		return kFalse;
+	wchar_t dir[MAX_PATH] = { 0 };
+	::GetTempPathW(MAX_PATH, dir);
+	path.assign(dir);
+	path += leaf;
+	::DeleteFileW(path.c_str());
+	std::ofstream file(path.c_str(), std::ios::binary | std::ios::trunc);
+	if (!file)
+		return kFalse;
+	file.write(data, static_cast<std::streamsize>(len));
+	const bool16 good = file.good() ? kTrue : kFalse;
+	file.close();
+	return good;
+}
+
+/** ★★★THE VOTE THIS CODE CANNOT CAST FOR ITSELF: InDesign's own UCF reader either opens those
+    bytes or it does not.
+    ⚠It has to be handed a FILE - OpenPackage refuses a memory stream and accepts a file stream
+      (four ways, measured 2026-09-14). **The file is the WITNESS, not the product**: the package
+      was built, carried and repaired without one. */
+void AskUcfToOpen(const std::wstring& path, int32 expectLen, PMString& into)
+{
+	Utils<IUCFPackageUtils> ucf;
+	if (!ucf)
+	{
+		into.Append("no IUCFPackageUtils");
+		return;
+	}
+	InterfacePtr<IPMStream> zipIn(StreamUtil::CreateFileStreamRead(PipeAsFile(path.c_str())));
+	if (zipIn == nil)
+	{
+		into.Append("the bytes could not be opened for reading");
+		return;
+	}
+	IUCFPackageUtils::UCFErrorCode err = IUCFPackageUtils::kSuccess;
+	IUCFPackageUtils::PackageRefPtr ref = ucf->OpenPackage(zipIn, err);
+	if (ref == nil)
+	{
+		into.Append("★REFUSED, UCFErrorCode ");
+		into.AppendNumber(static_cast<int32>(err));
+		return;
+	}
+	into.Append("★OPENED");
+	{
+		InterfacePtr<IPMStream> entry(ucf->OpenStream(ref, WideString("designmap.xml")));
+		if (entry == nil)
+		{
+			into.Append(", but designmap.xml is not in it");
+		}
+		else
+		{
+			int32 got = 0;
+			uchar buf[4096];
+			for (;;)
+			{
+				const int32 n = entry->XferByte(buf, static_cast<int32>(sizeof(buf)));
+				if (n <= 0)
+					break;
+				got += n;
+			}
+			entry->Close();
+			into.Append(", designmap.xml reads back ");
+			into.AppendNumber(got);
+			into.Append(" of ");
+			into.AppendNumber(expectLen);
+			into.Append(got == expectLen ? " B ★EXACT" : " B ★MISMATCH");
+		}
+	}
+	ucf->ClosePackage(ref);
+}
+
+void MinimalIdmlThroughAPipe(IDataBase* db, PMString& out)
+{
+	PMString line(Ascii("S22 the same IDML, aimed at a pipe: "));
+	std::string xml;
+	int32 rawInx = 0;
+	if (!BuildDesignmapXml(db, xml, rawInx, line))
+	{
+		Say(out, line);
+		return;
+	}
+	line.AppendNumber(static_cast<int32>(xml.size()));
+	line.Append(" B of designmap XML; ");
+
+	// ---- row A: the control, on disk, in this same run and from these same bytes -------------
+	// ★Without it, "28,xxx bytes came through" is a number with nothing to compare it against -
+	//   and the whole reading of the difference (+12 per entry) depends on the subtraction.
+	wchar_t tempDir[MAX_PATH] = { 0 };
+	::GetTempPathW(MAX_PATH, tempDir);
+	std::wstring diskPath(tempDir);
+	diskPath += L"kcm-spike-pipe-control.idml";
+	::DeleteFileW(diskPath.c_str());
+	int32 diskSize = 0;
+	{
+		InterfacePtr<IPMStream> zipOut(StreamUtil::CreateFileStreamWriteLazy(
+			PipeAsFile(diskPath.c_str()), kOpenOut | kOpenTrunc));
+		PMString why;
+		const bool16 wrote = WriteMinimalIdml(zipOut, xml, why);
+		zipOut.reset(nil);
+		WIN32_FILE_ATTRIBUTE_DATA fad;
+		std::memset(&fad, 0, sizeof(fad));
+		if (wrote && ::GetFileAttributesExW(diskPath.c_str(), GetFileExInfoStandard, &fad))
+			diskSize = static_cast<int32>(fad.nFileSizeLow);
+		line.Append("[control on disk ");
+		line.Append(why);
+		line.Append(", ");
+		line.AppendNumber(diskSize);
+		line.Append(" B] ");
+	}
+
+	// ---- row B: the same recipe, into this process's memory ---------------------------------
+	Trace("S22.1 the container aimed at a pipe");
+	KCMPipeCatcher catcher(L"kcm-idml-minimal", kTrue /*duplex*/, kTrue /*keep the bytes*/);
+	if (!catcher.Listening())
+	{
+		line.Append("★the pipe could not be created, error ");
+		line.AppendNumber(static_cast<int32>(catcher.CreateError()));
+		Say(out, line);
+		return;
+	}
+	{
+		InterfacePtr<IPMStream> zipOut(StreamUtil::CreateFileStreamWriteLazy(
+			PipeAsFile(catcher.Path()), kOpenOut | kOpenTrunc));
+		PMString why;
+		WriteMinimalIdml(zipOut, xml, why);
+		zipOut.reset(nil);		// ★flush before the reader is joined, or the tail is still in flight
+		line.Append("[through the pipe ");
+		line.Append(why);
+		line.Append("] ");
+	}
+	Trace("S22.2 joining the reader");
+	catcher.Finish();
+	line.Append("pipe ");
+	catcher.Describe(line);
+	Say(out, line);
+
+	// ---- what the difference between the two rows says ---------------------------------------
+	const int32 caught = catcher.Bytes();
+	const int32 kept = catcher.KeepLen();
+	PMString sizes(Ascii("S22 sizes: "));
+	sizes.AppendNumber(caught);
+	sizes.Append(" B through the pipe against ");
+	sizes.AppendNumber(diskSize);
+	sizes.Append(" B on disk, difference ");
+	sizes.AppendNumber(caught - diskSize);
+	// ★THE PREDICTION, made before the run out of S16's own two rows: 12 bytes of data descriptor
+	//   per entry, three entries. A different number means the loss is not what the repair below
+	//   assumes, and the repair would be putting back the wrong thing.
+	sizes.Append((caught - diskSize == 36) ? " ★EXACTLY +12 PER ENTRY, AS PREDICTED"
+	                                       : " ★NOT the predicted +36 - read the repair with that in mind");
+	if (caught <= 0 || kept != caught)
+	{
+		sizes.Append("; ★only ");
+		sizes.AppendNumber(kept);
+		sizes.Append(" B were kept - the repair is NOT run on a truncated zip");
+		Say(out, sizes);
+		return;
+	}
+	Say(out, sizes);
+
+	// ---- the control that is REQUIRED TO FAIL -------------------------------------------------
+	// ★★★AN UNARMED CHECK REPORTS SUCCESS FOR THE WRONG REASON. If what arrives is already a
+	//   working package, then "the repaired one opens" proves nothing whatever - so the BROKEN
+	//   bytes are offered to the same reader first, in the same run, and are required to be
+	//   refused. (A verifier that had lost three of these lines once said "identical" about
+	//   something it was not measuring at all.)
+	std::wstring brokenPath;
+	PMString before(Ascii("S22 BEFORE the repair (this one MUST be refused): "));
+	if (DropBytes(catcher.Keep(), kept, L"kcm-spike-pipe-broken.idml", brokenPath))
+	{
+		Trace("S22.3 OpenPackage on the unrepaired bytes");
+		AskUcfToOpen(brokenPath, static_cast<int32>(xml.size()), before);
+	}
+	else
+		before.Append("the bytes could not be written out");
+	Say(out, before);
+
+	// ---- the repair itself ---------------------------------------------------------------------
+	Trace("S22.4 repairing the index");
+	ZipRepairReport rep;
+	RepairZipIndex(catcher.Keep(), static_cast<uint32>(kept), rep);
+	PMString fixed(Ascii("S22 the repair: "));
+	if (!rep.ok)
+	{
+		fixed.Append("★FAILED - ");
+		fixed.Append(Ascii(rep.why != nil ? rep.why : "no reason was given"));
+		fixed.Append(" (EOCD at ");
+		fixed.AppendNumber(static_cast<int32>(rep.eocdAt));
+		fixed.Append(", ");
+		fixed.AppendNumber(rep.headersPatched);
+		fixed.Append(" headers had been filled in)");
+		Say(out, fixed);
+		return;
+	}
+	fixed.AppendNumber(rep.entries);
+	fixed.Append(" entries, ");
+	fixed.AppendNumber(rep.headersPatched);
+	fixed.Append(" local headers filled in from the directory, ");
+	fixed.AppendNumber(rep.withDescriptor);
+	fixed.Append(" of them followed by a data descriptor; the directory begins at ");
+	fixed.AppendNumber(static_cast<int32>(rep.dirOffset));
+	fixed.Append(" and the walk ended there ★EXACTLY");
+	Say(out, fixed);
+
+	// ---- and now the same reader, on the same bytes, repaired ---------------------------------
+	std::wstring fixedPath;
+	PMString after(Ascii("S22 AFTER the repair: "));
+	if (DropBytes(catcher.Keep(), kept, L"kcm-spike-pipe-repaired.idml", fixedPath))
+	{
+		Trace("S22.5 OpenPackage on the repaired bytes");
+		AskUcfToOpen(fixedPath, static_cast<int32>(xml.size()), after);
+		after.Append(" -> %TEMP%\\kcm-spike-pipe-repaired.idml ⇒ LET INDESIGN OPEN IT");
+	}
+	else
+		after.Append("the bytes could not be written out");
+	Say(out, after);
 }
 
 }	// namespace
@@ -3709,6 +4174,12 @@ void KCMProbePdfRoute(PMString& out)
 	// ---- S21: everything in one designmap - is the split needed at all? ---------------------
 	Trace("S21 begin - the smallest IDML");
 	MinimalIdml(db, out);
+
+	// ---- S22: the last step - the same package into memory, and its index put back ----------
+	// S21 proved the RECIPE; S16 proved the PIPE. This aims the one at the other and repairs what
+	// the pipe cannot help losing, so that a whole IDML exists with no file anywhere in its making.
+	Trace("S22 begin - the minimal IDML through a pipe, repaired");
+	MinimalIdmlThroughAPipe(db, out);
 
 	Trace("=== run ends, every step came back ===");
 }
