@@ -2521,9 +2521,17 @@ void RepairZipIndex(char* zip, uint32 len, ZipRepairReport& r)
 	}
 	r.entries = static_cast<int32>(Le16(zip + r.eocdAt + 10));
 	const uint32 dirSize = Le32(zip + r.eocdAt + 12);
-	if (r.entries <= 0 || dirSize == 0 || dirSize > r.eocdAt)
+	if (r.entries <= 0 || dirSize < 46 || dirSize > r.eocdAt)
 	{
 		r.why = "the central directory does not fit in front of the EOCD";
+		return;
+	}
+	// ★With at least one entry there must be room for a local header and a directory entry. Saying
+	//   so HERE is what lets every bound below be written as a subtraction (see the note in the
+	//   walk): `len - 30`, `len - 4` and `eocdAt - 46` are all safe from this line on.
+	if (len < 30 || r.eocdAt < 46)
+	{
+		r.why = "too short to hold even one entry";
 		return;
 	}
 	r.dirOffset = r.eocdAt - dirSize;
@@ -2540,9 +2548,17 @@ void RepairZipIndex(char* zip, uint32 len, ZipRepairReport& r)
 	// ---- 2 and 3. the two walks, kept in step -----------------------------------------------
 	uint32 cd = r.dirOffset;
 	uint32 lh = 0;
+	// ⚠★★★EVERY BOUND IN THIS LOOP IS A SUBTRACTION, AND THAT IS DELIBERATE. The lengths below are
+	//   read OUT OF THE ZIP, so on a damaged or hostile package a size can be 0xFFFFFFFF - and
+	//   `somewhere + thatSize > len` would then WRAP, pass the check, and send the reads off the
+	//   end of the buffer. Written as "is there that much room left", nothing can wrap. The three
+	//   guards above (len >= 30, eocdAt >= 46, dirSize >= 46) are what make the subtractions safe.
+	//   ⚠Today's input cannot reach this - the sizes are the ones UCF itself wrote - but this
+	//     function is the piece meant to be lifted out for reading IDML that came from elsewhere,
+	//     and THAT input is not ours.
 	for (int32 n = 0; n < r.entries; ++n)
 	{
-		if (cd + 46 > r.eocdAt || Le32(zip + cd) != kSigCentral)
+		if (cd > r.eocdAt - 46 || Le32(zip + cd) != kSigCentral)
 		{
 			r.why = "the central directory ran out before its own count did";
 			return;
@@ -2554,18 +2570,25 @@ void RepairZipIndex(char* zip, uint32 len, ZipRepairReport& r)
 		const uint32 cSize    = Le32(zip + cd + 20);
 		const uint32 uSize    = Le32(zip + cd + 24);
 
-		if (lh + 30 > len || Le32(zip + lh) != kSigLocal)
+		if (lh > len - 30 || Le32(zip + lh) != kSigLocal)
 		{
 			r.why = "no local header where the walk expected one";
 			return;
 		}
-		const uint16 lNameLen  = Le16(zip + lh + 26);
-		const uint16 lExtraLen = Le16(zip + lh + 28);
+		const uint32 lNameLen  = Le16(zip + lh + 26);
+		const uint32 lExtraLen = Le16(zip + lh + 28);
+		// The local header's own name and extra must fit, and so must the directory entry's name.
+		const uint32 head = lh + 30;					// safe: lh <= len - 30
+		if (lNameLen > len - head || lExtraLen > len - head - lNameLen
+		    || nameLen > r.eocdAt - cd - 46)
+		{
+			r.why = "an entry's name or extra field runs past the end";
+			return;
+		}
 		// ★The two walks are independent, so they are made to agree out loud. A mismatch here means
 		//   the step BEFORE it was wrong, and writing numbers on would corrupt a package that had
 		//   arrived whole.
-		if (lNameLen != nameLen || lh + 30 + nameLen > len || cd + 46 + nameLen > r.eocdAt
-		    || std::memcmp(zip + lh + 30, zip + cd + 46, nameLen) != 0)
+		if (lNameLen != nameLen || std::memcmp(zip + head, zip + cd + 46, nameLen) != 0)
 		{
 			r.why = "the local header and the directory entry name different files";
 			return;
@@ -2576,20 +2599,23 @@ void RepairZipIndex(char* zip, uint32 len, ZipRepairReport& r)
 		PutLe32(zip + cd + 42, lh);
 		++r.headersPatched;
 
-		const uint32 dataEnd = lh + 30 + lNameLen + lExtraLen + cSize;
-		if (dataEnd > len)
+		const uint32 dataAt = head + lNameLen + lExtraLen;	// safe: both lengths checked above
+		if (cSize > len - dataAt)
 		{
 			r.why = "an entry claims more bytes than arrived";
 			return;
 		}
+		const uint32 dataEnd = dataAt + cSize;
 		// ⚠THE FLAG IS NOT ASKED - see the block above, it disagrees with itself. The candidates
 		//   are "no descriptor", "a descriptor without its signature" and "a descriptor with one".
-		const uint32 candidates[3] = { dataEnd, dataEnd + 12, dataEnd + 16 };
+		const uint32 skip[3] = { 0, 12, 16 };
 		bool16 stepped = kFalse;
 		for (int32 t = 0; t < 3 && !stepped; ++t)
 		{
-			const uint32 p = candidates[t];
-			if (p + 4 > len)
+			if (skip[t] > len - dataEnd)		// not even room for a descriptor of that shape
+				continue;
+			const uint32 p = dataEnd + skip[t];
+			if (p > len - 4)					// safe: len >= 30 from the guard above
 				continue;
 			const uint32 sig = Le32(zip + p);
 			if (sig == kSigLocal || (p == r.dirOffset && sig == kSigCentral))
@@ -2605,6 +2631,9 @@ void RepairZipIndex(char* zip, uint32 len, ZipRepairReport& r)
 			r.why = "nothing recognisable follows an entry's data";
 			return;
 		}
+		// The one addition left, and it is bounded by its own types: three uint16 plus 46 is at most
+		// 196,650, and `len` comes from an int32 byte count - so this cannot wrap, and the next
+		// round's `cd > eocdAt - 46` catches it if the directory is shorter than its count claims.
 		cd += 46 + nameLen + extraLen + cmtLen;
 	}
 
