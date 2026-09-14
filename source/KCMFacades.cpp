@@ -230,7 +230,8 @@ public:
 	virtual bool16		HasOrigin()							{ return KCMHasOrigin(); }
 	virtual void		GetOriginLabel(PMString& outLabel)	{ KCMOriginLabel(outLabel); }
 	virtual bool16		IsOriginArmed()						{ return KCMOriginArmed(); }
-	virtual bool16		SaveOriginRawToDesktop(PMString& outPath, PMString& outWhyNot)	{ return KCMOriginSaveRaw(outPath, outWhyNot); }
+	// (SaveOriginRawToDesktop went on 2026-09-14 - the interface says why. KCMOriginSaveRaw is
+	//  called by KCMScriptProvider now, which is model-side and needs no facade to reach it.)
 };
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)

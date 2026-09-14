@@ -33,6 +33,7 @@
 
 class IDataBase;
 class IDocumentList;
+class IDFile;
 class KCMResourceBytes;
 
 /** What a document looks like in numbers. Taken with the origin, and checked against a rehydration. */
@@ -61,14 +62,25 @@ bool16 KCMTakeTaskStart(PMString& whyNot);
 
 bool16 KCMHasOrigin();
 
-/** THE DEBUGGING DOOR (2026-09-12; the only one of the three left after 2026-09-14): the
-    held origin's XML written to the
-    user's Desktop AS IT IS - the bytes Task Start took, before any injection - as
-    "<document name>.TaskStart-HHMMSS.xml". The same origin always gets the same name, so a
-    second press overwrites a file holding the same bytes. outPath is the file written, for the
-    status line. kFalse, with a reason, when nothing is held, the Desktop could not be found or
-    the write failed. Windows only (the Desktop is asked of the shell). */
-bool16 KCMOriginSaveRaw(PMString& outPath, PMString& whyNot);
+/** THE DEBUGGING DOOR (2026-09-12; the only one of the three left after 2026-09-14): the held
+    origin's XML written to `file` AS IT IS - the bytes Task Start took, before any injection.
+
+    ★THE WAY IN IS THE SCRIPT METHOD app.kcmSaveOriginXml (KCMScriptProvider.cpp, 2026-09-14).
+    The flyout items that opened and saved the origin were removed that day and this one was kept
+    on the user's decision - as a method rather than a menu item, with the CALLER naming the file.
+    So nothing here asks the shell for the Desktop or invents a name any more: both were the old
+    menu item's business, and a script that wants "<document>.TaskStart-HHMMSS.xml" can build that
+    name itself from app.kcmOriginStatus, which already reports the document and the time.
+
+    @param file where to write. The script engine has already resolved it from the path the caller
+           passed, and ScriptData::GetFile validates the PARENT FOLDER on the way (kTrue by
+           default), so a path into a folder that does not exist is refused before it reaches here.
+    @param whyNot the same answer in words, for a status line or a log.
+    @return 0 written / 1 no origin is held / 2 the file could not be created / 3 the write failed.
+    ★THE NUMBERS ARE DECIDED HERE, ONCE (one question, one place): the script method returns what
+      this returns without re-deciding anything, and KCM.fr spells the same list out for whoever
+      reads the DOM. Changing a number means changing that resource string in the same edit. */
+int32 KCMOriginSaveRaw(const IDFile& file, PMString& whyNot);
 
 /** The origin's document, or nil when none is held or it has closed. Compared, never dereferenced
     by callers that did not get it from here a moment ago. */

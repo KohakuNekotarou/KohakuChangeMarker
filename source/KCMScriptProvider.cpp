@@ -6,15 +6,29 @@
 //
 //      app.kcmStatus                     - the last message the panel put on its status line
 //      app.kcmBookResult                 - the last book comparison, one line per chapter
+//      app.kcmStoryRows                  - the whole Story Edits list, as TSV
+//      app.kcmOriginStatus               - the held Task Start origin, in one line
+//      app.kcmResourceSnapshot           - how the Resources mode's export of the active doc went
+//      app.kcmResourceDiff               - which definitions differ between the two armed documents
 //      stories[n].kcmChangeCount         - ITextModel's aggregate change counter
 //      stories[n].kcmTextChangeCount     - characters inserted, removed or replaced
 //      stories[n].kcmAttrChangeCount     - formatting, applied styles and overrides
 //      stories[n].kcmOtherChangeCount    - everything else
 //      document.kcmTransparencyItemCount - entries in the host's item-has-transparency list
+//      app.kcmSaveOriginXml(file)        - ★THE ONE METHOD (2026-09-14). Everything above it is a
+//                                          read-only property.
 //
-//  **Every one of them is READ-ONLY.** No methods and no script objects -- the ones this plug-in
-//  used to have (kescmToast and the rest) were removed and are not coming back; the panel is the
-//  interface. The toolbox tool's identity (en_KCMTool) lives on the UI side with the tool.
+//  ⚠**THE LIST ABOVE IS A READER'S MAP, NOT THE COUNT -- re-read it from KCM.fr's Provider blocks.**
+//    It had gone FOUR properties stale by 2026-09-14: kcmStoryRows, kcmOriginStatus and the two
+//    Resources ones were each added without it. (Same failure as the "six"/"seven" scar below, one
+//    level up: a list is safe to add to only while somebody adds to it.)
+//
+//  **Every PROPERTY here is READ-ONLY**, and there are no script objects -- no new object hangs off
+//  app. The scripting API this plug-in used to have (kescmToast and the rest) DROVE THE PRODUCT
+//  from outside, and that is not coming back; the panel is the interface. The one method does not
+//  drive anything: it writes out the Task Start origin, which the panel can no longer reach at all
+//  since the flyout item that used to save it was removed on the same day.
+//  The toolbox tool's identity (en_KCMTool) lives on the UI side with the tool.
 //  @warning **do not write a total into this list.** It said "six" while there were seven, for
 //    the whole time the document property existed -- and the doc on AccessProperty below said
 //    "seven", so one file stated both. KCMScriptingDefs.h has the same rule and the same scar.
@@ -106,7 +120,9 @@
 
 // General includes:
 #include "CScriptProvider.h"
+#include "IDFile.h"			// the file app.kcmSaveOriginXml is handed
 #include "ScriptData.h"
+#include "ScriptingDefs.h"	// keyAEFile ('kfil') - the standard "a file" parameter, as snippetrunner uses
 #include "ScriptingID.h"	// kInvalidScriptTargetError
 #include "UIDList.h"
 #include "WideString.h"
@@ -145,6 +161,11 @@ public:
 	    not ours goes to the base class, which is what keeps the rest of the scripting working on
 	    whichever object we were asked about. */
 	virtual ErrorCode AccessProperty(ScriptID propID, IScriptRequestData* data, IScript* script);
+
+	/** Serve app.kcmSaveOriginXml(file) - the only method this plug-in publishes. Anything else
+	    goes to the base class, which is what keeps the rest of the scripting working on whichever
+	    object we were asked about. */
+	virtual ErrorCode HandleMethod(ScriptID methodID, IScriptRequestData* data, IScript* script);
 
 private:
 	/** app.kcmStatus / app.kcmBookResult - both come from the module, not from a widget. */
@@ -233,6 +254,42 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 	if (isDocXPCount)
 		return this->ReadTransparencyItemCount(propID, data, script);
 	return this->ReadStoryCounter(id, propID, data, script);
+}
+
+ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData* data, IScript* script)
+{
+	if (methodID.Get() != e_KCMSaveOriginXml)
+		return CScriptProvider::HandleMethod(methodID, data, script);
+
+	// 4 = "the file argument could not be read", shared by the two failures below because a caller
+	// cannot act differently on them and neither says anything about the origin. KCM.fr declares
+	// the argument kRequired, so the engine refuses the call outright when it is missing: getting
+	// here at all takes an argument that IS present and cannot be turned into a file.
+	int32 status = 4;
+	ScriptData arg;
+	if (data->ExtractRequestData(keyAEFile, arg) == kSuccess)
+	{
+		IDFile file;
+		// ★GetFile resolves the path AND validates the PARENT FOLDER on the way in (validateFolder
+		//   defaults to kTrue), so "C:\\no-such-folder\\x.xml" is refused right here instead of
+		//   arriving downstream as the much vaguer "the file could not be created".
+		if (arg.GetFile(&file, data->GetRequestContext()) == kSuccess)
+		{
+			PMString whyNot;	// the same answer in words; nothing outside reads it yet
+			status = KCMOriginSaveRaw(file, whyNot);	// ★the numbers are decided there, once
+		}
+	}
+
+	// **kSuccess, with the outcome in the return DATA.** That is snippetrunner's shape (its own
+	// comment on these two lines is "NOTE: this is hardcoded"), and the guide gives the reason: a
+	// kFailure out of a script provider raises an ASSERT under a Debug build - a stopped test
+	// rather than a message - while a status number lets a script branch without a try/catch.
+	// ⚠A failure here is NOT an error in the scripting sense: "no origin is held" is a perfectly
+	//   ordinary answer to give a caller who asked before pressing Task Start.
+	ScriptData returnData;
+	returnData.SetInt32(status);
+	data->AppendReturnData(script, methodID, returnData);
+	return kSuccess;
 }
 
 ErrorCode KCMScriptProvider::ReadAppString(int32 id, ScriptID propID, IScriptRequestData* data, IScript* script)

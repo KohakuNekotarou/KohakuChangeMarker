@@ -573,7 +573,11 @@ resource LocaleIndex ( kSDKDefStringsResourceID)
  * app.kcmStatus (added 2026-08-06 at the user's request) is the panel's status line, read-only.
  * It is the same idea as KBS's app.kfcStatus (KBS.fr:1273-1313) and exists for the same reason:
  * the status line is the plug-in's account of what it just did, and until now reading it meant
- * looking at the screen, which cannot be automated. KCM still publishes NO methods.
+ * looking at the screen, which cannot be automated.
+ * ⚠**"KCM still publishes NO methods" ended this paragraph until 2026-09-14**, when
+ * app.kcmSaveOriginXml was added below. What that sentence was about - a scripting API that DRIVES
+ * the product from outside, as kescmToast and its neighbours did - is still true; the one method
+ * writes out a thing no menu item reaches any more. KCMScriptingDefs.h holds the full distinction.
  */
 resource VersionedScriptElementInfo(10)
 {
@@ -700,6 +704,38 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
+		// ★★THE ONE METHOD (2026-09-14): app.kcmSaveOriginXml(file) writes the held Task Start
+		// origin's XML to the file the CALLER names, exactly as Task Start took it.
+		//
+		// ⚠The flyout item that used to do this ("Save Task Start XML to Desktop") was removed the
+		// same day along with five of its neighbours; the user's decision was to keep the writer and
+		// reach it from a script instead, with the caller choosing the place and the name. So the
+		// plug-in no longer asks the shell for the Desktop, and no longer invents a file name.
+		//
+		// Shape follows the official example, snippetrunner's "save snip log" (SnipRun.fr:1485-1497):
+		// the file as keyAEFile, Int32Type for the answer, and a return-value string that spells the
+		// numbers out. ⚠**The numbers are decided in KCMOrigin.h** - this string and the comment in
+		// KCMScriptingDefs.h restate them, so all three move in one edit.
+		//
+		// ⚠kRequired: the engine refuses app.kcmSaveOriginXml() with no argument before this
+		//   plug-in's provider ever runs. (The opposite is kOptional, which KESCM's old
+		//   kescmShowOverset used for its BoolDefaultType flag.)
+		// ★A method needs NO entry in the INX-only resource at the end of this file: methods are
+		//   not serialised into IDML. Only properties on document-resident objects are, which is
+		//   what that resource exists to undo.
+		Method
+		{
+			kKCMSaveOriginXmlMethodScriptElement,
+			e_KCMSaveOriginXml,
+			"kcm save origin xml",				// name -> app.kcmSaveOriginXml(file)
+			"Write the held Task Start origin's XML out to a file, exactly as Task Start took it.",
+			Int32Type,							// status code
+			"Status: 0 written, 1 no origin is held, 2 the file could not be created, 3 the write failed, 4 the file argument could not be read"
+			{
+				keyAEFile, "file path", "File path to write the origin's XML to", FileType, kRequired
+			}
+		}
+
 		// Puts the property ON the application object.
 		//
 		// Object{}, not Parent{}: Object names an EXISTING scripting object to add members to,
@@ -722,6 +758,11 @@ resource VersionedScriptElementInfo(10)
 				Property{ kKCMOriginStatusPropertyScriptElement, kReadOnly },
 				Property{ kKCMResourceSnapshotPropertyScriptElement, kReadOnly },
 				Property{ kKCMResourceDiffPropertyScriptElement, kReadOnly },
+				// The method's half of the same pair - and it has no access-right field, a method
+				// being a thing you call rather than a thing you read. Leave this line out and
+				// app.kcmSaveOriginXml is simply not there, exactly as described above for the
+				// properties: no build error, no warning, ERR:55 at the first touch.
+				Method{ kKCMSaveOriginXmlMethodScriptElement },
 			}
 		}
 

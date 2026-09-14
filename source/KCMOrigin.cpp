@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  KCMOrigin.cpp -- see the header.
 //
@@ -20,17 +20,15 @@
 // General includes:
 #include "PersistUtils.h"
 #include "K2SmartPtr.h"
-#include "FileUtils.h"			// CoverSHGetFolderPath (the Desktop) / AppendPath / SysFileToPMString
-#include "IDFile.h"
+#include "IDFile.h"				// the file KCMOriginSaveRaw is handed
 #include "StreamUtil.h"			// CreateFileStreamWrite
 
 #include <time.h>
 #include <stdio.h>
 #include <new>
-#include <string>
-#ifdef WINDOWS
-#include <shlobj.h>				// CSIDL_DESKTOPDIRECTORY - as the application's own WLinkUtilsHelper.cpp does
-#endif
+// FileUtils.h, <string> and <shlobj.h> went on 2026-09-14 with the Desktop path and the generated
+// file name: the caller names the file now, so nothing here asks the shell for a folder, joins a
+// path or walks a UTF-8 string any more.
 
 // Project includes:
 #include "KCMOrigin.h"
@@ -144,58 +142,33 @@ bool16 KCMTakeTaskStart(PMString& whyNot)
 
 bool16 KCMHasOrigin()					{ return (sBytes.get() != nil) ? kTrue : kFalse; }
 
-bool16 KCMOriginSaveRaw(PMString& outPath, PMString& whyNot)
+int32 KCMOriginSaveRaw(const IDFile& file, PMString& whyNot)
 {
-	outPath.Clear();
-	outPath.SetTranslatable(kFalse);
 	whyNot.Clear();
 	whyNot.SetTranslatable(kFalse);
 	if (sBytes.get() == nil)
 	{
 		whyNot = "no Task Start origin is held";
-		return kFalse;
+		return 1;
 	}
 
-	// The Desktop, asked of the shell through the SDK's cover (FileUtils.h:596; the application's
-	// own use is WLinkUtilsHelper.cpp:634). CSIDL_DESKTOPDIRECTORY is the folder on disk;
-	// CSIDL_DESKTOP is the virtual namespace root and would not take a file.
-	IDFile file;
-#ifdef WINDOWS
-	if (FileUtils::CoverSHGetFolderPath(CSIDL_DESKTOPDIRECTORY, &file) != kSuccess)
-	{
-		whyNot = "the Desktop folder could not be found";
-		return kFalse;
-	}
-#else
-	whyNot = "saving to the Desktop is Windows only";
-	return kFalse;
-#endif
-
-	// "<document name>.TaskStart-HHMMSS.xml": the time as the panel shows it, minus the colons a
-	// file name may not carry. The document name is the user's; a name with a '/' or a '\' in it
-	// cannot come from a saved document, and an untitled one is "Untitled-1".
-	PMString name(sDocName);
-	name.Append(".TaskStart-");
-	{
-		// sTakenAt is "%02d:%02d:%02d" (Now, above) - ASCII, so the UTF-8 walk is a byte walk.
-		const std::string taken = sTakenAt.GetUTF8String();
-		std::string compact;
-		for (std::string::const_iterator it = taken.begin(); it != taken.end(); ++it)
-			if (*it != ':')
-				compact += *it;
-		name.Append(compact.c_str());
-	}
-	name.Append(".xml");
-	name.SetTranslatable(kFalse);
-	FileUtils::AppendPath(&file, name);
+	// ⚠**THE CALLER NAMES THE FILE** (2026-09-14). What stood here - the Desktop asked of the shell
+	// (FileUtils::CoverSHGetFolderPath with CSIDL_DESKTOPDIRECTORY) and a name built as
+	// "<document name>.TaskStart-HHMMSS.xml" - was the flyout item "Save Task Start XML to Desktop"
+	// speaking, and that item went with five of its neighbours. The script method that took its
+	// place is handed a path, so a place and a name chosen in here could only override the caller's.
+	// ★A script that wants the old name can still build it: app.kcmOriginStatus reports both the
+	//   document the origin was taken from and the time it was taken.
+	// ⚠That is also why this function is no longer Windows-only. Nothing in it asks the shell
+	//   anything now, and the stream below is the same one the TSV export uses on either platform.
 
 	// The same three steps as the TSV export (KCMChangedPagesTSV.cpp): write, Flush, THEN read
 	// the state - XferByte may only reach the buffer, so a failed write can surface at the Flush.
 	InterfacePtr<IPMStream> stream(StreamUtil::CreateFileStreamWrite(file, kOpenOut | kOpenTrunc, 'TEXT', 'CWIE'));
 	if (stream == nil)
 	{
-		whyNot = "the file could not be created on the Desktop";
-		return kFalse;
+		whyNot = "the file could not be created";
+		return 2;
 	}
 	stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(sBytes->Bytes())), static_cast<int32>(sBytes->Size()));
 	stream->Flush();
@@ -204,11 +177,9 @@ bool16 KCMOriginSaveRaw(PMString& outPath, PMString& whyNot)
 	if (failed)
 	{
 		whyNot = "the file could not be written";
-		return kFalse;
+		return 3;
 	}
-	outPath = FileUtils::SysFileToPMString(file);
-	outPath.SetTranslatable(kFalse);
-	return kTrue;
+	return 0;
 }
 
 IDataBase* KCMOriginDocDB()

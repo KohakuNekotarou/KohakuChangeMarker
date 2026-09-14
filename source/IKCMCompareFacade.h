@@ -577,12 +577,12 @@ public:
 	/** kTrue while a comparison is armed whose Source is the origin (GetArmedSourceDB is nil then). */
 	virtual bool16		IsOriginArmed() = 0;
 
-	/** THE DEBUGGING DOOR (2026-09-12, kept on 2026-09-14 when its two companions went): the held
-	    origin's XML written out exactly as Task Start took it. ⚠It is no longer on any menu - the
-	    flyout items that opened and saved the origin were removed - so the way in is the script
-	    method on app, which is why this survives while RehydrateOriginRaw and its twin did not.
-	    outPath is the file written. kFalse with a reason when nothing is held or the write failed. */
-	virtual bool16		SaveOriginRawToDesktop(PMString& outPath, PMString& outWhyNot) = 0;
+	// ⚠**SaveOriginRawToDesktop WENT LATER THE SAME DAY** (2026-09-14), and for the very reason the
+	//   comment that stood here gave for keeping it. It said the way in was "the script method on
+	//   app" - and a script method is served by KCMScriptProvider, which lives in THIS plug-in and
+	//   calls KCMOriginSaveRaw directly. A facade is the UI half's way into the model half; the
+	//   flyout item that used to come through this door had already been removed, so nothing was
+	//   left on the other side of it. The writer itself is very much alive: app.kcmSaveOriginXml.
 
 	// ---- the page pairing rule ------------------------------------------------------------
 	//
@@ -601,6 +601,23 @@ public:
 	//   UnicodeSavvyString::CopyFrom with the clone pointer read as a PMString&; the crash reporter
 	//   took the main thread and InDesign hung (work/hang-stacks/stacks-13032.txt). Appending
 	//   keeps every slot the older binary knows where it was; rebuild KIDMCP all the same.
+	//
+	// ⚠★★★**AND THE UI HALF IS THE OTHER CALLER. REBUILD KohakuChangeMarkerUI TOO.** This warning
+	//   said "KIDMCP" and nothing else for a day, and on 2026-09-14 that omission cost a crash:
+	//   SaveOriginRawToDesktop was removed from the MIDDLE of this class, KIDMCP was rebuilt
+	//   because the paragraph above says to, and the UI was not. InDesign then died while the
+	//   panel was opening -
+	//
+	//       KCMPanelObserver::AutoAttach -> KCMLoadPanelStateIfPresent
+	//         -> **KCMExportBeforeAfterReport** -> PMString::clear   (ACCESS_VIOLATION)
+	//
+	//   - the UI asked for one method and landed on the one that had moved up into its slot.
+	//   ★**The UI half has NO ABI stamp to catch this**: kKCMCompareFacadeAbi is checked by
+	//   KIDMCP alone (KIDMCPKcmBridge::AbiState), because KIDMCP ships separately and the two
+	//   halves of KCM are simply assumed to be built together. Nothing verifies that assumption.
+	//   ⇒ ★★★**A CHANGE TO THIS CLASS MEANS THREE BUILDS: model, UI, KIDMCP.**
+	//   ⚠And removal is worse than addition: appending leaves every existing slot where it was,
+	//   while removing shifts everything after it - which is exactly what happened both times.
 
 	virtual bool16		GetPairPagesByUid() = 0;
 	virtual void		SetPairPagesByUid(bool16 on) = 0;
@@ -631,6 +648,6 @@ public:
 	compares it with the value ITS build saw in this header before it calls anything here
 	(KIDMCPKcmBridge::AbiState). Two binaries built from different versions of this class then
 	refuse each other instead of running the wrong method (2026-09-13: the header's warning). */
-const int32 kKCMCompareFacadeAbi = 2026091401;	// 01 = the first change of 2026-09-14 (three virtuals removed with the menu items that called them: ExportChangedPagesTSV, RehydrateOriginRaw, RehydrateOriginAsCompared)
+const int32 kKCMCompareFacadeAbi = 2026091402;	// 02 = the second change of 2026-09-14 (SaveOriginRawToDesktop removed: the script method app.kcmSaveOriginXml reaches KCMOriginSaveRaw from inside this plug-in, so the facade door had no caller left). 01 was the first change that day (ExportChangedPagesTSV, RehydrateOriginRaw, RehydrateOriginAsCompared, removed with the menu items that called them)
 
 #endif // __IKCMCompareFacade_h__

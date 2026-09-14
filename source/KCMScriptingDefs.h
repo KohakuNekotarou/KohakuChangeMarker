@@ -4,12 +4,20 @@
 //
 //  ScriptIDs (four-character codes) published by the MODEL half of KCM.
 //
-//  WHAT IS EXPOSED -- all of it READ-ONLY, on three different script objects:
-//    Application  app.kcmStatus, app.kcmBookResult
+//  WHAT IS EXPOSED -- PROPERTIES, every one of them READ-ONLY, on three different script objects:
+//    Application  app.kcmStatus, app.kcmBookResult and the others listed below
 //    Story        the four change counters below
 //    Document     kcmTransparencyItemCount
-//  No methods and no script objects -- the ones this plug-in used to have (kescmToast and the
-//  rest) were removed and are not coming back; the panel is the interface.
+//  ...and, since 2026-09-14, ONE METHOD on the application: app.kcmSaveOriginXml(file).
+//  ⚠**"No methods and no script objects" stood in this line for months, and it has to be read for
+//    what it was about before it is quoted again.** It was about kescmToast and its neighbours --
+//    a scripting API that DROVE THE PRODUCT from outside, marking changes and arming peeks -- and
+//    that is still not coming back: the panel is the interface. The one method below drives
+//    nothing. It writes out a thing the panel cannot reach at all any more, the flyout item that
+//    used to do it having been removed the same day (the user's decision: keep the writer, reach
+//    it from a script, and let the CALLER name the file rather than the plug-in choosing the
+//    Desktop).
+//  ⚠No script OBJECTS, still: nothing here hangs a new object off app.
 //  @warning **do not write a total here.** "SIX" stood in this line while there were seven,
 //    because the document property was added later and only the implementation followed; the
 //    same thing had happened once before, when the story counters arrived (the note further
@@ -141,6 +149,44 @@ enum KCMScriptProperties
 								// 2026-09-03 - never registered with Adobe, never shipped, and the
 								// registry says the code is free (kes-scriptid-registry.md). That
 								// property was also the only READ-WRITE one KCM has ever had.
+};
+
+/** THE ONE METHOD KCM publishes (2026-09-14), on the application object.
+
+		app.kcmSaveOriginXml("C:\\work\\origin.xml")   ->  0
+
+	It writes the held Task Start origin's XML to that file EXACTLY as Task Start took it, and
+	returns a status rather than throwing: **0** written / **1** no origin is held / **2** the file
+	could not be created / **3** the write failed / **4** the file argument could not be read.
+	@warning **the list of numbers lives in THREE places and they are one edit** -- here,
+	  KCMOrigin.h (which decides them) and the return-value string in KCM.fr (which is what a
+	  reader of the DOM sees). KCMOrigin.h is the authority; these two restate it.
+
+	WHY A METHOD, when everything else here is a property. It DOES something -- it writes a file --
+	and it needs an argument to do it with. A property that wrote a file when it was read would be
+	a property whose meaning depends on when you look at it, and there would be nowhere to put the
+	path. This is the same shape as the official example, snippetrunner's "save snip log"
+	(SnipRun.fr:1485-1497 and SnipRunScriptProvider::HandleEvent_SaveSnipLog), which likewise takes
+	the file as keyAEFile and answers with "Status: 0 if ok, non-zero if error".
+
+	★IT IS NOT IN ANY IDML. Properties on document-resident objects are (see the warning at the top
+	  of this file); METHODS are not serialised at all, so the second, INX-only resource in KCM.fr
+	  needs no line for this one and deliberately has none.
+
+	Code: e = method, K = Kohaku, G = KCM, s = save -- the scheme at the top of this file.
+	⚠**'eKGs' is free, and that was measured rather than assumed** (2026-09-14): 0 hits in
+	  source/ (the SDK's ScriptingDefs.h and GenericID.h included), 0 in the four Kohaku plug-ins'
+	  own ScriptingDefs headers, and no entry in docs/ai-notes/kes-scriptid-registry.md -- ITS
+	  RETIRED ROWS READ TOO, which is where the 2026-08-18 near-miss came from ('eKGc' and 'eKGr'
+	  looked free and were old KESCM methods). The search was validated first on codes that DO
+	  exist ('pKGs' in this very file, 'cflo' and 'move' in the SDK), because a pattern that
+	  matches nothing reports every candidate as free.
+	⚠**Registered with Adobe? NOT YET** -- the seven that are were accepted on 2026-08-17. This one
+	  goes in with the next submission, as a code/name pair, so the DOM name is settled now.
+*/
+enum KCMScriptMethods
+{
+	e_KCMSaveOriginXml = 'eKGs'		// s = save. app.kcmSaveOriginXml(file)
 };
 
 /** Properties KCM adds to the STORY object (at the user's request).
