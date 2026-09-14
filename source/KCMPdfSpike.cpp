@@ -17,10 +17,13 @@
 #include <string>
 #include <vector>
 
+#include "IApplication.h"			// S24 - QueryDocumentList: the route KCM already uses
 #include "IBoolData.h"
 #include "ICommand.h"
 #include "IDataBase.h"
 #include "IDocument.h"
+#include "IDocumentCommands.h"		// S24 - New: the windowless document an import goes into
+#include "IDocumentList.h"			// S24 - the guard: is anything else open and unsaved
 #include "IDOMElement.h"			// the root a snippet is imported under
 #include "IExportManager.h"			// S17 - ExportIDMLDirect, the only public route to a whole IDML
 #include "IGeometry.h"
@@ -3101,6 +3104,207 @@ void IdmlPolicyProbe(IDataBase* db, PMString& out)
 	}
 }
 
+//========================================================================================
+//  ★★★S24 - DOES ImportINX TAKE A designmap AS IT STANDS?
+//
+//  S23.3 left this exactly poised. The three validations are perfectly exclusive, and each
+//  refuses the other's file in its OWN error number:
+//        INX  (type="action")   -> action ACCEPTS  / snippet 103681 / IDML 89345
+//        designmap (type="doc") -> action 90370    / snippet 103681 / ★IDML ACCEPTS
+//  So the body of the product says, in as many words, that **a designmap is not an INX** - and I
+//  have been planning to hand one to ImportINX after turning the PI back to "action", on the
+//  assumption that the INX door is the only one it fits through.
+//
+//  ⚠BUT VALIDATION AND IMPORT ARE TWO DIFFERENT CALLS. ValidateINX takes an IINXImportValidation;
+//    ImportINX takes an IINXImportPolicy. What one accepts is not evidence about the other, and
+//    reading it as such is the same mistake as reading "no function called ImportIDML" as "no
+//    import door" (S23). So: ask the import door itself, with the policy that is known to work.
+//
+//  ★THE ONLY THING THAT CHANGES BETWEEN THE TWO ROWS IS THE PI AND ONE ATTRIBUTE. Row A is the
+//   control and is known-good - KCM's Task Start does it every day - so if row A fails, the fault
+//   is in this harness and row B says nothing.
+//
+//  ⚠★★★AND THIS ONE GUARDS ITSELF. The import policies have a crash to their name, the user's
+//    document may be open and unsaved while this runs, and TODAY THAT COST THEM A FORCED QUIT
+//    because S23.2b was armed by default with only a comment to warn me. A comment is read by me,
+//    before the run; the accident happens later and to someone else. So the guard is CODE:
+//    ⇒ **if anything else is open and modified, S24 does not run.** It cannot be forgotten.
+//========================================================================================
+
+/** ★Is it safe to risk taking InDesign down right now? Only when nothing ELSE is open with unsaved
+    work in it. `mine` is the database this step made for itself and is not counted. */
+bool16 NothingElseAtRisk(IDataBase* mine, PMString& why)
+{
+	// ⚠IDocumentList has no kDefaultIID, so UseDefaultIID() will not compile against it. The route
+	//   KCM already uses everywhere is the session's application - see KCMComparisonRun.cpp:104-106.
+	ISession* const session = GetExecutionContextSession();
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
+	InterfacePtr<IDocumentList> docs(app ? app->QueryDocumentList() : nil);
+	if (docs == nil)
+	{
+		why.Append("the document list could not be read - refusing to risk it");
+		return kFalse;
+	}
+	int32 atRisk = 0;
+	for (int32 i = 0; i < docs->GetDocCount(); ++i)
+	{
+		IDocument* const d = docs->GetNthDoc(i);
+		if (d == nil)
+			continue;
+		IDataBase* const db = ::GetDataBase(d);
+		if (db == mine)
+			continue;
+		if (d->IsModified())
+			++atRisk;
+	}
+	if (atRisk > 0)
+	{
+		why.Append("★SKIPPED ON PURPOSE - ");
+		why.AppendNumber(atRisk);
+		why.Append(" other document(s) are open with unsaved work, and this step can take InDesign "
+		           "down. Save or close them and run again.");
+		return kFalse;
+	}
+	return kTrue;
+}
+
+/** One import attempt. The document it makes is LEFT OPEN on purpose.
+    ⚠★★★A CLOSE UNDER AN OUTSTANDING REFERENCE IS A PROTECTIVE SHUTDOWN - InDesign ends the process
+      itself, no exception, no crash report, one line in ProtectiveShutdownLog. It happened twice on
+      2026-09-12 for exactly this reason. So nothing here closes anything: the caller's JSX names
+      the documents and closes them, where every InterfacePtr is long gone. */
+void ImportOneInto(const char* label, const std::string& xml, PMString& line)
+{
+	line.Append("[");
+	line.Append(Ascii(label));
+	line.Append(" ");
+
+	ISession* const session = GetExecutionContextSession();
+	InterfacePtr<IINXManager> inx(session != nil ? session->QueryINXManager() : nil);
+	InterfacePtr<IPMUnknown> holder(
+		(IPMUnknown*)::CreateObject(kDocElementImportBoss, IID_IINXIMPORTPOLICY));
+	if (inx == nil || holder == nil)
+	{
+		line.Append("no manager or policy] ");
+		return;
+	}
+
+	// ⚠A plain New, on purpose: the two rows must differ in ONE thing only, and a document built
+	//   from the XML's own <DocumentPreference> (KCMRehydrate's NewDocumentLike) would differ in
+	//   two. This measures "does it go in", not "does it come back identical".
+	UIDRef docRef;
+	Utils<IDocumentCommands> docCmds;
+	if (!docCmds || docCmds->New(&docRef, kSuppressUI) != kSuccess || docRef == UIDRef::gNull)
+	{
+		line.Append("could not make a document to import into] ");
+		return;
+	}
+
+	ErrorCode err = kFailure;
+	int32 pages = 0, spreads = 0, stories = 0, swatches = 0;
+	PMString firstText;
+	{
+		// ★Every InterfacePtr on the new document lives INSIDE this scope, so that by the time the
+		//   caller can close it, none of them is still holding a reference. See the warning above.
+		InterfacePtr<IDocument> doc(docRef, UseDefaultIID());
+		InterfacePtr<IDOMElement> parent(doc, UseDefaultIID());
+		KCMMemXferBytes bytes;
+		bytes.Write(const_cast<char*>(xml.c_str()), static_cast<uint32>(xml.size()));
+		bytes.Seek(0, kSeekFromStart);			// it is sitting at the end after the write
+		InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamRead(&bytes, kFalse));
+		if (parent == nil || stream == nil)
+		{
+			line.Append("no parent element or no stream] ");
+			return;
+		}
+		Trace("S24 ImportINX begin");
+		inx->BeginImportSession();
+		err = inx->ImportINX(parent, (IINXImportPolicy*)holder.get(), stream, nil, kSuppressUI, nil);
+		inx->EndImportSession();
+		Trace("S24 ImportINX came back");
+		stream->Close();
+
+		IDataBase* const newDb = ::GetDataBase(doc);
+		if (doc != nil && newDb != nil)
+		{
+			InterfacePtr<ISpreadList> sl(doc, UseDefaultIID());
+			if (sl != nil)
+			{
+				spreads = sl->GetSpreadCount();
+				for (int32 s = 0; s < spreads; ++s)
+				{
+					InterfacePtr<ISpread> sp(newDb, sl->GetNthSpreadUID(s), UseDefaultIID());
+					if (sp != nil)
+						pages += sp->GetNumPages();
+				}
+			}
+			InterfacePtr<IStoryList> stl(doc, UseDefaultIID());
+			if (stl != nil)
+				stories = stl->GetUserAccessibleStoryCount();
+			InterfacePtr<ISwatchList> sw(doc, UseDefaultIID());
+			if (sw != nil)
+				swatches = sw->GetNumSwatches();		// ⚠not GetSwatchCount - that does not exist
+		}
+	}
+
+	line.Append("err ");
+	line.AppendNumber(static_cast<int32>(err));
+	line.Append(err == kSuccess ? " OK" : " FAILED");
+	line.Append(", pages ");
+	line.AppendNumber(pages);
+	line.Append(", spreads ");
+	line.AppendNumber(spreads);
+	line.Append(", stories ");
+	line.AppendNumber(stories);
+	line.Append(", swatches ");
+	line.AppendNumber(swatches);
+	line.Append("] ");
+}
+
+void ImportDesignmapProbe(IDataBase* db, PMString& out)
+{
+	PMString line(Ascii("S24 ImportINX with kDocElementImportBoss: "));
+
+	PMString why;
+	if (!NothingElseAtRisk(db, why))
+	{
+		line.Append(why);
+		Say(out, line);
+		return;
+	}
+
+	// Row A's XML is the INX as it comes; row B's is the same bytes with S21's two edits.
+	InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
+	InterfacePtr<IDOMElement> docElement(doc, UseDefaultIID());
+	KCMMemXferBytes inxBytes;
+	ErrorCode e = kFailure;
+	if (docElement == nil || !ExportElementAsInxWith(docElement, kActionExportPolicyBoss, inxBytes, e, nil)
+	    || inxBytes.GetSize() == 0)
+	{
+		line.Append("the source INX could not be made");
+		Say(out, line);
+		return;
+	}
+	const std::string inxXml(inxBytes.GetData(), inxBytes.GetSize());
+
+	std::string mapXml;
+	int32 raw = 0;
+	PMString whyB;
+	if (!BuildDesignmapXml(db, mapXml, raw, whyB))
+	{
+		line.Append("the designmap could not be made - ");
+		line.Append(whyB);
+		Say(out, line);
+		return;
+	}
+
+	// ★The control FIRST. If the known-good row fails, the harness is at fault and row B is noise.
+	ImportOneInto("A control: INX type=action", inxXml, line);
+	ImportOneInto("B ★designmap type=document", mapXml, line);
+	line.Append("(both documents are LEFT OPEN on purpose - close them by name)");
+	Say(out, line);
+}
+
 }	// namespace
 
 void KCMProbePdfRoute(PMString& out)
@@ -4478,6 +4682,13 @@ void KCMProbePdfRoute(PMString& out)
 	// READS ONLY - see the block at the head of IdmlPolicyProbe.
 	Trace("S23 begin - the IDML policies");
 	IdmlPolicyProbe(db, out);
+
+	// ---- S24: does the import door take a designmap as it stands? ---------------------------
+	// S23.3 said a designmap is NOT an INX (the action validation refuses it, 90370) - but
+	// validation and import are different calls, so the import door gets asked itself.
+	// ★It guards itself: nothing else open and unsaved, or it does not run.
+	Trace("S24 begin - ImportINX on a designmap");
+	ImportDesignmapProbe(db, out);
 
 	Trace("=== run ends, every step came back ===");
 }
