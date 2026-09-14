@@ -3182,12 +3182,13 @@ bool16 NothingElseAtRisk(IDataBase* mine, PMString& why)
 	return kTrue;
 }
 
-/** One import attempt. The document it makes is LEFT OPEN on purpose.
+/** One import attempt with a NAMED POLICY - the same call, with the one thing that matters varied.
+    The document it makes is LEFT OPEN on purpose.
     ⚠★★★A CLOSE UNDER AN OUTSTANDING REFERENCE IS A PROTECTIVE SHUTDOWN - InDesign ends the process
       itself, no exception, no crash report, one line in ProtectiveShutdownLog. It happened twice on
       2026-09-12 for exactly this reason. So nothing here closes anything: the caller's JSX names
       the documents and closes them, where every InterfacePtr is long gone. */
-void ImportOneInto(const char* label, const std::string& xml, PMString& line)
+void ImportOneIntoWith(const char* label, ClassID policyBoss, const std::string& xml, PMString& line)
 {
 	line.Append("[");
 	line.Append(Ascii(label));
@@ -3196,7 +3197,7 @@ void ImportOneInto(const char* label, const std::string& xml, PMString& line)
 	ISession* const session = GetExecutionContextSession();
 	InterfacePtr<IINXManager> inx(session != nil ? session->QueryINXManager() : nil);
 	InterfacePtr<IPMUnknown> holder(
-		(IPMUnknown*)::CreateObject(kDocElementImportBoss, IID_IINXIMPORTPOLICY));
+		(IPMUnknown*)::CreateObject(policyBoss, IID_IINXIMPORTPOLICY));
 	if (inx == nil || holder == nil)
 	{
 		line.Append("no manager or policy] ");
@@ -3276,6 +3277,12 @@ void ImportOneInto(const char* label, const std::string& xml, PMString& line)
 	line.Append(", swatches ");
 	line.AppendNumber(swatches);
 	line.Append("] ");
+}
+
+/** The shape every earlier caller used: the policy that is known to work. */
+void ImportOneInto(const char* label, const std::string& xml, PMString& line)
+{
+	ImportOneIntoWith(label, kDocElementImportBoss, xml, line);
 }
 
 void ImportDesignmapProbe(IDataBase* db, PMString& out)
@@ -3475,6 +3482,94 @@ void RealIdmlPartsProbe(IDataBase* db, PMString& out)
 	}
 	go.Append("(left open on purpose - close by name)");
 	Say(out, go);
+}
+
+//========================================================================================
+//  ★★★S26 - THE COMBINATION NOBODY TRIED: THE **IDML** POLICY, HANDED AN **IDML**.
+//
+//  THE USER'S QUESTION (2026-09-15), and it found a hole in my own table: "the dropped paragraph
+//  is the import POLICY's doing - so with an IDML-shaped file, could a different policy be used,
+//  and would the paragraph survive?"
+//
+//  ★WHAT THE TABLE ACTUALLY LOOKED LIKE. Four boxes, and only three had ever been filled in:
+//        kDocElementImportBoss     + INX        ✅ works (one ParagraphStyleRange is lost)
+//        kDocElementImportBoss     + designmap  ✅ works, same loss                      (S24)
+//        kSaveBackImportPolicyBoss + INX        ⛔ took InDesign down          (2026-09-12)
+//        kSaveBackImportPolicyBoss + designmap  ⬜ **NEVER MEASURED**
+//    The crash of 2026-09-12 was the IDML policy being handed an INX - the wrong FILE for that
+//    policy. I had been reading it as "this policy cannot be driven", which is a statement about
+//    the policy; the measurement only supports a statement about the PAIR.
+//
+//  ★AND THERE IS A REASON TO EXPECT THE FOURTH BOX TO BE DIFFERENT: the three VALIDATIONS turned
+//   out to be perfectly exclusive by format (S23.3) - each accepts its own file and refuses the
+//   others in its own error number. If the policies are built on the same idea, the IDML policy
+//   wants an IDML, which is exactly what has never been put in front of it.
+//
+//  ⇒ IF IT WORKS, the sacrificial range may stop being necessary: the lost ParagraphStyleRange is
+//    kDocElementImportBoss's behaviour, and this would not be that policy.
+//
+//  ⚠OFF BY DEFAULT. Its neighbour in this table took InDesign down, and the guard below refuses to
+//    run while anything else is open and unsaved.
+//
+//  ⛔★★★MEASURED 2026-09-15, AND THE ANSWER IS NO. The fourth box crashes too:
+//    EXCEPTION_ACCESS_VIOLATION, and the report puts frame 0 inside **SAVEBACK.APLN** itself -
+//    the IDML policy's own implementation - reached through INXCORE -> XMLPARSER -> Expat.
+//    (Report kept at work/kcm-crash-2026-09-15-s26.xml.)
+//    ★★AND THE CONTROL RAN FIRST, IN THE SAME PASS, ON THE SAME BYTES: the designmap went in
+//    through kDocElementImportBoss and came back. So the XML is not at fault and the file is not
+//    at fault - **the policy is**, and giving it the format it is named after changes nothing.
+//  ⇒ This also settles what 2026-09-12 left open. That crash was read as "perhaps it was handed
+//    the wrong file"; it was not. THREE measurements now say the same thing about kSaveBack*:
+//        kSaveBackExportPolicyBoss  + (export)   HANGS          (S23.2)
+//        kSaveBackImportPolicyBoss  + INX        dies           (2026-09-12)
+//        kSaveBackImportPolicyBoss  + designmap  dies, in SaveBack's own code   (here)
+//    ⇒ **The IDML policies cannot be driven from outside**, whatever they are handed. SaveBack
+//    sets something on one before use that plug-in code does not have, and the inside is not
+//    public. ★Stop guessing: there is nothing left to guess FROM.
+//  ⇒ AND THE PRACTICAL CONSEQUENCE: the sacrificial range stays necessary. The dropped
+//    ParagraphStyleRange is kDocElementImportBoss's behaviour, and that policy is the only one
+//    that works - so KCM keeps injecting, which is measured to work (100 pages, nothing lost).
+//========================================================================================
+
+/** ⛔OFF, and the answer is above - not a caution but a measured result. Turning it on again only
+    reproduces a crash whose cause is already named. */
+static const bool16 kProbeTheIdmlImportPolicy = kFalse;
+
+void IdmlImportPolicyProbe(IDataBase* db, PMString& out)
+{
+	PMString line(Ascii("S26 the IDML import policy, handed an IDML: "));
+	if (!kProbeTheIdmlImportPolicy)
+	{
+		line.Append("NOT RUN - kProbeTheIdmlImportPolicy is off");
+		Say(out, line);
+		return;
+	}
+	PMString why;
+	if (!NothingElseAtRisk(db, why))
+	{
+		line.Append(why);
+		Say(out, line);
+		return;
+	}
+	std::string mapXml;
+	int32 raw = 0;
+	if (!BuildDesignmapXml(db, mapXml, raw, why))
+	{
+		line.Append("the designmap could not be made - ");
+		line.Append(why);
+		Say(out, line);
+		return;
+	}
+
+	// ★The control first, and it is the SAME FILE through the policy that is known to take it - so
+	//   a difference between the two rows can only be the policy.
+	Trace("S26 control - designmap through kDocElementImportBoss");
+	ImportOneIntoWith("A control: designmap + docElement", kDocElementImportBoss, mapXml, line);
+	Trace("S26 THE ROW - designmap through kSaveBackImportPolicyBoss");
+	ImportOneIntoWith("B designmap + IDML policy", kSaveBackImportPolicyBoss, mapXml, line);
+	Trace("S26 came back");
+	line.Append("(left open on purpose - close by name)");
+	Say(out, line);
 }
 
 }	// namespace
@@ -4870,6 +4965,10 @@ void KCMProbePdfRoute(PMString& out)
 	// the question the user actually asked: can ImportINX be handed an IDML?
 	Trace("S25 begin - a real IDML's designmap and one part");
 	RealIdmlPartsProbe(db, out);
+
+	// ---- S26: the IDML policy, handed an IDML - the box nobody filled in --------------------
+	Trace("S26 begin - the IDML import policy on a designmap");
+	IdmlImportPolicyProbe(db, out);
 
 	Trace("=== run ends, every step came back ===");
 }
