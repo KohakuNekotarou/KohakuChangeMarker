@@ -430,6 +430,175 @@ private:
 	bool16			fEverListened;
 };
 
+//========================================================================================
+//  ★★★S27's APPARATUS - the catcher's mirror image: a pipe THIS side writes into, so that
+//  InDesign can be asked to READ from a path that is not a file.
+//
+//  ⚠THE HONEST PREDICTION, and it is worse than the writing case. A zip is read END FIRST: the
+//    reader looks for the End Of Central Directory record at the tail, then seeks back to the
+//    directory, then seeks again to each entry. **A pipe cannot go back.** And S15 measured the
+//    thing that makes it dangerous rather than merely impossible: on a pipe, SetFilePointerEx
+//    REPORTS SUCCESS AND MOVES NOTHING - so a reader can believe it seeked and then read the
+//    wrong bytes, instead of failing cleanly.
+//  ★WHY IT IS STILL WORTH MEASURING: OpenPackage refuses a MEMORY stream, and memory streams CAN
+//    seek - so its objection is evidently not about seeking. The writing side wanted "a path it
+//    has not opened yet"; if the reading side wants "a path" too, a pipe has one.
+//  ⇒ The question is whether it fails at the DOOR (a path is a path) or INSIDE (a pipe cannot
+//    rewind). Those are different answers, and only one of them can be reached by reasoning.
+//========================================================================================
+
+/** What one feeding pipe is doing. Heap-allocated and handed to the writer thread for the same
+    reason the catcher does it: a thread that does not come back must not write into a dead frame. */
+struct KCMPipeFeed
+{
+	HANDLE			pipe;
+	volatile LONG	ready;			// the writer is at the door
+	volatile LONG	connected;		// did anybody open the other end
+	volatile LONG	written;		// how much went out
+	DWORD			connectErr;
+	DWORD			lastErr;
+	const char*		data;			// not owned - the caller keeps it alive across Finish()
+	LONG			size;
+};
+
+/** Accept one connection and push the whole payload down it. */
+DWORD WINAPI KCMPipeFeederProc(LPVOID param)
+{
+	KCMPipeFeed* const s = static_cast<KCMPipeFeed*>(param);
+	::InterlockedExchange(&s->ready, 1);
+	const BOOL ok = ::ConnectNamedPipe(s->pipe, nil);
+	s->connectErr = ok ? 0 : ::GetLastError();
+	if (!ok && s->connectErr != ERROR_PIPE_CONNECTED && s->connectErr != ERROR_NO_DATA)
+	{
+		s->lastErr = s->connectErr;
+		return 0;
+	}
+	::InterlockedExchange(&s->connected, 1);
+	LONG at = 0;
+	while (at < s->size)
+	{
+		DWORD put = 0;
+		const DWORD want = static_cast<DWORD>((s->size - at) > 8192 ? 8192 : (s->size - at));
+		if (!::WriteFile(s->pipe, s->data + at, want, &put, nil) || put == 0)
+		{
+			s->lastErr = ::GetLastError();
+			break;
+		}
+		at += static_cast<LONG>(put);
+		::InterlockedExchange(&s->written, at);
+	}
+	// ⚠The reader sees end-of-file only when this end closes, so the handle goes here rather than
+	//   at Finish() - a reader still waiting for more would otherwise wait for ever.
+	::FlushFileBuffers(s->pipe);
+	::DisconnectNamedPipe(s->pipe);
+	return 0;
+}
+
+/** A named pipe with a thread PUSHING a known payload into it, for the length of one measurement.
+    ⚠Spike apparatus: like the catcher, it abandons its state rather than free it under a thread
+      that did not return. */
+class KCMPipeFeeder
+{
+public:
+	KCMPipeFeeder(const wchar_t* leafName, const char* data, int32 size)
+		: fPath(L"\\\\.\\pipe\\"), fState(nil), fThread(nil), fCreateErr(0), fEverStarted(kFalse)
+	{
+		fPath += leafName;
+		fState = new (std::nothrow) KCMPipeFeed;
+		if (fState == nil)
+			return;
+		std::memset(fState, 0, sizeof(KCMPipeFeed));
+		fState->data = data;
+		fState->size = static_cast<LONG>(size);
+		// ★A BUFFER BIG ENOUGH FOR THE WHOLE PAYLOAD. With a small one the writer blocks until the
+		//   reader drains it, and a reader that is hunting for the tail may never drain anything -
+		//   which would look like "the reader hung" when it was this side holding it up.
+		const DWORD buf = static_cast<DWORD>(size > 0 ? size + 4096 : 65536);
+		fState->pipe = ::CreateNamedPipeW(fPath.c_str(),
+		                                  PIPE_ACCESS_OUTBOUND,
+		                                  PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+		                                  1, buf, buf, 0, nil);
+		if (fState->pipe == INVALID_HANDLE_VALUE)
+		{
+			fCreateErr = ::GetLastError();
+			fState->pipe = nil;
+			return;
+		}
+		DWORD id = 0;
+		fThread = ::CreateThread(nil, 0, KCMPipeFeederProc, fState, 0, &id);
+		fEverStarted = (fThread != nil) ? kTrue : kFalse;
+		for (int32 spin = 0; spin < 1000 && fState->ready == 0; ++spin)
+			::Sleep(1);
+	}
+
+	~KCMPipeFeeder() { Finish(); }
+
+	bool16 Running() const { return fThread != nil; }
+	DWORD CreateError() const { return fCreateErr; }
+	const wchar_t* Path() const { return fPath.c_str(); }
+	int32 Written() const { return fState != nil ? static_cast<int32>(fState->written) : 0; }
+
+	void Describe(PMString& into) const
+	{
+		if (fState == nil || !fEverStarted)
+		{
+			into.Append("the feeding pipe never started, error ");
+			into.AppendNumber(static_cast<int32>(fCreateErr));
+			return;
+		}
+		into.Append(fState->connected != 0 ? "OPENED by the other side, " : "★NEVER OPENED, ");
+		into.AppendNumber(Written());
+		into.Append(" of ");
+		into.AppendNumber(static_cast<int32>(fState->size));
+		into.Append(" bytes pushed (connect said ");
+		into.AppendNumber(static_cast<int32>(fState->connectErr));
+		into.Append(", writing stopped on ");
+		into.AppendNumber(static_cast<int32>(fState->lastErr));
+		into.Append(")");
+	}
+
+	/** Stop the writer and join it. ★The knock: a thread parked in ConnectNamedPipe waits for
+	    ever, so if nobody came we open our own door once. */
+	void Finish()
+	{
+		if (fThread == nil)
+		{
+			if (fState != nil && fState->pipe != nil)
+			{
+				::CloseHandle(fState->pipe);
+				fState->pipe = nil;
+			}
+			return;
+		}
+		if (::InterlockedCompareExchange(&fState->connected, 0, 0) == 0)
+		{
+			HANDLE knock = ::CreateFileW(fPath.c_str(), GENERIC_READ, 0, nil, OPEN_EXISTING, 0, nil);
+			if (knock != INVALID_HANDLE_VALUE)
+				::CloseHandle(knock);
+		}
+		const DWORD waited = ::WaitForSingleObject(fThread, 5000);
+		if (waited != WAIT_OBJECT_0)
+		{
+			fThread = nil;			// ⚠abandoned on purpose - see the class comment
+			return;
+		}
+		::CloseHandle(fThread);
+		fThread = nil;
+		::CloseHandle(fState->pipe);
+		fState->pipe = nil;
+	}
+
+private:
+	KCMPipeFeeder(const KCMPipeFeeder&);
+	KCMPipeFeeder& operator=(const KCMPipeFeeder&);
+
+	std::wstring	fPath;
+	KCMPipeFeed*	fState;
+	HANDLE			fThread;
+	DWORD			fCreateErr;
+	bool16			fEverStarted;
+};
+
 /** An IDFile built straight from a path string, with no directory behind it. */
 IDFile PipeAsFile(const wchar_t* path)
 {
@@ -3572,6 +3741,377 @@ void IdmlImportPolicyProbe(IDataBase* db, PMString& out)
 	Say(out, line);
 }
 
+//========================================================================================
+//  ★★★S27 - CAN INDESIGN **READ** FROM A PIPE? (the user, 2026-09-15: "purely, I want to know")
+//
+//  S15 answered the writing half: InDesign's file layer writes to \\.\pipe\ perfectly well, which
+//  is how a whole IDML came to exist in memory. The reading half has never been asked.
+//
+//  ⚠THE PREDICTION IS WORSE HERE, AND FOR A STRUCTURAL REASON. A zip is read END FIRST - find the
+//    EOCD at the tail, seek back to the directory, seek again to each entry. A pipe cannot go
+//    back. And the dangerous part, measured in S15: **on a pipe SetFilePointerEx reports success
+//    and moves nothing**, so a reader can believe it seeked and then read the wrong bytes rather
+//    than failing cleanly.
+//  ★WHY ASK ANYWAY: OpenPackage refuses a MEMORY stream, and memory streams CAN seek - so its
+//    objection is not about seeking. The writing side wanted "a path it has not opened yet". If
+//    the reading side wants "a path" too, then a pipe HAS one, and the question becomes where it
+//    fails: at the door, or inside. **Only a measurement separates those.**
+//
+//  THREE STEPS, cheapest first, and each one gates the next IN CODE:
+//    27.1  StreamUtil::CreateFileStreamRead on a pipe, reading a KNOWN payload  - safe
+//    27.2  the same stream handed to OpenPackage                                - may hang
+//    27.3  IDFile(pipe) handed to OpenPackage directly (the IDFile overload)    - may hang
+//  ⚠27.2 and 27.3 only run if 27.1 says bytes come through at all.
+//========================================================================================
+
+/** ⛔OFF - ANSWERED 2026-09-15, and the answer is in three numbers:
+      27.1  CreateFileStreamRead on a pipe  ★27,800 / 27,800 B - InDesign READS from a pipe
+      27.2  that stream to OpenPackage      UCFErrorCode 1 - refused AT THE DOOR (the number a
+                                            memory stream gets: "not that kind of stream")
+      27.3  IDFile(pipe) to OpenPackage     UCFErrorCode 4 - ★got INSIDE and said "not a package"
+                                            (the number S22's unrepaired bytes got)
+    ⇒ ★★★THE FILE LAYER IS NOT THE LIMIT - THE ZIP IS. A zip is read END FIRST (find the EOCD at
+    the tail, seek back), and a pipe cannot rewind; writing worked in S22 precisely because writing
+    is a forward motion. Same pipe, same file layer, opposite results, and the reason is structural.
+    ★Nothing hung, which the prediction had feared: both refusals came back cleanly. */
+static const bool16 kProbeReadingThroughAPipe = kFalse;
+
+void PipeReadProbe(PMString& out)
+{
+	PMString line(Ascii("S27 reading through a pipe: "));
+
+	// The payload is a REAL IDML - the one S21 wrote earlier in this run - so that 27.2 is asked
+	// about the thing it would actually be used for, not about a token string.
+	wchar_t tempDir[MAX_PATH] = { 0 };
+	::GetTempPathW(MAX_PATH, tempDir);
+	std::wstring srcPath(tempDir);
+	srcPath += L"kcm-spike-minimal.idml";
+	std::string payload;
+	{
+		std::ifstream f(srcPath.c_str(), std::ios::binary);
+		if (f)
+		{
+			std::string all((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+			payload.swap(all);
+		}
+	}
+	if (payload.size() < 100)
+	{
+		line.Append("★the IDML written by S21 is not there - it has to run first");
+		Say(out, line);
+		return;
+	}
+	line.Append("payload ");
+	line.AppendNumber(static_cast<int32>(payload.size()));
+	line.Append(" B; ");
+
+	// ---- 27.1 does a file stream on a pipe deliver bytes at all? ----------------------------
+	// ★THE CONTROL IS THE SAME CALL ON THE REAL FILE. Without it, "0 bytes" cannot be told from
+	//   "this is not how you read a stream".
+	Trace("S27.1 control - CreateFileStreamRead on the real file");
+	{
+		InterfacePtr<IPMStream> s(StreamUtil::CreateFileStreamRead(PipeAsFile(srcPath.c_str())));
+		int32 got = 0;
+		if (s != nil)
+		{
+			uchar buf[4096];
+			for (;;)
+			{
+				const int32 n = s->XferByte(buf, static_cast<int32>(sizeof(buf)));
+				if (n <= 0)
+					break;
+				got += n;
+			}
+			s->Close();
+		}
+		line.Append("[control: real file ");
+		line.AppendNumber(got);
+		line.Append(" B] ");
+	}
+
+	int32 throughPipe = 0;
+	Trace("S27.1 the pipe");
+	{
+		KCMPipeFeeder feeder(L"kcm-idml-read", payload.c_str(), static_cast<int32>(payload.size()));
+		line.Append("[pipe ");
+		if (!feeder.Running())
+		{
+			line.Append("could not be created, error ");
+			line.AppendNumber(static_cast<int32>(feeder.CreateError()));
+			line.Append("] ");
+		}
+		else
+		{
+			InterfacePtr<IPMStream> s(StreamUtil::CreateFileStreamRead(PipeAsFile(feeder.Path())));
+			if (s == nil)
+			{
+				line.Append("★CreateFileStreamRead returned nil on a pipe] ");
+			}
+			else
+			{
+				uchar buf[4096];
+				for (;;)
+				{
+					const int32 n = s->XferByte(buf, static_cast<int32>(sizeof(buf)));
+					if (n <= 0)
+						break;
+					throughPipe += n;
+				}
+				s->Close();
+				line.Append("read ");
+				line.AppendNumber(throughPipe);
+				line.Append(" of ");
+				line.AppendNumber(static_cast<int32>(payload.size()));
+				line.Append(throughPipe == static_cast<int32>(payload.size()) ? " B ★ALL OF IT] " : " B] ");
+			}
+			feeder.Finish();
+			line.Append("[feeder ");
+			feeder.Describe(line);
+			line.Append("] ");
+		}
+	}
+	Say(out, line);
+
+	if (throughPipe <= 0)
+	{
+		Say(out, "S27.2/27.3: skipped - nothing came through the pipe, so OpenPackage has nothing to fail on");
+		return;
+	}
+	if (!kProbeReadingThroughAPipe)
+	{
+		Say(out, "S27.2/27.3: NOT RUN - kProbeReadingThroughAPipe is off");
+		return;
+	}
+
+	// ---- 27.2 the same stream, handed to OpenPackage ----------------------------------------
+	PMString two(Ascii("S27.2 OpenPackage(stream on a pipe): "));
+	Utils<IUCFPackageUtils> ucf;
+	if (!ucf)
+	{
+		two.Append("no IUCFPackageUtils");
+		Say(out, two);
+		return;
+	}
+	{
+		KCMPipeFeeder feeder(L"kcm-idml-read2", payload.c_str(), static_cast<int32>(payload.size()));
+		if (!feeder.Running())
+		{
+			two.Append("the pipe could not be created");
+		}
+		else
+		{
+			Trace("S27.2 OpenPackage on a pipe stream - MAY HANG");
+			InterfacePtr<IPMStream> s(StreamUtil::CreateFileStreamRead(PipeAsFile(feeder.Path())));
+			IUCFPackageUtils::UCFErrorCode err = IUCFPackageUtils::kSuccess;
+			IUCFPackageUtils::PackageRefPtr ref = (s != nil) ? ucf->OpenPackage(s, err) : nil;
+			Trace("S27.2 OpenPackage came back");
+			if (ref == nil)
+			{
+				two.Append("★REFUSED, UCFErrorCode ");
+				two.AppendNumber(static_cast<int32>(err));
+			}
+			else
+			{
+				two.Append("★★★OPENED - designmap.xml ");
+				KCMMemXferBytes got;
+				const int32 n = ReadPackageEntry(ref, "designmap.xml", got);
+				two.AppendNumber(n);
+				two.Append(" B");
+				ucf->ClosePackage(ref);
+			}
+			feeder.Finish();
+			two.Append(" [feeder ");
+			feeder.Describe(two);
+			two.Append("]");
+		}
+	}
+	Say(out, two);
+
+	// ---- 27.3 the IDFile overload, pointed straight at a pipe --------------------------------
+	PMString three(Ascii("S27.3 OpenPackage(IDFile on a pipe): "));
+	{
+		KCMPipeFeeder feeder(L"kcm-idml-read3", payload.c_str(), static_cast<int32>(payload.size()));
+		if (!feeder.Running())
+		{
+			three.Append("the pipe could not be created");
+		}
+		else
+		{
+			Trace("S27.3 OpenPackage(IDFile) on a pipe - MAY HANG");
+			IUCFPackageUtils::UCFErrorCode err = IUCFPackageUtils::kSuccess;
+			IUCFPackageUtils::PackageRefPtr ref = ucf->OpenPackage(PipeAsFile(feeder.Path()), err);
+			Trace("S27.3 came back");
+			if (ref == nil)
+			{
+				three.Append("★REFUSED, UCFErrorCode ");
+				three.AppendNumber(static_cast<int32>(err));
+			}
+			else
+			{
+				three.Append("★★★OPENED");
+				ucf->ClosePackage(ref);
+			}
+			feeder.Finish();
+			three.Append(" [feeder ");
+			feeder.Describe(three);
+			three.Append("]");
+		}
+	}
+	Say(out, three);
+}
+
+//========================================================================================
+//  ★★★S28 - OPEN THE IDML **AS A DOCUMENT**, FROM A PIPE.
+//
+//  THE USER'S AIM, said plainly (2026-09-15): "what I would like to fix is that dropped-paragraph
+//  problem - if it were read properly AS IDML, maybe it would not drop."
+//  ★AND THAT TURNED OUT TO BE RIGHT. Measured the same day, outside this spike: an origin written
+//    as .idml and opened with app.open() came back with 3 stories x 5 paragraphs, ALL FIFTEEN, and
+//    with NO sacrificial range anywhere. The dropped ParagraphStyleRange is kDocElementImportBoss's
+//    doing; the IDML reader is a different road and does not do it.
+//  ⚠BUT app.open TAKES A FILE. So "no sacrifice" and "nothing on disk" have not been available at
+//    the same time - which is what this step is for.
+//
+//  ⇒ THE COMBINATION: feed the package down a pipe and hand the PIPE'S PATH to the document opener.
+//    IDFile keeps a \\.\pipe\ path verbatim (S15), and Utils<IDocumentCommands>()->Open takes an
+//    IDFile - with showInWindow=kFalse, which KCMBookCompare already uses for every chapter, so
+//    the window problem is answered before it is asked.
+//
+//  ⚠THE HONEST PREDICTION: S27.3 handed the same pipe to OpenPackage(IDFile) and got UCFErrorCode
+//    4 - "this is not readable as a package" - because a zip is read END FIRST and a pipe cannot
+//    rewind. If the document opener goes through the same UCF, this ends the same way.
+//  ★WHY ASK ANYWAY: today alone, three pairs of doors that looked identical behaved differently
+//    (ValidateINX vs ImportINX; OpenPackage's stream vs IDFile overload; kDocElementImportBoss vs
+//    the IDML reader). The opener is a different door and has not been asked.
+//========================================================================================
+
+/** ⛔OFF - ANSWERED 2026-09-15:
+      control (the real .idml, showInWindow=kFalse)   err 0, stories 1  ★OPENED WINDOWLESS
+      the pipe                                        ★err 29446, and **0 of 27,801 bytes pushed**
+    ⇒ ★★★THIS ONE DOES NOT EVEN READ. OpenPackage at least drained the pipe before saying "not a
+    package" (S27.3); the document opener refuses with nothing taken at all - the feeder's write
+    stopped on 232 (ERROR_NO_DATA: the other end went away immediately). It looks at the
+    destination before it looks at the contents, and a pipe cannot answer what it asks.
+    ★★THE CONTROL IS THE VALUABLE HALF: **a .idml opens WINDOWLESS**, which was listed as unmeasured
+    an hour earlier and turned out to be sitting in our own code all along - KCMBookCompare has
+    passed showInWindow=kFalse for every chapter it ever opened. ⇒ Look in the plug-in before
+    calling something unmeasured. */
+static const bool16 kProbeOpeningFromAPipe = kFalse;
+
+void OpenIdmlFromPipeProbe(PMString& out)
+{
+	PMString line(Ascii("S28 open a document from a pipe: "));
+	if (!kProbeOpeningFromAPipe)
+	{
+		line.Append("NOT RUN - answered 2026-09-15: control OPENED WINDOWLESS (err 0), "
+		            "the pipe REFUSED with err 29446 and zero bytes read. kProbeOpeningFromAPipe");
+		Say(out, line);
+		return;
+	}
+
+	wchar_t tempDir[MAX_PATH] = { 0 };
+	::GetTempPathW(MAX_PATH, tempDir);
+	std::wstring srcPath(tempDir);
+	srcPath += L"kcm-spike-minimal.idml";
+	std::string payload;
+	{
+		std::ifstream f(srcPath.c_str(), std::ios::binary);
+		if (f)
+		{
+			std::string all((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+			payload.swap(all);
+		}
+	}
+	if (payload.size() < 100)
+	{
+		line.Append("★the IDML written by S21 is not there - it has to run first");
+		Say(out, line);
+		return;
+	}
+
+	Utils<IDocumentCommands> docCmds;
+	if (!docCmds)
+	{
+		line.Append("no IDocumentCommands");
+		Say(out, line);
+		return;
+	}
+
+	// ---- the control: the SAME package, from the real file ----------------------------------
+	// ★Without it, a failure on the pipe cannot be told from "this is not how you open an IDML".
+	//   ⚠It opens a real document - windowless, and closed by the caller's script by name.
+	Trace("S28 control - open the real .idml file, windowless");
+	{
+		UIDRef ref;
+		ErrorCode err = kFailure;
+		{
+			GlobalErrorStatePreserver keep;
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+			err = docCmds->Open(&ref, PipeAsFile(srcPath.c_str()), kSuppressUI,
+			                    IOpenFileCmdData::kOpenDefault, IOpenFileCmdData::kUseLockFile,
+			                    kFalse /*showInWindow*/);
+		}
+		line.Append("[control: real file err ");
+		line.AppendNumber(static_cast<int32>(err));
+		if (err == kSuccess && ref != UIDRef::gNull)
+		{
+			if (ref.GetDataBase() != nil)
+				sSpikeMade.push_back(ref.GetDataBase());
+			InterfacePtr<IDocument> doc(ref, UseDefaultIID());
+			InterfacePtr<IStoryList> sl(doc, UseDefaultIID());
+			line.Append(", stories ");
+			line.AppendNumber(sl != nil ? sl->GetUserAccessibleStoryCount() : -1);
+			line.Append(" ★OPENED WINDOWLESS");
+		}
+		line.Append("] ");
+	}
+
+	// ---- the row: the same package, down a pipe ----------------------------------------------
+	Trace("S28 THE ROW - open from a pipe");
+	{
+		KCMPipeFeeder feeder(L"kcm-idml-open", payload.c_str(), static_cast<int32>(payload.size()));
+		if (!feeder.Running())
+		{
+			line.Append("[pipe could not be created, error ");
+			line.AppendNumber(static_cast<int32>(feeder.CreateError()));
+			line.Append("]");
+			Say(out, line);
+			return;
+		}
+		UIDRef ref;
+		ErrorCode err = kFailure;
+		{
+			GlobalErrorStatePreserver keep;
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+			err = docCmds->Open(&ref, PipeAsFile(feeder.Path()), kSuppressUI,
+			                    IOpenFileCmdData::kOpenDefault, IOpenFileCmdData::kUseLockFile,
+			                    kFalse /*showInWindow*/);
+		}
+		Trace("S28 came back");
+		line.Append("[★PIPE: err ");
+		line.AppendNumber(static_cast<int32>(err));
+		if (err == kSuccess && ref != UIDRef::gNull)
+		{
+			if (ref.GetDataBase() != nil)
+				sSpikeMade.push_back(ref.GetDataBase());
+			InterfacePtr<IDocument> doc(ref, UseDefaultIID());
+			InterfacePtr<IStoryList> sl(doc, UseDefaultIID());
+			line.Append(", stories ");
+			line.AppendNumber(sl != nil ? sl->GetUserAccessibleStoryCount() : -1);
+			line.Append(" ★★★IT OPENED FROM A PIPE");
+		}
+		else
+		{
+			line.Append(" REFUSED");
+		}
+		feeder.Finish();
+		line.Append("] [feeder ");
+		feeder.Describe(line);
+		line.Append("] (documents LEFT OPEN - close by name)");
+	}
+	Say(out, line);
+}
+
 }	// namespace
 
 void KCMProbePdfRoute(PMString& out)
@@ -4969,6 +5509,16 @@ void KCMProbePdfRoute(PMString& out)
 	// ---- S26: the IDML policy, handed an IDML - the box nobody filled in --------------------
 	Trace("S26 begin - the IDML import policy on a designmap");
 	IdmlImportPolicyProbe(db, out);
+
+	// ---- S27: can InDesign READ from a pipe? (the writing half was S15) ---------------------
+	Trace("S27 begin - reading through a pipe");
+	PipeReadProbe(out);
+
+	// ---- S28: open the IDML AS A DOCUMENT, from a pipe --------------------------------------
+	// The user's aim: the IDML reader does not drop a paragraph, but app.open takes a file. This
+	// asks whether the document opener will take a pipe instead.
+	Trace("S28 begin - open a document from a pipe");
+	OpenIdmlFromPipeProbe(out);
 
 	Trace("=== run ends, every step came back ===");
 }
