@@ -222,6 +222,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceParse.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMXmlInject.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOrigin.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOriginIdml.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOriginPeek.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRehydrate.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOriginCompare.cpp" />
@@ -290,6 +291,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceParse.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMXmlInject.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOrigin.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOriginIdml.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOriginPeek.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMRehydrate.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOriginCompare.h" />
