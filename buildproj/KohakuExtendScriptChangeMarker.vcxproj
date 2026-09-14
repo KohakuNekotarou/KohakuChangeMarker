@@ -1,4 +1,4 @@
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceDisplay.h" />
+﻿    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceDisplay.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryRestore.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.h" />
@@ -17,7 +17,6 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTextDiff.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMMemXferBytes.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpike.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReportPlace.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTextRead.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageNumberMarker.h" />

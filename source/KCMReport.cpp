@@ -19,7 +19,7 @@
 
 #include "VCPlugInHeaders.h"
 
-#include <windows.h>				// ShellExecuteW - opening the finished report. (GetTempPathW and DeleteFileW went with the temporary PDFs, 2026-09-14)
+#include <windows.h>				// GetTempPathW / DeleteFileW / ShellExecuteW - Windows only, like the rest of KCM's file work
 #include <shellapi.h>
 #include <string>
 #include <vector>
@@ -37,14 +37,14 @@
 #include "IOutputPages.h"
 #include "IPageList.h"
 #include "IPDFExportPrefs.h"
-// (IPDFPlacePrefs.h was included for SetPlacePage / PlacePrefsRestorer, both gone 2026-09-14.)
+#include "IPDFPlacePrefs.h"
 #include "IPDFPostProcessPrefs.h"
 #include "IPDFSecurityPrefs.h"
 #include "ISession.h"
 #include "ISysFileData.h"
 #include "SDKFileHelper.h"			// SDKFileSaveChooser - where the report goes is the user's choice
 #include "IUIFlagData.h"
-// (IWorkspace.h went with them: the report no longer reads the session's place preferences.)
+#include "IWorkspace.h"
 #include "CmdUtils.h"
 #include "ErrorUtils.h"
 #include "FileUtils.h"
@@ -60,7 +60,6 @@
 #include "KCMReport.h"
 #include "KCMProgressBar.h"		// KCMDeferredProgressBar - the bar that appears only after three seconds
 #include "KCMReportTable.h"		// the page helpers and the table sections
-#include "KCMReportPlace.h"		// ★one page into the report, as a PDF held in memory - no file anywhere
 #include "KCMReportPaws.h"			// the cat's trail on the first page
 #include "KCMCore.h"				// KCMIsArmed / KCMArmedTargetDB / KCMArmedSourceDB / KCMCollectPageUIDs / KCMGetCompareMode
 #include "KCMComparisonRun.h"		// KCMToggleStartStop / KCMCanStartComparison - the report runs the comparison it needs
@@ -86,15 +85,15 @@ namespace
 const int32 kMaxTableRows = 400;	// rows of one table section before "... and N more"
 
 /** One report page: a Target page (kInvalidUID for a removed page) and its partner on the
-    report's Source (kInvalidUID for an added page).
-    ⚠fBefore/fAfter (the 1-based page numbers inside the two temporary PDFs) went with the
-      temporary PDFs on 2026-09-14: each page is exported at the moment it is placed, so there
-      is no file to number a page of. */
+    report's Source (kInvalidUID for an added page). fBefore/fAfter are the 1-based page numbers
+    inside the two temporary PDFs, filled in once the export order is settled. */
 struct Pair
 {
 	UID		fTarget;
 	UID		fSource;
-	Pair(UID t, UID s) : fTarget(t), fSource(s) {}
+	int32	fBefore;
+	int32	fAfter;
+	Pair(UID t, UID s) : fTarget(t), fSource(s), fBefore(0), fAfter(0) {}
 };
 
 PMString Ascii(const char* ascii)
@@ -188,9 +187,6 @@ void CollectPairs(IDataBase* targetDB, IDataBase* sourceDB, std::vector<Pair>& o
 			out.push_back(Pair(kInvalidUID, sOrder[i]));
 }
 
-// (TempPDF() stood here - it built the "<TEMP>\KCM-before-<tick>.pdf" names. **There are no
-//  temporary files anywhere in this feature since 2026-09-14**, so it had no caller left.)
-
 std::wstring WidePath(const IDFile& file)
 {
 	PMString s;
@@ -198,6 +194,94 @@ std::wstring WidePath(const IDFile& file)
 	int32 n = 0;
 	const UTF16TextChar* b = s.GrabUTF16Buffer(&n);
 	return (b != nil && n > 0) ? std::wstring(reinterpret_cast<const wchar_t*>(b), static_cast<size_t>(n)) : std::wstring();
+}
+
+/** ★★★THE REPORT'S FOLDER (2026-09-14, the user's decision), made beside the file they named:
+
+	    <what they typed, without .pdf> YYYY-MM-DD HHMMSS\
+	        <name>.pdf           the two sides, side by side
+	        <name>-before.pdf    the old side on its own
+	        <name>-after.pdf     the new side on its own
+
+	★**WHY THE TWO SIDES ARE NOT TEMPORARY FILES ANY MORE.** They used to go to %TEMP% and be
+	  deleted at the end. The user asked for that to stop, and when asked what the objection
+	  really was, said it plainly: **"it is being made without my say-so and deleted without my
+	  say-so that I do not like."** Not the disk space - the appearing and vanishing. The same two
+	  files, in a folder they chose, beside the report, are not that thing at all: they are part
+	  of what the feature produces, and two of them are useful on their own.
+	  ⚠**A whole day went into trying to produce the report with NO file at all** (a PDF made in
+	    memory, a snippet carrying the objects across). Both routes work and neither is usable:
+	    the memory PDF reverses the stacking order and drops transparency (it is the CLIPBOARD
+	    exporter), and a snippet loses what is tied to the page - master items, and page numbers,
+	    which cannot be right for two pages shown side by side on one. The record is
+	    docs/ai-notes/kcm-report-without-temp-files-2026-09-14.md.
+
+	⚠**THE TIME STAMP IS NOT DECORATION.** A folder has no "this exists, overwrite?" prompt the
+	  way the save dialog does, so a second report of the same name would silently overwrite the
+	  first. The stamp makes the name unique - the user's question was exactly this ("if a folder
+	  is made on the Desktop, wouldn't it collide?").
+
+	@param chosen   IN the file the save dialog returned.
+	@param outFolder OUT the folder that was created.
+	@param outStem  OUT the base name the three files are built from.
+	@return kFalse with `why` filled in when the folder could not be made. */
+bool16 MakeReportFolder(const IDFile& chosen, std::wstring& outFolder, std::wstring& outStem, PMString& why)
+{
+	const std::wstring full = WidePath(chosen);
+	if (full.empty())
+	{
+		why = Ascii("the chosen path could not be read");
+		return kFalse;
+	}
+	const size_t slash = full.find_last_of(L"\\/");
+	const std::wstring parent = (slash == std::wstring::npos) ? std::wstring() : full.substr(0, slash);
+	std::wstring name = (slash == std::wstring::npos) ? full : full.substr(slash + 1);
+	{
+		const size_t dot = name.find_last_of(L'.');
+		if (dot != std::wstring::npos && dot > 0)
+			name = name.substr(0, dot);			// drop the ".pdf" the dialog put there
+	}
+	if (name.empty())
+		name = L"report";
+	outStem = name;
+
+	wchar_t stamp[40] = { 0 };
+	{
+		time_t now = ::time(nil);
+		struct tm local;
+		::localtime_s(&local, &now);
+		::wcsftime(stamp, 40, L" %Y-%m-%d %H%M%S", &local);
+	}
+	std::wstring folder = parent;
+	if (!folder.empty())
+		folder += L"\\";
+	folder += name;
+	folder += stamp;
+
+	if (::CreateDirectoryW(folder.c_str(), nil) == 0)
+	{
+		// ⚠ERROR_ALREADY_EXISTS is not treated as success: the stamp is to the second, so a
+		//   folder of this name existing means something else made it, and writing into it would
+		//   be the silent overwrite this whole scheme exists to prevent.
+		why = Ascii("the report folder could not be created");
+		return kFalse;
+	}
+	outFolder = folder;
+	return kTrue;
+}
+
+/** One of the three files inside the report folder: "<folder>\<stem><suffix>.pdf". */
+IDFile InReportFolder(const std::wstring& folder, const std::wstring& stem, const wchar_t* suffix)
+{
+	std::wstring path = folder;
+	path += L"\\";
+	path += stem;
+	path += suffix;
+	path += L".pdf";
+	PMString s;
+	s.SetTranslatable(kFalse);
+	s.AppendW(reinterpret_cast<const UTF16TextChar*>(path.c_str()));
+	return FileUtils::PMStringToSysFile(s);
 }
 
 /** A paragraph end for the text frames (the model's paragraph separator is CR). */
@@ -273,11 +357,60 @@ bool16 ExportPagesToPDF(IDataBase* db, const std::vector<UID>& pages, const IDFi
 	return kTrue;
 }
 
-// (SetPlacePage() and PlacePrefsRestorer stood here. Both existed for ONE reason: the old route
-//  placed a temporary PDF FILE, and a file has to be told which of its pages to take and how to
-//  crop it - and the user's own place preferences had to be put back afterwards. The picture now
-//  arrives as a page item that is already exactly one page (KCMReportPlace.cpp), so nothing here
-//  reads or writes those preferences any more, and there is nothing to restore.)
+/** Pick which page of a placed PDF the next PlaceFileInFrame takes (1-based), through the
+    preferences command. The caller restores the user's setting afterwards with the command
+    `restore` (made before the first change, so it holds the values as they were). */
+bool16 SetPlacePage(int32 page1, IPDFPlacePrefs* current, PMString& why)
+{
+	InterfacePtr<ICommand> cmd(CmdUtils::CreateCommand(kSetPDFPlacePrefsCmdBoss));
+	InterfacePtr<IPDFPlacePrefs> data(cmd, UseDefaultIID());
+	if (cmd == nil || data == nil)
+	{
+		why = Ascii("the PDF place preferences command could not be assembled");
+		return kFalse;
+	}
+	if (current != nil)
+		data->CopyData(current);
+	data->SetPage(page1);
+	data->SetAllPages(0xffffffff, kFalse);
+	data->SetCropTo(IPDFPlacePrefs::kCropToMedia);		// the whole sheet, so both sides share one origin
+	data->SetTransparentBackground(kFalse);
+	data->SetShowPreview(kFalse);
+	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	if (CmdUtils::ProcessCommand(cmd) != kSuccess)
+	{
+		why = Ascii("the PDF place preferences could not be set");
+		return kFalse;
+	}
+	return kTrue;
+}
+
+/** Holds the PDF place preferences as they were, in a command made on construction, and
+    processes it on destruction - so the user's setting comes back whichever way BuildReport
+    leaves (a failed SetPlacePage used to leave the page number changed). */
+class PlacePrefsRestorer
+{
+public:
+	explicit PlacePrefsRestorer(IPDFPlacePrefs* current)
+		: fRestore(CmdUtils::CreateCommand(kSetPDFPlacePrefsCmdBoss))
+	{
+		InterfacePtr<IPDFPlacePrefs> keep(fRestore, UseDefaultIID());
+		if (keep != nil && current != nil)
+			keep->CopyData(current);
+	}
+	~PlacePrefsRestorer()
+	{
+		if (fRestore != nil)
+		{
+			GlobalErrorStatePreserver errorState;		// a destructor must not change the error the caller is reporting
+			CmdUtils::ProcessCommand(fRestore);
+		}
+	}
+private:
+	InterfacePtr<ICommand> fRestore;
+	PlacePrefsRestorer(const PlacePrefsRestorer&);
+	PlacePrefsRestorer& operator=(const PlacePrefsRestorer&);
+};
 
 // ---- the Story detail, borrowed ------------------------------------------------------------------
 
@@ -550,7 +683,7 @@ void BuildResourceRows(IDataBase* targetDB, std::vector<KCMReportRow>& out)
     Every interface on the report document is released when this returns; the caller then
     exports and closes it. */
 bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB,
-				   const std::vector<Pair>& pairs,
+				   const std::vector<Pair>& pairs, const IDFile& beforePDF, const IDFile& afterPDF,
 				   const PMReal& pageW, const PMReal& pageH, const PMString& sourceName,
 				   const std::vector<KCMReportRow>& storyRows, const PMString& storyHeading,
 				   const std::vector<KCMReportRow>& resourceRows, const PMString& resourceHeading,
@@ -559,11 +692,12 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 	SDKLayoutHelper helper;
 	const PMString targetName = NameOf(targetDB);
 
-	// (The user's PDF PLACE preferences used to be saved and restored around this function: the
-	//  old route placed a file and had to say which page of it to take, with kCropToMedia for the
-	//  sheet. Nothing is placed from a file any more - the picture arrives as a page item through
-	//  KCMPlacePageIntoReport - so those preferences are neither read nor changed, and there is
-	//  nothing to put back.)
+	// The user's PDF place preferences, kept in a command that puts them back when this function
+	// returns - by ANY path, a failed SetPlacePage included (the restorer's destructor).
+	ISession* const session = GetExecutionContextSession();
+	InterfacePtr<IWorkspace> workspace(session != nil ? session->QueryWorkspace() : nil);
+	InterfacePtr<IPDFPlacePrefs> currentPlace(workspace, UseDefaultIID());
+	PlacePrefsRestorer restorePlace(currentPlace);
 
 	// ---- the first page: three lines, and the cat's trail (the user's asks) ---------------------
 	{
@@ -612,11 +746,13 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 	}
 
 	// ---- one page per pair: "Before" / "After" over the two pictures, and nothing else --------
+	const IDFile beforeFile = beforePDF;
+	const IDFile afterFile = afterPDF;
 	for (size_t i = 0; i < pairs.size(); ++i)
 	{
 		// ★The bar's page units, and **the only place a cancel is read during the placing**: a page
-		//   goes down as two exports and nothing inside them can be interrupted, so the question is
-		//   asked between pages (the same rule as the comparison's own loop).
+		//   goes down as two PlaceFileInFrame calls and nothing inside them can be interrupted, so
+		//   the question is asked between pages (the same rule as the comparison's own loop).
 		{
 			PMString step(Ascii("Page "));
 			step.SetTranslatable(kFalse);
@@ -643,22 +779,17 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 		const PMRect rightBox(page.Left() + 2 * kKCMReportGutter + pageW,  top, page.Left() + 2 * kKCMReportGutter + 2 * pageW,      top + pageH);
 		KCMReportTypeAt(helper, layer, PMRect(leftBox.Left(),  page.Top() + 12, leftBox.Right(),  page.Top() + kKCMReportHeaderBand - 4), Ascii("Before"), kKCMReportHeadingPt);
 		KCMReportTypeAt(helper, layer, PMRect(rightBox.Left(), page.Top() + 12, rightBox.Right(), page.Top() + kKCMReportHeaderBand - 4), Ascii("After"),  kKCMReportHeadingPt);
-		// ★★★NO FILE ANYWHERE (2026-09-14). Each side is exported to a PDF held in MEMORY and
-		//   comes straight back in as a page item - KCMReportPlace.cpp, and its header says what
-		//   had to be measured before this line could be written. The Before side carries the
-		//   comparison marks, the After side is shown clean (the user's ask, 2026-09-13).
-		// ⚠What makes the marks reach the Before picture is sMarksOnPage, which
-		//   KCMPlacePageIntoReport raises for the length of the export: this export draws items
-		//   and never draws a spread, and the marks are drawn once per spread.
-		if (pair.fSource != kInvalidUID)
+		if (pair.fSource != kInvalidUID && pair.fBefore > 0)
 		{
-			if (!KCMPlacePageIntoReport(sourceDB, pair.fSource, layer, leftBox, kTrue /*with the marks*/, why))
+			if (!SetPlacePage(pair.fBefore, currentPlace, why))
 				return kFalse;
+			helper.PlaceFileInFrame(beforeFile, layer, leftBox, kSuppressUI);
 		}
-		if (pair.fTarget != kInvalidUID)
+		if (pair.fTarget != kInvalidUID && pair.fAfter > 0)
 		{
-			if (!KCMPlacePageIntoReport(targetDB, pair.fTarget, layer, rightBox, kFalse /*clean*/, why))
+			if (!SetPlacePage(pair.fAfter, currentPlace, why))
 				return kFalse;
+			helper.PlaceFileInFrame(afterFile, layer, rightBox, kSuppressUI);
 		}
 	}
 
@@ -821,14 +952,26 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	CollectPairs(targetDB, sourceDB, pairs);
 
 	// Where it goes - asked FIRST, so a cancel costs nothing (no export, no diff, no rehydration wasted).
+	// ★Since 2026-09-14 the answer is a FOLDER built from what they typed, holding three files:
+	//   the report, the old side and the new side. MakeReportFolder says why.
 	IDFile reportFile;
+	std::wstring reportFolder;
+	std::wstring reportStem;
 	{
 		PMString why;
-		if (!ReportPath(targetDB, reportFile, why))
+		IDFile chosen;
+		if (!ReportPath(targetDB, chosen, why))
 		{
 			outMessage = why.IsEmpty() ? Ascii("Report cancelled.") : why;
 			return kFalse;
 		}
+		if (!MakeReportFolder(chosen, reportFolder, reportStem, why))
+		{
+			outMessage = Ascii("Report failed: ");
+			outMessage.Append(why);
+			return kFalse;
+		}
+		reportFile = InReportFolder(reportFolder, reportStem, L"");
 	}
 
 	// ---- the two tables' rows, read while the borrowed results stand --------------------------
@@ -863,9 +1006,14 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 		}
 	}
 
-	// (Two lists of page UIDs stood here, in export order, so that each pair could remember WHICH
-	//  PAGE of the temporary PDF was its own. Nothing is numbered any more: a pair's page is
-	//  exported at the moment it is placed, and the pair already knows its UID.)
+	// The export orders (and so the PDF page numbers): every pair's Source page, every pair's
+	// Target page, each in report order.
+	std::vector<UID> beforePages, afterPages;
+	for (size_t i = 0; i < pairs.size(); ++i)
+	{
+		if (pairs[i].fSource != kInvalidUID) { beforePages.push_back(pairs[i].fSource); pairs[i].fBefore = static_cast<int32>(beforePages.size()); }
+		if (pairs[i].fTarget != kInvalidUID) { afterPages.push_back(pairs[i].fTarget);  pairs[i].fAfter  = static_cast<int32>(afterPages.size()); }
+	}
 
 	// Page size from the Target's first page.
 	PMReal pageW = 595.0, pageH = 842.0;
@@ -909,25 +1057,14 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	KCMDeferredProgressBar bar(barTitle, static_cast<int32>(pairs.size()) + 5, 0 /*delayMs: show at once*/);
 	int32 units = 0;
 
-	// ---- the report document, FIRST ----------------------------------------------------------
-	// ⚠**THE ORDER CHANGED WITH THE FILES** (2026-09-14). The old route wrote both documents out
-	//   to temporary PDFs and only afterwards had somewhere to put them. Now each page is
-	//   exported to MEMORY at the moment it is placed, so the report has to exist first.
+	// ---- the two sides, into the report's own folder ------------------------------------------
+	// ⚠**NOT TEMPORARY FILES.** They stay, beside the report, because the reader asked for them
+	//   there (MakeReportFolder carries the reasoning). Nothing below deletes them.
+	const IDFile beforePDF = InReportFolder(reportFolder, reportStem, L"-before");
+	const IDFile afterPDF  = InReportFolder(reportFolder, reportStem, L"-after");
 	PMString why;
 	bool16 ok = kTrue;
-	UIDRef reportDoc = UIDRef::gNull;
-	{
-		bar.Step(units++, Ascii("Building the report document"));
-		SDKLayoutHelper helper;
-		const PMReal reportW = 2 * pageW + 3 * kKCMReportGutter;
-		const PMReal reportH = pageH + kKCMReportHeaderBand + kKCMReportCaptionH + 2 * kKCMReportGutter;
-		reportDoc = helper.CreateDocument(kSuppressUI, reportW, reportH, static_cast<int32>(pairs.size()) + 1, 1, 0);
-		if (reportDoc == UIDRef::gNull)
-		{
-			why = Ascii("the report document could not be created");
-			ok = kFalse;
-		}
-	}
+	bar.Step(units++, Ascii("Exporting the Before pages"));
 	// THE MARKS GO ON THE BEFORE SIDE (the user's ask, 2026-09-13): the older version carries the
 	// rings of the changed pages and the "/" of the removed ones, the newer version is shown clean.
 	// The drawing marks a Source page only when the document is the one it knows as sSrcDB and the
@@ -960,20 +1097,14 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 			KCMDrawEventHandler::sOverflowS.clear();
 			KCMDrawEventHandler::sOverflowS.insert(sov.begin(), sov.end());
 		}
-		// ★★**THE WHOLE REPORT IS BUILT HERE NOW**, inside the lending and the guards, because
-		//   every picture in it is exported at the moment it is placed rather than beforehand.
-		//   The marks are drawn without the frame along the page edge (the user's ask,
-		//   2026-09-13): only the rings around what changed. The ring images are cached, so both
-		//   flips invalidate.
-		// ⚠**sPrintMarks is NOT set here.** KCMPlacePageIntoReport raises it - and sMarksOnPage
-		//   with it - for the length of each picture's own export, because the Before side
-		//   carries the marks and the After side must not.
-		if (ok)
+		if (!beforePages.empty())
 		{
+			// The marks, without the frame along the page edge (the user's ask, 2026-09-13): only
+			// the rings around what changed. The ring images are cached, so both flips invalidate.
+			KCMDrawEventHandler::sPrintMarks = kTrue;		// the older version with the marks
 			KCMDrawEventHandler::sRingFrameOff = kTrue;
 			KCMDrawEventHandler::InvalidateRingCache();
-			ok = BuildReport(reportDoc.GetDataBase(), targetDB, sourceDB, pairs, pageW, pageH, sourceName,
-							 storyRows, storyHeading, resourceRows, resourceHeading, bar, units, why);
+			ok = ExportPagesToPDF(sourceDB, beforePages, beforePDF, why);
 			KCMDrawEventHandler::sRingFrameOff = kFalse;
 			KCMDrawEventHandler::InvalidateRingCache();
 		}
@@ -985,10 +1116,40 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 			KCMDrawEventHandler::sSrcPageToTarget.clear();
 			KCMDrawEventHandler::sOverflowS.clear();
 		}
+		bar.Step(units++, Ascii("Exporting the After pages"));
+		if (ok && bar.WasCancelled())
+		{
+			ok = kFalse;
+			why = Ascii("cancelled");
+		}
+		if (ok && !afterPages.empty())
+		{
+			KCMDrawEventHandler::sPrintMarks = kFalse;		// the newer version clean
+			ok = ExportPagesToPDF(targetDB, afterPages, afterPDF, why);
+		}
 		KCMDrawEventHandler::sPrintMarks = printMarksWas;
 	}
 	KCMDrawEventHandler::sReportExport = kFalse;
 
+	// ---- the report document ---------------------------------------------------------------
+	// Made with the first page and the picture pages; the two tables append their own.
+	UIDRef reportDoc = UIDRef::gNull;
+	if (ok)
+	{
+		bar.Step(units++, Ascii("Building the report document"));
+		SDKLayoutHelper helper;
+		const PMReal reportW = 2 * pageW + 3 * kKCMReportGutter;
+		const PMReal reportH = pageH + kKCMReportHeaderBand + kKCMReportCaptionH + 2 * kKCMReportGutter;
+		reportDoc = helper.CreateDocument(kSuppressUI, reportW, reportH, static_cast<int32>(pairs.size()) + 1, 1, 0);
+		if (reportDoc == UIDRef::gNull)
+		{
+			why = Ascii("the report document could not be created");
+			ok = kFalse;
+		}
+	}
+	if (ok)
+		ok = BuildReport(reportDoc.GetDataBase(), targetDB, sourceDB, pairs, beforePDF, afterPDF, pageW, pageH, sourceName,
+						 storyRows, storyHeading, resourceRows, resourceHeading, bar, units, why);
 	int32 pageCount = 0;
 	if (ok)
 	{
@@ -1001,8 +1162,10 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 		ok = ExportPagesToPDF(reportDoc.GetDataBase(), all, reportFile, why);
 	}
 	CloseReportDocument(reportDoc);
-	// (Two ::DeleteFileW calls stood here, for the two temporary PDFs. **There are none to
-	//  delete now** - that is the whole of the 2026-09-14 change, seen from this end.)
+	// ⚠**NOTHING IS DELETED HERE ANY MORE.** Two ::DeleteFileW calls stood here, for the two side
+	//   exports in %TEMP%. They now live in the report's folder and are part of what the reader
+	//   asked for (MakeReportFolder). ★A failed run leaves the folder with whatever it managed to
+	//   write - which is the honest outcome, and lets the reader see how far it got.
 
 	if (!ok)
 	{
@@ -1026,12 +1189,15 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	// The reader wants to see it now.
 	::ShellExecuteW(nil, L"open", WidePath(reportFile).c_str(), nil, nil, SW_SHOWNORMAL);
 
+	// ★The FOLDER is named, not the report file: three files were written and the reader should
+	//   know where all three are.
 	outMessage = Ascii("Report: ");
 	outMessage.AppendNumber(pageCount);
-	outMessage.Append(" pages -> ");
+	outMessage.Append(" pages, with the Before and After PDFs -> ");
 	{
 		PMString path;
-		FileUtils::IDFileToPMString(reportFile, path);
+		path.SetTranslatable(kFalse);
+		path.AppendW(reinterpret_cast<const UTF16TextChar*>(reportFolder.c_str()));
 		outMessage.Append(path);
 	}
 	return kTrue;

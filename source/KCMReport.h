@@ -17,18 +17,14 @@
 //  report and put back - KCMReport.cpp's StoryDetailLoan / ResourceLoan); the Pixel pages exist
 //  only when the Pixel comparison ran, and the first page says so otherwise.
 //
-//  HOW (rewritten 2026-09-14 - ★NOT ONE TEMPORARY FILE IS WRITTEN ANY MORE): a windowless report
-//  document is built first (SDKLayoutHelper::CreateDocument), and then, for each pair of pages,
-//  each side is exported to a PDF held IN MEMORY and imported straight into the report as a page
-//  item - KCMReportPlace.cpp, whose header carries the whole route and the three measurements it
-//  rests on. The Before side carries the comparison marks, the After side is clean. The two
-//  tables are laid out by KCMReportTable.cpp (pages appended as they overflow), the report is
-//  exported where the save dialog said, and the report document is closed.
-//  ⚠**The user asked for the temporary files to go** (2026-09-14), with one constraint that
-//    decided the route: "raster is hard to read when you zoom in" - so the pictures stay VECTOR.
-//  Designs: docs/superpowers/specs/2026-09-13-kcm-before-after-report-design.md,
-//  docs/superpowers/specs/2026-09-13-kcm-pdf-report-three-sections-design.md, and the measurement
-//  record docs/ai-notes/kcm-report-without-temp-files-2026-09-14.md.
+//  HOW: both sides are exported to temporary PDFs (kPDFExportCmdBoss, the session's PDF
+//  preferences, no UI, no progress bar; the Before side with sPrintMarks forced on), a windowless
+//  report document is built (SDKLayoutHelper::CreateDocument), the PDF pages are placed side by
+//  side (kSetPDFPlacePrefsCmdBoss to pick the page, then PlaceFileInFrame), the two tables are
+//  laid out by KCMReportTable.cpp (pages appended as they overflow), the report is exported where
+//  the save dialog said, the report document is closed and the temporaries deleted. Designs:
+//  docs/superpowers/specs/2026-09-13-kcm-before-after-report-design.md and
+//  docs/superpowers/specs/2026-09-13-kcm-pdf-report-three-sections-design.md.
 //
 //  MODEL SIDE, no widget touched. Reached through IKCMCompareFacade::ExportBeforeAfterReport
 //  from the flyout; the caller shows outMessage on the status line.

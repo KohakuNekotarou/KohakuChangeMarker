@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
   <ItemGroup>
     <Filter Include="Source Files">
@@ -57,8 +57,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDrawEventHandler.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPeek.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -66,8 +64,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMHideUnchanged.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMComparisonRun.cpp">
@@ -86,9 +82,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReport.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReportPlace.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReportTable.cpp">
@@ -201,10 +194,6 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source$newh">
       <Filter>Header Files</Filter>
     </ClInclude>
-      <Filter>Header Files</Filter>
-    </ClInclude>
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPeek.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -212,8 +201,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMHideUnchanged.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMComparisonRun.h">
