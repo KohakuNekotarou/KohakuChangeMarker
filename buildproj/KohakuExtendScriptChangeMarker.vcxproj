@@ -1,4 +1,323 @@
-﻿    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceDisplay.h" />
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build" ToolsVersion="15.0">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectName>KohakuChangeMarker</ProjectName>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectGuid>{36D150B5-56E0-4BA4-B015-B0E45A4A90BB}</ProjectGuid>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="KCMReleaseWin32.sdk.props" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="KCMDebugWin32.sdk.props" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="KCMReleaseX64.sdk.props" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="KCMDebugX64.sdk.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.40219.1</_ProjectFileVersion>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\debug\sdk\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\objD\KohakuChangeMarker\</IntDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\debugx64\sdk\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\objDx64\KohakuChangeMarker\</IntDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\release\sdk\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\objR\KohakuChangeMarker\</IntDir>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\releasex64\sdk\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\objRx64\KohakuChangeMarker\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">KohakuChangeMarker</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">KohakuChangeMarker</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">KohakuChangeMarker</TargetName>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">KohakuChangeMarker</TargetName>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">.pln</TargetExt>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">.pln</TargetExt>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">.pln</TargetExt>
+    <TargetExt Condition="'$(Configuration)|$(Platform)'=='Release|x64'">.pln</TargetExt>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Midl>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MkTypLibCompatible>true</MkTypLibCompatible>
+      <TargetEnvironment>Win32</TargetEnvironment>
+      <TypeLibraryName>$(IntDir)KohakuChangeMarker.tlb</TypeLibraryName>
+      <HeaderFileName />
+    </Midl>
+    <ClCompile>
+      <AdditionalOptions>/vmg @"KohakuChangeMarkercpp.rsp"</AdditionalOptions>
+      <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarker.pch</PrecompiledHeaderOutputFile>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;DEBUG;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Culture>0x0409</Culture>
+    </ResourceCompile>
+    <PreLinkEvent>
+      <Command>merge_res.cmd "$(IntDir)"  KCM &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
+    </PreLinkEvent>
+    <Link>
+      <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);$(AFLLib);%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+      <ProgramDatabaseFile>..\debug\sdk\KohakuChangeMarker.pdb</ProgramDatabaseFile>
+      <ImportLibrary>$(LIB_DIR)\KohakuChangeMarker/KohakuChangeMarker.lib</ImportLibrary>
+    </Link>
+    <PostBuildEvent>
+      <Command>restore_res.cmd "$(IntDir)"  KCM</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Midl>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MkTypLibCompatible>true</MkTypLibCompatible>
+      <TargetEnvironment>X64</TargetEnvironment>
+      <TypeLibraryName>$(IntDir)KohakuChangeMarker.tlb</TypeLibraryName>
+      <HeaderFileName />
+    </Midl>
+    <ClCompile>
+      <AdditionalOptions>/vmg @"KohakuChangeMarkercpp.rsp"</AdditionalOptions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;DEBUG;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarker.pch</PrecompiledHeaderOutputFile>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Culture>0x0409</Culture>
+    </ResourceCompile>
+    <PreLinkEvent>
+      <Command>merge_res.cmd "$(IntDir)"  KCM &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
+    </PreLinkEvent>
+    <Link>
+      <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);$(AFLLib);%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+      <ProgramDatabaseFile>..\debugx64\sdk\KohakuChangeMarker.pdb</ProgramDatabaseFile>
+      <ImportLibrary>$(LIB_DIR)\KohakuChangeMarker/KohakuChangeMarker.lib</ImportLibrary>
+    </Link>
+    <PostBuildEvent>
+      <Command>restore_res.cmd "$(IntDir)"  KCM</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Midl>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MkTypLibCompatible>true</MkTypLibCompatible>
+      <TargetEnvironment>Win32</TargetEnvironment>
+      <TypeLibraryName>$(IntDir)KohakuChangeMarker.tlb</TypeLibraryName>
+      <HeaderFileName />
+    </Midl>
+    <ClCompile>
+      <AdditionalOptions>/vmg @"KohakuChangeMarkercpp.rsp"</AdditionalOptions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;STRICT;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarker.pch</PrecompiledHeaderOutputFile>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Culture>0x0409</Culture>
+    </ResourceCompile>
+    <PreLinkEvent>
+      <Command>merge_res.cmd "$(IntDir)"  KCM &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
+    </PreLinkEvent>
+    <Link>
+      <AdditionalOptions>/IGNORE:4089 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);$(AFLLib);%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+      <ProgramDatabaseFile>..\release\sdk\KohakuChangeMarker.pdb</ProgramDatabaseFile>
+      <ImportLibrary>$(LIB_DIR)\KohakuChangeMarker/KohakuChangeMarker.lib</ImportLibrary>
+    </Link>
+    <PostBuildEvent>
+      <Command>restore_res.cmd "$(IntDir)"  KCM</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Midl>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MkTypLibCompatible>true</MkTypLibCompatible>
+      <TargetEnvironment>X64</TargetEnvironment>
+      <TypeLibraryName>$(IntDir)KohakuChangeMarker.tlb</TypeLibraryName>
+      <HeaderFileName />
+    </Midl>
+    <ClCompile>
+      <AdditionalOptions>/vmg @"KohakuChangeMarkercpp.rsp"</AdditionalOptions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;STRICT;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
+      <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarker.pch</PrecompiledHeaderOutputFile>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <Culture>0x0409</Culture>
+    </ResourceCompile>
+    <PreLinkEvent>
+      <Command>merge_res.cmd "$(IntDir)"  KCM &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
+    </PreLinkEvent>
+    <Link>
+      <AdditionalOptions>/IGNORE:4089 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);$(AFLLib);%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
+      <ProgramDatabaseFile>..\releasex64\sdk\KohakuChangeMarker.pdb</ProgramDatabaseFile>
+      <ImportLibrary>$(LIB_DIR)\KohakuChangeMarker/KohakuChangeMarker.lib</ImportLibrary>
+    </Link>
+    <PostBuildEvent>
+      <Command>restore_res.cmd "$(IntDir)"  KCM</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceAttrDiff.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceBytes.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceDiff.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceStore.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceParse.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMXmlInject.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOrigin.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOriginPeek.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRehydrate.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOriginCompare.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceSnapshot.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMBookCompare.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMBookChapterModes.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMBookPair.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMColorSampler.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMCore.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDrawEventHandler.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpike.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReport.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReportTable.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReportPaws.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMXmlPretty.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryRestore.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMarksDoc.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMarksCmd.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMMarksObserver.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDocUidSet.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMThreadSafety.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryStamp.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryList.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTextDiff.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMMemXferBytes.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTextRead.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarker.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkerExpiry.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkBuild.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageNumberMarker.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPeek.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRingAdornment.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMHideUnchanged.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMComparisonRun.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMExternalSource.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMModelNotify.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMFacades.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDocResponder.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMScriptProvider.cpp" />
+    <ClCompile Include="$(id_sdk_dir)\source\public\libs\publiclib\statics\PlugInStatics.cpp" />
+    <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKPlugInEntrypoint.cpp" />
+    <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKFileHelper.cpp" />
+    <ClCompile Include="$(ID_SDK_DIR)\source\sdksamples\common\SDKLayoutHelper.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMID.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMNoStrip.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\TriggerResourceDeps.cpp" />
+    <ClCompile Include="$(id_sdk_dir)\source\precomp\msvc\VCPlugInHeaders.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceAttrDiff.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceBytes.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceDiff.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceKinds.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceLog.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceStore.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMResourcesFacade.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceParse.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMXmlInject.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOrigin.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOriginPeek.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMRehydrate.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOriginCompare.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceSnapshot.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookCompare.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookChapterModes.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookModeNames.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookPair.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookResult.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMColorSampler.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMConstants.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMCore.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMDrawEventHandler.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMID.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBoundaryID.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMLoc.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMFactoryList.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageFlagState.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPagePairRule.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpike.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReport.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReportTable.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReportPaws.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMXmlPretty.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceShortValue.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceUnits.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceDisplay.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryRestore.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageCheck.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPawStamp.h" />
@@ -16,7 +335,6 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryRowFilter.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTextDiff.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMMemXferBytes.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpike.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTextRead.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageNumberMarker.h" />
@@ -24,6 +342,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMRingAdornment.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMHideUnchanged.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMComparisonRun.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMExternalSource.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMNotifyPayload.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMModelNotify.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMCompareFacade.h" />

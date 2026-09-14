@@ -11,7 +11,7 @@
 
 #include "VCPlugInHeaders.h"
 
-#include <windows.h>				// GetTempPathW - the crash trace, and nothing else
+#include <windows.h>				// GetTempPathW - the crash trace; CreateNamedPipeW - S15
 #include <cstring>					// memset - the event structure before each GetNextPDFExportEvent
 #include <fstream>
 #include <string>
@@ -29,9 +29,14 @@
 #include "IK2ServiceProvider.h"
 #include "IK2ServiceRegistry.h"
 #include "IMasterSpreadUtils.h"		// AppendMasterPageItems - the page's furniture, which GetItemsOnPage leaves out
+#include "IMemoryStreamData.h"		// S16 - how a memory stream is told where to put its bytes
+#include "IOutputPages.h"			// S15 - the page exporter's list of pages
 #include "IPDFExportController.h"	// ★StartUp(bExportPageItems) - "is the item list PAGES or page items?"
 #include "IPDFExportPrefs.h"
+#include "IPDFPostProcessPrefs.h"	// S15 - no viewer after the export
 #include "IPDFSecurityPrefs.h"
+#include "ISysFileData.h"			// S15 - the ONLY door kPDFExportCmdBoss has for "where to write"
+#include "IUCFPackageUtils.h"		// S16 - the IDML container, which HAS a stream door
 #include "IPMStream.h"
 #include "IPMUnknownData.h"
 #include "ISession.h"
@@ -43,8 +48,12 @@
 #include "ISwatchUtils.h"
 #include "IUIFlagData.h"
 #include "CmdUtils.h"
+#include "DocumentID.h"				// IID_ISYSFILEDATA
 #include "ErrorUtils.h"
+#include "FileUtils.h"				// S15 - SysFileToPMString, to read back what IDFile made of a pipe path
 #include "OpenPlaceID.h"			// kImportProviderService - the service every import filter registers under
+#include "PersistUtils.h"			// ::CreateObject - S16 builds its own unopened stream
+#include "ShuksanID.h"				// kMemStreamWriteBoss
 #include "PDFID.h"					// kPDFExportItemsCmdBoss / IID_IPDFCLIPBOARDEXPORTPREFS / IID_IUSEPROGRESSINDICATOR
 #include "PMFlavorTypes.h"			// kPDFExternalFlavor / kPageItemFlavor
 #include "PreferenceUtils.h"		// ::QuerySessionPreferences
@@ -54,6 +63,7 @@
 #include "TransformUtils.h"			// InnerToSpreadMatrix
 #include "UIDList.h"
 #include "Utils.h"
+#include "WideString.h"				// S15 - IDFile(const WideString&)
 
 #include "KCMPdfSpike.h"
 #include "KCMCore.h"				// KCMActiveDocDB / KCMCollectPageUIDs
@@ -61,6 +71,8 @@
 #include "KCMMemXferBytes.h"		// where the PDF lands instead of a file
 #include "KCMRingAdornment.h"		// KCMBeginExportOn / KCMEndExportOnThisThread - announcing the export
 #include "KCMRehydrate.h"			// KCMMarkRehydratedClean / KCMCloseRehydrated - the throwaway document
+#include "KCMResourceBytes.h"		// S16 - where the whole document's XML already lands
+#include "KCMResourceSnapshot.h"	// S16 - KCMTakeResourceSnapshot: the document as one XML, no file
 
 namespace
 {
@@ -132,6 +144,654 @@ void DropForTheEye(KCMMemXferBytes& bytes, const wchar_t* name)
 	std::ofstream file(path.c_str(), std::ios::binary | std::ios::trunc);
 	if (file)
 		file.write(bytes.GetData(), static_cast<std::streamsize>(bytes.GetSize()));
+}
+
+//========================================================================================
+//  ★★★S15's APPARATUS - a named pipe wearing the costume of a file.
+//
+//  THE QUESTION (the user, 2026-09-14): "C++ kPDFExportCmdBoss / a page / accurate / a FILE -
+//  can that really only ever go to a file?" Measured so far: its 35 interfaces carry
+//  IID_ISYSFILEDATA and nothing that takes a stream, and IPDFExportController::StartUp - the
+//  one other door - takes InDesign down when called from outside (S12).
+//
+//  BUT ISysFileData TAKES A **PATH**, AND NOT EVERY PATH IS A FILE. On Windows,
+//  \\.\pipe\<name> is a path that any file API will open, and what is written to it goes
+//  straight into another piece of code's memory. No file system, no bytes on disk, nothing to
+//  delete. If the exporter simply opens what it is handed and writes forward, the page export
+//  lands in memory after all.
+//
+//  ⚠**AND THE REASON TO EXPECT IT NOT TO WORK**: a PDF writer SEEKS. The cross-reference table
+//    is written last, and the offset at the head of the file is filled in afterwards. A pipe
+//    cannot seek. So the honest prediction is "it opens, some bytes arrive, and then it fails" -
+//    and even that is worth knowing, because it separates "the door is locked" from "the door
+//    opens onto a room the exporter cannot use".
+//========================================================================================
+
+/** What one pipe caught. Heap-allocated and handed to the reader thread, so that a thread
+    which does not come back cannot write into a dead stack frame (it is leaked instead). */
+struct KCMPipeState
+{
+	HANDLE			pipe;
+	volatile LONG	ready;			// the reader is at the door (see the race below)
+	volatile LONG	connected;		// did anybody ever open the other end
+	volatile LONG	bytes;			// how much arrived
+	volatile LONG	headLen;
+	char			head[16];		// the first bytes, so "%PDF-" can be recognised
+	DWORD			connectErr;		// what ConnectNamedPipe said
+	DWORD			lastErr;		// why the reading stopped
+	// ★KEEPING THE CONTENT, not just counting it. "36,509 bytes arrived and they start PK" is
+	//   not proof that a usable zip arrived - only a zip tool outside InDesign can say that, and
+	//   it cannot say anything about bytes that were thrown away as they went past.
+	char*			keep;			// nil when the allocation failed: then only the count is real
+	LONG			keepCap;
+	volatile LONG	keepLen;
+};
+
+/** Accept one connection and read until the writer closes or fails.
+
+    ⚠★★★**THE RACE THAT MADE THE FIRST RUN LIE** (measured 2026-09-14): CreateThread returns
+      before the new thread runs, so the writer can open, write and close before this thread
+      reaches ConnectNamedPipe. Windows then answers **ERROR_NO_DATA (232)**, not
+      ERROR_PIPE_CONNECTED - and the first version treated that as a failure and returned
+      WITHOUT READING THE BUFFER. The control stage wrote 14 bytes and the instrument reported
+      0, which is exactly the shape of an unarmed check: it does not fail, it reports success
+      for the wrong reason. Both halves are fixed here - the flag below, and NO_DATA read as
+      "the writer has already been and gone; drain what is left". */
+DWORD WINAPI KCMPipeReaderProc(LPVOID param)
+{
+	KCMPipeState* const s = static_cast<KCMPipeState*>(param);
+	::InterlockedExchange(&s->ready, 1);
+	const BOOL ok = ::ConnectNamedPipe(s->pipe, nil);
+	s->connectErr = ok ? 0 : ::GetLastError();
+	if (!ok && s->connectErr != ERROR_PIPE_CONNECTED && s->connectErr != ERROR_NO_DATA)
+	{
+		s->lastErr = s->connectErr;
+		return 0;
+	}
+	::InterlockedExchange(&s->connected, 1);
+	char buf[8192];					// on this thread's own stack, so no allocation can throw
+	for (;;)
+	{
+		DWORD got = 0;
+		if (!::ReadFile(s->pipe, buf, static_cast<DWORD>(sizeof(buf)), &got, nil) || got == 0)
+		{
+			s->lastErr = ::GetLastError();
+			break;
+		}
+		if (::InterlockedCompareExchange(&s->headLen, 0, 0) == 0)
+		{
+			const DWORD n = got < sizeof(s->head) ? got : static_cast<DWORD>(sizeof(s->head));
+			std::memcpy(s->head, buf, n);
+			::InterlockedExchange(&s->headLen, static_cast<LONG>(n));
+		}
+		if (s->keep != nil && s->keepLen + static_cast<LONG>(got) <= s->keepCap)
+		{
+			std::memcpy(s->keep + s->keepLen, buf, got);
+			::InterlockedExchangeAdd(&s->keepLen, static_cast<LONG>(got));
+		}
+		::InterlockedExchangeAdd(&s->bytes, static_cast<LONG>(got));
+	}
+	return 0;
+}
+
+/** A named pipe standing open with a thread reading it, for the length of one measurement.
+    ⚠Spike apparatus: it leaks its state and its handles rather than free them under a thread
+      that did not return, because a crash inside this experiment must not be caused BY this
+      experiment. */
+class KCMPipeCatcher
+{
+public:
+	/** `duplex` opens the pipe for reading AND writing. ★A writer that asks for
+	    GENERIC_READ|GENERIC_WRITE - which is what a PDF writer asks for, because it patches the
+	    cross-reference offset back into the head when it is done - CANNOT open an inbound-only
+	    pipe at all, so the two are different questions and both get asked. */
+	KCMPipeCatcher(const wchar_t* leafName, bool16 duplex, bool16 keepContent = kFalse)
+		: fPath(L"\\\\.\\pipe\\"), fState(nil), fThread(nil), fCreateErr(0), fDuplex(duplex), fEverListened(kFalse)
+	{
+		fPath += leafName;
+		fState = new (std::nothrow) KCMPipeState;
+		if (fState == nil)
+			return;
+		std::memset(fState, 0, sizeof(KCMPipeState));
+		if (keepContent)
+		{
+			// 16MB is far beyond anything this spike sends; nothrow because a failed allocation
+			// must leave the COUNT still honest rather than take InDesign down.
+			fState->keepCap = 16 * 1024 * 1024;
+			fState->keep = new (std::nothrow) char[fState->keepCap];
+			if (fState->keep == nil)
+				fState->keepCap = 0;
+		}
+		fState->pipe = ::CreateNamedPipeW(fPath.c_str(),
+		                                  duplex ? PIPE_ACCESS_DUPLEX : PIPE_ACCESS_INBOUND,
+		                                  PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+		                                  1,				// one instance is all one measurement needs
+		                                  64 * 1024,
+		                                  64 * 1024,
+		                                  0, nil);
+		if (fState->pipe == INVALID_HANDLE_VALUE)
+		{
+			fCreateErr = ::GetLastError();
+			fState->pipe = nil;
+			return;
+		}
+		DWORD id = 0;
+		fThread = ::CreateThread(nil, 0, KCMPipeReaderProc, fState, 0, &id);
+		fEverListened = (fThread != nil) ? kTrue : kFalse;
+		// ★Do not hand the path out until the reader is at the door: see the race in the proc.
+		for (int32 spin = 0; spin < 1000 && fState->ready == 0; ++spin)
+			::Sleep(1);
+	}
+
+	~KCMPipeCatcher()
+	{
+		Finish();
+		// Only safe once Finish() has joined the reader - which it has, unless it timed out, and
+		// in that case fThread is nil and fState is deliberately abandoned with its buffer.
+		if (fThread == nil && fState != nil && fState->keep != nil)
+		{
+			delete[] fState->keep;
+			fState->keep = nil;
+			fState->keepCap = 0;
+		}
+	}
+
+	bool16 Listening() const { return fThread != nil; }
+	DWORD CreateError() const { return fCreateErr; }
+	const wchar_t* Path() const { return fPath.c_str(); }
+
+	int32 Bytes() const { return fState != nil ? static_cast<int32>(fState->bytes) : 0; }
+	bool16 EverConnected() const { return fState != nil && fState->connected != 0 ? kTrue : kFalse; }
+	DWORD LastReadError() const { return fState != nil ? fState->lastErr : 0; }
+
+	/** Everything this pipe knows, in one phrase - ★so that every stage reports the SAME facts
+	    and none of them can quietly leave out the one that would have shown the flaw. */
+	void Describe(PMString& into) const
+	{
+		into.Append(fDuplex ? "[duplex] " : "[inbound] ");
+		// ⚠NOT Listening(): that asks whether the thread is STILL there, and Finish() has just
+		//   joined it. Asking the wrong question here reported "never listening" for a pipe that
+		//   had worked perfectly - the second unarmed instrument in one afternoon.
+		if (fState == nil || !fEverListened)
+		{
+			into.Append("the pipe was never listening, error ");
+			into.AppendNumber(static_cast<int32>(fCreateErr));
+			return;
+		}
+		into.Append(EverConnected() ? "OPENED by the other side, " : "★NEVER OPENED, ");
+		into.AppendNumber(Bytes());
+		into.Append(" bytes");
+		if (Bytes() > 0)
+		{
+			into.Append(" \"");
+			Head(into);
+			into.Append("\"");
+		}
+		into.Append(" (connect said ");
+		into.AppendNumber(static_cast<int32>(fState->connectErr));
+		into.Append(", reading stopped on ");
+		into.AppendNumber(static_cast<int32>(fState->lastErr));
+		into.Append(")");
+	}
+
+	/** ★Drop everything that arrived into %TEMP%, so something that is not this code can judge
+	    it. Answers how many bytes were written, or -1 when the content was not kept. */
+	int32 SaveTo(const wchar_t* leafName) const
+	{
+		if (fState == nil || fState->keep == nil || fState->keepLen == 0)
+			return -1;
+		wchar_t dir[MAX_PATH] = { 0 };
+		::GetTempPathW(MAX_PATH, dir);
+		std::wstring path(dir);
+		path += leafName;
+		std::ofstream file(path.c_str(), std::ios::binary | std::ios::trunc);
+		if (!file)
+			return -1;
+		file.write(fState->keep, static_cast<std::streamsize>(fState->keepLen));
+		return static_cast<int32>(fState->keepLen);
+	}
+
+	/** The first bytes as printable ASCII, so "%PDF-1.7" can be read straight out of the answer. */
+	void Head(PMString& into) const
+	{
+		if (fState == nil)
+			return;
+		const LONG n = fState->headLen;
+		char printable[sizeof(fState->head) + 1] = { 0 };
+		for (LONG i = 0; i < n; ++i)
+		{
+			const char c = fState->head[i];
+			printable[i] = (c >= 0x20 && c < 0x7f) ? c : '.';
+		}
+		into.Append(Ascii(printable));
+	}
+
+	/** Stop the reader and join it. ★The knock is what makes this safe: a thread parked in
+	    ConnectNamedPipe waits forever, so if nobody ever came, we open our own door once. */
+	void Finish()
+	{
+		if (fThread == nil)
+		{
+			if (fState != nil && fState->pipe != nil)
+			{
+				::CloseHandle(fState->pipe);
+				fState->pipe = nil;
+			}
+			return;
+		}
+		if (::InterlockedCompareExchange(&fState->connected, 0, 0) == 0)
+		{
+			HANDLE knock = ::CreateFileW(fPath.c_str(), GENERIC_WRITE, 0, nil, OPEN_EXISTING, 0, nil);
+			if (knock != INVALID_HANDLE_VALUE)
+				::CloseHandle(knock);
+		}
+		const DWORD waited = ::WaitForSingleObject(fThread, 5000);
+		if (waited != WAIT_OBJECT_0)
+		{
+			fThread = nil;			// ⚠leave it, and leave fState with it: see the class comment
+			return;
+		}
+		::CloseHandle(fThread);
+		fThread = nil;
+		::CloseHandle(fState->pipe);
+		fState->pipe = nil;
+		// ⚠The keep-buffer is NOT freed here: SaveTo is called after Finish, and it needs it.
+		//   It goes with the catcher.
+	}
+
+private:
+	KCMPipeCatcher(const KCMPipeCatcher&);
+	KCMPipeCatcher& operator=(const KCMPipeCatcher&);
+
+	std::wstring	fPath;
+	KCMPipeState*	fState;
+	HANDLE			fThread;
+	DWORD			fCreateErr;
+	bool16			fDuplex;
+	bool16			fEverListened;
+};
+
+/** An IDFile built straight from a path string, with no directory behind it. */
+IDFile PipeAsFile(const wchar_t* path)
+{
+	WideString w(reinterpret_cast<const UTF16TextChar*>(path));
+	return IDFile(w);
+}
+
+/** ★★★S16 - build an IDML-shaped container ON A STREAM, then OPEN IT AGAIN FROM THE SAME BYTES.
+    Written as a ROUND TRIP on purpose: "CreatePackage returned something" is not evidence that a
+    package was made, and the only honest proof is that a known payload comes back out at the
+    same length. The bytes are also dropped to %TEMP% so that a zip tool OUTSIDE InDesign gets a
+    vote - the one check this code cannot fake. */
+void IdmlInMemory(IDataBase* db, PMString& line)
+{
+	Utils<IUCFPackageUtils> ucf;
+	if (!ucf)
+	{
+		line.Append("SKIPPED - IUCFPackageUtils is not available");
+		return;
+	}
+
+	// The payload is THE WHOLE DOCUMENT AS XML, from the route that already works (ExportINX,
+	// running in KCM's Resources mode every day). Using the real thing rather than a token
+	// string measures capacity at the same time.
+	KCMResourceBytes docXml;
+	PMString whyNot;
+	InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
+	const bool16 gotXml = (doc != nil) && KCMTakeResourceSnapshot(doc, docXml, whyNot);
+	const char* const kFallback = "<?xml version=\"1.0\"?><Document/>";
+	const char* const payload = gotXml ? docXml.Bytes() : kFallback;
+	const int32 payloadLen = gotXml ? static_cast<int32>(docXml.Size())
+	                                : static_cast<int32>(std::strlen(kFallback));
+	line.Append("payload ");
+	line.AppendNumber(payloadLen);
+	line.Append(gotXml ? " bytes of document XML; " : " bytes (ExportINX gave nothing - a token payload is used); ");
+
+	// ★★★THE MATRIX, and the reason it is one. The first run asked ONE question - "does
+	//   CreatePackage(stream) work" - got nil, and could not tell "the stream door is shut" from
+	//   "you are calling it wrong". Two things are varied, one of them being THE TARGET ITSELF,
+	//   so that the FILE overload acts as the control: if the file fails too, the fault is mine.
+	//   ⚠The mimetype is NOT a guess: read out of the SDK's own
+	//     devtools/idmltools/samples/conditionaltext/ConditionalText.idml, whose first entry is
+	//     "mimetype", 43 bytes, STORED rather than deflated.
+	const AString kIdmlMime("application/vnd.adobe.indesign-idml-package");
+	wchar_t tempDir[MAX_PATH] = { 0 };
+	::GetTempPathW(MAX_PATH, tempDir);
+
+	// Two buffers, because the two stream attempts must not write into each other
+	// (KCMMemXferBytes has no Reset), and `winner` points at whichever one came out with bytes.
+	// ⚠ONE BUFFER PER ROW. KCMMemXferBytes has no Reset, so a shared one would let a later row
+	//   append to an earlier row's bytes and every size after the first would be a lie.
+	KCMMemXferBytes zipPerRow[8];
+	KCMMemXferBytes* winner = nil;
+	// ★Round two varies WHAT KIND OF STREAM as well as where it writes. The first matrix proved
+	//   the call is right (the file overload packed 217KB into 36KB) and the STREAM overload
+	//   returned nil - but "the overload is dead" and "OUR stream is not acceptable" are two
+	//   different findings, and only a FILE-BACKED stream can tell them apart.
+	// ⚠plain ASCII in these labels: a non-ASCII char in a narrow literal came out as "Z".
+	// ★★★WHAT THE LAZY ROW TAUGHT. Only CreateFileStreamWriteLazy worked, and the one thing a
+	//   lazy stream has that the others do not is that IT IS NOT OPEN YET. IPMStream.h:359-361:
+	//   "Open() ... must be called before any Xfers are called. IT GETS CALLED FOR YOU BY THE
+	//   StreamUtils FUNCTIONS." ⇒ CreatePackage evidently calls Open() itself, and an
+	//   already-open stream refuses. If that is right, CLOSING the stream first should let any
+	//   of them through - and the FILE row is the control that says whether it is right.
+	// ⚠"Closed first" did NOT work, on a file or in memory - so the rule is not "not open", it
+	//   is NEVER OPENED. StreamUtil has no lazy MEMORY stream, so the last two rows build one:
+	//   ★kMemStreamWriteBoss carries exactly IID_IPMSTREAM + IID_IMEMORYSTREAMDATA, which is all
+	//     a memory stream is - make it, Set() the bytes, and simply never call Open().
+	//   ★kUCFWriteStreamBoss is UCF'S OWN stream boss (same two IIDs plus IID_IUCFSTREAMPROPERTY)
+	//     - if anything is what CreatePackage expects to be handed, it is this.
+	// ★★★WHAT TEN ROWS NARROWED IT TO. Only CreateFileStreamWriteLazy ever worked. Not an
+	//   unopened memory stream (kMemStreamWriteBoss with the bytes Set and Open never called),
+	//   not UCF's own kUCFWriteStreamBoss the same way, not an eager file stream Closed first.
+	//   The one thing the winner has and none of the others do is A PATH IT HAS NOT OPENED YET.
+	// ⇒ ★★★AND THAT IS WHERE TODAY'S TWO INVESTIGATIONS MEET. S15 measured that InDesign's own
+	//   file layer writes to \\.\pipe\ perfectly well. So: a LAZY FILE STREAM AIMED AT A PIPE
+	//   satisfies UCF's demand for a path, and delivers the bytes into memory anyway.
+	//   ⚠A zip patches its own headers, and a pipe cannot really seek (S15: SetFilePointerEx
+	//     *reports* success on a pipe and moves nothing) - so this may produce a broken zip
+	//     rather than none. That is still worth knowing, and the byte count will say which.
+	enum StreamKind { kNotAStream, kMemoryPlain, kMemoryRecycled, kFileBacked, kFileBackedRW,
+	                  kFileLazy, kMemoryClosed, kFileClosed, kMemoryVirgin, kUcfVirgin, kPipeLazy };
+	struct Aim { StreamKind kind; bool16 manifest; const char* what; };
+	const Aim aims[] = {
+		{ kNotAStream,     kTrue,  "file+manifest"          },	// the control: the call is right
+		{ kFileLazy,       kTrue,  "FILE stream lazy"       },	// the only kind that ever worked
+		{ kMemoryVirgin,   kTrue,  "MEM boss, never opened" },	// ruled the memory stream out
+		{ kPipeLazy,       kTrue,  "LAZY STREAM ON A PIPE"  },	// ★the two threads, joined
+	};
+	const int32 kAims = static_cast<int32>(sizeof(aims) / sizeof(aims[0]));
+
+	for (int32 attempt = 0; attempt < kAims; ++attempt)
+	{
+		const StreamKind kind = aims[attempt].kind;
+		const bool16 toStream = (kind != kNotAStream);
+		const bool16 manifest = aims[attempt].manifest;
+		KCMMemXferBytes& zipBytes = zipPerRow[attempt % 8];
+		line.Append("[");
+		line.Append(Ascii(aims[attempt].what));
+		line.Append(" ");
+
+		const bool16 onDisk = (kind == kNotAStream || kind == kFileBacked
+		                       || kind == kFileBackedRW || kind == kFileLazy || kind == kFileClosed);
+		std::wstring filePath(tempDir);
+		filePath += (attempt == 0) ? L"kcm-spike-ucf-a.idml"
+		          : (kind == kNotAStream) ? L"kcm-spike-ucf-b.idml"
+		          : L"kcm-spike-ucf-c.idml";
+		if (onDisk)
+			::DeleteFileW(filePath.c_str());
+
+		InterfacePtr<IPMStream> zipOut;
+		if (kind == kMemoryPlain)
+			zipOut.reset(StreamUtil::CreateMemoryStreamWrite(&zipBytes, kFalse, kFalse));
+		else if (kind == kMemoryRecycled)
+			zipOut.reset(StreamUtil::CreateMemoryStreamWrite(&zipBytes, kFalse, kTrue));
+		else if (kind == kFileBacked)
+			zipOut.reset(StreamUtil::CreateFileStreamWrite(PipeAsFile(filePath.c_str()),
+			                                               kOpenOut | kOpenTrunc));
+		else if (kind == kFileBackedRW)
+			zipOut.reset(StreamUtil::CreateFileStreamWrite(PipeAsFile(filePath.c_str()),
+			                                               kOpenIn | kOpenOut | kOpenTrunc));
+		else if (kind == kFileLazy)
+			zipOut.reset(StreamUtil::CreateFileStreamWriteLazy(PipeAsFile(filePath.c_str()),
+			                                                   kOpenOut | kOpenTrunc));
+		else if (kind == kFileClosed)
+			zipOut.reset(StreamUtil::CreateFileStreamWrite(PipeAsFile(filePath.c_str()),
+			                                               kOpenOut | kOpenTrunc));
+		else if (kind == kMemoryClosed)
+			zipOut.reset(StreamUtil::CreateMemoryStreamWrite(&zipBytes, kFalse, kFalse));
+		else if (kind == kMemoryVirgin || kind == kUcfVirgin)
+		{
+			// ★A memory stream built by hand and LEFT UNOPENED - the thing StreamUtil has no
+			//   factory for. StreamUtil's own memory factories Open() it for you (IPMStream.h:361),
+			//   and that is the only difference between them and this.
+			const ClassID boss = (kind == kUcfVirgin) ? kUCFWriteStreamBoss : kMemStreamWriteBoss;
+			zipOut.reset((IPMStream*)::CreateObject(boss, IID_IPMSTREAM));
+			InterfacePtr<IMemoryStreamData> data(zipOut, IID_IMEMORYSTREAMDATA);
+			if (data == nil)
+			{
+				line.Append("no IID_IMEMORYSTREAMDATA on that boss] ");
+				continue;
+			}
+			data->Set(&zipBytes, kFalse);
+		}
+		// ★The pipe row needs its catcher standing before the stream names the path.
+		// ⚠constructed every round because C++ wants it in scope, but it only ALLOCATES its
+		//   keep-buffer for the row that needs it.
+		KCMPipeCatcher catcher(L"kcm-idml-pipe", kTrue, (kind == kPipeLazy) ? kTrue : kFalse);
+		if (kind == kPipeLazy)
+		{
+			if (!catcher.Listening())
+			{
+				line.Append("the pipe could not be created] ");
+				continue;
+			}
+			zipOut.reset(StreamUtil::CreateFileStreamWriteLazy(PipeAsFile(catcher.Path()),
+			                                                   kOpenOut | kOpenTrunc));
+		}
+		if (toStream && zipOut == nil)
+		{
+			line.Append("the stream itself could not be made] ");
+			continue;
+		}
+		// ★The whole point of these two rows: hand it a stream that is NOT open.
+		if (kind == kFileClosed || kind == kMemoryClosed)
+			zipOut->Close();
+
+		IUCFPackageUtils::UCFErrorCode err = IUCFPackageUtils::kSuccess;
+		Trace("S16.1 CreatePackage");
+		IUCFPackageUtils::PackageRefPtr ref = toStream
+			? ucf->CreatePackage(zipOut, kIdmlMime, manifest, err)
+			: ucf->CreatePackage(PipeAsFile(filePath.c_str()), kIdmlMime, manifest, err);
+		Trace("S16.2 CreatePackage came back");
+		if (ref == nil)
+		{
+			line.Append("CreatePackage nil, err ");
+			line.AppendNumber(static_cast<int32>(err));
+			line.Append("] ");
+			continue;
+		}
+
+		Trace("S16.3 CreateStream for designmap.xml");
+		InterfacePtr<IPMStream> entry(ucf->CreateStream(ref, WideString("designmap.xml"),
+		                                               IUCFPackageUtils::kStandard));
+		Trace("S16.4 CreateStream came back");
+		if (entry == nil)
+		{
+			line.Append("CreateStream nil] ");
+			ucf->ClosePackageWithoutSave(ref);
+			continue;
+		}
+		entry->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(payload)), payloadLen);
+		entry->Close();
+		entry.reset(nil);
+
+		Trace("S16.5 ClosePackage");
+		const IUCFPackageUtils::UCFErrorCode closed = ucf->ClosePackage(ref);
+		Trace("S16.6 ClosePackage came back");
+		line.Append("Close -> ");
+		line.AppendNumber(static_cast<int32>(closed));
+		zipOut.reset(nil);		// ★flush before anything reads the bytes back
+
+		if (kind == kPipeLazy)
+		{
+			catcher.Finish();
+			line.Append(", pipe ");
+			catcher.Describe(line);
+			// ★THE VOTE THIS CODE CANNOT CAST FOR ITSELF: a zip tool outside InDesign either
+			//   opens what came through the pipe or it does not. A zip patches its own headers
+			//   after the fact and a pipe cannot really seek, so "36,509 bytes starting PK" is
+			//   a promising shape, not a working package.
+			const int32 saved = catcher.SaveTo(L"kcm-spike-memory.idml");
+			line.Append(", saved ");
+			line.AppendNumber(saved);
+			line.Append(" B to %TEMP%\\kcm-spike-memory.idml (UNZIP IT)] ");
+		}
+		else if (kind == kFileBacked || kind == kFileBackedRW || kind == kFileLazy || kind == kFileClosed)
+		{
+			// ★The answer lands on DISK, not in zipBytes - the point of these rows is only
+			//   "does CreatePackage(IPMStream*) work when the stream is a file".
+			WIN32_FILE_ATTRIBUTE_DATA fad;
+			std::memset(&fad, 0, sizeof(fad));
+			line.Append(", ");
+			if (::GetFileAttributesExW(filePath.c_str(), GetFileExInfoStandard, &fad))
+				line.AppendNumber(static_cast<int32>(fad.nFileSizeLow));
+			else
+				line.Append("no");
+			line.Append(" B through the stream] ");
+			::DeleteFileW(filePath.c_str());
+		}
+		else if (toStream)
+		{
+			line.Append(", ");
+			line.AppendNumber(static_cast<int32>(zipBytes.GetSize()));
+			line.Append(" B] ");
+			if (zipBytes.GetSize() > 2)
+				winner = &zipBytes;
+		}
+		else
+		{
+			WIN32_FILE_ATTRIBUTE_DATA fad;
+			std::memset(&fad, 0, sizeof(fad));
+			line.Append(", ");
+			if (::GetFileAttributesExW(filePath.c_str(), GetFileExInfoStandard, &fad))
+				line.AppendNumber(static_cast<int32>(fad.nFileSizeLow));
+			else
+				line.Append("no");
+			line.Append(" B on disk] ");
+			// ★attempt 0's file is KEPT so a zip tool outside InDesign gets a vote on whether
+			//   what the file overload produces is a real IDML: %TEMP%\kcm-spike-ucf-a.idml.
+			if (attempt != 0)
+				::DeleteFileW(filePath.c_str());
+		}
+	}
+
+	if (winner == nil)
+		return;
+	KCMMemXferBytes& zipBytes = *winner;
+
+	line.Append("the container is ");
+	line.AppendNumber(static_cast<int32>(zipBytes.GetSize()));
+	line.Append(" bytes");
+
+	// "PK" is how every zip begins. Anything else means whatever came out is not one.
+	const char* const z = zipBytes.GetData();
+	char two[3] = { (z[0] >= 0x20 && z[0] < 0x7f) ? z[0] : '.',
+	                (z[1] >= 0x20 && z[1] < 0x7f) ? z[1] : '.', 0 };
+	line.Append(", starts \"");
+	line.Append(Ascii(two));
+	line.Append("\"");
+	line.Append((z[0] == 'P' && z[1] == 'K') ? " ★IT IS A ZIP" : " ★NOT A ZIP");
+
+	// ---- the return leg: open those very bytes and read the entry back ---------------------
+	Trace("S16.7 OpenPackage from the same bytes");
+	InterfacePtr<IPMStream> zipIn(StreamUtil::CreateMemoryStreamRead(&zipBytes, kFalse));
+	IUCFPackageUtils::UCFErrorCode rerr = IUCFPackageUtils::kSuccess;
+	IUCFPackageUtils::PackageRefPtr back = (zipIn != nil) ? ucf->OpenPackage(zipIn, rerr) : nil;
+	Trace("S16.8 OpenPackage came back");
+	if (back == nil)
+	{
+		line.Append("; OpenPackage(stream) returned nil, UCFErrorCode ");
+		line.AppendNumber(static_cast<int32>(rerr));
+	}
+	else
+	{
+		line.Append("; OpenPackage(stream) OK, designmap.xml reads back ");
+		InterfacePtr<IPMStream> readBack(ucf->OpenStream(back, WideString("designmap.xml")));
+		if (readBack == nil)
+		{
+			line.Append("NOT AT ALL (OpenStream nil)");
+		}
+		else
+		{
+			int32 got = 0;
+			uchar buf[4096];
+			for (;;)
+			{
+				const int32 n = readBack->XferByte(buf, static_cast<int32>(sizeof(buf)));
+				if (n <= 0)
+					break;
+				got += n;
+			}
+			readBack->Close();
+			line.AppendNumber(got);
+			line.Append(" of ");
+			line.AppendNumber(payloadLen);
+			line.Append(got == payloadLen ? " bytes ★ROUND TRIP COMPLETE" : " bytes ★MISMATCH");
+		}
+		ucf->ClosePackage(back);
+	}
+	// ★Dropped so that something which is not this code gets a vote: a zip tool outside
+	//   InDesign either opens it or it does not.
+	DropForTheEye(zipBytes, L"kcm-spike-memory.idml");
+	line.Append(" -> %TEMP%\\kcm-spike-memory.idml (UNZIP IT)");
+}
+
+/** One page of `db` out through kPDFExportCmdBoss - THE PAGE EXPORTER, the one whose picture is
+    right - aimed at whatever `target` names. The same settings the report uses (KCMReport.cpp,
+    ExportPagesToPDF); the only thing being varied is where it points. */
+void ExportOnePageTo(IDataBase* db, UID pageUID, const IDFile& target,
+                     ErrorCode& err, ErrorCode& global, int32& msTaken)
+{
+	err = kFailure;
+	global = kFailure;
+	msTaken = -1;
+	InterfacePtr<ICommand> cmd(CmdUtils::CreateCommand(kPDFExportCmdBoss));
+	InterfacePtr<IOutputPages> pagesOut(cmd, IID_IOUTPUTPAGES);
+	InterfacePtr<ISysFileData> sys(cmd, IID_ISYSFILEDATA);
+	if (cmd == nil || pagesOut == nil || sys == nil)
+		return;
+
+	UIDList onePage(db);
+	onePage.Append(pageUID);
+	cmd->SetItemList(onePage);
+
+	InterfacePtr<IPDFExportPrefs> appPrefs((IPDFExportPrefs*)::QuerySessionPreferences(IID_IPDFEXPORTPREFS));
+	InterfacePtr<IPDFExportPrefs> prefs(cmd, IID_IPDFEXPORTPREFS);
+	if (prefs != nil && appPrefs != nil)
+	{
+		prefs->CopyPrefs(appPrefs);
+		prefs->SetPDFExReaderSpreads(IPDFExportPrefs::kExportReaderSpreadsOFF);
+	}
+	InterfacePtr<IPDFSecurityPrefs> security(cmd, IID_IPDFSECURITYPREFS);
+	if (security != nil)
+		security->SetUseSecurity(kFalse);
+	InterfacePtr<IPDFPostProcessPrefs> post(cmd, IID_IPDFPOSTPROCESSPREFS);
+	if (post != nil)
+		post->SetViewAfterExport(kFalse);
+	InterfacePtr<IBoolData> progress(cmd, IID_IUSEPROGRESSINDICATOR);
+	if (progress != nil)
+		progress->Set(kFalse);
+	InterfacePtr<IUIFlagData> ui(cmd, IID_IUIFLAGDATA);
+	if (ui != nil)
+		ui->Set(kSuppressUI);
+
+	sys->Set(target);
+	pagesOut->InitializeFrom(onePage, kFalse);
+	{
+		InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
+		PMString name;
+		if (doc != nil)
+			doc->GetName(name);
+		pagesOut->SetName(name);
+	}
+
+	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	Trace("        ProcessCommand in");
+	LARGE_INTEGER freq, t0, t1;
+	::QueryPerformanceFrequency(&freq);
+	::QueryPerformanceCounter(&t0);
+	err = CmdUtils::ProcessCommand(cmd);
+	::QueryPerformanceCounter(&t1);
+	Trace("        ProcessCommand out");
+	global = ErrorUtils::PMGetGlobalErrorCode();
+	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	// ★★★HOW LONG IT TOOK IS THE ANSWER TO "WHERE DID IT REFUSE". An export that renders a page
+	//   and then cannot write it takes as long as a real one; an export that looks at the path
+	//   and says no is over in a blink. A failure alone cannot tell those apart.
+	msTaken = (freq.QuadPart > 0)
+	          ? static_cast<int32>(((t1.QuadPart - t0.QuadPart) * 1000) / freq.QuadPart)
+	          : -1;
 }
 
 /** Export `items` of `db` to a PDF that never touches disk, and answer whether any bytes
@@ -1556,6 +2216,256 @@ void KCMProbePdfRoute(PMString& out)
 				Say(out, line);
 			}
 		}
+	}
+
+	// ---- S15: ★★★THE LAST UNMEASURED DOOR - a PATH THAT IS NOT A FILE ----------------------
+	// See the apparatus at the head of this file for the whole argument. Three stages, cheapest
+	// and safest first, so that a failure says WHICH layer refused:
+	//   .0  plain Win32, no InDesign at all: can a writer open \\.\pipe\x the way a writer opens
+	//       a file (CREATE_ALWAYS), or only the way a pipe client does (OPEN_EXISTING)?
+	//   .a  InDesign's own file layer: does StreamUtil::CreateFileStreamWrite take the path, and
+	//       does what it writes come out the other end?
+	//   .b  the real thing: kPDFExportCmdBoss, one page, ISysFileData pointing at the pipe.
+	Trace("S15 begin - a path that is not a file");
+	{
+		// .0 -------------------------------------------------------------------------------
+		{
+			// ★★★THE ARMED CONTROL. 14 bytes go in; if 14 do not come out, NOTHING BELOW MEANS
+			//   ANYTHING - a zero from the stages that follow would be the instrument's zero,
+			//   not the exporter's. The first run of this spike reported 0 here and the reading
+			//   was published anyway; that is the mistake this line exists to make impossible.
+			PMString line(Ascii("S15.0 plain Win32 on \\\\.\\pipe\\: "));
+			const char* const probe = "%PDF-1.7 probe";
+			const int32 probeLen = static_cast<int32>(std::strlen(probe));
+			for (int32 pass = 0; pass < 2; ++pass)
+			{
+				const bool16 duplex = (pass == 1);
+				KCMPipeCatcher catcher(duplex ? L"kcm-probe-w32-duplex" : L"kcm-probe-w32-in", duplex);
+				line.Append(pass == 0 ? "" : "; ");
+				if (!catcher.Listening())
+				{
+					line.Append("the pipe could not be created, error ");
+					line.AppendNumber(static_cast<int32>(catcher.CreateError()));
+					continue;
+				}
+				// CREATE_ALWAYS and GENERIC_READ|GENERIC_WRITE together: what an ordinary file
+				// writer asks for, and what a PDF writer needs if it seeks back at the end.
+				HANDLE h = ::CreateFileW(catcher.Path(),
+				                         duplex ? (GENERIC_READ | GENERIC_WRITE) : GENERIC_WRITE,
+				                         0, nil, CREATE_ALWAYS, 0, nil);
+				const DWORD openErr = ::GetLastError();
+				line.Append(duplex ? "read+write -> " : "write-only -> ");
+				if (h == INVALID_HANDLE_VALUE)
+				{
+					line.Append("REFUSED, error ");
+					line.AppendNumber(static_cast<int32>(openErr));
+					continue;
+				}
+				DWORD wrote = 0;
+				const BOOL written = ::WriteFile(h, probe, static_cast<DWORD>(probeLen), &wrote, nil);
+				const DWORD writeErr = written ? 0 : ::GetLastError();
+				// ★And can it SEEK? This is the whole question for a PDF writer, asked directly -
+				//   the cross-reference offset is patched into the head after the body is out.
+				// ⚠SetFilePointerEx, not SetFilePointer: the old one answers with the new
+				//   position, and position 0 is indistinguishable from "0 means look at
+				//   GetLastError". A BOOL cannot be misread.
+				LARGE_INTEGER zero;
+				zero.QuadPart = 0;
+				const BOOL seekOK = ::SetFilePointerEx(h, zero, nil, FILE_BEGIN);
+				const DWORD seekErr = seekOK ? 0 : ::GetLastError();
+				::CloseHandle(h);
+				catcher.Finish();
+				line.Append("opened, wrote ");
+				line.AppendNumber(static_cast<int32>(wrote));
+				if (writeErr != 0)
+				{
+					line.Append(" (write error ");
+					line.AppendNumber(static_cast<int32>(writeErr));
+					line.Append(")");
+				}
+				line.Append(", seek ");
+				line.Append(seekErr == 0 ? "OK" : "REFUSED error ");
+				if (seekErr != 0)
+					line.AppendNumber(static_cast<int32>(seekErr));
+				line.Append(", caught ");
+				catcher.Describe(line);
+				if (catcher.Bytes() != probeLen)
+					line.Append(" ★★★THE CONTROL FAILED - every reading below is void");
+			}
+			Say(out, line);
+		}
+
+		// .a -------------------------------------------------------------------------------
+		Trace("S15.a begin - InDesign's own file layer");
+		{
+			PMString line(Ascii("S15.a StreamUtil::CreateFileStreamWrite on a pipe: "));
+			KCMPipeCatcher catcher(L"kcm-probe-idstream", kTrue);
+			if (!catcher.Listening())
+			{
+				line.Append("skipped - the pipe could not be created");
+			}
+			else
+			{
+				const IDFile pipeFile = PipeAsFile(catcher.Path());
+				// ★What did IDFile make of it? A path with no directory behind it may not survive
+				//   the trip, and if it does not, nothing below means anything.
+				PMString roundTrip = FileUtils::SysFileToPMString(pipeFile);
+				roundTrip.SetTranslatable(kFalse);
+				line.Append("IDFile reads back as \"");
+				line.Append(roundTrip);
+				line.Append("\"; ");
+				Trace("S15.a1 opening the stream");
+				InterfacePtr<IPMStream> stream(StreamUtil::CreateFileStreamWrite(pipeFile, kOpenOut | kOpenTrunc));
+				Trace("S15.a2 the stream came back");
+				if (stream == nil)
+				{
+					line.Append("the stream is nil (InDesign would not open it)");
+				}
+				else
+				{
+					const char* probe = "%PDF-1.7 through InDesign";
+					stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(probe)),
+					                 static_cast<int32>(std::strlen(probe)));
+					stream->Close();
+					stream.reset(nil);
+					catcher.Finish();
+					line.Append("the stream opened, caught ");
+					catcher.Describe(line);
+				}
+			}
+			Say(out, line);
+		}
+
+		// .b -------------------------------------------------------------------------------
+		// ⚠THE ONE THAT COULD TAKE INDESIGN DOWN. The trace lines around ProcessCommand are what
+		//   tells a crash apart from a refusal, exactly as they did for S12.
+		// ★THREE AIMINGS, not one. The first run measured a single inbound pipe with no
+		//   extension and learned only "it opened and wrote nothing" - which has at least three
+		//   explanations, and a measurement that cannot tell them apart has not finished.
+		//   Each row below changes ONE thing about the target:
+		Trace("S15.b begin - kPDFExportCmdBoss aimed at a pipe");
+		{
+			struct Aim { const wchar_t* leaf; bool16 duplex; const char* what; };
+			const Aim aims[] = {
+				{ L"kcm-probe-pdf-in",  kFalse, "b inbound, no extension" },
+				{ L"kcm-probe-pdf-du",  kTrue,  "c duplex, no extension  " },
+				{ L"kcm-probe.pdf",     kTrue,  "d duplex, named .pdf    " },
+			};
+			for (int32 i = 0; i < static_cast<int32>(sizeof(aims) / sizeof(aims[0])); ++i)
+			{
+				PMString line(Ascii("S15."));
+				line.Append(Ascii(aims[i].what));
+				line.Append(": ");
+				KCMPipeCatcher catcher(aims[i].leaf, aims[i].duplex);
+				if (!catcher.Listening())
+				{
+					line.Append("skipped - the pipe could not be created, error ");
+					line.AppendNumber(static_cast<int32>(catcher.CreateError()));
+					Say(out, line);
+					continue;
+				}
+				Trace("S15.b aiming the export at the pipe");
+				ErrorCode err = kFailure;
+				ErrorCode global = kFailure;
+				int32 ms = -1;
+				ExportOnePageTo(db, pageUID, PipeAsFile(catcher.Path()), err, global, ms);
+				catcher.Finish();
+				line.Append("ProcessCommand -> ");
+				line.AppendNumber(static_cast<int32>(err));
+				line.Append(err == kSuccess ? " (kSuccess)" : " (failed)");
+				line.Append(" in ");
+				line.AppendNumber(ms);
+				line.Append("ms, global ");
+				line.AppendNumber(static_cast<int32>(global));
+				line.Append("; pipe ");
+				catcher.Describe(line);
+				Say(out, line);
+			}
+		}
+
+		// .e ---- ★★★THE BASELINE, and it is not optional ------------------------------------
+		// Every line above says "failed". Without an export that SUCCEEDS, measured in the same
+		// run with the same settings, "failed" could mean the page, the preferences, the
+		// session - anything at all. This is the line that makes the three above mean
+		// "the TARGET was refused", and it is also the clock the pipe's time is read against.
+		Trace("S15.e begin - the same export to a real file");
+		{
+			PMString line(Ascii("S15.e the same export to a REAL FILE (the baseline): "));
+			wchar_t dir[MAX_PATH] = { 0 };
+			::GetTempPathW(MAX_PATH, dir);
+			std::wstring real(dir);
+			real += L"kcm-spike-baseline.pdf";
+			::DeleteFileW(real.c_str());
+			ErrorCode err = kFailure;
+			ErrorCode global = kFailure;
+			int32 ms = -1;
+			ExportOnePageTo(db, pageUID, PipeAsFile(real.c_str()), err, global, ms);
+			line.Append("ProcessCommand -> ");
+			line.AppendNumber(static_cast<int32>(err));
+			line.Append(err == kSuccess ? " (kSuccess)" : " (FAILED - then nothing above means anything)");
+			line.Append(" in ");
+			line.AppendNumber(ms);
+			line.Append("ms, wrote ");
+			{
+				WIN32_FILE_ATTRIBUTE_DATA fad;
+				std::memset(&fad, 0, sizeof(fad));
+				if (::GetFileAttributesExW(real.c_str(), GetFileExInfoStandard, &fad))
+					line.AppendNumber(static_cast<int32>(fad.nFileSizeLow));
+				else
+					line.Append("no");
+			}
+			line.Append(" bytes");
+			::DeleteFileW(real.c_str());		// the baseline is a measurement, not a product
+			Say(out, line);
+		}
+
+		// .f ---- is it PIPES, or is it EVERYTHING THAT IS NOT A DISK FILE? -------------------
+		// NUL is the other well-known path that is not a file. It swallows everything and never
+		// fails, so an export that gets as far as writing will SUCCEED here even though nothing
+		// is kept. If NUL fails too, the exporter wants a real file object and the question is
+		// closed; if NUL works, the refusal is about pipes in particular.
+		Trace("S15.f begin - the NUL device");
+		{
+			PMString line(Ascii("S15.f the same export to NUL: "));
+			ErrorCode err = kFailure;
+			ErrorCode global = kFailure;
+			int32 ms = -1;
+			ExportOnePageTo(db, pageUID, PipeAsFile(L"\\\\.\\NUL"), err, global, ms);
+			line.Append("ProcessCommand -> ");
+			line.AppendNumber(static_cast<int32>(err));
+			line.Append(err == kSuccess ? " (kSuccess)" : " (failed)");
+			line.Append(" in ");
+			line.AppendNumber(ms);
+			line.Append("ms, global ");
+			line.AppendNumber(static_cast<int32>(global));
+			Say(out, line);
+		}
+	}
+
+	// ---- S16: ★★★AN IDML CONTAINER BUILT IN MEMORY, AND OPENED AGAIN FROM MEMORY -----------
+	// The user asked, after S15 closed the PDF door: "IDML is the whole-document export - can
+	// THAT be held internally?" Two thirds of the answer were already measured:
+	//   ✅ the CONTENT is already in memory      - IINXManager::ExportINX takes an IPMStream*,
+	//      and KCM's Resources mode runs it every day (376-388KB, 78-157ms, nothing on disk).
+	//   ⛔ the IDML EXPORT PROVIDER refuses a stream - measured 2026-09-09: IExportProvider::
+	//      ExportToStream gives 0 bytes, 0ms and ErrorCode 0, a silent failure.
+	// What was never measured is the third: the CONTAINER. IUCFPackageUtils carries an IDFile
+	// overload and an IPMStream overload SIDE BY SIDE, in both directions:
+	//      CreatePackage(const IDFile&,    mimeType, createManifest, err)
+	//      CreatePackage(const IPMStream*, mimeType, createManifest, err)   ★
+	//      OpenPackage  (const IDFile&,    err)
+	//      OpenPackage  (const IPMStream*, err)                             ★
+	// ⚠THE SDK HAS NOT ONE EXAMPLE of either. So this is a first run, and it is built as a
+	//  ROUND TRIP - write a known payload in, read it back out, compare the byte count - because
+	//  "CreatePackage returned something" is not evidence that a package was made.
+	// ★The mimetype string is NOT a guess: it was read out of a real IDML in the SDK's own
+	//   devtools (devtools/idmltools/samples/conditionaltext/ConditionalText.idml), whose first
+	//   entry is "mimetype", 43 bytes, STORED not deflated.
+	Trace("S16 begin - an IDML container in memory");
+	{
+		PMString line(Ascii("S16 IUCFPackageUtils on a stream: "));
+		IdmlInMemory(db, line);
+		Say(out, line);
 	}
 
 	Trace("=== run ends, every step came back ===");
