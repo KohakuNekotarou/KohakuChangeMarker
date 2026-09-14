@@ -112,6 +112,23 @@ const char* AbilityName(IImportProvider::ImportAbility ability)
 	return "an unknown ImportAbility";
 }
 
+/** ★DIAGNOSTIC ONLY, and it goes with the spike: drop the bytes into %TEMP% so the picture can
+    be LOOKED at (KIDMCP's capture takes pdf:PATH). The whole point of the work is that the
+    REPORT stops writing files; a measurement that has to be seen is a different thing, and a
+    reading that is never looked at is how "the marks cannot travel" survived three runs. */
+void DropForTheEye(KCMMemXferBytes& bytes, const wchar_t* name)
+{
+	if (bytes.GetSize() == 0)
+		return;
+	wchar_t dir[MAX_PATH] = { 0 };
+	::GetTempPathW(MAX_PATH, dir);
+	std::wstring path(dir);
+	path += name;
+	std::ofstream file(path.c_str(), std::ios::binary | std::ios::trunc);
+	if (file)
+		file.write(bytes.GetData(), static_cast<std::streamsize>(bytes.GetSize()));
+}
+
 /** Export `items` of `db` to a PDF that never touches disk, and answer whether any bytes
     arrived. `why` says what went wrong when they did not.
 
@@ -183,6 +200,56 @@ bool16 ExportToMemory(IDataBase* db, const UIDList& items, KCMMemXferBytes& byte
 		return kFalse;
 	}
 	return kTrue;
+}
+
+/** ★★★THE INSTRUMENT, ARMED - and it had to be, because the bare byte count lied in BOTH
+    directions on 2026-09-14:
+      - 2 bytes of difference were once read as "something of the marks reached it" (they were
+        compression noise), and
+      - 4,057 bytes were read as "the pasteboard came too" (the picture says it did not, and the
+        SAME export measured twice came out 400,237 then 398,756 - 1,481 bytes apart with
+        nothing changed at all).
+    So the noise is measured in the same run as the signal: the list goes out TWICE with the
+    marks off, and whatever "marks on" differs by has to beat that spread before it is called a
+    signal. `onBytes` keeps the marks-on export for the caller (the box, or the eye). */
+void MarkTest(IDataBase* db, const UIDList& list, PMString& line, KCMMemXferBytes& onBytes)
+{
+	const bool16 was = KCMDrawEventHandler::sPrintMarks;
+	KCMMemXferBytes off1;
+	KCMMemXferBytes off2;
+	PMString why;
+	KCMDrawEventHandler::sPrintMarks = kFalse;
+	const bool16 ok1 = ExportToMemory(db, list, off1, why);
+	const bool16 ok2 = ExportToMemory(db, list, off2, why);
+	KCMDrawEventHandler::sPrintMarks = kTrue;
+	const bool16 ok3 = ExportToMemory(db, list, onBytes, why);
+	KCMDrawEventHandler::sPrintMarks = was;
+	if (!ok1 || !ok2 || !ok3)
+	{
+		line.Append("FAILED - ");
+		line.Append(why);
+		return;
+	}
+	const int32 a = static_cast<int32>(off1.GetSize());
+	const int32 b = static_cast<int32>(off2.GetSize());
+	const int32 c = static_cast<int32>(onBytes.GetSize());
+	const int32 noise = (a > b) ? (a - b) : (b - a);
+	const int32 mid = (a + b) / 2;
+	const int32 signal = (c > mid) ? (c - mid) : (mid - c);
+	line.Append("off ");
+	line.AppendNumber(a);
+	line.Append(" / ");
+	line.AppendNumber(b);
+	line.Append(" (noise ");
+	line.AppendNumber(noise);
+	line.Append("), on ");
+	line.AppendNumber(c);
+	line.Append(" (signal ");
+	line.AppendNumber(signal);
+	line.Append(") -> ");
+	// Two conditions, and both earn their place: beating the noise of THIS run, and a floor so
+	// that a run which happens to be quiet does not turn 50 bytes into a discovery.
+	line.Append((signal > noise * 2 && signal > 500) ? "MARKS REACHED IT" : "NO - that is noise");
 }
 
 /** The page's index inside its own spread, and the spread, which GetItemsOnPage wants. */
@@ -890,7 +957,173 @@ void KCMProbePdfRoute(PMString& out)
 				line.AppendNumber(b);
 				line.Append(b == a ? " - IDENTICAL, the spread did not bring them"
 								   : " - DIFFERENT, THE SPREAD BROUGHT THE MARKS");
+				// For the eye: kcm-spike-spread.pdf is this very export, and looking at it is how
+				// "the marks are there" and "the pasteboard came too" stop being byte counts.
+				DropForTheEye(marked, L"kcm-spike-spread.pdf");
+				// ★AND WHAT SIZE IS THE BOX? The report places this picture in a slot half its
+				//   width, so a spread in the list costing two pages' width would change the
+				//   shape of the whole thing. S7 weighed the bytes; this looks.
+				SDKLayoutHelper helper;
+				UIDRef temp = helper.CreateDocument(kSuppressUI, PMReal(600), PMReal(800), 1, 1, 0);
+				if (temp != UIDRef::gNull)
+				{
+					{
+						InterfacePtr<IPMStream> read(StreamUtil::CreateMemoryStreamRead(&marked, kFalse, kFalse));
+						if (read != nil && provider != nil)
+						{
+							UIDRef imported = UIDRef::gNull;
+							provider->ImportThis(temp.GetDataBase(), read, kSuppressUI, &imported);
+							read->Close();
+							InterfacePtr<IGeometry> geo(imported != UIDRef::gNull ? UIDRef(imported) : UIDRef::gNull, UseDefaultIID());
+							if (geo != nil)
+							{
+								const PMRect box = geo->GetStrokeBoundingBox();
+								line.Append(", box ");
+								line.AppendNumber(static_cast<int32>(::ToDouble(box.Width())));
+								line.Append(" x ");
+								line.AppendNumber(static_cast<int32>(::ToDouble(box.Height())));
+							}
+							else
+							{
+								line.Append(", box unknown");
+							}
+						}
+					}
+					KCMMarkRehydratedClean(temp.GetDataBase());
+					KCMCloseRehydrated(temp, kFalse /*now*/);
+				}
 			}
+			Say(out, line);
+		}
+	}
+
+	// ---- S8: the PAGE without the spread - does it bring the marks on its own? ---------------
+	// ★★★THE COMBINATION NOBODY HAD TRIED. S4 measured the ITEMS with marks on/off (no), S7 the
+	//   SPREAD with the page and the items (yes, but the box came out 1802x1002 - the pasteboard
+	//   comes with the spread). What was never measured is the middle one: the PAGE and its items,
+	//   which is the combination whose box is the page's own size (S6, 595x841).
+	//   If the marks come with the PAGE, the report gets everything at once: a page-sized box,
+	//   vector, marks included, no file. If they do not, KCMRingAdornment.cpp:497-499 says why -
+	//   the drawing is written in SPREAD coordinates, and it is the spread that is looked for.
+	Trace("S8 begin - the page and its items, marks off then on");
+	{
+		PMString line(Ascii("S8 the page and its items (no spread): "));
+		UIDList list(db);
+		list.Append(pageUID);
+		{
+			InterfacePtr<ISpread> spread;
+			int32 pgPos = -1;
+			if (PagePosition(db, pageUID, spread, pgPos))
+				spread->GetItemsOnPage(pgPos, &list, kFalse, kFalse, kTrue);
+		}
+		KCMMemXferBytes onBytes;
+		MarkTest(db, list, line, onBytes);
+		Say(out, line);
+	}
+
+	// ---- S9: the PASTEBOARD, as items in the list ---------------------------------------------
+	// ★★USER'S IDEA (2026-09-14): "a normal PDF export never shows the pasteboard - with this
+	//   mechanism it looks as though the pasteboard's items COULD be put into a PDF. Remember it,
+	//   I would like it as a feature one day."
+	// ⚠THE FIRST ANSWER WAS WRONG. Putting the SPREAD in the list was read as carrying the
+	//   pasteboard because the file grew by 4,057 bytes - and then the picture showed nothing
+	//   beside the page, and the same export measured twice differed by 1,481 bytes on its own.
+	//   kPDFExportItemsCmdBoss draws WHAT IS IN THE LIST; the spread brings its own adornments
+	//   (the marks), not its children.
+	// ⇒ SO ASK PROPERLY: GetItemsOnPage takes bIncludePasteboard (ISpread.h:129). Put those items
+	//   in the list and they should be drawn like any other - which would mean a PDF with the
+	//   pasteboard in it, something the application's own export cannot make.
+	Trace("S9 begin - the pasteboard's items in the list");
+	{
+		PMString line(Ascii("S9 the pasteboard's items in the list: "));
+		UIDList onPageOnly(db);
+		UIDList withPasteboard(db);
+		{
+			InterfacePtr<ISpread> spread;
+			int32 pgPos = -1;
+			if (PagePosition(db, pageUID, spread, pgPos))
+			{
+				spread->GetItemsOnPage(pgPos, &onPageOnly, kFalse, kFalse /*no pasteboard*/, kTrue);
+				spread->GetItemsOnPage(pgPos, &withPasteboard, kFalse, kTrue /*pasteboard too*/, kTrue);
+			}
+		}
+		const int32 extra = withPasteboard.Length() - onPageOnly.Length();
+		line.AppendNumber(onPageOnly.Length());
+		line.Append(" on the page, ");
+		line.AppendNumber(withPasteboard.Length());
+		line.Append(" with the pasteboard (");
+		line.AppendNumber(extra);
+		line.Append(" extra), ");
+		if (withPasteboard.Length() == 0)
+		{
+			line.Append("nothing to export");
+			Say(out, line);
+		}
+		else
+		{
+			// The page goes in too, so the box is the page's - which is the shape the report
+			// wants, and makes "did the pasteboard item get drawn" a question about the PICTURE
+			// rather than about the size of the box.
+			UIDList full(db);
+			full.Append(pageUID);
+			for (int32 i = 0; i < withPasteboard.Length(); ++i)
+				full.Append(withPasteboard[i]);
+			KCMMemXferBytes bytes2;
+			PMString why;
+			if (!ExportToMemory(db, full, bytes2, why))
+			{
+				line.Append("FAILED - ");
+				line.Append(why);
+			}
+			else
+			{
+				line.AppendNumber(static_cast<int32>(bytes2.GetSize()));
+				line.Append(" bytes -> %TEMP%\\kcm-spike-pasteboard.pdf (LOOK AT IT)");
+				DropForTheEye(bytes2, L"kcm-spike-pasteboard.pdf");
+			}
+			Say(out, line);
+		}
+	}
+
+	// ---- S10: THE WHOLE SPREAD - the spread shape AND everything standing on it ----------------
+	// ★★USER'S QUESTION (2026-09-14): "is there no way to hand it the whole spread?"
+	//   There is, and this is it. kPDFExportItemsCmdBoss draws WHAT IS IN THE LIST, so "the whole
+	//   spread" is not one UID - it is the spread shape (which carries the adornments, i.e. the
+	//   MARKS) plus every page item standing on it, pasteboard included. GetItemsOnPage is asked
+	//   once per page of the spread with bIncludePage and bIncludePasteboard both on.
+	// ⇒ If this works it is the strongest form of the route: marks, content, and the pasteboard -
+	//   and the pasteboard is something the application's own PDF export never puts out.
+	Trace("S10 begin - the whole spread: its shape and everything on it");
+	{
+		PMString line(Ascii("S10 the whole spread: "));
+		UIDList list(db);
+		UID spreadUID = kInvalidUID;
+		int32 pages = 0;
+		{
+			InterfacePtr<IHierarchy> pageHier(db, pageUID, UseDefaultIID());
+			if (pageHier != nil)
+				spreadUID = pageHier->GetSpreadUID();
+		}
+		InterfacePtr<ISpread> spread(db, spreadUID, UseDefaultIID());
+		if (spread == nil)
+		{
+			line.Append("FAILED - no spread");
+			Say(out, line);
+		}
+		else
+		{
+			list.Append(spreadUID);				// the shape the marks hang off
+			pages = spread->GetNumPages();
+			for (int32 p = 0; p < pages; ++p)
+				spread->GetItemsOnPage(p, &list, kTrue /*the page shape too*/, kTrue /*pasteboard*/, kTrue);
+			line.AppendNumber(pages);
+			line.Append(" page(s), ");
+			line.AppendNumber(list.Length());
+			line.Append(" UIDs in the list, ");
+			KCMMemXferBytes onBytes;
+			MarkTest(db, list, line, onBytes);
+			line.Append(" -> %TEMP%\\kcm-spike-whole-spread.pdf (LOOK AT IT)");
+			DropForTheEye(onBytes, L"kcm-spike-whole-spread.pdf");
 			Say(out, line);
 		}
 	}
