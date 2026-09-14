@@ -520,6 +520,12 @@ void KCMProbePdfRoute(PMString& out)
 	}
 
 	// ---- S4: do the comparison marks travel with it? ----------------------------------------
+	// ⚠★★★**S4 ANSWERS "NO" AND S7 EXPLAINS WHY, AND THE ANSWER IS "NOBODY ASKED".** Read S7
+	//   before drawing any conclusion from this step: the marks are drawn once per SPREAD, and a
+	//   list of items contains no spread, so the adornment turns back at
+	//   KCMRingAdornment.cpp:498-504 for every item it is called on. Put the spread in the list
+	//   and they come (S7: +3,031 bytes). This step is kept because it is the control - it is
+	//   what the number looks like when the spread is NOT there.
 	// The marks are a DRAWING (KCMDrawEventHandler), not content, and sPrintMarks is the one
 	// switch that puts them into output. If the same export is bigger with it on, something of
 	// theirs reached the PDF. ⚠A size difference is evidence, not proof; the eye comes next.
@@ -817,6 +823,75 @@ void KCMProbePdfRoute(PMString& out)
 				KCMMarkRehydratedClean(temp.GetDataBase());
 				KCMCloseRehydrated(temp, kFalse /*now*/);
 			}
+		}
+	}
+
+	// ---- S7: put the SPREAD in the list, and the marks should follow -------------------------
+	// ★★★WHY S4 SAID NO, found by reading rather than guessing (KCMRingAdornment.cpp:498-504):
+	//
+	//       InterfacePtr<ISpread> spread(iShape, UseDefaultIID());
+	//       if (spread == nil) { KCMDrawStoryIdLabel(iShape, gd, flags); return; }
+	//
+	//   The adornment is on the GLOBAL list, so it is called for every page item on the spread -
+	//   and KCM draws the marks ONCE PER SPREAD, so every call whose iShape is not the spread
+	//   itself turns back there. kPDFExportItemsCmdBoss draws the items it was handed and never
+	//   draws the spread, so that line is reached for every item and the marks are never drawn.
+	//   Nothing is broken: the marks were never asked for.
+	// ⇒ THE TEST: hand it the SPREAD as well. If the export draws the spread shape, the adornment
+	//   gets its one call with iShape == the spread, and the marks go into the PDF after all.
+	Trace("S7 begin - the spread in the list, marks off then on");
+	{
+		PMString line(Ascii("S7 the spread in the list: "));
+		UIDList list(db);
+		UID spreadUID = kInvalidUID;
+		{
+			InterfacePtr<IHierarchy> pageHier(db, pageUID, UseDefaultIID());
+			if (pageHier != nil)
+				spreadUID = pageHier->GetSpreadUID();
+		}
+		if (spreadUID == kInvalidUID)
+		{
+			line.Append("FAILED - the page has no spread");
+			Say(out, line);
+		}
+		else
+		{
+			list.Append(spreadUID);
+			list.Append(pageUID);
+			{
+				InterfacePtr<ISpread> spread;
+				int32 pgPos = -1;
+				if (PagePosition(db, pageUID, spread, pgPos))
+					spread->GetItemsOnPage(pgPos, &list, kFalse, kFalse, kTrue);
+			}
+			const bool16 was = KCMDrawEventHandler::sPrintMarks;
+			KCMMemXferBytes plain;
+			KCMMemXferBytes marked;
+			PMString why;
+			KCMDrawEventHandler::sPrintMarks = kFalse;
+			const bool16 okPlain = ExportToMemory(db, list, plain, why);
+			KCMDrawEventHandler::sPrintMarks = kTrue;
+			const bool16 okMarked = ExportToMemory(db, list, marked, why);
+			KCMDrawEventHandler::sPrintMarks = was;
+
+			if (!okPlain || !okMarked)
+			{
+				line.Append("FAILED - ");
+				line.Append(why);
+			}
+			else
+			{
+				const int32 a = static_cast<int32>(plain.GetSize());
+				const int32 b = static_cast<int32>(marked.GetSize());
+				line.AppendNumber(list.Length());
+				line.Append(" in the list, marks off ");
+				line.AppendNumber(a);
+				line.Append(" bytes, marks on ");
+				line.AppendNumber(b);
+				line.Append(b == a ? " - IDENTICAL, the spread did not bring them"
+								   : " - DIFFERENT, THE SPREAD BROUGHT THE MARKS");
+			}
+			Say(out, line);
 		}
 	}
 

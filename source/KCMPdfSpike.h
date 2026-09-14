@@ -26,6 +26,14 @@
 //      2. does IID_IDRWEVTHANDLER on that same boss carry the comparison marks into it,
 //      3. what does ImportThis hand back, and where does the item land.
 //
+//  ★★★WHAT THE RUNS ANSWERED (2026-09-14), because these lines are what the report is built on:
+//      1. The page UID alone writes an EMPTY sheet; the page UID **with** the items writes the
+//         page at its own size (595x841) - which is what kCropToMedia buys today, without a file.
+//      2. YES, ONCE THE SPREAD IS IN THE LIST. The marks are drawn once per SPREAD
+//         (KCMRingAdornment.cpp:498-504 turns back for every iShape that is not one), and a list
+//         of items has no spread in it. Add the spread: +3,031 bytes with sPrintMarks on.
+//      3. A page item with NO PARENT - the caller places it.
+//
 //  ★THE WAY IN is the script method app.kcmProbePdfRoute() (KCM.fr, KCMScriptProvider.cpp),
 //    which returns the whole reading as one string, a line per step.
 //  ⚠IT READS THE ACTIVE DOCUMENT AND WRITES NOTHING TO IT. What it imports goes into a
