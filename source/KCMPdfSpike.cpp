@@ -60,6 +60,8 @@
 #include "OpenPlaceID.h"			// kImportProviderService - the service every import filter registers under
 #include "PersistUtils.h"			// ::CreateObject - S16 builds its own unopened stream
 #include "ShuksanID.h"				// kMemStreamWriteBoss
+#include "SaveBackID.h"				// ★S23 - kSaveBack*PolicyBoss: SaveBack IS the IDML filter
+#include "SnippetID.h"				// S23 - kDocElementImportBoss / kSnippetImportValidationBoss
 #include "PDFID.h"					// kPDFExportItemsCmdBoss / IID_IPDFCLIPBOARDEXPORTPREFS / IID_IUSEPROGRESSINDICATOR
 #include "PMFlavorTypes.h"			// kPDFExternalFlavor / kPageItemFlavor
 #include "PreferenceUtils.h"		// ::QuerySessionPreferences
@@ -1470,30 +1472,59 @@ bool16 FindSubtree(const char* d, uint32 len, const char* open, const char* clos
 	return kFalse;
 }
 
-/** ExportINX with one element as the root - the call S17.8 measured, in a form both callers use. */
-bool16 ExportElementAsInx(InterfacePtr<IDOMElement>& element, KCMMemXferBytes& into)
+/** ExportINX with one element as the root AND A NAMED POLICY.
+    ★The policy is a parameter because S23 asks the same question of the IDML policy
+    (kSaveBackExportPolicyBoss) that S17.8 asked of the action one - and "the same call with one
+    thing changed" is the only shape in which the two answers can be compared. */
+bool16 ExportElementAsInxWith(InterfacePtr<IDOMElement>& element, ClassID policyBoss,
+                              KCMMemXferBytes& into, ErrorCode& err, PMString* why)
 {
+	err = kFailure;
 	if (element == nil)
+	{
+		if (why != nil) why->Append("no element");
 		return kFalse;
+	}
 	ISession* const session = GetExecutionContextSession();
 	InterfacePtr<IINXManager> inx(session != nil ? session->QueryINXManager() : nil);
-	InterfacePtr<IPMUnknown> holder(
-		(IPMUnknown*)::CreateObject(kActionExportPolicyBoss, IID_IINXEXPORTPOLICY));
-	if (inx == nil || holder == nil)
+	// ⚠IINXExportPolicy is FORWARD-DECLARED ONLY in the SDK, so the object is received as
+	//   IPMUnknown and C-cast - the product's own InCopyImportProvider.cpp:413 does the same.
+	InterfacePtr<IPMUnknown> holder((IPMUnknown*)::CreateObject(policyBoss, IID_IINXEXPORTPOLICY));
+	if (inx == nil)
+	{
+		if (why != nil) why->Append("no IINXManager");
 		return kFalse;
+	}
+	if (holder == nil)
+	{
+		// ★A POLICY THAT CANNOT BE MADE IS A FINDING, not an error: it says this boss does not
+		//   carry IID_IINXEXPORTPOLICY at all, which is half the question S23 is asking.
+		if (why != nil) why->Append("★the boss does not carry IID_IINXEXPORTPOLICY");
+		return kFalse;
+	}
 	IINXExportPolicy* const policy = (IINXExportPolicy*)holder.get();
 	InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamWrite(&into, kFalse, kFalse));
 	if (stream == nil)
+	{
+		if (why != nil) why->Append("no memory stream");
 		return kFalse;
+	}
 	IDOMElement::ElementList roots;
 	roots.push_back(element);
 	inx->BeginExportSession();
 	element->Reset();
-	const ErrorCode err = inx->ExportINX(roots, policy, stream, kSuppressUI);
+	err = inx->ExportINX(roots, policy, stream, kSuppressUI);
 	element->Reset();
 	inx->EndExportSession();
 	stream->Close();
 	return (err == kSuccess) ? kTrue : kFalse;
+}
+
+/** ExportINX with one element as the root - the call S17.8 measured, in a form both callers use. */
+bool16 ExportElementAsInx(InterfacePtr<IDOMElement>& element, KCMMemXferBytes& into)
+{
+	ErrorCode err = kFailure;
+	return ExportElementAsInxWith(element, kActionExportPolicyBoss, into, err, nil);
 }
 
 /** ★★★P2/P3 - BUILD AN IDML PART OURSELVES, out of what ExportINX gives.
@@ -2807,6 +2838,238 @@ void MinimalIdmlThroughAPipe(IDataBase* db, PMString& out)
 	else
 		after.Append("the bytes could not be written out");
 	Say(out, after);
+}
+
+//========================================================================================
+//  ★★★S23 - IS THERE AN "ImportIDML" AFTER ALL?
+//
+//  THE USER'S QUESTION (2026-09-14): "does it have to be ImportINX? is ImportIDML impossible?"
+//
+//  ⚠★★★THE ANSWER I NEARLY GAVE WAS WRONG, AND HOW IT WAS WRONG IS THE POINT. There is no function
+//    called ImportIDML - measured, 0 hits in the whole SDK - and I read that as "IDML has no import
+//    door". But the door is not a function name. It is a POLICY, and there is a whole family:
+//        kSaveBackImportPolicyBoss / kSaveBackExportPolicyBoss / kSaveBackImportValidationBoss
+//    I had dismissed those as InCopy's, on the evidence that they are declared in SaveBackID.h.
+//    **That is reasoning from where a declaration SITS, which is not evidence at all.** The
+//    plug-in itself - Plug-Ins/Filters/SaveBack.apln - carries the strings "InDesignMarkup" and
+//    "AdobeConvertToIDMLService". SaveBack IS the IDML filter.
+//
+//  ⇒ THE REAL QUESTION: what do the IDML policies do when handed to the INX manager?
+//    - kSaveBackExportPolicyBoss has NEVER BEEN MEASURED. The 2026-09-09 sweep recorded
+//      kActionExportPolicyBoss and kPreflightProfileExportPolicyBoss as the two that worked out of
+//      fourteen; this one appears in the record neither way.
+//    - kSaveBackImportPolicyBoss HAS been measured, once, and took InDesign down - with nothing
+//      set on it. ★"It crashed when used wrong" is not "it cannot be used".
+//
+//  ★THIS STEP ONLY READS. It exports to memory and validates bytes. It creates no document,
+//   changes nothing, and DOES NOT CALL THE IMPORT POLICY - the one with a crash to its name. That
+//   is a separate step, to be armed deliberately once this one has said whether it is worth it.
+//
+//  ⛔★★★MEASURED, AND THE ANSWER IS "IT HANGS" (2026-09-14 22:41, first run).
+//    ExportINX with kSaveBackExportPolicyBoss NEVER COMES BACK. The trace's last line is
+//    "S23.2b ... never measured before" with no "came back" behind it.
+//      - not a crash: the process stayed alive, Responding=False, and only TerminateProcess ended it
+//      - not a hidden dialog: the window list carried NO #32770 at all
+//      - and the boss really does carry the interface (S23.1: all seven YES)
+//    ⇒ **The IDML policies are real, and they cannot be driven from outside.** Whatever SaveBack
+//    sets on one before use, this code does not have - exactly as kSaveBackImportPolicyBoss could
+//    not be driven on 2026-09-12. The pattern is now TWICE, on both halves, so read it as the rule.
+//    ⚠It is "we do not know how to hand it over", not "it cannot work" - but the inside is not
+//      public, so there is nothing left to guess FROM. Do not spend another run guessing.
+//
+//  ⚠★★★AND THE PROCESS LESSON, which cost the user a forced quit: THIS ROW HAD NO SWITCH.
+//    A measurement whose subject has a crash to its name must be OFF BY DEFAULT - the same rule
+//    kProbeTheGate is already written down for, three hundred lines up this very file. A comment
+//    warning is not enough: the only reader is me, before the run, and that is not where the
+//    accident happens.
+//========================================================================================
+
+/** ⛔OFF: ExportINX with the IDML policy hangs InDesign (above). Turn this on only to re-measure,
+    and only with nothing of the user's open - getting out needs TerminateProcess. */
+static const bool16 kProbeTheIdmlPolicy = kFalse;
+
+/** What came out of an ExportINX, in the terms that separate an INX from an IDML designmap.
+    ★Counted rather than eyeballed, and ALL of them counted every time: the first version of S17.8
+    stopped at the first thing it recognised and reported "the whole document" for a fragment. */
+void DescribeInxBytes(const KCMMemXferBytes& bytes, PMString& into)
+{
+	const char* const d = bytes.GetData();
+	const uint32 n = bytes.GetSize();
+	if (d == nil || n == 0)
+	{
+		into.Append("0 B");
+		return;
+	}
+	into.AppendNumber(static_cast<int32>(n));
+	into.Append(" B, root <");
+	FirstElementName(d, n, into);
+	into.Append(">, PI ");
+	into.Append(CountIn(d, n, "type=\"document\"") > 0 ? "type=document"
+	          : CountIn(d, n, "type=\"action\"") > 0 ? "type=action" : "(neither)");
+	into.Append(", idPkg refs ");
+	into.AppendNumber(CountIn(d, n, "<idPkg:"));
+	into.Append(", xmlns:idPkg ");
+	into.AppendNumber(CountIn(d, n, "xmlns:idPkg"));
+	into.Append(", StoryList ");
+	into.AppendNumber(CountIn(d, n, "StoryList="));
+	into.Append(", <Story ");
+	into.AppendNumber(CountIn(d, n, "<Story "));
+	into.Append(", <Spread ");
+	into.AppendNumber(CountIn(d, n, "<Spread "));
+}
+
+void IdmlPolicyProbe(IDataBase* db, PMString& out)
+{
+	InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
+	InterfacePtr<IDOMElement> docElement(doc, UseDefaultIID());
+	if (docElement == nil)
+	{
+		Say(out, "S23: SKIPPED - the document has no IDOMElement");
+		return;
+	}
+	ISession* const session = GetExecutionContextSession();
+	InterfacePtr<IINXManager> inx(session != nil ? session->QueryINXManager() : nil);
+
+	// ---- S23.1 the stock check: which boss carries which policy interface -------------------
+	// ★The cheapest question first, and it can already refute the whole idea: a boss that does not
+	//   carry IID_IINXEXPORTPOLICY cannot be an export policy whatever its name says.
+	Trace("S23.1 the policy stock check");
+	{
+		PMString line(Ascii("S23.1 what the policy bosses actually carry: "));
+		struct Stock { ClassID boss; PMIID iid; const char* what; };
+		const Stock stock[] = {
+			{ kActionExportPolicyBoss,       IID_IINXEXPORTPOLICY,     "action/export (the known-good control)" },
+			{ kSaveBackExportPolicyBoss,     IID_IINXEXPORTPOLICY,     "★IDML/export"       },
+			{ kSaveBackImportPolicyBoss,     IID_IINXIMPORTPOLICY,     "★IDML/import"       },
+			{ kSaveBackImportValidationBoss, IID_IINXIMPORTVALIDATION, "★IDML/validation"   },
+			{ kActionImportValidationBoss,   IID_IINXIMPORTVALIDATION, "action/validation"   },
+			{ kSnippetImportValidationBoss,  IID_IINXIMPORTVALIDATION, "snippet/validation"  },
+			{ kDocElementImportBoss,         IID_IINXIMPORTPOLICY,     "docElement/import (what KCM uses)" },
+		};
+		for (int32 i = 0; i < static_cast<int32>(sizeof(stock) / sizeof(stock[0])); ++i)
+		{
+			InterfacePtr<IPMUnknown> got((IPMUnknown*)::CreateObject(stock[i].boss, stock[i].iid));
+			line.Append("[");
+			line.Append(Ascii(stock[i].what));
+			line.Append(got != nil ? " YES] " : " ★no] ");
+		}
+		Say(out, line);
+	}
+
+	// ---- S23.2 the same ExportINX with ONE thing changed: the policy -------------------------
+	Trace("S23.2 ExportINX with the action policy (the control)");
+	KCMMemXferBytes actionBytes;
+	KCMMemXferBytes idmlBytes;
+	{
+		PMString line(Ascii("S23.2 ExportINX, one thing changed: "));
+		ErrorCode aErr = kFailure;
+		PMString aWhy;
+		ExportElementAsInxWith(docElement, kActionExportPolicyBoss, actionBytes, aErr, &aWhy);
+		line.Append("[action err ");
+		line.AppendNumber(static_cast<int32>(aErr));
+		line.Append(": ");
+		if (aWhy.CharCount() > 0)
+			line.Append(aWhy);
+		else
+			DescribeInxBytes(actionBytes, line);
+		line.Append("] ");
+
+		if (kProbeTheIdmlPolicy)
+		{
+			// ⚠ASCII only in this literal: U+26D4 is not in code page 932 and the build refuses it
+			//   (C4566, promoted to an error). ★The ones that are IN 932 - like the star - compile
+			//   and garble at RUN time instead, which is the worse half of the same trap.
+			Trace("S23.2b ExportINX with the IDML policy - THIS IS THE ROW THAT HANGS");
+			ErrorCode iErr = kFailure;
+			PMString iWhy;
+			ExportElementAsInxWith(docElement, kSaveBackExportPolicyBoss, idmlBytes, iErr, &iWhy);
+			Trace("S23.2c the IDML policy came back");
+			line.Append("[★IDML err ");
+			line.AppendNumber(static_cast<int32>(iErr));
+			line.Append(": ");
+			if (iWhy.CharCount() > 0)
+				line.Append(iWhy);
+			else
+				DescribeInxBytes(idmlBytes, line);
+			line.Append("]");
+		}
+		else
+		{
+			line.Append("[★IDML policy: NOT RUN - measured 2026-09-14 and it HANGS InDesign "
+			            "(no crash, no dialog, TerminateProcess to get out). kProbeTheIdmlPolicy]");
+		}
+		Say(out, line);
+
+		// ★Kept for the eye: if the IDML policy writes something DIFFERENT, the difference is the
+		//   whole finding, and no count decided in advance will show what it is.
+		if (idmlBytes.GetSize() > 0)
+		{
+			DropForTheEye(idmlBytes, L"kcm-spike-idml-policy.xml");
+			Say(out, "S23.2 the IDML policy's own output -> %TEMP%\\kcm-spike-idml-policy.xml");
+		}
+	}
+
+	// ---- S23.3 which validation accepts which XML -------------------------------------------
+	// ★A 3x2 table rather than one question, because "the IDML validation accepts the designmap"
+	//   means nothing until it is known what the OTHER two say about the same bytes.
+	Trace("S23.3 ValidateINX, three validations against two XMLs");
+	{
+		std::string xmlB;
+		int32 rawInx = 0;
+		PMString whyB;
+		const bool16 haveB = BuildDesignmapXml(db, xmlB, rawInx, whyB);
+		KCMMemXferBytes mapB;
+		if (haveB)
+			mapB.Write(const_cast<char*>(xmlB.c_str()), static_cast<uint32>(xmlB.size()));
+
+		struct Val { ClassID boss; const char* what; };
+		const Val vals[] = {
+			{ kActionImportValidationBoss,   "action"  },
+			{ kSnippetImportValidationBoss,  "snippet" },
+			{ kSaveBackImportValidationBoss, "★IDML"  },
+		};
+		for (int32 side = 0; side < 2; ++side)
+		{
+			PMString line(Ascii(side == 0 ? "S23.3 ValidateINX on the INX (type=action): "
+			                              : "S23.3 ValidateINX on the designmap (type=document): "));
+			KCMMemXferBytes& src = (side == 0) ? actionBytes : mapB;
+			if (src.GetSize() == 0)
+			{
+				line.Append("nothing to validate");
+				if (side == 1 && !haveB) { line.Append(" - "); line.Append(whyB); }
+				Say(out, line);
+				continue;
+			}
+			for (int32 v = 0; v < 3; ++v)
+			{
+				line.Append("[");
+				line.Append(Ascii(vals[v].what));
+				line.Append(" ");
+				InterfacePtr<IPMUnknown> holder(
+					(IPMUnknown*)::CreateObject(vals[v].boss, IID_IINXIMPORTVALIDATION));
+				if (holder == nil || inx == nil)
+				{
+					line.Append("could not be made] ");
+					continue;
+				}
+				// ⚠THE POSITION LIVES IN THE XferBytes, NOT IN THE STREAM: after a write - or
+				//   after the previous validation read it - it is sitting at the end, and the next
+				//   reader gets nothing. Every row rewinds for itself.
+				src.Seek(0, kSeekFromStart);
+				InterfacePtr<IPMStream> s(StreamUtil::CreateMemoryStreamRead(&src, kFalse));
+				if (s == nil)
+				{
+					line.Append("no read stream] ");
+					continue;
+				}
+				const ErrorCode e = inx->ValidateINX(s, (IINXImportValidation*)holder.get());
+				s->Close();
+				line.AppendNumber(static_cast<int32>(e));
+				line.Append(e == kSuccess ? " ★ACCEPTS] " : "] ");
+			}
+			Say(out, line);
+		}
+	}
 }
 
 }	// namespace
@@ -4180,6 +4443,12 @@ void KCMProbePdfRoute(PMString& out)
 	// the pipe cannot help losing, so that a whole IDML exists with no file anywhere in its making.
 	Trace("S22 begin - the minimal IDML through a pipe, repaired");
 	MinimalIdmlThroughAPipe(db, out);
+
+	// ---- S23: is there an ImportIDML after all? ----------------------------------------------
+	// The user asked, and the honest answer needed a measurement rather than a grep for a name.
+	// READS ONLY - see the block at the head of IdmlPolicyProbe.
+	Trace("S23 begin - the IDML policies");
+	IdmlPolicyProbe(db, out);
 
 	Trace("=== run ends, every step came back ===");
 }
