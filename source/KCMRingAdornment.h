@@ -175,4 +175,32 @@ void KCMForgetStoryHolders(IDataBase* db);
 //   Reading the list itself is what makes this exact.
 void KCMRevalidateItemXPList(IDataBase* db);
 
+//========================================================================================
+// ★★★JOINING THE TRANSPARENCY LIST FOR AN EXPORT THAT NOBODY ANNOUNCES (2026-09-14)
+//
+//  A PDF export normally tells this plug-in it has begun, through kPDFExportSetupService, and
+//  KCM answers by declaring "there will be transparency here" so that the flattener runs - which
+//  is what resolves the alpha server the marks are painted through.
+//
+//  ⚠**kPDFExportItemsCmdBoss raises no such event.** The Before/After report exports each page
+//    to memory with that command (KCMReportPlace.cpp), so nothing announced the export, nothing
+//    joined the list, the flattener did not run - and the marks came out as SOLID BLOCKS at full
+//    opacity instead of the panel's 25%. The warning that predicted it word for word is at the
+//    head of KCMDrawRingForPrint: "on a page with no transparency at all the alpha server's mask
+//    is never resolved and the result is a solid block."
+//
+//  So the report announces its own exports, with the same two calls the service makes.
+//  @warning **they must be paired**, and Begin leaves any previous db first. Safe on the real
+//    document only because these exports are SYNCHRONOUS: the declaration is up and down inside
+//    one call, so there is no window in which a save could bake it into the .indd (the reasoning
+//    is the same one written out beside kPDFExportSetupService in the .cpp).
+//========================================================================================
+
+/** Announce that an export has begun on `db` - join the transparency list if the marks could be
+	translucent. Leaves whatever db was announced before. */
+void KCMBeginExportOn(IDataBase* db);
+
+/** Announce that this thread's export is over - leave the list. */
+void KCMEndExportOnThisThread();
+
 #endif // __KCMRingAdornment_h__

@@ -2234,6 +2234,22 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	if (printing)
 		sxr = 1.0;
 
+	// ★★★THE REPORT'S IN-MEMORY PAGE EXPORT TAKES THE SCREEN ROUTE, and this is the one place
+	//   that decides it. kPDFExportItemsCmdBoss draws ITEMS: it never flattens a page, so the
+	//   print route's alpha server is never resolved and its fill comes out as A SOLID BLOCK -
+	//   the failure KCMDrawEntryOnPage's own comment describes, and the one the user saw as
+	//   "that looks like 75% when the panel says 25%" (2026-09-14). Declaring the transparency
+	//   does not help here: there is no flattener pass to resolve it in.
+	//   The screen route is an image() blit, which honours the pixels' alpha and the opacity set
+	//   on the port - no flattener needed - so it gives the panel's 25%/75% in the PDF.
+	// ⚠sxr has to be set too: it is the ring THICKNESS as well as the opacity gate
+	//   ((sxr <= 0) blits opaque, for thumbnails), and with no view it is 0.
+	if (sMarksOnPage)
+	{
+		drawMode = kKCMDrawModeScreen;
+		sxr = 1.0;					// the thickness 100% on screen gives, and past the thumbnail gate
+	}
+
 	// The "Check" tick, thumbnail version: a blue tick at the centre of a ticked page's thumbnail.
 	//   Completely independent of the other marks (the rings, the slashes, the Source toggle): this
 	//   spread's db may be the Target or the Source, and if that db has ticks they are drawn. It

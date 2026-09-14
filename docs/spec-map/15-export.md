@@ -34,10 +34,18 @@
   Source のページが別寸法でもそのまま置く。
   - 訂正:
 
-- **REP-05** 作り方＝両側を**一時 PDF** に書き出し（`kPDFExportCmdBoss`・セッションの PDF 設定・見開き OFF・セキュリティ OFF・UI なし・進捗バーなし・
-  書き出し後に開かない）→ 窓なしの新規文書に `kSetPDFPlacePrefsCmdBoss`（ページ番号・Media で切る）＋`SDKLayoutHelper::PlaceFileInFrame` で配置
-  → 見出し・注記はテキストフレーム（左揃えを明示。既定の段落設定が均等配置だったので）→ 報告書を書き出し → 文書を閉じ、一時 PDF を削除、
-  配置設定を元に戻す。
+- **REP-05** 作り方（★★★**2026-09-14 に全面的に変わった＝一時ファイルを1つも作らない**。ユーザー要望「ローカルに一時ファイルをつくらないでほしい」
+  「**ベクターのまま**が最良」）＝**先に**窓なしの報告書文書を作り（`SDKLayoutHelper::CreateDocument`）、**ページ1枚ごとに**
+  `kPDFExportItemsCmdBoss` で**メモリ上の `IPMStream`** へ PDF を書き（`IID_IPMUNKNOWNDATA` に渡す）、
+  `IImportProvider::ImportThis` で報告書にページアイテムとして取り込み、`IHierarchyUtils::AddToHierarchy` でレイヤーに載せ、
+  `ITransformFacade::TransformItems` で枠へ移す（`source/KCMReportPlace.cpp`）。
+  → 見出し・注記はテキストフレーム（左揃えを明示）→ 報告書を書き出し → 文書を閉じる。**消すファイルも、戻す配置設定も無い。**
+  - ★**item list に入れるもの3つ**＝**ページの UID**（これが無いと箱がアイテムの外接になる。入れるとページ寸法＝旧 `kCropToMedia` と同じ）
+    ／**ページ上のアイテム**（中身）／**マスターのアイテム**（`AppendMasterPageItems`。`GetItemsOnPage` は返さない）。
+  - ★**マークが乗る条件**＝`sPrintMarks` に加えて **`sMarksOnPage`**。この書き出しは**アイテムを描きスプレッドを描かない**ので、
+    スプレッドに1回だけ描かれるマークは既定では出ない（`KCMRingAdornment.cpp` の `spread == nil` で return）。
+  - ⚠**その `sMarksOnPage` は描画を SCREEN 経路に倒す**＝アイテム書き出しはフラットナを通らないので、印刷経路のアルファサーバが
+    解決されず**ベタ塗り**になるため。screen 経路は blit なので `sMarkScreenOpacity` を一緒に上げる（でないと不透明で出る）。
   ⚠Task Start の写しは報告書のために**もう一度再水和**する（比較のときの写しは離して閉じてある）。ページの対応は写しのラベルで取れる（第3章 CMP-04）。
   - 訂正:
 
@@ -97,7 +105,11 @@
 - **REP-19** ルビは本文と同じ大きさ（14pt・`kTARubyPointSizeBoss`）の本物のルビで2行、圏点は 0.6 倍の本物の圏点。セルの余白 4pt（`kCellAttr*InsetBoss`）、上の行を持つ行は上の余白を広げる。1列目は 180pt・12pt（⚠長い属性名は折れないので狭いと空欄になる＝`SwatchColorGroupReference` で実測）。
   - 訂正:
 
-- **REP-20** 1P目＝3行を 36pt、**猫の足あと 10 個**（赤・青交互、蛇行、`kKCMPawOutlines` からのスプライン＋報告書文書の RGB スウォッチ＝`KCMReportPaws.cpp`）、最下部に `Exported: YYYY-MM-DD HH:MM:SS`。Before／After の語は **Pixel の各ページの絵の上**（1P目の足には置かない）。
+- **REP-20** 1P目＝3行を 36pt、**猫の足あと**（赤・青交互、蛇行、`kKCMPawOutlines` からのスプライン＋報告書文書の RGB スウォッチ＝`KCMReportPaws.cpp`）、最下部に `Exported: YYYY-MM-DD HH:MM:SS`。Before／After の語は **Pixel の各ページの絵の上**（1P目の足には置かない）。
+  - ★**2026-09-14 改訂＝「ページを横切る」形に**（ユーザー要望「猫の足跡の数をもっと増やして欲しい、**ページからはみ出していい**、ページの端から端まで歩いて行った感じに」）。
+    ①**両端はページの外**（対辺の外側 14%・どの辺を横切るかと、その辺のどこを通るかは毎回ランダム）
+    ②**個数は歩幅で決まる**（`kPawSize` の 1.5〜2.1 倍ごとに1つ・下限14・上限64）＝旧「常に 8〜12 個」をやめた。長く歩けばその分多く残る。
+    ③ページの外に出た足あとは**印刷されないだけ**＝それが「通り抜けた」ように見える理由。
   - 訂正:
 
 - **REP-21** ★**Resources の値に文書の単位を添える**＝`8.503937007874015 (12 Q)`（`KCMResourceUnits.h`）。属性名で振り分け＝`PointSize`／`…FontSize`→文字サイズ単位、`…Weight`→線の単位、`Leading`／`BaselineShift`／`Space*`／`…Indent`／`…Offset`→テキスト単位（J 以外は水平単位）、`Left/RightInset`／`…Gutter`／`…Width`→水平、`Top/BottomInset`／`…Height`→垂直。知らない名前・数でない値・単位が pt のときは添えない。**PDF・パネルの行・パネルの帯の3か所が同じ inline 関数**。

@@ -528,7 +528,18 @@ static void KCMDrawMarksForPage(IShape* iShape, GraphicsData* gd, int32 flags)
 	const PMMatrix spreadToPage = ::InnerToSpreadMatrix(pageGeo).Inverse();
 	gPort->gsave();
 	gPort->concat(spreadToPage);
-	DrawEventData ded(spread, gd, flags);
+	// ★★★kPrinting IS ADDED, and the marks come out at the wrong density without it (measured
+	//   2026-09-14: the report's marks were opaque where the file route's are the panel's 25%,
+	//   and the user saw it at once - "that looks like 75%, when the panel says 25%").
+	//   WHY: this export is kPDFExportItemsCmdBoss, and it does NOT set kPrinting the way
+	//   kPDFExportCmdBoss does. The drawing then reads the flags as "screen", and a screen draw
+	//   with no view gives sxr = 0 - at which point KCMDrawEntryOnPage takes the branch
+	//   `(sxr <= 0) ? 1.0 : screenOpacity` and blits the ring OPAQUE. Printing sets sxr = 1.0,
+	//   which is both the right ring thickness and the right opacity.
+	// ⚠It is a statement of fact rather than a trick: this drawing IS going into output. The one
+	//   other flag that reads it, suppressForPrint, wants sPrintMarks on - which is exactly the
+	//   condition under which anything gets here at all.
+	DrawEventData ded(spread, gd, flags | IShape::kPrinting);
 	KCMDrawEventHandler::DrawSpreadMarks(&ded);
 	gPort->grestore();
 }
@@ -956,7 +967,14 @@ static IDThreading::ThreadLocal<IDataBase*> tl_ExportingDB(nil);
 
 /** Leave the db being exported. Called from `EndExport`, and when a book export moves on to the
 	next document. */
-static void KCMEndExportOnThisThread()
+// ★NOT static since 2026-09-14: the report's in-memory page exports call these two directly.
+//   They do NOT go through kPDFExportSetupService - that service is driven by the PDF export
+//   COMMAND, and kPDFExportItemsCmdBoss does not raise it - so without this pair the document
+//   never joins the transparency list, the flattener never runs, and KCMDrawRingForPrint's
+//   alpha server is never resolved: the marks come out as SOLID BLOCKS at full opacity, which
+//   is exactly what the user saw ("that looks like 75% when the panel says 25%"). The warning
+//   that predicted it is at the head of KCMDrawRingForPrint.
+void KCMEndExportOnThisThread()
 {
 	IDataBase* const db = tl_ExportingDB.Get();
 	if (db == nil)
@@ -971,7 +989,7 @@ static void KCMEndExportOnThisThread()
 
 /** An export has begun, or a book export has moved to another document. Join the list, but only
 	where transparency is going to arise. */
-static void KCMBeginExportOn(IDataBase* db)
+void KCMBeginExportOn(IDataBase* db)
 {
 	// A book's `NewDocument` comes here, so leave the previous chapter's db first.
 	// @warning forget this and every chapter from the second on **leaves the previous chapter's db on

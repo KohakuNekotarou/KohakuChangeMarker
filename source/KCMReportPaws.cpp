@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  KCMReportPaws.cpp -- see the header.
 //
@@ -191,26 +191,46 @@ void KCMReportDrawPawTrail(IDataBase* reportDB, const UIDRef& layer, const PMRec
 	// else - the paw itself, the two colours alternating, the toes facing the way the cat goes -
 	// stays as it was.
 	Dice dice(static_cast<uint32>(::time(nil)) ^ static_cast<uint32>(::GetTickCount64()));
-	const PMRect area(page.Left() + page.Width() * 0.06, page.Top() + page.Height() * 0.06,
-					  page.Right() - page.Width() * 0.06, page.Bottom() - page.Height() * 0.06);
+
+	// ★★THE WALK CROSSES THE WHOLE PAGE (2026-09-14, the user's ask: "more paw prints please -
+	//   they may run off the page, as though the cat had walked from one edge right across to the
+	//   other"). The two ends are taken OUTSIDE opposite edges, so the trail ENTERS the page and
+	//   LEAVES it instead of starting and stopping inside it. The paws that fall outside are
+	//   simply not printed - and that is what makes it read as a cat passing through rather than
+	//   a cat that appeared, walked a little and vanished.
+	// ⚠The ends still wander: where the trail crosses each edge is random, so the walk is
+	//   diagonal more often than square, which is the "playful" part of the earlier ask (2026-09-13).
+	const PMReal outX = page.Width() * PMReal(0.14);
+	const PMReal outY = page.Height() * PMReal(0.14);
 	PMReal x0 = 0, y0 = 0, x1 = 0, y1 = 0;
-	double dx = 0, dy = 0, len = 0;
-	const double kMinWalk = ::ToDouble(area.Height()) * 0.9;		// at least most of the free height
-	for (int32 attempt = 0; attempt < 32; ++attempt)
 	{
-		x0 = area.Left() + area.Width()  * dice.Unit();
-		y0 = area.Top()  + area.Height() * dice.Unit();
-		x1 = area.Left() + area.Width()  * dice.Unit();
-		y1 = area.Top()  + area.Height() * dice.Unit();
-		dx = ::ToDouble(x1 - x0);
-		dy = ::ToDouble(y1 - y0);
-		len = std::sqrt(dx * dx + dy * dy);
-		if (len >= kMinWalk)
-			break;
+		const PMReal anyX0 = page.Left() + page.Width()  * dice.Unit();
+		const PMReal anyX1 = page.Left() + page.Width()  * dice.Unit();
+		const PMReal anyY0 = page.Top()  + page.Height() * dice.Unit();
+		const PMReal anyY1 = page.Top()  + page.Height() * dice.Unit();
+		switch (dice.Below(4))
+		{
+			case 0:  x0 = page.Left() - outX;   y0 = anyY0; x1 = page.Right() + outX;  y1 = anyY1; break;	// left to right
+			case 1:  x0 = page.Right() + outX;  y0 = anyY0; x1 = page.Left() - outX;   y1 = anyY1; break;	// right to left
+			case 2:  x0 = anyX0; y0 = page.Top() - outY;    x1 = anyX1; y1 = page.Bottom() + outY; break;	// top to bottom
+			default: x0 = anyX0; y0 = page.Bottom() + outY; x1 = anyX1; y1 = page.Top() - outY;    break;	// bottom to top
+		}
 	}
+	const double dx = ::ToDouble(x1 - x0);
+	const double dy = ::ToDouble(y1 - y0);
+	const double len = std::sqrt(dx * dx + dy * dy);
 	if (len <= 0.0)
 		return;
-	const int32  pawCount = 8 + dice.Below(5);							// 8 .. 12 paws
+
+	// ★A STRIDE, NOT A COUNT. The trail used to lay down 8..12 paws however far it went, so a long
+	//   walk came out as a sparse dotted line. Spacing them by a stride means a longer crossing
+	//   simply has more paws in it - which is how a walk looks.
+	// ⚠The ceiling is not decoration: every paw is five closed splines, and this runs while the
+	//   report is being built.
+	const double stride = ::ToDouble(kPawSize) * (1.5 + 0.6 * dice.Unit());
+	int32 pawCount = static_cast<int32>(len / stride);
+	if (pawCount < 14) pawCount = 14;
+	if (pawCount > 64) pawCount = 64;
 	const double waves    = 0.8 + 1.4 * dice.Unit();						// how many times it winds
 	const double waveAmp  = ::ToDouble(kPawSize) * (0.5 + 0.9 * dice.Unit());	// how far
 	const double phase    = dice.Unit() * 2.0 * 3.14159265358979323846;		// where the winding starts

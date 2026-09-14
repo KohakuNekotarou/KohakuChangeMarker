@@ -88,6 +88,9 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReport.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReportPlace.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReportTable.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
