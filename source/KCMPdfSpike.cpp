@@ -1128,6 +1128,66 @@ void KCMProbePdfRoute(PMString& out)
 		}
 	}
 
+	// ---- S11: THE ANSWER THE REPORT NEEDS - a page-sized box WITH the marks ------------------
+	// ★★★Everything before this measured a trade-off: the page gives the right box and no marks
+	//   (S6, S8), the spread gives the marks and the wrong box (S7, S10 - two pages wide on a
+	//   facing-pages document, and the report wants one changed page). KCMDrawEventHandler::
+	//   sMarksOnPage removes the trade-off by letting the adornment draw when it is handed a
+	//   PAGE, in the page's own coordinates (KCMRingAdornment.cpp, KCMDrawMarksForPage).
+	// ⇒ If the signal shows here, the report can be built on this and nothing else.
+	Trace("S11 begin - page + items with sMarksOnPage");
+	{
+		PMString line(Ascii("S11 page + items with sMarksOnPage on: "));
+		UIDList list(db);
+		list.Append(pageUID);
+		{
+			InterfacePtr<ISpread> spread;
+			int32 pgPos = -1;
+			if (PagePosition(db, pageUID, spread, pgPos))
+				spread->GetItemsOnPage(pgPos, &list, kFalse, kFalse, kTrue);
+		}
+		const bool16 wasOnPage = KCMDrawEventHandler::sMarksOnPage;
+		KCMDrawEventHandler::sMarksOnPage = kTrue;
+		KCMMemXferBytes onBytes;
+		MarkTest(db, list, line, onBytes);		// takes care of sPrintMarks itself
+		KCMDrawEventHandler::sMarksOnPage = wasOnPage;
+		if (onBytes.GetSize() > 0)
+		{
+			line.Append(" -> %TEMP%\\kcm-spike-page-marks.pdf (LOOK AT IT)");
+			DropForTheEye(onBytes, L"kcm-spike-page-marks.pdf");
+			// And the box, because the whole point of this route is that it stays page-sized.
+			SDKLayoutHelper helper;
+			UIDRef temp = helper.CreateDocument(kSuppressUI, PMReal(600), PMReal(800), 1, 1, 0);
+			if (temp != UIDRef::gNull)
+			{
+				{
+					InterfacePtr<IPMStream> read(StreamUtil::CreateMemoryStreamRead(&onBytes, kFalse, kFalse));
+					if (read != nil && provider != nil)
+					{
+						UIDRef imported = UIDRef::gNull;
+						provider->ImportThis(temp.GetDataBase(), read, kSuppressUI, &imported);
+						read->Close();
+						if (imported != UIDRef::gNull)
+						{
+							InterfacePtr<IGeometry> geo(imported, UseDefaultIID());
+							if (geo != nil)
+							{
+								const PMRect box = geo->GetStrokeBoundingBox();
+								line.Append(", box ");
+								line.AppendNumber(static_cast<int32>(::ToDouble(box.Width())));
+								line.Append(" x ");
+								line.AppendNumber(static_cast<int32>(::ToDouble(box.Height())));
+							}
+						}
+					}
+				}
+				KCMMarkRehydratedClean(temp.GetDataBase());
+				KCMCloseRehydrated(temp, kFalse /*now*/);
+			}
+		}
+		Say(out, line);
+	}
+
 	Trace("=== run ends, every step came back ===");
 }
 

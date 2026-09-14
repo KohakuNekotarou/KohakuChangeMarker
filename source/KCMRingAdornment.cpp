@@ -46,6 +46,7 @@
 #include "IHierarchy.h"					// two steps up from a column: the multi-column frame, then the item that holds the story
 #include "ITOPSplineData.h"				// text on a path: from the text-on-path spline item to the main spline the reader sees
 #include "IGeometry.h"					// the item's own box, the label's place
+#include "SpreadID.h"					// kPageBoss - telling a PAGE from any other page item (the page route)
 #include "IGraphicsPort.h"				// selectfont / show / the stroke settings of the outline
 #include "GraphicTypes.h"				// kPMRoundJoin / kPMRoundCap
 #include "IControlView.h"				// GetContentToWindowMatrix - the zoom, for a label of fixed pixel size
@@ -481,6 +482,57 @@ PMRect KCMRingAdornmentShape::GetPaintedAdornmentBounds(IShape* iShape, Adornmen
 	return widened;
 }
 
+/** ★★★THE PAGE ROUTE (2026-09-14), and the whole of it is a change of coordinates.
+
+	The marks are drawn once per SPREAD, so DrawAdornment below turns back whenever what it is
+	handed is not one. That is right for the screen and for an ordinary export - the spread IS
+	drawn there - and it is why nothing reached a PDF made by kPDFExportItemsCmdBoss, which draws
+	THE ITEMS IT IS HANDED and never draws the spread (measured 2026-09-14: byte-identical with
+	sPrintMarks on and off; handing it the spread instead brought them, +3,031 bytes).
+
+	Handing it the spread is not the answer for the Before/After report, though: the box then is
+	the whole spread, **two pages wide on a facing-pages document**, and what the report wants is
+	one changed PAGE (the user, the same day). So the marks have to come to the page.
+
+	★A PAGE IS A PAGE ITEM (kPageBoss), so the global adornment is handed to it already - what was
+	  missing was the willingness to draw. All that stands in the way is the coordinate system:
+	  the drawing is written in SPREAD coordinates (it takes a page's box in spread coordinates
+	  and draws it), while the port, drawing a page, is in that page's inner coordinates.
+	  InnerToSpreadMatrix(page) takes page-inner -> spread, so its INVERSE turns the drawing's
+	  coordinates into the port's. Wrapped in gsave/grestore so nothing after this sees it.
+
+	@warning **guarded by sMarksOnPage, which is off by default.** In ordinary drawing the spread
+	  is drawn too, so leaving this on would draw every mark twice. */
+static void KCMDrawMarksForPage(IShape* iShape, GraphicsData* gd, int32 flags)
+{
+	IDataBase* const db = ::GetDataBase(iShape);
+	if (db == nil)
+		return;
+	InterfacePtr<IHierarchy> pageHier(iShape, UseDefaultIID());
+	InterfacePtr<IGeometry> pageGeo(iShape, UseDefaultIID());
+	if (pageHier == nil || pageGeo == nil)
+		return;
+	const UID spreadUID = pageHier->GetSpreadUID();
+	if (spreadUID == kInvalidUID)
+		return;
+	// The drawing reads an ISpread and an IDataBase off changedBy and nothing else (the comment
+	// at the call site below), so the spread's own boss is what it is given - while the port,
+	// and therefore the actual drawing, stays on the page.
+	InterfacePtr<ISpread> spread(db, spreadUID, UseDefaultIID());
+	if (spread == nil)
+		return;
+	IGraphicsPort* const gPort = gd->GetGraphicsPort();
+	if (gPort == nil)
+		return;
+
+	const PMMatrix spreadToPage = ::InnerToSpreadMatrix(pageGeo).Inverse();
+	gPort->gsave();
+	gPort->concat(spreadToPage);
+	DrawEventData ded(spread, gd, flags);
+	KCMDrawEventHandler::DrawSpreadMarks(&ded);
+	gPort->grestore();
+}
+
 void KCMRingAdornmentShape::DrawAdornment(IShape* iShape, AdornmentDrawOrder drawOrder,
 											GraphicsData* gd, int32 flags)
 {
@@ -498,6 +550,19 @@ void KCMRingAdornmentShape::DrawAdornment(IShape* iShape, AdornmentDrawOrder dra
 	InterfacePtr<ISpread> spread(iShape, UseDefaultIID());
 	if (spread == nil)
 	{
+		// ★THE PAGE ROUTE (2026-09-14), off unless something asked for it. See
+		//   KCMDrawMarksForPage above: an export that draws items and never draws the spread
+		//   would otherwise carry no marks at all, and handing it the spread instead costs the
+		//   page-sized box the report is built on.
+		// ⚠Asked by ClassID rather than by querying an interface: there is no IPage.h in the SDK,
+		//   and a page's distinguishing interfaces (IMargins, IColumns, IMasterPage) are the kind
+		//   of thing another boss could carry. The class is the question being asked.
+		if (KCMDrawEventHandler::sMarksOnPage)
+		{
+			IDataBase* const shapeDB = ::GetDataBase(iShape);
+			if (shapeDB != nil && shapeDB->GetClass(::GetUID(iShape)) == kPageBoss)
+				KCMDrawMarksForPage(iShape, gd, flags);
+		}
 		KCMDrawStoryIdLabel(iShape, gd, flags);
 		return;
 	}

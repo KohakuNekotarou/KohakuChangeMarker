@@ -198,6 +198,20 @@ public:
 	// around the page) and off again. Whoever flips it calls InvalidateRingCache() on both sides,
 	// because the ring images are cached per entry and rebuilt only when the radius changes.
 	static bool16 sRingFrameOff;
+	// ★★★While kTrue, the marks are drawn when a PAGE is handed to the adornment, not only when
+	// the spread is (KCMRingAdornment.cpp). Off by default, and it has to be: in ordinary drawing
+	// the spread IS drawn, so leaving this on would draw every mark TWICE.
+	//
+	// WHY IT EXISTS (2026-09-14). kPDFExportItemsCmdBoss - the command that writes a PDF into a
+	// stream instead of a file - draws THE ITEMS IT IS HANDED and never draws the spread, so the
+	// adornment turns back at its `spread == nil` line and no mark reaches the PDF (measured:
+	// byte-identical with sPrintMarks on and off). Handing it the spread instead does bring them,
+	// but then the box is the whole spread - two pages wide on a facing-pages document, and the
+	// report wants one changed PAGE. ⇒ **The marks have to come to the page.**
+	// ★A page IS a page item (kPageBoss), so the global adornment is already being handed to it;
+	//   what was missing was the willingness to draw. The page's own coordinates are not the
+	//   spread's, so the drawing is wrapped in the inverse of InnerToSpreadMatrix.
+	static bool16 sMarksOnPage;
 	// kTrue for the length of the Before/After report's two page exports (KCMReport.cpp), Before
 	// and After alike. Read by the story ID labels (KCMRingAdornment.cpp section 1.5): with their
 	// toggle on they go into the report's After side (the user's call, 2026-09-13; the Before side
