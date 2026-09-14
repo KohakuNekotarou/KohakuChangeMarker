@@ -953,13 +953,23 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	//   one's Cancel stops being readable (KCMProgressBar.h's warning, measured 2026-09-05). So this
 	//   one is created only after those loans have given back - the reader sees at most two bars in
 	//   sequence, never two at a time.
-	// ★Three seconds before it appears, like the comparison's (kKCMProgressBarDelayMs): a report of
-	//   two changed pages is over before anything is drawn.
+	// ★★★**NO DELAY - this one appears at the first Step** (2026-09-14, measured with the user on a
+	//   60-page pair: "the bar came up very late, I want it from the start").
+	//   ⚠**THE THREE-SECOND RULE COULD NOT WORK HERE, and the reason is worth keeping.** The delay is
+	//   judged INSIDE Step - nowhere else - so a bar appears only when the next Step comes round. The
+	//   order below is: Step "Exporting the Before pages" (at 0 ms, too early to show anything), then
+	//   **the Before export itself, which is the heaviest thing in the whole report** (60 pages came
+	//   to 1,086 KB and took the best part of a minute), and only then the next Step. So the bar sat
+	//   invisible through exactly the stretch it was wanted for, and appeared as the work was ending.
+	//   ⇒ A report is never the "over before you see it" case the three seconds exist for: it writes
+	//     two PDFs and builds a document. It shows at once instead.
+	//   ⚠It will not MOVE during that first export - there is no safe point inside ExportPagesToPDF
+	//     to step from - but "something is running, and here is its name" is what was missing.
 	// Units: the Before export, the After export, the report document, one per report page, the two
 	//   tables, and the final write.
 	PMString barTitle(Ascii("Export Before/After PDF Report"));
 	barTitle.SetTranslatable(kFalse);
-	KCMDeferredProgressBar bar(barTitle, static_cast<int32>(pairs.size()) + 5);
+	KCMDeferredProgressBar bar(barTitle, static_cast<int32>(pairs.size()) + 5, 0 /*delayMs: show at once*/);
 	int32 units = 0;
 
 	// ---- the two temporary PDFs ------------------------------------------------------------

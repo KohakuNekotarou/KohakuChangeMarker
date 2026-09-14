@@ -48,13 +48,20 @@ public:
 		@param total how many units the job has; the bar's range is 0..total.
 		@param delayMs how long the job may run before a bar is worth showing.
 
-		★★THE DELAY IS A PARAMETER, AND EVERY CALLER PASSES THE SAME VALUE (2026-09-09). It became
-		one when the Resources comparison wanted a bar with no wait at all, and it stayed one when
-		the user - having seen that bar - asked for the three seconds back, "like the others".
-		⇒ **Three modes, one rule.** A second value would need the kind of reason this one turned
-		out not to have.
-		⚠Zero, if it is ever passed again, still means "at the first Step" rather than "in the
-		  constructor": nothing is drawn until the caller says what it is about to do. */
+		★★THE DELAY IS A PARAMETER, AND THE THREE COMPARISON MODES ALL PASS THE SAME VALUE
+		(2026-09-09). It became one when the Resources comparison wanted a bar with no wait at all,
+		and it stayed one when the user - having seen that bar - asked for the three seconds back,
+		"like the others". ⇒ **Three modes, one rule.**
+		⚠★★**The Before/After report passes 0, and that is not a second rule for the same case - it
+		  is a different case** (2026-09-14, measured with the user on a 60-page pair). The delay is
+		  judged INSIDE Step and nowhere else, so a bar appears only when the NEXT Step comes round.
+		  The report's first Step is at 0 ms and its heaviest single act - exporting the Before pages
+		  - runs immediately after it with no safe point to step from, so the bar stayed invisible
+		  through the whole minute it was wanted for and appeared as the work ended. A report is
+		  never the "over before you see it" case the three seconds exist for: it writes two PDFs and
+		  builds a document.
+		⚠Zero means "at the first Step" rather than "in the constructor": nothing is drawn until the
+		  caller says what it is about to do. */
 	KCMDeferredProgressBar(const PMString& title, int32 total,
 						   int32 delayMs = kKCMProgressBarDelayMs)
 		: fTitle(title), fTotal(total), fDelayMs(delayMs),
