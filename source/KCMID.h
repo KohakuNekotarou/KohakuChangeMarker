@@ -329,6 +329,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKCMOriginStatusPropertyScriptElement, kKCMPref
 //   ⚠Unlike the properties, this needs NO line in KCM.fr's second (INX-only) resource: methods are
 //   not serialised into IDML, so there is nothing to take back out.
 DECLARE_PMID(kScriptInfoIDSpace, kKCMSaveOriginXmlMethodScriptElement, kKCMPrefix + 24)	// app.kcmSaveOriginXml(file) -> 0 written / 1 no origin held / 2 could not create / 3 could not write / 4 bad argument
+DECLARE_PMID(kScriptInfoIDSpace, kKCMSaveOriginIdmlMethodScriptElement, kKCMPrefix + 26)	// ★app.kcmSaveOriginIdml(file) -> THE SAME STATUS NUMBERS as the line above (2026-09-15). Writes the held origin as a REAL IDML package - three entries, because a package whose designmap was never cut is one InDesign opens AND one this plug-in can read back; a cut one carries <idPkg:* src> references, and handing those to ImportINX crashes inside JBX.APLN. ⚠+25 is TAKEN - it is kKCMProbePdfRouteMethodScriptElement, the spike's measuring door, declared further down this file. ★When the spike goes, +25 becomes a grave and is NOT reused (the same rule the old method IDs +1..+12 are under)
 // ★A MEASURING DOOR (2026-09-14), taken from +25 for the same reason +24 was: never from the graves
 //   at +1..+12. app.kcmProbePdfRoute() runs KCMPdfSpike.cpp and returns the reading as a string.
 //   ⚠It is here to answer whether the Before/After report can stop writing temporary PDFs to disk

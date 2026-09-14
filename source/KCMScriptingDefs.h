@@ -188,6 +188,16 @@ enum KCMScriptMethods
 {
 	e_KCMSaveOriginXml = 'eKGs',	// s = save. app.kcmSaveOriginXml(file)
 
+	// ★i = idml. app.kcmSaveOriginIdml(file) - the same origin, wrapped in a real IDML package
+	//   (2026-09-15). The snapshot is already an IDML's designmap, so this only adds the container.
+	//   ⚠'eKGi' was MEASURED free, not assumed: 0 hits in source/ and 0 in the registry ledger,
+	//     with the search validated on 'eKGs', which does exist and was found (4 hits).
+	//   ⚠'eKGd' looked free in source/ but IS in the ledger - the two have to agree, so the ledger
+	//     is the one that decides.
+	//   ⚠Not registered with Adobe yet: it goes in with 'eKGs', 'nKGp' and 'pKGx' at the next
+	//     submission (the unit of registration is the code-and-name pair, so the name is settled now).
+	e_KCMSaveOriginIdml = 'eKGi',
+
 	// ★A MEASURING DOOR, not a feature (2026-09-14). app.kcmProbePdfRoute() runs the experiment
 	// in KCMPdfSpike.cpp on the active document's first page and returns the whole reading as one
 	// string, a line per step. It exists because the Before/After report has to stop writing

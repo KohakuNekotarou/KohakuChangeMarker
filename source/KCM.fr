@@ -736,6 +736,35 @@ resource VersionedScriptElementInfo(10)
 			}
 		}
 
+		// ★★THE SAME ORIGIN, IN A CONTAINER (2026-09-15): app.kcmSaveOriginIdml(file) writes a
+		// REAL IDML package - a file InDesign opens as a document, and an outside tool reads as
+		// an IDML.
+		//
+		// ★Why this is a second method and not a flag on the one above: the two answer different
+		// questions. The XML one hands over the bytes Task Start took, for a diff or a store; this
+		// one hands over a PACKAGE, for anything that expects the file format. A flag would make
+		// the caller say which, in a place where the method name says it better.
+		//
+		// ★THREE ENTRIES, and the reason is not economy: measured 2026-09-14, InDesign opens a
+		// package whose designmap was never cut into parts - and measured 2026-09-15, a designmap
+		// that HAS been cut cannot be read back, because its <idPkg:* src="..."/> references crash
+		// ImportINX inside the plug-in that resolves them. So the uncut package is the one that
+		// travels BOTH ways, which is what "build a diff outside and put it back" needs.
+		//
+		// ⚠Same status numbers as the method above, decided in KCMOrigin.h and restated here.
+		Method
+		{
+			kKCMSaveOriginIdmlMethodScriptElement,
+			e_KCMSaveOriginIdml,
+			"kcm save origin idml",				// name -> app.kcmSaveOriginIdml(file)
+			"Write the held Task Start origin out as a real IDML package.",
+			Int32Type,							// status code
+			"Status: 0 written, 1 no origin is held, 2 the file could not be created, 3 the write failed, 4 the file argument could not be read"
+			{
+				keyAEFile, "file path", "File path to write the IDML package to", FileType, kRequired
+			}
+		}
+
 		// ★A MEASURING DOOR, not a feature (2026-09-14): app.kcmProbePdfRoute() runs the
 		// experiment in KCMPdfSpike.cpp and hands the whole reading back as one string, a line
 		// per step. The question it exists to answer is whether the Before/After report can stop
@@ -785,6 +814,7 @@ resource VersionedScriptElementInfo(10)
 				// app.kcmSaveOriginXml is simply not there, exactly as described above for the
 				// properties: no build error, no warning, ERR:55 at the first touch.
 				Method{ kKCMSaveOriginXmlMethodScriptElement },
+				Method{ kKCMSaveOriginIdmlMethodScriptElement },
 				// The measuring door's half of the same pair (see the Method block above).
 				Method{ kKCMProbePdfRouteMethodScriptElement },
 			}

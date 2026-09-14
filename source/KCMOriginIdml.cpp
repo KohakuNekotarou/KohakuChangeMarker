@@ -9,6 +9,14 @@
 #include <cstring>
 #include <string>
 
+#include "IDFile.h"
+#include "IPMStream.h"
+#include "IUCFPackageUtils.h"		// the IDML container - CreatePackage / CreateStream / ClosePackage
+#include "StreamUtil.h"
+#include "Utils.h"
+#include "WideString.h"
+
+#include "KCMOrigin.h"				// KCMOriginBytes - the held snapshot
 #include "KCMOriginIdml.h"
 #include "KCMResourceBytes.h"
 
@@ -85,6 +93,110 @@ bool16 KCMInxToDesignmap(KCMResourceBytes& bytes, PMString& whyNot)
 		return kFalse;
 	}
 	return kTrue;
+}
+
+//========================================================================================
+//  The container.
+//========================================================================================
+
+namespace
+{
+
+/** ★Copied out of a real IDML on 2026-09-14, byte for byte. Not composed here: the tabs and the
+    empty <rootfile> element are what InDesign's own writer puts there, and a package that differs
+    from it is a package nobody has opened. */
+const char* const kContainerXml =
+	"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+	"<container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\">\n"
+	"\t<rootfiles>\n"
+	"\t\t<rootfile full-path=\"designmap.xml\" media-type=\"text/xml\">\n"
+	"\t\t</rootfile>\n"
+	"\t</rootfiles>\n"
+	"</container>\n";
+
+/** ★Read out of the SDK's own devtools/idmltools sample package, not guessed at. */
+const char* const kIdmlMimeType = "application/vnd.adobe.indesign-idml-package";
+
+/** Write one entry. kFalse when the entry could not be created or the bytes did not all go. */
+bool16 WriteEntry(IUCFPackageUtils::PackageRefPtr ref, const char* name,
+                  const char* data, int32 len)
+{
+	Utils<IUCFPackageUtils> ucf;
+	if (!ucf || data == nil || len <= 0)
+		return kFalse;
+	InterfacePtr<IPMStream> entry(ucf->CreateStream(ref, WideString(name),
+	                                               IUCFPackageUtils::kStandard));
+	if (entry == nil)
+		return kFalse;
+	entry->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(data)), len);
+	const bool16 failed = (entry->GetStreamState() == kStreamStateFailure) ? kTrue : kFalse;
+	entry->Close();
+	return failed ? kFalse : kTrue;
+}
+
+}	// namespace
+
+int32 KCMOriginSaveIdml(const IDFile& file, PMString& whyNot)
+{
+	whyNot.Clear();
+	whyNot.SetTranslatable(kFalse);
+
+	const KCMResourceBytes* const held = KCMOriginBytes();
+	if (held == nil || held->Bytes() == nil || held->Size() == 0)
+	{
+		whyNot = "no Task Start origin is held";
+		return 1;
+	}
+	Utils<IUCFPackageUtils> ucf;
+	if (!ucf)
+	{
+		whyNot = "IUCFPackageUtils is not available";
+		return 2;
+	}
+
+	// ⚠★★★THE STREAM HAS TO BE A **LAZY** FILE STREAM. CreatePackage was handed eleven different
+	//   kinds on 2026-09-14 and accepted exactly one: a file stream that knows its path and has
+	//   NOT been opened yet. A memory stream, UCF's own kUCFWriteStreamBoss, an eager file stream,
+	//   an eager one closed first - all of them came back nil with UCFErrorCode 1.
+	InterfacePtr<IPMStream> zipOut(StreamUtil::CreateFileStreamWriteLazy(file, kOpenOut | kOpenTrunc));
+	if (zipOut == nil)
+	{
+		whyNot = "the file could not be created";
+		return 2;
+	}
+
+	IUCFPackageUtils::UCFErrorCode err = IUCFPackageUtils::kSuccess;
+	IUCFPackageUtils::PackageRefPtr ref =
+		ucf->CreatePackage(zipOut, AString(kIdmlMimeType), kFalse /*no manifest*/, err);
+	if (ref == nil)
+	{
+		whyNot = "the IDML container could not be started, UCFErrorCode ";
+		whyNot.AppendNumber(static_cast<int32>(err));
+		return 2;
+	}
+
+	const bool16 wroteContainer = WriteEntry(ref, "META-INF/container.xml", kContainerXml,
+	                                         static_cast<int32>(std::strlen(kContainerXml)));
+	const bool16 wroteMap = WriteEntry(ref, "designmap.xml", held->Bytes(),
+	                                   static_cast<int32>(held->Size()));
+	// ⚠ClosePackage is what writes the zip's index, so it runs even when an entry failed - a
+	//   package left unclosed would leave a half-written file behind with nothing to say so.
+	const IUCFPackageUtils::UCFErrorCode closed = ucf->ClosePackage(ref);
+	zipOut.reset(nil);					// flush before anybody reads the file back
+
+	if (!wroteContainer || !wroteMap)
+	{
+		whyNot = wroteContainer ? "the designmap entry could not be written"
+		                       : "the container.xml entry could not be written";
+		return 3;
+	}
+	if (closed != IUCFPackageUtils::kSuccess)
+	{
+		whyNot = "the IDML container could not be closed, UCFErrorCode ";
+		whyNot.AppendNumber(static_cast<int32>(closed));
+		return 3;
+	}
+	return 0;
 }
 
 // End, KCMOriginIdml.cpp.

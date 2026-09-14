@@ -135,6 +135,7 @@
 // of the widget-touching functions in it -- a dead dependency. What it reads is
 // KCMGetSessionStatus (declared in KCMModelNotify.h), which is not a reverse dependency.
 #include "KCMOrigin.h"			// KCMOriginStatusLine - the Task Start origin, read from outside
+#include "KCMOriginIdml.h"		// KCMOriginSaveIdml - the same origin, in an IDML container
 #include "KCMPdfSpike.h"		// KCMProbePdfRoute - the measuring door for the report's temp-file question
 #include "KCMResourceSnapshot.h"	// KCMDescribeResourceSnapshot - the Resources mode's export
 #include "KCMResourceDiff.h"	// KCMDescribeResourceDiff - the same mode's comparison of the two
@@ -274,7 +275,13 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 		return kSuccess;
 	}
 
-	if (methodID.Get() != e_KCMSaveOriginXml)
+	// ★TWO METHODS, ONE BODY (2026-09-15). app.kcmSaveOriginXml(file) and
+	//   app.kcmSaveOriginIdml(file) differ in exactly one call: one writes the origin's bytes, the
+	//   other wraps the same bytes in an IDML container. Everything around it - the argument, the
+	//   status numbers, the shape of the answer - is identical, so writing it twice would be two
+	//   places to keep agreeing about the same four numbers.
+	const bool16 wantsIdml = (methodID.Get() == e_KCMSaveOriginIdml) ? kTrue : kFalse;
+	if (methodID.Get() != e_KCMSaveOriginXml && !wantsIdml)
 		return CScriptProvider::HandleMethod(methodID, data, script);
 
 	// 4 = "the file argument could not be read", shared by the two failures below because a caller
@@ -292,7 +299,9 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 		if (arg.GetFile(&file, data->GetRequestContext()) == kSuccess)
 		{
 			PMString whyNot;	// the same answer in words; nothing outside reads it yet
-			status = KCMOriginSaveRaw(file, whyNot);	// ★the numbers are decided there, once
+			// ★the numbers are decided in KCMOrigin.h, once, and both writers answer on that scale
+			status = wantsIdml ? KCMOriginSaveIdml(file, whyNot)
+			                   : KCMOriginSaveRaw(file, whyNot);
 		}
 	}
 

@@ -43,6 +43,7 @@
 #include "BaseType.h"
 #include "PMString.h"
 
+class IDFile;
 class KCMResourceBytes;
 
 /** Turn an INX into a designmap, in place.
@@ -57,6 +58,33 @@ class KCMResourceBytes;
             names, so refusing to label it costs nothing and corrupting it would cost everything.
 */
 bool16 KCMInxToDesignmap(KCMResourceBytes& bytes, PMString& whyNot);
+
+/** Write the held origin out as a REAL IDML package - a file InDesign will open as a document.
+
+    ★WHAT MAKES THIS THREE ENTRIES AND NOT THIRTEEN. A real IDML cuts the document into a
+    designmap plus a dozen referenced parts, and the obvious reading is that the split is required.
+    It is not: measured 2026-09-14, InDesign opens a package whose designmap.xml was never cut, and
+    every element of the test document came back. So the package is
+
+        mimetype                 (UCF writes it itself, from the mime argument - 43 bytes)
+        META-INF/container.xml   (253 bytes, fixed, copied out of a real package byte for byte)
+        designmap.xml            (the origin, which is already in that shape)
+
+    ⚠And the split is not merely unnecessary - it is the thing that CANNOT be put back: handing
+      ImportINX a designmap with <idPkg:* src="..."/> references crashes InDesign inside JBX.APLN,
+      the plug-in that resolves them, because ImportINX takes one stream and has nowhere to fetch
+      the other files from (measured 2026-09-15, report at work/kcm-crash-2026-09-14-s25.xml).
+      ⇒ ★A package written here is one this plug-in can also READ BACK. A cut one would not be.
+
+    ⚠createManifest is kFalse on purpose: a real IDML has no manifest.xml.
+
+    @param file   where to write. The caller names it, as with KCMOriginSaveRaw.
+    @param whyNot when non-zero, what failed.
+    @return ★THE SAME STATUS NUMBERS KCMOriginSaveRaw USES, and for the same reasons - 0 written,
+            1 no origin is held, 2 the file could not be created, 3 it could not be written. One
+            scale, one place to read it, one set of numbers for the script side to test.
+*/
+int32 KCMOriginSaveIdml(const IDFile& file, PMString& whyNot);
 
 #endif // __KCMOriginIdml_h__
 
