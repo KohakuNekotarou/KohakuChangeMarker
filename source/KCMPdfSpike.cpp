@@ -22,10 +22,12 @@
 #include "IDataBase.h"
 #include "IDocument.h"
 #include "IDOMElement.h"			// the root a snippet is imported under
+#include "IExportManager.h"			// S17 - ExportIDMLDirect, the only public route to a whole IDML
 #include "IGeometry.h"
 #include "IHierarchy.h"
 #include "IImportProvider.h"
 #include "IImportProviderUtils.h"
+#include "IINXManager.h"			// S17.8 - ExportINX on a root smaller than the document
 #include "IK2ServiceProvider.h"
 #include "IK2ServiceRegistry.h"
 #include "IMasterSpreadUtils.h"		// AppendMasterPageItems - the page's furniture, which GetItemsOnPage leaves out
@@ -44,6 +46,7 @@
 #include "ISnippetImport.h"
 #include "ISpread.h"
 #include "ISpreadList.h"
+#include "IStoryList.h"			// S17.8 - the other part a real IDML keeps in a file of its own
 #include "ISwatchList.h"			// what the report's swatch list looks like after both sides arrive
 #include "ISwatchUtils.h"
 #include "IUIFlagData.h"
@@ -51,6 +54,9 @@
 #include "DocumentID.h"				// IID_ISYSFILEDATA
 #include "ErrorUtils.h"
 #include "FileUtils.h"				// S15 - SysFileToPMString, to read back what IDFile made of a pipe path
+#include "AppFrameworkID.h"		// S17.8 - kActionExportPolicyBoss, the policy measured to work
+#include "ImportExportUIID.h"		// S17 - kExportMgrBoss / kExportMgrServiceID
+#include "INXCoreID.h"			// S17.8 - IID_IINXEXPORTPOLICY
 #include "OpenPlaceID.h"			// kImportProviderService - the service every import filter registers under
 #include "PersistUtils.h"			// ::CreateObject - S16 builds its own unopened stream
 #include "ShuksanID.h"				// kMemStreamWriteBoss
@@ -245,7 +251,7 @@ public:
 	    GENERIC_READ|GENERIC_WRITE - which is what a PDF writer asks for, because it patches the
 	    cross-reference offset back into the head when it is done - CANNOT open an inbound-only
 	    pipe at all, so the two are different questions and both get asked. */
-	KCMPipeCatcher(const wchar_t* leafName, bool16 duplex, bool16 keepContent = kFalse)
+	KCMPipeCatcher(const wchar_t* leafName, bool16 duplex, bool16 keepContent = kFalse, DWORD maxInstances = 1)
 		: fPath(L"\\\\.\\pipe\\"), fState(nil), fThread(nil), fCreateErr(0), fDuplex(duplex), fEverListened(kFalse)
 	{
 		fPath += leafName;
@@ -265,7 +271,7 @@ public:
 		fState->pipe = ::CreateNamedPipeW(fPath.c_str(),
 		                                  duplex ? PIPE_ACCESS_DUPLEX : PIPE_ACCESS_INBOUND,
 		                                  PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
-		                                  1,				// one instance is all one measurement needs
+		                                  maxInstances,	// ★S17.6 - 9491 says "already open", so leave room for the check AND the write
 		                                  64 * 1024,
 		                                  64 * 1024,
 		                                  0, nil);
@@ -727,6 +733,1077 @@ void IdmlInMemory(IDataBase* db, PMString& line)
 	line.Append(" -> %TEMP%\\kcm-spike-memory.idml (UNZIP IT)");
 }
 
+//========================================================================================
+//  ★★★S17 - A REAL IDML, AND WHETHER ONE CAN EXIST WITHOUT A FILE.
+//
+//  THE QUESTION (the user, 2026-09-14 night): "what I am interested in is whether a REAL IDML
+//  can be held internally, without ever being written to a file."
+//
+//  ⚠WHAT S16 DID **NOT** ANSWER, and the measurement that says so. S16 put a UCF container on a
+//    stream and got 36KB of zip into memory - but what went INTO it was ONE entry named
+//    "designmap.xml", holding the INX that KCM's Resources mode exports every day. Held side by
+//    side with a real IDML (work/archive/2026-08/kescm-b11/unpacked/, read 2026-09-14):
+//        INX  : <?aid style="50" type="action"   ...?>  <Document DOMVersion="21.0" Self="d" ...>
+//        IDML : <?aid style="50" type="document" ...?>  <Document xmlns:idPkg="..." StoryList="ufe u115 ud0" ...>
+//                 + ten <idPkg:Spread src="Spreads/Spread_uee.xml"/> style references, with the
+//                   document's actual content living in those ten separate files.
+//    The same vocabulary; a different PI, and SPLIT. So S16 built an IDML-SHAPED CONTAINER around
+//    something that is not IDML. This step asks about the real thing.
+//
+//  ★THE MOVE THAT WAS NEVER PLAYED. IExportManager::ExportIDMLDirect (IExportManager.h:84) is the
+//    only public route to a whole IDML, and it takes `const IDFile*` - exactly the shape S15 has
+//    already defeated once: an IDFile holds \\.\pipe\<name>, and InDesign's own file layer writes
+//    to it (S15.a, measured, 25 bytes through). The pipe has been aimed at the PDF exporter and at
+//    UCF. It has never been aimed at THE IDML EXPORTER. That is S17.4.
+//
+//  ⚠TWO HONEST PREDICTIONS, both worth the measurement whichever way they fall:
+//    1. A zip patches its own headers and a pipe cannot seek, so what arrives may be a BROKEN zip
+//       rather than none - which is exactly what S16 saw, and every byte was there to repair.
+//    2. IUCFPackageUtils.h:113 says mode 3 (rewriting) "uses a temp file". If the IDML writer
+//       opens that way, a file appears on disk wherever the destination points - and THAT WOULD
+//       ANSWER THE USER'S QUESTION WITH A NO. It is the one outcome this step must not hide.
+//========================================================================================
+
+/** Count of non-overlapping `needle` in `len` bytes at `data`. */
+int32 CountIn(const char* data, uint32 len, const char* needle)
+{
+	if (data == nil)
+		return 0;
+	const uint32 nlen = static_cast<uint32>(std::strlen(needle));
+	if (nlen == 0 || len < nlen)
+		return 0;
+	int32 count = 0;
+	for (uint32 i = 0; i + nlen <= len; ++i)
+	{
+		if (std::memcmp(data + i, needle, nlen) == 0)
+		{
+			++count;
+			i += nlen - 1;
+		}
+	}
+	return count;
+}
+
+/** The name of the first real element, skipping the <?xml?> and <?aid?> instructions.
+    ★Read rather than guessed at: the first version of S17.8 asked "does it contain
+    <Document>?" and stopped at the first yes, which answered "the whole thing" for output that
+    was plainly not (19KB against the document's 180KB). */
+void FirstElementName(const char* data, uint32 len, PMString& into)
+{
+	if (data == nil || len == 0)
+	{
+		into.Append("(nothing)");
+		return;
+	}
+	for (uint32 i = 0; i + 1 < len; ++i)
+	{
+		if (data[i] != '<')
+			continue;
+		const char c = data[i + 1];
+		if (c == '?' || c == '!' || c == '/')
+			continue;
+		char name[64] = { 0 };
+		uint32 n = 0;
+		uint32 j = i + 1;
+		while (j < len && n < sizeof(name) - 1 && data[j] != ' ' && data[j] != '>'
+		       && data[j] != '/' && data[j] != '\r' && data[j] != '\n' && data[j] != '\t')
+		{
+			name[n++] = data[j++];
+		}
+		into.Append(Ascii(name));
+		return;
+	}
+	into.Append("(no element)");
+}
+
+/** Read a whole file into memory. Answers the byte count, or -1 when it could not be opened. */
+int32 LoadFileInto(const wchar_t* path, KCMMemXferBytes& into)
+{
+	std::ifstream file(path, std::ios::binary);
+	if (!file)
+		return -1;
+	char buf[8192];
+	int32 total = 0;
+	while (file)
+	{
+		file.read(buf, sizeof(buf));
+		const std::streamsize got = file.gcount();
+		if (got <= 0)
+			break;
+		into.Write(buf, static_cast<uint32>(got));
+		total += static_cast<int32>(got);
+	}
+	return total;
+}
+
+/** The export manager. ★The SDK contains not one caller of IExportManager, so both routes are
+    tried and the reading says which one answered. */
+IExportManager* QueryExportManager(PMString& line)
+{
+	IExportManager* made = (IExportManager*)::CreateObject(kExportMgrBoss, IID_IEXPORTMANAGER);
+	if (made != nil)
+	{
+		line.Append("via ::CreateObject(kExportMgrBoss), ");
+		return made;
+	}
+	InterfacePtr<IK2ServiceRegistry> registry(GetExecutionContextSession(), UseDefaultIID());
+	if (registry == nil)
+	{
+		line.Append("★NO EXPORT MANAGER - ::CreateObject gave nil and there is no service registry");
+		return nil;
+	}
+	InterfacePtr<IK2ServiceProvider> service(registry->QueryDefaultServiceProvider(kExportMgrServiceID));
+	InterfacePtr<IExportManager> found(service, IID_IEXPORTMANAGER);
+	if (found == nil)
+	{
+		line.Append("★NO EXPORT MANAGER - neither ::CreateObject nor kExportMgrServiceID answers");
+		return nil;
+	}
+	line.Append("via kExportMgrServiceID, ");
+	found->AddRef();		// handed back; the caller releases it
+	return found;
+}
+
+/** One ExportIDMLDirect, aimed wherever `target` names.
+
+    ★★★THE INSTRUMENT IS ARMED HERE, and what it is armed against is A BACKGROUND EXPORT: the
+    call would return, the file would not be there yet, and a size of 0 reads exactly like a
+    refusal. TaskInfo is asked for and waited on when it is real (TaskInfo.h:429 WaitForTask), so
+    a slow success cannot be reported as a failure. */
+void ExportIdmlTo(const UIDRef& docRef, const IDFile& target, IExportManager* mgr,
+                  PMString& line, int32& msTaken)
+{
+	TaskInfo task;
+	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	const DWORD t0 = ::GetTickCount();
+	mgr->ExportIDMLDirect(docRef, &target, kFalse /*bShowUI*/, &task);
+	msTaken = static_cast<int32>(::GetTickCount() - t0);
+	const ErrorCode global = ErrorUtils::PMGetGlobalErrorCode();
+	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+
+	line.Append("returned in ");
+	line.AppendNumber(msTaken);
+	line.Append("ms");
+	if (task.IsValid())
+	{
+		line.Append(", ★IT IS A BACKGROUND TASK (");
+		line.Append(task.GetName());
+		line.Append(") - waiting for it");
+		const TaskStatusInfo::TaskState state = task.WaitForTask();
+		msTaken = static_cast<int32>(::GetTickCount() - t0);
+		line.Append(", ended in state ");
+		line.AppendNumber(static_cast<int32>(state));
+		line.Append(" (3=Completed, 5=Cancelled, 7=ForceKilled) after ");
+		line.AppendNumber(msTaken);
+		line.Append("ms total");
+	}
+	else
+	{
+		line.Append(", synchronous (no task)");
+	}
+	if (global != kSuccess)
+	{
+		line.Append(", global error ");
+		line.AppendNumber(static_cast<int32>(global));
+	}
+}
+
+/** ★THE TEST FOR "IS THIS A REAL IDML", and it is the same two facts the two real files were
+    compared on: the processing instruction's type, and how many <idPkg:* src="..."/> references
+    designmap.xml carries. An INX inside a container answers "action" and zero. */
+void DescribeIdmlPackage(IUCFPackageUtils::PackageRefPtr ref, PMString& line)
+{
+	Utils<IUCFPackageUtils> ucf;
+	if (!ucf)
+	{
+		line.Append("no IUCFPackageUtils to describe it with");
+		return;
+	}
+	InterfacePtr<IPMStream> map(ucf->OpenStream(ref, WideString("designmap.xml")));
+	if (map == nil)
+	{
+		line.Append("but there is no designmap.xml in it");
+		return;
+	}
+	KCMMemXferBytes text;
+	uchar buf[4096];
+	int32 total = 0;
+	for (;;)
+	{
+		const int32 n = map->XferByte(buf, static_cast<int32>(sizeof(buf)));
+		if (n <= 0)
+			break;
+		text.Write(buf, static_cast<uint32>(n));
+		total += n;
+	}
+	map->Close();
+	const char* const data = text.GetData();
+	const uint32 len = text.GetSize();
+	line.Append("designmap.xml ");
+	line.AppendNumber(total);
+	line.Append(" B, PI type=");
+	if (CountIn(data, len, "type=\"document\"") > 0)
+		line.Append("\"document\" ★A REAL IDML");
+	else if (CountIn(data, len, "type=\"action\"") > 0)
+		line.Append("\"action\" ★INX, NOT IDML");
+	else
+		line.Append("neither");
+	line.Append(", idPkg refs ");
+	line.AppendNumber(CountIn(data, len, "<idPkg:"));
+	line.Append(", META-INF/container.xml ");
+	line.Append(ucf->FileExists(ref, WideString("META-INF/container.xml")) ? "yes" : "NO");
+	line.Append(", Resources/Styles.xml ");
+	line.Append(ucf->FileExists(ref, WideString("Resources/Styles.xml")) ? "yes" : "NO");
+}
+
+/** ★★★S17 - see the block above. */
+/** ★★★THE GATE ROWS ARE DONE, AND THEY ARE OFF.
+    S17.4 / S17.6 / S19 all aim an export at a destination it will refuse, to find out WHY it
+    refuses. The answer came in on 2026-09-14: global error 9491 = "Cannot save to the file,
+    because it is already open", and B1/B2/E narrowed it to "anything the caller is holding open",
+    not "a pipe". Nothing is left to learn from running them.
+    ⚠AND THEY COST SOMETHING TO RUN: a background export that fails puts InDesign's own
+      "background task warning" dialog in front of whoever is at the machine. That happened to the
+      user during the 21:37 run. Turn this back on only to re-measure the gate. */
+static const bool16 kProbeTheGate = kFalse;
+
+void RealIdmlWithoutAFile(IDataBase* db, PMString& out)
+{
+	Utils<IUCFPackageUtils> ucf;
+	InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
+	const UIDRef docRef(db, db->GetRootUID());
+
+	PMString mgrLine(Ascii("S17.1 IExportManager: "));
+	InterfacePtr<IExportManager> mgr(QueryExportManager(mgrLine));
+	Say(out, mgrLine);
+	if (mgr == nil || doc == nil || !ucf)
+	{
+		Say(out, "S17 SKIPPED - no export manager, no document, or no IUCFPackageUtils");
+		return;
+	}
+
+	wchar_t tempDir[MAX_PATH] = { 0 };
+	::GetTempPathW(MAX_PATH, tempDir);
+	std::wstring realPath(tempDir);
+	realPath += L"kcm-spike-real.idml";
+	::DeleteFileW(realPath.c_str());
+
+	// ---- S17.2 the baseline: a real IDML, on disk, where it is allowed to be ----------------
+	// ★This row is the MATERIAL and the STANDARD at once. Without it, "the pipe caught 0 bytes"
+	//   could not be told apart from "this document cannot be exported to IDML at all".
+	// ⚠The file is LEFT THERE on purpose: a zip tool outside InDesign is the only thing that can
+	//   vote on whether what came out is a real package, and this spike does not delete what it
+	//   makes - that is the very complaint the report work started from.
+	int32 baselineSize = 0;
+	Trace("S17.2 ExportIDMLDirect to a real file");
+	{
+		PMString line(Ascii("S17.2 ExportIDMLDirect to a REAL FILE (the baseline): "));
+		int32 ms = -1;
+		ExportIdmlTo(docRef, PipeAsFile(realPath.c_str()), mgr, line, ms);
+		WIN32_FILE_ATTRIBUTE_DATA fad;
+		std::memset(&fad, 0, sizeof(fad));
+		line.Append(", ");
+		if (::GetFileAttributesExW(realPath.c_str(), GetFileExInfoStandard, &fad))
+		{
+			baselineSize = static_cast<int32>(fad.nFileSizeLow);
+			line.AppendNumber(baselineSize);
+			line.Append(" B at %TEMP%\\kcm-spike-real.idml");
+		}
+		else
+		{
+			line.Append("★NO FILE WAS WRITTEN");
+		}
+		Say(out, line);
+	}
+
+	// ---- S17.3 the READ door, tried with a HEALTHY zip ---------------------------------------
+	// ★★★THE CONTROL THAT HAS TO COME FIRST. If OpenPackage(IPMStream*) refuses a healthy zip
+	//   held in memory, then nothing done on the writing side could ever be read back, and every
+	//   row below would be measuring the wrong door. The bytes are the baseline's, read off disk -
+	//   where they came from is not the question; whether THE READER TAKES A STREAM is.
+	//   ⚠The writing side took 11 tries to find its one acceptable stream (S16), so the reading
+	//     side is not assumed to be any easier.
+	KCMMemXferBytes baselineBytes;
+	Trace("S17.3 OpenPackage on a stream");
+	if (baselineSize > 0)
+	{
+		PMString line(Ascii("S17.3 OpenPackage(IPMStream*) on those same bytes in memory: "));
+		const int32 loaded = LoadFileInto(realPath.c_str(), baselineBytes);
+		line.AppendNumber(loaded);
+		line.Append(" B loaded, ");
+		InterfacePtr<IPMStream> zipIn(StreamUtil::CreateMemoryStreamRead(&baselineBytes, kFalse, kFalse));
+		IUCFPackageUtils::UCFErrorCode err = IUCFPackageUtils::kSuccess;
+		IUCFPackageUtils::PackageRefPtr ref = (zipIn != nil) ? ucf->OpenPackage(zipIn, err) : nil;
+		if (ref == nil)
+		{
+			line.Append("★REFUSED, UCFErrorCode ");
+			line.AppendNumber(static_cast<int32>(err));
+			line.Append(" - the read door does not take this stream");
+		}
+		else
+		{
+			line.Append("★OPENED: ");
+			DescribeIdmlPackage(ref, line);
+			ucf->ClosePackage(ref);
+		}
+		Say(out, line);
+	}
+	else
+	{
+		Say(out, "S17.3 SKIPPED - the baseline produced no bytes to read");
+	}
+
+	// ---- S17.4 ★★★THE MOVE THAT WAS NEVER PLAYED ------------------------------------------
+	Trace("S17.4 ExportIDMLDirect aimed at a pipe");
+	if (kProbeTheGate)
+	{
+		PMString line(Ascii("S17.4 ★ExportIDMLDirect AIMED AT A PIPE: "));
+		// duplex, because a writer that patches its own headers asks for GENERIC_READ|GENERIC_WRITE
+		// and cannot open an inbound-only pipe at all (S15's two rows).
+		KCMPipeCatcher catcher(L"kcm-idml-export", kTrue /*duplex*/, kTrue /*keep the bytes*/);
+		if (!catcher.Listening())
+		{
+			line.Append("the pipe could not be created, error ");
+			line.AppendNumber(static_cast<int32>(catcher.CreateError()));
+		}
+		else
+		{
+			int32 ms = -1;
+			ExportIdmlTo(docRef, PipeAsFile(catcher.Path()), mgr, line, ms);
+			catcher.Finish();
+			line.Append(", pipe ");
+			catcher.Describe(line);
+			const int32 saved = catcher.SaveTo(L"kcm-spike-idml-from-pipe.idml");
+			if (saved > 0)
+			{
+				line.Append(", saved ");
+				line.AppendNumber(saved);
+				line.Append(" B to %TEMP%\\kcm-spike-idml-from-pipe.idml");
+				if (baselineSize > 0 && saved == baselineSize)
+				{
+					line.Append(" ★THE SAME SIZE AS THE BASELINE");
+				}
+				else if (baselineSize > 0)
+				{
+					line.Append(" (the baseline was ");
+					line.AppendNumber(baselineSize);
+					line.Append(" B)");
+				}
+			}
+		}
+		Say(out, line);
+	}
+
+	// ---- S17.5 the control S15 established ---------------------------------------------------
+	// ★\\.\NUL is the same SHAPE of path as \\.\pipe\ but a device that swallows everything.
+	//   S15 found the PDF page exporter refuses a pipe and yet writes to NUL happily - which is
+	//   what separated "the path is wrong" from "the writer needs something a pipe cannot do".
+	//   The same pair of rows puts the same question to the IDML writer.
+	Trace("S17.5 the same export to NUL");
+	if (kProbeTheGate)
+	{
+		PMString line(Ascii("S17.5 the same export to \\\\.\\NUL (the control): "));
+		int32 ms = -1;
+		ExportIdmlTo(docRef, PipeAsFile(L"\\\\.\\NUL"), mgr, line, ms);
+		Say(out, line);
+	}
+
+	// ---- S17.6 ★★★THE DOOR HAS A NAME NOW, AND IT IS NOT "PIPE" ---------------------------
+	// S17.4 came back with global error 9491, and the error table says what that is:
+	//     0x2513 (9491) "Cannot save to the file ^2, because it is ALREADY OPEN."
+	// ⇒ The exporter is not refusing a pipe. It is refusing a destination SOMEBODY HAS OPEN - and
+	//   the somebody is us: KCMPipeCatcher holds the server end of it. That also settles what S15
+	//   had to leave open (LockFile or GetFileType): IT IS THE LOCK CHECK. The same gate turned the
+	//   PDF exporter back in 41ms and this one in 0ms, before either had drawn a thing.
+	// ★SO THE CHECK IS GIVEN ROOM TO PASS. A pipe made with nMaxInstances=1 has exactly one end to
+	//   hand out: the check takes it, and the real write finds nothing left. With more instances,
+	//   and a reader standing at each, the check can have the first and the write the second.
+	//   ⚠If this works, the answer to the user's whole question turns from "no" into "yes", so it
+	//     is written to be disbelieved: BOTH readers report separately, and the bytes of each are
+	//     dropped where a zip tool outside InDesign can judge them.
+	Trace("S17.6 the same export at a pipe with room for two");
+	if (kProbeTheGate)
+	{
+		PMString line(Ascii("S17.6 ★ExportIDMLDirect at a MULTI-INSTANCE pipe: "));
+		KCMPipeCatcher first(L"kcm-idml-multi", kTrue, kTrue, PIPE_UNLIMITED_INSTANCES);
+		KCMPipeCatcher second(L"kcm-idml-multi", kTrue, kTrue, PIPE_UNLIMITED_INSTANCES);
+		if (!first.Listening() || !second.Listening())
+		{
+			line.Append("could not stand up two readers (first error ");
+			line.AppendNumber(static_cast<int32>(first.CreateError()));
+			line.Append(", second error ");
+			line.AppendNumber(static_cast<int32>(second.CreateError()));
+			line.Append(")");
+		}
+		else
+		{
+			int32 ms = -1;
+			ExportIdmlTo(docRef, PipeAsFile(first.Path()), mgr, line, ms);
+			first.Finish();
+			second.Finish();
+			line.Append(" | reader A ");
+			first.Describe(line);
+			line.Append(" | reader B ");
+			second.Describe(line);
+			const int32 a = first.SaveTo(L"kcm-spike-idml-multi-a.idml");
+			const int32 b = second.SaveTo(L"kcm-spike-idml-multi-b.idml");
+			if (a > 0 || b > 0)
+			{
+				line.Append(" | saved A=");
+				line.AppendNumber(a);
+				line.Append(" B=");
+				line.AppendNumber(b);
+				line.Append(" to %TEMP%\\kcm-spike-idml-multi-*.idml (UNZIP THEM)");
+			}
+		}
+		Say(out, line);
+	}
+
+	// ---- S17.7 THE READ DOOR, asked the way the WRITE door had to be asked ------------------
+	// S17.3 tried ONE kind of stream, got UCFErrorCode 1, and that is exactly the answer the write
+	// door gave to ten of its eleven candidates (S16). The one that worked there was the odd one -
+	// CreateFileStreamWriteLazy, "a path it has not opened yet" - so one refusal here is not an
+	// answer either. ⚠The IDFile row is the CONTROL: if even that fails, the fault is in the call
+	// and not in the kind of stream, and every other row this step prints would be noise.
+	Trace("S17.7 the read door, four ways");
+	if (baselineSize > 0)
+	{
+		const int32 kWays = 4;
+		PMString line(Ascii("S17.7 OpenPackage, four ways: "));
+		for (int32 i = 0; i < kWays; ++i)
+		{
+			const char* const what = (i == 0) ? "IDFile (the control)"
+			                       : (i == 1) ? "CreateMemoryStreamRead"
+			                       : (i == 2) ? "CreateFileStreamRead"
+			                                  : "CreateFileStreamReadLazy";
+			line.Append("[");
+			line.Append(Ascii(what));
+			line.Append(" ");
+
+			// ⚠One buffer per row, alive until the package is closed: a memory stream reads
+			//   THROUGH this object, and a shared one would be read by the next row as well.
+			KCMMemXferBytes bytes;
+			InterfacePtr<IPMStream> stream;
+			if (i == 1)
+			{
+				LoadFileInto(realPath.c_str(), bytes);
+				stream.reset(StreamUtil::CreateMemoryStreamRead(&bytes, kFalse, kFalse));
+			}
+			else if (i == 2)
+			{
+				stream.reset(StreamUtil::CreateFileStreamRead(PipeAsFile(realPath.c_str())));
+			}
+			else if (i == 3)
+			{
+				stream.reset(StreamUtil::CreateFileStreamReadLazy(PipeAsFile(realPath.c_str())));
+			}
+
+			IUCFPackageUtils::UCFErrorCode err = IUCFPackageUtils::kSuccess;
+			IUCFPackageUtils::PackageRefPtr ref = nil;
+			if (i == 0)
+			{
+				ref = ucf->OpenPackage(PipeAsFile(realPath.c_str()), err);
+			}
+			else if (stream != nil)
+			{
+				ref = ucf->OpenPackage(stream, err);
+			}
+			else
+			{
+				line.Append("the stream itself could not be made] ");
+				continue;
+			}
+
+			if (ref == nil)
+			{
+				line.Append("nil, err ");
+				line.AppendNumber(static_cast<int32>(err));
+				line.Append("] ");
+				continue;
+			}
+			line.Append("★OPENED: ");
+			DescribeIdmlPackage(ref, line);
+			line.Append("] ");
+			ucf->ClosePackage(ref);
+		}
+		Say(out, line);
+	}
+	else
+	{
+		Say(out, "S17.7 SKIPPED - there is no baseline package to open");
+	}
+
+	// ---- S17.8 ROUTE B: can the PARTS be exported one at a time? -----------------------------
+	// If the exporter will write to nothing but a file, the other way to hold a real IDML is TO
+	// BUILD ONE. Two thirds of that are already in hand: the container goes onto a stream (S16,
+	// measured again today at 28,428 B through a pipe), and S17.2 showed exactly what has to go
+	// inside it - 13 entries, designmap + META-INF x2 + Resources x4 + Spreads + MasterSpreads +
+	// Stories + XML x2. The only unmeasured piece is whether ExportINX will take a root SMALLER
+	// than the whole document.
+	// ⚠2026-09-08 recorded "a spread as the root kills InDesign" - but THAT run passed policy=nil,
+	//   which was later found to be the true cause of both crashes that day. So this is UNTESTED,
+	//   not known-bad, and the policy used here is the one measured to work.
+	Trace("S17.8 parts as roots");
+	{
+		PMString line(Ascii("S17.8 ExportINX on a root SMALLER than the document: "));
+		ISession* const session = GetExecutionContextSession();
+		InterfacePtr<IINXManager> inx(session != nil ? session->QueryINXManager() : nil);
+		InterfacePtr<IPMUnknown> holder(
+			(IPMUnknown*)::CreateObject(kActionExportPolicyBoss, IID_IINXEXPORTPOLICY));
+		if (inx == nil || holder == nil)
+		{
+			line.Append("no INX manager, or the policy could not be made");
+			Say(out, line);
+		}
+		else
+		{
+			IINXExportPolicy* const policy = (IINXExportPolicy*)holder.get();
+
+			// The two parts a real IDML keeps in files of their own.
+			UID spreadUID = kInvalidUID;
+			{
+				InterfacePtr<ISpreadList> spreads(doc, UseDefaultIID());
+				if (spreads != nil && spreads->GetSpreadCount() > 0)
+					spreadUID = spreads->GetNthSpreadUID(0);
+			}
+			UID storyUID = kInvalidUID;
+			{
+				InterfacePtr<IStoryList> stories(db, db->GetRootUID(), UseDefaultIID());
+				if (stories != nil && stories->GetUserAccessibleStoryCount() > 0)
+					storyUID = stories->GetNthUserAccessibleStoryUID(0).GetUID();
+			}
+			const UID parts[2] = { spreadUID, storyUID };
+			const char* const names[2] = { "a SPREAD", "a STORY" };
+
+			for (int32 i = 0; i < 2; ++i)
+			{
+				line.Append("[");
+				line.Append(Ascii(names[i]));
+				line.Append(" ");
+				if (parts[i] == kInvalidUID)
+				{
+					line.Append("none in this document] ");
+					continue;
+				}
+				InterfacePtr<IDOMElement> element(db, parts[i], UseDefaultIID());
+				if (element == nil)
+				{
+					line.Append("★no IDOMElement on that boss] ");
+					continue;
+				}
+				KCMMemXferBytes bytes;
+				InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamWrite(&bytes, kFalse, kFalse));
+				if (stream == nil)
+				{
+					line.Append("no stream] ");
+					continue;
+				}
+				IDOMElement::ElementList roots;
+				roots.push_back(element);
+				// Same shape as KCMResourceSnapshot: Reset inside the session, both ends.
+				inx->BeginExportSession();
+				element->Reset();
+				const ErrorCode err = inx->ExportINX(roots, policy, stream, kSuppressUI);
+				element->Reset();
+				inx->EndExportSession();
+				stream->Close();
+
+				line.Append("err ");
+				line.AppendNumber(static_cast<int32>(err));
+				line.Append(", ");
+				line.AppendNumber(static_cast<int32>(bytes.GetSize()));
+				line.Append(" B");
+				// ★WHAT CAME OUT ON TOP is the whole point: a part, or the whole document again?
+				const char* const data = bytes.GetData();
+				const uint32 len = bytes.GetSize();
+				if (data != nil && len > 0)
+				{
+					// ★EVERY count, not the first hit. A wrapper element says nothing about what
+					//   is inside it, and "is there a <Document> tag" was answering the wrong
+					//   question: of course there is, it is the root INX always writes.
+					line.Append(", root <");
+					FirstElementName(data, len, line);
+					line.Append(">, Document x");
+					line.AppendNumber(CountIn(data, len, "<Document "));
+					line.Append(", Spread x");
+					line.AppendNumber(CountIn(data, len, "<Spread "));
+					line.Append(", MasterSpread x");
+					line.AppendNumber(CountIn(data, len, "<MasterSpread "));
+					line.Append(", Page x");
+					line.AppendNumber(CountIn(data, len, "<Page "));
+					line.Append(", Story x");
+					line.AppendNumber(CountIn(data, len, "<Story "));
+					line.Append(", TextFrame x");
+					line.AppendNumber(CountIn(data, len, "<TextFrame "));
+					line.Append(", ParagraphStyle x");
+					line.AppendNumber(CountIn(data, len, "<ParagraphStyle "));
+					line.Append(", Content x");
+					line.AppendNumber(CountIn(data, len, "<Content>"));
+				}
+				// ★The one check this code cannot make for itself: a person reading the XML.
+				DropForTheEye(bytes, (i == 0) ? L"kcm-spike-part-spread.xml"
+				                              : L"kcm-spike-part-story.xml");
+				line.Append(" -> %TEMP%] ");
+			}
+			Say(out, line);
+		}
+	}
+
+	// ---- S19 ★★★WHAT DOES THE GATE ACTUALLY CHECK? -----------------------------------------
+	// 9491 reads "Cannot save to the file, because it is already open". Three different mechanisms
+	// would produce that, and which one it is decides whether anything can be done about it:
+	//   (a) the exporter opens the destination EXCLUSIVELY, and loses to anyone already holding it
+	//   (b) the exporter refuses a handle whose GetFileType says FILE_TYPE_PIPE
+	//       (\\.\NUL is FILE_TYPE_CHAR, and NUL passes - S17.5)
+	//   (c) something about the shape of the path
+	// ★(c) IS ALREADY OUT: \\.\NUL and \\.\pipe\x have the same shape and one of them passes.
+	// These three rows separate (a) from (b), and each one is a single export:
+	//   B1  a REAL FILE this code holds open with NO sharing    - 9491 here means (a)
+	//   B2  the same, but opened WITH sharing                   - passing here means it is the LOCK
+	//   E   a PIPE PATH with nobody listening at all            - anything but 9491 means (b)
+	// ⚠B1/B2 write to files this code makes and removes itself; they are not the user's.
+	Trace("S19 what the gate checks");
+	if (kProbeTheGate)
+	{
+		for (int32 shared = 0; shared < 2; ++shared)
+		{
+			std::wstring heldPath(tempDir);
+			heldPath += (shared == 0) ? L"kcm-spike-held-excl.idml" : L"kcm-spike-held-share.idml";
+			::DeleteFileW(heldPath.c_str());
+			const DWORD share = (shared == 0) ? 0
+			                                  : (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE);
+			HANDLE held = ::CreateFileW(heldPath.c_str(), GENERIC_WRITE, share, nil,
+			                            CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nil);
+			PMString line(Ascii(shared == 0 ? "S19.B1 a REAL FILE we hold open, NO sharing: "
+			                                : "S19.B2 a REAL FILE we hold open, WITH sharing: "));
+			if (held == INVALID_HANDLE_VALUE)
+			{
+				line.Append("could not create it, Win32 error ");
+				line.AppendNumber(static_cast<int32>(::GetLastError()));
+			}
+			else
+			{
+				int32 ms = -1;
+				ExportIdmlTo(docRef, PipeAsFile(heldPath.c_str()), mgr, line, ms);
+				::CloseHandle(held);
+				WIN32_FILE_ATTRIBUTE_DATA fad;
+				std::memset(&fad, 0, sizeof(fad));
+				line.Append(", ");
+				if (::GetFileAttributesExW(heldPath.c_str(), GetFileExInfoStandard, &fad))
+				{
+					line.AppendNumber(static_cast<int32>(fad.nFileSizeLow));
+					line.Append(" B on disk");
+				}
+				else
+				{
+					line.Append("no file");
+				}
+				::DeleteFileW(heldPath.c_str());
+			}
+			Say(out, line);
+		}
+		{
+			// ★Nobody has called CreateNamedPipe for this name, so there is nothing to be "already
+			//   open". If 9491 still comes back, the message is not describing what is measured.
+			PMString line(Ascii("S19.E a PIPE PATH with NO listener at all: "));
+			int32 ms = -1;
+			ExportIdmlTo(docRef, PipeAsFile(L"\\\\.\\pipe\\kcm-nobody-is-home"), mgr, line, ms);
+			Say(out, line);
+		}
+	}
+}
+
+/** The UID an IDML part name carries: "Stories/Story_u101.xml" -> 0x101. kInvalidUID when the
+    name is not of that shape. ★This is how a part is matched back to the object it came from,
+    without having to enumerate anything. */
+UID UidFromPartName(const char* name)
+{
+	const char* p = std::strstr(name, "_u");
+	if (p == nil)
+		return kInvalidUID;
+	p += 2;
+	uint32 v = 0;
+	bool16 any = kFalse;
+	while (*p != 0 && *p != '.')
+	{
+		const char c = *p++;
+		uint32 digit = 0;
+		if (c >= '0' && c <= '9')			digit = static_cast<uint32>(c - '0');
+		else if (c >= 'a' && c <= 'f')		digit = 10 + static_cast<uint32>(c - 'a');
+		else if (c >= 'A' && c <= 'F')		digit = 10 + static_cast<uint32>(c - 'A');
+		else								return kInvalidUID;
+		v = v * 16 + digit;
+		any = kTrue;
+	}
+	return any ? UID(v) : kInvalidUID;
+}
+
+/** Find one <Tag ...> ... </Tag> subtree and hand back its byte range.
+    ⚠Good enough because none of the elements this is used on nest inside themselves. */
+bool16 FindSubtree(const char* d, uint32 len, const char* open, const char* close,
+                   uint32& begin, uint32& end)
+{
+	const uint32 ol = static_cast<uint32>(std::strlen(open));
+	const uint32 cl = static_cast<uint32>(std::strlen(close));
+	for (uint32 i = 0; i + ol <= len; ++i)
+	{
+		if (std::memcmp(d + i, open, ol) != 0)
+			continue;
+		for (uint32 j = i; j + cl <= len; ++j)
+		{
+			if (std::memcmp(d + j, close, cl) != 0)
+				continue;
+			begin = i;
+			end = j + cl;
+			return kTrue;
+		}
+		return kFalse;
+	}
+	return kFalse;
+}
+
+/** ExportINX with one element as the root - the call S17.8 measured, in a form both callers use. */
+bool16 ExportElementAsInx(InterfacePtr<IDOMElement>& element, KCMMemXferBytes& into)
+{
+	if (element == nil)
+		return kFalse;
+	ISession* const session = GetExecutionContextSession();
+	InterfacePtr<IINXManager> inx(session != nil ? session->QueryINXManager() : nil);
+	InterfacePtr<IPMUnknown> holder(
+		(IPMUnknown*)::CreateObject(kActionExportPolicyBoss, IID_IINXEXPORTPOLICY));
+	if (inx == nil || holder == nil)
+		return kFalse;
+	IINXExportPolicy* const policy = (IINXExportPolicy*)holder.get();
+	InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamWrite(&into, kFalse, kFalse));
+	if (stream == nil)
+		return kFalse;
+	IDOMElement::ElementList roots;
+	roots.push_back(element);
+	inx->BeginExportSession();
+	element->Reset();
+	const ErrorCode err = inx->ExportINX(roots, policy, stream, kSuppressUI);
+	element->Reset();
+	inx->EndExportSession();
+	stream->Close();
+	return (err == kSuccess) ? kTrue : kFalse;
+}
+
+/** ★★★P2/P3 - BUILD AN IDML PART OURSELVES, out of what ExportINX gives.
+    The two were compared byte for byte on 2026-09-14: what INX writes inside <Story> is what IDML
+    writes inside <Story>, to the character, and the repacked package opened in InDesign. The
+    difference is only the dress:
+        INX : <?aid ... type="action"?> <Document ...> [dependencies] <Story>...</Story> </Document>
+        IDML: <idPkg:Story xmlns:idPkg="..." DOMVersion="21.0">        <Story>...</Story> </idPkg:Story>
+    ★Nothing is EDITED - the subtree is CUT OUT and re-dressed. A cut cannot corrupt what it does
+      not touch, where a search-and-replace over the whole file could.
+    ★The indentation lines up by luck that is not luck: the object sits one level under the root
+      in both, so the tabs INX already wrote are the tabs IDML wants.
+
+    ⚠WHY THIS ONLY COVERS THE PARTS NAMED AFTER A UID. Stories, Spreads and MasterSpreads are
+      single objects with a UID in the file name, so each one can be asked for by itself. The
+      Resources parts are COLLECTIONS (every colour, every style) and XML/BackingStory has no UID
+      in its name - those need a different move and are still copied from the original. */
+struct PartRecipe
+{
+	const char* prefix;		// how the part's name begins
+	const char* innerOpen;	// the element to cut out, with its trailing space
+	const char* innerClose;	// and its closing tag
+	const char* pkgTag;		// the idPkg dress to put on it
+};
+
+/** The recipe for a part name, or nil when this code cannot build that one.
+    ⚠"</Spread>" does NOT occur inside "</MasterSpread>" (checked: the characters do not line
+      up), so the two recipes cannot be confused for each other. */
+const PartRecipe* RecipeFor(const char* name)
+{
+	static const PartRecipe kRecipes[] = {
+		{ "Stories/",       "<Story ",        "</Story>",        "idPkg:Story"        },
+		{ "Spreads/",       "<Spread ",       "</Spread>",       "idPkg:Spread"       },
+		{ "MasterSpreads/", "<MasterSpread ", "</MasterSpread>", "idPkg:MasterSpread" },
+	};
+	for (int32 i = 0; i < 3; ++i)
+	{
+		const size_t plen = std::strlen(kRecipes[i].prefix);
+		if (std::strlen(name) > plen && std::memcmp(name, kRecipes[i].prefix, plen) == 0)
+			return &kRecipes[i];
+	}
+	return nil;
+}
+
+/** Build one IDML part from the object it is named after. */
+bool16 MakeObjectPart(IDataBase* db, UID uid, const PartRecipe& recipe, KCMMemXferBytes& into)
+{
+	InterfacePtr<IDOMElement> element(db, uid, UseDefaultIID());
+	if (element == nil)
+		return kFalse;
+	KCMMemXferBytes inx;
+	if (!ExportElementAsInx(element, inx))
+		return kFalse;
+	const char* const d = inx.GetData();
+	const uint32 dl = inx.GetSize();
+	uint32 b = 0;
+	uint32 e = 0;
+	if (d == nil || !FindSubtree(d, dl, recipe.innerOpen, recipe.innerClose, b, e))
+		return kFalse;
+	// Byte for byte the shape of a real part (measured: LF, tabs, no <?aid?> instruction).
+	std::string head("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<");
+	head += recipe.pkgTag;
+	head += " xmlns:idPkg=\"http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging\" DOMVersion=\"21.0\">\n\t";
+	std::string tail("\n</");
+	tail += recipe.pkgTag;
+	tail += ">\n";
+	into.Write(const_cast<char*>(head.c_str()), static_cast<uint32>(head.size()));
+	into.Write(const_cast<char*>(d + b), e - b);
+	into.Write(const_cast<char*>(tail.c_str()), static_cast<uint32>(tail.size()));
+	return kTrue;
+}
+
+/** Read one entry of an open package into memory. Answers the byte count, or -1. */
+int32 ReadPackageEntry(IUCFPackageUtils::PackageRefPtr ref, const char* name, KCMMemXferBytes& into)
+{
+	Utils<IUCFPackageUtils> ucf;
+	if (!ucf)
+		return -1;
+	InterfacePtr<IPMStream> s(ucf->OpenStream(ref, WideString(name)));
+	if (s == nil)
+		return -1;
+	uchar buf[8192];
+	int32 total = 0;
+	for (;;)
+	{
+		const int32 n = s->XferByte(buf, static_cast<int32>(sizeof(buf)));
+		if (n <= 0)
+			break;
+		into.Write(buf, static_cast<uint32>(n));
+		total += n;
+	}
+	s->Close();
+	return total;
+}
+
+//========================================================================================
+//  ★★★S18 - ROUTE B, STEP ONE: REPACK.
+//
+//  S17 settled that the product will not write an IDML anywhere but a real, unopened file. So the
+//  other way to hold one is TO BUILD IT - and the pieces are all measured now:
+//     the container goes onto a stream, and a stream can be a pipe   (S16, 28,428 B into memory)
+//     ExportINX takes a root smaller than the document               (S17.8)
+//     what it produces IS the real thing inside                      (S17.8, byte for byte)
+//     a package can be read back from a file stream                  (S17.7)
+//
+//  ⚠BUT DO NOT BUILD EVERYTHING AT ONCE. Two things could be wrong - the CONTAINER (are the
+//    entries named, ordered and compressed the way a real IDML is?) and the PARTS (does the
+//    <idPkg:...> dress fit?) - and if both are built at once, a failure says nothing about which.
+//
+//  SO THIS STEP CHANGES ONLY THE CONTAINER. It reads a real IDML apart and writes THE SAME BYTES
+//  back into a container this code made. If InDesign opens the result, the container is right and
+//  every later failure belongs to the parts. If it does not, there is no point writing a single
+//  <idPkg:Story> until it does.
+//
+//  ★The destination is a real file ON PURPOSE for this step. Not because the pipe does not work -
+//    it does, S16 proves it twice a run - but because a pipe also breaks the zip's index (nothing
+//    can seek back to patch it), and a broken index would be indistinguishable from a container
+//    built wrong. One unknown at a time: the file first, the pipe once the recipe is known good.
+//========================================================================================
+void RepackIdml(IDataBase* db, PMString& out, bool16 ownStories)
+{
+	Utils<IUCFPackageUtils> ucf;
+	if (!ucf)
+	{
+		Say(out, "S18 SKIPPED - no IUCFPackageUtils");
+		return;
+	}
+	wchar_t tempDir[MAX_PATH] = { 0 };
+	::GetTempPathW(MAX_PATH, tempDir);
+	std::wstring srcPath(tempDir);
+	srcPath += L"kcm-spike-real.idml";
+	std::wstring dstPath(tempDir);
+	dstPath += ownStories ? L"kcm-spike-repacked-own.idml" : L"kcm-spike-repacked.idml";
+	::DeleteFileW(dstPath.c_str());
+
+	PMString line(Ascii(ownStories
+		? "S20 repack, and BUILD EVERY UID-NAMED PART OURSELVES: "
+		: "S18 repack a real IDML into a container of our own: "));
+
+	IUCFPackageUtils::UCFErrorCode err = IUCFPackageUtils::kSuccess;
+	IUCFPackageUtils::PackageRefPtr srcRef = ucf->OpenPackage(PipeAsFile(srcPath.c_str()), err);
+	if (srcRef == nil)
+	{
+		line.Append("the baseline could not be opened (err ");
+		line.AppendNumber(static_cast<int32>(err));
+		line.Append(") - S17.2 has to have run first");
+		Say(out, line);
+		return;
+	}
+
+	// ---- what is in it. ★UCF HAS NO ENUMERATE, so the names come from designmap.xml itself:
+	//      every part but the fixed three is named there as <idPkg:Xxx src="..."/>.
+	KCMMemXferBytes mapBytes;
+	const int32 mapLen = ReadPackageEntry(srcRef, "designmap.xml", mapBytes);
+	if (mapLen <= 0)
+	{
+		line.Append("designmap.xml did not read back");
+		Say(out, line);
+		ucf->ClosePackage(srcRef);
+		return;
+	}
+	std::vector<std::string> names;
+	names.push_back("designmap.xml");
+	names.push_back("META-INF/container.xml");
+	names.push_back("META-INF/metadata.xml");
+	{
+		const char* const d = mapBytes.GetData();
+		const uint32 dl = mapBytes.GetSize();
+		for (uint32 i = 0; i + 5 < dl; ++i)
+		{
+			if (std::memcmp(d + i, "src=\"", 5) != 0)
+				continue;
+			uint32 j = i + 5;
+			std::string one;
+			while (j < dl && d[j] != '"')
+				one += d[j++];
+			if (!one.empty())
+				names.push_back(one);
+			i = j;
+		}
+	}
+	line.Append("the baseline holds ");
+	line.AppendNumber(static_cast<int32>(names.size()));
+	line.Append(" named parts (+mimetype); ");
+
+	// ---- a container of our own.
+	// ⚠createManifest is kFALSE here: S16 asked for one and got an entry called "manifest.xml",
+	//   which a real IDML does NOT have - it carries META-INF/container.xml instead, and that one
+	//   is copied across like any other part.
+	const AString kIdmlMime("application/vnd.adobe.indesign-idml-package");
+	InterfacePtr<IPMStream> zipOut(StreamUtil::CreateFileStreamWriteLazy(
+		PipeAsFile(dstPath.c_str()), kOpenOut | kOpenTrunc));
+	if (zipOut == nil)
+	{
+		line.Append("could not make the lazy stream");
+		Say(out, line);
+		ucf->ClosePackage(srcRef);
+		return;
+	}
+	Trace("S18.1 CreatePackage");
+	IUCFPackageUtils::PackageRefPtr dstRef = ucf->CreatePackage(zipOut, kIdmlMime, kFalse, err);
+	Trace("S18.2 CreatePackage came back");
+	if (dstRef == nil)
+	{
+		line.Append("CreatePackage nil, err ");
+		line.AppendNumber(static_cast<int32>(err));
+		Say(out, line);
+		ucf->ClosePackage(srcRef);
+		return;
+	}
+
+	// ---- copy every part across, and count what did NOT make it.
+	int32 copied = 0;
+	int32 copiedBytes = 0;
+	int32 failed = 0;
+	for (size_t n = 0; n < names.size(); ++n)
+	{
+		KCMMemXferBytes part;
+		int32 got = -1;
+		// ★P3: every part whose name carries a UID is BUILT rather than copied. The rest still
+		//   come from the original, so a failure to open the result names its own cause.
+		const PartRecipe* const recipe = ownStories ? RecipeFor(names[n].c_str()) : nil;
+		if (recipe != nil)
+		{
+			const UID uid = UidFromPartName(names[n].c_str());
+			if (uid != kInvalidUID && MakeObjectPart(db, uid, *recipe, part))
+			{
+				got = static_cast<int32>(part.GetSize());
+				line.Append("[★built ");
+				line.Append(Ascii(names[n].c_str()));
+				line.Append(" ");
+				line.AppendNumber(got);
+				line.Append(" B] ");
+			}
+			else
+			{
+				line.Append("[★COULD NOT BUILD ");
+				line.Append(Ascii(names[n].c_str()));
+				line.Append(" - copying it instead] ");
+			}
+		}
+		if (got <= 0)
+			got = ReadPackageEntry(srcRef, names[n].c_str(), part);
+		if (got <= 0)
+		{
+			++failed;
+			line.Append("[cannot read ");
+			line.Append(Ascii(names[n].c_str()));
+			line.Append("] ");
+			continue;
+		}
+		InterfacePtr<IPMStream> entry(ucf->CreateStream(dstRef, WideString(names[n].c_str()),
+		                                               IUCFPackageUtils::kStandard));
+		if (entry == nil)
+		{
+			++failed;
+			line.Append("[cannot write ");
+			line.Append(Ascii(names[n].c_str()));
+			line.Append("] ");
+			continue;
+		}
+		entry->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(part.GetData())), got);
+		entry->Close();
+		++copied;
+		copiedBytes += got;
+	}
+	Trace("S18.3 ClosePackage");
+	const IUCFPackageUtils::UCFErrorCode closed = ucf->ClosePackage(dstRef);
+	Trace("S18.4 ClosePackage came back");
+	ucf->ClosePackage(srcRef);
+	zipOut.reset(nil);		// ★flush before anything measures the file
+
+	line.Append("copied ");
+	line.AppendNumber(copied);
+	line.Append(" parts / ");
+	line.AppendNumber(copiedBytes);
+	line.Append(" B, failed ");
+	line.AppendNumber(failed);
+	line.Append(", Close -> ");
+	line.AppendNumber(static_cast<int32>(closed));
+
+	WIN32_FILE_ATTRIBUTE_DATA fad;
+	std::memset(&fad, 0, sizeof(fad));
+	if (::GetFileAttributesExW(dstPath.c_str(), GetFileExInfoStandard, &fad))
+	{
+		line.Append(", the new package is ");
+		line.AppendNumber(static_cast<int32>(fad.nFileSizeLow));
+		line.Append(" B at %TEMP%\\kcm-spike-repacked.idml");
+	}
+	else
+	{
+		line.Append(", ★NO FILE WAS WRITTEN");
+	}
+	Say(out, line);
+
+	// ---- ★the first judge: can UCF itself open what we just built, and does it still look like
+	//      an IDML? A container InDesign cannot read is not worth carrying to the next step.
+	Trace("S18.5 reopen what we built");
+	{
+		PMString check(Ascii(ownStories ? "S20b reopening it: " : "S18b reopening our own package: "));
+		IUCFPackageUtils::UCFErrorCode rerr = IUCFPackageUtils::kSuccess;
+		IUCFPackageUtils::PackageRefPtr back = ucf->OpenPackage(PipeAsFile(dstPath.c_str()), rerr);
+		if (back == nil)
+		{
+			check.Append("★REFUSED BY UCF ITSELF, err ");
+			check.AppendNumber(static_cast<int32>(rerr));
+		}
+		else
+		{
+			check.Append("opened, ");
+			DescribeIdmlPackage(back, check);
+			ucf->ClosePackage(back);
+			check.Append(" ⇒ NOW LET INDESIGN OPEN IT - that is the only verdict that counts");
+		}
+		Say(out, check);
+	}
+}
+
 /** One page of `db` out through kPDFExportCmdBoss - THE PAGE EXPORTER, the one whose picture is
     right - aimed at whatever `target` names. The same settings the report uses (KCMReport.cpp,
     ExportPagesToPDF); the only thing being varied is where it points. */
@@ -1122,6 +2199,149 @@ IImportProvider* QueryProviderBySweep(KCMMemXferBytes& bytes, PMString& out)
 		line.Append("not one of them will take these bytes");
 	Say(out, line);
 	return winner;
+}
+
+//========================================================================================
+//  ★★★S21 - THE SMALLEST IDML THIS CODE CAN BUILD, AND WHETHER THAT IS ENOUGH.
+//
+//  P3a proved the parts named after a UID can be built from ExportINX, byte for byte. What is
+//  left are the COLLECTIONS (Resources x4, Tags) and designmap.xml itself - and routing those
+//  would mean baking a table of ~58 element names into this file, one that grows with every
+//  feature a document uses.
+//
+//  ★SO ASK A CHEAPER QUESTION FIRST: does the split matter at all?
+//    ExportINX already writes the WHOLE document as one XML - every colour, every style, every
+//    spread, every story, in one tree under <Document>. A real IDML holds the same tree, only
+//    cut into 13 files with <idPkg:* src="..."/> standing where each cut was made.
+//    IF INDESIGN WILL READ A designmap.xml THAT WAS NEVER CUT, then a whole IDML is three
+//    entries - mimetype, META-INF/container.xml, designmap.xml - and the routing table is never
+//    needed at all.
+//
+//  The transformation is two edits to the INX, and nothing else:
+//    1. <?aid ... type="action" ...?>  ->  type="document"
+//    2. <Document DOMVersion=...       ->  <Document xmlns:idPkg="...packaging" DOMVersion=...
+//  ⚠What a real designmap has and this will not: a StoryList attribute, and the nine idPkg
+//    references. Whether either is required is exactly what this step measures.
+//========================================================================================
+void MinimalIdml(IDataBase* db, PMString& out)
+{
+	Utils<IUCFPackageUtils> ucf;
+	InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
+	InterfacePtr<IDOMElement> docElement(doc, UseDefaultIID());
+	PMString line(Ascii("S21 the smallest IDML we can build: "));
+	if (!ucf || docElement == nil)
+	{
+		line.Append("no IUCFPackageUtils, or the document has no IDOMElement");
+		Say(out, line);
+		return;
+	}
+
+	// ---- the whole document, as one XML, in memory ----------------------------------------
+	KCMMemXferBytes inx;
+	if (!ExportElementAsInx(docElement, inx) || inx.GetSize() == 0)
+	{
+		line.Append("ExportINX gave nothing");
+		Say(out, line);
+		return;
+	}
+	line.AppendNumber(static_cast<int32>(inx.GetSize()));
+	line.Append(" B of document XML; ");
+
+	// ---- the two edits --------------------------------------------------------------------
+	std::string xml(inx.GetData(), inx.GetSize());
+	const std::string fromPI("type=\"action\"");
+	const std::string toPI("type=\"document\"");
+	const size_t atPI = xml.find(fromPI);
+	if (atPI == std::string::npos)
+	{
+		line.Append("★the processing instruction does not say type=\"action\" - not touching it");
+		Say(out, line);
+		return;
+	}
+	xml.replace(atPI, fromPI.size(), toPI);
+
+	const std::string anchor("<Document ");
+	const size_t atDoc = xml.find(anchor);
+	if (atDoc == std::string::npos)
+	{
+		line.Append("★no <Document> element to dress");
+		Say(out, line);
+		return;
+	}
+	xml.insert(atDoc + anchor.size(),
+	           "xmlns:idPkg=\"http://ns.adobe.com/AdobeInDesign/idml/1.0/packaging\" ");
+	line.Append("PI and namespace rewritten, ");
+	line.AppendNumber(static_cast<int32>(xml.size()));
+	line.Append(" B; ");
+
+	// ---- three entries, and two of them are fixed text -------------------------------------
+	// ★Read out of a real package, byte for byte (2026-09-14).
+	static const char* const kContainer =
+		"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n"
+		"<container version=\"1.0\" xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\">\n"
+		"\t<rootfiles>\n"
+		"\t\t<rootfile full-path=\"designmap.xml\" media-type=\"text/xml\">\n"
+		"\t\t</rootfile>\n"
+		"\t</rootfiles>\n"
+		"</container>\n";
+
+	wchar_t tempDir[MAX_PATH] = { 0 };
+	::GetTempPathW(MAX_PATH, tempDir);
+	std::wstring dstPath(tempDir);
+	dstPath += L"kcm-spike-minimal.idml";
+	::DeleteFileW(dstPath.c_str());
+
+	const AString kIdmlMime("application/vnd.adobe.indesign-idml-package");
+	InterfacePtr<IPMStream> zipOut(StreamUtil::CreateFileStreamWriteLazy(
+		PipeAsFile(dstPath.c_str()), kOpenOut | kOpenTrunc));
+	IUCFPackageUtils::UCFErrorCode err = IUCFPackageUtils::kSuccess;
+	IUCFPackageUtils::PackageRefPtr ref = (zipOut != nil)
+		? ucf->CreatePackage(zipOut, kIdmlMime, kFalse, err) : nil;
+	if (ref == nil)
+	{
+		line.Append("CreatePackage nil, err ");
+		line.AppendNumber(static_cast<int32>(err));
+		Say(out, line);
+		return;
+	}
+	Trace("S21.1 writing the two entries");
+	{
+		InterfacePtr<IPMStream> c(ucf->CreateStream(ref, WideString("META-INF/container.xml"),
+		                                           IUCFPackageUtils::kStandard));
+		if (c != nil)
+		{
+			c->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(kContainer)),
+			            static_cast<int32>(std::strlen(kContainer)));
+			c->Close();
+		}
+		InterfacePtr<IPMStream> m(ucf->CreateStream(ref, WideString("designmap.xml"),
+		                                           IUCFPackageUtils::kStandard));
+		if (m != nil)
+		{
+			m->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(xml.c_str())),
+			            static_cast<int32>(xml.size()));
+			m->Close();
+		}
+	}
+	Trace("S21.2 ClosePackage");
+	const IUCFPackageUtils::UCFErrorCode closed = ucf->ClosePackage(ref);
+	zipOut.reset(nil);
+	line.Append("Close -> ");
+	line.AppendNumber(static_cast<int32>(closed));
+
+	WIN32_FILE_ATTRIBUTE_DATA fad;
+	std::memset(&fad, 0, sizeof(fad));
+	if (::GetFileAttributesExW(dstPath.c_str(), GetFileExInfoStandard, &fad))
+	{
+		line.Append(", ");
+		line.AppendNumber(static_cast<int32>(fad.nFileSizeLow));
+		line.Append(" B at %TEMP%\\kcm-spike-minimal.idml ⇒ LET INDESIGN OPEN IT");
+	}
+	else
+	{
+		line.Append(", ★NO FILE WAS WRITTEN");
+	}
+	Say(out, line);
 }
 
 }	// namespace
@@ -2467,6 +3687,28 @@ void KCMProbePdfRoute(PMString& out)
 		IdmlInMemory(db, line);
 		Say(out, line);
 	}
+
+	// ---- S17: A REAL IDML, AND WHETHER ONE CAN EXIST WITHOUT A FILE -------------------------
+	// The user, once S16 had shown a container could be built on a stream: "what I am interested
+	// in is whether a REAL IDML can be held internally, without being written to a file." S16's
+	// container held an INX and not an IDML (the two were compared byte for byte - see the block
+	// at the head of RealIdmlWithoutAFile), so this step goes after the real thing. The move it
+	// makes is the one S15 opened and nobody has yet played: ExportIDMLDirect takes a
+	// `const IDFile*`, and an IDFile can be a pipe.
+	Trace("S17 begin - a real IDML without a file");
+	RealIdmlWithoutAFile(db, out);
+
+	// ---- S18: route B, step one - repack a real IDML into a container of our own ------------
+	Trace("S18 begin - repack");
+	RepackIdml(db, out, kFalse);
+
+	// ---- S20: the same repack, but one part is ours ----------------------------------------
+	Trace("S20 begin - repack with our own story part");
+	RepackIdml(db, out, kTrue);
+
+	// ---- S21: everything in one designmap - is the split needed at all? ---------------------
+	Trace("S21 begin - the smallest IDML");
+	MinimalIdml(db, out);
 
 	Trace("=== run ends, every step came back ===");
 }
