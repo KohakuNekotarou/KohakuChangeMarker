@@ -4,30 +4,27 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  "Copy Source Text" - the right-click menu of a CHANGE row (a child row of the Story Edits
-//  list). What arrives is words only - no formatting, none of InDesign's marker characters.
-//  (The name read "Copy Source Text as Plain Text" for an hour on 2026-09-12, at the user's
-//  request, and the user took the suffix out again the same night.)
+//  The right-click menu of a CHANGE row (a child row of the Story Edits list): which change the
+//  menu was popped over, and the items that act on that one change - "Restore Source Text", and
+//  the same command under the name the Import mode calls for, "Change to Imported Text".
 //
-//  The user's ask (2026-09-12): "I want the SOURCE side's text of a change on the clipboard, as
-//  plain text - the words a replacement replaced, the words a deletion removed - and for a ruby
-//  change or a removed ruby, the READING itself, not the characters it sits on." One item, one
-//  side. The newer side is the document in front of the reader; the older side is what the panel
-//  alone can still show, which is why that is the one worth a menu.
-//
-//  ★THIS REVERSES A DECISION OF 2026-08-21. Until today a right click on a child row raised no
-//  menu at all (user's call at the time), because the only menu there was acted on the WHOLE
-//  STORY, and a reader pointing at one difference would have been handed an action over
+//  ★THIS SUBTREE REVERSED A DECISION OF 2026-08-21. Until 2026-09-12 a right click on a child row
+//  raised no menu at all (the user's call at the time), because the only menu there acted on the
+//  WHOLE STORY, and a reader pointing at one difference would have been handed an action over
 //  something else. That reason does not apply to a menu of the child row's OWN: this subtree
-//  (kKCMChangeRowMenuName) carries nothing but this item, and the story row's menu
+//  (kKCMChangeRowMenuName) carries nothing but items about the change, and the story row's menu
 //  (kKCMStoryRowMenuName) is not offered on a child row any more than it was.
 //
-//  ★THE CLIPBOARD IS WRITTEN THE WAY THE PRODUCT WRITES IT (LinksUIPanelMenuComponent::
-//  CopyStringToScrap, source/open/components/linksui/LinksUIPanelMenuComponent.cpp:1707): the
-//  session's IClipboardController, its text handler's ITextScrapData, and ITextModelCmds::InsertCmd
-//  into the scrap story. No Win32, so it is the same code on both platforms, and what other
-//  applications receive is the plain text InDesign itself externalises for a copied text
-//  selection.
+//  ⛔**"Copy Source Text" WAS THE FIRST ITEM HERE AND IS GONE** (2026-09-15, the user's request:
+//  "メニューにCopyがまだでているので、このきのうはなくす"). It put the older side's words on the
+//  clipboard as plain text. ★The file keeps its name: renaming it would touch both vcxproj copies
+//  (the one the build reads is outside the repo) and every include, for nothing. Its ActionID is a
+//  dead slot - KCMUIID.h says why it is not reused.
+//  ⚠**What went with it**: the clipboard recipe copied from the product itself
+//  (LinksUIPanelMenuComponent::CopyStringToScrap - the session's IClipboardController, its text
+//  handler's ITextScrapData, ITextModelCmds::InsertCmd into the scrap story; no Win32, so the same
+//  code on both platforms). Nothing in KCM writes the clipboard any more, so that is recorded here
+//  rather than left only in a deleted function.
 //
 //  ★WHY A FILE OF ITS OWN, beside KCMStoryRefresh: that file is the STORY row's menu (which row,
 //  may it be offered, what it does) and this is the CHANGE row's. They stash different things - a
@@ -66,34 +63,6 @@ void KCMStorySetMenuChange(int32 rowIndex, int32 changeIndex);
 	@return kTrue when both are >= 0.
 */
 bool16 KCMStoryGetMenuChange(int32& outRow, int32& outChange);
-
-/** Whether "Copy Source Text" may be offered for the stashed change.
-
-	Answers kFalse in every case where there is nothing on the older side to copy:
-	  - no change was stashed, or the list has been rebuilt since and the indexes no longer name one;
-	  - the panel is not in the STORY mode (the Resources list's child rows are not text changes);
-	  - an INSERTION - nothing stood on the older side;
-	  - a ruby ADDED - no older reading;
-	  - a kenten, footnote or endnote row - what those carry is a kind, not text a reader would paste.
-
-	⚠Being the only item in its menu, greyed means the MENU DOES NOT APPEAR (InDesign's behaviour,
-	  measured on the chapter rows' menu), which is the intended answer for the rows above.
-*/
-bool16 KCMChangeRowCanCopySource();
-
-/** Put the stashed change's older-side text on the clipboard as plain text.
-
-	A replacement: the words that were replaced. A deletion: the words that were removed. A ruby
-	change or removal: the older READING, not the base characters. Context on either side is left
-	out - the row's fTextPre / fTextPost exist to place the words for a reader, and are not part of
-	the change. InDesign's own marker characters (anchors, table and footnote references, the
-	page-number and variable stand-ins) are dropped, so what arrives is text and nothing else.
-
-	Reports the outcome on the panel's message line.
-
-	@return kTrue when something was copied, kFalse when the item should not have been live.
-*/
-bool16 KCMChangeRowCopySource();
 
 /** Whether "Restore Source Text" may be enabled for the stashed change: the Story mode, and any
     change - words, ruby or kenten (since the evening of 2026-09-13). An insertion counts -

@@ -882,8 +882,8 @@ bool16 CanEditResourceRow(int32 row)
 	  greyed - the menu does not come up, and that is fine"). The other two items on this menu are
 	  the Story mode's, so in the Resources mode every item on it is disabled at once, and InDesign
 	  does not pop a menu with nothing live on it. ⇒ **"Greyed" below is what this code does; "no
-	  menu" is what it looks like.** The same is already true of Copy Source Text, which is the only
-	  item on its menu in the other direction (KCMActionComponent.cpp says so there).
+	  menu" is what it looks like.** The mirror image holds in the other direction: Restore Source
+	  Text is greyed in the Resources mode, and this item is the only one that could be live there.
 	⇒ **This is the one place that decides it, and the table is the one place that answers it.**
 	  An attribute added to kKCMAttributePages becomes live here on the same build.
 */
