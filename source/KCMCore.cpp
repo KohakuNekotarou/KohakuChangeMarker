@@ -52,6 +52,7 @@
 #include "KCMStoryList.h"          // the list of changed stories (the model the Story Edits section reads)
 #include "KCMResourceStore.h"      // the list of changed DEFINITIONS - emptied at the same moment
 #include "KCMStoryDiffRun.h"       // in the Story mode, what changed inside each row
+#include "KCMStoryUndoObserver.h"  // so that a Ctrl+Z after a restore redraws the list
 #include "KCMHideUnchanged.h"      // KCMResetHideUnchanged
 #include "KCMExternalSource.h"     // KCMIsDbAlive -- "still there" includes the lent Source
 #include "KCMOrigin.h"             // KCMOriginStoryStamps / KCMOriginBytes -- Task Start: the older side kept in memory
@@ -592,6 +593,13 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	// @warning in the Pixel mode no diff runs, so **a ruby-only change drops here** -- the Pixel
 	//   mode reports text changes and gives up the rest.
 	KCMStoryList::DropRowsWithNoContentChange();
+
+	// ***** AND FROM NOW ON, AN UNDO REDRAWS THE LIST (2026-09-15). *****
+	// ⚠**AFTER the drop, not before**: a row that has just been dropped has nothing on the panel to
+	//   redraw, and attaching to its story would be work for a notification nobody reads.
+	// The observer writes nothing - it says "the text of a story you are showing has changed", which
+	// is as true of a Ctrl+Z as of the restore that preceded it (KCMStoryUndoObserver.h).
+	KCMStoryUndoEnsureObservers(targetDB);
 
 	// Once the model is built, say so. It is safe to do with the panel closed or the section
 	// collapsed (both give up quietly inside), so the caller does not have to know whether anything

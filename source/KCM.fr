@@ -468,6 +468,21 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// ***** THE PANEL FOLLOWS AN UNDO (2026-09-15). *****
+	// One observer per COMPARED story - attached at run time by KCMStoryUndoEnsureObservers, never
+	// persistently - so that Ctrl+Z after a restore redraws the list. It listens under the SDK's own
+	// IID_ITEXTMODEL, because the change is InDesign's and not a KCM command's, and it listens
+	// LAZILY, because lazy is the only notification broadcast on undo and redo (ISubject.h:78-82).
+	AddIn
+	{
+		kTextStoryBoss,
+		kInvalidClass,
+		{
+			// Implementation: KCMStoryUndoObserver.cpp
+			IID_IKCMSTORYUNDOOBSERVER, kKCMStoryUndoObserverImpl,
+		}
+	},
+
 	// Tasks 12-15 add their four interfaces to THIS block - they do not open a second AddIn.
 	AddIn
 	{
