@@ -362,8 +362,43 @@ size_t ByteAtCodePoint(const std::string& text, const std::vector<int32>& byteAt
 	return static_cast<size_t>(byteAt[static_cast<size_t>(cp)]);
 }
 
+/** Every note reference standing exactly at cp.
+
+	★**THE LINK'S TARGET IS THE NOTE'S ORDINAL, ITS TEXT IS THE NUMBER THE PAGE PRINTS.** The two
+	are the same in a document that numbers its notes from one and never restarts, and different in
+	one that does - so pairing on the ordinal is what keeps a restarting document's links honest
+	while the reader still sees the number InDesign would print. */
+void WriteNotesAt(const Para& p, int32 cp, int32& ordinal, std::string& out)
+{
+	for (size_t k = 0; k < p.fNoteAt.size(); ++k)
+	{
+		if (p.fNoteAt[k] != cp)
+			continue;
+
+		++ordinal;
+		const int32 shown = (k < p.fNoteNum.size()) ? p.fNoteNum[k] : ordinal;
+		char buf[96];
+		std::snprintf(buf, sizeof(buf), "<sup><a href=\"#n%d\">%d</a></sup>",
+					  static_cast<int>(ordinal), static_cast<int>(shown));
+		out += buf;
+	}
+}
+
+/** The nearest note position strictly after cp, or `limit` when there is none. */
+int32 NextNoteAfter(const Para& p, int32 cp, int32 limit)
+{
+	int32 stop = limit;
+	for (size_t k = 0; k < p.fNoteAt.size(); ++k)
+	{
+		if (p.fNoteAt[k] > cp && p.fNoteAt[k] < stop)
+			stop = p.fNoteAt[k];
+	}
+	return stop;
+}
+
 /*	WriteRun
-	The code points [from, to) of `text`, cut where the kenten changes and wrapped in <em>.
+	The code points [from, to) of the paragraph, cut where the kenten changes and wrapped in <em>,
+	with every note reference standing in that stretch written where it stands.
 
 	★**EVERY PIECE OF TEXT THIS FILE WRITES GOES THROUGH HERE**, the base of a reading included -
 	which is what lets a kenten and a ruby stand on the same word: the <em> simply ends up inside
@@ -375,12 +410,22 @@ size_t ByteAtCodePoint(const std::string& text, const std::vector<int32>& byteAt
 	 worse than the alternative only if there were an alternative: Write's contract is that it
 	 never fails.
 */
-void WriteRun(const std::string& text, const std::vector<int32>& byteAt,
-			  const KCMAttrSpanList& kenten, int32 from, int32 to, std::string& out)
+void WriteRun(const Para& p, const std::vector<int32>& byteAt,
+			  int32 from, int32 to, int32& noteOrdinal, std::string& out)
 {
+	const std::string& text = p.fText;
+	const KCMAttrSpanList& kenten = p.fKenten;
+
 	int32 cp = from;
 	while (cp < to)
 	{
+		// ★★**EVERY NOTE REFERENCE IS EMITTED HERE**, wherever the run stands - inside a reading's
+		//   base included. ⚠MEASURED 2026-09-15: while the notes were placed by the paragraph's own
+		//   loop instead, a reference standing INSIDE A RUBY was written nowhere at all and came
+		//   back missing. A dropped footnote is the exact failure this format exists to prevent, so
+		//   the emission moved to the one place every piece of text goes through.
+		WriteNotesAt(p, cp, noteOrdinal, out);
+
 		const KCMAttrSpan* cover = nil;
 		for (size_t k = 0; k < kenten.size(); ++k)
 		{
@@ -408,6 +453,10 @@ void WriteRun(const std::string& text, const std::vector<int32>& byteAt,
 					stop = kenten[k].fStart;
 			}
 		}
+
+		// ...and a reference standing in the middle of this stretch cuts it, so that the next turn
+		// of the loop stands exactly where the reference does.
+		stop = NextNoteAfter(p, cp, stop);
 
 		std::string cls;
 		const bool16 wrapped = (cover != nil && KentenClassOf(cover->fValue, cls)) ? kTrue : kFalse;
@@ -560,6 +609,71 @@ bool16 TakeSpan(const std::string& s, size_t at, size_t after, bool16 closing,
 	return kTrue;
 }
 
+/*	TakeSup
+	One <sup><a href="#nN">N</a></sup>, wherever it stands - in a paragraph, or inside a reading's
+	base, which is where a note hanging off a ruby'd word puts it.
+
+	★**THE ORDINAL COMES FROM THE href AND THE PRINTED NUMBER FROM THE LINK'S TEXT.** They are the
+	same in a document that numbers from one and never restarts, and different in one that does.
+*/
+bool16 TakeSup(const std::string& s, size_t after, const std::string& para,
+			   std::vector<int32>& outNoteAt, std::vector<int32>& outNoteNum,
+			   std::vector<int32>& outRefs, size_t& outNext, std::string& whyNot)
+{
+	size_t closeAt = 0;
+	size_t closeAfter = 0;
+	if (!FindClosing(s, after, "sup", closeAt, closeAfter))
+	{
+		whyNot = "a <sup> was never closed";
+		return kFalse;
+	}
+
+	const std::string inside = s.substr(after, closeAt - after);
+	const size_t hash = inside.find("#n");
+	if (hash == std::string::npos)
+	{
+		whyNot = "a <sup> carries no link to a note "
+				 "(this format writes <sup><a href=\"#n1\">1</a></sup>)";
+		return kFalse;
+	}
+
+	int32 ordinal = 0;
+	size_t q = hash + 2;
+	while (q < inside.size() && inside[q] >= '0' && inside[q] <= '9')
+	{
+		ordinal = ordinal * 10 + (inside[q] - '0');
+		++q;
+	}
+	if (ordinal <= 0)
+	{
+		whyNot = "a <sup> points at no note in particular";
+		return kFalse;
+	}
+
+	int32 shown = ordinal;
+	const size_t gt = inside.find('>', q);
+	if (gt != std::string::npos)
+	{
+		size_t r = gt + 1;
+		int32 value = 0;
+		bool16 any = kFalse;
+		while (r < inside.size() && inside[r] >= '0' && inside[r] <= '9')
+		{
+			value = value * 10 + (inside[r] - '0');
+			++r;
+			any = kTrue;
+		}
+		if (any)
+			shown = value;
+	}
+
+	outNoteAt.push_back(CountCodePoints(para));
+	outNoteNum.push_back(shown);
+	outRefs.push_back(ordinal);
+	outNext = closeAfter;
+	return kTrue;
+}
+
 bool SpanStartsEarlier(const KCMAttrSpan& a, const KCMAttrSpan& b)
 {
 	return a.fStart < b.fStart;
@@ -579,40 +693,6 @@ bool SpanStartsEarlier(const KCMAttrSpan& a, const KCMAttrSpan& b)
 	 way either way, so the reader cannot tell - and does not guess, it answers GROUP. Whoever
 	 applies the result keeps the setting the document already had (the design says so, 3-3).
 */
-/** Every note reference standing exactly at cp.
-
-	★**THE LINK'S TARGET IS THE NOTE'S ORDINAL, ITS TEXT IS THE NUMBER THE PAGE PRINTS.** The two
-	are the same in a document that numbers its notes from one and never restarts, and different in
-	one that does - so pairing on the ordinal is what keeps a restarting document's links honest
-	while the reader still sees the number InDesign would print. */
-void WriteNotesAt(const Para& p, int32 cp, int32& ordinal, std::string& out)
-{
-	for (size_t k = 0; k < p.fNoteAt.size(); ++k)
-	{
-		if (p.fNoteAt[k] != cp)
-			continue;
-
-		++ordinal;
-		const int32 shown = (k < p.fNoteNum.size()) ? p.fNoteNum[k] : ordinal;
-		char buf[96];
-		std::snprintf(buf, sizeof(buf), "<sup><a href=\"#n%d\">%d</a></sup>",
-					  static_cast<int>(ordinal), static_cast<int>(shown));
-		out += buf;
-	}
-}
-
-/** The nearest note position strictly after cp, or `limit` when there is none. */
-int32 NextNoteAfter(const Para& p, int32 cp, int32 limit)
-{
-	int32 stop = limit;
-	for (size_t k = 0; k < p.fNoteAt.size(); ++k)
-	{
-		if (p.fNoteAt[k] > cp && p.fNoteAt[k] < stop)
-			stop = p.fNoteAt[k];
-	}
-	return stop;
-}
-
 void WriteParaHtml(const Para& p, int32& noteOrdinal, std::string& out)
 {
 	std::vector<int32> byteAt;
@@ -624,16 +704,8 @@ void WriteParaHtml(const Para& p, int32& noteOrdinal, std::string& out)
 
 	int32 cp = 0;
 	size_t next = 0;
-	int32 notesWrittenUpTo = -1;
 	while (cp < cpCount || next < spans.size())
 	{
-		// ⚠ONCE PER POSITION. The span-skipping branch below leaves cp where it is, and a note
-		//   written twice is a note the reader would have to guess about.
-		if (cp > notesWrittenUpTo)
-		{
-			WriteNotesAt(p, cp, noteOrdinal, out);
-			notesWrittenUpTo = cp;
-		}
 
 		// A span measuring nothing is not a span, and one that ends behind us cannot be placed:
 		// both are dropped rather than guessed at (KCMParaText.h applies the same rule to a
@@ -666,9 +738,10 @@ void WriteParaHtml(const Para& p, int32& noteOrdinal, std::string& out)
 			for (size_t k = next; k <= last; ++k)
 			{
 				// ★THE BASE GOES THROUGH WriteRun LIKE EVERYTHING ELSE, so a kenten standing on
-				//   these same characters comes out as an <em> inside the reading.
-				WriteRun(p.fText, byteAt, p.fKenten, spans[k].fStart,
-						 spans[k].fStart + spans[k].fLen, out);
+				//   these same characters comes out as an <em> inside the reading - and so does a
+				//   note reference, which is how one standing inside a reading keeps its place.
+				WriteRun(p, byteAt, spans[k].fStart, spans[k].fStart + spans[k].fLen,
+						 noteOrdinal, out);
 				out += "<rt>";
 				WriteText(spans[k].fValue, out);
 				out += "</rt>";
@@ -681,21 +754,18 @@ void WriteParaHtml(const Para& p, int32& noteOrdinal, std::string& out)
 		}
 
 		// ---- plain text, as far as the next reading (or the end) ------------------------------
-		int32 stop = (next < spans.size() && spans[next].fStart > cp) ? spans[next].fStart
-																	 : cpCount;
-		// ★A NOTE REFERENCE IS A PLACE, SO IT CUTS THE TEXT like a reading does.
-		stop = NextNoteAfter(p, cp, stop);
+		const int32 stop = (next < spans.size() && spans[next].fStart > cp) ? spans[next].fStart
+																		   : cpCount;
 		if (stop <= cp)
 			break;					// nothing left to write; a malformed span cannot loop us
 
-		WriteRun(p.fText, byteAt, p.fKenten, cp, stop, out);
+		WriteRun(p, byteAt, cp, stop, noteOrdinal, out);
 		cp = stop;
 	}
 
-	// ⚠A NOTE HANGING OFF THE LAST CHARACTER stands at the paragraph's end, where the loop above
-	//   has already stopped.
-	if (cpCount > notesWrittenUpTo)
-		WriteNotesAt(p, cpCount, noteOrdinal, out);
+	// ⚠A NOTE HANGING OFF THE LAST CHARACTER stands at the paragraph's end, which no run covers -
+	//   every run is half-open and stops before it.
+	WriteNotesAt(p, cpCount, noteOrdinal, out);
 }
 
 /*	WriteCellParas
@@ -1454,59 +1524,10 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					return kFalse;
 				}
 
-				size_t closeAt = 0;
-				size_t closeAfter = 0;
-				if (!FindClosing(s, after, "sup", closeAt, closeAfter))
-				{
-					whyNot = "a <sup> was never closed";
+				size_t next = after;
+				if (!TakeSup(s, after, para, paraNoteAt, paraNoteNum, refOrdinals, next, whyNot))
 					return kFalse;
-				}
-
-				const std::string inside = s.substr(after, closeAt - after);
-				const size_t hash = inside.find("#n");
-				if (hash == std::string::npos)
-				{
-					whyNot = "a <sup> carries no link to a note "
-							 "(this format writes <sup><a href=\"#n1\">1</a></sup>)";
-					return kFalse;
-				}
-
-				int32 ordinal = 0;
-				size_t q = hash + 2;
-				while (q < inside.size() && inside[q] >= '0' && inside[q] <= '9')
-				{
-					ordinal = ordinal * 10 + (inside[q] - '0');
-					++q;
-				}
-				if (ordinal <= 0)
-				{
-					whyNot = "a <sup> points at no note in particular";
-					return kFalse;
-				}
-
-				// ★The number the page prints is the LINK'S TEXT; the ordinal stands in when that
-				//   text is not a number (a note numbered with a letter, say).
-				int32 shown = ordinal;
-				const size_t gt = inside.find('>', q);
-				if (gt != std::string::npos)
-				{
-					size_t r = gt + 1;
-					int32 value = 0;
-					bool16 any = kFalse;
-					while (r < inside.size() && inside[r] >= '0' && inside[r] <= '9')
-					{
-						value = value * 10 + (inside[r] - '0');
-						++r;
-						any = kTrue;
-					}
-					if (any)
-						shown = value;
-				}
-
-				paraNoteAt.push_back(CountCodePoints(para));
-				paraNoteNum.push_back(shown);
-				refOrdinals.push_back(ordinal);
-				i = closeAfter;
+				i = next;
 				continue;
 			}
 
@@ -1681,6 +1702,24 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 						return kFalse;
 					}
 
+					// ★A NOTE CAN HANG OFF A RUBY'D WORD, so the reference stands inside the base -
+					//   and its place is measured against the paragraph like every other one
+					//   (⚠measured 2026-09-15: written anywhere else, it was silently dropped).
+					if (inner == "sup" && !innerClosing)
+					{
+						size_t next = innerAfter;
+						if (!TakeSup(s, innerAfter, para, paraNoteAt, paraNoteNum, refOrdinals,
+									 next, whyNot))
+							return kFalse;
+						i = next;
+						continue;
+					}
+					if (inner == "sup")
+					{
+						i = innerAfter;			// a stray </sup>
+						continue;
+					}
+
 					if (inner == "rt" && !innerClosing)
 					{
 						// ★THE BASE BELONGS TO THE READING THAT FOLLOWS IT. It is already in the
@@ -1721,6 +1760,20 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 								i = rtAfter;
 								rtClosed = kTrue;
 								break;
+							}
+
+							// ★★AN INVISIBLE CHARACTER CAN STAND IN A READING, and the writer puts
+							//   it there as a <span> like anywhere else. ⚠MEASURED 2026-09-15:
+							//   refusing it here meant the writer could produce a file its own
+							//   reader would not take - a reading holding a zero width space was
+							//   enough.
+							if (rtName == "span")
+							{
+								size_t next = rtAfter;
+								if (!TakeSpan(s, i, rtAfter, rtClosing, reading, next, whyNot))
+									return kFalse;
+								i = next;
+								continue;
 							}
 
 							whyNot = "the <" + rtName + "> element cannot stand inside an <rt>";
