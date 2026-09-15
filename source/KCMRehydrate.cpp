@@ -32,6 +32,8 @@
 #include "IStoryList.h"
 #include "ITextModel.h"
 #include "ITextModelCmds.h"		// DeleteCmd - the one edit ever made to a rehydrated copy
+#include "IStringData.h"			// NameCopyAfterOrigin: kSetDocNameCmdBoss carries the name here
+#include "KCMOrigin.h"				// KCMOriginDocDB - the document the copy stands for
 
 // General includes:
 #include "CmdUtils.h"
@@ -343,6 +345,59 @@ bool16 ImportOnly(const UIDRef& ref, KCMResourceBytes& xml, PMString& whyNot)
 	return kTrue;
 }
 
+/* NameCopyAfterOrigin
+	Give the copy the NAME of the document it was taken from.
+
+	★★★WHY (measured 2026-09-15). A text variable of the File Name kind resolves from the
+	DOCUMENT'S NAME, not from any file on disk: a new untitled document reports its untitled name,
+	and setting the name to "allin.indd" makes the same variable read "allin" on the spot. A
+	task-start copy IS a new untitled document, so a page carrying that variable came out different
+	from the page it was taken from, and the Pixel comparison reported a change nobody had made -
+	measured on work/kcm-storyhtml-live/allin.indd: `pages compared=7 changed=1`, and `changed=0`
+	with that one instance removed. **Task Start compares one document at two moments; its name is
+	the same at both**, so the difference was ours, not the reader's.
+
+	⚠THROUGH THE COMMAND, not IDocument::SetName - the header says third parties use
+	 kSetDocNameCmdBoss (IDocument.h:141-143). The SDK contains no caller of it.
+	⚠NOTHING IS DONE TO THE USER'S DOCUMENT: the command's item list is the copy.
+	★★★THE DATES ARE DELIBERATELY LEFT ALONE (the user's decision, 2026-09-15), and the line that
+	 decides it is worth keeping: **a copy's IDENTITY may be corrected; its CONTENT may not be
+	 rewritten.** The name is a correction - the document is called the same thing at both moments,
+	 and "untitled" was our own doing. Creation / Modification / Output Date are not: they resolve
+	 from the document itself (IID_ISTDTIME on kDocBoss has no published header; ILastOutputTime
+	 ::Set() takes no argument, "sets it to the current time"), and NOT from the XMP - writing
+	 xmp:CreateDate moves the metadata and leaves the variable where it was (measured). The only way
+	 left would have been to rewrite those variables into Custom Text ones in the XML before the
+	 import, which makes the copy something the origin never was. Task Start's whole shape rests on
+	 the copy being a faithful reconstruction (the shape check; the Resources mode reading the
+	 origin's own bytes rather than the copy), and a future "write the task-start INX to a file"
+	 would carry the lie out of the plug-in.
+	⇒ A page carrying a DATE variable therefore always compares as changed in the Pixel mode. That
+	 is written in the How to Use, not worked around.
+	 Full record: docs/ai-notes/kcm-story-text-export-vocabulary-2026-09-15.md §5-§6.
+*/
+void NameCopyAfterOrigin(const UIDRef& copyRef, IDataBase* originDB)
+{
+	IDocument* const origin = DocOf(originDB);
+	if (origin == nil)
+		return;						// the origin's document has closed: nothing to copy a name from
+
+	PMString name;
+	origin->GetName(name);
+	if (name.IsEmpty())
+		return;
+
+	InterfacePtr<ICommand> cmd(CmdUtils::CreateCommand(kSetDocNameCmdBoss));
+	if (cmd == nil)
+		return;
+	cmd->SetItemList(UIDList(copyRef));
+	InterfacePtr<IStringData> data(cmd, IID_ISTRINGDATA);
+	if (data == nil)
+		return;
+	data->Set(name);
+	CmdUtils::ProcessCommand(cmd);
+}
+
 bool16 ImportAndCheck(const UIDRef& ref, KCMResourceBytes& copy, const KCMOriginShape& expect,
 					  const char* dummy, PMString& whyNot)
 {
@@ -363,6 +418,14 @@ bool16 ImportAndCheck(const UIDRef& ref, KCMResourceBytes& copy, const KCMOrigin
 		GlobalErrorStatePreserver errorState;
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 		LabelCopyPages(ref.GetDataBase(), copy);
+	}
+
+	// 3d. the copy answers as the document it was taken from (NameCopyAfterOrigin says why).
+	//     Before the compose, so that what is composed already reads the right name.
+	{
+		GlobalErrorStatePreserver errorState;
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+		NameCopyAfterOrigin(ref, KCMOriginDocDB());
 	}
 
 	// 4. compose BEFORE anything reads pixels or text positions. A document straight out of the
