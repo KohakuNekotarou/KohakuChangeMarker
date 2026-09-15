@@ -443,6 +443,18 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupTaskStartActionID, kKCMUIPrefix + 59)	// �
 DECLARE_PMID(kActionIDSpace, kKCMPopupExportStoryTextActionID, kKCMUIPrefix + 70)	// ★"Export Story Text..." on the panel flyout (a plain command, 2026-09-15), directly under Task Start: every story of the active document is written as one HTML file in a dated folder under one the reader picks, for editing outside InDesign and importing again. **It only reads** - nothing is written into the document, and the walk is wrapped in IDataBase::SaveRestoreModifiedState so it is not even dirtied. ★Live whenever there is an active document (facade CanTakeTaskStart, the same one question Task Start asks). Facade ExportStoryText; the work is KCMStoryTextExport.cpp and the format is KCMStoryHtml.cpp (pure functions, tested outside InDesign in work/kcm-storyhtml-test)
 DECLARE_PMID(kActionIDSpace, kKCMPopupImportStoryTextActionID, kKCMUIPrefix + 71)	// ★"Import Story Text..." on the panel flyout (a plain command, 2026-09-15), under Export: the folder of edited HTML is read, the document's state is taken as the origin, and the Story comparison starts against a COPY with the edited words poured into it. ★★★**THE DOCUMENT IS NOT CHANGED BY THIS** - what puts any of it in is "Restore Source Text", one change at a time. ★Live with an active document and no comparison running (⚠unlike Task Start, it does NOT stop one and take over). Facade ImportStoryText; the work is KCMStoryTextImport.cpp, and the pouring happens in KCMRehydrate - the one place a copy is made
 DECLARE_PMID(kActionIDSpace, kKCMChangeRowImportActionID, kKCMUIPrefix + 72)	// ★"Change to Imported Text" on a CHANGE row's context menu (2026-09-15) - the SAME action as Restore Source Text, wearing the name the Import mode calls for. In that mode the Source is the copy the reader's own edited HTML was poured into, so taking a change in is a REPLACEMENT rather than a restoration (the user: "taking it in and swapping it over is a replacement"). ⚠A second ActionID rather than a dynamic menu: KCM has no IDynamicMenu anywhere, and the panel already tells items apart by mode through their enabling - a greyed item does not appear at all. Live in the Import mode on a change that has not been taken in yet (kCustomEnabling -> KCMChangeRowCanImport); Restore Source Text is greyed there, and this is greyed everywhere else. Both run KCMChangeRowRestore -> facade RestoreChange -> KCMStoryRestore.cpp
+// ★★**THE TWO BULK ITEMS, IN FOUR ActionIDs** (2026-09-15, the user's ask: "the same thing on the
+//   parent menu, for that story" and "and for every story that has edits"). Four rather than two
+//   for the reason kKCMChangeRowImportActionID gives one screen up: KCM has no IDynamicMenu, so an
+//   item whose NAME changes with the mode is two items, each greyed in the other's mode. The pairs
+//   are (Story mode / Import mode), and both of each pair run the same facade call.
+//   ⚠A change already taken in is never taken in twice, and one that cannot go in is SKIPPED with
+//    a count rather than stopping the run (the user's call: pressing a bulk item says "all").
+DECLARE_PMID(kActionIDSpace, kKCMStoryRowRestoreAllActionID, kKCMUIPrefix + 73)	// ★"Restore All in This Story" on a STORY row's context menu. Facade RestoreAllInStory -> KCMStoryRestore.cpp. Live in the Story mode on a row that has changes left
+DECLARE_PMID(kActionIDSpace, kKCMStoryRowImportAllActionID, kKCMUIPrefix + 74)	// ★"Change All in This Story" - the same call under the Import mode's name, greyed everywhere else
+DECLARE_PMID(kActionIDSpace, kKCMPopupRestoreAllStoriesActionID, kKCMUIPrefix + 75)	// ★"Restore All Stories" on the panel flyout. Facade RestoreAllStories. ⚠**Asks first** (CAlert, OK / Cancel): it writes across every story at once, which the per-story item does not
+DECLARE_PMID(kActionIDSpace, kKCMPopupImportAllStoriesActionID, kKCMUIPrefix + 76)	// ★"Change All Stories to Imported Text" - the Import mode's name for the item above, and it asks the same question
+
 DECLARE_PMID(kActionIDSpace, kKCMPopupModeResourcesActionID, kKCMUIPrefix + 57)	// ★"Compare mode > Resources Changes" on the flyout (2026-09-09). The third mode: export each document as XML and compare the DEFINITIONS - styles, swatches, layers - so that a change to something nobody has applied is reported. It moves no pixel and touches no word, which is why neither of the other two modes can see it. Exclusive with Pixel and Story, the selected one carrying the check (kCustomEnabling + kSelectedAction). KCMActionComponent.cpp
 
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
@@ -743,6 +755,14 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMStoryRowMenuName		"KCMRtMenuStoryRow"
 #define kKCMChangeRowRestoreMenuKey	kKCMStringPrefix "kKCMChangeRowRestoreMenuKey"		// the "Restore Source Text" item on a CHANGE row's context menu (2026-09-13)
 #define kKCMChangeRowImportMenuKey	kKCMStringPrefix "kKCMChangeRowImportMenuKey"		// the "Change to Imported Text" item - the same action under the name the Import mode calls for (2026-09-15)
+// The four bulk items (2026-09-15): a STORY row's menu takes the whole story, the flyout takes the
+// whole list, and each has a Story-mode name and an Import-mode one.
+#define kKCMStoryRowRestoreAllMenuKey	kKCMStringPrefix "kKCMStoryRowRestoreAllMenuKey"
+#define kKCMStoryRowImportAllMenuKey	kKCMStringPrefix "kKCMStoryRowImportAllMenuKey"
+#define kKCMRestoreAllStoriesMenuKey	kKCMStringPrefix "kKCMRestoreAllStoriesMenuKey"
+#define kKCMImportAllStoriesMenuKey	kKCMStringPrefix "kKCMImportAllStoriesMenuKey"
+// (The flyout pair's question carries the counts, so it is built in code and marked untranslatable,
+//  the way the status line and the book comparison's own question are - not a string key here.)
 // The CHANGE row (child row) context menu - a subtree of its own, so that the story row's items
 // (Refresh / Show as XML) are never offered on a child row. KCMStoryRowEH::RButtonDn puts it up
 // through HandlePopupMenu exactly as it does the story row's. ★Its root name never reaches the
@@ -1143,6 +1163,10 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMResourceRowXmlMenuItemPosition	2.0	// ★the SAME subtree: "Show as XML" sits under the refresh item. The two are never live at once (opposite modes), so the order only decides what a future third item would sit between
 #define kKCMChangeRowRestoreMenuItemPosition	2.0	// CHANGE row context menu (its own subtree, kKCMChangeRowMenuName): "Restore Source Text". ⚠2.0 rather than 1.0 because "Copy Source Text" held 1.0 until 2026-09-15; the number is left where it is so that a user's shortcut keeps pointing at the same item
 #define kKCMChangeRowImportMenuItemPosition		2.5	// CHANGE row context menu: "Change to Imported Text" - the same place, in the mode where the item is called that. ★The two are never live together, so what this number really decides is where a future item would sit between them
+#define kKCMStoryRowRestoreAllMenuItemPosition	3.0	// STORY row context menu: "Restore All in This Story", under Refresh Story Comparison (1.0) and Show as XML (2.0)
+#define kKCMStoryRowImportAllMenuItemPosition	3.5	// the same place, in the Import mode's name. ★Never live together with the one above
+#define kKCMRestoreAllStoriesMenuItemPosition	9.03	// panel flyout: "Restore All Stories", under Import Story Text... (9.022)
+#define kKCMImportAllStoriesMenuItemPosition	9.04	// the same place, in the Import mode's name
 // (The panel tool button's flyout had two positions here on 2026-09-04. Gone with its MenuDef --
 //  a Win32 popup orders its items by the order they are appended, in code.)
 // -- the informational items, at the end --

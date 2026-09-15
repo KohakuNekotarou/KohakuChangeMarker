@@ -489,6 +489,24 @@ public:
 		⚠Appended at the END, like the three above, and for the same reason. */
 	virtual bool16	GetOversetPoint(IDataBase* db, UID storyUID, TextIndex at,
 									UID& outFrame, PBPMPoint& outPb) = 0;
+
+	/** Every change of row `nth`, taken in together as ONE undo step (2026-09-15, the user's ask:
+		"the same thing on the parent menu, for that story").
+
+		★**ONE PRESS, ONE UNDO STEP, TWO COMPARISONS** - not one comparison per change: the row is
+		walked BACKWARDS, so a write only disturbs text the walk has already passed
+		(KCMStoryRestore.h says why that is the whole trick).
+		★**A CHANGE THAT CANNOT GO IN IS SKIPPED, NOT A STOP**: outMessage counts what went in and
+		what did not and names the first reason. Pressing a bulk item says "all of them".
+
+		@return kTrue when at least one change went in.
+		⚠Appended at the END of the class - new virtuals go nowhere else, because KIDMCP calls this
+		  facade through its vtable ([[facade-vtable-slot-append-only]]). */
+	virtual bool16	RestoreAllInStory(int32 nth, PMString& outMessage) = 0;
+
+	/** The same across every row of the Story Edits list, still one undo step. @see the note above.
+		⚠Appended at the END, like the one before it. */
+	virtual bool16	RestoreAllStories(PMString& outMessage) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

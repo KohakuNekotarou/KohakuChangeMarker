@@ -15,6 +15,7 @@
 //  what the recipe was, so that removing the code did not take the finding with it.)
 
 // General includes:
+#include "CAlert.h"					// ModalAlert / kOKString / kCancelString / the icon enum
 #include "PMString.h"
 #include "Utils.h"
 
@@ -23,6 +24,7 @@
 #include "IKCMCompareFacade.h"		// GetCompareMode - the Story mode only
 #include "IKCMStoryEditsFacade.h"	// GetChange - the words themselves
 #include "KCMStoryCopy.h"
+#include "KCMStoryRefresh.h"			// KCMStoryMenuRow - which STORY row the bulk item is about
 #include "KCMUIShared.h"				// KCMSetStatus - the panel's message line
 
 namespace
@@ -135,6 +137,115 @@ bool16 KCMChangeRowRestore()
 	// The model does the work and says what happened; the words go to the status line either way.
 	PMString msg;
 	const bool16 ok = Utils<IKCMStoryEditsFacade>()->RestoreChange(gMenuRow, gMenuChange, msg);
+	if (msg.CharCount() > 0)
+		KCMSetStatus(msg);
+	return ok;
+}
+
+//----------------------------------------------------------------------------------------
+// The bulk items (2026-09-15)
+//----------------------------------------------------------------------------------------
+
+namespace
+{
+
+/*	BulkLive
+	The one place that asks "is this the mode this item belongs to, and is there anything to act
+	on" - so the four bulk items cannot answer it four different ways.
+
+	@param wantImport kTrue for the Import mode's half of a pair.
+	@param nth a row to require children on, or -1 for "the list as a whole".
+*/
+bool16 BulkLive(bool16 wantImport, int32 nth)
+{
+	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+	if (compare == nil || !compare->IsArmed())
+		return kFalse;
+
+	const KCMCompareMode mode = compare->GetCompareMode();
+	if (!KCMModeUsesStoryRows(mode))
+		return kFalse;
+	if ((mode == kKCMModeImport ? kTrue : kFalse) != wantImport)
+		return kFalse;
+
+	// ⚠**THE MERGED COUNT**, so a story whose changes have ALL been taken in still offers the item;
+	//   pressing it then answers "nothing to take in" instead of writing. The cheap question here,
+	//   the exact one in the model (BulkRun skips the rows already taken in). Walking every change
+	//   to grey the item would cost that walk every time a menu opens.
+	if (nth >= 0)
+		return (Utils<IKCMStoryEditsFacade>()->GetChangeCount(nth) > 0) ? kTrue : kFalse;
+	return (Utils<IKCMStoryEditsFacade>()->GetRowCount() > 0) ? kTrue : kFalse;
+}
+
+}	// anonymous namespace
+
+bool16 KCMStoryRowCanRestoreAll()
+{
+	return BulkLive(kFalse, KCMStoryMenuRow());
+}
+
+bool16 KCMStoryRowCanImportAll()
+{
+	return BulkLive(kTrue, KCMStoryMenuRow());
+}
+
+bool16 KCMStoryRowRestoreAll()
+{
+	// ⚠**THE STORY ROW'S OWN STASH**, not the change row's: this item hangs on the parent menu, and
+	//   the two menus keep their rows apart on purpose (KCMStoryRefresh.h).
+	const int32 nth = KCMStoryMenuRow();
+	if (nth < 0)
+	{
+		KCMSetStatus("no story row to take in.");
+		return kFalse;
+	}
+	PMString msg;
+	const bool16 ok = Utils<IKCMStoryEditsFacade>()->RestoreAllInStory(nth, msg);
+	if (msg.CharCount() > 0)
+		KCMSetStatus(msg);
+	return ok;
+}
+
+bool16 KCMCanRestoreAllStories()
+{
+	return BulkLive(kFalse, -1);
+}
+
+bool16 KCMCanImportAllStories()
+{
+	return BulkLive(kTrue, -1);
+}
+
+bool16 KCMMenuRestoreAllStories()
+{
+	// ***** THE COUNTS, READ BEFORE THE QUESTION IS ASKED. *****
+	// ⚠The merged count again: it is what the PANEL shows, so the number in the question is the
+	//   number the reader can count in the list. What actually goes in can be fewer - a change
+	//   already taken in, one the model cannot write - and the status line says so afterwards.
+	const int32 rows = Utils<IKCMStoryEditsFacade>()->GetRowCount();
+	int32 changes = 0;
+	for (int32 i = 0; i < rows; ++i)
+		changes += Utils<IKCMStoryEditsFacade>()->GetChangeCount(i);
+
+	PMString ask;
+	ask.SetTranslatable(kFalse);
+	ask.Append("Take in ");
+	ask.AppendNumber(changes);
+	ask.Append(changes == 1 ? " change in " : " changes in ");
+	ask.AppendNumber(rows);
+	ask.Append(rows == 1 ? " story?" : " stories?");
+	ask.Append("\n\nOne Ctrl+Z undoes all of it.");
+
+	// ★**ONLY THIS ONE ASKS** (the user's call, 2026-09-15). The per-story item on the row's menu
+	//   acts on what the reader pointed at; this one reaches across the whole document at once.
+	if (CAlert::ModalAlert(ask, kOKString, kCancelString, kNullString, 1, CAlert::eQuestionIcon) != 1)
+	{
+		KCMSetStatus("cancelled - nothing was changed.");
+		return kFalse;
+	}
+
+	PMString msg;
+	const bool16 ok = Utils<IKCMStoryEditsFacade>()->RestoreAllStories(msg);
 	if (msg.CharCount() > 0)
 		KCMSetStatus(msg);
 	return ok;

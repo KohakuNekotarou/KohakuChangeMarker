@@ -676,6 +676,19 @@ public:
 		return KCMRestoreChange(nth, which, outMessage);
 	}
 
+	// The two bulk items (2026-09-15). ★The order of the DEFINITIONS here does not matter - the
+	//   vtable follows the order of the DECLARATIONS in IKCMStoryEditsFacade.h, where both are at
+	//   the end - but they are kept beside the single-change one so that a reader finds the family.
+	virtual bool16	RestoreAllInStory(int32 nth, PMString& outMessage)
+	{
+		return KCMRestoreAllInStory(nth, outMessage);
+	}
+
+	virtual bool16	RestoreAllStories(PMString& outMessage)
+	{
+		return KCMRestoreAllStories(outMessage);
+	}
+
 	virtual bool16	GetOversetPoint(IDataBase* db, UID storyUID, TextIndex at,
 									UID& outFrame, PBPMPoint& outPb)
 	{

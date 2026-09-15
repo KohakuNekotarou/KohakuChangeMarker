@@ -999,6 +999,19 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMChangeRowRestore();
 			break;
 
+		// The bulk items (2026-09-15): the same act one size up, and one size up again. Each pair
+		// shares its line for the reason the pair above does - one command, two names, and the
+		// enabling decides which name the reader sees.
+		case kKCMStoryRowRestoreAllActionID:
+		case kKCMStoryRowImportAllActionID:
+			KCMStoryRowRestoreAll();
+			break;
+
+		case kKCMPopupRestoreAllStoriesActionID:
+		case kKCMPopupImportAllStoriesActionID:
+			KCMMenuRestoreAllStories();		// ⚠asks first; the per-story item above does not
+			break;
+
 		// (The panel tool button's flyout had two cases here for a few hours on 2026-09-04. They
 		//  are gone with their ActionDefs: the flyout is a Win32 popup raised by KCMToolButtonEH,
 		//  and it calls KCMToolButtonPressed itself. ⚠Do not add them back without a MenuDef --
@@ -1513,6 +1526,28 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			// The same test the action runs (a text change, in the Story mode). Unlike the copy
 			// item, an insertion is live: restoring it takes the inserted words out again.
 			listToUpdate->SetNthActionState(i, KCMChangeRowCanRestore() ? kEnabledAction
+			                                                            : kDisabled_Unselected);
+		}
+		// The four bulk items: each pair is (Story mode / Import mode), and each half is greyed in
+		// the other's mode, so one name shows and never both (KCMStoryCopy.cpp's BulkLive).
+		else if (action == kKCMStoryRowRestoreAllActionID)
+		{
+			listToUpdate->SetNthActionState(i, KCMStoryRowCanRestoreAll() ? kEnabledAction
+			                                                              : kDisabled_Unselected);
+		}
+		else if (action == kKCMStoryRowImportAllActionID)
+		{
+			listToUpdate->SetNthActionState(i, KCMStoryRowCanImportAll() ? kEnabledAction
+			                                                             : kDisabled_Unselected);
+		}
+		else if (action == kKCMPopupRestoreAllStoriesActionID)
+		{
+			listToUpdate->SetNthActionState(i, KCMCanRestoreAllStories() ? kEnabledAction
+			                                                             : kDisabled_Unselected);
+		}
+		else if (action == kKCMPopupImportAllStoriesActionID)
+		{
+			listToUpdate->SetNthActionState(i, KCMCanImportAllStories() ? kEnabledAction
 			                                                            : kDisabled_Unselected);
 		}
 		else if (action == kKCMChangeRowImportActionID)

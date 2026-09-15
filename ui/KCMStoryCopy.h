@@ -82,6 +82,35 @@ bool16 KCMChangeRowCanImport();
     the model side) and puts its message on the status line. kTrue when something was written. */
 bool16 KCMChangeRowRestore();
 
+// ---- the bulk items (2026-09-15) ------------------------------------------------------------
+// ★**THE SAME ACT AT THREE SIZES**: one change (above), one story, the whole list. The model does
+//   the work in one undo step each (KCMStoryRestore.h); these decide when the items are offered,
+//   name which story, and - for the whole list only - ask first.
+// ⚠Each pair is (Story mode / Import mode), because an item whose NAME changes with the mode is
+//   two items in KCM: there is no IDynamicMenu anywhere in the plug-in.
+
+/** Whether "Restore All in This Story" may be offered on the STORY row the menu was popped over:
+    the Story mode, a comparison running, and a row with something under it. */
+bool16 KCMStoryRowCanRestoreAll();
+
+/** The Import mode's half of the pair above ("Change All in This Story"). */
+bool16 KCMStoryRowCanImportAll();
+
+/** Take in every change of that story - one press, one undo step. Reports on the status line. */
+bool16 KCMStoryRowRestoreAll();
+
+/** Whether "Restore All Stories" may be offered on the flyout: the Story mode, a comparison
+    running, and a list that has rows. */
+bool16 KCMCanRestoreAllStories();
+
+/** The Import mode's half of the pair above ("Change All Stories to Imported Text"). */
+bool16 KCMCanImportAllStories();
+
+/** Ask - this one reaches across every story at once - and then take them all in.
+    ⚠The question carries the counts, so it is built here and marked untranslatable, the way the
+      status line and the book comparison's own question are. */
+bool16 KCMMenuRestoreAllStories();
+
 #endif // __KCMStoryCopy_h__
 
 // End, KCMStoryCopy.h.
