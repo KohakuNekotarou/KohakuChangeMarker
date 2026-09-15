@@ -795,6 +795,24 @@ void KCMStoryList::SetRowTargetTextCount(int32 nth, uint32 count)
 	gRows[nth].fTargetTextCount = count;
 }
 
+/* AddReplacedChange
+*/
+void KCMStoryList::AddReplacedChange(int32 nth, const KCMStoryChange& done)
+{
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
+		return;
+	gRows[nth].fReplacedChanges.push_back(done);
+}
+
+/* ClearReplacedChanges
+*/
+void KCMStoryList::ClearReplacedChanges(int32 nth)
+{
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
+		return;
+	gRows[nth].fReplacedChanges.clear();
+}
+
 void KCMStoryList::SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& changes,
 								   bool16 textCompared)
 {

@@ -181,10 +181,52 @@ struct KCMStoryChange
 		out from these by SetRowChanges -- the row names the attribute, the children carry it. */
 	KCMStoryAttrKind fAttrKind;
 
+	// ---- what a REPLACED change remembers (the Import mode only, 2026-09-15) ------------------
+	//
+	// ★**A REPLACED CHANGE KEEPS BOTH SIDES OF ITSELF.** The row has to be drawable in two states:
+	//   as it stands now (replaced), and as it stood before (after the reader presses Ctrl+Z).
+	//   Working the older one out again is not possible - the words it named are no longer in the
+	//   story - so it is kept at the moment of the write and never recomputed.
+	//
+	// ⚠**THERE IS NO "replaced" FLAG HERE, AND THAT IS DELIBERATE.** A flag would be a second
+	//   answer to a question fReplacedCount already answers, and the two would part company the
+	//   first time the reader undid the write: the flag would still say yes over text that had
+	//   gone back ([[one-question-one-place]]). The row is drawn as replaced when, and only when,
+	//   this equals the story's text change counter NOW - and that counter goes back on an undo.
+
+	/** The Target story's text change counter at the moment this change was replaced, or 0 when
+		it never was. ⇒ **"Is it replaced?" is `fReplacedCount != 0 && fReplacedCount == the
+		counter now`**, asked wherever the answer is needed and stored nowhere. */
+	uint32		fReplacedCount;
+
+	/** The range the replacement occupies NOW, in the Target -- what a jump aims at and what the
+		cell draws as the changed part. Meaningless while fReplacedCount is 0. */
+	TextIndex	fReplacedStart;
+	TextIndex	fReplacedEnd;
+
+	/** The three pieces AS THEY STAND AFTER the replacement (context, the words that went in,
+		context), cut the way the diff cuts its own -- KCMStoryDiffRun::SliceAround. */
+	PMString	fReplacedTextPre;
+	PMString	fReplacedText;
+	PMString	fReplacedTextPost;
+
+	/** The range and the three pieces AS THEY STOOD BEFORE it.
+
+		★**THEY CANNOT SHARE fTargetStart / fText***: after the write the story is diffed again,
+		and those fields then belong to a different comparison of a text this change is no longer
+		part of. The before-state has to be held apart from them or it is quietly overwritten. */
+	TextIndex	fBeforeStart;
+	TextIndex	fBeforeEnd;
+	PMString	fBeforeTextPre;
+	PMString	fBeforeText;
+	PMString	fBeforeTextPost;
+
 	KCMStoryChange()
 		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
 		  fSourceStart(0), fSourceEnd(0),
-		  fAttrKind(kKCMStoryAttrNone) {}
+		  fAttrKind(kKCMStoryAttrNone),
+		  fReplacedCount(0), fReplacedStart(0), fReplacedEnd(0),
+		  fBeforeStart(0), fBeforeEnd(0) {}
 };
 
 /** One row of the Story Edits section. */
@@ -278,6 +320,19 @@ struct KCMStoryRow
 		still the fallback for a row nobody diffed (KCMStoryRowFilter.h says where).
 		⚠It is the diff's answer, so it means nothing unless fTextCompared is kTrue. */
 	bool16			fHasTextChange;
+
+	/** The changes in this row's story that the reader has already replaced, in the order they
+		were replaced (the Import mode only).
+
+		★★**THEY ARE NOT IN fChanges, AND THAT IS WHAT MAKES THE RE-DIFF SAFE.** Every replacement
+		is followed by comparing the story again (KCMStoryRestore.cpp), which clears fChanges and
+		refills it from what the comparison finds - and finds nothing where the words now agree.
+		Anything living there would be thrown away on the next write. This list survives it, and
+		the panel is handed the two merged in text order (KCMStoryRowMerge).
+
+		**EMPTIED BY "Refresh Story Comparison"**, which is a fresh start (the user's call,
+		2026-09-15) and so clears this as well as the diff. Empty in every other mode. */
+	std::vector<KCMStoryChange> fReplacedChanges;
 
 	KCMStoryRow()
 		: fStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fFrameUID(kInvalidUID),
@@ -452,6 +507,19 @@ namespace KCMStoryList
 	/** Record the Target story's text change counter for row nth (KCMStoryRow::fTargetTextCount),
 		read by the caller at the moment it attached the row's changes. Out-of-range nth is ignored. */
 	void SetRowTargetTextCount(int32 nth, uint32 count);
+
+	/** Keep `done` on row nth as a change the reader has already replaced (the Import mode).
+
+		★**A DOOR OF ITS OWN, BESIDE SetRowChanges.** GetRow hands out a const pointer precisely so
+		that nothing edits a row behind the list's back, and a replaced change is written at a
+		different moment than the diff's children are - after the story has been compared again.
+		Out-of-range nth is ignored, as everywhere else here.
+		@see KCMStoryRow::fReplacedChanges for why it is not simply appended to fChanges. */
+	void AddReplacedChange(int32 nth, const KCMStoryChange& done);
+
+	/** Forget row nth's replaced changes. "Refresh Story Comparison" is a fresh start (the user's
+		call, 2026-09-15), so it clears these as well as the diff. Out-of-range nth is ignored. */
+	void ClearReplacedChanges(int32 nth);
 
 	/** Drop the rows whose story differs only in HOW IT IS SET -- a font, a colour, a style, a
 		table stroke -- and keep the ones whose CONTENT differs: the words, or the ruby written over
