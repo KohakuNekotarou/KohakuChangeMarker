@@ -67,9 +67,12 @@ int32 KCMStoryMenuRow();
 	    never been looked at that way (user's call: "only in the story mode");
 	  - the row is an ADDED story, which has no partner in the older document at all.
 
-	⚠Being the only item in its menu, greyed means the MENU DOES NOT APPEAR - which is what makes
-	  this the whole of "the Story mode only". The chapter rows' menu behaves the same way and was
-	  measured doing so (KCMUI.fr, kKCMBookRowStartActionID).
+	⚠**IT WAS THE ONLY ITEM ON THIS MENU UNTIL 2026-09-15**, when "Restore All in This Story" (and
+	  its Import-mode twin) joined it. Greyed still means the menu does not appear, but only when
+	  EVERY item on it is greyed - which is what the Pixel and Resources modes do, since the bulk
+	  pair is confined to the same two modes as this one. So "the Story mode only" still holds; it
+	  is no longer this item alone that delivers it. The chapter rows' menu is the surviving
+	  one-item example, measured (KCMUI.fr, kKCMBookRowStartActionID).
 */
 bool16 KCMStoryRowCanRefresh();
 

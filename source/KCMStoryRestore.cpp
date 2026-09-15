@@ -843,7 +843,7 @@ void BulkReport(PMString& outMessage, int32 written, int32 skipped, int32 storie
 	{
 		outMessage.Append(", ");
 		outMessage.AppendNumber(skipped);
-		outMessage.Append(skipped == 1 ? " skipped" : " skipped");
+		outMessage.Append(" skipped");		// the word is the same either way; no plural here
 		if (!firstWhyNot.IsEmpty())
 		{
 			outMessage.Append(" (");

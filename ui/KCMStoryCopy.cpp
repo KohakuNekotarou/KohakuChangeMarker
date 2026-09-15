@@ -179,14 +179,20 @@ bool16 BulkLive(bool16 wantImport, int32 nth)
 
 }	// anonymous namespace
 
+// ⚠**-1 MEANS "NO ROW" HERE AND "THE WHOLE LIST" TO BulkLive**, so the two are not passed through
+//   to each other: a stash that names no row greys the per-story item outright. (It cannot happen
+//   in practice - the row is stashed as the menu is popped - but letting one -1 stand for two
+//   different questions is the shape of bug this plug-in has spent the most time on.)
 bool16 KCMStoryRowCanRestoreAll()
 {
-	return BulkLive(kFalse, KCMStoryMenuRow());
+	const int32 nth = KCMStoryMenuRow();
+	return (nth >= 0) ? BulkLive(kFalse, nth) : kFalse;
 }
 
 bool16 KCMStoryRowCanImportAll()
 {
-	return BulkLive(kTrue, KCMStoryMenuRow());
+	const int32 nth = KCMStoryMenuRow();
+	return (nth >= 0) ? BulkLive(kTrue, nth) : kFalse;
 }
 
 bool16 KCMStoryRowRestoreAll()

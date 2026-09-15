@@ -840,7 +840,7 @@ namespace
 
 	★THE SAME QUESTION THE ACTION ASKS ITSELF, so the menu and the outcome cannot part company -
 	the shape every other item on these menus follows (KCMResourceRowHasXml,
-	KCMChangeRowCanCopySource).
+	KCMChangeRowCanRestore).
 	⚠The MODE is asked first: the stashed row is an index into whichever list was on screen, so in
 	  the Story mode it names a story and reading it as a definition would answer about whatever
 	  definition happens to sit at that number.

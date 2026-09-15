@@ -1279,9 +1279,10 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// (user's call, 2026-08-21 - and see KCMStoryDiffRun.h for why the change counters could
 		// not answer the second question anyway).
 		// ★Enabled ONLY in the Story mode, while armed, on a row that has a partner to compare
-		// against (kCustomEnabling -> KCMStoryRowCanRefresh). ⚠Being the only item in this menu,
-		// greyed means the menu does not appear at all - which is exactly what "only in the Story
-		// mode" asks for.
+		// against (kCustomEnabling -> KCMStoryRowCanRefresh). ⚠It was the ONLY item on this menu
+		// until 2026-09-15, when the bulk pair below joined it: greyed still means no menu, but
+		// only when every item on it is greyed - which the Pixel and Resources modes still do,
+		// the bulk pair being confined to the same two modes as this one.
 		kKCMStoryRowRefreshActionID,
 		kKCMStoryRowMenuName,
 		kKCMStoryRowRefreshMenuItemPosition,
