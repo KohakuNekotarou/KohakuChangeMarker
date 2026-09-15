@@ -161,11 +161,32 @@ bool16 IsOurTagAt(const std::string& s, size_t at)
 */
 void WriteText(const std::string& text, std::string& out)
 {
-	for (size_t i = 0; i < text.size(); ++i)
+	std::vector<int32> cps;
+	std::vector<int32> byteAt;
+	KCMTextDiff::ToCodePoints(text, &cps, &byteAt);
+
+	for (size_t k = 0; k < cps.size(); ++k)
 	{
-		if (text[i] == '<' && IsOurTagAt(text, i))
-			out += '<';
-		out += text[i];
+		// ★★AN INVISIBLE CHARACTER IS WRITTEN AS ITS OWN NAME, never as itself. Left raw it would
+		//   be a control character sitting in a file somebody edits, and the first thing an editor
+		//   does with one of those is lose it. The class IS the code point, so a character this
+		//   build has never heard of travels as correctly as one it has.
+		if (IsInvisible(cps[k]))
+		{
+			char hex[16];
+			std::snprintf(hex, sizeof(hex), "%04x", static_cast<unsigned int>(cps[k]));
+			out += "<span class=\"u";
+			out += hex;
+			out += "\"></span>";
+			continue;
+		}
+
+		const size_t from = static_cast<size_t>(byteAt[k]);
+		const size_t to = (k + 1 < byteAt.size()) ? static_cast<size_t>(byteAt[k + 1]) : text.size();
+
+		if (text[from] == '<' && IsOurTagAt(text, from))
+			out += '<';					// the one escape
+		out.append(text, from, to - from);
 	}
 }
 
@@ -389,6 +410,81 @@ bool16 TakeEm(const std::string& s, size_t at, size_t after, bool16 closing,
 
 	em.fOpen = kFalse;
 	em.fValue.clear();
+	return kTrue;
+}
+
+/*	TakeSpan
+	One <span class="uXXXX">, wherever it stands: the character it names joins the paragraph.
+
+	★**THE CLOSING TAG IS OPTIONAL.** HTML5 ignores the '/' in <span/>, so a self-closed one would
+	swallow the rest of the document - which is why the format spells it with a real closing tag
+	and why the reader does not depend on finding one. When </span> stands RIGHT THERE it is eaten;
+	when it does not, nothing is assumed and the text carries on.
+
+	⚠**BUT TEXT INSIDE ONE IS REFUSED.** "<span class=\"ufffc\">something</span>" is not a shape
+	 this format has, and reading it either way - dropping the words or keeping them - would be a
+	 guess about what the writer meant.
+	⚠A stray </span> is ignored rather than refused, for the same reason the opening one does not
+	 need it: it carries no meaning of its own.
+*/
+bool16 TakeSpan(const std::string& s, size_t at, size_t after, bool16 closing,
+				std::string& para, size_t& outNext, std::string& whyNot)
+{
+	outNext = after;
+
+	if (closing)
+		return kTrue;
+
+	std::string cls;
+	if (!ClassOfTag(s, at, after, cls) || cls.size() < 2 || Lower(cls[0]) != 'u')
+	{
+		whyNot = "a <span> carries a class this format does not write: " + cls;
+		return kFalse;
+	}
+
+	int32 cp = 0;
+	for (size_t k = 1; k < cls.size(); ++k)
+	{
+		const int32 digit = HexDigit(cls[k]);
+		if (digit < 0)
+		{
+			whyNot = "a <span> names a character that cannot be read: " + cls;
+			return kFalse;
+		}
+		cp = cp * 16 + digit;
+		if (cp > 0x10FFFF)
+		{
+			whyNot = "a <span> names a character outside Unicode: " + cls;
+			return kFalse;
+		}
+	}
+	if (cp <= 0)
+	{
+		whyNot = "a <span> names no character: " + cls;
+		return kFalse;
+	}
+
+	KCMParaText::AppendUtf8(para, cp);
+
+	// The closing tag, when it stands right there - and a refusal when words stand in between.
+	size_t j = after;
+	while (j < s.size() && s[j] != '<')
+		++j;
+	if (j < s.size())
+	{
+		std::string name;
+		bool16 innerClosing = kFalse;
+		size_t innerAfter = 0;
+		if (TagAt(s, j, name, innerClosing, innerAfter) && name == "span" && innerClosing)
+		{
+			if (j > after)
+			{
+				whyNot = "a <span> standing for an invisible character carries text";
+				return kFalse;
+			}
+			outNext = innerAfter;
+		}
+	}
 	return kTrue;
 }
 
@@ -739,6 +835,23 @@ void Write(const Story& s, int32 uid, std::string& out)
 	out += "em{font-style:normal;-webkit-text-emphasis-style:filled sesame;"
 		   "text-emphasis-style:filled sesame}\r\n";
 	WriteKentenStyles(s, out);
+	// ★★AND THE INVISIBLE CHARACTERS GET A FACE. Each one is an empty <span> whose class is its
+	//   code point, so the browser shows nothing at all unless the stylesheet draws something -
+	//   and a reader who cannot see a thing will delete it. The marks are SYMBOLS rather than
+	//   words on purpose: the stylesheet then needs no language, and these strings stay ASCII in
+	//   the source (CSS's own \XXXX escape carries the character, so no literal here is non-ASCII
+	//   - which is the rule this file keeps for everything it writes).
+	out += "span[class^=\"u\"]{color:#999;font-size:.85em}\r\n";
+	out += "span[class^=\"u\"]::before{content:\"\\25CC\"}\r\n";		// dotted circle: something is here
+	out += ".u000a::before{content:\"\\23CE\"}\r\n";					// return symbol
+	out += ".u000a::after{content:\"\\A\";white-space:pre}\r\n";		// and it really breaks the line
+	out += ".ufffc::before{content:\"\\25A3\"}\r\n";					// framed square: anchored object
+	out += ".u0018::before{content:\"#\"}\r\n";						// auto page number / variable
+	out += ".u0019::before{content:\"\\00A7\"}\r\n";					// section marker
+	out += ".u0008::before{content:\"\\21E5\"}\r\n";					// right indent tab
+	out += ".u0007::before{content:\"\\21B1\"}\r\n";					// indent to here
+	out += ".u00ad::before{content:\"\\2010\"}\r\n";					// discretionary hyphen
+	out += ".ue02c::before{content:\"\\2318\"}\r\n";					// index marker
 	out += "</style></head>\r\n";
 	out += "<body>\r\n";
 
@@ -874,6 +987,31 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 				continue;
 			}
 
+			// ⚠**REFUSED ON PURPOSE, AND WITH BOTH ANSWERS IN THE MESSAGE.** Somebody who knows
+			//   HTML reaches for <br> meaning "a new line here", and InDesign has TWO of those -
+			//   a new paragraph and a forced line break inside one. Taking a guess would silently
+			//   produce the wrong one, so the reader stops and says how to spell each.
+			if (name == "br" || name == "wbr")
+			{
+				whyNot = "<br> is not read here: a new paragraph is written </p><p>, "
+						 "and a forced line break inside one is <span class=\"u000a\"></span>";
+				return kFalse;
+			}
+
+			if (name == "span")
+			{
+				if (!inBody || !inPara)
+				{
+					whyNot = "a <span> stands outside a paragraph";
+					return kFalse;
+				}
+				size_t next = after;
+				if (!TakeSpan(s, i, after, closing, para, next, whyNot))
+					return kFalse;
+				i = next;
+				continue;
+			}
+
 			if (name == "em")
 			{
 				if (!inBody || !inPara)
@@ -947,6 +1085,24 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 							return kFalse;
 						i = innerAfter;
 						continue;
+					}
+
+					// ★An invisible character can stand inside a base - a reading over a word that
+					//   carries an index marker is ordinary - so the base reads them too.
+					if (inner == "span")
+					{
+						size_t next = innerAfter;
+						if (!TakeSpan(s, i, innerAfter, innerClosing, para, next, whyNot))
+							return kFalse;
+						i = next;
+						continue;
+					}
+
+					if (inner == "br" || inner == "wbr")
+					{
+						whyNot = "<br> is not read here: a new paragraph is written </p><p>, "
+								 "and a forced line break inside one is <span class=\"u000a\"></span>";
+						return kFalse;
 					}
 
 					if (inner == "rt" && !innerClosing)
