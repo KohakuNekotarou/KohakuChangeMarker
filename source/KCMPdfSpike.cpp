@@ -4114,6 +4114,249 @@ void OpenIdmlFromPipeProbe(PMString& out)
 
 }	// namespace
 
+//========================================================================================
+//  ★★★S29 - A DOOR THAT TAKES A **STREAM** AND MAKES A DOCUMENT: IS THERE ONE?
+//
+//  THE USER'S CONSTRAINT (2026-09-15): "I don't want to write a file - I want it to stay inside."
+//  Every route measured so far puts the two wishes on opposite sides of one table:
+//        ImportINX + kDocElementImportBoss + memory stream  ✅ no file  ⚠ a ParagraphStyleRange lost
+//        .idml written out + IDocumentCommands::Open        ✅ nothing lost  ⚠ a file on disk
+//        the same package down a pipe                       ⛔ refused, 0 bytes read      (S28)
+//
+//  ★ONE FAMILY OF DOORS HAS NEVER BEEN ASKED, AND IT TAKES A STREAM BY SIGNATURE:
+//      IImportProvider::CanImportThisStream(IPMStream*)   and   ImportThis(db, stream, ...)
+//  The sweep that asks every registered provider is already in this file (QueryProviderBySweep) -
+//  it has only ever been shown PDF bytes. ⇒ Show it a designmap and write down who answers.
+//
+//  ⚠A SEPARATE SWEEP ON PURPOSE, not a call to that one. It stops at the first taker because its
+//    caller wanted a filter; here the interesting number is how MANY answer and what each says -
+//    "eighteen providers and not one of them" is itself the result, and the other sweep cannot
+//    report it.
+//  ★ASKING IS READ-ONLY. ImportThis is an execution and sits behind its own switch: a provider
+//    saying it can take the bytes has said exactly that and nothing about surviving them - S26 was
+//    a policy that accepted the format it is named after and still died inside its own code.
+//
+//  ⛔★★★MEASURED 2026-09-15, AND THE ANSWER IS NO: **18 providers, NOT ONE of them will take a
+//    designmap.** The sweep is not broken - the same sweep, in the same run, finds the PDF filter
+//    for PDF bytes and calls it kFullImport (S2c). ⇒ The import-provider family does read streams;
+//    nobody in it reads this format. ★ImportThis was never reached, so its switch stays off.
+//========================================================================================
+
+/** ⛔OFF until a run says somebody takes it. Turn on only after S29 names a kFullImport taker. */
+static const bool16 kProbeImportThisDesignmap = kFalse;
+
+void DesignmapProviderCanvass(IDataBase* db, PMString& out)
+{
+	PMString line(Ascii("S29 import providers shown a designmap: "));
+	std::string mapXml;
+	int32 raw = 0;
+	PMString why;
+	if (!BuildDesignmapXml(db, mapXml, raw, why))
+	{
+		line.Append("the designmap could not be made - ");
+		line.Append(why);
+		Say(out, line);
+		return;
+	}
+	KCMMemXferBytes bytes;
+	bytes.Write(const_cast<char*>(mapXml.c_str()), static_cast<uint32>(mapXml.size()));
+
+	InterfacePtr<IK2ServiceRegistry> registry(GetExecutionContextSession(), UseDefaultIID());
+	if (registry == nil)
+	{
+		line.Append("FAILED - no service registry");
+		Say(out, line);
+		return;
+	}
+	const int32 count = registry->GetServiceProviderCount(kImportProviderService);
+	line.AppendNumber(count);
+	line.Append(" providers, ");
+
+	int32 sayers = 0;
+	IImportProvider* taker = nil;
+	for (int32 i = 0; i < count; ++i)
+	{
+		InterfacePtr<IK2ServiceProvider> service(registry->QueryNthServiceProvider(kImportProviderService, i));
+		InterfacePtr<IImportProvider> provider(service, IID_IIMPORTPROVIDER);
+		if (provider == nil)
+			continue;
+		// ⚠A fresh read stream per provider: one that sniffs the head leaves the position where it
+		//   stopped, and the next would then read from the middle.
+		InterfacePtr<IPMStream> read(StreamUtil::CreateMemoryStreamRead(&bytes, kFalse, kFalse));
+		if (read == nil)
+			continue;
+		const IImportProvider::ImportAbility ability = provider->CanImportThisStream(read);
+		read->Close();
+		if (ability == IImportProvider::kCannotImport)
+			continue;
+		++sayers;
+		if (sayers > 1)
+			line.Append(", ");
+		line.Append(provider->GetFormatName(0));
+		line.Append(" says ");
+		line.Append(AbilityName(ability));
+		if (taker == nil && ability == IImportProvider::kFullImport)
+		{
+			taker = provider;
+			taker->AddRef();			// kept past the InterfacePtr's scope; released below
+		}
+	}
+	if (sayers == 0)
+		line.Append("★NOT ONE of them will take a designmap");
+
+	if (taker != nil && kProbeImportThisDesignmap)
+	{
+		// ★The execution, only when a run has already named a taker. A new document is made for it
+		//   exactly as S24 does, so that a difference between the two can only be the door.
+		UIDRef docRef;
+		Utils<IDocumentCommands> docCmds;
+		if (docCmds && docCmds->New(&docRef, kSuppressUI) == kSuccess && docRef != UIDRef::gNull)
+		{
+			if (docRef.GetDataBase() != nil)
+				sSpikeMade.push_back(docRef.GetDataBase());
+			int32 stories = 0;
+			{
+				InterfacePtr<IDocument> doc(docRef, UseDefaultIID());
+				InterfacePtr<IPMStream> read(StreamUtil::CreateMemoryStreamRead(&bytes, kFalse, kFalse));
+				IDataBase* const newDb = ::GetDataBase(doc);
+				if (doc != nil && newDb != nil && read != nil)
+				{
+					UIDRef made;
+					Trace("S29 ImportThis begin");
+					taker->ImportThis(newDb, read, kSuppressUI, &made, nil, nil);
+					Trace("S29 ImportThis came back");
+					read->Close();
+					InterfacePtr<IStoryList> stl(doc, UseDefaultIID());
+					if (stl != nil)
+						stories = stl->GetUserAccessibleStoryCount();
+				}
+			}
+			line.Append(" [ImportThis ran, stories ");
+			line.AppendNumber(stories);
+			line.Append("]");
+		}
+	}
+	else if (taker != nil)
+	{
+		line.Append(" [★a kFullImport taker exists - kProbeImportThisDesignmap is off]");
+	}
+	if (taker != nil)
+		taker->Release();
+	Say(out, line);
+}
+
+//========================================================================================
+//  ★★★S30 - ISnippetImport, SHOWN A designmap.
+//
+//  KCMRehydrate.h records this door refusing the stream "before any policy is consulted
+//  (kSnippetWrongDocType: the PI says type=\"action\")". ★THAT SENTENCE NAMES ITS OWN EXPIRY:
+//  since 2026-09-15 the origin's PI says type="document" (KCMOriginIdml). The thing the refusal
+//  was about has changed, and the refusal has never been re-measured against the new bytes.
+//
+//  ★AND THE HEADER INVITES THE QUESTION: ImportFromStream's policyClass defaults to kInvalidClass,
+//    documented as "means it will figure it out" - so this asks the door to judge a file it has
+//    never been shown, rather than telling it which policy to use.
+//  ⚠SAFE TO RUN: the previous answer was a clean ErrorCode, not a crash, and this differs from it
+//    in one thing only - the bytes.
+//
+//  ⛔★★★MEASURED 2026-09-15: **err 103681 (kSnippetWrongDocType) - THE SAME REFUSAL THE INX GOT.**
+//    Rewriting the PI changed nothing, and S23.3 in the same run says why: the snippet VALIDATION
+//    answers a designmap with exactly 103681, while the ZIDML (IDML) validation answers it with 0.
+//    ⇒ **This door judges by its own validation, and its validation is not IDML's.** The PI was
+//    never the whole reason - it was the part of the reason that was visible in the error text.
+//
+//  ⇒ ★★★WITH S26 AND S28, THE TABLE IS NOW CLOSED. "No file" and "no sacrifice" cannot both be had:
+//        the only validation that ACCEPTS a designmap is IDML's          (S23.3)
+//        the IDML policy cannot be driven from outside, whatever it is handed  (S23.2, 2026-09-12, S26)
+//        the document opener will not read a pipe at all                 (S28)
+//        the one door that CAN be driven is kDocElementImportBoss, and it eats a ParagraphStyleRange
+//    ⇒ **The sacrificial range stays, OR the origin becomes a file.** That is now a measured
+//    statement about every door in this file, not a guess about the ones not yet tried.
+//========================================================================================
+
+void SnippetImportDesignmapProbe(IDataBase* db, PMString& out)
+{
+	PMString line(Ascii("S30 ISnippetImport handed a designmap: "));
+	std::string mapXml;
+	int32 raw = 0;
+	PMString why;
+	if (!BuildDesignmapXml(db, mapXml, raw, why))
+	{
+		line.Append("the designmap could not be made - ");
+		line.Append(why);
+		Say(out, line);
+		return;
+	}
+
+	UIDRef docRef;
+	Utils<IDocumentCommands> docCmds;
+	if (!docCmds || docCmds->New(&docRef, kSuppressUI) != kSuccess || docRef == UIDRef::gNull)
+	{
+		line.Append("could not make a document to import into");
+		Say(out, line);
+		return;
+	}
+	if (docRef.GetDataBase() != nil)
+		sSpikeMade.push_back(docRef.GetDataBase());
+
+	ErrorCode err = kFailure;
+	int32 pages = 0, spreads = 0, stories = 0;
+	{
+		// ★Every InterfacePtr on the new document stays inside this scope - a close under an
+		//   outstanding reference is a protective shutdown, not a crash (KCMRehydrate.h).
+		InterfacePtr<IDocument> doc(docRef, UseDefaultIID());
+		InterfacePtr<IDOMElement> parent(doc, UseDefaultIID());
+		KCMMemXferBytes bytes;
+		bytes.Write(const_cast<char*>(mapXml.c_str()), static_cast<uint32>(mapXml.size()));
+		bytes.Seek(0, kSeekFromStart);			// it sits at the end after the write
+		InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamRead(&bytes, kFalse, kFalse));
+		Utils<ISnippetImport> importer;
+		if (parent == nil || stream == nil || !importer)
+		{
+			line.Append("no parent element, no stream, or no Utils<ISnippetImport>");
+			Say(out, line);
+			return;
+		}
+		Trace("S30 ImportFromStream begin");
+		err = importer->ImportFromStream(stream, parent, kInvalidClass, kSuppressUI, nil);
+		Trace("S30 ImportFromStream came back");
+		stream->Close();
+
+		IDataBase* const newDb = ::GetDataBase(doc);
+		if (doc != nil && newDb != nil)
+		{
+			InterfacePtr<ISpreadList> sl(doc, UseDefaultIID());
+			if (sl != nil)
+			{
+				spreads = sl->GetSpreadCount();
+				for (int32 s = 0; s < spreads; ++s)
+				{
+					InterfacePtr<ISpread> sp(newDb, sl->GetNthSpreadUID(s), UseDefaultIID());
+					if (sp != nil)
+						pages += sp->GetNumPages();
+				}
+			}
+			InterfacePtr<IStoryList> stl(doc, UseDefaultIID());
+			if (stl != nil)
+				stories = stl->GetUserAccessibleStoryCount();
+		}
+	}
+
+	line.Append("err ");
+	line.AppendNumber(static_cast<int32>(err));
+	line.Append(err == kSuccess ? " ★OK" : " refused");
+	if (err == kSnippetWrongDocType)
+		line.Append(" (kSnippetWrongDocType - the SAME refusal as the INX got)");
+	line.Append(", pages ");
+	line.AppendNumber(pages);
+	line.Append(", spreads ");
+	line.AppendNumber(spreads);
+	line.Append(", stories ");
+	line.AppendNumber(stories);
+	line.Append(" (left open on purpose - close by name)");
+	Say(out, line);
+}
+
 void KCMProbePdfRoute(PMString& out)
 {
 	out.Clear();
@@ -5519,6 +5762,17 @@ void KCMProbePdfRoute(PMString& out)
 	// asks whether the document opener will take a pipe instead.
 	Trace("S28 begin - open a document from a pipe");
 	OpenIdmlFromPipeProbe(out);
+
+	// ---- S29: does any import provider take a designmap as a STREAM? -----------------------
+	// The user's constraint is "no file, stay inside". IImportProvider is the one family of doors
+	// that takes a stream by signature and has never been shown one of these.
+	Trace("S29 begin - import providers shown a designmap");
+	DesignmapProviderCanvass(db, out);
+
+	// ---- S30: ISnippetImport, now that the PI says type="document" ---------------------------
+	// It refused the INX for naming type="action". That sentence names its own expiry.
+	Trace("S30 begin - ISnippetImport shown a designmap");
+	SnippetImportDesignmapProbe(db, out);
 
 	Trace("=== run ends, every step came back ===");
 }
