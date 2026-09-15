@@ -101,6 +101,13 @@ bool16 KCMChangeRowCanRestore()
 	if (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeImport)
 		return kFalse;
 
+	// ★**AND NOT ON ONE ALREADY RESTORED** (2026-09-15, when the Story mode started keeping those
+	//   rows too, so that a Ctrl+Z has something to come back to). The older words are in the
+	//   document and the row is showing them: offering to write them again would be offering to do
+	//   nothing. The Import half has asked this from its first day.
+	if (change.fReplaced)
+		return kFalse;
+
 	// Every kind: words, ruby and kenten (KCMStoryRestore.h). An insertion IS restorable - the
 	// words come out again - so, unlike the copy item, an empty older side does not grey this
 	// one. What cannot be written back (a custom kenten mark, an attribute whose paragraph's

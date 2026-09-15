@@ -669,14 +669,19 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 	//   story whose counter has moved since the comparison, and this write moved it.
 	const int32 left = KCMStoryDiffRun::RunOne(targetDB, sourceDB, nth);
 
-	// ***** AND IN THE IMPORT MODE THE REPLACED CHANGE GOES BACK INTO THE LIST. *****
-	// The Story mode keeps its old behaviour - the change is dealt with, and its row is gone.
-	// Here the reader is working through a list of edits they made outside InDesign, and a row
-	// that vanishes on being taken in leaves them nothing to read afterwards (the user, 2026-09-15:
-	// "I want the child row to stay, the way KBS keeps a replaced hit").
+	// ***** THE REPLACED CHANGE GOES BACK INTO THE LIST - IN BOTH MODES. *****
+	// ★★**BOTH SINCE 2026-09-15, and the undo observer is why** (the user's decision, changing
+	//   their own of the same day). It was the Import mode's alone at first: there the reader works
+	//   through a list of edits they made outside InDesign, and a row that vanishes on being taken
+	//   in leaves them nothing to read afterwards ("I want the child row to stay, the way KBS keeps
+	//   a replaced hit"). What made it both was measuring what a Ctrl+Z can and cannot put back:
+	//   a row the Story mode had DELETED needs the story diffed again to come back, and that needs
+	//   the task-start copy rehydrated - which runs commands (KCMRehydrate: three ProcessCommand
+	//   calls, a new document, ImportINX) and so cannot be done from inside a lazy notification.
+	//   A row that STAYS needs none of it: the sign is DERIVED from the story's change counter,
+	//   which the undo takes back by itself, so redrawing is the whole of the work.
 	// ⚠**AFTER RunOne, NEVER BEFORE IT**: RunOne rebuilds the row, and a replaced change added
 	//   ahead of it would be added to the row that is about to be replaced.
-	if (KCMGetCompareMode() == kKCMModeImport)
 	{
 		const KCMStoryRow* const after = KCMStoryList::GetRow(nth);
 		if (after != nil)
@@ -805,7 +810,8 @@ bool16 BulkRun(int32 nth, IDataBase* sourceDBIn, int32& outWritten, int32& outSk
 
 	// And the replaced rows, with the counter the re-diff has just recorded - the number that makes
 	// them draw as replaced, and that an undo takes back (see RestoreOne's own tail).
-	if (KCMGetCompareMode() == kKCMModeImport && !dones.empty())
+	// (Both modes, since 2026-09-15 - see RestoreOne's tail for why the Story mode joined.)
+	if (!dones.empty())
 	{
 		const KCMStoryRow* const after = KCMStoryList::GetRow(nth);
 		if (after != nil)
