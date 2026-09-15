@@ -902,67 +902,42 @@ void CollectKenten(const std::vector<Para>& paras, std::vector<std::string>& see
 	}
 }
 
-/*	WriteKentenStyles
-	A rule for each mark THIS story actually uses, and none for the rest.
+/*	WriteKentenRule
+	One rule: the class this format spells a mark with, and the CSS that draws it.
 */
-void WriteKentenStyles(const Story& s, std::string& out)
+void WriteKentenRule(const std::string& cls, const std::string& style, std::string& out)
 {
-	std::vector<std::string> seen;
-	CollectKenten(s.fBody, seen);
-	for (size_t t = 0; t < s.fTables.size(); ++t)
+	out += ".kenten-";
+	out += cls;
+	out += "{-webkit-text-emphasis-style:";
+	out += style;
+	out += ";text-emphasis-style:";
+	out += style;
+	out += "}\r\n";
+}
+
+/*	CustomKentenStyle
+	The quoted mark for a "Custom:X" value, and kFalse for anything that is not one.
+
+	★The mark comes from the document, never from a literal here - which is what keeps this file's
+	 own bytes ASCII while the sheet it writes carries whatever character the reader chose.
+*/
+bool16 CustomKentenStyle(const std::string& value, std::string& outStyle)
+{
+	const size_t kCustomLen = 7;		// "Custom:"
+	if (value.size() <= kCustomLen || value.compare(0, kCustomLen, "Custom:") != 0)
+		return kFalse;
+
+	outStyle = "\"";
+	const std::string mark = value.substr(kCustomLen);
+	for (size_t c = 0; c < mark.size(); ++c)
 	{
-		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
-		{
-			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
-				CollectKenten(s.fTables[t].fRows[r].fCells[c].fParas, seen);
-		}
+		if (mark[c] == '"' || mark[c] == '\\')
+			outStyle += '\\';
+		outStyle += mark[c];
 	}
-	for (size_t n = 0; n < s.fNotes.size(); ++n)
-		CollectKenten(s.fNotes[n], seen);
-
-	for (size_t i = 0; i < seen.size(); ++i)
-	{
-		std::string cls;
-		if (!KentenClassOf(seen[i], cls))
-			continue;
-
-		std::string style;
-		const size_t kCustomLen = 7;		// "Custom:"
-		if (seen[i].size() > kCustomLen && seen[i].compare(0, kCustomLen, "Custom:") == 0)
-		{
-			// ★The mark itself, quoted. It comes from the document, never from a literal here.
-			style = "\"";
-			const std::string mark = seen[i].substr(kCustomLen);
-			for (size_t c = 0; c < mark.size(); ++c)
-			{
-				if (mark[c] == '"' || mark[c] == '\\')
-					style += '\\';
-				style += mark[c];
-			}
-			style += "\"";
-		}
-		else
-		{
-			for (size_t k = 0; k < kKentenLookCount; ++k)
-			{
-				if (seen[i] == kKentenLooks[k].fName)
-				{
-					style = kKentenLooks[k].fStyle;
-					break;
-				}
-			}
-			if (style.empty())
-				continue;				// a kind we have no drawing for: the em rule covers it
-		}
-
-		out += ".kenten-";
-		out += cls;
-		out += "{-webkit-text-emphasis-style:";
-		out += style;
-		out += ";text-emphasis-style:";
-		out += style;
-		out += "}\r\n";
-	}
+	outStyle += "\"";
+	return kTrue;
 }
 
 }	// anonymous namespace
@@ -1081,6 +1056,90 @@ bool16 IsInvisible(int32 cp)
 	return kFalse;
 }
 
+const char* const kStylesheetName = "kcm-story.css";
+
+void CollectKentenValues(const Story& s, std::vector<std::string>& inOutSeen)
+{
+	CollectKenten(s.fBody, inOutSeen);
+	for (size_t t = 0; t < s.fTables.size(); ++t)
+	{
+		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
+		{
+			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
+				CollectKenten(s.fTables[t].fRows[r].fCells[c].fParas, inOutSeen);
+		}
+	}
+	for (size_t n = 0; n < s.fNotes.size(); ++n)
+		CollectKenten(s.fNotes[n], inOutSeen);
+}
+
+void WriteStylesheet(const std::vector<std::string>& kentenValues, std::string& outCss)
+{
+	outCss.clear();
+
+	// ★**THE SIZE IS THE READING SIZE** (the user's request, 2026-09-15): 1.5 times what the
+	//   browser would have chosen. These files are read on a screen rather than set on a page, so
+	//   the document's own point sizes have nothing to say here. The measure stays in em, which is
+	//   why the line still holds its 40 characters - the characters grow, the column does not.
+	outCss += "body{font-size:1.5em;line-height:2.2;margin:2em;max-width:40em}\r\n";
+	outCss += "p{margin:0 0 .7em}\r\n";		// so a paragraph and a forced line break look different
+	outCss += "table{border-collapse:collapse;margin:1em 0}\r\n";
+	outCss += "td{border:1px solid #999;padding:.3em .8em;vertical-align:top}\r\n";
+	outCss += "ol{border-top:1px solid #ccc;margin-top:2em;padding-top:1em}\r\n";
+
+	// ★★THE STYLESHEET IS WHERE THIS FORMAT EXPLAINS ITSELF. A kenten IS stress emphasis, CSS has
+	//   text-emphasis-style for exactly that, so <em> is the mark - and this rule says so to anyone
+	//   who opens the file, including a reader who writes one of their own by hand.
+	outCss += "em{font-style:normal;-webkit-text-emphasis-style:filled sesame;"
+			  "text-emphasis-style:filled sesame}\r\n";
+
+	// ★**EVERY BUILT-IN KIND, WHETHER THIS FOLDER USES IT OR NOT.** The sheet is the folder's, and
+	//   a reader who types <em class="kenten-BlackTriangle"> into one of these files by hand has to
+	//   see a triangle when the page reloads.
+	for (size_t k = 0; k < kKentenLookCount; ++k)
+		WriteKentenRule(kKentenLooks[k].fName, kKentenLooks[k].fStyle, outCss);
+
+	// ⚠**THE CUSTOM MARKS GET AN ORDER OF THEIR OWN.** They arrive in the order the stories were
+	//  read, and that is a property of the export rather than of the document: sorted here so that
+	//  two exports of one document produce the same bytes and a folder does not diff against
+	//  itself. Sorting the UTF-8 puts them in code point order, which is an order and is stable -
+	//  nobody reads this file top to bottom looking for a mark.
+	std::vector<std::string> customs;
+	for (size_t i = 0; i < kentenValues.size(); ++i)
+	{
+		std::string style;
+		if (CustomKentenStyle(kentenValues[i], style))
+			customs.push_back(kentenValues[i]);
+	}
+	std::sort(customs.begin(), customs.end());
+	customs.erase(std::unique(customs.begin(), customs.end()), customs.end());
+
+	for (size_t i = 0; i < customs.size(); ++i)
+	{
+		std::string cls, style;
+		if (KentenClassOf(customs[i], cls) && CustomKentenStyle(customs[i], style))
+			WriteKentenRule(cls, style, outCss);
+	}
+
+	// ★★AND THE INVISIBLE CHARACTERS GET A FACE. Each one is an empty <span> whose class is its
+	//   code point, so the browser shows nothing at all unless the stylesheet draws something -
+	//   and a reader who cannot see a thing will delete it. The marks are SYMBOLS rather than
+	//   words on purpose: the stylesheet then needs no language, and these strings stay ASCII in
+	//   the source (CSS's own \XXXX escape carries the character, so no literal here is non-ASCII
+	//   - which is the rule this file keeps for everything it writes).
+	outCss += "span[class^=\"u\"]{color:#999;font-size:.85em}\r\n";
+	outCss += "span[class^=\"u\"]::before{content:\"\\25CC\"}\r\n";	// dotted circle: something is here
+	outCss += ".u000a::before{content:\"\\23CE\"}\r\n";				// return symbol
+	outCss += ".u000a::after{content:\"\\A\";white-space:pre}\r\n";	// and it really breaks the line
+	outCss += ".ufffc::before{content:\"\\25A3\"}\r\n";				// framed square: anchored object
+	outCss += ".u0018::before{content:\"#\"}\r\n";					// auto page number / variable
+	outCss += ".u0019::before{content:\"\\00A7\"}\r\n";				// section marker
+	outCss += ".u0008::before{content:\"\\21E5\"}\r\n";				// right indent tab
+	outCss += ".u0007::before{content:\"\\21B1\"}\r\n";				// indent to here
+	outCss += ".u00ad::before{content:\"\\2010\"}\r\n";				// discretionary hyphen
+	outCss += ".ue02c::before{content:\"\\2318\"}\r\n";				// index marker
+}
+
 void Write(const Story& s, int32 uid, std::string& out)
 {
 	out.clear();
@@ -1095,36 +1154,16 @@ void Write(const Story& s, int32 uid, std::string& out)
 	out += "<head><meta charset=\"utf-8\"><title>";
 	out += uidText;
 	out += "</title>\r\n";
-	out += "<style>\r\n";
-	out += "body{line-height:2.2;margin:2em;max-width:40em}\r\n";
-	out += "p{margin:0 0 .7em}\r\n";			// so a paragraph and a forced line break look different
-	out += "table{border-collapse:collapse;margin:1em 0}\r\n";
-	out += "td{border:1px solid #999;padding:.3em .8em;vertical-align:top}\r\n";
-	out += "ol{border-top:1px solid #ccc;margin-top:2em;padding-top:1em}\r\n";
-	// ★★THE STYLESHEET IS WHERE THIS FORMAT EXPLAINS ITSELF. A kenten IS stress emphasis, CSS has
-	//   text-emphasis-style for exactly that, so <em> is the mark - and this rule says so to anyone
-	//   who opens the file, including a reader who writes one of their own by hand.
-	out += "em{font-style:normal;-webkit-text-emphasis-style:filled sesame;"
-		   "text-emphasis-style:filled sesame}\r\n";
-	WriteKentenStyles(s, out);
-	// ★★AND THE INVISIBLE CHARACTERS GET A FACE. Each one is an empty <span> whose class is its
-	//   code point, so the browser shows nothing at all unless the stylesheet draws something -
-	//   and a reader who cannot see a thing will delete it. The marks are SYMBOLS rather than
-	//   words on purpose: the stylesheet then needs no language, and these strings stay ASCII in
-	//   the source (CSS's own \XXXX escape carries the character, so no literal here is non-ASCII
-	//   - which is the rule this file keeps for everything it writes).
-	out += "span[class^=\"u\"]{color:#999;font-size:.85em}\r\n";
-	out += "span[class^=\"u\"]::before{content:\"\\25CC\"}\r\n";		// dotted circle: something is here
-	out += ".u000a::before{content:\"\\23CE\"}\r\n";					// return symbol
-	out += ".u000a::after{content:\"\\A\";white-space:pre}\r\n";		// and it really breaks the line
-	out += ".ufffc::before{content:\"\\25A3\"}\r\n";					// framed square: anchored object
-	out += ".u0018::before{content:\"#\"}\r\n";						// auto page number / variable
-	out += ".u0019::before{content:\"\\00A7\"}\r\n";					// section marker
-	out += ".u0008::before{content:\"\\21E5\"}\r\n";					// right indent tab
-	out += ".u0007::before{content:\"\\21B1\"}\r\n";					// indent to here
-	out += ".u00ad::before{content:\"\\2010\"}\r\n";					// discretionary hyphen
-	out += ".ue02c::before{content:\"\\2318\"}\r\n";					// index marker
-	out += "</style></head>\r\n";
+	// ★**THE LOOK LIVES IN ONE FILE PER FOLDER** (2026-09-15), so the reader who wants bigger text
+	//   or a different mark edits that one file and every story follows. WriteStylesheet produces
+	//   it and KCMStoryTextExport writes it; the name comes from kStylesheetName so that the two
+	//   can never disagree.
+	// ⚠A file carried out of its folder still IMPORTS perfectly - the reading side never looks at
+	//  a stylesheet - it simply draws no kenten and no invisible characters in a browser.
+	out += "<link rel=\"stylesheet\" href=\"";
+	out += kStylesheetName;
+	out += "\">\r\n";
+	out += "</head>\r\n";
 	out += "<body>\r\n";
 
 	int32 noteOrdinal = 0;

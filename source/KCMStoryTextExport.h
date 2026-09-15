@@ -27,23 +27,32 @@
 
 class IDataBase;
 class IDFile;
+class UIDList;
 
-/** Write every user-accessible story of `db` into a new folder under `parent`.
+/** Write the stories of `db` into a new folder under `parent`.
 
     The folder is named "<document name> YYYY-MM-DD HHMMSS" and each story becomes one file called
-    "<its UID in decimal>.html".
+    "<its UID in decimal>.html". One more file - the one KCMStoryHtml::kStylesheetName names, which
+    is also what each of those files links to - carries the look for all of them.
 
     ★**THE UID IS DECIMAL BECAUSE "Show Story IDs" PRINTS IT THAT WAY.** The reader matches a file
       against a story by reading the two side by side, so the two spellings have to agree.
     ⚠**THE TIME STAMP IS NOT DECORATION.** A folder has no "overwrite?" prompt, so keeping two
       exports apart is this code's job, exactly as it is the report's (KCMReport.cpp says so).
+    ★**THE STYLESHEET IS WRITTEN LAST**, because a custom kenten mark is a character out of the
+      document and only the stories themselves can say which ones are in use.
 
     @param db         the document to read. Nothing in it is changed.
     @param parent     the folder the user chose.
+    @param onlyThese  the stories to write. ★**AN EMPTY LIST MEANS EVERY STORY** - the one place
+                      that rule is stated, and the reason the caller decides what a selection means
+                      rather than this half guessing at it. A UID in the list that is not a story
+                      of this document is counted and passed over, never trusted.
     @param outMessage what happened, for the panel's status line - the count and the place when it
                       worked, the step that failed when it did not.
     @return kFalse when the folder could not be made or no story could be read. */
-bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, PMString& outMessage);
+bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& onlyThese,
+						  PMString& outMessage);
 
 #endif // __KCMStoryTextExport_h__
 

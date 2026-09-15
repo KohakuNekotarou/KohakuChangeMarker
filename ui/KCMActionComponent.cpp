@@ -50,6 +50,11 @@
 #include "IKCMBookFacade.h"		// ResolveBookPair (deciding whether "Compare Books" may be enabled)
 #include "IKCMStoryEditsFacade.h"	// ExportStoryText - "Export Story Text..." on the flyout
 #include "SDKFileHelper.h"			// SDKFolderChooser - where the exported stories go
+#include "IOpenFileDialog.h"		// the several-files-at-once dialog SDKFileOpenChooser cannot be
+#include "CreateObject.h"			// ::CreateObject(kOpenFileDialogBoss, ...) - the official call
+#include "SysFileList.h"			// what that dialog hands back
+#include "UIDList.h"				// the stories a selection resolved to
+#include "KCMStorySelection.h"		// KCMCollectSelectedStories - which stories the reader means
 #include "KCMBookPanelLookup.h"	// KCMGetPanelBookFile (observing the front tab; a UI-side job)
 #include "KCMBookRun.h"		// KCMRunBookComparison (the "Compare Books" flyout item: confirm, compare, show)
 #include "KCMBookOpen.h"			// KCMBookMenuRow / CanStart / StartComparisonForRow (the "Start Change Marker" row item)
@@ -895,12 +900,37 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		//   ⚠**Showing the two books before anything is pressed** has not changed as an aim -- what
 		//     changed is where they are shown (from two lines of the dialog to the body of the alert)
 		//     and that they are **full paths** rather than names, because so many books share a name.
-		// Flyout "Export Story Text...": every story of the active document, one HTML file each,
-		// in a dated folder under the one the reader picks. ★**This half only reads** - the model
-		// wraps the walk in SaveRestoreModifiedState, so the document is not even dirtied.
+		// Flyout "Export Story Text...": the stories of the active document, one HTML file each,
+		// plus the one stylesheet they share, in a dated folder under the one the reader picks.
+		// ★**This half only reads** - the model wraps the walk in SaveRestoreModifiedState, so the
+		// document is not even dirtied.
+		// ★★**A SELECTION NARROWS IT** (the user's decision, 2026-09-15): the frames or the text
+		//   the reader has selected, and the whole document when they have selected nothing.
 		// ⚠A cancelled dialog says nothing, because nothing happened.
 		case kKCMPopupExportStoryTextActionID:
 			{
+				// ★**THE SELECTION IS READ BEFORE THE DIALOG OPENS.** A modal file dialog takes the
+				//   keyboard focus and is a window in its own right; reading the selection first
+				//   cannot be wrong, while reading it after would depend on what a dialog does to
+				//   a selection - which is not a thing this code should have to know.
+				IDataBase* const db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
+				if (db == nil)
+					break;			// the menu item is greyed without one; this is the belt
+
+				UIDList stories(db);
+				const bool16 hasSelection = KCMCollectSelectedStories(db, stories);
+
+				if (hasSelection && stories.IsEmpty())
+				{
+					// ⚠**SOMETHING IS SELECTED AND NONE OF IT HOLDS TEXT.** Writing the whole
+					//  document here would answer a question the reader did not ask: they pointed
+					//  at something, and forty files is not an answer to pointing at a photograph.
+					PMString noText("Export Story Text: nothing in the selection holds text");
+					noText.SetTranslatable(kFalse);
+					KCMSetStatus(noText);
+					break;
+				}
+
 				SDKFolderChooser chooser;
 				PMString title("Export Story Text - where to put the folder");
 				title.SetTranslatable(kFalse);
@@ -909,30 +939,56 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				if (chooser.IsChosen())
 				{
 					PMString exportMsg;
-					Utils<IKCMStoryEditsFacade>()->ExportStoryText(chooser.GetIDFile(), exportMsg);
+					// ⚠An EMPTY list means every story - the rule is stated once, in
+					//   KCMStoryTextExport.h, and this is the only place that leans on it.
+					Utils<IKCMStoryEditsFacade>()->ExportStoryText(chooser.GetIDFile(), stories,
+																   exportMsg);
 					if (exportMsg.CharCount() > 0)
 						KCMSetStatus(exportMsg);
 				}
 			}
 			break;
 
-		// Flyout "Import Story Text...": the other half of the round trip. The folder of edited
-		// HTML is read, the document's state is taken as the origin, and the Story comparison
-		// starts against a COPY with those words poured into it.
+		// Flyout "Import Story Text...": the other half of the round trip. The chosen files of
+		// edited HTML are read, the document's state is taken as the origin, and the Story
+		// comparison starts against a COPY with those words poured into it.
 		// ★★★**THE READER'S DOCUMENT IS NOT CHANGED BY THIS.** What puts any of it in is "Restore
 		//   Source Text", one change at a time - the door that already exists and already refuses
 		//   what it cannot write.
+		// ★★**FILES, AND AS MANY AS THEY LIKE** (the user's decision, 2026-09-15). A folder was
+		//   what this asked for until now, which meant handing over everything that happened to be
+		//   in one.
 		case kKCMPopupImportStoryTextActionID:
 			{
-				SDKFolderChooser chooser;
-				PMString title("Import Story Text - the folder of edited stories");
+				// ⚠**SDKFileOpenChooser CANNOT DO THIS.** It holds one IDFile and has no way to
+				//  answer for several, so the dialog is built the way Adobe's own callers build it
+				//  (source/open/.../importdata/SelectFileObserver.cpp:147).
+				InterfacePtr<IOpenFileDialog> dialog(
+					(IOpenFileDialog*)::CreateObject(kOpenFileDialogBoss, IID_IOPENFILEDIALOG));
+				if (dialog == nil)
+					break;
+
+				PMString family("Story text (*.html)");
+				family.SetTranslatable(kFalse);
+				PMString extension("html");
+				extension.SetTranslatable(kFalse);
+				dialog->AddExtension(&family, &extension);
+				// ★**AND "All Files" UNDERNEATH IT**, so that a reader whose folder shows nothing
+				//   can see what is actually in there rather than an empty dialog.
+				// ⚠**IT DOES NOT WIDEN WHAT GOES IN.** UidOfLeaf takes "<decimal>.html" and nothing
+				//  else, so a file shown by this second filter and then chosen is counted as "not
+				//  named after a story" - seen, said, and not imported.
+				dialog->AppendAllFilesToFilterList();
+
+				PMString title("Import Story Text - the edited story files");
 				title.SetTranslatable(kFalse);
-				chooser.SetTitle(title);
-				chooser.ShowDialog();
-				if (chooser.IsChosen())
+
+				SysFileList chosen;
+				if (dialog->DoDialog(nil, chosen, kTrue /*allowMultipleFiles*/, &title)
+					&& chosen.GetFileCount() > 0)
 				{
 					PMString importMsg;
-					Utils<IKCMStoryEditsFacade>()->ImportStoryText(chooser.GetIDFile(), importMsg);
+					Utils<IKCMStoryEditsFacade>()->ImportStoryText(chosen, importMsg);
 					if (importMsg.CharCount() > 0)
 						KCMSetStatus(importMsg);
 				}

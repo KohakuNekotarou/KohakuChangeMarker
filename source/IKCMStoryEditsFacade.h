@@ -50,6 +50,8 @@
 							// then see and could not link to.
 
 class IDataBase;
+class SysFileList;		// what the open dialog hands back: Import Story Text takes several files
+class UIDList;			// what a selection resolved to: Export Story Text takes a list of stories
 
 class IKCMStoryEditsFacade : public IPMUnknown
 {
@@ -438,33 +440,47 @@ public:
 		⚠Appended at the END of the class (new virtuals go nowhere else). */
 	virtual bool16	RestoreChange(int32 nth, int32 which, PMString& outMessage) = 0;
 
-	/** "Export Story Text..." (2026-09-15): write every story of the ACTIVE document into a new
-		folder under `parent`, one HTML file per story, for the reader to edit outside InDesign.
+	/** "Export Story Text..." (2026-09-15): write stories of the ACTIVE document into a new folder
+		under `parent`, one HTML file per story plus the one stylesheet they all link to, for the
+		reader to edit outside InDesign.
 
 		Nothing in the document is changed - the walk composes, so the model half holds a
 		IDataBase::SaveRestoreModifiedState around it and gives the document back as clean as it
 		found it.
 
+		★**WHAT A SELECTION MEANS IS DECIDED ON THE UI SIDE** (2026-09-15), because that is where
+		  the selection lives: `onlyThese` arrives already resolved to stories. An EMPTY list means
+		  every story of the document, and a selection holding no text at all is a case the UI
+		  answers by not calling this at all - one question, asked in one place.
+
 		@param parent the folder the reader chose. A dated folder is made inside it.
+		@param onlyThese the stories to write; empty means all of them.
 		@param outMessage the count and the place, or the step that failed.
 		@return kFalse when no story could be written.
 		⚠Appended at the END of the class - new virtuals go nowhere else, because KIDMCP calls
 		  this facade through its vtable and an insertion lands it on a different method
-		  ([[facade-vtable-slot-append-only]]). Adding one means rebuilding KIDMCP too. */
-	virtual bool16	ExportStoryText(const IDFile& parent, PMString& outMessage) = 0;
+		  ([[facade-vtable-slot-append-only]]). Adding one means rebuilding KIDMCP too. A
+		  SIGNATURE change is a different matter and was measured before it was made: KIDMCP
+		  reaches for IKCMCompareFacade and IKCMStoryMarkFacade, and for this one never. */
+	virtual bool16	ExportStoryText(const IDFile& parent, const UIDList& onlyThese,
+									PMString& outMessage) = 0;
 
-	/** "Import Story Text..." (2026-09-15): read a folder of edited stories, take the document's
-		state as the origin, and start the Story comparison against a copy with those words in it.
+	/** "Import Story Text..." (2026-09-15): read the chosen files of edited stories, take the
+		document's state as the origin, and start the Story comparison against a copy with those
+		words in it.
 
 		★★★**THE DOCUMENT IS NOT CHANGED BY THIS.** The edited words go into the COPY; what puts
 		  any of them into the reader's own document is "Restore Source Text", one change at a
 		  time, as it always was.
+		★**FILES, NOT A FOLDER** (2026-09-15, the user's decision): the reader picks the stories
+		  they mean, several at once, instead of handing over everything that happens to be in a
+		  folder.
 
-		@param folder the folder the reader chose.
+		@param files the files the reader chose, in the dialog's own order.
 		@param outMessage what happened, for the panel's status line.
-		@return kFalse when the folder held nothing readable, or no origin could be taken.
+		@return kFalse when nothing readable was chosen, or no origin could be taken.
 		⚠Appended at the END of the class, like the one above and for the same reason. */
-	virtual bool16	ImportStoryText(const IDFile& folder, PMString& outMessage) = 0;
+	virtual bool16	ImportStoryText(const SysFileList& files, PMString& outMessage) = 0;
 
 	/** Whether the import mode is up, which the UI asks in order to grey the other three modes and
 		Task Start while it is (the user's rule: no other comparison inside it).

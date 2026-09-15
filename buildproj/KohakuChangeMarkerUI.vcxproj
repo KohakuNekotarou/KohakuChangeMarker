@@ -271,6 +271,8 @@
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMResourceEdit.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMXmlPretty.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryJump.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMKentenMark.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStorySelection.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryNav.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryRefresh.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryCopy.cpp"/>
@@ -328,6 +330,8 @@
       <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceUnits.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceDisplay.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryJump.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMKentenMark.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStorySelection.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryNav.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryRefresh.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryCopy.h"/>

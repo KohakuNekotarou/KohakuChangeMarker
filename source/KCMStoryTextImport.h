@@ -6,7 +6,7 @@
 //
 //  WHAT THIS IS FOR. The reader exported the document's stories (KCMStoryTextExport), edited them
 //  outside InDesign - in an editor, in a browser, or by handing the file to somebody else - and
-//  now hands the folder back. This file reads it and writes those words into the document.
+//  now hands the files back. This file reads them and writes those words into the document.
 //
 //  ★★★**AN IMPORT DOES NOT CHANGE THE DOCUMENT** (the user's decision, 2026-09-15 - taken, tried
 //  the other way round on a real document, and taken again). The edited words go into the
@@ -37,6 +37,7 @@
 
 class IDataBase;
 class IDFile;
+class SysFileList;			// what the open dialog hands back - the reader picks several at once
 
 /** What one folder of edited stories holds: each story's own uid, and what was read for it.
 
@@ -46,19 +47,22 @@ struct KCMStoryTextSet
 {
 	std::vector<UID>					fUids;
 	std::vector<KCMStoryHtml::Story>	fStories;
-	PMString							fFolderName;	// for the panel's status line
 };
 
-/** Read every "<decimal uid>.html" in `folder`.
+/** Read each chosen file. A name has to be "<decimal uid>.html" to be one of ours.
 
-    ★**THE FILE NAME IS THE PAIRING.** A name that is not a decimal number is not one of ours and
-      is passed over in silence - the reader may keep notes of their own in that folder.
+    ★**THE FILE NAME IS THE PAIRING**, and it stays that way now that files are chosen by hand
+      (the user's decision, 2026-09-15). What changed with them is the SILENCE: a folder walk could
+      pass over a stranger's file without a word, because nobody had asked for that one, while a
+      file the reader picked themselves is counted and named in whyNot - they meant it, and the
+      name is the only thing that can tell them why it did not go in.
     ⚠A file whose markup cannot be read is SKIPPED and named in whyNot, so that one bad file does
       not cost the other twenty. kFalse means nothing at all could be read.
 
+    @param files the files the reader chose, in the dialog's own order.
     @param out cleared first, then filled.
     @param whyNot what went wrong - filled even when this answers kTrue, when some file was skipped. */
-bool16 KCMReadStoryTextFolder(const IDFile& folder, KCMStoryTextSet& out, PMString& whyNot);
+bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMString& whyNot);
 
 /** The set held for the import mode, or nil when none is held. */
 const KCMStoryTextSet* KCMHeldStoryText();
@@ -83,8 +87,8 @@ void KCMReleaseStoryText();
     @return kFalse when nothing at all could be applied. */
 bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage);
 
-/** "Import Story Text..." from end to end: read the folder, take the document's state as this
-    mode's origin, hold the words, and start the comparison in the Import mode.
+/** "Import Story Text..." from end to end: read the chosen files, take the document's state as
+    this mode's origin, hold the words, and start the comparison in the Import mode.
 
     ⚠**ONLY CHANGES INSIDE A PARAGRAPH ARE APPLIED, so far.** A place whose paragraph COUNT differs
       is refused with a reason rather than guessed at: adding and removing paragraphs needs the end
@@ -95,10 +99,10 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage);
       page number, an index marker: these can be moved or deleted from outside only by accident,
       and the file format carries them precisely so that this check can be made.
 
-    @param folder the folder the reader chose.
+    @param files the files the reader chose.
     @param outMessage what happened, for the panel's status line.
     @return kFalse when nothing could be read or nothing could be applied. */
-bool16 KCMImportStoryText(const IDFile& folder, PMString& outMessage);
+bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage);
 
 /** Whether the fourth mode is up.
 

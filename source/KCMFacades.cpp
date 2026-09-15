@@ -711,12 +711,15 @@ public:
 	virtual UID		GetStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index)
 					{ return KCMStoryFrameAt(db, storyUID, index); }
 
-	virtual bool16	ExportStoryText(const IDFile& parent, PMString& outMessage)
+	virtual bool16	ExportStoryText(const IDFile& parent, const UIDList& onlyThese,
+									PMString& outMessage)
 	{
 		// ★THE ACTIVE DOCUMENT IS THE ONE EXPORTED, decided here rather than in the UI: which
 		//   document a menu item acts on is a model question, and the UI half already asks this
 		//   facade every other such question.
-		return KCMExportStoryText(KCMActiveDocDB(), parent, outMessage);
+		// ⚠WHICH STORIES is the other half of that, and it is NOT a model question: a selection is
+		//  the UI's own state. It arrives already resolved, and empty means all.
+		return KCMExportStoryText(KCMActiveDocDB(), parent, onlyThese, outMessage);
 	}
 
 	virtual bool16	InImportMode()
@@ -724,11 +727,11 @@ public:
 		return KCMInImportMode();
 	}
 
-	virtual bool16	ImportStoryText(const IDFile& folder, PMString& outMessage)
+	virtual bool16	ImportStoryText(const SysFileList& files, PMString& outMessage)
 	{
 		// ★The whole sequence is the model's (read, take the origin, hold, set the mode, start) -
 		//   the order of those five matters and is stated where they live, not here.
-		return KCMImportStoryText(folder, outMessage);
+		return KCMImportStoryText(files, outMessage);
 	}
 };
 

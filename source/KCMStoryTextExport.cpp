@@ -28,6 +28,7 @@
 #include "FileUtils.h"
 #include "StreamUtil.h"
 #include "TableTypes.h"
+#include "UIDList.h"
 #include "UIDRef.h"
 #include "WideString.h"
 
@@ -369,14 +370,14 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out)
 	return kTrue;
 }
 
-/** The bytes of one story, into "<folder>\<uid>.html", with the BOM the design asks the FILE to
-	carry (KCMStoryHtml::Write deliberately does not put one in the string). */
-bool16 WriteStoryFile(const std::wstring& folder, int32 uid, const std::string& html)
-{
-	wchar_t leaf[64] = { 0 };
-	::swprintf_s(leaf, 64, L"\\%d.html", static_cast<int>(uid));
+/** One file's bytes, with the BOM the design asks a FILE to carry (KCMStoryHtml deliberately does
+	not put one in the strings it builds).
 
-	const std::wstring path = folder + leaf;
+	★The stylesheet gets one too. A custom kenten mark is a character out of the document, so the
+	 sheet is not ASCII either, and a browser that guessed at its encoding would draw the wrong
+	 mark - or a pair of mojibake - with nothing at all to say why. */
+bool16 WriteFileWithBom(const std::wstring& path, const std::string& bytes)
+{
 	PMString pathString;
 	pathString.SetTranslatable(kFalse);
 	pathString.AppendW(reinterpret_cast<const UTF16TextChar*>(path.c_str()));
@@ -389,19 +390,43 @@ bool16 WriteStoryFile(const std::wstring& folder, int32 uid, const std::string& 
 
 	const char bom[3] = { '\xEF', '\xBB', '\xBF' };
 	stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(bom)), 3);
-	if (!html.empty())
+	if (!bytes.empty())
 	{
-		stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(html.c_str())),
-						 static_cast<int32>(html.size()));
+		stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(bytes.c_str())),
+						 static_cast<int32>(bytes.size()));
 	}
 	stream->Flush();
 	stream->Close();
 	return kTrue;
 }
 
+/** The bytes of one story, into "<folder>\<uid>.html". */
+bool16 WriteStoryFile(const std::wstring& folder, int32 uid, const std::string& html)
+{
+	wchar_t leaf[64] = { 0 };
+	::swprintf_s(leaf, 64, L"\\%d.html", static_cast<int>(uid));
+	return WriteFileWithBom(folder + leaf, html);
+}
+
+/** The folder's one stylesheet.
+
+	★**THE NAME COMES FROM KCMStoryHtml**, which is also what every exported file links to. Two
+	  spellings of it would produce a folder that opens with no kenten, no marks for the invisible
+	  characters, and no error anywhere to say what went wrong. */
+bool16 WriteStylesheetFile(const std::wstring& folder, const std::string& css)
+{
+	std::wstring path = folder;
+	path += L"\\";
+	for (const char* p = KCMStoryHtml::kStylesheetName; *p != '\0'; ++p)
+		path += static_cast<wchar_t>(*p);		// ASCII, and this loop is the file that says so
+
+	return WriteFileWithBom(path, css);
+}
+
 }	// anonymous namespace
 
-bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, PMString& outMessage)
+bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& onlyThese,
+						  PMString& outMessage)
 {
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
@@ -421,14 +446,6 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, PMString& outMess
 		return kFalse;
 	}
 
-	std::wstring folder;
-	if (!MakeDatedFolder(parentPath, DocumentStem(db), folder))
-	{
-		outMessage = "the export folder could not be created";
-		outMessage.SetTranslatable(kFalse);
-		return kFalse;
-	}
-
 	// ★★READING COMPOSES, AND COMPOSING DIRTIES. The document is left exactly as clean as it was
 	//   found - the same guard KCMStoryDiffRun puts around its own walk.
 	IDataBase::SaveRestoreModifiedState guard(db);
@@ -441,12 +458,69 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, PMString& outMess
 		return kFalse;
 	}
 
+	// ---- what to write, settled before any folder exists --------------------------------------
+	//
+	// ⚠**NO FOLDER IS MADE UNTIL THERE IS A STORY TO PUT IN IT.** Making it first leaves an empty
+	//  dated folder behind every run that has nothing to write, and the reader has to go and delete
+	//  it - a mess made by the failure rather than by the work. (A story that turns out to be
+	//  unreadable LATER does still leave the folder standing with the stylesheet in it. By then the
+	//  run has begun, and "there was nothing to export" and "what was there could not be read" are
+	//  different things to say.)
+	// ★**A UID FROM THE CALLER IS CHECKED, NOT TRUSTED.** The selection is read on the UI side, one
+	//   plug-in away: a page item that is not a story of this document is counted and passed over,
+	//   and a story named twice is written once - "2 of 7" has to be a count of files, and two
+	//   passes over one story would write one file and claim two.
+	const int32 count = stories->GetUserAccessibleStoryCount();
+
+	std::vector<UIDRef> targets;
+	int32 notAStory = 0;
+
+	if (onlyThese.IsEmpty())
+	{
+		for (int32 i = 0; i < count; ++i)
+			targets.push_back(stories->GetNthUserAccessibleStoryUID(i));
+	}
+	else
+	{
+		for (int32 k = 0; k < onlyThese.Length(); ++k)
+		{
+			const UID wanted = onlyThese[k];
+			if (stories->GetUserAccessibleStoryIndex(wanted) < 0)
+			{
+				++notAStory;
+				continue;
+			}
+
+			bool16 already = kFalse;
+			for (size_t t = 0; t < targets.size() && !already; ++t)
+				already = (targets[t].GetUID() == wanted) ? kTrue : kFalse;
+			if (!already)
+				targets.push_back(UIDRef(db, wanted));
+		}
+	}
+
+	if (targets.empty())
+	{
+		outMessage = "there is no story to export";
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	std::wstring folder;
+	if (!MakeDatedFolder(parentPath, DocumentStem(db), folder))
+	{
+		outMessage = "the export folder could not be created";
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
 	int32 written = 0;
 	int32 refused = 0;
-	const int32 count = stories->GetUserAccessibleStoryCount();
-	for (int32 i = 0; i < count; ++i)
+	std::vector<std::string> kentenInUse;		// for the folder's one stylesheet
+
+	for (size_t t = 0; t < targets.size(); ++t)
 	{
-		const UIDRef storyRef = stories->GetNthUserAccessibleStoryUID(i);
+		const UIDRef storyRef = targets[t];
 
 		KCMStoryHtml::Story story;
 		if (!BuildStory(storyRef, story))
@@ -454,6 +528,11 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, PMString& outMess
 			++refused;
 			continue;
 		}
+
+		// ★THE SHEET IS BUILT FROM THE STORIES AS THEY GO PAST. A custom kenten mark is a
+		//   character out of the document, so nothing but the stories themselves can say which
+		//   marks this folder has to be able to draw.
+		KCMStoryHtml::CollectKentenValues(story, kentenInUse);
 
 		std::string html;
 		KCMStoryHtml::Write(story, storyRef.GetUID().Get(), html);
@@ -464,6 +543,13 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, PMString& outMess
 			++refused;
 	}
 
+	// ★**THE STYLESHEET LAST**, for the reason above: it cannot be written until every story has
+	//   been read. It is written even when some story was refused - the files that DID get out
+	//   still have to look right.
+	std::string css;
+	KCMStoryHtml::WriteStylesheet(kentenInUse, css);
+	const bool16 sheetWritten = WriteStylesheetFile(folder, css);
+
 	PMString path;
 	path.SetTranslatable(kFalse);
 	path.AppendW(reinterpret_cast<const UTF16TextChar*>(folder.c_str()));
@@ -471,6 +557,14 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, PMString& outMess
 	outMessage = "exported ";
 	outMessage.SetTranslatable(kFalse);
 	outMessage.AppendNumber(written);
+	// ★**"2 of 7" WHEN THE SELECTION DECIDED IT.** Without the second number "exported 2 story
+	//   file(s)" reads as a document with two stories in it, and the reader goes looking for the
+	//   other five in the folder.
+	if (!onlyThese.IsEmpty())
+	{
+		outMessage.Append(" of ");
+		outMessage.AppendNumber(count);
+	}
 	outMessage.Append(" story file(s)");
 	if (refused > 0)
 	{
@@ -478,6 +572,14 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, PMString& outMess
 		outMessage.AppendNumber(refused);
 		outMessage.Append(" refused");
 	}
+	if (notAStory > 0)
+	{
+		outMessage.Append(", ");
+		outMessage.AppendNumber(notAStory);
+		outMessage.Append(" not a story of this document");
+	}
+	if (!sheetWritten)
+		outMessage.Append(", stylesheet not written");
 	outMessage.Append(" to ");
 	outMessage.Append(path);
 

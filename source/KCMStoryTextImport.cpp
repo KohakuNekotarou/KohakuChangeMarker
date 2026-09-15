@@ -6,7 +6,6 @@
 
 #include "VCPlugInHeaders.h"
 
-#include <windows.h>				// FindFirstFileW - Windows only, like the rest of KCM's file work
 #include <algorithm>
 #include <cstdio>
 #include <string>
@@ -21,6 +20,7 @@
 #include "CmdUtils.h"
 #include "ErrorUtils.h"
 #include "FileUtils.h"
+#include "SysFileList.h"			// what the open dialog hands back - several files at once
 #include "WideString.h"
 
 #include "KCMStoryTextImport.h"
@@ -55,12 +55,11 @@ KCMCompareMode	sModeBeforeImport = kKCMModePixel;
 KCMStoryTextSet	sHeld;
 bool16			sHolding = kFalse;
 
-/** The path of an IDFile as Windows spells it. (KCMStoryTextExport.cpp has the same four lines,
-	and for the same reason: the two files share nothing else.) */
-std::wstring WidePath(const IDFile& file)
+/** A PMString as wide characters. (KCMStoryTextExport.cpp has these four lines inside its own
+	WidePath, which takes an IDFile instead - the two files share nothing else, and a header holding
+	one helper would be a worse thing to maintain.) */
+std::wstring WideOf(const PMString& s)
 {
-	PMString s;
-	FileUtils::IDFileToPMString(file, s);
 	int32 n = 0;
 	const UTF16TextChar* b = s.GrabUTF16Buffer(&n);
 	return (b != nil && n > 0)
@@ -68,18 +67,12 @@ std::wstring WidePath(const IDFile& file)
 		   : std::wstring();
 }
 
-/** "<folder>\<leaf>" as an IDFile. */
-IDFile FileInFolder(const std::wstring& folder, const std::wstring& leaf)
+/** A file's own name, with the folders in front of it taken off. */
+std::wstring LeafOf(const IDFile& file)
 {
-	std::wstring path = folder;
-	if (!path.empty() && path[path.size() - 1] != L'\\' && path[path.size() - 1] != L'/')
-		path += L"\\";
-	path += leaf;
-
-	PMString s;
-	s.SetTranslatable(kFalse);
-	s.AppendW(reinterpret_cast<const UTF16TextChar*>(path.c_str()));
-	return FileUtils::PMStringToSysFile(s);
+	PMString leaf;
+	FileUtils::GetFileName(file, leaf);
+	return WideOf(leaf);
 }
 
 /** The whole file, as bytes. kFalse when it could not be opened.
@@ -125,6 +118,14 @@ bool16 UidOfLeaf(const std::wstring& leaf, uint32& outUid)
 
 	const std::wstring stem = leaf.substr(0, dot);
 	if (stem.empty() || stem.size() > 10)
+		return kFalse;
+
+	// ⚠**A PADDED NUMBER IS NOT ONE OF OURS.** The exporter writes "269.html" and never
+	//   "0269.html", and Windows keeps both of those in one folder quite happily (measured
+	//   2026-09-15) - so a padded name is somebody's own copy, and reading it as story 269 would
+	//   let two files claim one story. Refusing it here is what makes that impossible rather than
+	//   merely unlikely, now that the reader hands over files by name instead of a whole folder.
+	if (stem[0] == L'0')
 		return kFalse;
 
 	uint32 value = 0;
@@ -387,63 +388,48 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 
 }	// anonymous namespace
 
-bool16 KCMReadStoryTextFolder(const IDFile& folder, KCMStoryTextSet& out, PMString& whyNot)
+bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMString& whyNot)
 {
 	out = KCMStoryTextSet();
 	whyNot.Clear();
 	whyNot.SetTranslatable(kFalse);
 
-	const std::wstring folderPath = WidePath(folder);
-	if (folderPath.empty())
+	const int32 fileCount = files.GetFileCount();
+	if (fileCount <= 0)
 	{
-		whyNot = "the chosen folder could not be read";
+		whyNot = "no file was chosen";
 		whyNot.SetTranslatable(kFalse);
 		return kFalse;
 	}
 
-	// The folder's own name, for the panel's status line.
-	{
-		const size_t slash = folderPath.find_last_of(L"\\/");
-		const std::wstring leaf = (slash == std::wstring::npos) ? folderPath
-																: folderPath.substr(slash + 1);
-		out.fFolderName.SetTranslatable(kFalse);
-		out.fFolderName.AppendW(reinterpret_cast<const UTF16TextChar*>(leaf.c_str()));
-	}
-
-	std::wstring pattern = folderPath;
-	if (!pattern.empty() && pattern[pattern.size() - 1] != L'\\' && pattern[pattern.size() - 1] != L'/')
-		pattern += L"\\";
-	pattern += L"*.html";
-
-	WIN32_FIND_DATAW found;
-	HANDLE search = ::FindFirstFileW(pattern.c_str(), &found);
-	if (search == INVALID_HANDLE_VALUE)
-	{
-		whyNot = "there is no .html file in that folder";
-		whyNot.SetTranslatable(kFalse);
-		return kFalse;
-	}
-
-	int32 skippedName = 0;		// not one of ours: a name that is not a decimal number
+	int32 skippedName = 0;		// not one of ours: a name that is not a plain decimal number
 	int32 refused = 0;			// ours, but the markup could not be read
 	PMString firstReason;
 	firstReason.SetTranslatable(kFalse);
 
-	do
+	for (int32 i = 0; i < fileCount; ++i)
 	{
-		if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
+		const IDFile* const file = files.GetNthFile(i);
+		if (file == nil)
+		{
+			++refused;
 			continue;
+		}
 
-		const std::wstring leaf(found.cFileName);
+		const std::wstring leaf = LeafOf(*file);
 		uint32 uid = 0;
 		if (!UidOfLeaf(leaf, uid))
 		{
+			// ⚠**CHOSEN AND THEN PASSED OVER HAS TO BE SAID OUT LOUD.** Walking a folder could
+			//  pass over a file in silence - nobody had asked for that one. A file the reader
+			//  picked by hand is a different thing: they meant it, and the count below is the only
+			//  place that can tell them it was the NAME that stopped it.
 			++skippedName;
 			continue;
 		}
 
 		std::string bytes;
-		if (!ReadWholeFile(FileInFolder(folderPath, leaf), bytes))
+		if (!ReadWholeFile(*file, bytes))
 		{
 			++refused;
 			continue;
@@ -468,9 +454,6 @@ bool16 KCMReadStoryTextFolder(const IDFile& folder, KCMStoryTextSet& out, PMStri
 		out.fUids.push_back(UID(uid));
 		out.fStories.push_back(story);
 	}
-	while (::FindNextFileW(search, &found) != 0);
-
-	::FindClose(search);
 
 	const int32 read = static_cast<int32>(out.fUids.size());
 	AppendCount(whyNot, "", read, " story file(s) read");
@@ -490,15 +473,15 @@ bool16 KCMReadStoryTextFolder(const IDFile& folder, KCMStoryTextSet& out, PMStri
 	return (read > 0) ? kTrue : kFalse;
 }
 
-bool16 KCMImportStoryText(const IDFile& folder, PMString& outMessage)
+bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 {
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
 
-	// 1. THE FOLDER FIRST. Nothing is touched if it cannot be read.
+	// 1. THE FILES FIRST. Nothing is touched if they cannot be read.
 	KCMStoryTextSet set;
 	PMString readMessage;
-	if (!KCMReadStoryTextFolder(folder, set, readMessage))
+	if (!KCMReadStoryTextFiles(files, set, readMessage))
 	{
 		outMessage = "import: ";
 		outMessage.SetTranslatable(kFalse);
