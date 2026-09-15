@@ -1,0 +1,487 @@
+﻿//========================================================================================
+//
+//  KCMStoryTextExport.cpp -- see the header.
+//
+//  The shape of the work: ask KCMTextRead for a story's paragraphs (it already reports, for each
+//  one, whether it is body text, a cell of some table, or a footnote's own words), ask ITableModel
+//  for the things a paragraph cannot know - how many rows the table has, which cells are merged,
+//  which rows are header rows - hand both to KCMStoryHtml::Write, and put the bytes in a file.
+//
+//========================================================================================
+
+#include "VCPlugInHeaders.h"
+
+#include <windows.h>				// CreateDirectoryW - Windows only, like the rest of KCM's file work
+#include <ctime>
+#include <algorithm>
+#include <string>
+#include <vector>
+
+#include "IDataBase.h"
+#include "IDocument.h"
+#include "IPMStream.h"
+#include "IStoryList.h"
+#include "ITableModel.h"
+#include "ITextModel.h"
+#include "ITextStoryThreadDict.h"
+#include "ITextStoryThreadDictHier.h"
+#include "FileUtils.h"
+#include "StreamUtil.h"
+#include "TableTypes.h"
+#include "UIDRef.h"
+#include "WideString.h"
+
+#include "KCMStoryTextExport.h"
+#include "KCMStoryHtml.h"
+#include "KCMTextRead.h"
+#include "KCMParaText.h"
+
+namespace
+{
+
+/** The path of an IDFile as Windows spells it. (KCMReport.cpp has the same three lines; this one
+	is here rather than shared because the two files share nothing else, and a header holding one
+	helper would be a worse thing to maintain than four lines.) */
+std::wstring WidePath(const IDFile& file)
+{
+	PMString s;
+	FileUtils::IDFileToPMString(file, s);
+	int32 n = 0;
+	const UTF16TextChar* b = s.GrabUTF16Buffer(&n);
+	return (b != nil && n > 0)
+		   ? std::wstring(reinterpret_cast<const wchar_t*>(b), static_cast<size_t>(n))
+		   : std::wstring();
+}
+
+/** The document's name, with any extension taken off - the stem of the folder's name. */
+std::wstring DocumentStem(IDataBase* db)
+{
+	InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
+	if (doc == nil)
+		return std::wstring(L"document");
+
+	PMString name;
+	doc->GetName(name);
+	int32 n = 0;
+	const UTF16TextChar* b = name.GrabUTF16Buffer(&n);
+	std::wstring stem = (b != nil && n > 0)
+						? std::wstring(reinterpret_cast<const wchar_t*>(b), static_cast<size_t>(n))
+						: std::wstring();
+
+	const size_t dot = stem.find_last_of(L'.');
+	if (dot != std::wstring::npos && dot > 0)
+		stem = stem.substr(0, dot);
+
+	// ⚠A DOCUMENT NAME IS NOT A FILE NAME. An untitled document's name is fine, but anything a
+	//   reader has typed can hold a character Windows will not take in a path.
+	for (size_t i = 0; i < stem.size(); ++i)
+	{
+		const wchar_t c = stem[i];
+		if (c == L'\\' || c == L'/' || c == L':' || c == L'*' || c == L'?' || c == L'"'
+			|| c == L'<' || c == L'>' || c == L'|')
+			stem[i] = L'_';
+	}
+	if (stem.empty())
+		stem = L"document";
+	return stem;
+}
+
+/** "<parent>\<stem> YYYY-MM-DD HHMMSS", created. kFalse when it could not be made. */
+bool16 MakeDatedFolder(const std::wstring& parent, const std::wstring& stem, std::wstring& outFolder)
+{
+	wchar_t stamp[40] = { 0 };
+	{
+		time_t now = ::time(nil);
+		struct tm local;
+		::localtime_s(&local, &now);
+		::wcsftime(stamp, 40, L" %Y-%m-%d %H%M%S", &local);
+	}
+
+	std::wstring folder = parent;
+	if (!folder.empty() && folder[folder.size() - 1] != L'\\' && folder[folder.size() - 1] != L'/')
+		folder += L"\\";
+	folder += stem;
+	folder += stamp;
+
+	// ⚠ERROR_ALREADY_EXISTS is not success: the stamp runs to the second, so a folder of this name
+	//   already standing there was made by something else, and writing into it would be the silent
+	//   overwrite the stamp exists to prevent.
+	if (::CreateDirectoryW(folder.c_str(), nil) == 0)
+		return kFalse;
+
+	outFolder = folder;
+	return kTrue;
+}
+
+/*	TableShape
+	What a table is, as against what its text says - none of which a paragraph's attributes carry.
+*/
+struct CellShape
+{
+	int32	fRow;
+	int32	fCol;
+	int32	fRowSpan;
+	int32	fColSpan;
+
+	CellShape() : fRow(0), fCol(0), fRowSpan(1), fColSpan(1) {}
+};
+
+struct TableShape
+{
+	TextIndex				fStart;			// where the table stands in the story
+	int32					fRowCount;
+	int32					fHeaderStart;
+	int32					fHeaderCount;
+	std::vector<CellShape>	fCells;			// the anchors only, in row then column order
+
+	TableShape() : fStart(0), fRowCount(0), fHeaderStart(0), fHeaderCount(0) {}
+};
+
+bool16 EarlierTable(const TableShape& a, const TableShape& b)
+{
+	return a.fStart < b.fStart;
+}
+
+/*	ReadTableShapes
+	Every table of a story, in the order they stand in it.
+
+	★**THE WALK IS KCMTextRead's**, which is Adobe's own (SnpIterTableUseDictHier): a dictionary IS
+	a table exactly when an ITableModel can be got from it. Keeping the same shape matters because
+	the ORDER this produces has to be the order KCMTextRead numbered the cells in - fTableOrdinal
+	is an index into this list.
+
+	⚠**A MERGED CELL IS VISITED ONCE, AT ITS ANCHOR.** The covered addresses have no thread of their
+	 own, and GetCellArea at the anchor is what says how far it reaches.
+*/
+bool16 ReadTableShapes(ITextModel* model, std::vector<TableShape>& out)
+{
+	out.clear();
+
+	InterfacePtr<ITextStoryThreadDictHier> hier(model, UseDefaultIID());
+	if (hier == nil)
+		return kTrue;				// no hierarchy at all: a story with nothing but a body
+
+	IDataBase* const db = ::GetDataBase(hier);
+	if (db == nil)
+		return kFalse;
+
+	for (UID next = ::GetUIDRef(hier).GetUID(); next != kInvalidUID; next = hier->NextUID(next))
+	{
+		InterfacePtr<ITextStoryThreadDict> dict(db, next, UseDefaultIID());
+		if (dict == nil)
+			return kFalse;
+
+		InterfacePtr<ITableModel> table(dict, UseDefaultIID());
+		if (table == nil)
+			continue;				// the story's own dictionary
+
+		TableShape shape;
+		shape.fStart = dict->GetThreadBlockTextRange().Start(nil);
+
+		const RowRange rows = table->GetTotalRows();
+		const ColRange cols = table->GetTotalCols();
+		const RowRange header = table->GetHeaderRows();
+		shape.fRowCount = rows.count;
+		shape.fHeaderStart = header.start;
+		shape.fHeaderCount = header.count;
+
+		for (int32 r = rows.start; r < rows.start + rows.count; ++r)
+		{
+			for (int32 c = cols.start; c < cols.start + cols.count; ++c)
+			{
+				const GridAddress addr(r, c);
+				if (!table->IsValid(addr) || !table->IsAnchor(addr))
+					continue;
+
+				CellShape cell;
+				cell.fRow = r;
+				cell.fCol = c;
+
+				const GridArea area = table->GetCellArea(addr);
+				const RowRange areaRows = area.GetRows();
+				const ColRange areaCols = area.GetCols();
+				cell.fRowSpan = (areaRows.count > 0) ? areaRows.count : 1;
+				cell.fColSpan = (areaCols.count > 0) ? areaCols.count : 1;
+
+				shape.fCells.push_back(cell);
+			}
+		}
+		out.push_back(shape);
+	}
+
+	std::sort(out.begin(), out.end(), EarlierTable);
+	return kTrue;
+}
+
+/** One paragraph of KCMTextRead's, in the shape the writer wants.
+
+	⚠**ONLY FOOTNOTE REFERENCES TRAVEL.** An endnote's words live in a story of their own, which is
+	 exported as its own file, so a <sup> pointing at a note that is not in this file would be a
+	 link to nothing - and the reader refuses those, rightly. The marker is therefore left out of
+	 this version and written down as a gap rather than faked. */
+void FillPara(const std::string& text, const KCMParaAttrs& attrs, KCMStoryHtml::Para& out)
+{
+	out.fText = text;
+	out.fRuby = attrs.fRuby;
+	out.fKenten = attrs.fKenten;
+
+	for (size_t k = 0; k < attrs.fFootnote.size(); ++k)
+	{
+		// ★★THE MARKER STOOD AFTER THE SPAN, NOT ON IT. KCMTextRead::ScanNotes puts the span on the
+		//   character BEFORE the reference (the reference itself is taken out of the text), so the
+		//   place to put it back is fStart + fLen. Reading fStart as the marker's own place puts
+		//   every reference one character early - KCMParaText.h says so at length.
+		out.fNoteAt.push_back(attrs.fFootnote[k].fStart + attrs.fFootnote[k].fLen);
+
+		int32 number = 0;
+		const std::string& value = attrs.fFootnote[k].fValue;
+		for (size_t c = 0; c < value.size(); ++c)
+		{
+			if (value[c] < '0' || value[c] > '9')
+			{
+				number = 0;			// "?" for a number that could not be read, or a letter
+				break;
+			}
+			number = number * 10 + (value[c] - '0');
+		}
+		out.fNoteNum.push_back((number > 0) ? number : static_cast<int32>(out.fNoteNum.size() + 1));
+	}
+}
+
+/*	BuildStory
+	One story, as the writer wants it: a body, its tables, and its footnotes.
+*/
+bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out)
+{
+	out = KCMStoryHtml::Story();
+
+	std::vector<std::string> paras;
+	std::vector<KCMParaAttrs> attrs;
+	std::vector<int32> starts;
+	if (!KCMTextRead::ReadStory(storyRef, paras, attrs, starts))
+		return kFalse;
+
+	InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
+	std::vector<TableShape> shapes;
+	if (model != nil && !ReadTableShapes(model, shapes))
+		return kFalse;
+
+	// ---- the tables, empty of text for the moment ------------------------------------------
+	for (size_t t = 0; t < shapes.size(); ++t)
+	{
+		KCMStoryHtml::Table table;
+		table.fOrdinal = static_cast<int32>(t);
+		table.fParaIndex = 0;
+		table.fOffset = 0;
+		// ⚠**THE EXPORTER NEVER SPLITS A PARAGRAPH.** KCMTextRead reports a paragraph holding a
+		//   table as ONE paragraph (the table's own character is simply not counted), so the table
+		//   is written after it whole. fSplitsPara is the reader's side of a shape this half does
+		//   not produce.
+		table.fSplitsPara = kFalse;
+
+		for (int32 r = 0; r < shapes[t].fRowCount; ++r)
+		{
+			KCMStoryHtml::Row row;
+			row.fHeader = (r >= shapes[t].fHeaderStart
+						   && r < shapes[t].fHeaderStart + shapes[t].fHeaderCount) ? kTrue : kFalse;
+			for (size_t c = 0; c < shapes[t].fCells.size(); ++c)
+			{
+				if (shapes[t].fCells[c].fRow != r)
+					continue;
+				KCMStoryHtml::Cell cell;
+				cell.fColSpan = shapes[t].fCells[c].fColSpan;
+				cell.fRowSpan = shapes[t].fCells[c].fRowSpan;
+				row.fCells.push_back(cell);
+			}
+			table.fRows.push_back(row);
+		}
+		out.fTables.push_back(table);
+	}
+
+	// ---- the paragraphs, each into the place it belongs ---------------------------------------
+	std::vector<TextIndex> bodyStarts;			// the model start of each BODY paragraph
+
+	for (size_t i = 0; i < paras.size(); ++i)
+	{
+		KCMStoryHtml::Para p;
+		FillPara(paras[i], attrs[i], p);
+
+		if (attrs[i].IsCell())
+		{
+			const size_t t = static_cast<size_t>(attrs[i].fTableOrdinal);
+			if (t >= out.fTables.size())
+				continue;						// a cell of a table the walk did not find
+
+			// The cell at that grid address, among the anchors of its row.
+			KCMStoryHtml::Table& table = out.fTables[t];
+			if (attrs[i].fCellRow < 0 || static_cast<size_t>(attrs[i].fCellRow) >= table.fRows.size())
+				continue;
+
+			KCMStoryHtml::Row& row = table.fRows[static_cast<size_t>(attrs[i].fCellRow)];
+			size_t which = 0;
+			bool16 found = kFalse;
+			for (size_t c = 0; c < shapes[t].fCells.size(); ++c)
+			{
+				if (shapes[t].fCells[c].fRow != attrs[i].fCellRow)
+					continue;
+				if (shapes[t].fCells[c].fCol == attrs[i].fCellCol)
+				{
+					found = kTrue;
+					break;
+				}
+				++which;
+			}
+			if (found && which < row.fCells.size())
+				row.fCells[which].fParas.push_back(p);
+			continue;
+		}
+
+		if (attrs[i].IsFootnote())
+		{
+			const size_t n = static_cast<size_t>(attrs[i].fFootnoteOrdinal);
+			while (out.fNotes.size() <= n)
+				out.fNotes.push_back(std::vector<KCMStoryHtml::Para>());
+			out.fNotes[n].push_back(p);
+			continue;
+		}
+
+		out.fBody.push_back(p);
+		bodyStarts.push_back(static_cast<TextIndex>(starts[i]));
+	}
+
+	// ---- where each table stands, in the body's own numbering ---------------------------------
+	for (size_t t = 0; t < out.fTables.size() && t < shapes.size(); ++t)
+	{
+		int32 index = 0;
+		for (size_t b = 0; b < bodyStarts.size(); ++b)
+		{
+			if (bodyStarts[b] <= shapes[t].fStart)
+				index = static_cast<int32>(b);
+		}
+		out.fTables[t].fParaIndex = index;
+	}
+
+	// ⚠A STORY WITH NO PARAGRAPHS AT ALL still gets one, so that "the file is empty" and "there is
+	//   no file" stay different things.
+	if (out.fBody.empty())
+		out.fBody.push_back(KCMStoryHtml::Para());
+
+	return kTrue;
+}
+
+/** The bytes of one story, into "<folder>\<uid>.html", with the BOM the design asks the FILE to
+	carry (KCMStoryHtml::Write deliberately does not put one in the string). */
+bool16 WriteStoryFile(const std::wstring& folder, int32 uid, const std::string& html)
+{
+	wchar_t leaf[64] = { 0 };
+	::swprintf_s(leaf, 64, L"\\%d.html", static_cast<int>(uid));
+
+	const std::wstring path = folder + leaf;
+	PMString pathString;
+	pathString.SetTranslatable(kFalse);
+	pathString.AppendW(reinterpret_cast<const UTF16TextChar*>(path.c_str()));
+
+	const IDFile file = FileUtils::PMStringToSysFile(pathString);
+
+	InterfacePtr<IPMStream> stream(StreamUtil::CreateFileStreamWriteLazy(file, kOpenOut | kOpenTrunc));
+	if (stream == nil)
+		return kFalse;
+
+	const char bom[3] = { '\xEF', '\xBB', '\xBF' };
+	stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(bom)), 3);
+	if (!html.empty())
+	{
+		stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(html.c_str())),
+						 static_cast<int32>(html.size()));
+	}
+	stream->Flush();
+	stream->Close();
+	return kTrue;
+}
+
+}	// anonymous namespace
+
+bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, PMString& outMessage)
+{
+	outMessage.Clear();
+	outMessage.SetTranslatable(kFalse);
+
+	if (db == nil)
+	{
+		outMessage = "there is no document to export";
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	const std::wstring parentPath = WidePath(parent);
+	if (parentPath.empty())
+	{
+		outMessage = "the chosen folder could not be read";
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	std::wstring folder;
+	if (!MakeDatedFolder(parentPath, DocumentStem(db), folder))
+	{
+		outMessage = "the export folder could not be created";
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	// ★★READING COMPOSES, AND COMPOSING DIRTIES. The document is left exactly as clean as it was
+	//   found - the same guard KCMStoryDiffRun puts around its own walk.
+	IDataBase::SaveRestoreModifiedState guard(db);
+
+	InterfacePtr<IStoryList> stories(db, db->GetRootUID(), UseDefaultIID());
+	if (stories == nil)
+	{
+		outMessage = "the document has no stories to export";
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	int32 written = 0;
+	int32 refused = 0;
+	const int32 count = stories->GetUserAccessibleStoryCount();
+	for (int32 i = 0; i < count; ++i)
+	{
+		const UIDRef storyRef = stories->GetNthUserAccessibleStoryUID(i);
+
+		KCMStoryHtml::Story story;
+		if (!BuildStory(storyRef, story))
+		{
+			++refused;
+			continue;
+		}
+
+		std::string html;
+		KCMStoryHtml::Write(story, storyRef.GetUID().Get(), html);
+
+		if (WriteStoryFile(folder, storyRef.GetUID().Get(), html))
+			++written;
+		else
+			++refused;
+	}
+
+	PMString path;
+	path.SetTranslatable(kFalse);
+	path.AppendW(reinterpret_cast<const UTF16TextChar*>(folder.c_str()));
+
+	outMessage = "exported ";
+	outMessage.SetTranslatable(kFalse);
+	outMessage.AppendNumber(written);
+	outMessage.Append(" story file(s)");
+	if (refused > 0)
+	{
+		outMessage.Append(", ");
+		outMessage.AppendNumber(refused);
+		outMessage.Append(" refused");
+	}
+	outMessage.Append(" to ");
+	outMessage.Append(path);
+
+	return (written > 0) ? kTrue : kFalse;
+}
+
+// End, KCMStoryTextExport.cpp.

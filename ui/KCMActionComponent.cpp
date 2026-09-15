@@ -48,6 +48,8 @@
 #include "KCMStoryTree.h"		// KCMStoryTreeRebuild - the shared list changes with the mode
 #include "KCMStorySection.h"	// KCMUpdateStorySectionLabel - and so does its heading
 #include "IKCMBookFacade.h"		// ResolveBookPair (deciding whether "Compare Books" may be enabled)
+#include "IKCMStoryEditsFacade.h"	// ExportStoryText - "Export Story Text..." on the flyout
+#include "SDKFileHelper.h"			// SDKFolderChooser - where the exported stories go
 #include "KCMBookPanelLookup.h"	// KCMGetPanelBookFile (observing the front tab; a UI-side job)
 #include "KCMBookRun.h"		// KCMRunBookComparison (the "Compare Books" flyout item: confirm, compare, show)
 #include "KCMBookOpen.h"			// KCMBookMenuRow / CanStart / StartComparisonForRow (the "Start Change Marker" row item)
@@ -892,6 +894,27 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		//   ⚠**Showing the two books before anything is pressed** has not changed as an aim -- what
 		//     changed is where they are shown (from two lines of the dialog to the body of the alert)
 		//     and that they are **full paths** rather than names, because so many books share a name.
+		// Flyout "Export Story Text...": every story of the active document, one HTML file each,
+		// in a dated folder under the one the reader picks. ★**This half only reads** - the model
+		// wraps the walk in SaveRestoreModifiedState, so the document is not even dirtied.
+		// ⚠A cancelled dialog says nothing, because nothing happened.
+		case kKCMPopupExportStoryTextActionID:
+			{
+				SDKFolderChooser chooser;
+				PMString title("Export Story Text - where to put the folder");
+				title.SetTranslatable(kFalse);
+				chooser.SetTitle(title);
+				chooser.ShowDialog();
+				if (chooser.IsChosen())
+				{
+					PMString exportMsg;
+					Utils<IKCMStoryEditsFacade>()->ExportStoryText(chooser.GetIDFile(), exportMsg);
+					if (exportMsg.CharCount() > 0)
+						KCMSetStatus(exportMsg);
+				}
+			}
+			break;
+
 		case kKCMPopupCompareBooksActionID:
 			KCMRunBookComparison();
 			break;
@@ -1298,6 +1321,14 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			listToUpdate->SetNthActionState(i,
 				(Utils<IKCMCompareFacade>()->IsArmed() && Utils<IKCMCompareFacade>()->ArmedDocsAlive())
 					? kEnabledAction : kDisabled_Unselected);
+		}
+		else if (action == kKCMPopupExportStoryTextActionID)
+		{
+			// ★AN ACTIVE DOCUMENT IS THE WHOLE CONDITION. This item reads and never compares, so
+			//   it needs no Target, no Source and no comparison - and CanTakeTaskStart is already
+			//   exactly that question, asked in one place (KCMCanTakeTaskStart).
+			listToUpdate->SetNthActionState(i,
+				Utils<IKCMCompareFacade>()->CanTakeTaskStart() ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupExportReportActionID)
 		{

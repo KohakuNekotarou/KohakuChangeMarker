@@ -816,6 +816,14 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMTaskStartMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Export Story Text..." on the panel flyout (2026-09-15). Plain command: every story of
+		// the active document is written out as HTML, one file each, into a dated folder under the
+		// one the reader chooses. Directly under Task Start - the two belong together.
+		kKCMPopupExportStoryTextActionID,
+		kKCMPopupMenuPath,
+		kKCMExportStoryTextMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Clear Target and Source" on the panel flyout (popup) menu. Plain command: stops a running
 		// comparison and drops both chosen documents, so the next Start falls back to the automatic
 		// rule (active = Target, the earliest-opened other document = Source). Directly below the two
@@ -1371,6 +1379,19 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKCMActionComponentBoss,
 		kKCMPopupTaskStartActionID,
 		kKCMTaskStartMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Export Story Text..." (2026-09-15): the document's words, out to HTML files. Greyed only
+		// when there is no active document - it reads and never compares, so it needs no Target, no
+		// Source and no comparison (UpdateActionStates asks CanTakeTaskStart, which is exactly that
+		// one question).
+		kKCMActionComponentBoss,
+		kKCMPopupExportStoryTextActionID,
+		kKCMExportStoryTextMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,

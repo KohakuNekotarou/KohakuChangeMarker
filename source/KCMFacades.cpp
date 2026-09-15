@@ -49,6 +49,7 @@
 #include "KCMStoryList.h"			// the Story Edits rows, and where a story begins in a document
 #include "KCMStoryDiffRun.h"		// RunOne - re-comparing one row's story ("Refresh Story Comparison")
 #include "KCMStoryRestore.h"		// KCMRestoreChange - "Restore Source Text" on a change row
+#include "KCMStoryTextExport.h"	// KCMExportStoryText - "Export Story Text..." on the flyout
 #include "KCMBookPair.h"			// which two books, and their display paths
 #include "KCMBookCompare.h"		// the book comparison itself
 #include "KCMPageNumberMarker.h"	// the folio exclusion toggle
@@ -570,6 +571,14 @@ public:
 					{ return KCMStoryPointAt(db, storyUID, index, outPb); }
 	virtual UID		GetStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index)
 					{ return KCMStoryFrameAt(db, storyUID, index); }
+
+	virtual bool16	ExportStoryText(const IDFile& parent, PMString& outMessage)
+	{
+		// ★THE ACTIVE DOCUMENT IS THE ONE EXPORTED, decided here rather than in the UI: which
+		//   document a menu item acts on is a model question, and the UI half already asks this
+		//   facade every other such question.
+		return KCMExportStoryText(KCMActiveDocDB(), parent, outMessage);
+	}
 };
 
 CREATE_PMINTERFACE(KCMStoryEditsFacade, kKCMStoryEditsFacadeImpl)

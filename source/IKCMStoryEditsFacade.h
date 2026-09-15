@@ -397,6 +397,21 @@ public:
 		are read raw from the Source, never from the row's display excerpt (KCMStoryRestore.h).
 		⚠Appended at the END of the class (new virtuals go nowhere else). */
 	virtual bool16	RestoreChange(int32 nth, int32 which, PMString& outMessage) = 0;
+
+	/** "Export Story Text..." (2026-09-15): write every story of the ACTIVE document into a new
+		folder under `parent`, one HTML file per story, for the reader to edit outside InDesign.
+
+		Nothing in the document is changed - the walk composes, so the model half holds a
+		IDataBase::SaveRestoreModifiedState around it and gives the document back as clean as it
+		found it.
+
+		@param parent the folder the reader chose. A dated folder is made inside it.
+		@param outMessage the count and the place, or the step that failed.
+		@return kFalse when no story could be written.
+		⚠Appended at the END of the class - new virtuals go nowhere else, because KIDMCP calls
+		  this facade through its vtable and an insertion lands it on a different method
+		  ([[facade-vtable-slot-append-only]]). Adding one means rebuilding KIDMCP too. */
+	virtual bool16	ExportStoryText(const IDFile& parent, PMString& outMessage) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__
