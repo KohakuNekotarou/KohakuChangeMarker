@@ -43,7 +43,7 @@ namespace
 */
 const char* const kOurTags[] =
 {
-	"p", "ruby", "rt", "table", "tr", "td", "sup", "a", "ol", "li", "span",
+	"p", "ruby", "rt", "em", "table", "tr", "td", "sup", "a", "ol", "li", "span",
 	"tbody", "thead", "tfoot", "colgroup", "col", "br", "wbr"
 };
 const size_t kOurTagCount = sizeof(kOurTags) / sizeof(kOurTags[0]);
@@ -169,6 +169,83 @@ void WriteText(const std::string& text, std::string& out)
 	}
 }
 
+bool16 IsClassChar(char c)
+{
+	return ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+			|| c == '-' || c == '_') ? kTrue : kFalse;
+}
+
+int32 HexDigit(char c)
+{
+	if (c >= '0' && c <= '9')	return c - '0';
+	if (c >= 'a' && c <= 'f')	return c - 'a' + 10;
+	if (c >= 'A' && c <= 'F')	return c - 'A' + 10;
+	return -1;
+}
+
+/*	ClassOfTag
+	The class="..." of the tag standing between `at` and `after`.
+
+	⚠**THE ONLY ATTRIBUTE THIS FORMAT EVER READS on an element of its own**, and it is read rather
+	 than parsed: a full attribute walk would be a bigger thing to be wrong about than the one
+	 value anybody writes here.
+*/
+bool16 ClassOfTag(const std::string& s, size_t at, size_t after, std::string& outClass)
+{
+	outClass.clear();
+	if (after <= at + 5)
+		return kFalse;
+
+	for (size_t i = at; i + 5 < after; ++i)
+	{
+		if (Lower(s[i]) != 'c' || Lower(s[i + 1]) != 'l' || Lower(s[i + 2]) != 'a'
+			|| Lower(s[i + 3]) != 's' || Lower(s[i + 4]) != 's')
+			continue;
+
+		size_t j = i + 5;
+		while (j < after && (s[j] == ' ' || s[j] == '\t'))
+			++j;
+		if (j >= after || s[j] != '=')
+			continue;
+		++j;
+		while (j < after && (s[j] == ' ' || s[j] == '\t'))
+			++j;
+		if (j >= after)
+			return kFalse;
+
+		char quote = 0;
+		if (s[j] == '"' || s[j] == '\'')
+		{
+			quote = s[j];
+			++j;
+		}
+
+		const size_t from = j;
+		while (j < after)
+		{
+			const char c = s[j];
+			if (quote != 0 && c == quote)
+				break;
+			if (quote == 0 && (c == ' ' || c == '\t' || c == '>' || c == '/'))
+				break;
+			++j;
+		}
+		outClass.assign(s, from, j - from);
+		return kTrue;
+	}
+	return kFalse;
+}
+
+/** An <em> that has been opened and not yet closed. */
+struct EmState
+{
+	bool16		fOpen;
+	int32		fStart;		// where it began, in the paragraph's code points
+	std::string	fValue;
+
+	EmState() : fOpen(kFalse), fStart(0) {}
+};
+
 /** How many code points are in this UTF-8 string.
 
 	★**ASKED OF KCMTextDiff, NEVER COUNTED HERE.** KCMAttrSpan's offsets are code points - its own
@@ -182,11 +259,6 @@ int32 CountCodePoints(const std::string& utf8)
 	return static_cast<int32>(cps.size());
 }
 
-bool SpanStartsEarlier(const KCMAttrSpan& a, const KCMAttrSpan& b)
-{
-	return a.fStart < b.fStart;
-}
-
 /** The byte where code point `cp` begins; the string's length once cp is past the end. */
 size_t ByteAtCodePoint(const std::string& text, const std::vector<int32>& byteAt, int32 cp)
 {
@@ -195,6 +267,134 @@ size_t ByteAtCodePoint(const std::string& text, const std::vector<int32>& byteAt
 	if (cp >= static_cast<int32>(byteAt.size()))
 		return text.size();
 	return static_cast<size_t>(byteAt[static_cast<size_t>(cp)]);
+}
+
+/*	WriteRun
+	The code points [from, to) of `text`, cut where the kenten changes and wrapped in <em>.
+
+	★**EVERY PIECE OF TEXT THIS FILE WRITES GOES THROUGH HERE**, the base of a reading included -
+	which is what lets a kenten and a ruby stand on the same word: the <em> simply ends up inside
+	the <ruby>, where HTML is happy to have it. Writing the two separately would have meant deciding
+	which of them owns a character they share, and there is no answer to that.
+
+	⚠A MARK WHOSE NAME CANNOT BE A CLASS is written as plain text - the words are never lost, only
+	 the mark. It cannot arise from KCMTextRead (its names are ASCII), and a silent loss would be
+	 worse than the alternative only if there were an alternative: Write's contract is that it
+	 never fails.
+*/
+void WriteRun(const std::string& text, const std::vector<int32>& byteAt,
+			  const KCMAttrSpanList& kenten, int32 from, int32 to, std::string& out)
+{
+	int32 cp = from;
+	while (cp < to)
+	{
+		const KCMAttrSpan* cover = nil;
+		for (size_t k = 0; k < kenten.size(); ++k)
+		{
+			if (kenten[k].fLen > 0
+				&& kenten[k].fStart <= cp
+				&& cp < kenten[k].fStart + kenten[k].fLen)
+			{
+				cover = &kenten[k];
+				break;
+			}
+		}
+
+		int32 stop = to;
+		if (cover != nil)
+		{
+			const int32 coverEnd = cover->fStart + cover->fLen;
+			if (coverEnd < stop)
+				stop = coverEnd;
+		}
+		else
+		{
+			for (size_t k = 0; k < kenten.size(); ++k)
+			{
+				if (kenten[k].fLen > 0 && kenten[k].fStart > cp && kenten[k].fStart < stop)
+					stop = kenten[k].fStart;
+			}
+		}
+
+		std::string cls;
+		const bool16 wrapped = (cover != nil && KentenClassOf(cover->fValue, cls)) ? kTrue : kFalse;
+		if (wrapped)
+		{
+			out += "<em class=\"kenten-";
+			out += cls;
+			out += "\">";
+		}
+
+		const size_t a = ByteAtCodePoint(text, byteAt, cp);
+		const size_t b = ByteAtCodePoint(text, byteAt, stop);
+		if (b > a)
+			WriteText(text.substr(a, b - a), out);
+
+		if (wrapped)
+			out += "</em>";
+
+		cp = stop;
+	}
+}
+
+/*	TakeEm
+	One <em> or </em>, wherever it stands - in a paragraph, or inside a reading's base.
+
+	★**A CLASS THIS FORMAT DID NOT WRITE IS NOT AN ERROR.** No class, or somebody's own styling
+	class, means the default mark: the whole reason this is HTML is that a person - or Claude, asked
+	in a chat to put kenten on a word - can write <em>word</em> and have it work. A class of OURS
+	that will not parse IS an error, because it is a mistake rather than a request.
+*/
+bool16 TakeEm(const std::string& s, size_t at, size_t after, bool16 closing,
+			  const std::string& para, EmState& em, KCMAttrSpanList& outKenten,
+			  std::string& whyNot)
+{
+	const size_t kPrefixLen = 7;			// "kenten-"
+
+	if (!closing)
+	{
+		if (em.fOpen)
+		{
+			whyNot = "an <em> begins inside another one";
+			return kFalse;
+		}
+
+		std::string value = kKentenDefaultValue;
+		std::string cls;
+		if (ClassOfTag(s, at, after, cls) && cls.compare(0, kPrefixLen, "kenten-") == 0)
+		{
+			if (!KentenValueOfClass(cls.substr(kPrefixLen), value))
+			{
+				whyNot = "an <em> carries a mark that cannot be read: " + cls;
+				return kFalse;
+			}
+		}
+
+		em.fOpen = kTrue;
+		em.fStart = CountCodePoints(para);
+		em.fValue = value;
+		return kTrue;
+	}
+
+	if (!em.fOpen)
+	{
+		whyNot = "an </em> closes a mark that never began";
+		return kFalse;
+	}
+
+	// ⚠A MARK OVER NO CHARACTERS IS NO MARK - the same rule the readings follow.
+	const int32 len = CountCodePoints(para) - em.fStart;
+	if (len > 0)
+		outKenten.push_back(KCMAttrSpan(em.fStart, len, em.fValue));
+
+	em.fOpen = kFalse;
+	em.fValue.clear();
+	return kTrue;
+}
+
+bool SpanStartsEarlier(const KCMAttrSpan& a, const KCMAttrSpan& b)
+{
+	return a.fStart < b.fStart;
 }
 
 /*	WriteParaHtml
@@ -254,10 +454,10 @@ void WriteParaHtml(const Para& p, std::string& out)
 			out += "<ruby>";
 			for (size_t k = next; k <= last; ++k)
 			{
-				const size_t from = ByteAtCodePoint(p.fText, byteAt, spans[k].fStart);
-				const size_t to = ByteAtCodePoint(p.fText, byteAt, spans[k].fStart + spans[k].fLen);
-				if (to > from)
-					WriteText(p.fText.substr(from, to - from), out);
+				// ★THE BASE GOES THROUGH WriteRun LIKE EVERYTHING ELSE, so a kenten standing on
+				//   these same characters comes out as an <em> inside the reading.
+				WriteRun(p.fText, byteAt, p.fKenten, spans[k].fStart,
+						 spans[k].fStart + spans[k].fLen, out);
 				out += "<rt>";
 				WriteText(spans[k].fValue, out);
 				out += "</rt>";
@@ -275,15 +475,213 @@ void WriteParaHtml(const Para& p, std::string& out)
 		if (stop <= cp)
 			break;					// nothing left to write; a malformed span cannot loop us
 
-		const size_t from = ByteAtCodePoint(p.fText, byteAt, cp);
-		const size_t to = ByteAtCodePoint(p.fText, byteAt, stop);
-		if (to > from)
-			WriteText(p.fText.substr(from, to - from), out);
+		WriteRun(p.fText, byteAt, p.fKenten, cp, stop, out);
 		cp = stop;
 	}
 }
 
+/*	kKentenLooks
+	InDesign's marks, and the CSS that draws each one.
+
+	★★**ALL ELEVEN OF INDESIGN'S KINDS HAVE A CSS SPELLING** - text-emphasis-style is in the
+	standard for exactly this purpose - and the two that are easy to doubt are the double circles:
+	the bullseye (janome) is `open double-circle` and the fisheye is `filled double-circle`. The
+	eleventh, a custom mark, is a quoted string, which is written from the document's own data.
+
+	⚠**WHAT CSS DOES NOT HAVE is the finer setting**: the mark's SIZE, its FONT, and a numeric
+	 OFFSET (it has the position keyword and the colour, not those three). That costs this format
+	 nothing, because KCM does not read them either - KCMTextRead takes the KIND and, for a custom
+	 mark, its character, and KCMApplyKentenKind writes the kind with "the look left alone". So
+	 those settings stay in the document, untouched, on both sides of the trip.
+	⚠**AND CSS IS WIDER IN ONE PLACE**: it allows a string of several characters, while InDesign's
+	 custom mark is a single BMP character (an int16 attribute). That one is refused rather than
+	 silently cut down to its first character.
+	⚠NOTHING HERE IS EVER READ BACK. The class carries the truth; this is the look.
+*/
+struct KentenLook
+{
+	const char*	fName;
+	const char*	fStyle;
+};
+
+const KentenLook kKentenLooks[] =
+{
+	{ "BlackSesameDot",		"filled sesame" },
+	{ "WhiteSesameDot",		"open sesame" },
+	{ "BlackCircle",		"filled circle" },
+	{ "WhiteCircle",		"open circle" },
+	{ "SmallBlackCircle",	"filled dot" },
+	{ "SmallWhiteCircle",	"open dot" },
+	{ "BlackTriangle",		"filled triangle" },
+	{ "WhiteTriangle",		"open triangle" },
+	{ "Bullseye",			"open double-circle" },
+	{ "Fisheye",			"filled double-circle" }
+};
+const size_t kKentenLookCount = sizeof(kKentenLooks) / sizeof(kKentenLooks[0]);
+
+void CollectKenten(const std::vector<Para>& paras, std::vector<std::string>& seen)
+{
+	for (size_t i = 0; i < paras.size(); ++i)
+	{
+		for (size_t k = 0; k < paras[i].fKenten.size(); ++k)
+		{
+			const std::string& value = paras[i].fKenten[k].fValue;
+			if (value.empty())
+				continue;
+			if (std::find(seen.begin(), seen.end(), value) == seen.end())
+				seen.push_back(value);
+		}
+	}
+}
+
+/*	WriteKentenStyles
+	A rule for each mark THIS story actually uses, and none for the rest.
+*/
+void WriteKentenStyles(const Story& s, std::string& out)
+{
+	std::vector<std::string> seen;
+	CollectKenten(s.fBody, seen);
+	for (size_t t = 0; t < s.fTables.size(); ++t)
+	{
+		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
+		{
+			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
+				CollectKenten(s.fTables[t].fRows[r].fCells[c].fParas, seen);
+		}
+	}
+	for (size_t n = 0; n < s.fNotes.size(); ++n)
+		CollectKenten(s.fNotes[n], seen);
+
+	for (size_t i = 0; i < seen.size(); ++i)
+	{
+		std::string cls;
+		if (!KentenClassOf(seen[i], cls))
+			continue;
+
+		std::string style;
+		const size_t kCustomLen = 7;		// "Custom:"
+		if (seen[i].size() > kCustomLen && seen[i].compare(0, kCustomLen, "Custom:") == 0)
+		{
+			// ★The mark itself, quoted. It comes from the document, never from a literal here.
+			style = "\"";
+			const std::string mark = seen[i].substr(kCustomLen);
+			for (size_t c = 0; c < mark.size(); ++c)
+			{
+				if (mark[c] == '"' || mark[c] == '\\')
+					style += '\\';
+				style += mark[c];
+			}
+			style += "\"";
+		}
+		else
+		{
+			for (size_t k = 0; k < kKentenLookCount; ++k)
+			{
+				if (seen[i] == kKentenLooks[k].fName)
+				{
+					style = kKentenLooks[k].fStyle;
+					break;
+				}
+			}
+			if (style.empty())
+				continue;				// a kind we have no drawing for: the em rule covers it
+		}
+
+		out += ".kenten-";
+		out += cls;
+		out += "{-webkit-text-emphasis-style:";
+		out += style;
+		out += ";text-emphasis-style:";
+		out += style;
+		out += "}\r\n";
+	}
+}
+
 }	// anonymous namespace
+
+/*	kKentenDefaultValue
+	What an <em> with no class of ours means.
+
+	★★**BECAUSE SOMEBODY WILL WRITE ONE.** The whole point of this format being HTML is that a
+	person - or Claude, asked in a chat to "put kenten on this word" - can write the obvious thing
+	and have it work. The obvious thing is <em>, and refusing it would teach nobody anything: the
+	file would come back with the words marked up and the mark thrown away. So a bare <em> is a
+	kenten with InDesign's own default mark, and the stylesheet this file writes says as much in
+	plain CSS, where anybody opening the document can see it.
+	⚠A class of OURS that cannot be read is still refused - "kenten-Custom-zzz" is a mistake, not a
+	 request - and that is the difference: no class at all is a plain HTML author, a broken one of
+	 ours is a broken one of ours.
+*/
+const char* const kKentenDefaultValue = "BlackSesameDot";
+
+bool16 KentenClassOf(const std::string& value, std::string& outClass)
+{
+	outClass.clear();
+	if (value.empty())
+		return kFalse;
+
+	// "Custom:X" -> "Custom-<hex of X>". The character is the reader's own, so it is written the
+	// way this format writes every character that cannot be a class: as its code point.
+	const size_t kCustomLen = 7;			// "Custom:"
+	if (value.size() > kCustomLen && value.compare(0, kCustomLen, "Custom:") == 0)
+	{
+		std::vector<int32> cps;
+		KCMTextDiff::ToCodePoints(value.substr(kCustomLen), &cps, nil);
+		if (cps.empty())
+			return kFalse;
+
+		char hex[16];
+		std::snprintf(hex, sizeof(hex), "%x", static_cast<unsigned int>(cps[0]));
+		outClass = "Custom-";
+		outClass += hex;
+		return kTrue;
+	}
+
+	for (size_t i = 0; i < value.size(); ++i)
+	{
+		if (!IsClassChar(value[i]))
+			return kFalse;
+	}
+	outClass = value;
+	return kTrue;
+}
+
+bool16 KentenValueOfClass(const std::string& cls, std::string& outValue)
+{
+	outValue.clear();
+	if (cls.empty())
+		return kFalse;
+
+	for (size_t i = 0; i < cls.size(); ++i)
+	{
+		if (!IsClassChar(cls[i]))
+			return kFalse;
+	}
+
+	const size_t kCustomLen = 7;			// "Custom-"
+	if (cls.size() > kCustomLen && cls.compare(0, kCustomLen, "Custom-") == 0)
+	{
+		int32 cp = 0;
+		for (size_t i = kCustomLen; i < cls.size(); ++i)
+		{
+			const int32 digit = HexDigit(cls[i]);
+			if (digit < 0)
+				return kFalse;
+			cp = cp * 16 + digit;
+			if (cp > 0x10FFFF)
+				return kFalse;
+		}
+		if (cp <= 0)
+			return kFalse;
+
+		outValue = "Custom:";
+		KCMParaText::AppendUtf8(outValue, cp);
+		return kTrue;
+	}
+
+	outValue = cls;
+	return kTrue;
+}
 
 bool16 IsInvisible(int32 cp)
 {
@@ -335,6 +733,12 @@ void Write(const Story& s, int32 uid, std::string& out)
 	out += "table{border-collapse:collapse;margin:1em 0}\r\n";
 	out += "td{border:1px solid #999;padding:.3em .8em;vertical-align:top}\r\n";
 	out += "ol{border-top:1px solid #ccc;margin-top:2em;padding-top:1em}\r\n";
+	// ★★THE STYLESHEET IS WHERE THIS FORMAT EXPLAINS ITSELF. A kenten IS stress emphasis, CSS has
+	//   text-emphasis-style for exactly that, so <em> is the mark - and this rule says so to anyone
+	//   who opens the file, including a reader who writes one of their own by hand.
+	out += "em{font-style:normal;-webkit-text-emphasis-style:filled sesame;"
+		   "text-emphasis-style:filled sesame}\r\n";
+	WriteKentenStyles(s, out);
 	out += "</style></head>\r\n";
 	out += "<body>\r\n";
 
@@ -376,6 +780,8 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 	bool16 inPara = kFalse;
 	std::string para;
 	KCMAttrSpanList paraRuby;		// the readings met so far, in this paragraph's own count
+	KCMAttrSpanList paraKenten;		// and the marks, in the same count
+	EmState em;
 
 	size_t i = 0;
 	while (i < s.size())
@@ -439,6 +845,8 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					inPara = kTrue;
 					para.clear();
 					paraRuby.clear();
+					paraKenten.clear();
+					em = EmState();
 				}
 				else
 				{
@@ -447,14 +855,34 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 						whyNot = "a </p> closes a paragraph that never began";
 						return kFalse;
 					}
+					if (em.fOpen)
+					{
+						whyNot = "a paragraph ends with an <em> still open";
+						return kFalse;
+					}
 					Para p;
 					p.fText = para;
 					p.fRuby = paraRuby;
+					p.fKenten = paraKenten;
 					out.fBody.push_back(p);
 					inPara = kFalse;
 					para.clear();
 					paraRuby.clear();
+					paraKenten.clear();
 				}
+				i = after;
+				continue;
+			}
+
+			if (name == "em")
+			{
+				if (!inBody || !inPara)
+				{
+					whyNot = "an <em> stands outside a paragraph";
+					return kFalse;
+				}
+				if (!TakeEm(s, i, after, closing, para, em, paraKenten, whyNot))
+					return kFalse;
 				i = after;
 				continue;
 			}
@@ -474,20 +902,24 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 
 				i = after;
 				KCMAttrSpanList made;
-				std::string base;
+				int32 fragStartCp = CountCodePoints(para);
 				bool16 closed = kFalse;
 
 				while (i < s.size())
 				{
 					if (s[i] == '<' && i + 1 < s.size() && s[i + 1] == '<' && IsOurTagAt(s, i + 1))
 					{
-						base += '<';			// the one escape, inside a reading too
+						para += '<';			// the one escape, inside a reading too
 						i += 2;
 						continue;
 					}
 					if (s[i] != '<')
 					{
-						base += s[i];
+						// ★THE BASE GOES STRAIGHT INTO THE PARAGRAPH rather than into a buffer of
+						//   its own. An <em> can stand inside a reading - a kenten and a ruby on
+						//   the same word is ordinary typesetting - and it has to measure its place
+						//   against the paragraph, like every other mark.
+						para += s[i];
 						++i;
 						continue;
 					}
@@ -497,28 +929,33 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					size_t innerAfter = 0;
 					if (!TagAt(s, i, inner, innerClosing, innerAfter))
 					{
-						base += '<';			// "< 2" inside a base is a character, as anywhere
+						para += '<';			// "< 2" inside a base is a character, as anywhere
 						++i;
 						continue;
 					}
 
 					if (inner == "ruby" && innerClosing)
 					{
-						para += base;			// a trailing base with no reading is still text
-						base.clear();
 						i = innerAfter;
 						closed = kTrue;
 						break;
 					}
 
+					if (inner == "em")
+					{
+						if (!TakeEm(s, i, innerAfter, innerClosing, para, em, paraKenten, whyNot))
+							return kFalse;
+						i = innerAfter;
+						continue;
+					}
+
 					if (inner == "rt" && !innerClosing)
 					{
-						// ★THE BASE BELONGS TO THE READING THAT FOLLOWS IT, so where it stands is
-						//   measured before it joins the paragraph.
-						const int32 baseStart = CountCodePoints(para);
-						para += base;
-						const int32 baseLen = CountCodePoints(base);
-						base.clear();
+						// ★THE BASE BELONGS TO THE READING THAT FOLLOWS IT. It is already in the
+						//   paragraph, so its length is how far the paragraph has come since this
+						//   fragment began.
+						const int32 baseStart = fragStartCp;
+						const int32 baseLen = CountCodePoints(para) - fragStartCp;
 						i = innerAfter;
 
 						std::string reading;
@@ -570,6 +1007,8 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 						//   drop the words.
 						if (baseLen > 0 && !reading.empty())
 							made.push_back(KCMAttrSpan(baseStart, baseLen, reading, kFalse));
+
+						fragStartCp = CountCodePoints(para);	// the next fragment starts here
 						continue;
 					}
 

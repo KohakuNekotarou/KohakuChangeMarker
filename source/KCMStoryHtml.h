@@ -67,9 +67,33 @@ struct Para
 {
 	std::string			fText;
 	KCMAttrSpanList		fRuby;		// as KCMParaAttrs::fRuby
+	KCMAttrSpanList		fKenten;	// as KCMParaAttrs::fKenten - fValue is the KIND's name
 	std::vector<int32>	fNoteAt;	// offsets (code points) where a note reference stands
 	std::vector<int32>	fNoteNum;	// same length: the number the page prints
 };
+
+/** The default mark, for an <em> that names none. See kKentenDefaultValue's comment. */
+extern const char* const kKentenDefaultValue;
+
+/** The class this format writes for one kenten value, WITHOUT the "kenten-" in front
+	("BlackCircle", "Custom-203b", "Kind7"), and the value that such a class means.
+
+	*** THE CLASS CARRIES THE TRUTH AND THE STYLESHEET ONLY CARRIES THE LOOK. *** InDesign's kind
+	names travel verbatim, so a kind this build has never heard of - KCMTextRead answers "Kind7"
+	for one - survives the trip untouched. A CUSTOM mark is the kind plus a character, and the
+	character is written as its code point in lowercase hex, exactly as an invisible character is
+	(uXXXX): one rule, spelled the same way twice, and no second notation to remember.
+
+	*** AND THE ELEMENT IS PLAIN <em>, WHICH IS THE POINT. *** A kenten IS stress emphasis, CSS has
+	text-emphasis-style for exactly this, and the stylesheet this file writes says so - so the
+	document explains its own convention to anybody who opens it. The reader's side of that is
+	kKentenDefaultValue: an <em> carrying no class of ours is still a kenten, because somebody
+	asked for emphasis in the ordinary way and meant it.
+
+	@warning a custom mark is BMP-only, and that is InDesign's limit rather than this format's -
+	  the attribute behind it is an int16 (KCMTextRead says so where it reads it). */
+bool16 KentenClassOf(const std::string& value, std::string& outClass);
+bool16 KentenValueOfClass(const std::string& cls, std::string& outValue);
 
 /** kTrue when cp has to be written as <span class="uXXXX"></span> rather than as itself.
 
