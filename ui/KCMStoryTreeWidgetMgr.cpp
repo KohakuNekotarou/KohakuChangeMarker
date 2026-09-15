@@ -849,6 +849,17 @@ private:
 			textCell->Invalidate();
 		}
 
+		// ***** AND THE LEFT COLUMN SAYS "OV" WHEN THERE IS NOTHING ON THE PAGE TO GO TO. *****
+		// ⚠**WRITTEN EVERY TIME, EMPTY INCLUDED.** Row widgets are recycled as the list scrolls,
+		//   so a cell left alone keeps what the row it used to be had in it - the same rule the
+		//   story branch states at its own three cells. An "OV" stuck to an ordinary change would
+		//   be worse than no mark at all.
+		PMString oversetMark;
+		oversetMark.SetTranslatable(kFalse);
+		if (have && change.fOverset)
+			oversetMark.Append("OV");
+		this->SetNodeName(widgetList, oversetMark, kKCMStoryRowUIDWidgetID);
+
 		// (A "Mono" / "Group" cell on the upper line's right-hand column was filled here from
 		//  2026-09-08 to 2026-09-12. It went with the judgement behind it - a ruby re-set from mono
 		//  to group over the same reading is not a change any more (user's decision, 2026-09-12) -

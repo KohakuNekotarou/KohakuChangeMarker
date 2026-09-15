@@ -181,6 +181,19 @@ struct KCMStoryChange
 		out from these by SetRowChanges -- the row names the attribute, the children carry it. */
 	KCMStoryAttrKind fAttrKind;
 
+	/** Whether the text this change names is OVERSET - not composed into any frame (2026-09-15).
+
+		★**DECIDED ONCE, WHEN THE DIFF MAKES THE CHANGE**, and not asked again while the panel
+		draws. The question costs a parcel-list lookup, the row is drawn many times over, and a
+		"read-only" call that recomposes is a trap this SDK sets more than once
+		([[text-composition-damage-and-recompose]]). Every path that rebuilds a row runs the diff,
+		so the answer cannot go stale while the row stands.
+		⚠**A REPLACED change keeps the answer it had when it was taken in.** Writing different
+		words can in principle push a line over the edge; the row would then say OV a moment
+		later than it might. Refreshing the row settles it, and that is the same door everything
+		else in this list uses. */
+	bool16		fOverset;
+
 	// ---- what a REPLACED change remembers (the Import mode only, 2026-09-15) ------------------
 	//
 	// ★**A REPLACED CHANGE KEEPS BOTH SIDES OF ITSELF.** The row has to be drawable in two states:
@@ -224,7 +237,7 @@ struct KCMStoryChange
 	KCMStoryChange()
 		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
 		  fSourceStart(0), fSourceEnd(0),
-		  fAttrKind(kKCMStoryAttrNone),
+		  fAttrKind(kKCMStoryAttrNone), fOverset(kFalse),
 		  fReplacedCount(0), fReplacedStart(0), fReplacedEnd(0),
 		  fBeforeStart(0), fBeforeEnd(0) {}
 };

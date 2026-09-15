@@ -2591,6 +2591,33 @@ resource KCMStoryRowWidget(kKCMStoryChangeRowRsrcID + index_enUS)
 		//     this line is what the drawing code now decides: alignment (always left), the ellipsize
 		//     style (kEllipsizeMiddle would cut away the change itself - the middle is exactly where
 		//     it is) and the ampersand conversion (kFalse either way; this is document text).
+		// ★★**"OV" GOES HERE** (2026-09-15, the user's call: "shall we show OV in the ID place -
+		//   the child part"). This column has been EMPTY on a change row ever since the sign moved
+		//   to the right in August: a story's UID says nothing about one edit inside it, and the
+		//   24px in front of the text was there only to hold the indent. An empty column is exactly
+		//   where a short, rare word can go without taking a pixel from the text.
+		//   What it says is that this change's text is OVERSET - not composed into any frame - so
+		//   there is nothing on the page to be taken to. ⇒ The reader knows BEFORE pressing, and
+		//   the press itself now goes to the "+" InDesign draws for the overflow rather than
+		//   falling back to the story's first frame (KCMOversetPoint.h).
+		// ⚠**THE SAME WidgetID AND THE SAME FRAME AS THE STORY ROW'S UID CELL**, so the two levels
+		//   share one column and KCMApplyListColumnWidths fits them together. The two rows are
+		//   separate resources and are never each other's descendants, which is what makes reusing
+		//   the id safe (the note at the head of this resource).
+		KCMStoryRowCellWidget
+		(
+			kKCMStoryRowUIDWidgetID,		// WidgetId (the story row's left column, reused)
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft,						// Frame binding: a fixed column at the row's left edge
+			Frame(24, 1, 64, kKCMStoryRowHeight - 2),	// Frame - the story row's UID column, to the pixel
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+
 		KCMStoryChangeCellWidget
 		(
 			kKCMStoryRowTextWidgetID,		// WidgetId (reused)

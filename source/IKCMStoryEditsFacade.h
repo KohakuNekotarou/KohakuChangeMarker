@@ -280,10 +280,21 @@ public:
 		PMString	fBeforeText;
 		PMString	fBeforeTextPost;
 
+		/** Whether this change's text is OVERSET - not composed into any frame (2026-09-15, the
+			user's request after finding a jump that appeared to do nothing).
+
+			★**THE PANEL SHOWS IT AS "OV" IN THE ID COLUMN** of the change row - a column that is
+			otherwise empty on a child row - so that the reader knows before pressing that there
+			is nothing on the page to be taken to. The jump itself goes to the "+" InDesign draws
+			for the overflow rather than falling back to the story's first frame.
+			⚠Worked out by the DIFF, once per change, not asked while the row draws
+			(KCMStoryList.h says why). */
+		bool16		fOverset;
+
 		Change()
 			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),
 			  fSourceStart(0), fSourceEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
-			  fAttrKind(0), fReplaced(kFalse) {}
+			  fAttrKind(0), fReplaced(kFalse), fOverset(kFalse) {}
 	};
 
 	/** How many differences row nth holds.
@@ -453,6 +464,25 @@ public:
 		Task Start while it is (the user's rule: no other comparison inside it).
 		⚠Appended at the END, like the two above. */
 	virtual bool16	InImportMode() = 0;
+
+	/** Where InDesign draws the "+" for the overflow that swallowed `at` (2026-09-15).
+
+		★**WHAT IT IS FOR.** A change whose text is overset has no frame to be shown in, and the
+		jump used to fall back to the story's FIRST frame - measured on the application: the caret
+		landed correctly, its parentTextFrames was 0, and the window moved to page 1 while the
+		reader saw nothing happen. The overflow indicator is the one thing on the page that IS
+		about this text, so that is where the jump goes now.
+
+		@param db the document the story is in - the Target, the side with frames on screen.
+		@param storyUID the story.
+		@param at the TextIndex the change starts at.
+		@param outFrame the frame showing the "+".
+		@param outPb the "+" itself, in pasteboard coordinates.
+		@return kFalse when nothing of the thread, or of any table it sits in, is placed at all -
+			the caller then does what it did before (the story's first frame).
+		⚠Appended at the END, like the three above, and for the same reason. */
+	virtual bool16	GetOversetPoint(IDataBase* db, UID storyUID, TextIndex at,
+									UID& outFrame, PBPMPoint& outPb) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

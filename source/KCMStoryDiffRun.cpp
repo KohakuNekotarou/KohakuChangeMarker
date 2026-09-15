@@ -49,6 +49,7 @@
 #include "KCMStoryList.h"
 #include "KCMStoryStamp.h"	// kKCMStoryKindAdded - which rows have no partner to compare against
 #include "KCMTextDiff.h"
+#include "KCMOversetPoint.h"	// KCMIsTextIndexOverset - is this change's text composed anywhere
 
 namespace
 {
@@ -954,6 +955,32 @@ bool ChangeIsBefore(const KCMStoryChange& x, const KCMStoryChange& y)
    story could not be compared at all; an empty out with kTrue means it was compared and the text
    is identical (the counters also move for formatting).
 */
+/* MarkOverset
+   Says of each change whether the text it names is composed anywhere the reader can see it.
+
+   ★**ONE PASS, HERE, RATHER THAN A QUESTION THE PANEL ASKS WHILE IT DRAWS.** The list is drawn
+   many times over between comparisons and the answer cannot change in between: every road that
+   rebuilds a row runs the diff, and the diff runs this. (The cost is a parcel-list lookup per
+   change; asked from the cell drawing it would be one per change per repaint, and worse, a
+   "read-only" call in a draw path is how this SDK gets talked into recomposing.)
+
+   ⚠**THE TARGET SIDE ONLY.** A change's fTargetStart names the newer document, which is the one
+   with frames on screen; the older side is a task-start copy with no window at all for a
+   Task Start comparison, so "is it visible" has no meaning over there.
+*/
+void MarkOverset(IDataBase* targetDB, UID storyUID, std::vector<KCMStoryChange>& changes)
+{
+	if (targetDB == nil || changes.empty())
+		return;
+
+	InterfacePtr<ITextModel> model(UIDRef(targetDB, storyUID), UseDefaultIID());
+	if (model == nil)
+		return;		// every change keeps kFalse, which is what the panel did before this existed
+
+	for (size_t i = 0; i < changes.size(); ++i)
+		changes[i].fOverset = KCMIsTextIndexOverset(model, changes[i].fTargetStart);
+}
+
 bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 					   std::vector<KCMStoryChange>& out)
 {
@@ -1222,6 +1249,7 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 			//   writing an empty list changes nothing -- which was true of the CHANGES and false of the
 			//   fact that somebody looked. That fact is what lets the row say "None" instead of standing
 			//   there mute beside the rows that could not be compared at all.
+			MarkOverset(targetDB, row->fStoryUID, changes);
 			KCMStoryList::SetRowChanges(i, changes, kTrue);
 			KCMStoryList::SetRowTargetTextCount(i, KCMStoryDiffRun::TextCountOf(UIDRef(targetDB, row->fStoryUID)));
 			total += static_cast<int32>(changes.size());
@@ -1299,6 +1327,7 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	//   just repaired this" apart from "this was never looked at".
 	if (!compared)
 		changes.clear();
+	MarkOverset(targetDB, storyUID, changes);
 	KCMStoryList::SetRowChanges(rowIndex, changes, compared);
 	KCMStoryList::SetRowTargetTextCount(rowIndex, KCMStoryDiffRun::TextCountOf(UIDRef(targetDB, storyUID)));
 

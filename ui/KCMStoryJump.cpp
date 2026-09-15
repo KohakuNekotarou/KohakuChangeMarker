@@ -552,6 +552,35 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	// ⚠The fallback is the story's first frame (what a story row uses), for a story whose frame list
 	//   cannot answer - an unplaced story has none at all.
 	UID frameUID = Utils<IKCMStoryEditsFacade>()->GetStoryFrameAt(db, row.fStoryUID, from);
+
+	// ***** AN OVERSET CHANGE GOES TO THE "+" INSTEAD (2026-09-15, the user's request). *****
+	//
+	// ★**WHAT IT USED TO DO, MEASURED ON THE APPLICATION.** Text that is not composed belongs to
+	//   no frame, so the line above answered kInvalidUID and the jump fell through to the story's
+	//   FIRST frame: the window moved to page 1, a caret was placed correctly at a position
+	//   nothing draws (parentTextFrames = 0), and nothing was said. The reader sees a press that
+	//   did nothing - which is how the user found it.
+	// ⇒ The overflow indicator is the one thing on the page that IS about this text. The model
+	//   works out where it is (KCMOversetPoint.cpp, restored from the retired Find Overset), and
+	//   the frame that shows it becomes the frame this jump goes to.
+	// ⚠**THE "+" OF A TABLE CELL PUSHED OUT WITH ITS ROW IS THE TABLE'S, NOT THE CELL'S** - the
+	//   walk climbs the anchors, which is also what InDesign's own preflight reports.
+	// ⚠The caret is still placed at the change itself further down: its position is correct even
+	//   when it is invisible, and it is what makes the selection right if the frame is later
+	//   made big enough. What changes here is only where the WINDOW goes.
+	PBPMPoint oversetPb;
+	bool16 wentToOverset = kFalse;
+	if (frameUID == kInvalidUID && change.fOverset)
+	{
+		UID plusFrame = kInvalidUID;
+		if (Utils<IKCMStoryEditsFacade>()->GetOversetPoint(db, row.fStoryUID, from, plusFrame, oversetPb)
+			&& plusFrame != kInvalidUID)
+		{
+			frameUID = plusFrame;
+			wentToOverset = kTrue;
+		}
+	}
+
 	if (frameUID == kInvalidUID)
 		frameUID = row.fFrameUID;
 	if (frameUID == kInvalidUID)
@@ -582,7 +611,8 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   for one (fSourceEnd == fSourceStart) and centring works off the start, so nothing else has
 	//   to change.
 	const TextIndex sourceFocus = change.fSourceStart;
-	const bool16 moved = KCMGotoStoryFrame(db, frameUID, pageUID, row.fStoryUID, from, sourceFocus);
+	const bool16 moved = KCMGotoStoryFrame(db, frameUID, pageUID, row.fStoryUID, from, sourceFocus,
+										   wentToOverset ? &oversetPb : nil);
 
 	// ***** AND LIGHT THE CHARACTERS UP FOR A MOMENT. *****
 	//
@@ -690,6 +720,12 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	PMString label;
 	label.SetTranslatable(kFalse);
 	label.Append(change.fReplaced ? "Before the replacement:" : "Source Text:");
+
+	// ★AND A WORD WHEN THE WINDOW WENT TO THE "+" RATHER THAN TO THE TEXT. The row's ID column
+	//   already says OV, but the label is what the reader is looking at the instant after they
+	//   press, and "the page did not move to my words" deserves an answer in that moment.
+	if (wentToOverset)
+		label.Append(" (overset)");
 
 	// ★★THE OTHER SIDE'S READING GOES WITH IT (2026-08-22). The list shows the NEWER version, so a
 	//   reading that was REMOVED can be seen nowhere else - and the row's own upper line is left

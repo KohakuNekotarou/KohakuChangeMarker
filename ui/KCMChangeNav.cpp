@@ -1053,7 +1053,7 @@ void KCMGotoPrevChange() { KCMGoto(-1); }
 // KCMGotoStoryFrame (declared in KCMChangeNav.h)
 //========================================================================================
 bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
-	TextIndex focusIndex, TextIndex sourceFocusIndex)
+	TextIndex focusIndex, TextIndex sourceFocusIndex, const PBPMPoint* oversetPb)
 {
 	// The facade is asked more than once here, so it is queried into an InterfacePtr first
 	// (Utils.h says to do that rather than pay for a query per call). It is at the very top of the
@@ -1079,7 +1079,20 @@ bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 	// To the character when a change was named, and to the start of the story when it was not --
 	// NOT to the centre of the frame (see KCMScrollDocToStoryStart above).
 	UID landedFrame = kInvalidUID;
-	if (!KCMScrollDocToStoryStart(db, storyUID, frameUID, landedFrame, PMReal(-1.0), focusIndex))
+	if (oversetPb != nil)
+	{
+		// ***** THE OVERFLOW'S "+", THE WAY THE RETIRED CYCLE WENT THERE. *****
+		// These two lines are commit 3e98956's, brought back unchanged rather than written again:
+		// the spread FIRST (scrolling alone cannot reach a master spread, and a pasteboard point
+		// is spread-relative, so a point read before the switch names somewhere else), then the
+		// point. ⚠The order is the one thing here that is easy to get wrong and impossible to see
+		// afterwards - it lands on the right-looking place on the wrong spread.
+		KCMEnsureSpreadInView(db, pageUID);
+		if (!KCMScrollDocToPBPoint(db, *oversetPb))
+			return kFalse;
+		landedFrame = frameUID;		// the frame that shows the "+", for the Pages panel below
+	}
+	else if (!KCMScrollDocToStoryStart(db, storyUID, frameUID, landedFrame, PMReal(-1.0), focusIndex))
 		return kFalse;
 
 	// The Pages panel goes to the page of THE FRAME ACTUALLY LANDED ON (a frame on no page does

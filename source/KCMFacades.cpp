@@ -49,6 +49,8 @@
 #include "KCMStoryList.h"			// the Story Edits rows, and where a story begins in a document
 #include "KCMStoryDiffRun.h"		// RunOne - re-comparing one row's story ("Refresh Story Comparison")
 #include "KCMStoryRestore.h"		// KCMRestoreChange - "Restore Source Text" on a change row
+#include "KCMOversetPoint.h"		// KCMFindOversetOutport - where the "+" of an overflow is
+#include "ITextModel.h"			// the story the two above are asked about
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - "Export Story Text..." on the flyout
 #include "KCMStoryTextImport.h"	// KCMImportStoryText - "Import Story Text..." on the flyout
 #include "KCMBookPair.h"			// which two books, and their display paths
@@ -486,7 +488,21 @@ public:
 		// Cheap enough to ask every time: it is an interface lookup and a member read, and the
 		// alternative - a cache - would be a second copy of a number whose whole value is that
 		// it is the document's own ([[lean-processing-preference]] does not buy staleness).
-		return (KCMStoryDiffRun::TextCountOf(UIDRef(targetDB, row.fStoryUID)) == change.fReplacedCount)
+		//
+		// ⚠★★★**">=", NOT "==" - MEASURED ON THE APPLICATION, 2026-09-15.** It was "==" until the
+		//   first live run, where taking in a SECOND change in the same story made the FIRST one's
+		//   sign fall back to "-" while the panel said "0 change(s) left". The counter had moved
+		//   on for the second write, so the first change's record no longer matched it - and the
+		//   row went on being replaced while its mark said otherwise.
+		//   The counter only ever climbs as work is done and winds back as it is undone, so the
+		//   question a replaced change has to ask is not "is the story exactly where I left it"
+		//   but **"has the story got at least as far as the write I made"**. Undo takes it below
+		//   that mark and the sign falls away; redo lifts it back over and the sign returns.
+		//   ⚠An ordinary edit also lifts it, so an edited story keeps its marks. That is the right
+		//   side to err on: the marks are a record of what the reader took in, and the WRITING
+		//   path has its own, stricter test (KCMStoryRestore refuses a story whose counter has
+		//   moved at all), so nothing is written against positions that have rotted.
+		return (KCMStoryDiffRun::TextCountOf(UIDRef(targetDB, row.fStoryUID)) >= change.fReplacedCount)
 			   ? kTrue : kFalse;
 	}
 
@@ -530,6 +546,7 @@ public:
 		//   words as they stand now AND as they stood before, and which of the two belongs in
 		//   fText* is a question about the document's counter - which is this side's business.
 		//   The cell then draws whatever it is handed, exactly as it always has.
+		out.fOverset		= change.fOverset;		// decided by the diff; see KCMStoryList.h
 		out.fReplaced		= (isReplaced && StillReplaced(*row, change)) ? kTrue : kFalse;
 		out.fBeforeTextPre	= change.fBeforeTextPre;
 		out.fBeforeText		= change.fBeforeText;
@@ -657,6 +674,19 @@ public:
 	virtual bool16	RestoreChange(int32 nth, int32 which, PMString& outMessage)
 	{
 		return KCMRestoreChange(nth, which, outMessage);
+	}
+
+	virtual bool16	GetOversetPoint(IDataBase* db, UID storyUID, TextIndex at,
+									UID& outFrame, PBPMPoint& outPb)
+	{
+		// The model side of the jump's overset branch. The walk itself is KCMOversetPoint.cpp -
+		// restored from the Find Overset feature retired on 2026-09-08, the two computations only.
+		if (db == nil || storyUID == kInvalidUID)
+			return kFalse;
+		InterfacePtr<ITextModel> model(UIDRef(db, storyUID), UseDefaultIID());
+		if (model == nil)
+			return kFalse;
+		return KCMFindOversetOutport(model, db, at, outFrame, outPb);
 	}
 	virtual UID		GetFirstFrameUID(IDataBase* db, UID storyUID)
 					{ return KCMStoryFirstFrameUID(db, storyUID); }

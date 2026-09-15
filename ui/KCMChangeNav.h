@@ -119,7 +119,14 @@ void KCMNoteStoryStop(int32 rowIndex, int32 changeIndex);
 //   producing the point needs composition, and composition dirties the document
 //   (IKCMStoryEditsFacade::GetStoryPointAt). The guard for the OLD side is held by this function
 //   itself, since this is the only place that touches the old document.
+// ★**oversetPb**: when the change's text is OVERSET there is no composed character to scroll to,
+//   and focusIndex cannot answer - a position with no wax has no point on the page. Pass the
+//   pasteboard point of the overflow's "+" (IKCMStoryEditsFacade::GetOversetPoint) and the view
+//   goes THERE instead, exactly as the retired Find Overset cycle did: spread first, then the
+//   point (commit 3e98956's KCMGoto - the two lines are brought back rather than rewritten).
+//   nil for every ordinary jump, which then behaves as it always has.
 bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
-	TextIndex focusIndex = kInvalidTextIndex, TextIndex sourceFocusIndex = kInvalidTextIndex);
+	TextIndex focusIndex = kInvalidTextIndex, TextIndex sourceFocusIndex = kInvalidTextIndex,
+	const PBPMPoint* oversetPb = nil);
 
 #endif // __KCMChangeNav_h__
