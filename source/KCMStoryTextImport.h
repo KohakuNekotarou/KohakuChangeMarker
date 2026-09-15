@@ -65,6 +65,30 @@ void KCMHoldStoryText(const KCMStoryTextSet& set);
     rule and what forgetting it costs). */
 void KCMReleaseStoryText();
 
+/** Write the held set's text into `copyDB` - a rehydrated task-start copy, never a real document.
+
+    ★★★**THE COPY, AND ONLY EVER THE COPY.** What the reader edited outside InDesign goes in here;
+      the comparison then shows it against their own document and "Restore Source Text" is what
+      puts any of it in. That is the whole safety of this feature and it rests on this one
+      parameter being a copy.
+
+    ★**THE STORIES ARE PAIRED BY THE ORIGINAL UID**, read from the copy's own KcmOriginUid label
+      (KCMRehydrate.h) - the copy's UIDs are new ones, so the file names cannot be matched against
+      them directly.
+
+    ⚠**ONLY CHANGES INSIDE A PARAGRAPH ARE APPLIED, so far.** A place whose paragraph COUNT differs
+      is refused with a reason rather than guessed at: adding and removing paragraphs needs the end
+      of a thread to be known exactly, and that is measured work not yet done. Everything else -
+      the words inside each paragraph - goes in, minimally, so that the ruby and the kenten on the
+      parts nobody edited are still there afterwards.
+    ⚠**A CHANGE TOUCHING AN INVISIBLE CHARACTER IS REFUSED.** An anchored object's character, a
+      page number, an index marker: these can be moved or deleted from outside only by accident,
+      and the file format carries them precisely so that this check can be made.
+
+    @param outMessage the one line the panel shows: what went in, and what was refused.
+    @return kFalse when nothing at all could be applied. */
+bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage);
+
 #endif // __KCMStoryTextImport_h__
 
 // End, KCMStoryTextImport.h.

@@ -11,9 +11,22 @@
 #include <string>
 #include <vector>
 
+#include "ICommand.h"
+#include "ICommandSequence.h"		// the whole pouring is one step
+#include "IDataBase.h"
+#include "IStoryList.h"
+#include "ITextModel.h"
+#include "ITextModelCmds.h"
+#include "CmdUtils.h"
+#include "ErrorUtils.h"
 #include "FileUtils.h"
+#include "WideString.h"
 
 #include "KCMStoryTextImport.h"
+#include "KCMParaText.h"			// ModelOffsetInParagraph / AppendUtf8
+#include "KCMRehydrate.h"			// KCMReadOriginUidLabel - the copy's stories carry the original UID
+#include "KCMTextDiff.h"			// ToCodePoints / Diff
+#include "KCMTextRead.h"			// ReadStory - the copy, read the same way the export read the original
 
 namespace
 {
@@ -114,6 +127,243 @@ void AppendCount(PMString& out, const char* before, int32 n, const char* after)
 	out.Append(before);
 	out.AppendNumber(n);
 	out.Append(after);
+}
+
+//========================================================================================
+//  Pouring the edited text into the copy
+//========================================================================================
+
+/** One place in a story - the body, one cell, or one footnote - as the two sides see it.
+
+	★**THE PLACES ARE BUILT THE SAME WAY ON BOTH SIDES**, from KCMParaAttrs on the copy and from
+	the Story's own shape in the file, which is how a cell's paragraphs find their cell without
+	anything having to be written down in the file about where they came from. */
+struct Place
+{
+	std::vector<size_t>						fCopy;		// indices into the copy's flat arrays
+	const std::vector<KCMStoryHtml::Para>*	fFile;		// what the reader edited, or nil
+
+	Place() : fFile(nil) {}
+};
+
+/** kTrue when any code point of `text` in [from, to) is one the reader may not move or delete. */
+bool16 RangeTouchesInvisible(const std::vector<int32>& cps, int32 from, int32 to)
+{
+	for (int32 k = from; k < to && k < static_cast<int32>(cps.size()); ++k)
+	{
+		if (k >= 0 && KCMStoryHtml::IsInvisible(cps[k]))
+			return kTrue;
+	}
+	return kFalse;
+}
+
+/** The cells of one row, in the order the exporter wrote them: by column, anchors only.
+
+	The copy's paragraphs name their (row, column); the file's cells are a plain list. Sorting the
+	columns that actually occur is what turns one into the other - and it agrees with the exporter
+	by construction, because that walked the anchors in column order too. */
+void ColumnsOfRow(const std::vector<KCMParaAttrs>& attrs, int32 table, int32 row,
+				  std::vector<int32>& outCols)
+{
+	outCols.clear();
+	for (size_t i = 0; i < attrs.size(); ++i)
+	{
+		if (!attrs[i].IsCell() || attrs[i].fTableOrdinal != table || attrs[i].fCellRow != row)
+			continue;
+		bool16 seen = kFalse;
+		for (size_t k = 0; k < outCols.size() && !seen; ++k)
+			seen = (outCols[k] == attrs[i].fCellCol) ? kTrue : kFalse;
+		if (!seen)
+			outCols.push_back(attrs[i].fCellCol);
+	}
+	std::sort(outCols.begin(), outCols.end());
+}
+
+/** Every place of one story, with the file's paragraphs for each. */
+void BuildPlaces(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::Story& file,
+				 std::vector<Place>& out)
+{
+	out.clear();
+
+	Place body;
+	body.fFile = &file.fBody;
+	for (size_t i = 0; i < attrs.size(); ++i)
+	{
+		if (!attrs[i].IsCell() && !attrs[i].IsFootnote())
+			body.fCopy.push_back(i);
+	}
+	out.push_back(body);
+
+	// ---- the cells ----------------------------------------------------------------------------
+	for (size_t i = 0; i < attrs.size(); ++i)
+	{
+		if (!attrs[i].IsCell())
+			continue;
+
+		// One place per cell: the first paragraph of it opens the place, the rest join.
+		bool16 already = kFalse;
+		for (size_t k = 0; k < out.size() && !already; ++k)
+		{
+			if (out[k].fCopy.empty())
+				continue;
+			const KCMParaAttrs& first = attrs[out[k].fCopy[0]];
+			already = (first.IsCell()
+					   && first.fTableOrdinal == attrs[i].fTableOrdinal
+					   && first.fCellRow == attrs[i].fCellRow
+					   && first.fCellCol == attrs[i].fCellCol) ? kTrue : kFalse;
+			if (already)
+				out[k].fCopy.push_back(i);
+		}
+		if (already)
+			continue;
+
+		Place cell;
+		cell.fCopy.push_back(i);
+
+		const size_t t = static_cast<size_t>(attrs[i].fTableOrdinal);
+		if (t < file.fTables.size() && attrs[i].fCellRow >= 0
+			&& static_cast<size_t>(attrs[i].fCellRow) < file.fTables[t].fRows.size())
+		{
+			std::vector<int32> cols;
+			ColumnsOfRow(attrs, attrs[i].fTableOrdinal, attrs[i].fCellRow, cols);
+
+			size_t which = 0;
+			bool16 found = kFalse;
+			for (size_t k = 0; k < cols.size(); ++k)
+			{
+				if (cols[k] == attrs[i].fCellCol)
+				{
+					which = k;
+					found = kTrue;
+					break;
+				}
+			}
+			const KCMStoryHtml::Row& row = file.fTables[t].fRows[static_cast<size_t>(attrs[i].fCellRow)];
+			if (found && which < row.fCells.size())
+				cell.fFile = &row.fCells[which].fParas;
+		}
+		out.push_back(cell);
+	}
+
+	// ---- the footnotes ------------------------------------------------------------------------
+	for (size_t i = 0; i < attrs.size(); ++i)
+	{
+		if (!attrs[i].IsFootnote())
+			continue;
+
+		bool16 already = kFalse;
+		for (size_t k = 0; k < out.size() && !already; ++k)
+		{
+			if (out[k].fCopy.empty())
+				continue;
+			const KCMParaAttrs& first = attrs[out[k].fCopy[0]];
+			already = (first.IsFootnote()
+					   && first.fFootnoteOrdinal == attrs[i].fFootnoteOrdinal) ? kTrue : kFalse;
+			if (already)
+				out[k].fCopy.push_back(i);
+		}
+		if (already)
+			continue;
+
+		Place note;
+		note.fCopy.push_back(i);
+		const size_t n = static_cast<size_t>(attrs[i].fFootnoteOrdinal);
+		if (n < file.fNotes.size())
+			note.fFile = &file.fNotes[n];
+		out.push_back(note);
+	}
+}
+
+/*	ApplyParagraph
+	The edits between one paragraph of the copy and the same paragraph of the file.
+
+	★★**MINIMAL EDITS, BACK TO FRONT.** Replacing the whole paragraph would be simpler and would
+	throw away every attribute on the parts nobody touched - the ruby and the kenten this format
+	works so hard to carry. So the two are diffed by code point and only the runs that differ are
+	written, starting from the end so that the earlier positions are still true when they are used.
+
+	@return how many writes went in; -1 when the paragraph was refused (whyNot filled).
+*/
+int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs& attrs,
+					 const std::string& copyText, const std::string& fileText,
+					 PMString& whyNot)
+{
+	if (copyText == fileText)
+		return 0;
+
+	std::vector<int32> a;
+	std::vector<int32> b;
+	KCMTextDiff::ToCodePoints(copyText, &a, nil);
+	KCMTextDiff::ToCodePoints(fileText, &b, nil);
+
+	std::vector<KCMTextDiff::Change> changes;
+	if (!KCMTextDiff::Diff(a, b, changes))
+	{
+		whyNot = "the paragraph differs too much to place the changes";
+		whyNot.SetTranslatable(kFalse);
+		return -1;
+	}
+
+	// ⚠**NOTHING IS WRITTEN UNTIL EVERY CHANGE HAS BEEN JUDGED.** A paragraph half applied and then
+	//   refused would be worse than one refused whole, and the reader would have no way to tell.
+	for (size_t c = 0; c < changes.size(); ++c)
+	{
+		const KCMTextDiff::Change& ch = changes[c];
+		if (RangeTouchesInvisible(a, ch.aStart, ch.aStart + ch.aCount)
+			|| RangeTouchesInvisible(b, ch.bStart, ch.bStart + ch.bCount))
+		{
+			whyNot = "a change would move or delete a character that is not a letter "
+					 "(an anchored object, a page number, an index marker)";
+			whyNot.SetTranslatable(kFalse);
+			return -1;
+		}
+	}
+
+	InterfacePtr<ITextModelCmds> cmds(model, UseDefaultIID());
+	if (cmds == nil)
+	{
+		whyNot = "the story cannot be edited";
+		whyNot.SetTranslatable(kFalse);
+		return -1;
+	}
+
+	int32 written = 0;
+	for (size_t c = changes.size(); c > 0; --c)
+	{
+		const KCMTextDiff::Change& ch = changes[c - 1];
+
+		// ★THE CROSSING IS ModelOffsetInParagraph's, never an addition of our own: a table standing
+		//   inside this paragraph makes the two counts disagree from there on (KCMParaText.h).
+		const int32 from = KCMParaText::ModelOffsetInParagraph(attrs, ch.aStart);
+		const int32 to = KCMParaText::ModelOffsetInParagraph(attrs, ch.aStart + ch.aCount);
+
+		boost::shared_ptr<WideString> words(new WideString());
+		if (ch.bCount > 0)
+		{
+			std::string piece;
+			for (int32 k = ch.bStart; k < ch.bStart + ch.bCount
+								   && k < static_cast<int32>(b.size()); ++k)
+				KCMParaText::AppendUtf8(piece, b[k]);
+
+			PMString asString;
+			asString.SetUTF8String(piece);		// marks it not translatable, which is what we want
+			*words = WideString(asString);
+		}
+
+		const int32 count = to - from;
+		InterfacePtr<ICommand> write(count > 0
+			? cmds->ReplaceCmd(paraStart + from, count, words)
+			: cmds->InsertCmd(paraStart + from, words));
+		if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
+		{
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+			whyNot = "the write failed (a locked story or layer?)";
+			whyNot.SetTranslatable(kFalse);
+			return (written > 0) ? written : -1;
+		}
+		++written;
+	}
+	return written;
 }
 
 }	// anonymous namespace
@@ -236,6 +486,163 @@ void KCMReleaseStoryText()
 {
 	sHeld = KCMStoryTextSet();
 	sHolding = kFalse;
+}
+
+bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
+{
+	outMessage.Clear();
+	outMessage.SetTranslatable(kFalse);
+
+	const KCMStoryTextSet* set = KCMHeldStoryText();
+	if (set == nil || set->fUids.empty())
+	{
+		outMessage = "no edited stories are held";
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+	if (copyDB == nil)
+	{
+		outMessage = "there is no copy to write into";
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	InterfacePtr<IStoryList> stories(copyDB, copyDB->GetRootUID(), UseDefaultIID());
+	if (stories == nil)
+	{
+		outMessage = "the copy has no stories";
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	int32 storiesTouched = 0;
+	int32 edits = 0;
+	int32 refusedParas = 0;
+	int32 refusedPlaces = 0;
+	int32 unmatched = 0;
+	PMString firstRefusal;
+	firstRefusal.SetTranslatable(kFalse);
+
+	// ★ONE STEP. The copy has no window and nobody will press Ctrl+Z in it, but a sequence is what
+	//   keeps the writes from arriving as a hundred separate entries in a history that the peek
+	//   document shares.
+	ICommandSequence* sequence = CmdUtils::BeginCommandSequence("KCMApplyStoryText");
+	if (sequence != nil)
+		sequence->SetName(PMString("Apply edited story text"));
+
+	const int32 count = stories->GetUserAccessibleStoryCount();
+	for (int32 s = 0; s < count; ++s)
+	{
+		const UIDRef copyRef = stories->GetNthUserAccessibleStoryUID(s);
+
+		// ⚠**THE COPY'S UIDS ARE NEW ONES.** What pairs a file with a story is the label the
+		//   rehydration wrote, which carries the ORIGINAL uid - the one the file is named after.
+		UID original = kInvalidUID;
+		if (!KCMReadOriginUidLabel(copyDB, copyRef.GetUID(), original))
+			continue;
+
+		size_t which = 0;
+		bool16 found = kFalse;
+		for (size_t k = 0; k < set->fUids.size(); ++k)
+		{
+			if (set->fUids[k] == original)
+			{
+				which = k;
+				found = kTrue;
+				break;
+			}
+		}
+		if (!found)
+		{
+			++unmatched;
+			continue;
+		}
+
+		std::vector<std::string> paras;
+		std::vector<KCMParaAttrs> attrs;
+		std::vector<int32> starts;
+		if (!KCMTextRead::ReadStory(copyRef, paras, attrs, starts))
+			continue;
+
+		InterfacePtr<ITextModel> model(copyRef, UseDefaultIID());
+		if (model == nil)
+			continue;
+
+		std::vector<Place> places;
+		BuildPlaces(attrs, set->fStories[which], places);
+
+		bool16 touched = kFalse;
+		for (size_t p = 0; p < places.size(); ++p)
+		{
+			const Place& place = places[p];
+			if (place.fFile == nil)
+			{
+				++refusedPlaces;
+				if (firstRefusal.IsEmpty())
+					firstRefusal = "a cell or note in the document is not in the file";
+				continue;
+			}
+
+			// ⚠**THE PARAGRAPH COUNT HAS TO MATCH, so far.** Adding and removing paragraphs needs
+			//   the exact end of a thread, which is measured work not yet done - so the place is
+			//   refused with a reason rather than half-applied.
+			if (place.fCopy.size() != place.fFile->size())
+			{
+				++refusedPlaces;
+				if (firstRefusal.IsEmpty())
+				{
+					firstRefusal = "the number of paragraphs changed "
+								   "(this version writes changes inside a paragraph only)";
+					firstRefusal.SetTranslatable(kFalse);
+				}
+				continue;
+			}
+
+			// ★BACK TO FRONT ACROSS THE PARAGRAPHS TOO, for the same reason as inside one: an
+			//   earlier write moves every position after it.
+			for (size_t q = place.fCopy.size(); q > 0; --q)
+			{
+				const size_t i = place.fCopy[q - 1];
+				PMString whyNot;
+				const int32 n = ApplyParagraph(model, static_cast<TextIndex>(starts[i]), attrs[i],
+											   paras[i], (*place.fFile)[q - 1].fText, whyNot);
+				if (n < 0)
+				{
+					++refusedParas;
+					if (firstRefusal.IsEmpty())
+						firstRefusal = whyNot;
+					continue;
+				}
+				if (n > 0)
+				{
+					edits += n;
+					touched = kTrue;
+				}
+			}
+		}
+		if (touched)
+			++storiesTouched;
+	}
+
+	if (sequence != nil)
+		CmdUtils::EndCommandSequence(sequence);
+
+	AppendCount(outMessage, "", edits, " change(s) applied");
+	AppendCount(outMessage, " in ", storiesTouched, " story(ies)");
+	if (refusedPlaces > 0)
+		AppendCount(outMessage, ", ", refusedPlaces, " place(s) refused");
+	if (refusedParas > 0)
+		AppendCount(outMessage, ", ", refusedParas, " paragraph(s) refused");
+	if (unmatched > 0)
+		AppendCount(outMessage, ", ", unmatched, " story(ies) had no file");
+	if (!firstRefusal.IsEmpty())
+	{
+		outMessage.Append(" (");
+		outMessage.Append(firstRefusal);
+		outMessage.Append(")");
+	}
+
+	return (edits > 0) ? kTrue : kFalse;
 }
 
 // End, KCMStoryTextImport.cpp.
