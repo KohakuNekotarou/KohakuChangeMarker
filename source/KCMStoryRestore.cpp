@@ -252,6 +252,109 @@ private:
 	RestoreSequence& operator=(const RestoreSequence&);
 };
 
+/*	RefindAfterEdit
+	The story was edited since the comparison named the positions. Compare that ONE story again and
+	find the same change in the new list, instead of refusing the write.
+
+	★★★**THE SOURCE IS THE KEY, BECAUSE THE SOURCE CANNOT MOVE.** The task-start copy is rebuilt
+	from a fixed byte string every time, so a change's fSourceStart/fSourceEnd name the same place
+	before and after the reader types in the Target - while fTargetStart/fTargetEnd are exactly what
+	an edit invalidates. So the side that cannot move is what a change is looked up by, and the side
+	that moved is read back off the fresh comparison.
+	⚠**fSourceEnd == fSourceStart IS A REAL PLACE** (an insertion's caret in the older version), so
+	  the pair identifies those rows too - the rule is KCMStoryList.h's, not invented here.
+
+	★★**THIS IS NOT "TRUSTING THE COUNTER" - IT IS ITS OPPOSITE.** KBS once held the same counter in
+	order to SKIP the position test, and rewrote occurrences its reader had never seen (the note in
+	KBSResultModel.h, removed 2026-08-03 with the fast path it fed). Here the counter does not stand
+	in for the test: it is what makes the test run AGAIN.
+
+	@param change IN as the row held it; OUT the same change as the re-diff names it now.
+	@param outMessage filled on every kFalse.
+	@return kFalse when nothing should be written - the story cannot be compared again, the change
+		is gone, or the row now reads differently and the reader has not seen that yet.
+*/
+bool16 RefindAfterEdit(int32 nth, IDataBase* targetDB, IDataBase* sourceDB,
+					   KCMStoryChange& change, PMString& outMessage)
+{
+	// The row's story, diffed again - the same work "Refresh Story Comparison" does on one row, and
+	// it brings the row's counter up to date, which is what lets the SECOND press go straight
+	// through (KCMStoryDiffRun.h, RunOne).
+	const int32 left = KCMStoryDiffRun::RunOne(targetDB, sourceDB, nth);
+
+	bool16 ok = kFalse;
+	if (left < 0)
+	{
+		outMessage = Refused("this story was edited and cannot be compared again, so nothing was changed.");
+	}
+	else
+	{
+		// ⚠**AN ALREADY-REPLACED ROW IS NOT A CANDIDATE**: asking the merged list rather than the
+		//   live one keeps every caller counting in the same index space (KCMStoryList.h), and
+		//   GetMergedChange is the one place that knows which list an index fell in.
+		const int32 count = KCMStoryList::GetMergedChangeCount(nth);
+		const KCMStoryChange* found = nil;
+		for (int32 i = 0; i < count && found == nil; ++i)
+		{
+			bool16 isReplaced = kFalse;
+			const KCMStoryChange* const c = KCMStoryList::GetMergedChange(nth, i, isReplaced);
+			if (c == nil || isReplaced)
+				continue;
+			// ⚠**fKind IS PART OF THE IDENTITY, NOT A DETAIL.** Delete the paragraph this change
+			//   sits in and the re-diff names a DELETION over the same source range - which would
+			//   otherwise answer to a replacement's lookup and write the older words into whatever
+			//   now stands at that spot. A change that has become a different KIND of change is
+			//   not the same change; it is not found, and nothing is written.
+			if (c->fSourceStart == change.fSourceStart && c->fSourceEnd == change.fSourceEnd
+				&& c->fKind == change.fKind
+				&& c->fWhat == change.fWhat && c->fAttrKind == change.fAttrKind)
+				found = c;
+		}
+
+		if (found == nil)
+		{
+			outMessage = Refused("this change is not there any more - the words were edited until the "
+							   "two sides agreed. Nothing was changed.");
+		}
+		// ***** THE PARAGRAPH NOW READS DIFFERENTLY: STOP ONCE AND LET THEM LOOK. *****
+		// (the user's call, 2026-09-15: "this paragraph has been changed - check it and confirm the
+		// replacement once more"). The reader edited the very words they are replacing, so what
+		// would go in is no longer what they had in front of them when they opened the menu.
+		// ★The press after this one goes through without stopping: the panel is redrawn below, and
+		//   the row's counter now matches the story, so this function is not even reached.
+		//
+		// ⚠★★★**WHAT IS COMPARED IS WHAT WOULD BE OVERWRITTEN - NOT WHAT THE ROW LOOKS LIKE.**
+		//   Measured twice on 2026-09-15, each time by stopping on a change NOBODY had touched:
+		//     1. fTargetStart was in the test. It moves whenever anything EARLIER in the story is
+		//        edited, and fetching that moved position is the whole purpose of the re-diff above.
+		//     2. fTextPre / fTextPost were in the test. They are cut `kContextCodePoints` either
+		//        side of the change out of a JOINED RUN (KCMStoryDiffRun's Slice), so they reach
+		//        across the paragraph boundary and carry the neighbour's edits into this comparison.
+		//   Both mistakes were the same one: confusing "the row is drawn differently" with "the
+		//   words this would overwrite are different". Only the second is the reader's risk - the
+		//   context is never written, and what goes IN is read from the Source, which cannot move.
+		//   ⇒ the test is the CHANGED PART alone: how many characters would be taken out, and what
+		//     they read. A neighbour's typing is invisible to both.
+		else if ((found->fTargetEnd - found->fTargetStart) != (change.fTargetEnd - change.fTargetStart)
+				 || found->fText.Compare(kTrue, change.fText) != 0)
+		{
+			outMessage = Refused("this paragraph has changed - check what it shows now, then press "
+							   "again to replace.");
+		}
+		else
+		{
+			change = *found;	// copied before the panel is told: the pointer is the list's own
+			ok = kTrue;
+		}
+	}
+
+	// ★**TOLD WHICHEVER WAY THIS WENT.** The row is quoting a different moment than the one that was
+	//   right-clicked, and a row saying something untrue about the document in front of the reader
+	//   is worse than a refusal - the same reason RunOne re-reads the row at all.
+	KCMNotify(kKCMStoryEditsRebuiltMessage);
+	return ok;
+}
+
 }	// namespace
 
 bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
@@ -283,31 +386,13 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 						   "run Refresh Story Comparison on its row to start over.");
 		return kFalse;
 	}
-	// A copy: the row is rebuilt below, and the reference above would then point into freed memory.
-	const KCMStoryChange change = *found;
+	// A copy, and deliberately NOT const: when the story has been edited since the comparison, this
+	// is replaced by the same change as the re-diff now names it (RefindAfterEdit).
+	// ⚠The reference above points into freed memory once the row is rebuilt, either way.
+	KCMStoryChange change = *found;
 	const UID storyUID = row->fStoryUID;
 	const uint32 countThen = row->fTargetTextCount;
 	row = nil;
-
-	// ***** THE BEFORE-STATE, TAKEN BEFORE ANYTHING IS WRITTEN. *****
-	// In the Import mode this change stays in the list after the write, and its row has to be
-	// drawable both ways: as it stands now, and as it stood before - because Ctrl+Z puts the text
-	// back and the row follows it there. This is the only moment the before-state can be read;
-	// afterwards the words it names are no longer in the story.
-	// ★**THE AFTER-PIECES ARE ALREADY IN HAND** and are not cut again: a replacement changes the
-	//   CHANGED PART and leaves the context on either side untouched, so "after" is the row's own
-	//   pre + the SOURCE's middle + the row's own post. fOtherText is exactly the words about to
-	//   go in, cut and marked up by the same pass that made fText (KCMStoryDiffRun's Slice), so
-	//   the two states are drawn by one rule rather than by two that could drift.
-	KCMStoryChange done  = change;
-	done.fBeforeStart    = change.fTargetStart;
-	done.fBeforeEnd      = change.fTargetEnd;
-	done.fBeforeTextPre  = change.fTextPre;
-	done.fBeforeText     = change.fText;
-	done.fBeforeTextPost = change.fTextPost;
-	done.fReplacedTextPre  = change.fTextPre;
-	done.fReplacedText     = change.fOtherText;
-	done.fReplacedTextPost = change.fTextPost;
 
 	IDataBase* const targetDB = KCMArmedTargetDB();
 	if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
@@ -344,12 +429,38 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 		outMessage = Refused("the story is no longer in the Target document.");
 		return kFalse;
 	}
-	if (target->GetTextChangeCount() != countThen)
-	{
-		outMessage = Refused("this story has been edited since the comparison, so nothing was changed. "
-						   "Refreshing this row compares it again.");
+	// ***** EDITED SINCE THE COMPARISON? COMPARE IT AGAIN RATHER THAN REFUSE. *****
+	// (the user's decision, 2026-09-15). Until then this was a dead end: the reader had touched the
+	// document - by accident as often as not - and every remaining change in that story could only
+	// be taken in after running "Refresh Story Comparison" by hand. The positions are what an edit
+	// invalidates, so the positions are what is fetched again; nothing is taken on trust.
+	if (target->GetTextChangeCount() != countThen
+		&& !RefindAfterEdit(nth, targetDB, sourceDB, change, outMessage))
 		return kFalse;
-	}
+
+	// ***** THE BEFORE-STATE, TAKEN ONCE `change` IS FINAL AND BEFORE ANYTHING IS WRITTEN. *****
+	// In the Import mode this change stays in the list after the write, and its row has to be
+	// drawable both ways: as it stands now, and as it stood before - because Ctrl+Z puts the text
+	// back and the row follows it there. This is the only moment the before-state can be read;
+	// afterwards the words it names are no longer in the story.
+	// ⚠**AFTER RefindAfterEdit, NOT BEFORE IT**: when the story was edited, `change` above is the
+	//   re-diff's version of it, and a before-state cut from the stale one would draw the replaced
+	//   row with words that are no longer anywhere in the document.
+	// ★**THE AFTER-PIECES ARE ALREADY IN HAND** and are not cut again: a replacement changes the
+	//   CHANGED PART and leaves the context on either side untouched, so "after" is the row's own
+	//   pre + the SOURCE's middle + the row's own post. fOtherText is exactly the words about to
+	//   go in, cut and marked up by the same pass that made fText (KCMStoryDiffRun's Slice), so
+	//   the two states are drawn by one rule rather than by two that could drift.
+	KCMStoryChange done  = change;
+	done.fBeforeStart    = change.fTargetStart;
+	done.fBeforeEnd      = change.fTargetEnd;
+	done.fBeforeTextPre  = change.fTextPre;
+	done.fBeforeText     = change.fText;
+	done.fBeforeTextPost = change.fTextPost;
+	done.fReplacedTextPre  = change.fTextPre;
+	done.fReplacedText     = change.fOtherText;
+	done.fReplacedTextPost = change.fTextPost;
+
 	const TextIndex targetLength = target->TotalLength();
 	if (change.fTargetStart < 0 || change.fTargetEnd < change.fTargetStart || change.fTargetEnd > targetLength)
 	{

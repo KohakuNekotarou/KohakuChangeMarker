@@ -8,9 +8,14 @@
 //
 //  ★THE FIRST FEATURE THAT EDITS THE USER'S DOCUMENT beyond checks and paws. Its rules:
 //   1. one change, one command (ReplaceCmd or InsertCmd), so Ctrl+Z is the whole of it;
-//   2. it writes only where the change's positions still mean what they meant when the diff
-//      ran: the Target story's text change counter must equal the one recorded on the row
-//      (KCMStoryRow::fTargetTextCount), otherwise it refuses and asks for a refresh;
+//   2. it writes only where the change's positions still mean what they meant when the diff ran:
+//      the Target story's text change counter must equal the one recorded on the row
+//      (KCMStoryRow::fTargetTextCount). ★★**WHEN IT DOES NOT, THE STORY IS COMPARED AGAIN**
+//      (2026-09-15, the user's decision - until then it refused and asked for a refresh by hand,
+//      which made an accidental keystroke a dead end for every remaining change in that story).
+//      That one story is re-diffed and this change looked up afresh by its SOURCE range - the
+//      side an edit in the Target cannot move. Only a paragraph that now READS differently stops
+//      the write, and only once, so that nothing goes in that the reader has not seen;
 //   3. the older words are read RAW from the Source story (the armed Source, or the task-start
 //      copy rehydrated for the call) at the change's fSourceStart..fSourceEnd - never from the
 //      row's excerpt, which is cut and has its break characters replaced for display;

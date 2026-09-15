@@ -427,8 +427,14 @@ public:
 	/** "Restore Source Text" (2026-09-13): write the older side's words of change `which` of
 		row `nth` over the newer side's range - one undoable command - then diff the row's story
 		again. kTrue when written; outMessage either way (how many characters, or why not:
-		a ruby/kenten change, a story edited since the comparison, a closed document). The words
-		are read raw from the Source, never from the row's display excerpt (KCMStoryRestore.h).
+		a ruby/kenten change, a closed document). The words are read raw from the Source, never
+		from the row's display excerpt (KCMStoryRestore.h).
+
+		★★**A STORY EDITED SINCE THE COMPARISON IS NO LONGER A REFUSAL** (2026-09-15, the user's
+		decision). That one story is compared again and this change looked up afresh by its SOURCE
+		range - the side an edit in the Target cannot move. The one time it still answers kFalse
+		for an edit is when the paragraph now READS differently from what the reader had in front
+		of them: it says so, redraws the row, and the press after that one goes through.
 		⚠Appended at the END of the class (new virtuals go nowhere else). */
 	virtual bool16	RestoreChange(int32 nth, int32 which, PMString& outMessage) = 0;
 
