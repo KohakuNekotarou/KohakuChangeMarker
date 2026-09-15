@@ -253,6 +253,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryStamp.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryList.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTextDiff.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryRowMerge.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMMemXferBytes.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTextRead.cpp" />
@@ -342,6 +343,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryList.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryRowFilter.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTextDiff.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryRowMerge.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMMemXferBytes.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDiffRun.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTextRead.h" />
