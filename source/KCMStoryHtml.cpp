@@ -221,6 +221,21 @@ bool16 IsClassChar(char c)
 			|| c == '-' || c == '_') ? kTrue : kFalse;
 }
 
+/** A colspan or rowspan, which is at least 1 whatever it says. */
+int32 ReadCount(const std::string& text)
+{
+	int32 value = 0;
+	for (size_t i = 0; i < text.size(); ++i)
+	{
+		if (text[i] < '0' || text[i] > '9')
+			break;
+		value = value * 10 + (text[i] - '0');
+		if (value > 10000)
+			break;
+	}
+	return (value > 0) ? value : 1;
+}
+
 int32 HexDigit(char c)
 {
 	if (c >= '0' && c <= '9')	return c - '0';
@@ -299,6 +314,20 @@ bool16 ClassOfTag(const std::string& s, size_t at, size_t after, std::string& ou
 {
 	return AttrOfTag(s, at, after, "class", outClass);
 }
+
+/** A table being read. fSlot is its place in Story::fTables, taken when it OPENS.
+
+	★**THE SLOT IS RESERVED AT THE OPENING TAG** so that a nested table, which closes first, does
+	not end up standing in front of the one it is inside. Document order is the order the tables
+	BEGIN in, which is the order anybody reading the file sees them. */
+struct TableFrame
+{
+	size_t	fSlot;
+	Table	fTable;
+	bool16	fInHead;
+
+	TableFrame() : fSlot(0), fInHead(kFalse) {}
+};
 
 /** An <em> that has been opened and not yet closed. */
 struct EmState
@@ -669,6 +698,86 @@ void WriteParaHtml(const Para& p, int32& noteOrdinal, std::string& out)
 		WriteNotesAt(p, cpCount, noteOrdinal, out);
 }
 
+/*	WriteCellParas
+	A cell's paragraphs.
+
+	★**ONE PARAGRAPH IS WRITTEN WITHOUT <p>**, which is a departure from Adobe's export (it always
+	writes one) and from the <li> above. The design chose it for the reader's sake: a table of
+	one-word cells is read at a glance without <p> in the way, and the reader accepts both.
+*/
+void WriteCellParas(const std::vector<Para>& paras, std::string& out)
+{
+	int32 insideCell = 0;			// a cell's own notes are not the body's
+
+	if (paras.size() == 1)
+	{
+		WriteParaHtml(paras[0], insideCell, out);
+		return;
+	}
+	for (size_t k = 0; k < paras.size(); ++k)
+	{
+		out += "<p>";
+		WriteParaHtml(paras[k], insideCell, out);
+		out += "</p>";
+	}
+}
+
+/*	WriteTable
+	One table.
+
+	⚠**A NESTED TABLE IS NOT WRITTEN HERE.** A Cell holds paragraphs, not tables - the nested one
+	 is a separate entry in Story::fTables, and nothing in this shape says which cell it belongs
+	 to. The reader takes them (document order, their own entries); putting one back is Task 9's
+	 problem and is written down as unsolved rather than half-done.
+*/
+void WriteTable(const Table& t, std::string& out)
+{
+	out += "<table>";
+
+	bool16 inHead = kFalse;
+	for (size_t r = 0; r < t.fRows.size(); ++r)
+	{
+		const Row& row = t.fRows[r];
+		if (row.fHeader && !inHead)
+		{
+			out += "<thead>";
+			inHead = kTrue;
+		}
+		else if (!row.fHeader && inHead)
+		{
+			out += "</thead>";
+			inHead = kFalse;
+		}
+
+		out += "<tr>";
+		for (size_t c = 0; c < row.fCells.size(); ++c)
+		{
+			const Cell& cell = row.fCells[c];
+			out += "<td";
+			if (cell.fColSpan != 1)
+			{
+				char buf[32];
+				std::snprintf(buf, sizeof(buf), " colspan=\"%d\"", static_cast<int>(cell.fColSpan));
+				out += buf;
+			}
+			if (cell.fRowSpan != 1)
+			{
+				char buf[32];
+				std::snprintf(buf, sizeof(buf), " rowspan=\"%d\"", static_cast<int>(cell.fRowSpan));
+				out += buf;
+			}
+			out += ">";
+			WriteCellParas(cell.fParas, out);
+			out += "</td>";
+		}
+		out += "</tr>";
+	}
+	if (inHead)
+		out += "</thead>";
+
+	out += "</table>\r\n";
+}
+
 /*	kKentenLooks
 	InDesign's marks, and the CSS that draws each one.
 
@@ -951,9 +1060,27 @@ void Write(const Story& s, int32 uid, std::string& out)
 	int32 noteOrdinal = 0;
 	for (size_t i = 0; i < s.fBody.size(); ++i)
 	{
-		out += "<p>";
+		// ★**"THIS PARAGRAPH IS THE REST OF THE ONE BEFORE THE TABLE."** A table can stand in the
+		//   middle of a paragraph (measured - KCMTextRead::TakeAttrFor says where), and the two
+		//   halves arrive as two paragraphs. class="c" is what tells the reader they were one.
+		bool16 continuation = kFalse;
+		for (size_t t = 0; t < s.fTables.size() && !continuation; ++t)
+		{
+			if (s.fTables[t].fSplitsPara && i > 0
+				&& s.fTables[t].fParaIndex == static_cast<int32>(i) - 1)
+				continuation = kTrue;
+		}
+
+		out += continuation ? "<p class=\"c\">" : "<p>";
 		WriteParaHtml(s.fBody[i], noteOrdinal, out);
 		out += "</p>\r\n";
+
+		// The tables that hang off this paragraph, in the order they were given.
+		for (size_t t = 0; t < s.fTables.size(); ++t)
+		{
+			if (s.fTables[t].fParaIndex == static_cast<int32>(i))
+				WriteTable(s.fTables[t], out);
+		}
 	}
 
 	// ★THE NOTES STAND AT THE END, LINKED, which is how Adobe's own HTML export writes them and
@@ -1027,6 +1154,10 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 	int32 noteId = 0;
 	bool16 inNote = kFalse;
 
+	std::vector<TableFrame> tables;	// the tables open right now; more than one means nesting
+	bool16 inCell = kFalse;
+	bool16 implicitPara = kFalse;	// a cell's text with no <p> around it is still a paragraph
+
 	size_t i = 0;
 	while (i < s.size())
 	{
@@ -1081,18 +1212,50 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 				}
 				if (!closing)
 				{
-					if (inPara)
+					// ★A CELL'S IMPLICIT PARAGRAPH GIVES WAY TO A REAL ONE. <td> opens a paragraph
+					//   so that bare text in a cell is not lost; a <p> arriving before any text
+					//   means the cell was written the other way, and takes over.
+					if (inPara && implicitPara && para.empty() && paraRuby.empty()
+						&& paraKenten.empty() && paraNoteAt.empty())
+					{
+						implicitPara = kFalse;
+					}
+					else if (inPara)
 					{
 						whyNot = "a <p> begins inside another one";
 						return kFalse;
 					}
-					inPara = kTrue;
-					para.clear();
-					paraRuby.clear();
-					paraKenten.clear();
-					paraNoteAt.clear();
-					paraNoteNum.clear();
-					em = EmState();
+					else
+					{
+						inPara = kTrue;
+						implicitPara = kFalse;
+						para.clear();
+						paraRuby.clear();
+						paraKenten.clear();
+						paraNoteAt.clear();
+						paraNoteNum.clear();
+						em = EmState();
+					}
+
+					// ★★"THIS PARAGRAPH IS THE REST OF THE ONE BEFORE THE TABLE." The table has
+					//   already closed by the time this is read, so the mark is applied backwards -
+					//   and the offset is simply how long the first half turned out to be.
+					std::string cls;
+					if (!inCell && !inNote && ClassOfTag(s, i, after, cls) && cls == "c")
+					{
+						const int32 prevIndex = static_cast<int32>(out.fBody.size()) - 1;
+						for (size_t t = out.fTables.size(); t > 0; --t)
+						{
+							if (out.fTables[t - 1].fParaIndex == prevIndex)
+							{
+								out.fTables[t - 1].fSplitsPara = kTrue;
+								if (prevIndex >= 0)
+									out.fTables[t - 1].fOffset =
+										CountCodePoints(out.fBody[static_cast<size_t>(prevIndex)].fText);
+								break;
+							}
+						}
+					}
 				}
 				else
 				{
@@ -1112,17 +1275,167 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					p.fKenten = paraKenten;
 					p.fNoteAt = paraNoteAt;
 					p.fNoteNum = paraNoteNum;
-					// ★A PARAGRAPH INSIDE AN <li> BELONGS TO THAT NOTE, not to the body.
-					if (inNote)
+					// ★A PARAGRAPH BELONGS TO WHATEVER IT STANDS IN: a cell, a note, or the body.
+					if (inCell && !tables.empty()
+						&& !tables.back().fTable.fRows.empty()
+						&& !tables.back().fTable.fRows.back().fCells.empty())
+					{
+						tables.back().fTable.fRows.back().fCells.back().fParas.push_back(p);
+					}
+					else if (inNote)
+					{
 						noteParas.push_back(p);
+					}
 					else
+					{
 						out.fBody.push_back(p);
+					}
 					inPara = kFalse;
+					implicitPara = kFalse;
 					para.clear();
 					paraRuby.clear();
 					paraKenten.clear();
 					paraNoteAt.clear();
 					paraNoteNum.clear();
+
+					// ⚠TEXT AFTER </p> INSIDE A CELL still belongs to the cell, so the implicit
+					//   paragraph comes back. The empty leftover is dropped when </td> arrives.
+					if (inCell)
+					{
+						inPara = kTrue;
+						implicitPara = kTrue;
+						em = EmState();
+					}
+				}
+				i = after;
+				continue;
+			}
+
+			if (name == "table")
+			{
+				if (!closing)
+				{
+					if (inPara && !implicitPara)
+					{
+						whyNot = "a <table> stands inside a paragraph";
+						return kFalse;
+					}
+
+					TableFrame frame;
+					frame.fSlot = out.fTables.size();
+					frame.fTable.fOrdinal = static_cast<int32>(frame.fSlot);
+					// ★WHERE IT STANDS = after the paragraph most recently closed.
+					frame.fTable.fParaIndex = static_cast<int32>(out.fBody.size()) - 1;
+					out.fTables.push_back(Table());		// the slot, taken at the opening tag
+					tables.push_back(frame);
+				}
+				else
+				{
+					if (tables.empty())
+					{
+						whyNot = "a </table> closes a table that never began";
+						return kFalse;
+					}
+					out.fTables[tables.back().fSlot] = tables.back().fTable;
+					tables.pop_back();
+				}
+				i = after;
+				continue;
+			}
+
+			if (name == "thead")
+			{
+				if (!tables.empty())
+					tables.back().fInHead = closing ? kFalse : kTrue;
+				i = after;
+				continue;
+			}
+
+			if (name == "tbody" || name == "tfoot" || name == "colgroup" || name == "col")
+			{
+				// Written by editors that know HTML, carrying nothing this format needs.
+				i = after;
+				continue;
+			}
+
+			if (name == "tr")
+			{
+				if (!closing)
+				{
+					if (tables.empty())
+					{
+						whyNot = "a <tr> stands outside a table";
+						return kFalse;
+					}
+					Row row;
+					row.fHeader = tables.back().fInHead;
+					tables.back().fTable.fRows.push_back(row);
+				}
+				i = after;
+				continue;
+			}
+
+			if (name == "td")
+			{
+				if (tables.empty())
+				{
+					whyNot = "a <td> stands outside a table";
+					return kFalse;
+				}
+
+				if (!closing)
+				{
+					if (tables.back().fTable.fRows.empty())
+						tables.back().fTable.fRows.push_back(Row());
+
+					Cell cell;
+					std::string span;
+					if (AttrOfTag(s, i, after, "colspan", span))
+						cell.fColSpan = ReadCount(span);
+					if (AttrOfTag(s, i, after, "rowspan", span))
+						cell.fRowSpan = ReadCount(span);
+					tables.back().fTable.fRows.back().fCells.push_back(cell);
+
+					// ★A CELL OPENS A PARAGRAPH OF ITS OWN, so that text written straight into the
+					//   cell - which is how this format writes a cell holding one - is not lost.
+					inCell = kTrue;
+					inPara = kTrue;
+					implicitPara = kTrue;
+					para.clear();
+					paraRuby.clear();
+					paraKenten.clear();
+					paraNoteAt.clear();
+					paraNoteNum.clear();
+					em = EmState();
+				}
+				else
+				{
+					if (inPara)
+					{
+						bool16 hasParas = kFalse;
+						if (!tables.back().fTable.fRows.empty()
+							&& !tables.back().fTable.fRows.back().fCells.empty()
+							&& !tables.back().fTable.fRows.back().fCells.back().fParas.empty())
+							hasParas = kTrue;
+
+						// ⚠AN EMPTY CELL STILL HAS ONE PARAGRAPH, because a cell in InDesign always
+						//   does. What is dropped is the leftover implicit one after </p>.
+						if (!implicitPara || !para.empty() || !hasParas)
+						{
+							Para p;
+							p.fText = para;
+							p.fRuby = paraRuby;
+							p.fKenten = paraKenten;
+							p.fNoteAt = paraNoteAt;
+							p.fNoteNum = paraNoteNum;
+							if (!tables.back().fTable.fRows.empty()
+								&& !tables.back().fTable.fRows.back().fCells.empty())
+								tables.back().fTable.fRows.back().fCells.back().fParas.push_back(p);
+						}
+						inPara = kFalse;
+						implicitPara = kFalse;
+					}
+					inCell = kFalse;
 				}
 				i = after;
 				continue;
