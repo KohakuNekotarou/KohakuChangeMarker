@@ -175,10 +175,20 @@ enum KCMCompareMode
 {
 	kKCMModePixel = 0,	// the default: rasterize the pages and compare pixels (KCM's original comparison)
 	kKCMModeStory = 1,		// compare the stories' text, paragraph by paragraph and then character by character
-	kKCMModeResources = 2	// compare the DEFINITIONS - styles, swatches, layers - by exporting each document as
+	kKCMModeResources = 2,	// compare the DEFINITIONS - styles, swatches, layers - by exporting each document as
 							// XML and pairing the definitions by name. It is the only mode that sees a change
 							// to something nobody has applied: such a change cannot move a pixel and does not
 							// touch a word, so neither of the other two can report it.
+
+	// ★★★**THE FOURTH IS NOT LIKE THE OTHER THREE** (2026-09-15, the user's design). They answer
+	//   "what is being compared"; this one answers "WHERE THE CHANGE CAME FROM" - a folder of HTML
+	//   the reader edited outside InDesign and imported. It is named after the action that makes
+	//   it, so the panel and the menu say the same word.
+	// ⚠**IT IS MODAL, AND THAT IS WHAT MAKES IT CHEAP.** While it is up, the other three and Task
+	//   Start are greyed, and Stop Comparison is the way out. Because no other comparison can run
+	//   inside it, the reader's own Task Start can simply be PARKED for its duration and put back
+	//   afterwards (KCMOrigin.h, KCMParkOrigin) instead of the plug-in carrying two origins.
+	kKCMModeImport = 3
 };
 
 #endif // __KCMBoundaryID_h__

@@ -68,6 +68,26 @@ bool16 KCMTakeTaskStart(PMString& whyNot);
 
 bool16 KCMHasOrigin();
 
+/** Move the held origin aside so that the import mode can use the slot, and put it back after.
+
+    ★★★**WHY A PARK RATHER THAN A SECOND ORIGIN** (2026-09-15, the user's requirement: the task
+      they made is to keep existing). An import needs the document as it stood a moment ago, which
+      is what this slot holds - and giving the plug-in two origins would mean **82 places in 18
+      files** choosing between them, measured. The import mode is modal (no other comparison runs
+      while it is up, which is the user's own rule), so one slot plus a park is enough, and the
+      reader's Task Start comes back exactly as they left it.
+    ⚠**ONE PARK SLOT.** Parking twice answers kFalse rather than dropping the first.
+    ⚠Parking drops the PEEK, which stood on those bytes. The origin itself is kept.
+
+    @return kFalse when something was already parked (park), or nothing was (unpark). */
+bool16 KCMParkOrigin();
+bool16 KCMUnparkOrigin();
+bool16 KCMHasParkedOrigin();
+
+/** Throw the parked origin away, for a document closing: putting it back would restore an origin
+    whose document is gone. */
+void KCMDropParkedOrigin();
+
 /** THE DEBUGGING DOOR (2026-09-12; the only one of the three left after 2026-09-14): the held
     origin's XML written to `file` AS IT IS - the bytes Task Start took, before any injection.
 

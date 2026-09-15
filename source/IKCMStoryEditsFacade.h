@@ -425,6 +425,11 @@ public:
 		@return kFalse when the folder held nothing readable, or no origin could be taken.
 		⚠Appended at the END of the class, like the one above and for the same reason. */
 	virtual bool16	ImportStoryText(const IDFile& folder, PMString& outMessage) = 0;
+
+	/** Whether the import mode is up, which the UI asks in order to grey the other three modes and
+		Task Start while it is (the user's rule: no other comparison inside it).
+		⚠Appended at the END, like the two above. */
+	virtual bool16	InImportMode() = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

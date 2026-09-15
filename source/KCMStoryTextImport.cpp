@@ -7,12 +7,13 @@
 #include "VCPlugInHeaders.h"
 
 #include <windows.h>				// FindFirstFileW - Windows only, like the rest of KCM's file work
+#include <algorithm>
 #include <cstdio>
 #include <string>
 #include <vector>
 
 #include "ICommand.h"
-#include "ICommandSequence.h"		// the whole pouring is one step
+#include "ICommandSequence.h"		// the whole import is one step
 #include "IDataBase.h"
 #include "IStoryList.h"
 #include "ITextModel.h"
@@ -24,20 +25,21 @@
 
 #include "KCMStoryTextImport.h"
 #include "KCMComparisonRun.h"		// KCMToggleStartStop - the start, through the one resolver
-#include "KCMCore.h"				// KCMSetCompareMode
-#include "KCMOrigin.h"				// KCMTakeTaskStart - the state the edited words are compared against
+#include "KCMCore.h"				// KCMActiveDocDB / KCMGetCompareMode / KCMSetCompareMode
+#include "KCMOrigin.h"				// the origin slot: taken for this mode, parked for the reader's
 #include "KCMParaText.h"			// ModelOffsetInParagraph / AppendUtf8
-#include "KCMRehydrate.h"			// KCMReadOriginUidLabel - the copy's stories carry the original UID
 #include "KCMTextDiff.h"			// ToCodePoints / Diff
-#include "KCMTextRead.h"			// ReadStory - the copy, read the same way the export read the original
+#include "KCMTextRead.h"			// ReadStory - the document, read the way the export read it
 
 namespace
 {
 
-/** The set held beside the origin. ⚠A file-static holding PMStrings and std::strings, so it has a
-	line in the model's shutdown (KCMStoryList.h says what forgetting that costs). */
-KCMStoryTextSet		sHeld;
-bool16				sHolding = kFalse;
+/** Which mode was showing before the import took over, and whether it has taken over.
+
+	⚠File-statics, so the model's shutdown empties nothing here on purpose: both are plain values.
+	 (KCMStoryList.h's rule is about statics holding strings and rows.) */
+KCMCompareMode	sModeBeforeImport = kKCMModePixel;
+bool16			sInImportMode = kFalse;
 
 /** The path of an IDFile as Windows spells it. (KCMStoryTextExport.cpp has the same four lines,
 	and for the same reason: the two files share nothing else.) */
@@ -133,23 +135,23 @@ void AppendCount(PMString& out, const char* before, int32 n, const char* after)
 }
 
 //========================================================================================
-//  Pouring the edited text into the copy
+//  Writing the edited text into the document
 //========================================================================================
 
 /** One place in a story - the body, one cell, or one footnote - as the two sides see it.
 
-	★**THE PLACES ARE BUILT THE SAME WAY ON BOTH SIDES**, from KCMParaAttrs on the copy and from
-	the Story's own shape in the file, which is how a cell's paragraphs find their cell without
-	anything having to be written down in the file about where they came from. */
+	★**THE PLACES ARE BUILT THE SAME WAY ON BOTH SIDES**, from KCMParaAttrs on the document and
+	from the Story's own shape in the file, which is how a cell's paragraphs find their cell
+	without anything having to be written down in the file about where they came from. */
 struct Place
 {
-	std::vector<size_t>						fCopy;		// indices into the copy's flat arrays
+	std::vector<size_t>						fDoc;		// indices into the document's flat arrays
 	const std::vector<KCMStoryHtml::Para>*	fFile;		// what the reader edited, or nil
 
 	Place() : fFile(nil) {}
 };
 
-/** kTrue when any code point of `text` in [from, to) is one the reader may not move or delete. */
+/** kTrue when any code point of the text in [from, to) is one the reader may not move or delete. */
 bool16 RangeTouchesInvisible(const std::vector<int32>& cps, int32 from, int32 to)
 {
 	for (int32 k = from; k < to && k < static_cast<int32>(cps.size()); ++k)
@@ -162,9 +164,9 @@ bool16 RangeTouchesInvisible(const std::vector<int32>& cps, int32 from, int32 to
 
 /** The cells of one row, in the order the exporter wrote them: by column, anchors only.
 
-	The copy's paragraphs name their (row, column); the file's cells are a plain list. Sorting the
-	columns that actually occur is what turns one into the other - and it agrees with the exporter
-	by construction, because that walked the anchors in column order too. */
+	The document's paragraphs name their (row, column); the file's cells are a plain list. Sorting
+	the columns that actually occur is what turns one into the other - and it agrees with the
+	exporter by construction, because that walked the anchors in column order too. */
 void ColumnsOfRow(const std::vector<KCMParaAttrs>& attrs, int32 table, int32 row,
 				  std::vector<int32>& outCols)
 {
@@ -193,7 +195,7 @@ void BuildPlaces(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::Sto
 	for (size_t i = 0; i < attrs.size(); ++i)
 	{
 		if (!attrs[i].IsCell() && !attrs[i].IsFootnote())
-			body.fCopy.push_back(i);
+			body.fDoc.push_back(i);
 	}
 	out.push_back(body);
 
@@ -203,25 +205,24 @@ void BuildPlaces(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::Sto
 		if (!attrs[i].IsCell())
 			continue;
 
-		// One place per cell: the first paragraph of it opens the place, the rest join.
 		bool16 already = kFalse;
 		for (size_t k = 0; k < out.size() && !already; ++k)
 		{
-			if (out[k].fCopy.empty())
+			if (out[k].fDoc.empty())
 				continue;
-			const KCMParaAttrs& first = attrs[out[k].fCopy[0]];
+			const KCMParaAttrs& first = attrs[out[k].fDoc[0]];
 			already = (first.IsCell()
 					   && first.fTableOrdinal == attrs[i].fTableOrdinal
 					   && first.fCellRow == attrs[i].fCellRow
 					   && first.fCellCol == attrs[i].fCellCol) ? kTrue : kFalse;
 			if (already)
-				out[k].fCopy.push_back(i);
+				out[k].fDoc.push_back(i);
 		}
 		if (already)
 			continue;
 
 		Place cell;
-		cell.fCopy.push_back(i);
+		cell.fDoc.push_back(i);
 
 		const size_t t = static_cast<size_t>(attrs[i].fTableOrdinal);
 		if (t < file.fTables.size() && attrs[i].fCellRow >= 0
@@ -241,7 +242,8 @@ void BuildPlaces(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::Sto
 					break;
 				}
 			}
-			const KCMStoryHtml::Row& row = file.fTables[t].fRows[static_cast<size_t>(attrs[i].fCellRow)];
+			const KCMStoryHtml::Row& row =
+				file.fTables[t].fRows[static_cast<size_t>(attrs[i].fCellRow)];
 			if (found && which < row.fCells.size())
 				cell.fFile = &row.fCells[which].fParas;
 		}
@@ -257,19 +259,19 @@ void BuildPlaces(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::Sto
 		bool16 already = kFalse;
 		for (size_t k = 0; k < out.size() && !already; ++k)
 		{
-			if (out[k].fCopy.empty())
+			if (out[k].fDoc.empty())
 				continue;
-			const KCMParaAttrs& first = attrs[out[k].fCopy[0]];
+			const KCMParaAttrs& first = attrs[out[k].fDoc[0]];
 			already = (first.IsFootnote()
 					   && first.fFootnoteOrdinal == attrs[i].fFootnoteOrdinal) ? kTrue : kFalse;
 			if (already)
-				out[k].fCopy.push_back(i);
+				out[k].fDoc.push_back(i);
 		}
 		if (already)
 			continue;
 
 		Place note;
-		note.fCopy.push_back(i);
+		note.fDoc.push_back(i);
 		const size_t n = static_cast<size_t>(attrs[i].fFootnoteOrdinal);
 		if (n < file.fNotes.size())
 			note.fFile = &file.fNotes[n];
@@ -278,7 +280,7 @@ void BuildPlaces(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::Sto
 }
 
 /*	ApplyParagraph
-	The edits between one paragraph of the copy and the same paragraph of the file.
+	The edits between one paragraph of the document and the same paragraph of the file.
 
 	★★**MINIMAL EDITS, BACK TO FRONT.** Replacing the whole paragraph would be simpler and would
 	throw away every attribute on the parts nobody touched - the ruby and the kenten this format
@@ -288,15 +290,15 @@ void BuildPlaces(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::Sto
 	@return how many writes went in; -1 when the paragraph was refused (whyNot filled).
 */
 int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs& attrs,
-					 const std::string& copyText, const std::string& fileText,
+					 const std::string& docText, const std::string& fileText,
 					 PMString& whyNot)
 {
-	if (copyText == fileText)
+	if (docText == fileText)
 		return 0;
 
 	std::vector<int32> a;
 	std::vector<int32> b;
-	KCMTextDiff::ToCodePoints(copyText, &a, nil);
+	KCMTextDiff::ToCodePoints(docText, &a, nil);
 	KCMTextDiff::ToCodePoints(fileText, &b, nil);
 
 	std::vector<KCMTextDiff::Change> changes;
@@ -385,7 +387,7 @@ bool16 KCMReadStoryTextFolder(const IDFile& folder, KCMStoryTextSet& out, PMStri
 		return kFalse;
 	}
 
-	// The folder's own name, for the panel's Source: line.
+	// The folder's own name, for the panel's status line.
 	{
 		const size_t slash = folderPath.find_last_of(L"\\/");
 		const std::wstring leaf = (slash == std::wstring::npos) ? folderPath
@@ -474,30 +476,12 @@ bool16 KCMReadStoryTextFolder(const IDFile& folder, KCMStoryTextSet& out, PMStri
 	return (read > 0) ? kTrue : kFalse;
 }
 
-const KCMStoryTextSet* KCMHeldStoryText()
-{
-	return sHolding ? &sHeld : nil;
-}
-
-void KCMHoldStoryText(const KCMStoryTextSet& set)
-{
-	sHeld = set;
-	sHolding = kTrue;
-}
-
-void KCMReleaseStoryText()
-{
-	sHeld = KCMStoryTextSet();
-	sHolding = kFalse;
-}
-
 bool16 KCMImportStoryText(const IDFile& folder, PMString& outMessage)
 {
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
 
-	// 1. THE FOLDER FIRST. Nothing is disturbed if it cannot be read - no origin taken, no
-	//    comparison stopped, and whatever was held is still held.
+	// 1. THE FOLDER FIRST. Nothing is touched if it cannot be read.
 	KCMStoryTextSet set;
 	PMString readMessage;
 	if (!KCMReadStoryTextFolder(folder, set, readMessage))
@@ -508,58 +492,39 @@ bool16 KCMImportStoryText(const IDFile& folder, PMString& outMessage)
 		return kFalse;
 	}
 
-	// 2. THE ORIGIN SECOND, and this is the order that matters: taking one releases the origin that
-	//    was held, and releasing an origin releases the held stories with it (KCMReleaseOrigin).
-	//    Held any earlier, what was just read would be thrown away by the next line.
+	IDataBase* const db = KCMActiveDocDB();
+	if (db == nil)
+	{
+		outMessage = "import: there is no active document";
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	// 2. ★★★THE READER'S OWN TASK START IS MOVED ASIDE, NOT THROWN AWAY (the user's requirement).
+	//    The import needs this slot for its own snapshot - the document as it stands a moment
+	//    before the words go in - and gives it back when the mode ends.
+	const bool16 parked = KCMParkOrigin();
+
+	// 3. The import's own origin: the document as it is NOW, before a single character is written.
+	//    That is what makes the mode show exactly what the import did and nothing else.
 	PMString whyNot;
 	if (!KCMTakeTaskStart(whyNot))
 	{
+		if (parked)
+			KCMUnparkOrigin();		// nothing happened; the reader's own task comes straight back
 		outMessage = "import: the document's state could not be taken (";
 		outMessage.SetTranslatable(kFalse);
 		outMessage.Append(whyNot);
 		outMessage.Append(")");
 		return kFalse;
 	}
+	sModeBeforeImport = KCMGetCompareMode();
+	sInImportMode = kTrue;
 
-	// 3. Now they can be held: the copy has not been made yet, and every copy made from here on
-	//    gets them poured in (KCMRehydrate, the one place).
-	KCMHoldStoryText(set);
-
-	// 4. The Story mode is what shows words against words. ★Set before the start, so the start
-	//    builds what this mode needs rather than rasterising pages first.
-	KCMSetCompareMode(kKCMModeStory);
-	KCMToggleStartStop();
-
-	outMessage = "import: ";
-	outMessage.SetTranslatable(kFalse);
-	outMessage.Append(readMessage);
-	outMessage.Append(" - comparing the document against them");
-	return kTrue;
-}
-
-bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
-{
-	outMessage.Clear();
-	outMessage.SetTranslatable(kFalse);
-
-	const KCMStoryTextSet* set = KCMHeldStoryText();
-	if (set == nil || set->fUids.empty())
-	{
-		outMessage = "no edited stories are held";
-		outMessage.SetTranslatable(kFalse);
-		return kFalse;
-	}
-	if (copyDB == nil)
-	{
-		outMessage = "there is no copy to write into";
-		outMessage.SetTranslatable(kFalse);
-		return kFalse;
-	}
-
-	InterfacePtr<IStoryList> stories(copyDB, copyDB->GetRootUID(), UseDefaultIID());
+	InterfacePtr<IStoryList> stories(db, db->GetRootUID(), UseDefaultIID());
 	if (stories == nil)
 	{
-		outMessage = "the copy has no stories";
+		outMessage = "import: the document has no stories";
 		outMessage.SetTranslatable(kFalse);
 		return kFalse;
 	}
@@ -572,29 +537,23 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 	PMString firstRefusal;
 	firstRefusal.SetTranslatable(kFalse);
 
-	// ★ONE STEP. The copy has no window and nobody will press Ctrl+Z in it, but a sequence is what
-	//   keeps the writes from arriving as a hundred separate entries in a history that the peek
-	//   document shares.
-	ICommandSequence* sequence = CmdUtils::BeginCommandSequence("KCMApplyStoryText");
+	// ★★★**ONE UNDO STEP FOR THE WHOLE IMPORT.** It is the reader's own document: Ctrl+Z has to
+	//   take back the import, not the last paragraph of it.
+	ICommandSequence* sequence = CmdUtils::BeginCommandSequence("KCMImportStoryText");
 	if (sequence != nil)
-		sequence->SetName(PMString("Apply edited story text"));
+		sequence->SetName(PMString("Import Story Text"));
 
 	const int32 count = stories->GetUserAccessibleStoryCount();
 	for (int32 s = 0; s < count; ++s)
 	{
-		const UIDRef copyRef = stories->GetNthUserAccessibleStoryUID(s);
+		const UIDRef storyRef = stories->GetNthUserAccessibleStoryUID(s);
 
-		// ⚠**THE COPY'S UIDS ARE NEW ONES.** What pairs a file with a story is the label the
-		//   rehydration wrote, which carries the ORIGINAL uid - the one the file is named after.
-		UID original = kInvalidUID;
-		if (!KCMReadOriginUidLabel(copyDB, copyRef.GetUID(), original))
-			continue;
-
+		// ★THE FILE NAMES ARE THIS DOCUMENT'S OWN UIDS, because the export read this document.
 		size_t which = 0;
 		bool16 found = kFalse;
-		for (size_t k = 0; k < set->fUids.size(); ++k)
+		for (size_t k = 0; k < set.fUids.size(); ++k)
 		{
-			if (set->fUids[k] == original)
+			if (set.fUids[k] == storyRef.GetUID())
 			{
 				which = k;
 				found = kTrue;
@@ -602,23 +561,20 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 			}
 		}
 		if (!found)
-		{
-			++unmatched;
-			continue;
-		}
+			continue;					// a story nobody exported, or exported and then deleted
 
 		std::vector<std::string> paras;
 		std::vector<KCMParaAttrs> attrs;
 		std::vector<int32> starts;
-		if (!KCMTextRead::ReadStory(copyRef, paras, attrs, starts))
+		if (!KCMTextRead::ReadStory(storyRef, paras, attrs, starts))
 			continue;
 
-		InterfacePtr<ITextModel> model(copyRef, UseDefaultIID());
+		InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
 		if (model == nil)
 			continue;
 
 		std::vector<Place> places;
-		BuildPlaces(attrs, set->fStories[which], places);
+		BuildPlaces(attrs, set.fStories[which], places);
 
 		bool16 touched = kFalse;
 		for (size_t p = 0; p < places.size(); ++p)
@@ -628,14 +584,17 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 			{
 				++refusedPlaces;
 				if (firstRefusal.IsEmpty())
+				{
 					firstRefusal = "a cell or note in the document is not in the file";
+					firstRefusal.SetTranslatable(kFalse);
+				}
 				continue;
 			}
 
 			// ⚠**THE PARAGRAPH COUNT HAS TO MATCH, so far.** Adding and removing paragraphs needs
 			//   the exact end of a thread, which is measured work not yet done - so the place is
 			//   refused with a reason rather than half-applied.
-			if (place.fCopy.size() != place.fFile->size())
+			if (place.fDoc.size() != place.fFile->size())
 			{
 				++refusedPlaces;
 				if (firstRefusal.IsEmpty())
@@ -649,9 +608,9 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 
 			// ★BACK TO FRONT ACROSS THE PARAGRAPHS TOO, for the same reason as inside one: an
 			//   earlier write moves every position after it.
-			for (size_t q = place.fCopy.size(); q > 0; --q)
+			for (size_t q = place.fDoc.size(); q > 0; --q)
 			{
-				const size_t i = place.fCopy[q - 1];
+				const size_t i = place.fDoc[q - 1];
 				PMString whyNot;
 				const int32 n = ApplyParagraph(model, static_cast<TextIndex>(starts[i]), attrs[i],
 											   paras[i], (*place.fFile)[q - 1].fText, whyNot);
@@ -673,17 +632,30 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 			++storiesTouched;
 	}
 
+	// Stories in the folder that the document no longer has.
+	for (size_t k = 0; k < set.fUids.size(); ++k)
+	{
+		bool16 here = kFalse;
+		for (int32 s = 0; s < count && !here; ++s)
+			here = (stories->GetNthUserAccessibleStoryUID(s).GetUID() == set.fUids[k]) ? kTrue : kFalse;
+		if (!here)
+			++unmatched;
+	}
+
 	if (sequence != nil)
 		CmdUtils::EndCommandSequence(sequence);
 
-	AppendCount(outMessage, "", edits, " change(s) applied");
+	outMessage = "import: ";
+	outMessage.SetTranslatable(kFalse);
+	outMessage.Append(readMessage);
+	AppendCount(outMessage, " - ", edits, " change(s) written");
 	AppendCount(outMessage, " in ", storiesTouched, " story(ies)");
 	if (refusedPlaces > 0)
 		AppendCount(outMessage, ", ", refusedPlaces, " place(s) refused");
 	if (refusedParas > 0)
 		AppendCount(outMessage, ", ", refusedParas, " paragraph(s) refused");
 	if (unmatched > 0)
-		AppendCount(outMessage, ", ", unmatched, " story(ies) had no file");
+		AppendCount(outMessage, ", ", unmatched, " file(s) had no story");
 	if (!firstRefusal.IsEmpty())
 	{
 		outMessage.Append(" (");
@@ -691,7 +663,34 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 		outMessage.Append(")");
 	}
 
+	// 5. The fourth mode, and the comparison that shows what just went in.
+	KCMSetCompareMode(kKCMModeImport);
+	KCMToggleStartStop();
+	outMessage.Append(" - Stop Comparison ends the import");
+
 	return (edits > 0) ? kTrue : kFalse;
+}
+
+bool16 KCMInImportMode()
+{
+	return sInImportMode;
+}
+
+void KCMEndImportMode()
+{
+	if (!sInImportMode)
+		return;
+
+	// ★THE ORDER: the mode first, so that nothing asks "are we importing?" while the origin is
+	//   being moved back underneath it.
+	sInImportMode = kFalse;
+	KCMSetCompareMode(sModeBeforeImport);
+
+	// The import's own origin goes; the reader's own comes back exactly as they left it.
+	if (KCMHasParkedOrigin())
+		KCMUnparkOrigin();
+	else
+		KCMReleaseOrigin();
 }
 
 // End, KCMStoryTextImport.cpp.

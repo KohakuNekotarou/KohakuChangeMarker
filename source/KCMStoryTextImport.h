@@ -2,21 +2,22 @@
 //
 //  Owner: KohakuNekotarou
 //
-//  KohakuChangeMarker (KCM) - a folder of edited stories, read back into memory
+//  KohakuChangeMarker (KCM) - a folder of edited stories, read back and put into the document
 //
 //  WHAT THIS IS FOR. The reader exported the document's stories (KCMStoryTextExport), edited them
-//  outside InDesign, and now hands the folder back. This file turns that folder into memory.
+//  outside InDesign - in an editor, in a browser, or by handing the file to somebody else - and
+//  now hands the folder back. This file reads it and writes those words into the document.
 //
-//  ★★★**IT DOES NOT PUT ANYTHING INTO THE DOCUMENT, AND THAT IS THE WHOLE DESIGN.** The edited
-//  text is poured into the task-start COPY, the existing Story comparison shows what differs, and
-//  the reader puts in the changes they want, one at a time, with "Restore Source Text" - the door
-//  that already exists and already refuses what it cannot write. So an import can never surprise
-//  anybody: at the moment the folder is read, their document has not changed by one character.
-//  (The user weighed "apply everything on import" on 2026-09-15 and kept this; the design's
-//  decision table records it, and that they may revisit it once they have used it.)
+//  ★★★**IMPORTING CHANGES THE DOCUMENT. THAT IS THE DECISION** (the user's, 2026-09-15, after
+//  trying it the other way round): "read it in and everything is changed at that point". The
+//  design's first shape poured the words into the task-start COPY and let the reader put them in
+//  one at a time; that is recorded in the spec along with why it was dropped.
+//  ⚠**SO THE WHOLE IMPORT IS ONE UNDO STEP.** It is their document, and Ctrl+Z has to take back
+//    the import rather than the last paragraph of it.
 //
-//  ⚠**WHAT IS HELD IS BYTES, NOT A DOCUMENT.** The set sits beside the origin and is dropped with
-//   it (KCMReleaseOrigin), because it is only meaningful against that origin's copy.
+//  ★**THE FILE NAMES ARE THE DOCUMENT'S OWN STORY UIDS**, because the export read that document:
+//  no labels, no copy, no pairing table. A file whose uid is not in the document is counted and
+//  reported, never guessed at.
 //
 //========================================================================================
 #ifndef __KCMStoryTextImport_h__
@@ -30,6 +31,7 @@
 
 #include "KCMStoryHtml.h"
 
+class IDataBase;
 class IDFile;
 
 /** What one folder of edited stories holds: each story's own uid, and what was read for it.
@@ -40,7 +42,7 @@ struct KCMStoryTextSet
 {
 	std::vector<UID>					fUids;
 	std::vector<KCMStoryHtml::Story>	fStories;
-	PMString							fFolderName;	// for the panel's Source: line
+	PMString							fFolderName;	// for the panel's status line
 };
 
 /** Read every "<decimal uid>.html" in `folder`.
@@ -54,54 +56,34 @@ struct KCMStoryTextSet
     @param whyNot what went wrong - filled even when this answers kTrue, when some file was skipped. */
 bool16 KCMReadStoryTextFolder(const IDFile& folder, KCMStoryTextSet& out, PMString& whyNot);
 
-/** The set held beside the origin, or nil when none is held. */
-const KCMStoryTextSet* KCMHeldStoryText();
-
-/** Hold a copy of `set`, dropping whatever was held before. */
-void KCMHoldStoryText(const KCMStoryTextSet& set);
-
-/** Drop it. Called by KCMReleaseOrigin - the two belong to each other - and by the model's
-    shutdown, because this static holds PMStrings and std::strings (KCMStoryList.h states the
-    rule and what forgetting it costs). */
-void KCMReleaseStoryText();
-
-/** Write the held set's text into `copyDB` - a rehydrated task-start copy, never a real document.
-
-    ★★★**THE COPY, AND ONLY EVER THE COPY.** What the reader edited outside InDesign goes in here;
-      the comparison then shows it against their own document and "Restore Source Text" is what
-      puts any of it in. That is the whole safety of this feature and it rests on this one
-      parameter being a copy.
-
-    ★**THE STORIES ARE PAIRED BY THE ORIGINAL UID**, read from the copy's own KcmOriginUid label
-      (KCMRehydrate.h) - the copy's UIDs are new ones, so the file names cannot be matched against
-      them directly.
+/** "Import Story Text..." from end to end: read the folder, then write it into the active document
+    as ONE undo step.
 
     ⚠**ONLY CHANGES INSIDE A PARAGRAPH ARE APPLIED, so far.** A place whose paragraph COUNT differs
       is refused with a reason rather than guessed at: adding and removing paragraphs needs the end
       of a thread to be known exactly, and that is measured work not yet done. Everything else -
-      the words inside each paragraph - goes in, minimally, so that the ruby and the kenten on the
+      the words inside each paragraph - goes in minimally, so that the ruby and the kenten on the
       parts nobody edited are still there afterwards.
     ⚠**A CHANGE TOUCHING AN INVISIBLE CHARACTER IS REFUSED.** An anchored object's character, a
       page number, an index marker: these can be moved or deleted from outside only by accident,
       and the file format carries them precisely so that this check can be made.
 
-    @param outMessage the one line the panel shows: what went in, and what was refused.
-    @return kFalse when nothing at all could be applied. */
-bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage);
-
-/** "Import Story Text..." from end to end: read the folder, take the origin, and start the
-    comparison in the Story mode against a copy with the edited words in it.
-
-    ★★**THE ORDER IS NOT ARBITRARY.** The folder is read FIRST, so that a bad folder costs nothing
-      and disturbs nothing. The origin is taken SECOND, because taking one releases whatever origin
-      was held - and releasing an origin releases the held stories with it, so holding them any
-      earlier would throw them away. Only then are they held, the mode set, and the comparison
-      started.
-
     @param folder the folder the reader chose.
     @param outMessage what happened, for the panel's status line.
-    @return kFalse when nothing could be read, or no origin could be taken. */
+    @return kFalse when nothing could be read or nothing could be applied. */
 bool16 KCMImportStoryText(const IDFile& folder, PMString& outMessage);
+
+/** Whether the fourth mode is up.
+
+    ★★★**IT IS MODAL, AND THAT IS THE POINT** (the user's rule): while an import is showing, the
+      other three modes and Task Start are greyed, and Stop Comparison is the way out. Because no
+      other comparison can run inside it, the reader's own Task Start can simply be parked for its
+      duration - which is what lets one origin slot serve both. */
+bool16 KCMInImportMode();
+
+/** Leave it: the import's own origin goes, the reader's parked Task Start comes back, and the mode
+    that was showing before returns. Called by Stop Comparison; doing nothing when no import is up. */
+void KCMEndImportMode();
 
 #endif // __KCMStoryTextImport_h__
 

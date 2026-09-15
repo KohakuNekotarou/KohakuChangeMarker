@@ -581,6 +581,11 @@ public:
 		return KCMExportStoryText(KCMActiveDocDB(), parent, outMessage);
 	}
 
+	virtual bool16	InImportMode()
+	{
+		return KCMInImportMode();
+	}
+
 	virtual bool16	ImportStoryText(const IDFile& folder, PMString& outMessage)
 	{
 		// ★The whole sequence is the model's (read, take the origin, hold, set the mode, start) -

@@ -171,6 +171,7 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 	{
 		case kKCMModeStory:		modeWord = "story";		break;
 		case kKCMModeResources:	modeWord = "resources";	break;
+		case kKCMModeImport:	modeWord = "import";	break;
 		default:				modeWord = "pixel";		break;
 	}
 	PMString msg("Compare mode: ");
@@ -1058,6 +1059,22 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		     action == kKCMPageCheckToggleActionID ||
 		     action == kKCMPageRefreshCompareActionID) &&
 		    KCMPagesPanelSelectionHasNoRealPage())
+		{
+			listToUpdate->SetNthActionState(i, kDisabled_Unselected);
+			continue;
+		}
+
+		// ★★★**THE IMPORT MODE IS MODAL** (2026-09-15, the user's rule: "inside this mode you
+		//   cannot do other comparisons"). The three modes and Task Start are greyed while it is
+		//   up, and Stop Comparison is the way out.
+		//   ⚠**THAT RULE IS WHAT MAKES THE MODE CHEAP**: because nothing else can run inside it,
+		//     the reader's own Task Start is simply PARKED for its duration instead of the plug-in
+		//     carrying two origins (KCMOrigin.h says what the second one would have cost).
+		if ((action == kKCMPopupModePixelActionID ||
+		     action == kKCMPopupModeStoryActionID ||
+		     action == kKCMPopupModeResourcesActionID ||
+		     action == kKCMPopupTaskStartActionID) &&
+		    Utils<IKCMStoryEditsFacade>()->InImportMode())
 		{
 			listToUpdate->SetNthActionState(i, kDisabled_Unselected);
 			continue;

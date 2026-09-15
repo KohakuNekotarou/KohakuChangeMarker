@@ -36,7 +36,6 @@
 #include "KCMComparisonRun.h"		// KCMChooseOriginPair
 #include "KCMExternalSource.h"		// KCMIsDbAlive
 #include "KCMOriginPeek.h"			// KCMOriginPeekDrop / KCMOriginPeekDescribe
-#include "KCMStoryTextImport.h"	// KCMReleaseStoryText - the edited stories are released with the origin
 #include "KCMRehydrate.h"			// KCMRehydrateRaw - the test instrument's import
 #include "KCMResourceBytes.h"
 #include "KCMOriginIdml.h"			// KCMInxToDesignmap - the snapshot is kept as an IDML's designmap
@@ -51,6 +50,21 @@ std::vector<KCMStoryStamp>			sStamps;			// the stories' counters at Task Start, 
 IDataBase*							sDocDB = nil;		// compared, never dereferenced without KCMIsDbAlive
 PMString							sDocName;
 PMString							sTakenAt;			// "12:34:56"
+
+// ★★★**THE PARK: ONE SLOT, FOR THE IMPORT MODE ONLY** (2026-09-15, the user's requirement: "the
+//   task the user made is to keep existing"). An import needs the document as it stood a moment
+//   ago, which is the same slot a Task Start uses - so rather than give the plug-in two origins
+//   (measured: 82 places ask this one questions, and every one would have to choose), the import
+//   moves the reader's Task Start aside and puts it back when it ends.
+//   ⚠**THAT IS ONLY SAFE BECAUSE THE IMPORT MODE IS MODAL** - no other comparison can run while it
+//     is up (the user's rule), so the parked origin can never be the one somebody is looking at.
+K2::scoped_ptr<KCMResourceBytes>	sParkedBytes;
+KCMOriginShape						sParkedShape;
+std::vector<KCMStoryStamp>			sParkedStamps;
+IDataBase*							sParkedDocDB = nil;
+PMString							sParkedDocName;
+PMString							sParkedTakenAt;
+bool16								sParked = kFalse;
 
 /** The session's document list, or nil during the shutdown sequence. */
 IDocumentList* QueryDocList(InterfacePtr<IDocumentList>& holder)
@@ -246,6 +260,73 @@ void KCMOriginLabel(PMString& out)
 	out.Append(sTakenAt);
 }
 
+bool16 KCMParkOrigin()
+{
+	if (sParked)
+		return kFalse;			// one slot. A second park would drop the first, silently.
+
+	// ⚠THE PEEK STANDS ON THESE BYTES, so it goes now rather than being left pointing at an origin
+	//   nobody can reach. It is a transient view; the origin itself is what is being kept.
+	KCMOriginPeekDrop(kFalse);
+
+	sParkedBytes.reset(sBytes.release());
+	sParkedShape = sShape;
+	sParkedStamps = sStamps;
+	sParkedDocDB = sDocDB;
+	sParkedDocName = sDocName;
+	sParkedTakenAt = sTakenAt;
+	sParked = kTrue;
+
+	// The live slot is left EMPTY rather than released: a release would also drop the parked
+	// bytes' peek and the held story text, and neither belongs to what is being moved aside.
+	sShape = KCMOriginShape();
+	sStamps.clear();
+	sDocDB = nil;
+	sDocName.Clear();
+	sTakenAt.Clear();
+	return kTrue;
+}
+
+bool16 KCMUnparkOrigin()
+{
+	if (!sParked)
+		return kFalse;
+
+	// Whatever is live now is the import's own origin, and it is over.
+	KCMReleaseOrigin(kFalse);
+
+	sBytes.reset(sParkedBytes.release());
+	sShape = sParkedShape;
+	sStamps = sParkedStamps;
+	sDocDB = sParkedDocDB;
+	sDocName = sParkedDocName;
+	sTakenAt = sParkedTakenAt;
+
+	sParkedShape = KCMOriginShape();
+	sParkedStamps.clear();
+	sParkedDocDB = nil;
+	sParkedDocName.Clear();
+	sParkedTakenAt.Clear();
+	sParked = kFalse;
+	return kTrue;
+}
+
+bool16 KCMHasParkedOrigin()
+{
+	return sParked;
+}
+
+void KCMDropParkedOrigin()
+{
+	sParkedBytes.reset();
+	sParkedShape = KCMOriginShape();
+	sParkedStamps.clear();
+	sParkedDocDB = nil;
+	sParkedDocName.Clear();
+	sParkedTakenAt.Clear();
+	sParked = kFalse;
+}
+
 void KCMReleaseOrigin(bool16 deferPeekClose)
 {
 	// The slot first, the peek document second: closing it raises kAfterCloseDoc, whose sweep
@@ -256,10 +337,6 @@ void KCMReleaseOrigin(bool16 deferPeekClose)
 	sDocDB = nil;
 	sDocName.Clear();
 	sTakenAt.Clear();
-	// ★THE EDITED STORIES GO WITH IT. They are only meaningful against this origin's copy, so
-	//   holding them past its release would leave text waiting to be poured into a copy that no
-	//   longer exists.
-	KCMReleaseStoryText();
 	KCMOriginPeekDrop(deferPeekClose);	// the peek document stood on these bytes
 }
 
