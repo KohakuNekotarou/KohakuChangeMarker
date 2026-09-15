@@ -221,6 +221,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceStore.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceParse.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMXmlInject.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryTextImport.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryTextExport.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryHtml.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOrigin.cpp" />
@@ -292,6 +293,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMResourcesFacade.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceParse.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMXmlInject.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryTextImport.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryTextExport.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryHtml.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOrigin.h" />
