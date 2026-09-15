@@ -23,6 +23,9 @@
 #include "WideString.h"
 
 #include "KCMStoryTextImport.h"
+#include "KCMComparisonRun.h"		// KCMToggleStartStop - the start, through the one resolver
+#include "KCMCore.h"				// KCMSetCompareMode
+#include "KCMOrigin.h"				// KCMTakeTaskStart - the state the edited words are compared against
 #include "KCMParaText.h"			// ModelOffsetInParagraph / AppendUtf8
 #include "KCMRehydrate.h"			// KCMReadOriginUidLabel - the copy's stories carry the original UID
 #include "KCMTextDiff.h"			// ToCodePoints / Diff
@@ -486,6 +489,52 @@ void KCMReleaseStoryText()
 {
 	sHeld = KCMStoryTextSet();
 	sHolding = kFalse;
+}
+
+bool16 KCMImportStoryText(const IDFile& folder, PMString& outMessage)
+{
+	outMessage.Clear();
+	outMessage.SetTranslatable(kFalse);
+
+	// 1. THE FOLDER FIRST. Nothing is disturbed if it cannot be read - no origin taken, no
+	//    comparison stopped, and whatever was held is still held.
+	KCMStoryTextSet set;
+	PMString readMessage;
+	if (!KCMReadStoryTextFolder(folder, set, readMessage))
+	{
+		outMessage = "import: ";
+		outMessage.SetTranslatable(kFalse);
+		outMessage.Append(readMessage);
+		return kFalse;
+	}
+
+	// 2. THE ORIGIN SECOND, and this is the order that matters: taking one releases the origin that
+	//    was held, and releasing an origin releases the held stories with it (KCMReleaseOrigin).
+	//    Held any earlier, what was just read would be thrown away by the next line.
+	PMString whyNot;
+	if (!KCMTakeTaskStart(whyNot))
+	{
+		outMessage = "import: the document's state could not be taken (";
+		outMessage.SetTranslatable(kFalse);
+		outMessage.Append(whyNot);
+		outMessage.Append(")");
+		return kFalse;
+	}
+
+	// 3. Now they can be held: the copy has not been made yet, and every copy made from here on
+	//    gets them poured in (KCMRehydrate, the one place).
+	KCMHoldStoryText(set);
+
+	// 4. The Story mode is what shows words against words. ★Set before the start, so the start
+	//    builds what this mode needs rather than rasterising pages first.
+	KCMSetCompareMode(kKCMModeStory);
+	KCMToggleStartStop();
+
+	outMessage = "import: ";
+	outMessage.SetTranslatable(kFalse);
+	outMessage.Append(readMessage);
+	outMessage.Append(" - comparing the document against them");
+	return kTrue;
 }
 
 bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)

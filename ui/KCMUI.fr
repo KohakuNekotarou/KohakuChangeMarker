@@ -824,6 +824,14 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMExportStoryTextMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Import Story Text..." on the panel flyout (2026-09-15). Plain command: a folder of
+		// edited HTML is read and the Story comparison starts against a copy holding those words.
+		// Directly under Export - the two are one round trip.
+		kKCMPopupImportStoryTextActionID,
+		kKCMPopupMenuPath,
+		kKCMImportStoryTextMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Clear Target and Source" on the panel flyout (popup) menu. Plain command: stops a running
 		// comparison and drops both chosen documents, so the next Start falls back to the automatic
 		// rule (active = Target, the earliest-opened other document = Source). Directly below the two
@@ -1392,6 +1400,18 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKCMActionComponentBoss,
 		kKCMPopupExportStoryTextActionID,
 		kKCMExportStoryTextMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Import Story Text..." (2026-09-15): the edited words back in, against a copy. Greyed
+		// with no active document and while a comparison is running - ⚠unlike Task Start, which
+		// stops one and takes over, this one waits (UpdateActionStates).
+		kKCMActionComponentBoss,
+		kKCMPopupImportStoryTextActionID,
+		kKCMImportStoryTextMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,

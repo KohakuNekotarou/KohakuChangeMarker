@@ -89,6 +89,20 @@ void KCMReleaseStoryText();
     @return kFalse when nothing at all could be applied. */
 bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage);
 
+/** "Import Story Text..." from end to end: read the folder, take the origin, and start the
+    comparison in the Story mode against a copy with the edited words in it.
+
+    ★★**THE ORDER IS NOT ARBITRARY.** The folder is read FIRST, so that a bad folder costs nothing
+      and disturbs nothing. The origin is taken SECOND, because taking one releases whatever origin
+      was held - and releasing an origin releases the held stories with it, so holding them any
+      earlier would throw them away. Only then are they held, the mode set, and the comparison
+      started.
+
+    @param folder the folder the reader chose.
+    @param outMessage what happened, for the panel's status line.
+    @return kFalse when nothing could be read, or no origin could be taken. */
+bool16 KCMImportStoryText(const IDFile& folder, PMString& outMessage);
+
 #endif // __KCMStoryTextImport_h__
 
 // End, KCMStoryTextImport.h.

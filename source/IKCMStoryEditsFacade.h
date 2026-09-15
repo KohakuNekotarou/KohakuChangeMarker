@@ -412,6 +412,19 @@ public:
 		  this facade through its vtable and an insertion lands it on a different method
 		  ([[facade-vtable-slot-append-only]]). Adding one means rebuilding KIDMCP too. */
 	virtual bool16	ExportStoryText(const IDFile& parent, PMString& outMessage) = 0;
+
+	/** "Import Story Text..." (2026-09-15): read a folder of edited stories, take the document's
+		state as the origin, and start the Story comparison against a copy with those words in it.
+
+		★★★**THE DOCUMENT IS NOT CHANGED BY THIS.** The edited words go into the COPY; what puts
+		  any of them into the reader's own document is "Restore Source Text", one change at a
+		  time, as it always was.
+
+		@param folder the folder the reader chose.
+		@param outMessage what happened, for the panel's status line.
+		@return kFalse when the folder held nothing readable, or no origin could be taken.
+		⚠Appended at the END of the class, like the one above and for the same reason. */
+	virtual bool16	ImportStoryText(const IDFile& folder, PMString& outMessage) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

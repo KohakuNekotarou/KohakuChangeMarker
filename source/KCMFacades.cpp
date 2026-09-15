@@ -50,6 +50,7 @@
 #include "KCMStoryDiffRun.h"		// RunOne - re-comparing one row's story ("Refresh Story Comparison")
 #include "KCMStoryRestore.h"		// KCMRestoreChange - "Restore Source Text" on a change row
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - "Export Story Text..." on the flyout
+#include "KCMStoryTextImport.h"	// KCMImportStoryText - "Import Story Text..." on the flyout
 #include "KCMBookPair.h"			// which two books, and their display paths
 #include "KCMBookCompare.h"		// the book comparison itself
 #include "KCMPageNumberMarker.h"	// the folio exclusion toggle
@@ -578,6 +579,13 @@ public:
 		//   document a menu item acts on is a model question, and the UI half already asks this
 		//   facade every other such question.
 		return KCMExportStoryText(KCMActiveDocDB(), parent, outMessage);
+	}
+
+	virtual bool16	ImportStoryText(const IDFile& folder, PMString& outMessage)
+	{
+		// ★The whole sequence is the model's (read, take the origin, hold, set the mode, start) -
+		//   the order of those five matters and is stated where they live, not here.
+		return KCMImportStoryText(folder, outMessage);
 	}
 };
 

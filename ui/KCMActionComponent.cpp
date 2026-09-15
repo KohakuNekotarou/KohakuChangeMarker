@@ -915,6 +915,29 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			}
 			break;
 
+		// Flyout "Import Story Text...": the other half of the round trip. The folder of edited
+		// HTML is read, the document's state is taken as the origin, and the Story comparison
+		// starts against a COPY with those words poured into it.
+		// ★★★**THE READER'S DOCUMENT IS NOT CHANGED BY THIS.** What puts any of it in is "Restore
+		//   Source Text", one change at a time - the door that already exists and already refuses
+		//   what it cannot write.
+		case kKCMPopupImportStoryTextActionID:
+			{
+				SDKFolderChooser chooser;
+				PMString title("Import Story Text - the folder of edited stories");
+				title.SetTranslatable(kFalse);
+				chooser.SetTitle(title);
+				chooser.ShowDialog();
+				if (chooser.IsChosen())
+				{
+					PMString importMsg;
+					Utils<IKCMStoryEditsFacade>()->ImportStoryText(chooser.GetIDFile(), importMsg);
+					if (importMsg.CharCount() > 0)
+						KCMSetStatus(importMsg);
+				}
+			}
+			break;
+
 		case kKCMPopupCompareBooksActionID:
 			KCMRunBookComparison();
 			break;
@@ -1321,6 +1344,17 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			listToUpdate->SetNthActionState(i,
 				(Utils<IKCMCompareFacade>()->IsArmed() && Utils<IKCMCompareFacade>()->ArmedDocsAlive())
 					? kEnabledAction : kDisabled_Unselected);
+		}
+		else if (action == kKCMPopupImportStoryTextActionID)
+		{
+			// ★AN ACTIVE DOCUMENT, AND NO COMPARISON RUNNING. ⚠Unlike Task Start - which was
+			//   deliberately made pressable at any time, stopping a comparison and taking over -
+			//   an import WAITS: it replaces the origin, and doing that underneath a running
+			//   comparison would change what the panel is showing while it is showing it.
+			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+			const bool16 live = (compare != nil && compare->CanTakeTaskStart()
+								 && !compare->IsArmed()) ? kTrue : kFalse;
+			listToUpdate->SetNthActionState(i, live ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupExportStoryTextActionID)
 		{
