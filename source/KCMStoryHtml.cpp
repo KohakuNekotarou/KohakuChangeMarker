@@ -140,6 +140,31 @@ bool16 TagAt(const std::string& s, size_t at, std::string& outName, bool16& outC
 	return kFalse;				// never closed
 }
 
+/** Where the next closing tag called `name` stands, and where it ends. */
+bool16 FindClosing(const std::string& s, size_t from, const char* name, size_t& outAt, size_t& outAfter)
+{
+	size_t j = from;
+	while (j < s.size())
+	{
+		if (s[j] != '<')
+		{
+			++j;
+			continue;
+		}
+		std::string tag;
+		bool16 closing = kFalse;
+		size_t after = 0;
+		if (TagAt(s, j, tag, closing, after) && closing && tag == name)
+		{
+			outAt = j;
+			outAfter = after;
+			return kTrue;
+		}
+		++j;
+	}
+	return kFalse;
+}
+
 /** kTrue when one of THIS FORMAT's tags begins at `at`. */
 bool16 IsOurTagAt(const std::string& s, size_t at)
 {
@@ -211,19 +236,32 @@ int32 HexDigit(char c)
 	 than parsed: a full attribute walk would be a bigger thing to be wrong about than the one
 	 value anybody writes here.
 */
-bool16 ClassOfTag(const std::string& s, size_t at, size_t after, std::string& outClass)
+bool16 AttrOfTag(const std::string& s, size_t at, size_t after, const char* attr,
+				 std::string& outValue)
 {
-	outClass.clear();
-	if (after <= at + 5)
+	outValue.clear();
+
+	size_t attrLen = 0;
+	while (attr[attrLen] != '\0')
+		++attrLen;
+	if (attrLen == 0 || after <= at + attrLen)
 		return kFalse;
 
-	for (size_t i = at; i + 5 < after; ++i)
+	for (size_t i = at; i + attrLen < after; ++i)
 	{
-		if (Lower(s[i]) != 'c' || Lower(s[i + 1]) != 'l' || Lower(s[i + 2]) != 'a'
-			|| Lower(s[i + 3]) != 's' || Lower(s[i + 4]) != 's')
+		bool16 same = kTrue;
+		for (size_t k = 0; k < attrLen; ++k)
+		{
+			if (Lower(s[i + k]) != attr[k])
+			{
+				same = kFalse;
+				break;
+			}
+		}
+		if (!same)
 			continue;
 
-		size_t j = i + 5;
+		size_t j = i + attrLen;
 		while (j < after && (s[j] == ' ' || s[j] == '\t'))
 			++j;
 		if (j >= after || s[j] != '=')
@@ -251,10 +289,15 @@ bool16 ClassOfTag(const std::string& s, size_t at, size_t after, std::string& ou
 				break;
 			++j;
 		}
-		outClass.assign(s, from, j - from);
+		outValue.assign(s, from, j - from);
 		return kTrue;
 	}
 	return kFalse;
+}
+
+bool16 ClassOfTag(const std::string& s, size_t at, size_t after, std::string& outClass)
+{
+	return AttrOfTag(s, at, after, "class", outClass);
 }
 
 /** An <em> that has been opened and not yet closed. */
@@ -507,7 +550,41 @@ bool SpanStartsEarlier(const KCMAttrSpan& a, const KCMAttrSpan& b)
 	 way either way, so the reader cannot tell - and does not guess, it answers GROUP. Whoever
 	 applies the result keeps the setting the document already had (the design says so, 3-3).
 */
-void WriteParaHtml(const Para& p, std::string& out)
+/** Every note reference standing exactly at cp.
+
+	★**THE LINK'S TARGET IS THE NOTE'S ORDINAL, ITS TEXT IS THE NUMBER THE PAGE PRINTS.** The two
+	are the same in a document that numbers its notes from one and never restarts, and different in
+	one that does - so pairing on the ordinal is what keeps a restarting document's links honest
+	while the reader still sees the number InDesign would print. */
+void WriteNotesAt(const Para& p, int32 cp, int32& ordinal, std::string& out)
+{
+	for (size_t k = 0; k < p.fNoteAt.size(); ++k)
+	{
+		if (p.fNoteAt[k] != cp)
+			continue;
+
+		++ordinal;
+		const int32 shown = (k < p.fNoteNum.size()) ? p.fNoteNum[k] : ordinal;
+		char buf[96];
+		std::snprintf(buf, sizeof(buf), "<sup><a href=\"#n%d\">%d</a></sup>",
+					  static_cast<int>(ordinal), static_cast<int>(shown));
+		out += buf;
+	}
+}
+
+/** The nearest note position strictly after cp, or `limit` when there is none. */
+int32 NextNoteAfter(const Para& p, int32 cp, int32 limit)
+{
+	int32 stop = limit;
+	for (size_t k = 0; k < p.fNoteAt.size(); ++k)
+	{
+		if (p.fNoteAt[k] > cp && p.fNoteAt[k] < stop)
+			stop = p.fNoteAt[k];
+	}
+	return stop;
+}
+
+void WriteParaHtml(const Para& p, int32& noteOrdinal, std::string& out)
 {
 	std::vector<int32> byteAt;
 	KCMTextDiff::ToCodePoints(p.fText, nil, &byteAt);
@@ -518,8 +595,17 @@ void WriteParaHtml(const Para& p, std::string& out)
 
 	int32 cp = 0;
 	size_t next = 0;
+	int32 notesWrittenUpTo = -1;
 	while (cp < cpCount || next < spans.size())
 	{
+		// ⚠ONCE PER POSITION. The span-skipping branch below leaves cp where it is, and a note
+		//   written twice is a note the reader would have to guess about.
+		if (cp > notesWrittenUpTo)
+		{
+			WriteNotesAt(p, cp, noteOrdinal, out);
+			notesWrittenUpTo = cp;
+		}
+
 		// A span measuring nothing is not a span, and one that ends behind us cannot be placed:
 		// both are dropped rather than guessed at (KCMParaText.h applies the same rule to a
 		// reading with no text under it).
@@ -566,14 +652,21 @@ void WriteParaHtml(const Para& p, std::string& out)
 		}
 
 		// ---- plain text, as far as the next reading (or the end) ------------------------------
-		const int32 stop = (next < spans.size() && spans[next].fStart > cp) ? spans[next].fStart
-																		   : cpCount;
+		int32 stop = (next < spans.size() && spans[next].fStart > cp) ? spans[next].fStart
+																	 : cpCount;
+		// ★A NOTE REFERENCE IS A PLACE, SO IT CUTS THE TEXT like a reading does.
+		stop = NextNoteAfter(p, cp, stop);
 		if (stop <= cp)
 			break;					// nothing left to write; a malformed span cannot loop us
 
 		WriteRun(p.fText, byteAt, p.fKenten, cp, stop, out);
 		cp = stop;
 	}
+
+	// ⚠A NOTE HANGING OFF THE LAST CHARACTER stands at the paragraph's end, where the loop above
+	//   has already stopped.
+	if (cpCount > notesWrittenUpTo)
+		WriteNotesAt(p, cpCount, noteOrdinal, out);
 }
 
 /*	kKentenLooks
@@ -855,11 +948,38 @@ void Write(const Story& s, int32 uid, std::string& out)
 	out += "</style></head>\r\n";
 	out += "<body>\r\n";
 
+	int32 noteOrdinal = 0;
 	for (size_t i = 0; i < s.fBody.size(); ++i)
 	{
 		out += "<p>";
-		WriteParaHtml(s.fBody[i], out);
+		WriteParaHtml(s.fBody[i], noteOrdinal, out);
 		out += "</p>\r\n";
+	}
+
+	// ★THE NOTES STAND AT THE END, LINKED, which is how Adobe's own HTML export writes them and
+	//   what makes them work in a browser: the reference is a link and the note is its target.
+	//   ⚠An ENDNOTE's words are not here - they are a story of their own, with a file of their own.
+	if (!s.fNotes.empty())
+	{
+		out += "<ol>\r\n";
+		for (size_t n = 0; n < s.fNotes.size(); ++n)
+		{
+			char buf[64];
+			std::snprintf(buf, sizeof(buf), "<li id=\"n%d\">", static_cast<int>(n + 1));
+			out += buf;
+
+			// ⚠A NOTE'S PARAGRAPHS ARE PARAGRAPHS - ruby, kenten and the invisible characters all
+			//   belong there, so they go through the very same writer.
+			int32 insideNote = 0;
+			for (size_t k = 0; k < s.fNotes[n].size(); ++k)
+			{
+				out += "<p>";
+				WriteParaHtml(s.fNotes[n][k], insideNote, out);
+				out += "</p>";
+			}
+			out += "</li>\r\n";
+		}
+		out += "</ol>\r\n";
 	}
 
 	out += "</body>\r\n";
@@ -895,6 +1015,17 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 	KCMAttrSpanList paraRuby;		// the readings met so far, in this paragraph's own count
 	KCMAttrSpanList paraKenten;		// and the marks, in the same count
 	EmState em;
+	std::vector<int32> paraNoteAt;	// where a note hangs off this paragraph
+	std::vector<int32> paraNoteNum;	// and the number its page prints
+
+	// ★THE NOTES ARE COLLECTED BY ID and put in order at the end, because the <ol> stands after
+	//   the body: nothing can be paired until the whole document has been read.
+	std::vector<int32> refOrdinals;					// every ordinal a <sup> pointed at
+	std::vector<int32> noteIds;						// the id of each <li> met
+	std::vector< std::vector<Para> > noteBodies;	// and its paragraphs
+	std::vector<Para> noteParas;					// the <li> being read now
+	int32 noteId = 0;
+	bool16 inNote = kFalse;
 
 	size_t i = 0;
 	while (i < s.size())
@@ -959,6 +1090,8 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					para.clear();
 					paraRuby.clear();
 					paraKenten.clear();
+					paraNoteAt.clear();
+					paraNoteNum.clear();
 					em = EmState();
 				}
 				else
@@ -977,11 +1110,141 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					p.fText = para;
 					p.fRuby = paraRuby;
 					p.fKenten = paraKenten;
-					out.fBody.push_back(p);
+					p.fNoteAt = paraNoteAt;
+					p.fNoteNum = paraNoteNum;
+					// ★A PARAGRAPH INSIDE AN <li> BELONGS TO THAT NOTE, not to the body.
+					if (inNote)
+						noteParas.push_back(p);
+					else
+						out.fBody.push_back(p);
 					inPara = kFalse;
 					para.clear();
 					paraRuby.clear();
 					paraKenten.clear();
+					paraNoteAt.clear();
+					paraNoteNum.clear();
+				}
+				i = after;
+				continue;
+			}
+
+			if (name == "sup")
+			{
+				if (closing)
+				{
+					i = after;				// a stray </sup> means nothing of its own
+					continue;
+				}
+				if (!inBody || !inPara)
+				{
+					whyNot = "a <sup> stands outside a paragraph";
+					return kFalse;
+				}
+
+				size_t closeAt = 0;
+				size_t closeAfter = 0;
+				if (!FindClosing(s, after, "sup", closeAt, closeAfter))
+				{
+					whyNot = "a <sup> was never closed";
+					return kFalse;
+				}
+
+				const std::string inside = s.substr(after, closeAt - after);
+				const size_t hash = inside.find("#n");
+				if (hash == std::string::npos)
+				{
+					whyNot = "a <sup> carries no link to a note "
+							 "(this format writes <sup><a href=\"#n1\">1</a></sup>)";
+					return kFalse;
+				}
+
+				int32 ordinal = 0;
+				size_t q = hash + 2;
+				while (q < inside.size() && inside[q] >= '0' && inside[q] <= '9')
+				{
+					ordinal = ordinal * 10 + (inside[q] - '0');
+					++q;
+				}
+				if (ordinal <= 0)
+				{
+					whyNot = "a <sup> points at no note in particular";
+					return kFalse;
+				}
+
+				// ★The number the page prints is the LINK'S TEXT; the ordinal stands in when that
+				//   text is not a number (a note numbered with a letter, say).
+				int32 shown = ordinal;
+				const size_t gt = inside.find('>', q);
+				if (gt != std::string::npos)
+				{
+					size_t r = gt + 1;
+					int32 value = 0;
+					bool16 any = kFalse;
+					while (r < inside.size() && inside[r] >= '0' && inside[r] <= '9')
+					{
+						value = value * 10 + (inside[r] - '0');
+						++r;
+						any = kTrue;
+					}
+					if (any)
+						shown = value;
+				}
+
+				paraNoteAt.push_back(CountCodePoints(para));
+				paraNoteNum.push_back(shown);
+				refOrdinals.push_back(ordinal);
+				i = closeAfter;
+				continue;
+			}
+
+			if (name == "ol")
+			{
+				i = after;				// the list carries nothing; its items do
+				continue;
+			}
+
+			if (name == "li")
+			{
+				if (!closing)
+				{
+					if (inNote)
+					{
+						whyNot = "an <li> begins inside another one";
+						return kFalse;
+					}
+
+					// ★THE ID IS THE PAIRING, and its absence is not fatal: a note with no id of
+					//   its own takes the place it stands in.
+					noteId = static_cast<int32>(noteIds.size()) + 1;
+					std::string id;
+					if (AttrOfTag(s, i, after, "id", id) && id.size() > 1 && Lower(id[0]) == 'n')
+					{
+						int32 value = 0;
+						bool16 any = kTrue;
+						for (size_t k = 1; k < id.size() && any; ++k)
+						{
+							if (id[k] < '0' || id[k] > '9')
+								any = kFalse;
+							else
+								value = value * 10 + (id[k] - '0');
+						}
+						if (any && value > 0)
+							noteId = value;
+					}
+					inNote = kTrue;
+					noteParas.clear();
+				}
+				else
+				{
+					if (!inNote)
+					{
+						whyNot = "an </li> closes a note that never began";
+						return kFalse;
+					}
+					noteIds.push_back(noteId);
+					noteBodies.push_back(noteParas);
+					noteParas.clear();
+					inNote = kFalse;
 				}
 				i = after;
 				continue;
@@ -1222,6 +1485,38 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 	{
 		whyNot = "the last paragraph was never closed";
 		return kFalse;
+	}
+	if (inNote)
+	{
+		whyNot = "the last note was never closed";
+		return kFalse;
+	}
+
+	// ---- the notes, in the order their ids run ------------------------------------------------
+	std::vector<int32> order = noteIds;
+	std::sort(order.begin(), order.end());
+	for (size_t k = 0; k < order.size(); ++k)
+	{
+		for (size_t m = 0; m < noteIds.size(); ++m)
+		{
+			if (noteIds[m] == order[k])
+			{
+				out.fNotes.push_back(noteBodies[m]);
+				break;
+			}
+		}
+	}
+
+	// ⚠★★**A REFERENCE WITH NOTHING BEHIND IT IS REFUSED.** It means the note was deleted while
+	//   its marker was left standing, and reading it as "a note with no words" would put an empty
+	//   note into the document - a change nobody asked for, made silently.
+	for (size_t k = 0; k < refOrdinals.size(); ++k)
+	{
+		if (std::find(noteIds.begin(), noteIds.end(), refOrdinals[k]) == noteIds.end())
+		{
+			whyNot = "a <sup> points at a note that is not in the document";
+			return kFalse;
+		}
 	}
 
 	return kTrue;
