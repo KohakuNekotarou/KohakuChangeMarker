@@ -1209,7 +1209,11 @@ void KCMNoteStoryStop(int32 rowIndex, int32 changeIndex)
 	// What the Pixel mode walks is pages, and a list row is not among them -- touching the anchor
 	// there would make clicking a row move the page walk. Its rule, that a row jump leaves the
 	// anchor alone, stands.
-	if (Utils<IKCMCompareFacade>()->GetCompareMode() != kKCMModeStory)
+	// ⚠★★**THE IMPORT MODE WALKS ROWS TOO** (2026-09-15). Spelled `!= kKCMModeStory` this returned
+	//   there, so a click on a row left the walk's anchor where it was and Prev/Next carried on
+	//   from somewhere the reader was no longer looking. Third of the same kind found in one
+	//   afternoon - see KCMBoundaryID.h's note above KCMModeUsesStoryRows.
+	if (!KCMModeUsesStoryRows(Utils<IKCMCompareFacade>()->GetCompareMode()))
 		return;
 
 	// Whether the row exists, its storyUID, and its child count: all three come from the same

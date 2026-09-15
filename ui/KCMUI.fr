@@ -1334,7 +1334,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMChangeRowRestoreMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Import Source Text" (2026-09-15): the same command in the Import mode, where the Source
+		// "Change to Imported Text" (2026-09-15): the same command in the Import mode, where the Source
 		// is the copy the reader's own edited words were poured into - so taking a change in is a
 		// replacement, not a restoration. Exactly one of the two is ever live, and a greyed item
 		// does not appear, so the menu shows one name or the other and never both.
@@ -1763,7 +1763,7 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// ★"Import Source Text" - the same action as the one above, under the name the Import mode
+		// ★"Change to Imported Text" - the same action as the one above, under the name the Import mode
 		//   calls for, and greyed wherever that mode is not up (KCMChangeRowCanImport). Two items
 		//   rather than one renaming item because nothing in KCM is a dynamic menu, and because the
 		//   panel already tells items apart by mode through their enabling.

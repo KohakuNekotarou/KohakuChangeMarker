@@ -264,7 +264,7 @@ bool16 KCMChangeRowCanRestore()
 		return kFalse;
 
 	// ★NOT IN THE IMPORT MODE, where the same command is offered under its own name and
-	//   ActionID ("Import Source Text", KCMChangeRowCanImport below). Exactly one of the two is
+	//   ActionID ("Change to Imported Text", KCMChangeRowCanImport below). Exactly one of the two is
 	//   ever live, so the menu shows one name and never both.
 	if (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeImport)
 		return kFalse;

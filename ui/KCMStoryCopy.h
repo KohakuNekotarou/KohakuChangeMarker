@@ -101,7 +101,7 @@ bool16 KCMChangeRowCopySource();
     the model with a reason, not greyed here. */
 bool16 KCMChangeRowCanRestore();
 
-/** Whether "Import Source Text" may be offered on the change the menu was popped over.
+/** Whether "Change to Imported Text" may be offered on the change the menu was popped over.
 
 	★The same command as Restore, under the name the Import mode calls for - there the Source is
 	the copy the reader's own edited words were poured into, so taking a change in is a

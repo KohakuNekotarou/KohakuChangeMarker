@@ -61,6 +61,22 @@ PMString Ascii(const char* text)
 	return s;
 }
 
+/** A refusal, named after the act the reader pressed.
+
+	★**THE SAME COMMAND WEARS TWO NAMES** (2026-09-15). In the Import mode the Source is the copy
+	the reader's own edited words were poured into, so taking a change in is a REPLACEMENT - the
+	item there is called "Change to Imported Text". A message beginning "restore:" under that item
+	is the plug-in disagreeing with itself in the one line the reader reads after pressing.
+*/
+PMString Refused(const char* what)
+{
+	PMString s;
+	s.SetTranslatable(kFalse);
+	s.Append((KCMGetCompareMode() == kKCMModeImport) ? "import: " : "restore: ");
+	s.Append(what);
+	return s;
+}
+
 }	// namespace
 
 // ---- ruby ----------------------------------------------------------------------------------
@@ -217,12 +233,12 @@ public:
 	{
 		// ★THE NAME THE READER PRESSED, because this one goes on the Edit menu beside Undo. In the
 		//   Import mode the source is the copy their own edited words were poured into, so the
-		//   item there is called "Import Source Text" (the user, 2026-09-15: "taking it in and
+		//   item there is called "Change to Imported Text" (the user, 2026-09-15: "taking it in and
 		//   swapping it over is a replacement") - and an undo step calling itself something the
 		//   panel never offered would be the plug-in disagreeing with itself.
 		if (fSequence != nil)
 			fSequence->SetName(KCMGetCompareMode() == kKCMModeImport
-							   ? Ascii("Import Source Text")
+							   ? Ascii("Change to Imported Text")
 							   : Ascii("Restore Source Text"));
 	}
 	~RestoreSequence()
@@ -253,7 +269,7 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 	const KCMStoryRow* row = KCMStoryList::GetRow(nth);
 	if (found == nil || row == nil)
 	{
-		outMessage = Ascii("restore: no such change (the list was rebuilt - right-click the row again).");
+		outMessage = Refused("no such change (the list was rebuilt - right-click the row again).");
 		return kFalse;
 	}
 	if (alreadyReplaced)
@@ -263,7 +279,7 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 		// even when an undo has put the older text back: the positions on every OTHER row were
 		// named against the text as it stood after the write, so the list as a whole needs
 		// comparing again before anything more is written into this story.
-		outMessage = Ascii("restore: this change has already been taken in - "
+		outMessage = Refused("this change has already been taken in - "
 						   "run Refresh Story Comparison on its row to start over.");
 		return kFalse;
 	}
@@ -296,7 +312,7 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 	IDataBase* const targetDB = KCMArmedTargetDB();
 	if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
 	{
-		outMessage = Ascii("restore: the Target document is not open.");
+		outMessage = Refused("the Target document is not open.");
 		return kFalse;
 	}
 
@@ -309,7 +325,7 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 		PMString whyNot;
 		if (!originCopy.Open(whyNot))
 		{
-			outMessage = Ascii("restore: could not rebuild the task-start copy: ");
+			outMessage = Refused("could not rebuild the task-start copy: ");
 			outMessage.Append(whyNot);
 			return kFalse;
 		}
@@ -317,7 +333,7 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 	}
 	if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
 	{
-		outMessage = Ascii("restore: the Source document is not open.");
+		outMessage = Refused("the Source document is not open.");
 		return kFalse;
 	}
 
@@ -325,18 +341,19 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 	InterfacePtr<ITextModel> target(UIDRef(targetDB, storyUID), UseDefaultIID());
 	if (target == nil)
 	{
-		outMessage = Ascii("restore: the story is no longer in the Target document.");
+		outMessage = Refused("the story is no longer in the Target document.");
 		return kFalse;
 	}
 	if (target->GetTextChangeCount() != countThen)
 	{
-		outMessage = Ascii("restore: this story was edited after the comparison - run Refresh Story Comparison on its row first.");
+		outMessage = Refused("this story has been edited since the comparison, so nothing was changed. "
+						   "Refreshing this row compares it again.");
 		return kFalse;
 	}
 	const TextIndex targetLength = target->TotalLength();
 	if (change.fTargetStart < 0 || change.fTargetEnd < change.fTargetStart || change.fTargetEnd > targetLength)
 	{
-		outMessage = Ascii("restore: the change's range is outside the story.");
+		outMessage = Refused("the change's range is outside the story.");
 		return kFalse;
 	}
 	const int32 targetCount = change.fTargetEnd - change.fTargetStart;
@@ -348,7 +365,7 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 		InterfacePtr<ITextModel> source(UIDRef(sourceDB, KCMOriginToSourceUID(sourceDB, storyUID)), UseDefaultIID());
 		if (source == nil)
 		{
-			outMessage = Ascii("restore: the story is not in the Source.");
+			outMessage = Refused("the story is not in the Source.");
 			return kFalse;
 		}
 		boost::shared_ptr<WideString> words(new WideString());
@@ -356,7 +373,7 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 		{
 			if (change.fSourceStart < 0 || change.fSourceEnd > source->TotalLength())
 			{
-				outMessage = Ascii("restore: the change's range is outside the Source story.");
+				outMessage = Refused("the change's range is outside the Source story.");
 				return kFalse;
 			}
 			TextIterator iter(source, change.fSourceStart);
@@ -366,7 +383,7 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 		InterfacePtr<ITextModelCmds> cmds(target, UseDefaultIID());
 		if (cmds == nil)
 		{
-			outMessage = Ascii("restore: the story cannot be edited.");
+			outMessage = Refused("the story cannot be edited.");
 			return kFalse;
 		}
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
@@ -378,7 +395,7 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 			if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
 			{
 				ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-				outMessage = Ascii("restore: the write failed (a locked story or layer?).");
+				outMessage = Refused("the write failed (a locked story or layer?).");
 				return kFalse;
 			}
 		}
@@ -419,7 +436,7 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 		// - the words have to come back first.
 		if (targetCount <= 0)
 		{
-			outMessage = Ascii("restore: the words of this paragraph changed as well - restore the words first, then this.");
+			outMessage = Refused("the words of this paragraph changed as well - restore the words first, then this.");
 			return kFalse;
 		}
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
@@ -464,7 +481,7 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 			int16 kind = IKentenStyle::Kenten_None;
 			if (!change.fOtherRuby.IsEmpty() && !KCMKentenKindOf(change.fOtherRuby, kind))
 			{
-				outMessage = Ascii("restore: this kenten kind cannot be written back (a custom mark carries a character the row does not hold).");
+				outMessage = Refused("this kenten kind cannot be written back (a custom mark carries a character the row does not hold).");
 				return kFalse;
 			}
 			RestoreSequence undo;
@@ -476,13 +493,13 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 		}
 		else
 		{
-			outMessage = Ascii("restore: this kind of change is not restorable yet.");
+			outMessage = Refused("this kind of change is not restorable yet.");
 			return kFalse;
 		}
 		if (err != kSuccess)
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-			outMessage = Ascii("restore: the attribute could not be written.");
+			outMessage = Refused("the attribute could not be written.");
 			return kFalse;
 		}
 

@@ -996,7 +996,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// Change-row context menu "Restore Source Text" (2026-09-13): the older words written over
 		// that one change, undoable. The model decides and reports (KCMStoryRestore.cpp); this side
 		// only names the stashed change.
-		// ★TWO IDS, ONE COMMAND (2026-09-15). The Import mode calls it "Import Source Text",
+		// ★TWO IDS, ONE COMMAND (2026-09-15). The Import mode calls it "Change to Imported Text",
 		//   because there the Source is the copy the reader's own edited words were poured into -
 		//   taking a change in is a replacement, not a restoration. The work is identical, so
 		//   they share this line rather than a copy of it; which of the two the reader sees is

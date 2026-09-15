@@ -979,7 +979,14 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	std::vector<KCMReportRow> storyRows, resourceRows;
 	PMString storyHeading, resourceHeading;
 	{
-		StoryDetailLoan storyLoan(targetDB, sourceDB, (KCMGetCompareMode() != kKCMModeStory) ? kTrue : kFalse);
+		// ⚠**"the modes that already have the detail", not "the Story mode"** (2026-09-15). The loan
+		//   runs the text diff FOR THE REPORT and puts every row back as it was on the way out; in a
+		//   mode that has already diffed, doing that would take the rows apart and rebuild them
+		//   underneath a reader who is working through them - and in the Import mode it would throw
+		//   away the record of what they had taken in. Spelled `!= kKCMModeStory` this was true of
+		//   the Import mode, which is exactly the mode that must not be borrowed from.
+		StoryDetailLoan storyLoan(targetDB, sourceDB,
+								  KCMModeUsesStoryRows(KCMGetCompareMode()) ? kFalse : kTrue);
 		int32 stories = 0, edits = 0;
 		if (storyLoan.WasCancelled())
 		{
