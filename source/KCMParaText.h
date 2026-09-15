@@ -128,8 +128,22 @@ struct KCMParaAttrs
 		 than counted here, so a document that restarts its numbering per page or per section still
 		 agrees with the row (KCMTextRead::ScanNotes).
 
-		⚠**THE SPAN IS THE MARKER ITSELF** - one character, at the marker's own place - so the row
-		 draws the number over the reference, not over the word beside it.
+		⚠★★★**THE SPAN SITS ON THE CHARACTER BEFORE THE MARKER**, one character long: the marker's
+		 own place is fStart + fLen, never fStart. It has to be that way - ReadStory TAKES the
+		 marker out of the text (U+0004 / U+0005 are not in fText), so a span standing where it
+		 stood would measure no characters at all and TakeAttrFor drops a span whose text length
+		 comes out 0. It is also where the page puts the number: at the top right of the word the
+		 note hangs off.
+		 ⇒ ★**ANYTHING PUTTING THE REFERENCE BACK INTO TEXT WANTS fStart + fLen** (the HTML round
+		   trip's <sup> among them). Reading fStart as the marker's place puts it one character early.
+		 ⚠A marker that is its paragraph's FIRST character has no such character before it: the span
+		  clips away and the note is NOT reported here at all. (Read from KCMTextRead.cpp on
+		  2026-09-15 - the code says so and says why; not separately measured on a document.)
+		 ⚠**THIS PARAGRAPH SAID THE OPPOSITE UNTIL 2026-09-15** - "the span is the marker itself, at
+		  the marker's own place" - while KCMTextRead::ScanNotes has read `run.fAt = owned[i].fAt - 1`
+		  all along, and the notes go through the very same TakeAttrFor as ruby with no correction
+		  anywhere. The header was the wrong one, which is why it is written out here rather than
+		  quietly replaced.
 		@warning an ENDNOTE's own words are NOT here: they live in another story
 		 (kEndnoteStoryBoss), which arrives as a story row of its own. Only the marker is reported. */
 	KCMAttrSpanList	fFootnote;
