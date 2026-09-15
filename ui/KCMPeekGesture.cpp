@@ -362,7 +362,7 @@ void KCMTrackerRevealBegin(bool16 shiftDown, bool16 altDown, bool16 cmdDown, boo
 	// ★Only the pressed window's side is marked (the user's choice): deleted characters exist in the
 	//   older version alone and inserted ones in the newer, so which document is being looked at
 	//   decides what there is to mark.
-	if (compare->GetCompareMode() == kKCMModeStory)
+	if (KCMModeUsesStoryRows(compare->GetCompareMode()))
 	{
 		if (KCMMouseIsOverTarget())
 			KCMStoryPressMarksBegin(kFalse /*target*/);

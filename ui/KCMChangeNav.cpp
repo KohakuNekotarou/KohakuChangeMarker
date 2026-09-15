@@ -183,7 +183,7 @@ static void KCMBuildStops(std::vector<KCMNavStop>& out)
 	// @warning `== kKCMModeStory` is deliberate. Written as `!= kKCMModePixel`, a future third mode
 	//   that builds no frames would SILENTLY FALL IN HERE. KCMPeek.cpp carries the same warning on
 	//   its own `== kKCMModePixel` test, for the mirror-image reason.
-	const bool16 storyMode   = (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeStory);
+	const bool16 storyMode   = KCMModeUsesStoryRows(Utils<IKCMCompareFacade>()->GetCompareMode());
 	const bool16 changeHere  = (!storyMode && marks->GetMarkedTargetDB() == navDB);	// frames are only mixed in on the comparison Target
 
 	// 0) The Story leaves go FIRST.

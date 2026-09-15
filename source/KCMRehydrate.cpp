@@ -56,6 +56,7 @@
 #include "KCMOrigin.h"				// KCMOriginShape / KCMMeasureShape
 #include "KCMResourceBytes.h"
 #include "KCMXmlInject.h"
+#include "KCMStoryTextImport.h"	// the edited words, poured into every copy this makes
 
 class IINXImportPolicy;				// forward-declared only in the SDK; held through IPMUnknown
 
@@ -490,6 +491,21 @@ bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, U
 		KCMCloseRehydrated(ref);	// nothing of ours stands on it any more
 		return kFalse;
 	}
+	// ★★★**THE EDITED WORDS GO IN HERE, IF AN IMPORT IS HOLDING ANY** - the one place, because "a
+	//   copy is made, so the edited text is poured into it" is one rule rather than a list of call
+	//   sites to keep in step. There are two callers today (the comparison's copy and the peek's);
+	//   a copy that missed the pouring would compare as though the reader had edited nothing,
+	//   which looks exactly like a correct answer.
+	//   ⚠It writes into THIS COPY and nothing else. The reader's own document is never changed by
+	//     an import - "Restore Source Text" is what puts a change in, one at a time.
+	if (KCMHeldStoryText() != nil)
+	{
+		PMString poured;
+		KCMApplyStoryTextToCopy(ref.GetDataBase(), poured);
+		// The count belongs to the panel, and the caller that asked for the copy is what tells it;
+		// a failure here is not a failure of the rehydration - the copy is still the origin.
+	}
+
 	// 6. ours, and nothing in it to save (the header says why this matters at a Quit)
 	KCMMarkRehydratedClean(ref.GetDataBase());
 	outDoc = ref;

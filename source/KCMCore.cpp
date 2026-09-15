@@ -571,7 +571,7 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	// @warning it must run **after Build**. A change names its row by position in the sorted list,
 	//   so running it before the order is settled attaches it to the wrong row.
 	bool16 cancelled = kFalse;
-	if (KCMGetCompareMode() == kKCMModeStory)
+	if (KCMModeUsesStoryRows(KCMGetCompareMode()))
 		KCMStoryDiffRun::Run(targetDB, sourceDB, &cancelled);
 	// A cancel leaves half a list: rows read so far carry their changes, the rest none. It is NOT
 	//   cleared here -- the caller answers a cancel by going back to Stop, and Stop's KCMDoClearMarks
@@ -972,7 +972,7 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		// ⚠**THE TEST IS `== kKCMModePixel`.** As `!storyMode` it claimed a page count for every
 		//   mode that was not Story, which the Resources mode is.
 		const KCMCompareMode reportMode = KCMGetCompareMode();
-		const bool16 storyMode = (reportMode == kKCMModeStory);
+		const bool16 storyMode = KCMModeUsesStoryRows(reportMode);
 		if (reportMode == kKCMModePixel)
 		{
 			report.Append("pages compared="); report.AppendNumber((int32)n);

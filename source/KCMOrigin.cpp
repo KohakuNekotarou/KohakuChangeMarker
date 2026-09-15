@@ -36,6 +36,7 @@
 #include "KCMComparisonRun.h"		// KCMChooseOriginPair
 #include "KCMExternalSource.h"		// KCMIsDbAlive
 #include "KCMOriginPeek.h"			// KCMOriginPeekDrop / KCMOriginPeekDescribe
+#include "KCMStoryTextImport.h"	// KCMReleaseStoryText - the edited words go with the origin
 #include "KCMRehydrate.h"			// KCMRehydrateRaw - the test instrument's import
 #include "KCMResourceBytes.h"
 #include "KCMOriginIdml.h"			// KCMInxToDesignmap - the snapshot is kept as an IDML's designmap
@@ -337,6 +338,9 @@ void KCMReleaseOrigin(bool16 deferPeekClose)
 	sDocDB = nil;
 	sDocName.Clear();
 	sTakenAt.Clear();
+	// ★THE EDITED WORDS GO WITH IT. They are only meaningful against this origin's copy, so holding
+	//   them past its release would leave text waiting to be poured into a copy that is gone.
+	KCMReleaseStoryText();
 	KCMOriginPeekDrop(deferPeekClose);	// the peek document stood on these bytes
 }
 

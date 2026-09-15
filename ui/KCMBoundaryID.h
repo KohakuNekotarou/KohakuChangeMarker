@@ -191,4 +191,25 @@ enum KCMCompareMode
 	kKCMModeImport = 3
 };
 
+// ⚠★★**EVERYTHING BELOW IS HIDDEN FROM ODFRC.** This header is included by KCMUI.fr, and the
+//   resource compiler reads C++ only as far as constants and enums - an inline function makes it
+//   stop with "Error looking for resource specification" (measured 2026-09-15, one build).
+#ifndef __ODFRC__
+
+/** Does this mode show the Story Edits rows - the paragraph and character comparison?
+
+	★★★**ONE QUESTION, ONE PLACE.** The Import mode IS the Story comparison, with a different
+	Source: the copy holds the words the reader edited outside InDesign. Twelve places asked
+	`== kKCMModeStory` before it existed, five of them deciding real behaviour, and a fourth mode
+	spelled `(a || b)` in five files is a fourth mode that works in four of them.
+	⚠**MEASURED 2026-09-15**: the first import reported nothing at all because ONE of those five -
+	 the line that runs the text diff - had not been taught the new mode. The rest of the machinery
+	 was working perfectly. */
+inline bool16 KCMModeUsesStoryRows(KCMCompareMode mode)
+{
+	return (mode == kKCMModeStory || mode == kKCMModeImport) ? kTrue : kFalse;
+}
+
+#endif // __ODFRC__
+
 #endif // __KCMBoundaryID_h__

@@ -27,6 +27,7 @@
 #include "KCMComparisonRun.h"		// KCMToggleStartStop - the start, through the one resolver
 #include "KCMCore.h"				// KCMActiveDocDB / KCMGetCompareMode / KCMSetCompareMode
 #include "KCMOrigin.h"				// the origin slot: taken for this mode, parked for the reader's
+#include "KCMRehydrate.h"			// KCMReadOriginUidLabel - the copy's stories carry the original UID
 #include "KCMParaText.h"			// ModelOffsetInParagraph / AppendUtf8
 #include "KCMTextDiff.h"			// ToCodePoints / Diff
 #include "KCMTextRead.h"			// ReadStory - the document, read the way the export read it
@@ -40,6 +41,11 @@ namespace
 	 (KCMStoryList.h's rule is about statics holding strings and rows.) */
 KCMCompareMode	sModeBeforeImport = kKCMModePixel;
 bool16			sInImportMode = kFalse;
+
+/** The words waiting to go into the next copy. ⚠A static holding PMStrings and std::strings, so it
+	has a line in the model's shutdown (KCMStoryList.h says what forgetting that costs). */
+KCMStoryTextSet	sHeld;
+bool16			sHolding = kFalse;
 
 /** The path of an IDFile as Windows spells it. (KCMStoryTextExport.cpp has the same four lines,
 	and for the same reason: the two files share nothing else.) */
@@ -518,16 +524,37 @@ bool16 KCMImportStoryText(const IDFile& folder, PMString& outMessage)
 		outMessage.Append(")");
 		return kFalse;
 	}
+	// 4. ★★★THE WORDS ARE HELD, NOT WRITTEN. They go into the COPY when the comparison makes one
+	//    (KCMRehydrate, the one place), and into the reader's document only through "Restore
+	//    Source Text", one change at a time. An import changes nothing by itself.
+	KCMHoldStoryText(set);
 	sModeBeforeImport = KCMGetCompareMode();
 	sInImportMode = kTrue;
 
-	InterfacePtr<IStoryList> stories(db, db->GetRootUID(), UseDefaultIID());
-	if (stories == nil)
-	{
-		outMessage = "import: the document has no stories";
-		outMessage.SetTranslatable(kFalse);
+	// 5. The fourth mode, and the comparison that shows the edited words against the document.
+	KCMSetCompareMode(kKCMModeImport);
+	KCMToggleStartStop();
+
+	outMessage = "import: ";
+	outMessage.SetTranslatable(kFalse);
+	outMessage.Append(readMessage);
+	outMessage.Append(" - your document is unchanged; Restore Source Text puts a change in, "
+					  "Stop Comparison ends the import");
+	return kTrue;
+}
+
+bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
+{
+	outMessage.Clear();
+	outMessage.SetTranslatable(kFalse);
+
+	const KCMStoryTextSet* const set = KCMHeldStoryText();
+	if (set == nil || set->fUids.empty() || copyDB == nil)
 		return kFalse;
-	}
+
+	InterfacePtr<IStoryList> stories(copyDB, copyDB->GetRootUID(), UseDefaultIID());
+	if (stories == nil)
+		return kFalse;
 
 	int32 storiesTouched = 0;
 	int32 edits = 0;
@@ -537,23 +564,28 @@ bool16 KCMImportStoryText(const IDFile& folder, PMString& outMessage)
 	PMString firstRefusal;
 	firstRefusal.SetTranslatable(kFalse);
 
-	// ★★★**ONE UNDO STEP FOR THE WHOLE IMPORT.** It is the reader's own document: Ctrl+Z has to
-	//   take back the import, not the last paragraph of it.
-	ICommandSequence* sequence = CmdUtils::BeginCommandSequence("KCMImportStoryText");
+	// ★ONE STEP. The copy has no window and nobody presses Ctrl+Z in it, but a sequence keeps the
+	//   writes from arriving as a hundred separate entries in a history the peek shares.
+	ICommandSequence* sequence = CmdUtils::BeginCommandSequence("KCMPourStoryText");
 	if (sequence != nil)
-		sequence->SetName(PMString("Import Story Text"));
+		sequence->SetName(PMString("Edited story text"));
 
 	const int32 count = stories->GetUserAccessibleStoryCount();
 	for (int32 s = 0; s < count; ++s)
 	{
 		const UIDRef storyRef = stories->GetNthUserAccessibleStoryUID(s);
 
-		// ★THE FILE NAMES ARE THIS DOCUMENT'S OWN UIDS, because the export read this document.
+		// ⚠**THE COPY'S UIDS ARE NEW ONES.** What pairs a file with a story is the label the
+		//   rehydration wrote, which carries the ORIGINAL uid - the one the file is named after.
+		UID original = kInvalidUID;
+		if (!KCMReadOriginUidLabel(copyDB, storyRef.GetUID(), original))
+			continue;
+
 		size_t which = 0;
 		bool16 found = kFalse;
-		for (size_t k = 0; k < set.fUids.size(); ++k)
+		for (size_t k = 0; k < set->fUids.size(); ++k)
 		{
-			if (set.fUids[k] == storyRef.GetUID())
+			if (set->fUids[k] == original)
 			{
 				which = k;
 				found = kTrue;
@@ -574,7 +606,7 @@ bool16 KCMImportStoryText(const IDFile& folder, PMString& outMessage)
 			continue;
 
 		std::vector<Place> places;
-		BuildPlaces(attrs, set.fStories[which], places);
+		BuildPlaces(attrs, set->fStories[which], places);
 
 		bool16 touched = kFalse;
 		for (size_t p = 0; p < places.size(); ++p)
@@ -632,23 +664,18 @@ bool16 KCMImportStoryText(const IDFile& folder, PMString& outMessage)
 			++storiesTouched;
 	}
 
-	// Stories in the folder that the document no longer has.
-	for (size_t k = 0; k < set.fUids.size(); ++k)
-	{
-		bool16 here = kFalse;
-		for (int32 s = 0; s < count && !here; ++s)
-			here = (stories->GetNthUserAccessibleStoryUID(s).GetUID() == set.fUids[k]) ? kTrue : kFalse;
-		if (!here)
-			++unmatched;
-	}
+	// Files whose story the copy does not carry - counted by elimination, since the pairing above
+	// is the only place that can tell.
+	unmatched = static_cast<int32>(set->fUids.size()) - storiesTouched;
+	if (unmatched < 0)
+		unmatched = 0;
 
 	if (sequence != nil)
 		CmdUtils::EndCommandSequence(sequence);
 
-	outMessage = "import: ";
+	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
-	outMessage.Append(readMessage);
-	AppendCount(outMessage, " - ", edits, " change(s) written");
+	AppendCount(outMessage, "", edits, " change(s) poured into the copy");
 	AppendCount(outMessage, " in ", storiesTouched, " story(ies)");
 	if (refusedPlaces > 0)
 		AppendCount(outMessage, ", ", refusedPlaces, " place(s) refused");
@@ -663,12 +690,24 @@ bool16 KCMImportStoryText(const IDFile& folder, PMString& outMessage)
 		outMessage.Append(")");
 	}
 
-	// 5. The fourth mode, and the comparison that shows what just went in.
-	KCMSetCompareMode(kKCMModeImport);
-	KCMToggleStartStop();
-	outMessage.Append(" - Stop Comparison ends the import");
-
 	return (edits > 0) ? kTrue : kFalse;
+}
+
+const KCMStoryTextSet* KCMHeldStoryText()
+{
+	return sHolding ? &sHeld : nil;
+}
+
+void KCMHoldStoryText(const KCMStoryTextSet& set)
+{
+	sHeld = set;
+	sHolding = kTrue;
+}
+
+void KCMReleaseStoryText()
+{
+	sHeld = KCMStoryTextSet();
+	sHolding = kFalse;
 }
 
 bool16 KCMInImportMode()

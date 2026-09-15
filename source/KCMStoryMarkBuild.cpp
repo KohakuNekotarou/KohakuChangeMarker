@@ -265,7 +265,7 @@ void KCMStoryMarkRefresh()
 	KCMStoryMarkDocs docs;
 
 	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-	if (compare != nil && compare->IsArmed() && compare->GetCompareMode() == kKCMModeStory)
+	if (compare != nil && compare->IsArmed() && KCMModeUsesStoryRows(compare->GetCompareMode()))
 	{
 		// @warning **the opacity is no longer read here.** It used to be picked up in this line and
 		//   handed to the standing-mark call, which meant the jump's flash -- a different caller --

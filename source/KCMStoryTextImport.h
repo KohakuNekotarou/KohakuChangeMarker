@@ -8,16 +8,20 @@
 //  outside InDesign - in an editor, in a browser, or by handing the file to somebody else - and
 //  now hands the folder back. This file reads it and writes those words into the document.
 //
-//  ★★★**IMPORTING CHANGES THE DOCUMENT. THAT IS THE DECISION** (the user's, 2026-09-15, after
-//  trying it the other way round): "read it in and everything is changed at that point". The
-//  design's first shape poured the words into the task-start COPY and let the reader put them in
-//  one at a time; that is recorded in the spec along with why it was dropped.
-//  ⚠**SO THE WHOLE IMPORT IS ONE UNDO STEP.** It is their document, and Ctrl+Z has to take back
-//    the import rather than the last paragraph of it.
+//  ★★★**AN IMPORT DOES NOT CHANGE THE DOCUMENT** (the user's decision, 2026-09-15 - taken, tried
+//  the other way round on a real document, and taken again). The edited words go into the
+//  task-start COPY; the Import mode shows them as ordinary comparison rows; "Restore Source Text"
+//  is what puts any of them into the reader's own document, one at a time, through the door that
+//  already exists and already refuses what it cannot write.
 //
-//  ★**THE FILE NAMES ARE THE DOCUMENT'S OWN STORY UIDS**, because the export read that document:
-//  no labels, no copy, no pairing table. A file whose uid is not in the document is counted and
-//  reported, never guessed at.
+//  ★★**THE IMPORT MODE IS WHAT MAKES THAT WORK**, and not merely a label. The Story mode's cheap
+//  sieve asks "has the document changed since the task start?" and skips the stories whose counter
+//  has not moved - which is EVERY story in an import, because what changed is the copy. Measured
+//  2026-09-15: a word edited in the file went into the copy and the Story comparison reported
+//  nothing at all. A mode of its own is a mode that can decline that sieve (KCMStoryStamp.cpp).
+//
+//  ★**THE FILE NAMES ARE THE DOCUMENT'S OWN STORY UIDS**, because the export read that document.
+//  The copy's UIDs are new ones, so the pairing goes through the copy's KcmOriginUid label.
 //
 //========================================================================================
 #ifndef __KCMStoryTextImport_h__
@@ -56,8 +60,31 @@ struct KCMStoryTextSet
     @param whyNot what went wrong - filled even when this answers kTrue, when some file was skipped. */
 bool16 KCMReadStoryTextFolder(const IDFile& folder, KCMStoryTextSet& out, PMString& whyNot);
 
-/** "Import Story Text..." from end to end: read the folder, then write it into the active document
-    as ONE undo step.
+/** The set held for the import mode, or nil when none is held. */
+const KCMStoryTextSet* KCMHeldStoryText();
+
+/** Hold a copy of `set`, dropping whatever was held before. */
+void KCMHoldStoryText(const KCMStoryTextSet& set);
+
+/** Drop it. Called by KCMReleaseOrigin - the two belong to each other - and by the model's
+    shutdown, because this static holds PMStrings and std::strings (KCMStoryList.h states the rule
+    and what forgetting it costs). */
+void KCMReleaseStoryText();
+
+/** Pour the held words into `copyDB` - a rehydrated task-start copy, never a real document.
+
+    ★★★**THE COPY, AND ONLY EVER THE COPY** (the user's decision, 2026-09-15, kept after trying the
+      other way): an import does not change the reader's document. The words go into the copy, the
+      Import mode shows them as ordinary rows, and "Restore Source Text" is what puts any of them
+      in, one at a time.
+    ★**THE STORIES ARE PAIRED BY THE ORIGINAL UID**, read from the copy's own KcmOriginUid label -
+      the copy's UIDs are new ones, so the file names cannot be matched against them directly.
+
+    @return kFalse when nothing at all could be applied. */
+bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage);
+
+/** "Import Story Text..." from end to end: read the folder, take the document's state as this
+    mode's origin, hold the words, and start the comparison in the Import mode.
 
     ⚠**ONLY CHANGES INSIDE A PARAGRAPH ARE APPLIED, so far.** A place whose paragraph COUNT differs
       is refused with a reason rather than guessed at: adding and removing paragraphs needs the end
