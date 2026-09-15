@@ -20,7 +20,9 @@
 #include "VCPlugInHeaders.h"
 
 #include "KCMStoryHtml.h"
+#include "KCMTextDiff.h"	// ToCodePoints - the ONE place that knows how to walk UTF-8
 
+#include <algorithm>
 #include <cstdio>
 
 namespace KCMStoryHtml
@@ -167,6 +169,120 @@ void WriteText(const std::string& text, std::string& out)
 	}
 }
 
+/** How many code points are in this UTF-8 string.
+
+	★**ASKED OF KCMTextDiff, NEVER COUNTED HERE.** KCMAttrSpan's offsets are code points - its own
+	comment is the contract - and the differ already owns the walk that turns bytes into them. A
+	second walker in this file would be a second place to be wrong about a lead byte, and the two
+	would disagree only on the documents nobody tests with. */
+int32 CountCodePoints(const std::string& utf8)
+{
+	std::vector<int32> cps;
+	KCMTextDiff::ToCodePoints(utf8, &cps, nil);
+	return static_cast<int32>(cps.size());
+}
+
+bool SpanStartsEarlier(const KCMAttrSpan& a, const KCMAttrSpan& b)
+{
+	return a.fStart < b.fStart;
+}
+
+/** The byte where code point `cp` begins; the string's length once cp is past the end. */
+size_t ByteAtCodePoint(const std::string& text, const std::vector<int32>& byteAt, int32 cp)
+{
+	if (cp <= 0)
+		return 0;
+	if (cp >= static_cast<int32>(byteAt.size()))
+		return text.size();
+	return static_cast<size_t>(byteAt[static_cast<size_t>(cp)]);
+}
+
+/*	WriteParaHtml
+	One paragraph's text with its readings standing over it.
+
+	★★**THE SHAPE OF THE <rt> IS THE MONO/GROUP SETTING.** One reading over the whole base is a
+	GROUP ruby; a reading per character is MONO, and it is written as ONE <ruby> holding the base
+	split into pieces with an <rt> after each. That is KCM's own spelling and NOT Adobe's - measured
+	2026-09-15, Adobe's own HTML export drops the difference entirely (both come out <ruby><rt>,
+	with the same generated class). It is carried because turning one into the other IS a change
+	even when every reading stays the same, and the panel says which it now is.
+
+	⚠**A LONE MONO SPAN COMES BACK AS GROUP.** One character with one reading is written the same
+	 way either way, so the reader cannot tell - and does not guess, it answers GROUP. Whoever
+	 applies the result keeps the setting the document already had (the design says so, 3-3).
+*/
+void WriteParaHtml(const Para& p, std::string& out)
+{
+	std::vector<int32> byteAt;
+	KCMTextDiff::ToCodePoints(p.fText, nil, &byteAt);
+	const int32 cpCount = static_cast<int32>(byteAt.size());
+
+	std::vector<KCMAttrSpan> spans = p.fRuby;
+	std::sort(spans.begin(), spans.end(), SpanStartsEarlier);
+
+	int32 cp = 0;
+	size_t next = 0;
+	while (cp < cpCount || next < spans.size())
+	{
+		// A span measuring nothing is not a span, and one that ends behind us cannot be placed:
+		// both are dropped rather than guessed at (KCMParaText.h applies the same rule to a
+		// reading with no text under it).
+		if (next < spans.size()
+			&& (spans[next].fLen <= 0 || spans[next].fStart + spans[next].fLen <= cp))
+		{
+			++next;
+			continue;
+		}
+
+		if (next < spans.size() && spans[next].fStart <= cp)
+		{
+			// ---- the run: this span, plus every MONO one that carries straight on from it -----
+			size_t last = next;
+			if (spans[next].fGroup == kFalse)
+			{
+				int32 end = spans[next].fStart + spans[next].fLen;
+				while (last + 1 < spans.size()
+					   && spans[last + 1].fGroup == kFalse
+					   && spans[last + 1].fLen > 0
+					   && spans[last + 1].fStart == end)
+				{
+					++last;
+					end = spans[last].fStart + spans[last].fLen;
+				}
+			}
+
+			out += "<ruby>";
+			for (size_t k = next; k <= last; ++k)
+			{
+				const size_t from = ByteAtCodePoint(p.fText, byteAt, spans[k].fStart);
+				const size_t to = ByteAtCodePoint(p.fText, byteAt, spans[k].fStart + spans[k].fLen);
+				if (to > from)
+					WriteText(p.fText.substr(from, to - from), out);
+				out += "<rt>";
+				WriteText(spans[k].fValue, out);
+				out += "</rt>";
+			}
+			out += "</ruby>";
+
+			cp = spans[last].fStart + spans[last].fLen;
+			next = last + 1;
+			continue;
+		}
+
+		// ---- plain text, as far as the next reading (or the end) ------------------------------
+		const int32 stop = (next < spans.size() && spans[next].fStart > cp) ? spans[next].fStart
+																		   : cpCount;
+		if (stop <= cp)
+			break;					// nothing left to write; a malformed span cannot loop us
+
+		const size_t from = ByteAtCodePoint(p.fText, byteAt, cp);
+		const size_t to = ByteAtCodePoint(p.fText, byteAt, stop);
+		if (to > from)
+			WriteText(p.fText.substr(from, to - from), out);
+		cp = stop;
+	}
+}
+
 }	// anonymous namespace
 
 bool16 IsInvisible(int32 cp)
@@ -225,7 +341,7 @@ void Write(const Story& s, int32 uid, std::string& out)
 	for (size_t i = 0; i < s.fBody.size(); ++i)
 	{
 		out += "<p>";
-		WriteText(s.fBody[i].fText, out);
+		WriteParaHtml(s.fBody[i], out);
 		out += "</p>\r\n";
 	}
 
@@ -259,6 +375,7 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 	bool16 inBody = kFalse;
 	bool16 inPara = kFalse;
 	std::string para;
+	KCMAttrSpanList paraRuby;		// the readings met so far, in this paragraph's own count
 
 	size_t i = 0;
 	while (i < s.size())
@@ -321,6 +438,7 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					}
 					inPara = kTrue;
 					para.clear();
+					paraRuby.clear();
 				}
 				else
 				{
@@ -331,11 +449,146 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					}
 					Para p;
 					p.fText = para;
+					p.fRuby = paraRuby;
 					out.fBody.push_back(p);
 					inPara = kFalse;
 					para.clear();
+					paraRuby.clear();
 				}
 				i = after;
+				continue;
+			}
+
+			if (name == "ruby")
+			{
+				if (!inBody || !inPara)
+				{
+					whyNot = "a <ruby> stands outside a paragraph";
+					return kFalse;
+				}
+				if (closing)
+				{
+					whyNot = "a </ruby> closes a reading that never began";
+					return kFalse;
+				}
+
+				i = after;
+				KCMAttrSpanList made;
+				std::string base;
+				bool16 closed = kFalse;
+
+				while (i < s.size())
+				{
+					if (s[i] == '<' && i + 1 < s.size() && s[i + 1] == '<' && IsOurTagAt(s, i + 1))
+					{
+						base += '<';			// the one escape, inside a reading too
+						i += 2;
+						continue;
+					}
+					if (s[i] != '<')
+					{
+						base += s[i];
+						++i;
+						continue;
+					}
+
+					std::string inner;
+					bool16 innerClosing = kFalse;
+					size_t innerAfter = 0;
+					if (!TagAt(s, i, inner, innerClosing, innerAfter))
+					{
+						base += '<';			// "< 2" inside a base is a character, as anywhere
+						++i;
+						continue;
+					}
+
+					if (inner == "ruby" && innerClosing)
+					{
+						para += base;			// a trailing base with no reading is still text
+						base.clear();
+						i = innerAfter;
+						closed = kTrue;
+						break;
+					}
+
+					if (inner == "rt" && !innerClosing)
+					{
+						// ★THE BASE BELONGS TO THE READING THAT FOLLOWS IT, so where it stands is
+						//   measured before it joins the paragraph.
+						const int32 baseStart = CountCodePoints(para);
+						para += base;
+						const int32 baseLen = CountCodePoints(base);
+						base.clear();
+						i = innerAfter;
+
+						std::string reading;
+						bool16 rtClosed = kFalse;
+						while (i < s.size())
+						{
+							if (s[i] == '<' && i + 1 < s.size() && s[i + 1] == '<' && IsOurTagAt(s, i + 1))
+							{
+								reading += '<';
+								i += 2;
+								continue;
+							}
+							if (s[i] != '<')
+							{
+								reading += s[i];
+								++i;
+								continue;
+							}
+
+							std::string rtName;
+							bool16 rtClosing = kFalse;
+							size_t rtAfter = 0;
+							if (!TagAt(s, i, rtName, rtClosing, rtAfter))
+							{
+								reading += '<';
+								++i;
+								continue;
+							}
+							if (rtName == "rt" && rtClosing)
+							{
+								i = rtAfter;
+								rtClosed = kTrue;
+								break;
+							}
+
+							whyNot = "the <" + rtName + "> element cannot stand inside an <rt>";
+							return kFalse;
+						}
+
+						if (!rtClosed)
+						{
+							whyNot = "an <rt> was never closed";
+							return kFalse;
+						}
+
+						// ⚠AN EMPTY READING IS NO READING, and one over no characters cannot be
+						//   placed - KCMParaText.h applies both rules to fValue and fLen. The base
+						//   text stays in the paragraph either way: dropping the reading must never
+						//   drop the words.
+						if (baseLen > 0 && !reading.empty())
+							made.push_back(KCMAttrSpan(baseStart, baseLen, reading, kFalse));
+						continue;
+					}
+
+					whyNot = "the <" + inner + "> element cannot stand inside a <ruby>";
+					return kFalse;
+				}
+
+				if (!closed)
+				{
+					whyNot = "a <ruby> was never closed";
+					return kFalse;
+				}
+
+				// ★ONE READING IS A GROUP, SEVERAL ARE MONO - the split IS the setting, and
+				//   WriteParaHtml writes it the same way round.
+				if (made.size() == 1)
+					made[0].fGroup = kTrue;
+				for (size_t k = 0; k < made.size(); ++k)
+					paraRuby.push_back(made[k]);
 				continue;
 			}
 
