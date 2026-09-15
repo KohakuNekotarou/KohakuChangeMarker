@@ -465,19 +465,47 @@ public:
 		return kTrue;
 	}
 
+	// ***** IS THIS REPLACED CHANGE STILL STANDING AS REPLACED? *****
+	// ★★★The question is asked of the DOCUMENT, never of a flag: the story's text change counter
+	//   now, against the counter as it stood when the write happened. Undo takes that counter
+	//   back, so a replaced row stops being drawn as replaced the moment the reader presses
+	//   Ctrl+Z, and a redo brings it back - with no undo-specific code anywhere in the plug-in
+	//   ([[command-history-and-undo-stack]]: the counter is undone along with the text).
+	// ⚠It also answers kFalse after an ORDINARY edit, which is right for a different reason: the
+	//   row's positions were named against a text that has since moved, so what it is showing
+	//   can no longer be trusted. "Refresh Story Comparison" is the way back.
+	static bool16 StillReplaced(const KCMStoryRow& row, const KCMStoryChange& change)
+	{
+		if (change.fReplacedCount == 0)
+			return kFalse;		// never replaced
+
+		IDataBase* const targetDB = KCMArmedTargetDB();
+		if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
+			return kFalse;
+
+		// Cheap enough to ask every time: it is an interface lookup and a member read, and the
+		// alternative - a cache - would be a second copy of a number whose whole value is that
+		// it is the document's own ([[lean-processing-preference]] does not buy staleness).
+		return (KCMStoryDiffRun::TextCountOf(UIDRef(targetDB, row.fStoryUID)) == change.fReplacedCount)
+			   ? kTrue : kFalse;
+	}
+
 	virtual int32	GetChangeCount(int32 nth)
 	{
-		const KCMStoryRow* row = KCMStoryList::GetRow(nth);
-		return (row != nil) ? static_cast<int32>(row->fChanges.size()) : 0;
+		// The live diff's changes AND the ones already replaced - one index space, defined in
+		// KCMStoryList and asked for the same way by every question below.
+		return KCMStoryList::GetMergedChangeCount(nth);
 	}
 
 	virtual bool16	GetChange(int32 nth, int32 which, Change& out)
 	{
+		bool16 isReplaced = kFalse;
+		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which, isReplaced);
 		const KCMStoryRow* row = KCMStoryList::GetRow(nth);
-		if (row == nil || which < 0 || which >= static_cast<int32>(row->fChanges.size()))
+		if (found == nil || row == nil)
 			return kFalse;
 
-		const KCMStoryChange& change = row->fChanges[which];
+		const KCMStoryChange& change = *found;
 		out.fKind		= static_cast<int32>(change.fKind);
 		out.fWhat		= static_cast<int32>(change.fWhat);
 		out.fTargetStart = change.fTargetStart;
@@ -495,6 +523,57 @@ public:
 		out.fRubyGroup		= change.fRubyGroup;	// how it is SET - the readings alone cannot say
 		out.fOtherRubyGroup	= change.fOtherRubyGroup;
 		out.fAttrKind		= static_cast<int32>(change.fAttrKind);
+
+		// ---- the Import mode: which of its two states this row is in ---------------------------
+		//
+		// ★★**THE MODEL DECIDES WHICH FACE TO SHOW, NOT THE PANEL.** A replaced change carries the
+		//   words as they stand now AND as they stood before, and which of the two belongs in
+		//   fText* is a question about the document's counter - which is this side's business.
+		//   The cell then draws whatever it is handed, exactly as it always has.
+		out.fReplaced		= (isReplaced && StillReplaced(*row, change)) ? kTrue : kFalse;
+		out.fBeforeTextPre	= change.fBeforeTextPre;
+		out.fBeforeText		= change.fBeforeText;
+		out.fBeforeTextPost	= change.fBeforeTextPost;
+
+		if (isReplaced)
+		{
+			if (out.fReplaced)
+			{
+				// As it stands: the source's words are in the story now, and the range is where
+				// the write left them.
+				out.fTargetStart	= change.fReplacedStart;
+				out.fTargetEnd		= change.fReplacedEnd;
+				out.fTextPre		= change.fReplacedTextPre;
+				out.fText			= change.fReplacedText;
+				out.fTextPost		= change.fReplacedTextPost;
+
+				// ⚠**AND THE READING, FOR THE SAME REASON AS THE WORDS.** A ruby row draws fRuby
+				//   over its base text; after the write, what is over those characters is the
+				//   SOURCE's reading. Leaving fRuby alone would draw the old reading above text
+				//   that no longer carries it - the row lying about the document it describes.
+				//   (Empty when the ruby was taken off, which draws an empty upper line: right,
+				//   because that is what the story now has.)
+				out.fRuby			= change.fOtherRuby;
+				out.fRubyGroup		= change.fOtherRubyGroup;
+
+				// ⚠**AND THE TWO SIDES TRADE PLACES.** fOtherRuby is "the side the row is not
+				//   showing", and for a replaced row that is no longer the source - the source's
+				//   reading is the one now in the document. What the message area has to show is
+				//   the reading that was there BEFORE, which is the target's.
+				out.fOtherRuby		= change.fRuby;
+				out.fOtherRubyGroup	= change.fRubyGroup;
+			}
+			else
+			{
+				// Undone (or the story was edited): the row goes back to the change it was, so
+				// that what the reader sees and what the story holds agree again.
+				out.fTargetStart	= change.fBeforeStart;
+				out.fTargetEnd		= change.fBeforeEnd;
+				out.fTextPre		= change.fBeforeTextPre;
+				out.fText			= change.fBeforeText;
+				out.fTextPost		= change.fBeforeTextPost;
+			}
+		}
 		return kTrue;
 	}
 
@@ -504,25 +583,30 @@ public:
 		// tall a row is, and a row it cannot identify gets the ordinary height - the same shape the
 		// list has had all along. (GetChange returns kFalse for this case because its caller is
 		// about to DRAW the change and must not draw a stale one.)
-		const KCMStoryRow* row = KCMStoryList::GetRow(nth);
-		if (row == nil || which < 0 || which >= static_cast<int32>(row->fChanges.size()))
+		bool16 isReplaced = kFalse;
+		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which, isReplaced);
+		if (found == nil)
 			return static_cast<int32>(kKCMStoryAttrNone);
 
-		return static_cast<int32>(row->fChanges[which].fAttrKind);
+		return static_cast<int32>(found->fAttrKind);
 	}
 
 	virtual bool16	GetChangeHasAttrValue(int32 nth, int32 which)
 	{
 		// Same out-of-range rule as the kind above, and for the same caller: an unknown row gets
 		// the ordinary one-line height rather than an error.
-		const KCMStoryRow* row = KCMStoryList::GetRow(nth);
-		if (row == nil || which < 0 || which >= static_cast<int32>(row->fChanges.size()))
+		bool16 isReplaced = kFalse;
+		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which, isReplaced);
+		if (found == nil)
 			return kFalse;
 
 		// ⚠THE SIDE THE ROW SHOWS, which is fRuby - not fOtherRuby. The list shows the newer
 		//   version, so an attribute that was removed leaves this empty and the row is drawn on one
 		//   line; the older side's value is still read, but it belongs to the message area.
-		return row->fChanges[which].fRuby.IsEmpty() ? kFalse : kTrue;
+		// ★A REPLACED RUBY ROW IS STILL A TWO-LINE ROW: its reading is the one that went in, which
+		//   is the source's, and fRuby was copied from the change it was made out of. Asking the
+		//   same field of both states keeps the row from changing height when it is taken in.
+		return found->fRuby.IsEmpty() ? kFalse : kTrue;
 	}
 
 	virtual int32	RefreshRow(int32 nth)
@@ -554,7 +638,18 @@ public:
 		// whole tree, which costs the reader their selection - so a refresh that could not be
 		// done leaves the list alone rather than shaking it for no result.
 		if (count >= 0)
+		{
+			// ★★**A REFRESH IS A FRESH START** (the user's call, 2026-09-15), so the changes the
+			//   Import mode was keeping on this row as already replaced go with it. The row is
+			//   now whatever comparing the two versions says it is, and nothing besides.
+			//   ⚠Inside the same test as the notification on purpose: a refresh that could not
+			//   run must not quietly throw away the reader's record of what they took in.
+			//   ★**THE OTHER CALLER OF RunOne DOES THE OPPOSITE** - KCMStoryRestore adds one here
+			//   - which is why the two are worth reading together. Both were found by grepping
+			//   for RunOne( rather than by remembering.
+			KCMStoryList::ClearReplacedChanges(nth);
 			KCMNotify(kKCMStoryEditsRebuiltMessage);
+		}
 
 		return count;
 	}

@@ -90,9 +90,15 @@ bool16 StashedChange(IKCMStoryEditsFacade::Change& out)
 	if (gMenuRow < 0 || gMenuChange < 0)
 		return kFalse;
 
-	// ★THE STORY MODE ONLY. The list is shared with the Resources mode, whose child rows carry
-	//   the same node class and index shape but are not text changes of a story.
-	if (Utils<IKCMCompareFacade>()->GetCompareMode() != kKCMModeStory)
+	// ★THE MODES WHOSE CHILD ROWS ARE TEXT CHANGES. The list is shared with the Resources mode,
+	//   whose child rows carry the same node class and index shape but are not changes in a
+	//   story's words at all.
+	// ⚠★★**AND THE IMPORT MODE IS ONE OF THEM** (2026-09-15). This read `!= kKCMModeStory` until
+	//   today, which quietly shut the whole child-row menu in the Import mode - the mode whose
+	//   entire purpose is to take those changes in one at a time. The question is asked in one
+	//   place for exactly this reason (KCMModeUsesStoryRows, in the boundary header), and this
+	//   was the one caller still spelling it out by hand.
+	if (!KCMModeUsesStoryRows(Utils<IKCMCompareFacade>()->GetCompareMode()))
 		return kFalse;
 
 	return Utils<IKCMStoryEditsFacade>()->GetChange(gMenuRow, gMenuChange, out);
@@ -200,6 +206,13 @@ bool16 KCMChangeRowCanCopySource()
 	if (!StashedChange(change))
 		return kFalse;
 
+	// ★AND NOT ON A CHANGE ALREADY TAKEN IN (the Import mode, 2026-09-15). The source's words are
+	//   in the document now and the ROW is showing them, so "copy the source text" would put on
+	//   the clipboard the very string the reader is looking at - an item that appears to offer
+	//   something and hands back what is already there.
+	if (change.fReplaced)
+		return kFalse;
+
 	// ★GREYED WHEN THERE IS NOTHING TO COPY - an insertion, a ruby added, a kenten or footnote
 	//   row - rather than offered and then found empty. An item that copies an empty string
 	//   would clear the clipboard for nothing the reader asked for.
@@ -249,11 +262,37 @@ bool16 KCMChangeRowCanRestore()
 	IKCMStoryEditsFacade::Change change;
 	if (!StashedChange(change))
 		return kFalse;
+
+	// ★NOT IN THE IMPORT MODE, where the same command is offered under its own name and
+	//   ActionID ("Import Source Text", KCMChangeRowCanImport below). Exactly one of the two is
+	//   ever live, so the menu shows one name and never both.
+	if (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeImport)
+		return kFalse;
+
 	// Every kind: words, ruby and kenten (KCMStoryRestore.h). An insertion IS restorable - the
 	// words come out again - so, unlike the copy item, an empty older side does not grey this
 	// one. What cannot be written back (a custom kenten mark, an attribute whose paragraph's
 	// words also changed) is refused by the model with a reason on the status line.
 	return kTrue;
+}
+
+bool16 KCMChangeRowCanImport()
+{
+	IKCMStoryEditsFacade::Change change;
+	if (!StashedChange(change))
+		return kFalse;
+
+	// The Import mode's half of the pair above.
+	if (Utils<IKCMCompareFacade>()->GetCompareMode() != kKCMModeImport)
+		return kFalse;
+
+	// ★A CHANGE ALREADY TAKEN IN CANNOT BE TAKEN IN AGAIN. Its row is kept so that the reader can
+	//   see what they did - not so that they can do it twice over words that already match.
+	// ⚠fReplaced is the model's answer about the DOCUMENT (the story's counter has not moved
+	//   since the write), so after an undo this goes live again and the model refuses with its
+	//   own reason. Whether that refusal should instead be a greyed item is a thing to look at on
+	//   screen; both halves of it are one line.
+	return change.fReplaced ? kFalse : kTrue;
 }
 
 bool16 KCMChangeRowRestore()

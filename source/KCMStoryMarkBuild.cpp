@@ -183,6 +183,16 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 			if (!edits->GetChange(n, i, change))
 				continue;
 
+			// ★★**A CHANGE THE READER HAS TAKEN IN IS NOT A DIFFERENCE ANY MORE** (the Import
+			//   mode, 2026-09-15). Its row stays in the list so that they can see what they did -
+			//   that is the list's job - but these marks say "the two versions differ HERE", and
+			//   at that place they no longer do. Lighting it would point at text that now matches
+			//   the source, which is the one thing a comparison mark must never do.
+			//   ⚠It comes back on its own after an undo: fReplaced is the model comparing the
+			//   story's counter with the one it recorded, so the mark returns with the old words.
+			if (change.fReplaced)
+				continue;
+
 			TextIndex from = 0;
 			TextIndex to = 0;
 			if (useSourceDocument)

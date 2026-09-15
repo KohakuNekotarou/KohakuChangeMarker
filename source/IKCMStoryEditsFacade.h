@@ -257,10 +257,33 @@ public:
 		//   only kind reported; that is exactly the state in which a stand-in survives unnoticed.
 		int32		fAttrKind;
 
+		// ---- the Import mode's replaced changes (2026-09-15) --------------------------------
+		//
+		// ★**Added at the END of the struct.** The UI reads Change BY VALUE, so both halves have
+		//   to be built together whenever it changes, and a field inserted in the middle lands
+		//   the other side's reads on the wrong bytes - the same accident as inserting a virtual
+		//   into a facade ([[facade-vtable-slot-append-only]]), wearing different clothes.
+		//   ⚠KIDMCP reads this struct too. Three plug-ins are rebuilt together or none is.
+
+		/** Whether this change is being SHOWN as replaced right now.
+
+			★**IT IS NOT STORED ANYWHERE** - the model works it out by asking whether the story's
+			text change counter still stands where it stood when the write happened. An undo
+			takes that counter back, so this goes kFalse on its own and the row draws itself as
+			it was; a redo brings it back. ⇒ The panel never has to know that undo exists. */
+		bool16		fReplaced;
+
+		/** The three pieces AS THEY STOOD BEFORE the replacement - what the message area shows
+			for a replaced row, in place of the source text (which is now IN the row).
+			Meaningless while fReplaced is kFalse. */
+		PMString	fBeforeTextPre;
+		PMString	fBeforeText;
+		PMString	fBeforeTextPost;
+
 		Change()
 			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),
 			  fSourceStart(0), fSourceEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
-			  fAttrKind(0) {}
+			  fAttrKind(0), fReplaced(kFalse) {}
 	};
 
 	/** How many differences row nth holds.

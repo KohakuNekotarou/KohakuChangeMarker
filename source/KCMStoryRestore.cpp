@@ -215,8 +215,15 @@ class RestoreSequence
 public:
 	RestoreSequence() : fSequence(CmdUtils::BeginCommandSequence("KCMRestoreChange"))
 	{
+		// ★THE NAME THE READER PRESSED, because this one goes on the Edit menu beside Undo. In the
+		//   Import mode the source is the copy their own edited words were poured into, so the
+		//   item there is called "Import Source Text" (the user, 2026-09-15: "taking it in and
+		//   swapping it over is a replacement") - and an undo step calling itself something the
+		//   panel never offered would be the plug-in disagreeing with itself.
 		if (fSequence != nil)
-			fSequence->SetName(Ascii("Restore Source Text"));
+			fSequence->SetName(KCMGetCompareMode() == kKCMModeImport
+							   ? Ascii("Import Source Text")
+							   : Ascii("Restore Source Text"));
 	}
 	~RestoreSequence()
 	{
@@ -236,17 +243,55 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
 
+	// ★★★**THE SAME INDEX SPACE THE PANEL COUNTS IN** (KCMStoryList::GetMergedChange). The menu
+	//   hands over the child's position in the tree, and in the Import mode that tree holds the
+	//   live changes AND the ones already replaced. Reading fChanges[which] here would name a
+	//   DIFFERENT change as soon as one replaced row sat above it - and it would not fail loudly,
+	//   it would write the wrong words into the document.
+	bool16 alreadyReplaced = kFalse;
+	const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which, alreadyReplaced);
 	const KCMStoryRow* row = KCMStoryList::GetRow(nth);
-	if (row == nil || which < 0 || which >= static_cast<int32>(row->fChanges.size()))
+	if (found == nil || row == nil)
 	{
 		outMessage = Ascii("restore: no such change (the list was rebuilt - right-click the row again).");
 		return kFalse;
 	}
+	if (alreadyReplaced)
+	{
+		// The row is kept in the list precisely so the reader can see what they took in; taking
+		// it in twice would write the same words over words that already match them. ⚠Refused
+		// even when an undo has put the older text back: the positions on every OTHER row were
+		// named against the text as it stood after the write, so the list as a whole needs
+		// comparing again before anything more is written into this story.
+		outMessage = Ascii("restore: this change has already been taken in - "
+						   "run Refresh Story Comparison on its row to start over.");
+		return kFalse;
+	}
 	// A copy: the row is rebuilt below, and the reference above would then point into freed memory.
-	const KCMStoryChange change = row->fChanges[which];
+	const KCMStoryChange change = *found;
 	const UID storyUID = row->fStoryUID;
 	const uint32 countThen = row->fTargetTextCount;
 	row = nil;
+
+	// ***** THE BEFORE-STATE, TAKEN BEFORE ANYTHING IS WRITTEN. *****
+	// In the Import mode this change stays in the list after the write, and its row has to be
+	// drawable both ways: as it stands now, and as it stood before - because Ctrl+Z puts the text
+	// back and the row follows it there. This is the only moment the before-state can be read;
+	// afterwards the words it names are no longer in the story.
+	// ★**THE AFTER-PIECES ARE ALREADY IN HAND** and are not cut again: a replacement changes the
+	//   CHANGED PART and leaves the context on either side untouched, so "after" is the row's own
+	//   pre + the SOURCE's middle + the row's own post. fOtherText is exactly the words about to
+	//   go in, cut and marked up by the same pass that made fText (KCMStoryDiffRun's Slice), so
+	//   the two states are drawn by one rule rather than by two that could drift.
+	KCMStoryChange done  = change;
+	done.fBeforeStart    = change.fTargetStart;
+	done.fBeforeEnd      = change.fTargetEnd;
+	done.fBeforeTextPre  = change.fTextPre;
+	done.fBeforeText     = change.fText;
+	done.fBeforeTextPost = change.fTextPost;
+	done.fReplacedTextPre  = change.fTextPre;
+	done.fReplacedText     = change.fOtherText;
+	done.fReplacedTextPost = change.fTextPost;
 
 	IDataBase* const targetDB = KCMArmedTargetDB();
 	if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
@@ -337,6 +382,22 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 				return kFalse;
 			}
 		}
+		// Where the replacement now stands. ⚠**THE START DID NOT MOVE, THE END DID**: what went in
+		//   is as long as the source's side of the change, which is not the length that came out.
+		//   WideString counts code points, the same unit TextIndex counts in
+		//   ([[textindex-counts-code-points]]), so no conversion belongs here.
+		done.fReplacedStart = change.fTargetStart;
+		done.fReplacedEnd   = change.fTargetStart + static_cast<int32>(words->Length());
+
+		// ★★★**AND EVERYTHING ALREADY REPLACED FURTHER DOWN THE STORY SLIDES.** The live changes
+		//   are about to be named afresh by RunOne, but a change that has already been replaced
+		//   is not in that comparison any more - nothing else would move it. Replacing three
+		//   words with five pushes every later replaced row along by two, and a row whose
+		//   position quietly rots is a row whose jump lands in the wrong place.
+		//   ⚠BEFORE the new one is added, so that it is not shifted by its own write.
+		KCMStoryList::ShiftReplacedChanges(nth, change.fTargetStart,
+										   static_cast<int32>(words->Length()) - targetCount);
+
 		if (words->Length() > 0)
 		{
 			outMessage = Ascii("Restored ");
@@ -424,11 +485,42 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 			outMessage = Ascii("restore: the attribute could not be written.");
 			return kFalse;
 		}
+
+		// An attribute does not change how many characters there are, so the range is the one the
+		// diff named. ⚠A ruby whose span shrank writes its reading over fewer characters than the
+		// row covers; the row still points at where the change happened, which is what a jump and
+		// the cell's highlight are for.
+		done.fReplacedStart = change.fTargetStart;
+		done.fReplacedEnd   = change.fTargetEnd;
 	}
 
 	// The row's story, diffed again: the restored change leaves the list, and every other
 	// change's positions are named afresh against the text as it now stands.
+	// ★★AND THE ROW'S COUNTER IS BROUGHT UP TO DATE WITH IT, which is what lets a SECOND
+	//   replacement in the same story go through: the check at the top of this function refuses a
+	//   story whose counter has moved since the comparison, and this write moved it.
 	const int32 left = KCMStoryDiffRun::RunOne(targetDB, sourceDB, nth);
+
+	// ***** AND IN THE IMPORT MODE THE REPLACED CHANGE GOES BACK INTO THE LIST. *****
+	// The Story mode keeps its old behaviour - the change is dealt with, and its row is gone.
+	// Here the reader is working through a list of edits they made outside InDesign, and a row
+	// that vanishes on being taken in leaves them nothing to read afterwards (the user, 2026-09-15:
+	// "I want the child row to stay, the way KBS keeps a replaced hit").
+	// ⚠**AFTER RunOne, NEVER BEFORE IT**: RunOne rebuilds the row, and a replaced change added
+	//   ahead of it would be added to the row that is about to be replaced.
+	if (KCMGetCompareMode() == kKCMModeImport)
+	{
+		const KCMStoryRow* const after = KCMStoryList::GetRow(nth);
+		if (after != nil)
+		{
+			// The counter as the re-diff has just recorded it. ★This number IS "replaced": the row
+			// is drawn that way while it still matches the story's counter, and an undo - which
+			// takes the counter back - undraws it without a line of undo-specific code.
+			done.fReplacedCount = after->fTargetTextCount;
+			KCMStoryList::AddReplacedChange(nth, done);
+		}
+	}
+
 	KCMNotify(kKCMStoryEditsRebuiltMessage);
 	if (left >= 0)
 	{

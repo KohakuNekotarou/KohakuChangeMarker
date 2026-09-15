@@ -50,6 +50,7 @@
 #include "KCMStoryList.h"
 #include "KCMOriginCompare.h"	// KCMOriginToSourceUID - a Removed row's story, under its uid in a Task Start copy
 #include "KCMStoryRowFilter.h"	// KCMStoryRowHasContentChange - which rows belong in the list
+#include "KCMStoryRowMerge.h"	// the order the live changes and the replaced ones stand in
 
 namespace
 {
@@ -801,7 +802,16 @@ void KCMStoryList::AddReplacedChange(int32 nth, const KCMStoryChange& done)
 {
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
 		return;
-	gRows[nth].fReplacedChanges.push_back(done);
+
+	// ⚠KEPT IN fReplacedStart ORDER. The reader replaces changes in whatever order they like -
+	//   the last row first, if that is what they read first - and KCMStoryRowMerge is promised an
+	//   ascending list. Sorting at the door costs nothing here (a handful of entries) and means
+	//   the promise is kept by construction rather than by everyone remembering.
+	std::vector<KCMStoryChange>& list = gRows[nth].fReplacedChanges;
+	size_t at = list.size();
+	while (at > 0 && list[at - 1].fReplacedStart > done.fReplacedStart)
+		--at;
+	list.insert(list.begin() + at, done);
 }
 
 /* ClearReplacedChanges
@@ -811,6 +821,95 @@ void KCMStoryList::ClearReplacedChanges(int32 nth)
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
 		return;
 	gRows[nth].fReplacedChanges.clear();
+}
+
+/* ShiftReplacedChanges
+*/
+void KCMStoryList::ShiftReplacedChanges(int32 nth, TextIndex from, int32 delta)
+{
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || delta == 0)
+		return;
+
+	std::vector<KCMStoryChange>& list = gRows[nth].fReplacedChanges;
+	for (size_t i = 0; i < list.size(); ++i)
+	{
+		// ">=" AND NOT ">": a replacement written exactly where an earlier one stands pushes it
+		// along too. The one case that cannot arise is the two being the same change, which is
+		// what the "already replaced" refusal in KCMStoryRestore is for.
+		if (list[i].fReplacedStart >= from)
+		{
+			list[i].fReplacedStart += delta;
+			list[i].fReplacedEnd   += delta;
+			list[i].fBeforeStart   += delta;
+			list[i].fBeforeEnd     += delta;
+		}
+	}
+}
+
+namespace
+{
+
+/* MergedSlots
+   The one place the panel's child index is defined: the live changes and the replaced ones, in
+   the order they stand in the text. KCMStoryRowMerge owns the rule (and is tested outside
+   InDesign); this only feeds it the two ascending lists of starts.
+*/
+void MergedSlots(const KCMStoryRow& row, std::vector<KCMStoryRowMerge::Slot>& out)
+{
+	std::vector<TextIndex> live, done;
+	live.reserve(row.fChanges.size());
+	for (size_t i = 0; i < row.fChanges.size(); ++i)
+		live.push_back(row.fChanges[i].fTargetStart);
+
+	done.reserve(row.fReplacedChanges.size());
+	for (size_t i = 0; i < row.fReplacedChanges.size(); ++i)
+		done.push_back(row.fReplacedChanges[i].fReplacedStart);
+
+	KCMStoryRowMerge::Merge(live, done, out);
+}
+
+}	// namespace
+
+/* GetMergedChangeCount
+*/
+int32 KCMStoryList::GetMergedChangeCount(int32 nth)
+{
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
+		return 0;
+	const KCMStoryRow& row = gRows[nth];
+	return static_cast<int32>(row.fChanges.size() + row.fReplacedChanges.size());
+}
+
+/* GetMergedChange
+*/
+const KCMStoryChange* KCMStoryList::GetMergedChange(int32 nth, int32 which, bool16& outIsReplaced)
+{
+	outIsReplaced = kFalse;
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || which < 0)
+		return nil;
+
+	const KCMStoryRow& row = gRows[nth];
+
+	// ★THE COMMON CASE COSTS NOTHING. With no replaced changes the merged index IS the live
+	//   index, so the whole of the Story mode - and the Import mode until the reader takes
+	//   something in - skips the merge entirely.
+	if (row.fReplacedChanges.empty())
+	{
+		return (which < static_cast<int32>(row.fChanges.size())) ? &row.fChanges[which] : nil;
+	}
+
+	std::vector<KCMStoryRowMerge::Slot> slots;
+	MergedSlots(row, slots);
+	if (which >= static_cast<int32>(slots.size()))
+		return nil;
+
+	const KCMStoryRowMerge::Slot& slot = slots[which];
+	if (slot.fDone)
+	{
+		outIsReplaced = kTrue;
+		return &row.fReplacedChanges[slot.fIndex];
+	}
+	return &row.fChanges[slot.fIndex];
 }
 
 void KCMStoryList::SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& changes,

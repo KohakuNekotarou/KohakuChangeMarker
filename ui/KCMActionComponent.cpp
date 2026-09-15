@@ -996,7 +996,13 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// Change-row context menu "Restore Source Text" (2026-09-13): the older words written over
 		// that one change, undoable. The model decides and reports (KCMStoryRestore.cpp); this side
 		// only names the stashed change.
+		// ★TWO IDS, ONE COMMAND (2026-09-15). The Import mode calls it "Import Source Text",
+		//   because there the Source is the copy the reader's own edited words were poured into -
+		//   taking a change in is a replacement, not a restoration. The work is identical, so
+		//   they share this line rather than a copy of it; which of the two the reader sees is
+		//   decided by their enabling, and a greyed item does not appear at all.
 		case kKCMChangeRowRestoreActionID:
+		case kKCMChangeRowImportActionID:
 			KCMChangeRowRestore();
 			break;
 
@@ -1524,6 +1530,14 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			// item, an insertion is live: restoring it takes the inserted words out again.
 			listToUpdate->SetNthActionState(i, KCMChangeRowCanRestore() ? kEnabledAction
 			                                                            : kDisabled_Unselected);
+		}
+		else if (action == kKCMChangeRowImportActionID)
+		{
+			// The same test, asked of the other mode - and additionally refusing a change that
+			// has already been taken in (KCMChangeRowCanImport). The two are exclusive, so the
+			// child row's menu carries one name or the other.
+			listToUpdate->SetNthActionState(i, KCMChangeRowCanImport() ? kEnabledAction
+			                                                           : kDisabled_Unselected);
 		}
 	}
 }

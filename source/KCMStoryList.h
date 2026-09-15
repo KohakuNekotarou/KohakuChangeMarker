@@ -514,12 +514,46 @@ namespace KCMStoryList
 		that nothing edits a row behind the list's back, and a replaced change is written at a
 		different moment than the diff's children are - after the story has been compared again.
 		Out-of-range nth is ignored, as everywhere else here.
+
+		⚠**INSERTED IN fReplacedStart ORDER, NOT APPENDED.** The reader replaces changes in
+		whatever order they please, and KCMStoryRowMerge is promised two ASCENDING lists.
 		@see KCMStoryRow::fReplacedChanges for why it is not simply appended to fChanges. */
 	void AddReplacedChange(int32 nth, const KCMStoryChange& done);
 
 	/** Forget row nth's replaced changes. "Refresh Story Comparison" is a fresh start (the user's
 		call, 2026-09-15), so it clears these as well as the diff. Out-of-range nth is ignored. */
 	void ClearReplacedChanges(int32 nth);
+
+	/** Move row nth's replaced changes that stand at or after `from` by `delta` characters.
+
+		★★**BECAUSE THE RE-DIFF DOES NOT TOUCH THEM.** Comparing the story again names the LIVE
+		changes afresh against the text as it now stands, which is exactly why a second
+		replacement works at all - but a change that has already been replaced is no longer in
+		that comparison, so nothing would move it. Replacing words earlier in the story makes the
+		text longer or shorter, and everything after it slides by that much.
+		⚠Call it BEFORE the new replacement is added (the new one is already in the coordinates
+		the write left behind), and with the delta of THAT write: `source length - target length`.
+		Out-of-range nth, and delta 0, do nothing. */
+	void ShiftReplacedChanges(int32 nth, TextIndex from, int32 delta);
+
+	// ---- what the panel sees: the two lists as one ------------------------------------------
+	//
+	// ★★★**ONE INDEX SPACE, DEFINED IN ONE PLACE.** The panel asks four separate questions about
+	//   "change number N of row M" (how many, which one, which attribute, does it carry a value)
+	//   and "Restore Source Text" asks a fifth. Letting some of them count the live changes and
+	//   others count the merged list would not fail loudly - it would answer about the WRONG
+	//   CHANGE, which is the shape of bug this plug-in has spent the most time on
+	//   ([[one-question-one-place]]). So every one of them goes through the two below.
+
+	/** How many children row nth shows: the live diff's changes plus the replaced ones. */
+	int32 GetMergedChangeCount(int32 nth);
+
+	/** The change a merged index names, or nil when either index is out of range.
+
+		@param outIsReplaced kTrue when it came from fReplacedChanges. ⚠**Ask this rather than
+			looking at the change itself**: fReplacedCount says when it was replaced, not whether
+			it is being SHOWN as replaced, and the two differ after an undo. */
+	const KCMStoryChange* GetMergedChange(int32 nth, int32 which, bool16& outIsReplaced);
 
 	/** Drop the rows whose story differs only in HOW IT IS SET -- a font, a colour, a style, a
 		table stroke -- and keep the ones whose CONTENT differs: the words, or the ruby written over

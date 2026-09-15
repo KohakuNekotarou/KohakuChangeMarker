@@ -678,9 +678,18 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   newer text as the source. It went out with the rule that made it necessary - and the two
 	//   MUST go together. Restoring one without the other mislabels every deletion in the list.
 	//   (KCMStoryDiffRun's Slice is the other half.)
+	// ★★★**A REPLACED ROW ANSWERS A DIFFERENT QUESTION** (the Import mode, 2026-09-15). Its words
+	//   ARE the source's now - they are in the row - so showing the source here would show the
+	//   same string twice and tell the reader nothing. What is nowhere else on the panel is what
+	//   stood there BEFORE, which is precisely what they replaced. ⇒ The label says which of the
+	//   two this is, for the same reason it says "Source Text" the rest of the time: a box of
+	//   words that does not say which version it is showing is a box that can be read backwards.
+	// ⚠**THE WIDTH IS NOT SETTLED.** This is a narrow box and the phrase is long; it may have to
+	//   come down to "Before:". That is a thing to look at rather than to argue about, and it is
+	//   one line here.
 	PMString label;
 	label.SetTranslatable(kFalse);
-	label.Append("Source Text:");
+	label.Append(change.fReplaced ? "Before the replacement:" : "Source Text:");
 
 	// ★★THE OTHER SIDE'S READING GOES WITH IT (2026-08-22). The list shows the NEWER version, so a
 	//   reading that was REMOVED can be seen nowhere else - and the row's own upper line is left
@@ -710,7 +719,15 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 		otherRuby.SetTranslatable(kFalse);
 	}
 
-	KCMSetStatusSegments(label, change.fOtherTextPre, change.fOtherText, change.fOtherTextPost,
+	// The other side of this edit, in the three pieces the box draws in two colours - and for a
+	// replaced row, the side that is no longer anywhere else (see the label above). The model
+	// decided which words those are; both triples arrive filled in, and this picks the one that
+	// matches what the row is showing.
+	const PMString& otherPre  = change.fReplaced ? change.fBeforeTextPre  : change.fOtherTextPre;
+	const PMString& otherMid  = change.fReplaced ? change.fBeforeText     : change.fOtherText;
+	const PMString& otherPost = change.fReplaced ? change.fBeforeTextPost : change.fOtherTextPost;
+
+	KCMSetStatusSegments(label, otherPre, otherMid, otherPost,
 						   otherRuby, change.fAttrKind);
 
 	return moved;

@@ -101,6 +101,14 @@ bool16 KCMChangeRowCopySource();
     the model with a reason, not greyed here. */
 bool16 KCMChangeRowCanRestore();
 
+/** Whether "Import Source Text" may be offered on the change the menu was popped over.
+
+	★The same command as Restore, under the name the Import mode calls for - there the Source is
+	the copy the reader's own edited words were poured into, so taking a change in is a
+	replacement rather than a restoration. Live only in that mode, and only on a change that has
+	not been taken in yet. @see KCMChangeRowCanRestore, which is live everywhere else. */
+bool16 KCMChangeRowCanImport();
+
 /** Runs "Restore Source Text" on the stashed change through the facade (KCMStoryRestore.h on
     the model side) and puts its message on the status line. kTrue when something was written. */
 bool16 KCMChangeRowRestore();
