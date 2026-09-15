@@ -35,15 +35,23 @@
 namespace
 {
 
-/** Which mode was showing before the import took over, and whether it has taken over.
+/** Which mode was showing before the import took over.
 
-	⚠File-statics, so the model's shutdown empties nothing here on purpose: both are plain values.
+	⚠A file-static, so the model's shutdown empties nothing here on purpose: it is a plain value.
 	 (KCMStoryList.h's rule is about statics holding strings and rows.) */
 KCMCompareMode	sModeBeforeImport = kKCMModePixel;
-bool16			sInImportMode = kFalse;
 
 /** The words waiting to go into the next copy. ⚠A static holding PMStrings and std::strings, so it
-	has a line in the model's shutdown (KCMStoryList.h says what forgetting that costs). */
+	has a line in the model's shutdown (KCMStoryList.h says what forgetting that costs).
+
+	★★★**sHolding IS ALSO THE ANSWER TO "IS THE IMPORT MODE UP?"** (2026-09-15). A second flag
+	stood here, and the two parted company the first time a document was CLOSED with an import
+	showing: the words went - KCMReleaseOrigin drops them - and the flag stayed. The UI greys
+	Pixel, Story, Resources and Task Start whenever that flag is set (KCMActionComponent.cpp), and
+	Stop Comparison - the only caller of KCMEndImportMode - is itself greyed once nothing is armed,
+	so there was no way out but restarting InDesign. Measured, then predicted by the user in the
+	same minute ("Import モードが解除されない気がしました").
+	⇒ **the mode IS the words being held**, asked in one place ([[one-question-one-place]]). */
 KCMStoryTextSet	sHeld;
 bool16			sHolding = kFalse;
 
@@ -527,9 +535,10 @@ bool16 KCMImportStoryText(const IDFile& folder, PMString& outMessage)
 	// 4. ★★★THE WORDS ARE HELD, NOT WRITTEN. They go into the COPY when the comparison makes one
 	//    (KCMRehydrate, the one place), and into the reader's document only through "Restore
 	//    Source Text", one change at a time. An import changes nothing by itself.
-	KCMHoldStoryText(set);
+	// ★KCMHoldStoryText IS what puts the mode up: holding the words and being in the import mode
+	//   are one fact (see sHolding). The mode to come back to is noted a line before it.
 	sModeBeforeImport = KCMGetCompareMode();
-	sInImportMode = kTrue;
+	KCMHoldStoryText(set);
 
 	// 5. The fourth mode, and the comparison that shows the edited words against the document.
 	KCMSetCompareMode(kKCMModeImport);
@@ -706,24 +715,36 @@ void KCMHoldStoryText(const KCMStoryTextSet& set)
 
 void KCMReleaseStoryText()
 {
+	const bool16 wasImporting = sHolding;
 	sHeld = KCMStoryTextSet();
 	sHolding = kFalse;
+
+	// ★★★**THE MODE COMES DOWN WITH THE WORDS, AND THIS IS THE ONLY PLACE THAT CAN DO IT.** A
+	//   document closed while an import was showing arrives here through KCMReleaseOrigin and
+	//   through nothing else: Stop Comparison, which is the one caller of KCMEndImportMode, is
+	//   greyed by then. Leaving kKCMModeImport set stranded the reader with every mode and Task
+	//   Start greyed (measured 2026-09-15).
+	// ⚠Guarded on BOTH counts on purpose: a release that was not an import must not move the
+	//   reader's mode, and neither must the second, empty pass KCMEndImportMode makes through
+	//   KCMReleaseOrigin.
+	if (wasImporting && KCMGetCompareMode() == kKCMModeImport)
+		KCMSetCompareMode(sModeBeforeImport);
 }
 
 bool16 KCMInImportMode()
 {
-	return sInImportMode;
+	// ★One fact, one place: holding the edited words IS the mode (see sHolding).
+	return sHolding;
 }
 
 void KCMEndImportMode()
 {
-	if (!sInImportMode)
+	if (!KCMInImportMode())
 		return;
 
-	// ★THE ORDER: the mode first, so that nothing asks "are we importing?" while the origin is
-	//   being moved back underneath it.
-	sInImportMode = kFalse;
-	KCMSetCompareMode(sModeBeforeImport);
+	// ★THE ORDER: the words go first, so that nothing asks "are we importing?" while the origin is
+	//   being moved back underneath it. Dropping them takes the mode down with them.
+	KCMReleaseStoryText();
 
 	// The import's own origin goes; the reader's own comes back exactly as they left it.
 	if (KCMHasParkedOrigin())
