@@ -901,8 +901,10 @@ private:
 		//   stood on the bottom line until then, where the .fr still puts it before the first apply.
 		if (lineCount >= 2)
 		{
+			// ⚠fChanged numbers the LAYER; the line drawn is one lower when the text line is left out
+			//   (KCMStoryLayers::fShowsText - a tate-chu-yoko changing inside a warichu).
 			const int32 changedLine = (KCMAttrKindIsLayered(attrKind) && layers.fCount == lineCount)
-									  ? layers.fChanged : (lineCount - 1);
+									  ? (layers.fChanged - (layers.fShowsText ? 0 : 1)) : (lineCount - 1);
 			const int32 fromTop = lineCount - 1 - changedLine;
 			const WidgetID onTheChangedLine[] = { kKCMStoryRowKindWidgetID, kKCMStoryRowUIDWidgetID };
 			for (size_t w = 0; w < sizeof(onTheChangedLine) / sizeof(onTheChangedLine[0]); ++w)
@@ -956,21 +958,35 @@ private:
 		//   layered kinds - the one that changed stands where the sign is, so the other is on the
 		//   remaining line (3 - changed), and a warichu's other is a tate-chu-yoko and back. The
 		//   bottom line is the text and says nothing.
-		// ⚠**THIS CELL IS ONLY IN THE THREE-LINE TEMPLATE**, so FindWidget answers nil on every other
-		//   row; on this template it is written EVERY time, empty included, for the recycling reason
-		//   above, and placed on both axes - KCMApplyListColumnWidths only fits the first ID cell,
-		//   so the second takes its left and right from there.
+		// ★★AND ON A TWO-LINE ROW WHOSE TEXT LINE IS LEFT OUT (the same night): a tate-chu-yoko
+		//   changing inside a warichu is drawn as the warichu's line and its own, so "割注" goes on
+		//   the bottom line.
+		// ⚠**THIS CELL IS ONLY IN THE TWO- AND THREE-LINE TEMPLATES**, so FindWidget answers nil on a
+		//   one-line row; where it exists it is written EVERY time, empty included, for the recycling
+		//   reason above, and placed on both axes - KCMApplyListColumnWidths only fits the first ID
+		//   cell, so the second takes its left and right from there.
 		IControlView* layerIdCell = widgetList->FindWidget(kKCMStoryRowLayerIdWidgetID);
 		if (layerIdCell != nil)
 		{
 			PMString otherText;
-			int32 otherLine = 1;
-			if (have && lineCount == 3 && KCMAttrKindIsLayered(attrKind) && layers.fCount == 3)
+			int32 otherLine = 0;	// an empty cell stays off the line the first ID cell names
+			const int32 otherKind = (attrKind == kKCMStoryAttrWarichu) ? static_cast<int32>(kKCMStoryAttrTcy)
+																	   : static_cast<int32>(kKCMStoryAttrWarichu);
+			if (have && KCMAttrKindIsLayered(attrKind) && layers.fCount == lineCount)
 			{
-				const int32 otherKind = (attrKind == kKCMStoryAttrWarichu) ? static_cast<int32>(kKCMStoryAttrTcy)
-																		   : static_cast<int32>(kKCMStoryAttrWarichu);
-				otherText = AttrKindIdLabel(otherKind);
-				otherLine = 3 - layers.fChanged;
+				if (layers.fShowsText && lineCount == 3)
+				{
+					// text / layer 1 / layer 2: the other layer is the one that did not change
+					otherText = AttrKindIdLabel(otherKind);
+					otherLine = 3 - layers.fChanged;
+				}
+				else if (!layers.fShowsText && lineCount == 2)
+				{
+					// ★the layer it stands in, on the bottom line (2026-09-16, the user: "the
+					//   warichu's line and the tate-chu-yoko's" - the text line left out)
+					otherText = AttrKindIdLabel(otherKind);
+					otherLine = 0;
+				}
 			}
 			otherText.SetTranslatable(kFalse);
 			this->SetNodeName(widgetList, otherText, kKCMStoryRowLayerIdWidgetID);

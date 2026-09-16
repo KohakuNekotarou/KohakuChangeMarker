@@ -2796,6 +2796,23 @@ resource KCMStoryRowWidget(kKCMStoryRubyRowRsrcID + index_enUS)
 			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
 		),
 
+		// ★The ID column's SECOND cell (2026-09-16): "割注" on the bottom line when a tate-chu-yoko
+		//   changed inside a warichu and the text line is left out (the user's call). Empty on every
+		//   other two-line row. Placed per apply, both edges.
+		KCMStoryRowCellWidget
+		(
+			kKCMStoryRowLayerIdWidgetID,	// WidgetId
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft,						// Frame binding: a fixed column at the row's left edge
+			Frame(24, kKCMStoryRubyRowHeight / 2, 64, kKCMStoryRubyRowHeight - 2),	// Frame (lower line)
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+
 		// Left: the base characters on the LOWER line and the reading on the upper one. The cell
 		// takes the WHOLE height and divides it itself - it is the only thing here that knows the
 		// two lines exist, and it has to, because the reading is centred over the changed

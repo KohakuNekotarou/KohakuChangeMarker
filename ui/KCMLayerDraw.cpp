@@ -59,48 +59,63 @@ void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const Interface
 
 	const PMReal barW = Width(gc, font, KCMCaretPlaceholder());
 
-	auto drawText = [&](const PMString& s, const PMReal& x, int32 line, const RealAGMColor& colour)
+	// ★THE CANVAS COUNTS LINES DRAWN, THE LAYERS COUNT LAYERS (2026-09-16). With the text line left
+	//   out (KCMStoryLayers::fShowsText - a tate-chu-yoko changing inside a warichu), layer 1 is drawn
+	//   on the bottom line and layer 2 above it; every draw below names a LAYER and is moved here.
+	const int32 firstLayer = layers.fShowsText ? 0 : 1;
+	auto lineOf = [&](int32 layer) -> int32 { return layer - firstLayer; };
+
+	auto drawText = [&](const PMString& s, const PMReal& x, int32 layer, const RealAGMColor& colour)
 	{
-		if (!s.IsEmpty())
+		const int32 line = lineOf(layer);
+		if (!s.IsEmpty() && line >= 0 && line < 3)
 			StringUtils::PMDrawStringRGB(&gc, PMPoint(x, canvas.fBaseline[line]), s, font, colour,
 										 kKCMDontConvertAmpersand, kKCMNoUnderline);
 	};
 	// ⚠A pixel clear at each end of its line, so a bar over a bar reads as two - "the two bars in the
 	//   same place", not one tall line.
-	auto drawBar = [&](const PMReal& x, const PMReal& roomW, int32 line)
+	auto drawBar = [&](const PMReal& x, const PMReal& roomW, int32 layer)
 	{
-		KCMDrawCaret(gPort, canvas.fStrong, x, roomW, canvas.fTop[line] + PMReal(1.0),
-					 canvas.fLineHeight - PMReal(2.0));
+		const int32 line = lineOf(layer);
+		if (line >= 0 && line < 3)
+			KCMDrawCaret(gPort, canvas.fStrong, x, roomW, canvas.fTop[line] + PMReal(1.0),
+						 canvas.fLineHeight - PMReal(2.0));
 	};
 
 	// ---- line 0: the paragraph, with its one bar -----------------------------------------------
 	// ★THE CHANGE'S BAR SURVIVES A NARROW COLUMN, the rule the change row already keeps: the
 	//   context gives way, each side losing the end that faces away from the bar.
-	PMString pre = layers.fBottomPre;
-	PMString post = layers.fBottomPost;
-	PMReal preW = Width(gc, font, pre);
-	PMReal postW = Width(gc, font, post);
-	if (preW + barW + postW > avail)
-	{
-		const PMReal rem = avail - barW;
-		pre = (rem > PMReal(0.0) && !pre.IsEmpty())
-			? StringUtils::PMEllipsizeString(&gc, rem, pre, font, kEllipsizeBeginning, nil, kKCMDontConvertAmpersand)
-			: PMString();
-		preW = Width(gc, font, pre);
-		const PMReal postBudget = rem - preW;
-		post = (postBudget > PMReal(0.0) && !post.IsEmpty())
-			? StringUtils::PMEllipsizeString(&gc, postBudget, post, font, kEllipsizeEnd, nil, kKCMDontConvertAmpersand)
-			: PMString();
-		postW = Width(gc, font, post);
-	}
-	const RealAGMColor& bottomColour = (layers.fChanged == 0) ? canvas.fStrong : canvas.fFaded;
+	// ⚠Only when the text line is drawn. Without it there is no bar below to stand over, and line 1
+	//  starts at the column's left edge (holeX = left makes the centring below clamp there).
+	PMReal holeX = left;
 	PMReal x = left;
-	drawText(pre, x, 0, bottomColour);
-	x += preW;
-	const PMReal holeX = x;
-	drawBar(holeX, barW, 0);
-	x += barW;
-	drawText(post, x, 0, bottomColour);
+	if (layers.fShowsText)
+	{
+		PMString pre = layers.fBottomPre;
+		PMString post = layers.fBottomPost;
+		PMReal preW = Width(gc, font, pre);
+		PMReal postW = Width(gc, font, post);
+		if (preW + barW + postW > avail)
+		{
+			const PMReal rem = avail - barW;
+			pre = (rem > PMReal(0.0) && !pre.IsEmpty())
+				? StringUtils::PMEllipsizeString(&gc, rem, pre, font, kEllipsizeBeginning, nil, kKCMDontConvertAmpersand)
+				: PMString();
+			preW = Width(gc, font, pre);
+			const PMReal postBudget = rem - preW;
+			post = (postBudget > PMReal(0.0) && !post.IsEmpty())
+				? StringUtils::PMEllipsizeString(&gc, postBudget, post, font, kEllipsizeEnd, nil, kKCMDontConvertAmpersand)
+				: PMString();
+			postW = Width(gc, font, post);
+		}
+		const RealAGMColor& bottomColour = (layers.fChanged == 0) ? canvas.fStrong : canvas.fFaded;
+		drawText(pre, x, 0, bottomColour);
+		x += preW;
+		holeX = x;
+		drawBar(holeX, barW, 0);
+		x += barW;
+		drawText(post, x, 0, bottomColour);
+	}
 
 	// ---- line 1: one piece over that bar, with bars of its own ------------------------------
 	if (layers.fMiddleIsBar || layers.fMiddleParts.empty())
@@ -236,7 +251,9 @@ void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const Interface
 	}
 
 	// ---- line 2: one piece over each bar of line 1 -------------------------------------------
-	if (layers.fCount < 3)
+	// ⚠ASKED OF THE PIECES, NOT OF fCount: with the text line left out, layer 2 is there on a row of
+	//   two lines.
+	if (layers.fUpperPieces.empty())
 		return;
 
 	PMReal nextFree = left;

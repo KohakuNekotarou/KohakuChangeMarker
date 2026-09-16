@@ -432,8 +432,17 @@ struct LayerPlan
 	int32					fChangedPiece;	///< which piece of line 2 is the change; -1 when the change is line 1
 	bool16					fChangedPieceIsBar;	///< that piece is a bar: the mark is not on this side
 
+	/** ★★Whether line 0 (the paragraph) is drawn at all (2026-09-16, the user: "the ID column says
+		割注, so a tate-chu-yoko changing inside a warichu needs no text line - the warichu's line and
+		the tate-chu-yoko's are enough; three lines only where three are needed"). kFalse exactly
+		when the change stands inside a layer of the other kind: the lines are then 1 and 2 alone,
+		fCount is 2, and fHole says nothing anybody draws.
+		⚠fChanged, fMiddle and fUpperHoles keep their numbering (1 = the middle layer, 2 = the upper)
+		 whether or not line 0 is shown - only fCount, the number of lines DRAWN, changes. */
+	bool16					fShowsText;
+
 	LayerPlan() : fCount(0), fChanged(0), fMiddleIsBar(kFalse), fChangedPiece(-1),
-				  fChangedPieceIsBar(kFalse) {}
+				  fChangedPieceIsBar(kFalse), fShowsText(kTrue) {}
 };
 
 /** Which lines one side of a warichu or tate-chu-yoko change is drawn on.
@@ -480,7 +489,10 @@ inline void PlanLayers(bool16 changedIsWarichu, const KCMAttrSpanList& warichu,
 	{
 		const int32 os = other[outer].fStart;
 		const int32 oe = other[outer].fStart + other[outer].fLen;
-		out.fCount = 3;
+		// ★TWO LINES, NOT THREE: the layer it stands in, and itself - the text line is left out (see
+		//   fShowsText). A change of the OUTER layer with this one inside it is the three-line case.
+		out.fCount = 2;
+		out.fShowsText = kFalse;
 		out.fChanged = 2;
 		out.fHole = LayerRange(os, oe);
 		out.fMiddle = LayerRange(os, oe);

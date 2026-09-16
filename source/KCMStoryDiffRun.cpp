@@ -551,12 +551,18 @@ void BuildLayers(ParaSide& side, bool16 changedIsWarichu, int32 start, int32 len
 
 	out.fCount = plan.fCount;
 	out.fChanged = plan.fChanged;
+	out.fShowsText = plan.fShowsText;
 
-	std::string pre, mid, post;
-	Slice(side.fText, bytes, plan.fHole.fFrom, plan.fHole.fTo - plan.fHole.fFrom, kContextCodePoints,
-		  pre, mid, post);
-	SetDocumentText(out.fBottomPre, pre);
-	SetDocumentText(out.fBottomPost, post);
+	// ★The text line only when it is drawn (a change inside another layer leaves it out - the user's
+	//   call, KCMStoryLayers::fShowsText); its two pieces stay empty otherwise.
+	if (plan.fShowsText)
+	{
+		std::string pre, mid, post;
+		Slice(side.fText, bytes, plan.fHole.fFrom, plan.fHole.fTo - plan.fHole.fFrom, kContextCodePoints,
+			  pre, mid, post);
+		SetDocumentText(out.fBottomPre, pre);
+		SetDocumentText(out.fBottomPost, post);
+	}
 
 	auto piece = [&](int32 from, int32 to) -> PMString
 	{
