@@ -390,6 +390,11 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out)
 	// ★★**AND THE PARAGRAPH IT STANDS IN MAY BE A CELL'S** (2026-09-16, the user's request), which
 	//   is what a nested table is: the walk below is over EVERY paragraph rather than the body's,
 	//   and where the anchor lands is where the table is written.
+	// ★**WHERE IN THE PARAGRAPH EACH ONE STANDS**, counted per paragraph: a paragraph can hold more
+	//   than one table, and the tables are walked in document order, so taking the positions in turn
+	//   pairs them up.
+	std::vector<int32> spotsUsed(paras.size(), 0);
+
 	for (size_t t = 0; t < out.fTables.size() && t < shapes.size(); ++t)
 	{
 		int32 host = -1;
@@ -438,6 +443,34 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out)
 			//  it would be a shape with no reader rather than a safeguard.
 			out.fTables[t].fInTable = -1;
 		}
+		// ★★**WHERE IN THAT PARAGRAPH IT STANDS**, in the text's own count - which is what lets the
+		//   writer put it back among the characters rather than after all of them.
+		//   ⚠**AN ANCHOR AT THE HEAD OF A PARAGRAPH LEAVES NO TRACE IN fUncountedAt**: the reader
+		//    steps over it and moves the paragraph's start instead (KCMTextRead, "if
+		//    (!paraHasCharacters) paraStart = i + 1"), so that case is told by the anchor standing
+		//    BEFORE the reported start, and its place is 0.
+		if (shapes[t].fAnchor < static_cast<TextIndex>(starts[static_cast<size_t>(host)]))
+		{
+			out.fTables[t].fOffset = 0;
+		}
+		else
+		{
+			// fUncountedAt holds ONE ENTRY PER CHARACTER the table costs the model (the anchor,
+			// plus one per row after the first), and they all sit at the same place in the text -
+			// so the distinct values, in order, are where this paragraph's tables stand.
+			const std::vector<int32>& un = attrs[static_cast<size_t>(host)].fUncountedAt;
+			std::vector<int32> spots;
+			for (size_t k = 0; k < un.size(); ++k)
+			{
+				if (spots.empty() || spots.back() != un[k])
+					spots.push_back(un[k]);
+			}
+
+			const size_t which = static_cast<size_t>(spotsUsed[static_cast<size_t>(host)]);
+			++spotsUsed[static_cast<size_t>(host)];
+			out.fTables[t].fOffset = (which < spots.size()) ? spots[which] : 0;
+		}
+
 		out.fTables[t].fParaIndex = placeIndex[static_cast<size_t>(host)];
 	}
 

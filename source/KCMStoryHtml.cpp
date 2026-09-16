@@ -317,6 +317,15 @@ bool16 InsideCell(const std::vector<TableFrame>& tables)
 	return (!tables.empty() && tables.back().fInCell) ? kTrue : kFalse;
 }
 
+/** A paragraph that is waiting: everything read so far, put aside while a table standing inside it
+	is read. See paraStack in Read. */
+struct ParaState
+{
+	std::string		fText;
+	KCMAttrSpanList	fRuby;
+	KCMAttrSpanList	fKenten;
+};
+
 /** An <em> that has been opened and not yet closed. */
 struct EmState
 {
@@ -364,8 +373,35 @@ size_t ByteAtCodePoint(const std::string& text, const std::vector<int32>& byteAt
 	 worse than the alternative only if there were an alternative: Write's contract is that it
 	 never fails.
 */
-void WriteRun(const Para& p, const std::vector<int32>& byteAt,
-			  int32 from, int32 to, std::string& out)
+void WriteTable(const Story& s, const Table& t, int32 depth, std::string& out);
+
+/** The tables of `inside` that stand exactly at `cp`, written there. */
+void WriteTablesAt(const Story& s, const std::vector<size_t>& inside, int32 cp, int32 depth,
+				   std::string& out)
+{
+	for (size_t k = 0; k < inside.size(); ++k)
+	{
+		if (s.fTables[inside[k]].fOffset == cp)
+			WriteTable(s, s.fTables[inside[k]], depth, out);
+	}
+}
+
+/** The nearest table position strictly after cp, or `limit` when there is none. */
+int32 NextTableAfter(const Story& s, const std::vector<size_t>& inside, int32 cp, int32 limit)
+{
+	int32 stop = limit;
+	for (size_t k = 0; k < inside.size(); ++k)
+	{
+		const int32 at = s.fTables[inside[k]].fOffset;
+		if (at > cp && at < stop)
+			stop = at;
+	}
+	return stop;
+}
+
+void WriteRun(const Story& s, const Para& p, const std::vector<int32>& byteAt,
+			  int32 from, int32 to, const std::vector<size_t>& inside, int32 depth,
+			  bool16 writeTables, std::string& out)
 {
 	const std::string& text = p.fText;
 	const KCMAttrSpanList& kenten = p.fKenten;
@@ -373,6 +409,11 @@ void WriteRun(const Para& p, const std::vector<int32>& byteAt,
 	int32 cp = from;
 	while (cp < to)
 	{
+		// ★★**EVERY TABLE OF THIS PARAGRAPH IS WRITTEN WHERE IT STANDS**, wherever the run is -
+		//   inside a reading's base included, for the same reason the note references used to be
+		//   emitted here: this is the one place every piece of text goes through.
+		if (writeTables)
+			WriteTablesAt(s, inside, cp, depth, out);
 
 		const KCMAttrSpan* cover = nil;
 		for (size_t k = 0; k < kenten.size(); ++k)
@@ -401,6 +442,11 @@ void WriteRun(const Para& p, const std::vector<int32>& byteAt,
 					stop = kenten[k].fStart;
 			}
 		}
+
+		// ...and a table standing in the middle of this stretch cuts it, so that the next turn of
+		// the loop stands exactly where the table does.
+		if (writeTables)
+			stop = NextTableAfter(s, inside, cp, stop);
 
 
 		std::string cls;
@@ -573,7 +619,8 @@ bool SpanStartsEarlier(const KCMAttrSpan& a, const KCMAttrSpan& b)
 	 way either way, so the reader cannot tell - and does not guess, it answers GROUP. Whoever
 	 applies the result keeps the setting the document already had (the design says so, 3-3).
 */
-void WriteParaHtml(const Para& p, std::string& out)
+void WriteParaHtml(const Story& s, const Para& p, const std::vector<size_t>& inside,
+				   int32 depth, std::string& out)
 {
 	std::vector<int32> byteAt;
 	KCMTextDiff::ToCodePoints(p.fText, nil, &byteAt);
@@ -614,13 +661,31 @@ void WriteParaHtml(const Para& p, std::string& out)
 				}
 			}
 
+			// ★★**A TABLE ANCHORED INSIDE A READING'S BASE IS WRITTEN IN FRONT OF THE <ruby>.** It
+			//   cannot stand inside one - the markup would be nonsense and a browser would not draw
+			//   it - so it is moved to the head of the reading, which is as close to its real place
+			//   as this shape allows. ⚠**THE MODEL IS NOT CHANGED**: fOffset still says where the
+			//   document has it, and this rounding is the markup's alone.
+			//   ⚠MEASURED 2026-09-16: without this, a table anchored where a reading began came out
+			//    between <ruby> and <rt>, which is neither valid nor readable.
+			{
+				const int32 rubyEnd = spans[last].fStart + spans[last].fLen;
+				for (size_t u = 0; u < inside.size(); ++u)
+				{
+					const int32 at = s.fTables[inside[u]].fOffset;
+					if (at >= cp && at < rubyEnd)
+						WriteTable(s, s.fTables[inside[u]], depth, out);
+				}
+			}
+
 			out += "<ruby>";
 			for (size_t k = next; k <= last; ++k)
 			{
 				// ★THE BASE GOES THROUGH WriteRun LIKE EVERYTHING ELSE, so a kenten standing on
 				//   these same characters comes out as an <em> inside the reading - and so does a
 				//   note reference, which is how one standing inside a reading keeps its place.
-					WriteRun(p, byteAt, spans[k].fStart, spans[k].fStart + spans[k].fLen, out);
+					WriteRun(s, p, byteAt, spans[k].fStart, spans[k].fStart + spans[k].fLen,
+							 inside, depth, kFalse, out);
 				out += "<rt>";
 				WriteText(spans[k].fValue, out);
 				out += "</rt>";
@@ -638,10 +703,14 @@ void WriteParaHtml(const Para& p, std::string& out)
 		if (stop <= cp)
 			break;					// nothing left to write; a malformed span cannot loop us
 
-		WriteRun(p, byteAt, cp, stop, out);
+		WriteRun(s, p, byteAt, cp, stop, inside, depth, kTrue, out);
 		cp = stop;
 	}
 
+	// ⚠A TABLE AT THE VERY END of the paragraph stands where no run covers - every run is
+	//   half-open and stops before it. A paragraph holding NOTHING but a table is this case with
+	//   cpCount == 0, which is why it needs no special path of its own.
+	WriteTablesAt(s, inside, cpCount, depth, out);
 }
 
 /*	WriteTable
@@ -665,20 +734,19 @@ void Indent(int32 depth, std::string& out)
 		out += "    ";
 }
 
-void WriteTable(const Story& s, const Table& t, int32 depth, bool16 insideParagraph, std::string& out)
+void WriteTable(const Story& s, const Table& t, int32 depth, std::string& out)
 {
 	// ★★**A TABLE IS PRETTY-PRINTED** (the user's request, 2026-09-16): one tag per line, four
 	//   spaces a step, so that a reader editing the file can see the shape of the table at a
 	//   glance. ⚠**THIS COSTS NOTHING IN CORRECTNESS** because every newline and space here is
 	//   OUTSIDE a <p>, and outside a <p> nothing is text - which is the one rule this format has.
-	// ★★★**THE TAG SAYS WHICH OF THE TWO THIS IS** (2026-09-16). A table either IS a paragraph -
-	//   the document holds [anchor][continued...][CR] and nothing else - or it stands INSIDE one,
-	//   among that paragraph's own characters ("あいう[table]えお", measured 2026-09-01). Written
-	//   without the class it makes its own paragraph when read back; written with it, it joins the
-	//   paragraph before it. Nothing else can tell the two apart, because the empty <p> that used
-	//   to stand in front of every table is exactly what this removes.
-	Indent(depth, out);
-	out += insideParagraph ? "<table class=\"c\">\r\n" : "<table>\r\n";
+	// ★★★**EVERY TABLE STANDS INSIDE A <p>** (the user's decision, 2026-09-16), at the place in
+	//   that paragraph's text where the document has it - so the opening tag follows whatever came
+	//   before it on the same line and is NOT indented. A paragraph holding nothing but a table is
+	//   <p><table>...</table></p>, which is the same rule with no text either side rather than a
+	//   case of its own. ⚠It is not valid HTML - a <p> may not contain a table - but a browser
+	//   shows it correctly (measured in Chrome), and the reader that has to understand it is ours.
+	out += "<table>\r\n";
 
 	bool16 inHead = kFalse;
 	for (size_t r = 0; r < t.fRows.size(); ++r)
@@ -729,33 +797,9 @@ void WriteTable(const Story& s, const Table& t, int32 depth, bool16 insideParagr
 			//   layout.
 			for (size_t k = 0; k < cell.fParas.size(); ++k)
 			{
-				// ★**A PARAGRAPH THAT IS NOTHING BUT A TABLE IS NOT WRITTEN**, here for the same
-				//   reason as in the body (Write says it at length): the nested table below IS this
-				//   paragraph, and an empty <p> in front of it would make one paragraph look like
-				//   two.
-				bool16 hostsTable = kFalse;
-				for (size_t u = 0; u < s.fTables.size() && !hostsTable; ++u)
-				{
-					if (s.fTables[u].fInTable == t.fOrdinal
-						&& s.fTables[u].fInRow == static_cast<int32>(r)
-						&& s.fTables[u].fInCell == static_cast<int32>(c)
-						&& s.fTables[u].fParaIndex == static_cast<int32>(k))
-					{
-						hostsTable = kTrue;
-					}
-				}
-
-				const bool16 paraIsOnlyTable =
-					(hostsTable && cell.fParas[k].fText.empty()) ? kTrue : kFalse;
-
-				if (!paraIsOnlyTable)
-				{
-					Indent(rowDepth + 2, out);
-					out += "<p>";
-					WriteParaHtml(cell.fParas[k], out);
-					out += "</p>\r\n";
-				}
-
+				// ★**A CELL IS A SMALL BODY**: every paragraph is a <p>, and the tables standing in
+				//   it are written inside that <p>, at the place in its text where they stand.
+				std::vector<size_t> inside;
 				for (size_t u = 0; u < s.fTables.size(); ++u)
 				{
 					if (s.fTables[u].fInTable == t.fOrdinal
@@ -763,9 +807,14 @@ void WriteTable(const Story& s, const Table& t, int32 depth, bool16 insideParagr
 						&& s.fTables[u].fInCell == static_cast<int32>(c)
 						&& s.fTables[u].fParaIndex == static_cast<int32>(k))
 					{
-						WriteTable(s, s.fTables[u], rowDepth + 2, !paraIsOnlyTable, out);
+						inside.push_back(u);
 					}
 				}
+
+				Indent(rowDepth + 2, out);
+				out += "<p>";
+				WriteParaHtml(s, cell.fParas[k], inside, rowDepth + 2, out);
+				out += "</p>\r\n";
 			}
 
 			Indent(rowDepth + 1, out);
@@ -780,8 +829,10 @@ void WriteTable(const Story& s, const Table& t, int32 depth, bool16 insideParagr
 		out += "</thead>\r\n";
 	}
 
+	// ⚠**NO NEWLINE AFTER IT.** Whatever follows the table is the rest of the same paragraph -
+	//  more text, or the </p> - and a newline here would be a character inside a <p>.
 	Indent(depth, out);
-	out += "</table>\r\n";
+	out += "</table>";
 }
 
 /*	kKentenLooks
@@ -1120,47 +1171,24 @@ void Write(const Story& s, int32 uid, std::string& out)
 
 	for (size_t i = 0; i < s.fBody.size(); ++i)
 	{
-		// ★**"THIS PARAGRAPH IS THE REST OF THE ONE BEFORE THE TABLE."** A table can stand in the
-		//   middle of a paragraph (measured - KCMTextRead::TakeAttrFor says where), and the two
-		//   halves arrive as two paragraphs. class="c" is what tells the reader they were one.
-		bool16 continuation = kFalse;
-		for (size_t t = 0; t < s.fTables.size() && !continuation; ++t)
-		{
-			if (s.fTables[t].fSplitsPara && i > 0
-				&& s.fTables[t].fParaIndex == static_cast<int32>(i) - 1)
-				continuation = kTrue;
-		}
-
-		// ★★★**A PARAGRAPH THAT IS NOTHING BUT A TABLE IS NOT WRITTEN AS A PARAGRAPH** (the user's
-		//   decision, 2026-09-16). The model holds [table anchor][continued...][CR] and nothing
-		//   else - the table IS that paragraph, and there is no text in front of the anchor - so an
-		//   empty <p> before it would say there were two paragraphs where the document has one.
-		//   Read puts the paragraph back when it meets a table with no <p> in front of it.
-		bool16 hostsTable = kFalse;
-		for (size_t t = 0; t < s.fTables.size() && !hostsTable; ++t)
-		{
-			if (s.fTables[t].fInTable < 0 && s.fTables[t].fParaIndex == static_cast<int32>(i))
-				hostsTable = kTrue;
-		}
-
-		const bool16 paraIsOnlyTable =
-			(hostsTable && s.fBody[i].fText.empty()) ? kTrue : kFalse;
-
-		if (!paraIsOnlyTable)
-		{
-			out += continuation ? "<p class=\"c\">" : "<p>";
-			WriteParaHtml(s.fBody[i], out);
-			out += "</p>\r\n";
-		}
-
-		// The tables that hang off this paragraph, in the order they were given.
-		// ⚠**THE BODY'S OWN ONLY.** A table standing in a cell is written by WriteTable, inside the
-		//  <td> that holds it - it is in this same flat list, and fInTable is what tells them apart.
+		// ★★★**EVERY PARAGRAPH IS A <p>, AND ITS TABLES ARE INSIDE IT** (the user's decision,
+		//   2026-09-16). One rule, no cases: a paragraph holding nothing but a table is
+		//   <p><table>...</table></p>, and one with a table in the middle of a sentence is
+		//   <p>琥珀猫<table>...</table>ねこねこ</p>. The reader adds a paragraph by copying a <p>,
+		//   and never meets a table standing on its own where they might type in front of it.
+		// ⚠**THE BODY'S OWN TABLES ONLY.** A table standing in a cell is written by WriteTable,
+		//  inside the <td> that holds it - it is in this same flat list, and fInTable tells them
+		//  apart.
+		std::vector<size_t> inside;
 		for (size_t t = 0; t < s.fTables.size(); ++t)
 		{
 			if (s.fTables[t].fInTable < 0 && s.fTables[t].fParaIndex == static_cast<int32>(i))
-				WriteTable(s, s.fTables[t], 0, !paraIsOnlyTable, out);
+				inside.push_back(t);
 		}
+
+		out += "<p>";
+		WriteParaHtml(s, s.fBody[i], inside, 0, out);
+		out += "</p>\r\n";
 	}
 
 	// ★★★**A NOTE IS A LIST ITEM HOLDING PARAGRAPHS** (the user's decision, 2026-09-16, replacing
@@ -1177,11 +1205,15 @@ void Write(const Story& s, int32 uid, std::string& out)
 		{
 			Indent(1, out);
 			out += "<li>\r\n";
+
+			// A note's paragraphs hold no tables - InDesign does not let one be put in a footnote -
+			// so the list of tables handed to the writer is empty.
+			const std::vector<size_t> noTables;
 			for (size_t k = 0; k < s.fNotes[n].size(); ++k)
 			{
 				Indent(2, out);
 				out += "<p>";
-				WriteParaHtml(s.fNotes[n][k], out);
+				WriteParaHtml(s, s.fNotes[n][k], noTables, 2, out);
 				out += "</p>\r\n";
 			}
 			Indent(1, out);
@@ -1223,6 +1255,12 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 	KCMAttrSpanList paraRuby;		// the readings met so far, in this paragraph's own count
 	KCMAttrSpanList paraKenten;		// and the marks, in the same count
 	EmState em;
+
+	// ★★★**A PARAGRAPH IS PUT ASIDE WHILE A TABLE INSIDE IT IS READ** (2026-09-16). A table may
+	//   stand in the middle of a paragraph, and its cells hold paragraphs of their own, so the one
+	//   being read has to wait somewhere while they are. One buffer could not do it: the cells
+	//   would write into the paragraph the table interrupted.
+	std::vector<ParaState> paraStack;
 	// ★**A NOTE IS AN <li>, AND ITS PARAGRAPHS ARE WHATEVER STANDS INSIDE IT** (2026-09-16), so
 	//   nothing has to be paired up at the end and the paragraphs carry nothing of their own.
 	bool16 inNote = kFalse;
@@ -1388,47 +1426,55 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 			{
 				if (!closing)
 				{
-					if (inPara)
+					if (em.fOpen)
 					{
-						whyNot = "a <table> stands inside a paragraph";
+						whyNot = "a <table> stands inside an <em> that is still open";
 						return kFalse;
 					}
 
-					// ★★★**A TABLE WITHOUT class="c" IS ITS OWN PARAGRAPH.** The writer leaves out
-					//   the empty <p> of a paragraph that holds nothing but a table, because in the
-					//   document that table IS the paragraph - the model has [anchor][continued...]
-					//   [CR] and no text before the anchor. A table that stands INSIDE a paragraph
-					//   carries the class and joins the paragraph before it instead (measured
-					//   2026-09-01: inserting a table into "あいうえ" leaves ONE paragraph, its
-					//   anchor between two of the paragraph's own characters).
-					//   ⚠**NOTHING ELSE CAN TELL THE TWO APART.** "Was there a <p> just now" cannot:
-					//    a paragraph of text followed by a table-only paragraph looks exactly like a
-					//    paragraph with a table inside it. Measured 2026-09-16 - the file lost a
-					//    paragraph on the way back.
-					std::string tableCls;
-					const bool16 insidePara =
-						(ClassOfTag(s, i, after, tableCls) && tableCls == "c") ? kTrue : kFalse;
-
-					if (!insidePara)
+					// ★★★**WHERE THE TAG STANDS IS WHAT IT MEANS** (the user's decision,
+					//   2026-09-16). INSIDE a <p> the table is part of that paragraph and its place
+					//   among the characters is kept; OUTSIDE one it IS the next paragraph, because
+					//   in the document a table of its own makes a paragraph holding
+					//   [anchor][continued...][CR] and nothing else.
+					//   ⚠**A <p> HOLDING A TABLE IS NOT VALID HTML** - a browser closes the <p> at
+					//    the table - but it SHOWS it correctly (measured in Chrome, 2026-09-16) and
+					//    this reader is the one that has to understand it. Nothing else can carry
+					//    where in a sentence the table stood.
+					if (!inPara)
 					{
-						if (!InsideCell(tables))
-						{
-							out.fBody.push_back(Para());
-						}
-						else if (!tables.back().fTable.fRows.empty()
-								 && !tables.back().fTable.fRows.back().fCells.empty())
-						{
-							tables.back().fTable.fRows.back().fCells.back().fParas.push_back(Para());
-						}
+						whyNot = "a <table> stands outside a paragraph: every table is written "
+								 "inside the <p> of the paragraph it belongs to, and a paragraph "
+								 "that holds nothing else is <p><table>...</table></p>";
+						return kFalse;
 					}
 
+					// ★WHERE IN THE PARAGRAPH, in the text's own count - and the paragraph goes
+					//   aside while the table's own cells are read into a fresh one.
 					TableFrame frame;
 					frame.fSlot = out.fTables.size();
 					frame.fTable.fOrdinal = static_cast<int32>(frame.fSlot);
+					frame.fTable.fSplitsPara = kTrue;
+					frame.fTable.fOffset = CountCodePoints(para);
 
-					// ★WHERE IT STANDS = after the paragraph most recently closed, in whatever
-					//   holds it. A table inside a <td> belongs to that cell and counts that
-					//   cell's paragraphs; one in the body belongs to the body and counts its own.
+					{
+						ParaState saved;
+						saved.fText = para;
+						saved.fRuby = paraRuby;
+						saved.fKenten = paraKenten;
+						paraStack.push_back(saved);
+					}
+
+					para.clear();
+					paraRuby.clear();
+					paraKenten.clear();
+					em = EmState();
+					inPara = kFalse;
+
+					// ★WHERE IT STANDS, in whatever holds it. A table inside a <td> belongs to that
+					//   cell and counts that cell's paragraphs; one in the body counts the body's.
+					//   ⚠A table INSIDE a paragraph names the paragraph that has not been closed
+					//    yet, which is the one about to be pushed - hence no -1.
 					if (InsideCell(tables))
 					{
 						const TableFrame& parent = tables.back();
@@ -1436,13 +1482,15 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 						frame.fTable.fInTable = parent.fTable.fOrdinal;
 						frame.fTable.fInRow = static_cast<int32>(parent.fTable.fRows.size()) - 1;
 						frame.fTable.fInCell = static_cast<int32>(row.fCells.size()) - 1;
+						// ⚠**THE PARAGRAPH IT NAMES HAS NOT BEEN CLOSED YET** - it is the one about to be
+						//  pushed when its </p> arrives, so the count is taken as it stands, with no -1.
 						frame.fTable.fParaIndex =
-							static_cast<int32>(row.fCells.back().fParas.size()) - 1;
+							static_cast<int32>(row.fCells.back().fParas.size());
 					}
 					else
 					{
 						frame.fTable.fInTable = -1;
-						frame.fTable.fParaIndex = static_cast<int32>(out.fBody.size()) - 1;
+						frame.fTable.fParaIndex = static_cast<int32>(out.fBody.size());
 					}
 
 					out.fTables.push_back(Table());		// the slot, taken at the opening tag
@@ -1455,8 +1503,28 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 						whyNot = "a </table> closes a table that never began";
 						return kFalse;
 					}
+					if (inPara)
+					{
+						whyNot = "a </table> closes a table with a paragraph still open inside it";
+						return kFalse;
+					}
+
+					const bool16 wasInsidePara = tables.back().fTable.fSplitsPara;
 					out.fTables[tables.back().fSlot] = tables.back().fTable;
 					tables.pop_back();
+
+					// ★**THE PARAGRAPH THE TABLE INTERRUPTED GOES ON**, exactly where it left off:
+					//   everything after the table joins the same paragraph, which is what makes
+					//   "琥珀猫[table]ねこねこ" one paragraph on both sides of the trip.
+					if (wasInsidePara && !paraStack.empty())
+					{
+						para = paraStack.back().fText;
+						paraRuby = paraStack.back().fRuby;
+						paraKenten = paraStack.back().fKenten;
+						paraStack.pop_back();
+						em = EmState();
+						inPara = kTrue;
+					}
 				}
 				i = after;
 				continue;
