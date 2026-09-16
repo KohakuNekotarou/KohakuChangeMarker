@@ -1160,7 +1160,12 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 		//   is written in means nothing.
 		if (narrowed)
 		{
-			KCMTextDiff::MergeNearbyChanges(fineChanges);
+			// ⚠**THE PARAGRAPH BREAK IS HANDED OVER AS SOMETHING NOT TO SWALLOW** (2026-09-16).
+			//   JoinParagraphs puts exactly one '\n' between two paragraphs of a run, so that
+			//   code point is what marks a break here - and a change that contains one writes
+			//   over it, which costs the following paragraphs their styles (KCMTextDiff.h has
+			//   the measurement).
+			KCMTextDiff::MergeNearbyChanges(fineChanges, &sourceCodePoints, static_cast<int32>('\n'));
 
 			// **THEN SLIDE EACH RUN TO THE POSITION A READER WOULD PUT IT.** Myers returns A
 			//   shortest edit script, not THE one a person would describe, and when the surrounding

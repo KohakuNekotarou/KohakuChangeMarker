@@ -129,9 +129,26 @@ namespace KCMTextDiff
 		 paragraphs that nobody touched as changed, because "the gap between two changed paragraphs
 		 is short" says nothing about the paragraph sitting in that gap.
 
+		⚠★★★**AND A PARAGRAPH BREAK IS NEVER SWALLOWED** (2026-09-16, the user's report). A break is
+		 ONE character, so it is exactly the "short gap" this rule exists to absorb - and absorbing
+		 it turns three rewritten lines into ONE change covering both breaks. Writing that change
+		 replaces the breaks themselves, and **a paragraph style lives on its paragraph**: measured
+		 on a document whose three paragraphs were StyleA, StyleB and StyleC, restoring such a
+		 change left all three reading StyleC. The words came back and the styles did not.
+		 ⇒ Pass `tokens` and the break's own token to keep changes on their own side of it. The
+		   case where the break ITSELF changed - a paragraph joined or split - is untouched: there
+		   the break is not in an unchanged gap at all, so it is still restorable, which it has to
+		   be (putting it back is literally writing that character).
+
 		@param changes IN OUT the runs to merge, in order. Repeats until nothing more merges.
+		@param tokens the sequence the changes are indexed into (the A side), or nil for no such
+			test. The gap between two changes is the same on both sides, so one side answers.
+		@param doNotSwallow a token that blocks a merge when the gap holds it - the paragraph
+			break for a joined run of paragraphs. Ignored when `tokens` is nil.
 	*/
-	void MergeNearbyChanges(std::vector<Change>& changes);
+	void MergeNearbyChanges(std::vector<Change>& changes,
+							const std::vector<int32>* tokens = 0,
+							int32 doNotSwallow = -1);
 
 	/** Slides each change to whichever of its EQUIVALENT positions reads most naturally, widens
 		it to the whole word where it starts or ends inside a LATIN one (letters or digits), and

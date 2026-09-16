@@ -568,7 +568,37 @@ bool16 KCMTextDiff::Diff(const std::vector<int32>& a, const std::vector<int32>& 
    merge as well, and one pass would leave that one behind. It terminates because every pass
    that sets merged either removed an entry or did nothing.
 */
-void KCMTextDiff::MergeNearbyChanges(std::vector<Change>& changes)
+namespace
+{
+
+/*	GapHolds
+	Whether the unchanged run [from, to) of `tokens` holds `token`.
+
+	★**THE ONE PLACE THAT LOOKS INSIDE A GAP.** MergeNearbyChanges otherwise reasons about lengths
+	alone, which is why a paragraph break - a gap of one - looked like every other short gap to it.
+*/
+bool16 GapHolds(const std::vector<int32>* tokens, int32 token, int32 from, int32 to)
+{
+	if (tokens == 0 || token < 0)
+		return kFalse;
+
+	if (from < 0)
+		from = 0;
+	if (to > static_cast<int32>(tokens->size()))
+		to = static_cast<int32>(tokens->size());
+
+	for (int32 i = from; i < to; ++i)
+	{
+		if ((*tokens)[i] == token)
+			return kTrue;
+	}
+	return kFalse;
+}
+
+}	// anonymous namespace
+
+void KCMTextDiff::MergeNearbyChanges(std::vector<Change>& changes,
+									 const std::vector<int32>* tokens, int32 doNotSwallow)
 {
 	if (changes.size() < 2)
 		return;
@@ -620,7 +650,16 @@ void KCMTextDiff::MergeNearbyChanges(std::vector<Change>& changes)
 			//   @warning the header said BOTH things at once -- "no longer than EACH" in one sentence
 			//     and "shorter than both" in the next, and the implementation followed the first. Two
 			//     spellings of one rule in one place is how it survived being read.
-			if (gap >= 0 && gap < previousSize && gap < currentSize)
+			// ⚠★★★**AND NEVER ACROSS A PARAGRAPH BREAK** (2026-09-16). A break is one character, so
+			//   it is the shortest gap there is and this rule would always swallow it - which
+			//   makes three rewritten lines one change covering both breaks, and writing that
+			//   change back takes the breaks with it. A paragraph style lives on its paragraph:
+			//   measured, restoring such a change left StyleA, StyleB and StyleC all reading
+			//   StyleC. The header carries the rest of the reasoning.
+			const bool16 acrossABreak = GapHolds(tokens, doNotSwallow,
+												 previous.aStart + previous.aCount, current.aStart);
+
+			if (gap >= 0 && gap < previousSize && gap < currentSize && !acrossABreak)
 			{
 				previous.aCount = (current.aStart + current.aCount) - previous.aStart;
 				previous.bCount = (current.bStart + current.bCount) - previous.bStart;
