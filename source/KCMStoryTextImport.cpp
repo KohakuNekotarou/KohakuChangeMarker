@@ -235,6 +235,25 @@ bool16 TablesAgree(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::S
 
 	for (int32 tbl = 0; tbl < docTables; ++tbl)
 	{
+		const KCMStoryHtml::Table& fileTable = file.fTables[static_cast<size_t>(tbl)];
+		const int32 fileRows = static_cast<int32>(fileTable.fRows.size());
+
+		// ★★**THE TWO SIDES COUNT ROWS DIFFERENTLY, SO NEITHER COUNT IS COMPARED.** The writer walks
+		//   the MODEL's row count (KCMStoryTextExport's ReadTableShapes -> fRowCount) and emits a
+		//   <tr> for every row, empty or not. Here there are only paragraph attributes, where a row
+		//   with no cell of its own leaves no trace - so "highest fCellRow + 1" and fRows.size()
+		//   are not the same quantity, and comparing them would be comparing two different things.
+		// ★**WHAT IS COMPARED INSTEAD: the cells of each row, over the union of both row ranges.**
+		//   An empty row reads as 0 cells on both sides, so it agrees; a row added or removed shows
+		//   up as a row with cells on one side and none on the other. Nothing is lost.
+		// ⚠**THIS IS A GUARD, NOT A FIX FOR SOMETHING SEEN.** The obvious way to produce an empty
+		//   row - merging every column of a row into the one above - does NOT produce one: InDesign
+		//   REMOVES THE ROW instead (measured 2026-09-16: BodyRowCount 2 -> 1, the row and its last
+		//   cell deleted, RowSpan back to 1). So no such table has been observed, and the earlier
+		//   reading of this code that said every table with one would be refused for ever was WRONG
+		//   - it was read, not measured. The union form costs nothing and is kept because the two
+		//   counts genuinely mean different things; if a row with no cells ever does arrive, by
+		//   some route not tried here, it will agree rather than refuse the story.
 		int32 docRows = 0;
 		for (size_t i = 0; i < attrs.size(); ++i)
 		{
@@ -242,27 +261,21 @@ bool16 TablesAgree(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::S
 				docRows = attrs[i].fCellRow + 1;
 		}
 
-		const int32 fileRows = static_cast<int32>(file.fTables[static_cast<size_t>(tbl)].fRows.size());
-		if (docRows != fileRows)
-		{
-			whyNot = "a table's number of rows changed";
-			whyNot.SetTranslatable(kFalse);
-			return kFalse;
-		}
-
-		for (int32 r = 0; r < docRows; ++r)
+		const int32 rowsToCheck = (docRows > fileRows) ? docRows : fileRows;
+		for (int32 r = 0; r < rowsToCheck; ++r)
 		{
 			std::vector<int32> cols;
-			ColumnsOfRow(attrs, tbl, r, cols);
+			ColumnsOfRow(attrs, tbl, r, cols);		// no such row in the document -> empty
 
 			// ⚠**A MERGED CELL IS ONE CELL ON BOTH SIDES.** The document gives it the column it
 			//   starts in and no other; the file writes one <td> with colspan. That is why the
 			//   counts can be compared directly rather than having to add the spans up.
-			const size_t fileCells =
-				file.fTables[static_cast<size_t>(tbl)].fRows[static_cast<size_t>(r)].fCells.size();
+			const size_t fileCells = (r < fileRows)
+				? fileTable.fRows[static_cast<size_t>(r)].fCells.size()
+				: 0;
 			if (cols.size() != fileCells)
 			{
-				whyNot = "a table row's number of cells changed (a merge, a split, or a column)";
+				whyNot = "a table row's number of cells changed (a merge, a split, a row or a column)";
 				whyNot.SetTranslatable(kFalse);
 				return kFalse;
 			}
