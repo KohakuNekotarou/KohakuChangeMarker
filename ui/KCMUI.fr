@@ -2778,6 +2778,24 @@ resource KCMStoryRowWidget(kKCMStoryRubyRowRsrcID + index_enUS)
 	kTrue, kTrue,						// Visible, Enabled
 	"",									// Panel name
 	{
+		// ★★THE ID COLUMN (2026-09-16, the user's call): the kind of attribute - ルビ, 圏点, 割注,
+		//   縦中横, Footnote, Endnote - on the line its sign stands on. This row had no cell here
+		//   until that day. The frame is the change row's ID cell on the lower line; the widget
+		//   manager fits it to the column and moves it to the sign's line on every apply.
+		KCMStoryRowCellWidget
+		(
+			kKCMStoryRowUIDWidgetID,		// WidgetId (the story row's left column, reused)
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft,						// Frame binding: a fixed column at the row's left edge
+			Frame(24, kKCMStoryRubyRowHeight / 2, 64, kKCMStoryRubyRowHeight - 2),	// Frame (lower line)
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+
 		// Left: the base characters on the LOWER line and the reading on the upper one. The cell
 		// takes the WHOLE height and divides it itself - it is the only thing here that knows the
 		// two lines exist, and it has to, because the reading is centred over the changed
@@ -2848,6 +2866,21 @@ resource KCMStoryRowWidget(kKCMStoryTallRowRsrcID + index_enUS)
 	kTrue, kTrue,						// Visible, Enabled
 	"",									// Panel name
 	{
+		// The ID column - the kind's name, moved to the sign's line per apply (see the ruby row).
+		KCMStoryRowCellWidget
+		(
+			kKCMStoryRowUIDWidgetID,		// WidgetId (the story row's left column, reused)
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft,						// Frame binding: a fixed column at the row's left edge
+			Frame(24, kKCMStoryRowHeight * 2, 64, kKCMStoryTallRowHeight - 2),	// Frame (bottom line; moved per apply)
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+
 		KCMStoryChangeCellWidget
 		(
 			kKCMStoryRowTextWidgetID,		// WidgetId (reused - see 1014)

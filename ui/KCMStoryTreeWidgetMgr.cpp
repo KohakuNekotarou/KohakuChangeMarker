@@ -115,6 +115,57 @@ PMString Translated(const char* key)
 	return s;
 }
 
+/** What a change row's ID column names an ATTRIBUTE change as (2026-09-16, the user's call: "ルビ,
+	圏点, 割注, 縦中横 - and Footnote, Endnote in English").
+
+	★★THE FOUR JAPANESE TYPESETTING FEATURES ARE NAMED IN JAPANESE, the two notes in English - the
+	  user's reasoning: ruby, kenten, warichu and tate-chu-yoko exist only in a Japanese document, so
+	  their reader reads Japanese, while footnotes do not belong to one language. ⚠**NOT through the
+	  string tables**: the panel is English (KCM's convention) and these four are not translations of
+	  anything.
+	⚠NON-ASCII, so set as UTF-16 - the same reason `≠` is (a narrow literal would be converted to the
+	  system code page, and every one of these four exists in CP932, so it would build and come out
+	  wrong: cpp-japanese-needs-bom, the dangerous half).
+	★ONE PLACE for the words: the row shows them and the column's width is fitted to them
+	  (KCMRecomputeListLeftColumnWidth), and a second list would drift.
+	@return empty for a text change and for a kind this build does not name. */
+PMString AttrKindIdLabel(int32 attrKind)
+{
+	PMString label;
+	switch (attrKind)
+	{
+		case kKCMStoryAttrRuby:
+		{
+			const char16_t s[] = u"ルビ";				// ルビ
+			label.SetXString(reinterpret_cast<const UTF16TextChar*>(s), 2);
+			break;
+		}
+		case kKCMStoryAttrKenten:
+		{
+			const char16_t s[] = u"圏点";				// 圏点
+			label.SetXString(reinterpret_cast<const UTF16TextChar*>(s), 2);
+			break;
+		}
+		case kKCMStoryAttrWarichu:
+		{
+			const char16_t s[] = u"割注";				// 割注
+			label.SetXString(reinterpret_cast<const UTF16TextChar*>(s), 2);
+			break;
+		}
+		case kKCMStoryAttrTcy:
+		{
+			const char16_t s[] = u"縦中横";		// 縦中横
+			label.SetXString(reinterpret_cast<const UTF16TextChar*>(s), 3);
+			break;
+		}
+		case kKCMStoryAttrFootnote:	label.Append("Footnote");	break;
+		case kKCMStoryAttrEndnote:	label.Append("Endnote");	break;
+		default:					break;
+	}
+	label.SetTranslatable(kFalse);
+	return label;
+}
+
 /** Which sign a story row's change column shows.
 
 	★★★**FOUR SIGNS, NOT WORDS** (2026-09-10, the user's call, arrived at in three steps: the
@@ -374,9 +425,9 @@ public:
 		//   put the child rows' sign in the Δ column as well). They used to be excluded, and their
 		//   sign stayed out at the row's right edge while the parent's sat in the Δ column - the
 		//   one column in the list where two rows answered the same question in two places.
-		//   ★**Their resource has no left cell**, and that costs nothing: KCMApplyListColumnWidths
-		//     ignores a nil cell, so the change row gets the sign and the text placed and nothing
-		//     put where its UID would have been.
+		//   ★Their left cell holds "OV" (a text change) or the attribute's name (ルビ / 圏点 / 割注 /
+		//     縦中横 / Footnote / Endnote, since 2026-09-16), and is fitted to the same column as the
+		//     story row's UID. KCMApplyListColumnWidths still ignores a nil cell.
 		{
 			// ⚠The 12 moved to the top of this file on 2026-09-10: the self-fitting Kind column has
 			//   to add the same indent when it measures a child's name, and a second copy of it
@@ -843,18 +894,22 @@ private:
 		//   .fr puts it. ⚠Set on EVERY apply of a row of two or three lines, because the widget is
 		//   recycled between a ruby row and a layered one of the same height; only the vertical edges
 		//   move - the horizontal ones belong to the panel's width (kBindRight).
+		// ★AND THE ID CELL WITH IT (the same day): the kind's name stands beside its sign.
 		if (lineCount >= 2)
 		{
-			IControlView* signCell = widgetList->FindWidget(kKCMStoryRowKindWidgetID);
-			if (signCell != nil)
+			const int32 changedLine = (KCMAttrKindIsLayered(attrKind) && layers.fCount == lineCount)
+									  ? layers.fChanged : 0;
+			const int32 fromTop = lineCount - 1 - changedLine;
+			const WidgetID onTheChangedLine[] = { kKCMStoryRowKindWidgetID, kKCMStoryRowUIDWidgetID };
+			for (size_t w = 0; w < sizeof(onTheChangedLine) / sizeof(onTheChangedLine[0]); ++w)
 			{
-				const int32 changedLine = (KCMAttrKindIsLayered(attrKind) && layers.fCount == lineCount)
-										  ? layers.fChanged : 0;
-				const int32 fromTop = lineCount - 1 - changedLine;
-				PMRect frame = signCell->GetFrame();
+				IControlView* cell = widgetList->FindWidget(onTheChangedLine[w]);
+				if (cell == nil)
+					continue;
+				PMRect frame = cell->GetFrame();
 				frame.Top(PMReal(kKCMStoryRowHeight * fromTop + ((fromTop == 0) ? 1 : 0)));
 				frame.Bottom(PMReal(kKCMStoryRowHeight * (fromTop + 1) - 2));
-				signCell->SetFrame(frame);
+				cell->SetFrame(frame);
 			}
 		}
 
@@ -879,11 +934,18 @@ private:
 		//   so a cell left alone keeps what the row it used to be had in it - the same rule the
 		//   story branch states at its own three cells. An "OV" stuck to an ordinary change would
 		//   be worse than no mark at all.
-		PMString oversetMark;
-		oversetMark.SetTranslatable(kFalse);
-		if (have && change.fOverset)
-			oversetMark.Append("OV");
-		this->SetNodeName(widgetList, oversetMark, kKCMStoryRowUIDWidgetID);
+		// ★★AND AN ATTRIBUTE CHANGE IS NAMED THERE (2026-09-16, the user's call): ルビ / 圏点 / 割注 /
+		//   縦中横 / Footnote / Endnote, on the line the sign stands on. ⚠Such a row is two or three
+		//   lines, and "OV" is not shown on it - which is how those rows already were: until this day
+		//   their template had no ID cell at all, so an overset ruby never said OV either.
+		PMString idText;
+		idText.SetTranslatable(kFalse);
+		if (have && KCMAttrKindHasMarkLine(change.fAttrKind))
+			idText = AttrKindIdLabel(change.fAttrKind);
+		else if (have && change.fOverset)
+			idText.Append("OV");
+		idText.SetTranslatable(kFalse);
+		this->SetNodeName(widgetList, idText, kKCMStoryRowUIDWidgetID);
 
 		// (A "Mono" / "Group" cell on the upper line's right-hand column was filled here from
 		//  2026-09-08 to 2026-09-12. It went with the judgement behind it - a ruby re-set from mono
@@ -1028,6 +1090,20 @@ void KCMRecomputeListLeftColumnWidth()
 			const PMReal w = StringUtils::PMMeasureString(uid, font, kFalse).X();
 			if (w > widestUid)
 				widestUid = w;
+
+			// ★★AND THE NAME EACH ATTRIBUTE CHANGE SHOWS IN THIS COLUMN (2026-09-16): "Footnote" is
+			//   wider than any UID, and a column fitted to the UIDs alone would clip it. The same
+			//   function names them here and on the row (AttrKindIdLabel), so the two cannot disagree.
+			const int32 changes = stories->GetChangeCount(i);
+			for (int32 k = 0; k < changes; ++k)
+			{
+				const PMString label = AttrKindIdLabel(stories->GetChangeAttrKind(i, k));
+				if (label.IsEmpty())
+					continue;
+				const PMReal lw = StringUtils::PMMeasureString(label, font, kFalse).X();
+				if (lw > widestUid)
+					widestUid = lw;
+			}
 		}
 
 		if (widestUid > PMReal(0.0))
