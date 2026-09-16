@@ -665,14 +665,20 @@ void Indent(int32 depth, std::string& out)
 		out += "    ";
 }
 
-void WriteTable(const Story& s, const Table& t, int32 depth, std::string& out)
+void WriteTable(const Story& s, const Table& t, int32 depth, bool16 insideParagraph, std::string& out)
 {
 	// ★★**A TABLE IS PRETTY-PRINTED** (the user's request, 2026-09-16): one tag per line, four
 	//   spaces a step, so that a reader editing the file can see the shape of the table at a
 	//   glance. ⚠**THIS COSTS NOTHING IN CORRECTNESS** because every newline and space here is
 	//   OUTSIDE a <p>, and outside a <p> nothing is text - which is the one rule this format has.
+	// ★★★**THE TAG SAYS WHICH OF THE TWO THIS IS** (2026-09-16). A table either IS a paragraph -
+	//   the document holds [anchor][continued...][CR] and nothing else - or it stands INSIDE one,
+	//   among that paragraph's own characters ("あいう[table]えお", measured 2026-09-01). Written
+	//   without the class it makes its own paragraph when read back; written with it, it joins the
+	//   paragraph before it. Nothing else can tell the two apart, because the empty <p> that used
+	//   to stand in front of every table is exactly what this removes.
 	Indent(depth, out);
-	out += "<table>\r\n";
+	out += insideParagraph ? "<table class=\"c\">\r\n" : "<table>\r\n";
 
 	bool16 inHead = kFalse;
 	for (size_t r = 0; r < t.fRows.size(); ++r)
@@ -723,10 +729,32 @@ void WriteTable(const Story& s, const Table& t, int32 depth, std::string& out)
 			//   layout.
 			for (size_t k = 0; k < cell.fParas.size(); ++k)
 			{
-				Indent(rowDepth + 2, out);
-				out += "<p>";
-				WriteParaHtml(cell.fParas[k], out);
-				out += "</p>\r\n";
+				// ★**A PARAGRAPH THAT IS NOTHING BUT A TABLE IS NOT WRITTEN**, here for the same
+				//   reason as in the body (Write says it at length): the nested table below IS this
+				//   paragraph, and an empty <p> in front of it would make one paragraph look like
+				//   two.
+				bool16 hostsTable = kFalse;
+				for (size_t u = 0; u < s.fTables.size() && !hostsTable; ++u)
+				{
+					if (s.fTables[u].fInTable == t.fOrdinal
+						&& s.fTables[u].fInRow == static_cast<int32>(r)
+						&& s.fTables[u].fInCell == static_cast<int32>(c)
+						&& s.fTables[u].fParaIndex == static_cast<int32>(k))
+					{
+						hostsTable = kTrue;
+					}
+				}
+
+				const bool16 paraIsOnlyTable =
+					(hostsTable && cell.fParas[k].fText.empty()) ? kTrue : kFalse;
+
+				if (!paraIsOnlyTable)
+				{
+					Indent(rowDepth + 2, out);
+					out += "<p>";
+					WriteParaHtml(cell.fParas[k], out);
+					out += "</p>\r\n";
+				}
 
 				for (size_t u = 0; u < s.fTables.size(); ++u)
 				{
@@ -735,7 +763,7 @@ void WriteTable(const Story& s, const Table& t, int32 depth, std::string& out)
 						&& s.fTables[u].fInCell == static_cast<int32>(c)
 						&& s.fTables[u].fParaIndex == static_cast<int32>(k))
 					{
-						WriteTable(s, s.fTables[u], rowDepth + 2, out);
+						WriteTable(s, s.fTables[u], rowDepth + 2, !paraIsOnlyTable, out);
 					}
 				}
 			}
@@ -1103,9 +1131,27 @@ void Write(const Story& s, int32 uid, std::string& out)
 				continuation = kTrue;
 		}
 
-		out += continuation ? "<p class=\"c\">" : "<p>";
-		WriteParaHtml(s.fBody[i], out);
-		out += "</p>\r\n";
+		// ★★★**A PARAGRAPH THAT IS NOTHING BUT A TABLE IS NOT WRITTEN AS A PARAGRAPH** (the user's
+		//   decision, 2026-09-16). The model holds [table anchor][continued...][CR] and nothing
+		//   else - the table IS that paragraph, and there is no text in front of the anchor - so an
+		//   empty <p> before it would say there were two paragraphs where the document has one.
+		//   Read puts the paragraph back when it meets a table with no <p> in front of it.
+		bool16 hostsTable = kFalse;
+		for (size_t t = 0; t < s.fTables.size() && !hostsTable; ++t)
+		{
+			if (s.fTables[t].fInTable < 0 && s.fTables[t].fParaIndex == static_cast<int32>(i))
+				hostsTable = kTrue;
+		}
+
+		const bool16 paraIsOnlyTable =
+			(hostsTable && s.fBody[i].fText.empty()) ? kTrue : kFalse;
+
+		if (!paraIsOnlyTable)
+		{
+			out += continuation ? "<p class=\"c\">" : "<p>";
+			WriteParaHtml(s.fBody[i], out);
+			out += "</p>\r\n";
+		}
 
 		// The tables that hang off this paragraph, in the order they were given.
 		// ⚠**THE BODY'S OWN ONLY.** A table standing in a cell is written by WriteTable, inside the
@@ -1113,7 +1159,7 @@ void Write(const Story& s, int32 uid, std::string& out)
 		for (size_t t = 0; t < s.fTables.size(); ++t)
 		{
 			if (s.fTables[t].fInTable < 0 && s.fTables[t].fParaIndex == static_cast<int32>(i))
-				WriteTable(s, s.fTables[t], 0, out);
+				WriteTable(s, s.fTables[t], 0, !paraIsOnlyTable, out);
 		}
 	}
 
@@ -1180,6 +1226,7 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 	// ★**A NOTE IS AN <li>, AND ITS PARAGRAPHS ARE WHATEVER STANDS INSIDE IT** (2026-09-16), so
 	//   nothing has to be paired up at the end and the paragraphs carry nothing of their own.
 	bool16 inNote = kFalse;
+
 
 	std::vector<TableFrame> tables;	// the tables open right now; more than one means nesting
 
@@ -1345,6 +1392,34 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					{
 						whyNot = "a <table> stands inside a paragraph";
 						return kFalse;
+					}
+
+					// ★★★**A TABLE WITHOUT class="c" IS ITS OWN PARAGRAPH.** The writer leaves out
+					//   the empty <p> of a paragraph that holds nothing but a table, because in the
+					//   document that table IS the paragraph - the model has [anchor][continued...]
+					//   [CR] and no text before the anchor. A table that stands INSIDE a paragraph
+					//   carries the class and joins the paragraph before it instead (measured
+					//   2026-09-01: inserting a table into "あいうえ" leaves ONE paragraph, its
+					//   anchor between two of the paragraph's own characters).
+					//   ⚠**NOTHING ELSE CAN TELL THE TWO APART.** "Was there a <p> just now" cannot:
+					//    a paragraph of text followed by a table-only paragraph looks exactly like a
+					//    paragraph with a table inside it. Measured 2026-09-16 - the file lost a
+					//    paragraph on the way back.
+					std::string tableCls;
+					const bool16 insidePara =
+						(ClassOfTag(s, i, after, tableCls) && tableCls == "c") ? kTrue : kFalse;
+
+					if (!insidePara)
+					{
+						if (!InsideCell(tables))
+						{
+							out.fBody.push_back(Para());
+						}
+						else if (!tables.back().fTable.fRows.empty()
+								 && !tables.back().fTable.fRows.back().fCells.empty())
+						{
+							tables.back().fTable.fRows.back().fCells.back().fParas.push_back(Para());
+						}
 					}
 
 					TableFrame frame;
