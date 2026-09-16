@@ -302,9 +302,20 @@ struct TableFrame
 	size_t	fSlot;
 	Table	fTable;
 	bool16	fInHead;
+	bool16	fInCell;	// a <td> of THIS table is open - the cell a nested table would stand in
 
-	TableFrame() : fSlot(0), fInHead(kFalse) {}
+	TableFrame() : fSlot(0), fInHead(kFalse), fInCell(kFalse) {}
 };
+
+/** Whether the innermost table has a cell open.
+
+	★★**ONE BOOLEAN FOR THE WHOLE READ COULD NOT SAY THIS.** The </td> of a NESTED table would
+	  clear it, and the outer cell - still open, still collecting paragraphs - would look closed
+	  from then on. The answer belongs to each table, so it is kept with each table. */
+bool16 InsideCell(const std::vector<TableFrame>& tables)
+{
+	return (!tables.empty() && tables.back().fInCell) ? kTrue : kFalse;
+}
 
 /** An <em> that has been opened and not yet closed. */
 struct EmState
@@ -633,32 +644,19 @@ void WriteParaHtml(const Para& p, std::string& out)
 
 }
 
-/*	WriteCellParas
-	A cell's paragraphs.
-
-	★★**EVERY PARAGRAPH IS WRITTEN WITH <p>, INCLUDING A CELL HOLDING ONE** (the user's rule,
-	2026-09-16: "a paragraph always begins with a <p> tag"). Until then a one-paragraph cell was
-	written bare, which read well but forced the reader to keep an IMPLICIT paragraph open inside
-	<td> - and that implicit paragraph is what swallowed the whitespace of a pretty-printed table.
-	One rule instead of two: <p> starts a paragraph, and anything outside <p> is layout, not text.
-*/
-void WriteCellParas(const std::vector<Para>& paras, std::string& out)
-{
-	for (size_t k = 0; k < paras.size(); ++k)
-	{
-		out += "<p>";
-		WriteParaHtml(paras[k], out);
-		out += "</p>";
-	}
-}
-
 /*	WriteTable
-	One table.
+	One table, and the tables standing inside its cells.
 
-	⚠**A NESTED TABLE IS NOT WRITTEN HERE.** A Cell holds paragraphs, not tables - the nested one
-	 is a separate entry in Story::fTables, and nothing in this shape says which cell it belongs
-	 to. The reader takes them (document order, their own entries); putting one back is Task 9's
-	 problem and is written down as unsolved rather than half-done.
+	★★★**A NESTED TABLE IS WRITTEN WHERE IT STANDS** (the user's request, 2026-09-16): inside the
+	<td> of the cell that holds it, after that cell's own paragraphs - because a cell is a small
+	body, and a table stands among a body's paragraphs in exactly the same way. It used to come out
+	as a second table AFTER the outer one, which is where the flat list had put it and where nobody
+	reading the file would look for it.
+
+	⚠**THE DATA IS STILL FLAT, ONLY THE MARKUP IS NESTED.** Story::fTables is one list in document
+	 order and each entry says which cell it belongs to (Table::fInTable), so the ordinals stay a
+	 single count - which is what the comparison pairs the two sides on, and what lets a nested
+	 table be just another table to everything downstream.
 */
 /** One step of indent: four spaces, as the user asked for (2026-09-16). */
 void Indent(int32 depth, std::string& out)
@@ -667,12 +665,13 @@ void Indent(int32 depth, std::string& out)
 		out += "    ";
 }
 
-void WriteTable(const Table& t, std::string& out)
+void WriteTable(const Story& s, const Table& t, int32 depth, std::string& out)
 {
 	// ★★**A TABLE IS PRETTY-PRINTED** (the user's request, 2026-09-16): one tag per line, four
 	//   spaces a step, so that a reader editing the file can see the shape of the table at a
 	//   glance. ⚠**THIS COSTS NOTHING IN CORRECTNESS** because every newline and space here is
 	//   OUTSIDE a <p>, and outside a <p> nothing is text - which is the one rule this format has.
+	Indent(depth, out);
 	out += "<table>\r\n";
 
 	bool16 inHead = kFalse;
@@ -681,17 +680,19 @@ void WriteTable(const Table& t, std::string& out)
 		const Row& row = t.fRows[r];
 		if (row.fHeader && !inHead)
 		{
-			out += "    <thead>\r\n";
+			Indent(depth + 1, out);
+			out += "<thead>\r\n";
 			inHead = kTrue;
 		}
 		else if (!row.fHeader && inHead)
 		{
-			out += "    </thead>\r\n";
+			Indent(depth + 1, out);
+			out += "</thead>\r\n";
 			inHead = kFalse;
 		}
 
 		// A row inside <thead> sits one step deeper than one outside it.
-		const int32 rowDepth = inHead ? 2 : 1;
+		const int32 rowDepth = depth + (inHead ? 2 : 1);
 
 		Indent(rowDepth, out);
 		out += "<tr>\r\n";
@@ -713,9 +714,32 @@ void WriteTable(const Table& t, std::string& out)
 				out += buf;
 			}
 			out += ">\r\n";
-			Indent(rowDepth + 2, out);
-			WriteCellParas(cell.fParas, out);
-			out += "\r\n";
+
+			// ★**A CELL IS A SMALL BODY**: its paragraphs, and after each one the tables that stand
+			//   there. A cell always holds at least one paragraph - InDesign's cells do, and Read
+			//   puts one back when a file leaves it out - so a cell holding nothing but a table
+			//   still writes <p></p> first. That is the same rule as everywhere else and not a
+			//   special case: every character lives in a paragraph, and everything outside one is
+			//   layout.
+			for (size_t k = 0; k < cell.fParas.size(); ++k)
+			{
+				Indent(rowDepth + 2, out);
+				out += "<p>";
+				WriteParaHtml(cell.fParas[k], out);
+				out += "</p>\r\n";
+
+				for (size_t u = 0; u < s.fTables.size(); ++u)
+				{
+					if (s.fTables[u].fInTable == t.fOrdinal
+						&& s.fTables[u].fInRow == static_cast<int32>(r)
+						&& s.fTables[u].fInCell == static_cast<int32>(c)
+						&& s.fTables[u].fParaIndex == static_cast<int32>(k))
+					{
+						WriteTable(s, s.fTables[u], rowDepth + 2, out);
+					}
+				}
+			}
+
 			Indent(rowDepth + 1, out);
 			out += "</td>\r\n";
 		}
@@ -723,8 +747,12 @@ void WriteTable(const Table& t, std::string& out)
 		out += "</tr>\r\n";
 	}
 	if (inHead)
-		out += "    </thead>\r\n";
+	{
+		Indent(depth + 1, out);
+		out += "</thead>\r\n";
+	}
 
+	Indent(depth, out);
 	out += "</table>\r\n";
 }
 
@@ -1070,10 +1098,12 @@ void Write(const Story& s, int32 uid, std::string& out)
 		out += "</p>\r\n";
 
 		// The tables that hang off this paragraph, in the order they were given.
+		// ⚠**THE BODY'S OWN ONLY.** A table standing in a cell is written by WriteTable, inside the
+		//  <td> that holds it - it is in this same flat list, and fInTable is what tells them apart.
 		for (size_t t = 0; t < s.fTables.size(); ++t)
 		{
-			if (s.fTables[t].fParaIndex == static_cast<int32>(i))
-				WriteTable(s.fTables[t], out);
+			if (s.fTables[t].fInTable < 0 && s.fTables[t].fParaIndex == static_cast<int32>(i))
+				WriteTable(s, s.fTables[t], 0, out);
 		}
 	}
 
@@ -1136,7 +1166,6 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 	int32 paraNote = -1;			// the note the paragraph being read belongs to; -1 is the body
 
 	std::vector<TableFrame> tables;	// the tables open right now; more than one means nesting
-	bool16 inCell = kFalse;
 
 	size_t i = 0;
 	while (i < s.size())
@@ -1234,7 +1263,7 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					size_t notePrefix = 0;
 					while (kNoteClassPrefix[notePrefix] != 0)
 						++notePrefix;
-					if (hasClass && !inCell && cls.size() > notePrefix
+					if (hasClass && !InsideCell(tables) && cls.size() > notePrefix
 						&& cls.compare(0, notePrefix, kNoteClassPrefix) == 0)
 					{
 						int32 number = 0;
@@ -1254,7 +1283,7 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 						paraNote = number - 1;
 					}
 
-					if (hasClass && !inCell && paraNote < 0 && cls == "c")
+					if (hasClass && !InsideCell(tables) && paraNote < 0 && cls == "c")
 					{
 						const int32 prevIndex = static_cast<int32>(out.fBody.size()) - 1;
 						for (size_t t = out.fTables.size(); t > 0; --t)
@@ -1287,7 +1316,7 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					p.fRuby = paraRuby;
 					p.fKenten = paraKenten;
 					// ★A PARAGRAPH BELONGS TO WHATEVER IT STANDS IN: a cell, a note, or the body.
-					if (inCell && !tables.empty()
+					if (InsideCell(tables)
 						&& !tables.back().fTable.fRows.empty()
 						&& !tables.back().fTable.fRows.back().fCells.empty())
 					{
@@ -1330,8 +1359,26 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					TableFrame frame;
 					frame.fSlot = out.fTables.size();
 					frame.fTable.fOrdinal = static_cast<int32>(frame.fSlot);
-					// ★WHERE IT STANDS = after the paragraph most recently closed.
-					frame.fTable.fParaIndex = static_cast<int32>(out.fBody.size()) - 1;
+
+					// ★WHERE IT STANDS = after the paragraph most recently closed, in whatever
+					//   holds it. A table inside a <td> belongs to that cell and counts that
+					//   cell's paragraphs; one in the body belongs to the body and counts its own.
+					if (InsideCell(tables))
+					{
+						const TableFrame& parent = tables.back();
+						const Row& row = parent.fTable.fRows.back();
+						frame.fTable.fInTable = parent.fTable.fOrdinal;
+						frame.fTable.fInRow = static_cast<int32>(parent.fTable.fRows.size()) - 1;
+						frame.fTable.fInCell = static_cast<int32>(row.fCells.size()) - 1;
+						frame.fTable.fParaIndex =
+							static_cast<int32>(row.fCells.back().fParas.size()) - 1;
+					}
+					else
+					{
+						frame.fTable.fInTable = -1;
+						frame.fTable.fParaIndex = static_cast<int32>(out.fBody.size()) - 1;
+					}
+
 					out.fTables.push_back(Table());		// the slot, taken at the opening tag
 					tables.push_back(frame);
 				}
@@ -1406,7 +1453,7 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					//   anywhere else - which is what lets a table be pretty-printed: every
 					//   newline and space between <td> and <p> is outside a paragraph, and
 					//   outside a paragraph nothing is text.
-					inCell = kTrue;
+					tables.back().fInCell = kTrue;
 					para.clear();
 					paraRuby.clear();
 					paraKenten.clear();
@@ -1430,7 +1477,7 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					{
 						tables.back().fTable.fRows.back().fCells.back().fParas.push_back(Para());
 					}
-					inCell = kFalse;
+					tables.back().fInCell = kFalse;
 				}
 				i = after;
 				continue;

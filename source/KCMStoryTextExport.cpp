@@ -301,14 +301,27 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out)
 	}
 
 	// ---- the paragraphs, each into the place it belongs ---------------------------------------
-	std::vector<TextIndex> bodyStarts;			// the model start of each BODY paragraph
+	//
+	// ★**WHERE A PARAGRAPH LANDS IS ALSO WHERE A TABLE ANCHORED IN IT LANDS**, so the walk keeps
+	//   these for EVERY paragraph - the cells' and the notes' included, because a table can stand
+	//   in a cell and that is what a nested one is.
+	std::vector<int32> placeIndex(paras.size(), -1);	// its number within its own place
+	std::vector<int32> cellWhich(paras.size(), -1);		// a cell's place in its row, as the <td>s run
 	// ⚠**AND WHERE EACH ONE ENDS**, which is not the next one's start: a table anchor standing at
 	//  the head of a paragraph is stepped OVER by the reader (KCMTextRead: "if (!paraHasCharacters)
 	//  paraStart = i + 1"), so that paragraph is reported as beginning AFTER its own anchor.
-	std::vector<TextIndex> bodyEnds;
+	std::vector<TextIndex> paraEnds(paras.size(), 0);
 
 	for (size_t i = 0; i < paras.size(); ++i)
 	{
+		// The model length of this paragraph: its characters, plus the positions the model counts
+		// and the text does not (fUncountedAt - a table standing INSIDE the paragraph).
+		std::vector<int32> cps;
+		KCMTextDiff::ToCodePoints(paras[i], &cps, nil);
+		paraEnds[i] = static_cast<TextIndex>(starts[i])
+					  + static_cast<TextIndex>(cps.size())
+					  + static_cast<TextIndex>(attrs[i].fUncountedAt.size());
+
 		KCMStoryHtml::Para p;
 		FillPara(paras[i], attrs[i], p);
 
@@ -338,7 +351,11 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out)
 				++which;
 			}
 			if (found && which < row.fCells.size())
+			{
 				row.fCells[which].fParas.push_back(p);
+				cellWhich[i] = static_cast<int32>(which);
+				placeIndex[i] = static_cast<int32>(row.fCells[which].fParas.size()) - 1;
+			}
 			continue;
 		}
 
@@ -348,34 +365,30 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out)
 			while (out.fNotes.size() <= n)
 				out.fNotes.push_back(std::vector<KCMStoryHtml::Para>());
 			out.fNotes[n].push_back(p);
+			placeIndex[i] = static_cast<int32>(out.fNotes[n].size()) - 1;
 			continue;
 		}
 
 		out.fBody.push_back(p);
-		bodyStarts.push_back(static_cast<TextIndex>(starts[i]));
-
-		// The model length of this paragraph: its characters, plus the positions the model counts
-		// and the text does not (fUncountedAt - a table standing INSIDE the paragraph).
-		std::vector<int32> cps;
-		KCMTextDiff::ToCodePoints(paras[i], &cps, nil);
-		bodyEnds.push_back(static_cast<TextIndex>(starts[i])
-						   + static_cast<TextIndex>(cps.size())
-						   + static_cast<TextIndex>(attrs[i].fUncountedAt.size()));
+		placeIndex[i] = static_cast<int32>(out.fBody.size()) - 1;
 	}
 
-	// ---- where each table stands, in the body's own numbering ---------------------------------
+	// ---- where each table stands --------------------------------------------------------------
 	//
-	// ★**THE ANCHOR, NOT THE CELLS** (2026-09-16). fStart is past every body paragraph for
+	// ★**THE ANCHOR, NOT THE CELLS** (2026-09-16). fStart is past every paragraph of the body for
 	//   EVERY table of the story (ReadTableShapes says why), so asking it this question handed
 	//   each table the LAST paragraph and the file came out with all of its tables at the
 	//   bottom, whatever paragraph each one really stood after.
+	// ★★**AND THE PARAGRAPH IT STANDS IN MAY BE A CELL'S** (2026-09-16, the user's request), which
+	//   is what a nested table is: the walk below is over EVERY paragraph rather than the body's,
+	//   and where the anchor lands is where the table is written.
 	for (size_t t = 0; t < out.fTables.size() && t < shapes.size(); ++t)
 	{
-		int32 index = 0;
-		for (size_t b = 0; b < bodyStarts.size(); ++b)
+		int32 host = -1;
+		for (size_t i = 0; i < paras.size(); ++i)
 		{
-			if (bodyStarts[b] <= shapes[t].fAnchor)
-				index = static_cast<int32>(b);
+			if (static_cast<TextIndex>(starts[i]) <= shapes[t].fAnchor)
+				host = static_cast<int32>(i);
 		}
 
 		// ★★★**AN ANCHOR CAN STAND IN THE GAP BETWEEN TWO REPORTED PARAGRAPHS**, and that is the
@@ -385,13 +398,39 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out)
 		//   text is what tells the two apart - a table standing inside a paragraph is not.
 		//   ⚠MEASURED 2026-09-16 on allin.indd: without this, two tables of one story came out one
 		//    paragraph early each, with the empty paragraphs they live in left standing behind them.
-		if (index + 1 < static_cast<int32>(bodyStarts.size())
-			&& shapes[t].fAnchor >= bodyEnds[static_cast<size_t>(index)])
+		if (host >= 0 && host + 1 < static_cast<int32>(paras.size())
+			&& shapes[t].fAnchor >= paraEnds[static_cast<size_t>(host)])
 		{
-			++index;
+			++host;
 		}
 
-		out.fTables[t].fParaIndex = index;
+		if (host < 0 || placeIndex[static_cast<size_t>(host)] < 0)
+		{
+			// Nowhere to put it - a cell the walk could not place, or a story with no paragraphs
+			// at all. The body's top is where it can still be seen.
+			out.fTables[t].fInTable = -1;
+			out.fTables[t].fParaIndex = 0;
+			continue;
+		}
+
+		const KCMParaAttrs& hostAttrs = attrs[static_cast<size_t>(host)];
+		if (hostAttrs.IsCell())
+		{
+			// ★**THE CELL IS NAMED THE WAY THE TWO SIDES PAIR CELLS**: its place among the anchors
+			//   of its row, which is the order the <td>s run - not its grid column. ColumnsOfRow
+			//   produces the same number on the import's side, so a merged cell is one cell in both.
+			out.fTables[t].fInTable = hostAttrs.fTableOrdinal;
+			out.fTables[t].fInRow = hostAttrs.fCellRow;
+			out.fTables[t].fInCell = cellWhich[static_cast<size_t>(host)];
+		}
+		else
+		{
+			// ⚠**A TABLE ANCHORED IN A FOOTNOTE IS WRITTEN AS THE BODY'S.** InDesign does not let
+			//  one be put there, so this is a case nobody can produce; inventing a third place for
+			//  it would be a shape with no reader rather than a safeguard.
+			out.fTables[t].fInTable = -1;
+		}
+		out.fTables[t].fParaIndex = placeIndex[static_cast<size_t>(host)];
 	}
 
 	// ⚠A STORY WITH NO PARAGRAPHS AT ALL still gets one, so that "the file is empty" and "there is

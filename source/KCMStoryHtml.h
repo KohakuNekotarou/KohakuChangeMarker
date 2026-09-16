@@ -105,7 +105,10 @@ bool16 KentenValueOfClass(const std::string& cls, std::string& outValue);
 	  invisible, the forced line break U+000A included, becomes a span. */
 bool16 IsInvisible(int32 cp);
 
-/** One table cell. Its text is paragraphs, exactly as the body's is. */
+/** One table cell. Its contents are paragraphs and the tables standing among them, exactly as
+	the body's are - a cell is a small body. The tables are not held HERE (see Table::fInTable):
+	keeping them in one flat list, in document order, is what lets the ordinals stay a single
+	count and keeps this header free of a type that contains itself. */
 struct Cell
 {
 	int32				fColSpan;
@@ -124,7 +127,14 @@ struct Row
 	Row() : fHeader(kFalse) {}
 };
 
-/** One table, and where it stands in the story.
+/** One table: where it stands, and what is in it.
+
+	★★**A TABLE STANDS EITHER IN THE BODY OR IN ONE CELL OF ANOTHER TABLE** (2026-09-16). fInTable
+	  is -1 for the body, or the ordinal of the table whose cell holds this one; fInRow and
+	  fInCell then say which cell, counted the way the <td>s of that row run - the same count
+	  ColumnsOfRow produces on the document's side, so a merged cell is one cell in both.
+	  ⚠**fParaIndex IS RELATIVE TO WHATEVER HOLDS IT**: the body's paragraphs when fInTable is
+	   -1, and that cell's paragraphs otherwise.
 
 	@warning fSplitsPara is the case a table can stand in the MIDDLE of a paragraph - measured, and
 	  the rest of the diff assumes it away (KCMTextRead::TakeAttrFor says where). */
@@ -133,10 +143,14 @@ struct Table
 	int32				fOrdinal;
 	int32				fParaIndex;
 	int32				fOffset;
+	int32				fInTable;	// -1 = the body, else the ordinal of the table this one is inside
+	int32				fInRow;		// which row of that table
+	int32				fInCell;	// and which cell of that row, in the order its <td>s run
 	bool16				fSplitsPara;
 	std::vector<Row>	fRows;
 
-	Table() : fOrdinal(0), fParaIndex(0), fOffset(0), fSplitsPara(kFalse) {}
+	Table() : fOrdinal(0), fParaIndex(0), fOffset(0), fInTable(-1), fInRow(0), fInCell(0),
+			  fSplitsPara(kFalse) {}
 };
 
 /** A whole story: its body, the tables standing in it, and its footnotes' own paragraphs.
@@ -149,7 +163,7 @@ struct Table
 struct Story
 {
 	std::vector<Para>					fBody;
-	std::vector<Table>					fTables;	// in document order
+	std::vector<Table>					fTables;	// EVERY table, nested ones included, document order
 	std::vector< std::vector<Para> >	fNotes;		// [n] = footnote n's paragraphs
 };
 
