@@ -21,6 +21,7 @@
 #include "IDocument.h"
 #include "IPMStream.h"
 #include "IStoryList.h"
+#include "IStoryOptions.h"			// IsVertical - the story's own setting, not a frame's
 #include "ITableModel.h"
 #include "ITextModel.h"
 #include "ITextStoryThreadDict.h"
@@ -268,6 +269,13 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out)
 	if (model != nil && !ReadTableShapes(model, shapes))
 		return kFalse;
 
+	// ★**WHICH WAY THE STORY IS SET**, asked of the STORY rather than of a frame: it is a story
+	//   setting (IID_ISTORYOPTIONS is on kTextStoryBoss, and the official form is exactly this -
+	//   basicme/BscMEInvertFacade.cpp:198, codesnippetsME/SnpCreateFrameME.cpp:207), so a story
+	//   with no frame on any page still answers.
+	InterfacePtr<IStoryOptions> options(model, UseDefaultIID());
+	out.fVertical = (options != nil && options->IsVertical()) ? kTrue : kFalse;
+
 	// ---- the tables, empty of text for the moment ------------------------------------------
 	for (size_t t = 0; t < shapes.size(); ++t)
 	{
@@ -479,21 +487,6 @@ bool16 WriteStoryFile(const std::wstring& folder, int32 uid, const std::string& 
 	return WriteFileWithBom(folder + leaf, html);
 }
 
-/** The folder's one stylesheet.
-
-	★**THE NAME COMES FROM KCMStoryHtml**, which is also what every exported file links to. Two
-	  spellings of it would produce a folder that opens with no kenten, no marks for the invisible
-	  characters, and no error anywhere to say what went wrong. */
-bool16 WriteStylesheetFile(const std::wstring& folder, const std::string& css)
-{
-	std::wstring path = folder;
-	path += L"\\";
-	for (const char* p = KCMStoryHtml::kStylesheetName; *p != '\0'; ++p)
-		path += static_cast<wchar_t>(*p);		// ASCII, and this loop is the file that says so
-
-	return WriteFileWithBom(path, css);
-}
-
 }	// anonymous namespace
 
 bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& onlyThese,
@@ -587,7 +580,6 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 
 	int32 written = 0;
 	int32 refused = 0;
-	std::vector<std::string> kentenInUse;		// for the folder's one stylesheet
 
 	for (size_t t = 0; t < targets.size(); ++t)
 	{
@@ -600,11 +592,6 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 			continue;
 		}
 
-		// ★THE SHEET IS BUILT FROM THE STORIES AS THEY GO PAST. A custom kenten mark is a
-		//   character out of the document, so nothing but the stories themselves can say which
-		//   marks this folder has to be able to draw.
-		KCMStoryHtml::CollectKentenValues(story, kentenInUse);
-
 		std::string html;
 		KCMStoryHtml::Write(story, storyRef.GetUID().Get(), html);
 
@@ -613,13 +600,6 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 		else
 			++refused;
 	}
-
-	// ★**THE STYLESHEET LAST**, for the reason above: it cannot be written until every story has
-	//   been read. It is written even when some story was refused - the files that DID get out
-	//   still have to look right.
-	std::string css;
-	KCMStoryHtml::WriteStylesheet(kentenInUse, css);
-	const bool16 sheetWritten = WriteStylesheetFile(folder, css);
 
 	PMString path;
 	path.SetTranslatable(kFalse);
@@ -649,8 +629,6 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 		outMessage.AppendNumber(notAStory);
 		outMessage.Append(" not a story of this document");
 	}
-	if (!sheetWritten)
-		outMessage.Append(", stylesheet not written");
 	outMessage.Append(" to ");
 	outMessage.Append(path);
 

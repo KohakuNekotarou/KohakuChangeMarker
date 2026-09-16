@@ -964,14 +964,6 @@ bool16 IsInvisible(int32 cp)
 	return kFalse;
 }
 
-const char* const kStylesheetName = "kcm-story.css";
-
-/*	kNoteClassPrefix
-	See the header. The number follows it, counting from 1, so <p class="note1"> is the first
-	note of the story - the same number the page prints when a document numbers from one.
-*/
-const char* const kNoteClassPrefix = "note";
-
 void CollectKentenValues(const Story& s, std::vector<std::string>& inOutSeen)
 {
 	CollectKenten(s.fBody, inOutSeen);
@@ -997,6 +989,13 @@ void WriteStylesheet(const std::vector<std::string>& kentenValues, std::string& 
 	//   why the line still holds its 40 characters - the characters grow, the column does not.
 	outCss += "body{font-size:1.5em;line-height:2.2;margin:2em;max-width:40em}\r\n";
 	outCss += "p{margin:0 0 .7em}\r\n";		// so a paragraph and a forced line break look different
+
+	// ★**AND THE VERTICAL SETTING** (2026-09-16): writing-mode turns the page, and the ruby and the
+	//   kenten turn with it - the browser puts them where the page puts them. The measure turns too,
+	//   so the 40em that was a line's LENGTH becomes its height, and the page is given a height to
+	//   fill or the columns would have nowhere to run.
+	outCss += "body.vertical{-webkit-writing-mode:vertical-rl;writing-mode:vertical-rl;"
+			  "max-width:none;max-height:40em;height:88vh}\r\n";
 	outCss += "table{border-collapse:collapse;margin:1em 0}\r\n";
 	outCss += "td{border:1px solid #999;padding:.3em .8em;vertical-align:top}\r\n";
 	outCss += "ol{border-top:1px solid #ccc;margin-top:2em;padding-top:1em}\r\n";
@@ -1068,17 +1067,28 @@ void Write(const Story& s, int32 uid, std::string& out)
 	out += "<head><meta charset=\"utf-8\"><title>";
 	out += uidText;
 	out += "</title>\r\n";
-	// ★**THE LOOK LIVES IN ONE FILE PER FOLDER** (2026-09-15), so the reader who wants bigger text
-	//   or a different mark edits that one file and every story follows. WriteStylesheet produces
-	//   it and KCMStoryTextExport writes it; the name comes from kStylesheetName so that the two
-	//   can never disagree.
-	// ⚠A file carried out of its folder still IMPORTS perfectly - the reading side never looks at
-	//  a stylesheet - it simply draws no kenten and no invisible characters in a browser.
-	out += "<link rel=\"stylesheet\" href=\"";
-	out += kStylesheetName;
-	out += "\">\r\n";
-	out += "</head>\r\n";
-	out += "<body>\r\n";
+	// ★★**THE LOOK TRAVELS WITH THE FILE** (2026-09-16, the user's decision - going back on the
+	//   folder-wide stylesheet of the day before). One file carried out of its folder - mailed,
+	//   pasted into a chat, opened on its own - has to LOOK right, because looking at it in a
+	//   browser is how the reader checks what they have edited. The reason for pulling the look
+	//   out was that somebody wanting bigger text would otherwise edit thirty files; the reader
+	//   edits inside <p> and nowhere else, so that reason went away.
+	out += "<style>\r\n";
+	{
+		std::vector<std::string> kenten;
+		CollectKentenValues(s, kenten);
+		std::string css;
+		WriteStylesheet(kenten, css);
+		out += css;
+	}
+	out += "</style></head>\r\n";
+
+	// ★**A VERTICAL STORY IS SHOWN VERTICALLY** (2026-09-16). CSS has writing-mode for exactly
+	//   this, and a browser then puts the ruby where the page puts it and the kenten beside the
+	//   character rather than above it - so what the reader checks looks like what they are
+	//   editing. The class is on <body>, which is outside every <p> and therefore none of the
+	//   reader's business; Read takes it back off so the trip loses nothing.
+	out += s.fVertical ? "<body class=\"vertical\">\r\n" : "<body>\r\n";
 
 	for (size_t i = 0; i < s.fBody.size(); ++i)
 	{
@@ -1107,25 +1117,31 @@ void Write(const Story& s, int32 uid, std::string& out)
 		}
 	}
 
-	// ★★**A NOTE'S WORDS ARE PARAGRAPHS, AFTER THE BODY AND ITS TABLES** (the user's decision,
-	//   2026-09-16). They used to be an <ol> of <li> items with ids, pointed at by a <sup> in the
-	//   body, and that pairing was a defect factory: the <sup> counted the body's own references
-	//   while the id counted the note's ordinal, and the two parted company the moment a note
-	//   stood in a table cell or an InDesign NOTE took an ordinal. The class is the whole of the
-	//   pairing now, and there is nothing left to disagree.
-	// ⚠**A NOTE WITH NO PARAGRAPHS WRITES NOTHING AT ALL** - Read builds the gap back up by
-	//  number as soon as a later note names itself.
-	for (size_t n = 0; n < s.fNotes.size(); ++n)
+	// ★★★**A NOTE IS A LIST ITEM HOLDING PARAGRAPHS** (the user's decision, 2026-09-16, replacing
+	//   the <p class="note1"> of the same afternoon). The paragraphs inside carry NOTHING of their
+	//   own, and that is the point: adding one is copying a <p>, and a copied <p> cannot end up
+	//   belonging to the wrong note. A class on every paragraph could, and would do it silently.
+	// ★**THE ORDER IS THE PAIRING** - the first <li> is note 1 - so there are no ids to keep in
+	//   step with anything. The <sup> that used to point at them is not written at all any more.
+	// ⚠**AN EMPTY NOTE IS STILL AN <li>**, or every note after it would shift up by one.
+	if (!s.fNotes.empty())
 	{
-		char cls[64];
-		std::snprintf(cls, sizeof(cls), "<p class=\"%s%d\">", kNoteClassPrefix,
-					  static_cast<int>(n + 1));
-		for (size_t k = 0; k < s.fNotes[n].size(); ++k)
+		out += "<ol>\r\n";
+		for (size_t n = 0; n < s.fNotes.size(); ++n)
 		{
-			out += cls;
-			WriteParaHtml(s.fNotes[n][k], out);
-			out += "</p>\r\n";
+			Indent(1, out);
+			out += "<li>\r\n";
+			for (size_t k = 0; k < s.fNotes[n].size(); ++k)
+			{
+				Indent(2, out);
+				out += "<p>";
+				WriteParaHtml(s.fNotes[n][k], out);
+				out += "</p>\r\n";
+			}
+			Indent(1, out);
+			out += "</li>\r\n";
 		}
+		out += "</ol>\r\n";
 	}
 
 	out += "</body>\r\n";
@@ -1161,9 +1177,9 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 	KCMAttrSpanList paraRuby;		// the readings met so far, in this paragraph's own count
 	KCMAttrSpanList paraKenten;		// and the marks, in the same count
 	EmState em;
-	// ★**A PARAGRAPH SAYS WHICH NOTE IT BELONGS TO, IN ITS CLASS** (2026-09-16), so nothing has
-	//   to be paired up at the end any more: kNoteClassPrefix plus the note's number, from 1.
-	int32 paraNote = -1;			// the note the paragraph being read belongs to; -1 is the body
+	// ★**A NOTE IS AN <li>, AND ITS PARAGRAPHS ARE WHATEVER STANDS INSIDE IT** (2026-09-16), so
+	//   nothing has to be paired up at the end and the paragraphs carry nothing of their own.
+	bool16 inNote = kFalse;
 
 	std::vector<TableFrame> tables;	// the tables open right now; more than one means nesting
 
@@ -1257,33 +1273,10 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					std::string cls;
 					const bool16 hasClass = ClassOfTag(s, i, after, cls) ? kTrue : kFalse;
 
-					// ★**A NOTE'S OWN PARAGRAPH NAMES ITS NOTE.** Everything else about it - the ruby,
-					//   the kenten, the invisible characters - is read exactly as the body's is.
-					paraNote = -1;
-					size_t notePrefix = 0;
-					while (kNoteClassPrefix[notePrefix] != 0)
-						++notePrefix;
-					if (hasClass && !InsideCell(tables) && cls.size() > notePrefix
-						&& cls.compare(0, notePrefix, kNoteClassPrefix) == 0)
-					{
-						int32 number = 0;
-						bool16 digits = kTrue;
-						for (size_t k = notePrefix; k < cls.size() && digits; ++k)
-						{
-							if (cls[k] < '0' || cls[k] > '9')
-								digits = kFalse;
-							else
-								number = number * 10 + (cls[k] - '0');
-						}
-						if (!digits || number <= 0)
-						{
-							whyNot = "a paragraph carries a note class that cannot be read: " + cls;
-							return kFalse;
-						}
-						paraNote = number - 1;
-					}
-
-					if (hasClass && !InsideCell(tables) && paraNote < 0 && cls == "c")
+					// ★**A NOTE'S PARAGRAPH CARRIES NOTHING OF ITS OWN**: which note it belongs to
+					//   is the <li> it stands in, so the only class this format still writes on a
+					//   paragraph is the "rest of the one before the table" below.
+					if (hasClass && !InsideCell(tables) && !inNote && cls == "c")
 					{
 						const int32 prevIndex = static_cast<int32>(out.fBody.size()) - 1;
 						for (size_t t = out.fTables.size(); t > 0; --t)
@@ -1322,13 +1315,11 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					{
 						tables.back().fTable.fRows.back().fCells.back().fParas.push_back(p);
 					}
-					else if (paraNote >= 0)
+					else if (inNote)
 					{
-						// ⚠**THE GAPS ARE FILLED IN.** A note whose paragraphs were all deleted writes
-						//  nothing at all, and the notes after it still have to land on their own number.
-						while (out.fNotes.size() <= static_cast<size_t>(paraNote))
-							out.fNotes.push_back(std::vector<Para>());
-						out.fNotes[static_cast<size_t>(paraNote)].push_back(p);
+						// The <li> made the note when it opened, so there is always one to add to.
+						if (!out.fNotes.empty())
+							out.fNotes.back().push_back(p);
 					}
 					else
 					{
@@ -1483,15 +1474,55 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 				continue;
 			}
 
-			// ⚠**NOT PART OF THIS FORMAT ANY MORE** (2026-09-16), so reading one would be a guess at
-			//   what somebody meant by it. They are named in kOurTags all the same: that is what lets
-			//   the message below be printed instead of the tag quietly becoming text.
-			if (name == "sup" || name == "a" || name == "ol" || name == "li")
+			// ⚠**A NOTE'S REFERENCE IS NOT WRITTEN ANY MORE** (2026-09-16), so reading one would be
+			//   a guess at what somebody meant by it. Both are named in kOurTags all the same: that
+			//   is what lets this message be printed instead of the tag quietly becoming text.
+			if (name == "sup" || name == "a")
 			{
-				whyNot = "the <" + name + "> element is not part of this format: the words of a "
-						 "footnote are a paragraph of their own, written "
-						 "<p class=\"note1\">...</p> after the body";
+				whyNot = "the <" + name + "> element is not part of this format: a note's words "
+						 "are an <li> of the <ol> after the body, and nothing in the body points "
+						 "at them";
 				return kFalse;
+			}
+
+			if (name == "ol")
+			{
+				i = after;			// the list carries nothing of its own; its items do
+				continue;
+			}
+
+			if (name == "li")
+			{
+				if (!closing)
+				{
+					if (inNote)
+					{
+						whyNot = "an <li> begins inside another one";
+						return kFalse;
+					}
+					if (inPara)
+					{
+						whyNot = "an <li> begins inside a paragraph";
+						return kFalse;
+					}
+
+					// ★**THE ORDER IS THE PAIRING**: this is the next note, whatever it turns out
+					//   to hold. An <li> with nothing in it is an empty note and still counts, or
+					//   every note after it would shift up by one.
+					inNote = kTrue;
+					out.fNotes.push_back(std::vector<Para>());
+				}
+				else
+				{
+					if (!inNote)
+					{
+						whyNot = "an </li> closes a note that never began";
+						return kFalse;
+					}
+					inNote = kFalse;
+				}
+				i = after;
+				continue;
 			}
 
 			// ★**IGNORED, NOT REFUSED** (the user's rule, 2026-09-16). Somebody who knows HTML
@@ -1719,7 +1750,19 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 		if (isTag && IsInList(name, kScaffolding, kScaffoldingCount))
 		{
 			if (name == "body")
+			{
 				inBody = closing ? kFalse : kTrue;
+
+				// ★THE ONE THING <body> CARRIES: which way the story is set. Written by the
+				//   exporter from the document, read back here so the trip loses nothing - and if
+				//   a reader turns it on or off by hand, that is an answer too.
+				if (!closing)
+				{
+					std::string cls;
+					out.fVertical = (ClassOfTag(s, i, after, cls) && cls == "vertical")
+									? kTrue : kFalse;
+				}
+			}
 			i = after;
 			continue;
 		}
@@ -1742,6 +1785,11 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 	if (inPara)
 	{
 		whyNot = "the last paragraph was never closed";
+		return kFalse;
+	}
+	if (inNote)
+	{
+		whyNot = "the last note was never closed";
 		return kFalse;
 	}
 	return kTrue;

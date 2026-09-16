@@ -32,15 +32,16 @@ class UIDList;
 /** Write the stories of `db` into a new folder under `parent`.
 
     The folder is named "<document name> YYYY-MM-DD HHMMSS" and each story becomes one file called
-    "<its UID in decimal>.html". One more file - the one KCMStoryHtml::kStylesheetName names, which
-    is also what each of those files links to - carries the look for all of them.
+    "<its UID in decimal>.html", carrying its own look in a <style> of its own (2026-09-16: one
+    file taken out of the folder has to look right on its own, because looking at it in a browser
+    is how the reader checks what they edited).
 
     ★**THE UID IS DECIMAL BECAUSE "Show Story IDs" PRINTS IT THAT WAY.** The reader matches a file
       against a story by reading the two side by side, so the two spellings have to agree.
     ⚠**THE TIME STAMP IS NOT DECORATION.** A folder has no "overwrite?" prompt, so keeping two
       exports apart is this code's job, exactly as it is the report's (KCMReport.cpp says so).
-    ★**THE STYLESHEET IS WRITTEN LAST**, because a custom kenten mark is a character out of the
-      document and only the stories themselves can say which ones are in use.
+    ★**A VERTICAL STORY SAYS SO**, and the browser then shows it the way the page does - the
+      direction is read from the story itself (IStoryOptions), so one with no frame still answers.
 
     @param db         the document to read. Nothing in it is changed.
     @param parent     the folder the user chose.

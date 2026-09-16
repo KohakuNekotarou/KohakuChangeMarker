@@ -29,7 +29,7 @@
 //  WRITER's business and turning it back is the READER's; nothing upstream or downstream has to
 //  know those characters were ever markup. The four characters ReadStory takes OUT (U+0016 and
 //  U+0017 for tables, U+0004 and U+0005 for note references) are not in fText either - the tables
-//  and fNoteAt carry those places instead.
+//  carry their own places, and a note's reference is not carried at all (Para says why).
 //
 //  *** WHAT IS IMPLEMENTED SO FAR (2026-09-15): BODY PARAGRAPHS ONLY. *** Ruby, the invisible
 //  characters, notes and tables arrive in Tasks 2 to 5 of the plan, each with its failing test
@@ -155,9 +155,9 @@ struct Table
 
 /** A whole story: its body, the tables standing in it, and its footnotes' own paragraphs.
 
-	★**A FOOTNOTE'S PARAGRAPHS ARE WRITTEN LIKE ANY OTHERS**, after the body and its tables,
-	  each one <p class="note1">...</p> - kNoteClassPrefix plus the note's number. The class is
-	  the only thing that says which note a paragraph belongs to, so it is what Read looks at.
+	★**A FOOTNOTE IS AN <li> OF THE <ol> THAT FOLLOWS THE BODY**, holding its own paragraphs -
+	  which carry nothing of their own, so adding one is copying a <p> and a copied <p> cannot end
+	  up in the wrong note. The ORDER of the items is the pairing: the first <li> is note 1.
 	@warning an ENDNOTE's words are not here. They live in another story (kEndnoteStoryBoss) and
 	  arrive as a story of their own, with its own file. */
 struct Story
@@ -165,43 +165,24 @@ struct Story
 	std::vector<Para>					fBody;
 	std::vector<Table>					fTables;	// EVERY table, nested ones included, document order
 	std::vector< std::vector<Para> >	fNotes;		// [n] = footnote n's paragraphs
+	bool16								fVertical;	// the story is set vertically (tategaki)
+
+	Story() : fVertical(kFalse) {}
 };
-
-/** The file a folder of exported stories keeps its look in, and the name every one of those files
-	links to.
-
-	★**ONE NAME, IN ONE PLACE.** The writer puts it in the <link> and the exporter writes the file
-	  under it. A folder where those two disagreed would open with no styling and no error at all -
-	  the kenten would have no marks and the invisible characters no faces, and nothing would say
-	  why. */
-extern const char* const kStylesheetName;
-
-/** The class a footnote's paragraph wears, WITHOUT the number: "note1", "note2".
-
-	★**ONE NAME, IN ONE PLACE**, like kStylesheetName above: the writer puts it on and the reader
-	  takes it off. The number is the note's own, counting from 1, so it reads the way the page
-	  prints it - and a reader editing these files by hand can move a paragraph between notes by
-	  changing one digit. */
-extern const char* const kNoteClassPrefix;
 
 /** Add to `inOutSeen` every kenten value this story uses - body, cells and notes alike - skipping
 	any already there.
 
-	★★**THE SHEET BELONGS TO THE FOLDER, SO THE COLLECTING DOES TOO.** A custom mark is a character
-	  out of the document, which no fixed list can hold, so the stories themselves have to be asked.
-	  The exporter asks each story as it writes it and hands the whole answer to WriteStylesheet
-	  once, at the end.
 	⚠**A CELL'S AND A NOTE'S MARKS COUNT.** A sheet built from the body alone leaves a custom mark
 	 inside a table drawing nothing: the <em> is there, its class is there, and the page shows
 	 nothing at all. */
 void CollectKentenValues(const Story& s, std::vector<std::string>& inOutSeen);
 
-/** The stylesheet itself: the layout, the faces for the invisible characters, EVERY built-in
-	kenten kind, and one rule for each custom mark among `kentenValues`.
+/** The stylesheet: the layout, the faces for the invisible characters, EVERY built-in kenten kind,
+	one rule for each custom mark among `kentenValues`, and the vertical setting.
 
-	★**THE BUILT-IN KINDS ARE ALL THERE, USED OR NOT.** One sheet serves the whole folder, and the
-	  reader edits these files by hand - somebody who types <em class="kenten-BlackCircle"> into one
-	  of them has to see a circle when the page reloads.
+	★**THE BUILT-IN KINDS ARE ALL THERE, USED OR NOT.** The reader edits these files by hand, and
+	  somebody who types <em class="kenten-BlackCircle"> into one has to see a circle on reload.
 	★**THE TEXT IS 1.5 TIMES THE BROWSER'S OWN SIZE** (the user's request, 2026-09-15). The measure
 	  stays in em, so a line still holds the same 40 characters; only the characters grow.
 	⚠**THE ORDER OF `kentenValues` DOES NOT REACH THE BYTES.** Two exports of one document have to
@@ -210,11 +191,11 @@ void WriteStylesheet(const std::vector<std::string>& kentenValues, std::string& 
 
 /** Story -> a complete HTML document. uid goes into <title>. Never fails.
 
-	★**THE LOOK IS NOT IN HERE ANY MORE** (2026-09-15): the document links kStylesheetName instead
-	  of carrying a <style> of its own, so the reader changes one file rather than thirty.
-	⚠A file taken OUT of its folder still imports perfectly - nothing on the reading side looks at
-	 the stylesheet - but a browser then shows each kenten as the plain italic an <em> means to it,
-	 and each invisible character as the nothing an empty <span> means to it.
+	★**THE LOOK IS IN THE FILE** (2026-09-16, the user's decision, going back on the folder-wide
+	  stylesheet of the day before): each document carries its own <style>, built from the marks
+	  that document actually uses. A file mailed on its own, or pasted into a chat, still shows its
+	  kenten and its invisible characters - and looking at it in a browser is how the reader checks
+	  what they have edited.
 	@warning ***NO BYTE ORDER MARK IS PRODUCED HERE.*** The design asks the FILE to carry one, and
 	  the file is written by KCMStoryTextExport, which puts it on. A BOM in this string would sit in
 	  front of the doctype, where a document is supposed to start. Read skips one if it finds it. */
