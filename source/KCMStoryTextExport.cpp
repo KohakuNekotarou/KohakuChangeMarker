@@ -249,6 +249,20 @@ void FillPara(const std::string& text, const KCMParaAttrs& attrs, KCMStoryHtml::
 	out.fText = text;
 	out.fRuby = attrs.fRuby;
 	out.fKenten = attrs.fKenten;
+
+	// ★★★**A READING OVER ONE CHARACTER IS ALWAYS MONO** (the user's rule, 2026-09-16). One
+	//   character with one reading is the same typesetting whichever way the document has it set,
+	//   and the markup cannot tell the two apart - <ruby>立<rt>た</rt></ruby> either way - so both
+	//   sides settle it here rather than letting the trip decide.
+	//   ⚠**THE DOCUMENT IS NOT TOUCHED BY THIS.** It changes what the FILE says, and the import
+	//    reads nothing from a paragraph but its text (measured: KCMStoryTextImport uses fText and
+	//    nothing else, and writes with ReplaceCmd/InsertCmd alone), so no ruby setting can travel
+	//    back into anybody's document through it.
+	for (size_t k = 0; k < out.fRuby.size(); ++k)
+	{
+		if (out.fRuby[k].fLen == 1)
+			out.fRuby[k].fGroup = kFalse;
+	}
 }
 
 /*	BuildStory
@@ -613,6 +627,10 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 
 	int32 written = 0;
 	int32 refused = 0;
+	// What stopped the first story that could not be written, so the message can say more than a
+	// number - the reader needs to know WHICH story and WHY before they can do anything about it.
+	PMString firstRefusal;
+	firstRefusal.SetTranslatable(kFalse);
 
 	for (size_t t = 0; t < targets.size(); ++t)
 	{
@@ -627,6 +645,31 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 
 		std::string html;
 		KCMStoryHtml::Write(story, storyRef.GetUID().Get(), html);
+
+		// ★★★**THE FILE CHECKS ITSELF BEFORE IT IS WRITTEN** (2026-09-16, the user's decision). The
+		//   bytes are read straight back and compared against the story they came from, and the
+		//   file is only written when the two agree. A story this format cannot carry is therefore
+		//   refused HERE - not after somebody has spent an afternoon editing it and the import
+		//   turns them away with a count.
+		//   ⚠**IT TOUCHES NOTHING.** Write, Read and Same are pure functions on plain structs
+		//    (KCMStoryHtml holds no SDK type at all), so the document is not read a second time and
+		//    cannot be dirtied by this. What it costs is one parse of a string already in memory.
+		{
+			KCMStoryHtml::Story back;
+			std::string why;
+			if (!KCMStoryHtml::Read(html.c_str(), html.size(), back, why)
+				|| !KCMStoryHtml::Same(story, back, why))
+			{
+				++refused;
+				if (firstRefusal.IsEmpty())
+				{
+					firstRefusal.AppendNumber(static_cast<int32>(storyRef.GetUID().Get()));
+					firstRefusal.Append(": ");
+					firstRefusal.Append(why.c_str());
+				}
+				continue;
+			}
+		}
 
 		if (WriteStoryFile(folder, storyRef.GetUID().Get(), html))
 			++written;
@@ -655,6 +698,12 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 		outMessage.Append(", ");
 		outMessage.AppendNumber(refused);
 		outMessage.Append(" refused");
+		if (!firstRefusal.IsEmpty())
+		{
+			outMessage.Append(" (");
+			outMessage.Append(firstRefusal);
+			outMessage.Append(")");
+		}
 	}
 	if (notAStory > 0)
 	{

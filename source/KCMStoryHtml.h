@@ -201,6 +201,17 @@ void WriteStylesheet(const std::vector<std::string>& kentenValues, std::string& 
 	  front of the doctype, where a document is supposed to start. Read skips one if it finds it. */
 void Write(const Story& s, int32 uid, std::string& out);
 
+/** kTrue when the two stories are the same in every way this format carries.
+
+	★★★**THIS IS WHAT LETS A WRITE CHECK ITSELF** (2026-09-16). The exporter writes a story, reads
+	  the bytes straight back, and compares - all of it in memory, with no SDK type and no document
+	  anywhere near it - so a story this format cannot carry is refused BEFORE its file is written,
+	  rather than after somebody has spent a day editing it.
+	★**AND IT IS THE HARNESS'S CHECK TOO**: Read(Write(x)) == x is the property the whole file
+	  exists to keep, and this is that sentence as a function.
+	@param outWhy where the first difference is, in words a status line can show. */
+bool16 Same(const Story& a, const Story& b, std::string& outWhy);
+
 /** HTML -> Story. kFalse with a reason when the markup cannot be read at all.
 
 	*** THE READER IS DELIBERATELY TOLERANT IN ONE DIRECTION ONLY. *** Anything it does not
