@@ -26,7 +26,7 @@
 #include "IDataBase.h"
 #include "IKentenStyle.h"			// IKentenStyle::KentenKind
 #include "IRubyStrand.h"			// IRubyAttrStrand (the file is IRubyStrand.h, the class is not)
-#include "ITextAttrBoolean.h"		// kTARubyAttrBoss / kTAMojiRubyBoss
+#include "ITextAttrBoolean.h"		// kTARubyAttrBoss / kTAMojiRubyBoss / kTATatechuyokoAttrBoss
 #include "ITextAttrInt16.h"		// kTAKentenKindBoss
 #include "ITextAttrWideString.h"	// kTARubyStringBoss
 #include "ITextModel.h"
@@ -175,7 +175,8 @@ bool16 HoldsObjectCharacter(const WideString& words)
 PMString WriteBlockedMessage(int32 writeBlock)
 {
 	if (writeBlock == kKCMWriteBlockedKind)
-		return Refused("a warichu or tate-chu-yoko change is shown for reading - it is not written back.");
+		return Refused("a warichu change, or a tate-chu-yoko one outside the Import mode, is shown for "
+					   "reading - it is not written back.");
 	return (writeBlock == kKCMWriteBlockedPlaces)
 		? Refused("this change is in a table cell or a footnote that the other version does not have - "
 				  "its words cannot be put back as text.")
@@ -328,6 +329,29 @@ ErrorCode KCMApplyKentenKind(ITextModel* model, TextIndex at, int32 len, int16 k
 	if (attr == nil)
 		return kFailure;
 	attr->Set(kind);
+	InterfacePtr<IAttrReport> report(attr, UseDefaultIID());
+	attrs->ApplyAttribute(report);
+	InterfacePtr<ITextModelCmds> cmds(model, UseDefaultIID());
+	if (cmds == nil)
+		return kFailure;
+	InterfacePtr<ICommand> apply(cmds->ApplyCmd(RangeData(at, at + len), attrs, kCharAttrStrandBoss));
+	return (apply != nil) ? CmdUtils::ProcessCommand(apply) : kFailure;
+}
+
+// ---- tate-chu-yoko -------------------------------------------------------------------------
+
+/** Tate-chu-yoko ON or OFF over [at, at+len) (2026-09-17, the user's request - the Import mode takes
+    it in). ⚠**OFF IS A VALUE, kFalse**, not a cleared override: that is how the official snippet
+    takes it off (SnpPerformTextAttrTateChuYoko.cpp's `SetTextBool16Attribute(..., kFalse)`), and it
+    stays off under a character style that turns it on. The X/Y offsets are its look and are left
+    alone, the way a kenten's look is. */
+ErrorCode KCMApplyTcy(ITextModel* model, TextIndex at, int32 len, bool16 on)
+{
+	boost::shared_ptr<AttributeBossList> attrs(new AttributeBossList);
+	InterfacePtr<ITextAttrBoolean> attr(::CreateObject2<ITextAttrBoolean>(kTATatechuyokoAttrBoss));
+	if (attr == nil)
+		return kFailure;
+	attr->SetFlag(on ? kTrue : kFalse);
 	InterfacePtr<IAttrReport> report(attr, UseDefaultIID());
 	attrs->ApplyAttribute(report);
 	InterfacePtr<ITextModelCmds> cmds(model, UseDefaultIID());
@@ -815,6 +839,49 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 			outMessage.AppendNumber(targetCount);
 			outMessage.Append(" character(s)");
 		}
+		else if (change.fAttrKind == kKCMStoryAttrTcy)
+		{
+			// ★★TATE-CHU-YOKO (2026-09-17, the user's call: the Import mode takes it in - the diff still
+			//   blocks it everywhere else, so only an Import row gets this far). Its value IS its
+			//   characters, so the Source's value says only one thing: where it is ON. Off over the
+			//   Target's stretch, then on over the Source's reach from the same start - which is one
+			//   write when the stretch kept its length, and right either way when it grew or shrank.
+			const bool16 sourceHasIt = change.fOtherRuby.IsEmpty() ? kFalse : kTrue;
+			int32 len = targetCount;
+			if (sourceHasIt && sourceCount > 0)
+			{
+				len = sourceCount;
+				if (change.fTargetStart + len > targetLength)
+					len = targetLength - change.fTargetStart;
+			}
+
+			// ★★★**THE CHARACTERS ABOUT TO BE SET HAVE TO BE THE SOURCE'S.** The value is the characters,
+			//   so this one test says whether the two sides' positions still name the same words. When
+			//   the words inside it changed as well, the Source's stretch would land on whatever the
+			//   Target has there - silently, on the wrong characters. So the words go back first, the
+			//   same order a ruby keeps for the same reason.
+			if (sourceHasIt)
+			{
+				WideString standing;
+				TargetWordsAt(target, change.fTargetStart, len, standing);
+				if (standing != WideString(change.fOtherRuby))
+				{
+					outMessage = Refused("the characters under this tate-chu-yoko are not the Source's - "
+									   "restore the words first, then this.");
+					return kFalse;
+				}
+			}
+
+			RestoreSequence undo(standalone);
+			err = kSuccess;
+			if (!sourceHasIt || len != targetCount)
+				err = KCMApplyTcy(target, change.fTargetStart, targetCount, kFalse);
+			if (sourceHasIt && err == kSuccess)
+				err = KCMApplyTcy(target, change.fTargetStart, len, kTrue);
+			outMessage = sourceHasIt ? Ascii("Set tate-chu-yoko over ") : Ascii("Took the tate-chu-yoko off ");
+			outMessage.AppendNumber(sourceHasIt ? len : targetCount);
+			outMessage.Append(" character(s)");
+		}
 		else
 		{
 			outMessage = Refused("this kind of change is not restorable yet.");
@@ -1278,6 +1345,29 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 				outMessage.Append(change.fRuby);
 				outMessage.Append("\" back over ");
 			}
+		}
+		else if (change.fAttrKind == kKCMStoryAttrTcy)
+		{
+			// ★THE MIRROR OF THE TAKE-IN (2026-09-17). What it set ON reached the SOURCE's length from
+			//   `at`, which can be further than `len` - so that whole reach goes off first, and then the
+			//   Target's own stretch goes back on if it had one. When the reach is `len` and there was
+			//   one, turning it on is the whole of it.
+			const int32 sourceCount = change.fSourceEnd - change.fSourceStart;
+			int32 reach = len;
+			if (!change.fOtherRuby.IsEmpty() && sourceCount > len)
+			{
+				reach = sourceCount;
+				if (at + reach > target->TotalLength())
+					reach = target->TotalLength() - at;
+			}
+			err = kSuccess;
+			if (change.fRuby.IsEmpty() || reach != len)
+				err = KCMApplyTcy(target, at, reach, kFalse);
+			if (err == kSuccess && !change.fRuby.IsEmpty())
+				err = KCMApplyTcy(target, at, len, kTrue);
+			outMessage = change.fRuby.IsEmpty()
+						 ? Ascii("Took the tate-chu-yoko off again over ")
+						 : Ascii("Put the tate-chu-yoko back over ");
 		}
 		else if (change.fAttrKind == kKCMStoryAttrKenten)
 		{

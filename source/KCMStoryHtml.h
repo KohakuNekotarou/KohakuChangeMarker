@@ -72,6 +72,7 @@ struct Para
 	std::string			fText;
 	KCMAttrSpanList		fRuby;		// as KCMParaAttrs::fRuby
 	KCMAttrSpanList		fKenten;	// as KCMParaAttrs::fKenten - fValue is the KIND's name
+	KCMAttrSpanList		fTcy;		// as KCMParaAttrs::fTcy - fValue is the characters it covers
 };
 
 /** The default mark, for an <em> that names none. See kKentenDefaultValue's comment. */

@@ -667,12 +667,19 @@ void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 	//   side without the mark is drawn differently from one with it (KCMParaText::PlanLayers).
 	//   ★Neither kind is written back (user's call): named here, where the change is made, so the
 	//   menu hides the item instead of offering one that refuses.
+	//   ★★**EXCEPT A TATE-CHU-YOKO IN THE IMPORT MODE** (2026-09-17, the user's call): there the reader
+	//     edited it in the file on purpose, and taking it in is what the mode is for. A Task Start,
+	//     KIDMCP's Compare and a warichu anywhere stay as they were. ⚠The mode is set BEFORE the
+	//     comparison runs (KCMImportStoryText), and every re-diff of a row happens inside the mode.
 	if (KCMAttrKindIsLayered(attrKind))
 	{
 		const bool16 isWarichu = (attrKind == kKCMStoryAttrWarichu) ? kTrue : kFalse;
 		BuildLayers(target, isWarichu, tStart, tCount, newRuby.empty() ? kFalse : kTrue, change.fLayers);
 		BuildLayers(source, isWarichu, sStart, sCount, oldRuby.empty() ? kFalse : kTrue, change.fOtherLayers);
-		change.fWriteBlock = kKCMWriteBlockedKind;
+		const bool16 takenInHere = (attrKind == kKCMStoryAttrTcy && KCMGetCompareMode() == kKCMModeImport)
+								   ? kTrue : kFalse;
+		if (!takenInHere)
+			change.fWriteBlock = kKCMWriteBlockedKind;
 	}
 
 	out.push_back(change);

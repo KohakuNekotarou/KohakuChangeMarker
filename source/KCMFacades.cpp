@@ -520,7 +520,7 @@ public:
 		out.fOtherRubyGroup	= change.fOtherRubyGroup;
 		out.fAttrKind		= static_cast<int32>(change.fAttrKind);
 		out.fLayers			= change.fLayers;		// a warichu / tate-chu-yoko change, line by line
-		out.fOtherLayers	= change.fOtherLayers;	// (never replaced: neither kind is written back)
+		out.fOtherLayers	= change.fOtherLayers;	// (traded below once a tate-chu-yoko is taken in)
 
 		// ---- the Import mode: which of its two states this row is in ---------------------------
 		//
@@ -562,6 +562,14 @@ public:
 				//   the reading that was there BEFORE, which is the target's.
 				out.fOtherRuby		= change.fRuby;
 				out.fOtherRubyGroup	= change.fRubyGroup;
+
+				// ★★**AND A TATE-CHU-YOKO'S LINES, FOR THE SAME TWO REASONS** (2026-09-17, when the
+				//   Import mode began to take one in). A layered row is drawn from its lines rather
+				//   than from fRuby, and after the write the lines that describe the story are the
+				//   SOURCE's. ⚠GetChangeLineCount asks the same side for the height - one without the
+				//   other and the row's picture and its height disagree.
+				out.fLayers			= change.fOtherLayers;
+				out.fOtherLayers	= change.fLayers;
 			}
 			else
 			{
@@ -687,8 +695,18 @@ public:
 
 		// ★The layered kinds say how many lines themselves; every other mark is two, whether or not
 		//   this side carries it (the side without draws a bar - KCMAttrKindHasMarkLine).
-		if (KCMAttrKindIsLayered(found->fAttrKind) && found->fLayers.fCount >= 2)
-			return found->fLayers.fCount;
+		// ★★A TATE-CHU-YOKO STANDING AS TAKEN IN is drawn from the Source's lines (GetChange trades
+		//   them, 2026-09-17), so its height comes from the same side - the same question GetChange
+		//   asks (StillReplaced), not a second one.
+		const KCMStoryLayers* layers = &found->fLayers;
+		if (isReplaced)
+		{
+			const KCMStoryRow* const row = KCMStoryList::GetRow(nth);
+			if (row != nil && StillReplaced(*row, *found))
+				layers = &found->fOtherLayers;
+		}
+		if (KCMAttrKindIsLayered(found->fAttrKind) && layers->fCount >= 2)
+			return layers->fCount;
 		return KCMAttrKindHasMarkLine(found->fAttrKind) ? 2 : 1;
 	}
 

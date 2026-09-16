@@ -110,6 +110,10 @@ ErrorCode KCMApplyKentenKind(ITextModel* model, TextIndex at, int32 len, int16 k
     this build cannot write ("Custom" among them). */
 bool16 KCMKentenKindOf(const PMString& name, int16& outKind);
 
+/** Tate-chu-yoko ON or OFF over [at, at+len) - kTATatechuyokoAttrBoss alone, OFF written as kFalse
+    (2026-09-17: the Import mode takes it in). Its X/Y offsets are its look and are left alone. */
+ErrorCode KCMApplyTcy(ITextModel* model, TextIndex at, int32 len, bool16 on);
+
 #endif // __KCMStoryRestore_h__
 
 // End, KCMStoryRestore.h.

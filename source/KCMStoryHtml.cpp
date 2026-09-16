@@ -63,6 +63,13 @@ const size_t kOurTagCount = sizeof(kOurTags) / sizeof(kOurTags[0]);
 */
 const char* const kContinuedClass = "continued";
 
+/*	kTcyClass
+	The class on a <span> holding a tate-chu-yoko (2026-09-17, the user's request).
+
+	★**SPELT OUT FOR THE SAME REASON AS "continued"**: somebody opening the file sees what it is.
+*/
+const char* const kTcyClass = "tate-chu-yoko";
+
 const char* const kScaffolding[] = { "html", "head", "body", "meta", "title", "style", "link" };
 const size_t kScaffoldingCount = sizeof(kScaffolding) / sizeof(kScaffolding[0]);
 
@@ -361,6 +368,15 @@ struct EmState
 	EmState() : fOpen(kFalse), fStart(0) {}
 };
 
+/** A <span class="tate-chu-yoko"> that has been opened and not yet closed. */
+struct TcyState
+{
+	bool16		fOpen;
+	int32		fStart;		// where it began, in the paragraph's code points
+
+	TcyState() : fOpen(kFalse), fStart(0) {}
+};
+
 /** How many code points are in this UTF-8 string.
 
 	★**ASKED OF KCMTextDiff, NEVER COUNTED HERE.** KCMAttrSpan's offsets are code points - its own
@@ -434,6 +450,7 @@ Para Slice(const Para& p, const std::vector<int32>& byteAt, int32 from, int32 to
 
 	SliceSpans(p.fRuby, from, to, out.fRuby);
 	SliceSpans(p.fKenten, from, to, out.fKenten);
+	SliceSpans(p.fTcy, from, to, out.fTcy);
 	return out;
 }
 
@@ -461,10 +478,68 @@ int32 NextTableAfter(const Story& s, const std::vector<size_t>& inside, int32 cp
 	return stop;
 }
 
+/*	WriteTcyPieces
+	The code points [from, to) of the paragraph, with every stretch of tate-chu-yoko in them wrapped in
+	<span class="tate-chu-yoko"> (2026-09-17, the user's request).
+
+	★★**THE INNERMOST OF THE THREE, AND THE ONLY ONE THAT GIVES WAY.** A reading cut in two is two
+	  readings, and a kenten cut in two comes back as two marks where the document has one
+	  (KCMTextRead's ScanKenten joins touching marks of one kind, so the self-check would refuse the
+	  story). A tate-chu-yoko is ON or OFF per character, so two touching stretches ARE one - and Read
+	  joins them back (SettleTcy). So this is called INSIDE a kenten's piece, which is itself inside a
+	  reading's base: where a tate-chu-yoko crosses either edge, it is the tate-chu-yoko that is cut.
+	⚠A browser draws the two halves as two boxes. The document, and the trip, see one.
+*/
+void WriteTcyPieces(const Para& p, const std::vector<int32>& byteAt,
+					int32 from, int32 to, std::string& out)
+{
+	const KCMAttrSpanList& tcy = p.fTcy;
+
+	int32 cp = from;
+	while (cp < to)
+	{
+		bool16 inside = kFalse;
+		int32 stop = to;
+		for (size_t k = 0; k < tcy.size(); ++k)
+		{
+			if (tcy[k].fLen <= 0)
+				continue;
+			const int32 start = tcy[k].fStart;
+			const int32 end = start + tcy[k].fLen;
+			if (start <= cp && cp < end)
+			{
+				inside = kTrue;
+				if (end < stop)
+					stop = end;
+			}
+			else if (start > cp && start < stop)
+			{
+				stop = start;
+			}
+		}
+
+		if (inside)
+		{
+			out += "<span class=\"";
+			out += kTcyClass;
+			out += "\">";
+		}
+
+		const size_t a = ByteAtCodePoint(p.fText, byteAt, cp);
+		const size_t b = ByteAtCodePoint(p.fText, byteAt, stop);
+		if (b > a)
+			WriteText(p.fText.substr(a, b - a), out);
+
+		if (inside)
+			out += "</span>";
+
+		cp = stop;
+	}
+}
+
 void WriteRun(const Para& p, const std::vector<int32>& byteAt,
 			  int32 from, int32 to, std::string& out)
 {
-	const std::string& text = p.fText;
 	const KCMAttrSpanList& kenten = p.fKenten;
 
 	int32 cp = from;
@@ -510,10 +585,9 @@ void WriteRun(const Para& p, const std::vector<int32>& byteAt,
 			out += "\">";
 		}
 
-		const size_t a = ByteAtCodePoint(text, byteAt, cp);
-		const size_t b = ByteAtCodePoint(text, byteAt, stop);
-		if (b > a)
-			WriteText(text.substr(a, b - a), out);
+		// The tate-chu-yoko inside this piece - cut here if it crosses the kenten's edge, never the
+		// other way round (WriteTcyPieces says why).
+		WriteTcyPieces(p, byteAt, cp, stop, out);
 
 		if (wrapped)
 			out += "</em>";
@@ -652,9 +726,82 @@ bool16 TakeSpan(const std::string& s, size_t at, size_t after, bool16 closing,
 	return kTrue;
 }
 
+/*	TakeTcyOrSpan
+	One <span> or </span> where a paragraph's text stands: a tate-chu-yoko opening or closing
+	(2026-09-17), or an invisible character (TakeSpan).
+
+	★**A </span> BELONGS TO THE TATE-CHU-YOKO WHEN ONE IS OPEN.** An invisible character's own closing
+	  tag never gets here - TakeSpan eats it where it stands, straight after the opening one - so a
+	  closing tag arriving while a tate-chu-yoko is open can only be that one's. With none open it is
+	  the stray that TakeSpan has always let pass.
+	⚠A TATE-CHU-YOKO OVER NO CHARACTERS IS NO TATE-CHU-YOKO - the rule an <em> and a reading keep.
+	⚠Its value is filled in when the paragraph closes (SettleTcy): it is the characters it covers, and
+	 a continued half has not finished arriving until then.
+*/
+bool16 TakeTcyOrSpan(const std::string& s, size_t at, size_t after, bool16 closing,
+					 std::string& para, TcyState& tcy, KCMAttrSpanList& outTcy,
+					 size_t& outNext, std::string& whyNot)
+{
+	outNext = after;
+
+	if (closing && tcy.fOpen)
+	{
+		const int32 len = CountCodePoints(para) - tcy.fStart;
+		if (len > 0)
+			outTcy.push_back(KCMAttrSpan(tcy.fStart, len, std::string()));
+		tcy = TcyState();
+		return kTrue;
+	}
+
+	std::string cls;
+	if (!closing && ClassOfTag(s, at, after, cls) && cls == kTcyClass)
+	{
+		if (tcy.fOpen)
+		{
+			whyNot = "a tate-chu-yoko begins inside another one";
+			return kFalse;
+		}
+		tcy.fOpen = kTrue;
+		tcy.fStart = CountCodePoints(para);
+		return kTrue;
+	}
+
+	return TakeSpan(s, at, after, closing, para, outNext, whyNot);
+}
+
 bool SpanStartsEarlier(const KCMAttrSpan& a, const KCMAttrSpan& b)
 {
 	return a.fStart < b.fStart;
+}
+
+/*	SettleTcy
+	A paragraph's tate-chu-yoko as the document reports it: in order, touching stretches joined, and
+	each one's value the characters it covers (KCMParaAttrs::fTcy's rule, KCMParaText's
+	SetSpanValuesToText).
+
+	★**JOINED BECAUSE THE DOCUMENT JOINS THEM** - ON is per character, so KCMTextRead's
+	  ScanBoolAttribute has only one answer for touching stretches. The writer relies on this: it cuts
+	  a tate-chu-yoko where a reading, a kenten or a table stands across it (WriteTcyPieces).
+*/
+void SettleTcy(Para& p)
+{
+	std::sort(p.fTcy.begin(), p.fTcy.end(), SpanStartsEarlier);
+
+	KCMAttrSpanList joined;
+	for (size_t k = 0; k < p.fTcy.size(); ++k)
+	{
+		if (!joined.empty() && p.fTcy[k].fStart <= joined.back().fStart + joined.back().fLen)
+		{
+			const int32 end = p.fTcy[k].fStart + p.fTcy[k].fLen;
+			if (end > joined.back().fStart + joined.back().fLen)
+				joined.back().fLen = end - joined.back().fStart;
+			continue;
+		}
+		joined.push_back(p.fTcy[k]);
+	}
+
+	KCMParaText::SetSpanValuesToText(joined, p.fText);
+	p.fTcy.swap(joined);
 }
 
 /*	WriteParaHtml
@@ -749,17 +896,25 @@ void Indent(int32 depth, std::string& out)
 		out += "    ";
 }
 
-/** <p> for the first piece of a paragraph, <p class="continued"> for the ones after a table. */
+/** <p> for the first piece of a paragraph, <p class="continued"> for the ones after a table.
+
+	★★**EVERY <p> IS EDITABLE IN A BROWSER, AND NOTHING ELSE IS** (2026-09-17, the user's request):
+	  contenteditable="plaintext-only" on each paragraph. On <body> a browser lets the reader delete a
+	  whole table; on a <p> only that paragraph's words are theirs to change, and plaintext-only keeps
+	  Ctrl+B and a paste from bringing markup this format does not have.
+	⚠**AN ATTRIBUTE, NOT A STYLE**: CSS cannot make an element editable, so it is written on every
+	  paragraph rather than once in the stylesheet. Read looks at a <p>'s class and nothing else, so a
+	  <p> written by hand without it reads exactly the same. */
 void OpenPara(bool16 first, std::string& out)
 {
-	if (first)
+	out += "<p";
+	if (!first)
 	{
-		out += "<p>";
-		return;
+		out += " class=\"";
+		out += kContinuedClass;
+		out += "\"";
 	}
-	out += "<p class=\"";
-	out += kContinuedClass;
-	out += "\">";
+	out += " contenteditable=\"plaintext-only\">";
 }
 
 /*	WriteParagraphWithTables
@@ -1178,6 +1333,12 @@ void WriteStylesheet(const std::vector<std::string>& kentenValues, std::string& 
 	outCss += "em{font-style:normal;-webkit-text-emphasis-style:filled sesame;"
 			  "text-emphasis-style:filled sesame}\r\n";
 
+	// ★**AND TATE-CHU-YOKO IS IN CSS TOO** (2026-09-17): text-combine-upright sets a span's characters
+	//   across one character's width in a vertical line, which is what InDesign does. Like InDesign's,
+	//   it means nothing in horizontal text, so the rule is written for the vertical page only.
+	outCss += "body.vertical .tate-chu-yoko{-webkit-text-combine:horizontal;"
+			  "text-combine-upright:all}\r\n";
+
 	// ★**EVERY BUILT-IN KIND, WHETHER THIS FOLDER USES IT OR NOT.** The sheet is the folder's, and
 	//   a reader who types <em class="kenten-BlackTriangle"> into one of these files by hand has to
 	//   see a triangle when the page reloads.
@@ -1370,6 +1531,8 @@ bool16 SameParas(const std::vector<Para>& a, const std::vector<Para>& b, const s
 			return kFalse;
 		if (!SameSpans(a[i].fKenten, b[i].fKenten, here, "kenten", outWhy))
 			return kFalse;
+		if (!SameSpans(a[i].fTcy, b[i].fTcy, here, "tate-chu-yoko", outWhy))
+			return kFalse;
 	}
 	return kTrue;
 }
@@ -1489,7 +1652,9 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 	std::string para;
 	KCMAttrSpanList paraRuby;		// the readings met so far, in this paragraph's own count
 	KCMAttrSpanList paraKenten;		// and the marks, in the same count
+	KCMAttrSpanList paraTcy;		// and the tate-chu-yoko, in the same count (values filled at </p>)
 	EmState em;
+	TcyState tcy;
 
 	// ★**A NOTE IS AN <li>, AND ITS PARAGRAPHS ARE WHATEVER STANDS INSIDE IT** (2026-09-16), so
 	//   nothing has to be paired up at the end and the paragraphs carry nothing of their own.
@@ -1579,7 +1744,9 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 						para.clear();
 						paraRuby.clear();
 						paraKenten.clear();
+						paraTcy.clear();
 						em = EmState();
+						tcy = TcyState();
 					}
 
 					// ★★**"THIS PARAGRAPH IS THE REST OF THE ONE BEFORE IT."** A table standing in
@@ -1602,10 +1769,17 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 						whyNot = "a paragraph ends with an <em> still open";
 						return kFalse;
 					}
+					if (tcy.fOpen)
+					{
+						whyNot = "a paragraph ends with a tate-chu-yoko still open";
+						return kFalse;
+					}
 					Para p;
 					p.fText = para;
 					p.fRuby = paraRuby;
 					p.fKenten = paraKenten;
+					p.fTcy = paraTcy;
+					SettleTcy(p);
 
 					// ★A PARAGRAPH BELONGS TO WHATEVER IT STANDS IN: a cell, a note, or the body.
 					std::vector<Para>* const where = CurrentParas(out, tables, inNote);
@@ -1630,6 +1804,15 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 							span.fStart += shift;
 							prev.fKenten.push_back(span);
 						}
+						// ★A tate-chu-yoko the table cut in two is ONE again here, and its value
+						//   is its characters across both halves - so it is settled afresh.
+						for (size_t k = 0; k < p.fTcy.size(); ++k)
+						{
+							KCMAttrSpan span(p.fTcy[k]);
+							span.fStart += shift;
+							prev.fTcy.push_back(span);
+						}
+						SettleTcy(prev);
 					}
 					else if (where != nil)
 					{
@@ -1641,6 +1824,7 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					para.clear();
 					paraRuby.clear();
 					paraKenten.clear();
+					paraTcy.clear();
 
 					// ★**NOTHING REOPENS HERE.** Text between </p> and the next <p> is layout,
 					//   inside a cell exactly as in the body.
@@ -1795,7 +1979,9 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					para.clear();
 					paraRuby.clear();
 					paraKenten.clear();
+					paraTcy.clear();
 					em = EmState();
+					tcy = TcyState();
 				}
 				else
 				{
@@ -1892,7 +2078,7 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					return kFalse;
 				}
 				size_t next = after;
-				if (!TakeSpan(s, i, after, closing, para, next, whyNot))
+				if (!TakeTcyOrSpan(s, i, after, closing, para, tcy, paraTcy, next, whyNot))
 					return kFalse;
 				i = next;
 				continue;
@@ -1974,11 +2160,12 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					}
 
 					// ★An invisible character can stand inside a base - a reading over a word that
-					//   carries an index marker is ordinary - so the base reads them too.
+					//   carries an index marker is ordinary - so the base reads them too. And so does
+					//   a tate-chu-yoko (2026-09-17): a reading over a year set 12 is ordinary as well.
 					if (inner == "span")
 					{
 						size_t next = innerAfter;
-						if (!TakeSpan(s, i, innerAfter, innerClosing, para, next, whyNot))
+						if (!TakeTcyOrSpan(s, i, innerAfter, innerClosing, para, tcy, paraTcy, next, whyNot))
 							return kFalse;
 						i = next;
 						continue;

@@ -86,12 +86,19 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 	KCMAttrSpanList applyRuby;
 	KCMAttrSpanList clearKenten;
 	KCMAttrSpanList applyKenten;
+	KCMAttrSpanList clearTcy;
+	KCMAttrSpanList applyTcy;
 	KCMParaText::PlanSpanChanges(docAttrs.fRuby, file.fRuby, clearRuby, applyRuby);
 	KCMParaText::PlanSpanChanges(docAttrs.fKenten, file.fKenten, clearKenten, applyKenten);
+	// ★TATE-CHU-YOKO TOO (2026-09-17). Its value is its characters on both sides - KCMTextRead and
+	//   KCMStoryHtml's reader settle it the same way - so a stretch that did not change pairs off and
+	//   nothing is written, exactly as for a reading.
+	KCMParaText::PlanSpanChanges(docAttrs.fTcy, file.fTcy, clearTcy, applyTcy);
 
 	// ★THE ORDINARY ANSWER, and the one worth being fast and silent about: the reader edited a
 	//   word somewhere else and every reading in this paragraph is where it was.
-	if (clearRuby.empty() && applyRuby.empty() && clearKenten.empty() && applyKenten.empty())
+	if (clearRuby.empty() && applyRuby.empty() && clearKenten.empty() && applyKenten.empty()
+		&& clearTcy.empty() && applyTcy.empty())
 		return 0;
 
 	// ★★★**THE WORDS FIRST.** Both sides count in the paragraph's own text, so the offsets mean
@@ -99,8 +106,8 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 	//   this is the enabling condition rather than a precaution).
 	if (docText != file.fText)
 	{
-		whyNot = "the words of this paragraph did not go in, so its ruby and kenten were left "
-				 "alone (the words go first)";
+		whyNot = "the words of this paragraph did not go in, so its ruby, kenten and tate-chu-yoko "
+				 "were left alone (the words go first)";
 		whyNot.SetTranslatable(kFalse);
 		outRefused = kTrue;
 		return 0;
@@ -172,6 +179,25 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 		++written;
 	}
 
+	// ⚠A tate-chu-yoko has no look to lose by being turned off and on again (its offsets are not
+	//  touched either way), so it needs no StandsOnTheSameCharacters: a stretch that grew is simply
+	//  off over the old one and on over the new.
+	for (size_t i = 0; i < clearTcy.size(); ++i)
+	{
+		ModelRangeOf(docAttrs, clearTcy[i], paraStart, at, len);
+		if (len <= 0)
+			continue;
+		if (KCMApplyTcy(model, at, len, kFalse) != kSuccess)
+		{
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+			whyNot = "a tate-chu-yoko could not be taken off (a locked story or layer?)";
+			whyNot.SetTranslatable(kFalse);
+			outRefused = kTrue;
+			return written;
+		}
+		++written;
+	}
+
 	// ---- and what goes on -----------------------------------------------------------------------
 	if (!applyRuby.empty())
 	{
@@ -216,6 +242,22 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 			whyNot = "a kenten could not be written (a locked story or layer?)";
+			whyNot.SetTranslatable(kFalse);
+			outRefused = kTrue;
+			return written;
+		}
+		++written;
+	}
+
+	for (size_t i = 0; i < applyTcy.size(); ++i)
+	{
+		ModelRangeOf(docAttrs, applyTcy[i], paraStart, at, len);
+		if (len <= 0)
+			continue;
+		if (KCMApplyTcy(model, at, len, kTrue) != kSuccess)
+		{
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+			whyNot = "a tate-chu-yoko could not be written (a locked story or layer?)";
 			whyNot.SetTranslatable(kFalse);
 			outRefused = kTrue;
 			return written;

@@ -249,6 +249,10 @@ void FillPara(const std::string& text, const KCMParaAttrs& attrs, KCMStoryHtml::
 	out.fText = text;
 	out.fRuby = attrs.fRuby;
 	out.fKenten = attrs.fKenten;
+	// ★TATE-CHU-YOKO TRAVELS TOO (2026-09-17, the user's request). Its value is already the characters
+	//   it covers - KCMTextRead settles that when it closes the paragraph - which is exactly what
+	//   KCMStoryHtml's reader produces, so the self-check compares like with like.
+	out.fTcy = attrs.fTcy;
 
 	// ★★★**A READING OVER ONE CHARACTER IS ALWAYS MONO** (the user's rule, 2026-09-16). One
 	//   character with one reading is the same typesetting whichever way the document has it set,

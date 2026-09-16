@@ -42,7 +42,7 @@
 
 class ITextModel;
 
-/** Make one paragraph's ruby and kenten match the file's.
+/** Make one paragraph's ruby, kenten and tate-chu-yoko (2026-09-17) match the file's.
 
 	Nothing is written when the two already agree, which is the ordinary case: a reader who edited
 	one word of a long document leaves every reading in it untouched, and a reading rewritten is a
