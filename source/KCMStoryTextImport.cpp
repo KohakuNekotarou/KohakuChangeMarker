@@ -25,6 +25,7 @@
 
 #include "KCMStoryTextImport.h"
 #include "KCMComparisonRun.h"		// KCMToggleStartStop - the start, through the one resolver
+#include "KCMStoryAttrPour.h"		// the ruby and the kenten, after the words are in
 #include "KCMCore.h"				// KCMActiveDocDB / KCMGetCompareMode / KCMSetCompareMode
 #include "KCMOrigin.h"				// the origin slot: taken for this mode, parked for the reader's
 #include "KCMRehydrate.h"			// KCMReadOriginUidLabel - the copy's stories carry the original UID
@@ -654,6 +655,8 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 
 	int32 storiesTouched = 0;
 	int32 edits = 0;
+	int32 attrEdits = 0;			// ruby and kenten: a second pass, after the words of a story are in
+	int32 refusedAttrs = 0;
 	int32 refusedParas = 0;
 	int32 refusedPlaces = 0;
 	int32 skippedByTables = 0;		// stories left alone entirely: their table shape changed
@@ -779,6 +782,61 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 				}
 			}
 		}
+		// ---- and now the ruby and the kenten, over the words that went in ----------------------
+		//
+		// ★★★**THE STORY IS READ AGAIN FIRST.** Every write above moved the positions after it, so
+		//   an attribute placed from the reading the WORDS were planned from would land on the
+		//   wrong characters. This second reading is also what lets each paragraph be asked the
+		//   one question that makes an offset mean the same thing on both sides - do the words
+		//   match now? - which KCMPourParagraphAttributes asks, and refuses on.
+		// ★**FORWARDS, unlike the text pass**: an attribute never changes how many characters
+		//   there are, so nothing standing after it moves.
+		// ⚠A story whose second read fails keeps the words that went in; only its attributes are
+		//   left alone.
+		{
+			std::vector<std::string> paras2;
+			std::vector<KCMParaAttrs> attrs2;
+			std::vector<int32> starts2;
+			if (KCMTextRead::ReadStory(storyRef, paras2, attrs2, starts2))
+			{
+				std::vector<Place> places2;
+				BuildPlaces(attrs2, set->fStories[which], places2);
+
+				for (size_t p = 0; p < places2.size(); ++p)
+				{
+					const Place& place = places2[p];
+					// ⚠The two kinds of place the text pass has already counted and named are
+					//   passed over in silence here. Counting them again would tell the reader
+					//   about one cell twice, under two headings - the lesson matchedFiles above
+					//   was written for.
+					if (place.fFile == nil || place.fDoc.size() != place.fFile->size())
+						continue;
+
+					for (size_t q = 0; q < place.fDoc.size(); ++q)
+					{
+						const size_t i = place.fDoc[q];
+						PMString attrWhyNot;
+						bool16 attrRefused = kFalse;
+						const int32 n = KCMPourParagraphAttributes(
+											model, static_cast<TextIndex>(starts2[i]),
+											attrs2[i], paras2[i], (*place.fFile)[q],
+											attrWhyNot, attrRefused);
+						if (attrRefused)
+						{
+							++refusedAttrs;
+							if (firstRefusal.IsEmpty())
+								firstRefusal = attrWhyNot;
+						}
+						if (n > 0)
+						{
+							attrEdits += n;
+							touched = kTrue;
+						}
+					}
+				}
+			}
+		}
+
 		if (touched)
 			++storiesTouched;
 	}
@@ -797,12 +855,19 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 	outMessage.SetTranslatable(kFalse);
 	AppendCount(outMessage, "", edits, " change(s) poured into the copy");
 	AppendCount(outMessage, " in ", storiesTouched, " story(ies)");
+	// ★COUNTED APART FROM THE WORDS, because an import that changed nothing else is exactly the
+	//   case this pass was written for ("I only changed the ruby") - and a line saying "0 changes"
+	//   under it would be the plug-in denying what it had just done.
+	if (attrEdits > 0)
+		AppendCount(outMessage, ", ", attrEdits, " ruby/kenten write(s)");
 	if (skippedByTables > 0)
 		AppendCount(outMessage, ", ", skippedByTables, " story(ies) left alone (table structure changed)");
 	if (refusedPlaces > 0)
 		AppendCount(outMessage, ", ", refusedPlaces, " place(s) refused");
 	if (refusedParas > 0)
 		AppendCount(outMessage, ", ", refusedParas, " paragraph(s) refused");
+	if (refusedAttrs > 0)
+		AppendCount(outMessage, ", ", refusedAttrs, " paragraph(s) kept their own ruby/kenten");
 	if (unmatched > 0)
 		AppendCount(outMessage, ", ", unmatched, " file(s) had no story");
 	if (!firstRefusal.IsEmpty())
@@ -812,7 +877,10 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 		outMessage.Append(")");
 	}
 
-	return (edits > 0) ? kTrue : kFalse;
+	// ★★★**A RUBY-ONLY IMPORT IS AN IMPORT** (2026-09-16). This answered on the word writes alone
+	//   until the attributes were poured, so a file whose only edit was a reading came back as
+	//   "nothing could be applied" - the very case the user asked for.
+	return (edits > 0 || attrEdits > 0) ? kTrue : kFalse;
 }
 
 const KCMStoryTextSet* KCMHeldStoryText()

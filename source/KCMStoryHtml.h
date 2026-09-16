@@ -31,11 +31,15 @@
 //  U+0017 for tables, U+0004 and U+0005 for note references) are not in fText either - the tables
 //  carry their own places, and a note's reference is not carried at all (Para says why).
 //
-//  *** WHAT IS IMPLEMENTED SO FAR (2026-09-15): BODY PARAGRAPHS ONLY. *** Ruby, the invisible
-//  characters, notes and tables arrive in Tasks 2 to 5 of the plan, each with its failing test
-//  first. Until then Read REFUSES, with a reason, any element it does not yet understand - it does
-//  not skip it. Skipping would drop the reader's words without telling anybody, which is the one
-//  failure this whole file exists to prevent.
+//  *** WHAT IS CARRIED (2026-09-16): body paragraphs, ruby, kenten, the invisible characters,
+//  footnotes and tables - nested ones included. *** ⚠**THIS PARAGRAPH SAID "BODY PARAGRAPHS ONLY"
+//  UNTIL 2026-09-16**, which was true when it was written (2026-09-15) and was left behind by
+//  Tasks 2 to 5 of the plan it names; the harness has had passing tests for all five since.
+//  What is deliberately NOT carried is written down where it is decided: a note's REFERENCE
+//  position (Para), and an ENDNOTE's words, which live in a story of their own (Story).
+//  Read REFUSES, with a reason, any element it does not understand - it does not skip it. Skipping
+//  would drop the reader's words without telling anybody, which is the one failure this whole file
+//  exists to prevent.
 //
 //========================================================================================
 #ifndef __KCMStoryHtml_h__

@@ -72,6 +72,13 @@ ErrorCode KCMCreateRubyStrandIfNeeded(ITextModel* model);
     mono-or-group). ⚠Call KCMCreateRubyStrandIfNeeded first on a story that never had ruby. */
 ErrorCode KCMApplyRuby(ITextModel* model, TextIndex at, int32 len, const PMString& reading, bool16 group);
 
+/** Ruby OFF [at, at+len), by clearing the overrides of all thirty ruby attributes.
+
+    ★**IT IS THIRTY AND NOT THREE** (KIDMCPRuby.cpp's list): taking off only the three that are the
+      reading leaves the twenty-seven that are its look behind, where the comparison then reports
+      them as a difference nobody made. Exported for the import's third caller, 2026-09-16. */
+ErrorCode KCMClearRuby(ITextModel* model, TextIndex at, int32 len);
+
 /** The kenten KIND onto [at, at+len) (IKentenStyle::Kenten_None = off; the look is left alone). */
 ErrorCode KCMApplyKentenKind(ITextModel* model, TextIndex at, int32 len, int16 kind);
 

@@ -138,11 +138,12 @@ ErrorCode KCMApplyRuby(ITextModel* model, TextIndex at, int32 len, const PMStrin
 }
 
 /** Ruby off a range by REMOVING the ruby attributes' overrides - all thirty, so that nothing is
-    left for the diff to report as a residue (KIDMCPRuby.cpp's list and reasoning). */
-namespace
-{
+    left for the diff to report as a residue (KIDMCPRuby.cpp's list and reasoning).
 
-ErrorCode ClearRuby(ITextModel* model, TextIndex at, int32 len)
+    ★EXPORTED SINCE 2026-09-16, when the import gained a third caller (KCMStoryAttrPour.cpp): a
+      reading the reader deleted from their file has to come off the copy, and taking it off is
+      this list of thirty or it is a residue nobody asked for. */
+ErrorCode KCMClearRuby(ITextModel* model, TextIndex at, int32 len)
 {
 	static const ClassID kRubyAttrs[] =
 	{
@@ -172,8 +173,6 @@ ErrorCode ClearRuby(ITextModel* model, TextIndex at, int32 len)
 	InterfacePtr<ICommand> clear(cmds->ClearOverridesCmd(at, len, attrs, kCharAttrStrandBoss));
 	return (clear != nil) ? CmdUtils::ProcessCommand(clear) : kFailure;
 }
-
-}	// namespace
 
 // ---- kenten --------------------------------------------------------------------------------
 
@@ -587,7 +586,7 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 			if (change.fOtherRuby.IsEmpty())
 			{
 				// ruby ADDED since the older version: take it off
-				err = ClearRuby(target, change.fTargetStart, targetCount);
+				err = KCMClearRuby(target, change.fTargetStart, targetCount);
 				outMessage = Ascii("Took the ruby off ");
 				outMessage.AppendNumber(targetCount);
 				outMessage.Append(" character(s)");
@@ -600,7 +599,7 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 				int32 len = targetCount;
 				if (err == kSuccess && sourceCount > 0 && sourceCount != targetCount)
 				{
-					err = ClearRuby(target, change.fTargetStart, targetCount);
+					err = KCMClearRuby(target, change.fTargetStart, targetCount);
 					len = sourceCount;
 					if (change.fTargetStart + len > targetLength)
 						len = targetLength - change.fTargetStart;

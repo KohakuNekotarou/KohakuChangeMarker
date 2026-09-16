@@ -631,6 +631,72 @@ inline bool16 SpansDiffer(const KCMAttrSpanList& a, const KCMAttrSpanList& b)
 	return kFalse;
 }
 
+/** What has to be WRITTEN to turn one paragraph's attribute spans into another's: the spans to
+	take off (`outClear`) and the spans to put on (`outApply`).
+
+	★★★**A SPAN BOTH SIDES CARRY IS IN NEITHER LIST, AND THAT IS THE WHOLE REASON THIS EXISTS.** A
+	  reading is three attributes and its LOOK is twenty-seven more (KCMStoryRestore.cpp's
+	  ClearRuby names them); a kenten's kind is one attribute and its look is several. Taking the
+	  attributes off a paragraph and writing the incoming ones back would leave the reading right
+	  and throw away every look the reader had set on the parts nobody edited - which is exactly
+	  what the import exists NOT to do (KCMStoryHtml.h: "so that the ruby and the kenten on the
+	  parts nobody edited are still there afterwards").
+
+	★**THE ORDER IS ALL THE CLEARS AND THEN ALL THE APPLIES**, and the caller must keep it: two
+	  spans can overlap - a reading that grew covers where the old one stood - and an apply that
+	  ran before the clear beside it would be wiped by it. Nothing has to be written back to front,
+	  though, the way text does: an attribute never changes how many characters there are.
+
+	⚠**fGroup IS NOT COMPARED**, exactly as SpansDiffer does not compare it (2026-09-12, the user's
+	  decision: mono turned into group is not a change). An applied span carries whatever fGroup it
+	  came with, because a span being written has to say which it is.
+
+	⚠**PAIRING CONSUMES A MATCH**, so the same value standing in two places is two spans: a
+	  paragraph reading ねこ twice, with one of them since taken off, must not pair both of its
+	  spans against the one that is left.
+
+	★ORDER WITHIN A LIST IS NOT A DIFFERENCE HERE, though it is one to SpansDiffer above. That one
+	  answers "did anything change?"; this one answers "what do I write?", and for the same spans
+	  listed in another order the answer is: nothing.
+
+	@param doc the spans the document carries now.
+	@param file the spans it should carry - the reader's edited file.
+*/
+inline void PlanSpanChanges(const KCMAttrSpanList& doc, const KCMAttrSpanList& file,
+							KCMAttrSpanList& outClear, KCMAttrSpanList& outApply)
+{
+	outClear.clear();
+	outApply.clear();
+
+	// ⚠std::vector<char> rather than <bool>: the bool specialisation is a bitfield and this header
+	//   is built by a harness outside InDesign as well as by the plug-in.
+	std::vector<char> paired(file.size(), 0);
+
+	for (size_t i = 0; i < doc.size(); ++i)
+	{
+		bool16 matched = kFalse;
+		for (size_t k = 0; k < file.size() && !matched; ++k)
+		{
+			if (paired[k] != 0)
+				continue;
+			if (doc[i].fStart == file[k].fStart && doc[i].fLen == file[k].fLen
+				&& doc[i].fValue == file[k].fValue)
+			{
+				paired[k] = 1;
+				matched = kTrue;
+			}
+		}
+		if (!matched)
+			outClear.push_back(doc[i]);
+	}
+
+	for (size_t k = 0; k < file.size(); ++k)
+	{
+		if (paired[k] == 0)
+			outApply.push_back(file[k]);
+	}
+}
+
 }	// namespace KCMParaText
 
 #endif // __KCMParaText_h__

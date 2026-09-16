@@ -95,6 +95,10 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage);
       of a thread to be known exactly, and that is measured work not yet done. Everything else -
       the words inside each paragraph - goes in minimally, so that the ruby and the kenten on the
       parts nobody edited are still there afterwards.
+    ★★**AND THE RUBY AND THE KENTEN THEMSELVES GO IN TOO** (2026-09-16, the user's ask: "ruby only,
+      the base and the ruby together, kenten as well"). They are a SECOND PASS over each story,
+      after its words are in and the story has been read again - KCMStoryAttrPour, which states why
+      it has to be that way round and why it touches only a paragraph whose words already match.
     ⚠**A CHANGE TOUCHING AN INVISIBLE CHARACTER IS REFUSED.** An anchored object's character, a
       page number, an index marker: these can be moved or deleted from outside only by accident,
       and the file format carries them precisely so that this check can be made.
