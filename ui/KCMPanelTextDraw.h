@@ -152,9 +152,16 @@ inline void KCMDrawCaret(IGraphicsPort* gPort, const RealAGMColor& colour,
 	if (gPort == nil || height <= PMReal(0.0))
 		return;
 
-	const PMReal left = x + (roomW - kKCMCaretWidth) / PMReal(2.0);
+	// ★★ON WHOLE PIXELS (2026-09-16, the user: "are the bars all the same width? they look
+	//   different"). They were: 1.0 wide everywhere. But centring put the left edge at x.5 as often as
+	//   at a whole number, and a one-pixel fill that straddles two pixels is smoothed into two paler
+	//   ones - so the same bar read as a thin dark line in one row and a wide grey one in the next.
+	//   Rounding the left edge (and the top, for the same reason at the ends) makes every bar the
+	//   same crisp pixel. ⚠At a UI scale above 100% a view unit is more than one pixel, so this
+	//   cannot promise one device pixel there - only that every bar is drawn the same way.
+	const PMReal left = ::Round(x + (roomW - kKCMCaretWidth) / PMReal(2.0));
 	gPort->setrgbcolor(colour.red, colour.green, colour.blue);
-	gPort->rectfill(left, top, kKCMCaretWidth, height);
+	gPort->rectfill(left, ::Round(top), kKCMCaretWidth, height);
 }
 #endif // __KCMPanelTextDraw_h__
 
