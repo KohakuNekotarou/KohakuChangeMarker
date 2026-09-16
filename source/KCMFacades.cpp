@@ -670,6 +670,11 @@ public:
 		return KCMUndoRestoreChange(nth, which, outMessage);
 	}
 
+	virtual bool16	CanWriteToTarget()
+	{
+		return KCMStoryWritesAllowed();
+	}
+
 	virtual bool16	RestoreAllStories(PMString& outMessage)
 	{
 		return KCMRestoreAllStories(outMessage);

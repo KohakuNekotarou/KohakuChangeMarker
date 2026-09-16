@@ -542,6 +542,14 @@ public:
 		  ([[facade-vtable-slot-append-only]]: KIDMCP calls this facade through its vtable, so a
 		  virtual inserted anywhere else lands its callers on a different method). */
 	virtual bool16	UndoRestoreChange(int32 nth, int32 which, PMString& outMessage) = 0;
+
+	/** Whether the comparison standing now lets anything be written back into the Target - kTrue
+		only against a Task Start (or the Import mode's snapshot). 2026-09-16, the user's rule:
+		comparing two documents offers no restore, because the Source is there to copy from.
+		★The UI hides every write item on it; the model's writes refuse on the same answer
+		  (KCMStoryWritesAllowed - the one place it is decided).
+		⚠Appended at the END, like every virtual added since the split. */
+	virtual bool16	CanWriteToTarget() = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

@@ -101,6 +101,11 @@ bool16 KCMChangeRowCanRestore()
 	if (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeImport)
 		return kFalse;
 
+	// ★★**AND NOT WHEN TWO DOCUMENTS ARE COMPARED** (2026-09-16, the user's rule: the Source is
+	//   there to copy from). The model decides (CanWriteToTarget) and its writes refuse on it too.
+	if (!Utils<IKCMStoryEditsFacade>()->CanWriteToTarget())
+		return kFalse;
+
 	// ★**AND NOT ON ONE ALREADY RESTORED** (2026-09-15, when the Story mode started keeping those
 	//   rows too, so that a Ctrl+Z has something to come back to). The older words are in the
 	//   document and the row is showing them: offering to write them again would be offering to do
@@ -184,6 +189,10 @@ bool16 CanUndoRestore(bool16 wantImport)
 	if (isImport != wantImport)
 		return kFalse;
 
+	// Not when two documents are compared - the same rule and the same one answer as the take-in.
+	if (!Utils<IKCMStoryEditsFacade>()->CanWriteToTarget())
+		return kFalse;
+
 	return change.fReplaced ? kTrue : kFalse;
 }
 
@@ -237,6 +246,11 @@ bool16 BulkLive(bool16 wantImport, int32 nth)
 	if (!KCMModeUsesStoryRows(mode))
 		return kFalse;
 	if ((mode == kKCMModeImport ? kTrue : kFalse) != wantImport)
+		return kFalse;
+
+	// ★★Not when two documents are compared (2026-09-16, the user's rule) - asked of the model,
+	//   which refuses the write on the same answer.
+	if (!Utils<IKCMStoryEditsFacade>()->CanWriteToTarget())
 		return kFalse;
 
 	// ⚠**THE MERGED COUNT**, so a story whose changes have ALL been taken in still offers the item;

@@ -40,6 +40,17 @@ class ITextModel;
     says how many); kFalse with the reason in outMessage. */
 bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage);
 
+/** Whether anything may be written back into the Target at all: kTrue only while the Source is a
+    rehydrated ORIGIN - a Task Start, or the Import mode's own snapshot.
+
+    ★★**THE USER'S RULE (2026-09-16): COMPARING TWO DOCUMENTS OFFERS NO RESTORE.** The Source is a
+      document the reader can open and copy from, so the plug-in does not write for them there.
+      Against a Task Start the older text exists nowhere else, which is what the items are for.
+    ⚠The lent database (KIDMCP's Compare, an invisible copy) counts as two documents here - the
+     rule read literally as "only against a Task Start". One line to change if that is to differ.
+    ★ONE PLACE: the UI hides the items on it (facade CanWriteToTarget) and every write refuses on it. */
+bool16 KCMStoryWritesAllowed();
+
 /** The opposite: put change `which` of row `nth` back the way it was before it was taken in
     ("Undo the Restore" / "Change Back to the Original", 2026-09-16).
 

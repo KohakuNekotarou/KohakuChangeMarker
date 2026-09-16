@@ -181,6 +181,16 @@ PMString WriteBlockedMessage(int32 writeBlock)
 				  "text cannot bring it back, and removing it would delete the object.");
 }
 
+/*	NotAgainstTwoDocumentsMessage
+	The refusal every write gives when KCMStoryWritesAllowed says no - one wording, whichever item
+	was pressed (the menu hides them all, so this is what a script or a stale menu reaches).
+*/
+PMString NotAgainstTwoDocumentsMessage()
+{
+	return Refused("the Source is a document of its own, so nothing is written back from here - "
+				   "take what you need from the Source. (Restore works against a Task Start.)");
+}
+
 }	// namespace
 
 // ---- ruby ----------------------------------------------------------------------------------
@@ -481,6 +491,13 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 {
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
+
+	// ★★**NOT AGAINST TWO DOCUMENTS** (2026-09-16, the user's rule - KCMStoryRestore.h says why).
+	if (!KCMStoryWritesAllowed())
+	{
+		outMessage = NotAgainstTwoDocumentsMessage();
+		return kFalse;
+	}
 
 	// ★★★**THE SAME INDEX SPACE THE PANEL COUNTS IN** (KCMStoryList::GetMergedChange). The menu
 	//   hands over the child's position in the tree, and in the Import mode that tree holds the
@@ -1058,6 +1075,14 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 	return RestoreOne(nth, which, kTrue, outMessage, nil, nil);
 }
 
+bool16 KCMStoryWritesAllowed()
+{
+	// KCMOriginArmed is true exactly while the armed Source is a rehydrated origin: a Task Start, or
+	// the Import mode's snapshot (it takes the origin slot too). Two open documents, and the lent
+	// database, arm a real Source database instead - KCMArmedSourceDB is then non-nil.
+	return KCMOriginArmed();
+}
+
 /*	KCMUndoRestoreChange
 	"Undo the Restore" / "Change Back to the Original" (2026-09-16, the user's ask: "Ctrl+Z puts it
 	back, but I want it on the right-click menu too").
@@ -1079,6 +1104,12 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 {
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
+
+	if (!KCMStoryWritesAllowed())
+	{
+		outMessage = NotAgainstTwoDocumentsMessage();
+		return kFalse;
+	}
 
 	bool16 isReplaced = kFalse;
 	const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which, isReplaced);
@@ -1322,6 +1353,13 @@ bool16 KCMRestoreAllInStory(int32 nth, PMString& outMessage)
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
 
+	// Asked before the undo step is opened, so a refusal leaves no empty step on the Edit menu.
+	if (!KCMStoryWritesAllowed())
+	{
+		outMessage = NotAgainstTwoDocumentsMessage();
+		return kFalse;
+	}
+
 	ICommandSequence* const seq = CmdUtils::BeginCommandSequence("KCMRestoreAllInStory");
 	if (seq != nil)
 		seq->SetName(BulkSequenceName(kFalse));
@@ -1349,6 +1387,12 @@ bool16 KCMRestoreAllStories(PMString& outMessage)
 {
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
+
+	if (!KCMStoryWritesAllowed())
+	{
+		outMessage = NotAgainstTwoDocumentsMessage();
+		return kFalse;
+	}
 
 	// ⚠**THE ROW COUNT IS READ ONCE, BEFORE ANYTHING IS WRITTEN.** A row never disappears from the
 	//   list while this runs (a re-diff empties a row's children, it does not drop the row), so the
