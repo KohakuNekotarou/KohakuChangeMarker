@@ -43,7 +43,9 @@
 #include <string>
 #include <vector>					// the replaced rows a bulk run holds until its one re-diff is done
 
+#include "K2SmartPtr.h"			// K2::scoped_ptr - WideString::Substring hands back a new one
 #include "KCMStoryRestore.h"
+#include "KCMSourceCache.h"		// the Source story kept from the origin: no copy per press
 #include "KCMCore.h"				// KCMArmedTargetDB / KCMArmedSourceDB / KCMIsDocDBOpen
 #include "KCMOriginCompare.h"		// KCMOriginArmed / KCMOriginScopedCopy / KCMOriginToSourceUID
 #include "KCMStoryList.h"			// the row and its changes
@@ -447,12 +449,22 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 	//   rehydrated task-start document at a time, so a second Open fails outright - measured on the
 	//   first live run of the bulk item, which answered "0 changes taken in, 2 skipped (a
 	//   task-start copy is already open)" and left the document untouched.
+	// ★★★**AND MOST PRESSES NOW NEED NO SOURCE DOCUMENT AT ALL** (2026-09-16, the user: "it is too
+	//   heavy to work with"). Against a Task Start the Source was a byte string rebuilt into a
+	//   whole document - kNewDocumentCmdBoss, ImportINX, the page names - for every single change
+	//   taken in. What that document was asked for is kept instead, read once when the comparison
+	//   was set up: the older words, and the paragraphs the re-diff needs (KCMSourceCache.h).
+	//   ⚠**IT CHANGES NOTHING FOR TWO OPEN DOCUMENTS.** An armed Source is handed back by
+	//    KCMArmedSourceDB without rehydrating anything - that path was never the slow one - and it
+	//    must not be cached either, because the reader can edit it.
+	const bool16 sourceIsKept = KCMSourceCacheHas(storyUID);
+
 	KCMOriginScopedCopy originCopy;
 	IDataBase* sourceDB = sourceDBIn;
 	if (sourceDB == nil)
 	{
 		sourceDB = KCMArmedSourceDB();
-		if (sourceDB == nil && KCMOriginArmed())
+		if (sourceDB == nil && KCMOriginArmed() && !sourceIsKept)
 		{
 			PMString whyNot;
 			if (!originCopy.Open(whyNot))
@@ -464,7 +476,10 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 			sourceDB = originCopy.DB();
 		}
 	}
-	if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
+	if (sourceDB != nil && !KCMIsDocDBOpen(sourceDB))
+		sourceDB = nil;					// closed under us; the kept text may still answer
+
+	if (sourceDB == nil && !sourceIsKept)
 	{
 		outMessage = Refused("the Source document is not open.");
 		return kFalse;
@@ -534,22 +549,50 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 	// ===== the words =============================================================================
 	if (change.fWhat == KCMStoryChange::kText)
 	{
-		InterfacePtr<ITextModel> source(UIDRef(sourceDB, KCMOriginToSourceUID(sourceDB, storyUID)), UseDefaultIID());
-		if (source == nil)
-		{
-			outMessage = Refused("the story is not in the Source.");
-			return kFalse;
-		}
+		// ★★★**THE OLDER WORDS COME FROM WHAT WAS KEPT, WHEN ANYTHING WAS** (2026-09-16). The slice
+		//   is taken by the very same indices out of the very same characters - the whole story as
+		//   TextIterator read it, once, when the comparison was set up. ⚠**NOT re-assembled from
+		//   the paragraphs**: those have their break characters and a table's own characters taken
+		//   out, and putting them back is a second answer to a question the document has already
+		//   answered (KCMSourceCache.h).
 		boost::shared_ptr<WideString> words(new WideString());
-		if (sourceCount > 0)
+		WideString keptRaw;
+		const bool16 fromKept = KCMSourceCacheGetRaw(storyUID, keptRaw);
+
+		if (fromKept)
 		{
-			if (change.fSourceStart < 0 || change.fSourceEnd > source->TotalLength())
+			if (sourceCount > 0)
 			{
-				outMessage = Refused("the change's range is outside the Source story.");
+				if (change.fSourceStart < 0 || change.fSourceEnd > keptRaw.Length())
+				{
+					outMessage = Refused("the change's range is outside the Source story.");
+					return kFalse;
+				}
+				K2::scoped_ptr<WideString> slice(keptRaw.Substring(change.fSourceStart, sourceCount));
+				if (slice.get() != nil)
+					*words = *slice;
+			}
+		}
+		else
+		{
+			InterfacePtr<ITextModel> source(sourceDB != nil
+				? UIDRef(sourceDB, KCMOriginToSourceUID(sourceDB, storyUID))
+				: UIDRef(nil, kInvalidUID), UseDefaultIID());
+			if (source == nil)
+			{
+				outMessage = Refused("the story is not in the Source.");
 				return kFalse;
 			}
-			TextIterator iter(source, change.fSourceStart);
-			iter.AppendToStringAndIncrement(words.get(), sourceCount);
+			if (sourceCount > 0)
+			{
+				if (change.fSourceStart < 0 || change.fSourceEnd > source->TotalLength())
+				{
+					outMessage = Refused("the change's range is outside the Source story.");
+					return kFalse;
+				}
+				TextIterator iter(source, change.fSourceStart);
+				iter.AppendToStringAndIncrement(words.get(), sourceCount);
+			}
 		}
 
 		InterfacePtr<ITextModelCmds> cmds(target, UseDefaultIID());

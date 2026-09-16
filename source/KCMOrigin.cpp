@@ -37,6 +37,7 @@
 #include "KCMExternalSource.h"		// KCMIsDbAlive
 #include "KCMOriginPeek.h"			// KCMOriginPeekDrop / KCMOriginPeekDescribe
 #include "KCMStoryTextImport.h"	// KCMReleaseStoryText - the edited words go with the origin
+#include "KCMSourceCache.h"		// KCMSourceCacheClear - and so does the Source text read out of it
 #include "KCMRehydrate.h"			// KCMRehydrateRaw - the test instrument's import
 #include "KCMResourceBytes.h"
 #include "KCMOriginIdml.h"			// KCMInxToDesignmap - the snapshot is kept as an IDML's designmap
@@ -269,6 +270,9 @@ bool16 KCMParkOrigin()
 	// ⚠THE PEEK STANDS ON THESE BYTES, so it goes now rather than being left pointing at an origin
 	//   nobody can reach. It is a transient view; the origin itself is what is being kept.
 	KCMOriginPeekDrop(kFalse);
+	// ★And so does the Source text read out of them - the same rule, stated in KCMReleaseOrigin:
+	//   the cache belongs to the bytes, and these bytes are leaving the live slot.
+	KCMSourceCacheClear();
 
 	sParkedBytes.reset(sBytes.release());
 	sParkedShape = sShape;
@@ -341,6 +345,14 @@ void KCMReleaseOrigin(bool16 deferPeekClose)
 	// ★THE EDITED WORDS GO WITH IT. They are only meaningful against this origin's copy, so holding
 	//   them past its release would leave text waiting to be poured into a copy that is gone.
 	KCMReleaseStoryText();
+	// ★★**AND SO DOES WHAT WAS READ OUT OF IT** (2026-09-16). The Source text kept for the story
+	//   comparison was read from THESE bytes; against any other origin it is simply wrong, and
+	//   wrong in the quietest way there is - a comparison against text nobody has any more.
+	//   ⚠**THE RULE IS "THE CACHE BELONGS TO THE BYTES"**, so it is dropped where the bytes leave
+	//    the live slot and nowhere else: here, and in KCMParkOrigin. Taking a new Task Start comes
+	//    through here as well (KCMClearChosenDocs releases the origin), and unparking calls this
+	//    before it puts the parked bytes back - so those two need no line of their own.
+	KCMSourceCacheClear();
 	KCMOriginPeekDrop(deferPeekClose);	// the peek document stood on these bytes
 }
 

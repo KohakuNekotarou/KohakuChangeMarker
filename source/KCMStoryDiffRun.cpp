@@ -31,6 +31,8 @@
 // Interface includes:
 #include "IDataBase.h"		// SaveRestoreModifiedState - see Run()
 #include "ITextModel.h"
+#include "TextIterator.h"		// AppendToStringAndIncrement - the Source story's raw text, read once
+#include "WideString.h"
 
 // General includes:
 #include "PMString.h"
@@ -45,6 +47,7 @@
 #include "KCMProgressBar.h"	// KCMDeferredProgressBar - the progress bar and Cancel of Run, shown after kKCMProgressBarDelayMs
 #include "KCMStoryDiffRun.h"
 #include "KCMCore.h"			// KCMArmedTargetDB / KCMIsDocDBOpen - which document a replaced change is measured against
+#include "KCMSourceCache.h"	// the Source side, read once per origin instead of once per press
 #include "KCMOriginCompare.h"	// KCMOriginToSourceUID - the older side's uid when the Source is a Task Start copy
 #include "KCMTextRead.h"		// the reader: paragraphs, their positions and their attributes, straight from the text model
 #include "KCMStoryList.h"
@@ -1020,8 +1023,36 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	//   could not be opened at all. **An empty story is not a failure** (KCMTextRead.h).
 	if (!KCMTextRead::ReadStory(targetStory, targetParas, targetAttrs, targetStarts))
 		return kFalse;
-	if (!KCMTextRead::ReadStory(sourceStory, sourceParas, sourceAttrs, sourceStarts))
-		return kFalse;
+
+	// ★★★**THE SOURCE IS READ ONCE PER ORIGIN, NOT ONCE PER PRESS** (2026-09-16, the user: "it is
+	//   too heavy to work with"). Against a Task Start - or an Import, which uses the same slot -
+	//   the Source is a byte string rebuilt into a whole document for the occasion, and every
+	//   change taken in was rebuilding it again. It cannot change while it is held, so what was
+	//   read from it is kept (KCMSourceCache says when that is allowed and when it is dropped).
+	// ⚠**THE TARGET IS NEVER CACHED**: it is the reader's own document and they are editing it.
+	//   That is the whole asymmetry, and it is why only one of the two reads above moved.
+	if (!KCMSourceCacheGet(targetStory.GetUID(), sourceParas, sourceAttrs, sourceStarts))
+	{
+		if (!KCMTextRead::ReadStory(sourceStory, sourceParas, sourceAttrs, sourceStarts))
+			return kFalse;
+
+		// ★**THE RAW TEXT IS TAKEN IN THE SAME BREATH**, from the same API "Restore Source Text"
+		//   used to call on every press - so what the write puts in is the document's own
+		//   characters and not a re-assembly of the paragraphs above (KCMSourceCache.h says what
+		//   re-assembling them would get wrong, and it is the paragraph break itself).
+		WideString raw;
+		InterfacePtr<ITextModel> sourceModel(sourceStory, UseDefaultIID());
+		if (sourceModel != nil)
+		{
+			const TextIndex total = sourceModel->TotalLength();
+			if (total > 0)
+			{
+				TextIterator iter(sourceModel, 0);
+				iter.AppendToStringAndIncrement(&raw, total);
+			}
+		}
+		KCMSourceCachePut(targetStory.GetUID(), sourceParas, sourceAttrs, sourceStarts, raw);
+	}
 
 	// **ONE TABLE FOR BOTH SEQUENCES.** Numbering them from separate tables would give equal
 	//   paragraphs different tokens, and every paragraph would look changed.
@@ -1348,7 +1379,12 @@ uint32 KCMStoryDiffRun::CountForKind(const UIDRef& story, int32 kind)
 
 int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 rowIndex)
 {
-	if (targetDB == nil || sourceDB == nil)
+	// ★★**A nil SOURCE IS ALLOWED WHEN THE STORY IS ALREADY KEPT** (2026-09-16). Comparing one
+	//   story again after a write no longer needs the origin rebuilt into a document: what the
+	//   Source side says was read when the comparison was set up and cannot have changed since
+	//   (KCMSourceCache.h). The caller passes nil to say "I did not open one", and only a story
+	//   nobody has read yet refuses here.
+	if (targetDB == nil)
 		return -1;
 
 	// **THE UID IS COPIED OUT BEFORE ANYTHING ELSE HAPPENS.** GetRow hands back a pointer into
@@ -1361,6 +1397,10 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	const bool16 unpaired = ((row->fKinds & kKCMStoryKindUnpaired) != 0);
 	row = nil;
 
+	// Nothing open and nothing kept: there is no older side to compare against at all.
+	if (sourceDB == nil && !KCMSourceCacheHas(storyUID))
+		return -1;
+
 	// A story with no partner has nothing to be compared against - the same judgement Run reads
 	// rather than makes again. The menu greys the item for these rows, so this is the second line
 	// of defence. Both kinds (added AND removed); for a removed row the uid above belongs to the
@@ -1369,8 +1409,12 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 		return -1;
 
 	// See the header: the same guard Run takes, and the only one on this path.
+	// ⚠**THE SOURCE'S GUARD ONLY EXISTS WHEN THE SOURCE DOES.** With the story kept there is no
+	//   Source document to leave dirty - and handing a nil database to a guard that exists to
+	//   write its modified flag back is not a thing to find out about at run time.
 	IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
-	IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
+	K2::scoped_ptr<IDataBase::SaveRestoreModifiedState> sourceDirtyGuard(
+		(sourceDB != nil) ? new (std::nothrow) IDataBase::SaveRestoreModifiedState(sourceDB) : nil);
 
 	// **THE ROW ITSELF IS RE-READ FIRST.** The row quotes the story's opening words, and points
 	//   at the frame a click scrolls to -- both read from the document when the comparison ran.
@@ -1381,9 +1425,15 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	//     than half-writing it, and the diff below is what reports the failure.
 	KCMStoryList::RefreshRowFromDocument(rowIndex, targetDB);
 
+	// ⚠**THE SOURCE'S UIDRef IS ONLY BUILT WHEN THERE IS A SOURCE.** With the story kept,
+	//   CompareOneStory never opens it - the cache answers first - so an invalid ref is the honest
+	//   thing to hand it, and the uid translator is not asked about a database that is not there.
+	const UIDRef sourceRef = (sourceDB != nil)
+		? UIDRef(sourceDB, KCMOriginToSourceUID(sourceDB, storyUID))
+		: UIDRef(nil, kInvalidUID);
+
 	std::vector<KCMStoryChange> changes;
-	const bool16 compared = CompareOneStory(UIDRef(targetDB, storyUID),
-										    UIDRef(sourceDB, KCMOriginToSourceUID(sourceDB, storyUID)), changes);
+	const bool16 compared = CompareOneStory(UIDRef(targetDB, storyUID), sourceRef, changes);
 
 	// **WRITTEN EITHER WAY, INCLUDING EMPTY.** What stands under the row after a refresh is what
 	//   the documents say now, and "nothing" is a perfectly good thing for them to say -- the row
