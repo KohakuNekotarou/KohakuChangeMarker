@@ -31,6 +31,7 @@
 #include "PMString.h"
 #include "PMPoint.h"	// PBPMPoint - where a story begins, for the jump
 #include "UIDRef.h"
+#include "WideString.h"	// KCMStoryChange::fBeforeRaw - the characters themselves, not a quote of them
 
 #include <vector>
 
@@ -241,12 +242,27 @@ struct KCMStoryChange
 	PMString	fBeforeText;
 	PMString	fBeforeTextPost;
 
+	/** The Target's OWN CHARACTERS over [fBeforeStart, fBeforeEnd), read from the text model at the
+		moment of the take-in, before anything was written - what "Undo the Restore" writes back.
+
+		⚠★★★**NEVER fBeforeText.** That is the ROW'S QUOTE: KCMStoryDiffRun's Slice cuts it to
+		 kExcerptCodePoints and MarkUpBreaks turns a paragraph break into a pilcrow. Written back
+		 into the story it cost the reader their words - measured 2026-09-16: eighty characters came
+		 back as sixty, and a paragraph break came back as the character U+00B6 in a single paragraph.
+		Empty for a change that is not a replaced TEXT change. */
+	WideString	fBeforeRaw;
+
+	/** Why this change must not be written back - KCMStoryWriteBlock, kKCMWriteAllowed for a change
+		that may. Decided by the diff for a TEXT change (KCMStoryDiffRun), shown by the menu, and asked
+		again by the write against the characters as they stand then (KCMStoryRestore). */
+	int32		fWriteBlock;
+
 	KCMStoryChange()
 		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
 		  fSourceStart(0), fSourceEnd(0),
 		  fAttrKind(kKCMStoryAttrNone), fOverset(kFalse),
 		  fReplacedCount(0), fReplacedStart(0), fReplacedEnd(0),
-		  fBeforeStart(0), fBeforeEnd(0) {}
+		  fBeforeStart(0), fBeforeEnd(0), fWriteBlock(kKCMWriteAllowed) {}
 };
 
 /** One row of the Story Edits section. */

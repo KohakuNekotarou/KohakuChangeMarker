@@ -108,6 +108,13 @@ bool16 KCMChangeRowCanRestore()
 	if (change.fReplaced)
 		return kFalse;
 
+	// ★★**AND NOT ON ONE THAT CANNOT BE WRITTEN BACK** (2026-09-16, the user's rule: "offer it only
+	//   when the range holds no special character"). A table, a note, an anchored object: text
+	//   commands put back the character without the object. The model decided it (fWriteBlock), and
+	//   its write refuses the same change again if it is reached some other way.
+	if (change.fWriteBlock != 0)
+		return kFalse;
+
 	// Every kind: words, ruby and kenten (KCMStoryRestore.h). An insertion IS restorable - the
 	// words come out again - so, unlike the copy item, an empty older side does not grey this
 	// one. What cannot be written back (a custom kenten mark, an attribute whose paragraph's
@@ -131,7 +138,11 @@ bool16 KCMChangeRowCanImport()
 	//   since the write), so after an undo this goes live again and the model refuses with its
 	//   own reason. Whether that refusal should instead be a greyed item is a thing to look at on
 	//   screen; both halves of it are one line.
-	return change.fReplaced ? kFalse : kTrue;
+	if (change.fReplaced)
+		return kFalse;
+
+	// The same rule as the Story mode's half above, for the same reason (fWriteBlock).
+	return (change.fWriteBlock != 0) ? kFalse : kTrue;
 }
 
 bool16 KCMChangeRowRestore()

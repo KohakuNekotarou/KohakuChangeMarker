@@ -524,6 +524,97 @@ inline void SplitRunAtPlaces(const std::vector<KCMParaAttrs>& sourceAttrs,
 	AppendPair(out, aStart, aCount, bStart, bCount);	// the run, left whole
 }
 
+/** kTrue when cp is a character InDesign hangs an OBJECT on - one that text commands cannot bring
+	back, because what they write is the character and the object lives somewhere else.
+
+	★★★**MEASURED 2026-09-16 (the night the user asked for this rule): writing one back gives the
+	  character ALONE.** A deleted anchored rectangle "restored" as X U+FFFC Y with no page item in
+	  the story; the comparison then answered "0 changes left", so nothing even said so.
+	⇒ Every write that puts words into the reader's document asks this of what goes in AND of what
+	  comes out (the user's rule: in the Task Start mode, offer to restore a change only when its
+	  text holds none of these). Deleting one is refused too - InDesign takes the object with the
+	  character, so a restore would delete a table or a frame the reader added.
+
+	★**A LIST, NOT A RANGE, AND EACH ENTRY IS ONE OF TextChar.h's.** Footnote/endnote reference
+	  (0004/0005), table anchor and row continuation (0016/0017), page number and every text
+	  variable (0018 - measured to be the one code they all share in a document), section name
+	  (0019), the non-Roman special glyph (001A), the XML tag and note anchor mark (FEFF), an
+	  anchored object (FFFC) and the index marker (E02C).
+	⚠**NOT THE REST OF THE E0xx BAND.** Those are Find/Change wildcards that are never stored in a
+	 document (the variables among them measured as 0018 in the text), and the private use area is
+	 where a gaiji font lives - blocking it would refuse ordinary text.
+	⚠**A PARAGRAPH BREAK, A FORCED LINE BREAK AND A TAB ARE NOT HERE.** They carry nothing, and a
+	 paragraph break was restored correctly on the application the same day. */
+inline bool16 IsObjectCharacter(int32 cp)
+{
+	switch (cp)
+	{
+		case 0x0004:	// kTextChar_FootnoteMarker
+		case 0x0005:	// kTextChar_EndnoteMarker
+		case 0x0016:	// kTextChar_Table
+		case 0x0017:	// kTextChar_TableContinued
+		case 0x0018:	// kTextChar_PageNumber / kTextChar_AutoText
+		case 0x0019:	// kTextChar_SectionName
+		case 0x001A:	// kTextChar_NonRomanSpecialGlyph
+		case 0xFEFF:	// kTextChar_ZeroSpaceNoBreak - the XML tag's mark, and a note's anchor
+		case 0xFFFC:	// kTextChar_ObjectReplacementCharacter - an anchored object
+		case 0xE02C:	// kTextChar_IndexMarker
+			return kTrue;
+		default:
+			return kFalse;
+	}
+}
+
+/** kTrue when the words of one run may be written back across it: the two sides stand in the same
+	PLACES (see ParaRegion), or neither side involves a place other than the body.
+
+	★★**MEASURED 2026-09-16: A DELETED TABLE'S CELL "RESTORED" INTO NOWHERE.** The table was gone,
+	  so its cells' paragraphs had no paragraph of their own on the target side; the change's
+	  position fell back to the end of the story, "Restored 2 character(s)" was reported, and
+	  neither the DOM nor a snippet export could find the words afterwards. The cell cannot be put
+	  back by writing text - the table is an object - so the change is not offered.
+	★**A FOOTNOTE IS A PLACE THE SAME WAY**, and a deleted footnote's paragraphs have the same
+	  nowhere to go.
+
+	@param aStart/aCount the run on the SOURCE side, in paragraphs.
+	@param bStart/bCount the run on the TARGET side. ⚠**WHEN bCount IS 0 the words would go in at
+		the start of paragraph bStart**, so that paragraph's place is what they would land in, and
+		it is compared: a body paragraph deleted just before a table's cells would otherwise be
+		written into the first cell. ⚠aCount 0 is NOT treated the same way - restoring an insertion
+		deletes the target's words where they stand, and nothing lands anywhere.
+	@return kFalse only when a cell or a footnote is involved and the places disagree. The body
+		against the body is not this function's question, and answers kTrue. */
+inline bool16 WordsCanBeWrittenAcross(const std::vector<KCMParaAttrs>& sourceAttrs,
+									  int32 aStart, int32 aCount,
+									  const std::vector<KCMParaAttrs>& targetAttrs,
+									  int32 bStart, int32 bCount)
+{
+	std::vector<ParaRegion> aRegions;
+	std::vector<ParaRegion> bRegions;
+	ParagraphRegions(sourceAttrs, aStart, aCount, aRegions);
+	if (bCount == 0 && aCount > 0 && bStart >= 0 && static_cast<size_t>(bStart) < targetAttrs.size())
+		ParagraphRegions(targetAttrs, bStart, 1, bRegions);		// where the words would land
+	else
+		ParagraphRegions(targetAttrs, bStart, bCount, bRegions);
+
+	bool16 containerInvolved = kFalse;
+	for (size_t i = 0; i < aRegions.size() && !containerInvolved; ++i)
+		if (aRegions[i].fTable != KCMParaAttrs::kNotACell || aRegions[i].fFootnote != KCMParaAttrs::kNotAFootnote)
+			containerInvolved = kTrue;
+	for (size_t i = 0; i < bRegions.size() && !containerInvolved; ++i)
+		if (bRegions[i].fTable != KCMParaAttrs::kNotACell || bRegions[i].fFootnote != KCMParaAttrs::kNotAFootnote)
+			containerInvolved = kTrue;
+	if (!containerInvolved)
+		return kTrue;
+
+	if (aRegions.size() != bRegions.size())
+		return kFalse;
+	for (size_t i = 0; i < aRegions.size(); ++i)
+		if (!aRegions[i].SamePlaceAs(bRegions[i]))
+			return kFalse;
+	return kTrue;
+}
+
 /** Where an offset into that joined string lands in the document, as a TextIndex.
 
 	**WHY THIS IS NOT `base + offset`.** JoinParagraphs puts ONE character between two

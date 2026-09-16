@@ -336,6 +336,70 @@ void SetExcerptPieces(PMString& outPre, PMString& outMid, PMString& outPost,
 	SetDocumentText(outPost, post);
 }
 
+/* SliceHoldsObjectCharacter
+   Whether [from, to) of one side holds a character InDesign hangs an object on
+   (KCMParaText::IsObjectCharacter).
+
+   ★**READ FROM THE SAME CHARACTERS A WRITE WOULD USE**: the text kept for the origin when there is
+   any (KCMSourceCache - the Source side of a Task Start or an Import), the text model otherwise.
+   The paragraphs cannot answer it: the reader takes a table's characters and a note's reference
+   OUT of them, which is exactly what is being looked for.
+   @param kept the kept raw text, or nil to read `model`. */
+bool16 SliceHoldsObjectCharacter(ITextModel* model, const WideString* kept, TextIndex from, TextIndex to)
+{
+	if (from < 0 || to <= from)
+		return kFalse;
+
+	if (kept != nil)
+	{
+		const int32 end = (to < kept->CharCount()) ? to : kept->CharCount();
+		for (int32 i = from; i < end; ++i)
+		{
+			if (KCMParaText::IsObjectCharacter(static_cast<int32>(kept->GetChar(i).GetValue())))
+				return kTrue;
+		}
+		return kFalse;
+	}
+
+	if (model == nil)
+		return kFalse;			// nothing to read; the write asks again against what it writes
+	const int32 total = model->TotalLength();
+	const int32 end = (to < total) ? to : total;
+	if (from >= end)
+		return kFalse;
+	TextIterator iter(model, from);
+	for (int32 i = from; i < end; ++i, ++iter)
+	{
+		if (KCMParaText::IsObjectCharacter(static_cast<int32>((*iter).GetValue())))
+			return kTrue;
+	}
+	return kFalse;
+}
+
+/* MarkWriteBlocks
+   Names, on every TEXT change made from one run, why it must not be written back - or nothing.
+
+   ★**ONE RUN, ONE ANSWER ABOUT PLACES; ONE CHANGE, ONE ANSWER ABOUT CHARACTERS.** Whether the run's
+   two sides stand in the same cells and footnotes is a property of the run (the paragraphs are
+   what know it); which characters a change would write or remove is a property of the change.
+   ⚠Attribute changes are left alone: they write no characters.
+   @param first the first of `out` made from this run. */
+void MarkWriteBlocks(std::vector<KCMStoryChange>& out, size_t first, bool16 placesAgree,
+					 ITextModel* targetModel, ITextModel* sourceModel, const WideString* keptSource)
+{
+	for (size_t i = first; i < out.size(); ++i)
+	{
+		KCMStoryChange& change = out[i];
+		if (change.fWhat != KCMStoryChange::kText)
+			continue;
+		if (!placesAgree)
+			change.fWriteBlock = kKCMWriteBlockedPlaces;
+		else if (SliceHoldsObjectCharacter(targetModel, nil, change.fTargetStart, change.fTargetEnd)
+				 || SliceHoldsObjectCharacter(sourceModel, keptSource, change.fSourceStart, change.fSourceEnd))
+			change.fWriteBlock = kKCMWriteBlockedObjects;
+	}
+}
+
 /* Add
    Builds one change and appends it. Kept in one place so that the two callers below - a run that
    was narrowed down to characters, and one that was not - cannot describe the same thing in two
@@ -1122,9 +1186,23 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	//     ⚠**With them went the only instrument that could dump what the reader read** - the user's
 	//     call; the reader's answer now reaches the outside only through the rows themselves.
 
+	// ★**WHAT A WRITE BACK WOULD USE FOR THE SOURCE'S CHARACTERS** (2026-09-16): the text kept for the
+	//   origin when there is any - the Source document is then a copy that may not even be open -
+	//   and the Source's own text model otherwise. See MarkWriteBlocks.
+	WideString keptSourceRaw;
+	const bool16 haveKeptSource = KCMSourceCacheGetRaw(targetStory.GetUID(), keptSourceRaw);
+
 	for (size_t c = 0; c < paragraphChanges.size(); ++c)
 	{
 		const KCMTextDiff::Change& change = paragraphChanges[c];
+
+		// ★★**WHETHER THE WORDS OF THIS RUN CAN BE WRITTEN BACK AT ALL** (2026-09-16, measured: a
+		//   deleted table's cell "restored" into a position nothing could see, and an anchored
+		//   object came back as U+FFFC alone). Asked once per run; MarkWriteBlocks puts the answer
+		//   on every change the run produces, which is what hides the menu item.
+		const size_t firstOfRun = out.size();
+		const bool16 placesAgree = KCMParaText::WordsCanBeWrittenAcross(
+			sourceAttrs, change.aStart, change.aCount, targetAttrs, change.bStart, change.bCount);
 
 		const std::string sourceText = KCMParaText::JoinParagraphs(sourceParas, change.aStart, change.aCount);
 		const std::string targetText = KCMParaText::JoinParagraphs(targetParas, change.bStart, change.bCount);
@@ -1187,6 +1265,8 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 			// cannot place it - not an error, just a coarser answer.
 			Add(out, targetText, targetBytes, tRun, 0, static_cast<int32>(targetCodePoints.size()),
 				sourceText, sourceBytes, sRun, 0, static_cast<int32>(sourceCodePoints.size()));
+			MarkWriteBlocks(out, firstOfRun, placesAgree, targetModel, sourceModel,
+							haveKeptSource ? &keptSourceRaw : nil);
 			continue;
 		}
 
@@ -1196,6 +1276,8 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 			Add(out, targetText, targetBytes, tRun, fine.bStart, fine.bCount,
 				sourceText, sourceBytes, sRun, fine.aStart, fine.aCount);
 		}
+		MarkWriteBlocks(out, firstOfRun, placesAgree, targetModel, sourceModel,
+						haveKeptSource ? &keptSourceRaw : nil);
 	}
 
 	// **AND THEN THE RUBY.** Everything above compared <Content> and nothing else, so a story

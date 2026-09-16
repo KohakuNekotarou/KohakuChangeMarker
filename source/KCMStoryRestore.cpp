@@ -49,7 +49,8 @@
 #include "KCMCore.h"				// KCMArmedTargetDB / KCMArmedSourceDB / KCMIsDocDBOpen
 #include "KCMOriginCompare.h"		// KCMOriginArmed / KCMOriginScopedCopy / KCMOriginToSourceUID
 #include "KCMStoryList.h"			// the row and its changes
-#include "KCMStoryKinds.h"			// kKCMStoryAttrRuby / kKCMStoryAttrKenten
+#include "KCMStoryKinds.h"			// kKCMStoryAttrRuby / kKCMStoryAttrKenten / KCMStoryWriteBlock
+#include "KCMParaText.h"			// IsObjectCharacter - what text cannot bring back
 #include "KCMStoryDiffRun.h"		// RunOne - the row diffed again after the write
 #include "KCMModelNotify.h"		// KCMNotify - the panel rebuilds its tree
 #include "KCMID.h"					// kKCMStoryEditsRebuiltMessage
@@ -78,6 +79,106 @@ PMString Refused(const char* what)
 	s.Append((KCMGetCompareMode() == kKCMModeImport) ? "import: " : "restore: ");
 	s.Append(what);
 	return s;
+}
+
+/*	SourceWordsFor
+	The OLDER side's characters for one range of one story: from the text kept for the origin when
+	there is any, and from the Source story otherwise.
+
+	★**ONE PLACE, BECAUSE TWO CALLERS NEED THE SAME SLICE** (2026-09-16). "Restore Source Text"
+	  writes these characters; "Undo the Restore" compares them against what is in the document, to
+	  find out whether what it is about to overwrite is still what the take-in put there. The two
+	  must agree about what "the older words" are, or the check would pass on a slice the write
+	  would not have produced.
+	⚠**NEVER RE-ASSEMBLED FROM THE PARAGRAPHS** - KCMSourceCache.h says what that gets wrong, and
+	 it is the paragraph break itself.
+
+	@param whyNot filled, and already worded for the reader, on every kFalse.
+*/
+bool16 SourceWordsFor(UID storyUID, IDataBase* sourceDB, TextIndex from, int32 count,
+					  WideString& out, PMString& whyNot)
+{
+	out = WideString();
+	if (count <= 0)
+		return kTrue;				// an insertion: nothing stood there, and that is an answer
+
+	WideString keptRaw;
+	if (KCMSourceCacheGetRaw(storyUID, keptRaw))
+	{
+		if (from < 0 || from + count > keptRaw.Length())
+		{
+			whyNot = Refused("the change's range is outside the Source story.");
+			return kFalse;
+		}
+		K2::scoped_ptr<WideString> slice(keptRaw.Substring(from, count));
+		if (slice.get() != nil)
+			out = *slice;
+		return kTrue;
+	}
+
+	InterfacePtr<ITextModel> source(sourceDB != nil
+		? UIDRef(sourceDB, KCMOriginToSourceUID(sourceDB, storyUID))
+		: UIDRef(nil, kInvalidUID), UseDefaultIID());
+	if (source == nil)
+	{
+		whyNot = Refused("the story is not in the Source.");
+		return kFalse;
+	}
+	if (from < 0 || from + count > source->TotalLength())
+	{
+		whyNot = Refused("the change's range is outside the Source story.");
+		return kFalse;
+	}
+	TextIterator iter(source, from);
+	iter.AppendToStringAndIncrement(&out, count);
+	return kTrue;
+}
+
+/*	TargetWordsAt
+	What the TARGET story reads right now over one range. Used to ask the one question a write that
+	puts something back has to ask: is what I am about to overwrite still what went in?
+*/
+void TargetWordsAt(ITextModel* target, TextIndex at, int32 count, WideString& out)
+{
+	out = WideString();
+	if (target == nil || count <= 0)
+		return;
+	if (at < 0 || at + count > target->TotalLength())
+		return;
+	TextIterator iter(target, at);
+	iter.AppendToStringAndIncrement(&out, count);
+}
+
+/*	HoldsObjectCharacter
+	Whether any character of `words` is one InDesign hangs an object on (KCMParaText::IsObjectCharacter).
+
+	★★★**ASKED OF EVERY WRITE, BOTH WAYS** (2026-09-16, measured the same night): a text command puts
+	  back the CHARACTER and not the object - an anchored rectangle came back as U+FFFC alone - and
+	  removing one takes the object with it. The diff has already hidden the menu item for such a
+	  change (KCMStoryChange::fWriteBlock); this is the write asking again of the characters as
+	  they stand now, because the reader can type between the menu and the press.
+*/
+bool16 HoldsObjectCharacter(const WideString& words)
+{
+	for (int32 i = 0; i < words.CharCount(); ++i)
+	{
+		if (KCMParaText::IsObjectCharacter(static_cast<int32>(words.GetChar(i).GetValue())))
+			return kTrue;
+	}
+	return kFalse;
+}
+
+/*	WriteBlockedMessage
+	The refusal for a change the diff marked as not writable - one sentence per reason, so a bulk run
+	that skips it can quote the reason on the status line.
+*/
+PMString WriteBlockedMessage(int32 writeBlock)
+{
+	return (writeBlock == kKCMWriteBlockedPlaces)
+		? Refused("this change is in a table cell or a footnote that the other version does not have - "
+				  "its words cannot be put back as text.")
+		: Refused("this change holds a table, a note, an anchored object or another special character - "
+				  "text cannot bring it back, and removing it would delete the object.");
 }
 
 }	// namespace
@@ -549,6 +650,14 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 	// ===== the words =============================================================================
 	if (change.fWhat == KCMStoryChange::kText)
 	{
+		// ★★**NOT A CHANGE THE DIFF SAID CANNOT GO BACK** (2026-09-16, the user's rule). The menu
+		//   hides the item for these; a bulk run reaches them anyway, and skips them with this reason.
+		if (change.fWriteBlock != kKCMWriteAllowed)
+		{
+			outMessage = WriteBlockedMessage(change.fWriteBlock);
+			return kFalse;
+		}
+
 		// ★★★**THE OLDER WORDS COME FROM WHAT WAS KEPT, WHEN ANYTHING WAS** (2026-09-16). The slice
 		//   is taken by the very same indices out of the very same characters - the whole story as
 		//   TextIterator read it, once, when the comparison was set up. ⚠**NOT re-assembled from
@@ -556,44 +665,22 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 		//   out, and putting them back is a second answer to a question the document has already
 		//   answered (KCMSourceCache.h).
 		boost::shared_ptr<WideString> words(new WideString());
-		WideString keptRaw;
-		const bool16 fromKept = KCMSourceCacheGetRaw(storyUID, keptRaw);
+		if (!SourceWordsFor(storyUID, sourceDB, change.fSourceStart, sourceCount, *words, outMessage))
+			return kFalse;
 
-		if (fromKept)
+		// ★★★**WHAT IS ABOUT TO COME OUT, AS THE CHARACTERS THEMSELVES** - kept on the record for
+		//   "Undo the Restore", and asked the same question as the words going in.
+		//   ⚠**NEVER change.fText**: that is the row's quote, cut to kExcerptCodePoints with its
+		//    paragraph breaks drawn as pilcrows (measured: 80 characters came back as 60, and a
+		//    break came back as U+00B6).
+		WideString goingOut;
+		TargetWordsAt(target, change.fTargetStart, targetCount, goingOut);
+		if (HoldsObjectCharacter(*words) || HoldsObjectCharacter(goingOut))
 		{
-			if (sourceCount > 0)
-			{
-				if (change.fSourceStart < 0 || change.fSourceEnd > keptRaw.Length())
-				{
-					outMessage = Refused("the change's range is outside the Source story.");
-					return kFalse;
-				}
-				K2::scoped_ptr<WideString> slice(keptRaw.Substring(change.fSourceStart, sourceCount));
-				if (slice.get() != nil)
-					*words = *slice;
-			}
+			outMessage = WriteBlockedMessage(kKCMWriteBlockedObjects);
+			return kFalse;
 		}
-		else
-		{
-			InterfacePtr<ITextModel> source(sourceDB != nil
-				? UIDRef(sourceDB, KCMOriginToSourceUID(sourceDB, storyUID))
-				: UIDRef(nil, kInvalidUID), UseDefaultIID());
-			if (source == nil)
-			{
-				outMessage = Refused("the story is not in the Source.");
-				return kFalse;
-			}
-			if (sourceCount > 0)
-			{
-				if (change.fSourceStart < 0 || change.fSourceEnd > source->TotalLength())
-				{
-					outMessage = Refused("the change's range is outside the Source story.");
-					return kFalse;
-				}
-				TextIterator iter(source, change.fSourceStart);
-				iter.AppendToStringAndIncrement(words.get(), sourceCount);
-			}
-		}
+		done.fBeforeRaw = goingOut;
 
 		InterfacePtr<ITextModelCmds> cmds(target, UseDefaultIID());
 		if (cmds == nil)
@@ -980,7 +1067,8 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 	  have done since, and is itself one undo step.
 	★**THE ROW ALREADY HOLDS BOTH SIDES OF ITSELF** - that is why it is kept in the list after a
 	  take-in (KCMStoryList.h, fBefore*), so nothing has to be worked out again here. Words come
-	  from fBeforeText; a ruby or a kenten from fRuby, which is the TARGET's own value, the one the
+	  from fBeforeRaw (⚠never fBeforeText, the row's quote - measured 2026-09-16 turning 80
+	  characters into 60); a ruby or a kenten from fRuby, which is the TARGET's own value, the one the
 	  take-in wrote over (RestoreOne writes fOtherRuby, the Source's - this is its mirror).
 	⚠**THE RECORD IS TAKEN OUT BY HAND, not left to the counter.** StillReplaced answers by asking
 	  whether the story has got as far as the write, and this write moves it FURTHER - so the
@@ -1038,6 +1126,67 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 		return kFalse;
 	}
 
+	// ***** IS WHAT I AM ABOUT TO OVERWRITE STILL WHAT WENT IN? *****
+	// ⚠★★★**NOTHING ELSE ASKS THIS, AND WITHOUT IT THE ITEM CAN OVERWRITE THE READER'S OWN WORDS**
+	//   (found by re-reading this on 2026-09-16, the day it was written). A later TAKE-IN is
+	//   accounted for - ShiftReplacedChanges slides the records that stand after it - but nothing
+	//   moves them when the reader TYPES, and StillReplaced above cannot tell: it asks whether the
+	//   story has got at least as far as the write, and an ordinary edit lifts that counter too.
+	//   So the range could name text the reader wrote, and the older words would go silently on
+	//   top of it.
+	// ★**THE TEST IS THE CHARACTERS THEMSELVES**, which is the one answer that cannot be
+	//   wrong-footed: what the take-in put there is the SOURCE's words for this change, and
+	//   SourceWordsFor is the function the write itself uses to produce them.
+	// ⚠**WORDS ONLY, AND THAT IS NOT LAZINESS.** A ruby's two sides may cover DIFFERENT NUMBERS OF
+	//   CHARACTERS - RestoreOne clears and rewrites at the older length when they do - so the two
+	//   slices would differ in length whenever a reading's span had grown or shrunk, and the test
+	//   would refuse a perfectly good change. What it is guarding against is text loss, and only
+	//   the words branch writes text; an attribute landing on the wrong characters is wrong, but it
+	//   is the same exposure the take-in itself has had all along, and it takes no words away.
+	if (change.fAttrKind == kKCMStoryAttrNone)
+	{
+		IDataBase* checkSourceDB = KCMArmedSourceDB();
+		KCMOriginScopedCopy checkCopy;
+		if (checkSourceDB == nil && KCMOriginArmed() && !KCMSourceCacheHas(storyUID))
+		{
+			PMString whyNot;
+			if (checkCopy.Open(whyNot))
+				checkSourceDB = checkCopy.DB();
+		}
+
+		WideString wentIn;
+		const int32 sourceCount = change.fSourceEnd - change.fSourceStart;
+		if (!SourceWordsFor(storyUID, checkSourceDB, change.fSourceStart, sourceCount,
+							wentIn, outMessage))
+			return kFalse;
+
+		WideString standingThere;
+		TargetWordsAt(target, at, len, standingThere);
+		if (standingThere != wentIn)
+		{
+			outMessage = Refused("what went in is not there any more - the words have been edited "
+							   "since. Run Refresh Story Comparison on its row.");
+			return kFalse;
+		}
+
+		// ***** AND WHAT GOES BACK IS THE CHARACTERS THEMSELVES *****
+		// ⚠★★★**fBeforeRaw, NEVER fBeforeText** (2026-09-16, measured before the fix): fBeforeText
+		//   is the row's quote - cut to kExcerptCodePoints, paragraph breaks drawn as pilcrows - and
+		//   written back it turned eighty characters into sixty and a paragraph break into U+00B6.
+		//   A record without the raw characters is refused rather than guessed at.
+		if (change.fBeforeRaw.CharCount() != (change.fBeforeEnd - change.fBeforeStart))
+		{
+			outMessage = Refused("the words that stood here before were not kept, so they cannot be put "
+							   "back - Ctrl+Z still can.");
+			return kFalse;
+		}
+		if (HoldsObjectCharacter(change.fBeforeRaw))
+		{
+			outMessage = WriteBlockedMessage(kKCMWriteBlockedObjects);
+			return kFalse;
+		}
+	}
+
 	// A kenten this build cannot write is judged BEFORE anything is written, the same way the
 	// take-in judges it: a refusal then costs nothing.
 	int16 kentenKind = IKentenStyle::Kenten_None;
@@ -1060,14 +1209,33 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 
 		if (change.fAttrKind == kKCMStoryAttrRuby)
 		{
+			// ★**WHAT THE TAKE-IN WROTE OVER, WHICH IS NOT ALWAYS `len`** (2026-09-16, measured before
+			//   the fix). When the two sides' spans differ, RestoreOne takes the Target's reading off
+			//   and writes the Source's at the SOURCE's length. Putting the Target's reading back over
+			//   `len` alone left the rest of that span holding the Source's reading string and its
+			//   mono/group setting (flag off, so nothing was drawn - but not the state it was taken
+			//   from). So the whole written reach comes off first, the same thirty attributes the
+			//   take-in clears, and only then does the older reading go on.
+			const int32 sourceCount = change.fSourceEnd - change.fSourceStart;
+			int32 written = len;
+			if (!change.fOtherRuby.IsEmpty() && sourceCount > 0 && sourceCount != len)
+			{
+				written = sourceCount;
+				if (at + written > target->TotalLength())
+					written = target->TotalLength() - at;
+			}
+			const int32 reach = (written > len) ? written : len;
+
 			if (change.fRuby.IsEmpty())
 			{
-				err = KCMClearRuby(target, at, len);			// there was no ruby before it
+				err = KCMClearRuby(target, at, reach);		// there was no ruby before it
 				outMessage = Ascii("Took the ruby off again over ");
 			}
 			else
 			{
 				err = KCMCreateRubyStrandIfNeeded(target);
+				if (err == kSuccess && written != len)
+					err = KCMClearRuby(target, at, reach);
 				if (err == kSuccess)
 					err = KCMApplyRuby(target, at, len, change.fRuby, change.fRubyGroup);
 				outMessage = Ascii("Put the ruby \"");
@@ -1084,10 +1252,11 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 		}
 		else
 		{
-			// The words. ⚠**ReplaceCmd EVEN WHEN len IS 0**: an insertion taken in is put back by
-			//   deleting what went in, and what was there before is the empty string.
+			// The words: the Target's own characters as the take-in found them (fBeforeRaw, checked
+			//   above). An insertion taken in is put back by replacing what went in with the empty
+			//   string; a deletion taken in (nothing went in, len 0) by inserting them.
 			InterfacePtr<ITextModelCmds> cmds(target, UseDefaultIID());
-			boost::shared_ptr<WideString> words(new WideString(change.fBeforeText));
+			boost::shared_ptr<WideString> words(new WideString(change.fBeforeRaw));
 			InterfacePtr<ICommand> write(cmds != nil
 				? (len > 0 ? cmds->ReplaceCmd(at, len, words) : cmds->InsertCmd(at, words))
 				: nil);
@@ -1107,23 +1276,41 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 	}
 
 	outMessage.AppendNumber((change.fAttrKind == kKCMStoryAttrNone)
-							? change.fBeforeText.CharCount() : len);
+							? change.fBeforeRaw.CharCount() : len);
 	outMessage.Append(" character(s)");
+
+	// ★★★**AND EVERYTHING ALREADY REPLACED FURTHER DOWN THE STORY SLIDES** - the same rule the
+	//   take-in keeps, and for the same reason: the other replaced records are not in any live
+	//   comparison, so nothing else would move them, and a record whose position quietly rots is a
+	//   row whose jump lands in the wrong place. ⚠**BEFORE this change's own record is removed**,
+	//   so that the walk sees the list as it stood when the write happened.
+	//   ⚠An attribute write changes no lengths, so the delta is zero and the call is a no-op -
+	//    stated rather than branched on, because the reason it is zero is worth reading.
+	{
+		const int32 wentBack = (change.fAttrKind == kKCMStoryAttrNone)
+							 ? change.fBeforeRaw.CharCount() : len;
+		KCMStoryList::ShiftReplacedChanges(nth, at, wentBack - len);
+	}
 
 	// ***** THE RECORD GOES, AND THE STORY IS COMPARED AGAIN. *****
 	// The change is a live difference once more - which is exactly what it was before the reader
 	// took it in - so the row shows it that way and can take it in again.
 	KCMStoryList::RemoveMergedReplacedChange(nth, which);
 
+	// ⚠**AND NO COPY IS BUILT FOR IT WHEN THE STORY IS KEPT** - this item would otherwise carry
+	//   the very cost that was taken out of the take-in the same day (KCMSourceCache.h): a whole
+	//   document rebuilt from the origin, per press, to compare one story.
 	IDataBase* sourceDB = KCMArmedSourceDB();
 	KCMOriginScopedCopy originCopy;
-	if (sourceDB == nil && KCMOriginArmed())
+	if (sourceDB == nil && KCMOriginArmed() && !KCMSourceCacheHas(storyUID))
 	{
 		PMString whyNot;
 		if (originCopy.Open(whyNot))
 			sourceDB = originCopy.DB();
 	}
-	if (sourceDB != nil && KCMIsDocDBOpen(sourceDB))
+	if (sourceDB != nil && !KCMIsDocDBOpen(sourceDB))
+		sourceDB = nil;
+	if (sourceDB != nil || KCMSourceCacheHas(storyUID))
 		KCMStoryDiffRun::RunOne(targetDB, sourceDB, nth);
 
 	KCMNotify(kKCMStoryEditsRebuiltMessage);

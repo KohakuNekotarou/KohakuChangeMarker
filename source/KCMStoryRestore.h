@@ -46,8 +46,9 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage);
     ★★**A COMMAND, NOT Edit > Undo.** Ctrl+Z reaches only the last thing done; this reaches the one
       change the reader points at, whatever they have done since - and is itself one undo step.
     ★The row remembers both sides of itself, which is why it stays in the list after a take-in, so
-      nothing is worked out again: the words come from fBeforeText, a ruby or kenten from fRuby -
-      the Target's own value, the one the take-in wrote over.
+      nothing is worked out again: the words come from fBeforeRaw (the Target's own characters,
+      read before the take-in wrote - ⚠never fBeforeText, which is the row's quote), a ruby or
+      kenten from fRuby - the Target's own value, the one the take-in wrote over.
     ⚠Refused when the change was never taken in, when an undo has already put it back, and for a
       custom kenten mark - the same one the take-in cannot write either. */
 bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage);

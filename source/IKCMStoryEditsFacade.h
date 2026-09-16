@@ -293,10 +293,17 @@ public:
 			(KCMStoryList.h says why). */
 		bool16		fOverset;
 
+		/** Why this change must not be written back into the reader's document - KCMStoryWriteBlock
+			(0 = it may). 2026-09-16, the user's rule: offer "Restore Source Text" / "Change to
+			Imported Text" only when the text holds no special character, and never for a cell or a
+			footnote whose place is gone. ★Decided by the diff; the model's write asks again.
+			⚠Appended at the END, for the reason stated above fReplaced. */
+		int32		fWriteBlock;
+
 		Change()
 			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),
 			  fSourceStart(0), fSourceEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
-			  fAttrKind(0), fReplaced(kFalse), fOverset(kFalse) {}
+			  fAttrKind(0), fReplaced(kFalse), fOverset(kFalse), fWriteBlock(0) {}
 	};
 
 	/** How many differences row nth holds.

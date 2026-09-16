@@ -114,6 +114,28 @@ enum KCMStoryAttrKind
 */
 const uint32 kKCMStoryKindUnpaired = kKCMStoryKindAdded | kKCMStoryKindRemoved;
 
+/** Why a TEXT change cannot be written back into the reader's document (2026-09-16, the user's rule:
+	"in the Task Start mode, restore only when the range holds no special character - and only then
+	show the item").
+
+	★**DECIDED BY THE DIFF, CARRIED TO THE MENU, ASKED AGAIN BY THE WRITE.** The comparison knows
+	  both sides' paragraphs and characters, so it names the reason once per change; the UI hides
+	  "Restore Source Text" / "Change to Imported Text" on a change that has one; and the write
+	  itself asks the same questions of the characters as they stand at that moment, because the
+	  reader can type between the two (KCMStoryRestore.cpp).
+	@warning carried across the model/UI boundary as a plain int32 (IKCMStoryEditsFacade's
+	  Change::fWriteBlock) - the values are the contract and must not be renumbered. */
+enum KCMStoryWriteBlock
+{
+	kKCMWriteAllowed = 0,
+	kKCMWriteBlockedPlaces = 1,		// a table cell or a footnote whose place is not on the other side
+									// (KCMParaText::WordsCanBeWrittenAcross) - measured, a deleted
+									// table's cell "restored" into a position nothing could see
+	kKCMWriteBlockedObjects = 2		// the words going in or coming out hold a character InDesign hangs
+									// an object on (KCMParaText::IsObjectCharacter) - measured, an
+									// anchored rectangle came back as U+FFFC alone
+};
+
 #endif // __KCMStoryKinds_h__
 
 // End, KCMStoryKinds.h.
