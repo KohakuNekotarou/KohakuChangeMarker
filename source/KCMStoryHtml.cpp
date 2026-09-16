@@ -771,19 +771,16 @@ void WriteParaHtml(const Para& p, int32& noteOrdinal, std::string& out)
 /*	WriteCellParas
 	A cell's paragraphs.
 
-	★**ONE PARAGRAPH IS WRITTEN WITHOUT <p>**, which is a departure from Adobe's export (it always
-	writes one) and from the <li> above. The design chose it for the reader's sake: a table of
-	one-word cells is read at a glance without <p> in the way, and the reader accepts both.
+	★★**EVERY PARAGRAPH IS WRITTEN WITH <p>, INCLUDING A CELL HOLDING ONE** (the user's rule,
+	2026-09-16: "a paragraph always begins with a <p> tag"). Until then a one-paragraph cell was
+	written bare, which read well but forced the reader to keep an IMPLICIT paragraph open inside
+	<td> - and that implicit paragraph is what swallowed the whitespace of a pretty-printed table.
+	One rule instead of two: <p> starts a paragraph, and anything outside <p> is layout, not text.
 */
 void WriteCellParas(const std::vector<Para>& paras, std::string& out)
 {
 	int32 insideCell = 0;			// a cell's own notes are not the body's
 
-	if (paras.size() == 1)
-	{
-		WriteParaHtml(paras[0], insideCell, out);
-		return;
-	}
 	for (size_t k = 0; k < paras.size(); ++k)
 	{
 		out += "<p>";
@@ -800,9 +797,20 @@ void WriteCellParas(const std::vector<Para>& paras, std::string& out)
 	 to. The reader takes them (document order, their own entries); putting one back is Task 9's
 	 problem and is written down as unsolved rather than half-done.
 */
+/** One step of indent: four spaces, as the user asked for (2026-09-16). */
+void Indent(int32 depth, std::string& out)
+{
+	for (int32 k = 0; k < depth; ++k)
+		out += "    ";
+}
+
 void WriteTable(const Table& t, std::string& out)
 {
-	out += "<table>";
+	// ★★**A TABLE IS PRETTY-PRINTED** (the user's request, 2026-09-16): one tag per line, four
+	//   spaces a step, so that a reader editing the file can see the shape of the table at a
+	//   glance. ⚠**THIS COSTS NOTHING IN CORRECTNESS** because every newline and space here is
+	//   OUTSIDE a <p>, and outside a <p> nothing is text - which is the one rule this format has.
+	out += "<table>\r\n";
 
 	bool16 inHead = kFalse;
 	for (size_t r = 0; r < t.fRows.size(); ++r)
@@ -810,19 +818,24 @@ void WriteTable(const Table& t, std::string& out)
 		const Row& row = t.fRows[r];
 		if (row.fHeader && !inHead)
 		{
-			out += "<thead>";
+			out += "    <thead>\r\n";
 			inHead = kTrue;
 		}
 		else if (!row.fHeader && inHead)
 		{
-			out += "</thead>";
+			out += "    </thead>\r\n";
 			inHead = kFalse;
 		}
 
-		out += "<tr>";
+		// A row inside <thead> sits one step deeper than one outside it.
+		const int32 rowDepth = inHead ? 2 : 1;
+
+		Indent(rowDepth, out);
+		out += "<tr>\r\n";
 		for (size_t c = 0; c < row.fCells.size(); ++c)
 		{
 			const Cell& cell = row.fCells[c];
+			Indent(rowDepth + 1, out);
 			out += "<td";
 			if (cell.fColSpan != 1)
 			{
@@ -836,14 +849,18 @@ void WriteTable(const Table& t, std::string& out)
 				std::snprintf(buf, sizeof(buf), " rowspan=\"%d\"", static_cast<int>(cell.fRowSpan));
 				out += buf;
 			}
-			out += ">";
+			out += ">\r\n";
+			Indent(rowDepth + 2, out);
 			WriteCellParas(cell.fParas, out);
-			out += "</td>";
+			out += "\r\n";
+			Indent(rowDepth + 1, out);
+			out += "</td>\r\n";
 		}
-		out += "</tr>";
+		Indent(rowDepth, out);
+		out += "</tr>\r\n";
 	}
 	if (inHead)
-		out += "</thead>";
+		out += "    </thead>\r\n";
 
 	out += "</table>\r\n";
 }
@@ -1265,7 +1282,6 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 
 	std::vector<TableFrame> tables;	// the tables open right now; more than one means nesting
 	bool16 inCell = kFalse;
-	bool16 implicitPara = kFalse;	// a cell's text with no <p> around it is still a paragraph
 
 	size_t i = 0;
 	while (i < s.size())
@@ -1275,7 +1291,23 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 		if (c != '<')
 		{
 			if (inBody && inPara)
+			{
 				para += c;
+			}
+			else if (inBody && c != ' ' && c != '\t' && c != '\r' && c != '\n')
+			{
+				// ⚠★★★**EVERY CHARACTER BELONGS TO A PARAGRAPH** (the user's rule, 2026-09-16).
+				//   Whitespace outside <p> is layout - that is what lets a table be indented and
+				//   a long paragraph be wrapped in an editor - but a WORD outside <p> is text
+				//   that this reader would otherwise drop without saying anything.
+				// ★**MEASURED, NOT IMAGINED**: a file exported before this rule wrote its cells
+				//   as <td>品名</td>, and reading it back gave every cell one EMPTY paragraph,
+				//   with no error and every test still passing (2026-09-16). Refusing here is
+				//   what turns that silent loss into a sentence somebody can act on.
+				whyNot = "there is text outside a <p>: every character has to be inside a "
+						 "paragraph, written <p>...</p>";
+				return kFalse;
+			}
 			++i;
 			continue;
 		}
@@ -1321,15 +1353,7 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 				}
 				if (!closing)
 				{
-					// ★A CELL'S IMPLICIT PARAGRAPH GIVES WAY TO A REAL ONE. <td> opens a paragraph
-					//   so that bare text in a cell is not lost; a <p> arriving before any text
-					//   means the cell was written the other way, and takes over.
-					if (inPara && implicitPara && para.empty() && paraRuby.empty()
-						&& paraKenten.empty() && paraNoteAt.empty())
-					{
-						implicitPara = kFalse;
-					}
-					else if (inPara)
+					if (inPara)
 					{
 						whyNot = "a <p> begins inside another one";
 						return kFalse;
@@ -1337,7 +1361,6 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					else
 					{
 						inPara = kTrue;
-						implicitPara = kFalse;
 						para.clear();
 						paraRuby.clear();
 						paraKenten.clear();
@@ -1400,21 +1423,14 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 						out.fBody.push_back(p);
 					}
 					inPara = kFalse;
-					implicitPara = kFalse;
 					para.clear();
 					paraRuby.clear();
 					paraKenten.clear();
 					paraNoteAt.clear();
 					paraNoteNum.clear();
 
-					// ⚠TEXT AFTER </p> INSIDE A CELL still belongs to the cell, so the implicit
-					//   paragraph comes back. The empty leftover is dropped when </td> arrives.
-					if (inCell)
-					{
-						inPara = kTrue;
-						implicitPara = kTrue;
-						em = EmState();
-					}
+					// ★**NOTHING REOPENS HERE.** Text between </p> and the next <p> is layout,
+					//   inside a cell exactly as in the body.
 				}
 				i = after;
 				continue;
@@ -1424,7 +1440,7 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 			{
 				if (!closing)
 				{
-					if (inPara && !implicitPara)
+					if (inPara)
 					{
 						whyNot = "a <table> stands inside a paragraph";
 						return kFalse;
@@ -1505,11 +1521,11 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 						cell.fRowSpan = ReadCount(span);
 					tables.back().fTable.fRows.back().fCells.push_back(cell);
 
-					// ★A CELL OPENS A PARAGRAPH OF ITS OWN, so that text written straight into the
-					//   cell - which is how this format writes a cell holding one - is not lost.
+					// ★★**A CELL OPENS NO PARAGRAPH.** Its paragraphs are its <p>s, the same as
+					//   anywhere else - which is what lets a table be pretty-printed: every
+					//   newline and space between <td> and <p> is outside a paragraph, and
+					//   outside a paragraph nothing is text.
 					inCell = kTrue;
-					inPara = kTrue;
-					implicitPara = kTrue;
 					para.clear();
 					paraRuby.clear();
 					paraKenten.clear();
@@ -1521,28 +1537,19 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 				{
 					if (inPara)
 					{
-						bool16 hasParas = kFalse;
-						if (!tables.back().fTable.fRows.empty()
-							&& !tables.back().fTable.fRows.back().fCells.empty()
-							&& !tables.back().fTable.fRows.back().fCells.back().fParas.empty())
-							hasParas = kTrue;
+						whyNot = "a </td> closes a cell with a paragraph still open";
+						return kFalse;
+					}
 
-						// ⚠AN EMPTY CELL STILL HAS ONE PARAGRAPH, because a cell in InDesign always
-						//   does. What is dropped is the leftover implicit one after </p>.
-						if (!implicitPara || !para.empty() || !hasParas)
-						{
-							Para p;
-							p.fText = para;
-							p.fRuby = paraRuby;
-							p.fKenten = paraKenten;
-							p.fNoteAt = paraNoteAt;
-							p.fNoteNum = paraNoteNum;
-							if (!tables.back().fTable.fRows.empty()
-								&& !tables.back().fTable.fRows.back().fCells.empty())
-								tables.back().fTable.fRows.back().fCells.back().fParas.push_back(p);
-						}
-						inPara = kFalse;
-						implicitPara = kFalse;
+					// ⚠**AN EMPTY CELL STILL HAS ONE PARAGRAPH**, because a cell in InDesign always
+					//   does. <td></td> is how this format writes one, so the paragraph is put back
+					//   here rather than asked of the file.
+					if (!tables.empty()
+						&& !tables.back().fTable.fRows.empty()
+						&& !tables.back().fTable.fRows.back().fCells.empty()
+						&& tables.back().fTable.fRows.back().fCells.back().fParas.empty())
+					{
+						tables.back().fTable.fRows.back().fCells.back().fParas.push_back(Para());
 					}
 					inCell = kFalse;
 				}
@@ -1623,15 +1630,16 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 				continue;
 			}
 
-			// ⚠**REFUSED ON PURPOSE, AND WITH BOTH ANSWERS IN THE MESSAGE.** Somebody who knows
-			//   HTML reaches for <br> meaning "a new line here", and InDesign has TWO of those -
-			//   a new paragraph and a forced line break inside one. Taking a guess would silently
-			//   produce the wrong one, so the reader stops and says how to spell each.
+			// ★**IGNORED, NOT REFUSED** (the user's rule, 2026-09-16). Somebody who knows HTML
+			//   reaches for <br> meaning "a new line here", and InDesign has TWO of those - a new
+			//   paragraph, which is </p><p>, and a forced line break inside one, which is
+			//   <span class="u000a"></span>. Guessing between them would silently produce the
+			//   wrong one; stopping the whole import over a stray tag is worse than letting it
+			//   pass. So it is dropped, exactly like the whitespace and the newlines around it.
 			if (name == "br" || name == "wbr")
 			{
-				whyNot = "<br> is not read here: a new paragraph is written </p><p>, "
-						 "and a forced line break inside one is <span class=\"u000a\"></span>";
-				return kFalse;
+				i = after;
+				continue;
 			}
 
 			if (name == "span")
@@ -1736,9 +1744,8 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 
 					if (inner == "br" || inner == "wbr")
 					{
-						whyNot = "<br> is not read here: a new paragraph is written </p><p>, "
-								 "and a forced line break inside one is <span class=\"u000a\"></span>";
-						return kFalse;
+						i = innerAfter;		// ignored here too - see the note in the body
+						continue;
 					}
 
 					// ★A NOTE CAN HANG OFF A RUBY'D WORD, so the reference stands inside the base -
