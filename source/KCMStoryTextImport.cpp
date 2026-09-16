@@ -639,6 +639,7 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 	int32 refusedParas = 0;
 	int32 refusedPlaces = 0;
 	int32 skippedByTables = 0;		// stories left alone entirely: their table shape changed
+	int32 matchedFiles = 0;			// files whose story the copy really does carry
 	int32 unmatched = 0;
 	PMString firstRefusal;
 	firstRefusal.SetTranslatable(kFalse);
@@ -673,6 +674,12 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 		}
 		if (!found)
 			continue;					// a story nobody exported, or exported and then deleted
+
+		// ★**PAIRED IS PAIRED, WHATEVER HAPPENS NEXT** (2026-09-16). The count at the end used to
+		//   be "files minus stories WRITTEN", which said "had no story" about a file the reader
+		//   had simply not edited - and about every story TablesAgree left alone, naming that one
+		//   twice, once under each heading.
+		++matchedFiles;
 
 		std::vector<std::string> paras;
 		std::vector<KCMParaAttrs> attrs;
@@ -756,9 +763,10 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 			++storiesTouched;
 	}
 
-	// Files whose story the copy does not carry - counted by elimination, since the pairing above
-	// is the only place that can tell.
-	unmatched = static_cast<int32>(set->fUids.size()) - storiesTouched;
+	// Files whose story the copy does not carry, counted by the pairing above - the only place
+	// that can tell. ⚠**A PAIRING, NOT A WRITE**: a file that matched and changed nothing has a
+	// story, and so has one whose story was left alone because its tables had moved.
+	unmatched = static_cast<int32>(set->fUids.size()) - matchedFiles;
 	if (unmatched < 0)
 		unmatched = 0;
 

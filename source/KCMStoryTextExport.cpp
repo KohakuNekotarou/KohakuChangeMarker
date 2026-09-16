@@ -36,6 +36,7 @@
 #include "KCMStoryHtml.h"
 #include "KCMTextRead.h"
 #include "KCMParaText.h"
+#include "KCMTextDiff.h"		// ToCodePoints - the one walk over UTF-8 this half is allowed
 
 namespace
 {
@@ -129,13 +130,20 @@ struct CellShape
 
 struct TableShape
 {
-	TextIndex				fStart;			// where the table stands in the story
+	// ⚠**TWO PLACES, AND THEY ARE NOWHERE NEAR EACH OTHER.** fStart is where the table's CELLS
+	//  begin and fAnchor is where the table STANDS in the text. ITableTextContent.h:41-44 is the
+	//  reason they have to be kept apart: a table's threads are "ALWAYS at greater TextIndex than
+	//  the Text Story Thread that the Table Model is anchored in", so fStart is past the whole
+	//  body for EVERY table of a story - it orders the tables and says nothing about where any of
+	//  them stands.
+	TextIndex				fStart;			// where the cells' text begins - the ordinals' order
+	TextIndex				fAnchor;		// where the table stands in the text
 	int32					fRowCount;
 	int32					fHeaderStart;
 	int32					fHeaderCount;
 	std::vector<CellShape>	fCells;			// the anchors only, in row then column order
 
-	TableShape() : fStart(0), fRowCount(0), fHeaderStart(0), fHeaderCount(0) {}
+	TableShape() : fStart(0), fAnchor(0), fRowCount(0), fHeaderStart(0), fHeaderCount(0) {}
 };
 
 bool16 EarlierTable(const TableShape& a, const TableShape& b)
@@ -178,6 +186,21 @@ bool16 ReadTableShapes(ITextModel* model, std::vector<TableShape>& out)
 
 		TableShape shape;
 		shape.fStart = dict->GetThreadBlockTextRange().Start(nil);
+
+		// ★★★**WHERE THE TABLE STANDS IS A QUESTION OF ITS OWN, AND THE DICTIONARY ANSWERS IT.**
+		//   GetThreadBlockTextRange is "the StoryRange of text spanned by the threads of the
+		//   dictionary" - the CELLS - and those are always past the whole body, so it answers
+		//   "after the last paragraph" for every table there has ever been. GetAnchorTextRange is
+		//   the anchor itself, and its contract covers the odd case too: a dictionary that is not
+		//   anchored "should return the TextIndex of the last carriage return in the primary story
+		//   thread" (ITextStoryThreadDict.h), which is the same end-of-body answer the old code
+		//   gave by accident - so no guard is needed here, only the right question.
+		//   ⚠**MEASURED 2026-09-16**: a story with three tables wrote all three at the end of the
+		//    file, whatever paragraph each one really stood after.
+		//   ★A NESTED table's anchor is inside a CELL, so it still lands after the last body
+		//    paragraph - which is where the writer puts it anyway (a nested table is a table of
+		//    its own in this format, KCMStoryHtml's WriteTable says why).
+		shape.fAnchor = dict->GetAnchorTextRange().Start(nil);
 
 		const RowRange rows = table->GetTotalRows();
 		const ColRange cols = table->GetTotalCols();
@@ -301,6 +324,10 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out)
 
 	// ---- the paragraphs, each into the place it belongs ---------------------------------------
 	std::vector<TextIndex> bodyStarts;			// the model start of each BODY paragraph
+	// ⚠**AND WHERE EACH ONE ENDS**, which is not the next one's start: a table anchor standing at
+	//  the head of a paragraph is stepped OVER by the reader (KCMTextRead: "if (!paraHasCharacters)
+	//  paraStart = i + 1"), so that paragraph is reported as beginning AFTER its own anchor.
+	std::vector<TextIndex> bodyEnds;
 
 	for (size_t i = 0; i < paras.size(); ++i)
 	{
@@ -348,17 +375,44 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out)
 
 		out.fBody.push_back(p);
 		bodyStarts.push_back(static_cast<TextIndex>(starts[i]));
+
+		// The model length of this paragraph: its characters, plus the positions the model counts
+		// and the text does not (fUncountedAt - a table standing INSIDE the paragraph).
+		std::vector<int32> cps;
+		KCMTextDiff::ToCodePoints(paras[i], &cps, nil);
+		bodyEnds.push_back(static_cast<TextIndex>(starts[i])
+						   + static_cast<TextIndex>(cps.size())
+						   + static_cast<TextIndex>(attrs[i].fUncountedAt.size()));
 	}
 
 	// ---- where each table stands, in the body's own numbering ---------------------------------
+	//
+	// ★**THE ANCHOR, NOT THE CELLS** (2026-09-16). fStart is past every body paragraph for
+	//   EVERY table of the story (ReadTableShapes says why), so asking it this question handed
+	//   each table the LAST paragraph and the file came out with all of its tables at the
+	//   bottom, whatever paragraph each one really stood after.
 	for (size_t t = 0; t < out.fTables.size() && t < shapes.size(); ++t)
 	{
 		int32 index = 0;
 		for (size_t b = 0; b < bodyStarts.size(); ++b)
 		{
-			if (bodyStarts[b] <= shapes[t].fStart)
+			if (bodyStarts[b] <= shapes[t].fAnchor)
 				index = static_cast<int32>(b);
 		}
+
+		// ★★★**AN ANCHOR CAN STAND IN THE GAP BETWEEN TWO REPORTED PARAGRAPHS**, and that is the
+		//   ordinary case rather than the odd one: a table of its own makes a paragraph holding
+		//   nothing else, whose reported start is PAST the anchor, so the loop above lands on the
+		//   paragraph BEFORE it. Asking whether the anchor is past the end of that paragraph's own
+		//   text is what tells the two apart - a table standing inside a paragraph is not.
+		//   ⚠MEASURED 2026-09-16 on allin.indd: without this, two tables of one story came out one
+		//    paragraph early each, with the empty paragraphs they live in left standing behind them.
+		if (index + 1 < static_cast<int32>(bodyStarts.size())
+			&& shapes[t].fAnchor >= bodyEnds[static_cast<size_t>(index)])
+		{
+			++index;
+		}
+
 		out.fTables[t].fParaIndex = index;
 	}
 
