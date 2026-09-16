@@ -253,6 +253,9 @@ void FillPara(const std::string& text, const KCMParaAttrs& attrs, KCMStoryHtml::
 	//   it covers - KCMTextRead settles that when it closes the paragraph - which is exactly what
 	//   KCMStoryHtml's reader produces, so the self-check compares like with like.
 	out.fTcy = attrs.fTcy;
+	// ★AND WARICHU (2026-09-17, the same request for it), the same way: its ON/OFF and the characters
+	//   it covers, none of its settings.
+	out.fWarichu = attrs.fWarichu;
 
 	// ★★★**A READING OVER ONE CHARACTER IS ALWAYS MONO** (the user's rule, 2026-09-16). One
 	//   character with one reading is the same typesetting whichever way the document has it set,

@@ -35,6 +35,8 @@
 //  footnotes and tables - nested ones included. *** ⚠**THIS PARAGRAPH SAID "BODY PARAGRAPHS ONLY"
 //  UNTIL 2026-09-16**, which was true when it was written (2026-09-15) and was left behind by
 //  Tasks 2 to 5 of the plan it names; the harness has had passing tests for all five since.
+//  ★Tate-chu-yoko and warichu (2026-09-17) travel as <span class="tate-chu-yoko"> and
+//  <span class="warichu">, the ON/OFF of each and nothing of its settings.
 //  What is deliberately NOT carried is written down where it is decided: a note's REFERENCE
 //  position (Para), and an ENDNOTE's words, which live in a story of their own (Story).
 //  Read REFUSES, with a reason, any element it does not understand - it does not skip it. Skipping
@@ -73,6 +75,7 @@ struct Para
 	KCMAttrSpanList		fRuby;		// as KCMParaAttrs::fRuby
 	KCMAttrSpanList		fKenten;	// as KCMParaAttrs::fKenten - fValue is the KIND's name
 	KCMAttrSpanList		fTcy;		// as KCMParaAttrs::fTcy - fValue is the characters it covers
+	KCMAttrSpanList		fWarichu;	// as KCMParaAttrs::fWarichu (2026-09-17) - the same, for a warichu
 };
 
 /** The default mark, for an <em> that names none. See kKentenDefaultValue's comment. */

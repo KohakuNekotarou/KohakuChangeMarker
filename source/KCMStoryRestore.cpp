@@ -175,8 +175,8 @@ bool16 HoldsObjectCharacter(const WideString& words)
 PMString WriteBlockedMessage(int32 writeBlock)
 {
 	if (writeBlock == kKCMWriteBlockedKind)
-		return Refused("a warichu change, or a tate-chu-yoko one outside the Import mode, is shown for "
-					   "reading - it is not written back.");
+		return Refused("a warichu or tate-chu-yoko change outside the Import mode is shown for reading - "
+					   "it is not written back.");
 	return (writeBlock == kKCMWriteBlockedPlaces)
 		? Refused("this change is in a table cell or a footnote that the other version does not have - "
 				  "its words cannot be put back as text.")
@@ -345,10 +345,15 @@ ErrorCode KCMApplyKentenKind(ITextModel* model, TextIndex at, int32 len, int16 k
     takes it off (SnpPerformTextAttrTateChuYoko.cpp's `SetTextBool16Attribute(..., kFalse)`), and it
     stays off under a character style that turns it on. The X/Y offsets are its look and are left
     alone, the way a kenten's look is. */
-ErrorCode KCMApplyTcy(ITextModel* model, TextIndex at, int32 len, bool16 on)
+namespace
+{
+
+/** One boolean character attribute, ON or OFF, over [at, at+len) - the shape tate-chu-yoko and warichu
+	share (each is one kTA*AttrBoss holding an ITextAttrBoolean on the character strand). */
+ErrorCode ApplyBooleanCharAttr(ITextModel* model, TextIndex at, int32 len, ClassID boss, bool16 on)
 {
 	boost::shared_ptr<AttributeBossList> attrs(new AttributeBossList);
-	InterfacePtr<ITextAttrBoolean> attr(::CreateObject2<ITextAttrBoolean>(kTATatechuyokoAttrBoss));
+	InterfacePtr<ITextAttrBoolean> attr(::CreateObject2<ITextAttrBoolean>(boss));
 	if (attr == nil)
 		return kFailure;
 	attr->SetFlag(on ? kTrue : kFalse);
@@ -359,6 +364,26 @@ ErrorCode KCMApplyTcy(ITextModel* model, TextIndex at, int32 len, bool16 on)
 		return kFailure;
 	InterfacePtr<ICommand> apply(cmds->ApplyCmd(RangeData(at, at + len), attrs, kCharAttrStrandBoss));
 	return (apply != nil) ? CmdUtils::ProcessCommand(apply) : kFailure;
+}
+
+}	// namespace
+
+ErrorCode KCMApplyTcy(ITextModel* model, TextIndex at, int32 len, bool16 on)
+{
+	return ApplyBooleanCharAttr(model, at, len, kTATatechuyokoAttrBoss, on);
+}
+
+// ---- warichu -------------------------------------------------------------------------------
+
+/** Warichu ON or OFF over [at, at+len) (2026-09-17, the user's request - the Import mode takes it in,
+    the way it took tate-chu-yoko in earlier the same day). ⚠**OFF IS A VALUE, kFalse**, the way the official
+    snippet takes it off (SnpPerformTextAttrWarichu.cpp's RemoveWarichu: `SetTextBool16Attribute(...,
+    kTAWarichuAttrBoss, kFalse)`). ★**ONLY THE ON/OFF.** The snippet's ApplyWarichu writes six settings
+    beside it (lines, relative size, line spacing, alignment, the two break minimums); those are the
+    warichu's look - the file does not carry them - and are left as each character has them. */
+ErrorCode KCMApplyWarichu(ITextModel* model, TextIndex at, int32 len, bool16 on)
+{
+	return ApplyBooleanCharAttr(model, at, len, kTAWarichuAttrBoss, on);
 }
 
 namespace
@@ -839,13 +864,16 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 			outMessage.AppendNumber(targetCount);
 			outMessage.Append(" character(s)");
 		}
-		else if (change.fAttrKind == kKCMStoryAttrTcy)
+		else if (change.fAttrKind == kKCMStoryAttrTcy || change.fAttrKind == kKCMStoryAttrWarichu)
 		{
-			// ★★TATE-CHU-YOKO (2026-09-17, the user's call: the Import mode takes it in - the diff still
-			//   blocks it everywhere else, so only an Import row gets this far). Its value IS its
-			//   characters, so the Source's value says only one thing: where it is ON. Off over the
-			//   Target's stretch, then on over the Source's reach from the same start - which is one
-			//   write when the stretch kept its length, and right either way when it grew or shrank.
+			// ★★TATE-CHU-YOKO AND WARICHU (2026-09-17) - the user's calls: the Import mode
+			//   takes them in; the diff still blocks them everywhere else, so only an Import row gets
+			//   this far. Each is one ON/OFF whose value IS its characters, so the Source's value says
+			//   only one thing: where it is ON. Off over the Target's stretch, then on over the Source's
+			//   reach from the same start - which is one write when the stretch kept its length, and
+			//   right either way when it grew or shrank.
+			const bool16 isWarichu = (change.fAttrKind == kKCMStoryAttrWarichu) ? kTrue : kFalse;
+			ErrorCode (*const apply)(ITextModel*, TextIndex, int32, bool16) = isWarichu ? KCMApplyWarichu : KCMApplyTcy;
 			const bool16 sourceHasIt = change.fOtherRuby.IsEmpty() ? kFalse : kTrue;
 			int32 len = targetCount;
 			if (sourceHasIt && sourceCount > 0)
@@ -866,8 +894,11 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 				TargetWordsAt(target, change.fTargetStart, len, standing);
 				if (standing != WideString(change.fOtherRuby))
 				{
-					outMessage = Refused("the characters under this tate-chu-yoko are not the Source's - "
-									   "restore the words first, then this.");
+					outMessage = isWarichu
+						? Refused("the characters under this warichu are not the Source's - "
+								  "restore the words first, then this.")
+						: Refused("the characters under this tate-chu-yoko are not the Source's - "
+								  "restore the words first, then this.");
 					return kFalse;
 				}
 			}
@@ -875,10 +906,13 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 			RestoreSequence undo(standalone);
 			err = kSuccess;
 			if (!sourceHasIt || len != targetCount)
-				err = KCMApplyTcy(target, change.fTargetStart, targetCount, kFalse);
+				err = apply(target, change.fTargetStart, targetCount, kFalse);
 			if (sourceHasIt && err == kSuccess)
-				err = KCMApplyTcy(target, change.fTargetStart, len, kTrue);
-			outMessage = sourceHasIt ? Ascii("Set tate-chu-yoko over ") : Ascii("Took the tate-chu-yoko off ");
+				err = apply(target, change.fTargetStart, len, kTrue);
+			if (isWarichu)
+				outMessage = sourceHasIt ? Ascii("Set warichu over ") : Ascii("Took the warichu off ");
+			else
+				outMessage = sourceHasIt ? Ascii("Set tate-chu-yoko over ") : Ascii("Took the tate-chu-yoko off ");
 			outMessage.AppendNumber(sourceHasIt ? len : targetCount);
 			outMessage.Append(" character(s)");
 		}
@@ -1346,12 +1380,14 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 				outMessage.Append("\" back over ");
 			}
 		}
-		else if (change.fAttrKind == kKCMStoryAttrTcy)
+		else if (change.fAttrKind == kKCMStoryAttrTcy || change.fAttrKind == kKCMStoryAttrWarichu)
 		{
-			// ★THE MIRROR OF THE TAKE-IN (2026-09-17). What it set ON reached the SOURCE's length from
-			//   `at`, which can be further than `len` - so that whole reach goes off first, and then the
-			//   Target's own stretch goes back on if it had one. When the reach is `len` and there was
-			//   one, turning it on is the whole of it.
+			// ★THE MIRROR OF THE TAKE-IN (2026-09-17, a warichu the same way). What it
+			//   set ON reached the SOURCE's length from `at`, which can be further than `len` - so that
+			//   whole reach goes off first, and then the Target's own stretch goes back on if it had one.
+			//   When the reach is `len` and there was one, turning it on is the whole of it.
+			const bool16 isWarichu = (change.fAttrKind == kKCMStoryAttrWarichu) ? kTrue : kFalse;
+			ErrorCode (*const apply)(ITextModel*, TextIndex, int32, bool16) = isWarichu ? KCMApplyWarichu : KCMApplyTcy;
 			const int32 sourceCount = change.fSourceEnd - change.fSourceStart;
 			int32 reach = len;
 			if (!change.fOtherRuby.IsEmpty() && sourceCount > len)
@@ -1362,12 +1398,17 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 			}
 			err = kSuccess;
 			if (change.fRuby.IsEmpty() || reach != len)
-				err = KCMApplyTcy(target, at, reach, kFalse);
+				err = apply(target, at, reach, kFalse);
 			if (err == kSuccess && !change.fRuby.IsEmpty())
-				err = KCMApplyTcy(target, at, len, kTrue);
-			outMessage = change.fRuby.IsEmpty()
-						 ? Ascii("Took the tate-chu-yoko off again over ")
-						 : Ascii("Put the tate-chu-yoko back over ");
+				err = apply(target, at, len, kTrue);
+			if (isWarichu)
+				outMessage = change.fRuby.IsEmpty()
+							 ? Ascii("Took the warichu off again over ")
+							 : Ascii("Put the warichu back over ");
+			else
+				outMessage = change.fRuby.IsEmpty()
+							 ? Ascii("Took the tate-chu-yoko off again over ")
+							 : Ascii("Put the tate-chu-yoko back over ");
 		}
 		else if (change.fAttrKind == kKCMStoryAttrKenten)
 		{

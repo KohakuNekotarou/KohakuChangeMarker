@@ -70,6 +70,12 @@ const char* const kContinuedClass = "continued";
 */
 const char* const kTcyClass = "tate-chu-yoko";
 
+/*	kWarichuClass
+	The class on a <span> holding a warichu (2026-09-17, the user's request - the Import mode takes it in).
+	Named the way "tate-chu-yoko" is, in the word a Japanese typesetter uses for it.
+*/
+const char* const kWarichuClass = "warichu";
+
 const char* const kScaffolding[] = { "html", "head", "body", "meta", "title", "style", "link" };
 const size_t kScaffoldingCount = sizeof(kScaffolding) / sizeof(kScaffolding[0]);
 
@@ -368,13 +374,27 @@ struct EmState
 	EmState() : fOpen(kFalse), fStart(0) {}
 };
 
-/** A <span class="tate-chu-yoko"> that has been opened and not yet closed. */
-struct TcyState
+/** A <span class="tate-chu-yoko"> or <span class="warichu"> that has been opened and not yet closed. */
+struct OpenSpan
 {
 	bool16		fOpen;
 	int32		fStart;		// where it began, in the paragraph's code points
 
-	TcyState() : fOpen(kFalse), fStart(0) {}
+	OpenSpan() : fOpen(kFalse), fStart(0) {}
+};
+
+/** The spans that carry a LAYER - a warichu and a tate-chu-yoko - open right now (2026-09-17).
+
+	★**WHICHEVER OPENED LAST IS THE ONE A </span> CLOSES.** InDesign sets either one inside the other
+	  (measured 2026-09-16), so a file may nest them either way. The writer puts the warichu outside
+	  (WriteLayerPieces); the reader takes both, because the two are per-character ON/OFF and the order
+	  of the tags says nothing the characters do not.
+*/
+struct LayerState
+{
+	OpenSpan			fWarichu;
+	OpenSpan			fTcy;
+	std::vector<bool16>	fOrder;		// kTrue = a warichu; the innermost last
 };
 
 /** How many code points are in this UTF-8 string.
@@ -451,6 +471,7 @@ Para Slice(const Para& p, const std::vector<int32>& byteAt, int32 from, int32 to
 	SliceSpans(p.fRuby, from, to, out.fRuby);
 	SliceSpans(p.fKenten, from, to, out.fKenten);
 	SliceSpans(p.fTcy, from, to, out.fTcy);
+	SliceSpans(p.fWarichu, from, to, out.fWarichu);
 	return out;
 }
 
@@ -478,34 +499,40 @@ int32 NextTableAfter(const Story& s, const std::vector<size_t>& inside, int32 cp
 	return stop;
 }
 
-/*	WriteTcyPieces
-	The code points [from, to) of the paragraph, with every stretch of tate-chu-yoko in them wrapped in
-	<span class="tate-chu-yoko"> (2026-09-17, the user's request).
+/*	WriteLayerPieces
+	The code points [from, to) of the paragraph, with every stretch of warichu in them wrapped in
+	<span class="warichu"> and, inside that, every stretch of tate-chu-yoko wrapped in
+	<span class="tate-chu-yoko"> - the user's requests, both of 2026-09-17.
 
-	★★**THE INNERMOST OF THE THREE, AND THE ONLY ONE THAT GIVES WAY.** A reading cut in two is two
-	  readings, and a kenten cut in two comes back as two marks where the document has one
-	  (KCMTextRead's ScanKenten joins touching marks of one kind, so the self-check would refuse the
-	  story). A tate-chu-yoko is ON or OFF per character, so two touching stretches ARE one - and Read
-	  joins them back (SettleTcy). So this is called INSIDE a kenten's piece, which is itself inside a
-	  reading's base: where a tate-chu-yoko crosses either edge, it is the tate-chu-yoko that is cut.
-	⚠A browser draws the two halves as two boxes. The document, and the trip, see one.
+	★★**THE INNERMOST TWO, AND THE ONLY ONES THAT GIVE WAY.** A reading cut in two is two readings,
+	  and a kenten cut in two comes back as two marks where the document has one (KCMTextRead's
+	  ScanKenten joins touching marks of one kind, so the self-check would refuse the story). A
+	  warichu and a tate-chu-yoko are ON or OFF per character, so two touching stretches ARE one - and
+	  Read joins them back (SettleLayers). So this is called INSIDE a kenten's piece, which is itself
+	  inside a reading's base: where either crosses an edge of those, it is the one cut.
+	★**THE WARICHU OUTSIDE THE TATE-CHU-YOKO**, because a tate-chu-yoko inside a warichu is the shape
+	  a page has (a year in a note) and a browser then draws it inside the warichu's box. The other
+	  nesting is legal too and survives the trip, with the tate-chu-yoko cut at the warichu's edges.
+	⚠A browser draws the pieces of a cut one as separate boxes. The document, and the trip, see one.
+	@param warichuLevel kTrue for the outer level (warichu, which calls this again for the inner one).
 */
-void WriteTcyPieces(const Para& p, const std::vector<int32>& byteAt,
-					int32 from, int32 to, std::string& out)
+void WriteLayerPieces(const Para& p, const std::vector<int32>& byteAt,
+					  int32 from, int32 to, bool16 warichuLevel, std::string& out)
 {
-	const KCMAttrSpanList& tcy = p.fTcy;
+	const KCMAttrSpanList& spans = warichuLevel ? p.fWarichu : p.fTcy;
+	const char* const cls = warichuLevel ? kWarichuClass : kTcyClass;
 
 	int32 cp = from;
 	while (cp < to)
 	{
 		bool16 inside = kFalse;
 		int32 stop = to;
-		for (size_t k = 0; k < tcy.size(); ++k)
+		for (size_t k = 0; k < spans.size(); ++k)
 		{
-			if (tcy[k].fLen <= 0)
+			if (spans[k].fLen <= 0)
 				continue;
-			const int32 start = tcy[k].fStart;
-			const int32 end = start + tcy[k].fLen;
+			const int32 start = spans[k].fStart;
+			const int32 end = start + spans[k].fLen;
 			if (start <= cp && cp < end)
 			{
 				inside = kTrue;
@@ -521,14 +548,21 @@ void WriteTcyPieces(const Para& p, const std::vector<int32>& byteAt,
 		if (inside)
 		{
 			out += "<span class=\"";
-			out += kTcyClass;
+			out += cls;
 			out += "\">";
 		}
 
-		const size_t a = ByteAtCodePoint(p.fText, byteAt, cp);
-		const size_t b = ByteAtCodePoint(p.fText, byteAt, stop);
-		if (b > a)
-			WriteText(p.fText.substr(a, b - a), out);
+		if (warichuLevel)
+		{
+			WriteLayerPieces(p, byteAt, cp, stop, kFalse, out);
+		}
+		else
+		{
+			const size_t a = ByteAtCodePoint(p.fText, byteAt, cp);
+			const size_t b = ByteAtCodePoint(p.fText, byteAt, stop);
+			if (b > a)
+				WriteText(p.fText.substr(a, b - a), out);
+		}
 
 		if (inside)
 			out += "</span>";
@@ -585,9 +619,9 @@ void WriteRun(const Para& p, const std::vector<int32>& byteAt,
 			out += "\">";
 		}
 
-		// The tate-chu-yoko inside this piece - cut here if it crosses the kenten's edge, never the
-		// other way round (WriteTcyPieces says why).
-		WriteTcyPieces(p, byteAt, cp, stop, out);
+		// The warichu and the tate-chu-yoko inside this piece - cut here if they cross the kenten's
+		// edge, never the other way round (WriteLayerPieces says why).
+		WriteLayerPieces(p, byteAt, cp, stop, kTrue, out);
 
 		if (wrapped)
 			out += "</em>";
@@ -726,43 +760,51 @@ bool16 TakeSpan(const std::string& s, size_t at, size_t after, bool16 closing,
 	return kTrue;
 }
 
-/*	TakeTcyOrSpan
-	One <span> or </span> where a paragraph's text stands: a tate-chu-yoko opening or closing
-	(2026-09-17), or an invisible character (TakeSpan).
+/*	TakeLayerOrSpan
+	One <span> or </span> where a paragraph's text stands: a warichu or a tate-chu-yoko (both
+	2026-09-17) opening or closing, or an invisible character (TakeSpan).
 
-	★**A </span> BELONGS TO THE TATE-CHU-YOKO WHEN ONE IS OPEN.** An invisible character's own closing
-	  tag never gets here - TakeSpan eats it where it stands, straight after the opening one - so a
-	  closing tag arriving while a tate-chu-yoko is open can only be that one's. With none open it is
-	  the stray that TakeSpan has always let pass.
-	⚠A TATE-CHU-YOKO OVER NO CHARACTERS IS NO TATE-CHU-YOKO - the rule an <em> and a reading keep.
-	⚠Its value is filled in when the paragraph closes (SettleTcy): it is the characters it covers, and
-	 a continued half has not finished arriving until then.
+	★**A </span> BELONGS TO THE LAYER OPENED LAST WHEN ONE IS OPEN.** An invisible character's own
+	  closing tag never gets here - TakeSpan eats it where it stands, straight after the opening one -
+	  so a closing tag arriving while a layer is open can only be a layer's, and the innermost one's.
+	  With none open it is the stray that TakeSpan has always let pass.
+	⚠A LAYER OVER NO CHARACTERS IS NO LAYER - the rule an <em> and a reading keep.
+	⚠Its value is filled in when the paragraph closes (SettleLayers): it is the characters it covers,
+	 and a continued half has not finished arriving until then.
 */
-bool16 TakeTcyOrSpan(const std::string& s, size_t at, size_t after, bool16 closing,
-					 std::string& para, TcyState& tcy, KCMAttrSpanList& outTcy,
-					 size_t& outNext, std::string& whyNot)
+bool16 TakeLayerOrSpan(const std::string& s, size_t at, size_t after, bool16 closing,
+					   std::string& para, LayerState& layers,
+					   KCMAttrSpanList& outWarichu, KCMAttrSpanList& outTcy,
+					   size_t& outNext, std::string& whyNot)
 {
 	outNext = after;
 
-	if (closing && tcy.fOpen)
+	if (closing && !layers.fOrder.empty())
 	{
-		const int32 len = CountCodePoints(para) - tcy.fStart;
+		const bool16 isWarichu = layers.fOrder.back();
+		layers.fOrder.pop_back();
+		OpenSpan& open = isWarichu ? layers.fWarichu : layers.fTcy;
+		const int32 len = CountCodePoints(para) - open.fStart;
 		if (len > 0)
-			outTcy.push_back(KCMAttrSpan(tcy.fStart, len, std::string()));
-		tcy = TcyState();
+			(isWarichu ? outWarichu : outTcy).push_back(KCMAttrSpan(open.fStart, len, std::string()));
+		open = OpenSpan();
 		return kTrue;
 	}
 
 	std::string cls;
-	if (!closing && ClassOfTag(s, at, after, cls) && cls == kTcyClass)
+	if (!closing && ClassOfTag(s, at, after, cls) && (cls == kTcyClass || cls == kWarichuClass))
 	{
-		if (tcy.fOpen)
+		const bool16 isWarichu = (cls == kWarichuClass) ? kTrue : kFalse;
+		OpenSpan& open = isWarichu ? layers.fWarichu : layers.fTcy;
+		if (open.fOpen)
 		{
-			whyNot = "a tate-chu-yoko begins inside another one";
+			whyNot = isWarichu ? "a warichu begins inside another one"
+							   : "a tate-chu-yoko begins inside another one";
 			return kFalse;
 		}
-		tcy.fOpen = kTrue;
-		tcy.fStart = CountCodePoints(para);
+		open.fOpen = kTrue;
+		open.fStart = CountCodePoints(para);
+		layers.fOrder.push_back(isWarichu);
 		return kTrue;
 	}
 
@@ -774,34 +816,41 @@ bool SpanStartsEarlier(const KCMAttrSpan& a, const KCMAttrSpan& b)
 	return a.fStart < b.fStart;
 }
 
-/*	SettleTcy
-	A paragraph's tate-chu-yoko as the document reports it: in order, touching stretches joined, and
-	each one's value the characters it covers (KCMParaAttrs::fTcy's rule, KCMParaText's
-	SetSpanValuesToText).
+/*	SettleLayer / SettleLayers
+	A paragraph's warichu and tate-chu-yoko as the document reports them: in order, touching stretches
+	joined, and each one's value the characters it covers (KCMParaAttrs::fTcy's and fWarichu's rule,
+	KCMParaText's SetSpanValuesToText).
 
 	★**JOINED BECAUSE THE DOCUMENT JOINS THEM** - ON is per character, so KCMTextRead's
 	  ScanBoolAttribute has only one answer for touching stretches. The writer relies on this: it cuts
-	  a tate-chu-yoko where a reading, a kenten or a table stands across it (WriteTcyPieces).
+	  either where a reading, a kenten, a table - or, for a tate-chu-yoko, a warichu - stands across it
+	  (WriteLayerPieces).
 */
-void SettleTcy(Para& p)
+void SettleLayer(KCMAttrSpanList& spans, const std::string& text)
 {
-	std::sort(p.fTcy.begin(), p.fTcy.end(), SpanStartsEarlier);
+	std::sort(spans.begin(), spans.end(), SpanStartsEarlier);
 
 	KCMAttrSpanList joined;
-	for (size_t k = 0; k < p.fTcy.size(); ++k)
+	for (size_t k = 0; k < spans.size(); ++k)
 	{
-		if (!joined.empty() && p.fTcy[k].fStart <= joined.back().fStart + joined.back().fLen)
+		if (!joined.empty() && spans[k].fStart <= joined.back().fStart + joined.back().fLen)
 		{
-			const int32 end = p.fTcy[k].fStart + p.fTcy[k].fLen;
+			const int32 end = spans[k].fStart + spans[k].fLen;
 			if (end > joined.back().fStart + joined.back().fLen)
 				joined.back().fLen = end - joined.back().fStart;
 			continue;
 		}
-		joined.push_back(p.fTcy[k]);
+		joined.push_back(spans[k]);
 	}
 
-	KCMParaText::SetSpanValuesToText(joined, p.fText);
-	p.fTcy.swap(joined);
+	KCMParaText::SetSpanValuesToText(joined, text);
+	spans.swap(joined);
+}
+
+void SettleLayers(Para& p)
+{
+	SettleLayer(p.fWarichu, p.fText);
+	SettleLayer(p.fTcy, p.fText);
 }
 
 /*	WriteParaHtml
@@ -1339,6 +1388,18 @@ void WriteStylesheet(const std::vector<std::string>& kentenValues, std::string& 
 	outCss += "body.vertical .tate-chu-yoko{-webkit-text-combine:horizontal;"
 			  "text-combine-upright:all}\r\n";
 
+	// ★★**AND A WARICHU, WHICH CSS HAS NO WORD FOR** (2026-09-17; where it was looked for is in
+	//   docs/ai-notes/kcm-import-tcy-and-editable-p-2026-09-17.md §1). Half-size characters in a box
+	//   whose line length is half its contents' plus half a character, so the words fold onto TWO lines the way the page sets them - across the line in
+	//   horizontal text, down it in vertical text, because inline-size turns with the page.
+	//   ★MEASURED in Edge 153 (the user wants it to show there): "/ 2" alone ran to three lines,
+	//   "+ 1em" left a gap after the second, "+ .5em" gave two in both directions, a tate-chu-yoko
+	//   inside it included. ⚠calc-size() is Chromium's (Edge, Chrome); a browser without it drops
+	//   that one declaration and shows the warichu as one small line - still marked, still editable,
+	//   and the reader never looks at the look anyway.
+	outCss += ".warichu{display:inline-block;font-size:.5em;line-height:1.1;vertical-align:middle;"
+			  "inline-size:calc-size(max-content, size / 2 + .5em);background:#eef3ff}\r\n";
+
 	// ★**EVERY BUILT-IN KIND, WHETHER THIS FOLDER USES IT OR NOT.** The sheet is the folder's, and
 	//   a reader who types <em class="kenten-BlackTriangle"> into one of these files by hand has to
 	//   see a triangle when the page reloads.
@@ -1533,6 +1594,8 @@ bool16 SameParas(const std::vector<Para>& a, const std::vector<Para>& b, const s
 			return kFalse;
 		if (!SameSpans(a[i].fTcy, b[i].fTcy, here, "tate-chu-yoko", outWhy))
 			return kFalse;
+		if (!SameSpans(a[i].fWarichu, b[i].fWarichu, here, "warichu", outWhy))
+			return kFalse;
 	}
 	return kTrue;
 }
@@ -1653,8 +1716,9 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 	KCMAttrSpanList paraRuby;		// the readings met so far, in this paragraph's own count
 	KCMAttrSpanList paraKenten;		// and the marks, in the same count
 	KCMAttrSpanList paraTcy;		// and the tate-chu-yoko, in the same count (values filled at </p>)
+	KCMAttrSpanList paraWarichu;	// and the warichu, the same way
 	EmState em;
-	TcyState tcy;
+	LayerState layers;
 
 	// ★**A NOTE IS AN <li>, AND ITS PARAGRAPHS ARE WHATEVER STANDS INSIDE IT** (2026-09-16), so
 	//   nothing has to be paired up at the end and the paragraphs carry nothing of their own.
@@ -1745,8 +1809,9 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 						paraRuby.clear();
 						paraKenten.clear();
 						paraTcy.clear();
+						paraWarichu.clear();
 						em = EmState();
-						tcy = TcyState();
+						layers = LayerState();
 					}
 
 					// ★★**"THIS PARAGRAPH IS THE REST OF THE ONE BEFORE IT."** A table standing in
@@ -1769,9 +1834,14 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 						whyNot = "a paragraph ends with an <em> still open";
 						return kFalse;
 					}
-					if (tcy.fOpen)
+					if (layers.fTcy.fOpen)
 					{
 						whyNot = "a paragraph ends with a tate-chu-yoko still open";
+						return kFalse;
+					}
+					if (layers.fWarichu.fOpen)
+					{
+						whyNot = "a paragraph ends with a warichu still open";
 						return kFalse;
 					}
 					Para p;
@@ -1779,7 +1849,8 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					p.fRuby = paraRuby;
 					p.fKenten = paraKenten;
 					p.fTcy = paraTcy;
-					SettleTcy(p);
+					p.fWarichu = paraWarichu;
+					SettleLayers(p);
 
 					// ★A PARAGRAPH BELONGS TO WHATEVER IT STANDS IN: a cell, a note, or the body.
 					std::vector<Para>* const where = CurrentParas(out, tables, inNote);
@@ -1804,15 +1875,21 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 							span.fStart += shift;
 							prev.fKenten.push_back(span);
 						}
-						// ★A tate-chu-yoko the table cut in two is ONE again here, and its value
-						//   is its characters across both halves - so it is settled afresh.
+						// ★A tate-chu-yoko or warichu the table cut in two is ONE again here, and
+						//   its value is its characters across both halves - so both are settled afresh.
 						for (size_t k = 0; k < p.fTcy.size(); ++k)
 						{
 							KCMAttrSpan span(p.fTcy[k]);
 							span.fStart += shift;
 							prev.fTcy.push_back(span);
 						}
-						SettleTcy(prev);
+						for (size_t k = 0; k < p.fWarichu.size(); ++k)
+						{
+							KCMAttrSpan span(p.fWarichu[k]);
+							span.fStart += shift;
+							prev.fWarichu.push_back(span);
+						}
+						SettleLayers(prev);
 					}
 					else if (where != nil)
 					{
@@ -1825,6 +1902,7 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					paraRuby.clear();
 					paraKenten.clear();
 					paraTcy.clear();
+					paraWarichu.clear();
 
 					// ★**NOTHING REOPENS HERE.** Text between </p> and the next <p> is layout,
 					//   inside a cell exactly as in the body.
@@ -1980,8 +2058,9 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					paraRuby.clear();
 					paraKenten.clear();
 					paraTcy.clear();
+					paraWarichu.clear();
 					em = EmState();
-					tcy = TcyState();
+					layers = LayerState();
 				}
 				else
 				{
@@ -2078,7 +2157,7 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					return kFalse;
 				}
 				size_t next = after;
-				if (!TakeTcyOrSpan(s, i, after, closing, para, tcy, paraTcy, next, whyNot))
+				if (!TakeLayerOrSpan(s, i, after, closing, para, layers, paraWarichu, paraTcy, next, whyNot))
 					return kFalse;
 				i = next;
 				continue;
@@ -2161,11 +2240,13 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 
 					// ★An invisible character can stand inside a base - a reading over a word that
 					//   carries an index marker is ordinary - so the base reads them too. And so does
-					//   a tate-chu-yoko (2026-09-17): a reading over a year set 12 is ordinary as well.
+					//   a tate-chu-yoko (2026-09-17): a reading over a year set 12 is ordinary as well - and
+					//   so is the piece of a warichu (the same day) that a reading's edge cut off.
 					if (inner == "span")
 					{
 						size_t next = innerAfter;
-						if (!TakeTcyOrSpan(s, i, innerAfter, innerClosing, para, tcy, paraTcy, next, whyNot))
+						if (!TakeLayerOrSpan(s, i, innerAfter, innerClosing, para, layers, paraWarichu, paraTcy,
+											 next, whyNot))
 							return kFalse;
 						i = next;
 						continue;

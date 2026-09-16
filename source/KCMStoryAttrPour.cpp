@@ -94,11 +94,15 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 	//   KCMStoryHtml's reader settle it the same way - so a stretch that did not change pairs off and
 	//   nothing is written, exactly as for a reading.
 	KCMParaText::PlanSpanChanges(docAttrs.fTcy, file.fTcy, clearTcy, applyTcy);
+	// ★AND WARICHU (2026-09-17), on exactly the same terms: its value is its characters on both sides.
+	KCMAttrSpanList clearWarichu;
+	KCMAttrSpanList applyWarichu;
+	KCMParaText::PlanSpanChanges(docAttrs.fWarichu, file.fWarichu, clearWarichu, applyWarichu);
 
 	// ★THE ORDINARY ANSWER, and the one worth being fast and silent about: the reader edited a
 	//   word somewhere else and every reading in this paragraph is where it was.
 	if (clearRuby.empty() && applyRuby.empty() && clearKenten.empty() && applyKenten.empty()
-		&& clearTcy.empty() && applyTcy.empty())
+		&& clearTcy.empty() && applyTcy.empty() && clearWarichu.empty() && applyWarichu.empty())
 		return 0;
 
 	// ★★★**THE WORDS FIRST.** Both sides count in the paragraph's own text, so the offsets mean
@@ -106,8 +110,8 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 	//   this is the enabling condition rather than a precaution).
 	if (docText != file.fText)
 	{
-		whyNot = "the words of this paragraph did not go in, so its ruby, kenten and tate-chu-yoko "
-				 "were left alone (the words go first)";
+		whyNot = "the words of this paragraph did not go in, so its ruby, kenten, tate-chu-yoko and "
+				 "warichu were left alone (the words go first)";
 		whyNot.SetTranslatable(kFalse);
 		outRefused = kTrue;
 		return 0;
@@ -198,6 +202,25 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 		++written;
 	}
 
+	// ⚠A WARICHU's settings - its line count, size, alignment - are separate attributes and are never
+	//  written (KCMApplyWarichu), so turning it off and on again keeps them on every character that had
+	//  them. That is why it too needs no StandsOnTheSameCharacters.
+	for (size_t i = 0; i < clearWarichu.size(); ++i)
+	{
+		ModelRangeOf(docAttrs, clearWarichu[i], paraStart, at, len);
+		if (len <= 0)
+			continue;
+		if (KCMApplyWarichu(model, at, len, kFalse) != kSuccess)
+		{
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+			whyNot = "a warichu could not be taken off (a locked story or layer?)";
+			whyNot.SetTranslatable(kFalse);
+			outRefused = kTrue;
+			return written;
+		}
+		++written;
+	}
+
 	// ---- and what goes on -----------------------------------------------------------------------
 	if (!applyRuby.empty())
 	{
@@ -258,6 +281,22 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 			whyNot = "a tate-chu-yoko could not be written (a locked story or layer?)";
+			whyNot.SetTranslatable(kFalse);
+			outRefused = kTrue;
+			return written;
+		}
+		++written;
+	}
+
+	for (size_t i = 0; i < applyWarichu.size(); ++i)
+	{
+		ModelRangeOf(docAttrs, applyWarichu[i], paraStart, at, len);
+		if (len <= 0)
+			continue;
+		if (KCMApplyWarichu(model, at, len, kTrue) != kSuccess)
+		{
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+			whyNot = "a warichu could not be written (a locked story or layer?)";
 			whyNot.SetTranslatable(kFalse);
 			outRefused = kTrue;
 			return written;

@@ -111,8 +111,8 @@ enum KCMStoryAttrKind
 								// compared. ★ITS VALUE IS THE CHARACTERS IT COVERS; LAYERED, over a
 								// warichu when it stands inside one.
 								// ⚠**Neither of the two is written back** (user's call): their changes
-								// carry kKCMWriteBlockedKind - ★**except a tate-chu-yoko in the Import
-								// mode** (2026-09-17, the user's call), which is taken in.
+								// carry kKCMWriteBlockedKind - ★**except in the Import mode**, which takes
+								// them in (the user's calls of 2026-09-17: tate-chu-yoko, then warichu).
 };
 
 /** Whether a change of this kind is drawn on TWO LINES - a value (or a mark) standing over the
@@ -192,8 +192,8 @@ enum KCMStoryWriteBlock
 									// an object on (KCMParaText::IsObjectCharacter) - measured, an
 									// anchored rectangle came back as U+FFFC alone
 	kKCMWriteBlockedKind = 3		// ★a kind of change that is shown and never written back - warichu
-									// and tate-chu-yoko (2026-09-16, user's call; a tate-chu-yoko in the
-									// Import mode is taken in since 2026-09-17). Set by the diff
+									// and tate-chu-yoko (2026-09-16, user's call; the Import mode takes a
+									// tate-chu-yoko and a warichu in since 2026-09-17). Set by the diff
 									// (KCMStoryDiffRun's AddAttrChange), so the menu hides the item
 									// rather than offering one that then refuses
 };
