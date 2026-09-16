@@ -6,7 +6,8 @@
 //
 //  WHAT THIS IS FOR. "Export Story Text..." writes every story of the document unless something is
 //  selected, and then it writes the stories that selection touches (the user's decision,
-//  2026-09-15). This file answers the one question that takes: which stories.
+//  2026-09-15; narrowed to the LAYOUT selection only on 2026-09-16). This file answers the one
+//  question that takes: which stories.
 //
 //  ★**IT LIVES ON THE UI SIDE BECAUSE A SELECTION DOES.** The model half is handed a list of UIDs
 //  and is never told what a selection is; it checks that each UID really is a story of the document
@@ -26,8 +27,11 @@ class UIDList;
 
 	★**A SELECTED FRAME MEANS ITS WHOLE STORY**, not the part that one frame shows. An exported
 	  file is a story; a story can run through twenty frames; half of one could not be read back.
-	★**A CARET COUNTS.** A typing position, a run of characters, a cell, a footnote - they all
-	  resolve to the one ITextModel holding them, and that is the story that gets written.
+	★★**A CARET DOES NOT COUNT** (the user's decision, 2026-09-16). Only what is selected ON THE
+	  LAYOUT is read: a frame, or a path carrying text on it. A typing position selects nothing
+	  here, so a reader who is editing text and exports gets the WHOLE document, the same as one
+	  who has selected nothing at all. The reason it is not read at all - rather than read
+	  carefully - is in the .cpp: the answer outlives the caret.
 	★**A GROUP IS LOOKED INSIDE OF**, because what the reader sees is the frames, not the group.
 
 	@param db the document being exported. A selection living in ANY OTHER document is passed over

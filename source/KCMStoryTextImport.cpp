@@ -199,6 +199,79 @@ void ColumnsOfRow(const std::vector<KCMParaAttrs>& attrs, int32 table, int32 row
 	std::sort(outCols.begin(), outCols.end());
 }
 
+/** kTrue when the document's tables and the file's are the SAME SHAPE.
+
+	★★★**THE USER'S RULE (2026-09-16): A TABLE IS A LANDMARK, NOT SOMETHING THIS EDITS.** The table
+	  tags in the file say WHERE the words sit; they are not an instruction to build a table. So if
+	  the shapes disagree - a table added or removed, a row or a column added, cells merged or split
+	  - the story this file names is left ENTIRELY ALONE. Not the body, not the notes, not the cells
+	  that happen to still line up: the whole story.
+	⚠**WHY THE WHOLE STORY AND NOT THE CELL.** The cells are paired BY POSITION (ColumnsOfRow's
+	  order against the row's <td> order), so a merge does not read as a miss - it reads as a
+	  DIFFERENT CELL. Merging B and C of [A][B][C] leaves the document with two cells, and the
+	  file's B would be poured into the merged BC without anything looking wrong. Refusing per cell
+	  cannot catch that; only comparing the shapes first can.
+	@param whyNot filled with the first disagreement found, for the panel's status line. */
+bool16 TablesAgree(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::Story& file,
+				   PMString& whyNot)
+{
+	// The document's shape is read off the paragraph attributes: the ordinals are assigned in
+	// document order, depth first, which is the order the file writes its <table>s in - so a
+	// nested table is just another ordinal and needs no special case here.
+	int32 docTables = 0;
+	for (size_t i = 0; i < attrs.size(); ++i)
+	{
+		if (attrs[i].IsCell() && attrs[i].fTableOrdinal + 1 > docTables)
+			docTables = attrs[i].fTableOrdinal + 1;
+	}
+
+	const int32 fileTables = static_cast<int32>(file.fTables.size());
+	if (docTables != fileTables)
+	{
+		whyNot = "the number of tables changed";
+		whyNot.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	for (int32 tbl = 0; tbl < docTables; ++tbl)
+	{
+		int32 docRows = 0;
+		for (size_t i = 0; i < attrs.size(); ++i)
+		{
+			if (attrs[i].IsCell() && attrs[i].fTableOrdinal == tbl && attrs[i].fCellRow + 1 > docRows)
+				docRows = attrs[i].fCellRow + 1;
+		}
+
+		const int32 fileRows = static_cast<int32>(file.fTables[static_cast<size_t>(tbl)].fRows.size());
+		if (docRows != fileRows)
+		{
+			whyNot = "a table's number of rows changed";
+			whyNot.SetTranslatable(kFalse);
+			return kFalse;
+		}
+
+		for (int32 r = 0; r < docRows; ++r)
+		{
+			std::vector<int32> cols;
+			ColumnsOfRow(attrs, tbl, r, cols);
+
+			// ⚠**A MERGED CELL IS ONE CELL ON BOTH SIDES.** The document gives it the column it
+			//   starts in and no other; the file writes one <td> with colspan. That is why the
+			//   counts can be compared directly rather than having to add the spans up.
+			const size_t fileCells =
+				file.fTables[static_cast<size_t>(tbl)].fRows[static_cast<size_t>(r)].fCells.size();
+			if (cols.size() != fileCells)
+			{
+				whyNot = "a table row's number of cells changed (a merge, a split, or a column)";
+				whyNot.SetTranslatable(kFalse);
+				return kFalse;
+			}
+		}
+	}
+
+	return kTrue;
+}
+
 /** Every place of one story, with the file's paragraphs for each. */
 void BuildPlaces(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::Story& file,
 				 std::vector<Place>& out)
@@ -552,6 +625,7 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 	int32 edits = 0;
 	int32 refusedParas = 0;
 	int32 refusedPlaces = 0;
+	int32 skippedByTables = 0;		// stories left alone entirely: their table shape changed
 	int32 unmatched = 0;
 	PMString firstRefusal;
 	firstRefusal.SetTranslatable(kFalse);
@@ -596,6 +670,19 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 		InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
 		if (model == nil)
 			continue;
+
+		// ★★★**THE TABLE SHAPES DECIDE WHETHER THIS STORY IS TOUCHED AT ALL** (the user's rule,
+		//   2026-09-16). Asked BEFORE the places are built, because the pairing inside BuildPlaces
+		//   is by position and would happily pour the file's cell into a different cell of the
+		//   document. Nothing of this story is written when the answer is no.
+		PMString tableWhyNot;
+		if (!TablesAgree(attrs, set->fStories[which], tableWhyNot))
+		{
+			++skippedByTables;
+			if (firstRefusal.IsEmpty())
+				firstRefusal = tableWhyNot;
+			continue;
+		}
 
 		std::vector<Place> places;
 		BuildPlaces(attrs, set->fStories[which], places);
@@ -669,6 +756,8 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 	outMessage.SetTranslatable(kFalse);
 	AppendCount(outMessage, "", edits, " change(s) poured into the copy");
 	AppendCount(outMessage, " in ", storiesTouched, " story(ies)");
+	if (skippedByTables > 0)
+		AppendCount(outMessage, ", ", skippedByTables, " story(ies) left alone (table structure changed)");
 	if (refusedPlaces > 0)
 		AppendCount(outMessage, ", ", refusedPlaces, " place(s) refused");
 	if (refusedParas > 0)

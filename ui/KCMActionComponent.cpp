@@ -943,8 +943,18 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 					//   KCMStoryTextExport.h, and this is the only place that leans on it.
 					Utils<IKCMStoryEditsFacade>()->ExportStoryText(chooser.GetIDFile(), stories,
 																   exportMsg);
+					// ★**SAY WHICH ROAD IT TOOK.** "4 files" means one thing when the reader
+					//   selected nothing and quite another when they selected one frame - and
+					//   without this line the two are spelt the same in the status line. It is
+					//   here because they WERE spelt the same on 2026-09-16, and the export wrote
+					//   the whole document for every selection there had ever been.
 					if (exportMsg.CharCount() > 0)
+					{
+						exportMsg.Append(hasSelection ? " [selection -> " : " [no selection -> ");
+						exportMsg.AppendNumber(stories.Length());
+						exportMsg.Append(" story(ies)]");
 						KCMSetStatus(exportMsg);
+					}
 				}
 			}
 			break;
