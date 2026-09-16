@@ -82,6 +82,25 @@ bool16 KCMChangeRowCanImport();
     the model side) and puts its message on the status line. kTrue when something was written. */
 bool16 KCMChangeRowRestore();
 
+// ---- putting one change back (2026-09-16) ---------------------------------------------------
+// ★**THE OPPOSITE OF THE PAIR ABOVE, AND A PAIR FOR THE SAME REASON**: "Undo the Restore" in the
+//   Story mode, "Change Back to the Original" in the Import mode (the user's pick - the two modes
+//   keep separate names, as the take-in items already do).
+// ⚠**NOT Edit > Undo.** Ctrl+Z reaches only the last thing done; this reaches the change the
+//   reader points at, whatever they have done since, and is itself one undo step.
+
+/** Whether "Undo the Restore" may be offered: the Story mode, and a change that is STANDING as
+    taken in. ⚠Asks the model's fReplaced, which is the document's own answer - so a change the
+    reader has already put back with Ctrl+Z greys the item rather than offering a second way to
+    do what is done. */
+bool16 KCMChangeRowCanUndoRestore();
+
+/** The same in the Import mode, under the name that mode calls for. */
+bool16 KCMChangeRowCanUndoImport();
+
+/** Runs it through the facade and puts the model's message on the status line. */
+bool16 KCMChangeRowUndoRestore();
+
 // ---- the bulk items (2026-09-15) ------------------------------------------------------------
 // ★**THE SAME ACT AT THREE SIZES**: one change (above), one story, the whole list. The model does
 //   the work in one undo step each (KCMStoryRestore.h); these decide when the items are offered,

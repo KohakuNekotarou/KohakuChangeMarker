@@ -392,16 +392,39 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 		outMessage = Refused("no such change (the list was rebuilt - right-click the row again).");
 		return kFalse;
 	}
+	// ***** ALREADY TAKEN IN - OR TAKEN IN AND THEN UNDONE, WHICH IS NOT THE SAME THING. *****
+	// ★★★**THE UNDONE ONE IS TAKEN IN AGAIN, AFTER COMPARING THE STORY AFRESH** (2026-09-16, the
+	//   user's ask: "it says refresh - refreshing worked, but maybe it should refresh by itself").
+	//   It refused both cases until then, with the same words, and the reasoning for refusing the
+	//   undone one was sound as far as it went: a write moves every position after it, so the
+	//   OTHER rows were named against text that the undo has since taken back. What was wrong was
+	//   the remedy - making the reader run "Refresh Story Comparison" by hand, which is a dead end
+	//   the moment they do not know that is what the message means. So the refresh is done here,
+	//   where commands MAY run, and the change is looked up again on the far side of it.
+	// ⚠**THE UNDO ITSELF CANNOT DO THIS** - a re-diff can need the task-start copy rehydrated,
+	//   which runs commands, and commands cannot run inside a lazy notification. That is why the
+	//   rows are kept rather than deleted (the tail of this function says so at length), and it is
+	//   why "automatically" means "at the next press" rather than "at the undo".
+	// ★**SAME SHAPE AS THE COUNTER CASE BELOW**, which the user turned from a refusal into a
+	//   re-diff on 2026-09-15 for the same reason.
+	bool16 takingInAnUndoneOne = kFalse;
 	if (alreadyReplaced)
 	{
-		// The row is kept in the list precisely so the reader can see what they took in; taking
-		// it in twice would write the same words over words that already match them. ⚠Refused
-		// even when an undo has put the older text back: the positions on every OTHER row were
-		// named against the text as it stood after the write, so the list as a whole needs
-		// comparing again before anything more is written into this story.
-		outMessage = Refused("this change has already been taken in - "
-						   "run Refresh Story Comparison on its row to start over.");
-		return kFalse;
+		// ⚠**THE RE-DIFF BELONGS TO THE SINGLE PRESS** (`standalone`), the same way the counter
+		//   case does: a bulk run refreshes ONCE at its start and walks backwards so that its own
+		//   writes cannot invalidate what it has not reached - and it therefore never hands an
+		//   already-replaced index down here. Refusing rather than dropping records for a caller
+		//   that is not going to re-diff is what keeps that true whoever calls next.
+		if (!standalone || KCMStoryDiffRun::StillReplaced(*row, *found))
+		{
+			// Still standing as replaced: the row is kept in the list precisely so the reader can
+			// see what they took in, and taking it in twice would write the same words over words
+			// that already match them.
+			outMessage = Refused("this change has already been taken in - "
+							   "run Refresh Story Comparison on its row to start over.");
+			return kFalse;
+		}
+		takingInAnUndoneOne = kTrue;
 	}
 	// A copy, and deliberately NOT const: when the story has been edited since the comparison, this
 	// is replaced by the same change as the re-diff now names it (RefindAfterEdit).
@@ -462,7 +485,17 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 	// ⚠**ONLY WHEN THIS CALL IS THE ACT.** A bulk run tested the counter once before it started, and
 	//   walks backwards so that its own writes cannot invalidate what it has not reached yet.
 	//   Re-diffing here would throw that away and cost one comparison per change.
-	if (standalone && target->GetTextChangeCount() != countThen
+	// ⚠**THE UNDONE RECORDS GO FIRST, AND ONLY THEN THE RE-DIFF.** RefindAfterEdit looks through
+	//   the MERGED list and skips anything marked replaced, so the stale record of this very
+	//   change would hide the live one the re-diff is about to produce - and the change would come
+	//   back as "not there any more". ★Only the records an undo has taken back are dropped: the
+	//   ones still standing are the reader's own record of what IS in the document (DropUndoneReplaced).
+	// ⚠**`found` AND `row` POINT INTO THE LIST BEING REWRITTEN** - `change` and `storyUID` above
+	//   are copies, taken before this, and nothing below reads either pointer again.
+	if (takingInAnUndoneOne)
+		KCMStoryDiffRun::DropUndoneReplaced(nth);
+
+	if (standalone && (takingInAnUndoneOne || target->GetTextChangeCount() != countThen)
 		&& !RefindAfterEdit(nth, targetDB, sourceDB, change, outMessage))
 		return kFalse;
 
@@ -685,10 +718,16 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 		const KCMStoryRow* const after = KCMStoryList::GetRow(nth);
 		if (after != nil)
 		{
-			// The counter as the re-diff has just recorded it. ★This number IS "replaced": the row
-			// is drawn that way while it still matches the story's counter, and an undo - which
-			// takes the counter back - undraws it without a line of undo-specific code.
-			done.fReplacedCount = after->fTargetTextCount;
+			// The counter this change is measured by. ★This number IS "replaced": the row is drawn
+			// that way while the story has got at least as far as it, and an undo - which takes
+			// the counter back - undraws it without a line of undo-specific code.
+			// ⚠**ASKED THROUGH CountForKind, NOT TAKEN FROM THE ROW** (2026-09-16): for a change
+			//   to the WORDS it is the same number the re-diff has just recorded on the row, but
+			//   a ruby or a kenten has to be measured by the aggregate counter, because the text
+			//   counter does not move for either - and then neither the write nor its undo would
+			//   be visible here. The choosing lives in ONE place, and CountForKind is it.
+			done.fReplacedCount = KCMStoryDiffRun::CountForKind(
+										UIDRef(targetDB, after->fStoryUID), done.fAttrKind);
 			KCMStoryList::AddReplacedChange(nth, done);
 		}
 	}
@@ -763,7 +802,14 @@ bool16 BulkRun(int32 nth, IDataBase* sourceDBIn, int32& outWritten, int32& outSk
 	// The reader may have typed since the comparison - the same case the single item now handles by
 	// looking the change up again. Here one re-diff at the start makes every position in the row
 	// true at once, and the backwards walk keeps them true.
-	if (target->GetTextChangeCount() != countThen
+	// ★★**AND THE RECORDS AN UNDO HAS TAKEN BACK GO WITH IT** (2026-09-16): a change taken in and
+	//   then undone is a candidate again, and it only returns to the LIVE list when the story is
+	//   compared afresh. Dropping first, then re-diffing, is the same order the single press uses
+	//   and for the same reason - a stale record hides the live change behind it.
+	// ⚠**DropUndoneReplaced IS ASKED FIRST AND THE `||` IS DELIBERATE**: the text counter does not
+	//   move for a ruby, so an undone ruby would not be caught by the counter test beside it.
+	const bool16 someWereUndone = KCMStoryDiffRun::DropUndoneReplaced(nth);
+	if ((someWereUndone || target->GetTextChangeCount() != countThen)
 		&& KCMStoryDiffRun::RunOne(targetDB, sourceDB, nth) < 0)
 		return kFalse;
 
@@ -816,7 +862,10 @@ bool16 BulkRun(int32 nth, IDataBase* sourceDBIn, int32& outWritten, int32& outSk
 		if (after != nil)
 			for (size_t k = 0; k < dones.size(); ++k)
 			{
-				dones[k].fReplacedCount = after->fTargetTextCount;
+				// ⚠Each change by ITS OWN instrument - a bulk run can hold words and rubies
+				//   together, and the two are not measured by the same counter (CountForKind).
+				dones[k].fReplacedCount = KCMStoryDiffRun::CountForKind(
+												UIDRef(targetDB, after->fStoryUID), dones[k].fAttrKind);
 				KCMStoryList::AddReplacedChange(nth, dones[k]);
 			}
 	}
@@ -877,6 +926,165 @@ PMString BulkSequenceName(bool16 wholeList)
 bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 {
 	return RestoreOne(nth, which, kTrue, outMessage, nil, nil);
+}
+
+/*	KCMUndoRestoreChange
+	"Undo the Restore" / "Change Back to the Original" (2026-09-16, the user's ask: "Ctrl+Z puts it
+	back, but I want it on the right-click menu too").
+
+	★★**IT IS A COMMAND, NOT Edit > Undo, AND THAT IS THE WHOLE VALUE OF IT.** Ctrl+Z can only take
+	  back the LAST thing done; this takes back the one change the reader points at, whatever they
+	  have done since, and is itself one undo step.
+	★**THE ROW ALREADY HOLDS BOTH SIDES OF ITSELF** - that is why it is kept in the list after a
+	  take-in (KCMStoryList.h, fBefore*), so nothing has to be worked out again here. Words come
+	  from fBeforeText; a ruby or a kenten from fRuby, which is the TARGET's own value, the one the
+	  take-in wrote over (RestoreOne writes fOtherRuby, the Source's - this is its mirror).
+	⚠**THE RECORD IS TAKEN OUT BY HAND, not left to the counter.** StillReplaced answers by asking
+	  whether the story has got as far as the write, and this write moves it FURTHER - so the
+	  counter alone would go on saying "replaced" over text that has just been put back. The record
+	  goes, the story is compared again, and the change returns to the list as a live difference.
+*/
+bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
+{
+	outMessage.Clear();
+	outMessage.SetTranslatable(kFalse);
+
+	bool16 isReplaced = kFalse;
+	const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which, isReplaced);
+	const KCMStoryRow* const row = KCMStoryList::GetRow(nth);
+	if (found == nil || row == nil)
+	{
+		outMessage = Refused("no such change (the list was rebuilt - right-click the row again).");
+		return kFalse;
+	}
+	if (!isReplaced)
+	{
+		outMessage = Refused("this change has not been taken in, so there is nothing to put back.");
+		return kFalse;
+	}
+	if (!KCMStoryDiffRun::StillReplaced(*row, *found))
+	{
+		// An undo has already taken it back; saying so beats writing the same words twice.
+		outMessage = Refused("this change is already back the way it was.");
+		return kFalse;
+	}
+
+	// ⚠**COPIES FIRST**: the list is rewritten below and both pointers go stale with it.
+	const KCMStoryChange change = *found;
+	const UID storyUID = row->fStoryUID;
+
+	IDataBase* const targetDB = KCMArmedTargetDB();
+	if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
+	{
+		outMessage = Refused("the Target document is not open.");
+		return kFalse;
+	}
+	InterfacePtr<ITextModel> target(UIDRef(targetDB, storyUID), UseDefaultIID());
+	if (target == nil)
+	{
+		outMessage = Refused("the story is no longer in the Target document.");
+		return kFalse;
+	}
+
+	const TextIndex at = change.fReplacedStart;
+	const int32 len = change.fReplacedEnd - change.fReplacedStart;
+	if (at < 0 || len < 0 || at + len > target->TotalLength())
+	{
+		outMessage = Refused("what went in is no longer where it was - "
+						   "run Refresh Story Comparison on its row.");
+		return kFalse;
+	}
+
+	// A kenten this build cannot write is judged BEFORE anything is written, the same way the
+	// take-in judges it: a refusal then costs nothing.
+	int16 kentenKind = IKentenStyle::Kenten_None;
+	if (change.fAttrKind == kKCMStoryAttrKenten && !change.fRuby.IsEmpty()
+		&& !KCMKentenKindOf(change.fRuby, kentenKind))
+	{
+		outMessage = Refused("this kenten kind cannot be written back (a custom mark carries a "
+						   "character the row does not hold).");
+		return kFalse;
+	}
+
+	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	ErrorCode err = kFailure;
+	{
+		ICommandSequence* const seq = CmdUtils::BeginCommandSequence("KCMUndoRestoreChange");
+		if (seq != nil)
+			seq->SetName(KCMGetCompareMode() == kKCMModeImport
+						 ? Ascii("Change Back to the Original")
+						 : Ascii("Undo the Restore"));
+
+		if (change.fAttrKind == kKCMStoryAttrRuby)
+		{
+			if (change.fRuby.IsEmpty())
+			{
+				err = KCMClearRuby(target, at, len);			// there was no ruby before it
+				outMessage = Ascii("Took the ruby off again over ");
+			}
+			else
+			{
+				err = KCMCreateRubyStrandIfNeeded(target);
+				if (err == kSuccess)
+					err = KCMApplyRuby(target, at, len, change.fRuby, change.fRubyGroup);
+				outMessage = Ascii("Put the ruby \"");
+				outMessage.Append(change.fRuby);
+				outMessage.Append("\" back over ");
+			}
+		}
+		else if (change.fAttrKind == kKCMStoryAttrKenten)
+		{
+			err = KCMApplyKentenKind(target, at, len, kentenKind);
+			outMessage = (kentenKind == IKentenStyle::Kenten_None)
+						 ? Ascii("Took the kenten off again over ")
+						 : Ascii("Put the kenten back over ");
+		}
+		else
+		{
+			// The words. ⚠**ReplaceCmd EVEN WHEN len IS 0**: an insertion taken in is put back by
+			//   deleting what went in, and what was there before is the empty string.
+			InterfacePtr<ITextModelCmds> cmds(target, UseDefaultIID());
+			boost::shared_ptr<WideString> words(new WideString(change.fBeforeText));
+			InterfacePtr<ICommand> write(cmds != nil
+				? (len > 0 ? cmds->ReplaceCmd(at, len, words) : cmds->InsertCmd(at, words))
+				: nil);
+			err = (write != nil) ? CmdUtils::ProcessCommand(write) : kFailure;
+			outMessage = Ascii("Put back ");
+		}
+
+		if (seq != nil)
+			CmdUtils::EndCommandSequence(seq);
+	}
+
+	if (err != kSuccess)
+	{
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+		outMessage = Refused("it could not be written back (a locked story or layer?).");
+		return kFalse;
+	}
+
+	outMessage.AppendNumber((change.fAttrKind == kKCMStoryAttrNone)
+							? change.fBeforeText.CharCount() : len);
+	outMessage.Append(" character(s)");
+
+	// ***** THE RECORD GOES, AND THE STORY IS COMPARED AGAIN. *****
+	// The change is a live difference once more - which is exactly what it was before the reader
+	// took it in - so the row shows it that way and can take it in again.
+	KCMStoryList::RemoveMergedReplacedChange(nth, which);
+
+	IDataBase* sourceDB = KCMArmedSourceDB();
+	KCMOriginScopedCopy originCopy;
+	if (sourceDB == nil && KCMOriginArmed())
+	{
+		PMString whyNot;
+		if (originCopy.Open(whyNot))
+			sourceDB = originCopy.DB();
+	}
+	if (sourceDB != nil && KCMIsDocDBOpen(sourceDB))
+		KCMStoryDiffRun::RunOne(targetDB, sourceDB, nth);
+
+	KCMNotify(kKCMStoryEditsRebuiltMessage);
+	return kTrue;
 }
 
 bool16 KCMRestoreAllInStory(int32 nth, PMString& outMessage)

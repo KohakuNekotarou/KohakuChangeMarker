@@ -454,6 +454,8 @@ DECLARE_PMID(kActionIDSpace, kKCMStoryRowRestoreAllActionID, kKCMUIPrefix + 73)	
 DECLARE_PMID(kActionIDSpace, kKCMStoryRowImportAllActionID, kKCMUIPrefix + 74)	// ★"Change All in This Story" - the same call under the Import mode's name, greyed everywhere else
 DECLARE_PMID(kActionIDSpace, kKCMPopupRestoreAllStoriesActionID, kKCMUIPrefix + 75)	// ★"Restore All Stories" on the panel flyout. Facade RestoreAllStories. ⚠**Asks first** (CAlert, OK / Cancel): it writes across every story at once, which the per-story item does not
 DECLARE_PMID(kActionIDSpace, kKCMPopupImportAllStoriesActionID, kKCMUIPrefix + 76)	// ★"Change All Stories to Imported Text" - the Import mode's name for the item above, and it asks the same question
+DECLARE_PMID(kActionIDSpace, kKCMChangeRowUndoRestoreActionID, kKCMUIPrefix + 77)	// ★"Undo the Restore" on a CHANGE row's context menu (2026-09-16, the user's ask: "Ctrl+Z puts it back, but I want it on the right-click menu too"). Writes the words the row remembers from BEFORE the take-in back over what went in, drops that row's record of having been taken in, and diffs the story again - so the change returns to the list as a live difference. ⚠**NOT Edit > Undo**: it is a command of its own, so it works whatever else has been done since, and it is itself undoable. Live in the Story mode on a change that is standing as taken-in (kCustomEnabling -> KCMChangeRowCanUndoRestore). Facade UndoRestoreChange -> KCMStoryRestore.cpp
+DECLARE_PMID(kActionIDSpace, kKCMChangeRowUndoImportActionID, kKCMUIPrefix + 78)	// ★"Change Back to the Original" - the same action under the name the Import mode calls for (the user's pick, 2026-09-16: the two modes keep separate names, as Restore Source Text / Change to Imported Text already do). Greyed everywhere else, so one name shows and never both
 
 DECLARE_PMID(kActionIDSpace, kKCMPopupModeResourcesActionID, kKCMUIPrefix + 57)	// ★"Compare mode > Resources Changes" on the flyout (2026-09-09). The third mode: export each document as XML and compare the DEFINITIONS - styles, swatches, layers - so that a change to something nobody has applied is reported. It moves no pixel and touches no word, which is why neither of the other two modes can see it. Exclusive with Pixel and Story, the selected one carrying the check (kCustomEnabling + kSelectedAction). KCMActionComponent.cpp
 
@@ -755,6 +757,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMStoryRowMenuName		"KCMRtMenuStoryRow"
 #define kKCMChangeRowRestoreMenuKey	kKCMStringPrefix "kKCMChangeRowRestoreMenuKey"		// the "Restore Source Text" item on a CHANGE row's context menu (2026-09-13)
 #define kKCMChangeRowImportMenuKey	kKCMStringPrefix "kKCMChangeRowImportMenuKey"		// the "Change to Imported Text" item - the same action under the name the Import mode calls for (2026-09-15)
+#define kKCMChangeRowUndoRestoreMenuKey	kKCMStringPrefix "kKCMChangeRowUndoRestoreMenuKey"	// the "Undo the Restore" item on a CHANGE row's context menu (2026-09-16)
+#define kKCMChangeRowUndoImportMenuKey	kKCMStringPrefix "kKCMChangeRowUndoImportMenuKey"	// the same item under the Import mode's name, "Change Back to the Original"
 // The four bulk items (2026-09-15): a STORY row's menu takes the whole story, the flyout takes the
 // whole list, and each has a Story-mode name and an Import-mode one.
 #define kKCMStoryRowRestoreAllMenuKey	kKCMStringPrefix "kKCMStoryRowRestoreAllMenuKey"
@@ -1163,6 +1167,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMResourceRowXmlMenuItemPosition	2.0	// ★the SAME subtree: "Show as XML" sits under the refresh item. The two are never live at once (opposite modes), so the order only decides what a future third item would sit between
 #define kKCMChangeRowRestoreMenuItemPosition	2.0	// CHANGE row context menu (its own subtree, kKCMChangeRowMenuName): "Restore Source Text". ⚠2.0 rather than 1.0 because "Copy Source Text" held 1.0 until 2026-09-15; the number is left where it is so that a user's shortcut keeps pointing at the same item
 #define kKCMChangeRowImportMenuItemPosition		2.5	// CHANGE row context menu: "Change to Imported Text" - the same place, in the mode where the item is called that. ★The two are never live together, so what this number really decides is where a future item would sit between them
+#define kKCMChangeRowUndoRestoreMenuItemPosition	2.7	// CHANGE row context menu: "Undo the Restore" (2026-09-16), directly under the item that takes a change in - the two are opposites and belong beside each other
+#define kKCMChangeRowUndoImportMenuItemPosition		2.8	// the same place, under the Import mode's name "Change Back to the Original". ★Never live together with the one above
 #define kKCMStoryRowRestoreAllMenuItemPosition	3.0	// STORY row context menu: "Restore All in This Story", under Refresh Story Comparison (1.0) and Show as XML (2.0)
 #define kKCMStoryRowImportAllMenuItemPosition	3.5	// the same place, in the Import mode's name. ★Never live together with the one above
 #define kKCMRestoreAllStoriesMenuItemPosition	9.03	// panel flyout: "Restore All Stories", under Import Story Text... (9.022)

@@ -150,6 +150,59 @@ bool16 KCMChangeRowRestore()
 }
 
 //----------------------------------------------------------------------------------------
+// Putting one change back (2026-09-16)
+//----------------------------------------------------------------------------------------
+
+namespace
+{
+
+/*	CanUndoRestore
+	The one question both halves of the pair ask: the right mode, and a change that is STANDING as
+	taken in. ⚠fReplaced is the MODEL's answer, worked out from the document's own counter - so a
+	change the reader has already put back with Ctrl+Z greys the item instead of offering a second
+	road to something that is done.
+*/
+bool16 CanUndoRestore(bool16 wantImport)
+{
+	IKCMStoryEditsFacade::Change change;
+	if (!StashedChange(change))
+		return kFalse;
+
+	const bool16 isImport = (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeImport)
+						  ? kTrue : kFalse;
+	if (isImport != wantImport)
+		return kFalse;
+
+	return change.fReplaced ? kTrue : kFalse;
+}
+
+}	// anonymous namespace
+
+bool16 KCMChangeRowCanUndoRestore()
+{
+	return CanUndoRestore(kFalse);
+}
+
+bool16 KCMChangeRowCanUndoImport()
+{
+	return CanUndoRestore(kTrue);
+}
+
+bool16 KCMChangeRowUndoRestore()
+{
+	if (gMenuRow < 0 || gMenuChange < 0)
+	{
+		KCMSetStatus("restore: no change to put back.");
+		return kFalse;
+	}
+	PMString msg;
+	const bool16 ok = Utils<IKCMStoryEditsFacade>()->UndoRestoreChange(gMenuRow, gMenuChange, msg);
+	if (msg.CharCount() > 0)
+		KCMSetStatus(msg);
+	return ok;
+}
+
+//----------------------------------------------------------------------------------------
 // The bulk items (2026-09-15)
 //----------------------------------------------------------------------------------------
 

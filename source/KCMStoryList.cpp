@@ -912,6 +912,33 @@ const KCMStoryChange* KCMStoryList::GetMergedChange(int32 nth, int32 which, bool
 	return &row.fChanges[slot.fIndex];
 }
 
+/* RemoveMergedReplacedChange
+*/
+bool16 KCMStoryList::RemoveMergedReplacedChange(int32 nth, int32 which)
+{
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || which < 0)
+		return kFalse;
+
+	KCMStoryRow& row = gRows[nth];
+	if (row.fReplacedChanges.empty())
+		return kFalse;
+
+	// The same walk GetMergedChange makes, so the two cannot disagree about which list an index
+	// fell in - and the reason both of them are in this file.
+	std::vector<KCMStoryRowMerge::Slot> slots;
+	MergedSlots(row, slots);
+	if (which >= static_cast<int32>(slots.size()))
+		return kFalse;
+
+	const KCMStoryRowMerge::Slot& slot = slots[which];
+	if (!slot.fDone || slot.fIndex < 0
+		|| slot.fIndex >= static_cast<int32>(row.fReplacedChanges.size()))
+		return kFalse;			// a live change: not this function's business
+
+	row.fReplacedChanges.erase(row.fReplacedChanges.begin() + slot.fIndex);
+	return kTrue;
+}
+
 void KCMStoryList::SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& changes,
 								   bool16 textCompared)
 {

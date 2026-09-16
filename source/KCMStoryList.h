@@ -207,9 +207,16 @@ struct KCMStoryChange
 	//   gone back ([[one-question-one-place]]). The row is drawn as replaced when, and only when,
 	//   this equals the story's text change counter NOW - and that counter goes back on an undo.
 
-	/** The Target story's text change counter at the moment this change was replaced, or 0 when
-		it never was. ⇒ **"Is it replaced?" is `fReplacedCount != 0 && fReplacedCount == the
-		counter now`**, asked wherever the answer is needed and stored nowhere. */
+	/** The Target story's counter at the moment this change was replaced, or 0 when it never was.
+		⇒ **"Is it replaced?" is `fReplacedCount != 0 && the story has got at least this far`**,
+		asked wherever the answer is needed and stored nowhere (KCMFacades' StillReplaced).
+
+		⚠★★★**WHICH COUNTER DEPENDS ON THE KIND, AND ONLY KCMStoryDiffRun::CountForKind KNOWS**
+		 (2026-09-16). A change to the WORDS is measured by the story's TEXT change counter; a
+		 ruby or a kenten by the AGGREGATE one, because the text counter does not move for an
+		 attribute at all - measured 4, 4, 4 across a ruby write and its undo, against 13, 14, 13
+		 from the aggregate. Written and read through that one function, so the two ends cannot
+		 disagree about what the number means. */
 	uint32		fReplacedCount;
 
 	/** The range the replacement occupies NOW, in the Target -- what a jump aims at and what the
@@ -567,6 +574,16 @@ namespace KCMStoryList
 			looking at the change itself**: fReplacedCount says when it was replaced, not whether
 			it is being SHOWN as replaced, and the two differ after an undo. */
 	const KCMStoryChange* GetMergedChange(int32 nth, int32 which, bool16& outIsReplaced);
+
+	/** Take one REPLACED record out of the list, named by its place in the merged index space.
+
+		★**THE MERGED INDEX IS RESOLVED HERE AND NOWHERE ELSE**, for the reason stated above: the
+		  caller ("Undo the Restore") holds the number the menu handed it, and turning that into a
+		  position in fReplacedChanges is this file's own knowledge.
+		@return kFalse when the index is out of range or names a LIVE change rather than a
+			replaced one - a caller that has just written the older words back is expected to know
+			which it asked about, so this answers rather than guessing. */
+	bool16 RemoveMergedReplacedChange(int32 nth, int32 which);
 
 	/** Drop the rows whose story differs only in HOW IT IS SET -- a font, a colour, a style, a
 		table stroke -- and keep the ones whose CONTENT differs: the words, or the ruby written over

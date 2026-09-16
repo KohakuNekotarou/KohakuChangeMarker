@@ -85,6 +85,8 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMResourceAttrEditMenuKey,		"Edit...",
                 kKCMChangeRowRestoreMenuKey,		"Restore Source Text",
                 kKCMChangeRowImportMenuKey,		"Change to Imported Text",
+                kKCMChangeRowUndoRestoreMenuKey,	"Undo the Restore",
+                kKCMChangeRowUndoImportMenuKey,	"Change Back to the Original",
                 kKCMStoryRowRestoreAllMenuKey,	"Restore All in This Story",
                 kKCMStoryRowImportAllMenuKey,	"Change All in This Story",
                 kKCMRestoreAllStoriesMenuKey,	"Restore All Stories",

@@ -1348,6 +1348,20 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMChangeRowImportMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Undo the Restore" / "Change Back to the Original" (2026-09-16, the user's ask: "Ctrl+Z
+		// puts it back, but I want it on the right-click menu too"). The opposite of the pair
+		// above, and built the same way: one ActionID per mode, each greyed in the other's, so the
+		// menu shows one name and never both. Live only on a change that is standing as taken in.
+		kKCMChangeRowUndoRestoreActionID,
+		kKCMChangeRowMenuName,
+		kKCMChangeRowUndoRestoreMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMChangeRowUndoImportActionID,
+		kKCMChangeRowMenuName,
+		kKCMChangeRowUndoImportMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// ----- The bulk items (2026-09-15) -----
 		// "Restore All in This Story" / "Change All in This Story" on the STORY row's menu, under
 		// Refresh Story Comparison. One press, one undo step, every change of that story.
@@ -1782,6 +1796,27 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// live only in the Import mode, on a change not taken in yet (KCMChangeRowCanImport)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// ★"Undo the Restore" / "Change Back to the Original" (2026-09-16) - the opposite of the
+		//   pair above, built as a pair for the same reason. ⚠It is a COMMAND, not Edit > Undo: it
+		//   works whatever has been done since, and it can itself be undone.
+		kKCMActionComponentBoss,
+		kKCMChangeRowUndoRestoreActionID,
+		kKCMChangeRowUndoRestoreMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// live in the Story mode on a change standing as taken in (KCMChangeRowCanUndoRestore)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMChangeRowUndoImportActionID,
+		kKCMChangeRowUndoImportMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// the same, in the Import mode (KCMChangeRowCanUndoImport)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

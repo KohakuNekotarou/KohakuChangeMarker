@@ -523,6 +523,18 @@ public:
 	/** The same across every row of the Story Edits list, still one undo step. @see the note above.
 		⚠Appended at the END, like the one before it. */
 	virtual bool16	RestoreAllStories(PMString& outMessage) = 0;
+
+	/** Put change `which` of row `nth` back the way it stood before it was taken in
+		("Undo the Restore" / "Change Back to the Original", 2026-09-16, the user's ask).
+
+		★**A COMMAND OF ITS OWN, NOT Edit > Undo**: it reaches the change the reader points at
+		  whatever has been done since, and it is itself one undo step.
+		⚠Refused when the change was never taken in, when an undo has already put it back, and for
+		  a custom kenten mark. outMessage says which.
+		⚠Appended at the END, like every virtual added since the split
+		  ([[facade-vtable-slot-append-only]]: KIDMCP calls this facade through its vtable, so a
+		  virtual inserted anywhere else lands its callers on a different method). */
+	virtual bool16	UndoRestoreChange(int32 nth, int32 which, PMString& outMessage) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

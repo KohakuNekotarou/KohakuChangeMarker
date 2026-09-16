@@ -44,6 +44,7 @@
 #include "KCMParaText.h"	// KCMParaAttrs and the pure functions over paragraphs (Join / IndexInStory / SplitRunAtPlaces / SpansDiffer)
 #include "KCMProgressBar.h"	// KCMDeferredProgressBar - the progress bar and Cancel of Run, shown after kKCMProgressBarDelayMs
 #include "KCMStoryDiffRun.h"
+#include "KCMCore.h"			// KCMArmedTargetDB / KCMIsDocDBOpen - which document a replaced change is measured against
 #include "KCMOriginCompare.h"	// KCMOriginToSourceUID - the older side's uid when the Source is a Task Start copy
 #include "KCMTextRead.h"		// the reader: paragraphs, their positions and their attributes, straight from the text model
 #include "KCMStoryList.h"
@@ -1280,6 +1281,69 @@ uint32 KCMStoryDiffRun::TextCountOf(const UIDRef& story)
 {
 	InterfacePtr<ITextModel> model(story, UseDefaultIID());
 	return (model != nil) ? model->GetTextChangeCount() : 0;
+}
+
+bool16 KCMStoryDiffRun::StillReplaced(const KCMStoryRow& row, const KCMStoryChange& change)
+{
+	if (change.fReplacedCount == 0)
+		return kFalse;		// never replaced
+
+	IDataBase* const targetDB = KCMArmedTargetDB();
+	if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
+		return kFalse;
+
+	// ⚠★★★**">=", NOT "==" - MEASURED ON THE APPLICATION, 2026-09-15.** It was "==" until the
+	//   first live run, where taking in a SECOND change in the same story made the FIRST one's
+	//   sign fall back to "-" while the panel said "0 change(s) left". The counter had moved on
+	//   for the second write, so the first change's record no longer matched it - and the row went
+	//   on being replaced while its mark said otherwise.
+	//   The counter only ever climbs as work is done and winds back as it is undone, so the
+	//   question a replaced change has to ask is not "is the story exactly where I left it" but
+	//   **"has the story got at least as far as the write I made"**. Undo takes it below that mark
+	//   and the sign falls away; redo lifts it back over and the sign returns.
+	//   ⚠An ordinary edit also lifts it, so an edited story keeps its marks. That is the right side
+	//   to err on: the marks are a record of what the reader took in, and the WRITING path looks
+	//   the change up again rather than trusting them (KCMStoryRestore's RefindAfterEdit).
+	return (KCMStoryDiffRun::CountForKind(UIDRef(targetDB, row.fStoryUID), change.fAttrKind)
+			>= change.fReplacedCount)
+		   ? kTrue : kFalse;
+}
+
+bool16 KCMStoryDiffRun::DropUndoneReplaced(int32 nth)
+{
+	const KCMStoryRow* const row = KCMStoryList::GetRow(nth);
+	if (row == nil || row->fReplacedChanges.empty())
+		return kFalse;
+
+	std::vector<KCMStoryChange> keep;
+	keep.reserve(row->fReplacedChanges.size());
+	for (size_t i = 0; i < row->fReplacedChanges.size(); ++i)
+	{
+		if (KCMStoryDiffRun::StillReplaced(*row, row->fReplacedChanges[i]))
+			keep.push_back(row->fReplacedChanges[i]);
+	}
+
+	if (keep.size() == row->fReplacedChanges.size())
+		return kFalse;			// nothing was undone; the list is left exactly as it was
+
+	// ⚠**THE COPIES ARE TAKEN BEFORE THE CLEAR**: `row` points into the list being emptied, and
+	//   `keep` holds values rather than references precisely so that this is safe to say.
+	KCMStoryList::ClearReplacedChanges(nth);
+	for (size_t i = 0; i < keep.size(); ++i)
+		KCMStoryList::AddReplacedChange(nth, keep[i]);
+	return kTrue;
+}
+
+uint32 KCMStoryDiffRun::CountForKind(const UIDRef& story, int32 kind)
+{
+	// The header carries the measurement and the reasoning. Here: words are measured by the text
+	// counter, anything laid OVER the words by the aggregate - because the text counter does not
+	// move for a ruby or a kenten, so it can tell neither that one went in nor that it came out.
+	if (kind == kKCMStoryAttrNone)
+		return KCMStoryDiffRun::TextCountOf(story);
+
+	InterfacePtr<ITextModel> model(story, UseDefaultIID());
+	return (model != nil) ? static_cast<uint32>(model->GetChangeCount()) : 0;
 }
 
 int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 rowIndex)

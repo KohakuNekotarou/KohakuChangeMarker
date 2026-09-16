@@ -476,34 +476,14 @@ public:
 	// ⚠It also answers kFalse after an ORDINARY edit, which is right for a different reason: the
 	//   row's positions were named against a text that has since moved, so what it is showing
 	//   can no longer be trusted. "Refresh Story Comparison" is the way back.
+	// ★★★**THE BODY MOVED TO KCMStoryDiffRun ON 2026-09-16**, because the WRITING side has to ask
+	//   exactly the same question. While it lived here the two had separate answers: a row went
+	//   back to unreplaced when the reader pressed Ctrl+Z - correctly - while the menu went on
+	//   refusing to take it in, because its own test was merely "a record exists". The
+	//   measurement and the reasoning went with it ([[one-question-one-place]]).
 	static bool16 StillReplaced(const KCMStoryRow& row, const KCMStoryChange& change)
 	{
-		if (change.fReplacedCount == 0)
-			return kFalse;		// never replaced
-
-		IDataBase* const targetDB = KCMArmedTargetDB();
-		if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
-			return kFalse;
-
-		// Cheap enough to ask every time: it is an interface lookup and a member read, and the
-		// alternative - a cache - would be a second copy of a number whose whole value is that
-		// it is the document's own ([[lean-processing-preference]] does not buy staleness).
-		//
-		// ⚠★★★**">=", NOT "==" - MEASURED ON THE APPLICATION, 2026-09-15.** It was "==" until the
-		//   first live run, where taking in a SECOND change in the same story made the FIRST one's
-		//   sign fall back to "-" while the panel said "0 change(s) left". The counter had moved
-		//   on for the second write, so the first change's record no longer matched it - and the
-		//   row went on being replaced while its mark said otherwise.
-		//   The counter only ever climbs as work is done and winds back as it is undone, so the
-		//   question a replaced change has to ask is not "is the story exactly where I left it"
-		//   but **"has the story got at least as far as the write I made"**. Undo takes it below
-		//   that mark and the sign falls away; redo lifts it back over and the sign returns.
-		//   ⚠An ordinary edit also lifts it, so an edited story keeps its marks. That is the right
-		//   side to err on: the marks are a record of what the reader took in, and the WRITING
-		//   path has its own, stricter test (KCMStoryRestore refuses a story whose counter has
-		//   moved at all), so nothing is written against positions that have rotted.
-		return (KCMStoryDiffRun::TextCountOf(UIDRef(targetDB, row.fStoryUID)) >= change.fReplacedCount)
-			   ? kTrue : kFalse;
+		return KCMStoryDiffRun::StillReplaced(row, change);
 	}
 
 	virtual int32	GetChangeCount(int32 nth)
@@ -682,6 +662,11 @@ public:
 	virtual bool16	RestoreAllInStory(int32 nth, PMString& outMessage)
 	{
 		return KCMRestoreAllInStory(nth, outMessage);
+	}
+
+	virtual bool16	UndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
+	{
+		return KCMUndoRestoreChange(nth, which, outMessage);
 	}
 
 	virtual bool16	RestoreAllStories(PMString& outMessage)

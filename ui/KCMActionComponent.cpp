@@ -1076,6 +1076,16 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMChangeRowRestore();
 			break;
 
+		// The opposite (2026-09-16, the user's ask: "Ctrl+Z puts it back, but I want it on the
+		// right-click menu too"). ★Two IDs and one line again, for the same reason as above:
+		// "Undo the Restore" in the Story mode, "Change Back to the Original" in the Import mode.
+		// ⚠It is a COMMAND, not Edit > Undo - it reaches the change the reader points at whatever
+		//   they have done since, and it is itself one undo step.
+		case kKCMChangeRowUndoRestoreActionID:
+		case kKCMChangeRowUndoImportActionID:
+			KCMChangeRowUndoRestore();
+			break;
+
 		// The bulk items (2026-09-15): the same act one size up, and one size up again. Each pair
 		// shares its line for the reason the pair above does - one command, two names, and the
 		// enabling decides which name the reader sees.
@@ -1634,6 +1644,19 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			// child row's menu carries one name or the other.
 			listToUpdate->SetNthActionState(i, KCMChangeRowCanImport() ? kEnabledAction
 			                                                           : kDisabled_Unselected);
+		}
+		// "Undo the Restore" / "Change Back to the Original" (2026-09-16): live on a change that is
+		// STANDING as taken in - which is the model's answer about the document, so a change the
+		// reader has already put back with Ctrl+Z greys them both.
+		else if (action == kKCMChangeRowUndoRestoreActionID)
+		{
+			listToUpdate->SetNthActionState(i, KCMChangeRowCanUndoRestore() ? kEnabledAction
+			                                                                : kDisabled_Unselected);
+		}
+		else if (action == kKCMChangeRowUndoImportActionID)
+		{
+			listToUpdate->SetNthActionState(i, KCMChangeRowCanUndoImport() ? kEnabledAction
+			                                                               : kDisabled_Unselected);
 		}
 	}
 }

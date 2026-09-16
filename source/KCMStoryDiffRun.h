@@ -30,6 +30,8 @@
 #define __KCMStoryDiffRun_h__
 
 class IDataBase;
+struct KCMStoryRow;
+struct KCMStoryChange;
 
 /** Filling in the Story Edits list's children.
 	@ingroup KCM
@@ -117,6 +119,57 @@ namespace KCMStoryDiffRun
 		be opened. Run and RunOne record it on the row as they attach the changes; "Restore Source
 		Text" compares it before it writes (KCMStoryRow::fTargetTextCount). */
 	uint32 TextCountOf(const UIDRef& story);
+
+	/** ★★★**THE COUNTER A CHANGE OF THIS KIND IS MEASURED BY** - the one question "which
+		instrument?", asked in one place (2026-09-16).
+
+		A replaced change is drawn as replaced while the story has got at least as far as the
+		counter recorded when it was written, and an undo takes that counter back on its own -
+		which is the whole of KCM's undo handling for the Story Edits list. That works only while
+		the counter can SEE the write.
+
+		⚠**AND THE TEXT COUNTER CANNOT SEE AN ATTRIBUTE.** Measured 2026-09-16 on a real document,
+		 taking in a ruby and undoing it: GetTextChangeCount answered **4, 4 and 4** across before,
+		 after and undone, while GetChangeCount answered **13, 14, 13**. A ruby or kenten row
+		 therefore stayed drawn as taken-in for ever - the reader's own report ("the document comes
+		 back, the panel does not"). It was never a missing signal: the panel was asking an
+		 instrument that had not moved.
+
+		★**THE AGGREGATE IS THE RIGHT ONE FOR ATTRIBUTES**, and KCMStoryStamp.h's essay says why
+		  in more detail than belongs here: which sub-counter an edit lands on cannot be predicted
+		  from the headers, and the aggregate is the only reading that cannot be wrong-footed.
+		⚠**WORDS KEEP THE TEXT COUNTER**, deliberately: the ">=" behaviour of the text path was
+		 measured on the application on 2026-09-15 and nothing here is trying to re-decide it.
+
+		@param kind kKCMStoryAttrNone for a change to the WORDS, else the attribute's kind.
+		@return 0 when the story cannot be opened. */
+	uint32 CountForKind(const UIDRef& story, int32 kind);
+
+	/** ★★★**IS THIS REPLACED CHANGE STILL STANDING AS REPLACED?** - the one question, in the one
+		place, asked by everything that draws a row AND by everything that writes (2026-09-16).
+
+		It was a static inside KCMFacades while only the DRAWING asked it, and the writing side had
+		a test of its own: "already replaced" meant the record existed at all. The two then said
+		different things the moment the reader pressed Ctrl+Z - the row went back to unreplaced,
+		correctly, while the menu went on refusing to take it in ("this change has already been
+		taken in"). One question, two answers, which is the fault this file has the most scars from
+		([[one-question-one-place]]).
+
+		★The answer is the document's own: the story's counter, of the kind this change is measured
+		 by (CountForKind), against the counter recorded when the change went in. An undo takes the
+		 counter back and this answers kFalse with no undo-specific code anywhere.
+		@return kFalse for a change that was never replaced, and for one an undo has taken back. */
+	bool16 StillReplaced(const KCMStoryRow& row, const KCMStoryChange& change);
+
+	/** Drop the row's replaced records that an undo has taken back (StillReplaced answers kFalse).
+
+		★**THE RECORD IS THE READER'S OWN HISTORY, so only the ones that are no longer true go.**
+		  Undo in InDesign is a stack: undoing once takes back the LAST take-in, and the ones
+		  before it are still in the document. Clearing the row outright - what "Refresh Story
+		  Comparison" does, deliberately, as a fresh start - would throw those away as well.
+		@return kTrue when any went, which is also "this story now needs comparing again": the
+			change that came back is not in the live list until it is. */
+	bool16 DropUndoneReplaced(int32 nth);
 }
 
 #endif // __KCMStoryDiffRun_h__
