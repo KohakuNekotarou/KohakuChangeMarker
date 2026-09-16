@@ -890,15 +890,19 @@ private:
 
 		// ★★AND ON THE LINE THAT CHANGED (2026-09-16, the user's drawings: "+" beside the
 		//   tate-chu-yoko's line when a tate-chu-yoko was added inside a warichu, beside the warichu's
-		//   when the warichu was). A ruby / kenten / note row keeps it on the bottom line, where the
-		//   .fr puts it. ⚠Set on EVERY apply of a row of two or three lines, because the widget is
-		//   recycled between a ruby row and a layered one of the same height; only the vertical edges
-		//   move - the horizontal ones belong to the panel's width (kBindRight).
+		//   when the warichu was). ⚠Set on EVERY apply of a row of two or three lines, because the
+		//   widget is recycled between a ruby row and a layered one of the same height; only the
+		//   vertical edges move - the horizontal ones belong to the panel's width (kBindRight).
 		// ★AND THE ID CELL WITH IT (the same day): the kind's name stands beside its sign.
+		// ★★A RUBY / KENTEN / NOTE ROW PUTS BOTH ON ITS UPPER LINE (the same evening, the user: "the
+		//   name shows on the bottom line, by the base characters - I want it on the line where the
+		//   ruby is actually written"). That line IS what changed - the reading, the mark, the number,
+		//   or the bar where one was - so the rule is the layered rows' own: the changed line. ⚠It
+		//   stood on the bottom line until then, where the .fr still puts it before the first apply.
 		if (lineCount >= 2)
 		{
 			const int32 changedLine = (KCMAttrKindIsLayered(attrKind) && layers.fCount == lineCount)
-									  ? layers.fChanged : 0;
+									  ? layers.fChanged : (lineCount - 1);
 			const int32 fromTop = lineCount - 1 - changedLine;
 			const WidgetID onTheChangedLine[] = { kKCMStoryRowKindWidgetID, kKCMStoryRowUIDWidgetID };
 			for (size_t w = 0; w < sizeof(onTheChangedLine) / sizeof(onTheChangedLine[0]); ++w)
@@ -946,6 +950,43 @@ private:
 			idText.Append("OV");
 		idText.SetTranslatable(kFalse);
 		this->SetNodeName(widgetList, idText, kKCMStoryRowUIDWidgetID);
+
+		// ★★AND ON A THREE-LINE ROW, THE OTHER LAYER IS NAMED ON ITS OWN LINE (2026-09-16, the
+		//   user's drawing: "縦中横 888 / 割注 あ｜い / てす｜と"). Line 1 and line 2 are the two
+		//   layered kinds - the one that changed stands where the sign is, so the other is on the
+		//   remaining line (3 - changed), and a warichu's other is a tate-chu-yoko and back. The
+		//   bottom line is the text and says nothing.
+		// ⚠**THIS CELL IS ONLY IN THE THREE-LINE TEMPLATE**, so FindWidget answers nil on every other
+		//   row; on this template it is written EVERY time, empty included, for the recycling reason
+		//   above, and placed on both axes - KCMApplyListColumnWidths only fits the first ID cell,
+		//   so the second takes its left and right from there.
+		IControlView* layerIdCell = widgetList->FindWidget(kKCMStoryRowLayerIdWidgetID);
+		if (layerIdCell != nil)
+		{
+			PMString otherText;
+			int32 otherLine = 1;
+			if (have && lineCount == 3 && KCMAttrKindIsLayered(attrKind) && layers.fCount == 3)
+			{
+				const int32 otherKind = (attrKind == kKCMStoryAttrWarichu) ? static_cast<int32>(kKCMStoryAttrTcy)
+																		   : static_cast<int32>(kKCMStoryAttrWarichu);
+				otherText = AttrKindIdLabel(otherKind);
+				otherLine = 3 - layers.fChanged;
+			}
+			otherText.SetTranslatable(kFalse);
+			this->SetNodeName(widgetList, otherText, kKCMStoryRowLayerIdWidgetID);
+
+			const int32 fromTop = lineCount - 1 - otherLine;
+			PMRect frame = layerIdCell->GetFrame();
+			IControlView* firstIdCell = widgetList->FindWidget(kKCMStoryRowUIDWidgetID);
+			if (firstIdCell != nil)
+			{
+				frame.Left(firstIdCell->GetFrame().Left());
+				frame.Right(firstIdCell->GetFrame().Right());
+			}
+			frame.Top(PMReal(kKCMStoryRowHeight * fromTop + ((fromTop == 0) ? 1 : 0)));
+			frame.Bottom(PMReal(kKCMStoryRowHeight * (fromTop + 1) - 2));
+			layerIdCell->SetFrame(frame);
+		}
 
 		// (A "Mono" / "Group" cell on the upper line's right-hand column was filled here from
 		//  2026-09-08 to 2026-09-12. It went with the judgement behind it - a ruby re-set from mono

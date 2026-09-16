@@ -2818,6 +2818,10 @@ resource KCMStoryRowWidget(kKCMStoryRubyRowRsrcID + index_enUS)
 		//  and a new ruby's setting alone was not worth a column. The upper half of the right-hand
 		//  column is blank again, as it was before 2026-09-08.)
 
+		// ★★(2026-09-16) The sign and the ID cell are MOVED ON EVERY APPLY to the line that changed -
+		//   the UPPER line on a ruby / kenten / note row, where the mark is written (the user's call),
+		//   and the changed layer's line on a warichu / tate-chu-yoko row. The frames below are only
+		//   where they stand before the first apply.
 		// Right: the sign, ON THE LOWER LINE with the base text rather than centred in the row.
 		// ★A stock static text centres itself in its own frame, so the frame is the lower half.
 		//   Centred in the WHOLE row it would land exactly on the boundary between the two lines,
@@ -2873,6 +2877,23 @@ resource KCMStoryRowWidget(kKCMStoryTallRowRsrcID + index_enUS)
 			kPMRsrcID_None,					// RsrcId
 			kBindLeft,						// Frame binding: a fixed column at the row's left edge
 			Frame(24, kKCMStoryRowHeight * 2, 64, kKCMStoryTallRowHeight - 2),	// Frame (bottom line; moved per apply)
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+
+		// ★The ID column's SECOND cell (2026-09-16, the user's drawing): the OTHER layer's name on
+		//   its own line - "割注" beside the warichu while "縦中横" stands beside the changed
+		//   tate-chu-yoko, and the other way round. Placed per apply, both edges.
+		KCMStoryRowCellWidget
+		(
+			kKCMStoryRowLayerIdWidgetID,	// WidgetId
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft,						// Frame binding: a fixed column at the row's left edge
+			Frame(24, kKCMStoryRowHeight, 64, kKCMStoryRowHeight * 2 - 2),	// Frame (middle line; moved per apply)
 			kTrue, kTrue,					// Visible, Enabled
 			kAlignLeft,						// Alignment
 			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
