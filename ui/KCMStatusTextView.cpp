@@ -65,6 +65,7 @@
 #include "KCMUIID.h"
 #include "KCMKentenMark.h"	// the emphasis marks - the SAME drawing the change row uses
 #include "KCMStoryKinds.h"	// kKCMStoryAttrKenten - which attribute the upper line belongs to
+#include "KCMLayerDraw.h"	// a warichu / tate-chu-yoko message, drawn in layers (shared with the change row)
 #include "KCMPanelTextDraw.h"	// kKCMContextTextWeight, KCMBlendColor - shared with the row cell
 
 // Std includes:
@@ -359,7 +360,7 @@ bool16 KCMLayoutRuns(IGraphicsContext* gc, const InterfaceFontInfo& font,
 /** The four pieces as runs, with the heading on a line of its own.
 	@param wantCaret draw the change as a BAR rather than as characters - what a change with a place
 	       and nothing to show on this side needs (see kKCMCaretWidth). Only ever true when mid is
-	       empty AND the change is a text change. */
+	       empty - for a text change, and since 2026-09-16 for a mark, whose upper bar stands on it. */
 std::vector<KCMRun> KCMMakeRuns(const PMString& label, const PMString& pre,
 									const PMString& mid, const PMString& post, bool16 wantCaret)
 {
@@ -428,7 +429,7 @@ public:
 
 	virtual void SetSegments(const PMString& label, const PMString& pre,
 							 const PMString& mid, const PMString& post,
-							 const PMString& ruby, int32 attrKind)
+							 const PMString& ruby, int32 attrKind, const KCMStoryLayers& layers)
 	{
 		// ★Not translation keys. Messages are assembled sentences and document text, and a short
 		//   common word left translatable can be looked up in the string tables and come back as
@@ -440,11 +441,12 @@ public:
 		fPost  = post;  fPost.SetTranslatable(kFalse);
 		fRuby  = ruby;  fRuby.SetTranslatable(kFalse);
 		fAttrKind = attrKind;
+		fLayers = layers;
 	}
 
 	virtual void GetSegments(PMString& outLabel, PMString& outPre,
 							 PMString& outMid, PMString& outPost, PMString& outRuby,
-							 int32& outAttrKind) const
+							 int32& outAttrKind, KCMStoryLayers& outLayers) const
 	{
 		outLabel = fLabel;
 		outPre   = fPre;
@@ -452,6 +454,7 @@ public:
 		outPost  = fPost;
 		outRuby  = fRuby;
 		outAttrKind = fAttrKind;
+		outLayers = fLayers;
 	}
 
 private:
@@ -463,6 +466,9 @@ private:
 
 	/** Which attribute the upper line belongs to - see IKCMStatusTextData.h. */
 	int32    fAttrKind;
+
+	/** The lines of a warichu / tate-chu-yoko message (fCount 0 for every other message). */
+	KCMStoryLayers fLayers;
 };
 
 CREATE_PMINTERFACE(KCMStatusTextData, kKCMStatusTextDataImpl)
@@ -498,26 +504,34 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 
 	PMString label, pre, mid, post, ruby;
 	int32 attrKind = 0;
-	data->GetSegments(label, pre, mid, post, ruby, attrKind);
+	KCMStoryLayers layers;
+	data->GetSegments(label, pre, mid, post, ruby, attrKind, layers);
+	const bool16 layered = (KCMAttrKindIsLayered(attrKind) && layers.fCount >= 2) ? kTrue : kFalse;
 
 	// ★NOTHING IS PAINTED BEHIND THE TEXT. The panel draws its own background; this box adds words
 	//   on top of it, exactly as the stock widget it replaced did. An empty message is therefore a
 	//   no-op rather than a blank rectangle.
-	if (label.IsEmpty() && pre.IsEmpty() && mid.IsEmpty() && post.IsEmpty())
+	if (label.IsEmpty() && pre.IsEmpty() && mid.IsEmpty() && post.IsEmpty() && !layered)
 		return;
+
+	// ★★★**A MARK KIND IS ALWAYS TWO LINES HERE TOO** (2026-09-16, the user's rule): the side without
+	//   the ruby, kenten or note draws a BAR on the upper line - which is exactly the side this box
+	//   shows after a mark was ADDED. The same question the change row asks (KCMStoryKinds.h), so the
+	//   two cannot disagree.
+	const bool16 markLine = KCMAttrKindHasMarkLine(attrKind);
 
 	// ⚠A reading with nothing under it is not drawn. It belongs OVER the changed characters, and
 	//   without them there is no place for it to be - see the layout below, which finds its line by
-	//   looking for them.
-	if (mid.IsEmpty())
+	//   looking for them. ★A MARK is the exception since 2026-09-16: it gets a bar to stand on.
+	if (mid.IsEmpty() && !markLine)
 		ruby = PMString();		// (assigned rather than Clear()d - see the kNothing below)
 
 	// ★**AN INSERTION HAS NO CHARACTERS ON THE OLDER SIDE**, and this box shows the older side - so
 	//   the place the new words went in is drawn as a bar (2026-09-08; the whole argument is at
-	//   kKCMCaretWidth). ⚠**TEXT CHANGES ONLY** - a ruby or kenten change keeps its base characters
-	//   here, so nothing is missing to point at (user's call the same day).
-	const bool16 wantCaret = (mid.IsEmpty() &&
-							  attrKind == static_cast<int32>(kKCMStoryAttrNone)) ? kTrue : kFalse;
+	//   kKCMCaretWidth). ★Since 2026-09-16 also for a MARK with no characters on this side, so the
+	//   bar above has something to stand on (the change row's KCMStoryCellView does the same).
+	const bool16 wantCaret =
+		(mid.IsEmpty() && (attrKind == static_cast<int32>(kKCMStoryAttrNone) || markLine)) ? kTrue : kFalse;
 
 	// The palette window's SYSTEM SCRIPT font - the one the resource this replaced named
 	// (kPaletteWindowFontId there; the system-script variant here for the same reason the change
@@ -573,7 +587,7 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	//   piece of it (see the drawing below). In a Japanese UI that is 4 lines becoming 3.
 	// ⚠Not "a line per fragment". A run split across a wrap becomes several fragments, and hanging a
 	//   reading over each would be claiming the word was read that way in the document.
-	const int32 rubyLines = ruby.IsEmpty() ? 0 : 1;
+	const int32 rubyLines = (ruby.IsEmpty() && !markLine) ? 0 : 1;		// a mark's bar costs the line too
 
 	int32 maxLines = static_cast<int32>(ToDouble(frame.Height() / lineHeight)) - rubyLines;
 	if (maxLines < 1)
@@ -591,6 +605,40 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	}
 	const RealAGMColor kChangeColor = fg;
 	const RealAGMColor kContextColor = KCMBlendColor(bg, fg, PMReal(kKCMContextTextWeight));
+
+	// ---- a warichu / tate-chu-yoko: the heading, then its lines, top line first -----------------
+	// ★THE SAME DRAWING THE CHANGE ROW USES (KCMLayerDraw), one line per layer instead of wrapping.
+	//   ⚠The heading gives way before a line does: a box too short for both keeps the lines, which
+	//   are the message, and drops "Source Text:", which only names it.
+	if (layered)
+	{
+		const int32 lines = (layers.fCount < 3) ? layers.fCount : 3;
+		const int32 boxLines = static_cast<int32>(ToDouble(frame.Height() / lineHeight));
+		const int32 firstRow = (!label.IsEmpty() && boxLines >= lines + 1) ? 1 : 0;
+		// Baselines the way the wrapped layout below places them: one ascent down, one advance a row.
+		auto baselineOfRow = [&](int32 row) -> PMReal
+		{
+			return frame.Top() + ascent + lineHeight * PMReal(row);
+		};
+		if (firstRow == 1)
+			StringUtils::PMDrawStringRGB(&gc, PMPoint(frame.Left(), baselineOfRow(0)), label, fontInfo,
+										 kChangeColor, kKCMDontConvertAmpersand, kKCMNoUnderline);
+
+		KCMLayerCanvas canvas;
+		canvas.fLeft = frame.Left();
+		canvas.fRight = frame.Right();
+		canvas.fLineHeight = lineHeight;
+		canvas.fStrong = kChangeColor;
+		canvas.fFaded = kContextColor;
+		for (int32 level = 0; level < 3; ++level)
+		{
+			const int32 row = firstRow + ((level < lines) ? (lines - 1 - level) : 0);
+			canvas.fBaseline[level] = baselineOfRow(row);
+			canvas.fTop[level] = canvas.fBaseline[level] - ascent;
+		}
+		KCMDrawLayers(gc, gPort, fontInfo, layers, canvas);
+		return;
+	}
 
 	// ---- lay the message out, giving the context away first if it does not fit ----------------
 
@@ -682,7 +730,7 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	int32 rubyLine = -1;
 	PMReal rubyBaseX(0.0), rubyBaseW(0.0);
 	int32 rubyBaseChars = 0;	// how many characters that run holds - a kenten draws one mark per character
-	if (!ruby.IsEmpty())
+	if (!ruby.IsEmpty() || markLine)
 	{
 		for (size_t i = 0; i < frags.size(); ++i)
 		{
@@ -717,8 +765,11 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		//   The room was reserved by a space; the bar is drawn over it and the space itself never is.
 		if (f.fIsCaret)
 		{
+			// ⚠UNDER A MARK'S LINE the bar keeps a pixel clear at each end, so that it and a bar
+			//   above it read as two rather than as one tall line.
+			const PMReal inset = markLine ? PMReal(1.0) : PMReal(0.0);
 			KCMDrawCaret(gPort, kChangeColor, at.X(), KCMWidth(&gc, f.fText, fontInfo),
-						 at.Y() - ascent, lineHeight);
+						 at.Y() - ascent + inset, lineHeight - inset - inset);
 			continue;
 		}
 
@@ -729,6 +780,16 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 
 	if (rubyLine >= 0)
 	{
+		// ★★★**NO MARK ON THIS SIDE: A BAR** (2026-09-16, the user's rule) - centred over the
+		//   characters, or over the lower bar when this side has none.
+		if (ruby.IsEmpty())
+		{
+			KCMDrawCaret(gPort, kChangeColor, frame.Left() + rubyBaseX, rubyBaseW,
+						 baseline0 + lineHeight * PMReal(rubyLine) - ascent + PMReal(1.0),
+						 lineHeight - PMReal(2.0));
+			return;
+		}
+
 		// ★★A KENTEN IS DRAWN HERE EXACTLY AS IT IS IN THE LIST - same function, same rules (user's
 		//   call, 2026-09-01: "the source text should show it the way ruby does, and use the same
 		//   code"). This box shows the OTHER version, so it is where a mark that was REMOVED can be

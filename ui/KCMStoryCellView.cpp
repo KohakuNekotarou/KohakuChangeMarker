@@ -58,6 +58,7 @@
 #include "KCMKentenMark.h"	// the emphasis marks, drawn as shapes rather than written as characters
 #include "KCMPanelTextDraw.h"	// kKCMContextTextWeight, KCMBlendColor - shared with the message area
 #include "KCMStoryKinds.h"	// kKCMStoryAttrKenten - which attribute the upper line belongs to
+#include "KCMLayerDraw.h"	// a warichu / tate-chu-yoko change, drawn in layers (shared with the message area)
 
 namespace
 {
@@ -107,11 +108,12 @@ class KCMStoryCellData : public CPMUnknown<IKCMStoryCellData>
 {
 public:
 	KCMStoryCellData(IPMUnknown* boss)
-		: CPMUnknown<IKCMStoryCellData>(boss), fTwoLines(kFalse), fAttrKind(0) {}
+		: CPMUnknown<IKCMStoryCellData>(boss), fLineCount(1), fAttrKind(0) {}
 	virtual ~KCMStoryCellData() {}
 
 	virtual void SetSegments(const PMString& pre, const PMString& mid, const PMString& post,
-							 const PMString& ruby, bool16 twoLines, int32 attrKind)
+							 const PMString& ruby, int32 lineCount, int32 attrKind,
+							 const KCMStoryLayers& layers)
 	{
 		// ★Not translation keys. This is text out of a document, and a short common word can
 		//   otherwise be looked up in the string tables and come back as something else entirely
@@ -121,19 +123,22 @@ public:
 		fMid = mid;   fMid.SetTranslatable(kFalse);
 		fPost = post; fPost.SetTranslatable(kFalse);
 		fRuby = ruby; fRuby.SetTranslatable(kFalse);
-		fTwoLines = twoLines;
+		fLineCount = lineCount;
 		fAttrKind = attrKind;
+		fLayers = layers;
 	}
 
 	virtual void GetSegments(PMString& outPre, PMString& outMid, PMString& outPost,
-							 PMString& outRuby, bool16& outTwoLines, int32& outAttrKind) const
+							 PMString& outRuby, int32& outLineCount, int32& outAttrKind,
+							 KCMStoryLayers& outLayers) const
 	{
 		outPre = fPre;
 		outMid = fMid;
 		outPost = fPost;
 		outRuby = fRuby;
-		outTwoLines = fTwoLines;
+		outLineCount = fLineCount;
 		outAttrKind = fAttrKind;
+		outLayers = fLayers;
 	}
 
 private:
@@ -144,8 +149,9 @@ private:
 	/** The reading (ruby) or the kind (kenten) - which one is fAttrKind's business, never this
 		field's. See IKCMStoryCellData.h. */
 	PMString fRuby;
-	bool16   fTwoLines;
+	int32    fLineCount;
 	int32    fAttrKind;
+	KCMStoryLayers fLayers;		// a warichu / tate-chu-yoko change, line by line (fCount 0 otherwise)
 };
 
 CREATE_PMINTERFACE(KCMStoryCellData, kKCMStoryCellDataImpl)
@@ -180,9 +186,12 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		return;
 
 	PMString pre, mid, post, ruby;
-	bool16 twoLines = kFalse;
+	int32 lineCount = 1;
 	int32 attrKind = 0;
-	data->GetSegments(pre, mid, post, ruby, twoLines, attrKind);
+	KCMStoryLayers layers;
+	data->GetSegments(pre, mid, post, ruby, lineCount, attrKind, layers);
+	const bool16 twoLines = (lineCount >= 2) ? kTrue : kFalse;
+	const bool16 layered = (KCMAttrKindIsLayered(attrKind) && layers.fCount >= 2) ? kTrue : kFalse;
 
 	// ★WHAT THE UPPER LINE IS, ASKED ONCE. Kenten's value is the NAME of a mark, so it is painted
 	//   as the mark; ruby's is a reading and is written out. Everything below that has to know the
@@ -196,7 +205,7 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	//   widget waiting for its next apply has to look like.
 	// ⚠The reading counts as something to draw: a recycled widget that kept only a ruby would
 	//   otherwise paint it over the row it has become.
-	if (pre.IsEmpty() && mid.IsEmpty() && post.IsEmpty() && ruby.IsEmpty())
+	if (pre.IsEmpty() && mid.IsEmpty() && post.IsEmpty() && ruby.IsEmpty() && !layered)
 		return;
 
 	// The palette window's SYSTEM SCRIPT font - the one every other cell of these two rows declares
@@ -265,6 +274,31 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	//  widgets share. They were declared here and in KCMStatusTextView.cpp, under two different
 	//  names, with that reason written out twice.)
 
+	// ★★A WARICHU OR TATE-CHU-YOKO IS DRAWN IN LAYERS (2026-09-16), by the drawing the message area
+	//   shares (KCMLayerDraw). The cell is the row's line count tall and each line is one of them,
+	//   the top line on top - the same halving the ruby row does above, by three when it is three.
+	if (layered)
+	{
+		const int32 lines = (layers.fCount < 3) ? layers.fCount : 3;		// KCMLayerCanvas holds three
+		const PMReal oneLine = frame.Height() / PMReal(lines);
+		const PMReal textY = Utils<IWidgetUtils>()->GetViewYPosition(&gc, fontInfo, oneLine);
+
+		KCMLayerCanvas canvas;
+		canvas.fLeft = leftEdge;
+		canvas.fRight = rightEdge;
+		canvas.fLineHeight = oneLine;
+		canvas.fStrong = kChangeColor;
+		canvas.fFaded = kContextColor;
+		for (int32 level = 0; level < 3; ++level)
+		{
+			const int32 fromTop = (level < lines) ? (lines - 1 - level) : 0;
+			canvas.fTop[level] = frame.Top() + oneLine * PMReal(fromTop);
+			canvas.fBaseline[level] = canvas.fTop[level] + textY;
+		}
+		KCMDrawLayers(gc, gPort, fontInfo, layers, canvas);
+		return;
+	}
+
 	const PMReal availWidth = rightEdge - x;
 	if (availWidth <= PMReal(0.0))
 		return;
@@ -280,15 +314,25 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 
 	// ★**A DELETION HAS NOTHING TO SHOW ON THIS SIDE**, so the place it left is drawn as a bar
 	//   instead of as a gap the reader cannot see (2026-09-08 - see kKCMCaretWidth for the whole
-	//   argument). ⚠**TEXT CHANGES ONLY**: a ruby or kenten change keeps its base characters here,
-	//   so there is nothing missing to point at, and those rows are left exactly as they were
-	//   (user's call the same day).
-	const bool16 wantCaret = (mid.IsEmpty() &&
-							  attrKind == static_cast<int32>(kKCMStoryAttrNone)) ? kTrue : kFalse;
+	//   argument).
+	// ★★**AND SINCE 2026-09-16 A MARK'S ROW DRAWS IT TOO, WHEN IT HAS NO CHARACTERS ON THIS SIDE** -
+	//   the words changed as well, so this side was given a place and nothing to select. The bar on
+	//   the upper line (below) needs something to stand on. A ruby, kenten or note row that HAS its
+	//   base characters still shows them, as before.
+	const bool16 markLine = (twoLines && KCMAttrKindHasMarkLine(attrKind)) ? kTrue : kFalse;
+	const bool16 wantCaret =
+		(mid.IsEmpty() && (attrKind == static_cast<int32>(kKCMStoryAttrNone) || markLine)) ? kTrue : kFalse;
 	const PMString caretRoom = KCMCaretPlaceholder();
 	const PMReal caretRoomW = wantCaret
 		? StringUtils::PMMeasureString(&gc, caretRoom, fontInfo, kKCMDontConvertAmpersand).X()
 		: PMReal(0.0);
+
+	// ★WHERE EACH BAR STANDS. A one-line row's bar spans the cell, which is what makes it read as
+	//   "between these two characters". On two lines each bar keeps to ITS OWN line, with a pixel
+	//   short of the middle on either side - otherwise a mark's upper bar and the lower bar under it
+	//   touch and read as one tall line instead of two.
+	const PMReal lowerBarTop    = twoLines ? (frame.Top() + lineHeight + PMReal(1.0)) : (frame.Top() + PMReal(1.0));
+	const PMReal lowerBarHeight = twoLines ? (lineHeight - PMReal(2.0)) : (frame.Height() - PMReal(2.0));
 
 	// ★WHERE THE CHANGED CHARACTERS ACTUALLY LANDED. The reading has to stand over THEM, and where
 	//   they land is not known until the line has been laid out: all three branches below place the
@@ -302,9 +346,7 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		drawnMidX = x;
 		if (wantCaret && s.IsEmpty())
 		{
-			// The bar spans the cell's own height, so it reads as a place between two characters.
-			KCMDrawCaret(gPort, kChangeColor, x, caretRoomW,
-						 frame.Top() + PMReal(1.0), frame.Height() - PMReal(2.0));
+			KCMDrawCaret(gPort, kChangeColor, x, caretRoomW, lowerBarTop, lowerBarHeight);
 			x += caretRoomW;
 		}
 		else
@@ -361,12 +403,19 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 
 	// ---- the upper line: the reading, over the characters it belongs to -------------------
 	//
-	// ★NOTHING IS DRAWN FOR A RUBY THAT WAS TAKEN AWAY, and that is the decision rather than an
-	//   oversight (user's call, 2026-08-22). The row shows the NEWER version, where there is no
-	//   reading any more, so an empty upper line is what that version actually looks like; the
-	//   reading that was removed is read in the panel's message area, which shows the other side.
-	//   The row is still laid out on two lines - see the widget manager - so the base text does not
-	//   jump half a row against the rows above and below it.
+	// ★★★**A MARK THAT IS NOT ON THIS SIDE IS DRAWN AS A BAR** (2026-09-16, the user's rule: "when a
+	//   ruby is removed, two lines - a bar over the kanji; kenten the same"). The row shows the NEWER
+	//   version, where a removed ruby, kenten or note has no value, and the upper line
+	//   says so with the same bar a deletion leaves in the text. ⚠**It replaces two older answers**:
+	//   an empty upper line (2026-08-22) and one line (2026-09-01). The value that was removed is read
+	//   in the panel's message area, which shows the other side.
+	if (markLine && ruby.IsEmpty())
+	{
+		KCMDrawCaret(gPort, kChangeColor, drawnMidX, drawnMidW,
+					 frame.Top() + PMReal(1.0), lineHeight - PMReal(2.0));
+		return;
+	}
+	//
 	// ★★THE MARKS ARE DRAWN BY THE SAME CODE THE MESSAGE AREA USES (user's call, 2026-09-01:
 	//   "use the same code where it can be the same"). Everything about how a kenten looks - one
 	//   mark per character, how big, where the custom glyph goes - lives in KCMKentenMark, so the

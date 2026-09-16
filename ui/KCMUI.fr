@@ -2823,6 +2823,59 @@ resource KCMStoryRowWidget(kKCMStoryRubyRowRsrcID + index_enUS)
 	}
 };
 
+// ---------------------------------------------------------------------------------------
+// ★★A THREE-LINE CHANGE ROW (2026-09-16) - a warichu or tate-chu-yoko drawn in layers, a
+// tate-chu-yoko on the line of the warichu it stands in, on the line of the text (the user's
+// drawing). The ruby row above, three lines tall; nothing else differs.
+// ⚠Its own WidgetID, for the reason the ruby row has one: the height belongs to the widget.
+// ⚠The sign's Frame here is the bottom line, but the widget manager moves it to the line that
+//   changed on every apply (KCMStoryTreeWidgetMgr::ApplyChangeRow) - only its top and bottom.
+// ---------------------------------------------------------------------------------------
+resource LocaleIndex (kKCMStoryTallRowRsrcID)
+{
+	kViewRsrcType,
+	{
+		kWildFS, k_Wild, kKCMStoryTallRowRsrcID + index_enUS
+	}
+};
+
+resource KCMStoryRowWidget(kKCMStoryTallRowRsrcID + index_enUS)
+{
+	__FILE__, __LINE__,
+	kKCMStoryTallRowWidgetID, kPMRsrcID_None,	// WidgetId (★neither the change row's nor the ruby row's)
+	kBindLeft | kBindRight,				// Frame binding: follow the list's width
+	Frame(0, 0, 224, kKCMStoryTallRowHeight),	// Frame (left, top, right, bottom)
+	kTrue, kTrue,						// Visible, Enabled
+	"",									// Panel name
+	{
+		KCMStoryChangeCellWidget
+		(
+			kKCMStoryRowTextWidgetID,		// WidgetId (reused - see 1014)
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft | kBindRight,			// Frame binding: this is the cell that grows
+			Frame(68, 1, 176, kKCMStoryTallRowHeight - 2),	// Frame (all three lines)
+			kTrue, kTrue,					// Visible, Enabled
+			"",								// Panel name (none)
+			{
+			}
+		),
+
+		KCMStoryRowCellWidget
+		(
+			kKCMStoryRowKindWidgetID,		// WidgetId (reused)
+			kPMRsrcID_None,					// RsrcId
+			kBindRight,						// Frame binding: stay at the row's right edge
+			Frame(176, kKCMStoryRowHeight * 2, 216, kKCMStoryTallRowHeight - 2),	// Frame (bottom line; moved per apply)
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignRight,					// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+	}
+};
+
 // One row of the book comparison dialog's chapter list, created at runtime by
 // KCMBookTreeWidgetMgr. Same construction as the Story Edits row above - including the
 // LocaleIndex wrapper, which is required rather than decorative: the widget manager asks for the

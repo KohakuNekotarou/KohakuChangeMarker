@@ -47,6 +47,7 @@
 
 // Project includes:
 #include "KCMUIID.h"		// IID_IKCMSTATUSTEXTDATA
+#include "KCMStoryLayers.h"	// the lines of a warichu / tate-chu-yoko message
 
 /** Holds what the panel's message area draws, split where the colour changes. */
 class IKCMStatusTextData : public IPMUnknown
@@ -87,14 +88,18 @@ public:
 		that can tell them apart is this - and a reading could perfectly well BE the word
 		"Bullseye". The same rule the row's cell follows (IKCMStoryCellData.h) and the one
 		IKCMStoryEditsFacade.h states outright. */
+	/** @param layers ★the LINES of a warichu / tate-chu-yoko message (2026-09-16) - the other side of
+		 such an edit, drawn in layers by the drawing the change row shares (KCMLayerDraw). fCount 0
+		 for every other message. In the same one call, for the reason stated above. */
 	virtual void SetSegments(const PMString& label, const PMString& pre,
 							 const PMString& mid, const PMString& post,
-							 const PMString& ruby, int32 attrKind) = 0;
+							 const PMString& ruby, int32 attrKind,
+							 const KCMStoryLayers& layers) = 0;
 
 	/** Read back what was written. Answers empty strings and 0 before the first message. */
 	virtual void GetSegments(PMString& outLabel, PMString& outPre,
 							 PMString& outMid, PMString& outPost, PMString& outRuby,
-							 int32& outAttrKind) const = 0;
+							 int32& outAttrKind, KCMStoryLayers& outLayers) const = 0;
 };
 
 #endif // __IKCMStatusTextData_h__

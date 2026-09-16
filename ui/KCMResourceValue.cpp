@@ -82,7 +82,8 @@ bool16 BandHoldsOurText()
 
 	PMString label, pre, mid, post, ruby;
 	int32 attrKind = 0;
-	data->GetSegments(label, pre, mid, post, ruby, attrKind);
+	KCMStoryLayers layers;		// not asked about - the band never draws layers
+	data->GetSegments(label, pre, mid, post, ruby, attrKind, layers);
 
 	// ★BOTH PIECES ARE ASKED, because this file writes the label into either one: as the HEADING
 	//   when a value goes under it, and as the BODY when none does (KCMShowSelectedResource carries

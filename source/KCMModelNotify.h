@@ -34,6 +34,7 @@
 // THIS file for it, and said so -- "the type alone is borrowed"). Everything below is the
 // SENDING side, which is model-only work the UI can see and cannot link to.
 #include "KCMNotifyPayload.h"	// KCMNotifyPayload
+#include "KCMStoryLayers.h"		// the lines of a warichu / tate-chu-yoko message
 
 class IDataBase;
 
@@ -182,10 +183,18 @@ void	KCMGetSessionStatusSegments(PMString& outLabel, PMString& outPre,
 									  PMString& outMid, PMString& outPost, PMString& outRuby,
 									  int32& outAttrKind);
 
+// ★THE LINES OF A WARICHU / TATE-CHU-YOKO MESSAGE (2026-09-16), stored beside the pieces above for
+// the reason they are stored: re-opening the panel must bring the message back drawn the same way.
+// ⚠STORE THE PIECES FIRST. KCMStoreSessionStatus and KCMStoreSessionStatusSegments both EMPTY the
+//  lines - a message that is not a layered one has none, and a stale set standing beside a new
+//  sentence would be drawn over it - so the lines go in after them, never before.
+void	KCMStoreSessionStatusLayers(const KCMStoryLayers& layers);
+void	KCMGetSessionStatusLayers(KCMStoryLayers& out);
+
 // Shutdown only: empty the stored message, so the static PMStrings' destructors have no live
 // heap buffer to free when the plug-in unloads (Mac unload order differs from Windows).
-// @warning ALL FIVE PIECES. A static PMString added beside its fellows and left out of this list
-// is the exact shape of two defects already found in this plug-in.
+// @warning ALL FIVE PIECES, AND THE LINES. A static PMString added beside its fellows and left out
+// of this list is the exact shape of two defects already found in this plug-in.
 void	KCMClearSessionStatus();
 
 #endif // __KCMModelNotify_h__

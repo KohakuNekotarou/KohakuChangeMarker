@@ -529,6 +529,63 @@ private:
 	bool16				fBytesMade;
 };
 
+/* BuildLayers
+   One side of a warichu or tate-chu-yoko change, as the lines the panel draws (KCMStoryLayers.h):
+   the plan decides which characters go on which line (KCMParaText::PlanLayers, tested outside
+   InDesign), and this cuts the words.
+   ★LINE 0 IS CUT THE WAY EVERY ROW IS - Slice, with its context and its ellipses - around its one
+    bar. The lines above are whole pieces of a warichu or a tate-chu-yoko and are not shortened
+    here: the cell ellipsizes what does not fit.
+   @param present whether this side carries the mark (its value is not empty). */
+void BuildLayers(ParaSide& side, bool16 changedIsWarichu, int32 start, int32 len, bool16 present,
+				 KCMStoryLayers& out)
+{
+	out = KCMStoryLayers();
+
+	const std::vector<int32>& bytes = side.Bytes();
+	KCMParaText::LayerPlan plan;
+	KCMParaText::PlanLayers(changedIsWarichu, side.fAttrs.fWarichu, side.fAttrs.fTcy,
+							start, len, present, static_cast<int32>(bytes.size()), plan);
+	if (plan.fCount < 2)
+		return;
+
+	out.fCount = plan.fCount;
+	out.fChanged = plan.fChanged;
+
+	std::string pre, mid, post;
+	Slice(side.fText, bytes, plan.fHole.fFrom, plan.fHole.fTo - plan.fHole.fFrom, kContextCodePoints,
+		  pre, mid, post);
+	SetDocumentText(out.fBottomPre, pre);
+	SetDocumentText(out.fBottomPost, post);
+
+	auto piece = [&](int32 from, int32 to) -> PMString
+	{
+		PMString s;
+		SetDocumentText(s, MarkUpBreaks(KCMParaText::SliceCodePoints(side.fText, from, to - from)));
+		return s;
+	};
+
+	out.fMiddleIsBar = plan.fMiddleIsBar;
+	if (!plan.fMiddleIsBar)
+	{
+		int32 at = plan.fMiddle.fFrom;
+		for (size_t h = 0; h < plan.fUpperHoles.size(); ++h)
+		{
+			out.fMiddleParts.push_back(piece(at, plan.fUpperHoles[h].fFrom));
+			at = plan.fUpperHoles[h].fTo;
+
+			const bool16 bar = (static_cast<int32>(h) == plan.fChangedPiece && plan.fChangedPieceIsBar)
+							   ? kTrue : kFalse;
+			out.fUpperPieces.push_back(bar ? PMString() : piece(plan.fUpperHoles[h].fFrom, plan.fUpperHoles[h].fTo));
+			if (bar)
+				out.fUpperPieces.back().SetTranslatable(kFalse);
+		}
+		out.fMiddleParts.push_back(piece(at, plan.fMiddle.fTo));
+	}
+	out.fChangedPiece = plan.fChangedPiece;
+	out.fChangedPieceIsBar = plan.fChangedPieceIsBar;
+}
+
 /* AddAttrChange
    One ATTRIBUTE difference -- a ruby today -- turned into the child row that reports it.
 
@@ -599,6 +656,19 @@ void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 	change.fRubyGroup = newGroup;
 	change.fOtherRubyGroup = oldGroup;
 
+	// ★★WARICHU AND TATE-CHU-YOKO ARE DRAWN IN LAYERS (2026-09-16, the user's drawings), and the lines
+	//   are cut HERE, where the paragraph and its spans are - each side on its own terms, since a
+	//   side without the mark is drawn differently from one with it (KCMParaText::PlanLayers).
+	//   ★Neither kind is written back (user's call): named here, where the change is made, so the
+	//   menu hides the item instead of offering one that refuses.
+	if (KCMAttrKindIsLayered(attrKind))
+	{
+		const bool16 isWarichu = (attrKind == kKCMStoryAttrWarichu) ? kTrue : kFalse;
+		BuildLayers(target, isWarichu, tStart, tCount, newRuby.empty() ? kFalse : kTrue, change.fLayers);
+		BuildLayers(source, isWarichu, sStart, sCount, oldRuby.empty() ? kFalse : kTrue, change.fOtherLayers);
+		change.fWriteBlock = kKCMWriteBlockedKind;
+	}
+
 	out.push_back(change);
 }
 
@@ -636,7 +706,23 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 			//   reading is not reported.
 			const bool16 same = (sourceSpans[i].fValue == targetSpans[j].fValue &&
 								 sourceSpans[i].fLen == targetSpans[j].fLen) ? kTrue : kFalse;
-			if (!same)
+
+			// ★★ONLY THE INNERMOST LAYER REPORTS A CHANGE OF ITS WORDS (2026-09-16, the user's call).
+			//   A warichu's value is its characters, so rewriting a tate-chu-yoko inside it changes the
+			//   warichu's value too - and the tate-chu-yoko's own row already says so. The same the
+			//   other way round, for a warichu standing inside a tate-chu-yoko. ⚠The warichu is the
+			//   outer one of two over the same range, which is what the last argument says.
+			bool16 nestedOnly = kFalse;
+			if (!same && KCMAttrKindIsLayered(attrKind))
+			{
+				const bool16 isWarichu = (attrKind == kKCMStoryAttrWarichu) ? kTrue : kFalse;
+				nestedOnly = KCMParaText::OnlyNestedDiffers(
+					source.fText, sourceSpans[i], isWarichu ? source.fAttrs.fTcy : source.fAttrs.fWarichu,
+					target.fText, targetSpans[j], isWarichu ? target.fAttrs.fTcy : target.fAttrs.fWarichu,
+					isWarichu);
+			}
+
+			if (!same && !nestedOnly)
 			{
 				AddAttrChange(KCMStoryChange::kReplace, attrKind,
 							  targetSpans[j].fStart, targetSpans[j].fLen,
@@ -967,6 +1053,18 @@ void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChange
 		//     (kEndnoteStoryBoss) and arrives as a story row of its own. This is the marker alone.
 		compareAttr(kKCMStoryAttrFootnote, sourceAttrs[ai].fFootnote, targetAttrs[bi].fFootnote);
 		compareAttr(kKCMStoryAttrEndnote,  sourceAttrs[ai].fEndnote,  targetAttrs[bi].fEndnote);
+
+		// ★WARICHU AND TATE-CHU-YOKO (2026-09-16, user's request), through the same door once more.
+		//   Their VALUE is the characters they cover (KCMParaAttrs::fWarichu), so two things fall out
+		//   of the rules above with nothing added here:
+		//   - rewriting the words INSIDE one keeps its span where it starts on both sides, the pair
+		//     is compared, the values differ, and a row of this kind stands beside the text row;
+		//   - typing or deleting one TOGETHER WITH its words drops the span (SpansWhoseTextSurvives),
+		//     so only the text row says so - the text is the subject, the mark its attendant.
+		//   What IS added is in CompareParagraphAttr: of two nested layers, only the inner one
+		//   reports a change of the words inside it.
+		compareAttr(kKCMStoryAttrWarichu,  sourceAttrs[ai].fWarichu,  targetAttrs[bi].fWarichu);
+		compareAttr(kKCMStoryAttrTcy,      sourceAttrs[ai].fTcy,      targetAttrs[bi].fTcy);
 	};
 
 	// Walk the two paragraph lists side by side, stepping over each reported change. What is left

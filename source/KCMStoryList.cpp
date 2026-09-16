@@ -1103,6 +1103,8 @@ std::string AttrWord(int32 attrKind)
 		case kKCMStoryAttrKenten:	return "Kenten";
 		case kKCMStoryAttrFootnote:	return "Footnote";
 		case kKCMStoryAttrEndnote:	return "Endnote";
+		case kKCMStoryAttrWarichu:	return "Warichu";
+		case kKCMStoryAttrTcy:		return "TCY";		// the tagged-text name for it (TTImportExportAttrId.h)
 		default:					return "Attr" + Num(attrKind);
 	}
 }

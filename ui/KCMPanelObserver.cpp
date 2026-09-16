@@ -46,6 +46,7 @@
 #include "IKCMStatusTextData.h"	// ★the message area is self-drawn ＝ four pieces are written, not one string
 #include "Utils.h"					// Utils<IKCMCompareFacade>()
 #include "IKCMCompareFacade.h"	// ★the way to ask the model for the armed state and the status
+#include "IKCMStoryEditsFacade.h"	// StoreStatusLayers / GetStatusLayers - a layered message's lines
 								//  string. Reading is GetSessionStatus, writing is StoreSessionStatus
 								//  ---- the latter came here when the halves became two .pln, because a
 								//  free function of the model cannot be linked from another one.
@@ -263,7 +264,11 @@ void KCMPanelObserver::AutoAttach()
 	}
 	else
 	{
-		KCMSetStatusSegments(savedLabel, savedPre, savedMid, savedPost, savedRuby, savedAttrKind);
+		// ★And the lines of a warichu / tate-chu-yoko message, remembered beside the pieces
+		//   (2026-09-16) - without them it would come back wrapped instead of layered.
+		KCMStoryLayers savedLayers;
+		Utils<IKCMStoryEditsFacade>()->GetStatusLayers(savedLayers);
+		KCMSetStatusSegments(savedLabel, savedPre, savedMid, savedPost, savedRuby, savedAttrKind, savedLayers);
 	}
 
 	// The position readout between Prev and Next, and whether the buttons are enabled, have already
@@ -771,7 +776,7 @@ namespace
 */
 void KCMWriteStatusToPanel(const PMString& label, const PMString& pre,
 							 const PMString& mid, const PMString& post, const PMString& ruby,
-							 int32 attrKind, bool16 forceRedrawNow)
+							 int32 attrKind, const KCMStoryLayers& layers, bool16 forceRedrawNow)
 {
 	IControlView* panel = KCMGetVisibleOwnPanel();
 	if (panel == nil)
@@ -786,7 +791,7 @@ void KCMWriteStatusToPanel(const PMString& label, const PMString& pre,
 	if (data == nil)
 		return;
 
-	data->SetSegments(label, pre, mid, post, ruby, attrKind);
+	data->SetSegments(label, pre, mid, post, ruby, attrKind, layers);
 	cv->Invalidate();
 
 	// When a blocking stretch of work (a comparison loop, say) follows immediately, an Invalidate
@@ -810,7 +815,7 @@ void KCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 	//   exactly like the stock static text used to, which is why not one of the many call sites had
 	//   to change.
 	const PMString kNothing;
-	KCMWriteStatusToPanel(kNothing, kNothing, s, kNothing, kNothing, 0, forceRedrawNow);
+	KCMWriteStatusToPanel(kNothing, kNothing, s, kNothing, kNothing, 0, KCMStoryLayers(), forceRedrawNow);
 }
 
 // A message written out where it is used (declared in KCMUIShared.h, with the reason).
@@ -825,13 +830,25 @@ void KCMSetStatusSegments(const PMString& label, const PMString& pre,
 							const PMString& mid, const PMString& post, const PMString& ruby,
 							int32 attrKind)
 {
+	KCMSetStatusSegments(label, pre, mid, post, ruby, attrKind, KCMStoryLayers());
+}
+
+void KCMSetStatusSegments(const PMString& label, const PMString& pre,
+							const PMString& mid, const PMString& post, const PMString& ruby,
+							int32 attrKind, const KCMStoryLayers& layers)
+{
 	// ★Remembered in exactly the same one place as above. Joining the pieces into a single string is
 	//   done on the model side, so app.kcmStatus answers "heading + newline + body" ＝ what this area
 	//   shows.
 	Utils<IKCMCompareFacade>()->StoreSessionStatusSegments(label, pre, mid, post, ruby, attrKind);
 
+	// ★AND THE LINES, AFTER THE PIECES (2026-09-16): storing the pieces empties them, so a message
+	//   that has none cannot leave an old set standing (KCMModelNotify.h).
+	if (layers.fCount >= 2)
+		Utils<IKCMStoryEditsFacade>()->StoreStatusLayers(layers);
+
 	// ★forceRedrawNow is not passed: this route is a row click, with no blocking work behind it
-	KCMWriteStatusToPanel(label, pre, mid, post, ruby, attrKind, kFalse);
+	KCMWriteStatusToPanel(label, pre, mid, post, ruby, attrKind, layers, kFalse);
 }
 
 // (★KCMGetSessionStatus and KCMClearSessionStatus moved to **KCMModelNotify.cpp, on the model

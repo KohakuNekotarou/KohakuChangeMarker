@@ -2,7 +2,9 @@
 //
 //  KCMStoryKinds.h
 //
-//  What kind of change a Story Edits row reports -- the two enums alone.
+//  What kind of change a Story Edits row reports -- the enums, and the questions every widget asks
+//  of an attribute kind (KCMAttrKindHasMarkLine / KCMAttrKindIsLayered, 2026-09-16), which need
+//  nothing but the values and so cross the boundary with them.
 //
 //  WHY THEY ARE A FILE OF THEIR OWN. Both halves read them: the model fills a row's fKinds, and
 //  the UI names the kinds on the row and picks which window a Removed row jumps to. They used to
@@ -93,12 +95,66 @@ enum KCMStoryAttrKind
 								// sitting over a place - and because the alternative (a text change
 								// of one invisible character) is what the panel used to show: a "□"
 								// nobody could read.
-	kKCMStoryAttrEndnote = 4	// ★the same for an ENDNOTE (U+0005). ⚠**ITS TEXT LIVES IN ANOTHER
+	kKCMStoryAttrEndnote = 4,	// ★the same for an ENDNOTE (U+0005). ⚠**ITS TEXT LIVES IN ANOTHER
 								// STORY** (kEndnoteStoryBoss - measured 2026-09-08: adding one makes
 								// app.documents[0].stories go from 1 to 2), so only the marker is
 								// reported here; the note's own words arrive as a story row of their
 								// own, exactly as they did before.
+	kKCMStoryAttrWarichu = 5,	// ★WARICHU set on or taken off characters (2026-09-16, user's request -
+								// reversing 2026-09-09's "leave warichu out"). kTAWarichuAttrBoss, the
+								// ON/OFF alone: its line count, size and alignment are not compared
+								// (the Pixel mode sees those). ★ITS VALUE IS THE CHARACTERS IT COVERS.
+								// ★LAYERED: drawn as a line of its own over the text (KCMStoryLayers.h).
+	kKCMStoryAttrTcy = 6		// ★TATE-CHU-YOKO set on or taken off characters (2026-09-16, the same
+								// request), the manual one: kTATatechuyokoAttrBoss. Its X/Y offsets
+								// and the automatic tate-chu-yoko (a paragraph setting) are not
+								// compared. ★ITS VALUE IS THE CHARACTERS IT COVERS; LAYERED, over a
+								// warichu when it stands inside one.
+								// ⚠**Neither of the two is written back** (user's call): their changes
+								// carry kKCMWriteBlockedKind.
 };
+
+/** Whether a change of this kind is drawn on TWO LINES - a value (or a mark) standing over the
+	characters it belongs to.
+
+	★★★**ALWAYS, WHETHER OR NOT THIS SIDE HAS A VALUE** (2026-09-16, the user's rule: "when a ruby is
+	  removed, two lines - a bar over the kanji; kenten the same", and footnotes and endnotes with
+	  them). The side that has no ruby, no kenten or no note draws a BAR on the upper line, over where
+	  it would stand. **This reverses 2026-09-01** ("when the ruby or the kenten is gone, make it one
+	  line"), which kept the height and the drawing in step by asking whether the value was empty;
+	  now nothing asks that, and the two stay in step because both ask THIS.
+	★ONE QUESTION IN ONE PLACE for everything that lays such a change out: the change row's height
+	  and drawing (KCMStoryTreeWidgetMgr, KCMStoryCellView), the message area (KCMStatusTextView,
+	  reached through KCMStoryJump) and the PDF report (KCMReport). A kind added above is two lines
+	  exactly when it is added here. */
+inline bool16 KCMAttrKindHasMarkLine(int32 attrKind)
+{
+	switch (attrKind)
+	{
+		case kKCMStoryAttrRuby:
+		case kKCMStoryAttrKenten:
+		case kKCMStoryAttrFootnote:
+		case kKCMStoryAttrEndnote:
+		case kKCMStoryAttrWarichu:
+		case kKCMStoryAttrTcy:
+			return kTrue;
+		default:
+			return kFalse;
+	}
+}
+
+/** Whether a change of this kind is drawn in LAYERS - the text below, a warichu over the place it
+	stands, a tate-chu-yoko over the place IT stands - rather than as a value over its characters.
+
+	★WARICHU AND TATE-CHU-YOKO (2026-09-16, the user's drawing: "77" over "わりちゅう｜のぶん" over
+	  "琥珀｜猫太郎"). The two are pieces of text set apart from the line they stand in, and one can
+	  stand inside the other, so each is lifted onto a line of its own and leaves a bar where it was.
+	  The model works out the lines (KCMParaText::PlanLayers) and carries them as strings
+	  (KCMStoryLayers); nothing on the UI side decides what goes on which line. */
+inline bool16 KCMAttrKindIsLayered(int32 attrKind)
+{
+	return (attrKind == kKCMStoryAttrWarichu || attrKind == kKCMStoryAttrTcy) ? kTrue : kFalse;
+}
 
 /** The two kinds that mean "this story has no partner in the other version".
 
@@ -131,9 +187,13 @@ enum KCMStoryWriteBlock
 	kKCMWriteBlockedPlaces = 1,		// a table cell or a footnote whose place is not on the other side
 									// (KCMParaText::WordsCanBeWrittenAcross) - measured, a deleted
 									// table's cell "restored" into a position nothing could see
-	kKCMWriteBlockedObjects = 2		// the words going in or coming out hold a character InDesign hangs
+	kKCMWriteBlockedObjects = 2,	// the words going in or coming out hold a character InDesign hangs
 									// an object on (KCMParaText::IsObjectCharacter) - measured, an
 									// anchored rectangle came back as U+FFFC alone
+	kKCMWriteBlockedKind = 3		// ★a kind of change that is shown and never written back - warichu
+									// and tate-chu-yoko (2026-09-16, user's call). Set by the diff
+									// (KCMStoryDiffRun's AddAttrChange), so the menu hides the item
+									// rather than offering one that then refuses
 };
 
 #endif // __KCMStoryKinds_h__

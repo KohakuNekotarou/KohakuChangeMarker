@@ -572,31 +572,100 @@ void BuildStoryRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KCMRep
 				if (r.fLeft.fMid.IsEmpty() && !r.fRight.fMid.IsEmpty())  r.fLeft.fMid = Ascii("|");
 				if (r.fRight.fMid.IsEmpty() && !r.fLeft.fMid.IsEmpty()) r.fRight.fMid = Ascii("|");
 			}
-			else if (ch.fAttrKind == kKCMStoryAttrRuby)
+			else
 			{
-				r.fLeft.fRuby = ch.fOtherRuby;   r.fLeft.fRubyGroup = ch.fOtherRubyGroup;
-				r.fRight.fRuby = ch.fRuby;       r.fRight.fRubyGroup = ch.fRubyGroup;
-			}
-			else if (ch.fAttrKind == kKCMStoryAttrKenten)
-			{
-				// The value is a KIND NAME ("BlackCircle"); a kind this build can write is drawn
-				// as the mark itself, any other (a custom mark) is named after the text.
-				int16 kind = 0;
-				if (!ch.fOtherRuby.IsEmpty())
+				// ★★THE PANEL'S RULE, ON PAPER (2026-09-16, the user's rule): the side WITHOUT the mark
+				//   shows a bar where the mark would stand - over the characters for a ruby or a
+				//   kenten, as the superscript for a note number. A side with no characters at all gets
+				//   a bar below too, or nothing would carry the one above it.
+				const PMString bar = Ascii("|");
+				auto oneSide = [&](KCMReportCell& cell, const PMString& value, bool16 group,
+								   const KCMStoryLayers& layers)
 				{
-					if (KCMKentenKindOf(ch.fOtherRuby, kind)) r.fLeft.fKentenKind = kind;
-					else { r.fLeft.fNote = Ascii(" ["); r.fLeft.fNote.Append(ch.fOtherRuby); r.fLeft.fNote.Append("]"); }
-				}
-				if (!ch.fRuby.IsEmpty())
-				{
-					if (KCMKentenKindOf(ch.fRuby, kind)) r.fRight.fKentenKind = kind;
-					else { r.fRight.fNote = Ascii(" ["); r.fRight.fNote.Append(ch.fRuby); r.fRight.fNote.Append("]"); }
-				}
-			}
-			else	// footnote / endnote: the value is the number the page prints
-			{
-				r.fLeft.fNote = ch.fOtherRuby;
-				r.fRight.fNote = ch.fRuby;
+					// ★★A WARICHU OR TATE-CHU-YOKO (2026-09-16): the page cannot stack three lines, so
+					//   the outer layers are written out in one line and the INNERMOST piece stands
+					//   over its bar as a reading - the changed piece when the change is up there, the
+					//   first otherwise. A side without the mark reads "|" over "|".
+					if (KCMAttrKindIsLayered(ch.fAttrKind) && layers.fCount >= 2)
+					{
+						PMString pre(layers.fBottomPre);
+						PMString post;
+						PMString over;
+						if (layers.fMiddleIsBar || layers.fMiddleParts.empty())
+						{
+							over = bar;
+						}
+						else if (layers.fUpperPieces.empty())
+						{
+							for (size_t k = 0; k < layers.fMiddleParts.size(); ++k)
+								over.Append(layers.fMiddleParts[k]);
+						}
+						else
+						{
+							const size_t lifted = (layers.fChangedPiece >= 0 &&
+												   static_cast<size_t>(layers.fChangedPiece) < layers.fUpperPieces.size())
+												  ? static_cast<size_t>(layers.fChangedPiece) : 0;
+							// Line 1 reads part0 piece0 part1 piece1 ... partN: everything before the
+							// lifted piece goes in front of its bar, everything after it behind.
+							for (size_t k = 0; k < lifted; ++k)
+							{
+								pre.Append(layers.fMiddleParts[k]);
+								pre.Append(layers.fUpperPieces[k]);
+							}
+							pre.Append(layers.fMiddleParts[lifted]);
+							for (size_t k = lifted + 1; k < layers.fMiddleParts.size(); ++k)
+							{
+								if (k > lifted + 1)
+									post.Append(layers.fUpperPieces[k - 1]);
+								post.Append(layers.fMiddleParts[k]);
+							}
+							over = layers.fUpperPieces[lifted].IsEmpty() ? bar : layers.fUpperPieces[lifted];
+						}
+						post.Append(layers.fBottomPost);
+						pre.SetTranslatable(kFalse);
+						post.SetTranslatable(kFalse);
+						over.SetTranslatable(kFalse);
+						cell.fPre = pre;
+						cell.fMid = bar;
+						cell.fPost = post;
+						cell.fRuby = over;
+						cell.fRubyGroup = kTrue;
+						return;
+					}
+
+					if (cell.fMid.IsEmpty())
+						cell.fMid = bar;
+
+					if (ch.fAttrKind == kKCMStoryAttrFootnote || ch.fAttrKind == kKCMStoryAttrEndnote)
+					{
+						cell.fNote = value.IsEmpty() ? bar : value;		// the number the page prints
+						return;
+					}
+					if (value.IsEmpty())
+					{
+						cell.fRuby = bar;
+						return;
+					}
+					if (ch.fAttrKind == kKCMStoryAttrKenten)
+					{
+						// The value is a KIND NAME ("BlackCircle"); a kind this build can write is drawn
+						// as the mark itself, any other (a custom mark) is named after the text.
+						int16 kind = 0;
+						if (KCMKentenKindOf(value, kind))
+							cell.fKentenKind = kind;
+						else
+						{
+							cell.fNote = Ascii(" [");
+							cell.fNote.Append(value);
+							cell.fNote.Append("]");
+						}
+						return;
+					}
+					cell.fRuby = value;			// a ruby's reading
+					cell.fRubyGroup = group;
+				};
+				oneSide(r.fLeft, ch.fOtherRuby, ch.fOtherRubyGroup, ch.fOtherLayers);
+				oneSide(r.fRight, ch.fRuby, ch.fRubyGroup, ch.fLayers);
 			}
 			out.push_back(r);
 			if (static_cast<int32>(out.size()) >= kMaxTableRows)

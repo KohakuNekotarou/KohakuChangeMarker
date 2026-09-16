@@ -149,6 +149,18 @@ struct KCMParaAttrs
 	KCMAttrSpanList	fFootnote;
 	KCMAttrSpanList	fEndnote;
 
+	/** ★**WARICHU AND TATE-CHU-YOKO** (2026-09-16, user's request): the manual ON/OFF of each,
+		kTAWarichuAttrBoss / kTATatechuyokoAttrBoss on the character strand (KCMTextRead's
+		ScanBoolAttribute). Measured the same day: one character can carry both - a tate-chu-yoko
+		inside a warichu, and the other way round - so they are two lists, not one.
+		★★**THE VALUE IS THE CHARACTERS THE SPAN COVERS**, not a flag. That is what the row lifts onto
+		 its own line, and it is what makes rewriting the words inside one a change of that kind as
+		 well as a change of the text.
+		 ⇒ **Filled from the paragraph's own text** (SetSpanValuesToText, in ClosePara), so a table's
+		   uncounted characters never land in it and the value is exactly what the row shows. */
+	KCMAttrSpanList	fWarichu;
+	KCMAttrSpanList	fTcy;
+
 	/** Which table cell this paragraph IS, if it is one at all.
 
 		**WHY IT EXISTS: A CELL IS A PLACE.** The text of a cell paragraph and of a body paragraph
@@ -338,6 +350,238 @@ inline int32 CountCodePoints(const std::string& utf8)
 			++n;
 	}
 	return n;
+}
+
+/** The characters from code point `start`, `len` of them, as UTF-8 - clipped to the string, and
+	empty when nothing of it is inside.
+
+	@warning CODE POINTS, the unit every offset in this header counts in (a four-byte character is
+	  one), never bytes. */
+inline std::string SliceCodePoints(const std::string& utf8, int32 start, int32 len)
+{
+	if (start < 0 || len <= 0)
+		return std::string();
+
+	size_t from = std::string::npos;
+	int32 seen = 0;
+	for (size_t i = 0; i < utf8.size(); ++i)
+	{
+		if ((static_cast<unsigned char>(utf8[i]) & 0xC0) == 0x80)
+			continue;						// a continuation byte - not the start of a character
+		if (seen == start)
+			from = i;
+		if (seen == start + len)
+			return utf8.substr(from, i - from);
+		++seen;
+	}
+	return (from == std::string::npos) ? std::string() : utf8.substr(from);
+}
+
+/** Give every span, as its value, the characters it covers in `paraText` - and drop a span that
+	covers none.
+
+	★**WHY A SPAN'S VALUE IS ITS OWN TEXT** is KCMParaAttrs::fWarichu's story. ★Dropping the one that
+	  comes out empty keeps the rule the reader holds every kind to - no span has an empty value
+	  (this header's head, "AN EMPTY RUBY STRING IS NO RUBY") - and the comparison and the panel
+	  both rely on it. */
+inline void SetSpanValuesToText(KCMAttrSpanList& spans, const std::string& paraText)
+{
+	KCMAttrSpanList kept;
+	kept.reserve(spans.size());
+	for (size_t i = 0; i < spans.size(); ++i)
+	{
+		KCMAttrSpan span(spans[i]);
+		span.fValue = SliceCodePoints(paraText, span.fStart, span.fLen);
+		if (!span.fValue.empty())
+			kept.push_back(span);
+	}
+	spans.swap(kept);
+}
+
+/** A range of the paragraph's code points, [fFrom, fTo). */
+struct LayerRange
+{
+	int32	fFrom;
+	int32	fTo;
+
+	LayerRange() : fFrom(0), fTo(0) {}
+	LayerRange(int32 from, int32 to) : fFrom(from), fTo(to) {}
+};
+
+/** The lines of one side of a LAYERED change (warichu / tate-chu-yoko - KCMStoryKinds.h,
+	KCMAttrKindIsLayered), as ranges of the paragraph's code points (2026-09-16, the user's drawings):
+
+	    12      34          <- line 2: one PIECE over each hole of line 1
+	    わり｜ちゅう｜のぶん   <- line 1: ONE piece over the hole of line 0, with its own holes
+	    琥珀｜猫太郎          <- line 0: the paragraph, with ONE hole
+
+	★**LINE 0 HAS ONE HOLE, LINE 1 MAY HAVE SEVERAL** (the user: "there may be several
+	  tate-chu-yoko inside one warichu"). Only the layer this change stands in is lifted out of the
+	  paragraph; another warichu elsewhere in the same paragraph stays plain text in the context. */
+struct LayerPlan
+{
+	int32					fCount;			///< how many lines: 2 or 3 (0 before PlanLayers)
+	int32					fChanged;		///< the line holding the change (1 or 2) - where the row's sign goes
+
+	LayerRange				fHole;			///< line 0's one hole
+
+	bool16					fMiddleIsBar;	///< line 1 is a bar alone: the mark is not on this side
+	LayerRange				fMiddle;		///< line 1's characters (unless it is a bar)
+	std::vector<LayerRange>	fUpperHoles;	///< line 1's holes, in order; line 2 has one piece over each
+
+	int32					fChangedPiece;	///< which piece of line 2 is the change; -1 when the change is line 1
+	bool16					fChangedPieceIsBar;	///< that piece is a bar: the mark is not on this side
+
+	LayerPlan() : fCount(0), fChanged(0), fMiddleIsBar(kFalse), fChangedPiece(-1),
+				  fChangedPieceIsBar(kFalse) {}
+};
+
+/** Which lines one side of a warichu or tate-chu-yoko change is drawn on.
+
+	★**NESTING IS CONTAINMENT.** A span of the OTHER layered kind that contains the change is line 1
+	  and the change stands over it on line 2, beside every other span of the change's own kind inside
+	  it; the spans of the other kind inside the change are line 2 over it. Over the SAME range the
+	  warichu is the outer one. Ranges that merely cross are not nested.
+	★**A SIDE WITHOUT THE MARK** draws a bar where the mark would stand, and the characters it covered
+	  on the other side are hidden behind a bar below it - for both kinds (the user: "the two bars in
+	  the same place"; "deleted looks the same as tate-chu-yoko"). Nothing is lifted over that bar.
+	⚠A change with NO characters on this side (the words changed too) is a bar over a bar at `start`.
+
+	@param changedIsWarichu kTrue for a warichu change, kFalse for a tate-chu-yoko.
+	@param warichu / tcy this side's paragraph's spans of each kind, in order.
+	@param start / len the change's range on this side, in the paragraph's code points.
+	@param present whether this side carries the mark.
+	@param paraLen the paragraph's length in code points. */
+inline void PlanLayers(bool16 changedIsWarichu, const KCMAttrSpanList& warichu,
+					   const KCMAttrSpanList& tcy, int32 start, int32 len, bool16 present,
+					   int32 paraLen, LayerPlan& out)
+{
+	out = LayerPlan();
+	const KCMAttrSpanList& own = changedIsWarichu ? warichu : tcy;
+	const KCMAttrSpanList& other = changedIsWarichu ? tcy : warichu;
+	const int32 end = start + ((len > 0) ? len : 0);
+
+	// The span of the other kind this change stands inside. ⚠The warichu is the outer one of two
+	//   over the same range, so a warichu change is never inside a tate-chu-yoko of its own extent.
+	int32 outer = -1;
+	if (len > 0)
+	{
+		for (size_t k = 0; k < other.size() && outer < 0; ++k)
+		{
+			const int32 s = other[k].fStart;
+			const int32 e = other[k].fStart + other[k].fLen;
+			const bool16 same = (s == start && e == end) ? kTrue : kFalse;
+			if (s <= start && end <= e && (!same || !changedIsWarichu))
+				outer = static_cast<int32>(k);
+		}
+	}
+
+	if (outer >= 0)
+	{
+		const int32 os = other[outer].fStart;
+		const int32 oe = other[outer].fStart + other[outer].fLen;
+		out.fCount = 3;
+		out.fChanged = 2;
+		out.fHole = LayerRange(os, oe);
+		out.fMiddle = LayerRange(os, oe);
+
+		// Every span of the change's own kind inside the outer one is a hole of line 1, the change
+		// among them. A side WITHOUT the mark has no span there, so the change's range is put in
+		// (and a span of this kind overlapping it - which would make two holes over the same
+		// characters - is left out).
+		bool16 placed = kFalse;
+		for (size_t k = 0; k < own.size(); ++k)
+		{
+			const int32 s = own[k].fStart;
+			const int32 e = own[k].fStart + own[k].fLen;
+			if (s < os || e > oe)
+				continue;
+			const bool16 isChange = (present && s == start && e == end) ? kTrue : kFalse;
+			if (!isChange && s < end && start < e)
+				continue;								// overlaps the change's own range
+			if (!placed && !present && start < s)
+			{
+				out.fChangedPiece = static_cast<int32>(out.fUpperHoles.size());
+				out.fUpperHoles.push_back(LayerRange(start, end));
+				placed = kTrue;
+			}
+			if (isChange)
+			{
+				out.fChangedPiece = static_cast<int32>(out.fUpperHoles.size());
+				placed = kTrue;
+			}
+			out.fUpperHoles.push_back(LayerRange(s, e));
+		}
+		if (!placed)
+		{
+			out.fChangedPiece = static_cast<int32>(out.fUpperHoles.size());
+			out.fUpperHoles.push_back(LayerRange(start, end));
+		}
+		out.fChangedPieceIsBar = present ? kFalse : kTrue;
+		return;
+	}
+
+	out.fChanged = 1;
+	out.fHole = LayerRange(start, end);
+	if (!present)
+	{
+		out.fCount = 2;
+		out.fMiddleIsBar = kTrue;
+		return;
+	}
+
+	out.fMiddle = LayerRange(start, end);
+	for (size_t k = 0; k < other.size(); ++k)
+	{
+		const int32 s = other[k].fStart;
+		const int32 e = other[k].fStart + other[k].fLen;
+		const bool16 same = (s == start && e == end) ? kTrue : kFalse;
+		if (start <= s && e <= end && (!same || changedIsWarichu))
+			out.fUpperHoles.push_back(LayerRange(s, e));
+	}
+	out.fCount = out.fUpperHoles.empty() ? 2 : 3;
+}
+
+/** The characters of `outer`, with every span of `inner` standing wholly inside it replaced by one
+	placeholder - the text of a layer as it is once the layer above it is taken out.
+	@param outerWinsTies whether an inner span over exactly the same range counts as inside (the
+	  warichu is the outer one of two over the same range). */
+inline std::string MaskNested(const std::string& paraText, const KCMAttrSpan& outer,
+							  const KCMAttrSpanList& inner, bool16 outerWinsTies)
+{
+	std::string out;
+	const int32 end = outer.fStart + outer.fLen;
+	int32 at = outer.fStart;
+	for (size_t k = 0; k < inner.size(); ++k)
+	{
+		const int32 s = inner[k].fStart;
+		const int32 e = inner[k].fStart + inner[k].fLen;
+		if (s < at || e > end)
+			continue;
+		if (s == outer.fStart && e == end && !outerWinsTies)
+			continue;
+		out += SliceCodePoints(paraText, at, s - at);
+		out += '\x01';				// a stand-in for "a layer stood here"; never a document's own character
+		at = e;
+	}
+	out += SliceCodePoints(paraText, at, end - at);
+	return out;
+}
+
+/** kTrue when two versions of one warichu (or tate-chu-yoko) differ ONLY inside the layer standing in
+	it - so the change belongs to that inner layer and not to this one.
+
+	★**ONLY THE INNERMOST LAYER REPORTS A CHANGE OF ITS WORDS** (2026-09-16, the user's call): 77 -> 88
+	  inside a tate-chu-yoko inside a warichu is the text row and the tate-chu-yoko row. The warichu's
+	  own value changed too - it is its characters - and without this it would be a third row for the
+	  same keystroke. A warichu character OUTSIDE the tate-chu-yoko is still the warichu's. */
+inline bool16 OnlyNestedDiffers(const std::string& textA, const KCMAttrSpan& outerA,
+								const KCMAttrSpanList& innerA,
+								const std::string& textB, const KCMAttrSpan& outerB,
+								const KCMAttrSpanList& innerB, bool16 outerWinsTies)
+{
+	return (MaskNested(textA, outerA, innerA, outerWinsTies)
+			== MaskNested(textB, outerB, innerB, outerWinsTies)) ? kTrue : kFalse;
 }
 
 /** The text of a RUN of paragraphs, with the break characters put back.

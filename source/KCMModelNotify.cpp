@@ -55,6 +55,10 @@ static PMString sStatusRuby;
 	an empty string is a state nothing should be able to read. */
 static int32 sStatusAttrKind = 0;
 
+/** The lines of a warichu / tate-chu-yoko message (2026-09-16) - part of the same one value.
+	⚠Holds PMStrings in vectors, so it is in the Clear list for the heap reason. */
+static KCMStoryLayers sStatusLayers;
+
 // Get at the application's subject. During shutdown the session and the application cannot be
 // resolved, so nil comes back and the caller gives up quietly (KCM's rule everywhere: do not touch
 // what has closed or gone).
@@ -199,6 +203,7 @@ void KCMStoreSessionStatus(const PMString& s)
 	sStatusPost.Clear();
 	sStatusRuby.Clear();
 	sStatusAttrKind = 0;
+	sStatusLayers = KCMStoryLayers();
 }
 
 // KCMStoreSessionStatusSegments (declared in KCMModelNotify.h) -- remember the split, do not notify.
@@ -214,6 +219,18 @@ void KCMStoreSessionStatusSegments(const PMString& label, const PMString& pre,
 	sStatusPost  = post;
 	sStatusRuby  = ruby;
 	sStatusAttrKind = attrKind;
+	sStatusLayers = KCMStoryLayers();		// a layered message stores its lines after this (see the header)
+}
+
+// KCMStoreSessionStatusLayers / KCMGetSessionStatusLayers (declared in KCMModelNotify.h)
+void KCMStoreSessionStatusLayers(const KCMStoryLayers& layers)
+{
+	sStatusLayers = layers;
+}
+
+void KCMGetSessionStatusLayers(KCMStoryLayers& out)
+{
+	out = sStatusLayers;
 }
 
 // KCMGetSessionStatus (declared in KCMModelNotify.h)
@@ -260,6 +277,13 @@ void KCMClearSessionStatus()
 	sStatusPost.Clear();
 	sStatusRuby.Clear();
 	sStatusAttrKind = 0;
+	// ⚠THE LINES' HEAP GOES TOO. Assigning an empty vector destroys the strings but may keep the
+	//   vector's own buffer, so the buffers are swapped out rather than assigned.
+	sStatusLayers.fBottomPre.Clear();
+	sStatusLayers.fBottomPost.Clear();
+	std::vector<PMString>().swap(sStatusLayers.fMiddleParts);
+	std::vector<PMString>().swap(sStatusLayers.fUpperPieces);
+	sStatusLayers = KCMStoryLayers();
 }
 
 // End of KCMModelNotify.cpp.

@@ -105,9 +105,11 @@ inline PMReal KCMRubyX(const PMReal& baseX, const PMReal& baseW, const PMReal& r
 	marks on the page have always drawn as a caret (KCMStoryMarkBuild turns a zero-width range into
 	KCMMarkRange::Caret). The panel was the one place without it.
 
-	⚠**TEXT CHANGES ONLY** (user's call, the same day): a ruby or kenten change keeps its base
-	 characters on both sides, so there is nothing missing to point at - those are left exactly as
-	 they were.
+	⚠**TEXT CHANGES** (user's call, the same day): a ruby or kenten change keeps its base
+	 characters on both sides, so there is nothing missing to point at.
+	★★**AND SINCE 2026-09-16 A MARK THAT IS NOT ON ONE SIDE** (the user's rule: a removed ruby is a
+	 bar over the kanji, kenten and notes the same) - drawn on the UPPER line over the base
+	 characters, and on the lower line too when that side has no characters for it to stand on.
 
 	★**NOTHING IS ADDED TO ANY STRING.** The bar is DRAWN; the placeholder below only reserves the
 	room, so nothing measured, selected or copied ever gains a character - the rule

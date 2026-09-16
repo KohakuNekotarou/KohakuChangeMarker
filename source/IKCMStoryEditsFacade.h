@@ -48,6 +48,7 @@
 							// the UI includes has to be: this used to reach the enum through
 							// KCMStoryStamp.h, whose three model-side free functions the UI could
 							// then see and could not link to.
+#include "KCMStoryLayers.h"	// Change::fLayers - a type only, for the same reason
 
 class IDataBase;
 class SysFileList;		// what the open dialog hands back: Import Story Text takes several files
@@ -99,7 +100,7 @@ public:
 		bool16		fTextCompared;
 
 		/** WHICH KIND OF ATTRIBUTE this row's children found a difference in, when they found one.
-			**0 = none; 1 = ruby; 2 = kenten; 3 = footnote; 4 = endnote.**
+			**0 = none; 1 = ruby; 2 = kenten; 3 = footnote; 4 = endnote; 5 = warichu; 6 = tate-chu-yoko.**
 
 			A NUMBER RATHER THAN A FLAG, so that a second attribute costs one more value here and
 			one more label - not another field and another branch everywhere. Kenten is that second
@@ -300,6 +301,13 @@ public:
 			⚠Appended at the END, for the reason stated above fReplaced. */
 		int32		fWriteBlock;
 
+		/** The lines a WARICHU or TATE-CHU-YOKO change is drawn on (2026-09-16) - fLayers for the row
+			(Target), fOtherLayers for the message area (Source). fCount 0 for every other kind.
+			KCMStoryLayers.h says what each line holds. ⚠Appended at the END; the struct is read by
+			KCM's two halves only (KIDMCP does not include this facade - measured by grep). */
+		KCMStoryLayers	fLayers;
+		KCMStoryLayers	fOtherLayers;
+
 		Change()
 			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),
 			  fSourceStart(0), fSourceEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
@@ -318,7 +326,7 @@ public:
 	virtual bool16	GetChange(int32 nth, int32 which, Change& out) = 0;
 
 	/** WHICH ATTRIBUTE this difference is in - Change::fAttrKind, and nothing else (0 = none,
-		1 = ruby, 2 = kenten, 3 = footnote, 4 = endnote). 0 for a text change and for an index that
+		1 = ruby, 2 = kenten, 3 = footnote, 4 = endnote, 5 = warichu, 6 = tate-chu-yoko). 0 for a text change and for an index that
 		names no change.
 
 		WHY THE ONE FIELD HAS A CALL OF ITS OWN. The tree asks this of every row it lays out, to
@@ -343,7 +351,12 @@ public:
 		two lines with an empty upper one is a gap the reader has to interpret.
 		⚠**The row's height and the row's drawing must ask the same question**, which is why this
 		 is one call rather than each of them testing the string it happens to hold.
-		★AS CHEAP AS GetChangeAttrKind: it reads one field off the change, no strings copied. */
+		★AS CHEAP AS GetChangeAttrKind: it reads one field off the change, no strings copied.
+		⚠★★**NOTHING IN KCM ASKS THIS ANY MORE (2026-09-16).** The user reversed the one-line rule:
+		  a removed mark is two lines with a BAR on top, so the row's height depends on the kind (and
+		  a warichu / tate-chu-yoko's layers) alone - GetChangeLineCount answers it, and both the
+		  height and the drawing ask that. **Kept, not removed**, because removing a virtual shifts
+		  every slot after it ([[facade-vtable-slot-append-only]]). */
 	virtual bool16	GetChangeHasAttrValue(int32 nth, int32 which) = 0;
 
 	/** Compare row nth's story again against the older document, and replace its differences with
@@ -550,6 +563,25 @@ public:
 		  (KCMStoryWritesAllowed - the one place it is decided).
 		⚠Appended at the END, like every virtual added since the split. */
 	virtual bool16	CanWriteToTarget() = 0;
+
+	/** How many LINES change `which` of row `nth` is drawn on in the list: 1 for a text change, 2 for
+		a ruby / kenten / note (always, since 2026-09-16 - a side without the mark draws a bar), and
+		2 or 3 for a warichu / tate-chu-yoko (its fLayers.fCount).
+		★ONE ANSWER FOR THE ROW'S HEIGHT, ITS WIDGET TYPE AND ITS DRAWING (KCMStoryTreeWidgetMgr),
+		  and as cheap as GetChangeAttrKind: no strings are copied. 1 for an index out of range.
+		⚠Appended at the END, like every virtual added since the split. */
+	virtual int32	GetChangeLineCount(int32 nth, int32 which) = 0;
+
+	/** The lines of the warichu / tate-chu-yoko message standing in the panel's message area,
+		remembered beside its pieces (IKCMCompareFacade's StoreSessionStatusSegments) so that
+		re-opening the panel draws it the same way (2026-09-16).
+		★ON THIS FACADE AND NOT THAT ONE, deliberately: IKCMCompareFacade is read by Kohaku InDesign
+		  MCP and carries an ABI stamp, and these two concern a Story Edits type nothing outside KCM
+		  reads.
+		⚠STORE AFTER THE SEGMENTS - storing the segments empties the lines (KCMModelNotify.h).
+		⚠Appended at the END. */
+	virtual void	StoreStatusLayers(const KCMStoryLayers& layers) = 0;
+	virtual void	GetStatusLayers(KCMStoryLayers& out) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

@@ -174,6 +174,8 @@ bool16 HoldsObjectCharacter(const WideString& words)
 */
 PMString WriteBlockedMessage(int32 writeBlock)
 {
+	if (writeBlock == kKCMWriteBlockedKind)
+		return Refused("a warichu or tate-chu-yoko change is shown for reading - it is not written back.");
 	return (writeBlock == kKCMWriteBlockedPlaces)
 		? Refused("this change is in a table cell or a footnote that the other version does not have - "
 				  "its words cannot be put back as text.")
@@ -664,17 +666,20 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 	const int32 targetCount = change.fTargetEnd - change.fTargetStart;
 	const int32 sourceCount = change.fSourceEnd - change.fSourceStart;
 
+	// ★★**NOT A CHANGE THE DIFF SAID CANNOT GO BACK** (2026-09-16, the user's rule). The menu hides
+	//   the item for these; a bulk run reaches them anyway, and skips them with this reason.
+	// ⚠**ASKED BEFORE THE WORDS/ATTRIBUTE SPLIT** since the same day: it sat inside the words branch
+	//   while only text changes could carry a reason, and a warichu or tate-chu-yoko (ATTRIBUTE
+	//   changes marked kKCMWriteBlockedKind) would otherwise fall through to "not restorable yet".
+	if (change.fWriteBlock != kKCMWriteAllowed)
+	{
+		outMessage = WriteBlockedMessage(change.fWriteBlock);
+		return kFalse;
+	}
+
 	// ===== the words =============================================================================
 	if (change.fWhat == KCMStoryChange::kText)
 	{
-		// ★★**NOT A CHANGE THE DIFF SAID CANNOT GO BACK** (2026-09-16, the user's rule). The menu
-		//   hides the item for these; a bulk run reaches them anyway, and skips them with this reason.
-		if (change.fWriteBlock != kKCMWriteAllowed)
-		{
-			outMessage = WriteBlockedMessage(change.fWriteBlock);
-			return kFalse;
-		}
-
 		// ★★★**THE OLDER WORDS COME FROM WHAT WAS KEPT, WHEN ANYTHING WAS** (2026-09-16). The slice
 		//   is taken by the very same indices out of the very same characters - the whole story as
 		//   TextIterator read it, once, when the comparison was set up. ⚠**NOT re-assembled from

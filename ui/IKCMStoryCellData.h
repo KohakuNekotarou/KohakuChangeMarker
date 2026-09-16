@@ -41,6 +41,7 @@
 
 // Project includes:
 #include "KCMUIID.h"		// IID_IKCMSTORYCELLDATA
+#include "KCMStoryLayers.h"	// the lines of a warichu / tate-chu-yoko change
 
 /** Holds what one change row's text cell draws, split where the colour changes. */
 class IKCMStoryCellData : public IPMUnknown
@@ -79,12 +80,20 @@ public:
 		kenten was withdrawn in August: the name of a mark was painted over the base text as though
 		somebody could read it aloud. **The cell has to be told which it is looking at**, and
 		IKCMStoryEditsFacade.h says the same thing about every other place that asks. */
+	/** @param layers ★the LINES of a warichu / tate-chu-yoko change (2026-09-16), cut by the model
+		 (KCMStoryLayers.h). fCount 0 for every other kind, which draws from the pieces as before.
+		 ★In the same one call as everything else, for the reason stated above: a second setter
+		 could be half-called, and a recycled row would draw the last row's layers over its text.
+		★`twoLines` went on 2026-09-16 with the three-line row: how many lines the cell is laid out on
+		 is the row's line count (IKCMStoryEditsFacade's GetChangeLineCount), 1 to 3. */
 	virtual void SetSegments(const PMString& pre, const PMString& mid, const PMString& post,
-							 const PMString& ruby, bool16 twoLines, int32 attrKind) = 0;
+							 const PMString& ruby, int32 lineCount, int32 attrKind,
+							 const KCMStoryLayers& layers) = 0;
 
-	/** Read back what was written. Answers empty strings, kFalse and 0 before the first apply. */
+	/** Read back what was written. Answers empty strings, 1 and 0 before the first apply. */
 	virtual void GetSegments(PMString& outPre, PMString& outMid, PMString& outPost,
-							 PMString& outRuby, bool16& outTwoLines, int32& outAttrKind) const = 0;
+							 PMString& outRuby, int32& outLineCount, int32& outAttrKind,
+							 KCMStoryLayers& outLayers) const = 0;
 };
 
 #endif // __IKCMStoryCellData_h__

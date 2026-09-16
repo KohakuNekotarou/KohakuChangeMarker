@@ -36,6 +36,7 @@
 #include <vector>
 
 #include "KCMStoryStamp.h"	// KCMStoryDiff / KCMStoryChangeKind
+#include "KCMStoryLayers.h"	// KCMStoryChange::fLayers - a warichu / tate-chu-yoko change, line by line
 
 class IDataBase;
 
@@ -256,6 +257,13 @@ struct KCMStoryChange
 		that may. Decided by the diff for a TEXT change (KCMStoryDiffRun), shown by the menu, and asked
 		again by the write against the characters as they stand then (KCMStoryRestore). */
 	int32		fWriteBlock;
+
+	/** ★**THE LINES A WARICHU OR TATE-CHU-YOKO CHANGE IS DRAWN ON** (2026-09-16) - fLayers for the
+		side the row shows (Target), fOtherLayers for the message area's side (Source), the same
+		pairing as fText / fOtherText. fCount is 0 for every other kind of change, which then draws
+		from the pieces above as it always has. Filled by KCMStoryDiffRun's AddAttrChange. */
+	KCMStoryLayers	fLayers;
+	KCMStoryLayers	fOtherLayers;
 
 	KCMStoryChange()
 		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),

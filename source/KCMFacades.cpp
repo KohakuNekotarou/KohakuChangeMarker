@@ -461,7 +461,7 @@ public:
 		out.fFrameUID	= row->fFrameUID;
 		out.fPageUID	= row->fPageUID;
 		out.fTextCompared = row->fTextCompared;
-		out.fAttrKind	= static_cast<int32>(row->fAttrKind);	// 0 = none, 1 = ruby, 2 = kenten, 3 = footnote, 4 = endnote
+		out.fAttrKind	= static_cast<int32>(row->fAttrKind);	// 0 = none, 1 = ruby, 2 = kenten, 3 = footnote, 4 = endnote, 5 = warichu, 6 = tate-chu-yoko
 		out.fAttrKindCount = row->fAttrKindCount;				// how many DIFFERENT kinds - "Ruby+" when > 1
 		out.fHasTextChange = row->fHasTextChange;				// what the DIFF found, not what the counters said
 		return kTrue;
@@ -519,6 +519,8 @@ public:
 		out.fRubyGroup		= change.fRubyGroup;	// how it is SET - the readings alone cannot say
 		out.fOtherRubyGroup	= change.fOtherRubyGroup;
 		out.fAttrKind		= static_cast<int32>(change.fAttrKind);
+		out.fLayers			= change.fLayers;		// a warichu / tate-chu-yoko change, line by line
+		out.fOtherLayers	= change.fOtherLayers;	// (never replaced: neither kind is written back)
 
 		// ---- the Import mode: which of its two states this row is in ---------------------------
 		//
@@ -674,6 +676,24 @@ public:
 	{
 		return KCMStoryWritesAllowed();
 	}
+
+	virtual int32	GetChangeLineCount(int32 nth, int32 which)
+	{
+		// Same out-of-range rule as GetChangeAttrKind, for the same caller (the tree asking a height).
+		bool16 isReplaced = kFalse;
+		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which, isReplaced);
+		if (found == nil)
+			return 1;
+
+		// ★The layered kinds say how many lines themselves; every other mark is two, whether or not
+		//   this side carries it (the side without draws a bar - KCMAttrKindHasMarkLine).
+		if (KCMAttrKindIsLayered(found->fAttrKind) && found->fLayers.fCount >= 2)
+			return found->fLayers.fCount;
+		return KCMAttrKindHasMarkLine(found->fAttrKind) ? 2 : 1;
+	}
+
+	virtual void	StoreStatusLayers(const KCMStoryLayers& layers)	{ KCMStoreSessionStatusLayers(layers); }
+	virtual void	GetStatusLayers(KCMStoryLayers& out)			{ KCMGetSessionStatusLayers(out); }
 
 	virtual bool16	RestoreAllStories(PMString& outMessage)
 	{

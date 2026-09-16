@@ -25,6 +25,7 @@
 #include "BaseType.h"
 #include "OMTypes.h"		// WidgetID
 #include "PMString.h"
+#include "KCMStoryLayers.h"	// KCMSetStatusSegments' lines
 
 class IControlView;
 
@@ -83,6 +84,15 @@ void			KCMSetStatus(const char* s, bool16 forceRedrawNow = kFalse);
 void			KCMSetStatusSegments(const PMString& label, const PMString& pre,
 									   const PMString& mid, const PMString& post,
 									   const PMString& ruby, int32 attrKind);
+
+// ★The same, for a WARICHU / TATE-CHU-YOKO edit (2026-09-16): `layers` are that side's lines
+//   (KCMStoryLayers.h), drawn in layers instead of wrapped. The pieces still go in beside them - they
+//   are what app.kcmStatus reads - and both are remembered model-side, so a re-shown panel draws
+//   the lines again. The overload above is this one with no lines.
+void			KCMSetStatusSegments(const PMString& label, const PMString& pre,
+									   const PMString& mid, const PMString& post,
+									   const PMString& ruby, int32 attrKind,
+									   const KCMStoryLayers& layers);
 
 // Start / stop the UI-side observer of the model's notifications (KCMModelChangeObserver.cpp).
 // Attached in Startup; detached in Shutdown **before** the panel is taken down.

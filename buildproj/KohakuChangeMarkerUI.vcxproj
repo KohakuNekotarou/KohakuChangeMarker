@@ -272,6 +272,7 @@
       <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMXmlPretty.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryJump.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMKentenMark.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMLayerDraw.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStorySelection.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryNav.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryRefresh.cpp"/>
@@ -313,6 +314,7 @@
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\IKCMStoryCellData.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\IKCMStatusTextData.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMPanelTextDraw.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMLayerDraw.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryPressMarks.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMCheckGlyph.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMBookTree.h"/>

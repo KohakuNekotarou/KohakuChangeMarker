@@ -520,6 +520,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryColKindWidgetID, kKCMUIPrefix + 71)	// hea
 // (kKCMUIPrefix + 72 was the Resources mode's own value band, retired on 2026-09-09 - the day it was added - when that band moved into the panel's MESSAGE AREA, the box the Story mode writes "Source Text:" into. The panel grew 45px for it and shrank back. ⚠**The slot did NOT stay free**: the book dialog's Change column took it the next day - see kKCMBookRowChangeWidgetID below. This line said "left unused rather than reassigned" until 2026-09-10, which the line that reassigned it made untrue on the same page.)
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowWidgetID, kKCMUIPrefix + 51)		// the row template itself. ★This is what GetWidgetTypeForNode answers
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryChangeRowWidgetID, kKCMUIPrefix + 63)	// ★the template of a **change row** (the second level). ★It **has to differ from +51 above**: the framework decides from the ID GetWidgetTypeForNode answers whether a widget can be recycled, and answering the same one hands a story row's widget to a change row while scrolling. ⚠**Its two cells reuse +48 and +49** -- widget IDs need be unique only among the descendants of one widget (guide vol2-12). The book rows share the same two
+DECLARE_PMID(kWidgetIDSpace, kKCMStoryTallRowWidgetID, kKCMUIPrefix + 73)	// ★the template of a **three-line change row** (2026-09-16): a tate-chu-yoko standing inside a warichu, over the text. Its own ID for the same reason as the ruby row's below - the height belongs to the widget. ⚠+73 was the next free slot, counted (in use were 0, 1, 26, 34-53 and 57-72)
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRubyRowWidgetID, kKCMUIPrefix + 64)	// ★the template of a **ruby change row**. It has to differ from +63 for the same reason: the ID GetWidgetTypeForNode answers is what decides whether a widget can be recycled. ⚠Without a separate one, the taller ruby widget is handed to an ordinary change row and **the rows overlap** (the height belongs to the widget, so an unchanged ID means the tree does not replace it)
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowUIDWidgetID, kKCMUIPrefix + 52)	// ★row, far left: the story's UID in decimal (user's request: "UID, text, and the changed part"). It is what lets a row be followed by eye: two stories with the same opening words are still told apart
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRubyKindWidgetID, kKCMUIPrefix + 53)	// (retired 2026-09-12, reserved) the ruby change row's "Mono" / "Group" cell of 2026-09-08. Gone from the row template and from the widget manager with the judgement it reported: a ruby re-set from mono to group over the same reading is no longer a change (user's decision). The number stays reserved rather than reused
@@ -962,7 +963,12 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 // so there is no reason for a second implementation ("draw it on two lines" reaches the cell at
 // run time).
 #define kKCMStoryRubyRowRsrcID	1015
-#define kKCMPawWordDialogRsrcID	1016	// the paw word dialog view resource (2026-09-07). ⚠Next free: 1017
+#define kKCMPawWordDialogRsrcID	1016	// the paw word dialog view resource (2026-09-07)
+
+// ★The template of a **three-line change row** (2026-09-16): a warichu or tate-chu-yoko drawn in
+// layers - a tate-chu-yoko on the line of the warichu it stands in, on the line of the text. The same
+// cells as the ruby row, three lines tall (KCMStoryCellView.cpp divides the cell by three).
+#define kKCMStoryTallRowRsrcID	1017	// ⚠Next free: 1018
 
 // The row height of the chapter list. ★As with kKCMStoryRowHeight below, **both the .fr and the
 // C++ read this one constant** (the row resource's Frame, the tree's scroll increment,
@@ -993,6 +999,10 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 // ⚠The C++ is not the only reader: the row resource in the .fr (kKCMStoryRubyRowRsrcID) writes
 //   the same value.
 #define kKCMStoryRubyRowHeight	38
+
+// ★The height of a three-line change row (2026-09-16) - three lines, on the same terms as the 38
+// above: 19 per line. The .fr (kKCMStoryTallRowRsrcID) writes the same value.
+#define kKCMStoryTallRowHeight	57
 
 // The height of the heading band of the list (a 14px label + a 1px rule + 3px of padding).
 // ★As with the row heights, **both the .fr and the C++ read this one constant** ＝ thicken the

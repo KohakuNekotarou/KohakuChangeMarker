@@ -747,9 +747,12 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   mark that was REMOVED can be seen at all** - the row shows the newer version, where there
 	//   is nothing left to draw. Leaving kenten out of this condition made exactly that case
 	//   invisible, and it was invisible in a way that looked deliberate.
+	// ★★AND A NOTE'S NUMBER TOO, SINCE 2026-09-16 - the question is now the one the row asks
+	//   (KCMAttrKindHasMarkLine): every kind drawn on two lines there is drawn on two lines here, with
+	//   a bar on the upper line on the side that has none. Asking a list of two kinds here while the
+	//   row asked four is how a removed footnote came to show its number nowhere.
 	PMString otherRuby;
-	if (change.fAttrKind == static_cast<int32>(kKCMStoryAttrRuby) ||
-		change.fAttrKind == static_cast<int32>(kKCMStoryAttrKenten))
+	if (KCMAttrKindHasMarkLine(change.fAttrKind))
 	{
 		otherRuby = change.fOtherRuby;
 		otherRuby.SetTranslatable(kFalse);
@@ -763,8 +766,10 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	const PMString& otherMid  = change.fReplaced ? change.fBeforeText     : change.fOtherText;
 	const PMString& otherPost = change.fReplaced ? change.fBeforeTextPost : change.fOtherTextPost;
 
+	// ★A WARICHU / TATE-CHU-YOKO carries its other side's LINES too (2026-09-16), cut by the model;
+	//   the box draws them in layers. fCount is 0 for every other kind, and then nothing changes.
 	KCMSetStatusSegments(label, otherPre, otherMid, otherPost,
-						   otherRuby, change.fAttrKind);
+						   otherRuby, change.fAttrKind, change.fOtherLayers);
 
 	return moved;
 }

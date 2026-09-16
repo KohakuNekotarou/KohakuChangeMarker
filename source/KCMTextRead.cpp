@@ -22,7 +22,7 @@
 #include "IKentenStyle.h"		// IKentenStyle::KentenKind, and Kenten_None for "no kenten"
 #include "IRubyStrand.h"		// IRubyAttrStrand - ⚠the file is IRubyStrand.h, the class is not
 #include "ITableModel.h"
-#include "ITextAttrBoolean.h"	// kTAMojiRubyBoss - mono against group
+#include "ITextAttrBoolean.h"	// kTAMojiRubyBoss - mono against group; warichu and tate-chu-yoko on/off
 #include "ITextAttrInt16.h"	// kTAKentenKindBoss / kTAKentenCharacterBoss - both are int16
 #include "ITextAttrWideString.h"	// kTARubyStringBoss - the reading itself
 #include "ITextModel.h"
@@ -489,6 +489,79 @@ void ScanKenten(ITextModel* model, std::vector<AttrRun>& out)
 	}
 }
 
+/* ScanBoolAttribute
+   Every stretch of the story where one ON/OFF character attribute is ON, in reading order - the
+   manual WARICHU (kTAWarichuAttrBoss) and TATE-CHU-YOKO (kTATatechuyokoAttrBoss) (2026-09-16, user's
+   request).
+
+   ★ONE FUNCTION FOR BOTH, because they are the same shape: a bool16 on kCharAttrStrandBoss, read
+   by the official snippets the same way (SnpPerformTextAttrWarichu.cpp:302 /
+   SnpPerformTextAttrTateChuYoko.cpp:380, GetTextBool16Attribute over a range). The walk is
+   ScanKenten's, for ScanKenten's reasons: the attribute has no runs of its own, so it steps by the
+   strand's style and override boundaries (the shorter of the two), and those are over-fine, so
+   touching runs that are both ON are joined.
+   ⚠OFF IS A VALUE: taking either off writes kFalse (SnpPerformTextAttrWarichu.cpp:280, the
+    tate-chu-yoko snippet's :318), so kFalse produces no span - the same trap as Kenten_None.
+   ★MEASURED 2026-09-16 (a script on a scratch document): one character can carry BOTH - a
+    tate-chu-yoko inside a warichu reads true for both, in either order of applying them - which is
+    why they are two scans filling two lists rather than one.
+   ⚠**THE VALUE WRITTEN HERE IS A PLACEHOLDER.** A span's value is the characters it covers, and those
+    are only known in the paragraph's own count - ClosePara replaces it
+    (KCMParaText::SetSpanValuesToText). It is not empty only so that nothing between here and there
+    mistakes the run for "no value".
+   ⚠UNMEASURED: whether two warichu (or two tate-chu-yoko) set separately on touching characters are
+    one on the page. Joined here, the way the kenten walk joins.
+*/
+void ScanBoolAttribute(ITextModel* model, ClassID attribute, std::vector<AttrRun>& out)
+{
+	InterfacePtr<IAttributeStrand> strand(
+		(IAttributeStrand*)model->QueryStrand(kCharAttrStrandBoss, IID_IATTRIBUTESTRAND));
+	if (strand == nil)
+		return;
+
+	InterfacePtr<IComposeScanner> scanner(model, UseDefaultIID());
+	if (scanner == nil)
+		return;
+
+	const TextIndex total = model->TotalLength();
+	for (TextIndex i = 0; i < total; )
+	{
+		int32 styleLen = 0;
+		int32 overrideLen = 0;
+		strand->GetStyleUID(i, &styleLen);
+		strand->GetLocalOverrides(i, &overrideLen);
+
+		int32 len = styleLen;
+		if (overrideLen > 0 && (len <= 0 || overrideLen < len))
+			len = overrideLen;
+		if (len <= 0)
+			break;
+		if (i + len > total)
+			len = static_cast<int32>(total - i);
+
+		InterfacePtr<const IAttrReport> report(scanner->QueryAttributeAt(i, i + len, attribute));
+		InterfacePtr<const ITextAttrBoolean> on(report, UseDefaultIID());
+
+		if (on != nil && on->Get() != kFalse)
+		{
+			if (!out.empty() && out.back().fAt + out.back().fLen == i)
+			{
+				out.back().fLen += len;
+			}
+			else
+			{
+				AttrRun run;
+				run.fAt = i;
+				run.fLen = len;
+				run.fValue = "on";		// the placeholder - see the head of this function
+				out.push_back(run);
+			}
+		}
+
+		i += len;
+	}
+}
+
 /* ScanNotes
    FOOTNOTE and ENDNOTE references, as one-character spans standing where each marker stands.
 
@@ -682,16 +755,22 @@ struct AttrWalk
 	const std::vector<AttrRun>&	fKenten;
 	const std::vector<AttrRun>&	fFootnote;
 	const std::vector<AttrRun>&	fEndnote;
+	const std::vector<AttrRun>&	fWarichu;
+	const std::vector<AttrRun>&	fTcy;
 
 	size_t	fRubyAt;
 	size_t	fKentenAt;
 	size_t	fFootnoteAt;
 	size_t	fEndnoteAt;
+	size_t	fWarichuAt;
+	size_t	fTcyAt;
 
 	AttrWalk(const std::vector<AttrRun>& ruby, const std::vector<AttrRun>& kenten,
-			 const std::vector<AttrRun>& footnote, const std::vector<AttrRun>& endnote)
+			 const std::vector<AttrRun>& footnote, const std::vector<AttrRun>& endnote,
+			 const std::vector<AttrRun>& warichu, const std::vector<AttrRun>& tcy)
 		: fRuby(ruby), fKenten(kenten), fFootnote(footnote), fEndnote(endnote),
-		  fRubyAt(0), fKentenAt(0), fFootnoteAt(0), fEndnoteAt(0) {}
+		  fWarichu(warichu), fTcy(tcy),
+		  fRubyAt(0), fKentenAt(0), fFootnoteAt(0), fEndnoteAt(0), fWarichuAt(0), fTcyAt(0) {}
 };
 
 void ClosePara(std::vector<std::string>& outParas,
@@ -733,6 +812,13 @@ void ClosePara(std::vector<std::string>& outParas,
 	TakeAttrFor(walk.fKenten,   walk.fKentenAt,   paraStart, paraEnd, uncounted, attrs.fKenten);
 	TakeAttrFor(walk.fFootnote, walk.fFootnoteAt, paraStart, paraEnd, uncounted, attrs.fFootnote);
 	TakeAttrFor(walk.fEndnote,  walk.fEndnoteAt,  paraStart, paraEnd, uncounted, attrs.fEndnote);
+
+	// ★A WARICHU'S AND A TATE-CHU-YOKO'S VALUE IS ITS OWN CHARACTERS (2026-09-16), and they are only
+	//   known here, in the text's count that TakeAttrFor has just put the spans into.
+	TakeAttrFor(walk.fWarichu,  walk.fWarichuAt,  paraStart, paraEnd, uncounted, attrs.fWarichu);
+	TakeAttrFor(walk.fTcy,      walk.fTcyAt,      paraStart, paraEnd, uncounted, attrs.fTcy);
+	KCMParaText::SetSpanValuesToText(attrs.fWarichu, text);
+	KCMParaText::SetSpanValuesToText(attrs.fTcy, text);
 	outAttrs.push_back(attrs);
 
 	// ⚠EMPTIED HERE, WHERE THE PARAGRAPH ENDS, so that the two places a paragraph can close cannot
@@ -784,7 +870,13 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 	std::vector<AttrRun> endnotes;
 	ScanNotes(model, footnotes, endnotes);
 
-	AttrWalk walk(ruby, kenten, footnotes, endnotes);
+	// ★AND WARICHU AND TATE-CHU-YOKO (2026-09-16), off the same moment for the same reason.
+	std::vector<AttrRun> warichu;
+	std::vector<AttrRun> tcy;
+	ScanBoolAttribute(model, kTAWarichuAttrBoss, warichu);
+	ScanBoolAttribute(model, kTATatechuyokoAttrBoss, tcy);
+
+	AttrWalk walk(ruby, kenten, footnotes, endnotes, warichu, tcy);
 
 	const TextIndex total = model->TotalLength();
 	size_t nextCell = 0;

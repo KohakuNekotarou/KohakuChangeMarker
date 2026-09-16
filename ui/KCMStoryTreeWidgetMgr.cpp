@@ -8,10 +8,11 @@
 //  UID, its opening words, and what kind of change moved (2026-08-10 - it was two cells before, and
 //  the kind column spelled every kind out; now it names the first and says "+" for the rest).
 //
-//  ★THREE ROW SHAPES SINCE 2026-08-22: a story row, a change row, and a change row twice as tall
-//  for a RUBY, whose reading is drawn above the characters it belongs to. The three overrides that
-//  build a row - which resource, which WidgetID, how tall - must agree about which shape a node is,
-//  so they all ask IsTwoLineNode and nothing works it out for itself.
+//  ★FOUR ROW SHAPES: a story row, a change row, a change row twice as tall for a RUBY (2026-08-22),
+//  whose reading is drawn above the characters it belongs to, and one three times as tall for a
+//  tate-chu-yoko standing inside a warichu (2026-09-16). The three overrides that build a row -
+//  which resource, which WidgetID, how tall - must agree about which shape a node is, so they all
+//  ask LineCountOfNode and nothing works it out for itself.
 //
 //  The list is NOT flat (it has had two levels since 2026-08-20), but this file still does none of
 //  the indent arithmetic KBS's widget manager exists for: each level's layout lives in its own
@@ -209,9 +210,11 @@ public:
 		//     make the tree build widgets it already had.
 		TreeNodePtr<KCMStoryNodeID> nodeID(node);
 		const bool16 isChange = (nodeID != nil && nodeID->IsChangeRow() && !KCMListShowsResources());
-		const RsrcID rsrcID = !isChange           ? kKCMStoryRowRsrcID
-							  : IsTwoLineNode(node) ? kKCMStoryRubyRowRsrcID
-												    : kKCMStoryChangeRowRsrcID;
+		const int32 lines = isChange ? LineCountOfNode(node) : 1;
+		const RsrcID rsrcID = !isChange   ? kKCMStoryRowRsrcID
+							  : (lines >= 3) ? kKCMStoryTallRowRsrcID
+							  : (lines == 2) ? kKCMStoryRubyRowRsrcID
+											 : kKCMStoryChangeRowRsrcID;
 
 		// ★THREE STEPS, NOT ONE CreateObject, AND THE ORDER IS THE POINT:
 		//   1. CreateObjectNoInit - make the row boss, but do not build the cells inside it yet.
@@ -256,7 +259,10 @@ public:
 		if (nodeID == nil || !nodeID->IsChangeRow() || KCMListShowsResources())
 			return kKCMStoryRowWidgetID;
 
-		return IsTwoLineNode(node) ? kKCMStoryRubyRowWidgetID : kKCMStoryChangeRowWidgetID;
+		const int32 lines = LineCountOfNode(node);
+		return (lines >= 3) ? kKCMStoryTallRowWidgetID
+			 : (lines == 2) ? kKCMStoryRubyRowWidgetID
+							: kKCMStoryChangeRowWidgetID;
 	}
 
 	// Answer both size questions rather than letting the base class build a widget and measure it.
@@ -270,7 +276,10 @@ public:
 	//   ⚠AND ChangeRoot MUST NO LONGER BE PROMISED A CONSTANT HEIGHT - see KCMStoryTreeRebuild.
 	virtual PMReal GetNodeWidgetHeight(const NodeID& node) const
 	{
-		return PMReal(IsTwoLineNode(node) ? kKCMStoryRubyRowHeight : kKCMStoryRowHeight);
+		const int32 lines = LineCountOfNode(node);
+		return PMReal((lines >= 3) ? kKCMStoryTallRowHeight
+					: (lines == 2) ? kKCMStoryRubyRowHeight
+								   : kKCMStoryRowHeight);
 	}
 
 	virtual PMReal GetNodeWidgetWidth(const NodeID& /*node*/) const
@@ -672,46 +681,39 @@ private:
 		already unpacked one. Rather than let the apply ask the model in its own words - which is
 		how the drawing and the row height would drift apart - the unpacking is the only thing
 		that differs, and both end here. */
-	bool16 IsTwoLineChange(int32 row, int32 change) const
+	int32 LineCountOfChange(int32 row, int32 change) const
 	{
 		// ★★NAMED KINDS, NOT "any attribute": the upper line has to be worth having, and an
 		//   attribute nothing can show there would leave it permanently empty. Ruby earns it with a
-		//   reading; kenten earns it since 2026-09-01 by having its KIND DRAWN there as the mark
-		//   itself (KCMKentenMark, user's call). A third attribute would have to earn it in turn -
-		//   which is why this stays a list and does not become "attrKind != none".
-		// ★A FOOTNOTE AND AN ENDNOTE EARN IT WITH THEIR NUMBER (2026-09-08, user's request: "the
-		//   page shows a 1 above the character - show it in the row the way ruby is shown"). The
-		//   number is written out on the upper line exactly as a reading is, which is also what the
-		//   page does with it.
-		const int32 attrKind = Utils<IKCMStoryEditsFacade>()->GetChangeAttrKind(row, change);
-		if (attrKind != static_cast<int32>(kKCMStoryAttrRuby) &&
-			attrKind != static_cast<int32>(kKCMStoryAttrKenten) &&
-			attrKind != static_cast<int32>(kKCMStoryAttrFootnote) &&
-			attrKind != static_cast<int32>(kKCMStoryAttrEndnote))
-			return kFalse;
-
-		// ⚠★★AND THE UPPER LINE HAS TO HAVE SOMETHING IN IT (2026-09-01, user's call: "when the
-		//   ruby or the kenten is gone, make it one line"). **This reverses the decision of
-		//   2026-08-22**, which kept a removed attribute on two lines so that its base text would
-		//   not sit half a row higher than its neighbours. Measured against the alternative, the
-		//   gap was the worse of the two: a blank upper line reads as "something should be here",
-		//   and the row that most needs to be plainly readable is the one where the mark is gone.
-		//   ★The height and the drawing still come from THIS ONE ANSWER, which is what stops them
-		//   disagreeing - the point the older note was really making.
-		return Utils<IKCMStoryEditsFacade>()->GetChangeHasAttrValue(row, change);
+		//   reading; kenten by having its KIND DRAWN there as the mark itself (KCMKentenMark, user's
+		//   call, 2026-09-01); a footnote and an endnote with their NUMBER (2026-09-08). The list
+		//   lives in KCMStoryKinds.h now (KCMAttrKindHasMarkLine), because the message area and the
+		//   PDF report ask it too.
+		// ★★★**AND THE KIND ALONE DECIDES** (2026-09-16, the user's rule: "when it was removed, two
+		//   lines, with a bar on top"). The side that has no mark draws a BAR on the upper line, so
+		//   there is always something there. **This reverses 2026-09-01** ("when the ruby or the
+		//   kenten is gone, make it one line"), which asked GetChangeHasAttrValue here; the gap that
+		//   decision removed was a BLANK upper line, and a bar is not blank - it says "none here".
+		// ★★★**AND A WARICHU / TATE-CHU-YOKO CAN BE THREE** (the same day): a tate-chu-yoko inside a
+		//   warichu stands on the warichu's line, which stands on the text's. The model knows how many
+		//   (the layers it cut), so the count is asked, not worked out here.
+		//   ★The height, the widget type and the drawing still come from THIS ONE ANSWER, which is
+		//   what stops them disagreeing.
+		const int32 lines = Utils<IKCMStoryEditsFacade>()->GetChangeLineCount(row, change);
+		return (lines < 1) ? 1 : ((lines > 3) ? 3 : lines);
 	}
 
-	bool16 IsTwoLineNode(const NodeID& node) const
+	int32 LineCountOfNode(const NodeID& node) const
 	{
 		// ⚠**THE RESOURCES MODE MUST NOT REACH THE STORY MODEL HERE.** Its child nodes carry the
-		//   same pair of indices, and IsTwoLineChange would ask IKCMStoryEditsFacade about a row that
-		//   belongs to a different list. It would answer - out of range is a legal question there -
-		//   and the answer would mean nothing. No row in this mode is ever two lines.
+		//   same pair of indices, and LineCountOfChange would ask IKCMStoryEditsFacade about a row
+		//   that belongs to a different list. It would answer - out of range is a legal question
+		//   there - and the answer would mean nothing. No row in this mode is ever taller than one.
 		TreeNodePtr<KCMStoryNodeID> nodeID(node);
 		if (nodeID == nil || !nodeID->IsChangeRow() || KCMListShowsResources())
-			return kFalse;
+			return 1;
 
-		return this->IsTwoLineChange(nodeID->GetRow(), nodeID->GetChange());
+		return this->LineCountOfChange(nodeID->GetRow(), nodeID->GetChange());
 	}
 
 	/** Fills one CHANGE row: what sort of edit it was, and the words it concerns.
@@ -740,8 +742,9 @@ private:
 
 		PMString kind;
 		PMString textPre, textMid, textPost, ruby;
-		bool16 twoLines = kFalse;
-		int32 attrKind = 0;		// KCMStoryAttrKind: 0 = none, 1 = ruby, 2 = kenten
+		int32 lineCount = 1;
+		int32 attrKind = 0;		// KCMStoryAttrKind as a plain int32 (KCMStoryKinds.h)
+		KCMStoryLayers layers;	// a warichu / tate-chu-yoko change, line by line
 		kind.SetTranslatable(kFalse);
 		textPre.SetTranslatable(kFalse);
 		textMid.SetTranslatable(kFalse);
@@ -815,8 +818,8 @@ private:
 			// ⚠It is asked of the same helper the three overrides above use, rather than read off
 			//   change.fWhat here: two ways of answering it is how the drawing and the row height
 			//   come to disagree.
-			twoLines = this->IsTwoLineChange(nodeID.GetRow(), nodeID.GetChange());
-			if (twoLines)
+			lineCount = this->LineCountOfChange(nodeID.GetRow(), nodeID.GetChange());
+			if (lineCount >= 2)
 			{
 				ruby = change.fRuby;
 				ruby.SetTranslatable(kFalse);
@@ -825,6 +828,7 @@ private:
 				//   out as text and paints a KIND as a mark, and the string alone cannot tell it
 				//   which it has - a reading could be the word "Bullseye".
 				attrKind = change.fAttrKind;
+				layers = change.fLayers;
 			}
 		}
 
@@ -832,6 +836,27 @@ private:
 		//   (2026-08-20, user's call - see the .fr). A change row has no left-hand cell at all
 		//   now, so there is nothing else to write here.
 		this->SetNodeName(widgetList, kind, kKCMStoryRowKindWidgetID);
+
+		// ★★AND ON THE LINE THAT CHANGED (2026-09-16, the user's drawings: "+" beside the
+		//   tate-chu-yoko's line when a tate-chu-yoko was added inside a warichu, beside the warichu's
+		//   when the warichu was). A ruby / kenten / note row keeps it on the bottom line, where the
+		//   .fr puts it. ⚠Set on EVERY apply of a row of two or three lines, because the widget is
+		//   recycled between a ruby row and a layered one of the same height; only the vertical edges
+		//   move - the horizontal ones belong to the panel's width (kBindRight).
+		if (lineCount >= 2)
+		{
+			IControlView* signCell = widgetList->FindWidget(kKCMStoryRowKindWidgetID);
+			if (signCell != nil)
+			{
+				const int32 changedLine = (KCMAttrKindIsLayered(attrKind) && layers.fCount == lineCount)
+										  ? layers.fChanged : 0;
+				const int32 fromTop = lineCount - 1 - changedLine;
+				PMRect frame = signCell->GetFrame();
+				frame.Top(PMReal(kKCMStoryRowHeight * fromTop + ((fromTop == 0) ? 1 : 0)));
+				frame.Bottom(PMReal(kKCMStoryRowHeight * (fromTop + 1) - 2));
+				signCell->SetFrame(frame);
+			}
+		}
 
 		// ★The hand-drawn cell, written through its own interface. A nil here would mean the row
 		//   resource and this code disagree about what the middle cell is, which nothing at runtime
@@ -841,7 +866,7 @@ private:
 		InterfacePtr<IKCMStoryCellData> cellData(textCell, UseDefaultIID());
 		if (cellData != nil)
 		{
-			cellData->SetSegments(textPre, textMid, textPost, ruby, twoLines, attrKind);
+			cellData->SetSegments(textPre, textMid, textPost, ruby, lineCount, attrKind, layers);
 			// ★Writing the strings does not ask for a redraw - SetNodeName does that for a stock
 			//   cell, and this one has no such courtesy. Without it a recycled row can keep the
 			//   picture the row it used to be left behind. (KBS's widget manager makes the same
