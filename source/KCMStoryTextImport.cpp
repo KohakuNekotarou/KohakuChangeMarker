@@ -388,12 +388,21 @@ void BuildPlaces(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::Sto
 	works so hard to carry. So the two are diffed by code point and only the runs that differ are
 	written, starting from the end so that the earlier positions are still true when they are used.
 
-	@return how many writes went in; -1 when the paragraph was refused (whyNot filled).
+	@param outRefused kTrue when the paragraph was turned away, or when a write failed part way
+	       through it. ⚠**REFUSED AND WRITTEN ARE NOT EXCLUSIVE, WHICH IS WHY THIS IS NOT THE
+	       RETURN VALUE.** The judging happens before anything is written, so a refusal there
+	       costs nothing - but a command that fails in the MIDDLE of the loop leaves the writes
+	       that went in ahead of it, and the paragraph then holds neither the document's words
+	       nor the file's. Answering with a count alone hid the failure (the old -1 turned into a
+	       success as soon as one write had gone in); answering with -1 alone hid the change.
+	@return how many writes went in - 0 when none did, refused or not.
 */
 int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs& attrs,
 					 const std::string& docText, const std::string& fileText,
-					 PMString& whyNot)
+					 PMString& whyNot, bool16& outRefused)
 {
+	outRefused = kFalse;
+
 	if (docText == fileText)
 		return 0;
 
@@ -407,11 +416,14 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 	{
 		whyNot = "the paragraph differs too much to place the changes";
 		whyNot.SetTranslatable(kFalse);
-		return -1;
+		outRefused = kTrue;
+		return 0;
 	}
 
-	// ⚠**NOTHING IS WRITTEN UNTIL EVERY CHANGE HAS BEEN JUDGED.** A paragraph half applied and then
-	//   refused would be worse than one refused whole, and the reader would have no way to tell.
+	// ⚠**NOTHING IS WRITTEN UNTIL EVERY CHANGE HAS BEEN JUDGED**, so a paragraph turned away
+	//   here is turned away whole. ★What that cannot rule out is a write that FAILS half way
+	//   through the loop below; the reader is TOLD about that one (outRefused) rather than it
+	//   being counted as a success, which is what used to happen.
 	for (size_t c = 0; c < changes.size(); ++c)
 	{
 		const KCMTextDiff::Change& ch = changes[c];
@@ -421,7 +433,8 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 			whyNot = "a change would move or delete a character that is not a letter "
 					 "(an anchored object, a page number, an index marker)";
 			whyNot.SetTranslatable(kFalse);
-			return -1;
+			outRefused = kTrue;
+			return 0;
 		}
 	}
 
@@ -430,7 +443,8 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 	{
 		whyNot = "the story cannot be edited";
 		whyNot.SetTranslatable(kFalse);
-		return -1;
+		outRefused = kTrue;
+		return 0;
 	}
 
 	int32 written = 0;
@@ -463,9 +477,13 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 		if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-			whyNot = "the write failed (a locked story or layer?)";
+			whyNot = (written > 0)
+					 ? "a write failed part way through a paragraph, which now holds neither the "
+					   "document's words nor the file's (a locked story or layer?)"
+					 : "the write failed (a locked story or layer?)";
 			whyNot.SetTranslatable(kFalse);
-			return (written > 0) ? written : -1;
+			outRefused = kTrue;
+			return written;
 		}
 		++written;
 	}
@@ -743,14 +761,16 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 			{
 				const size_t i = place.fDoc[q - 1];
 				PMString whyNot;
+				bool16 refused = kFalse;
 				const int32 n = ApplyParagraph(model, static_cast<TextIndex>(starts[i]), attrs[i],
-											   paras[i], (*place.fFile)[q - 1].fText, whyNot);
-				if (n < 0)
+											   paras[i], (*place.fFile)[q - 1].fText, whyNot, refused);
+				// ⚠**BOTH ANSWERS ARE READ, because both can be true of one paragraph**: a write that
+				//  failed half way leaves what went in ahead of it (ApplyParagraph says so).
+				if (refused)
 				{
 					++refusedParas;
 					if (firstRefusal.IsEmpty())
 						firstRefusal = whyNot;
-					continue;
 				}
 				if (n > 0)
 				{

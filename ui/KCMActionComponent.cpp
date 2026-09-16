@@ -950,9 +950,20 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 					//   the whole document for every selection there had ever been.
 					if (exportMsg.CharCount() > 0)
 					{
-						exportMsg.Append(hasSelection ? " [selection -> " : " [no selection -> ");
-						exportMsg.AppendNumber(stories.Length());
-						exportMsg.Append(" story(ies)]");
+						// ⚠**NO NUMBER FOR THE WHOLE DOCUMENT.** The list is empty when nothing was
+						//  selected - that is the rule, stated in KCMStoryTextExport.h - so printing its
+						//  length here said "0 story(ies)" about a run that had just written every one
+						//  of them. The count belongs to the selection, and only the selection has one.
+						if (hasSelection)
+						{
+							exportMsg.Append(" [selection -> ");
+							exportMsg.AppendNumber(stories.Length());
+							exportMsg.Append(" story(ies)]");
+						}
+						else
+						{
+							exportMsg.Append(" [no selection -> the whole document]");
+						}
 						KCMSetStatus(exportMsg);
 					}
 				}

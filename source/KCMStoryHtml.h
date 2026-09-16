@@ -56,20 +56,18 @@ namespace KCMStoryHtml
 	KCMParaAttrs::fRuby unchanged, so a reading that survives the trip is the same object the
 	comparison already knows how to talk about.
 
-	@warning fNoteAt holds the offsets where a note REFERENCE stands, in the text's own count, and
-	  fNoteNum the number the page prints at each - the two are always the same length.
-	  ***THE OFFSET IS WHERE THE MARKER WAS, NOT WHERE ITS SPAN IS.*** KCMParaAttrs::fFootnote
-	  reports a span sitting on the character BEFORE the marker (KCMTextRead::ScanNotes takes the
-	  marker out of the text, so a span standing on it would measure nothing and be dropped), which
-	  means whoever fills fNoteAt from that span has to add fLen. Read fStart as the marker's place
-	  and every reference comes out one character early. */
+	⚠**WHERE A NOTE'S REFERENCE STANDS IS NOT CARRIED** (the user's decision, 2026-09-16). The
+	  reader of these files edits the WORDS of a note, and a marker in the body is not a word:
+	  it was written as <sup><a href="#n1">1</a></sup> and it is written no more. What that
+	  removes is a whole class of defect - the <sup>'s number was the body's own running count
+	  while the <li>'s id was the note's ordinal, and the two disagreed the moment a note lived
+	  in a table cell or an InDesign NOTE took an ordinal (measured: a document whose only
+	  reference pointed at the wrong one of its two notes). */
 struct Para
 {
 	std::string			fText;
 	KCMAttrSpanList		fRuby;		// as KCMParaAttrs::fRuby
 	KCMAttrSpanList		fKenten;	// as KCMParaAttrs::fKenten - fValue is the KIND's name
-	std::vector<int32>	fNoteAt;	// offsets (code points) where a note reference stands
-	std::vector<int32>	fNoteNum;	// same length: the number the page prints
 };
 
 /** The default mark, for an <em> that names none. See kKentenDefaultValue's comment. */
@@ -143,8 +141,11 @@ struct Table
 
 /** A whole story: its body, the tables standing in it, and its footnotes' own paragraphs.
 
+	★**A FOOTNOTE'S PARAGRAPHS ARE WRITTEN LIKE ANY OTHERS**, after the body and its tables,
+	  each one <p class="note1">...</p> - kNoteClassPrefix plus the note's number. The class is
+	  the only thing that says which note a paragraph belongs to, so it is what Read looks at.
 	@warning an ENDNOTE's words are not here. They live in another story (kEndnoteStoryBoss) and
-	  arrive as a story of their own, with its own file - only the reference is in this one. */
+	  arrive as a story of their own, with its own file. */
 struct Story
 {
 	std::vector<Para>					fBody;
@@ -160,6 +161,14 @@ struct Story
 	  the kenten would have no marks and the invisible characters no faces, and nothing would say
 	  why. */
 extern const char* const kStylesheetName;
+
+/** The class a footnote's paragraph wears, WITHOUT the number: "note1", "note2".
+
+	★**ONE NAME, IN ONE PLACE**, like kStylesheetName above: the writer puts it on and the reader
+	  takes it off. The number is the note's own, counting from 1, so it reads the way the page
+	  prints it - and a reader editing these files by hand can move a paragraph between notes by
+	  changing one digit. */
+extern const char* const kNoteClassPrefix;
 
 /** Add to `inOutSeen` every kenten value this story uses - body, cells and notes alike - skipping
 	any already there.

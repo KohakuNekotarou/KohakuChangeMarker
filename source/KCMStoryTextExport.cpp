@@ -239,37 +239,15 @@ bool16 ReadTableShapes(ITextModel* model, std::vector<TableShape>& out)
 
 /** One paragraph of KCMTextRead's, in the shape the writer wants.
 
-	⚠**ONLY FOOTNOTE REFERENCES TRAVEL.** An endnote's words live in a story of their own, which is
-	 exported as its own file, so a <sup> pointing at a note that is not in this file would be a
-	 link to nothing - and the reader refuses those, rightly. The marker is therefore left out of
-	 this version and written down as a gap rather than faked. */
+	⚠**A NOTE'S REFERENCE DOES NOT TRAVEL** (2026-09-16, the user's decision). The file carries
+	 a note's WORDS - a paragraph of its own, after the body - and not the place in the body
+	 where its marker stood: what the reader edits is the words. KCMStoryHtml::Para says what
+	 that removed. attrs.fFootnote is therefore read by nobody here. */
 void FillPara(const std::string& text, const KCMParaAttrs& attrs, KCMStoryHtml::Para& out)
 {
 	out.fText = text;
 	out.fRuby = attrs.fRuby;
 	out.fKenten = attrs.fKenten;
-
-	for (size_t k = 0; k < attrs.fFootnote.size(); ++k)
-	{
-		// ★★THE MARKER STOOD AFTER THE SPAN, NOT ON IT. KCMTextRead::ScanNotes puts the span on the
-		//   character BEFORE the reference (the reference itself is taken out of the text), so the
-		//   place to put it back is fStart + fLen. Reading fStart as the marker's own place puts
-		//   every reference one character early - KCMParaText.h says so at length.
-		out.fNoteAt.push_back(attrs.fFootnote[k].fStart + attrs.fFootnote[k].fLen);
-
-		int32 number = 0;
-		const std::string& value = attrs.fFootnote[k].fValue;
-		for (size_t c = 0; c < value.size(); ++c)
-		{
-			if (value[c] < '0' || value[c] > '9')
-			{
-				number = 0;			// "?" for a number that could not be read, or a letter
-				break;
-			}
-			number = number * 10 + (value[c] - '0');
-		}
-		out.fNoteNum.push_back((number > 0) ? number : static_cast<int32>(out.fNoteNum.size() + 1));
-	}
 }
 
 /*	BuildStory
