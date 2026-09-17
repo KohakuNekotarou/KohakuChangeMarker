@@ -233,9 +233,18 @@ struct KCMParaAttrs
 		 standing inside it - and was the assumption the whole diff made until this field existed. */
 	std::vector<int32>	fUncountedAt;
 
+	/** How many of those positions stand BEFORE the paragraph's first character - a table or a note
+		reference the paragraph begins with (2026-09-17, the import matrix's A17).
+		⚠**THEY ARE NOT IN fUncountedAt AND NOT IN THE PARAGRAPH'S START**: the reader moves the start
+		 past them (KCMTextRead), so ModelOffsetInParagraph never meets them and they stand directly
+		 BEHIND the start in the model. Only the pairing of objects across two versions asks for them
+		 (RunObjectOffsets) - without them "表の前の文 [table] 表の後の文" emptied to "[table]" had one object
+		 on one side and none on the other, and could not be cut. */
+	int32				fLeadingUncounted;
+
 	KCMParaAttrs()
 		: fTableOrdinal(kNotACell), fCellRow(-1), fCellCol(-1),
-		  fFootnoteOrdinal(kNotAFootnote) {}
+		  fFootnoteOrdinal(kNotAFootnote), fLeadingUncounted(0) {}
 
 	/** Whether this paragraph is a table cell.
 
@@ -334,6 +343,149 @@ inline int32 ModelOffsetInParagraph(const KCMParaAttrs& attrs, int32 textOffset)
 	for (size_t k = 0; k < attrs.fUncountedAt.size() && attrs.fUncountedAt[k] <= textOffset; ++k)
 		++skipped;
 	return textOffset + skipped;
+}
+
+/** One table standing in a paragraph, as the DOCUMENT has it (2026-09-17): the text offset it stands
+	at, and its anchor's model offset from the paragraph's start. ⚠**A table standing at the very start
+	of a paragraph has a NEGATIVE model offset**: the reader moves the paragraph's start past the
+	table's own characters (KCMTextRead), so the anchor is behind it. */
+struct KCMTableInPara
+{
+	int32	fTextOffset;
+	int32	fModelOffset;
+};
+
+/** One piece of a text change, cut where an OBJECT stands (CutChangeAtObjects).
+	A and B are the two versions: [fAStart, +fACount) and [fBStart, +fBCount), in their texts' counts. */
+struct KCMObjectPiece
+{
+	int32	fAStart;
+	int32	fACount;
+	int32	fBStart;
+	int32	fBCount;
+	/** How many of the objects stand BEFORE this piece - the same number on both sides, which is what
+		places a side with no characters: between object fObjectsBefore - 1 and object fObjectsBefore.
+		-1 = nothing is known about the objects (the change came back whole, see the return value). */
+	int32	fObjectsBefore;
+};
+
+/** Cut one text change where the objects standing in it are - tables and note references, the
+	characters the text leaves out (KCMParaAttrs::fUncountedAt) - pairing the k-th object of one version
+	with the k-th of the other (2026-09-17, the import matrix's G1 and G2).
+
+	★★★**THE TEXT CANNOT SAY WHICH SIDE OF AN OBJECT THE WORDS ARE ON.** "表の前の文" [table] "表の後の文" is
+	  one paragraph reading "表の前の文表の後の文" with the table at offset 5, and words typed at the END of
+	  the first half and at the START of the second are one insertion at offset 5. Measured: `表の前の文追加`
+	  came back as `表の前の文` [table] `追加表の後の文`; `表の前の文章` + `後の文` (A30) put 章 behind the table.
+	  ★**THE OTHER VERSION KNOWS**: its own object stands at an offset of ITS text, so the words before
+	  that offset belong before the object.
+	★★**AND A CHANGE ACROSS AN OBJECT IS SEVERAL CHANGES.** Deleting "文表" around a table is two
+	  deletions with the table left between them; taken as one, its range holds the table's anchor and
+	  the write is refused - rightly, since removing the anchor removes the table.
+
+	Each object is BEFORE the change (at or before its start on both sides), AFTER it (at or after its
+	end on both sides) or IN it (within both ranges) - and one standing in it cuts it. A piece with no
+	characters on either side is left out.
+	@param aObjects / bObjects the objects' text offsets in each version, ascending. Several at one offset
+	  are fine (a table of three rows is three).
+	@return kFalse when the objects cannot be paired with the change - the counts differ, or an object
+	  stands on different sides of it in the two versions (it moved). `out` then holds the change whole
+	  with fObjectsBefore -1, which is exactly what was done before this existed. */
+inline bool16 CutChangeAtObjects(const std::vector<int32>& aObjects, const std::vector<int32>& bObjects,
+								 int32 aStart, int32 aCount, int32 bStart, int32 bCount,
+								 std::vector<KCMObjectPiece>& out)
+{
+	out.clear();
+	KCMObjectPiece whole;
+	whole.fAStart = aStart;
+	whole.fACount = aCount;
+	whole.fBStart = bStart;
+	whole.fBCount = bCount;
+	whole.fObjectsBefore = -1;
+
+	if (aObjects.size() != bObjects.size())
+	{
+		out.push_back(whole);
+		return kFalse;
+	}
+
+	const int32 aEnd = aStart + aCount;
+	const int32 bEnd = bStart + bCount;
+	int32 before = 0;
+	std::vector<size_t> inside;
+	int stage = 0;		// 0 = before, 1 = in, 2 = after - and it never goes back
+	for (size_t j = 0; j < aObjects.size(); ++j)
+	{
+		const int32 a = aObjects[j];
+		const int32 b = bObjects[j];
+		int where = -1;
+		if (a <= aStart && b <= bStart)
+			where = 0;
+		else if (a >= aEnd && b >= bEnd)
+			where = 2;
+		else if (a >= aStart && a <= aEnd && b >= bStart && b <= bEnd)
+			where = 1;
+		if (where < stage)
+		{
+			out.push_back(whole);
+			return kFalse;
+		}
+		stage = where;
+		if (where == 0)
+			++before;
+		else if (where == 1)
+			inside.push_back(j);
+	}
+
+	int32 aFrom = aStart;
+	int32 bFrom = bStart;
+	for (size_t k = 0; k <= inside.size(); ++k)
+	{
+		const int32 aTo = (k < inside.size()) ? aObjects[inside[k]] : aEnd;
+		const int32 bTo = (k < inside.size()) ? bObjects[inside[k]] : bEnd;
+		if (aTo > aFrom || bTo > bFrom)
+		{
+			KCMObjectPiece piece;
+			piece.fAStart = aFrom;
+			piece.fACount = aTo - aFrom;
+			piece.fBStart = bFrom;
+			piece.fBCount = bTo - bFrom;
+			piece.fObjectsBefore = before + static_cast<int32>(k);
+			out.push_back(piece);
+		}
+		aFrom = aTo;
+		bFrom = bTo;
+	}
+	return kTrue;
+}
+
+/** How many of the objects standing exactly AT `textOffset` a position there must stay in front of,
+	when `objectsBefore` objects are to stand before it (a KCMObjectPiece's fObjectsBefore).
+
+	★A START is asked with ModelOffsetInParagraph / IndexInStory, which answer "after everything
+	  standing there"; this is how far to step back from that. 0 when nothing is known (-1), and never
+	  past the objects standing exactly there - the answer is clamped, so an inconsistent count cannot
+	  put a position inside the words before them.
+	@param objects the objects' text offsets on this side, ascending. */
+inline int32 ObjectsToStepBack(const std::vector<int32>& objects, int32 textOffset, int32 objectsBefore)
+{
+	if (objectsBefore < 0)
+		return 0;
+	int32 atOrBefore = 0;
+	int32 strictlyBefore = 0;
+	for (size_t k = 0; k < objects.size(); ++k)
+	{
+		if (objects[k] <= textOffset)
+			++atOrBefore;
+		if (objects[k] < textOffset)
+			++strictlyBefore;
+	}
+	int32 wanted = objectsBefore;
+	if (wanted < strictlyBefore)
+		wanted = strictlyBefore;
+	if (wanted > atOrBefore)
+		wanted = atOrBefore;
+	return atOrBefore - wanted;
 }
 
 /** How many CODE POINTS a UTF-8 string holds -- continuation bytes (10xxxxxx) are not counted.
@@ -953,6 +1105,31 @@ inline int32 IndexInStory(const std::vector<std::string>& paragraphs,
 														 CountCodePoints(paragraphs[last]));
 	}
 	return base;
+}
+
+/** The objects standing inside a RUN of paragraphs - every paragraph's fUncountedAt - as offsets into
+	JoinParagraphs' answer, ascending (2026-09-17: what CutChangeAtObjects pairs across two versions).
+	★The ones a paragraph BEGINS with (fLeadingUncounted) are at its offset 0 and come first. They stand
+	 behind the paragraph's start in the model, which is exactly where ObjectsToStepBack steps back to
+	 from IndexInStory's answer for that offset. */
+inline void RunObjectOffsets(const std::vector<std::string>& paragraphs,
+							 const std::vector<KCMParaAttrs>& attrs,
+							 int32 start, int32 count, std::vector<int32>& out)
+{
+	out.clear();
+	int32 joined = 0;
+	for (int32 i = 0; i < count; ++i)
+	{
+		const int32 which = start + i;
+		if (which < 0 || which >= static_cast<int32>(paragraphs.size()))
+			break;
+		const KCMParaAttrs& para = AttrsOfParagraph(attrs, which);
+		for (int32 k = 0; k < para.fLeadingUncounted; ++k)
+			out.push_back(joined);
+		for (size_t k = 0; k < para.fUncountedAt.size(); ++k)
+			out.push_back(joined + para.fUncountedAt[k]);
+		joined += CountCodePoints(paragraphs[which]) + 1;
+	}
 }
 
 /** True when two spans lists differ -- the question "did only the ruby change?" is this one

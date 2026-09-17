@@ -39,6 +39,7 @@
 #include "ErrorUtils.h"
 #include "TextID.h"				// kCharAttrStrandBoss, kPrivateCreateStrandCmdBoss
 #include "TextIterator.h"			// AppendToStringAndIncrement - the older words, raw
+#include "TextChar.h"				// kTextChar_Table - which side of a table an insertion goes
 #include "WideString.h"
 #include <string>
 #include <vector>					// the replaced rows a bulk run holds until its one re-diff is done
@@ -147,6 +148,62 @@ void TargetWordsAt(ITextModel* target, TextIndex at, int32 count, WideString& ou
 		return;
 	TextIterator iter(target, at);
 	iter.AppendToStringAndIncrement(&out, count);
+}
+
+/*	InsertionSideInTarget
+	Where a pure INSERTION goes in the Target when tables stand right before the position the diff
+	named (2026-09-17, the import matrix's G1).
+
+	★★★**THE TEXT CANNOT TELL "BEFORE THE TABLE" FROM "AFTER IT".** The diff counts in the paragraph's
+	  text, where a table's own characters are left out, so words typed right before a table and right
+	  after it come out as the same text position - and the Target's model position for it is the one
+	  AFTER the table. Measured: `表の前の文追加` taken in came back as `表の前の文` [table] `追加表の後の文`.
+	★**THE SOURCE KNOWS**: there the words stand where they belong. When a table's anchor follows them
+	  in the Source, they go in front of the matching table in the Target - matched by counting the tables
+	  that stand directly before the words on each side.
+	★★**A BACKSTOP SINCE THE SAME AFTERNOON (G2)**: the diff now cuts every change where the tables and
+	  note references stand and names the right side itself (KCMParaText::CutChangeAtObjects), so this
+	  finds no table right before `at` and answers `at`. It stays for a run whose objects could not be
+	  paired - measured nowhere yet, and cheap: it reads a character or two.
+	@return `at` whenever anything is unclear: no table right before it, a Source that cannot be read. */
+TextIndex InsertionSideInTarget(ITextModel* target, TextIndex at, UID storyUID, IDataBase* sourceDB,
+								TextIndex sourceStart, int32 sourceCount)
+{
+	// The anchors of the tables standing right before `at` in the Target, in order.
+	std::vector<TextIndex> anchors;
+	for (TextIndex s = at; s > 0; --s)
+	{
+		WideString one;
+		TargetWordsAt(target, s - 1, 1, one);
+		const int32 cp = (one.CharCount() == 1) ? static_cast<int32>(one.GetChar(0).GetValue()) : -1;
+		if (cp != kTextChar_Table && cp != kTextChar_TableContinued)
+			break;
+		if (cp == kTextChar_Table)
+			anchors.insert(anchors.begin(), s - 1);
+	}
+	if (anchors.empty())
+		return at;
+
+	// In the Source: does a table's anchor follow the words, and how many tables stand right before them?
+	PMString ignored;
+	WideString next;
+	if (!SourceWordsFor(storyUID, sourceDB, sourceStart + sourceCount, 1, next, ignored)
+		|| next.CharCount() != 1 || static_cast<int32>(next.GetChar(0).GetValue()) != kTextChar_Table)
+		return at;
+
+	size_t before = 0;
+	for (TextIndex q = sourceStart; q > 0; --q)
+	{
+		WideString one;
+		if (!SourceWordsFor(storyUID, sourceDB, q - 1, 1, one, ignored) || one.CharCount() != 1)
+			break;
+		const int32 cp = static_cast<int32>(one.GetChar(0).GetValue());
+		if (cp != kTextChar_Table && cp != kTextChar_TableContinued)
+			break;
+		if (cp == kTextChar_Table)
+			++before;
+	}
+	return (before < anchors.size()) ? anchors[before] : at;
 }
 
 /*	HoldsObjectCharacter
@@ -776,10 +833,19 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 			outMessage = Refused("the story cannot be edited.");
 			return kFalse;
 		}
+
+		// ★★WHICH SIDE OF A TABLE AN INSERTION GOES (2026-09-17, the import matrix's G1). The diff names
+		//   a position in the TEXT, and words typed right before a table and right after it are the same
+		//   position there. The diff names the side itself since G2 (CutChangeAtObjects); asking the Source
+		//   as well is the backstop (InsertionSideInTarget says when it still matters).
+		const TextIndex writeAt = (targetCount == 0 && words->Length() > 0)
+								  ? InsertionSideInTarget(target, change.fTargetStart, storyUID, sourceDB,
+														  change.fSourceStart, sourceCount)
+								  : change.fTargetStart;
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 		{
 			RestoreSequence undo(standalone);
-			InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(target, change.fTargetStart, targetCount, *words));
+			InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(target, writeAt, targetCount, *words));
 			if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
 			{
 				ErrorUtils::PMSetGlobalErrorCode(kSuccess);
@@ -791,8 +857,8 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 		//   is as long as the source's side of the change, which is not the length that came out.
 		//   WideString counts code points, the same unit TextIndex counts in
 		//   ([[textindex-counts-code-points]]), so no conversion belongs here.
-		done.fReplacedStart = change.fTargetStart;
-		done.fReplacedEnd   = change.fTargetStart + static_cast<int32>(words->Length());
+		done.fReplacedStart = writeAt;		// where it really went in (a table may stand after it - G1)
+		done.fReplacedEnd   = writeAt + static_cast<int32>(words->Length());
 
 		// ★★★**AND EVERYTHING ALREADY REPLACED FURTHER DOWN THE STORY SLIDES.** The live changes
 		//   are about to be named afresh by RunOne, but a change that has already been replaced
@@ -800,7 +866,7 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 		//   words with five pushes every later replaced row along by two, and a row whose
 		//   position quietly rots is a row whose jump lands in the wrong place.
 		//   ⚠BEFORE the new one is added, so that it is not shifted by its own write.
-		KCMStoryList::ShiftReplacedChanges(nth, change.fTargetStart,
+		KCMStoryList::ShiftReplacedChanges(nth, writeAt,
 										   static_cast<int32>(words->Length()) - targetCount);
 
 		if (words->Length() > 0)

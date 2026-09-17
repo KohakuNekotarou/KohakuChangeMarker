@@ -279,11 +279,15 @@ struct RunSide
 	int32								fStart;		// first paragraph of the run
 	int32								fCount;		// how many it covers
 	int32								fBase;		// where the run begins, as a TextIndex
+	std::vector<int32>					fObjects;	// the run's tables and note references, in the joined text's count
 
 	RunSide(const std::vector<std::string>& paragraphs, const std::vector<int32>& starts,
 			const std::vector<KCMParaAttrs>& attrs, int32 start, int32 count, int32 base)
 		: fParagraphs(&paragraphs), fStarts(&starts), fAttrs(&attrs),
-		  fStart(start), fCount(count), fBase(base) {}
+		  fStart(start), fCount(count), fBase(base)
+	{
+		KCMParaText::RunObjectOffsets(paragraphs, attrs, start, count, fObjects);
+	}
 
 	/** Where an offset into the run's joined TEXT stands in the DOCUMENT.
 		⚠**THE ATTRIBUTES ARE CARRIED FOR ONE FIELD** (fUncountedAt), and it is what makes this a
@@ -406,12 +410,15 @@ void MarkWriteBlocks(std::vector<KCMStoryChange>& out, size_t first, bool16 plac
    different ways.
 
    @param tFrom/tCount, sFrom/sCount are offsets WITHIN the joined run, in code points.
+   @param objectsBefore how many of the run's objects stand before this change on both sides
+          (KCMParaText::KCMObjectPiece), or -1 when nothing is known - see AddCutAtObjects.
 */
 void Add(std::vector<KCMStoryChange>& out,
 		 const std::string& targetText, const std::vector<int32>& targetBytes,
 		 const RunSide& tRun, int32 tFrom, int32 tCount,
 		 const std::string& sourceText, const std::vector<int32>& sourceBytes,
-		 const RunSide& sRun, int32 sFrom, int32 sCount)
+		 const RunSide& sRun, int32 sFrom, int32 sCount,
+		 int32 objectsBefore)
 {
 	KCMStoryChange change;
 	change.fWhat = KCMStoryChange::kText;
@@ -423,8 +430,17 @@ void Add(std::vector<KCMStoryChange>& out,
 	// @warning **BOTH ENDS ARE ASKED FOR**, rather than the start plus the count. A change may
 	//   run across a paragraph boundary, and a boundary can be worth more than the one character
 	//   the joined text spends on it -- see RunSide above.
+	// ★★**AND AN END IS NOT A START** (2026-09-17, the import matrix's G2). Index answers for a START -
+	//   the character at an offset stands AFTER a table standing there - so asking it for an END put
+	//   a range that stops right before a table one position wide, over the table's anchor: the change
+	//   then "held a table" and could not be taken in, though its words touched nothing but letters.
+	//   An end is "just past the last character"; an empty range ends where it starts.
+	// ★★**AND AN EMPTY RANGE NEXT TO A TABLE HAS A SIDE** (the same day, G1): "after everything standing
+	//   there" is Index's answer, and objectsBefore says how many of those it stays in front of.
 	change.fTargetStart = tRun.Index(tFrom);
-	change.fTargetEnd = tRun.Index(tFrom + tCount);
+	if (tCount == 0)
+		change.fTargetStart -= KCMParaText::ObjectsToStepBack(tRun.fObjects, tFrom, objectsBefore);
+	change.fTargetEnd = (tCount > 0) ? tRun.Index(tFrom + tCount - 1) + 1 : change.fTargetStart;
 
 	// **AN INSERTION HAS A PLACE IN THE OLDER DOCUMENT EVEN THOUGH IT HAS NO CHARACTERS THERE.**
 	//   The reader wants to see where the new words went in, and the older version has an exact
@@ -443,7 +459,9 @@ void Add(std::vector<KCMStoryChange>& out,
 	//     and what the marks already draw as a caret (KCMStoryMarkBuild turns a zero-width range
 	//     into KCMMarkRange::Caret without being asked). So + and - are mirror images.
 	change.fSourceStart = sRun.Index(sFrom);
-	change.fSourceEnd = sRun.Index(sFrom + sCount);
+	if (sCount == 0)
+		change.fSourceStart -= KCMParaText::ObjectsToStepBack(sRun.fObjects, sFrom, objectsBefore);
+	change.fSourceEnd = (sCount > 0) ? sRun.Index(sFrom + sCount - 1) + 1 : change.fSourceStart;	// the same END rule
 
 	// **BOTH SIDES ARE CUT, ALWAYS.** The row shows the side that changed; the panel's message
 	//   area shows the other one while that row is selected, so that the reader can see what the
@@ -472,6 +490,33 @@ void Add(std::vector<KCMStoryChange>& out,
 					 sourceText, sourceBytes, sFrom, sCount);
 
 	out.push_back(change);
+}
+
+/* AddCutAtObjects
+   Add, once for each piece of the change that the tables and note references standing in it leave
+   (2026-09-17, the import matrix's G2).
+
+   ★★**A CHANGE ACROSS A TABLE IS TWO CHANGES, ONE ON EACH SIDE OF IT.** Deleting 文表 around a table
+   came out as one change whose range held the table's anchor, and it could not be taken in: writing it
+   would have deleted the table. Cut where the table stands, each piece holds letters alone and the
+   table stays - and the rows say what happened, one on each side of it.
+   ★The objects are paired in order across the two versions (KCMParaText::CutChangeAtObjects); when
+   they cannot be - a table was added or moved - the change is added whole, as it always was.
+*/
+void AddCutAtObjects(std::vector<KCMStoryChange>& out,
+					 const std::string& targetText, const std::vector<int32>& targetBytes,
+					 const RunSide& tRun, int32 tFrom, int32 tCount,
+					 const std::string& sourceText, const std::vector<int32>& sourceBytes,
+					 const RunSide& sRun, int32 sFrom, int32 sCount)
+{
+	std::vector<KCMParaText::KCMObjectPiece> pieces;
+	KCMParaText::CutChangeAtObjects(sRun.fObjects, tRun.fObjects, sFrom, sCount, tFrom, tCount, pieces);
+	for (size_t i = 0; i < pieces.size(); ++i)
+	{
+		const KCMParaText::KCMObjectPiece& piece = pieces[i];
+		Add(out, targetText, targetBytes, tRun, piece.fBStart, piece.fBCount,
+			sourceText, sourceBytes, sRun, piece.fAStart, piece.fACount, piece.fObjectsBefore);
+	}
 }
 
 /* ParaSide
@@ -1372,8 +1417,8 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 		{
 			// The whole run, as one change. This is where a run lands when the character pass
 			// cannot place it - not an error, just a coarser answer.
-			Add(out, targetText, targetBytes, tRun, 0, static_cast<int32>(targetCodePoints.size()),
-				sourceText, sourceBytes, sRun, 0, static_cast<int32>(sourceCodePoints.size()));
+			AddCutAtObjects(out, targetText, targetBytes, tRun, 0, static_cast<int32>(targetCodePoints.size()),
+							sourceText, sourceBytes, sRun, 0, static_cast<int32>(sourceCodePoints.size()));
 			MarkWriteBlocks(out, firstOfRun, placesAgree, targetModel, sourceModel,
 							haveKeptSource ? &keptSourceRaw : nil);
 			continue;
@@ -1382,8 +1427,8 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 		for (size_t k = 0; k < fineChanges.size(); ++k)
 		{
 			const KCMTextDiff::Change& fine = fineChanges[k];
-			Add(out, targetText, targetBytes, tRun, fine.bStart, fine.bCount,
-				sourceText, sourceBytes, sRun, fine.aStart, fine.aCount);
+			AddCutAtObjects(out, targetText, targetBytes, tRun, fine.bStart, fine.bCount,
+							sourceText, sourceBytes, sRun, fine.aStart, fine.aCount);
 		}
 		MarkWriteBlocks(out, firstOfRun, placesAgree, targetModel, sourceModel,
 						haveKeptSource ? &keptSourceRaw : nil);

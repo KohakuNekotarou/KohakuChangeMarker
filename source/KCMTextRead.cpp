@@ -778,7 +778,7 @@ void ClosePara(std::vector<std::string>& outParas,
 			   std::vector<int32>& outStarts,
 			   const std::string& text,
 			   const KCMParaAttrs& place,
-			   TextIndex paraStart, TextIndex paraEnd,
+			   TextIndex lineStart, TextIndex paraStart, TextIndex paraEnd,
 			   AttrWalk& walk,
 			   std::vector<TextIndex>& uncounted)
 {
@@ -786,6 +786,10 @@ void ClosePara(std::vector<std::string>& outParas,
 	outStarts.push_back(static_cast<int32>(paraStart));
 
 	KCMParaAttrs attrs = place;		// the cell identity, which is the same for every paragraph here
+
+	// ★The table or note reference the paragraph BEGINS with: the start was moved past them, so they are
+	//   the distance from where the paragraph really begins (2026-09-17 - KCMParaAttrs::fLeadingUncounted).
+	attrs.fLeadingUncounted = static_cast<int32>(paraStart - lineStart);
 
 	// ★★★**THE SKIPPED POSITIONS TRAVEL WITH THE PARAGRAPH, IN THE TEXT'S COUNT.** Everything this
 	//   file hands out is counted the way the panel reads it - the table's own characters left out
@@ -937,6 +941,7 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 		}
 
 		std::string text;
+		TextIndex lineStart = position;		// where the paragraph really begins, before anything it starts with
 		TextIndex paraStart = position;
 		bool16 paraHasCharacters = kFalse;
 
@@ -996,9 +1001,10 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 
 			if (cp == kTextChar_CR)
 			{
-				ClosePara(outParas, outAttrs, outStarts, text, place, paraStart, i,
+				ClosePara(outParas, outAttrs, outStarts, text, place, lineStart, paraStart, i,
 						  walk, uncounted);
 				text.clear();
+				lineStart = i + 1;
 				paraStart = i + 1;
 				paraHasCharacters = kFalse;
 				continue;
@@ -1018,7 +1024,7 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 		// last paragraph itself. This catches the one that does not - and an empty tail is NOT
 		// pushed, or every thread would end with a paragraph nobody wrote.
 		if (!text.empty())
-			ClosePara(outParas, outAttrs, outStarts, text, place, paraStart, threadEnd,
+			ClosePara(outParas, outAttrs, outStarts, text, place, lineStart, paraStart, threadEnd,
 					  walk, uncounted);
 
 		position = threadEnd;

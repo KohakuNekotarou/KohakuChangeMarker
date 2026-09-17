@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,7 @@
 #include "ITextStoryThread.h"		// the thread a paragraph stands in - a write may not leave it
 #include "CmdUtils.h"
 #include "TextIterator.h"			// the characters a write is about to take out, read before it does
+#include "TextChar.h"				// kTextChar_Table / kTextChar_TableContinued - which side of a table
 #include "ErrorUtils.h"
 #include "FileUtils.h"
 #include "SysFileList.h"			// what the open dialog hands back - several files at once
@@ -41,6 +43,47 @@ namespace
 
 // (A per-write trace to %TEMP% stood here while the 2026-09-17 crash was run down. It is out of the
 //  product - the user's rule - and kept, working, as work/kcm-import-matrix/KCMStoryTextImport-with-trace.cpp.txt.)
+
+/** The one character at `at`, or -1 outside the story. */
+int32 CharAt(ITextModel* model, TextIndex at)
+{
+	if (model == nil || at < 0 || at >= model->TotalLength())
+		return -1;
+	TextIterator iter(model, at);
+	return static_cast<int32>((*iter).GetValue());
+}
+
+/** For every paragraph of the file that has tables standing in it, those tables' text offsets,
+	ascending (2026-09-17, G1). A table stands in the body (fInTable -1) or in one cell of another
+	table, and fParaIndex counts inside whichever holds it - so the paragraph is found the same way. */
+void FileTablesByParagraph(const KCMStoryHtml::Story& story,
+						   std::map<const KCMStoryHtml::Para*, std::vector<int32> >& out)
+{
+	out.clear();
+	for (size_t t = 0; t < story.fTables.size(); ++t)
+	{
+		const KCMStoryHtml::Table& table = story.fTables[t];
+		const std::vector<KCMStoryHtml::Para>* holder = nil;
+		if (table.fInTable < 0)
+		{
+			holder = &story.fBody;
+		}
+		else if (static_cast<size_t>(table.fInTable) < story.fTables.size())
+		{
+			const KCMStoryHtml::Table& parent = story.fTables[static_cast<size_t>(table.fInTable)];
+			if (table.fInRow >= 0 && static_cast<size_t>(table.fInRow) < parent.fRows.size()
+				&& table.fInCell >= 0
+				&& static_cast<size_t>(table.fInCell) < parent.fRows[static_cast<size_t>(table.fInRow)].fCells.size())
+			{
+				holder = &parent.fRows[static_cast<size_t>(table.fInRow)].fCells[static_cast<size_t>(table.fInCell)].fParas;
+			}
+		}
+		if (holder != nil && table.fParaIndex >= 0 && static_cast<size_t>(table.fParaIndex) < holder->size())
+			out[&(*holder)[static_cast<size_t>(table.fParaIndex)]].push_back(table.fOffset);
+	}
+	for (std::map<const KCMStoryHtml::Para*, std::vector<int32> >::iterator it = out.begin(); it != out.end(); ++it)
+		std::sort(it->second.begin(), it->second.end());
+}
 
 /** Which mode was showing before the import took over.
 
@@ -402,10 +445,13 @@ void BuildPlaces(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::Sto
 	       that went in ahead of it, and the paragraph then holds neither the document's words
 	       nor the file's. Answering with a count alone hid the failure (the old -1 turned into a
 	       success as soon as one write had gone in); answering with -1 alone hid the change.
+	@param fileTableOffsets the text offsets of the tables standing in the FILE's version of this
+	       paragraph, ascending - what decides which side of a table an insertion goes (2026-09-17).
 	@return how many writes went in - 0 when none did, refused or not.
 */
 int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs& attrs,
 					 const std::string& docText, const std::string& fileText,
+					 const std::vector<int32>& fileTableOffsets,
 					 PMString& whyNot, bool16& outRefused)
 {
 	outRefused = kFalse;
@@ -463,9 +509,10 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 	//   This used to take the END from the same function, so changing the last characters before a
 	//   table took the table's own anchor out with them - in the copy, silently. The end is now "just
 	//   past the last character": ModelOffsetInParagraph(last) + 1.
-	// ★★**A DELETION ACROSS A TABLE IS DONE IN PIECES**, one for each side, so the table stays. A
-	//   REPLACEMENT across one is refused: which side its words belong on is not something the text
-	//   can say.
+	// ★★**A CHANGE ACROSS A TABLE IS DONE IN PIECES**, one for each side, so the table stays - and since
+	//   the same day's G1/G2 the FILE's table position says which of the new words go on which side
+	//   (KCMParaText::CutChangeAtObjects). A replacement across a NOTE REFERENCE is still refused: the
+	//   file does not carry where a reference stands, so nothing can say which side its words belong on.
 	// ★★★**AND EVERY PIECE IS CHECKED AGAINST THE DOCUMENT BEFORE ANYTHING GOES IN** (the same day,
 	//   after the crash): the range has to stay inside this paragraph's own story thread, and what it
 	//   takes out has to BE the characters the reading gave. A position that has gone stale fails the
@@ -478,6 +525,8 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 		int32	fCount;		// model characters it takes out (0 = an insertion)
 		int32	fAStart;	// the same run in the text's count
 		int32	fACount;
+		int32	fBStart;	// the FILE's words this piece puts in (an insertion cut at a table has two)
+		int32	fBCount;
 	};
 	std::vector<Piece> pieces;
 
@@ -494,51 +543,116 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 		}
 	}
 
+	// ★★**THE TABLES STANDING IN THIS PARAGRAPH, AS THE DOCUMENT HAS THEM** (2026-09-17, G1) - read off
+	//   the model, because the paragraph's attributes do not say which of its uncounted positions are
+	//   tables (a note's marker is one too), and a table standing at the very START is not among them
+	//   at all: the reader moved the paragraph's start past it.
+	std::vector<KCMParaText::KCMTableInPara> tables;
+	{
+		TextIndex lead = paraStart;
+		while (lead > threadStart)
+		{
+			const int32 cp = CharAt(model, lead - 1);
+			if (cp != kTextChar_Table && cp != kTextChar_TableContinued)
+				break;
+			--lead;
+		}
+		for (TextIndex m = lead; m < paraStart; ++m)
+		{
+			if (CharAt(model, m) == kTextChar_Table)
+			{
+				KCMParaText::KCMTableInPara t;
+				t.fTextOffset = 0;
+				t.fModelOffset = static_cast<int32>(m - paraStart);
+				tables.push_back(t);
+			}
+		}
+		for (size_t k = 0; k < attrs.fUncountedAt.size(); ++k)
+		{
+			const TextIndex m = paraStart + attrs.fUncountedAt[k] + static_cast<int32>(k);
+			if (CharAt(model, m) == kTextChar_Table)
+			{
+				KCMParaText::KCMTableInPara t;
+				t.fTextOffset = attrs.fUncountedAt[k];
+				t.fModelOffset = static_cast<int32>(m - paraStart);
+				tables.push_back(t);
+			}
+		}
+	}
+
+	std::vector<int32> docTableOffsets;
+	for (size_t j = 0; j < tables.size(); ++j)
+		docTableOffsets.push_back(tables[j].fTextOffset);
+
 	for (size_t c = 0; c < changes.size(); ++c)
 	{
 		const KCMTextDiff::Change& ch = changes[c];
 
-		if (ch.aCount <= 0)
+		// ★★**FIRST CUT WHERE THE TABLES STAND, THE DOCUMENT'S PAIRED WITH THE FILE'S** (G1/G2): which side
+		//   of a table words go on, and which of them are before it and which after, only the file's own
+		//   table position says. `表の前の文章` + `後の文` is 章 before the table and 表の gone after it.
+		std::vector<KCMParaText::KCMObjectPiece> parts;
+		KCMParaText::CutChangeAtObjects(docTableOffsets, fileTableOffsets, ch.aStart, ch.aCount,
+										ch.bStart, ch.bCount, parts);
+		for (size_t q = 0; q < parts.size(); ++q)
 		{
-			Piece p;
-			p.fChange = c;
-			p.fFrom = KCMParaText::ModelOffsetInParagraph(attrs, ch.aStart);
-			p.fCount = 0;
-			p.fAStart = ch.aStart;
-			p.fACount = 0;
-			pieces.push_back(p);
-			continue;
-		}
+			const KCMParaText::KCMObjectPiece& part = parts[q];
 
-		// Cut the run where a table stands BETWEEN two of its characters.
-		std::vector<int32> cuts;
-		for (size_t k = 0; k < attrs.fUncountedAt.size(); ++k)
-		{
-			const int32 u = attrs.fUncountedAt[k];
-			if (u > ch.aStart && u < ch.aStart + ch.aCount && (cuts.empty() || cuts.back() != u))
-				cuts.push_back(u);
-		}
-		if (!cuts.empty() && ch.bCount > 0)
-		{
-			whyNot = "a change replaces words on both sides of a table standing inside the paragraph "
-					 "(which side the new words belong on cannot be told - edit the two sides apart)";
-			whyNot.SetTranslatable(kFalse);
-			outRefused = kTrue;
-			return 0;
-		}
+			if (part.fACount <= 0)
+			{
+				// An insertion: in front of the first table the file puts after these words, or after
+				// everything standing there when none does.
+				const int32 ob = part.fObjectsBefore;
+				Piece p;
+				p.fChange = c;
+				p.fFrom = (ob >= 0 && static_cast<size_t>(ob) < tables.size()
+						   && tables[static_cast<size_t>(ob)].fTextOffset == part.fAStart)
+						  ? tables[static_cast<size_t>(ob)].fModelOffset
+						  : KCMParaText::ModelOffsetInParagraph(attrs, part.fAStart);
+				p.fCount = 0;
+				p.fAStart = part.fAStart;
+				p.fACount = 0;
+				p.fBStart = part.fBStart;
+				p.fBCount = part.fBCount;
+				pieces.push_back(p);
+				continue;
+			}
 
-		int32 s = ch.aStart;
-		for (size_t k = 0; k <= cuts.size(); ++k)
-		{
-			const int32 e = (k < cuts.size()) ? cuts[k] : ch.aStart + ch.aCount;
-			Piece p;
-			p.fChange = c;
-			p.fFrom = KCMParaText::ModelOffsetInParagraph(attrs, s);
-			p.fCount = KCMParaText::ModelOffsetInParagraph(attrs, e - 1) + 1 - p.fFrom;
-			p.fAStart = s;
-			p.fACount = e - s;
-			pieces.push_back(p);
-			s = e;
+			// Then cut where anything else the text leaves out stands BETWEEN two of its characters - a
+			// note's reference, whose place the file does not carry (KCMStoryHtml::Para) - or a table
+			// the pairing above could not place.
+			const int32 partEnd = part.fAStart + part.fACount;
+			std::vector<int32> cuts;
+			for (size_t k = 0; k < attrs.fUncountedAt.size(); ++k)
+			{
+				const int32 u = attrs.fUncountedAt[k];
+				if (u > part.fAStart && u < partEnd && (cuts.empty() || cuts.back() != u))
+					cuts.push_back(u);
+			}
+			if (!cuts.empty() && part.fBCount > 0)
+			{
+				whyNot = "a change replaces words on both sides of a table or a note reference standing inside "
+						 "the paragraph (which side the new words belong on cannot be told - edit the two sides apart)";
+				whyNot.SetTranslatable(kFalse);
+				outRefused = kTrue;
+				return 0;
+			}
+
+			int32 s = part.fAStart;
+			for (size_t k = 0; k <= cuts.size(); ++k)
+			{
+				const int32 e = (k < cuts.size()) ? cuts[k] : partEnd;
+				Piece p;
+				p.fChange = c;
+				p.fFrom = KCMParaText::ModelOffsetInParagraph(attrs, s);
+				p.fCount = KCMParaText::ModelOffsetInParagraph(attrs, e - 1) + 1 - p.fFrom;
+				p.fAStart = s;
+				p.fACount = e - s;
+				p.fBStart = part.fBStart;		// only ever words when there is one piece (a replacement
+				p.fBCount = part.fBCount;		// across a note reference was refused just above)
+				pieces.push_back(p);
+				s = e;
+			}
 		}
 	}
 
@@ -576,14 +690,13 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 	for (size_t i = pieces.size(); i > 0; --i)
 	{
 		const Piece& piece = pieces[i - 1];
-		const KCMTextDiff::Change& ch = changes[piece.fChange];
 		const int32 from = piece.fFrom;
 
 		WideString words;
-		if (ch.bCount > 0)
+		if (piece.fBCount > 0)
 		{
 			std::string text;
-			for (int32 k = ch.bStart; k < ch.bStart + ch.bCount
+			for (int32 k = piece.fBStart; k < piece.fBStart + piece.fBCount
 								   && k < static_cast<int32>(b.size()); ++k)
 				KCMParaText::AppendUtf8(text, b[k]);
 
@@ -912,13 +1025,22 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 		std::sort(jobs.begin(), jobs.end(),
 				  [&starts](const Job& a, const Job& b) { return starts[a.fPara] > starts[b.fPara]; });
 
+		// ★The file's own table positions, per paragraph - which side of a table an insertion goes (G1).
+		std::map<const KCMStoryHtml::Para*, std::vector<int32> > fileTables;
+		FileTablesByParagraph(set->fStories[which], fileTables);
+		const std::vector<int32> noTables;
+
 		for (size_t j = 0; j < jobs.size(); ++j)
 		{
 			const size_t i = jobs[j].fPara;
 			PMString whyNot;
 			bool16 refused = kFalse;
+			const std::map<const KCMStoryHtml::Para*, std::vector<int32> >::const_iterator ft =
+				fileTables.find(jobs[j].fFile);
 			const int32 n = ApplyParagraph(model, static_cast<TextIndex>(starts[i]), attrs[i],
-										   paras[i], jobs[j].fFile->fText, whyNot, refused);
+										   paras[i], jobs[j].fFile->fText,
+										   (ft != fileTables.end()) ? ft->second : noTables,
+										   whyNot, refused);
 			// ⚠**BOTH ANSWERS ARE READ, because both can be true of one paragraph**: a write that
 			//  failed half way leaves what went in ahead of it (ApplyParagraph says so).
 			if (refused)
