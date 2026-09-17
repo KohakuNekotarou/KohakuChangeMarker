@@ -213,7 +213,25 @@ enum KCMScriptMethods
 	//   search was validated on 'eKGs', which does exist and was found.
 	// ⚠**Registered with Adobe? NOT YET** - it goes in with the next submission if it is still
 	//   here. If the report ends up not needing it, retire the row rather than reusing the code.
-	e_KCMProbePdfRoute = 'eKGv'		// v = vector: is there a route that keeps the pages vector without a file?
+	e_KCMProbePdfRoute = 'eKGv',	// v = vector: is there a route that keeps the pages vector without a file?
+
+	// ★★THE STORY TEXT ROUND TRIP, DRIVEN WITHOUT A DIALOG (2026-09-17, the user's go-ahead: "script
+	//   extensions if they are needed"). An import of "tags kept, contents emptied" crashed InDesign,
+	//   and the user asked for every case that can happen - HTML mangled by hand included - to be
+	//   built, imported and taken in. Each of those goes through a file dialog and a confirmation
+	//   from the menu, so a run of dozens was not possible; these four are the menu items' own model
+	//   calls with the dialogs left out, and each answers with the sentence the status line shows.
+	//   ⚠**THE DOCUMENT IS THE ACTIVE ONE**, exactly as for the menu items.
+	//   ⚠**kcmTakeInAllStories DOES NOT ASK.** The menu asks because a person pressed one item for the
+	//     whole document; a script that calls this has already decided.
+	//   ⚠'eKGn' / 'eKGw' / 'eKGe' / 'eKGq' were MEASURED free: 0 hits anywhere in the tree (headers,
+	//     .fr and the notes), and no row in the registry ledger, whose used letters for eKG* are
+	//     c r s v i m D x o h u a d t p - retired rows counted, 'm' 'x' and 'a' avoided for that
+	//     reason. The same search form found 'eKGs'. ⚠Not registered with Adobe yet.
+	e_KCMImportStoryText = 'eKGn',	// n = in.    app.kcmImportStoryText(file)  -> the import's sentence
+	e_KCMTakeInAllStories = 'eKGw',	// w = write. app.kcmTakeInAllStories()     -> "N changes taken in..."
+	e_KCMExportStoryText = 'eKGe',	// e = export. app.kcmExportStoryText(folder) -> "exported N ... to <folder>"
+	e_KCMStopComparison = 'eKGq'	// q = quit.  app.kcmStopComparison()       -> the status line after it
 };
 
 /** Properties KCM adds to the STORY object (at the user's request).

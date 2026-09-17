@@ -802,6 +802,61 @@ resource VersionedScriptElementInfo(10)
 			{ /* void */ }
 		}
 
+		// ★★THE STORY TEXT ROUND TRIP WITHOUT A DIALOG (2026-09-17). The menu items' own model calls,
+		// with the file dialog and the confirmation left out, so that a test can run dozens of cases:
+		// an import of "tags kept, contents emptied" crashed InDesign that morning, and the user asked
+		// for every case - hand-mangled HTML included - to be imported and taken in. KCMScriptingDefs.h
+		// has the codes and why they were free.
+		// ⚠Each answers with the sentence the status line would show (StringType) - the outcome is
+		//   words, and "0 changes taken in, 2 skipped (...)" is exactly what a test has to read.
+		Method
+		{
+			kKCMImportStoryTextMethodScriptElement,
+			e_KCMImportStoryText,
+			"kcm import story text",			// name -> app.kcmImportStoryText(file)
+			"Import one edited story file into the active document's Import mode, as Import Story Text does, without the dialog.",
+			StringType,
+			"The sentence the status line shows"
+			{
+				keyAEFile, "file path", "The edited story file (<story id>.html)", FileType, kRequired
+			}
+		}
+
+		Method
+		{
+			kKCMTakeInAllStoriesMethodScriptElement,
+			e_KCMTakeInAllStories,
+			"kcm take in all stories",			// name -> app.kcmTakeInAllStories()
+			"Take every change of the list in, as Change All Stories to Imported Text does, without asking.",
+			StringType,
+			"The sentence the status line shows"
+			{ /* void */ }
+		}
+
+		Method
+		{
+			kKCMExportStoryTextMethodScriptElement,
+			e_KCMExportStoryText,
+			"kcm export story text",			// name -> app.kcmExportStoryText(folder)
+			"Export every story of the active document, as Export Story Text does, into a dated folder inside the one given.",
+			StringType,
+			"The sentence the status line shows, with the dated folder in it"
+			{
+				keyAEFile, "folder path", "The folder to make the dated folder in", FileType, kRequired
+			}
+		}
+
+		Method
+		{
+			kKCMStopComparisonMethodScriptElement,
+			e_KCMStopComparison,
+			"kcm stop comparison",				// name -> app.kcmStopComparison()
+			"Stop the comparison - which ends an import - as Stop Comparison does.",
+			StringType,
+			"The status line afterwards"
+			{ /* void */ }
+		}
+
 		// Puts the property ON the application object.
 		//
 		// Object{}, not Parent{}: Object names an EXISTING scripting object to add members to,
@@ -832,6 +887,11 @@ resource VersionedScriptElementInfo(10)
 				Method{ kKCMSaveOriginIdmlMethodScriptElement },
 				// The measuring door's half of the same pair (see the Method block above).
 				Method{ kKCMProbePdfRouteMethodScriptElement },
+				// ...and the round trip's four (2026-09-17) - the other half of each Method block above.
+				Method{ kKCMImportStoryTextMethodScriptElement },
+				Method{ kKCMTakeInAllStoriesMethodScriptElement },
+				Method{ kKCMExportStoryTextMethodScriptElement },
+				Method{ kKCMStopComparisonMethodScriptElement },
 			}
 		}
 

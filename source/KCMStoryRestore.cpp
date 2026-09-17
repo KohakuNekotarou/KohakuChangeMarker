@@ -3,7 +3,7 @@
 //  KCMStoryRestore.cpp -- see the header.
 //
 //  THREE KINDS OF CHANGE, THREE WAYS BACK, ONE UNDO STEP EACH:
-//   - words ........ ReplaceCmd / InsertCmd with the older words read raw from the Source;
+//   - words ........ ReplaceCmd / InsertCmd / DeleteCmd (KCMCreateWordsWriteCmd) with the older words read raw from the Source;
 //   - ruby ......... the older reading written as InDesign's three ruby attributes (on, the
 //                    reading, mono/group) over the base characters - or, where the older side
 //                    had none, the ruby attributes' overrides taken off. The shape is Kohaku
@@ -386,6 +386,23 @@ ErrorCode KCMApplyWarichu(ITextModel* model, TextIndex at, int32 len, bool16 on)
 	return ApplyBooleanCharAttr(model, at, len, kTAWarichuAttrBoss, on);
 }
 
+// ---- words ---------------------------------------------------------------------------------
+
+ICommand* KCMCreateWordsWriteCmd(ITextModel* model, TextIndex at, int32 count, const WideString& words)
+{
+	InterfacePtr<ITextModelCmds> cmds(model, UseDefaultIID());
+	if (cmds == nil)
+		return nil;
+
+	// ★The official shape: a deletion is a DeleteCmd, never a ReplaceCmd with nothing to put in
+	//   (the header says why, and where the crash that turned this into a rule is kept).
+	if (words.Length() == 0)
+		return (count > 0) ? cmds->DeleteCmd(at, count) : nil;
+
+	boost::shared_ptr<WideString> in(new WideString(words));
+	return (count > 0) ? cmds->ReplaceCmd(at, count, in) : cmds->InsertCmd(at, in);
+}
+
 namespace
 {
 
@@ -762,9 +779,7 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 		{
 			RestoreSequence undo(standalone);
-			InterfacePtr<ICommand> write(targetCount > 0
-				? cmds->ReplaceCmd(change.fTargetStart, targetCount, words)
-				: cmds->InsertCmd(change.fTargetStart, words));
+			InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(target, change.fTargetStart, targetCount, *words));
 			if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
 			{
 				ErrorUtils::PMSetGlobalErrorCode(kSuccess);
@@ -1420,13 +1435,9 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 		else
 		{
 			// The words: the Target's own characters as the take-in found them (fBeforeRaw, checked
-			//   above). An insertion taken in is put back by replacing what went in with the empty
-			//   string; a deletion taken in (nothing went in, len 0) by inserting them.
-			InterfacePtr<ITextModelCmds> cmds(target, UseDefaultIID());
-			boost::shared_ptr<WideString> words(new WideString(change.fBeforeRaw));
-			InterfacePtr<ICommand> write(cmds != nil
-				? (len > 0 ? cmds->ReplaceCmd(at, len, words) : cmds->InsertCmd(at, words))
-				: nil);
+			//   above). An insertion taken in is put back by deleting what went in; a deletion taken
+			//   in (nothing went in, len 0) by inserting them (KCMCreateWordsWriteCmd picks which).
+			InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(target, at, len, change.fBeforeRaw));
 			err = (write != nil) ? CmdUtils::ProcessCommand(write) : kFailure;
 			outMessage = Ascii("Put back ");
 		}

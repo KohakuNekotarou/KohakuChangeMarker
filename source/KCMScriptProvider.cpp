@@ -144,6 +144,12 @@
 #include "KCMStoryStamp.h"	// KCMStoryEdits::ReadStamp - the SAME reading the panel uses
 #include "KCMStoryList.h"	// KCMStoryList::RowsAsTsv - app.kcmStoryRows, the reading port
 #include "KCMRingAdornment.h"	// KCMGetNumItemsWithXP - document.kcmTransparencyItemCount
+#include "SysFileList.h"			// app.kcmImportStoryText hands its one file over as a list
+#include "KCMCore.h"				// KCMActiveDocDB - app.kcmExportStoryText exports the active document
+#include "KCMComparisonRun.h"		// KCMStopComparison - app.kcmStopComparison
+#include "KCMStoryRestore.h"		// KCMRestoreAllStories - app.kcmTakeInAllStories
+#include "KCMStoryTextExport.h"	// KCMExportStoryText - app.kcmExportStoryText
+#include "KCMStoryTextImport.h"	// KCMImportStoryText - app.kcmImportStoryText
 // ⚠**KCMTextRead.h WENT WITH THE FEATURE THAT NEEDED IT** (2026-09-08). It was included here for
 //   app.kcmStoryReadCompare - the direct-read migration's parallel run - and its own comment said
 //   "temporary". The property was removed on 2026-09-03; the include outlived it by five days and
@@ -164,9 +170,11 @@ public:
 	    whichever object we were asked about. */
 	virtual ErrorCode AccessProperty(ScriptID propID, IScriptRequestData* data, IScript* script);
 
-	/** Serve app.kcmSaveOriginXml(file) - the only method this plug-in publishes. Anything else
-	    goes to the base class, which is what keeps the rest of the scripting working on whichever
-	    object we were asked about. */
+	/** Serve the methods on app: kcmSaveOriginXml / kcmSaveOriginIdml (file), kcmProbePdfRoute(), and
+	    the story text round trip's four (2026-09-17). ("the only method this plug-in publishes" stood
+	    here until then, and had stopped being true on 2026-09-15.) Anything else goes to the base
+	    class, which is what keeps the rest of the scripting working on whichever object we were
+	    asked about. */
 	virtual ErrorCode HandleMethod(ScriptID methodID, IScriptRequestData* data, IScript* script);
 
 private:
@@ -273,6 +281,70 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 		returnData.SetWideString(WideString(reading));
 		data->AppendReturnData(script, methodID, returnData);
 		return kSuccess;
+	}
+
+	// ★★THE STORY TEXT ROUND TRIP WITHOUT A DIALOG (2026-09-17) - the menu items' own model calls, so
+	//   a test can run every case the user asked for (KCMScriptingDefs.h says why). Each answers with
+	//   the sentence, and puts it on the status line the way the menu item's UI half does.
+	//   ⚠kSuccess with the sentence in the return data, whatever the sentence says - the same shape
+	//    as the status number below: "0 changes taken in, 2 skipped" is an answer, not an error.
+	{
+		const int32 id = methodID.Get();
+		if (id == e_KCMImportStoryText || id == e_KCMTakeInAllStories
+			|| id == e_KCMExportStoryText || id == e_KCMStopComparison)
+		{
+			PMString message;
+			message.SetTranslatable(kFalse);
+
+			if (id == e_KCMTakeInAllStories)
+			{
+				KCMRestoreAllStories(message);
+			}
+			else if (id == e_KCMStopComparison)
+			{
+				KCMStopComparison();
+				KCMGetSessionStatus(message);
+			}
+			else
+			{
+				ScriptData arg;
+				IDFile file;
+				if (data->ExtractRequestData(keyAEFile, arg) != kSuccess
+					|| arg.GetFile(&file, data->GetRequestContext()) != kSuccess)
+				{
+					message = "the file argument could not be read";
+					message.SetTranslatable(kFalse);
+				}
+				else if (id == e_KCMImportStoryText)
+				{
+					SysFileList files;
+					files.AddFile(&file);
+					KCMImportStoryText(files, message);
+				}
+				else
+				{
+					// An EMPTY list is the whole document - the rule KCMStoryTextExport.h states.
+					IDataBase* const db = KCMActiveDocDB();
+					if (db == nil)
+					{
+						message = "there is no active document";
+						message.SetTranslatable(kFalse);
+					}
+					else
+					{
+						KCMExportStoryText(db, file, UIDList(db), message);
+					}
+				}
+			}
+
+			if (id != e_KCMStopComparison && message.CharCount() > 0)
+				KCMNotifyStatus(message, kFalse);
+
+			ScriptData returnData;
+			returnData.SetWideString(WideString(message));
+			data->AppendReturnData(script, methodID, returnData);
+			return kSuccess;
+		}
 	}
 
 	// ★TWO METHODS, ONE BODY (2026-09-15). app.kcmSaveOriginXml(file) and

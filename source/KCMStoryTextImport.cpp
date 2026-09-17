@@ -17,7 +17,9 @@
 #include "IStoryList.h"
 #include "ITextModel.h"
 #include "ITextModelCmds.h"
+#include "ITextStoryThread.h"		// the thread a paragraph stands in - a write may not leave it
 #include "CmdUtils.h"
+#include "TextIterator.h"			// the characters a write is about to take out, read before it does
 #include "ErrorUtils.h"
 #include "FileUtils.h"
 #include "SysFileList.h"			// what the open dialog hands back - several files at once
@@ -26,6 +28,7 @@
 #include "KCMStoryTextImport.h"
 #include "KCMComparisonRun.h"		// KCMToggleStartStop - the start, through the one resolver
 #include "KCMStoryAttrPour.h"		// the ruby and the kenten, after the words are in
+#include "KCMStoryRestore.h"		// KCMCreateWordsWriteCmd - one answer to "replace, insert or delete"
 #include "KCMCore.h"				// KCMActiveDocDB / KCMGetCompareMode / KCMSetCompareMode
 #include "KCMOrigin.h"				// the origin slot: taken for this mode, parked for the reader's
 #include "KCMRehydrate.h"			// KCMReadOriginUidLabel - the copy's stories carry the original UID
@@ -35,6 +38,9 @@
 
 namespace
 {
+
+// (A per-write trace to %TEMP% stood here while the 2026-09-17 crash was run down. It is out of the
+//  product - the user's rule - and kept, working, as work/kcm-import-matrix/KCMStoryTextImport-with-trace.cpp.txt.)
 
 /** Which mode was showing before the import took over.
 
@@ -448,33 +454,149 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 		return 0;
 	}
 
-	int32 written = 0;
-	for (size_t c = changes.size(); c > 0; --c)
+	// ---- where each change lands in the MODEL, judged before anything is written ------------------
+	//
+	// ★★★**A RANGE HAS A START AND AN END, AND THEY ARE COUNTED DIFFERENTLY** (2026-09-17). A table
+	//   standing inside the paragraph puts characters in the model that the text does not have, and
+	//   ModelOffsetInParagraph answers for a START - "the character at text offset t" stands AFTER a
+	//   table standing at t (KCMParaText.h says so, and that a range ENDING there comes back one wide).
+	//   This used to take the END from the same function, so changing the last characters before a
+	//   table took the table's own anchor out with them - in the copy, silently. The end is now "just
+	//   past the last character": ModelOffsetInParagraph(last) + 1.
+	// ★★**A DELETION ACROSS A TABLE IS DONE IN PIECES**, one for each side, so the table stays. A
+	//   REPLACEMENT across one is refused: which side its words belong on is not something the text
+	//   can say.
+	// ★★★**AND EVERY PIECE IS CHECKED AGAINST THE DOCUMENT BEFORE ANYTHING GOES IN** (the same day,
+	//   after the crash): the range has to stay inside this paragraph's own story thread, and what it
+	//   takes out has to BE the characters the reading gave. A position that has gone stale fails the
+	//   second test even when it lands inside a thread of the right length - which is exactly how the
+	//   crash began (cell A's deletion landed, three characters long, on cell C).
+	struct Piece
 	{
-		const KCMTextDiff::Change& ch = changes[c - 1];
+		size_t	fChange;	// which change of `changes`
+		int32	fFrom;		// model offset from the paragraph's start
+		int32	fCount;		// model characters it takes out (0 = an insertion)
+		int32	fAStart;	// the same run in the text's count
+		int32	fACount;
+	};
+	std::vector<Piece> pieces;
 
-		// ★THE CROSSING IS ModelOffsetInParagraph's, never an addition of our own: a table standing
-		//   inside this paragraph makes the two counts disagree from there on (KCMParaText.h).
-		const int32 from = KCMParaText::ModelOffsetInParagraph(attrs, ch.aStart);
-		const int32 to = KCMParaText::ModelOffsetInParagraph(attrs, ch.aStart + ch.aCount);
-
-		boost::shared_ptr<WideString> words(new WideString());
-		if (ch.bCount > 0)
+	TextIndex threadStart = 0;
+	int32 threadSpan = 0;
+	{
+		InterfacePtr<ITextStoryThread> thread(model->QueryStoryThread(paraStart, &threadStart, &threadSpan));
+		if (thread == nil)
 		{
-			std::string piece;
-			for (int32 k = ch.bStart; k < ch.bStart + ch.bCount
-								   && k < static_cast<int32>(b.size()); ++k)
-				KCMParaText::AppendUtf8(piece, b[k]);
+			whyNot = "the paragraph's story thread could not be found (nothing was written)";
+			whyNot.SetTranslatable(kFalse);
+			outRefused = kTrue;
+			return 0;
+		}
+	}
 
-			PMString asString;
-			asString.SetUTF8String(piece);		// marks it not translatable, which is what we want
-			*words = WideString(asString);
+	for (size_t c = 0; c < changes.size(); ++c)
+	{
+		const KCMTextDiff::Change& ch = changes[c];
+
+		if (ch.aCount <= 0)
+		{
+			Piece p;
+			p.fChange = c;
+			p.fFrom = KCMParaText::ModelOffsetInParagraph(attrs, ch.aStart);
+			p.fCount = 0;
+			p.fAStart = ch.aStart;
+			p.fACount = 0;
+			pieces.push_back(p);
+			continue;
 		}
 
-		const int32 count = to - from;
-		InterfacePtr<ICommand> write(count > 0
-			? cmds->ReplaceCmd(paraStart + from, count, words)
-			: cmds->InsertCmd(paraStart + from, words));
+		// Cut the run where a table stands BETWEEN two of its characters.
+		std::vector<int32> cuts;
+		for (size_t k = 0; k < attrs.fUncountedAt.size(); ++k)
+		{
+			const int32 u = attrs.fUncountedAt[k];
+			if (u > ch.aStart && u < ch.aStart + ch.aCount && (cuts.empty() || cuts.back() != u))
+				cuts.push_back(u);
+		}
+		if (!cuts.empty() && ch.bCount > 0)
+		{
+			whyNot = "a change replaces words on both sides of a table standing inside the paragraph "
+					 "(which side the new words belong on cannot be told - edit the two sides apart)";
+			whyNot.SetTranslatable(kFalse);
+			outRefused = kTrue;
+			return 0;
+		}
+
+		int32 s = ch.aStart;
+		for (size_t k = 0; k <= cuts.size(); ++k)
+		{
+			const int32 e = (k < cuts.size()) ? cuts[k] : ch.aStart + ch.aCount;
+			Piece p;
+			p.fChange = c;
+			p.fFrom = KCMParaText::ModelOffsetInParagraph(attrs, s);
+			p.fCount = KCMParaText::ModelOffsetInParagraph(attrs, e - 1) + 1 - p.fFrom;
+			p.fAStart = s;
+			p.fACount = e - s;
+			pieces.push_back(p);
+			s = e;
+		}
+	}
+
+	for (size_t i = 0; i < pieces.size(); ++i)
+	{
+		const Piece& p = pieces[i];
+		const TextIndex at = paraStart + p.fFrom;
+		bool16 inPlace = (at >= threadStart && p.fCount >= 0
+						  && at + p.fCount <= threadStart + threadSpan - 1		// never the thread's own end
+						  && p.fCount == p.fACount) ? kTrue : kFalse;
+		if (inPlace && p.fCount > 0)
+		{
+			WideString standing;
+			TextIterator iter(model, at);
+			iter.AppendToStringAndIncrement(&standing, p.fCount);
+			if (standing.CharCount() != p.fACount)
+				inPlace = kFalse;
+			for (int32 k = 0; inPlace && k < p.fACount; ++k)
+			{
+				if (static_cast<int32>(standing.GetChar(k).GetValue()) != a[static_cast<size_t>(p.fAStart + k)])
+					inPlace = kFalse;
+			}
+		}
+		if (!inPlace)
+		{
+			whyNot = "the copy does not hold the words where they were read, so nothing of this paragraph "
+					 "was written (please report this - it is a fault of the plug-in, not of the file)";
+			whyNot.SetTranslatable(kFalse);
+			outRefused = kTrue;
+			return 0;
+		}
+	}
+
+	int32 written = 0;
+	for (size_t i = pieces.size(); i > 0; --i)
+	{
+		const Piece& piece = pieces[i - 1];
+		const KCMTextDiff::Change& ch = changes[piece.fChange];
+		const int32 from = piece.fFrom;
+
+		WideString words;
+		if (ch.bCount > 0)
+		{
+			std::string text;
+			for (int32 k = ch.bStart; k < ch.bStart + ch.bCount
+								   && k < static_cast<int32>(b.size()); ++k)
+				KCMParaText::AppendUtf8(text, b[k]);
+
+			PMString asString;
+			asString.SetUTF8String(text);		// marks it not translatable, which is what we want
+			words = WideString(asString);
+		}
+
+		// ★★A DELETION IS A DeleteCmd (2026-09-17, the user's call: "match the official way") - the one
+		//   place that decides, shared with the restore. (Replace against Delete was NOT what crashed:
+		//   both crashed at the same place - the positions were stale; see KCMApplyStoryTextToCopy.)
+		const int32 count = piece.fCount;
+		InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(model, paraStart + from, count, words));
 		if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
@@ -728,6 +850,25 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 		std::vector<Place> places;
 		BuildPlaces(attrs, set->fStories[which], places);
 
+		// ★★★**EVERY WRITE OF THE STORY GOES IN BACK TO FRONT - ACROSS PLACES, NOT ONLY INSIDE ONE**
+		//   (2026-09-17, measured with a trace). The body, each cell and each note are separate PLACES,
+		//   and a cell's thread always stands after the whole body (ITableTextContent.h:41-44). The
+		//   places used to be written in the order BuildPlaces made them - the body first - so a body
+		//   edit that changed the length moved every cell, and the cell writes still used positions
+		//   read before it. Measured on emptytags.indd: eight characters came out of the body, then
+		//   "empty cell A" at 48 took three characters out of cell C, and "empty cell B" at 52 ran
+		//   across the end of its thread - and InDesign crashed inside the text command. Replace
+		//   against Delete had nothing to do with it (both crashed at the same place).
+		//   ⇒ Every place is JUDGED first (nothing is written for a place turned away), and then the
+		//     paragraphs are written from the highest TextIndex down: a write moves only what stands
+		//     after it, and everything after it has been written already.
+		struct Job
+		{
+			size_t						fPara;		// index into paras / attrs / starts
+			const KCMStoryHtml::Para*	fFile;		// the same paragraph in the file
+		};
+		std::vector<Job> jobs;
+
 		bool16 touched = kFalse;
 		for (size_t p = 0; p < places.size(); ++p)
 		{
@@ -758,28 +899,38 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 				continue;
 			}
 
-			// ★BACK TO FRONT ACROSS THE PARAGRAPHS TOO, for the same reason as inside one: an
-			//   earlier write moves every position after it.
-			for (size_t q = place.fDoc.size(); q > 0; --q)
+			for (size_t q = 0; q < place.fDoc.size(); ++q)
 			{
-				const size_t i = place.fDoc[q - 1];
-				PMString whyNot;
-				bool16 refused = kFalse;
-				const int32 n = ApplyParagraph(model, static_cast<TextIndex>(starts[i]), attrs[i],
-											   paras[i], (*place.fFile)[q - 1].fText, whyNot, refused);
-				// ⚠**BOTH ANSWERS ARE READ, because both can be true of one paragraph**: a write that
-				//  failed half way leaves what went in ahead of it (ApplyParagraph says so).
-				if (refused)
-				{
-					++refusedParas;
-					if (firstRefusal.IsEmpty())
-						firstRefusal = whyNot;
-				}
-				if (n > 0)
-				{
-					edits += n;
-					touched = kTrue;
-				}
+				Job job;
+				job.fPara = place.fDoc[q];
+				job.fFile = &(*place.fFile)[q];
+				jobs.push_back(job);
+			}
+		}
+
+		// ★BACK TO FRONT OVER THE WHOLE STORY (the note above). Two paragraphs never share a start.
+		std::sort(jobs.begin(), jobs.end(),
+				  [&starts](const Job& a, const Job& b) { return starts[a.fPara] > starts[b.fPara]; });
+
+		for (size_t j = 0; j < jobs.size(); ++j)
+		{
+			const size_t i = jobs[j].fPara;
+			PMString whyNot;
+			bool16 refused = kFalse;
+			const int32 n = ApplyParagraph(model, static_cast<TextIndex>(starts[i]), attrs[i],
+										   paras[i], jobs[j].fFile->fText, whyNot, refused);
+			// ⚠**BOTH ANSWERS ARE READ, because both can be true of one paragraph**: a write that
+			//  failed half way leaves what went in ahead of it (ApplyParagraph says so).
+			if (refused)
+			{
+				++refusedParas;
+				if (firstRefusal.IsEmpty())
+					firstRefusal = whyNot;
+			}
+			if (n > 0)
+			{
+				edits += n;
+				touched = kTrue;
 			}
 		}
 		// ---- and now the ruby and the kenten, over the words that went in ----------------------

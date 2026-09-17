@@ -261,10 +261,11 @@ void FillPara(const std::string& text, const KCMParaAttrs& attrs, KCMStoryHtml::
 	//   character with one reading is the same typesetting whichever way the document has it set,
 	//   and the markup cannot tell the two apart - <ruby>立<rt>た</rt></ruby> either way - so both
 	//   sides settle it here rather than letting the trip decide.
-	//   ⚠**THE DOCUMENT IS NOT TOUCHED BY THIS.** It changes what the FILE says, and the import
-	//    reads nothing from a paragraph but its text (measured: KCMStoryTextImport uses fText and
-	//    nothing else, and writes with ReplaceCmd/InsertCmd alone), so no ruby setting can travel
-	//    back into anybody's document through it.
+	//   ⚠**THE DOCUMENT IS NOT TOUCHED BY THIS.** It changes what the FILE says. ⚠**IT DOES TRAVEL
+	//    BACK, THOUGH**: since 2026-09-16 the import pours a paragraph's readings into the copy with
+	//    the file's own mono/group setting (KCMStoryAttrPour) - which is exactly why the rule has to
+	//    be the same on both sides. (This note said "the import uses fText and nothing else" until
+	//    2026-09-17; that stopped being true the day the pour went in.)
 	for (size_t k = 0; k < out.fRuby.size(); ++k)
 	{
 		if (out.fRuby[k].fLen == 1)

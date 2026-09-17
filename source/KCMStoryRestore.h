@@ -7,7 +7,8 @@
 //  side's range of that one change, through ITextModelCmds - one command, one undo step.
 //
 //  ★THE FIRST FEATURE THAT EDITS THE USER'S DOCUMENT beyond checks and paws. Its rules:
-//   1. one change, one command (ReplaceCmd or InsertCmd), so Ctrl+Z is the whole of it;
+//   1. one change, one command (ReplaceCmd, InsertCmd or DeleteCmd - KCMCreateWordsWriteCmd picks),
+//      so Ctrl+Z is the whole of it;
 //   2. it writes only where the change's positions still mean what they meant when the diff ran:
 //      the Target story's text change counter must equal the one recorded on the row
 //      (KCMStoryRow::fTargetTextCount). ★★**WHEN IT DOES NOT, THE STORY IS COMPARED AGAIN**
@@ -34,7 +35,9 @@
 #include "BaseType.h"		// bool16 / int32 / TextIndex / ErrorCode
 #include "PMString.h"
 
+class ICommand;
 class ITextModel;
+class WideString;
 
 /** Restore change `which` of Story Edits row `nth`. kTrue when the words were written (outMessage
     says how many); kFalse with the reason in outMessage. */
@@ -82,6 +85,21 @@ bool16 KCMRestoreAllInStory(int32 nth, PMString& outMessage);
 /** The same across every row of the list, still in ONE undo step. @see the note above, which holds
     per story; the rows are walked in order and the counts add up across them. */
 bool16 KCMRestoreAllStories(PMString& outMessage);
+
+/** The one command that makes [at, at+count) of `model` read `words` - for every writer of WORDS: the
+    restore, "Change Back to the Original" and the import's pour into the copy (2026-09-17).
+
+    ★★**A DELETION IS A DeleteCmd** (the user's call: "match the official way"). Every deletion in the
+     SDK's samples is one (codesnippets/SnpTextModelHelper.cpp:109, hiddentext/HidTxtCommands.cpp:264,
+     the footnote and endnote snippets), and ReplaceCmd is only ever handed text to put in (:142).
+     KCM used to write a deletion as ReplaceCmd with an EMPTY string. ⚠**That was NOT what crashed the
+     import on 2026-09-17** (work/kcm-crash-2026-09-17-emptytags*.xml): after the switch it crashed at
+     the same place, and a trace showed the positions had gone stale (KCMApplyStoryTextToCopy says
+     how). The switch stays because it is the official form.
+    ★Otherwise ReplaceCmd when something is there to replace, InsertCmd when nothing is.
+    @return an AddRef'd command for an InterfacePtr to take, or nil when there is nothing to write
+      (no characters out and none in) or the story has no ITextModelCmds. */
+ICommand* KCMCreateWordsWriteCmd(ITextModel* model, TextIndex at, int32 count, const WideString& words);
 
 // ---- the attribute writers, shared with the PDF report (2026-09-13) ------------------------
 // The report's Story section (KCMReportTable.cpp) sets real ruby and real kenten over the changed
