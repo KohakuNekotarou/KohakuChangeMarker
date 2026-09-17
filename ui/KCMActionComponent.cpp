@@ -981,6 +981,30 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		//   in one.
 		case kKCMPopupImportStoryTextActionID:
 			{
+				// ★★**A TASK START TAKEN JUST BEFORE, RECOMMENDED EVERY TIME** (2026-09-17, the user's request).
+				//   The import gives back the Task Start it moved aside when it ends, and comparing against
+				//   that is how the reader sees what the import put into the document - which only holds
+				//   when it was taken right before. Whether one is held says nothing about WHEN (the user:
+				//   a Task Start that exists may not be the one just before), so this asks whether or not
+				//   one is held.
+				// ⚠**A SCRIPT IS NOT ASKED** (the user, the same day): app.kcmImportStoryText goes straight
+				//   to the model half (KCMScriptProvider) and never passes through here, and a script has
+				//   nobody to press OK.
+				// ★OK IS THE DEFAULT: it comes up on every import, including the ones that follow a Task
+				//   Start just taken, so Enter carries on.
+				{
+					PMString advice(kKCMImportTaskStartAdviceKey);
+					advice.Translate();			// from the enUS table, like every other English string here
+					advice.SetTranslatable(kFalse);
+					if (CAlert::ModalAlert(advice, kOKString, kCancelString, kNullString,
+							1,						// OK is the default button
+							CAlert::eQuestionIcon) != 1)
+					{
+						KCMSetStatus("import: cancelled - take a Task Start, then Import Story Text again.");
+						break;
+					}
+				}
+
 				// ⚠**SDKFileOpenChooser CANNOT DO THIS.** It holds one IDFile and has no way to
 				//  answer for several, so the dialog is built the way Adobe's own callers build it
 				//  (source/open/.../importdata/SelectFileObserver.cpp:147).
