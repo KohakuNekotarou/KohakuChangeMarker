@@ -737,6 +737,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 //     2026-09-08 (spec map BK-11); until then only this one was, and the warning beneath it
 //     answered in Japanese on a Japanese UI.
 #define kKCMBookCompareConfirmKey	kKCMStringPrefix "kKCMBookCompareConfirmKey"	// the first line of the "these two will be compared" alert (the full paths of target: / source: follow it)
+#define kKCMParagraphOrderConfirmKey	kKCMStringPrefix "kKCMParagraphOrderConfirmKey"	// asked before a new paragraph is taken in ahead of the new paragraph before it (2026-09-17)
 #define kKCMBookNoPairKey			kKCMStringPrefix "kKCMBookNoPairKey"			// the warning when two books could not be resolved (normally unreachable, since the menu item is greyed)
 #define kKCMBookRowStartMenuKey	kKCMStringPrefix "kKCMBookRowStartMenuKey"	// the "Start Change Marker" item on a chapter row context menu
 // The chapter row context menu. KCMBookRowEH::RButtonDn puts the MenuDef subtree of this name up

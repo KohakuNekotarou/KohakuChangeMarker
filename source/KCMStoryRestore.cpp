@@ -52,6 +52,7 @@
 #include "KCMStoryList.h"			// the row and its changes
 #include "KCMStoryKinds.h"			// kKCMStoryAttrRuby / kKCMStoryAttrKenten / KCMStoryWriteBlock
 #include "KCMParaText.h"			// IsObjectCharacter - what text cannot bring back
+#include "KCMParagraphStyle.h"		// the next style for a whole paragraph taken in after another
 #include "KCMStoryDiffRun.h"		// RunOne - the row diffed again after the write
 #include "KCMModelNotify.h"		// KCMNotify - the panel rebuilds its tree
 #include "KCMID.h"					// kKCMStoryEditsRebuiltMessage
@@ -277,8 +278,17 @@ ErrorCode KCMCreateRubyStrandIfNeeded(ITextModel* model)
 	return CmdUtils::ProcessCommand(cmd);
 }
 
-/** One reading onto one range: the three attributes that ARE a reading (on, the string,
-    mono/group), and none of the twenty-seven that are its look. ⚠kTAMojiRubyBoss kTrue IS MONO. */
+/** One reading onto one range: the attributes that ARE a reading (on, the string, and for a GROUP
+    reading its setting), and none of the twenty-seven that are its look. ⚠kTAMojiRubyBoss kTrue IS MONO.
+
+    ★★**A MONO READING WRITES NO SETTING; A GROUP READING WRITES "GROUP"** (2026-09-17 afternoon, the
+      user's rule). A paragraph style says which ruby its text gets, and a setting written on top of it
+      that disagrees is an override. The markup tells the two apart by its shape - one <rt> over several
+      characters is a group, readings split character by character (or over one character) are mono -
+      so a group is said out loud and mono is left to the style. Until then the setting was written
+      both ways.
+    ⚠A reading that was an explicit MONO override on a GROUP style comes back from a restore as the
+     style's group, for the same reason - the rule is the user's, and it is kept in this one place. */
 ErrorCode KCMApplyRuby(ITextModel* model, TextIndex at, int32 len, const PMString& reading, bool16 group)
 {
 	boost::shared_ptr<AttributeBossList> attrs(new AttributeBossList);
@@ -296,16 +306,31 @@ ErrorCode KCMApplyRuby(ITextModel* model, TextIndex at, int32 len, const PMStrin
 		InterfacePtr<IAttrReport> report(text, UseDefaultIID());
 		attrs->ApplyAttribute(report);
 	}
+	if (group)
 	{
 		InterfacePtr<ITextAttrBoolean> moji(::CreateObject2<ITextAttrBoolean>(kTAMojiRubyBoss));
 		if (moji == nil) return kFailure;
-		moji->SetFlag(group ? kFalse : kTrue);
+		moji->SetFlag(kFalse);				// kFalse = group
 		InterfacePtr<IAttrReport> report(moji, UseDefaultIID());
 		attrs->ApplyAttribute(report);
 	}
 	InterfacePtr<ITextModelCmds> cmds(model, UseDefaultIID());
 	if (cmds == nil)
 		return kFailure;
+	if (!group)
+	{
+		// ⚠**MONO TAKES A GROUP SETTING OFF, rather than merely not writing one**: a range that carried
+		//   "group" as an override (a reading being rewritten in place, which the restore does without
+		//   clearing first) would otherwise stay group under a mono reading.
+		boost::shared_ptr<AttributeBossList> setting(new AttributeBossList);
+		InterfacePtr<IAttrReport> report(::CreateObject2<IAttrReport>(kTAMojiRubyBoss));
+		if (report == nil)
+			return kFailure;
+		setting->ApplyAttribute(report);
+		InterfacePtr<ICommand> clear(cmds->ClearOverridesCmd(at, len, setting, kCharAttrStrandBoss));
+		if (clear == nil || CmdUtils::ProcessCommand(clear) != kSuccess)
+			return kFailure;
+	}
 	InterfacePtr<ICommand> apply(cmds->ApplyCmd(RangeData(at, at + len), attrs, kCharAttrStrandBoss));
 	return (apply != nil) ? CmdUtils::ProcessCommand(apply) : kFailure;
 }
@@ -838,7 +863,7 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 		//   a position in the TEXT, and words typed right before a table and right after it are the same
 		//   position there. The diff names the side itself since G2 (CutChangeAtObjects); asking the Source
 		//   as well is the backstop (InsertionSideInTarget says when it still matters).
-		const TextIndex writeAt = (targetCount == 0 && words->Length() > 0)
+		const TextIndex writeAt = (targetCount == 0 && words->Length() > 0 && !change.fWholeParagraph)
 								  ? InsertionSideInTarget(target, change.fTargetStart, storyUID, sourceDB,
 														  change.fSourceStart, sourceCount)
 								  : change.fTargetStart;
@@ -852,6 +877,15 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 				outMessage = Refused("the write failed (a locked story or layer?).");
 				return kFalse;
 			}
+			// ★★**A WHOLE PARAGRAPH TAKEN IN AFTER ANOTHER GETS THAT PARAGRAPH'S NEXT STYLE** (2026-09-17
+			//   afternoon, the user's rule - both the Import and the Task Start, and taken from the document
+			//   AS IT STANDS: "\rNEW" went in right before the return of the paragraph it follows, so it
+			//   starts in that paragraph's style, the way Return starts it). A bulk run chains its runs of
+			//   new paragraphs again once they are all in (BulkRun).
+			//   ⚠In the same undo step as the words.
+			if (change.fWholeParagraph && targetCount == 0 && words->Length() > 1
+				&& static_cast<int32>(words->GetChar(0).GetValue()) == kTextChar_CR)
+				KCMApplyNextStyleAfter(target, writeAt, writeAt + 1, static_cast<int32>(words->Length()) - 1);
 		}
 		// Where the replacement now stands. ⚠**THE START DID NOT MOVE, THE END DID**: what went in
 		//   is as long as the source's side of the change, which is not the length that came out.
@@ -1181,6 +1215,42 @@ bool16 BulkRun(int32 nth, IDataBase* sourceDBIn, int32& outWritten, int32& outSk
 			++outSkipped;
 			if (outFirstWhyNot.IsEmpty())
 				outFirstWhyNot = whyNot;
+		}
+	}
+
+	// ★★**RUNS OF NEW PARAGRAPHS GET THEIR NEXT STYLES CHAINED, ONCE THEY ARE ALL IN** (2026-09-17 afternoon,
+	//   the user: "only the bulk take-in needs to care"). Walking backwards puts the paragraphs of one run
+	//   in right before the same return, each in front of the last - the right order, but each styled after
+	//   the paragraph before the run, not after the new one before it. Chained over the whole run from the
+	//   paragraph before it, they come out as pressing Return in order gives them.
+	//   The run is found by the caret the diff named for all of its paragraphs (fBeforeStart), and where it
+	//   stands now by the replaced ranges, which have followed every write since.
+	{
+		std::vector<bool16> chained(dones.size(), kFalse);
+		for (size_t k = 0; k < dones.size(); ++k)
+		{
+			if (chained[k] || !dones[k].fWholeParagraph || dones[k].fBeforeEnd != dones[k].fBeforeStart)
+				continue;
+			TextIndex from = dones[k].fReplacedStart;
+			TextIndex to = dones[k].fReplacedEnd;
+			int32 members = 1;
+			for (size_t m = k + 1; m < dones.size(); ++m)
+			{
+				if (!chained[m] && dones[m].fWholeParagraph && dones[m].fBeforeEnd == dones[m].fBeforeStart
+					&& dones[m].fBeforeStart == dones[k].fBeforeStart)
+				{
+					chained[m] = kTrue;
+					from = (dones[m].fReplacedStart < from) ? dones[m].fReplacedStart : from;
+					to = (dones[m].fReplacedEnd > to) ? dones[m].fReplacedEnd : to;
+					++members;
+				}
+			}
+			chained[k] = kTrue;
+			WideString first;
+			TargetWordsAt(target, from, 1, first);
+			if (members > 1 && to - from > 1 && first.CharCount() == 1
+				&& static_cast<int32>(first.GetChar(0).GetValue()) == kTextChar_CR)
+				KCMApplyNextStyleAfter(target, from, from + 1, to - from - 1);
 		}
 	}
 

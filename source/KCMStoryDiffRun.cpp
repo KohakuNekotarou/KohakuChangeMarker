@@ -44,6 +44,7 @@
 
 // Project includes:
 #include "KCMParaText.h"	// KCMParaAttrs and the pure functions over paragraphs (Join / IndexInStory / SplitRunAtPlaces / SpansDiffer)
+#include "KCMParaPairing.h"	// which paragraph goes with which, when a run holds more on one side (the import pours by it too)
 #include "KCMProgressBar.h"	// KCMDeferredProgressBar - the progress bar and Cancel of Run, shown after kKCMProgressBarDelayMs
 #include "KCMStoryDiffRun.h"
 #include "KCMCore.h"			// KCMArmedTargetDB / KCMIsDocDBOpen - which document a replaced change is measured against
@@ -516,6 +517,132 @@ void AddCutAtObjects(std::vector<KCMStoryChange>& out,
 		const KCMParaText::KCMObjectPiece& piece = pieces[i];
 		Add(out, targetText, targetBytes, tRun, piece.fBStart, piece.fBCount,
 			sourceText, sourceBytes, sRun, piece.fAStart, piece.fACount, piece.fObjectsBefore);
+	}
+}
+
+/* AddWholeParagraphs
+   One change per paragraph of a run that stands on ONE side only - paragraphs added or removed whole
+   (2026-09-17 afternoon, the user's rule and request: "+ and - per paragraph").
+
+   ★★★**THE RANGES CARRY A PARAGRAPH BREAK.** Measured the same day: a paragraph added in the file and
+   taken in ran into the next paragraph, and one removed left an empty paragraph behind - the joined
+   run's words held no break to write or take out.
+   ★**WHICH BREAK: THE ONE BEFORE THE PARAGRAPH**, cut at returns - [return of the paragraph before,
+   return of this one). Taken in, that is "\rNEW" right before the return of the paragraph it follows:
+   what pressing Return at its end puts in (the new paragraph starts in that paragraph's style, and the
+   restore then gives it the next style - KCMParagraphStyle.h). Taken out, it joins the paragraph before
+   with the removed one's return, and a join keeps the UPPER paragraph's style (measured).
+   ⚠**A PLACE'S FIRST PARAGRAPH HAS NO RETURN BEFORE IT IN ITS PLACE**, so it is cut at its own start
+   instead: [its start, just past its return), before the paragraph that follows.
+   ⚠**ONE CARET FOR ALL OF A RUN'S PARAGRAPHS ON THE SIDE THAT LACKS THEM.** Taken in one by one they
+   all go in right before the same return; each press writes in front of the ones already in, so a bulk
+   run walking backwards puts them in their order (and gives them the next style chained afterwards -
+   KCMStoryRestore's BulkRun). Taken in singly and out of order, the panel asks first
+   (fAfterNewParagraph).
+   @param placesAgree OUT whether the paragraphs can be placed at all - the paragraph they follow (or
+          precede) stands in the same place on both sides. */
+void AddWholeParagraphs(std::vector<KCMStoryChange>& out, const KCMTextDiff::Change& run,
+						const std::vector<std::string>& sourceParas, const std::vector<int32>& sourceStarts,
+						const std::vector<KCMParaAttrs>& sourceAttrs,
+						const std::vector<std::string>& targetParas, const std::vector<int32>& targetStarts,
+						const std::vector<KCMParaAttrs>& targetAttrs, bool16& outPlacesAgree)
+{
+	// The source holds them and the target lacks them - taking in ADDS them - or the other way round.
+	const bool16 adds = (run.aCount > 0) ? kTrue : kFalse;
+	const int32 first = adds ? run.aStart : run.bStart;
+	const int32 count = adds ? run.aCount : run.bCount;
+	const std::vector<KCMParaAttrs>& ownAttrs = adds ? sourceAttrs : targetAttrs;
+
+	const int32 sourceSize = static_cast<int32>(sourceParas.size());
+	const int32 targetSize = static_cast<int32>(targetParas.size());
+	const bool16 afterReturn = (run.aStart > 0 && run.bStart > 0
+								&& run.aStart - 1 < sourceSize && run.bStart - 1 < targetSize
+								&& KCMParaText::ParagraphsSharePlace(ownAttrs, first, sourceAttrs, run.aStart - 1)
+								&& KCMParaText::ParagraphsSharePlace(ownAttrs, first, targetAttrs, run.bStart - 1))
+							   ? kTrue : kFalse;
+	const int32 nextA = run.aStart + run.aCount;
+	const int32 nextB = run.bStart + run.bCount;
+	const bool16 beforeNext = (!afterReturn && nextA < sourceSize && nextB < targetSize
+							   && KCMParaText::ParagraphsSharePlace(ownAttrs, first, sourceAttrs, nextA)
+							   && KCMParaText::ParagraphsSharePlace(ownAttrs, first, targetAttrs, nextB))
+							  ? kTrue : kFalse;
+	outPlacesAgree = (afterReturn || beforeNext) ? kTrue : kFalse;
+
+	for (int32 k = 0; k < count; ++k)
+	{
+		const int32 p = first + k;
+		KCMStoryChange change;
+		change.fWhat = KCMStoryChange::kText;
+		change.fWholeParagraph = kTrue;
+
+		// The side that holds the paragraph: its range. The side that lacks it: the caret.
+		int32 ownStart = 0;
+		int32 ownEnd = 0;
+		int32 caret = 0;
+		const std::vector<std::string>& ownParas = adds ? sourceParas : targetParas;
+		const std::vector<int32>& ownStarts = adds ? sourceStarts : targetStarts;
+		const std::vector<std::string>& otherParas = adds ? targetParas : sourceParas;
+		const std::vector<int32>& otherStarts = adds ? targetStarts : sourceStarts;
+		const std::vector<KCMParaAttrs>& otherAttrs = adds ? targetAttrs : sourceAttrs;
+		const int32 otherBefore = adds ? run.bStart - 1 : run.aStart - 1;
+		const int32 otherNext = adds ? nextB : nextA;
+		std::string otherText;			// the paragraph the caret stands in, for the row's context
+		int32 otherFrom = 0;
+		if (afterReturn)
+		{
+			ownStart = KCMParaText::ParagraphReturn(ownParas, ownStarts, ownAttrs, p - 1);
+			ownEnd = KCMParaText::ParagraphReturn(ownParas, ownStarts, ownAttrs, p);
+			caret = KCMParaText::ParagraphReturn(otherParas, otherStarts, otherAttrs, otherBefore);
+			otherText = otherParas[static_cast<size_t>(otherBefore)];
+			otherFrom = KCMParaText::CountCodePoints(otherText);
+		}
+		else if (beforeNext)
+		{
+			ownStart = KCMParaText::ParagraphLineStart(ownStarts, ownAttrs, p);
+			ownEnd = KCMParaText::ParagraphReturn(ownParas, ownStarts, ownAttrs, p) + 1;
+			caret = KCMParaText::ParagraphLineStart(otherStarts, otherAttrs, otherNext);
+			otherText = otherParas[static_cast<size_t>(otherNext)];
+			otherFrom = 0;
+		}
+		else
+		{
+			// Nowhere to put it: shown, and marked as not writable by the caller (placesAgree).
+			ownStart = ownStarts[static_cast<size_t>(p)];
+			ownEnd = KCMParaText::ParagraphReturn(ownParas, ownStarts, ownAttrs, p);
+			caret = ownStart;
+		}
+
+		const std::string& ownText = ownParas[static_cast<size_t>(p)];
+		std::vector<int32> ownBytes;
+		std::vector<int32> otherBytes;
+		KCMTextDiff::ToCodePoints(ownText, nil, &ownBytes);
+		KCMTextDiff::ToCodePoints(otherText, nil, &otherBytes);
+		const int32 ownLength = KCMParaText::CountCodePoints(ownText);
+
+		if (adds)
+		{
+			change.fKind = KCMStoryChange::kDelete;		// the target lacks it (Add's naming: tCount == 0)
+			change.fAfterNewParagraph = (k > 0) ? kTrue : kFalse;
+			change.fTargetStart = caret;
+			change.fTargetEnd = caret;
+			change.fSourceStart = ownStart;
+			change.fSourceEnd = ownEnd;
+			SetExcerptPieces(change.fTextPre, change.fText, change.fTextPost, otherText, otherBytes, otherFrom, 0);
+			SetExcerptPieces(change.fOtherTextPre, change.fOtherText, change.fOtherTextPost,
+							 ownText, ownBytes, 0, ownLength);
+		}
+		else
+		{
+			change.fKind = KCMStoryChange::kInsert;		// the target holds it and the source does not
+			change.fTargetStart = ownStart;
+			change.fTargetEnd = ownEnd;
+			change.fSourceStart = caret;
+			change.fSourceEnd = caret;
+			SetExcerptPieces(change.fTextPre, change.fText, change.fTextPost, ownText, ownBytes, 0, ownLength);
+			SetExcerptPieces(change.fOtherTextPre, change.fOtherText, change.fOtherTextPost,
+							 otherText, otherBytes, otherFrom, 0);
+		}
+		out.push_back(change);
 	}
 }
 
@@ -1318,6 +1445,66 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 		paragraphChanges.swap(byPlace);
 	}
 
+	// ★★**A RUN HOLDING MORE PARAGRAPHS ON ONE SIDE IS CUT INTO PAIRS, ADDITIONS AND REMOVALS** (2026-09-17
+	//   afternoon). The paragraph diff merges an added paragraph with an edited one beside it into one
+	//   run, and the character pass then wrote "NEW\r" into the head of the edited paragraph - the new
+	//   paragraph taking THAT paragraph's style, with no next style and no whole-paragraph row. Paired the
+	//   way the import pours (KCMParaPairing - the paragraphs sharing the most characters pair), the edited
+	//   paragraph is an edit and the new one is a paragraph of its own. A pair whose words are the same is
+	//   no change at all and is left out, which is also what AddAttributeChanges reads as "unchanged".
+	{
+		std::vector<KCMTextDiff::Change> expanded;
+		for (size_t c = 0; c < paragraphChanges.size(); ++c)
+		{
+			const KCMTextDiff::Change& run = paragraphChanges[c];
+			if (run.aCount == run.bCount || run.aCount == 0 || run.bCount == 0)
+			{
+				expanded.push_back(run);
+				continue;
+			}
+			const std::vector<std::string> a(sourceParas.begin() + run.aStart, sourceParas.begin() + run.aStart + run.aCount);
+			const std::vector<std::string> b(targetParas.begin() + run.bStart, targetParas.begin() + run.bStart + run.bCount);
+			std::vector<KCMParaPairing::Step> steps;
+			KCMParaPairing::Pair(a, b, steps);
+			int32 nextA = run.aStart;
+			int32 nextB = run.bStart;
+			for (size_t s = 0; s < steps.size(); ++s)
+			{
+				const KCMParaPairing::Step& step = steps[s];
+				KCMTextDiff::Change piece;
+				if (step.fKind == KCMParaPairing::Step::kPair)
+				{
+					piece.aStart = run.aStart + step.fDoc;
+					piece.aCount = 1;
+					piece.bStart = run.bStart + step.fFile;
+					piece.bCount = 1;
+					nextA = piece.aStart + 1;
+					nextB = piece.bStart + 1;
+					if (sourceParas[static_cast<size_t>(piece.aStart)] == targetParas[static_cast<size_t>(piece.bStart)])
+						continue;
+				}
+				else if (step.fKind == KCMParaPairing::Step::kInsert)
+				{
+					piece.aStart = run.aStart + step.fDoc + 1;	// the target holds them and the source does not
+					piece.aCount = 0;
+					piece.bStart = run.bStart + step.fFile;
+					piece.bCount = step.fCount;
+					nextB = piece.bStart + piece.bCount;
+				}
+				else
+				{
+					piece.aStart = run.aStart + step.fDoc;		// the source holds them and the target does not
+					piece.aCount = step.fCount;
+					piece.bStart = nextB;
+					piece.bCount = 0;
+					nextA = piece.aStart + piece.aCount;
+				}
+				expanded.push_back(piece);
+			}
+		}
+		paragraphChanges.swap(expanded);
+	}
+
 	// Where each story ends, for a run that covers no paragraph of its own (an insertion past the
 	//   last one). ★**ASKED OF THE DOCUMENT.** The total used to be added up from what the snippet
 	//   said, with a set of counters that existed only because the positions came from somewhere
@@ -1355,6 +1542,18 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 		//   object came back as U+FFFC alone). Asked once per run; MarkWriteBlocks puts the answer
 		//   on every change the run produces, which is what hides the menu item.
 		const size_t firstOfRun = out.size();
+
+		// ★★Paragraphs on one side only: one change per paragraph, its break in its range (AddWholeParagraphs).
+		if ((change.aCount == 0) != (change.bCount == 0))
+		{
+			bool16 wholePlacesAgree = kFalse;
+			AddWholeParagraphs(out, change, sourceParas, sourceStarts, sourceAttrs,
+							   targetParas, targetStarts, targetAttrs, wholePlacesAgree);
+			MarkWriteBlocks(out, firstOfRun, wholePlacesAgree, targetModel, sourceModel,
+							haveKeptSource ? &keptSourceRaw : nil);
+			continue;
+		}
+
 		const bool16 placesAgree = KCMParaText::WordsCanBeWrittenAcross(
 			sourceAttrs, change.aStart, change.aCount, targetAttrs, change.bStart, change.bCount);
 

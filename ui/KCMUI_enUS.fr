@@ -78,6 +78,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMBookHintKey,					"Right-click a changed chapter to start Change Marker.",
                 kKCMBookCompareConfirmKey,		"These two books will be compared chapter by chapter in three ways: as pictures, by their story text, and by their definitions - the comparison mode does not change this.",
                 kKCMBookNoPairKey,				"Select a book tab in the Book panel, and open a second book.",
+                kKCMParagraphOrderConfirmKey,	"The new paragraph before this one has not been taken in yet. Taken in first, this paragraph gets the next style of the paragraph standing before it in the document now, which can differ from taking the paragraphs in order. Take it in anyway?",
                 kKCMBookRowStartMenuKey,			"Start Change Marker",
                 kKCMStoryRowRefreshMenuKey,		"Refresh Story Comparison",
                 kKCMResourceRowXmlMenuKey,		"Show as XML",

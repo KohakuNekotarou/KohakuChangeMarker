@@ -308,10 +308,18 @@ public:
 		KCMStoryLayers	fLayers;
 		KCMStoryLayers	fOtherLayers;
 
+		/** A whole paragraph added or removed, and whether the paragraph before it is one to take in as
+			well (2026-09-17 afternoon) - KCMStoryList.h's fields of the same names say what each means.
+			The panel asks before taking in the second "+" of "+ +" on its own (the user's request).
+			⚠Appended at the END, for the reason stated above fReplaced. */
+		bool16			fWholeParagraph;
+		bool16			fAfterNewParagraph;
+
 		Change()
 			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),
 			  fSourceStart(0), fSourceEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
-			  fAttrKind(0), fReplaced(kFalse), fOverset(kFalse), fWriteBlock(0) {}
+			  fAttrKind(0), fReplaced(kFalse), fOverset(kFalse), fWriteBlock(0),
+			  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse) {}
 	};
 
 	/** How many differences row nth holds.

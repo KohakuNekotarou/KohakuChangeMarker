@@ -1107,6 +1107,36 @@ inline int32 IndexInStory(const std::vector<std::string>& paragraphs,
 	return base;
 }
 
+/** Where paragraph `which` really begins in the document - before a table or a note reference it starts
+	with, which its recorded start stands after (KCMParaAttrs::fLeadingUncounted). */
+inline int32 ParagraphLineStart(const std::vector<int32>& starts, const std::vector<KCMParaAttrs>& attrs,
+								int32 which)
+{
+	return starts[static_cast<size_t>(which)] - AttrsOfParagraph(attrs, which).fLeadingUncounted;
+}
+
+/** Where paragraph `which`'s RETURN stands in the document: after its words and anything standing at
+	their end (2026-09-17 afternoon - a whole paragraph added or removed is cut at returns). */
+inline int32 ParagraphReturn(const std::vector<std::string>& paragraphs, const std::vector<int32>& starts,
+							 const std::vector<KCMParaAttrs>& attrs, int32 which)
+{
+	return starts[static_cast<size_t>(which)]
+		   + ModelOffsetInParagraph(AttrsOfParagraph(attrs, which),
+									CountCodePoints(paragraphs[static_cast<size_t>(which)]));
+}
+
+/** kTrue when paragraph i of one version and paragraph j of the other stand in the same place (the body,
+	the same cell, the same note). */
+inline bool16 ParagraphsSharePlace(const std::vector<KCMParaAttrs>& attrsA, int32 i,
+								   const std::vector<KCMParaAttrs>& attrsB, int32 j)
+{
+	std::vector<ParaRegion> a;
+	std::vector<ParaRegion> b;
+	ParagraphRegions(attrsA, i, 1, a);
+	ParagraphRegions(attrsB, j, 1, b);
+	return (a.size() == 1 && b.size() == 1 && a[0].SamePlaceAs(b[0])) ? kTrue : kFalse;
+}
+
 /** The objects standing inside a RUN of paragraphs - every paragraph's fUncountedAt - as offsets into
 	JoinParagraphs' answer, ascending (2026-09-17: what CutChangeAtObjects pairs across two versions).
 	★The ones a paragraph BEGINS with (fLeadingUncounted) are at its offset 0 and come first. They stand

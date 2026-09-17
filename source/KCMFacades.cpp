@@ -530,6 +530,8 @@ public:
 		//   The cell then draws whatever it is handed, exactly as it always has.
 		out.fOverset		= change.fOverset;		// decided by the diff; see KCMStoryList.h
 		out.fWriteBlock		= change.fWriteBlock;	// decided by the diff too; the menu hides the write on it
+		out.fWholeParagraph		= change.fWholeParagraph;		// a paragraph added or removed whole
+		out.fAfterNewParagraph	= change.fAfterNewParagraph;	// the second "+" of "+ +": the panel asks first
 		out.fReplaced		= (isReplaced && StillReplaced(*row, change)) ? kTrue : kFalse;
 		out.fBeforeTextPre	= change.fBeforeTextPre;
 		out.fBeforeText		= change.fBeforeText;

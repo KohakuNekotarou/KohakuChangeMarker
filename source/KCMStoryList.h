@@ -265,12 +265,30 @@ struct KCMStoryChange
 	KCMStoryLayers	fLayers;
 	KCMStoryLayers	fOtherLayers;
 
+	/** ★★**A WHOLE PARAGRAPH, ADDED OR REMOVED** (2026-09-17 afternoon, the user's rule: "a <p> added or
+		removed is a paragraph added or removed", one row per paragraph). The ranges then carry the
+		paragraph's BREAK as well as its words - measured the same day: without it a paragraph taken in
+		ran into the next one, and one taken out left an empty paragraph behind.
+		The break is the one BEFORE the paragraph ("\rNEW" right before the return of the paragraph it
+		follows - the way pressing Return puts a paragraph in, and joining two paragraphs keeps the upper
+		one's style), or the paragraph's own when it is the first of its place ("NEW\r" at the start of
+		the one it precedes). KCMStoryDiffRun's AddWholeParagraphs makes them; KCMStoryRestore gives a
+		paragraph taken in the next style of the one before it. */
+	bool16		fWholeParagraph;
+
+	/** kTrue for a paragraph to take in whose paragraph BEFORE it is also one to take in - the second
+		"+" of "+ +". Taking it in first gives it the next style of whatever stands before it in the
+		document then, which is not what taking them in order gives; the panel asks first (the user's
+		request). */
+	bool16		fAfterNewParagraph;
+
 	KCMStoryChange()
 		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
 		  fSourceStart(0), fSourceEnd(0),
 		  fAttrKind(kKCMStoryAttrNone), fOverset(kFalse),
 		  fReplacedCount(0), fReplacedStart(0), fReplacedEnd(0),
-		  fBeforeStart(0), fBeforeEnd(0), fWriteBlock(kKCMWriteAllowed) {}
+		  fBeforeStart(0), fBeforeEnd(0), fWriteBlock(kKCMWriteAllowed),
+		  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse) {}
 };
 
 /** One row of the Story Edits section. */

@@ -164,6 +164,85 @@ bool16 TagAt(const std::string& s, size_t at, std::string& outName, bool16& outC
 	return kFalse;				// never closed
 }
 
+/*	DropLineBreaksInParagraphs
+	The file with every line break that stands inside a <p> taken out - and the spaces and tabs that
+	directly follow one (2026-09-17 afternoon, the user's rule).
+
+	★★**A LINE BREAK INSIDE A PARAGRAPH IS THE EDITOR'S, NOT THE TEXT'S.** The file is edited in a text
+	  editor, which wraps a long paragraph and indents the lines it wraps. The writer never puts a CR or
+	  an LF inside a <p> - a forced line break is <span class="u000a"></span> - so one found there is
+	  layout, and so is the indent after it. The same holds inside a reading, a warichu and a
+	  tate-chu-yoko, which is why this runs over the file before anything is read rather than at each of
+	  the places the reader collects characters.
+	⚠**ONLY OUTSIDE TAGS AND COMMENTS.** A tag broken over lines (`<p\n class="continued">`) is copied
+	  untouched - taking its break out would glue the name to the attribute. The tags are found by
+	  TagAt, the reader's own test, so "< 2" is a character here exactly as it is there.
+	⚠**SPACES BEFORE A BREAK STAY**, and so do spaces after a TAG that follows one: only the run of
+	  spaces and tabs standing directly after the break is its indent. A tab the paragraph BEGINS with
+	  (right after <p>) is text. */
+std::string DropLineBreaksInParagraphs(const std::string& s)
+{
+	std::string out;
+	out.reserve(s.size());
+	bool16 inPara = kFalse;
+	bool16 afterBreak = kFalse;
+	size_t i = 0;
+	while (i < s.size())
+	{
+		const char c = s[i];
+		if (c == '<')
+		{
+			afterBreak = kFalse;
+			// ⚠**THE ESCAPE FIRST**: "<<" in front of a tag is the reader's own '<' followed by words, so
+			//   "<</p>" is the TEXT "</p>" and ends nothing (found on review the same afternoon - the rest
+			//   of such a paragraph kept its editor's breaks). Copied whole, as the reader will read it.
+			std::string name;
+			bool16 closing = kFalse;
+			size_t after = 0;
+			if (i + 1 < s.size() && s[i + 1] == '<' && TagAt(s, i + 1, name, closing, after))
+			{
+				out.append(s, i, after - i);
+				i = after;
+				continue;
+			}
+			if (s.compare(i, 4, "<!--") == 0)
+			{
+				const size_t end = s.find("-->", i + 4);
+				const size_t stop = (end == std::string::npos) ? s.size() : end + 3;
+				out.append(s, i, stop - i);
+				i = stop;
+				continue;
+			}
+			if (TagAt(s, i, name, closing, after))
+			{
+				if (name == "p")
+					inPara = closing ? kFalse : kTrue;
+				out.append(s, i, after - i);
+				i = after;
+				continue;
+			}
+		}
+		else if (inPara && (c == '\r' || c == '\n'))
+		{
+			afterBreak = kTrue;
+			++i;
+			continue;
+		}
+		else if (inPara && afterBreak && (c == ' ' || c == '\t'))
+		{
+			++i;
+			continue;
+		}
+		else
+		{
+			afterBreak = kFalse;
+		}
+		out += c;
+		++i;
+	}
+	return out;
+}
+
 /** kTrue when one of THIS FORMAT's tags begins at `at`. */
 bool16 IsOurTagAt(const std::string& s, size_t at)
 {
@@ -947,13 +1026,10 @@ void Indent(int32 depth, std::string& out)
 
 /** <p> for the first piece of a paragraph, <p class="continued"> for the ones after a table.
 
-	★★**EVERY <p> IS EDITABLE IN A BROWSER, AND NOTHING ELSE IS** (2026-09-17, the user's request):
-	  contenteditable="plaintext-only" on each paragraph. On <body> a browser lets the reader delete a
-	  whole table; on a <p> only that paragraph's words are theirs to change, and plaintext-only keeps
-	  Ctrl+B and a paste from bringing markup this format does not have.
-	⚠**AN ATTRIBUTE, NOT A STYLE**: CSS cannot make an element editable, so it is written on every
-	  paragraph rather than once in the stylesheet. Read looks at a <p>'s class and nothing else, so a
-	  <p> written by hand without it reads exactly the same. */
+	★★**NOTHING IS EDITABLE IN A BROWSER** (2026-09-17 afternoon, the user's decision). The file is
+	  edited in a text editor and a browser only shows it. That morning every <p> carried
+	  contenteditable="plaintext-only"; it went the same day, together with the browser editing it
+	  invited. Read never looked at the attribute, so a file written that morning reads the same. */
 void OpenPara(bool16 first, std::string& out)
 {
 	out += "<p";
@@ -963,7 +1039,7 @@ void OpenPara(bool16 first, std::string& out)
 		out += kContinuedClass;
 		out += "\"";
 	}
-	out += " contenteditable=\"plaintext-only\">";
+	out += ">";
 }
 
 /*	WriteParagraphWithTables
@@ -1697,17 +1773,20 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 		return kFalse;
 	}
 
-	std::string s(html, size);
+	std::string raw(html, size);
 
 	// ⚠A BOM IS SKIPPED, NEVER REQUIRED. The file carries one; a file that has been through a chat
 	//   window does not, and has to read exactly the same.
-	if (s.size() >= 3
-		&& static_cast<unsigned char>(s[0]) == 0xEF
-		&& static_cast<unsigned char>(s[1]) == 0xBB
-		&& static_cast<unsigned char>(s[2]) == 0xBF)
+	if (raw.size() >= 3
+		&& static_cast<unsigned char>(raw[0]) == 0xEF
+		&& static_cast<unsigned char>(raw[1]) == 0xBB
+		&& static_cast<unsigned char>(raw[2]) == 0xBF)
 	{
-		s.erase(0, 3);
+		raw.erase(0, 3);
 	}
+
+	// ★The line breaks a text editor put inside a paragraph, and their indents, are not text.
+	const std::string s = DropLineBreaksInParagraphs(raw);
 
 	bool16 inBody = kFalse;
 	bool16 inPara = kFalse;

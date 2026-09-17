@@ -110,8 +110,10 @@ ICommand* KCMCreateWordsWriteCmd(ITextModel* model, TextIndex at, int32 count, c
     any needs it made first. kSuccess when it exists afterwards. */
 ErrorCode KCMCreateRubyStrandIfNeeded(ITextModel* model);
 
-/** One reading onto [at, at+len): the three attributes that ARE a reading (on, the string,
-    mono-or-group). ⚠Call KCMCreateRubyStrandIfNeeded first on a story that never had ruby. */
+/** One reading onto [at, at+len): the attributes that ARE a reading (on, the string - and "group" for a
+    group reading; a MONO reading writes no setting and takes a group override off, leaving it to the
+    paragraph style - the user's rule of 2026-09-17). ⚠Call KCMCreateRubyStrandIfNeeded first on a story
+    that never had ruby. */
 ErrorCode KCMApplyRuby(ITextModel* model, TextIndex at, int32 len, const PMString& reading, bool16 group);
 
 /** Ruby OFF [at, at+len), by clearing the overrides of all thirty ruby attributes.

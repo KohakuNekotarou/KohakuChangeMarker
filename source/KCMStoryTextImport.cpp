@@ -35,6 +35,8 @@
 #include "KCMOrigin.h"				// the origin slot: taken for this mode, parked for the reader's
 #include "KCMRehydrate.h"			// KCMReadOriginUidLabel - the copy's stories carry the original UID
 #include "KCMParaText.h"			// ModelOffsetInParagraph / AppendUtf8
+#include "KCMParaPairing.h"			// which paragraph goes with which when <p>s were added or removed
+#include "KCMParagraphStyle.h"		// the next style for a paragraph put in after another
 #include "KCMTextDiff.h"			// ToCodePoints / Diff
 #include "KCMTextRead.h"			// ReadStory - the document, read the way the export read it
 
@@ -216,12 +218,18 @@ struct Place
 	Place() : fFile(nil) {}
 };
 
-/** kTrue when any code point of the text in [from, to) is one the reader may not move or delete. */
-bool16 RangeTouchesInvisible(const std::vector<int32>& cps, int32 from, int32 to)
+/** kTrue when any code point of the text in [from, to) is one the reader may not move or delete.
+
+	★**AN OBJECT'S CHARACTER, NOT EVERY INVISIBLE ONE** (2026-09-17 afternoon, the user's request: a forced
+	  line break added or removed is taken in). This asked KCMStoryHtml::IsInvisible until then, which
+	  turned away a forced line break, a zero width space and an indent-to-here as if they were tables -
+	  while writing the document back asks KCMParaText::IsObjectCharacter. Now the pour asks the same
+	  question: those characters carry nothing, and text commands write them whole. */
+bool16 RangeTouchesObject(const std::vector<int32>& cps, int32 from, int32 to)
 {
 	for (int32 k = from; k < to && k < static_cast<int32>(cps.size()); ++k)
 	{
-		if (k >= 0 && KCMStoryHtml::IsInvisible(cps[k]))
+		if (k >= 0 && KCMParaText::IsObjectCharacter(cps[k]))
 			return kTrue;
 	}
 	return kFalse;
@@ -480,11 +488,11 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 	for (size_t c = 0; c < changes.size(); ++c)
 	{
 		const KCMTextDiff::Change& ch = changes[c];
-		if (RangeTouchesInvisible(a, ch.aStart, ch.aStart + ch.aCount)
-			|| RangeTouchesInvisible(b, ch.bStart, ch.bStart + ch.bCount))
+		if (RangeTouchesObject(a, ch.aStart, ch.aStart + ch.aCount)
+			|| RangeTouchesObject(b, ch.bStart, ch.bStart + ch.bCount))
 		{
-			whyNot = "a change would move or delete a character that is not a letter "
-					 "(an anchored object, a page number, an index marker)";
+			whyNot = "a change would add, move or delete a character InDesign hangs an object on "
+					 "(an anchored object, a note reference, a page number, an index marker)";
 			whyNot.SetTranslatable(kFalse);
 			outRefused = kTrue;
 			return 0;
@@ -724,6 +732,300 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 		++written;
 	}
 	return written;
+}
+
+/** One write of the text pass: a paragraph's words (ApplyParagraph), new paragraphs, or paragraphs
+	taken out. */
+struct Job
+{
+	enum { kParagraph = 0, kInsert = 1, kDelete = 2 };
+
+	int32								fKind;
+	/** ★**THE ORDER**: writes go from the highest key down. Twice the position the write starts at, so
+		that a write standing at the same position can be put before (+1) or after (-1) the paragraph
+		whose start that is - new paragraphs after a paragraph's return go in before that paragraph's own
+		words are rewritten (their position is read before those words move it), and new paragraphs in
+		front of a place's first paragraph go in after (the paragraph's words are written at the positions
+		they were read at). */
+	int64								fKey;
+	size_t								fPara;			// kParagraph: index into paras / attrs / starts
+	const KCMStoryHtml::Para*			fFile;			// kParagraph: the same paragraph in the file
+	TextIndex							fAt;			// kInsert: where; kDelete: from
+	TextIndex							fTo;			// kDelete: up to, not including
+	bool16								fAfterReturn;	// kInsert: "\rNEW" after a return, not "NEW\r" before a paragraph
+	std::vector<const KCMStoryHtml::Para*>	fNew;		// kInsert: the file's new paragraphs, in order
+
+	Job() : fKind(kParagraph), fKey(0), fPara(0), fFile(nil), fAt(0), fTo(0), fAfterReturn(kFalse) {}
+};
+
+/** kTrue when a code point of the UTF-8 text is one InDesign hangs an object on. */
+bool16 TextHoldsObject(const std::string& utf8)
+{
+	std::vector<int32> cps;
+	KCMTextDiff::ToCodePoints(utf8, &cps, nil);
+	for (size_t k = 0; k < cps.size(); ++k)
+	{
+		if (KCMParaText::IsObjectCharacter(cps[k]))
+			return kTrue;
+	}
+	return kFalse;
+}
+
+/** Where a paragraph's return stands: after its text and anything standing at its end. */
+TextIndex ReturnOfParagraph(int32 paraStart, const KCMParaAttrs& attrs, const std::string& text)
+{
+	return static_cast<TextIndex>(paraStart)
+		   + KCMParaText::ModelOffsetInParagraph(attrs, KCMParaText::CountCodePoints(text));
+}
+
+/** How many tables stand in one paragraph of the document - at its start and inside it. */
+int32 DocTablesInParagraph(ITextModel* model, int32 paraStart, const KCMParaAttrs& attrs)
+{
+	int32 n = 0;
+	for (int32 k = 1; k <= attrs.fLeadingUncounted; ++k)
+	{
+		if (CharAt(model, static_cast<TextIndex>(paraStart - k)) == kTextChar_Table)
+			++n;
+	}
+	for (size_t k = 0; k < attrs.fUncountedAt.size(); ++k)
+	{
+		const TextIndex m = static_cast<TextIndex>(paraStart) + attrs.fUncountedAt[k] + static_cast<int32>(k);
+		if (CharAt(model, m) == kTextChar_Table)
+			++n;
+	}
+	return n;
+}
+
+/** The writes that turn one place's paragraphs into the file's when the file has more or fewer of them
+	(2026-09-17 afternoon, the user's rule: a <p> added or removed is a paragraph added or removed).
+
+	★**NEW PARAGRAPHS GO IN RIGHT BEFORE THE RETURN OF THE ONE THEY FOLLOW**, as "\rNEW" - the way pressing
+	  Return at the end of that paragraph puts them in, so they start out in its style with its overrides
+	  (measured 2026-09-17), and InsertParagraphs then applies the next style. In front of a place's first
+	  paragraph there is nothing to follow: "NEW\r" goes in at its start and takes its style.
+	★**A REMOVED PARAGRAPH GOES WITH THE RETURN BEFORE IT**, [return of the one before, its own return) -
+	  measured the same day: joining two paragraphs keeps the UPPER one's style and overrides, so the
+	  paragraph before keeps its own. A place's first paragraph has no return before it and goes with its
+	  own.
+	⚠**REFUSED, WHOLE PLACE, NOTHING WRITTEN**: a place the file leaves without a paragraph; a paragraph
+	  holding a table, a note reference or an anchored object taken out (the object would go with it); a
+	  new paragraph holding one (text cannot bring it); a paired paragraph whose tables are not the file's
+	  (a table would have to change paragraphs).
+	@param outWhyNot empty when the place can be written. */
+std::vector<Job> PlanParagraphSteps(ITextModel* model, const Place& place,
+									const std::vector<std::string>& paras,
+									const std::vector<KCMParaAttrs>& attrs,
+									const std::vector<int32>& starts,
+									const std::map<const KCMStoryHtml::Para*, std::vector<int32> >& fileTables,
+									PMString& outWhyNot)
+{
+	std::vector<Job> out;
+	outWhyNot.Clear();
+	outWhyNot.SetTranslatable(kFalse);
+
+	const std::vector<KCMStoryHtml::Para>& fileParas = *place.fFile;
+	if (fileParas.empty() || place.fDoc.empty())
+	{
+		outWhyNot = "a cell or a note has to keep at least one paragraph (<p>)";
+		outWhyNot.SetTranslatable(kFalse);
+		return std::vector<Job>();
+	}
+
+	std::vector<std::string> docTexts;
+	for (size_t q = 0; q < place.fDoc.size(); ++q)
+		docTexts.push_back(paras[place.fDoc[q]]);
+	std::vector<std::string> fileTexts;
+	for (size_t q = 0; q < fileParas.size(); ++q)
+		fileTexts.push_back(fileParas[q].fText);
+
+	std::vector<KCMParaPairing::Step> steps;
+	KCMParaPairing::Pair(docTexts, fileTexts, steps);
+
+	for (size_t s = 0; s < steps.size(); ++s)
+	{
+		const KCMParaPairing::Step& step = steps[s];
+		if (step.fKind == KCMParaPairing::Step::kPair)
+		{
+			const size_t i = place.fDoc[static_cast<size_t>(step.fDoc)];
+			const KCMStoryHtml::Para* file = &fileParas[static_cast<size_t>(step.fFile)];
+			const std::map<const KCMStoryHtml::Para*, std::vector<int32> >::const_iterator ft = fileTables.find(file);
+			const int32 fileTableCount = (ft != fileTables.end()) ? static_cast<int32>(ft->second.size()) : 0;
+			if (DocTablesInParagraph(model, starts[i], attrs[i]) != fileTableCount)
+			{
+				outWhyNot = "paragraphs were added or removed next to a table in a way that would move the table "
+							"into another paragraph (a table cannot be moved by text)";
+				outWhyNot.SetTranslatable(kFalse);
+				return std::vector<Job>();
+			}
+			Job job;
+			job.fKind = Job::kParagraph;
+			job.fPara = i;
+			job.fFile = file;
+			job.fKey = 2 * static_cast<int64>(starts[i]);
+			out.push_back(job);
+		}
+		else if (step.fKind == KCMParaPairing::Step::kInsert)
+		{
+			Job job;
+			job.fKind = Job::kInsert;
+			for (int32 k = 0; k < step.fCount; ++k)
+			{
+				const KCMStoryHtml::Para* file = &fileParas[static_cast<size_t>(step.fFile + k)];
+				if (fileTables.find(file) != fileTables.end() || TextHoldsObject(file->fText))
+				{
+					outWhyNot = "a new paragraph holds a table, a note reference or an anchored object "
+								"(text cannot bring an object into the document)";
+					outWhyNot.SetTranslatable(kFalse);
+					return std::vector<Job>();
+				}
+				job.fNew.push_back(file);
+			}
+			if (step.fDoc >= 0)
+			{
+				const size_t before = place.fDoc[static_cast<size_t>(step.fDoc)];
+				job.fAt = ReturnOfParagraph(starts[before], attrs[before], paras[before]);
+				job.fAfterReturn = kTrue;
+				job.fKey = 2 * static_cast<int64>(job.fAt) + 1;
+			}
+			else
+			{
+				const size_t first = place.fDoc[0];
+				job.fAt = static_cast<TextIndex>(starts[first] - attrs[first].fLeadingUncounted);
+				job.fAfterReturn = kFalse;
+				job.fKey = 2 * static_cast<int64>(job.fAt) - 1;
+			}
+			out.push_back(job);
+		}
+		else
+		{
+			for (int32 k = 0; k < step.fCount; ++k)
+			{
+				const size_t i = place.fDoc[static_cast<size_t>(step.fDoc + k)];
+				if (attrs[i].fLeadingUncounted > 0 || !attrs[i].fUncountedAt.empty() || TextHoldsObject(paras[i]))
+				{
+					outWhyNot = "a paragraph holding a table, a note reference or an anchored object cannot be "
+								"removed (the object would go with it)";
+					outWhyNot.SetTranslatable(kFalse);
+					return std::vector<Job>();
+				}
+			}
+			const size_t last = place.fDoc[static_cast<size_t>(step.fDoc + step.fCount - 1)];
+			Job job;
+			job.fKind = Job::kDelete;
+			if (step.fDoc > 0)
+			{
+				const size_t before = place.fDoc[static_cast<size_t>(step.fDoc - 1)];
+				job.fAt = ReturnOfParagraph(starts[before], attrs[before], paras[before]);
+				job.fTo = ReturnOfParagraph(starts[last], attrs[last], paras[last]);
+				job.fKey = 2 * static_cast<int64>(job.fAt) + 1;
+			}
+			else
+			{
+				const size_t first = place.fDoc[static_cast<size_t>(step.fDoc)];
+				job.fAt = static_cast<TextIndex>(starts[first] - attrs[first].fLeadingUncounted);
+				job.fTo = ReturnOfParagraph(starts[last], attrs[last], paras[last]) + 1;
+				job.fKey = 2 * static_cast<int64>(job.fAt) - 1;
+			}
+			out.push_back(job);
+		}
+	}
+	return out;
+}
+
+/** Puts new paragraphs in - "\rNEW" right before a return, or "NEW\r" at a paragraph's start - and gives
+	the ones after a return the next style (KCMApplyNextStyleAfter).
+	@return how many writes went in. */
+int32 InsertParagraphs(ITextModel* model, TextIndex at, bool16 afterReturn,
+					   const std::vector<const KCMStoryHtml::Para*>& news, PMString& whyNot, bool16& outRefused)
+{
+	outRefused = kFalse;
+	TextIndex threadStart = 0;
+	int32 threadSpan = 0;
+	InterfacePtr<ITextStoryThread> thread(model->QueryStoryThread(at, &threadStart, &threadSpan));
+	const bool16 inPlace = (thread != nil && at >= threadStart && at < threadStart + threadSpan
+							&& (!afterReturn || CharAt(model, at) == kTextChar_CR)) ? kTrue : kFalse;
+	if (!inPlace || news.empty())
+	{
+		whyNot = "the copy does not hold the paragraphs where they were read, so no paragraph was added "
+				 "(please report this - it is a fault of the plug-in, not of the file)";
+		whyNot.SetTranslatable(kFalse);
+		outRefused = kTrue;
+		return 0;
+	}
+
+	std::string text;
+	for (size_t k = 0; k < news.size(); ++k)
+	{
+		if (afterReturn)
+			text += '\r';
+		text += news[k]->fText;
+		if (!afterReturn)
+			text += '\r';
+	}
+	PMString asString;
+	asString.SetUTF8String(text);
+	const WideString words(asString);
+
+	InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(model, at, 0, words));
+	if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
+	{
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+		whyNot = "adding a paragraph failed (a locked story or layer?)";
+		whyNot.SetTranslatable(kFalse);
+		outRefused = kTrue;
+		return 0;
+	}
+	if (afterReturn)
+		KCMApplyNextStyleAfter(model, at, at + 1, words.CharCount() - 1);	// a style that cannot be applied leaves the inherited one
+	return 1;
+}
+
+/** Takes paragraphs out: [from, to), checked first to be whole paragraphs of one thread holding nothing
+	InDesign hangs an object on.
+	@return how many writes went in. */
+int32 DeleteParagraphs(ITextModel* model, TextIndex from, TextIndex to, PMString& whyNot, bool16& outRefused)
+{
+	outRefused = kFalse;
+	TextIndex threadStart = 0;
+	int32 threadSpan = 0;
+	InterfacePtr<ITextStoryThread> thread(model->QueryStoryThread(from, &threadStart, &threadSpan));
+	bool16 inPlace = (thread != nil && from >= threadStart && to > from
+					  && to <= threadStart + threadSpan - 1			// never the thread's own last return
+					  && CharAt(model, to - 1) != -1) ? kTrue : kFalse;
+	// Either [a return, the next return) or [a paragraph's start, just past its return).
+	if (inPlace && !(CharAt(model, from) == kTextChar_CR && CharAt(model, to) == kTextChar_CR)
+		&& !(CharAt(model, to - 1) == kTextChar_CR && (from == threadStart || CharAt(model, from - 1) == kTextChar_CR)))
+		inPlace = kFalse;
+	if (inPlace)
+	{
+		WideString standing;
+		TextIterator iter(model, from);
+		iter.AppendToStringAndIncrement(&standing, to - from);
+		for (int32 k = 0; inPlace && k < standing.CharCount(); ++k)
+		{
+			if (KCMParaText::IsObjectCharacter(static_cast<int32>(standing.GetChar(k).GetValue())))
+				inPlace = kFalse;
+		}
+	}
+	if (!inPlace)
+	{
+		whyNot = "the copy does not hold the paragraphs where they were read, so no paragraph was removed "
+				 "(please report this - it is a fault of the plug-in, not of the file)";
+		whyNot.SetTranslatable(kFalse);
+		outRefused = kTrue;
+		return 0;
+	}
+
+	InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(model, from, to - from, WideString()));
+	if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
+	{
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+		whyNot = "removing a paragraph failed (a locked story or layer?)";
+		whyNot.SetTranslatable(kFalse);
+		outRefused = kTrue;
+		return 0;
+	}
+	return 1;
 }
 
 }	// anonymous namespace
@@ -975,12 +1277,12 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 		//   ⇒ Every place is JUDGED first (nothing is written for a place turned away), and then the
 		//     paragraphs are written from the highest TextIndex down: a write moves only what stands
 		//     after it, and everything after it has been written already.
-		struct Job
-		{
-			size_t						fPara;		// index into paras / attrs / starts
-			const KCMStoryHtml::Para*	fFile;		// the same paragraph in the file
-		};
 		std::vector<Job> jobs;
+
+		// ★The file's own table positions, per paragraph - which side of a table an insertion goes (G1),
+		//   and whether a paragraph added or removed would move a table into another paragraph.
+		std::map<const KCMStoryHtml::Para*, std::vector<int32> > fileTables;
+		FileTablesByParagraph(set->fStories[which], fileTables);
 
 		bool16 touched = kFalse;
 		for (size_t p = 0; p < places.size(); ++p)
@@ -997,50 +1299,65 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 				continue;
 			}
 
-			// ⚠**THE PARAGRAPH COUNT HAS TO MATCH, so far.** Adding and removing paragraphs needs
-			//   the exact end of a thread, which is measured work not yet done - so the place is
-			//   refused with a reason rather than half-applied.
-			if (place.fDoc.size() != place.fFile->size())
+			if (place.fDoc.size() == place.fFile->size())
 			{
-				++refusedPlaces;
-				if (firstRefusal.IsEmpty())
+				for (size_t q = 0; q < place.fDoc.size(); ++q)
 				{
-					firstRefusal = "the number of paragraphs changed "
-								   "(this version writes changes inside a paragraph only)";
-					firstRefusal.SetTranslatable(kFalse);
+					Job job;
+					job.fPara = place.fDoc[q];
+					job.fFile = &(*place.fFile)[q];
+					job.fKey = 2 * static_cast<int64>(starts[job.fPara]);
+					jobs.push_back(job);
 				}
 				continue;
 			}
 
-			for (size_t q = 0; q < place.fDoc.size(); ++q)
+			// ★★**<p> ADDED OR REMOVED = A PARAGRAPH ADDED OR REMOVED** (2026-09-17 afternoon, the user's
+			//   rule). Which paragraph goes with which is KCMParaPairing's answer; the place is JUDGED whole
+			//   before anything of it is written, like every other refusal here.
+			PMString placeWhyNot;
+			const std::vector<Job> placeJobs = PlanParagraphSteps(model, place, paras, attrs, starts, fileTables,
+																  placeWhyNot);
+			if (!placeWhyNot.IsEmpty())
 			{
-				Job job;
-				job.fPara = place.fDoc[q];
-				job.fFile = &(*place.fFile)[q];
-				jobs.push_back(job);
+				++refusedPlaces;
+				if (firstRefusal.IsEmpty())
+					firstRefusal = placeWhyNot;
+				continue;
 			}
+			jobs.insert(jobs.end(), placeJobs.begin(), placeJobs.end());
 		}
 
-		// ★BACK TO FRONT OVER THE WHOLE STORY (the note above). Two paragraphs never share a start.
-		std::sort(jobs.begin(), jobs.end(),
-				  [&starts](const Job& a, const Job& b) { return starts[a.fPara] > starts[b.fPara]; });
+		// ★BACK TO FRONT OVER THE WHOLE STORY (the note above) - by Job::fKey, which also says which of two
+		//   writes at one position goes first. Stable, so nothing else about the order is decided here.
+		std::stable_sort(jobs.begin(), jobs.end(), [](const Job& a, const Job& b) { return a.fKey > b.fKey; });
 
-		// ★The file's own table positions, per paragraph - which side of a table an insertion goes (G1).
-		std::map<const KCMStoryHtml::Para*, std::vector<int32> > fileTables;
-		FileTablesByParagraph(set->fStories[which], fileTables);
 		const std::vector<int32> noTables;
 
 		for (size_t j = 0; j < jobs.size(); ++j)
 		{
-			const size_t i = jobs[j].fPara;
+			const Job& job = jobs[j];
 			PMString whyNot;
 			bool16 refused = kFalse;
-			const std::map<const KCMStoryHtml::Para*, std::vector<int32> >::const_iterator ft =
-				fileTables.find(jobs[j].fFile);
-			const int32 n = ApplyParagraph(model, static_cast<TextIndex>(starts[i]), attrs[i],
-										   paras[i], jobs[j].fFile->fText,
-										   (ft != fileTables.end()) ? ft->second : noTables,
-										   whyNot, refused);
+			int32 n = 0;
+			if (job.fKind == Job::kInsert)
+			{
+				n = InsertParagraphs(model, job.fAt, job.fAfterReturn, job.fNew, whyNot, refused);
+			}
+			else if (job.fKind == Job::kDelete)
+			{
+				n = DeleteParagraphs(model, job.fAt, job.fTo, whyNot, refused);
+			}
+			else
+			{
+				const size_t i = job.fPara;
+				const std::map<const KCMStoryHtml::Para*, std::vector<int32> >::const_iterator ft =
+					fileTables.find(job.fFile);
+				n = ApplyParagraph(model, static_cast<TextIndex>(starts[i]), attrs[i],
+								   paras[i], job.fFile->fText,
+								   (ft != fileTables.end()) ? ft->second : noTables,
+								   whyNot, refused);
+			}
 			// ⚠**BOTH ANSWERS ARE READ, because both can be true of one paragraph**: a write that
 			//  failed half way leaves what went in ahead of it (ApplyParagraph says so).
 			if (refused)

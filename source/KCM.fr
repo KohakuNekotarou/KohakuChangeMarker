@@ -857,6 +857,35 @@ resource VersionedScriptElementInfo(10)
 			{ /* void */ }
 		}
 
+		// ★ONE CHANGE, AND ONE STORY, FROM A SCRIPT (2026-09-17 afternoon) - the order checks the user asked
+		// for (KCMScriptingDefs.h). The parameters are Adobe's p_Index and p_Contents.
+		Method
+		{
+			kKCMTakeInChangeMethodScriptElement,
+			e_KCMTakeInChange,
+			"kcm take in change",				// name -> app.kcmTakeInChange(storyRow, words)
+			"Take in one change of a story row, as the change row's menu does, without asking: the first change not yet taken in whose words hold the text given.",
+			StringType,
+			"The sentence the status line shows"
+			{
+				p_Index, "story row", "The story row, from 0 (app.kcmStoryRows)", Int32Type, kRequired,
+				p_Contents, "words", "Words the change holds, on either side", StringType, kRequired,
+			}
+		}
+
+		Method
+		{
+			kKCMTakeInStoryMethodScriptElement,
+			e_KCMTakeInStory,
+			"kcm take in story",				// name -> app.kcmTakeInStory(storyRow)
+			"Take in every change of one story row, as the story row's menu does, without asking.",
+			StringType,
+			"The sentence the status line shows"
+			{
+				p_Index, "story row", "The story row, from 0 (app.kcmStoryRows)", Int32Type, kRequired,
+			}
+		}
+
 		// Puts the property ON the application object.
 		//
 		// Object{}, not Parent{}: Object names an EXISTING scripting object to add members to,
@@ -892,6 +921,9 @@ resource VersionedScriptElementInfo(10)
 				Method{ kKCMTakeInAllStoriesMethodScriptElement },
 				Method{ kKCMExportStoryTextMethodScriptElement },
 				Method{ kKCMStopComparisonMethodScriptElement },
+				// ...and the two order checks' (2026-09-17 afternoon).
+				Method{ kKCMTakeInChangeMethodScriptElement },
+				Method{ kKCMTakeInStoryMethodScriptElement },
 			}
 		}
 

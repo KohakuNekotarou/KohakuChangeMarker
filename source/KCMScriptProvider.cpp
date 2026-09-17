@@ -291,7 +291,8 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 	{
 		const int32 id = methodID.Get();
 		if (id == e_KCMImportStoryText || id == e_KCMTakeInAllStories
-			|| id == e_KCMExportStoryText || id == e_KCMStopComparison)
+			|| id == e_KCMExportStoryText || id == e_KCMStopComparison
+			|| id == e_KCMTakeInChange || id == e_KCMTakeInStory)
 		{
 			PMString message;
 			message.SetTranslatable(kFalse);
@@ -299,6 +300,59 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 			if (id == e_KCMTakeInAllStories)
 			{
 				KCMRestoreAllStories(message);
+			}
+			else if (id == e_KCMTakeInChange || id == e_KCMTakeInStory)
+			{
+				// ★The story row by index, the change by WORDS it holds - the index space of a row's changes
+				//   moves as changes are taken in (the replaced ones stay listed), so a test naming "the
+				//   paragraph that says 3" cannot be pointed at the wrong one by an earlier take-in.
+				ScriptData rowArg;
+				int32 storyRow = -1;
+				if (data->ExtractRequestData(p_Index, rowArg) != kSuccess || rowArg.GetInt32(&storyRow) != kSuccess)
+				{
+					message = "the story row argument could not be read";
+					message.SetTranslatable(kFalse);
+				}
+				else if (id == e_KCMTakeInStory)
+				{
+					KCMRestoreAllInStory(storyRow, message);
+				}
+				else
+				{
+					ScriptData wordsArg;
+					PMString words;
+					if (data->ExtractRequestData(p_Contents, wordsArg) != kSuccess
+						|| wordsArg.GetPMString(words) != kSuccess)
+					{
+						message = "the words argument could not be read";
+						message.SetTranslatable(kFalse);
+					}
+					else
+					{
+						const std::string wanted = words.GetUTF8String();
+						int32 found = -1;
+						const int32 count = KCMStoryList::GetMergedChangeCount(storyRow);
+						for (int32 k = 0; k < count && found < 0; ++k)
+						{
+							bool16 replaced = kFalse;
+							const KCMStoryChange* const change = KCMStoryList::GetMergedChange(storyRow, k, replaced);
+							if (change == nil || replaced)
+								continue;
+							if (change->fOtherText.GetUTF8String().find(wanted) != std::string::npos
+								|| change->fText.GetUTF8String().find(wanted) != std::string::npos)
+								found = k;
+						}
+						if (found < 0)
+						{
+							message = "no change not yet taken in holds those words";
+							message.SetTranslatable(kFalse);
+						}
+						else
+						{
+							KCMRestoreChange(storyRow, found, message);
+						}
+					}
+				}
 			}
 			else if (id == e_KCMStopComparison)
 			{

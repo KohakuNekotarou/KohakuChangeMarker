@@ -157,6 +157,27 @@ bool16 KCMChangeRowRestore()
 		KCMSetStatus("restore: no change to restore.");
 		return kFalse;
 	}
+	// ★★**THE SECOND "+" OF "+ +", TAKEN IN ALONE, IS ASKED ABOUT FIRST** (2026-09-17 afternoon, the user's
+	//   request). A paragraph taken in gets the next style of the paragraph standing before it in the
+	//   document at that moment, so taking the later of two new paragraphs first can style it differently
+	//   from taking them in order - which the story row's take-in-all does.
+	{
+		IKCMStoryEditsFacade::Change change;
+		if (StashedChange(change) && change.fAfterNewParagraph && !change.fReplaced)
+		{
+			PMString question(kKCMParagraphOrderConfirmKey);
+			question.Translate();			// from the enUS table, like every other English string here
+			question.SetTranslatable(kFalse);
+			if (CAlert::ModalAlert(question, kOKString, kCancelString, kNullString,
+					2,							// Cancel is the default: the careful answer
+					CAlert::eQuestionIcon) != 1)
+			{
+				KCMSetStatus("restore: not taken in.");
+				return kFalse;
+			}
+		}
+	}
+
 	// The model does the work and says what happened; the words go to the status line either way.
 	PMString msg;
 	const bool16 ok = Utils<IKCMStoryEditsFacade>()->RestoreChange(gMenuRow, gMenuChange, msg);

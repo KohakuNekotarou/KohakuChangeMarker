@@ -231,7 +231,19 @@ enum KCMScriptMethods
 	e_KCMImportStoryText = 'eKGn',	// n = in.    app.kcmImportStoryText(file)  -> the import's sentence
 	e_KCMTakeInAllStories = 'eKGw',	// w = write. app.kcmTakeInAllStories()     -> "N changes taken in..."
 	e_KCMExportStoryText = 'eKGe',	// e = export. app.kcmExportStoryText(folder) -> "exported N ... to <folder>"
-	e_KCMStopComparison = 'eKGq'	// q = quit.  app.kcmStopComparison()       -> the status line after it
+	e_KCMStopComparison = 'eKGq',	// q = quit.  app.kcmStopComparison()       -> the status line after it
+
+	// ★★ONE CHANGE, AND ONE STORY, TAKEN IN FROM A SCRIPT (2026-09-17 afternoon). The user asked for the
+	//   order checks - "1 became 1..5, and the user takes in 3, then 5, then 4, then 2: does the order
+	//   hold?" and "one change taken in on its child row, the rest on the story's row" - which the
+	//   all-stories method above cannot drive. The change is named by WORDS it holds rather than by an
+	//   index, because the index space moves under a test as changes are taken in (the replaced ones stay
+	//   in the list). ⚠No confirmation here either: the panel asks before a second "+" goes in alone, a
+	//   script has already decided.
+	//   ⚠'eKGk' / 'eKGy' were MEASURED free: 0 hits in headers, .fr, sources, notes, scripts; the same
+	//     search form finds 'eKGs'. The parameters are Adobe's own p_Index and p_Contents. ⚠Not registered.
+	e_KCMTakeInChange = 'eKGk',		// k = keep one. app.kcmTakeInChange(storyRow, words) -> the take-in's sentence
+	e_KCMTakeInStory = 'eKGy'		// y = storY.   app.kcmTakeInStory(storyRow)          -> "N changes taken in..."
 };
 
 /** Properties KCM adds to the STORY object (at the user's request).
