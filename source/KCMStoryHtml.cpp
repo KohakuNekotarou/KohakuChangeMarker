@@ -1397,8 +1397,10 @@ void WriteStylesheet(const std::vector<std::string>& kentenValues, std::string& 
 	//   inside it included. ⚠calc-size() is Chromium's (Edge, Chrome); a browser without it drops
 	//   that one declaration and shows the warichu as one small line - still marked, still editable,
 	//   and the reader never looks at the look anyway.
+	//   ★NO BACKGROUND (the user, the same day: "the background need not be bluish") - the half-size
+	//   characters folded onto two lines are the mark.
 	outCss += ".warichu{display:inline-block;font-size:.5em;line-height:1.1;vertical-align:middle;"
-			  "inline-size:calc-size(max-content, size / 2 + .5em);background:#eef3ff}\r\n";
+			  "inline-size:calc-size(max-content, size / 2 + .5em)}\r\n";
 
 	// ★**EVERY BUILT-IN KIND, WHETHER THIS FOLDER USES IT OR NOT.** The sheet is the folder's, and
 	//   a reader who types <em class="kenten-BlackTriangle"> into one of these files by hand has to
