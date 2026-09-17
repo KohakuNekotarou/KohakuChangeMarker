@@ -213,7 +213,14 @@ std::string DropLineBreaksInParagraphs(const std::string& s)
 				i = stop;
 				continue;
 			}
-			if (TagAt(s, i, name, closing, after))
+			// ★★**BUT ONLY A TAG THE READER TAKES AS ONE** (2026-09-17 evening, found by the fuzzer). Inside a
+			//   paragraph an element this format does not know is TEXT to Read - its '<' becomes a character
+			//   and the rest follows one by one - so its line breaks are the editor's like any other. Copied
+			//   whole here, they reached the words raw, and a CR in InDesign is a paragraph break.
+			//   (<p class="continued"> broken over lines is still copied untouched: it is ours.)
+			if (TagAt(s, i, name, closing, after)
+				&& (!inPara || IsInList(name, kOurTags, kOurTagCount)
+					|| IsInList(name, kScaffolding, kScaffoldingCount)))
 			{
 				if (name == "p")
 					inPara = closing ? kFalse : kTrue;
@@ -241,6 +248,112 @@ std::string DropLineBreaksInParagraphs(const std::string& s)
 		++i;
 	}
 	return out;
+}
+
+/*	FindBrokenUtf8
+	The byte where the file stops being UTF-8, or npos when all of it is.
+
+	★★**A BROKEN BYTE IS REFUSED, NOT READ AS A CHARACTER** (2026-09-17 evening). KCMTextDiff::ToCodePoints
+	  walks on past damage on purpose - one bad byte should cost one position in a comparison - so a
+	  reader built on it took "\xFF\xFE\xC3" as three characters, the last of them U+0003, and an import
+	  poured that control character into the copy (the matrix's N34). In a FILE somebody saved, damage is
+	  not a character anybody typed; the answer is to say so.
+	★STRICT, the way the Unicode standard's table 3-7 is: a lead byte C2-F4, its continuation bytes, and
+	  none of the three shapes that decode to something that is not a character - an overlong form
+	  (E0 80-9F / F0 80-8F), a surrogate (ED A0-BF) and a code point past U+10FFFF (F4 90-BF). */
+size_t FindBrokenUtf8(const std::string& s)
+{
+	size_t i = 0;
+	while (i < s.size())
+	{
+		const unsigned char lead = static_cast<unsigned char>(s[i]);
+		if (lead < 0x80)
+		{
+			++i;
+			continue;
+		}
+
+		size_t extra = 0;
+		unsigned char lo = 0x80;		// the range the FIRST continuation byte has to fall in
+		unsigned char hi = 0xBF;
+		if (lead >= 0xC2 && lead <= 0xDF)		{ extra = 1; }
+		else if (lead == 0xE0)					{ extra = 2; lo = 0xA0; }
+		else if (lead >= 0xE1 && lead <= 0xEC)	{ extra = 2; }
+		else if (lead == 0xED)					{ extra = 2; hi = 0x9F; }
+		else if (lead >= 0xEE && lead <= 0xEF)	{ extra = 2; }
+		else if (lead == 0xF0)					{ extra = 3; lo = 0x90; }
+		else if (lead >= 0xF1 && lead <= 0xF3)	{ extra = 3; }
+		else if (lead == 0xF4)					{ extra = 3; hi = 0x8F; }
+		else
+			return i;
+
+		if (i + extra >= s.size())
+			return i;						// cut short by the end of the file
+		for (size_t k = 1; k <= extra; ++k)
+		{
+			const unsigned char cont = static_cast<unsigned char>(s[i + k]);
+			if (cont < ((k == 1) ? lo : 0x80) || cont > ((k == 1) ? hi : 0xBF))
+				return i;
+		}
+		i += extra + 1;
+	}
+	return std::string::npos;
+}
+
+/*	FindRawControl
+	The byte of the first control character standing in the file AS ITSELF, or npos.
+
+	★**THE WRITER NEVER PUTS ONE THERE**: every invisible character goes out as its name,
+	  <span class="uXXXX"></span> (WriteText), so a raw U+0000-U+001F or U+007F in a file is damage or a
+	  paste, not the format. Tab, CR and LF are the three a text editor types, and they are layout or
+	  text exactly as the reader has always taken them.
+	⚠**ONLY THE CONTROL CHARACTERS.** A raw zero width joiner, zero width space or private use character
+	  is still read - an emoji sequence carries a ZWJ inside it (the matrix's M28), and a character pasted
+	  from another application arrives raw without anything being wrong.
+	⚠Asked of the bytes, which is safe only because FindBrokenUtf8 has run first: in valid UTF-8 a byte
+	  below 0x80 is always a character of its own. */
+size_t FindRawControl(const std::string& s)
+{
+	for (size_t i = 0; i < s.size(); ++i)
+	{
+		const unsigned char c = static_cast<unsigned char>(s[i]);
+		if ((c < 0x20 && c != '\t' && c != '\r' && c != '\n') || c == 0x7F)
+			return i;
+	}
+	return std::string::npos;
+}
+
+/** The line `at` stands on, counted from 1 - what a text editor shows beside it. */
+size_t LineOfByte(const std::string& s, size_t at)
+{
+	size_t line = 1;
+	for (size_t k = 0; k < at && k < s.size(); ++k)
+	{
+		if (s[k] == '\n')
+			++line;
+	}
+	return line;
+}
+
+/*	IsSkeletonInParagraph
+	Whether this tag is part of a table's or the notes' skeleton, which never stands inside a paragraph.
+
+	★★**INSIDE A PARAGRAPH EACH OF THESE MOVED WORDS SOMEWHERE ELSE WITHOUT A SOUND** (2026-09-17 evening):
+	  a <tr> started a row under the open paragraph, so its words fell out of the table into the body
+	  (the matrix's T13); a <td> emptied the paragraph so far and carried on in the next cell; an </li>
+	  ended the note, so the paragraph became the body's.
+	⚠<table>, </table>, </td> and <li> are NOT here - each already refuses inside a paragraph with words
+	  of its own, and those are kept. */
+bool16 IsSkeletonInParagraph(const std::string& name, bool16 closing)
+{
+	if (name == "tr" || name == "thead" || name == "tbody" || name == "tfoot" || name == "colgroup"
+		|| name == "col" || name == "ol")
+		return kTrue;
+	if (name == "td" && !closing)
+		return kTrue;
+	if (name == "li" && closing)
+		return kTrue;
+	return kFalse;
 }
 
 /** kTrue when one of THIS FORMAT's tags begins at `at`. */
@@ -418,18 +531,27 @@ bool16 InsideCell(const std::vector<TableFrame>& tables)
 	return (!tables.empty() && tables.back().fInCell) ? kTrue : kFalse;
 }
 
+/** Whether the innermost table has a cell open that paragraphs can go into - the cell AND the row
+	it stands in exist, not only the flag. */
+bool16 CellIsOpen(const std::vector<TableFrame>& tables)
+{
+	return (InsideCell(tables)
+			&& !tables.back().fTable.fRows.empty()
+			&& !tables.back().fTable.fRows.back().fCells.empty()) ? kTrue : kFalse;
+}
+
 /** The list of paragraphs being filled right now: a cell's, a note's, or the body's.
 
 	★**THREE PLACES, ONE QUESTION.** A paragraph, a table and a continuation all have to know which
 	  list they belong to, and asking it in one place is what keeps their answers the same. */
 std::vector<Para>* CurrentParas(Story& out, std::vector<TableFrame>& tables, bool16 inNote)
 {
-	if (InsideCell(tables)
-		&& !tables.back().fTable.fRows.empty()
-		&& !tables.back().fTable.fRows.back().fCells.empty())
-	{
+	// ⚠**WITH A TABLE OPEN AND NO CELL, THE ANSWER BELOW WOULD BE THE BODY** - which is how a <p> standing
+	//   between <tr> and <td> became a body paragraph (the matrix's T05, 2026-09-17). Read refuses that
+	//   shape before it asks here, with the same question (CellIsOpen), so the fall-through only ever
+	//   serves text that really is outside every table.
+	if (CellIsOpen(tables))
 		return &tables.back().fTable.fRows.back().fCells.back().fParas;
-	}
 	if (inNote && !out.fNotes.empty())
 		return &out.fNotes.back();
 	return &out.fBody;
@@ -1785,6 +1907,26 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 		raw.erase(0, 3);
 	}
 
+	// ★★THE BYTES FIRST, BEFORE ANYTHING IS READ AS TEXT (2026-09-17 evening). Both answers name the line,
+	//   because the file is fixed in a text editor and that is the number it shows.
+	const size_t broken = FindBrokenUtf8(raw);
+	if (broken != std::string::npos)
+	{
+		whyNot = "the file is not UTF-8 on line " + Num(LineOfByte(raw, broken))
+				 + ": save it as UTF-8 again";
+		return kFalse;
+	}
+	const size_t control = FindRawControl(raw);
+	if (control != std::string::npos)
+	{
+		char hex[8];
+		std::snprintf(hex, sizeof(hex), "%04x", static_cast<unsigned int>(static_cast<unsigned char>(raw[control])));
+		whyNot = std::string("a control character (U+") + hex + ") stands in the file as itself on line "
+				 + Num(LineOfByte(raw, control)) + ": an invisible character is written <span class=\"u"
+				 + hex + "\"></span>";
+		return kFalse;
+	}
+
 	// ★The line breaks a text editor put inside a paragraph, and their indents, are not text.
 	const std::string s = DropLineBreaksInParagraphs(raw);
 
@@ -1804,7 +1946,9 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 	// ★**A NOTE IS AN <li>, AND ITS PARAGRAPHS ARE WHATEVER STANDS INSIDE IT** (2026-09-16), so
 	//   nothing has to be paired up at the end and the paragraphs carry nothing of their own.
 	bool16 inNote = kFalse;
-
+	// ★**AND A NOTE IS AN <li> OF THE <ol> ONLY** (2026-09-17 evening). An <li> used to make a note wherever
+	//   it stood, so one typed in the body took that body paragraph away into the notes (the matrix's N30).
+	bool16 inList = kFalse;
 
 	std::vector<TableFrame> tables;	// the tables open right now; more than one means nesting
 
@@ -1869,6 +2013,13 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 
 		if (isTag && IsInList(name, kOurTags, kOurTagCount))
 		{
+			if (inPara && IsSkeletonInParagraph(name, closing))
+			{
+				whyNot = std::string("the <") + (closing ? "/" : "") + name
+						 + "> element cannot stand inside a paragraph";
+				return kFalse;
+			}
+
 			if (name == "p")
 			{
 				if (!inBody)
@@ -1885,6 +2036,23 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					}
 					else
 					{
+						// ★★**A PARAGRAPH HAS TO HAVE SOMEWHERE TO GO** (2026-09-17 evening). In a table it is
+						//   a cell's, and in the notes' list it is an <li>'s; anywhere else between those
+						//   tags it used to fall through to the body - as a NEW body paragraph, which the
+						//   import now takes in (the matrix's T05).
+						if (!tables.empty() && !CellIsOpen(tables))
+						{
+							whyNot = "a paragraph stands in a table but outside any <td>: a table's words "
+									 "are the paragraphs of its cells";
+							return kFalse;
+						}
+						if (tables.empty() && inList && !inNote)
+						{
+							whyNot = "a paragraph stands in the <ol> but outside any <li>: a note's words "
+									 "are the paragraphs of its <li>";
+							return kFalse;
+						}
+
 						inPara = kTrue;
 						para.clear();
 						paraRuby.clear();
@@ -2017,6 +2185,28 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 						return kFalse;
 					}
 
+					// ★The same question a paragraph asks (above), for the same reason: a table needs a
+					//   paragraph of a cell or of the body to belong to. And a NOTE cannot hold one -
+					//   Table::fInTable says where a table stands, and "a note" is not among its answers,
+					//   so one read there came out standing in the body.
+					if (!tables.empty() && !CellIsOpen(tables))
+					{
+						whyNot = "a <table> stands in a table but outside any <td>: a nested table stands "
+								 "in a cell";
+						return kFalse;
+					}
+					if (tables.empty() && inNote)
+					{
+						whyNot = "a <table> stands inside a note: a note's <li> holds paragraphs only";
+						return kFalse;
+					}
+					if (tables.empty() && inList)
+					{
+						whyNot = "a <table> stands in the <ol> but outside any <li>: the tables belong to "
+								 "the body, before the <ol>";
+						return kFalse;
+					}
+
 					std::vector<Para>* const holder = CurrentParas(out, tables, inNote);
 					if (holder == nil || holder->empty())
 					{
@@ -2066,6 +2256,24 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 						return kFalse;
 					}
 
+					// ★A CELL LEFT OPEN ends with no paragraph at all - its </td> is what puts the one
+					//   paragraph every cell has into an empty one - so the file has a cell InDesign
+					//   cannot (2026-09-17 evening, the fuzzer: <td colspan="9999999"></tr></table>).
+					if (tables.back().fInCell)
+					{
+						whyNot = "a </table> closes a table with a cell still open: a cell ends with </td>";
+						return kFalse;
+					}
+
+					// ★A TABLE HAS A ROW - InDesign has no other kind, and the writer never writes one
+					//   without. An empty one could only be words lost to a broken edit (2026-09-17
+					//   evening: the fuzzer's last six, a comment left open having swallowed the rows).
+					if (tables.back().fTable.fRows.empty())
+					{
+						whyNot = "a table has no rows: every table is written with its <tr>s";
+						return kFalse;
+					}
+
 					out.fTables[tables.back().fSlot] = tables.back().fTable;
 					tables.pop_back();
 
@@ -2101,6 +2309,14 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 						whyNot = "a <tr> stands outside a table";
 						return kFalse;
 					}
+					// ★A ROW BEGUN WITH A CELL STILL OPEN takes that cell's next paragraph away: it has no
+					//   cell of its own yet, so it used to go to the body (2026-09-17 evening).
+					if (InsideCell(tables))
+					{
+						whyNot = "a <tr> begins inside a cell: a cell ends with </td> before the next row "
+								 "begins";
+						return kFalse;
+					}
 					Row row;
 					row.fHeader = tables.back().fInHead;
 					tables.back().fTable.fRows.push_back(row);
@@ -2119,6 +2335,17 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 
 				if (!closing)
 				{
+					// ★A CELL BEGUN INSIDE A CELL leaves the first with no paragraph at all, and a cell has
+					//   at least one - the count of cells and of paragraphs both come out wrong
+					//   (2026-09-17 evening, the matrix's T05). A nested table is not this: its <td>
+					//   belongs to the inner table, whose own cell is not open yet.
+					if (tables.back().fInCell)
+					{
+						whyNot = "a <td> begins inside another cell: a cell ends with </td> before the next "
+								 "one begins";
+						return kFalse;
+					}
+
 					if (tables.back().fTable.fRows.empty())
 						tables.back().fTable.fRows.push_back(Row());
 
@@ -2180,7 +2407,35 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 
 			if (name == "ol")
 			{
-				i = after;			// the list carries nothing of its own; its items do
+				// The list carries nothing of its own; its items do - but where it stands and whether it
+				// is still open decide whether an <li> is a note at all (2026-09-17 evening).
+				if (!closing)
+				{
+					if (!tables.empty())
+					{
+						whyNot = "an <ol> stands inside a table: the notes are one <ol> after the body";
+						return kFalse;
+					}
+					if (inList)
+					{
+						whyNot = "an <ol> begins inside another one";
+						return kFalse;
+					}
+					inList = kTrue;
+				}
+				else
+				{
+					// ★A NOTE LEFT OPEN is refused here rather than at the end of the file: an </li>
+					//   further on would otherwise close it, and every paragraph in between would be
+					//   the note's, body paragraphs included.
+					if (inNote)
+					{
+						whyNot = "an </ol> closes the notes with a note still open: a note ends with </li>";
+						return kFalse;
+					}
+					inList = kFalse;	// a stray </ol> carries nothing, like a stray </td>
+				}
+				i = after;
 				continue;
 			}
 
@@ -2196,6 +2451,12 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 					if (inPara)
 					{
 						whyNot = "an <li> begins inside a paragraph";
+						return kFalse;
+					}
+					if (!inList)
+					{
+						whyNot = "an <li> stands outside an <ol>: a note is an <li> of the <ol> after the "
+								 "body";
 						return kFalse;
 					}
 
@@ -2492,6 +2753,13 @@ bool16 Read(const char* html, size_t size, Story& out, std::string& whyNot)
 	if (inNote)
 	{
 		whyNot = "the last note was never closed";
+		return kFalse;
+	}
+	// ⚠**A TABLE NEVER CLOSED LEFT ITS SLOT BEHIND** - reserved at the opening tag, filled only at the
+	//   closing one, so it stood in the story as an empty table at paragraph 0 (2026-09-17 evening).
+	if (!tables.empty())
+	{
+		whyNot = "a <table> was never closed";
 		return kFalse;
 	}
 	return kTrue;
