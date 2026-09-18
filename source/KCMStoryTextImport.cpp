@@ -40,6 +40,9 @@
 #include "KCMTextDiff.h"			// ToCodePoints / Diff
 #include "KCMTextRead.h"			// ReadStory - the document, read the way the export read it
 #include "KCMProgressBar.h"			// the import's one bar, and the slot its inner loops step (2026-09-17)
+#include "KCMDocxPackage.h"			// KCMReadDocxParts - a .docx on disk as its parts (2026-09-19)
+#include "KCMStoryDocx.h"			// Read / OriginMatchesTag - the parts as two stories, and whether the marks are whole
+#include "KCMZipStore.h"			// Entry - a part, named
 #include "KCMModelNotify.h"			// KCMNotify - a cancelled import tells the panel the mode came back
 
 namespace
@@ -207,6 +210,55 @@ bool16 UidOfLeaf(const std::wstring& leaf, uint32& outUid)
 
 	outUid = value;
 	return kTrue;
+}
+
+/** ".docx"? and, when the name begins with a decimal number the way the exporter writes it
+	("269.docx", "269 - chapter one.docx"), that number - for the check against the tag (the design,
+	section 4-3: a file copied to another story's name and its inside replaced). 0 when the name
+	carries none ("chapter one.docx", "2026年度原稿.docx"): then the tag alone says which story.
+
+	★THE TAG IS THE PAIRING FOR A .docx, NOT THE NAME - the name is a cross-check and a courtesy. */
+bool16 IsDocxLeaf(const std::wstring& leaf, uint32& outLeadingNumber)
+{
+	outLeadingNumber = 0;
+
+	const size_t dot = leaf.find_last_of(L'.');
+	if (dot == std::wstring::npos || dot == 0)
+		return kFalse;
+	std::wstring ext = leaf.substr(dot + 1);
+	for (size_t i = 0; i < ext.size(); ++i)
+	{
+		if (ext[i] >= L'A' && ext[i] <= L'Z')
+			ext[i] = static_cast<wchar_t>(ext[i] - L'A' + L'a');
+	}
+	if (ext != L"docx")
+		return kFalse;
+
+	// A leading number counts only when it is the exporter's spelling: no padding, and either the
+	// extension's dot or a space right after it.
+	if (leaf[0] < L'1' || leaf[0] > L'9')
+		return kTrue;
+	uint32 value = 0;
+	size_t i = 0;
+	for (; i < dot && leaf[i] >= L'0' && leaf[i] <= L'9'; ++i)
+	{
+		if (i >= 10)
+			return kTrue;
+		value = value * 10 + static_cast<uint32>(leaf[i] - L'0');
+	}
+	if (i == dot || leaf[i] == L' ')
+		outLeadingNumber = value;
+	return kTrue;
+}
+
+/** "<leaf>: <why>" into `firstReason` when it is still empty. */
+void NoteFirstReason(PMString& firstReason, const std::wstring& leaf, const std::string& why)
+{
+	if (!firstReason.IsEmpty())
+		return;
+	firstReason.AppendW(reinterpret_cast<const UTF16TextChar*>(leaf.c_str()));
+	firstReason.Append(": ");
+	firstReason.Append(why.c_str());
 }
 
 void AppendCount(PMString& out, const char* before, int32 n, const char* after)
@@ -1062,10 +1114,14 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 		return kFalse;
 	}
 
-	int32 skippedName = 0;		// not one of ours: a name that is not a plain decimal number
+	int32 skippedName = 0;		// not one of ours: neither "<decimal>.html" nor a .docx
 	int32 refused = 0;			// ours, but the markup could not be read
+	int32 fromWord = 0;			// .docx files read
+	int32 trackedCount = 0;		// of those, the ones whose revision marks account for everything
 	PMString firstReason;
 	firstReason.SetTranslatable(kFalse);
+	PMString firstUntracked;	// the first .docx whose marks do not - named, not refused
+	firstUntracked.SetTranslatable(kFalse);
 
 	// ★The import's bar when there is one (a slice of it), a bar of its own otherwise.
 	PMString barTitle("Reading story files...");
@@ -1102,7 +1158,35 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 
 		const std::wstring leaf = LeafOf(*file);
 		uint32 uid = 0;
-		if (!UidOfLeaf(leaf, uid))
+		uint32 leading = 0;
+		if (UidOfLeaf(leaf, uid))
+		{
+			// ---- an .html: the name is the pairing -------------------------------------------------
+			std::string bytes;
+			if (!ReadWholeFile(*file, bytes))
+			{
+				++refused;
+				continue;
+			}
+
+			KCMStoryHtml::Story story;
+			std::string why;
+			if (!KCMStoryHtml::Read(bytes.c_str(), bytes.size(), story, why))
+			{
+				// ⚠ONE BAD FILE MUST NOT COST THE OTHERS. It is counted and the first reason is kept,
+				//   so the reader is told what to fix rather than left with nothing.
+				++refused;
+				NoteFirstReason(firstReason, leaf, why);
+				continue;
+			}
+
+			out.fUids.push_back(UID(uid));
+			out.fStories.push_back(story);
+			out.fOrigins.push_back(KCMStoryHtml::Story());
+			out.fOriginKnown.push_back(kFalse);
+			continue;
+		}
+		if (!IsDocxLeaf(leaf, leading))
 		{
 			// ⚠**CHOSEN AND THEN PASSED OVER HAS TO BE SAID OUT LOUD.** Walking a folder could
 			//  pass over a file in silence - nobody had asked for that one. A file the reader
@@ -1112,35 +1196,90 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 			continue;
 		}
 
-		std::string bytes;
-		if (!ReadWholeFile(*file, bytes))
+		// ---- a .docx (2026-09-19, stage 2 of the docx plan): the tag is the pairing ----------------
+		//
+		// ★What goes into fStories is the story AS WORD SHOWS IT - the after side - so the pour and
+		//   the Import mode treat it exactly as an .html: the whole text against the document. What
+		//   is new is beside it: when the file's revision marks account for every change since it
+		//   was written (OriginMatchesTag), the story AS WRITTEN is kept too, for stage 3 to show
+		//   only Word's changes. Nothing is refused on that account (the user's rule, 2026-09-19).
+		std::vector<KCMZipStore::Entry> parts;
+		PMString packageWhy;
+		if (!KCMReadDocxParts(*file, parts, packageWhy))
 		{
-			++refused;
-			continue;
-		}
-
-		KCMStoryHtml::Story story;
-		std::string why;
-		if (!KCMStoryHtml::Read(bytes.c_str(), bytes.size(), story, why))
-		{
-			// ⚠ONE BAD FILE MUST NOT COST THE OTHERS. It is counted and the first reason is kept,
-			//   so the reader is told what to fix rather than left with nothing.
 			++refused;
 			if (firstReason.IsEmpty())
 			{
 				firstReason.AppendW(reinterpret_cast<const UTF16TextChar*>(leaf.c_str()));
 				firstReason.Append(": ");
-				firstReason.Append(why.c_str());
+				firstReason.Append(packageWhy);
 			}
 			continue;
 		}
+		KCMStoryDocx::ReadResult result;
+		std::string why;
+		if (!KCMStoryDocx::Read(parts, result, why))
+		{
+			++refused;
+			NoteFirstReason(firstReason, leaf, why);
+			continue;
+		}
+		if (!result.fTag.fPresent)
+		{
+			// A .docx nobody exported (written from scratch in Word) is the design's section 7 and a
+			// later stage; until then it is named, not guessed at.
+			++refused;
+			NoteFirstReason(firstReason, leaf,
+							"the file carries no story tag (a Word document not written by Kohaku Change Marker is not imported yet)");
+			continue;
+		}
+		if (leading != 0 && leading != static_cast<uint32>(result.fTag.fUid))
+		{
+			// ★THE FILE COPIED TO ANOTHER STORY'S NAME (the design, 4-3): which of the two is meant is
+			//   not this plug-in's to decide.
+			++refused;
+			std::string mismatch = "the name says story ";
+			{
+				char buf[32];
+				std::snprintf(buf, sizeof(buf), "%u but the file says %d", static_cast<unsigned int>(leading), static_cast<int>(result.fTag.fUid));
+				mismatch += buf;
+			}
+			NoteFirstReason(firstReason, leaf, mismatch);
+			continue;
+		}
 
-		out.fUids.push_back(UID(uid));
-		out.fStories.push_back(story);
+		++fromWord;
+		out.fUids.push_back(UID(static_cast<uint32>(result.fTag.fUid)));
+		out.fStories.push_back(result.fAfter);
+		std::string whole;
+		const bool16 tracked = KCMStoryDocx::OriginMatchesTag(result, whole);
+		out.fOrigins.push_back(tracked ? result.fOrigin : KCMStoryHtml::Story());
+		out.fOriginKnown.push_back(tracked);
+		if (tracked)
+		{
+			++trackedCount;
+		}
+		else if (firstUntracked.IsEmpty())
+		{
+			firstUntracked.AppendNumber(result.fTag.fUid);
+			firstUntracked.Append(": ");
+			firstUntracked.Append(whole.c_str());
+		}
 	}
 
 	const int32 read = static_cast<int32>(out.fUids.size());
 	AppendCount(whyNot, "", read, " story file(s) read");
+	if (fromWord > 0)
+	{
+		AppendCount(whyNot, ", ", fromWord, " from Word");
+		AppendCount(whyNot, ", ", trackedCount, " with complete revision marks");
+		if (!firstUntracked.IsEmpty())
+		{
+			whyNot.Append(" (");
+			whyNot.Append(firstUntracked);
+			whyNot.Append(")");
+		}
+	}
 	if (refused > 0)
 	{
 		AppendCount(whyNot, ", ", refused, " refused");

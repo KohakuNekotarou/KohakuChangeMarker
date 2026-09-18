@@ -46,7 +46,15 @@ class SysFileList;			// what the open dialog hands back - the reader picks sever
 struct KCMStoryTextSet
 {
 	std::vector<UID>					fUids;
-	std::vector<KCMStoryHtml::Story>	fStories;
+	std::vector<KCMStoryHtml::Story>	fStories;		// what the file says NOW (a .docx: the after-Word side)
+
+	// ★★A .docx WHOSE REVISION MARKS ACCOUNT FOR EVERYTHING ALSO SAYS WHAT THE STORY WAS WHEN IT WAS
+	//   WRITTEN (2026-09-19, stage 2 of the docx plan: KCMStoryDocx::Read rebuilds it from the marks,
+	//   and OriginMatchesTag says whether they are the whole truth). Held here for stage 3, which
+	//   will show ONLY Word's changes by merging origin, after and the document; the pour reads
+	//   fStories alone until then. ⚠ALWAYS kFalse and empty for an .html - that format has no origin.
+	std::vector<KCMStoryHtml::Story>	fOrigins;		// parallel; empty unless fOriginKnown
+	std::vector<bool16>					fOriginKnown;
 };
 
 /** Read each chosen file. A name has to be "<decimal uid>.html" to be one of ours.
