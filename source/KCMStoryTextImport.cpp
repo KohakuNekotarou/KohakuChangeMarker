@@ -39,6 +39,8 @@
 #include "KCMParagraphStyle.h"		// the next style for a paragraph put in after another
 #include "KCMTextDiff.h"			// ToCodePoints / Diff
 #include "KCMTextRead.h"			// ReadStory - the document, read the way the export read it
+#include "KCMProgressBar.h"			// the import's one bar, and the slot its inner loops step (2026-09-17)
+#include "KCMModelNotify.h"			// KCMNotify - a cancelled import tells the panel the mode came back
 
 namespace
 {
@@ -87,6 +89,18 @@ void FileTablesByParagraph(const KCMStoryHtml::Story& story,
 		std::sort(it->second.begin(), it->second.end());
 }
 
+/** The import's one progress bar, in thousandths of the whole job (2026-09-17). Each constant is where
+	a stage STARTS: reading the files runs up to the state, taking the state up to the copy, building
+	the copy up to the comparison, and the comparison to the end. ⚠A guess at where the time goes, not a
+	measurement - see KCMImportStoryText. */
+const int32		kImportUnitsState	= 100;
+const int32		kImportUnitsCopy	= 350;
+const int32		kImportUnitsCompare	= 650;
+const int32		kImportUnitsAll		= 1000;
+
+/** What the status line says whenever the reader pressed Cancel, wherever in the import it landed. */
+const char* const	kImportCancelledMessage = "import: cancelled - your document is unchanged";
+
 /** Which mode was showing before the import took over.
 
 	⚠A file-static, so the model's shutdown empties nothing here on purpose: it is a plain value.
@@ -100,7 +114,8 @@ KCMCompareMode	sModeBeforeImport = kKCMModePixel;
 	stood here, and the two parted company the first time a document was CLOSED with an import
 	showing: the words went - KCMReleaseOrigin drops them - and the flag stayed. The UI greys
 	Pixel, Story, Resources and Task Start whenever that flag is set (KCMActionComponent.cpp), and
-	Stop Comparison - the only caller of KCMEndImportMode - is itself greyed once nothing is armed,
+	Stop Comparison (named Finish Import while importing, 2026-09-17) - the only caller of
+	KCMEndImportMode - is itself greyed once nothing is armed,
 	so there was no way out but restarting InDesign. Measured, then predicted by the user in the
 	same minute ("Import モードが解除されない気がしました").
 	⇒ **the mode IS the words being held**, asked in one place ([[one-question-one-place]]). */
@@ -1030,11 +1045,14 @@ int32 DeleteParagraphs(ITextModel* model, TextIndex from, TextIndex to, PMString
 
 }	// anonymous namespace
 
-bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMString& whyNot)
+bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMString& whyNot,
+							 bool16* outCancelled)
 {
 	out = KCMStoryTextSet();
 	whyNot.Clear();
 	whyNot.SetTranslatable(kFalse);
+	if (outCancelled != nil)
+		*outCancelled = kFalse;
 
 	const int32 fileCount = files.GetFileCount();
 	if (fileCount <= 0)
@@ -1049,8 +1067,32 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 	PMString firstReason;
 	firstReason.SetTranslatable(kFalse);
 
+	// ★The import's bar when there is one (a slice of it), a bar of its own otherwise.
+	PMString barTitle("Reading story files...");
+	barTitle.SetTranslatable(kFalse);
+	KCMProgressStepper progress(barTitle, fileCount);
+
 	for (int32 i = 0; i < fileCount; ++i)
 	{
+		// ★A CANCEL IS ASKED BETWEEN TWO FILES - a safe point, since WasCancelled pumps events - and never
+		//   after the last one, for the rule the comparison loops keep: nothing is left to interrupt.
+		if (i > 0 && progress.WasCancelled())
+		{
+			out = KCMStoryTextSet();
+			whyNot = "cancelled";
+			whyNot.SetTranslatable(kFalse);
+			if (outCancelled != nil)
+				*outCancelled = kTrue;
+			return kFalse;
+		}
+		PMString step("Reading story files (");
+		step.AppendNumber(i + 1);
+		step.Append(" / ");
+		step.AppendNumber(fileCount);
+		step.Append(")");
+		step.SetTranslatable(kFalse);
+		progress.Step(i, step);
+
 		const IDFile* const file = files.GetNthFile(i);
 		if (file == nil)
 		{
@@ -1120,14 +1162,28 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
 
+	// ★★ONE BAR FOR ALL OF IT (2026-09-17, the user's choice). The reading, the comparison's raster
+	//   loop and its story loop each step a slice of this one instead of raising their own - two bars
+	//   alive at once is what KCMProgressBar.h forbids. The units are thousandths of the whole job.
+	//   ⚠The slices are a guess at where the time goes, not a measurement: the state and the copy are
+	//    single calls into InDesign and are given the middle, because on a large document they are
+	//    the heavy part and the bar can only stand still through them.
+	PMString barTitle("Importing story text...");
+	barTitle.SetTranslatable(kFalse);
+	KCMDeferredProgressBar progress(barTitle, kImportUnitsAll);
+	KCMOuterProgressScope outer(progress);
+
 	// 1. THE FILES FIRST. Nothing is touched if they cannot be read.
 	KCMStoryTextSet set;
 	PMString readMessage;
-	if (!KCMReadStoryTextFiles(files, set, readMessage))
+	bool16 cancelledReading = kFalse;
+	outer.Slice(0, kImportUnitsState);
+	if (!KCMReadStoryTextFiles(files, set, readMessage, &cancelledReading))
 	{
-		outMessage = "import: ";
+		outMessage = cancelledReading ? PMString(kImportCancelledMessage) : PMString("import: ");
 		outMessage.SetTranslatable(kFalse);
-		outMessage.Append(readMessage);
+		if (!cancelledReading)
+			outMessage.Append(readMessage);
 		return kFalse;
 	}
 
@@ -1146,6 +1202,9 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 
 	// 3. The import's own origin: the document as it is NOW, before a single character is written.
 	//    That is what makes the mode show exactly what the import did and nothing else.
+	PMString stateStep("Taking the document's state");
+	stateStep.SetTranslatable(kFalse);
+	progress.Step(kImportUnitsState, stateStep);	// ★before the call: the bar can only appear at a Step
 	PMString whyNot;
 	if (!KCMTakeTaskStart(whyNot))
 	{
@@ -1157,6 +1216,19 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 		outMessage.Append(")");
 		return kFalse;
 	}
+	// ★A CANCEL PRESSED WHILE THE STATE WAS TAKEN is answered here, the first safe point after it: the
+	//   import's own origin goes, and the reader's comes back - the two halves KCMEndImportMode does,
+	//   which cannot be called yet because no words are held.
+	if (progress.WasCancelled())
+	{
+		if (parked)
+			KCMUnparkOrigin();
+		else
+			KCMReleaseOrigin();
+		outMessage = kImportCancelledMessage;
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
 	// 4. ★★★THE WORDS ARE HELD, NOT WRITTEN. They go into the COPY when the comparison makes one
 	//    (KCMRehydrate, the one place), and into the reader's document only through "Restore
 	//    Source Text", one change at a time. An import changes nothing by itself.
@@ -1166,14 +1238,41 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 	KCMHoldStoryText(set);
 
 	// 5. The fourth mode, and the comparison that shows the edited words against the document.
+	//    ★The copy is built first inside the start (KCMRehydrate, where the words are poured), then the
+	//     stories are compared - which is the loop that steps the last slice.
+	PMString copyStep("Building the copy with the edited text");
+	copyStep.SetTranslatable(kFalse);
+	progress.Step(kImportUnitsCopy, copyStep);
+	outer.Slice(kImportUnitsCompare, kImportUnitsAll);
 	KCMSetCompareMode(kKCMModeImport);
 	KCMToggleStartStop();
+
+	// ★★★A START THAT DID NOT ARM LEAVES THE MODE UP WITH NOTHING UNDER IT (found while adding the bar,
+	//   2026-09-17). A cancelled comparison does not start (KCMStartComparisonOn: "do not arm on
+	//   cancel"), and it does not go through Stop either - so the words stayed held, the mode stayed
+	//   Import and every mode and Task Start stayed greyed. The import is ended here instead, the way
+	//   Finish Import ends it, and the panel is told the mode came back.
+	if (!(KCMIsArmed() && KCMArmedTargetDB() != nil))
+	{
+		const bool16 cancelled = progress.WasCancelled();
+		KCMEndImportMode();
+		KCMNotify(kKCMMarksClearedMessage);
+		if (cancelled)
+			outMessage = kImportCancelledMessage;
+		else
+			outMessage = "import: the comparison did not start - your document is unchanged";
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
 
 	outMessage = "import: ";
 	outMessage.SetTranslatable(kFalse);
 	outMessage.Append(readMessage);
-	outMessage.Append(" - your document is unchanged; Restore Source Text puts a change in, "
-					  "Stop Comparison ends the import");
+	// ★The two menu names as the Import mode spells them (2026-09-17): the row item is "Change to Imported
+	//   Text" in this mode (it read "Restore Source Text", the Task Start mode's name), and the way out is
+	//   "Finish Import" (the Start/Stop item, renamed while importing).
+	outMessage.Append(" - your document is unchanged; Change to Imported Text puts a change in, "
+					  "Finish Import ends the import");
 	return kTrue;
 }
 
@@ -1492,7 +1591,8 @@ void KCMReleaseStoryText()
 
 	// ★★★**THE MODE COMES DOWN WITH THE WORDS, AND THIS IS THE ONLY PLACE THAT CAN DO IT.** A
 	//   document closed while an import was showing arrives here through KCMReleaseOrigin and
-	//   through nothing else: Stop Comparison, which is the one caller of KCMEndImportMode, is
+	//   through nothing else: Stop Comparison (Finish Import while importing), which is the one
+	//   caller of KCMEndImportMode, is
 	//   greyed by then. Leaving kKCMModeImport set stranded the reader with every mode and Task
 	//   Start greyed (measured 2026-09-15).
 	// ⚠Guarded on BOTH counts on purpose: a release that was not an import must not move the

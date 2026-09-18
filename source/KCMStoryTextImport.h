@@ -61,8 +61,12 @@ struct KCMStoryTextSet
 
     @param files the files the reader chose, in the dialog's own order.
     @param out cleared first, then filled.
-    @param whyNot what went wrong - filled even when this answers kTrue, when some file was skipped. */
-bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMString& whyNot);
+    @param whyNot what went wrong - filled even when this answers kTrue, when some file was skipped.
+    @param outCancelled set kTrue when the reader pressed Cancel on the progress bar between two files
+           (2026-09-17: the import's one bar covers the reading too - KCMProgressBar.h). Nothing is
+           read then, and this answers kFalse. */
+bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMString& whyNot,
+							 bool16* outCancelled = nil);
 
 /** The set held for the import mode, or nil when none is held. */
 const KCMStoryTextSet* KCMHeldStoryText();
@@ -103,21 +107,29 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage);
       page number, an index marker: these can be moved or deleted from outside only by accident,
       and the file format carries them precisely so that this check can be made.
 
+    ★★**ONE PROGRESS BAR FROM THE FIRST FILE TO THE LAST STORY** (2026-09-17, the user's choice): it
+      appears after the same three seconds as every other bar and carries Cancel. Taking the
+      document's state and building the copy are single calls into InDesign, so the bar stands still
+      through them and a Cancel pressed there is answered at the next safe point. A cancel anywhere
+      leaves the document unchanged and gives the reader's own Task Start back.
+
     @param files the files the reader chose.
     @param outMessage what happened, for the panel's status line.
-    @return kFalse when nothing could be read or nothing could be applied. */
+    @return kFalse when nothing could be read or nothing could be applied, or the reader cancelled. */
 bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage);
 
 /** Whether the fourth mode is up.
 
     ★★★**IT IS MODAL, AND THAT IS THE POINT** (the user's rule): while an import is showing, the
-      other three modes and Task Start are greyed, and Stop Comparison is the way out. Because no
+      other three modes and Task Start are greyed, and Finish Import (the Start/Stop item, renamed
+      while importing - 2026-09-17) is the way out. Because no
       other comparison can run inside it, the reader's own Task Start can simply be parked for its
       duration - which is what lets one origin slot serve both. */
 bool16 KCMInImportMode();
 
 /** Leave it: the import's own origin goes, the reader's parked Task Start comes back, and the mode
-    that was showing before returns. Called by Stop Comparison; doing nothing when no import is up. */
+    that was showing before returns. Called by Stop Comparison (Finish Import while importing); doing
+    nothing when no import is up. */
 void KCMEndImportMode();
 
 #endif // __KCMStoryTextImport_h__

@@ -864,7 +864,7 @@ resource VersionedScriptElementInfo(10)
 			kKCMStopComparisonMethodScriptElement,
 			e_KCMStopComparison,
 			"kcm stop comparison",				// name -> app.kcmStopComparison()
-			"Stop the comparison - which ends an import - as Stop Comparison does.",
+			"Stop the comparison - which ends an import - as Stop Comparison (Finish Import while importing) does.",
 			StringType,
 			"The status line afterwards"
 			{ /* void */ }

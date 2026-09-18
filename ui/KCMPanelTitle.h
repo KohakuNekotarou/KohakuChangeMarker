@@ -3,7 +3,7 @@
 //  KCMPanelTitle.h
 //
 //  Shows **which mode the comparison is in** on the panel's tab (user's instruction):
-//    "Kohaku Change Marker - Pixel" / "Kohaku Change Marker - Story"
+//    "Kohaku Change Marker - Pixel" / "- Story" / "- Resources" / "- Import"
 //
 //  ★★Modelled on the file of the same name in KBS (`KBS/source/KBSPanelTitle.cpp`), which shows
 //    its search scope as "- Document" / "- Book" -- the user asked for it "like the document and
@@ -23,6 +23,9 @@
 //  ★**Callers** -- each of them only "writes the current state", so any of them may run at any
 //    time and as often as it likes:
 //     - the mode was switched (KCMApplyCompareMode in KCMActionComponent)
+//     - the panel was refreshed after a model notification (KCMRefreshPanel in KCMPanelObserver) ----
+//       ★the Import mode starts and ends on the MODEL side, from the menu or a script, so this is
+//       the only one of these an import passes through (2026-09-17: the tab said "Pixel" throughout)
 //     - the panel was shown (KCMPanelObserver::AutoAttach; the widgets are rebuilt every time,
 //       but **the tab label belongs to the palette and survives** ---- until the first time the
 //       panel is shown there is nowhere to write, and the function below returns quietly on

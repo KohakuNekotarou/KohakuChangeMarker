@@ -742,6 +742,13 @@ void KCMPanelObserver::UpdateInfoDisplay()
 //========================================================================================
 void KCMRefreshPanel()
 {
+	// ★★THE TAB FIRST, AND BEFORE THE VISIBILITY TEST (2026-09-17). The mode also changes on the model
+	//   side - an import starts and ends there, from the menu or a script - and the notifications that
+	//   follow come here; the tab said "Pixel" all through an import until this line (measured). It goes
+	//   ahead of the test because the label belongs to the palette and shows on a collapsed one too
+	//   (KCMPanelTitle.cpp says why); KCMPanelTitle returns quietly when there is no panel.
+	KCMPanelTitle::Update();
+
 	// ★the nil guard for the session (teardown) is inside KCMGetVisibleOwnPanel as well
 	IControlView* panel = KCMGetVisibleOwnPanel();
 	if (panel == nil)

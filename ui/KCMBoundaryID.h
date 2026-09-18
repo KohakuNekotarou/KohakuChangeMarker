@@ -185,7 +185,8 @@ enum KCMCompareMode
 	//   the reader edited outside InDesign and imported. It is named after the action that makes
 	//   it, so the panel and the menu say the same word.
 	// ⚠**IT IS MODAL, AND THAT IS WHAT MAKES IT CHEAP.** While it is up, the other three and Task
-	//   Start are greyed, and Stop Comparison is the way out. Because no other comparison can run
+	//   Start are greyed, and Finish Import (the Start/Stop item's name while importing) is the way
+	//   out. Because no other comparison can run
 	//   inside it, the reader's own Task Start can simply be PARKED for its duration and put back
 	//   afterwards (KCMOrigin.h, KCMParkOrigin) instead of the plug-in carrying two origins.
 	kKCMModeImport = 3

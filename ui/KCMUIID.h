@@ -842,6 +842,9 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 //   Refresh Comparison / Refresh Story Comparison / Refresh Page Comparison.
 #define kKCMStartMenuText	"Start Comparison"
 #define kKCMStopMenuText	"Stop Comparison"
+// ★The same item while the Import mode is up (2026-09-17, the user: "Stop Comparison" read wrong there).
+//   It does exactly what Stop does - KCMStopComparison ends the import first - so only the name moves.
+#define kKCMFinishImportMenuText	"Finish Import"
 #define kKCMPrintCheckKey		kKCMStringPrefix "kKCMPrintCheckKey"	// the menu name of the "Print comparison marks" toggle on the flyout (inherited from the old panel checkbox caption)
 // ★The body of the alert shown **only when "Print comparison marks" is switched ON**
 //   (user's instruction).
@@ -1121,7 +1124,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 //   ⇒ **Read the values below in ascending order: that IS the flyout.**
 // ※Menu names are English in every locale. The separators are Sep1 / OversetSep / Sep3 / Sep2.
 // -- run the comparison, and choose what it runs on --
-#define kKCMStartStopMenuItemPosition		9.0	// "Start Comparison" at the head of the flyout; UpdateActionStates swaps the name to "Stop Comparison" once armed
+#define kKCMStartStopMenuItemPosition		9.0	// "Start Comparison" at the head of the flyout; UpdateActionStates swaps the name to "Stop Comparison" once armed ("Finish Import" while importing)
 #define kKCMRefreshCompareMenuItemPosition	9.01	// "Refresh Comparison", directly under it: both are VERBS that run the comparison on the pair already chosen
 #define kKCMCompareModeSubmenuMenuItemPosition	9.015	// the "Compare mode" submenu (Pixel / Story / Resources Changes). ★Under the two verbs: WHAT is compared is settled before how it is shown
 #define kKCMModePixelSubMenuItemPosition		1.0	// inside "Compare mode": Pixel Changes (checked when selected)
@@ -1130,10 +1133,10 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 // -- the pair those verbs run on (2026-09-14: the user moved Task Start to the head of this group) --
 #define kKCMTaskStartMenuItemPosition	9.02	// "Task Start": a Source that is a moment rather than a document, which is why it heads the group that chooses the pair
 #define kKCMExportStoryTextMenuItemPosition	9.021	// "Export Story Text...", directly under Task Start: the two belong together (one takes the state, the other hands the words out)
+#define kKCMExportStoryDocxMenuItemPosition	9.0215	// "Export Story Text as Word...", between the two: the other spelling of the same export, and still in front of the import that reads either
 #define kKCMImportStoryTextMenuItemPosition	9.022	// "Import Story Text...", directly under Export: the two halves of one round trip
 #define kKCMSetTargetMenuItemPosition		9.03	// "Set as Target"
 #define kKCMSetSourceMenuItemPosition		9.04	// "Set as Source", right below its Target counterpart (the pair reads new-then-old, as the two "Always Show Marks on" toggles do)
-#define kKCMExportStoryDocxMenuItemPosition	9.0215	// "Export Story Text as Word...", between the two: the other spelling of the same export, and still in front of the import that reads either
 #define kKCMClearChosenMenuItemPosition	9.05	// "Clear Target and Source", directly below the items it undoes
 #define kKCMCompareBooksMenuItemPosition	9.06	// "Compare Books" (chapter by chapter), still above Sep1 so that everything which BEGINS a comparison reads as one group
 #define kKCMExportReportMenuItemPosition	9.07	// "Export Before/After PDF Report", last of the group because it writes out what the comparison found (2026-09-14: moved up from 9.535, out of the plain commands)

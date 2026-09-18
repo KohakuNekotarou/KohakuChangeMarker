@@ -219,8 +219,11 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 	}
 
 	// ★★Put the current mode on the tab (user’s instruction: "like the document and book in KBS").
-	//   This is the one place the mode changes, so it is the one place that has to write it.
-	//   (When the panel is reopened, KCMPanelObserver::AutoAttach calls the same function.)
+	//   ⚠**This is NOT the only place the mode changes** (2026-09-17): an import sets it on the model
+	//   side, from the menu or from a script, and ends it the same way - and the tab said "Pixel" all
+	//   through an import (measured). Those reach the tab through KCMRefreshPanel, which every
+	//   comparison notification calls. This call stays for the case with no comparison running, where
+	//   no notification comes. (When the panel is reopened, KCMPanelObserver::AutoAttach calls it too.)
 	KCMPanelTitle::Update();
 
 	// ★★THE LIST IS SHARED, so switching the mode changes what belongs in it - and nothing else
@@ -907,19 +910,19 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// ★★**A SELECTION NARROWS IT** (the user's decision, 2026-09-15): the frames or the text
 		//   the reader has selected, and the whole document when they have selected nothing.
 		// ⚠A cancelled dialog says nothing, because nothing happened.
-		case kKCMPopupExportStoryTextActionID:
-			{
-				// ★**THE SELECTION IS READ BEFORE THE DIALOG OPENS.** A modal file dialog takes the
 		// ★★**TWO ITEMS, ONE BODY** (2026-09-19): "Export Story Text as Word..." is the same export in
 		//   the other spelling (.docx - the model's KCMStoryDocx), so everything below - the selection
 		//   read first, the refusal of a selection holding no text, the folder chooser, the line
 		//   that says which road the selection took - is shared, and the two differ in the one
 		//   number handed to the facade. Writing it twice would be two places to keep agreeing.
-				//   keyboard focus and is a window in its own right; reading the selection first
+		case kKCMPopupExportStoryTextActionID:
 		case kKCMPopupExportStoryDocxActionID:
-				//   cannot be wrong, while reading it after would depend on what a dialog does to
+			{
 				const bool16 asWord = (actionID.Get() == kKCMPopupExportStoryDocxActionID) ? kTrue : kFalse;
 
+				// ★**THE SELECTION IS READ BEFORE THE DIALOG OPENS.** A modal file dialog takes the
+				//   keyboard focus and is a window in its own right; reading the selection first
+				//   cannot be wrong, while reading it after would depend on what a dialog does to
 				//   a selection - which is not a thing this code should have to know.
 				IDataBase* const db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
 				if (db == nil)
@@ -1200,7 +1203,7 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 
 		// ★★★**THE IMPORT MODE IS MODAL** (2026-09-15, the user's rule: "inside this mode you
 		//   cannot do other comparisons"). The three modes and Task Start are greyed while it is
-		//   up, and Stop Comparison is the way out.
+		//   up, and Finish Import (the Start/Stop item under its import name) is the way out.
 		//   ⚠**THAT RULE IS WHAT MAKES THE MODE CHEAP**: because nothing else can run inside it,
 		//     the reader's own Task Start is simply PARKED for its duration instead of the plug-in
 		//     carrying two origins (KCMOrigin.h says what the second one would have cost).
@@ -1222,7 +1225,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//   which is what the other branches of this file already do.
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
-			PMString name(armed ? kKCMStopMenuText : kKCMStartMenuText);
+			// ★While importing, the way out says what it ends (2026-09-17, the user).
+			PMString name(!armed ? kKCMStartMenuText
+						  : Utils<IKCMStoryEditsFacade>()->InImportMode() ? kKCMFinishImportMenuText
+						  : kKCMStopMenuText);
 			name.SetTranslatable(kFalse);
 			listToUpdate->SetNthActionName(i, name);
 			// ★Stop is always live: clearing the marks and ending a peek must work even with no document

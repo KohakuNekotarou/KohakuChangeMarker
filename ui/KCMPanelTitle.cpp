@@ -77,6 +77,13 @@ void KCMPanelTitle::Update()
 	// ★The separator is a plain ASCII hyphen, as in KBS. A tab is narrow, and a full-width dash
 	//   looks stretched there. Keeping to ASCII also stays clear of the problem where a non-ASCII
 	//   literal in a .cpp without a BOM is read as CP932.
+	// ⚠**GUARDED, because KCMRefreshPanel calls this now** (2026-09-17) - from every comparison
+	//   notification, not only from a menu press - and `Utils<T>()->M()` dereferences before anything
+	//   can be tested ([[utils-boss-facade-access]]).
+	Utils<IKCMCompareFacade> compare;
+	if (!compare)
+		return;
+
 	PMString title(kKCMDisplayName);
 	title.Append(" - ");
 	// ★The shorter wording is used: the menu says "Pixel Changes" / "Story Changes" /
@@ -84,7 +91,7 @@ void KCMPanelTitle::Update()
 	// ⚠**A switch, not a ternary** (2026-09-09). As `== kKCMModeStory ? "Story" : "Pixel"` the tab
 	//   called the Resources mode "Pixel" - a label that is not merely unhelpful but wrong, and the
 	//   one place a reader looks to see which comparison is running.
-	switch (Utils<IKCMCompareFacade>()->GetCompareMode())
+	switch (compare->GetCompareMode())
 	{
 		case kKCMModeStory:		title.Append("Story");		break;
 		case kKCMModeResources:	title.Append("Resources");	break;

@@ -797,7 +797,8 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	//   runs zero times, the object stayed alive with nothing to do, and the Story bar was refused
 	//   registration (sup=1 regDis=1 reg=0) for as long as it lived.
 	{
-	KCMDeferredProgressBar progress(barTitle, rasterCount);
+	// ★A stepper, not a bar of its own: an import covers this loop with ITS bar (KCMProgressBar.h).
+	KCMProgressStepper progress(barTitle, rasterCount);
 	for (size_t k = 0; k < toRaster.size(); ++k)
 	{
 		const size_t i = toRaster[k];

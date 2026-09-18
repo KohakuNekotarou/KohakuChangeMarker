@@ -1686,7 +1686,9 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 	//   at all -- the Pixel mode's was tied to a page count, and this mode rasterises no page.
 	PMString barTitle("Comparing stories...");
 	barTitle.SetTranslatable(kFalse);
-	KCMDeferredProgressBar progress(barTitle, pairedCount);
+	// ★A stepper, not a bar of its own: an import covers the whole of its work - this loop included -
+	//   with ONE bar, and two bars alive at once is the thing KCMProgressBar.h forbids.
+	KCMProgressStepper progress(barTitle, pairedCount);
 	int32 done = 0;
 
 	for (int32 i = 0; i < rowCount; ++i)

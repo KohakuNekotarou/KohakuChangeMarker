@@ -136,6 +136,111 @@ private:
 	bool16										fBarUp;
 };
 
+//========================================================================================
+//  ONE BAR FOR A LONGER JOB (2026-09-17, the user: the Import mode is covered by one bar from
+//  reading the files to comparing the stories).
+//
+//  ★★**WHY A SLOT AND NOT A PARAMETER.** The comparison an import runs is reached through the
+//    ordinary Start (KCMToggleStartStop -> ... -> KCMStoryDiffRun::Run, and the raster loop in
+//    KCMCore.cpp on the way), and those loops make their OWN bar. Two alive at once is the one thing
+//    this class must never allow (the warning above), so the loops ask the slot first: while a
+//    longer job has registered its bar there, they step a SLICE of it instead of making their own.
+//  ⚠**MAIN THREAD ONLY**, like every bar: the slot is read by the comparison loops, which run on the
+//    main thread; nothing on a background thread (a PDF export) goes near them.
+//========================================================================================
+
+/** The bar a longer job has registered, and the slice of it the next inner loop reports into. */
+struct KCMOuterProgress
+{
+	KCMDeferredProgressBar*	fBar;
+	int32					fFrom;		// the unit of fBar an inner loop's "0 done" lands on
+	int32					fTo;		// and its "all done"
+};
+
+/** The one slot. An inline function's static is one object for the whole plug-in. */
+inline KCMOuterProgress& KCMOuterProgressSlot()
+{
+	static KCMOuterProgress sSlot = { nil, 0, 0 };
+	return sSlot;
+}
+
+/** Registers `bar` for its lifetime and puts back whatever was there before. */
+class KCMOuterProgressScope
+{
+public:
+	explicit KCMOuterProgressScope(KCMDeferredProgressBar& bar)
+		: fSaved(KCMOuterProgressSlot())
+	{
+		KCMOuterProgress& slot = KCMOuterProgressSlot();
+		slot.fBar = &bar;
+		slot.fFrom = 0;
+		slot.fTo = 0;
+	}
+	~KCMOuterProgressScope() { KCMOuterProgressSlot() = fSaved; }
+
+	/** The units of the bar the NEXT inner loop's whole range maps onto. */
+	void Slice(int32 from, int32 to)
+	{
+		KCMOuterProgressSlot().fFrom = from;
+		KCMOuterProgressSlot().fTo = to;
+	}
+
+private:
+	KCMOuterProgress	fSaved;
+
+	KCMOuterProgressScope(const KCMOuterProgressScope&);
+	KCMOuterProgressScope& operator=(const KCMOuterProgressScope&);
+};
+
+/*	KCMProgressStepper
+	What a loop that reports progress holds: a KCMDeferredProgressBar of its OWN, or - while a longer
+	job has registered one (KCMOuterProgressScope) - a slice of that one. The same two calls either way.
+
+	★**THE OWN BAR IS NOT EVEN CONSTRUCTED WHEN THERE IS AN OUTER ONE**: its constructor alone raises a
+	  suppressor, and a suppressor is what refuses the outer bar its registration.
+*/
+class KCMProgressStepper
+{
+public:
+	KCMProgressStepper(const PMString& title, int32 total)
+		: fOuter(KCMOuterProgressSlot()), fTotal(total)
+	{
+		if (fOuter.fBar == nil)
+			fOwn.reset(new (std::nothrow) KCMDeferredProgressBar(title, total));
+	}
+
+	void Step(int32 done, const PMString& text)
+	{
+		if (fOuter.fBar != nil)
+			fOuter.fBar->Step(OuterUnit(done), text);
+		else if (fOwn.get() != nil)
+			fOwn->Step(done, text);
+	}
+
+	bool16 WasCancelled()
+	{
+		if (fOuter.fBar != nil)
+			return fOuter.fBar->WasCancelled();
+		return (fOwn.get() != nil) ? fOwn->WasCancelled() : kFalse;
+	}
+
+private:
+	int32 OuterUnit(int32 done) const
+	{
+		if (fTotal <= 0)
+			return fOuter.fFrom;
+		const int64 span = static_cast<int64>(fOuter.fTo) - fOuter.fFrom;
+		return fOuter.fFrom + static_cast<int32>(span * done / fTotal);
+	}
+
+	const KCMOuterProgress					fOuter;		// copied at construction: the slice this loop was given
+	int32									fTotal;
+	K2::scoped_ptr<KCMDeferredProgressBar>	fOwn;
+
+	KCMProgressStepper(const KCMProgressStepper&);
+	KCMProgressStepper& operator=(const KCMProgressStepper&);
+};
+
 #endif // __KCMProgressBar_h__
 
 // End, KCMProgressBar.h.
