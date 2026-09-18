@@ -216,6 +216,13 @@ struct ReadResult
 	has to be there - -> both sides, the tag, the marks. */
 bool16 Read(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, std::string& whyNot);
 
+/** kTrue when Fingerprint(fOrigin) is the tag's fingerprint: Word's revision marks account for every
+	change made since the file was written, so ONLY those changes need be shown (the design, section
+	6). kFalse, with the reason, when there is no tag, when the origin cannot be written at all, or
+	when the two differ - tracking was off for some of the editing, the changes were accepted, or the
+	file holds something else by now. ⚠NOT A REFUSAL: the import then compares the whole text. */
+bool16 OriginMatchesTag(const ReadResult& r, std::string& outWhy);
+
 /** What this spelling cannot tell apart, made the same - so that a story can be compared with
 	itself read back (Same), the way the export checks itself.
 

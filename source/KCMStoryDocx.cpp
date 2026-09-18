@@ -2433,6 +2433,25 @@ bool16 Read(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, std::
 	return kTrue;
 }
 
+bool16 OriginMatchesTag(const ReadResult& r, std::string& outWhy)
+{
+	outWhy.clear();
+	if (!r.fTag.fPresent)
+	{
+		outWhy = "the file carries no story tag";
+		return kFalse;
+	}
+	std::string print;
+	if (!Fingerprint(r.fOrigin, print, outWhy))
+		return kFalse;
+	if (print != r.fTag.fFingerprint)
+	{
+		outWhy = "revision tracking does not account for every change - the whole text was compared";
+		return kFalse;
+	}
+	return kTrue;
+}
+
 void SettleForThisFormat(KCMStoryHtml::Story& s)
 {
 	SettleParas(s.fBody);
