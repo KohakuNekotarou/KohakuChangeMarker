@@ -171,6 +171,62 @@ struct Tag
 	  and cannot be read - a format this build does not know, a uid that is not a number. */
 bool16 ReadTag(const std::string& customXmlPart, Tag& out, std::string& whyNot);
 
+/** Which of the two stories a revision-marked file holds.
+
+	★★★**ONE FILE, TWO STORIES.** With Word's revision tracking on (settings.xml switches it on and
+	  protects it), what an editor changed is in the file as <w:ins> and <w:del>, and the file can be
+	  read either way: as the editor left it, or as it stood when it was written. The import needs
+	  both - the second one's fingerprint is what says whether the marks are the whole truth
+	  (Fingerprint, above), and the difference between the two is what the import shows. */
+enum Side
+{
+	kSideAfterWord = 0,			// as Word shows it now: <w:ins> kept, <w:del> gone, the outer <w:rPr>
+	kSideOriginAsWritten = 1	// as it stood when written: <w:del> put back, <w:ins> left out, the <w:rPrChange>'s <w:rPr>
+};
+
+/** One revision mark met on the way: who, and when. Word puts both on every one (measured
+	2026-09-19 - <w:ins>, <w:del>, <w:rPrChange>, a paragraph mark's and a row's alike). */
+struct Mark
+{
+	std::string	fAuthor;
+	std::string	fDate;
+};
+
+/** document.xml (+ footnotes.xml, + styles.xml; either may be empty) -> one side's Story.
+
+	★**IT REFUSES, BY NAME, WHATEVER IT DOES NOT UNDERSTAND** - a drawing, a field that is not a
+	  ruby, an automatic number, an element it has never heard of - and never skips it: skipping
+	  would drop somebody's words without a word (the rule KCMStoryHtml::Read keeps). What it
+	  ignores is only what carries no text: bookmarks, proofing marks, Word's own formatting-change
+	  records on tables, and every kind of formatting this format does not carry.
+	@param outMarks  every revision mark met, whichever side is being read; nil when not wanted. */
+bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml, const std::string& stylesXml,
+				Side side, KCMStoryHtml::Story& out, std::vector<Mark>* outMarks, std::string& whyNot);
+
+/** What one package holds, once read. */
+struct ReadResult
+{
+	KCMStoryHtml::Story	fAfter;
+	KCMStoryHtml::Story	fOrigin;
+	Tag					fTag;		// fPresent kFalse for a file that carries none (not written by us)
+	std::vector<Mark>	fMarks;		// empty = no revision mark anywhere in the file
+};
+
+/** The parts of one package - whichever the caller could fetch; word/document.xml is the one that
+	has to be there - -> both sides, the tag, the marks. */
+bool16 Read(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, std::string& whyNot);
+
+/** What this spelling cannot tell apart, made the same - so that a story can be compared with
+	itself read back (Same), the way the export checks itself.
+
+	★ONE THING ONLY: a MONO reading standing over SEVERAL characters becomes GROUP. A <w:ruby> holds
+	  one reading over its base, and one reading over two characters is what Word calls a group
+	  ruby; the reader answers GROUP for it, and it cannot answer anything else. The HTML format
+	  keeps the distinction by putting several <rt> in one <ruby> - a shape Word has not got.
+	  ⚠That this is a loss the comparison does not mind is the user's own rule (2026-09-12: "mono
+	   turned into group is not a change"); KCMParaText's SpansDiffer says the same. */
+void SettleForThisFormat(KCMStoryHtml::Story& s);
+
 }	// namespace KCMStoryDocx
 
 #endif // __KCMStoryDocx_h__

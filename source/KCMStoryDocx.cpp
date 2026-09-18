@@ -11,8 +11,11 @@
 #include "KCMStoryDocx.h"
 #include "KCMTextDiff.h"		// ToCodePoints - the one walk over UTF-8, shared with the HTML writer
 #include "KCMXmlTree.h"		// the reading half walks Word's parts through this
+#include "KCMParaText.h"		// AppendUtf8 / SetSpanValuesToText - the reading half builds spans the way the HTML reader does
 
+#include <cstddef>
 #include <cstdio>
+#include <utility>
 
 namespace KCMStoryDocx
 {
@@ -101,14 +104,19 @@ void AppendRunProps(const Look& look, std::string& out)
 	out += "</w:rPr>";
 }
 
-/** One invisible character as a locked content control. ★THE TAG IS THE TRUTH - see the header. */
-void AppendPlaceholder(int32 cp, std::string& out)
+/** One invisible character as a locked content control. ★THE TAG IS THE TRUTH - see the header.
+	★THE RUN INSIDE CARRIES THE CHARACTER'S OWN LOOK (2026-09-19, stage 2): a kenten or a
+	  tate-chu-yoko standing over an invisible character does so in InDesign too, and without the
+	  <w:rPr> here the span came back from the reader cut in two at the placeholder. */
+void AppendPlaceholder(int32 cp, const Look& look, std::string& out)
 {
 	out += "<w:sdt><w:sdtPr><w:alias w:val=\"U+";
 	AppendHex(cp, kTrue, out);
 	out += "\"/><w:tag w:val=\"u";
 	AppendHex(cp, kFalse, out);
-	out += "\"/><w:lock w:val=\"sdtContentLocked\"/></w:sdtPr><w:sdtContent><w:r><w:t>\xE2\x9F\xA6";
+	out += "\"/><w:lock w:val=\"sdtContentLocked\"/></w:sdtPr><w:sdtContent><w:r>";
+	AppendRunProps(look, out);
+	out += "<w:t>\xE2\x9F\xA6";
 	AppendHex(cp, kTrue, out);
 	out += "\xE2\x9F\xA7</w:t></w:r></w:sdtContent></w:sdt>";
 }
@@ -184,7 +192,7 @@ bool16 AppendRuns(const std::string& text, const std::vector<int32>& cps,
 				whyNot += "), which a Word ruby cannot hold";
 				return kFalse;
 			}
-			AppendPlaceholder(cp, out);
+			AppendPlaceholder(cp, looks[at], out);
 			++i;
 			continue;
 		}
@@ -1128,6 +1136,1068 @@ bool16 ReadTag(const std::string& customXmlPart, Tag& out, std::string& whyNot)
 	}
 	out.fFingerprint = *fingerprint;
 	return kTrue;
+}
+
+//----------------------------------------------------------------------------------------
+//  The story itself, on either side of the revision marks.
+//
+//  ★THE SAME WALK TWICE. One tree, one set of rules, and a Side that says which of <w:ins> and
+//    <w:del> is taken and which <w:rPr> a changed run wears. Everything that can refuse refuses
+//    the same way on both sides, so a file either reads on both or on neither.
+//----------------------------------------------------------------------------------------
+
+namespace
+{
+
+const char* const kW = KCMXmlTree::kWordNs;
+const char* const kMc = KCMXmlTree::kMcNs;
+
+/** What one character carries on the way in: the kenten VALUE (the reader answers values, not
+	classes), and whether a tate-chu-yoko or a warichu covers it. ⚠Not the writer's Look: that one
+	keeps span INDICES, and the reader has no spans yet - it makes them from runs that touch. */
+struct RLook
+{
+	std::string	fKenten;
+	bool16		fTcy;
+	bool16		fWarichu;
+
+	RLook() : fTcy(kFalse), fWarichu(kFalse) {}
+};
+
+/** A paragraph being built, in code points. */
+struct Building
+{
+	std::string							fText;
+	int32								fLen;			// code points in fText
+	KCMAttrSpanList						fRuby;
+	KCMAttrSpanList						fKenten;		// touching runs of one kind are one span
+	KCMAttrSpanList						fTcy;			// fValue filled by Finish
+	KCMAttrSpanList						fWarichu;
+	std::vector<KCMStoryHtml::NoteRef>	fNoteRefs;		// fNote holds the footnote ID until ResolveNotes ranks it
+	bool16								fContinued;		// pStyle kcm-continued: the rest of the paragraph before
+	int32								fMarkRevision;	// 0 none, +1 the paragraph mark was inserted, -1 deleted
+	// the field being collected, if any
+	int32								fFieldDepth;	// 0 none, 1 between begin and end
+	bool16								fInResult;		// between separate and end
+	std::string							fFieldCode;
+	RLook								fFieldLook;		// the look of the run holding the begin
+
+	Building() : fLen(0), fContinued(kFalse), fMarkRevision(0), fFieldDepth(0), fInResult(kFalse) {}
+};
+
+typedef std::vector< std::pair<std::string, std::string> > StyleNames;	// styleId -> w:name
+
+/** What the reader carries down the tree. */
+struct Reader
+{
+	const KCMXmlTree*		fTree;
+	Side					fSide;
+	std::vector<Mark>*		fMarks;
+	StyleNames				fStyleNames;
+	KCMStoryHtml::Story*	fStory;
+	std::string				fWhy;
+
+	Reader() : fTree(nil), fSide(kSideAfterWord), fMarks(nil), fStory(nil) {}
+};
+
+bool16 Refuse(Reader& rd, const std::string& why)
+{
+	rd.fWhy = why;
+	return kFalse;
+}
+
+/** "w:drawing" - the name a refusal shows. The prefix is Word's own spelling for its namespace. */
+std::string QName(const KCMXmlTree& t, int32 node)
+{
+	const KCMXmlNode& n = t.At(node);
+	if (n.fNs == kW)	return "w:" + n.fName;
+	if (n.fNs == kMc)	return "mc:" + n.fName;
+	if (n.fNs.empty())	return n.fName;
+	return "{" + n.fNs + "}" + n.fName;
+}
+
+bool16 IsBlank(const std::string& s)
+{
+	for (size_t i = 0; i < s.size(); ++i)
+	{
+		if (s[i] != ' ' && s[i] != '\t' && s[i] != '\r' && s[i] != '\n')
+			return kFalse;
+	}
+	return kTrue;
+}
+
+/** A w:vert / w:combine value: "1", "true" and "on" mean on; absent or anything else means off. */
+bool16 IsOn(const std::string* v)
+{
+	if (v == nil)
+		return kFalse;
+	return (*v == "1" || *v == "true" || *v == "on") ? kTrue : kFalse;
+}
+
+/** The first word of a field code, for a message: " PAGE \* MERGEFORMAT" -> "PAGE". */
+std::string FirstWord(const std::string& code)
+{
+	size_t i = 0;
+	while (i < code.size() && (code[i] == ' ' || code[i] == '\t'))
+		++i;
+	size_t j = i;
+	while (j < code.size() && code[j] != ' ' && code[j] != '\t')
+		++j;
+	return code.substr(i, j - i);
+}
+
+void NoteMark(Reader& rd, int32 node)
+{
+	if (rd.fMarks == nil)
+		return;
+	Mark m;
+	const std::string* author = rd.fTree->Attr(node, "author");
+	const std::string* date = rd.fTree->Attr(node, "date");
+	if (author != nil)	m.fAuthor = *author;
+	if (date != nil)	m.fDate = *date;
+	rd.fMarks->push_back(m);
+}
+
+/** The w:name a styleId stands for, or the id itself when styles.xml did not say. ★THE NAME
+	CARRIES THE KIND: Word makes ids of its own for a style typed by hand ("kentenBlackTriangle"
+	for a style named kenten-BlackTriangle), and the name is what the person typed. */
+std::string StyleName(const Reader& rd, const std::string& id)
+{
+	for (size_t k = 0; k < rd.fStyleNames.size(); ++k)
+	{
+		if (rd.fStyleNames[k].first == id)
+			return rd.fStyleNames[k].second;
+	}
+	return id;
+}
+
+void CollectStyleNames(const KCMXmlTree& styles, StyleNames& out)
+{
+	const int32 root = styles.Root();
+	if (root < 0 || !styles.Is(root, kW, "styles"))
+		return;
+	const KCMXmlNode& n = styles.At(root);
+	for (size_t k = 0; k < n.fChildren.size(); ++k)
+	{
+		const int32 style = n.fChildren[k];
+		if (!styles.Is(style, kW, "style"))
+			continue;
+		const std::string* type = styles.Attr(style, "type");
+		const std::string* id = styles.Attr(style, "styleId");
+		if (type == nil || *type != "character" || id == nil)
+			continue;
+		const int32 name = styles.Child(style, kW, "name");
+		const std::string* val = (name >= 0) ? styles.Attr(name, "val") : nil;
+		if (val != nil)
+			out.push_back(std::make_pair(*id, *val));
+	}
+}
+
+/** The one <w:rPr> a run wears on the side being read, and what it says. */
+bool16 LookOf(Reader& rd, int32 rPr, RLook& out)
+{
+	out = RLook();
+	if (rPr < 0)
+		return kTrue;
+	const KCMXmlTree& t = *rd.fTree;
+
+	int32 use = rPr;
+	const int32 change = t.Child(rPr, kW, "rPrChange");
+	if (change >= 0)
+	{
+		NoteMark(rd, change);
+		if (rd.fSide == kSideOriginAsWritten)
+		{
+			// ★THE CHANGE RECORD HOLDS THE PROPERTIES AS THEY WERE (measured 2026-09-19): a kenten
+			//   style taken off in Word leaves <w:rPrChange><w:rPr><w:rStyle .../></w:rPr></w:rPrChange>,
+			//   and one put on leaves an empty <w:rPr/> in there.
+			use = t.Child(change, kW, "rPr");
+			if (use < 0)
+				return kTrue;
+		}
+	}
+
+	const int32 style = t.Child(use, kW, "rStyle");
+	if (style >= 0)
+	{
+		const std::string* id = t.Attr(style, "val");
+		if (id != nil)
+		{
+			const std::string name = StyleName(rd, *id);
+			if (name.size() > 7 && name.compare(0, 7, "kenten-") == 0)
+			{
+				if (!KCMStoryHtml::KentenValueOfClass(name.substr(7), out.fKenten))
+					return Refuse(rd, "a kenten style this reader cannot read: " + name);
+			}
+		}
+	}
+	if (out.fKenten.empty())
+	{
+		// Word's own emphasis mark, put on from its UI: the nearest of InDesign's kinds (the design,
+		// section 4-1; the three lines are still to be confirmed by the user).
+		const int32 em = t.Child(use, kW, "em");
+		const std::string* v = (em >= 0) ? t.Attr(em, "val") : nil;
+		if (v != nil)
+		{
+			if (*v == "comma")							out.fKenten = KCMStoryHtml::kKentenDefaultValue;
+			else if (*v == "dot" || *v == "underDot")	out.fKenten = "BlackCircle";
+			else if (*v == "circle")					out.fKenten = "WhiteCircle";
+		}
+	}
+	const int32 layout = t.Child(use, kW, "eastAsianLayout");
+	if (layout >= 0)
+	{
+		out.fTcy = IsOn(t.Attr(layout, "vert"));
+		out.fWarichu = IsOn(t.Attr(layout, "combine"));
+	}
+	return kTrue;
+}
+
+/** Grow the last span when it reaches exactly here and (when asked) means the same, else start one. */
+void Extend(KCMAttrSpanList& spans, int32 at, const std::string& value, bool16 compareValue)
+{
+	if (!spans.empty() && spans.back().fStart + spans.back().fLen == at
+		&& (!compareValue || spans.back().fValue == value))
+	{
+		++spans.back().fLen;
+		return;
+	}
+	spans.push_back(KCMAttrSpan(at, 1, value, kFalse));
+}
+
+void Put(Building& b, int32 cp, const RLook& look)
+{
+	KCMParaText::AppendUtf8(b.fText, cp);
+	if (!look.fKenten.empty())
+		Extend(b.fKenten, b.fLen, look.fKenten, kTrue);
+	if (look.fTcy)
+		Extend(b.fTcy, b.fLen, "-", kFalse);		// the value is the text it covers: Finish fills it
+	if (look.fWarichu)
+		Extend(b.fWarichu, b.fLen, "-", kFalse);
+	++b.fLen;
+}
+
+void PutText(Building& b, const std::string& utf8, const RLook& look)
+{
+	std::vector<int32> cps;
+	KCMTextDiff::ToCodePoints(utf8, &cps, nil);
+	for (size_t i = 0; i < cps.size(); ++i)
+		Put(b, cps[i], look);
+}
+
+/** A <w:sdt> whose tag is "uXXXX": the invisible character it stands for. */
+bool16 PlaceholderOf(const KCMXmlTree& t, int32 sdt, int32& outCp)
+{
+	const int32 pr = t.Child(sdt, kW, "sdtPr");
+	const int32 tag = (pr >= 0) ? t.Child(pr, kW, "tag") : -1;
+	const std::string* v = (tag >= 0) ? t.Attr(tag, "val") : nil;
+	if (v == nil || v->size() < 5 || (*v)[0] != 'u')
+		return kFalse;
+	int32 cp = 0;
+	for (size_t i = 1; i < v->size(); ++i)
+	{
+		const char c = (*v)[i];
+		int32 d = -1;
+		if (c >= '0' && c <= '9')		d = c - '0';
+		else if (c >= 'a' && c <= 'f')	d = c - 'a' + 10;
+		else if (c >= 'A' && c <= 'F')	d = c - 'A' + 10;
+		if (d < 0)
+			return kFalse;
+		cp = cp * 16 + d;
+		if (cp > 0x10FFFF)
+			return kFalse;
+	}
+	if (cp <= 0)
+		return kFalse;
+	outCp = cp;
+	return kTrue;
+}
+
+/*	ParseEqRuby
+	Word's OTHER spelling of a ruby (measured 2026-09-19, Word 2007, from the Phonetic Guide):
+	    EQ \* jc2 \* "Font:MS Mincho" \* hps10 \o\ad(\s\up 9(READING),BASE)
+	The \o's arguments are split at the commas standing at depth 0; the first holds the reading
+	inside the parentheses after \s; the second is the base text itself. A backslash in front of
+	( ) , or \ makes that character literal.
+*/
+bool16 ParseEqRuby(const std::string& code, std::string& outReading, std::string& outBase)
+{
+	size_t i = 0;
+	while (i < code.size() && (code[i] == ' ' || code[i] == '\t'))
+		++i;
+	if (i + 2 > code.size() || (code[i] != 'E' && code[i] != 'e') || (code[i + 1] != 'Q' && code[i + 1] != 'q'))
+		return kFalse;
+	if (i + 2 < code.size() && code[i + 2] != ' ' && code[i + 2] != '\t')
+		return kFalse;
+
+	const size_t o = code.find("\\o", i + 2);
+	if (o == std::string::npos)
+		return kFalse;
+	const size_t open = code.find('(', o);
+	if (open == std::string::npos)
+		return kFalse;
+
+	std::vector<std::string> args(1);
+	int32 depth = 0;
+	bool16 closed = kFalse;
+	for (size_t k = open + 1; k < code.size(); ++k)
+	{
+		const char c = code[k];
+		if (c == '\\' && k + 1 < code.size()
+			&& (code[k + 1] == '(' || code[k + 1] == ')' || code[k + 1] == ',' || code[k + 1] == '\\'))
+		{
+			args.back() += code[k + 1];
+			++k;
+			continue;
+		}
+		if (c == '(')
+		{
+			++depth;
+			args.back() += c;
+			continue;
+		}
+		if (c == ')')
+		{
+			if (depth == 0)
+			{
+				closed = kTrue;
+				break;
+			}
+			--depth;
+			args.back() += c;
+			continue;
+		}
+		if (c == ',' && depth == 0)
+		{
+			args.push_back(std::string());
+			continue;
+		}
+		args.back() += c;
+	}
+	if (!closed || args.size() != 2)
+		return kFalse;
+
+	const std::string& a = args[0];
+	const size_t s = a.find("\\s");
+	if (s == std::string::npos)
+		return kFalse;
+	const size_t ro = a.find('(', s);
+	const size_t rc = a.rfind(')');
+	if (ro == std::string::npos || rc == std::string::npos || rc <= ro)
+		return kFalse;
+	outReading = a.substr(ro + 1, rc - ro - 1);
+	outBase = args[1];
+	return (!outReading.empty() && !outBase.empty()) ? kTrue : kFalse;
+}
+
+/** The field code, once its end is met: an EQ ruby is put as text with a reading over it; any
+	other field is refused - its result is Word's rendering, not anybody's words. */
+bool16 SettleField(Reader& rd, Building& b)
+{
+	std::string reading, base;
+	if (!ParseEqRuby(b.fFieldCode, reading, base))
+	{
+		const std::string first = FirstWord(b.fFieldCode);
+		if (first == "EQ" || first == "eq")
+			return Refuse(rd, "a field this reader cannot read: " + b.fFieldCode.substr(0, 60));
+		return Refuse(rd, "a field, which is not text: " + first);
+	}
+	const int32 start = b.fLen;
+	PutText(b, base, b.fFieldLook);
+	const int32 len = b.fLen - start;
+	b.fRuby.push_back(KCMAttrSpan(start, len, reading, (len > 1) ? kTrue : kFalse));
+	b.fFieldCode.clear();
+	return kTrue;
+}
+
+bool16 ReadContent(Reader& rd, int32 node, Building& b);
+
+bool16 ReadRuby(Reader& rd, int32 ruby, Building& b)
+{
+	const KCMXmlTree& t = *rd.fTree;
+	const int32 rt = t.Child(ruby, kW, "rt");
+	const int32 base = t.Child(ruby, kW, "rubyBase");
+	if (rt < 0 || base < 0)
+		return Refuse(rd, "a ruby without a reading or a base");
+	const std::string reading = t.TextBelow(rt);
+	const int32 start = b.fLen;
+	if (!ReadContent(rd, base, b))
+		return kFalse;
+	const int32 len = b.fLen - start;
+	if (len <= 0)
+		return kTrue;			// a reading over nothing is no reading (the HTML rule)
+	// ★ONE READING OVER SEVERAL CHARACTERS IS GROUP, over one it is MONO: the way the elements are
+	//   cut IS the setting (the header), and this is the only answer a <w:ruby> can give.
+	b.fRuby.push_back(KCMAttrSpan(start, len, reading, (len > 1) ? kTrue : kFalse));
+	return kTrue;
+}
+
+bool16 ReadRun(Reader& rd, int32 r, Building& b)
+{
+	const KCMXmlTree& t = *rd.fTree;
+	RLook look;
+	if (!LookOf(rd, t.Child(r, kW, "rPr"), look))
+		return kFalse;
+
+	const KCMXmlNode& n = t.At(r);
+	for (size_t k = 0; k < n.fChildren.size(); ++k)
+	{
+		const int32 c = n.fChildren[k];
+		const KCMXmlNode& cn = t.At(c);
+		if (cn.IsText())
+		{
+			if (!IsBlank(cn.fText))
+				return Refuse(rd, "text stands outside a run");
+			continue;
+		}
+		if (cn.fNs != kW)
+			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
+
+		const std::string& name = cn.fName;
+		if (name == "rPr")
+			continue;
+
+		// ---- inside a field: the code is collected, the result is not read -----------------------
+		if (b.fFieldDepth > 0 && name != "fldChar")
+		{
+			if (name == "instrText" || name == "delInstrText")
+			{
+				if (!b.fInResult)
+					b.fFieldCode += t.TextBelow(c);
+				continue;
+			}
+			if (b.fInResult)
+				continue;				// Word's rendering of the field, not text
+			return Refuse(rd, "text inside a field's code");
+		}
+
+		if (name == "t" || name == "delText")
+		{
+			PutText(b, t.TextBelow(c), look);
+		}
+		else if (name == "tab")
+		{
+			Put(b, 0x0009, look);
+		}
+		else if (name == "br")
+		{
+			const std::string* type = t.Attr(c, "type");
+			if (type != nil && (*type == "page" || *type == "column"))
+				return Refuse(rd, "a page or column break, which is not a character");
+			Put(b, 0x000A, look);
+		}
+		else if (name == "cr")
+		{
+			Put(b, 0x000A, look);
+		}
+		else if (name == "noBreakHyphen")
+		{
+			Put(b, 0x2011, look);
+		}
+		else if (name == "softHyphen")
+		{
+			Put(b, 0x00AD, look);
+		}
+		else if (name == "footnoteReference")
+		{
+			const std::string* id = t.Attr(c, "id");
+			int32 value = 0;
+			if (id == nil || !ParseDecimal(*id, value))
+				return Refuse(rd, "a footnote reference with no id");
+			KCMStoryHtml::NoteRef ref;
+			ref.fAt = b.fLen;
+			ref.fNote = value;
+			b.fNoteRefs.push_back(ref);
+		}
+		else if (name == "ruby")
+		{
+			if (!ReadRuby(rd, c, b))
+				return kFalse;
+		}
+		else if (name == "fldChar")
+		{
+			const std::string* type = t.Attr(c, "fldCharType");
+			const std::string kind = (type != nil) ? *type : std::string();
+			if (kind == "begin")
+			{
+				if (b.fFieldDepth > 0)
+					return Refuse(rd, "a field inside a field");
+				b.fFieldDepth = 1;
+				b.fInResult = kFalse;
+				b.fFieldCode.clear();
+				b.fFieldLook = look;
+			}
+			else if (kind == "separate")
+			{
+				b.fInResult = kTrue;
+			}
+			else if (kind == "end")
+			{
+				if (b.fFieldDepth == 0)
+					return Refuse(rd, "a field that ends without having begun");
+				b.fFieldDepth = 0;
+				b.fInResult = kFalse;
+				if (!SettleField(rd, b))
+					return kFalse;
+			}
+			else
+			{
+				return Refuse(rd, "a field character of a kind this reader does not know: " + kind);
+			}
+		}
+		else if (name == "footnoteRef" || name == "separator" || name == "continuationSeparator"
+				 || name == "lastRenderedPageBreak")
+		{
+			continue;
+		}
+		else
+		{
+			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
+		}
+	}
+	return kTrue;
+}
+
+/** The contents of a <w:p>, or of anything standing inside one that holds runs. */
+bool16 ReadContent(Reader& rd, int32 node, Building& b)
+{
+	const KCMXmlTree& t = *rd.fTree;
+	const KCMXmlNode& n = t.At(node);
+	for (size_t k = 0; k < n.fChildren.size(); ++k)
+	{
+		const int32 c = n.fChildren[k];
+		const KCMXmlNode& cn = t.At(c);
+		if (cn.IsText())
+		{
+			if (!IsBlank(cn.fText))
+				return Refuse(rd, "text stands outside a run");
+			continue;
+		}
+		if (cn.fNs == kMc)
+		{
+			if (cn.fName == "AlternateContent")
+			{
+				const int32 fallback = t.Child(c, kMc, "Fallback");
+				if (fallback >= 0 && !ReadContent(rd, fallback, b))
+					return kFalse;
+				continue;
+			}
+			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
+		}
+		if (cn.fNs != kW)
+			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
+
+		const std::string& name = cn.fName;
+		if (name == "pPr")
+		{
+			continue;					// read by ReadParagraph
+		}
+		else if (name == "r")
+		{
+			if (!ReadRun(rd, c, b))
+				return kFalse;
+		}
+		else if (name == "ins" || name == "moveTo")
+		{
+			NoteMark(rd, c);
+			if (rd.fSide == kSideAfterWord && !ReadContent(rd, c, b))
+				return kFalse;
+		}
+		else if (name == "del" || name == "moveFrom")
+		{
+			NoteMark(rd, c);
+			if (rd.fSide == kSideOriginAsWritten && !ReadContent(rd, c, b))
+				return kFalse;
+		}
+		else if (name == "sdt")
+		{
+			int32 cp = 0;
+			if (PlaceholderOf(t, c, cp))
+			{
+				// ★THE TAG IS THE TRUTH; the run inside is decoration Word re-cuts as it likes. Its
+				//   look, though, is the character's own (the writer puts it there).
+				RLook look;
+				const int32 content = t.Child(c, kW, "sdtContent");
+				const int32 run = (content >= 0) ? t.Child(content, kW, "r") : -1;
+				if (run >= 0 && !LookOf(rd, t.Child(run, kW, "rPr"), look))
+					return kFalse;
+				Put(b, cp, look);
+				continue;
+			}
+			const int32 content = t.Child(c, kW, "sdtContent");
+			if (content >= 0 && !ReadContent(rd, content, b))
+				return kFalse;
+		}
+		else if (name == "hyperlink" || name == "smartTag" || name == "customXml" || name == "dir" || name == "bdo")
+		{
+			if (!ReadContent(rd, c, b))
+				return kFalse;
+		}
+		else if (name == "bookmarkStart" || name == "bookmarkEnd" || name == "proofErr"
+				 || name == "commentRangeStart" || name == "commentRangeEnd"
+				 || name == "permStart" || name == "permEnd"
+				 || name == "moveFromRangeStart" || name == "moveFromRangeEnd"
+				 || name == "moveToRangeStart" || name == "moveToRangeEnd")
+		{
+			continue;
+		}
+		else if (name == "fldSimple")
+		{
+			const std::string* instr = t.Attr(c, "instr");
+			return Refuse(rd, "a field, which is not text: " + FirstWord(instr != nil ? *instr : std::string()));
+		}
+		else
+		{
+			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
+		}
+	}
+	return kTrue;
+}
+
+bool16 ReadParagraph(Reader& rd, int32 p, Building& b)
+{
+	const KCMXmlTree& t = *rd.fTree;
+	b = Building();
+
+	const int32 pPr = t.Child(p, kW, "pPr");
+	if (pPr >= 0)
+	{
+		const int32 style = t.Child(pPr, kW, "pStyle");
+		const std::string* v = (style >= 0) ? t.Attr(style, "val") : nil;
+		if (v != nil && *v == "kcm-continued")
+			b.fContinued = kTrue;
+		if (t.Child(pPr, kW, "numPr") >= 0)
+			return Refuse(rd, "an automatic number: the number is not a character, so it would be lost");
+		if (t.Child(pPr, kW, "sectPr") >= 0)
+			return Refuse(rd, "a section break inside the text");
+
+		// ★THE PARAGRAPH MARK'S OWN REVISION (measured 2026-09-19): a paragraph split in Word puts
+		//   <w:ins> on the FIRST half's mark; two joined put <w:del> on the first one's. The <w:p>
+		//   elements stay as they are either way; joining is the reader's job (ReadBlocks).
+		const int32 rPr = t.Child(pPr, kW, "rPr");
+		if (rPr >= 0)
+		{
+			const int32 ins = t.Child(rPr, kW, "ins");
+			const int32 del = t.Child(rPr, kW, "del");
+			if (ins >= 0)
+			{
+				NoteMark(rd, ins);
+				b.fMarkRevision = 1;
+			}
+			if (del >= 0)
+			{
+				NoteMark(rd, del);
+				b.fMarkRevision = -1;
+			}
+		}
+	}
+
+	if (!ReadContent(rd, p, b))
+		return kFalse;
+	if (b.fFieldDepth > 0)
+		return Refuse(rd, "a field runs past the end of its paragraph");
+	return kTrue;
+}
+
+void Finish(Building& b, KCMStoryHtml::Para& out)
+{
+	out = KCMStoryHtml::Para();
+	out.fText = b.fText;
+	out.fRuby = b.fRuby;
+	out.fKenten = b.fKenten;
+	out.fTcy = b.fTcy;
+	out.fWarichu = b.fWarichu;
+	KCMParaText::SetSpanValuesToText(out.fTcy, out.fText);
+	KCMParaText::SetSpanValuesToText(out.fWarichu, out.fText);
+	out.fNoteRefs = b.fNoteRefs;
+}
+
+int32 CodePointsIn(const std::string& utf8)
+{
+	std::vector<int32> byteAt;
+	KCMTextDiff::ToCodePoints(utf8, nil, &byteAt);
+	return static_cast<int32>(byteAt.size());
+}
+
+/** Spans of `more`, moved right by `shift`, onto `into` - a span that reaches the one before it
+	becomes part of it when `join` (and, when `compareValue`, only if it means the same). */
+void AppendShifted(KCMAttrSpanList& into, const KCMAttrSpanList& more, int32 shift, bool16 join,
+				   bool16 compareValue)
+{
+	for (size_t k = 0; k < more.size(); ++k)
+	{
+		KCMAttrSpan s = more[k];
+		s.fStart += shift;
+		if (join && !into.empty() && into.back().fStart + into.back().fLen == s.fStart
+			&& (!compareValue || into.back().fValue == s.fValue))
+		{
+			into.back().fLen += s.fLen;
+			continue;
+		}
+		into.push_back(s);
+	}
+}
+
+/*	JoinOnto
+	`next` is the rest of `prev`: the half after a table, or the paragraph after a mark that was
+	inserted or deleted in Word.
+
+	★KENTEN, TATE-CHU-YOKO AND WARICHU CUT BY A TABLE ARE ONE SPAN AGAIN; A RUBY IS NOT. The writer
+	  cuts every span at a table's place, and the first three are runs of an attribute, which the
+	  document reports as one span across the cut. A ruby cut in two is two readings on the page
+	  and comes back as two - which is how the export's own check refuses such a story (the
+	  writer's Slice says so).
+*/
+void JoinOnto(KCMStoryHtml::Para& prev, const KCMStoryHtml::Para& next)
+{
+	const int32 shift = CodePointsIn(prev.fText);
+	prev.fText += next.fText;
+	AppendShifted(prev.fRuby, next.fRuby, shift, kFalse, kFalse);
+	AppendShifted(prev.fKenten, next.fKenten, shift, kTrue, kTrue);
+	AppendShifted(prev.fTcy, next.fTcy, shift, kTrue, kFalse);
+	AppendShifted(prev.fWarichu, next.fWarichu, shift, kTrue, kFalse);
+	KCMParaText::SetSpanValuesToText(prev.fTcy, prev.fText);
+	KCMParaText::SetSpanValuesToText(prev.fWarichu, prev.fText);
+	for (size_t k = 0; k < next.fNoteRefs.size(); ++k)
+	{
+		KCMStoryHtml::NoteRef ref = next.fNoteRefs[k];
+		ref.fAt += shift;
+		prev.fNoteRefs.push_back(ref);
+	}
+}
+
+/** Where a run of blocks stands: the body, a cell of a table, or a footnote. */
+const int32 kInBody = -1;
+const int32 kInNote = -2;
+
+/*	ReadBlocks
+	The children of a <w:body>, a <w:tc> or a <w:footnote>: paragraphs, and tables among them,
+	settled as they come.
+
+	★A CONTINUED PARAGRAPH JOINS THE ONE BEFORE IT, and so does the paragraph after a mark that
+	  this side treats as gone (inserted, on the origin side; deleted, on the after side).
+*/
+bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32 inCell,
+				  std::vector<KCMStoryHtml::Para>& out)
+{
+	const KCMXmlTree& t = *rd.fTree;
+	const KCMXmlNode& n = t.At(container);
+	bool16 pendingJoin = kFalse;
+
+	for (size_t k = 0; k < n.fChildren.size(); ++k)
+	{
+		const int32 c = n.fChildren[k];
+		const KCMXmlNode& cn = t.At(c);
+		if (cn.IsText())
+		{
+			if (!IsBlank(cn.fText))
+				return Refuse(rd, "text stands outside a paragraph");
+			continue;
+		}
+		if (cn.fNs == kMc && cn.fName == "AlternateContent")
+		{
+			const int32 fallback = t.Child(c, kMc, "Fallback");
+			if (fallback >= 0 && !ReadBlocks(rd, fallback, inTable, inRow, inCell, out))
+				return kFalse;
+			continue;
+		}
+		if (cn.fNs != kW)
+			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
+
+		const std::string& name = cn.fName;
+		if (name == "p")
+		{
+			Building b;
+			if (!ReadParagraph(rd, c, b))
+				return kFalse;
+			KCMStoryHtml::Para para;
+			Finish(b, para);
+			const bool16 marksJoin = ((rd.fSide == kSideOriginAsWritten && b.fMarkRevision > 0)
+									  || (rd.fSide == kSideAfterWord && b.fMarkRevision < 0)) ? kTrue : kFalse;
+			if (b.fContinued || pendingJoin)
+			{
+				if (out.empty())
+					return Refuse(rd, "a continued paragraph stands first: there is nothing for it to continue");
+				JoinOnto(out.back(), para);
+			}
+			else
+			{
+				out.push_back(para);
+			}
+			pendingJoin = marksJoin;
+		}
+		else if (name == "sectPr")
+		{
+			continue;					// the body's, read by ReadSide
+		}
+		else if (name == "sdt" || name == "customXml")
+		{
+			const int32 content = (name == "sdt") ? t.Child(c, kW, "sdtContent") : c;
+			if (content >= 0 && !ReadBlocks(rd, content, inTable, inRow, inCell, out))
+				return kFalse;
+		}
+		else if (name == "bookmarkStart" || name == "bookmarkEnd" || name == "proofErr")
+		{
+			continue;
+		}
+		else
+		{
+			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
+		}
+	}
+	(void)inTable; (void)inRow; (void)inCell;
+	return kTrue;
+}
+
+/** Every run of paragraphs a story has: the body, then each cell in table order. */
+void HoldersOf(KCMStoryHtml::Story& s, std::vector< std::vector<KCMStoryHtml::Para>* >& out)
+{
+	out.clear();
+	out.push_back(&s.fBody);
+	for (size_t t = 0; t < s.fTables.size(); ++t)
+	{
+		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
+		{
+			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
+				out.push_back(&s.fTables[t].fRows[r].fCells[c].fParas);
+		}
+	}
+}
+
+/*	ResolveNotes
+	The footnotes this side refers to, in ascending order of Word's ids, each read from
+	footnotes.xml; the references' fNote turned from an id into that rank.
+
+	★NOTES NOBODY REFERS TO ON THIS SIDE ARE NOT THIS SIDE'S: the separators, and a note whose
+	  reference was deleted in Word - the note is still in the file (measured 2026-09-19) and it is
+	  the other side's.
+*/
+bool16 ResolveNotes(Reader& rd, const KCMXmlTree* notesTree)
+{
+	KCMStoryHtml::Story& s = *rd.fStory;
+	std::vector< std::vector<KCMStoryHtml::Para>* > holders;
+	HoldersOf(s, holders);
+
+	std::vector<int32> ids;			// ascending, each once
+	for (size_t h = 0; h < holders.size(); ++h)
+	{
+		const std::vector<KCMStoryHtml::Para>& paras = *holders[h];
+		for (size_t i = 0; i < paras.size(); ++i)
+		{
+			for (size_t k = 0; k < paras[i].fNoteRefs.size(); ++k)
+			{
+				const int32 id = paras[i].fNoteRefs[k].fNote;
+				size_t at = 0;
+				while (at < ids.size() && ids[at] < id)
+					++at;
+				if (at < ids.size() && ids[at] == id)
+				{
+					std::string why = "footnote ";
+					AppendNumber(id, why);
+					return Refuse(rd, why + " is referred to more than once");
+				}
+				ids.insert(ids.begin() + static_cast<std::ptrdiff_t>(at), id);
+			}
+		}
+	}
+	if (ids.empty())
+		return kTrue;
+
+	const int32 root = (notesTree != nil) ? notesTree->Root() : -1;
+	if (root < 0 || !notesTree->Is(root, kW, "footnotes"))
+	{
+		std::string why = "a reference to footnote ";
+		AppendNumber(ids[0], why);
+		return Refuse(rd, why + ", which the file does not have");
+	}
+
+	const KCMXmlTree* const saved = rd.fTree;
+	rd.fTree = notesTree;
+	const KCMXmlNode& all = notesTree->At(root);
+	for (size_t n = 0; n < ids.size(); ++n)
+	{
+		std::string wanted;
+		AppendNumber(ids[n], wanted);
+		int32 found = -1;
+		for (size_t k = 0; k < all.fChildren.size() && found < 0; ++k)
+		{
+			const int32 note = all.fChildren[k];
+			if (!notesTree->Is(note, kW, "footnote"))
+				continue;
+			const std::string* type = notesTree->Attr(note, "type");
+			if (type != nil && (*type == "separator" || *type == "continuationSeparator"))
+				continue;
+			const std::string* id = notesTree->Attr(note, "id");
+			if (id != nil && *id == wanted)
+				found = note;
+		}
+		if (found < 0)
+		{
+			rd.fTree = saved;
+			return Refuse(rd, "a reference to footnote " + wanted + ", which the file does not have");
+		}
+		std::vector<KCMStoryHtml::Para> paras;
+		if (!ReadBlocks(rd, found, kInNote, 0, 0, paras))
+		{
+			rd.fTree = saved;
+			return kFalse;
+		}
+		s.fNotes.push_back(paras);
+	}
+	rd.fTree = saved;
+
+	for (size_t h = 0; h < holders.size(); ++h)
+	{
+		std::vector<KCMStoryHtml::Para>& paras = *holders[h];
+		for (size_t i = 0; i < paras.size(); ++i)
+		{
+			for (size_t k = 0; k < paras[i].fNoteRefs.size(); ++k)
+			{
+				int32& note = paras[i].fNoteRefs[k].fNote;
+				size_t rank = 0;
+				while (rank < ids.size() && ids[rank] != note)
+					++rank;
+				note = static_cast<int32>(rank);
+			}
+		}
+	}
+	return kTrue;
+}
+
+void SettleParas(std::vector<KCMStoryHtml::Para>& paras)
+{
+	for (size_t i = 0; i < paras.size(); ++i)
+	{
+		for (size_t k = 0; k < paras[i].fRuby.size(); ++k)
+		{
+			if (!paras[i].fRuby[k].fGroup && paras[i].fRuby[k].fLen > 1)
+				paras[i].fRuby[k].fGroup = kTrue;
+		}
+	}
+}
+
+}	// anonymous namespace
+
+bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml, const std::string& stylesXml,
+				Side side, KCMStoryHtml::Story& out, std::vector<Mark>* outMarks, std::string& whyNot)
+{
+	out = KCMStoryHtml::Story();
+	whyNot.clear();
+
+	KCMXmlTree document;
+	if (!document.Parse(documentXml.data(), documentXml.size(), whyNot))
+	{
+		whyNot = "word/document.xml: " + whyNot;
+		return kFalse;
+	}
+	KCMXmlTree notes;
+	const bool16 hasNotes = footnotesXml.empty() ? kFalse : kTrue;
+	if (hasNotes && !notes.Parse(footnotesXml.data(), footnotesXml.size(), whyNot))
+	{
+		whyNot = "word/footnotes.xml: " + whyNot;
+		return kFalse;
+	}
+
+	Reader rd;
+	rd.fTree = &document;
+	rd.fSide = side;
+	rd.fMarks = outMarks;
+	rd.fStory = &out;
+	if (!stylesXml.empty())
+	{
+		// An unreadable styles part is not fatal: the style ids then stand for themselves.
+		KCMXmlTree styles;
+		std::string ignored;
+		if (styles.Parse(stylesXml.data(), stylesXml.size(), ignored))
+			CollectStyleNames(styles, rd.fStyleNames);
+	}
+
+	const int32 root = document.Root();
+	if (root < 0 || !document.Is(root, kW, "document"))
+	{
+		whyNot = "word/document.xml does not hold a w:document";
+		return kFalse;
+	}
+	const int32 body = document.Child(root, kW, "body");
+	if (body < 0)
+	{
+		whyNot = "word/document.xml has no w:body";
+		return kFalse;
+	}
+	const int32 sect = document.Child(body, kW, "sectPr");
+	if (sect >= 0)
+	{
+		const int32 dir = document.Child(sect, kW, "textDirection");
+		const std::string* v = (dir >= 0) ? document.Attr(dir, "val") : nil;
+		if (v != nil && (*v == "tbRl" || *v == "tbRlV"))
+			out.fVertical = kTrue;
+	}
+
+	if (!ReadBlocks(rd, body, kInBody, 0, 0, out.fBody) || !ResolveNotes(rd, hasNotes ? &notes : nil))
+	{
+		whyNot = rd.fWhy;
+		return kFalse;
+	}
+	return kTrue;
+}
+
+bool16 Read(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, std::string& whyNot)
+{
+	out = ReadResult();
+	whyNot.clear();
+
+	const std::string* document = nil;
+	const std::string* footnotes = nil;
+	const std::string* styles = nil;
+	for (size_t i = 0; i < parts.size(); ++i)
+	{
+		const std::string& name = parts[i].fName;
+		if (name == "word/document.xml")		document = &parts[i].fBytes;
+		else if (name == "word/footnotes.xml")	footnotes = &parts[i].fBytes;
+		else if (name == "word/styles.xml")		styles = &parts[i].fBytes;
+		else if (name.compare(0, 14, "customXml/item") == 0 && name.size() > 4
+				 && name.compare(name.size() - 4, 4, ".xml") == 0 && name.find("itemProps") == std::string::npos)
+		{
+			// ★FOUND BY NAMESPACE, NOT BY NUMBER: Word may renumber the items it keeps.
+			Tag tag;
+			if (!ReadTag(parts[i].fBytes, tag, whyNot))
+			{
+				whyNot = name + ": " + whyNot;
+				return kFalse;
+			}
+			if (tag.fPresent && !out.fTag.fPresent)
+				out.fTag = tag;
+		}
+	}
+	if (document == nil)
+	{
+		whyNot = "the package has no word/document.xml";
+		return kFalse;
+	}
+
+	const std::string empty;
+	if (!ReadSide(*document, footnotes ? *footnotes : empty, styles ? *styles : empty,
+				  kSideAfterWord, out.fAfter, &out.fMarks, whyNot))
+		return kFalse;
+	if (!ReadSide(*document, footnotes ? *footnotes : empty, styles ? *styles : empty,
+				  kSideOriginAsWritten, out.fOrigin, nil, whyNot))
+		return kFalse;
+	return kTrue;
+}
+
+void SettleForThisFormat(KCMStoryHtml::Story& s)
+{
+	SettleParas(s.fBody);
+	for (size_t t = 0; t < s.fTables.size(); ++t)
+	{
+		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
+		{
+			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
+				SettleParas(s.fTables[t].fRows[r].fCells[c].fParas);
+		}
+	}
+	for (size_t n = 0; n < s.fNotes.size(); ++n)
+		SettleParas(s.fNotes[n]);
 }
 
 }	// namespace KCMStoryDocx
