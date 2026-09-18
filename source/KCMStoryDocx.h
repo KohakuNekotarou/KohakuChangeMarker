@@ -169,8 +169,10 @@ struct Tag
 /** One custom XML part -> Tag. ★READ AS XML, NOT MATCHED AS BYTES: Word parses this part and writes
 	it out again (measured 2026-09-19 - the line break after the declaration came off), so what is
 	relied on is the element, its namespace and its attributes, in whatever order and spelling.
-	@return kTrue with fPresent kFalse when the part is not ours; kFalse with a reason when it IS ours
-	  and cannot be read - a format this build does not know, a uid that is not a number. */
+	@return kTrue with fPresent kFalse when the part is not ours - another namespace, or not even
+	  well-formed XML (other applications' parts are kept by Word and are none of our business);
+	  kFalse with a reason when it IS ours and cannot be read - a format this build does not know,
+	  a uid that is not a number. */
 bool16 ReadTag(const std::string& customXmlPart, Tag& out, std::string& whyNot);
 
 /** Which of the two stories a revision-marked file holds.

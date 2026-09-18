@@ -1267,6 +1267,42 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 		}
 	}
 
+	// ★A STORY CHOSEN TWICE - 269.html and 269.docx, say - is refused on both counts (the design,
+	//   section 8): which of the two is meant is not this plug-in's to decide, and the pour would
+	//   otherwise take the first and pass over the second without a word.
+	{
+		std::vector<bool16> twice(out.fUids.size(), kFalse);
+		for (size_t i = 0; i < out.fUids.size(); ++i)
+		{
+			for (size_t j = 0; j < i; ++j)
+			{
+				if (out.fUids[i] == out.fUids[j])
+					twice[i] = twice[j] = kTrue;
+			}
+		}
+		KCMStoryTextSet kept;
+		for (size_t i = 0; i < out.fUids.size(); ++i)
+		{
+			if (twice[i])
+			{
+				++refused;
+				if (firstReason.IsEmpty())
+				{
+					firstReason = "story ";
+					firstReason.AppendNumber(static_cast<int32>(out.fUids[i].Get()));
+					firstReason.Append(" was chosen twice");
+					firstReason.SetTranslatable(kFalse);
+				}
+				continue;
+			}
+			kept.fUids.push_back(out.fUids[i]);
+			kept.fStories.push_back(out.fStories[i]);
+			kept.fOrigins.push_back(out.fOrigins[i]);
+			kept.fOriginKnown.push_back(out.fOriginKnown[i]);
+		}
+		out = kept;
+	}
+
 	const int32 read = static_cast<int32>(out.fUids.size());
 	AppendCount(whyNot, "", read, " story file(s) read");
 	if (fromWord > 0)

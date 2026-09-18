@@ -1097,7 +1097,13 @@ bool16 ReadTag(const std::string& customXmlPart, Tag& out, std::string& whyNot)
 
 	KCMXmlTree tree;
 	if (!tree.Parse(customXmlPart.data(), customXmlPart.size(), whyNot))
-		return kFalse;
+	{
+		// ★NOT OURS, THEN - Word keeps other applications' parts, and one of those that is not even
+		//   well-formed XML is not a reason to refuse the story (the re-check, R3). Ours is written
+		//   well-formed and Word rewrites it well-formed.
+		whyNot.clear();
+		return kTrue;
+	}
 	const int32 root = tree.Root();
 	if (root < 0 || !tree.Is(root, kStoryTagNamespace, "story"))
 		return kTrue;			// somebody else's part: present kFalse, and nothing wrong
@@ -1512,6 +1518,57 @@ bool16 SettleField(Reader& rd, Building& b)
 
 bool16 ReadContent(Reader& rd, int32 node, Building& b);
 
+/** The characters of a <w:rt>, on this side: runs of text, and nothing that is not text - a tab or
+	a break in a reading would otherwise be dropped without a word (found by the re-check, R1). */
+bool16 ReadingText(Reader& rd, int32 node, std::string& out)
+{
+	const KCMXmlTree& t = *rd.fTree;
+	const KCMXmlNode& n = t.At(node);
+	for (size_t k = 0; k < n.fChildren.size(); ++k)
+	{
+		const int32 c = n.fChildren[k];
+		const KCMXmlNode& cn = t.At(c);
+		if (cn.IsText())
+		{
+			if (!IsBlank(cn.fText))
+				return Refuse(rd, "text stands outside a run");
+			continue;
+		}
+		if (cn.fNs != kW)
+			return Refuse(rd, "a reading holds something that is not text: " + QName(t, c));
+		const std::string& name = cn.fName;
+		if (name == "r" || name == "hyperlink" || name == "smartTag" || name == "customXml")
+		{
+			if (!ReadingText(rd, c, out))
+				return kFalse;
+		}
+		else if (name == "ins" || name == "moveTo")
+		{
+			if (rd.fSide == kSideAfterWord && !ReadingText(rd, c, out))
+				return kFalse;
+		}
+		else if (name == "del" || name == "moveFrom")
+		{
+			if (rd.fSide == kSideOriginAsWritten && !ReadingText(rd, c, out))
+				return kFalse;
+		}
+		else if (name == "t" || name == "delText")
+		{
+			out += t.TextBelow(c);
+		}
+		else if (name == "rPr" || name == "smartTagPr" || name == "customXmlPr" || name == "proofErr"
+				 || name == "bookmarkStart" || name == "bookmarkEnd" || name == "lastRenderedPageBreak")
+		{
+			continue;
+		}
+		else
+		{
+			return Refuse(rd, "a reading holds something that is not text: " + QName(t, c));
+		}
+	}
+	return kTrue;
+}
+
 bool16 ReadRuby(Reader& rd, int32 ruby, Building& b)
 {
 	const KCMXmlTree& t = *rd.fTree;
@@ -1519,7 +1576,9 @@ bool16 ReadRuby(Reader& rd, int32 ruby, Building& b)
 	const int32 base = t.Child(ruby, kW, "rubyBase");
 	if (rt < 0 || base < 0)
 		return Refuse(rd, "a ruby without a reading or a base");
-	const std::string reading = t.TextBelow(rt);
+	std::string reading;
+	if (!ReadingText(rd, rt, reading))
+		return kFalse;
 	const int32 start = b.fLen;
 	if (!ReadContent(rd, base, b))
 		return kFalse;
@@ -1532,14 +1591,23 @@ bool16 ReadRuby(Reader& rd, int32 ruby, Building& b)
 	return kTrue;
 }
 
+bool16 ReadRunChildren(Reader& rd, int32 node, const RLook& look, Building& b);
+
 bool16 ReadRun(Reader& rd, int32 r, Building& b)
 {
-	const KCMXmlTree& t = *rd.fTree;
 	RLook look;
-	if (!LookOf(rd, t.Child(r, kW, "rPr"), look))
+	if (!LookOf(rd, rd.fTree->Child(r, kW, "rPr"), look))
 		return kFalse;
+	return ReadRunChildren(rd, r, look, b);
+}
 
-	const KCMXmlNode& n = t.At(r);
+/** The children of a <w:r> - or of an <mc:Fallback> standing inside one, which holds the same
+	kinds of thing (the re-check, R5: a newer Word wraps what it draws in AlternateContent, and the
+	fallback is where the older spelling is). */
+bool16 ReadRunChildren(Reader& rd, int32 node, const RLook& look, Building& b)
+{
+	const KCMXmlTree& t = *rd.fTree;
+	const KCMXmlNode& n = t.At(node);
 	for (size_t k = 0; k < n.fChildren.size(); ++k)
 	{
 		const int32 c = n.fChildren[k];
@@ -1548,6 +1616,13 @@ bool16 ReadRun(Reader& rd, int32 r, Building& b)
 		{
 			if (!IsBlank(cn.fText))
 				return Refuse(rd, "text stands outside a run");
+			continue;
+		}
+		if (cn.fNs == kMc && cn.fName == "AlternateContent")
+		{
+			const int32 fallback = t.Child(c, kMc, "Fallback");
+			if (fallback >= 0 && !ReadRunChildren(rd, fallback, look, b))
+				return kFalse;
 			continue;
 		}
 		if (cn.fNs != kW)
@@ -1737,7 +1812,8 @@ bool16 ReadContent(Reader& rd, int32 node, Building& b)
 				 || name == "commentRangeStart" || name == "commentRangeEnd"
 				 || name == "permStart" || name == "permEnd"
 				 || name == "moveFromRangeStart" || name == "moveFromRangeEnd"
-				 || name == "moveToRangeStart" || name == "moveToRangeEnd")
+				 || name == "moveToRangeStart" || name == "moveToRangeEnd"
+				 || name == "smartTagPr" || name == "customXmlPr")		// the properties of what is seen through (R4)
 		{
 			continue;
 		}
@@ -1990,7 +2066,7 @@ bool16 ReadCells(Reader& rd, int32 container, int32 slot, int32 rowIndex, KCMSto
 				return kFalse;
 		}
 		else if (name == "trPr" || name == "tblPrEx" || name == "bookmarkStart" || name == "bookmarkEnd"
-				 || name == "proofErr")
+				 || name == "proofErr" || name == "customXmlPr")
 		{
 			continue;
 		}
@@ -2070,7 +2146,7 @@ bool16 ReadRows(Reader& rd, int32 container, int32 slot, GridOpen& open)
 				return kFalse;
 		}
 		else if (name == "tblPr" || name == "tblGrid" || name == "bookmarkStart" || name == "bookmarkEnd"
-				 || name == "proofErr")
+				 || name == "proofErr" || name == "customXmlPr")
 		{
 			continue;
 		}
@@ -2185,7 +2261,7 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 			if (content >= 0 && !ReadBlocks(rd, content, inTable, inRow, inCell, out))
 				return kFalse;
 		}
-		else if (name == "bookmarkStart" || name == "bookmarkEnd" || name == "proofErr")
+		else if (name == "bookmarkStart" || name == "bookmarkEnd" || name == "proofErr" || name == "customXmlPr")
 		{
 			continue;
 		}
@@ -2471,7 +2547,12 @@ void SettleForThisFormat(KCMStoryHtml::Story& s)
 		}
 	}
 	for (size_t n = 0; n < s.fNotes.size(); ++n)
+	{
+		// The same for a note: its mark has to stand in a paragraph, so the writer makes one (R2).
+		if (s.fNotes[n].empty())
+			s.fNotes[n].push_back(KCMStoryHtml::Para());
 		SettleParas(s.fNotes[n]);
+	}
 }
 
 }	// namespace KCMStoryDocx
