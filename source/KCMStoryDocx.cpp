@@ -648,7 +648,7 @@ namespace
 
 const char* const kXmlDeclaration = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n";
 const char* const kWordNamespace = "xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"";
-const char* const kOriginNamespace = "urn:kohaku:kcm:story-origin:1";
+const char* const kStoryTagNamespace = "urn:kohaku:kcm:story:1";
 
 /*	The built-in kenten kinds, and the nearest of Word's four emphasis marks for each.
 
@@ -856,6 +856,61 @@ void AddPart(const char* name, const std::string& bytes, std::vector<KCMZipStore
 
 }	// anonymous namespace
 
+namespace
+{
+
+/** The two elements that ARE the story - <w:document> and, when it has notes, <w:footnotes> - with
+	no XML declaration in front of either. Everything that can refuse a story refuses it here. */
+bool16 WriteStoryElements(const KCMStoryHtml::Story& s, std::string& outDocument,
+						  std::string& outFootnotes, std::string& whyNot)
+{
+	outDocument.clear();
+	outFootnotes.clear();
+
+	if (!EveryNoteIsReferredTo(s, whyNot))
+		return kFalse;
+
+	outDocument = "<w:document ";
+	outDocument += kWordNamespace;
+	outDocument += "><w:body>";
+	if (!WriteBlocks(s, s.fBody, -1, 0, 0, outDocument, whyNot))
+		return kFalse;
+	outDocument += "<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/>";
+	if (s.fVertical)
+		outDocument += "<w:textDirection w:val=\"tbRl\"/>";
+	outDocument += "</w:sectPr></w:body></w:document>";
+
+	if (!s.fNotes.empty() && !WriteFootnotesElement(s, outFootnotes, whyNot))
+		return kFalse;
+	return kTrue;
+}
+
+/** "<bytes>-<crc32, 8 hex digits>" of the two elements, one after the other. */
+void FingerprintOf(const std::string& documentElement, const std::string& footnotesElement,
+				   std::string& out)
+{
+	const std::string both = documentElement + footnotesElement;
+	char buf[40] = { 0 };
+	std::snprintf(buf, sizeof(buf), "%u-%08x", static_cast<unsigned int>(both.size()),
+				  KCMZipStore::Crc32(both.data(), both.size()));
+	out = buf;
+}
+
+}	// anonymous namespace
+
+bool16 Fingerprint(const KCMStoryHtml::Story& s, std::string& outFingerprint, std::string& whyNot)
+{
+	outFingerprint.clear();
+
+	std::string documentElement;
+	std::string footnotesElement;
+	if (!WriteStoryElements(s, documentElement, footnotesElement, whyNot))
+		return kFalse;
+
+	FingerprintOf(documentElement, footnotesElement, outFingerprint);
+	return kTrue;
+}
+
 bool16 WriteParts(const KCMStoryHtml::Story& s, int32 uid, const std::string& documentNameUtf8,
 				  std::vector<KCMZipStore::Entry>& outParts, std::string& whyNot)
 {
@@ -865,21 +920,9 @@ bool16 WriteParts(const KCMStoryHtml::Story& s, int32 uid, const std::string& do
 	const bool16 hasNotes = s.fNotes.empty() ? kFalse : kTrue;
 
 	// ---- everything that can refuse, before any part is made -----------------------------------
-	if (!EveryNoteIsReferredTo(s, whyNot))
-		return kFalse;
-
-	std::string documentElement = "<w:document ";
-	documentElement += kWordNamespace;
-	documentElement += "><w:body>";
-	if (!WriteBlocks(s, s.fBody, -1, 0, 0, documentElement, whyNot))
-		return kFalse;
-	documentElement += "<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/>";
-	if (s.fVertical)
-		documentElement += "<w:textDirection w:val=\"tbRl\"/>";
-	documentElement += "</w:sectPr></w:body></w:document>";
-
+	std::string documentElement;
 	std::string footnotesElement;
-	if (hasNotes && !WriteFootnotesElement(s, footnotesElement, whyNot))
+	if (!WriteStoryElements(s, documentElement, footnotesElement, whyNot))
 		return kFalse;
 
 	std::string styles;
@@ -932,28 +975,35 @@ bool16 WriteParts(const KCMStoryHtml::Story& s, int32 uid, const std::string& do
 	if (hasNotes)
 		AddPart("word/footnotes.xml", std::string(kXmlDeclaration) + footnotesElement, outParts);
 
-	// ---- the origin --------------------------------------------------------------------------------
+	// ---- the tag: which story this is, and a fingerprint of it as written ------------------------
+	//
+	// ★★★**NOT A WORD OF THE STORY IS IN HERE** (the user's decision, 2026-09-19, going back on the
+	//   "origin" this part held for half a day - the whole story a second time, hidden). A file is
+	//   handed on, and used again for something else; text nobody can see would travel with it,
+	//   and would still name the old story after the visible one had been replaced.
+	//   WHAT WORD CHANGED IS TOLD BY WORD'S OWN REVISION MARKS. The fingerprint is what says
+	//   whether those marks are the whole truth: the import rebuilds the story as it stood (the
+	//   deletions put back, the insertions left out), takes ITS fingerprint, and compares. The same
+	//   -> only Word's changes are shown. Different -> tracking was off for some of the editing,
+	//   or the changes were accepted, or the file holds something else by now: the import then
+	//   compares the whole text, the way the HTML import does, and says that it did.
 	// ⚠**NO LINE BREAK AFTER THE DECLARATION.** Word does not copy this part through a save, it
 	//  parses it and writes it out again, and what it writes has none (measured 2026-09-19: the
 	//  part came back two bytes shorter, the CRLF and nothing else). Written the way Word writes
 	//  it, the part is the same bytes before and after - which is what lets a test say so.
-	std::string origin = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><kcm:origin xmlns:kcm=\"";
-	origin += kOriginNamespace;
-	origin += "\" uid=\"";
-	AppendNumber(uid, origin);
-	origin += "\" document=\"";
-	AppendEscaped(documentNameUtf8, 0, documentNameUtf8.size(), origin);
-	origin += "\" format=\"1\"><kcm:document>";
-	origin += documentElement;
-	origin += "</kcm:document>";
-	if (hasNotes)
-	{
-		origin += "<kcm:footnotes>";
-		origin += footnotesElement;
-		origin += "</kcm:footnotes>";
-	}
-	origin += "</kcm:origin>";
-	AddPart("customXml/item1.xml", origin, outParts);
+	std::string fingerprint;
+	FingerprintOf(documentElement, footnotesElement, fingerprint);
+
+	std::string tag = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><kcm:story xmlns:kcm=\"";
+	tag += kStoryTagNamespace;
+	tag += "\" uid=\"";
+	AppendNumber(uid, tag);
+	tag += "\" document=\"";
+	AppendEscaped(documentNameUtf8, 0, documentNameUtf8.size(), tag);
+	tag += "\" format=\"1\" fingerprint=\"";
+	tag += fingerprint;
+	tag += "\"/>";
+	AddPart("customXml/item1.xml", tag, outParts);
 
 	// The item's id is fixed: it names the KIND of part, and a fresh one per file would be the one
 	// thing making two exports of a story differ.
@@ -961,7 +1011,7 @@ bool16 WriteParts(const KCMStoryHtml::Story& s, int32 uid, const std::string& do
 						"<ds:datastoreItem ds:itemID=\"{5B0F4C3A-1D2E-4F60-8A7B-9C0D1E2F3A4B}\" "
 						"xmlns:ds=\"http://schemas.openxmlformats.org/officeDocument/2006/customXml\">"
 						"<ds:schemaRefs><ds:schemaRef ds:uri=\"";
-	props += kOriginNamespace;
+	props += kStoryTagNamespace;
 	props += "\"/></ds:schemaRefs></ds:datastoreItem>";
 	AddPart("customXml/itemProps1.xml", props, outParts);
 

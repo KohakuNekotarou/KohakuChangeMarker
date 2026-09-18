@@ -7,8 +7,9 @@
 //  WHAT THIS IS FOR. The same round trip KCMStoryHtml serves, for a reader whose editor is Word:
 //  the stories go out as .docx, are edited there with Word's own revision tracking switched on,
 //  and come back through the Import mode - which then shows ONLY what was changed in Word, because
-//  the file carries the story as it stood when it was written (the "origin" part) and the import
-//  merges Word's changes onto the document as it stands now. The design is
+//  Word's revision marks say what that was, and the import merges those changes onto the document
+//  as it stands now. (When the marks are not the whole truth, the whole text is compared instead:
+//  Fingerprint, below, is how the two are told apart.) The design is
 //  docs/superpowers/specs/2026-09-19-kcm-story-docx-roundtrip-design.md and it, not this header,
 //  is where the decisions and their reasons live.
 //
@@ -92,20 +93,45 @@ bool16 WriteParagraphContent(const KCMStoryHtml::Para& p, std::string& out, std:
 bool16 WriteBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml::Para>& paras,
 				   int32 inTable, int32 inRow, int32 inCell, std::string& out, std::string& whyNot);
 
+/** A fingerprint of a story: "<bytes>-<crc32>" of what Write makes of it.
+
+	★★★**WHAT IT IS FOR: TO KNOW WHETHER WORD'S REVISION MARKS ARE THE WHOLE TRUTH.** The import
+	  rebuilds the story as it stood when it was written - the deletions put back, the insertions
+	  left out - and takes ITS fingerprint:
+	    the same as the file's tag  ->  the marks account for every change made in Word, so ONLY
+	                                    those changes are shown, however much the document has
+	                                    been edited in InDesign since (the design, section 1-1);
+	    different                   ->  tracking was off for some of the editing, or the changes
+	                                    were accepted, or the file was used again for something
+	                                    else. The import then compares the WHOLE text against the
+	                                    document, the way the HTML import does, and says so - the
+	                                    user's rule (2026-09-19): never refused, and what goes in
+	                                    is theirs to choose, one change at a time, as always.
+	★**IT WORKS BECAUSE Write IS DETERMINISTIC**: the same Story is the same bytes, so a story read
+	  back and written again has the fingerprint it had. ⚠Whatever breaks that - a date, an id that
+	  counts up, an order taken from a hash table - breaks this, silently, into "always different".
+	★IT IS OF THE STORY ALONE: the uid and the document's name are beside it, not in it.
+	⚠NOT A SECRET AND NOT A SIGNATURE. It tells two honest files apart; it is not there to stop
+	  anybody who sets out to fool it.
+
+	@return kFalse with a reason when the story cannot be written in this format at all. */
+bool16 Fingerprint(const KCMStoryHtml::Story& s, std::string& outFingerprint, std::string& whyNot);
+
 /** Every part of the package, in the order they are zipped.
 
 	  [Content_Types].xml, _rels/.rels, word/document.xml, word/_rels/document.xml.rels,
 	  word/styles.xml, word/settings.xml, word/footnotes.xml (ONLY when the story has notes - and
 	  then nothing else speaks of footnotes either), customXml/item1.xml and its two companions.
 
-	★★★**customXml/item1.xml IS THE ORIGIN: the story as it stood when it was written**, which is what
-	  lets the import tell Word's changes from everybody else's (the design, section 1-1). It holds
-	  the <w:document> and <w:footnotes> ELEMENTS THEMSELVES, byte for byte, beside the story's uid
-	  and the document's name - so the reader of the origin is the reader of the document, and
-	  there is no second serialisation to keep in step. ★Measured: Word keeps a custom XML part of
-	  a namespace of our own untouched through a save.
-	★**settings.xml SWITCHES REVISION TRACKING ON**, so the editor sees their own changes in red.
-	  The import does not depend on it - that is the point of carrying the origin.
+	★★★**customXml/item1.xml IS A TAG, NOT A COPY**: the story's uid, the document's name, and a
+	  FINGERPRINT of the story as written (Fingerprint, below) - and not one word of it. For half
+	  a day (2026-09-19) it held the whole story a second time, hidden, as the "origin" the import
+	  would compare against; the user went back on that the same day, because a file is handed on
+	  and used again for other things, and text nobody can see would go with it. ★Measured: Word
+	  keeps a custom XML part of a namespace of our own through a save.
+	★★★**settings.xml SWITCHES REVISION TRACKING ON, AND THE IMPORT DEPENDS ON IT**: what Word
+	  changed is told by Word's own <w:ins> and <w:del>. The fingerprint is what says whether they
+	  are the whole truth - Fingerprint says how, and what happens when they are not.
 	★**styles.xml HOLDS EVERY BUILT-IN KENTEN KIND, USED OR NOT**, plus one style for each custom
 	  mark the story uses, in a fixed order: the same story is the same bytes.
 
