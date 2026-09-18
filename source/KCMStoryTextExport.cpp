@@ -803,21 +803,38 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 
 		// ---- the .docx road (2026-09-19) ---------------------------------------------------------
 		//
-		// ⚠**NO SELF-CHECK YET, UNLIKE THE ROAD BELOW**: that one reads its own bytes back before
-		//  writing them, and this one cannot until KCMStoryDocx has a reader (stage 2 of its plan).
-		//  Until then a .docx from here is for LOOKING AT in Word, not for handing out to be edited.
-		//  What it does refuse is what the format cannot hold at all - KCMStoryDocx says which -
-		//  and a story whose footnote references could not be placed, which Word would lose.
+		// ★★★**THE FILE CHECKS ITSELF BEFORE IT IS WRITTEN, AS THE .html ROAD BELOW DOES** (stage 2 of
+		//   the docx plan, the same day): the parts are read straight back - BOTH sides of the revision
+		//   marks, since a file nobody has edited has to read the same either way - and compared with
+		//   the story they came from, and the file is only written when they agree. A story this
+		//   format cannot carry (a ruby a table cuts in two; the reader's Slice says why) is refused
+		//   HERE, not after somebody has spent an afternoon editing it.
+		//   ⚠**COMPARED AS THIS FORMAT SETTLES IT** (KCMStoryDocx::SettleForThisFormat): a mono reading
+		//    over several characters is one <w:ruby> and reads back as group, and that is not a
+		//    difference the comparison minds (the user's rule of 2026-09-12).
+		//   ⚠**IT TOUCHES NOTHING**: pure functions on plain structs, exactly as below.
+		//   What it also refuses: a story whose footnote references could not be placed, which Word
+		//   would lose.
 		if (format == kKCMStoryTextDocx)
 		{
-			std::string docx;
+			std::vector<KCMZipStore::Entry> parts;
 			std::string why;
 			if (!noteRefsPlaced)
 				why = "a footnote's reference could not be placed";
 
-			if (!why.empty()
-				|| !KCMStoryDocx::Write(story, static_cast<int32>(storyRef.GetUID().Get()),
-										documentName, docx, why))
+			bool16 sound = why.empty()
+						   && KCMStoryDocx::WriteParts(story, static_cast<int32>(storyRef.GetUID().Get()),
+													   documentName, parts, why);
+			if (sound)
+			{
+				KCMStoryHtml::Story settled = story;
+				KCMStoryDocx::SettleForThisFormat(settled);
+				KCMStoryDocx::ReadResult back;
+				sound = KCMStoryDocx::Read(parts, back, why)
+						&& KCMStoryHtml::Same(settled, back.fAfter, why, kTrue)
+						&& KCMStoryHtml::Same(settled, back.fOrigin, why, kTrue);
+			}
+			if (!sound)
 			{
 				++refused;
 				if (firstRefusal.IsEmpty())
@@ -829,6 +846,8 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 				continue;
 			}
 
+			std::string docx;
+			KCMZipStore::Write(parts, docx);
 			if (WriteStoryFile(folder, storyRef.GetUID().Get(), docx, kKCMStoryTextDocx))
 				++written;
 			else

@@ -23,10 +23,12 @@
 //  measured there too, with Word itself (word_open.ps1) - docs/ai-notes/kcm-docx-probe-2026-09-19.md
 //  is the measurement every spelling below rests on.
 //
-//  ⚠**THIS IS THE WRITING HALF ONLY** (stage 1 of the plan, docs/superpowers/plans/2026-09-19-kcm-
-//   story-docx-stage1-write.md). Until Read exists, an export cannot check itself the way the HTML
-//   one does (Write, Read, Same), so a .docx written by this build is for LOOKING AT, not for
-//   handing to somebody to edit.
+//  *** BOTH HALVES ARE HERE. *** Write (stage 1, docs/superpowers/plans/2026-09-19-kcm-story-docx-
+//  stage1-write.md) and Read (stage 2, ...-stage2-read.md). Read walks one tree twice - once for the
+//  story as Word shows it, once for the story as it was written, which Word's revision marks let
+//  it rebuild - and OriginMatchesTag says whether the second one is the fingerprint the tag holds.
+//  The export checks itself the way the HTML one does (Write, Read, Same), so a .docx from a
+//  build of this file is one that has been read back before it was written.
 //
 //  HOW EACH THING IS SPELT (all of it measured in Word 2007; newer Words are still to be measured):
 //    a paragraph            <w:p>, its text in <w:t xml:space="preserve">
