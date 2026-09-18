@@ -68,6 +68,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMSetSourceMenuKey,				"Set as Source",
                 kKCMTaskStartMenuKey,				"Task Start",
 		kKCMExportStoryTextMenuKey,			"Export Story Text...",
+		kKCMExportStoryDocxMenuKey,			"Export Story Text as Word...",
 		kKCMImportStoryTextMenuKey,			"Import Story Text...",
                 kKCMClearChosenMenuKey,			"Clear Target and Source",
                 kKCMBookDialogTitleKey,			"Kohaku Change Marker - Compare Books",

@@ -457,6 +457,8 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupImportAllStoriesActionID, kKCMUIPrefix + 7
 DECLARE_PMID(kActionIDSpace, kKCMChangeRowUndoRestoreActionID, kKCMUIPrefix + 77)	// ★"Undo the Restore" on a CHANGE row's context menu (2026-09-16, the user's ask: "Ctrl+Z puts it back, but I want it on the right-click menu too"). Writes the words the row remembers from BEFORE the take-in back over what went in, drops that row's record of having been taken in, and diffs the story again - so the change returns to the list as a live difference. ⚠**NOT Edit > Undo**: it is a command of its own, so it works whatever else has been done since, and it is itself undoable. Live in the Story mode on a change that is standing as taken-in (kCustomEnabling -> KCMChangeRowCanUndoRestore). Facade UndoRestoreChange -> KCMStoryRestore.cpp
 DECLARE_PMID(kActionIDSpace, kKCMChangeRowUndoImportActionID, kKCMUIPrefix + 78)	// ★"Change Back to the Original" - the same action under the name the Import mode calls for (the user's pick, 2026-09-16: the two modes keep separate names, as Restore Source Text / Change to Imported Text already do). Greyed everywhere else, so one name shows and never both
 
+DECLARE_PMID(kActionIDSpace, kKCMPopupExportStoryDocxActionID, kKCMUIPrefix + 79)	// ★"Export Story Text as Word..." on the flyout (2026-09-19): the same stories, the same selection rule and the same dated folder as Export Story Text..., written as .docx for Word instead of .html (the model's KCMStoryDocx). Greyed on the same one condition - no active document. ⚠+79 was MEASURED free: the highest in this space was +78. Facade ExportStoryTextAs(..., 1, ...)
+
 DECLARE_PMID(kActionIDSpace, kKCMPopupModeResourcesActionID, kKCMUIPrefix + 57)	// ★"Compare mode > Resources Changes" on the flyout (2026-09-09). The third mode: export each document as XML and compare the DEFINITIONS - styles, swatches, layers - so that a change to something nobody has applied is reported. It moves no pixel and touches no word, which is why neither of the other two modes can see it. Exclusive with Pixel and Story, the selected one carrying the check (kCustomEnabling + kSelectedAction). KCMActionComponent.cpp
 
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
@@ -722,6 +724,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMSetSourceMenuKey		kKCMStringPrefix "kKCMSetSourceMenuKey"	// ★the menu name of "Set as Source" on the panel flyout (the active document becomes the older version)
 #define kKCMTaskStartMenuKey		kKCMStringPrefix "kKCMTaskStartMenuKey"	// ★the menu name of "Task Start" on the panel flyout (the active document's state now becomes the Source)
 #define kKCMExportStoryTextMenuKey	kKCMStringPrefix "kKCMExportStoryTextMenuKey"	// the menu name of "Export Story Text..." on the panel flyout
+#define kKCMExportStoryDocxMenuKey	kKCMStringPrefix "kKCMExportStoryDocxMenuKey"	// the menu name of "Export Story Text as Word..." on the panel flyout (2026-09-19)
 #define kKCMImportStoryTextMenuKey	kKCMStringPrefix "kKCMImportStoryTextMenuKey"	// the menu name of "Import Story Text..." on the panel flyout
 #define kKCMClearChosenMenuKey	kKCMStringPrefix "kKCMClearChosenMenuKey"	// ★the menu name of "Clear Target and Source" on the panel flyout (drops both choices; the next Start falls back to the automatic rule)
 #define kKCMBookDialogTitleKey	kKCMStringPrefix "kKCMBookDialogTitleKey"	// the title of the book comparison dialog
@@ -1130,6 +1133,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMImportStoryTextMenuItemPosition	9.022	// "Import Story Text...", directly under Export: the two halves of one round trip
 #define kKCMSetTargetMenuItemPosition		9.03	// "Set as Target"
 #define kKCMSetSourceMenuItemPosition		9.04	// "Set as Source", right below its Target counterpart (the pair reads new-then-old, as the two "Always Show Marks on" toggles do)
+#define kKCMExportStoryDocxMenuItemPosition	9.0215	// "Export Story Text as Word...", between the two: the other spelling of the same export, and still in front of the import that reads either
 #define kKCMClearChosenMenuItemPosition	9.05	// "Clear Target and Source", directly below the items it undoes
 #define kKCMCompareBooksMenuItemPosition	9.06	// "Compare Books" (chapter by chapter), still above Sep1 so that everything which BEGINS a comparison reads as one group
 #define kKCMExportReportMenuItemPosition	9.07	// "Export Before/After PDF Report", last of the group because it writes out what the comparison found (2026-09-14: moved up from 9.535, out of the plain commands)

@@ -824,6 +824,13 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMExportStoryTextMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Export Story Text as Word..." on the panel flyout (2026-09-19). The same export in the
+		// other spelling - .docx, for a reader whose editor is Word - directly under the .html one.
+		kKCMPopupExportStoryDocxActionID,
+		kKCMPopupMenuPath,
+		kKCMExportStoryDocxMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Import Story Text..." on the panel flyout (2026-09-15). Plain command: a folder of
 		// edited HTML is read and the Story comparison starts against a copy holding those words.
 		// Directly under Export - the two are one round trip.
@@ -1443,6 +1450,17 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKCMActionComponentBoss,
 		kKCMPopupExportStoryTextActionID,
 		kKCMExportStoryTextMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Export Story Text as Word..." (2026-09-19): the same export, as .docx. Greyed on the
+		// same one condition as the item above, and by the same branch of UpdateActionStates.
+		kKCMActionComponentBoss,
+		kKCMPopupExportStoryDocxActionID,
+		kKCMExportStoryDocxMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,

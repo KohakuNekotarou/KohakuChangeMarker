@@ -910,8 +910,16 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		case kKCMPopupExportStoryTextActionID:
 			{
 				// ★**THE SELECTION IS READ BEFORE THE DIALOG OPENS.** A modal file dialog takes the
+		// ★★**TWO ITEMS, ONE BODY** (2026-09-19): "Export Story Text as Word..." is the same export in
+		//   the other spelling (.docx - the model's KCMStoryDocx), so everything below - the selection
+		//   read first, the refusal of a selection holding no text, the folder chooser, the line
+		//   that says which road the selection took - is shared, and the two differ in the one
+		//   number handed to the facade. Writing it twice would be two places to keep agreeing.
 				//   keyboard focus and is a window in its own right; reading the selection first
+		case kKCMPopupExportStoryDocxActionID:
 				//   cannot be wrong, while reading it after would depend on what a dialog does to
+				const bool16 asWord = (actionID.Get() == kKCMPopupExportStoryDocxActionID) ? kTrue : kFalse;
+
 				//   a selection - which is not a thing this code should have to know.
 				IDataBase* const db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
 				if (db == nil)
@@ -932,7 +940,8 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				}
 
 				SDKFolderChooser chooser;
-				PMString title("Export Story Text - where to put the folder");
+				PMString title(asWord ? "Export Story Text as Word - where to put the folder"
+									  : "Export Story Text - where to put the folder");
 				title.SetTranslatable(kFalse);
 				chooser.SetTitle(title);
 				chooser.ShowDialog();
@@ -941,8 +950,10 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 					PMString exportMsg;
 					// ⚠An EMPTY list means every story - the rule is stated once, in
 					//   KCMStoryTextExport.h, and this is the only place that leans on it.
-					Utils<IKCMStoryEditsFacade>()->ExportStoryText(chooser.GetIDFile(), stories,
-																   exportMsg);
+					// ⚠0 and 1 are KCMStoryTextFormat's values (the model's KCMStoryTextExport.h); the
+					//  facade takes a plain number so that this half needs nothing of that header.
+					Utils<IKCMStoryEditsFacade>()->ExportStoryTextAs(chooser.GetIDFile(), stories,
+																	 asWord ? 1 : 0, exportMsg);
 					// ★**SAY WHICH ROAD IT TOOK.** "4 files" means one thing when the reader
 					//   selected nothing and quite another when they selected one frame - and
 					//   without this line the two are spelt the same in the status line. It is
@@ -1496,7 +1507,8 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 								 && !compare->IsArmed()) ? kTrue : kFalse;
 			listToUpdate->SetNthActionState(i, live ? kEnabledAction : kDisabled_Unselected);
 		}
-		else if (action == kKCMPopupExportStoryTextActionID)
+		else if (action == kKCMPopupExportStoryTextActionID
+				 || action == kKCMPopupExportStoryDocxActionID)
 		{
 			// ★AN ACTIVE DOCUMENT IS THE WHOLE CONDITION. This item reads and never compares, so
 			//   it needs no Target, no Source and no comparison - and CanTakeTaskStart is already

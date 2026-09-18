@@ -590,6 +590,15 @@ public:
 		⚠Appended at the END. */
 	virtual void	StoreStatusLayers(const KCMStoryLayers& layers) = 0;
 	virtual void	GetStatusLayers(KCMStoryLayers& out) = 0;
+
+	/** ExportStoryText, in the spelling asked for (2026-09-19): 0 is the .html road, 1 the .docx one
+		for Word - KCMStoryTextExport.h's KCMStoryTextFormat, as a plain number so that this header
+		needs nothing of that one. Everything else is ExportStoryText's, word for word.
+		⚠A NEW VIRTUAL RATHER THAN A FOURTH ARGUMENT ON THE OLD ONE, and APPENDED AT THE END: the old
+		  one keeps its slot and its shape for whoever calls it through the vtable
+		  ([[facade-vtable-slot-append-only]]). Adding this means rebuilding both halves and KIDMCP. */
+	virtual bool16	ExportStoryTextAs(const IDFile& parent, const UIDList& onlyThese, int32 format,
+									  PMString& outMessage) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__
