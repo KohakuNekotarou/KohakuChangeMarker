@@ -1772,8 +1772,29 @@ bool16 SameSpans(const KCMAttrSpanList& a, const KCMAttrSpanList& b, const std::
 	return kTrue;
 }
 
+/** Where the footnotes' references stand, compared only when the caller's format carries them
+	(KCMStoryHtml.h, Same's withNoteRefs says which does and why the other must not be asked). */
+bool16 SameNoteRefs(const std::vector<NoteRef>& a, const std::vector<NoteRef>& b,
+					const std::string& where, std::string& outWhy)
+{
+	if (a.size() != b.size())
+	{
+		outWhy = where + ": " + Num(a.size()) + " note reference(s) became " + Num(b.size());
+		return kFalse;
+	}
+	for (size_t k = 0; k < a.size(); ++k)
+	{
+		if (a[k].fAt != b[k].fAt || a[k].fNote != b[k].fNote)
+		{
+			outWhy = where + ": note reference " + Num(k) + " differs";
+			return kFalse;
+		}
+	}
+	return kTrue;
+}
+
 bool16 SameParas(const std::vector<Para>& a, const std::vector<Para>& b, const std::string& where,
-				 std::string& outWhy)
+				 bool16 withNoteRefs, std::string& outWhy)
 {
 	if (a.size() != b.size())
 	{
@@ -1796,13 +1817,15 @@ bool16 SameParas(const std::vector<Para>& a, const std::vector<Para>& b, const s
 			return kFalse;
 		if (!SameSpans(a[i].fWarichu, b[i].fWarichu, here, "warichu", outWhy))
 			return kFalse;
+		if (withNoteRefs && !SameNoteRefs(a[i].fNoteRefs, b[i].fNoteRefs, here, outWhy))
+			return kFalse;
 	}
 	return kTrue;
 }
 
 }	// anonymous namespace
 
-bool16 Same(const Story& a, const Story& b, std::string& outWhy)
+bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNoteRefs)
 {
 	outWhy.clear();
 
@@ -1812,7 +1835,7 @@ bool16 Same(const Story& a, const Story& b, std::string& outWhy)
 		return kFalse;
 	}
 
-	if (!SameParas(a.fBody, b.fBody, "the body", outWhy))
+	if (!SameParas(a.fBody, b.fBody, "the body", withNoteRefs, outWhy))
 		return kFalse;
 
 	if (a.fNotes.size() != b.fNotes.size())
@@ -1822,7 +1845,7 @@ bool16 Same(const Story& a, const Story& b, std::string& outWhy)
 	}
 	for (size_t n = 0; n < a.fNotes.size(); ++n)
 	{
-		if (!SameParas(a.fNotes[n], b.fNotes[n], "note " + Num(n + 1), outWhy))
+		if (!SameParas(a.fNotes[n], b.fNotes[n], "note " + Num(n + 1), withNoteRefs, outWhy))
 			return kFalse;
 	}
 
@@ -1875,7 +1898,7 @@ bool16 Same(const Story& a, const Story& b, std::string& outWhy)
 					outWhy = cell + ": its span changed";
 					return kFalse;
 				}
-				if (!SameParas(p.fParas, q.fParas, cell, outWhy))
+				if (!SameParas(p.fParas, q.fParas, cell, withNoteRefs, outWhy))
 					return kFalse;
 			}
 		}

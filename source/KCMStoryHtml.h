@@ -56,6 +56,22 @@
 namespace KCMStoryHtml
 {
 
+/** Where one footnote's reference stands in a paragraph (2026-09-19).
+
+	★★**THE DOCX FORMAT CARRIES THIS AND THE HTML ONE DOES NOT.** Word cannot hold a footnote
+	  without its reference standing in the body, so KCMStoryDocx writes it; the HTML decision of
+	  2026-09-16 (Para, below) stands exactly as it was - KCMStoryHtml::Write never writes this,
+	  Read never fills it, and Same looks at it only when asked to.
+	fAt counts fText's code points, 0 to the paragraph's length: the reference stands BEFORE the
+	character at fAt, and at the length it ends the paragraph. fNote indexes Story::fNotes. */
+struct NoteRef
+{
+	int32	fAt;
+	int32	fNote;
+
+	NoteRef() : fAt(0), fNote(0) {}
+};
+
 /** One paragraph, in the shape both sides use.
 
 	fText is the paragraph's text as KCMTextRead reports it - see the file header. fRuby is
@@ -76,6 +92,7 @@ struct Para
 	KCMAttrSpanList		fKenten;	// as KCMParaAttrs::fKenten - fValue is the KIND's name
 	KCMAttrSpanList		fTcy;		// as KCMParaAttrs::fTcy - fValue is the characters it covers
 	KCMAttrSpanList		fWarichu;	// as KCMParaAttrs::fWarichu (2026-09-17) - the same, for a warichu
+	std::vector<NoteRef>	fNoteRefs;	// in order of fAt. DOCX ONLY - see NoteRef; HTML neither writes nor reads it
 };
 
 /** The default mark, for an <em> that names none. See kKentenDefaultValue's comment. */
@@ -217,8 +234,11 @@ void Write(const Story& s, int32 uid, std::string& out);
 	  rather than after somebody has spent a day editing it.
 	★**AND IT IS THE HARNESS'S CHECK TOO**: Read(Write(x)) == x is the property the whole file
 	  exists to keep, and this is that sentence as a function.
-	@param outWhy where the first difference is, in words a status line can show. */
-bool16 Same(const Story& a, const Story& b, std::string& outWhy);
+	@param outWhy where the first difference is, in words a status line can show.
+	@param withNoteRefs kTrue compares Para::fNoteRefs as well. ⚠**kFalse FOR EVERYTHING HTML**: that
+	  format does not carry a reference's place, so a story read back from it has none, and asking
+	  would refuse every story with a footnote in it. KCMStoryDocx's own check passes kTrue. */
+bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNoteRefs = kFalse);
 
 /** HTML -> Story. kFalse with a reason when the markup cannot be read at all.
 
