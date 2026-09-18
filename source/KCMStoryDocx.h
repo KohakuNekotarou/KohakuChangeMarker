@@ -146,6 +146,31 @@ bool16 WriteParts(const KCMStoryHtml::Story& s, int32 uid, const std::string& do
 bool16 Write(const KCMStoryHtml::Story& s, int32 uid, const std::string& documentNameUtf8,
 			 std::string& outDocx, std::string& whyNot);
 
+//========================================================================================
+//  THE READING HALF (stage 2, docs/superpowers/plans/2026-09-19-kcm-story-docx-stage2-read.md)
+//========================================================================================
+
+/** What customXml/item1.xml says: which story, from which document, and the fingerprint of the
+	story as written. fPresent is kFalse for a custom XML part that is somebody else's - Word keeps
+	other people's parts too, and one of those is not an error. */
+struct Tag
+{
+	bool16		fPresent;
+	int32		fUid;
+	int32		fFormat;
+	std::string	fDocument;		// UTF-8, entities decoded
+	std::string	fFingerprint;	// as written: "<bytes>-<crc32>"
+
+	Tag() : fPresent(kFalse), fUid(0), fFormat(0) {}
+};
+
+/** One custom XML part -> Tag. ★READ AS XML, NOT MATCHED AS BYTES: Word parses this part and writes
+	it out again (measured 2026-09-19 - the line break after the declaration came off), so what is
+	relied on is the element, its namespace and its attributes, in whatever order and spelling.
+	@return kTrue with fPresent kFalse when the part is not ours; kFalse with a reason when it IS ours
+	  and cannot be read - a format this build does not know, a uid that is not a number. */
+bool16 ReadTag(const std::string& customXmlPart, Tag& out, std::string& whyNot);
+
 }	// namespace KCMStoryDocx
 
 #endif // __KCMStoryDocx_h__

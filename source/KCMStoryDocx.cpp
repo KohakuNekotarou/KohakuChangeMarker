@@ -10,6 +10,7 @@
 
 #include "KCMStoryDocx.h"
 #include "KCMTextDiff.h"		// ToCodePoints - the one walk over UTF-8, shared with the HTML writer
+#include "KCMXmlTree.h"		// the reading half walks Word's parts through this
 
 #include <cstdio>
 
@@ -1053,6 +1054,79 @@ bool16 Write(const KCMStoryHtml::Story& s, int32 uid, const std::string& documen
 		return kFalse;
 
 	KCMZipStore::Write(parts, outDocx);
+	return kTrue;
+}
+
+//========================================================================================
+//  THE READING HALF
+//========================================================================================
+
+namespace
+{
+
+/** "269" -> 269. kFalse for anything that is not a plain decimal number. */
+bool16 ParseDecimal(const std::string& text, int32& out)
+{
+	if (text.empty() || text.size() > 10)
+		return kFalse;
+	int32 value = 0;
+	for (size_t i = 0; i < text.size(); ++i)
+	{
+		if (text[i] < '0' || text[i] > '9')
+			return kFalse;
+		value = value * 10 + (text[i] - '0');
+	}
+	out = value;
+	return kTrue;
+}
+
+}	// anonymous namespace
+
+bool16 ReadTag(const std::string& customXmlPart, Tag& out, std::string& whyNot)
+{
+	out = Tag();
+	whyNot.clear();
+
+	KCMXmlTree tree;
+	if (!tree.Parse(customXmlPart.data(), customXmlPart.size(), whyNot))
+		return kFalse;
+	const int32 root = tree.Root();
+	if (root < 0 || !tree.Is(root, kStoryTagNamespace, "story"))
+		return kTrue;			// somebody else's part: present kFalse, and nothing wrong
+
+	out.fPresent = kTrue;
+
+	const std::string* format = tree.Attr(root, "format");
+	if (format == nil || !ParseDecimal(*format, out.fFormat))
+	{
+		whyNot = "the story tag names no format";
+		return kFalse;
+	}
+	if (out.fFormat != 1)
+	{
+		whyNot = "the story tag is of format ";
+		AppendNumber(out.fFormat, whyNot);
+		whyNot += ", and this build reads format 1";
+		return kFalse;
+	}
+
+	const std::string* uid = tree.Attr(root, "uid");
+	if (uid == nil || !ParseDecimal(*uid, out.fUid) || out.fUid <= 0)
+	{
+		whyNot = "the story tag's uid is not a number";
+		return kFalse;
+	}
+
+	const std::string* document = tree.Attr(root, "document");
+	if (document != nil)
+		out.fDocument = *document;
+	const std::string* fingerprint = tree.Attr(root, "fingerprint");
+	if (fingerprint == nil || fingerprint->empty())
+	{
+		whyNot = "the story tag carries no fingerprint";
+		return kFalse;
+	}
+	out.fFingerprint = *fingerprint;
 	return kTrue;
 }
 
