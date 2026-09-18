@@ -1032,11 +1032,19 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				PMString extension("html");
 				extension.SetTranslatable(kFalse);
 				dialog->AddExtension(&family, &extension);
-				// ★**AND "All Files" UNDERNEATH IT**, so that a reader whose folder shows nothing
+				// ★**AND THE OTHER SPELLING** (2026-09-19): a .docx written by Export Story Text as
+				//   Word..., edited in Word with its revision tracking on. The model half tells the
+				//   two apart by the extension; both may be chosen at once.
+				PMString wordFamily("Word document (*.docx)");
+				wordFamily.SetTranslatable(kFalse);
+				PMString wordExtension("docx");
+				wordExtension.SetTranslatable(kFalse);
+				dialog->AddExtension(&wordFamily, &wordExtension);
+				// ★**AND "All Files" UNDERNEATH THEM**, so that a reader whose folder shows nothing
 				//   can see what is actually in there rather than an empty dialog.
-				// ⚠**IT DOES NOT WIDEN WHAT GOES IN.** UidOfLeaf takes "<decimal>.html" and nothing
-				//  else, so a file shown by this second filter and then chosen is counted as "not
-				//  named after a story" - seen, said, and not imported.
+				// ⚠**IT DOES NOT WIDEN WHAT GOES IN.** The model takes "<decimal>.html" and a .docx
+				//  by its tag, and nothing else, so a file shown by this last filter and then chosen
+				//  is counted as "not named after a story" - seen, said, and not imported.
 				dialog->AppendAllFilesToFilterList();
 
 				PMString title("Import Story Text - the edited story files");
