@@ -72,6 +72,26 @@ namespace KCMStoryDocx
 	  - a kenten value KCMStoryHtml::KentenClassOf cannot name. */
 bool16 WriteParagraphContent(const KCMStoryHtml::Para& p, std::string& out, std::string& whyNot);
 
+/** A run of paragraphs with the tables standing among them: the body, or one cell.
+
+	★**A TABLE STANDS BETWEEN PARAGRAPHS AND BELONGS TO THE ONE BEFORE IT**, exactly as in the HTML
+	  format: "AB" with a table after the A is <w:p>A</w:p>, the <w:tbl>, and then B in a paragraph
+	  whose style is kcm-continued - the reader's sign to join it back on.
+	⚠**UNLIKE THE HTML FORMAT, THE CONTINUED HALF IS ALWAYS WRITTEN, EMPTY OR NOT.** Two of Word's
+	  own rules ask for it: a cell has to END with a paragraph (so a nested table cannot be a cell's
+	  last thing), and two tables that touch are joined into one. An empty continued paragraph
+	  joins back on as nothing, so it costs the round trip nothing.
+	★A MERGED CELL: Story's rows hold the ANCHORS only, and Word wants a cell in every row a
+	  vertical merge covers, so the covered ones are made up here (<w:vMerge/>, an empty paragraph).
+
+	@param paras    the body's paragraphs, or one cell's.
+	@param inTable  -1 for the body, else the index in s.fTables of the table that cell is in -
+	                with inRow and inCell, this is how KCMStoryHtml::Table says where it stands.
+	@param out      appended to - and left exactly as it was when this answers kFalse.
+	@return kFalse with a reason: WriteParagraphContent's refusals, from however deep. */
+bool16 WriteBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml::Para>& paras,
+				   int32 inTable, int32 inRow, int32 inCell, std::string& out, std::string& whyNot);
+
 }	// namespace KCMStoryDocx
 
 #endif // __KCMStoryDocx_h__

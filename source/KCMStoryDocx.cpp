@@ -303,6 +303,305 @@ bool16 WriteParagraphContent(const KCMStoryHtml::Para& p, std::string& out, std:
 	return kTrue;
 }
 
+namespace
+{
+
+const char* const kContinuedProps = "<w:pPr><w:pStyle w:val=\"kcm-continued\"/></w:pPr>";
+
+// A table inside a table inside a table... The data cannot really do this (a nested table comes
+// later in Story::fTables than the one it stands in), so this only stops a malformed Story from
+// walking for ever.
+const int32 kDeepestNesting = 32;
+
+/** The characters [from, to) of a paragraph, with every span that reaches into them, re-based.
+
+	★**A NOTE REFERENCE AT A CUT BELONGS TO THE PIECE BEFORE IT**: the pieces are cut where tables
+	  stand, and a reference at that very place is written in front of the table - once. So a
+	  piece takes the references with from < fAt <= to, and the first piece takes fAt == 0 too. */
+KCMStoryHtml::Para Slice(const KCMStoryHtml::Para& p, const std::vector<int32>& byteAt,
+						 int32 from, int32 to)
+{
+	KCMStoryHtml::Para piece;
+
+	const size_t n = byteAt.size();
+	const size_t b0 = (static_cast<size_t>(from) < n) ? static_cast<size_t>(byteAt[static_cast<size_t>(from)])
+													  : p.fText.size();
+	const size_t b1 = (static_cast<size_t>(to) < n) ? static_cast<size_t>(byteAt[static_cast<size_t>(to)])
+													: p.fText.size();
+	piece.fText = p.fText.substr(b0, b1 - b0);
+
+	const KCMAttrSpanList* const lists[4] = { &p.fRuby, &p.fKenten, &p.fTcy, &p.fWarichu };
+	KCMAttrSpanList* const made[4] = { &piece.fRuby, &piece.fKenten, &piece.fTcy, &piece.fWarichu };
+	for (int32 which = 0; which < 4; ++which)
+	{
+		for (size_t k = 0; k < lists[which]->size(); ++k)
+		{
+			KCMAttrSpan span = (*lists[which])[k];
+			const int32 s0 = (span.fStart > from) ? span.fStart : from;
+			const int32 s1 = (span.fStart + span.fLen < to) ? span.fStart + span.fLen : to;
+			if (s1 <= s0)
+				continue;
+			span.fStart = s0 - from;
+			span.fLen = s1 - s0;
+			made[which]->push_back(span);
+		}
+	}
+
+	for (size_t k = 0; k < p.fNoteRefs.size(); ++k)
+	{
+		const int32 at = p.fNoteRefs[k].fAt;
+		if ((at > from && at <= to) || (at == 0 && from == 0))
+		{
+			KCMStoryHtml::NoteRef ref = p.fNoteRefs[k];
+			ref.fAt = at - from;
+			piece.fNoteRefs.push_back(ref);
+		}
+	}
+	return piece;
+}
+
+/** One <w:p>. An empty one with nothing to say about itself is <w:p/>. */
+bool16 AppendParagraph(const KCMStoryHtml::Para& piece, bool16 continued, std::string& out,
+					   std::string& whyNot)
+{
+	std::string content;
+	if (!WriteParagraphContent(piece, content, whyNot))
+		return kFalse;
+
+	if (content.empty() && !continued)
+	{
+		out += "<w:p/>";
+		return kTrue;
+	}
+	out += "<w:p>";
+	if (continued)
+		out += kContinuedProps;
+	out += content;
+	out += "</w:p>";
+	return kTrue;
+}
+
+/*	Slot
+	One <w:tc> of a row as Word wants it: an anchor cell of the Story's, or a cell a vertical merge
+	from above covers.
+*/
+struct Slot
+{
+	int32	fCell;		// index into Row::fCells, or -1 for a covered cell
+	int32	fSpan;		// grid columns
+	bool16	fRestarts;	// an anchor that reaches down into the rows below
+
+	Slot() : fCell(-1), fSpan(1), fRestarts(kFalse) {}
+};
+
+struct Carry
+{
+	int32	fRowsLeft;
+	int32	fSpan;
+
+	Carry() : fRowsLeft(0), fSpan(1) {}
+};
+
+/** Lay one row out over the grid. `carry` is the merges reaching down from the rows above, by the
+	grid column each starts at, and is updated for the row below. @return the columns the row used. */
+int32 LayRowOut(const KCMStoryHtml::Row& row, std::vector<Carry>& carry, std::vector<Slot>& outSlots)
+{
+	outSlots.clear();
+
+	int32 col = 0;
+	size_t next = 0;
+	for (;;)
+	{
+		if (static_cast<size_t>(col) < carry.size() && carry[static_cast<size_t>(col)].fRowsLeft > 0)
+		{
+			Slot covered;
+			covered.fSpan = carry[static_cast<size_t>(col)].fSpan;
+			--carry[static_cast<size_t>(col)].fRowsLeft;
+			outSlots.push_back(covered);
+			col += covered.fSpan;
+			continue;
+		}
+
+		if (next >= row.fCells.size())
+		{
+			// The anchors are used up. A merge reaching down further to the right still needs its
+			// covered cell; a ragged gap before it is left a gap.
+			size_t further = static_cast<size_t>(col);
+			while (further < carry.size() && carry[further].fRowsLeft <= 0)
+				++further;
+			if (further >= carry.size())
+				break;
+			col = static_cast<int32>(further);
+			continue;
+		}
+
+		const KCMStoryHtml::Cell& cell = row.fCells[next];
+		Slot anchor;
+		anchor.fCell = static_cast<int32>(next);
+		anchor.fSpan = (cell.fColSpan > 0) ? cell.fColSpan : 1;
+		anchor.fRestarts = (cell.fRowSpan > 1) ? kTrue : kFalse;
+
+		if (carry.size() < static_cast<size_t>(col + anchor.fSpan))
+			carry.resize(static_cast<size_t>(col + anchor.fSpan));
+		if (anchor.fRestarts)
+		{
+			carry[static_cast<size_t>(col)].fRowsLeft = cell.fRowSpan - 1;
+			carry[static_cast<size_t>(col)].fSpan = anchor.fSpan;
+		}
+
+		outSlots.push_back(anchor);
+		col += anchor.fSpan;
+		++next;
+	}
+	return col;
+}
+
+bool16 AppendBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml::Para>& paras,
+					int32 inTable, int32 inRow, int32 inCell, int32 depth, std::string& out,
+					std::string& whyNot);
+
+bool16 AppendTable(const KCMStoryHtml::Story& s, size_t index, int32 depth, std::string& out,
+				   std::string& whyNot)
+{
+	const KCMStoryHtml::Table& table = s.fTables[index];
+
+	// ---- the grid, settled before a byte is written: <w:tblGrid> comes first in the markup ------
+	std::vector< std::vector<Slot> > rows(table.fRows.size());
+	int32 columns = 1;
+	{
+		std::vector<Carry> carry;
+		for (size_t r = 0; r < table.fRows.size(); ++r)
+		{
+			const int32 used = LayRowOut(table.fRows[r], carry, rows[r]);
+			if (used > columns)
+				columns = used;
+		}
+	}
+	const int32 columnWidth = 9000 / columns;		// twips; Word re-fits them, this is a start
+
+	out += "<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/><w:tblBorders>"
+		   "<w:top w:val=\"single\" w:sz=\"4\"/><w:left w:val=\"single\" w:sz=\"4\"/>"
+		   "<w:bottom w:val=\"single\" w:sz=\"4\"/><w:right w:val=\"single\" w:sz=\"4\"/>"
+		   "<w:insideH w:val=\"single\" w:sz=\"4\"/><w:insideV w:val=\"single\" w:sz=\"4\"/>"
+		   "</w:tblBorders></w:tblPr><w:tblGrid>";
+	for (int32 c = 0; c < columns; ++c)
+	{
+		out += "<w:gridCol w:w=\"";
+		AppendNumber(columnWidth, out);
+		out += "\"/>";
+	}
+	out += "</w:tblGrid>";
+
+	for (size_t r = 0; r < table.fRows.size(); ++r)
+	{
+		out += "<w:tr>";
+		if (table.fRows[r].fHeader)
+			out += "<w:trPr><w:tblHeader/></w:trPr>";
+
+		for (size_t k = 0; k < rows[r].size(); ++k)
+		{
+			const Slot& slot = rows[r][k];
+			out += "<w:tc><w:tcPr><w:tcW w:w=\"";
+			AppendNumber(columnWidth * slot.fSpan, out);
+			out += "\" w:type=\"dxa\"/>";
+			if (slot.fSpan > 1)
+			{
+				out += "<w:gridSpan w:val=\"";
+				AppendNumber(slot.fSpan, out);
+				out += "\"/>";
+			}
+			if (slot.fCell < 0)
+				out += "<w:vMerge/>";
+			else if (slot.fRestarts)
+				out += "<w:vMerge w:val=\"restart\"/>";
+			out += "</w:tcPr>";
+
+			if (slot.fCell < 0)
+			{
+				out += "<w:p/>";
+			}
+			else if (!AppendBlocks(s, table.fRows[r].fCells[static_cast<size_t>(slot.fCell)].fParas,
+								   static_cast<int32>(index), static_cast<int32>(r), slot.fCell,
+								   depth + 1, out, whyNot))
+			{
+				return kFalse;
+			}
+			out += "</w:tc>";
+		}
+		out += "</w:tr>";
+	}
+	out += "</w:tbl>";
+	return kTrue;
+}
+
+bool16 AppendBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml::Para>& paras,
+					int32 inTable, int32 inRow, int32 inCell, int32 depth, std::string& out,
+					std::string& whyNot)
+{
+	if (depth > kDeepestNesting)
+	{
+		whyNot = "the tables are nested deeper than this format writes";
+		return kFalse;
+	}
+
+	if (paras.empty())
+	{
+		out += "<w:p/>";		// a cell of Word's cannot be empty
+		return kTrue;
+	}
+
+	for (size_t i = 0; i < paras.size(); ++i)
+	{
+		const KCMStoryHtml::Para& p = paras[i];
+		std::vector<int32> byteAt;
+		KCMTextDiff::ToCodePoints(p.fText, nil, &byteAt);
+		const int32 n = static_cast<int32>(byteAt.size());
+
+		int32 pos = 0;
+		bool16 first = kTrue;
+
+		// Story::fTables is in document order, so the ones standing in this paragraph come out
+		// in the order of their places.
+		for (size_t t = 0; t < s.fTables.size(); ++t)
+		{
+			const KCMStoryHtml::Table& table = s.fTables[t];
+			if (table.fInTable != inTable || table.fParaIndex != static_cast<int32>(i))
+				continue;
+			if (inTable >= 0 && (table.fInRow != inRow || table.fInCell != inCell))
+				continue;
+
+			int32 at = table.fOffset;
+			if (at < pos)	at = pos;
+			if (at > n)		at = n;
+
+			if (!AppendParagraph(Slice(p, byteAt, pos, at), first ? kFalse : kTrue, out, whyNot))
+				return kFalse;
+			if (!AppendTable(s, t, depth, out, whyNot))
+				return kFalse;
+			pos = at;
+			first = kFalse;
+		}
+
+		// ⚠THE TAIL IS ALWAYS WRITTEN - the header says which two rules of Word's ask for it.
+		if (!AppendParagraph(Slice(p, byteAt, pos, n), first ? kFalse : kTrue, out, whyNot))
+			return kFalse;
+	}
+	return kTrue;
+}
+
+}	// anonymous namespace
+
+bool16 WriteBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml::Para>& paras,
+				   int32 inTable, int32 inRow, int32 inCell, std::string& out, std::string& whyNot)
+{
+	// Into a string of its own: a refusal from deep inside a cell leaves `out` as it was found.
+	std::string made;
+	if (!AppendBlocks(s, paras, inTable, inRow, inCell, 0, made, whyNot))
+		return kFalse;
+	out += made;
+	return kTrue;
+}
+
 }	// namespace KCMStoryDocx
 
 // End, KCMStoryDocx.cpp.
