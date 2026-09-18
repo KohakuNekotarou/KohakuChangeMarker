@@ -612,7 +612,16 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outN
 			KCMStoryHtml::NoteRef ref;
 			ref.fAt = (textOffset > 0) ? textOffset : 0;
 			ref.fNote = note;
-			para->fNoteRefs.push_back(ref);		// the owned items come in TextIndex order, so these do too
+			// ★KEPT IN ORDER OF fAt HERE, NOT TRUSTED TO ARRIVE SO: KCMStoryDocx walks a paragraph's
+			//   references once, front to back, and one out of order would be written late. The owned
+			//   items do come in TextIndex order on everything measured - this is what makes that an
+			//   observation rather than something the writer's correctness hangs on. Equal places keep
+			//   the order they arrived in.
+			std::vector<KCMStoryHtml::NoteRef>& refs = para->fNoteRefs;
+			size_t where = refs.size();
+			while (where > 0 && refs[where - 1].fAt > ref.fAt)
+				--where;
+			refs.insert(refs.begin() + static_cast<std::ptrdiff_t>(where), ref);
 		}
 	}
 
