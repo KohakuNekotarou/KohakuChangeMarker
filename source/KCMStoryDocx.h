@@ -92,6 +92,34 @@ bool16 WriteParagraphContent(const KCMStoryHtml::Para& p, std::string& out, std:
 bool16 WriteBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml::Para>& paras,
 				   int32 inTable, int32 inRow, int32 inCell, std::string& out, std::string& whyNot);
 
+/** Every part of the package, in the order they are zipped.
+
+	  [Content_Types].xml, _rels/.rels, word/document.xml, word/_rels/document.xml.rels,
+	  word/styles.xml, word/settings.xml, word/footnotes.xml (ONLY when the story has notes - and
+	  then nothing else speaks of footnotes either), customXml/item1.xml and its two companions.
+
+	★★★**customXml/item1.xml IS THE ORIGIN: the story as it stood when it was written**, which is what
+	  lets the import tell Word's changes from everybody else's (the design, section 1-1). It holds
+	  the <w:document> and <w:footnotes> ELEMENTS THEMSELVES, byte for byte, beside the story's uid
+	  and the document's name - so the reader of the origin is the reader of the document, and
+	  there is no second serialisation to keep in step. ★Measured: Word keeps a custom XML part of
+	  a namespace of our own untouched through a save.
+	★**settings.xml SWITCHES REVISION TRACKING ON**, so the editor sees their own changes in red.
+	  The import does not depend on it - that is the point of carrying the origin.
+	★**styles.xml HOLDS EVERY BUILT-IN KENTEN KIND, USED OR NOT**, plus one style for each custom
+	  mark the story uses, in a fixed order: the same story is the same bytes.
+
+	@param uid               the story's UID - the pairing, as the file name is for the HTML format.
+	@param documentNameUtf8  the document's name, for the import's "is this the right document?".
+	@return kFalse with a reason: WriteBlocks' refusals, a note nothing refers to (Word cannot
+	  keep one), or a reference to a note the story does not have. */
+bool16 WriteParts(const KCMStoryHtml::Story& s, int32 uid, const std::string& documentNameUtf8,
+				  std::vector<KCMZipStore::Entry>& outParts, std::string& whyNot);
+
+/** The same, zipped: the bytes of the .docx. */
+bool16 Write(const KCMStoryHtml::Story& s, int32 uid, const std::string& documentNameUtf8,
+			 std::string& outDocx, std::string& whyNot);
+
 }	// namespace KCMStoryDocx
 
 #endif // __KCMStoryDocx_h__

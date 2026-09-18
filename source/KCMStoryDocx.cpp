@@ -4,6 +4,10 @@
 //
 //========================================================================================
 
+// ⚠FIRST AND UNGUARDED: the plug-in builds with /Yu, which discards everything up to and including
+//  this line. The harness answers it with a stub of its own (work/kcm-storyhtml-test).
+#include "VCPlugInHeaders.h"
+
 #include "KCMStoryDocx.h"
 #include "KCMTextDiff.h"		// ToCodePoints - the one walk over UTF-8, shared with the HTML writer
 
@@ -120,6 +124,17 @@ bool16 IsBreakOrTab(int32 cp)
 	return (cp == 0x000A || cp == 0x0009) ? kTrue : kFalse;
 }
 
+/** Whether a character has to travel as a placeholder rather than as itself.
+
+	KCMStoryHtml::IsInvisible is the rule, and XML adds two characters to it: U+FFFE and U+FFFF
+	are not characters XML 1.0 allows at all, and ONE of them anywhere makes the whole package
+	unreadable - HTML shrugs at them, which is why the shared rule does not name them. (The
+	control characters, which XML forbids too, are IsInvisible's already.) */
+bool16 NeedsPlaceholder(int32 cp)
+{
+	return (KCMStoryHtml::IsInvisible(cp) || cp == 0xFFFE || cp == 0xFFFF) ? kTrue : kFalse;
+}
+
 /*	AppendRuns
 	The characters [from, to) of a paragraph, as runs.
 
@@ -147,7 +162,7 @@ bool16 AppendRuns(const std::string& text, const std::vector<int32>& cps,
 			continue;
 		}
 
-		if (KCMStoryHtml::IsInvisible(cp))
+		if (NeedsPlaceholder(cp))
 		{
 			if (inRuby)
 			{
@@ -164,7 +179,7 @@ bool16 AppendRuns(const std::string& text, const std::vector<int32>& cps,
 		int32 j = i + 1;
 		while (j < to
 			   && !IsBreakOrTab(cps[static_cast<size_t>(j)])
-			   && !KCMStoryHtml::IsInvisible(cps[static_cast<size_t>(j)])
+			   && !NeedsPlaceholder(cps[static_cast<size_t>(j)])
 			   && looks[static_cast<size_t>(j)].SameAs(looks[at]))
 			++j;
 
@@ -231,6 +246,26 @@ bool16 WriteParagraphContent(const KCMStoryHtml::Para& p, std::string& out, std:
 	}
 	PaintSpans(p.fTcy, n, looks, kFalse);
 	PaintSpans(p.fWarichu, n, looks, kTrue);
+
+	// ⚠**A READING IS TEXT TOO, AND IT HAS NOWHERE TO PUT A PLACEHOLDER**: a <w:rt> takes a run and
+	//  nothing else. A reading holding a character that cannot travel as itself would otherwise go
+	//  into the XML raw - and a control character there makes the whole package unreadable (found
+	//  by reading this again on 2026-09-19, and true: the test was written first and failed).
+	for (size_t k = 0; k < p.fRuby.size(); ++k)
+	{
+		std::vector<int32> reading;
+		KCMTextDiff::ToCodePoints(p.fRuby[k].fValue, &reading, nil);
+		for (size_t c = 0; c < reading.size(); ++c)
+		{
+			if (NeedsPlaceholder(reading[c]) || IsBreakOrTab(reading[c]))
+			{
+				whyNot = "a ruby's reading holds a character that cannot be written as itself (U+";
+				AppendHex(reading[c], kTrue, whyNot);
+				whyNot += ")";
+				return kFalse;
+			}
+		}
+	}
 
 	std::vector<int32> rubyOf(static_cast<size_t>(n), -1);
 	for (size_t k = 0; k < p.fRuby.size(); ++k)
@@ -317,9 +352,15 @@ const int32 kDeepestNesting = 32;
 
 	★**A NOTE REFERENCE AT A CUT BELONGS TO THE PIECE BEFORE IT**: the pieces are cut where tables
 	  stand, and a reference at that very place is written in front of the table - once. So a
-	  piece takes the references with from < fAt <= to, and the first piece takes fAt == 0 too. */
+	  piece takes the references with from < fAt <= to, and the FIRST piece takes fAt == 0 too.
+	  ⚠**"FIRST" IS SAID BY THE CALLER, NOT READ OFF from == 0**: a table standing at the very head
+	   of its paragraph makes a first piece that is [0, 0) and a second that ALSO starts at 0, and
+	   both took the reference (2026-09-19 - found by reading, and a failing test before the fix).
+	⚠A RUBY CUT BY A TABLE comes out as two rubies with the same reading, one on each side. That is
+	  what the page shows, and it is not what the Story said - so the export's own check (stage 2)
+	  will refuse such a story rather than let it round-trip into two. */
 KCMStoryHtml::Para Slice(const KCMStoryHtml::Para& p, const std::vector<int32>& byteAt,
-						 int32 from, int32 to)
+						 int32 from, int32 to, bool16 first)
 {
 	KCMStoryHtml::Para piece;
 
@@ -350,7 +391,7 @@ KCMStoryHtml::Para Slice(const KCMStoryHtml::Para& p, const std::vector<int32>& 
 	for (size_t k = 0; k < p.fNoteRefs.size(); ++k)
 	{
 		const int32 at = p.fNoteRefs[k].fAt;
-		if ((at > from && at <= to) || (at == 0 && from == 0))
+		if ((at > from && at <= to) || (first && at <= from))
 		{
 			KCMStoryHtml::NoteRef ref = p.fNoteRefs[k];
 			ref.fAt = at - from;
@@ -574,7 +615,7 @@ bool16 AppendBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml
 			if (at < pos)	at = pos;
 			if (at > n)		at = n;
 
-			if (!AppendParagraph(Slice(p, byteAt, pos, at), first ? kFalse : kTrue, out, whyNot))
+			if (!AppendParagraph(Slice(p, byteAt, pos, at, first), first ? kFalse : kTrue, out, whyNot))
 				return kFalse;
 			if (!AppendTable(s, t, depth, out, whyNot))
 				return kFalse;
@@ -583,7 +624,7 @@ bool16 AppendBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml
 		}
 
 		// ⚠THE TAIL IS ALWAYS WRITTEN - the header says which two rules of Word's ask for it.
-		if (!AppendParagraph(Slice(p, byteAt, pos, n), first ? kFalse : kTrue, out, whyNot))
+		if (!AppendParagraph(Slice(p, byteAt, pos, n, first), first ? kFalse : kTrue, out, whyNot))
 			return kFalse;
 	}
 	return kTrue;
@@ -599,6 +640,350 @@ bool16 WriteBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml:
 	if (!AppendBlocks(s, paras, inTable, inRow, inCell, 0, made, whyNot))
 		return kFalse;
 	out += made;
+	return kTrue;
+}
+
+namespace
+{
+
+const char* const kXmlDeclaration = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n";
+const char* const kWordNamespace = "xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"";
+const char* const kOriginNamespace = "urn:kohaku:kcm:story-origin:1";
+
+/*	The built-in kenten kinds, and the nearest of Word's four emphasis marks for each.
+
+	⚠**THIS LIST IS KCMStoryHtml.cpp's kKentenLooks, A SECOND TIME** - that one is in an anonymous
+	 namespace with CSS beside each name, this one has Word's marks. What says the two still agree
+	 is a test, not a comment: work/kcm-storydocx-test, TestKentenNames, puts every name below
+	 through KCMStoryHtml's KentenValueOfClass and KentenClassOf.
+	★The look is only the nearest one - sesame marks are Word's comma, the hollow ones its circle,
+	 everything else its dot. The NAME carries the kind (the header says why).
+*/
+struct KentenStyle
+{
+	const char*	fClass;
+	const char*	fWordMark;
+};
+
+const KentenStyle kBuiltInKenten[] =
+{
+	{ "BlackSesameDot",		"comma" },
+	{ "WhiteSesameDot",		"comma" },
+	{ "BlackCircle",		"dot" },
+	{ "WhiteCircle",		"circle" },
+	{ "SmallBlackCircle",	"dot" },
+	{ "SmallWhiteCircle",	"circle" },
+	{ "BlackTriangle",		"dot" },
+	{ "WhiteTriangle",		"circle" },
+	{ "Bullseye",			"circle" },
+	{ "Fisheye",			"circle" }
+};
+const size_t kBuiltInKentenCount = sizeof(kBuiltInKenten) / sizeof(kBuiltInKenten[0]);
+
+void AppendKentenStyle(const std::string& cls, const char* wordMark, std::string& out)
+{
+	out += "<w:style w:type=\"character\" w:customStyle=\"1\" w:styleId=\"kenten-";
+	AppendEscaped(cls, 0, cls.size(), out);
+	out += "\"><w:name w:val=\"kenten-";
+	AppendEscaped(cls, 0, cls.size(), out);
+	out += "\"/><w:basedOn w:val=\"DefaultParagraphFont\"/><w:qFormat/><w:rPr><w:em w:val=\"";
+	out += wordMark;
+	out += "\"/></w:rPr></w:style>";
+}
+
+bool16 WriteStyles(const KCMStoryHtml::Story& s, std::string& out, std::string& whyNot)
+{
+	out = kXmlDeclaration;
+	out += "<w:styles ";
+	out += kWordNamespace;
+	// ★THE DEFAULTS: 10.5pt, and East Asian text that is JAPANESE. The ruby written above gives its
+	//   own sizes against a 10.5pt base (hpsBaseText 21), so without this the base is Word's 10pt
+	//   and the two disagree; and without the language Word breaks the lines of a Japanese story
+	//   by another language's rules. No font is named: that is the reader's Word's business.
+	out += ">"
+		   "<w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val=\"21\"/><w:szCs w:val=\"21\"/>"
+		   "<w:lang w:val=\"en-US\" w:eastAsia=\"ja-JP\"/></w:rPr></w:rPrDefault></w:docDefaults>"
+		   "<w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/>"
+		   "<w:qFormat/></w:style>"
+		   "<w:style w:type=\"character\" w:default=\"1\" w:styleId=\"DefaultParagraphFont\">"
+		   "<w:name w:val=\"Default Paragraph Font\"/><w:uiPriority w:val=\"1\"/><w:semiHidden/></w:style>"
+		   "<w:style w:type=\"paragraph\" w:customStyle=\"1\" w:styleId=\"kcm-continued\">"
+		   "<w:name w:val=\"kcm-continued\"/><w:basedOn w:val=\"Normal\"/><w:qFormat/></w:style>";
+
+	for (size_t i = 0; i < kBuiltInKentenCount; ++i)
+		AppendKentenStyle(kBuiltInKenten[i].fClass, kBuiltInKenten[i].fWordMark, out);
+
+	// The custom marks this story uses, sorted: the order the story happens to use them in must
+	// not reach the bytes.
+	std::vector<std::string> values;
+	KCMStoryHtml::CollectKentenValues(s, values);
+	std::vector<std::string> custom;
+	for (size_t v = 0; v < values.size(); ++v)
+	{
+		std::string cls;
+		if (!KCMStoryHtml::KentenClassOf(values[v], cls))
+		{
+			whyNot = "a kenten kind this format cannot name: " + values[v];
+			return kFalse;
+		}
+		bool16 builtIn = kFalse;
+		for (size_t i = 0; i < kBuiltInKentenCount && !builtIn; ++i)
+			builtIn = (cls == kBuiltInKenten[i].fClass) ? kTrue : kFalse;
+		if (!builtIn)
+			custom.push_back(cls);
+	}
+	for (size_t a = 1; a < custom.size(); ++a)			// a handful at most: an insertion sort
+	{
+		for (size_t b = a; b > 0 && custom[b] < custom[b - 1]; --b)
+			custom[b].swap(custom[b - 1]);
+	}
+	for (size_t c = 0; c < custom.size(); ++c)
+	{
+		if (c == 0 || custom[c] != custom[c - 1])
+			AppendKentenStyle(custom[c], "dot", out);
+	}
+
+	out += "</w:styles>";
+	return kTrue;
+}
+
+/** Tick off every note the paragraphs refer to. kFalse for a reference to a note that is not there. */
+bool16 TickReferences(const std::vector<KCMStoryHtml::Para>& paras, std::vector<bool16>& seen,
+					  std::string& whyNot)
+{
+	for (size_t i = 0; i < paras.size(); ++i)
+	{
+		for (size_t k = 0; k < paras[i].fNoteRefs.size(); ++k)
+		{
+			const int32 note = paras[i].fNoteRefs[k].fNote;
+			if (note < 0 || static_cast<size_t>(note) >= seen.size())
+			{
+				whyNot = "a reference points at footnote ";
+				AppendNumber(note + 1, whyNot);
+				whyNot += ", which the story does not have";
+				return kFalse;
+			}
+			// ⚠TWICE IS AS BAD AS NEVER: two <w:footnoteReference> with one id is not a document Word
+			//  can keep, and InDesign cannot make one either - so this is a damaged Story, refused.
+			if (seen[static_cast<size_t>(note)])
+			{
+				whyNot = "footnote ";
+				AppendNumber(note + 1, whyNot);
+				whyNot += " is referred to more than once";
+				return kFalse;
+			}
+			seen[static_cast<size_t>(note)] = kTrue;
+		}
+	}
+	return kTrue;
+}
+
+/** Word cannot keep a note nothing refers to, so every note has to be reached from the text. */
+bool16 EveryNoteIsReferredTo(const KCMStoryHtml::Story& s, std::string& whyNot)
+{
+	std::vector<bool16> seen(s.fNotes.size(), kFalse);
+
+	if (!TickReferences(s.fBody, seen, whyNot))
+		return kFalse;
+	for (size_t t = 0; t < s.fTables.size(); ++t)
+	{
+		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
+		{
+			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
+			{
+				if (!TickReferences(s.fTables[t].fRows[r].fCells[c].fParas, seen, whyNot))
+					return kFalse;
+			}
+		}
+	}
+
+	for (size_t n = 0; n < seen.size(); ++n)
+	{
+		if (!seen[n])
+		{
+			whyNot = "footnote ";
+			AppendNumber(static_cast<int32>(n) + 1, whyNot);
+			whyNot += " has no reference in the text, and Word cannot keep a note without one";
+			return kFalse;
+		}
+	}
+	return kTrue;
+}
+
+/** <w:footnotes ...>...</w:footnotes>, with no XML declaration in front of it. */
+bool16 WriteFootnotesElement(const KCMStoryHtml::Story& s, std::string& out, std::string& whyNot)
+{
+	out = "<w:footnotes ";
+	out += kWordNamespace;
+	out += ">"
+		   "<w:footnote w:type=\"separator\" w:id=\"-1\"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>"
+		   "<w:footnote w:type=\"continuationSeparator\" w:id=\"0\"><w:p><w:r><w:continuationSeparator/>"
+		   "</w:r></w:p></w:footnote>";
+
+	for (size_t n = 0; n < s.fNotes.size(); ++n)
+	{
+		out += "<w:footnote w:id=\"";
+		AppendNumber(static_cast<int32>(n) + 1, out);
+		out += "\">";
+
+		// A note with no paragraph at all still gets one: its own mark has to stand somewhere.
+		const size_t count = s.fNotes[n].empty() ? 1 : s.fNotes[n].size();
+		for (size_t i = 0; i < count; ++i)
+		{
+			std::string content;
+			if (i < s.fNotes[n].size() && !WriteParagraphContent(s.fNotes[n][i], content, whyNot))
+				return kFalse;
+
+			out += "<w:p>";
+			if (i == 0)
+				out += "<w:r><w:rPr><w:vertAlign w:val=\"superscript\"/></w:rPr><w:footnoteRef/></w:r>";
+			out += content;
+			out += "</w:p>";
+		}
+		out += "</w:footnote>";
+	}
+	out += "</w:footnotes>";
+	return kTrue;
+}
+
+void AddPart(const char* name, const std::string& bytes, std::vector<KCMZipStore::Entry>& parts)
+{
+	KCMZipStore::Entry e;
+	e.fName = name;
+	e.fBytes = bytes;
+	parts.push_back(e);
+}
+
+}	// anonymous namespace
+
+bool16 WriteParts(const KCMStoryHtml::Story& s, int32 uid, const std::string& documentNameUtf8,
+				  std::vector<KCMZipStore::Entry>& outParts, std::string& whyNot)
+{
+	outParts.clear();
+	whyNot.clear();
+
+	const bool16 hasNotes = s.fNotes.empty() ? kFalse : kTrue;
+
+	// ---- everything that can refuse, before any part is made -----------------------------------
+	if (!EveryNoteIsReferredTo(s, whyNot))
+		return kFalse;
+
+	std::string documentElement = "<w:document ";
+	documentElement += kWordNamespace;
+	documentElement += "><w:body>";
+	if (!WriteBlocks(s, s.fBody, -1, 0, 0, documentElement, whyNot))
+		return kFalse;
+	documentElement += "<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/>";
+	if (s.fVertical)
+		documentElement += "<w:textDirection w:val=\"tbRl\"/>";
+	documentElement += "</w:sectPr></w:body></w:document>";
+
+	std::string footnotesElement;
+	if (hasNotes && !WriteFootnotesElement(s, footnotesElement, whyNot))
+		return kFalse;
+
+	std::string styles;
+	if (!WriteStyles(s, styles, whyNot))
+		return kFalse;
+
+	// ---- the parts -------------------------------------------------------------------------------
+	std::string types = kXmlDeclaration;
+	types += "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
+			 "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
+			 "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
+			 "<Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>"
+			 "<Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/>"
+			 "<Override PartName=\"/word/settings.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml\"/>";
+	if (hasNotes)
+		types += "<Override PartName=\"/word/footnotes.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml\"/>";
+	types += "<Override PartName=\"/customXml/itemProps1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.customXmlProperties+xml\"/>"
+			 "</Types>";
+	AddPart("[Content_Types].xml", types, outParts);
+
+	std::string rootRels = kXmlDeclaration;
+	rootRels += "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+				"<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/>"
+				"</Relationships>";
+	AddPart("_rels/.rels", rootRels, outParts);
+
+	AddPart("word/document.xml", std::string(kXmlDeclaration) + documentElement, outParts);
+
+	std::string docRels = kXmlDeclaration;
+	docRels += "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+			   "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>"
+			   "<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings\" Target=\"settings.xml\"/>"
+			   "<Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml\" Target=\"../customXml/item1.xml\"/>";
+	if (hasNotes)
+		docRels += "<Relationship Id=\"rId4\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes\" Target=\"footnotes.xml\"/>";
+	docRels += "</Relationships>";
+	AddPart("word/_rels/document.xml.rels", docRels, outParts);
+
+	AddPart("word/styles.xml", styles, outParts);
+
+	std::string settings = kXmlDeclaration;
+	settings += "<w:settings ";
+	settings += kWordNamespace;
+	settings += "><w:trackRevisions/>";
+	if (hasNotes)
+		settings += "<w:footnotePr><w:footnote w:id=\"-1\"/><w:footnote w:id=\"0\"/></w:footnotePr>";
+	settings += "</w:settings>";
+	AddPart("word/settings.xml", settings, outParts);
+
+	if (hasNotes)
+		AddPart("word/footnotes.xml", std::string(kXmlDeclaration) + footnotesElement, outParts);
+
+	// ---- the origin --------------------------------------------------------------------------------
+	// ⚠**NO LINE BREAK AFTER THE DECLARATION.** Word does not copy this part through a save, it
+	//  parses it and writes it out again, and what it writes has none (measured 2026-09-19: the
+	//  part came back two bytes shorter, the CRLF and nothing else). Written the way Word writes
+	//  it, the part is the same bytes before and after - which is what lets a test say so.
+	std::string origin = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><kcm:origin xmlns:kcm=\"";
+	origin += kOriginNamespace;
+	origin += "\" uid=\"";
+	AppendNumber(uid, origin);
+	origin += "\" document=\"";
+	AppendEscaped(documentNameUtf8, 0, documentNameUtf8.size(), origin);
+	origin += "\" format=\"1\"><kcm:document>";
+	origin += documentElement;
+	origin += "</kcm:document>";
+	if (hasNotes)
+	{
+		origin += "<kcm:footnotes>";
+		origin += footnotesElement;
+		origin += "</kcm:footnotes>";
+	}
+	origin += "</kcm:origin>";
+	AddPart("customXml/item1.xml", origin, outParts);
+
+	// The item's id is fixed: it names the KIND of part, and a fresh one per file would be the one
+	// thing making two exports of a story differ.
+	std::string props = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\r\n"
+						"<ds:datastoreItem ds:itemID=\"{5B0F4C3A-1D2E-4F60-8A7B-9C0D1E2F3A4B}\" "
+						"xmlns:ds=\"http://schemas.openxmlformats.org/officeDocument/2006/customXml\">"
+						"<ds:schemaRefs><ds:schemaRef ds:uri=\"";
+	props += kOriginNamespace;
+	props += "\"/></ds:schemaRefs></ds:datastoreItem>";
+	AddPart("customXml/itemProps1.xml", props, outParts);
+
+	std::string itemRels = kXmlDeclaration;
+	itemRels += "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+				"<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps\" Target=\"itemProps1.xml\"/>"
+				"</Relationships>";
+	AddPart("customXml/_rels/item1.xml.rels", itemRels, outParts);
+
+	return kTrue;
+}
+
+bool16 Write(const KCMStoryHtml::Story& s, int32 uid, const std::string& documentNameUtf8,
+			 std::string& outDocx, std::string& whyNot)
+{
+	outDocx.clear();
+
+	std::vector<KCMZipStore::Entry> parts;
+	if (!WriteParts(s, uid, documentNameUtf8, parts, whyNot))
+		return kFalse;
+
+	KCMZipStore::Write(parts, outDocx);
 	return kTrue;
 }
 
