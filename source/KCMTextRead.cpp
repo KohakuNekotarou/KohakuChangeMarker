@@ -36,6 +36,7 @@
 #include "TableTypes.h"		// GridAddress, RowRange, ColRange
 #include "TextChar.h"		// kTextChar_CR / kTextChar_Table / kTextChar_TableContinued
 #include "TextID.h"			// kCharAttrStrandBoss (kenten's strand) and kFootnoteReferenceBoss / kEndnoteAnchorBoss (the note markers)
+#include "PersistUtils.h"	// ::GetClass - what a story thread hangs off (a footnote, or a note, or deleted text)
 #include "Utils.h"			// Utils<ITextUtils> - the collector above
 #include "TextIterator.h"
 #include "UIDRef.h"
@@ -937,6 +938,28 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 			//   ⚠NUMBERED IN THE ORDER THE THREADS COME OUT, which is TextIndex order. Unlike
 			//    tables there is no nesting to reorder (a footnote inside a footnote is not a
 			//    thing), so no equivalent of EarlierBlock is needed.
+			//
+			// ★★★**...AND SINCE 2026-09-19 THE THREAD IS ASKED WHAT IT IS, because the warning above
+			//   came true.** An InDesign NOTE is exactly "a shape this walk has never met": its words
+			//   are a story thread of their own (kNoteDataBoss), so the note was counted as a
+			//   footnote. Measured on allin.indd (one footnote, one note): two "footnotes" - the HTML
+			//   export wrote the note out as one, silently, and the .docx export, which refuses a
+			//   footnote nothing refers to, was the first thing to say so.
+			//   A footnote's thread IS its reference (kFootnoteReferenceBoss aggregates
+			//   ITextStoryThread - docs/ai-notes/iid-boss-dictionary.md), so the thread's own class
+			//   answers the question. Everything else that hangs a thread off the body - a note,
+			//   text deleted under Track Changes (kDeletedTextBoss), hidden conditional text
+			//   (kHiddenTextBoss / kHidTxtModelBoss) - is NOT the story's text as the page sets it,
+			//   and is stepped over: none of its paragraphs is reported. The character it hangs
+			//   off stays where it is in the body, invisible, as it always was.
+			//   ⚠WHAT THIS CHANGES FOR THE COMPARISON: an edit inside a NOTE used to come out as a
+			//    row (labelled as a footnote's); it no longer comes out at all. A note does not
+			//    print, and what the marks point at is what changed on the page.
+			if (::GetClass(thread) != kFootnoteReferenceBoss)
+			{
+				position = threadEnd;
+				continue;
+			}
 			place.fFootnoteOrdinal = nextFootnote++;
 		}
 
