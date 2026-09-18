@@ -24,17 +24,21 @@
 #include "IStoryOptions.h"			// IsVertical - the story's own setting, not a frame's
 #include "ITableModel.h"
 #include "ITextModel.h"
+#include "ITextStoryThread.h"		// a footnote reference IS its note's thread - which note a reference belongs to
 #include "ITextStoryThreadDict.h"
 #include "ITextStoryThreadDictHier.h"
+#include "ITextUtils.h"				// CollectOwnedItems + OwnedItemDataList - the walk KCMTextRead::ScanNotes uses
 #include "FileUtils.h"
 #include "StreamUtil.h"
 #include "TableTypes.h"
+#include "TextID.h"					// kFootnoteReferenceBoss
 #include "UIDList.h"
 #include "UIDRef.h"
 #include "WideString.h"
 
 #include "KCMStoryTextExport.h"
 #include "KCMStoryHtml.h"
+#include "KCMStoryDocx.h"		// the .docx road (2026-09-19)
 #include "KCMTextRead.h"
 #include "KCMParaText.h"
 #include "KCMTextDiff.h"		// ToCodePoints - the one walk over UTF-8 this half is allowed
@@ -276,9 +280,10 @@ void FillPara(const std::string& text, const KCMParaAttrs& attrs, KCMStoryHtml::
 /*	BuildStory
 	One story, as the writer wants it: a body, its tables, and its footnotes.
 */
-bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out)
+bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outNoteRefsPlaced)
 {
 	out = KCMStoryHtml::Story();
+	outNoteRefsPlaced = kTrue;
 
 	std::vector<std::string> paras;
 	std::vector<KCMParaAttrs> attrs;
@@ -496,6 +501,121 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out)
 		out.fTables[t].fParaIndex = placeIndex[static_cast<size_t>(host)];
 	}
 
+	// ---- where each footnote's reference stands (2026-09-19, for the .docx format) ---------------
+	//
+	// ★★**THE HTML FORMAT DOES NOT CARRY THIS AND THE DOCX ONE HAS TO** (KCMStoryHtml::NoteRef): Word
+	//   cannot hold a footnote without its reference in the text. It is filled for both - HTML
+	//   never looks - so that there is one BuildStory and not two.
+	// ★THE WALK IS KCMTextRead::ScanNotes' OWN (CollectOwnedItems, kFootnoteReferenceBoss). What
+	//   that one cannot give is asked of the document here: ScanNotes clips away a reference that
+	//   is its paragraph's first character and reports the PRINTED number, while this needs every
+	//   reference and the note's ORDINAL.
+	//     - which note: the reference boss IS the note's own story thread (ITextStoryThread), so
+	//       the thread's range says which footnote paragraphs are its words;
+	//     - which paragraph: the last one beginning at or before the reference, where "beginning"
+	//       is before whatever the reader stepped over (fLeadingUncounted);
+	//     - where in it: the model's distance from the paragraph's start, less the uncounted
+	//       positions standing before it - the inverse of KCMParaText::ModelOffsetInParagraph.
+	//       The reference is itself one of those positions (KCMTextRead: "A NOTE'S MARKER IS A
+	//       POSITION, NOT TEXT"), which is why the comparison below is a strict one.
+	// ⚠ANY REFERENCE THAT CANNOT BE PLACED SAYS SO, and the caller then refuses the .docx for this
+	//   story rather than writing a note Word would lose. The HTML road is not affected.
+	outNoteRefsPlaced = kTrue;
+	{
+		Utils<ITextUtils> textUtils;
+		OwnedItemDataList owned;
+		if (model != nil && textUtils != nil && model->TotalLength() > 0)
+			textUtils->CollectOwnedItems(model, 0, model->TotalLength() - 1, &owned);
+
+		IDataBase* const db = storyRef.GetDataBase();
+		for (int32 k = 0; k < static_cast<int32>(owned.size()); ++k)
+		{
+			if (owned[k].fClassID != kFootnoteReferenceBoss)
+				continue;
+
+			const TextIndex refAt = owned[k].fAt;
+
+			// ---- which note ---------------------------------------------------------------------
+			int32 note = -1;
+			InterfacePtr<ITextStoryThread> noteThread(db, owned[k].fUID, UseDefaultIID());
+			if (noteThread != nil)
+			{
+				int32 span = 0;
+				const TextIndex noteStart = noteThread->GetTextStart(&span);
+				for (size_t j = 0; j < paras.size() && note < 0; ++j)
+				{
+					if (!attrs[j].IsFootnote())
+						continue;
+					const TextIndex lineStart = static_cast<TextIndex>(starts[j])
+												- static_cast<TextIndex>(attrs[j].fLeadingUncounted);
+					if (lineStart >= noteStart && lineStart < noteStart + span)
+						note = attrs[j].fFootnoteOrdinal;
+				}
+			}
+
+			// ---- which paragraph ------------------------------------------------------------------
+			int32 host = -1;
+			for (size_t i = 0; i < paras.size(); ++i)
+			{
+				const TextIndex lineStart = static_cast<TextIndex>(starts[i])
+											- static_cast<TextIndex>(attrs[i].fLeadingUncounted);
+				if (lineStart <= refAt && refAt <= paraEnds[i])
+					host = static_cast<int32>(i);
+			}
+
+			if (note < 0 || host < 0 || attrs[static_cast<size_t>(host)].IsFootnote()
+				|| placeIndex[static_cast<size_t>(host)] < 0)
+			{
+				outNoteRefsPlaced = kFalse;
+				continue;
+			}
+
+			// ---- where in it ------------------------------------------------------------------------
+			const size_t h = static_cast<size_t>(host);
+			int32 textOffset = 0;
+			if (refAt >= static_cast<TextIndex>(starts[h]))
+			{
+				const std::vector<int32>& un = attrs[h].fUncountedAt;
+				int32 before = 0;
+				while (static_cast<size_t>(before) < un.size()
+					   && static_cast<TextIndex>(starts[h]) + un[static_cast<size_t>(before)] + before < refAt)
+					++before;
+				textOffset = static_cast<int32>(refAt - static_cast<TextIndex>(starts[h])) - before;
+			}
+
+			// ---- and into the paragraph it belongs to ---------------------------------------------
+			KCMStoryHtml::Para* para = nil;
+			if (attrs[h].IsCell())
+			{
+				const size_t t = static_cast<size_t>(attrs[h].fTableOrdinal);
+				if (t < out.fTables.size() && attrs[h].fCellRow >= 0
+					&& static_cast<size_t>(attrs[h].fCellRow) < out.fTables[t].fRows.size()
+					&& cellWhich[h] >= 0)
+				{
+					KCMStoryHtml::Row& row = out.fTables[t].fRows[static_cast<size_t>(attrs[h].fCellRow)];
+					if (static_cast<size_t>(cellWhich[h]) < row.fCells.size()
+						&& static_cast<size_t>(placeIndex[h]) < row.fCells[static_cast<size_t>(cellWhich[h])].fParas.size())
+						para = &row.fCells[static_cast<size_t>(cellWhich[h])].fParas[static_cast<size_t>(placeIndex[h])];
+				}
+			}
+			else if (static_cast<size_t>(placeIndex[h]) < out.fBody.size())
+			{
+				para = &out.fBody[static_cast<size_t>(placeIndex[h])];
+			}
+
+			if (para == nil)
+			{
+				outNoteRefsPlaced = kFalse;
+				continue;
+			}
+
+			KCMStoryHtml::NoteRef ref;
+			ref.fAt = (textOffset > 0) ? textOffset : 0;
+			ref.fNote = note;
+			para->fNoteRefs.push_back(ref);		// the owned items come in TextIndex order, so these do too
+		}
+	}
+
 	// ⚠A STORY WITH NO PARAGRAPHS AT ALL still gets one, so that "the file is empty" and "there is
 	//   no file" stay different things.
 	if (out.fBody.empty())
@@ -510,7 +630,7 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out)
 	★The stylesheet gets one too. A custom kenten mark is a character out of the document, so the
 	 sheet is not ASCII either, and a browser that guessed at its encoding would draw the wrong
 	 mark - or a pair of mojibake - with nothing at all to say why. */
-bool16 WriteFileWithBom(const std::wstring& path, const std::string& bytes)
+bool16 WriteFileBytes(const std::wstring& path, const std::string& bytes, bool16 withBom)
 {
 	PMString pathString;
 	pathString.SetTranslatable(kFalse);
@@ -522,8 +642,13 @@ bool16 WriteFileWithBom(const std::wstring& path, const std::string& bytes)
 	if (stream == nil)
 		return kFalse;
 
-	const char bom[3] = { '\xEF', '\xBB', '\xBF' };
-	stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(bom)), 3);
+	// ⚠NEVER ON A .docx: that file is a zip, and three bytes in front of a zip's first signature
+	//  are three bytes in front of everything its directory points at.
+	if (withBom)
+	{
+		const char bom[3] = { '\xEF', '\xBB', '\xBF' };
+		stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(bom)), 3);
+	}
 	if (!bytes.empty())
 	{
 		stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(bytes.c_str())),
@@ -534,18 +659,31 @@ bool16 WriteFileWithBom(const std::wstring& path, const std::string& bytes)
 	return kTrue;
 }
 
-/** The bytes of one story, into "<folder>\<uid>.html". */
-bool16 WriteStoryFile(const std::wstring& folder, int32 uid, const std::string& html)
+/** The bytes of one story, into "<folder>\<uid>.html" - or ".docx", which carries no BOM. */
+bool16 WriteStoryFile(const std::wstring& folder, int32 uid, const std::string& bytes,
+					  KCMStoryTextFormat format)
 {
 	wchar_t leaf[64] = { 0 };
-	::swprintf_s(leaf, 64, L"\\%d.html", static_cast<int>(uid));
-	return WriteFileWithBom(folder + leaf, html);
+	::swprintf_s(leaf, 64, (format == kKCMStoryTextDocx) ? L"\\%d.docx" : L"\\%d.html",
+				 static_cast<int>(uid));
+	return WriteFileBytes(folder + leaf, bytes, (format == kKCMStoryTextDocx) ? kFalse : kTrue);
+}
+
+/** The document's name as UTF-8, for the .docx's tag (the import's "is this the right document?"). */
+std::string DocumentNameUtf8(IDataBase* db)
+{
+	InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
+	if (doc == nil)
+		return std::string();
+	PMString name;
+	doc->GetName(name);
+	return name.GetUTF8String();
 }
 
 }	// anonymous namespace
 
 bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& onlyThese,
-						  PMString& outMessage)
+						  PMString& outMessage, KCMStoryTextFormat format)
 {
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
@@ -633,6 +771,8 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 		return kFalse;
 	}
 
+	const std::string documentName = DocumentNameUtf8(db);
+
 	int32 written = 0;
 	int32 refused = 0;
 	// What stopped the first story that could not be written, so the message can say more than a
@@ -645,9 +785,45 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 		const UIDRef storyRef = targets[t];
 
 		KCMStoryHtml::Story story;
-		if (!BuildStory(storyRef, story))
+		bool16 noteRefsPlaced = kTrue;
+		if (!BuildStory(storyRef, story, noteRefsPlaced))
 		{
 			++refused;
+			continue;
+		}
+
+		// ---- the .docx road (2026-09-19) ---------------------------------------------------------
+		//
+		// ⚠**NO SELF-CHECK YET, UNLIKE THE ROAD BELOW**: that one reads its own bytes back before
+		//  writing them, and this one cannot until KCMStoryDocx has a reader (stage 2 of its plan).
+		//  Until then a .docx from here is for LOOKING AT in Word, not for handing out to be edited.
+		//  What it does refuse is what the format cannot hold at all - KCMStoryDocx says which -
+		//  and a story whose footnote references could not be placed, which Word would lose.
+		if (format == kKCMStoryTextDocx)
+		{
+			std::string docx;
+			std::string why;
+			if (!noteRefsPlaced)
+				why = "a footnote's reference could not be placed";
+
+			if (!why.empty()
+				|| !KCMStoryDocx::Write(story, static_cast<int32>(storyRef.GetUID().Get()),
+										documentName, docx, why))
+			{
+				++refused;
+				if (firstRefusal.IsEmpty())
+				{
+					firstRefusal.AppendNumber(static_cast<int32>(storyRef.GetUID().Get()));
+					firstRefusal.Append(": ");
+					firstRefusal.Append(why.c_str());
+				}
+				continue;
+			}
+
+			if (WriteStoryFile(folder, storyRef.GetUID().Get(), docx, kKCMStoryTextDocx))
+				++written;
+			else
+				++refused;
 			continue;
 		}
 
@@ -679,7 +855,7 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 			}
 		}
 
-		if (WriteStoryFile(folder, storyRef.GetUID().Get(), html))
+		if (WriteStoryFile(folder, storyRef.GetUID().Get(), html, kKCMStoryTextHtml))
 			++written;
 		else
 			++refused;

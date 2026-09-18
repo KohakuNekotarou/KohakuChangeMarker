@@ -848,6 +848,19 @@ resource VersionedScriptElementInfo(10)
 
 		Method
 		{
+			kKCMExportStoryDocxMethodScriptElement,
+			e_KCMExportStoryDocx,
+			"kcm export story docx",			// name -> app.kcmExportStoryDocx(folder)
+			"Export every story of the active document as a Word document, as Export Story Text as Word does, into a dated folder inside the one given.",
+			StringType,
+			"The sentence the status line shows, with the dated folder in it"
+			{
+				keyAEFile, "folder path", "The folder to make the dated folder in", FileType, kRequired
+			}
+		}
+
+		Method
+		{
 			kKCMStopComparisonMethodScriptElement,
 			e_KCMStopComparison,
 			"kcm stop comparison",				// name -> app.kcmStopComparison()
@@ -924,6 +937,8 @@ resource VersionedScriptElementInfo(10)
 				// ...and the two order checks' (2026-09-17 afternoon).
 				Method{ kKCMTakeInChangeMethodScriptElement },
 				Method{ kKCMTakeInStoryMethodScriptElement },
+				// ...and the export's .docx road (2026-09-19).
+				Method{ kKCMExportStoryDocxMethodScriptElement },
 			}
 		}
 

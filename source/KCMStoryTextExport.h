@@ -29,6 +29,18 @@ class IDataBase;
 class IDFile;
 class UIDList;
 
+/** Which spelling the stories are written in.
+
+    kKCMStoryTextHtml is "<uid>.html", checked against its own reader before it is written.
+    kKCMStoryTextDocx is "<uid>.docx" for Word (2026-09-19, KCMStoryDocx.h). ⚠It has no reader yet,
+    so it is NOT checked that way: until it is, what it writes is for looking at in Word. It refuses
+    what Word's format cannot hold, and says which story and why. */
+enum KCMStoryTextFormat
+{
+	kKCMStoryTextHtml = 0,
+	kKCMStoryTextDocx = 1
+};
+
 /** Write the stories of `db` into a new folder under `parent`.
 
     The folder is named "<document name> YYYY-MM-DD HHMMSS" and each story becomes one file called
@@ -51,9 +63,11 @@ class UIDList;
                       of this document is counted and passed over, never trusted.
     @param outMessage what happened, for the panel's status line - the count and the place when it
                       worked, the step that failed when it did not.
+    @param format     the spelling. HTML when not said, which is what every caller older than the
+                      .docx road means.
     @return kFalse when the folder could not be made or no story could be read. */
 bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& onlyThese,
-						  PMString& outMessage);
+						  PMString& outMessage, KCMStoryTextFormat format = kKCMStoryTextHtml);
 
 #endif // __KCMStoryTextExport_h__
 

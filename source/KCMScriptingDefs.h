@@ -243,7 +243,15 @@ enum KCMScriptMethods
 	//   ⚠'eKGk' / 'eKGy' were MEASURED free: 0 hits in headers, .fr, sources, notes, scripts; the same
 	//     search form finds 'eKGs'. The parameters are Adobe's own p_Index and p_Contents. ⚠Not registered.
 	e_KCMTakeInChange = 'eKGk',		// k = keep one. app.kcmTakeInChange(storyRow, words) -> the take-in's sentence
-	e_KCMTakeInStory = 'eKGy'		// y = storY.   app.kcmTakeInStory(storyRow)          -> "N changes taken in..."
+	e_KCMTakeInStory = 'eKGy',		// y = storY.   app.kcmTakeInStory(storyRow)          -> "N changes taken in..."
+
+	// ★THE .DOCX ROAD OF THE EXPORT, WITHOUT A DIALOG (2026-09-19). The menu item opens the system's
+	//   folder chooser, which a test cannot answer; this is the same model call with the folder
+	//   handed in, exactly as 'eKGe' is for the HTML road.
+	//   ⚠'eKGf' was MEASURED free: 0 hits in the tree, no row in the registry ledger (whose used
+	//     letters for eKG* are a c d D e h i k m n o p q r s t u v w x y). The same search form finds
+	//     'eKGe'. ⚠Not registered with Adobe.
+	e_KCMExportStoryDocx = 'eKGf'	// f = file for Word. app.kcmExportStoryDocx(folder) -> "exported N ... to <folder>"
 };
 
 /** Properties KCM adds to the STORY object (at the user's request).

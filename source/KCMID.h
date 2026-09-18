@@ -347,6 +347,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKCMExportStoryTextMethodScriptElement, kKCMPre
 DECLARE_PMID(kScriptInfoIDSpace, kKCMStopComparisonMethodScriptElement, kKCMPrefix + 30)	// app.kcmStopComparison() -> the status line afterwards
 DECLARE_PMID(kScriptInfoIDSpace, kKCMTakeInChangeMethodScriptElement, kKCMPrefix + 31)	// app.kcmTakeInChange(storyRow, words) -> the take-in's sentence (the first change not taken in whose words hold `words`)
 DECLARE_PMID(kScriptInfoIDSpace, kKCMTakeInStoryMethodScriptElement, kKCMPrefix + 32)	// app.kcmTakeInStory(storyRow) -> the story row's take-in-all sentence
+DECLARE_PMID(kScriptInfoIDSpace, kKCMExportStoryDocxMethodScriptElement, kKCMPrefix + 33)	// app.kcmExportStoryDocx(folder) -> the export's sentence, for the .docx road (2026-09-19)
 // (The tool's enumerator goes on the application's own kToolBoxEnumScriptElement, so this side
 //  needs no ID for it.)
 

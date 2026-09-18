@@ -292,7 +292,8 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 		const int32 id = methodID.Get();
 		if (id == e_KCMImportStoryText || id == e_KCMTakeInAllStories
 			|| id == e_KCMExportStoryText || id == e_KCMStopComparison
-			|| id == e_KCMTakeInChange || id == e_KCMTakeInStory)
+			|| id == e_KCMTakeInChange || id == e_KCMTakeInStory
+			|| id == e_KCMExportStoryDocx)
 		{
 			PMString message;
 			message.SetTranslatable(kFalse);
@@ -386,7 +387,11 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 					}
 					else
 					{
-						KCMExportStoryText(db, file, UIDList(db), message);
+						// ★ONE BRANCH FOR BOTH ROADS: the two methods differ in the spelling and in
+						//   nothing else (KCMStoryTextExport.h, KCMStoryTextFormat).
+						KCMExportStoryText(db, file, UIDList(db), message,
+										   (id == e_KCMExportStoryDocx) ? kKCMStoryTextDocx
+																		: kKCMStoryTextHtml);
 					}
 				}
 			}
