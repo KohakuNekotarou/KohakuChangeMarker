@@ -132,7 +132,19 @@ bool16 IsBreakOrTab(int32 cp)
 	control characters, which XML forbids too, are IsInvisible's already.) */
 bool16 NeedsPlaceholder(int32 cp)
 {
-	return (KCMStoryHtml::IsInvisible(cp) || cp == 0xFFFE || cp == 0xFFFF) ? kTrue : kFalse;
+	if (KCMStoryHtml::IsInvisible(cp) || cp == 0xFFFE || cp == 0xFFFF)
+		return kTrue;
+
+	// ★TWO MORE, FOUND ON 2026-09-19 BY ASKING "IS THE ESCAPING ENTIRELY SOUND?" and written as
+	//   failing tests first:
+	//   - a LONE SURROGATE (U+D800..U+DFFF). Text that has been through a bad conversion can hold
+	//     one; it is not an XML character, and one of them makes the package unreadable.
+	//   - U+000D. It "never arrives" - it IS the paragraph boundary - and if it ever did, an XML
+	//     parser would turn it into a line feed without a word. A placeholder says it was there.
+	if ((cp >= 0xD800 && cp <= 0xDFFF) || cp == 0x000D)
+		return kTrue;
+
+	return kFalse;
 }
 
 /*	AppendRuns
@@ -311,7 +323,7 @@ bool16 WriteParagraphContent(const KCMStoryHtml::Para& p, std::string& out, std:
 			const std::string& reading = p.fRuby[static_cast<size_t>(k)].fValue;
 			made += "<w:r><w:ruby><w:rubyPr><w:rubyAlign w:val=\"distributeSpace\"/><w:hps w:val=\"10\"/>"
 					"<w:hpsRaise w:val=\"18\"/><w:hpsBaseText w:val=\"21\"/><w:lid w:val=\"ja-JP\"/></w:rubyPr>"
-					"<w:rt><w:r><w:rPr><w:sz w:val=\"10\"/></w:rPr><w:t>";
+					"<w:rt><w:r><w:rPr><w:sz w:val=\"10\"/></w:rPr><w:t xml:space=\"preserve\">";	// a reading's own spaces are its own
 			AppendEscaped(reading, 0, reading.size(), made);
 			made += "</w:t></w:r></w:rt><w:rubyBase>";
 			if (!AppendRuns(p.fText, cps, byteAt, looks, i, j, kTrue, made, whyNot))
