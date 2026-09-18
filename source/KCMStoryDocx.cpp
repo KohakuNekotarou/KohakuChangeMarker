@@ -1870,6 +1870,241 @@ void JoinOnto(KCMStoryHtml::Para& prev, const KCMStoryHtml::Para& next)
 const int32 kInBody = -1;
 const int32 kInNote = -2;
 
+bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32 inCell,
+				  std::vector<KCMStoryHtml::Para>& out);
+
+/*	The table, read back.
+
+	★THE GRID IS WALKED THE WAY THE WRITER LAID IT OUT (LayRowOut): a cell's grid column is the
+	  sum of the spans before it in its row, and a <w:vMerge> with no "restart" is a COVERED cell -
+	  it is not a cell of the Story's, it makes the anchor above it, in the same grid column, one
+	  row taller. The anchor open in each grid column is remembered as (row, cell) into the table
+	  being built, which is why a row is pushed before the next one is read.
+	★A ROW INSERTED IN WORD IS THE AFTER SIDE'S ONLY, ONE DELETED IS THE ORIGIN'S ONLY (<w:trPr>'s
+	  <w:ins> / <w:del>); a cell inserted, deleted or merged in Word (cellIns, cellDel, cellMerge)
+	  is refused - the grid can no longer be told.
+*/
+struct GridOpen
+{
+	std::vector<int32>	fRow;		// per grid column: the row of the anchor reaching down, or -1
+	std::vector<int32>	fCell;		// and which cell of that row
+};
+
+bool16 ReadCells(Reader& rd, int32 container, int32 slot, int32 rowIndex, KCMStoryHtml::Row& row,
+				 int32& col, GridOpen& open);
+
+bool16 ReadCell(Reader& rd, int32 tc, int32 slot, int32 rowIndex, KCMStoryHtml::Row& row, int32& col,
+				GridOpen& open)
+{
+	const KCMXmlTree& t = *rd.fTree;
+	KCMStoryHtml::Story& s = *rd.fStory;
+
+	int32 span = 1;
+	bool16 restarts = kFalse;
+	bool16 covered = kFalse;
+	const int32 tcPr = t.Child(tc, kW, "tcPr");
+	if (tcPr >= 0)
+	{
+		const int32 gridSpan = t.Child(tcPr, kW, "gridSpan");
+		const std::string* gs = (gridSpan >= 0) ? t.Attr(gridSpan, "val") : nil;
+		if (gs != nil && (!ParseDecimal(*gs, span) || span < 1))
+			return Refuse(rd, "a cell whose grid span cannot be read: " + *gs);
+		const int32 vMerge = t.Child(tcPr, kW, "vMerge");
+		if (vMerge >= 0)
+		{
+			const std::string* v = t.Attr(vMerge, "val");
+			if (v != nil && *v == "restart")
+				restarts = kTrue;
+			else
+				covered = kTrue;
+		}
+		if (t.Child(tcPr, kW, "cellIns") >= 0 || t.Child(tcPr, kW, "cellDel") >= 0
+			|| t.Child(tcPr, kW, "cellMerge") >= 0)
+			return Refuse(rd, "a table cell was inserted, deleted or merged in Word");
+	}
+
+	if (open.fRow.size() < static_cast<size_t>(col + span))
+	{
+		open.fRow.resize(static_cast<size_t>(col + span), -1);
+		open.fCell.resize(static_cast<size_t>(col + span), -1);
+	}
+
+	if (covered)
+	{
+		const int32 anchorRow = open.fRow[static_cast<size_t>(col)];
+		const int32 anchorCell = open.fCell[static_cast<size_t>(col)];
+		if (anchorRow >= 0)
+		{
+			// The anchor above grows by this row; the covered cell itself is nothing of the Story's.
+			++s.fTables[static_cast<size_t>(slot)].fRows[static_cast<size_t>(anchorRow)]
+				.fCells[static_cast<size_t>(anchorCell)].fRowSpan;
+			col += span;
+			return kTrue;
+		}
+		// A "continue" with nothing open above it (the row above is the other side's): a plain cell.
+	}
+
+	KCMStoryHtml::Cell cell;
+	cell.fColSpan = span;
+	const int32 cellIndex = static_cast<int32>(row.fCells.size());
+	for (int32 c = col; c < col + span; ++c)
+	{
+		open.fRow[static_cast<size_t>(c)] = restarts ? rowIndex : -1;
+		open.fCell[static_cast<size_t>(c)] = restarts ? cellIndex : -1;
+	}
+
+	if (!ReadBlocks(rd, tc, slot, rowIndex, cellIndex, cell.fParas))
+		return kFalse;
+	row.fCells.push_back(cell);
+	col += span;
+	return kTrue;
+}
+
+bool16 ReadCells(Reader& rd, int32 container, int32 slot, int32 rowIndex, KCMStoryHtml::Row& row,
+				 int32& col, GridOpen& open)
+{
+	const KCMXmlTree& t = *rd.fTree;
+	const KCMXmlNode& n = t.At(container);
+	for (size_t k = 0; k < n.fChildren.size(); ++k)
+	{
+		const int32 c = n.fChildren[k];
+		const KCMXmlNode& cn = t.At(c);
+		if (cn.IsText())
+		{
+			if (!IsBlank(cn.fText))
+				return Refuse(rd, "text stands outside a paragraph");
+			continue;
+		}
+		if (cn.fNs != kW)
+			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
+		const std::string& name = cn.fName;
+		if (name == "tc")
+		{
+			if (!ReadCell(rd, c, slot, rowIndex, row, col, open))
+				return kFalse;
+		}
+		else if (name == "sdt" || name == "customXml")
+		{
+			const int32 content = (name == "sdt") ? t.Child(c, kW, "sdtContent") : c;
+			if (content >= 0 && !ReadCells(rd, content, slot, rowIndex, row, col, open))
+				return kFalse;
+		}
+		else if (name == "trPr" || name == "tblPrEx" || name == "bookmarkStart" || name == "bookmarkEnd"
+				 || name == "proofErr")
+		{
+			continue;
+		}
+		else
+		{
+			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
+		}
+	}
+	return kTrue;
+}
+
+bool16 ReadRow(Reader& rd, int32 tr, int32 slot, GridOpen& open)
+{
+	const KCMXmlTree& t = *rd.fTree;
+	KCMStoryHtml::Story& s = *rd.fStory;
+
+	KCMStoryHtml::Row row;
+	const int32 trPr = t.Child(tr, kW, "trPr");
+	if (trPr >= 0)
+	{
+		const int32 header = t.Child(trPr, kW, "tblHeader");
+		if (header >= 0)
+		{
+			const std::string* v = t.Attr(header, "val");
+			row.fHeader = (v == nil || (*v != "0" && *v != "false" && *v != "off")) ? kTrue : kFalse;
+		}
+		const int32 ins = t.Child(trPr, kW, "ins");
+		const int32 del = t.Child(trPr, kW, "del");
+		if (ins >= 0)
+		{
+			NoteMark(rd, ins);
+			if (rd.fSide == kSideOriginAsWritten)
+				return kTrue;			// a row Word added: not the origin's
+		}
+		if (del >= 0)
+		{
+			NoteMark(rd, del);
+			if (rd.fSide == kSideAfterWord)
+				return kTrue;			// a row Word took out: not the after side's
+		}
+	}
+
+	const int32 rowIndex = static_cast<int32>(s.fTables[static_cast<size_t>(slot)].fRows.size());
+	int32 col = 0;
+	if (!ReadCells(rd, tr, slot, rowIndex, row, col, open))
+		return kFalse;
+	s.fTables[static_cast<size_t>(slot)].fRows.push_back(row);
+	return kTrue;
+}
+
+bool16 ReadRows(Reader& rd, int32 container, int32 slot, GridOpen& open)
+{
+	const KCMXmlTree& t = *rd.fTree;
+	const KCMXmlNode& n = t.At(container);
+	for (size_t k = 0; k < n.fChildren.size(); ++k)
+	{
+		const int32 c = n.fChildren[k];
+		const KCMXmlNode& cn = t.At(c);
+		if (cn.IsText())
+		{
+			if (!IsBlank(cn.fText))
+				return Refuse(rd, "text stands outside a paragraph");
+			continue;
+		}
+		if (cn.fNs != kW)
+			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
+		const std::string& name = cn.fName;
+		if (name == "tr")
+		{
+			if (!ReadRow(rd, c, slot, open))
+				return kFalse;
+		}
+		else if (name == "sdt" || name == "customXml")
+		{
+			const int32 content = (name == "sdt") ? t.Child(c, kW, "sdtContent") : c;
+			if (content >= 0 && !ReadRows(rd, content, slot, open))
+				return kFalse;
+		}
+		else if (name == "tblPr" || name == "tblGrid" || name == "bookmarkStart" || name == "bookmarkEnd"
+				 || name == "proofErr")
+		{
+			continue;
+		}
+		else
+		{
+			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
+		}
+	}
+	return kTrue;
+}
+
+/** One <w:tbl>, standing in paragraph `paraIndex` of its holder at `offset` code points. */
+bool16 ReadTable(Reader& rd, int32 tbl, int32 inTable, int32 inRow, int32 inCell, int32 paraIndex, int32 offset)
+{
+	KCMStoryHtml::Story& s = *rd.fStory;
+
+	// The slot is taken at the opening tag, so the tables inside this one come after it - the
+	// document order Story::fTables promises (and the writer's AppendTable walks).
+	const int32 slot = static_cast<int32>(s.fTables.size());
+	s.fTables.push_back(KCMStoryHtml::Table());
+	{
+		KCMStoryHtml::Table& table = s.fTables[static_cast<size_t>(slot)];
+		table.fOrdinal = slot;
+		table.fSplitsPara = kTrue;
+		table.fParaIndex = paraIndex;
+		table.fOffset = offset;
+		table.fInTable = inTable;
+		table.fInRow = inRow;
+		table.fInCell = inCell;
+	}
+	GridOpen open;
+	return ReadRows(rd, tbl, slot, open);
+}
+
 /*	ReadBlocks
 	The children of a <w:body>, a <w:tc> or a <w:footnote>: paragraphs, and tables among them,
 	settled as they come.
@@ -1926,9 +2161,23 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 			}
 			pendingJoin = marksJoin;
 		}
-		else if (name == "sectPr")
+		else if (name == "tbl")
 		{
-			continue;					// the body's, read by ReadSide
+			if (inTable == kInNote)
+				return Refuse(rd, "a table stands inside a footnote");
+			if (out.empty())
+				return Refuse(rd, "a table stands before any paragraph: every table belongs to the paragraph in front of it");
+			if (pendingJoin)
+				return Refuse(rd, "a paragraph mark next to a table was inserted or deleted");
+			// ★WHERE IN THAT PARAGRAPH: however far it has come when the table arrives (the HTML
+			//   reader's rule). The continued half, if any, joins on behind it.
+			if (!ReadTable(rd, c, inTable, inRow, inCell, static_cast<int32>(out.size()) - 1,
+						   CodePointsIn(out.back().fText)))
+				return kFalse;
+		}
+		else if (name == "sectPr" || name == "tcPr")
+		{
+			continue;					// the body's section (read by ReadSide); a cell's properties (read by ReadCell)
 		}
 		else if (name == "sdt" || name == "customXml")
 		{
@@ -1945,7 +2194,6 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
 		}
 	}
-	(void)inTable; (void)inRow; (void)inCell;
 	return kTrue;
 }
 
@@ -2193,7 +2441,14 @@ void SettleForThisFormat(KCMStoryHtml::Story& s)
 		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
 		{
 			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
-				SettleParas(s.fTables[t].fRows[r].fCells[c].fParas);
+			{
+				// ★A CELL OF WORD'S HOLDS A PARAGRAPH, ALWAYS: the writer puts <w:p/> into one that
+				//   has none, and that is one empty paragraph on the way back.
+				std::vector<KCMStoryHtml::Para>& paras = s.fTables[t].fRows[r].fCells[c].fParas;
+				if (paras.empty())
+					paras.push_back(KCMStoryHtml::Para());
+				SettleParas(paras);
+			}
 		}
 	}
 	for (size_t n = 0; n < s.fNotes.size(); ++n)
