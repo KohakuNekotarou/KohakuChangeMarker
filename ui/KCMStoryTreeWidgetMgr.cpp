@@ -170,16 +170,23 @@ PMString AttrKindIdLabel(int32 attrKind)
 	user's request). ★ONE PLACE for the words, like AttrKindIdLabel: the row shows them and the column
 	is fitted to them (KCMRecomputeListLeftColumnWidth measures the widest).
 	★**A WHOLE PARAGRAPH SAYS SO** (2026-09-19 evening, the user: "a + alone does not say whether
-	  characters were added or a paragraph was - write Paragraph in the ID column"): "Paragraph" /
-	  "Cell Paragraph" / "Note Paragraph" for a row that adds or removes a paragraph whole
-	  (Change::fWholeParagraph), the same three places as the words. */
-const char* PlaceIdLabel(int32 place, bool16 wholeParagraph)
+	  characters were added or a paragraph was - write Paragraph in the ID column"): "Paragraph" for a
+	  row that adds or removes a paragraph whole (Change::fWholeParagraph).
+	★★**AND A WHOLE CELL SAYS "Cell"** (the same night, the user: "when a table appears where there was
+	  nothing, the rows should say Cell +" / "a second paragraph inside a cell can just be Paragraph"):
+	  Change::fWholeCell, decided by the diff. ⚠**"Cell Paragraph" and "Note Paragraph" went with it** -
+	  a paragraph added or removed says "Paragraph" wherever it stands; the place is told by the story
+	  row's table sign and by where the click lands. The WORDS of a change keep their place: "Text" /
+	  "Cell Text" / "Note Text". */
+const char* PlaceIdLabel(int32 place, bool16 wholeParagraph, bool16 wholeCell)
 {
+	if (wholeParagraph)
+		return wholeCell ? "Cell" : "Paragraph";
 	switch (place)
 	{
-		case 1:		return wholeParagraph ? "Cell Paragraph" : "Cell Text";	// KCMStoryList.h's kKCMPlaceCell
-		case 2:		return wholeParagraph ? "Note Paragraph" : "Note Text";	// kKCMPlaceNote
-		default:	return wholeParagraph ? "Paragraph" : "Text";			// kKCMPlaceBody
+		case 1:		return "Cell Text";		// KCMStoryList.h's kKCMPlaceCell
+		case 2:		return "Note Text";		// kKCMPlaceNote
+		default:	return "Text";			// kKCMPlaceBody
 	}
 }
 
@@ -1008,7 +1015,14 @@ private:
 		InterfacePtr<IKCMStoryCellData> cellData(textCell, UseDefaultIID());
 		if (cellData != nil)
 		{
-			cellData->SetSegments(textPre, textMid, textPost, ruby, lineCount, attrKind, layers);
+			// ★A change with no words to show - an empty cell of a new table, an empty line added, the
+			//   only word of a story deleted - is still a change the reader has to see (2026-09-19 night:
+			//   four "Cell +" rows and a "Text -" row with nothing in their Story column), so a REAL row
+			//   is told to draw the bar it draws for a deletion instead of nothing. ⚠`have`, not "whole
+			//   paragraph": the "Text -" row was the one that showed the narrower rule was not enough.
+			//   A recycled widget with no row behind it keeps kFalse and stays blank.
+			const bool16 barWhenEmpty = have ? kTrue : kFalse;
+			cellData->SetSegments(textPre, textMid, textPost, ruby, lineCount, attrKind, layers, barWhenEmpty);
 			// ★Writing the strings does not ask for a redraw - SetNodeName does that for a stock
 			//   cell, and this one has no such courtesy. Without it a recycled row can keep the
 			//   picture the row it used to be left behind. (KBS's widget manager makes the same
@@ -1037,7 +1051,7 @@ private:
 		{
 			if (change.fOverset)
 				idText.Append("OV ");
-			idText.Append(PlaceIdLabel(change.fPlace, change.fWholeParagraph));
+			idText.Append(PlaceIdLabel(change.fPlace, change.fWholeParagraph, change.fWholeCell));
 		}
 		idText.SetTranslatable(kFalse);
 		this->SetNodeName(widgetList, idText, kKCMStoryRowUIDWidgetID);
@@ -1224,14 +1238,23 @@ void KCMRecomputeListLeftColumnWidth()
 			return;
 
 		PMReal widestUid(0.0);
-		// ★THE TEXT CHANGES' OWN WORDS (2026-09-19): "OV Cell Paragraph" is the widest thing this column
-		//   can hold (it was "OV Cell Text" until the evening of the same day), and it is measured whether
-		//   or not a row shows it today - the column must not jump the first time one does.
+		// ★THE TEXT CHANGES' OWN WORDS (2026-09-19): the widest of them, with "OV " in front, is the least
+		//   this column can be, and it is measured whether or not a row shows it today - the column must
+		//   not jump the first time one does. ⚠**WHICH word is widest is not assumed** - it was "OV Cell
+		//   Text", then "OV Cell Paragraph", and since the night of the same day the candidates are "Cell
+		//   Text" / "Note Text" / "Paragraph" (PlaceIdLabel), so every one of them is measured.
 		{
-			PMString widestPlace("OV ");
-			widestPlace.Append(PlaceIdLabel(1, kTrue));
-			widestPlace.SetTranslatable(kFalse);
-			widestUid = StringUtils::PMMeasureString(widestPlace, font, kFalse).X();
+			const char* const candidates[] = { PlaceIdLabel(1, kFalse, kFalse), PlaceIdLabel(2, kFalse, kFalse),
+											   PlaceIdLabel(0, kTrue, kFalse), PlaceIdLabel(0, kTrue, kTrue) };
+			for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i)
+			{
+				PMString widestPlace("OV ");
+				widestPlace.Append(candidates[i]);
+				widestPlace.SetTranslatable(kFalse);
+				const PMReal w = StringUtils::PMMeasureString(widestPlace, font, kFalse).X();
+				if (w > widestUid)
+					widestUid = w;
+			}
 		}
 		const int32 storyRows = stories->GetRowCount();
 		for (int32 i = 0; i < storyRows; ++i)

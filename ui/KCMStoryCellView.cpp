@@ -108,12 +108,12 @@ class KCMStoryCellData : public CPMUnknown<IKCMStoryCellData>
 {
 public:
 	KCMStoryCellData(IPMUnknown* boss)
-		: CPMUnknown<IKCMStoryCellData>(boss), fLineCount(1), fAttrKind(0) {}
+		: CPMUnknown<IKCMStoryCellData>(boss), fLineCount(1), fAttrKind(0), fBarWhenEmpty(kFalse) {}
 	virtual ~KCMStoryCellData() {}
 
 	virtual void SetSegments(const PMString& pre, const PMString& mid, const PMString& post,
 							 const PMString& ruby, int32 lineCount, int32 attrKind,
-							 const KCMStoryLayers& layers)
+							 const KCMStoryLayers& layers, bool16 barWhenEmpty)
 	{
 		// ★Not translation keys. This is text out of a document, and a short common word can
 		//   otherwise be looked up in the string tables and come back as something else entirely
@@ -126,11 +126,12 @@ public:
 		fLineCount = lineCount;
 		fAttrKind = attrKind;
 		fLayers = layers;
+		fBarWhenEmpty = barWhenEmpty;
 	}
 
 	virtual void GetSegments(PMString& outPre, PMString& outMid, PMString& outPost,
 							 PMString& outRuby, int32& outLineCount, int32& outAttrKind,
-							 KCMStoryLayers& outLayers) const
+							 KCMStoryLayers& outLayers, bool16& outBarWhenEmpty) const
 	{
 		outPre = fPre;
 		outMid = fMid;
@@ -139,6 +140,7 @@ public:
 		outLineCount = fLineCount;
 		outAttrKind = fAttrKind;
 		outLayers = fLayers;
+		outBarWhenEmpty = fBarWhenEmpty;
 	}
 
 private:
@@ -152,6 +154,7 @@ private:
 	int32    fLineCount;
 	int32    fAttrKind;
 	KCMStoryLayers fLayers;		// a warichu / tate-chu-yoko change, line by line (fCount 0 otherwise)
+	bool16   fBarWhenEmpty;		// a whole paragraph with no words: draw the bar rather than nothing
 };
 
 CREATE_PMINTERFACE(KCMStoryCellData, kKCMStoryCellDataImpl)
@@ -189,7 +192,8 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	int32 lineCount = 1;
 	int32 attrKind = 0;
 	KCMStoryLayers layers;
-	data->GetSegments(pre, mid, post, ruby, lineCount, attrKind, layers);
+	bool16 barWhenEmpty = kFalse;
+	data->GetSegments(pre, mid, post, ruby, lineCount, attrKind, layers, barWhenEmpty);
 	const bool16 twoLines = (lineCount >= 2) ? kTrue : kFalse;
 	const bool16 layered = (KCMAttrKindIsLayered(attrKind) && layers.fCount >= 2) ? kTrue : kFalse;
 
@@ -205,7 +209,11 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	//   widget waiting for its next apply has to look like.
 	// ⚠The reading counts as something to draw: a recycled widget that kept only a ruby would
 	//   otherwise paint it over the row it has become.
-	if (pre.IsEmpty() && mid.IsEmpty() && post.IsEmpty() && ruby.IsEmpty() && !layered)
+	// ★★EXCEPT A WHOLE PARAGRAPH WITH NO WORDS (2026-09-19 night, barWhenEmpty): an empty cell of a new
+	//   table, an empty line added - the reader was shown a blank Story column for it. Falling through
+	//   with every piece empty reaches the one-line branch below, where wantCaret draws the deletion's
+	//   bar across the caret's room; nothing else has to know.
+	if (pre.IsEmpty() && mid.IsEmpty() && post.IsEmpty() && ruby.IsEmpty() && !layered && !barWhenEmpty)
 		return;
 
 	// The palette window's SYSTEM SCRIPT font - the one every other cell of these two rows declares

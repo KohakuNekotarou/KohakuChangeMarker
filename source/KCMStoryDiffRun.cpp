@@ -568,12 +568,43 @@ void AddWholeParagraphs(std::vector<KCMStoryChange>& out, const KCMTextDiff::Cha
 							  ? kTrue : kFalse;
 	outPlacesAgree = (afterReturn || beforeNext) ? kTrue : kFalse;
 
+	// ★★**IS THE CELL ITSELF WHAT IS NEW (OR GONE)?** (2026-09-19 night, the user: "when a table appears
+	//   where there was nothing, say Cell +"). A cell's paragraphs stand together in the list (one thread,
+	//   read in order - KCMTextRead), so the cell is whole exactly when its first and last paragraph both
+	//   fall inside THIS run: every paragraph it has was added or removed with it, none is paired with the
+	//   other side. A paragraph added inside a cell that already stood leaves the cell's other paragraphs
+	//   outside the run, and the answer is kFalse - that row stays a "Paragraph".
+	//   ★Asked of the paragraphs, not of the grid address, so a column inserted at the left - which
+	//     shifts every address after it - still names the right rows (which column is not named at all;
+	//     the user: "knowing that a column was added is enough").
+	auto cellIsWhole = [&](int32 p) -> bool16
+	{
+		const KCMParaAttrs& here = ownAttrs[static_cast<size_t>(p)];
+		if (!here.IsCell())
+			return kFalse;
+		auto sameCell = [&](int32 q) -> bool
+		{
+			const KCMParaAttrs& other = ownAttrs[static_cast<size_t>(q)];
+			return other.IsCell() && other.fTableOrdinal == here.fTableOrdinal
+				&& other.fCellRow == here.fCellRow && other.fCellCol == here.fCellCol;
+		};
+		int32 cellFirst = p;
+		while (cellFirst > 0 && sameCell(cellFirst - 1))
+			--cellFirst;
+		int32 cellLast = p;
+		const int32 size = static_cast<int32>(ownAttrs.size());
+		while (cellLast + 1 < size && sameCell(cellLast + 1))
+			++cellLast;
+		return (cellFirst >= first && cellLast < first + count) ? kTrue : kFalse;
+	};
+
 	for (int32 k = 0; k < count; ++k)
 	{
 		const int32 p = first + k;
 		KCMStoryChange change;
 		change.fWhat = KCMStoryChange::kText;
 		change.fWholeParagraph = kTrue;
+		change.fWholeCell = cellIsWhole(p);
 
 		// ★**AND WHICH END OF THE RANGE THE BREAK IS AT** (2026-09-19, the user: the mark reached the end
 		//   of the paragraph above). The ranges below are cut for the WRITE; the facade cuts the break

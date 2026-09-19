@@ -328,11 +328,17 @@ public:
 			(the user's request). ⚠Appended at the END, for the reason stated above fReplaced. */
 		int32			fPlace;
 
+		/** A whole CELL added or removed - a whole-paragraph change whose cell has no paragraph paired with
+			the other side (KCMStoryList.h's fWholeCell, 2026-09-19 night). The ID column says "Cell" for it,
+			where an ordinary whole paragraph says "Paragraph". Only meaningful with fWholeParagraph.
+			⚠Appended at the END, for the reason stated above fReplaced. */
+		bool16			fWholeCell;
+
 		Change()
 			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),
 			  fSourceStart(0), fSourceEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
 			  fAttrKind(0), fReplaced(kFalse), fOverset(kFalse), fWriteBlock(0),
-			  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse), fPlace(0) {}
+			  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse), fPlace(0), fWholeCell(kFalse) {}
 	};
 
 	/** How many differences row nth holds.

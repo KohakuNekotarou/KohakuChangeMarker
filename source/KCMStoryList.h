@@ -333,13 +333,28 @@ struct KCMStoryChange
 		  never checked: the write just gave it whatever it inherited. */
 	std::vector<UID>	fAfterParaStyles;
 
+	/** ★**A WHOLE CELL, ADDED OR REMOVED** (2026-09-19 night, the user: "when a table appears where there
+		was nothing, the rows should say Cell +"). kTrue on a whole-paragraph change whose paragraph is a
+		cell paragraph AND whose cell has NO paragraph outside the run the change came from - every
+		paragraph of that cell was added (or removed) together, so the cell itself is what is new (or gone).
+		A paragraph added INSIDE a cell that already stood - the cell's other paragraphs are paired with the
+		other side - keeps kFalse and is a "Paragraph" like any other.
+		★Decided from the paragraphs, not from the grid address: a column inserted at the left shifts every
+		  address after it, while "does this cell have a paired paragraph" does not move. Which column it
+		  was is not named (the user: "knowing that a column was added is enough").
+		★The ID column says "Cell" for it (KCMStoryTreeWidgetMgr::PlaceIdLabel), the script door's `whole`
+		  column says 2. Nothing is written back for it - no menu offers to (kKCMWriteBlockedPlaces stands;
+		  the user: "to remove a table, select it and delete it").
+		⚠Appended at the END, for the reason stated above fReplacedCount's neighbours. */
+	bool16		fWholeCell;
+
 	KCMStoryChange()
 		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
 		  fSourceStart(0), fSourceEnd(0),
 		  fAttrKind(kKCMStoryAttrNone), fOverset(kFalse),
 		  fReplacedCount(0), fReplacedStart(0), fReplacedEnd(0),
 		  fBeforeStart(0), fBeforeEnd(0), fWriteBlock(kKCMWriteAllowed),
-		  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse), fPlace(0), fBreakAt(0) {}
+		  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse), fPlace(0), fBreakAt(0), fWholeCell(kFalse) {}
 };
 
 /** KCMStoryChange::fBreakAt - which end of a whole paragraph's range holds the paragraph break that the

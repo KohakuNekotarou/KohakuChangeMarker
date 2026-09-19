@@ -1435,8 +1435,8 @@ std::string RubySetting(const KCMStoryChange& c)
 }
 
 /** Where a change's words stand (KCMStoryPlace) - the fact the UI's "Text" / "Cell Text" / "Note Text"
-	and "Paragraph" / "Cell Paragraph" / "Note Paragraph" are made of, not the words themselves
-	(KCMStoryTreeWidgetMgr::PlaceIdLabel owns those). */
+	are made of, not the words themselves (KCMStoryTreeWidgetMgr::PlaceIdLabel owns those; a whole
+	paragraph says "Paragraph" wherever it stands, and a whole cell "Cell" - the `whole` column, 1 / 2). */
 std::string PlaceWord(int32 place)
 {
 	switch (place)
@@ -1541,7 +1541,7 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 			   + "\t" + Field(c.fRuby)
 			   + "\t" + Field(c.fText)
 			   + "\t" + state
-			   + "\t" + (c.fWholeParagraph ? "1" : "0")
+			   + "\t" + (c.fWholeCell ? "2" : (c.fWholeParagraph ? "1" : "0"))	// 2 = a whole CELL (2026-09-19 night)
 			   + "\t" + PlaceWord(c.fPlace)
 			   + "\t" + (haveShown ? Num(shown.fTargetStart) : std::string("-"))
 			   + "\t" + (haveShown ? Num(shown.fTargetEnd) : std::string("-"))

@@ -86,14 +86,19 @@ public:
 		 could be half-called, and a recycled row would draw the last row's layers over its text.
 		★`twoLines` went on 2026-09-16 with the three-line row: how many lines the cell is laid out on
 		 is the row's line count (IKCMStoryEditsFacade's GetChangeLineCount), 1 to 3. */
+	/** @param barWhenEmpty ★draw the deletion's bar when all three pieces are empty (2026-09-19 night):
+		 a whole paragraph with no words in it - an empty cell of a new table, an empty line - is a
+		 change the reader has to see, and until this the cell drew nothing for it. ⚠kFalse is what
+		 keeps a RECYCLED widget blank between rows: an empty set of pieces without this flag is "nothing
+		 to draw", exactly as before. */
 	virtual void SetSegments(const PMString& pre, const PMString& mid, const PMString& post,
 							 const PMString& ruby, int32 lineCount, int32 attrKind,
-							 const KCMStoryLayers& layers) = 0;
+							 const KCMStoryLayers& layers, bool16 barWhenEmpty) = 0;
 
-	/** Read back what was written. Answers empty strings, 1 and 0 before the first apply. */
+	/** Read back what was written. Answers empty strings, 1, 0 and kFalse before the first apply. */
 	virtual void GetSegments(PMString& outPre, PMString& outMid, PMString& outPost,
 							 PMString& outRuby, int32& outLineCount, int32& outAttrKind,
-							 KCMStoryLayers& outLayers) const = 0;
+							 KCMStoryLayers& outLayers, bool16& outBarWhenEmpty) const = 0;
 };
 
 #endif // __IKCMStoryCellData_h__
