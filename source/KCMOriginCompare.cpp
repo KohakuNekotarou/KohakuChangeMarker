@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  KCMOriginCompare.cpp -- see the header.
 //
@@ -22,6 +22,7 @@
 
 #include "KCMComparisonRun.h"		// KCMStartComparisonOn / KCMStopComparison / KCMChosenSourceIsOrigin
 #include "KCMCore.h"				// KCMIsArmed / KCMArmedTargetDB / KCMArmedSourceDB / KCMDetachArmedSource
+#include "KCMTargetSnapshot.h"		// KCMTargetSnapshotTake / Drop - the Target's own IDML, taken with a Story comparison (2026-09-20)
 #include "KCMID.h"				// kKCMMarksRebuiltMessage
 #include "KCMModelNotify.h"			// KCMSayStatus / KCMNotifyStatus / KCMNotify
 #include "KCMOrigin.h"
@@ -105,6 +106,24 @@ bool16 Run(bool16 isRefresh)
 		// sweep finds no pointer of ours at it (KCMHandleDocsClosed would otherwise clear everything).
 		KCMDetachArmedSource();
 	}
+
+	// ★THE TARGET'S OWN INTERNAL IDML, TAKEN WITH THE COMPARISON (2026-09-20, the user: "take the
+	//   Target's internal IDML the moment a Story comparison against a Task Start starts - it will be
+	//   useful later"). Its first use is the Table row's Undo the Restore (KCMTableRestore). Only in
+	//   the Story mode, only against a Task Start; a failure is said, never a reason not to compare.
+	if (compared && KCMGetCompareMode() == kKCMModeStory)
+	{
+		PMString whyNot;
+		if (!KCMTargetSnapshotTake(targetDB, whyNot))
+		{
+			PMString msg("target snapshot not taken: ");
+			msg.SetTranslatable(kFalse);
+			msg.Append(whyNot);
+			KCMNotifyStatus(msg);
+		}
+	}
+	else
+		KCMTargetSnapshotDrop();
 
 	if (compared)
 	{

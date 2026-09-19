@@ -1384,6 +1384,15 @@ int32 ParagraphIndexAt(const std::vector<int32>& starts, TextIndex at)
 	return which;
 }
 
+/* ParaIsCellOfTable
+   Is paragraph `para` of `attrs` a cell of table `ordinal`? Out-of-range indices answer kFalse, so a
+   caller may hand it the -1 ParagraphIndexAt returns. */
+bool16 ParaIsCellOfTable(const std::vector<KCMParaAttrs>& attrs, int32 para, int32 ordinal)
+{
+	return (para >= 0 && static_cast<size_t>(para) < attrs.size()
+			&& attrs[para].IsCell() && attrs[para].fTableOrdinal == ordinal) ? kTrue : kFalse;
+}
+
 /* FirstTableWords
    The first paragraph of table `ordinal` (in `paras`, whose attrs name the table) that holds any
    text - what the Table row shows after its shape word. Empty when every cell is empty. */
@@ -1398,10 +1407,10 @@ std::string FirstTableWords(int32 ordinal, const std::vector<std::string>& paras
 /* FoldTableChanges
    ★★★A TABLE WHOSE SHAPE DIFFERS FROM TASK START'S BECOMES ONE CHANGE (2026-09-19 night, the user:
    "fold every change of that table - rows, columns, merged cells, and the words inside - into one row,
-   Table ≠"). The cell-level changes the paragraph diff found inside it are taken out, and what they said
-   about PAIRED cells is kept on the table change (fKeptCells), so that a restore can put those cells'
-   words back after the whole table has been replaced (the user: "a cell that was not added or removed but
-   whose words changed - do not put that back too").
+   Table ≠"). The cell-level changes the paragraph diff found inside it are taken out; only the spans
+   they mark stay, on fMarkSpans.
+   ⚠Which cells keep the reader's own words over a restore is NOT worked out here any more (2026-09-20):
+    the restore merges the two tables as XML, where each <Cell> names itself. See the note inside.
    A table with no partner is Table + (only here) or Table − (only in Task Start).
 
    ⚠TABLES ARE PAIRED BY ORDINAL - the numbering KCMTextRead gives the cells, in the order the tables'
@@ -1444,9 +1453,9 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		table.fKind = (!haveS) ? KCMStoryChange::kInsert
 					: (!haveT) ? KCMStoryChange::kDelete
 					: KCMStoryChange::kReplace;
-		// ⚠Until the table restore exists (the plan's Task 6) EVERY table row is shown and never written:
-		//   RestoreOne would otherwise take a kTable change down its attribute branch.
-		table.fWriteBlock = kKCMWriteBlockedPlaces;
+		// Only a table whose SHAPE changed can be put back (KCMTableRestore); Table + and Table − offer
+		// no menu - the user: "to remove a table, select it and delete it".
+		table.fWriteBlock = (table.fKind == KCMStoryChange::kReplace) ? kKCMWriteAllowed : kKCMWriteBlockedPlaces;
 		if (haveT)
 		{
 			table.fTargetStart = tShapes[ord].fAnchorStart;
@@ -1463,7 +1472,6 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		// The cell-level changes of THIS table come out; what they say about paired cells stays.
 		std::vector<KCMStoryChange> kept;
 		kept.reserve(out.size());
-		TextIndex deletedCaret = -1;
 		for (size_t c = 0; c < out.size(); ++c)
 		{
 			const KCMStoryChange& ch = out[c];
@@ -1486,10 +1494,8 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 			const bool16 sideS = (ch.fKind != KCMStoryChange::kInsert) ? kTrue : kFalse;
 			const int32 tPara = sideT ? ParagraphIndexAt(targetStarts, tFrom) : -1;
 			const int32 sPara = sideS ? ParagraphIndexAt(sourceStarts, sFrom) : -1;
-			const bool16 tHolds = (tPara >= 0 && static_cast<size_t>(tPara) < targetAttrs.size()
-								   && targetAttrs[tPara].IsCell() && targetAttrs[tPara].fTableOrdinal == ordinal) ? kTrue : kFalse;
-			const bool16 sHolds = (sPara >= 0 && static_cast<size_t>(sPara) < sourceAttrs.size()
-								   && sourceAttrs[sPara].IsCell() && sourceAttrs[sPara].fTableOrdinal == ordinal) ? kTrue : kFalse;
+			const bool16 tHolds = ParaIsCellOfTable(targetAttrs, tPara, ordinal);
+			const bool16 sHolds = ParaIsCellOfTable(sourceAttrs, sPara, ordinal);
 			const bool16 inTable = (haveT && tHolds) || (haveS && sHolds);
 			if (!inTable)
 			{
@@ -1499,29 +1505,16 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 
 			if (tHolds)
 				table.fMarkSpans.push_back(KCMTextSpan(tFrom, tTo));
-			else if (!haveT && deletedCaret < 0)
-				deletedCaret = ch.fTargetStart;
 
-			// ★A PAIRED CELL WHOSE WORDS DIFFER: a text change with characters on BOTH sides, inside a
-			//   paragraph that exists on both - never a whole paragraph (its caret pairs nothing).
-			if (haveT && haveS && ch.fWhat == KCMStoryChange::kText && !ch.fWholeParagraph && tHolds && sHolds)
-			{
-				const KCMTableCellPlace* const live = KCMTableCellAt(tShapes[ord], targetAttrs[tPara].fCellRow, targetAttrs[tPara].fCellCol);
-				if (live != nil)
-				{
-					KCMKeptCell cell;
-					cell.fRow = sourceAttrs[sPara].fCellRow;
-					cell.fCol = sourceAttrs[sPara].fCellCol;
-					cell.fLiveStart = live->fStart;
-					cell.fLiveEnd = live->fEnd;
-					bool16 seen = kFalse;
-					for (size_t k = 0; k < table.fKeptCells.size() && !seen; ++k)
-						if (table.fKeptCells[k].fRow == cell.fRow && table.fKeptCells[k].fCol == cell.fCol)
-							seen = kTrue;
-					if (!seen)
-						table.fKeptCells.push_back(cell);
-				}
-			}
+			// (Which cells keep the reader's own words over a restore was worked out HERE until
+			//  2026-09-20 - fKeptCells - and it could not be made right from this side. A change has a
+			//  paragraph only on the side that holds its characters, so an insertion or a deletion had
+			//  to guess the other side by position, and a caret in a cell the other side does not have,
+			//  or in an EMPTIED cell (no width at all), names the next cell along. It put a new row's
+			//  "k21" into the old (1,1) on the running application.
+			//  ★The restore now merges the two tables AS XML, where every <Cell> carries its own
+			//  Name="col:row" and an empty cell is named as plainly as a full one - KCMTableSnippet.h,
+			//  KCMMergeTableCells. Nothing about cells is carried from here any more.)
 		}
 
 		// Cells only here (a new row or column, by address) and cells whose merge differs: marked whole.
@@ -1554,8 +1547,22 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		}
 		else
 		{
-			// Table −: the place it stood, as a caret.
-			const TextIndex at = (deletedCaret >= 0) ? deletedCaret : 0;
+			// Table −: the place it stood, as a caret in the Target.
+			// ⚠★★★**THE SOURCE'S OWN ANCHOR POSITION, CLAMPED TO THE STORY** (2026-09-20, measured on
+			//   the running application). It was the caret of one of the folded cell changes, which is a
+			//   position among the CELLS - and cells stand past the whole body (ITableTextContent.h), so
+			//   for a table that is GONE from the Target it came out past the end of the story: 12 in a
+			//   story of 10. Nothing drew a mark there, and every write refused it with "the change's
+			//   range is outside the story" - the range test in RestoreOne stands before the one that
+			//   would have said the real reason, so even the refusal was misleading.
+			//   ★The anchor stood in the BODY, and the body agrees on both sides unless it was edited
+			//   too - and an edit there is a row of its own.
+			TextIndex at = haveS ? sShapes[ord].fAnchorStart : 0;
+			const TextIndex total = (targetModel != nil) ? targetModel->TotalLength() : at;
+			if (at > total)
+				at = total;
+			if (at < 0)
+				at = 0;
 			table.fTargetStart = at;
 			table.fTargetEnd = at;
 			table.fMarkSpans.push_back(KCMTextSpan(at, at));
@@ -2037,6 +2044,20 @@ bool16 KCMStoryDiffRun::StillReplaced(const KCMStoryRow& row, const KCMStoryChan
 	IDataBase* const targetDB = KCMArmedTargetDB();
 	if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
 		return kFalse;
+
+	// ★A TABLE ROW IS "STILL REPLACED" WHILE THE TABLE KEEPS THE SHAPE THE RESTORE LEFT (2026-09-20):
+	//   one comparison of signatures against the live table, no counter - Ctrl+Z gives the table its
+	//   old shape back and the answer falls away with it.
+	if (change.fWhat == KCMStoryChange::kTable)
+	{
+		InterfacePtr<ITextModel> model(UIDRef(targetDB, row.fStoryUID), UseDefaultIID());
+		std::vector<KCMTableShape> shapes;
+		if (model == nil || !KCMReadTableShapes(model, shapes) || change.fTableOrdinal < 0
+			|| static_cast<size_t>(change.fTableOrdinal) >= shapes.size())
+			return kFalse;
+		return (KCMTableShapeSignature(shapes[static_cast<size_t>(change.fTableOrdinal)]) == change.fReplacedShapeSig)
+			   ? kTrue : kFalse;
+	}
 
 	// ⚠★★★**">=", NOT "==" - MEASURED ON THE APPLICATION, 2026-09-15.** It was "==" until the
 	//   first live run, where taking in a SECOND change in the same story made the FIRST one's

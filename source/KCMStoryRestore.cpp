@@ -40,6 +40,7 @@
 #include "TextID.h"				// kCharAttrStrandBoss, kPrivateCreateStrandCmdBoss
 #include "TextIterator.h"			// AppendToStringAndIncrement - the older words, raw
 #include "TextChar.h"				// kTextChar_Table - which side of a table an insertion goes
+#include "KCMTableRestore.h"		// KCMRestoreTable / KCMUndoRestoreTable - a Table row, put back whole (2026-09-20)
 #include "WideString.h"
 #include <string>
 #include <vector>					// the replaced rows a bulk run holds until its one re-diff is done
@@ -831,6 +832,12 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 		return kFalse;
 	}
 
+	// ===== a table ==============================================================================
+	// ★A TABLE ROW IS PUT BACK WHOLE (2026-09-20, KCMTableRestore): never through the words below,
+	//   and never through the attribute branch either.
+	if (change.fWhat == KCMStoryChange::kTable)
+		return KCMRestoreTable(nth, which, change, standalone, outMessage, outDone, outSlot);
+
 	// ===== the words =============================================================================
 	if (change.fWhat == KCMStoryChange::kText)
 	{
@@ -1483,6 +1490,10 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 	// ⚠**COPIES FIRST**: the list is rewritten below and both pointers go stale with it.
 	const KCMStoryChange change = *found;
 	const UID storyUID = row->fStoryUID;
+
+	// ★A TABLE ROW GOES BACK FROM ITS KEPT SNIPPET (2026-09-20, KCMTableRestore), not from words.
+	if (change.fWhat == KCMStoryChange::kTable)
+		return KCMUndoRestoreTable(nth, which, change, outMessage);
 	// ★Its slot in the replaced list: what decides which records the write below moves (the ones
 	//   AFTER it in the text, however many share its position), and which record is taken out.
 	const int32 slot = KCMStoryList::ReplacedSlotOfMerged(nth, which);

@@ -248,6 +248,10 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpike.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableCopySpike.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableShape.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableSnippet.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTargetSnapshot.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMScratchDoc.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableRestore.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReport.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReportTable.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReportPaws.cpp" />

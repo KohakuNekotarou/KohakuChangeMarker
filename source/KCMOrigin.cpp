@@ -19,6 +19,7 @@
 
 // General includes:
 #include "PersistUtils.h"
+#include "KCMTargetSnapshot.h"		// KCMTargetSnapshotDrop - released with the origin (2026-09-20)
 #include "K2SmartPtr.h"
 #include "IDFile.h"				// the file KCMOriginSaveRaw is handed
 #include "StreamUtil.h"			// CreateFileStreamWrite
@@ -273,6 +274,7 @@ bool16 KCMParkOrigin()
 	// ★And so does the Source text read out of them - the same rule, stated in KCMReleaseOrigin:
 	//   the cache belongs to the bytes, and these bytes are leaving the live slot.
 	KCMSourceCacheClear();
+	KCMTargetSnapshotDrop();		// the Target's own IDML stood beside this origin (2026-09-20)
 
 	sParkedBytes.reset(sBytes.release());
 	sParkedShape = sShape;
@@ -356,6 +358,9 @@ void KCMReleaseOrigin(bool16 deferPeekClose)
 	//    through here as well (KCMClearChosenDocs releases the origin), and unparking calls this
 	//    before it puts the parked bytes back - so those two need no line of their own.
 	KCMSourceCacheClear();
+	// ★AND THE TARGET'S OWN IDML (2026-09-20): two internal IDMLs stand during a Task Start Story
+	//   comparison, and the user's rule is "do not forget to release them at Stop".
+	KCMTargetSnapshotDrop();
 	KCMOriginPeekDrop(deferPeekClose);	// the peek document stood on these bytes
 }
 

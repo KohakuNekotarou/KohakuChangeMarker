@@ -49,17 +49,6 @@ struct KCMTextSpan
 	KCMTextSpan(TextIndex from, TextIndex to) : fFrom(from), fTo(to) {}
 };
 
-/** A cell a table restore keeps the words of: its address in TASK START's grid, and where its live
-	words stand now (the cell thread's range in the Target, the final return included). */
-struct KCMKeptCell
-{
-	int32		fRow;
-	int32		fCol;
-	TextIndex	fLiveStart;
-	TextIndex	fLiveEnd;
-	KCMKeptCell() : fRow(0), fCol(0), fLiveStart(0), fLiveEnd(0) {}
-};
-
 /** One difference inside one story: where it is, what sort it is, and what it reads.
 
 	**ONLY THE STORY CHANGES MODE PRODUCES THESE.** The change counters KCMStoryStamp reads can
@@ -384,13 +373,11 @@ struct KCMStoryChange
 	std::string	fShapeSigBefore;
 	std::string	fShapeSigAfter;
 
-	/** ★**THE CELLS THAT EXIST ON BOTH SIDES AND WHOSE WORDS DIFFER** (2026-09-19 night, the user: "a cell
-		that was not added or removed but whose words changed - do not put that back too; be clever"). A
-		restore replaces the whole table with Task Start's and then writes each of these cells' LIVE words
-		into the cell of the same TASK START address (the addresses are Task Start's own once the table is
-		back). Paired by the diff - a text change inside a paragraph that exists on both sides - never by
-		address alone, so a row inserted at the top does not pair the wrong cells. */
-	std::vector<KCMKeptCell>	fKeptCells;
+	// (The cells whose live words a restore keeps were recorded here until 2026-09-20 - fKeptCells,
+	//  paired by the diff. They are not recorded at all any more: KCMTableRestore asks the two XML
+	//  texts at the moment it restores and merges the cells there, so nothing about cells has to be
+	//  carried from the time of the comparison to the time of the write. That is what took the
+	//  position bugs out - see KCMTableSnippet.h, KCMMergeTableCells.)
 
 	/** After a restore: the snippet that puts the LIVE table back ("Undo the Restore"), built from the
 		Target's own XML (KCMTableSnippet). Empty until a restore, and dropped once it is redone. */
