@@ -157,6 +157,7 @@ DECLARE_PMID(kClassIDSpace, kKCMBookPathTextWidgetBoss, kKCMUIPrefix + 28)	// kS
 //   text nor colour of its own.
 //   ⇒ It has no tooltip either, so the kKCMNoTipImpl that the row cell at +20 needs is not
 //     needed here ＝ **the silence comes for free**.
+DECLARE_PMID(kClassIDSpace, kKCMStoryBangCellBoss, kKCMUIPrefix + 37)	// kGenericPanelWidgetBoss + IID_ICONTROLVIEW (kKCMStoryBangViewImpl): the Δ cell of a "!" row - a red "!" drawn by hand, because a stock static text has one colour (KCMStoryBangView.cpp, 2026-09-19). ⚠+37 was the next free class slot, counted (30 and 31 stay vacant on purpose - see 2026-08-23 below)
 DECLARE_PMID(kClassIDSpace, kKCMStoryChangeCellBoss, kKCMUIPrefix + 29)	// kGenericPanelWidgetBoss + IID_ICONTROLVIEW (kKCMStoryCellViewImpl) + IID_IKCMSTORYCELLDATA (kKCMStoryCellDataImpl): the text cell of a change row. It takes three pieces (context, the changed characters, context) and draws the middle one in the theme text colour with the outer two faded toward the background (KCMStoryCellView.cpp)
 // The mark that briefly lights up wherever a change row jumps to. ★★It is a **GLOBAL TEXT
 // ADORNMENT** = the official mechanism for drawing **over the characters themselves**, and it
@@ -286,6 +287,7 @@ DECLARE_PMID(kImplementationIDSpace, kKCMUIDrawEventHandlerImpl, kKCMUIPrefix + 
 //     **A move always involves copying numbers across, so open what you copied them into and
 //     count.**
 DECLARE_PMID(kImplementationIDSpace, kKCMStoryCellViewImpl, kKCMUIPrefix + 39)	// IControlView (DVControlView subclass). The text cell of a **change row** in Story Edits: the changed characters in the theme text colour, the context on either side faded toward the background (KCMStoryCellView.cpp). ★Modelled on KBS's KBSColorTextView, which highlights the matched part of a search hit
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryBangViewImpl, kKCMUIPrefix + 51)	// IControlView (DVControlView subclass, PERSIST: built from the .fr). The Δ cell of a "!" row in Story Edits: a red "!" centred in the column, for a story an import could not fill (KCMStoryBangView.cpp, 2026-09-19). ⚠+51 was the next free implementation slot, counted (41 and 42 stay vacant - the retired markers)
 DECLARE_PMID(kImplementationIDSpace, kKCMStoryCellDataImpl, kKCMUIPrefix + 40)	// IKCMStoryCellData (a non-persistent container for the three pieces; it lives on the same boss as the cell above. KCMStoryCellView.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKCMStatusTextViewImpl, kKCMUIPrefix + 43)	// IControlView (DVControlView subclass). The panel's message area: it wraps to fill the box, draws the changed characters in the theme text colour and fades the heading and the context (KCMStatusTextView.cpp). ★**The PERSIST form** -- this widget is built from the panel's .fr, so it has to be persistent like the IID_ICONTROLVIEW of the kGenericPanelWidgetBoss it is built on
 DECLARE_PMID(kImplementationIDSpace, kKCMStatusTextDataImpl, kKCMUIPrefix + 44)	// IKCMStatusTextData (a non-persistent container for the four pieces; it lives on the same boss as the area above. KCMStatusTextView.cpp)
@@ -524,6 +526,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowWidgetID, kKCMUIPrefix + 51)		// the ro
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryChangeRowWidgetID, kKCMUIPrefix + 63)	// ★the template of a **change row** (the second level). ★It **has to differ from +51 above**: the framework decides from the ID GetWidgetTypeForNode answers whether a widget can be recycled, and answering the same one hands a story row's widget to a change row while scrolling. ⚠**Its two cells reuse +48 and +49** -- widget IDs need be unique only among the descendants of one widget (guide vol2-12). The book rows share the same two
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryTallRowWidgetID, kKCMUIPrefix + 73)	// ★the template of a **three-line change row** (2026-09-16): a tate-chu-yoko standing inside a warichu, over the text. Its own ID for the same reason as the ruby row's below - the height belongs to the widget. ⚠+73 was the next free slot, counted (in use were 0, 1, 26, 34-53 and 57-72)
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowLayerIdWidgetID, kKCMUIPrefix + 74)	// ★the SECOND ID cell of a three-line row (2026-09-16, the user's drawing: "縦中横" on the tate-chu-yoko's line AND "割注" on the warichu's). The first (kKCMStoryRowUIDWidgetID) names the layer that changed, beside its sign; this one names the other layer on its own line. ⚠+74 was the next free slot, counted
+DECLARE_PMID(kWidgetIDSpace, kKCMStoryBangRowWidgetID, kKCMUIPrefix + 75)	// ★the template of a "!" STORY row (2026-09-19): a story an import could not fill, wholly or in part. The story row's three cells with the Δ cell drawn by hand in red. Its own ID so the tree never recycles it onto a plain story row (the same reason as +63 / +64). ⚠+75 was the next free widget slot, counted
+DECLARE_PMID(kWidgetIDSpace, kKCMStoryBangChangeRowWidgetID, kKCMUIPrefix + 76)	// ★the template of a "!" CHILD row (2026-09-19): one thing the import could not put in - the kind word in the ID column, where and why in the text cell (a stock static text, not the hand-drawn one: nothing to colour), and the red "!" in Δ. ⚠+76, counted
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRubyRowWidgetID, kKCMUIPrefix + 64)	// ★the template of a **ruby change row**. It has to differ from +63 for the same reason: the ID GetWidgetTypeForNode answers is what decides whether a widget can be recycled. ⚠Without a separate one, the taller ruby widget is handed to an ordinary change row and **the rows overlap** (the height belongs to the widget, so an unchanged ID means the tree does not replace it)
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowUIDWidgetID, kKCMUIPrefix + 52)	// ★row, far left: the story's UID in decimal (user's request: "UID, text, and the changed part"). It is what lets a row be followed by eye: two stories with the same opening words are still told apart
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRubyKindWidgetID, kKCMUIPrefix + 53)	// (retired 2026-09-12, reserved) the ruby change row's "Mono" / "Group" cell of 2026-09-08. Gone from the row template and from the widget manager with the judgement it reported: a ruby re-set from mono to group over the same reading is no longer a change (user's decision). The number stays reserved rather than reused
@@ -741,7 +745,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 //     answered in Japanese on a Japanese UI.
 #define kKCMBookCompareConfirmKey	kKCMStringPrefix "kKCMBookCompareConfirmKey"	// the first line of the "these two will be compared" alert (the full paths of target: / source: follow it)
 #define kKCMParagraphOrderConfirmKey	kKCMStringPrefix "kKCMParagraphOrderConfirmKey"	// asked before a new paragraph is taken in ahead of the new paragraph before it (2026-09-17)
-#define kKCMImportTaskStartAdviceKey	kKCMStringPrefix "kKCMImportTaskStartAdviceKey"	// asked before every "Import Story Text..." from the flyout: take a Task Start just before it (2026-09-17). ⚠A script's import is not asked
+#define kKCMImportTaskStartAdviceKey	kKCMStringPrefix "kKCMImportTaskStartAdviceKey"	// ⚠UNUSED SINCE 2026-09-19: it was asked before every "Import Story Text..." from the flyout (take a Task Start just before it, 2026-09-17). The import takes a Task Start of its own now, so nothing is asked; the string stays in the table until the trial is decided
 #define kKCMBookNoPairKey			kKCMStringPrefix "kKCMBookNoPairKey"			// the warning when two books could not be resolved (normally unreachable, since the menu item is greyed)
 #define kKCMBookRowStartMenuKey	kKCMStringPrefix "kKCMBookRowStartMenuKey"	// the "Start Change Marker" item on a chapter row context menu
 // The chapter row context menu. KCMBookRowEH::RButtonDn puts the MenuDef subtree of this name up
@@ -883,6 +887,11 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 //   this section has a key of its own. DoUsage reads hint / hint3 / hint2, and the Japanese side
 //   (KCMLoc.h) carries the same section at the head of its kHint2 - the same seam, one text.
 #define kKCMHint3Key			kKCMStringPrefix "kKCMHint3Key"
+// ★**The fourth part (2026-09-19): the story text round trip** (Export / Import Story Text, the "!"
+//   rows, Restore / Undo the Restore, Ctrl+Z). A key of its own for the same reason as the third.
+//   DoUsage reads hint / hint3 / hint4 / hint2; the Japanese side carries the section inside its
+//   kHint2 at the same seam (after Story IDs, before the books).
+#define kKCMHint4Key			kKCMStringPrefix "kKCMHint4Key"
 #define kKCMToolStringKey		kKCMStringPrefix "kKCMToolStringKey"	// the tool name in the toolbox (its tooltip). English in every locale
 #define kKCMPawToolStringKey	kKCMStringPrefix "kKCMPawToolStringKey"	// the cat-paw stamp tool's name in the flyout (its tooltip). ★English in every locale, as the line above: the jaJP string table was retired on 2026-08-05 and Japanese now comes from ui/KCMLoc.h at run time -- a tool name is not one of the strings that file carries
 
@@ -977,7 +986,13 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 // ★The template of a **three-line change row** (2026-09-16): a warichu or tate-chu-yoko drawn in
 // layers - a tate-chu-yoko on the line of the warichu it stands in, on the line of the text. The same
 // cells as the ruby row, three lines tall (KCMStoryCellView.cpp divides the cell by three).
-#define kKCMStoryTallRowRsrcID	1017	// ⚠Next free: 1018
+#define kKCMStoryTallRowRsrcID	1017
+
+// ★The two "!" rows of Story Edits (2026-09-19): a story an import could not fill, and one thing it
+// could not put in. The story row and the change row respectively, with the Δ cell replaced by the
+// hand-drawn red "!" (kKCMStoryBangCellBoss). Own WidgetIDs, own resources, one line tall.
+#define kKCMStoryBangRowRsrcID			1018
+#define kKCMStoryBangChangeRowRsrcID	1019	// ⚠Next free: 1020
 
 // The row height of the chapter list. ★As with kKCMStoryRowHeight below, **both the .fr and the
 // C++ read this one constant** (the row resource's Frame, the tree's scroll increment,

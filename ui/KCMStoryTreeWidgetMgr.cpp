@@ -274,8 +274,13 @@ public:
 		//     make the tree build widgets it already had.
 		TreeNodePtr<KCMStoryNodeID> nodeID(node);
 		const bool16 isChange = (nodeID != nil && nodeID->IsChangeRow() && !KCMListShowsResources());
-		const int32 lines = isChange ? LineCountOfNode(node) : 1;
-		const RsrcID rsrcID = !isChange   ? kKCMStoryRowRsrcID
+		// ★A "!" ROW FIRST (2026-09-19): a story an import could not fill, or one thing it could not put
+		//   in, has a resource of its own - the same cells with the Δ cell drawn by hand in red.
+		bool16 bangChild = kFalse;
+		const bool16 bang = this->IsBangNode(nodeID, bangChild);
+		const int32 lines = (isChange && !bang) ? LineCountOfNode(node) : 1;
+		const RsrcID rsrcID = bang        ? (bangChild ? kKCMStoryBangChangeRowRsrcID : kKCMStoryBangRowRsrcID)
+							  : !isChange   ? kKCMStoryRowRsrcID
 							  : (lines >= 3) ? kKCMStoryTallRowRsrcID
 							  : (lines == 2) ? kKCMStoryRubyRowRsrcID
 											 : kKCMStoryChangeRowRsrcID;
@@ -320,6 +325,13 @@ public:
 		//     the same widget (see CreateWidgetForNode). The rule this comment states is about kinds
 		//     that DIFFER; two that do not are meant to share.
 		TreeNodePtr<KCMStoryNodeID> nodeID(node);
+		// ★THE "!" ROWS ANSWER THEIR OWN IDs (2026-09-19) - a plain row handed one of their widgets
+		//   would show a red "!" it has no business showing, and the other way round. Asked first,
+		//   before the Resources shortcut below: a "!" story row is a story row in every other respect.
+		bool16 bangChild = kFalse;
+		if (this->IsBangNode(nodeID, bangChild))
+			return bangChild ? kKCMStoryBangChangeRowWidgetID : kKCMStoryBangRowWidgetID;
+
 		if (nodeID == nil || !nodeID->IsChangeRow() || KCMListShowsResources())
 			return kKCMStoryRowWidgetID;
 
@@ -327,6 +339,34 @@ public:
 		return (lines >= 3) ? kKCMStoryTallRowWidgetID
 			 : (lines == 2) ? kKCMStoryRubyRowWidgetID
 							: kKCMStoryChangeRowWidgetID;
+	}
+
+	/** Whether this node is one an import could not fill (2026-09-19): a story row carrying
+		kKCMStoryKindRefused, or a child whose fWhat is kWhatRefused. `outIsChild` says which.
+
+		★ONE QUESTION FOR THREE CALLERS - the resource to build, the widget type to recycle by, and
+		  the apply that fills the cells - so that the three cannot disagree about which rows are
+		  the red ones. ⚠Never in the Resources mode: its rows share the node class and mean
+		  something else, the same guard LineCountOfNode states. */
+	bool16 IsBangNode(const KCMStoryNodeID* nodeID, bool16& outIsChild) const
+	{
+		outIsChild = kFalse;
+		if (nodeID == nil || KCMListShowsResources())
+			return kFalse;
+
+		if (nodeID->IsChangeRow())
+		{
+			IKCMStoryEditsFacade::Change change;
+			if (!Utils<IKCMStoryEditsFacade>()->GetChange(nodeID->GetRow(), nodeID->GetChange(), change))
+				return kFalse;
+			outIsChild = kTrue;
+			return (change.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused) ? kTrue : kFalse;
+		}
+
+		IKCMStoryEditsFacade::Row row;
+		if (!Utils<IKCMStoryEditsFacade>()->GetRow(nodeID->GetRow(), row))
+			return kFalse;
+		return ((row.fKinds & kKCMStoryKindRefused) != 0) ? kTrue : kFalse;
 	}
 
 	// Answer both size questions rather than letting the base class build a widget and measure it.
@@ -765,6 +805,8 @@ private:
 		//   what stops them disagreeing.
 		const int32 lines = Utils<IKCMStoryEditsFacade>()->GetChangeLineCount(row, change);
 		return (lines < 1) ? 1 : ((lines > 3) ? 3 : lines);
+		// (A "!" child answers 1 here too: its fAttrKind is none, so the model says one line. The
+		//  callers that build its widget ask IsBangNode first and never reach this for it.)
 	}
 
 	int32 LineCountOfNode(const NodeID& node) const
@@ -803,6 +845,23 @@ private:
 		IKCMStoryEditsFacade::Change change;
 		const bool16 have = Utils<IKCMStoryEditsFacade>()->GetChange(
 								nodeID.GetRow(), nodeID.GetChange(), change);
+
+		// ★A "!" CHILD IS WRITTEN BY ITS OWN BRANCH AND RETURNS (2026-09-19). Its widget is the
+		//   bang change row's, whose text cell is a STOCK static text - so there is no
+		//   IKCMStoryCellData to hand three pieces to, and the pieces below would mean nothing anyway:
+		//   the ID column holds the kind word (fTextPre) and the text cell the place and the reason
+		//   (fText). The Δ cell draws its own red "!" and is not written at all.
+		//   ⚠Both cells written every time, empty included - the recycling rule every branch keeps.
+		if (have && change.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused)
+		{
+			PMString kindWord = change.fTextPre;
+			PMString whereAndWhy = change.fText;
+			kindWord.SetTranslatable(kFalse);
+			whereAndWhy.SetTranslatable(kFalse);
+			this->SetNodeName(widgetList, kindWord, kKCMStoryRowUIDWidgetID);
+			this->SetNodeName(widgetList, whereAndWhy, kKCMStoryRowTextWidgetID);
+			return kTrue;
+		}
 
 		PMString kind;
 		PMString textPre, textMid, textPost, ruby;

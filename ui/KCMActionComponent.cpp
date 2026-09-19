@@ -984,40 +984,22 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			}
 			break;
 
-		// Flyout "Import Story Text...": the other half of the round trip. The chosen files of
-		// edited HTML are read, the document's state is taken as the origin, and the Story
-		// comparison starts against a COPY with those words poured into it.
-		// ★★★**THE READER'S DOCUMENT IS NOT CHANGED BY THIS.** What puts any of it in is "Restore
-		//   Source Text", one change at a time - the door that already exists and already refuses
-		//   what it cannot write.
+		// Flyout "Import Story Text...": the other half of the round trip. The chosen files (HTML or
+		// .docx) are read, a Task Start is taken, the edits go INTO THE DOCUMENT as one undo step,
+		// and the Story comparison starts against that Task Start (2026-09-19, the user's call - a
+		// trial; the design is docs/superpowers/specs/2026-09-19-kcm-import-direct-design.md).
+		// ★What could not go in is listed first, with a red "!". "Restore Source Text" takes one
+		//   change back; Ctrl+Z takes the whole import back.
 		// ★★**FILES, AND AS MANY AS THEY LIKE** (the user's decision, 2026-09-15). A folder was
 		//   what this asked for until now, which meant handing over everything that happened to be
 		//   in one.
 		case kKCMPopupImportStoryTextActionID:
 			{
-				// ★★**A TASK START TAKEN JUST BEFORE, RECOMMENDED EVERY TIME** (2026-09-17, the user's request).
-				//   The import gives back the Task Start it moved aside when it ends, and comparing against
-				//   that is how the reader sees what the import put into the document - which only holds
-				//   when it was taken right before. Whether one is held says nothing about WHEN (the user:
-				//   a Task Start that exists may not be the one just before), so this asks whether or not
-				//   one is held.
-				// ⚠**A SCRIPT IS NOT ASKED** (the user, the same day): app.kcmImportStoryText goes straight
-				//   to the model half (KCMScriptProvider) and never passes through here, and a script has
-				//   nobody to press OK.
-				// ★OK IS THE DEFAULT: it comes up on every import, including the ones that follow a Task
-				//   Start just taken, so Enter carries on.
-				{
-					PMString advice(kKCMImportTaskStartAdviceKey);
-					advice.Translate();			// from the enUS table, like every other English string here
-					advice.SetTranslatable(kFalse);
-					if (CAlert::ModalAlert(advice, kOKString, kCancelString, kNullString,
-							1,						// OK is the default button
-							CAlert::eQuestionIcon) != 1)
-					{
-						KCMSetStatus("import: cancelled - take a Task Start, then Import Story Text again.");
-						break;
-					}
-				}
+				// ★NO DIALOG BEFORE THE FILES (2026-09-19, the user's call). Until then this asked the
+				//   reader to take a Task Start just before the import (kKCMImportTaskStartAdviceKey,
+				//   2026-09-17), because the import moved theirs aside and compared against it after.
+				//   The import takes a Task Start of ITS OWN now, replacing any the reader had - so there
+				//   is nothing to advise, and How to Use says so instead.
 
 				// ⚠**SDKFileOpenChooser CANNOT DO THIS.** It holds one IDFile and has no way to
 				//  answer for several, so the dialog is built the way Adobe's own callers build it
@@ -1750,6 +1732,10 @@ void KCMActionComponent::DoUsage()
 	//   limit - read here between the two. On the Japanese side it is the head of kHint2, so the
 	//   Japanese literal for this key is empty and the order comes out the same in both languages.
 	usage.Append(KCMLoc::Text(kKCMHint3Key, u""));
+	// ★The story text round trip (2026-09-19) is a FOURTH English key, read after the third; on the
+	//   Japanese side it sits inside kHint2 at the same seam (after Story IDs, before the books), so
+	//   the Japanese literal for this key is empty too and the order comes out the same.
+	usage.Append(KCMLoc::Text(kKCMHint4Key, u""));
 	usage.Append(KCMLoc::Text(kKCMHint2Key, KCMJa::kHint2));
 	usage.SetTranslatable(kFalse);
 
