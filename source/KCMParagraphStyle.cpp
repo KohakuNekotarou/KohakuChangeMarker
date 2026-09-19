@@ -106,11 +106,21 @@ void KCMSnapshotChainAfter(ITextModel* model, TextIndex removedFrom, TextIndex r
 	// its last character, which both removal shapes hold inside [removedFrom, removedTo).
 	UID previous = KCMParagraphStyleAt(model, removedTo - 1);
 
-	// Every paragraph from removedTo to the thread's last return: a start is removedTo, and each
-	// character after a return - except the thread's final return, which ends the last paragraph.
+	// Every paragraph after the removal: the first starts at removedTo - or one further on when the
+	// character at removedTo is the removed paragraph's OWN return ("\rTEXT" leaves that return behind
+	// as the paragraph before's; measured 2026-09-19: read as a paragraph of its own it was "not chained"
+	// and stopped the walk at once, so nothing was ever re-styled) - and each character after a return
+	// from there, except the thread's final return, which ends the last paragraph.
 	TextIndex start = removedTo;
-	TextIterator iter(model, removedTo);
-	for (TextIndex i = removedTo; i < threadEnd; ++i, ++iter)
+	{
+		TextIterator at(model, removedTo);
+		if (static_cast<int32>((*at).GetValue()) == kTextChar_CR)
+			start = removedTo + 1;
+	}
+	if (start >= threadEnd)
+		return;
+	TextIterator iter(model, start);
+	for (TextIndex i = start; i < threadEnd; ++i, ++iter)
 	{
 		const int32 cp = static_cast<int32>((*iter).GetValue());
 		if (cp != kTextChar_CR)

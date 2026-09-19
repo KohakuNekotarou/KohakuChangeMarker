@@ -127,6 +127,12 @@ KCMCompareMode	sModeBeforeImport = kKCMModePixel;
 KCMStoryTextSet	sHeld;
 bool16			sHolding = kFalse;
 
+/** What the last pour said about a three-way merge - "N change(s) from Word, M conflict(s) kept the
+	document's words (...)" - for the import's status line (2026-09-19, live test: the pour runs inside
+	the rehydration and its sentence went nowhere, so a conflict was invisible). Empty when the last
+	pour merged nothing. Dropped with the words (KCMReleaseStoryText). */
+PMString		sLastMergeNote;
+
 /** A PMString as wide characters. (KCMStoryTextExport.cpp has these four lines inside its own
 	WidePath, which takes an IDFile instead - the two files share nothing else, and a header holding
 	one helper would be a worse thing to maintain.) */
@@ -1445,6 +1451,12 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 	outMessage = "import: ";
 	outMessage.SetTranslatable(kFalse);
 	outMessage.Append(readMessage);
+	// ★What the merge did, when there was one (stage 3): the pour's own sentence, kept for this line.
+	if (!sLastMergeNote.IsEmpty())
+	{
+		outMessage.Append("; ");
+		outMessage.Append(sLastMergeNote);
+	}
 	// ★The two menu names as the Import mode spells them (2026-09-17): the row item is "Change to Imported
 	//   Text" in this mode (it read "Restore Source Text", the Task Start mode's name), and the way out is
 	//   "Finish Import" (the Start/Stop item, renamed while importing).
@@ -1774,19 +1786,25 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 		AppendCount(outMessage, ", ", attrEdits, " ruby/kenten write(s)");
 	// ★A .docx MERGED THREE WAYS SAYS SO (stage 3): how many of Word's changes went in, and how many
 	//   the document's own edits kept out - the first of those named, so the reader knows where to look.
+	//   ⚠Kept in sLastMergeNote as well: this sentence is the pour's, and the pour runs inside the
+	//    rehydration, whose caller has no status line - the import's own sentence picks it up.
+	sLastMergeNote.Clear();
+	sLastMergeNote.SetTranslatable(kFalse);
 	if (wordChanges > 0 || conflicts > 0)
 	{
-		AppendCount(outMessage, ", ", wordChanges, " change(s) from Word");
+		AppendCount(sLastMergeNote, "", wordChanges, " change(s) from Word");
 		if (conflicts > 0)
 		{
-			AppendCount(outMessage, ", ", conflicts, " conflict(s) kept the document's words");
+			AppendCount(sLastMergeNote, ", ", conflicts, " conflict(s) kept the document's words");
 			if (!firstConflict.IsEmpty())
 			{
-				outMessage.Append(" (");
-				outMessage.Append(firstConflict);
-				outMessage.Append(")");
+				sLastMergeNote.Append(" (");
+				sLastMergeNote.Append(firstConflict);
+				sLastMergeNote.Append(")");
 			}
 		}
+		outMessage.Append(", ");
+		outMessage.Append(sLastMergeNote);
 	}
 	if (skippedByTables > 0)
 		AppendCount(outMessage, ", ", skippedByTables, " story(ies) left alone (table structure changed)");
@@ -1824,6 +1842,7 @@ void KCMHoldStoryText(const KCMStoryTextSet& set)
 
 void KCMReleaseStoryText()
 {
+	sLastMergeNote.Clear();
 	const bool16 wasImporting = sHolding;
 	sHeld = KCMStoryTextSet();
 	sHolding = kFalse;
