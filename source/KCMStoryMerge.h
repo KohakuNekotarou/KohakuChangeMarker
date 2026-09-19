@@ -47,15 +47,60 @@
 namespace KCMStoryMerge
 {
 
+/** One change of Word's that was taken, as it landed: `fNowCount` characters at `fNowAt` of `now`
+	became `fNewCount`. What a table's place in the paragraph is moved by (Merge). */
+struct Edit
+{
+	int32	fNowAt;
+	int32	fNowCount;
+	int32	fNewCount;
+};
+
 /** One paragraph's merge. Exposed for the harness; Merge (below) is what the import calls. */
 struct ParaResult
 {
 	KCMStoryHtml::Para			fMerged;	// `now` plus Word's changes
 	int32						fApplied;	// Word's changes taken, each counted once
 	std::vector<std::string>	fWhys;		// one per change of Word's NOT taken: why the document's words were kept
+	std::vector<Edit>			fEdits;		// the word changes taken, in ascending order of fNowAt
 
 	ParaResult() : fApplied(0) {}
 };
+
+/** One change of Word's that was not taken: where, and why the document's words were kept. */
+struct Refusal
+{
+	std::string	fWhere;		// "body paragraph 3", "table 0 row 1 cell 0 paragraph 1", "note 1 paragraph 1", "the notes"
+	std::string	fWhy;
+};
+
+struct Result
+{
+	KCMStoryHtml::Story		fMerged;		// the document as it stands now, plus Word's changes
+	int32					fApplied;		// Word's changes taken, each counted once
+	std::vector<Refusal>	fConflicts;		// Word's changes not taken, each named
+	bool16					fStoryRefused;	// the whole story was left as it stands: its tables disagree
+	std::string				fWhy;			// when fStoryRefused
+
+	Result() : fApplied(0), fStoryRefused(kFalse) {}
+};
+
+/** origin (as written), after (as Word left it), now (the document as it stands) -> Result.
+
+	★**PLACE BY PLACE** (the design, 6-2): the body, each cell, each note is a list of paragraphs, and
+	  each list is merged on its own - first paragraph by paragraph (A = Diff(origin, after) and
+	  B = Diff(origin, now) over the paragraphs' texts), then, for a paragraph both sides kept,
+	  character by character (MergePara). A paragraph Word added, took out or split is taken when
+	  the document did not touch the paragraphs around it; else it is a conflict (6-5).
+	★**THE TABLES HAVE TO AGREE THREE WAYS** (6-1) - the same count, rows and cells on every side -
+	  or the whole story is left as it stands (fStoryRefused). A paragraph-level change that holds
+	  a table is a conflict; a character-level change moves a table standing after it in its
+	  paragraph, and one straddling the table's place is a conflict.
+	★**THE NOTES' NUMBER HAS TO AGREE THREE WAYS** too; when it does not, the notes stand as they are
+	  (one conflict, "the notes") and the body and the cells are merged all the same.
+	★**THE OUTPUT IS "NOW PLUS WORD'S CHANGES"**: with nothing from Word it is Same as `now` (6-7). */
+void Merge(const KCMStoryHtml::Story& origin, const KCMStoryHtml::Story& after, const KCMStoryHtml::Story& now,
+		   Result& out);
 
 /** origin, after (Word), now (the document) -> now plus Word's changes to these words and to the
 	ruby, kenten, tate-chu-yoko and warichu over them.
@@ -69,9 +114,12 @@ struct ParaResult
 	  has moved nothing that a change still to be taken will land on; ToNow itself does not depend
 	  on that order, because B is fixed in origin coordinates.
 	★**A footnote reference standing inside a change of Word's makes that change a conflict**: the
-	  reference is the document's and cannot travel with words nobody can see in Word. */
+	  reference is the document's and cannot travel with words nobody can see in Word. So does a
+	  position in `keep` (a table's place in the paragraph, in now's coordinates): a change may end
+	  or begin there, not straddle it.
+	@param keep positions of `now` no change may straddle; nil for none. */
 void MergePara(const KCMStoryHtml::Para& origin, const KCMStoryHtml::Para& after, const KCMStoryHtml::Para& now,
-			   ParaResult& out);
+			   ParaResult& out, const std::vector<int32>* keep = nil);
 
 }	// namespace KCMStoryMerge
 

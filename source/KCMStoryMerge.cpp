@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdio>
 #include <utility>
 
 namespace KCMStoryMerge
@@ -325,7 +326,7 @@ struct SpanMerge
 }	// anonymous namespace
 
 void MergePara(const KCMStoryHtml::Para& origin, const KCMStoryHtml::Para& after, const KCMStoryHtml::Para& now,
-			   ParaResult& out)
+			   ParaResult& out, const std::vector<int32>* keep)
 {
 	out = ParaResult();
 	out.fMerged = now;
@@ -372,7 +373,27 @@ void MergePara(const KCMStoryHtml::Para& origin, const KCMStoryHtml::Para& after
 			out.fWhys.push_back("a footnote reference stands in the changed words");
 			continue;
 		}
+		// ★A TABLE'S PLACE, THE SAME WAY: a change may begin or end at it, not run across it.
+		bool16 straddles = kFalse;
+		for (size_t p = 0; keep != nil && p < keep->size() && !straddles; ++p)
+		{
+			const int32 at = (*keep)[p];
+			straddles = (at > t.fNowAt && at < t.fNowAt + t.fOriginCount) ? kTrue : kFalse;
+		}
+		if (straddles)
+		{
+			out.fWhys.push_back("a table stands in the changed words");
+			continue;
+		}
 		taken.push_back(t);
+	}
+	for (size_t i = 0; i < taken.size(); ++i)
+	{
+		Edit e;
+		e.fNowAt = taken[i].fNowAt;
+		e.fNowCount = taken[i].fOriginCount;
+		e.fNewCount = taken[i].fAfterCount;
+		out.fEdits.push_back(e);
 	}
 
 	// ---- the words, back to front ----------------------------------------------------------------
@@ -418,6 +439,363 @@ void MergePara(const KCMStoryHtml::Para& origin, const KCMStoryHtml::Para& after
 				delta += taken[i].fAfterCount - taken[i].fOriginCount;
 		}
 		at += delta;
+	}
+}
+
+//========================================================================================
+//  The whole story: place by place
+//========================================================================================
+
+namespace
+{
+
+typedef std::vector<KCMStoryHtml::Para> Paras;
+
+std::string Num(int32 n)
+{
+	char buf[32];
+	std::snprintf(buf, sizeof(buf), "%d", static_cast<int>(n));
+	return std::string(buf);
+}
+
+/** kTrue when the three stories' tables are the same shape: as many, standing in the same places,
+	with the same rows and the same cells. */
+bool16 TablesAgreeThreeWays(const KCMStoryHtml::Story& o, const KCMStoryHtml::Story& w, const KCMStoryHtml::Story& n,
+							std::string& why)
+{
+	if (o.fTables.size() != w.fTables.size() || o.fTables.size() != n.fTables.size())
+	{
+		why = "the number of tables changed";
+		return kFalse;
+	}
+	for (size_t t = 0; t < o.fTables.size(); ++t)
+	{
+		const KCMStoryHtml::Table& a = o.fTables[t];
+		const KCMStoryHtml::Table& b = w.fTables[t];
+		const KCMStoryHtml::Table& c = n.fTables[t];
+		if (a.fInTable != b.fInTable || a.fInTable != c.fInTable || a.fInRow != b.fInRow || a.fInRow != c.fInRow
+			|| a.fInCell != b.fInCell || a.fInCell != c.fInCell)
+		{
+			why = "table " + Num(static_cast<int32>(t)) + " stands somewhere else";
+			return kFalse;
+		}
+		if (a.fRows.size() != b.fRows.size() || a.fRows.size() != c.fRows.size())
+		{
+			why = "table " + Num(static_cast<int32>(t)) + ": the number of rows changed";
+			return kFalse;
+		}
+		for (size_t r = 0; r < a.fRows.size(); ++r)
+		{
+			if (a.fRows[r].fCells.size() != b.fRows[r].fCells.size() || a.fRows[r].fCells.size() != c.fRows[r].fCells.size())
+			{
+				why = "table " + Num(static_cast<int32>(t)) + " row " + Num(static_cast<int32>(r)) + ": the number of cells changed";
+				return kFalse;
+			}
+		}
+	}
+	return kTrue;
+}
+
+/** The tables of `s` standing in one place, as indices into s.fTables. */
+void TablesIn(const KCMStoryHtml::Story& s, int32 inTable, int32 inRow, int32 inCell, std::vector<size_t>& out)
+{
+	out.clear();
+	for (size_t t = 0; t < s.fTables.size(); ++t)
+	{
+		const KCMStoryHtml::Table& table = s.fTables[t];
+		if (table.fInTable != inTable)
+			continue;
+		if (inTable >= 0 && (table.fInRow != inRow || table.fInCell != inCell))
+			continue;
+		out.push_back(t);
+	}
+}
+
+/** Whether any table of `tables` (indices into s.fTables) stands in paragraphs [from, to) of its place. */
+bool16 TableInParagraphs(const KCMStoryHtml::Story& s, const std::vector<size_t>& tables, int32 from, int32 to)
+{
+	for (size_t k = 0; k < tables.size(); ++k)
+	{
+		const int32 p = s.fTables[tables[k]].fParaIndex;
+		if (p >= from && p < to)
+			return kTrue;
+	}
+	return kFalse;
+}
+
+/** Whether origin paragraph `i` is inside a change of `b` that takes paragraphs away or rewrites them. */
+bool16 InsideChange(const std::vector<Change>& b, int32 i)
+{
+	for (size_t k = 0; k < b.size(); ++k)
+	{
+		if (b[k].aCount > 0 && i >= b[k].aStart && i < b[k].aStart + b[k].aCount)
+			return kTrue;
+	}
+	return kFalse;
+}
+
+/** The change of `b` origin paragraph `i` is inside, or -1. */
+int32 ChangeHolding(const std::vector<Change>& b, int32 i)
+{
+	for (size_t k = 0; k < b.size(); ++k)
+	{
+		if (b[k].aCount > 0 && i >= b[k].aStart && i < b[k].aStart + b[k].aCount)
+			return static_cast<int32>(k);
+	}
+	return -1;
+}
+
+/** Whether `b` inserts paragraphs exactly at origin position `i` (before paragraph i). */
+bool16 InsertsAt(const std::vector<Change>& b, int32 i)
+{
+	for (size_t k = 0; k < b.size(); ++k)
+	{
+		if (b[k].aCount == 0 && b[k].aStart == i)
+			return kTrue;
+	}
+	return kFalse;
+}
+
+/*	MergePlace
+	One place's paragraphs, three ways. `nowTables` / `originTables` / `afterTables` are the tables
+	standing in this place (indices into the three stories' fTables; the three lists run parallel
+	because TablesAgreeThreeWays has passed). `merged` starts as a copy of now's paragraphs, and the
+	tables' fParaIndex / fOffset in `out.fMerged` are moved as the paragraphs move.
+*/
+void MergePlace(const KCMStoryHtml::Story& o, const KCMStoryHtml::Story& w, const KCMStoryHtml::Story& n,
+				const Paras& oParas, const Paras& wParas, const Paras& nParas,
+				const std::vector<size_t>& tables, const std::string& where,
+				Paras& merged, Result& out)
+{
+	merged = nParas;
+
+	std::vector<std::string> table;
+	std::vector<std::string> oText, wText, nText;
+	for (size_t i = 0; i < oParas.size(); ++i) oText.push_back(oParas[i].fText);
+	for (size_t i = 0; i < wParas.size(); ++i) wText.push_back(wParas[i].fText);
+	for (size_t i = 0; i < nParas.size(); ++i) nText.push_back(nParas[i].fText);
+	std::vector<int32> oTok, wTok, nTok;
+	KCMTextDiff::Tokenize(oText, table, oTok);
+	KCMTextDiff::Tokenize(wText, table, wTok);
+	KCMTextDiff::Tokenize(nText, table, nTok);
+
+	std::vector<Change> a, b;
+	KCMTextDiff::Diff(oTok, wTok, a);
+	KCMTextDiff::Diff(oTok, nTok, b);
+
+	// now index -> merged index, kept up to date as paragraphs go in and out (-1 = gone)
+	std::vector<int32> mergedIndexOfNow(nParas.size());
+	for (size_t i = 0; i < nParas.size(); ++i)
+		mergedIndexOfNow[i] = static_cast<int32>(i);
+	// the tables of this place: their paragraph, as a now index, and their offset
+	std::vector<int32> tableNowPara(tables.size());
+	std::vector<int32> tableOffset(tables.size());
+	for (size_t k = 0; k < tables.size(); ++k)
+	{
+		tableNowPara[k] = n.fTables[tables[k]].fParaIndex;
+		tableOffset[k] = n.fTables[tables[k]].fOffset;
+	}
+
+	// ---- Word's paragraph-level changes, back to front ------------------------------------------
+	for (size_t ci = a.size(); ci > 0; --ci)
+	{
+		const Change& c = a[ci - 1];
+		const int32 s = c.aStart, k = c.aCount, t = c.bStart, m = c.bCount;
+		const std::string here = where + " paragraph " + Num(s + 1);
+
+		if (k == 1 && m == 1)
+		{
+			// ---- the words of one paragraph -------------------------------------------------------
+			int32 nowIdx = -1;
+			const int32 holding = ChangeHolding(b, s);
+			if (holding < 0)
+			{
+				nowIdx = ToNow(b, s);
+			}
+			else if (b[static_cast<size_t>(holding)].aCount == 1 && b[static_cast<size_t>(holding)].bCount == 1)
+			{
+				nowIdx = b[static_cast<size_t>(holding)].bStart;		// the document rewrote it 1:1: three ways inside
+			}
+			else
+			{
+				Refusal r; r.fWhere = here; r.fWhy = "the document changed the paragraph count here";
+				out.fConflicts.push_back(r);
+				continue;
+			}
+			if (nowIdx < 0 || static_cast<size_t>(nowIdx) >= nParas.size() || mergedIndexOfNow[static_cast<size_t>(nowIdx)] < 0)
+				continue;
+			// the tables standing in this paragraph: positions no change may straddle
+			std::vector<int32> keep;
+			for (size_t tk = 0; tk < tables.size(); ++tk)
+			{
+				if (tableNowPara[tk] == nowIdx)
+					keep.push_back(tableOffset[tk]);
+			}
+			ParaResult pr;
+			MergePara(oParas[static_cast<size_t>(s)], wParas[static_cast<size_t>(t)], nParas[static_cast<size_t>(nowIdx)], pr,
+					  keep.empty() ? nil : &keep);
+			merged[static_cast<size_t>(mergedIndexOfNow[static_cast<size_t>(nowIdx)])] = pr.fMerged;
+			out.fApplied += pr.fApplied;
+			for (size_t y = 0; y < pr.fWhys.size(); ++y)
+			{
+				Refusal r; r.fWhere = here; r.fWhy = pr.fWhys[y];
+				out.fConflicts.push_back(r);
+			}
+			// the tables after the edited words move with them
+			for (size_t tk = 0; tk < tables.size(); ++tk)
+			{
+				if (tableNowPara[tk] != nowIdx)
+					continue;
+				int32 delta = 0;
+				for (size_t e = 0; e < pr.fEdits.size(); ++e)
+				{
+					if (pr.fEdits[e].fNowAt + pr.fEdits[e].fNowCount <= tableOffset[tk])
+						delta += pr.fEdits[e].fNewCount - pr.fEdits[e].fNowCount;
+				}
+				tableOffset[tk] += delta;
+			}
+			continue;
+		}
+
+		// ---- paragraphs added, taken out, split or joined ---------------------------------------
+		// The origin paragraphs concerned, and the ones on either side, have to be the document's still.
+		bool16 clean = kTrue;
+		for (int32 i = s; i < s + k && clean; ++i)
+			clean = InsideChange(b, i) ? kFalse : kTrue;
+		if (clean && k == 0)
+		{
+			// an insertion before origin paragraph s: neither neighbour rewritten, no insertion of the
+			// document's at the same place
+			if ((s > 0 && InsideChange(b, s - 1)) || (s < static_cast<int32>(oParas.size()) && InsideChange(b, s)) || InsertsAt(b, s))
+				clean = kFalse;
+		}
+		if (!clean)
+		{
+			Refusal r; r.fWhere = here;
+			r.fWhy = (k == 0) ? "the document changed the paragraphs around the ones Word added"
+							  : "the document changed a paragraph Word took out or split";
+			out.fConflicts.push_back(r);
+			continue;
+		}
+		if (TableInParagraphs(o, tables.empty() ? std::vector<size_t>() : tables, s, s + k) && k > 0)
+		{
+			// (the tables' indices are the same in o and n: the shapes agree)
+			Refusal r; r.fWhere = here; r.fWhy = "a table stands in the changed paragraphs";
+			out.fConflicts.push_back(r);
+			continue;
+		}
+		{
+			std::vector<size_t> afterTables;
+			TablesIn(w, tables.empty() ? -2 : w.fTables[tables[0]].fInTable, tables.empty() ? 0 : w.fTables[tables[0]].fInRow,
+					 tables.empty() ? 0 : w.fTables[tables[0]].fInCell, afterTables);
+			if (!tables.empty() && TableInParagraphs(w, afterTables, t, t + m))
+			{
+				Refusal r; r.fWhere = here; r.fWhy = "a table stands in the changed paragraphs";
+				out.fConflicts.push_back(r);
+				continue;
+			}
+		}
+
+		const int32 nowAt = ToNow(b, s);			// where the k paragraphs stand in now (k may be 0)
+		if (nowAt < 0 || static_cast<size_t>(nowAt) > nParas.size())
+			continue;
+		// their merged position: the first of them that is still there, else the position after the last
+		int32 at = -1;
+		for (int32 i = nowAt; i < nowAt + k && at < 0; ++i)
+			at = mergedIndexOfNow[static_cast<size_t>(i)];
+		if (at < 0)
+		{
+			at = static_cast<int32>(merged.size());
+			for (int32 i = nowAt + k; i < static_cast<int32>(nParas.size()); ++i)
+			{
+				if (mergedIndexOfNow[static_cast<size_t>(i)] >= 0)
+				{
+					at = mergedIndexOfNow[static_cast<size_t>(i)];
+					break;
+				}
+			}
+		}
+		// take the k out (they are the document's still, so they are origin's), put the m in
+		merged.erase(merged.begin() + at, merged.begin() + at + k);
+		merged.insert(merged.begin() + at, wParas.begin() + t, wParas.begin() + t + m);
+		for (size_t i = 0; i < mergedIndexOfNow.size(); ++i)
+		{
+			if (static_cast<int32>(i) >= nowAt && static_cast<int32>(i) < nowAt + k)
+				mergedIndexOfNow[i] = -1;
+			else if (mergedIndexOfNow[i] >= at + k)
+				mergedIndexOfNow[i] += m - k;
+		}
+		++out.fApplied;
+	}
+
+	// ---- the tables of this place, in their new paragraphs --------------------------------------
+	for (size_t k = 0; k < tables.size(); ++k)
+	{
+		KCMStoryHtml::Table& moved = out.fMerged.fTables[tables[k]];
+		const int32 idx = mergedIndexOfNow[static_cast<size_t>(tableNowPara[k])];
+		if (idx >= 0)
+			moved.fParaIndex = idx;
+		moved.fOffset = tableOffset[k];
+	}
+}
+
+}	// anonymous namespace
+
+void Merge(const KCMStoryHtml::Story& origin, const KCMStoryHtml::Story& after, const KCMStoryHtml::Story& now,
+		   Result& out)
+{
+	out = Result();
+	out.fMerged = now;
+
+	if (!TablesAgreeThreeWays(origin, after, now, out.fWhy))
+	{
+		out.fStoryRefused = kTrue;
+		return;
+	}
+
+	// ---- the body ------------------------------------------------------------------------------
+	{
+		std::vector<size_t> tables;
+		TablesIn(now, -1, 0, 0, tables);
+		Paras merged;
+		MergePlace(origin, after, now, origin.fBody, after.fBody, now.fBody, tables, "body", merged, out);
+		out.fMerged.fBody = merged;
+	}
+
+	// ---- the cells -----------------------------------------------------------------------------
+	for (size_t t = 0; t < now.fTables.size(); ++t)
+	{
+		for (size_t r = 0; r < now.fTables[t].fRows.size(); ++r)
+		{
+			for (size_t c = 0; c < now.fTables[t].fRows[r].fCells.size(); ++c)
+			{
+				std::vector<size_t> tables;
+				TablesIn(now, static_cast<int32>(t), static_cast<int32>(r), static_cast<int32>(c), tables);
+				Paras merged;
+				const std::string where = "table " + Num(static_cast<int32>(t)) + " row " + Num(static_cast<int32>(r))
+										  + " cell " + Num(static_cast<int32>(c));
+				MergePlace(origin, after, now,
+						   origin.fTables[t].fRows[r].fCells[c].fParas, after.fTables[t].fRows[r].fCells[c].fParas,
+						   now.fTables[t].fRows[r].fCells[c].fParas, tables, where, merged, out);
+				out.fMerged.fTables[t].fRows[r].fCells[c].fParas = merged;
+			}
+		}
+	}
+
+	// ---- the notes -----------------------------------------------------------------------------
+	if (origin.fNotes.size() != after.fNotes.size() || origin.fNotes.size() != now.fNotes.size())
+	{
+		Refusal r; r.fWhere = "the notes"; r.fWhy = "their number changed";
+		out.fConflicts.push_back(r);
+		return;					// out.fMerged.fNotes is now's already
+	}
+	for (size_t nn = 0; nn < now.fNotes.size(); ++nn)
+	{
+		std::vector<size_t> noTables;
+		Paras merged;
+		MergePlace(origin, after, now, origin.fNotes[nn], after.fNotes[nn], now.fNotes[nn], noTables,
+				   "note " + Num(static_cast<int32>(nn) + 1), merged, out);
+		out.fMerged.fNotes[nn] = merged;
 	}
 }
 
