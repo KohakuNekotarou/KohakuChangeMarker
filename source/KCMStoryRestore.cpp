@@ -870,6 +870,17 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 		{
 			RestoreSequence undo(standalone);
+
+			// ★★**A WHOLE PARAGRAPH TAKEN OUT MOVES THE STYLES AFTER IT ALONG THEIR CHAIN** (2026-09-19, the
+			//   user: "1 2 3 4 and 2 goes - 3 and 4 have to get the next styles, or the styles are wrong
+			//   even though the words did not change"). The chain is read BEFORE the write, while the
+			//   paragraph going out is still there to be the first link's "before"; re-chained after, in
+			//   the same undo step, and only as far as the chain went (KCMParagraphStyle.h).
+			const bool16 removesParagraph = (change.fWholeParagraph && words->Length() == 0 && targetCount > 0) ? kTrue : kFalse;
+			KCMChainAfter chain;
+			if (removesParagraph)
+				KCMSnapshotChainAfter(target, writeAt, writeAt + targetCount, chain);
+
 			InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(target, writeAt, targetCount, *words));
 			if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
 			{
@@ -877,6 +888,8 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 				outMessage = Refused("the write failed (a locked story or layer?).");
 				return kFalse;
 			}
+			if (removesParagraph)
+				KCMRechainAfterRemoval(target, writeAt, targetCount, chain);		// a style that cannot be applied leaves the one it had
 			// ★★**A WHOLE PARAGRAPH TAKEN IN AFTER ANOTHER GETS THAT PARAGRAPH'S NEXT STYLE** (2026-09-17
 			//   afternoon, the user's rule - both the Import and the Task Start, and taken from the document
 			//   AS IT STANDS: "\rNEW" went in right before the return of the paragraph it follows, so it

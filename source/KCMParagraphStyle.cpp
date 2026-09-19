@@ -18,10 +18,13 @@
 #include "IStyleInfo.h"
 #include "ITextModel.h"
 #include "ITextModelCmds.h"
+#include "ITextStoryThread.h"
 
 #include "CmdUtils.h"
 #include "ErrorUtils.h"
+#include "TextChar.h"
 #include "TextID.h"
+#include "TextIterator.h"
 
 #include "KCMParagraphStyle.h"
 
@@ -78,6 +81,79 @@ ErrorCode KCMApplyNextStyleAfter(ITextModel* model, TextIndex prevAt, TextIndex 
 	const ErrorCode err = CmdUtils::ProcessCommand(apply);
 	if (err != kSuccess)
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	return err;
+}
+
+//----------------------------------------------------------------------------------------
+void KCMSnapshotChainAfter(ITextModel* model, TextIndex removedFrom, TextIndex removedTo, KCMChainAfter& out)
+{
+	out.fStarts.clear();
+	out.fChained.clear();
+	if (model == nil || removedTo <= removedFrom)
+		return;
+
+	TextIndex threadStart = 0;
+	int32 threadSpan = 0;
+	InterfacePtr<ITextStoryThread> thread(model->QueryStoryThread(removedFrom, &threadStart, &threadSpan));
+	if (thread == nil)
+		return;
+	const TextIndex threadEnd = threadStart + threadSpan;		// past the thread's own last return
+	if (removedTo >= threadEnd)
+		return;
+
+	IDataBase* db = ::GetDataBase(model);
+	// The "before" of the first following paragraph is the one being taken out: its style is read off
+	// its last character, which both removal shapes hold inside [removedFrom, removedTo).
+	UID previous = KCMParagraphStyleAt(model, removedTo - 1);
+
+	// Every paragraph from removedTo to the thread's last return: a start is removedTo, and each
+	// character after a return - except the thread's final return, which ends the last paragraph.
+	TextIndex start = removedTo;
+	TextIterator iter(model, removedTo);
+	for (TextIndex i = removedTo; i < threadEnd; ++i, ++iter)
+	{
+		const int32 cp = static_cast<int32>((*iter).GetValue());
+		if (cp != kTextChar_CR)
+			continue;
+		const UID own = KCMParagraphStyleAt(model, start);
+		out.fStarts.push_back(start);
+		out.fChained.push_back((own != kInvalidUID && own == KCMNextParagraphStyle(db, previous)) ? kTrue : kFalse);
+		previous = own;
+		start = i + 1;
+	}
+}
+
+//----------------------------------------------------------------------------------------
+ErrorCode KCMRechainAfterRemoval(ITextModel* model, TextIndex removedFrom, int32 removedCount,
+								 const KCMChainAfter& chain)
+{
+	if (model == nil || chain.fStarts.empty())
+		return kSuccess;
+	TextIndex threadStart = 0;
+	int32 threadSpan = 0;
+	InterfacePtr<ITextStoryThread> thread(model->QueryStoryThread(removedFrom, &threadStart, &threadSpan));
+	if (thread == nil || removedFrom <= threadStart)
+		return kSuccess;				// the first paragraph of its place went: nothing stands before the chain
+
+	IDataBase* db = ::GetDataBase(model);
+	TextIndex prevAt = removedFrom - 1;		// the last character of the paragraph now standing before the chain
+	ErrorCode err = kSuccess;
+	for (size_t i = 0; i < chain.fStarts.size(); ++i)
+	{
+		if (!chain.fChained[i])
+			break;						// chosen by hand: the chain ends here, and so does the walk
+		const TextIndex at = chain.fStarts[i] - removedCount;
+		const UID previous = KCMParagraphStyleAt(model, prevAt);
+		const UID wanted = KCMNextParagraphStyle(db, previous);
+		const UID own = KCMParagraphStyleAt(model, at);
+		if (wanted != kInvalidUID && own != wanted)
+		{
+			const ErrorCode e = KCMApplyParagraphStyle(model, at, 1, wanted, kFalse /*keep its overrides*/);
+			if (e != kSuccess)
+				err = e;
+		}
+		prevAt = at;
+	}
 	return err;
 }
 

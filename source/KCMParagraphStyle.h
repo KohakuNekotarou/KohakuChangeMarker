@@ -19,6 +19,8 @@
 #include "PMString.h"
 #include "UIDRef.h"
 
+#include <vector>
+
 class ITextModel;
 class IDataBase;
 
@@ -50,6 +52,31 @@ UID KCMFindParagraphStyle(IDataBase* db, const PMString& path);
 /** One paragraph style over [start, start + length), keeping or replacing the overrides. */
 ErrorCode KCMApplyParagraphStyle(ITextModel* model, TextIndex start, int32 length, UID style,
 								 bool16 replaceOverrides);
+
+/** The paragraphs standing AFTER a paragraph about to be taken out, in the same thread, and whether
+	each of them wore the NEXT STYLE of the paragraph before it - the mark of a chain pressing Return
+	made (2026-09-19, the user: "1 2 3 4, and 2 goes: 3 and 4 have to move along the next styles, or
+	the styles are wrong even though the words did not change").
+	★**THE CHAIN IS READ BEFORE THE WRITE**, when the paragraph being taken out is still there to be
+	  the first link's "before". Filled by KCMSnapshotChainAfter; read by KCMRechainAfterRemoval. */
+struct KCMChainAfter
+{
+	std::vector<TextIndex>	fStarts;	// each following paragraph's first character, BEFORE the removal
+	std::vector<bool16>		fChained;	// whether its style was the next style of the paragraph before it
+};
+
+/** Reads the chain after the paragraph [removedFrom, removedTo) - either "\rTEXT" (the return before it and
+	its words) or "TEXT\r" at the start of its place, the two shapes a whole-paragraph removal takes. */
+void KCMSnapshotChainAfter(ITextModel* model, TextIndex removedFrom, TextIndex removedTo, KCMChainAfter& out);
+
+/** After the removal: gives the following paragraphs the next styles chained from the paragraph now
+	standing before them - AS FAR AS THE CHAIN WENT and no further. A paragraph whose style was not its
+	predecessor's next style was chosen by hand, and stops the walk; the overrides of a re-styled
+	paragraph are kept (they are its own). Nothing is written where the style already agrees.
+	@param removedCount how many characters the removal took out (every start in `chain` moved by it).
+	@return kSuccess when nothing needed writing too. */
+ErrorCode KCMRechainAfterRemoval(ITextModel* model, TextIndex removedFrom, int32 removedCount,
+								 const KCMChainAfter& chain);
 
 #endif // __KCMParagraphStyle_h__
 
