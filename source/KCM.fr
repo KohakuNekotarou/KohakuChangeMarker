@@ -899,6 +899,23 @@ resource VersionedScriptElementInfo(10)
 			}
 		}
 
+		// ★THE MIRROR OF "kcm take in change" (2026-09-19 night): "Undo the Restore" on a change already
+		// taken in, named by words it holds - so that a test can take paragraphs out and put them back in
+		// any order without a right click per press (KCMScriptingDefs.h).
+		Method
+		{
+			kKCMUndoRestoreChangeMethodScriptElement,
+			e_KCMUndoRestoreChange,
+			"kcm undo restore",					// name -> app.kcmUndoRestore(storyRow, words)
+			"Put back one change already taken in, as the change row's Undo the Restore does: the first change taken in whose words hold the text given.",
+			StringType,
+			"The sentence the status line shows"
+			{
+				p_Index, "story row", "The story row, from 0 (app.kcmStoryRows)", Int32Type, kRequired,
+				p_Contents, "words", "Words the change holds, on either side", StringType, kRequired,
+			}
+		}
+
 		// Puts the property ON the application object.
 		//
 		// Object{}, not Parent{}: Object names an EXISTING scripting object to add members to,
@@ -939,6 +956,8 @@ resource VersionedScriptElementInfo(10)
 				Method{ kKCMTakeInStoryMethodScriptElement },
 				// ...and the export's .docx road (2026-09-19).
 				Method{ kKCMExportStoryDocxMethodScriptElement },
+				// ...and the undo of a take-in (2026-09-19 night).
+				Method{ kKCMUndoRestoreChangeMethodScriptElement },
 			}
 		}
 

@@ -251,7 +251,19 @@ enum KCMScriptMethods
 	//   ⚠'eKGf' was MEASURED free: 0 hits in the tree, no row in the registry ledger (whose used
 	//     letters for eKG* are a c d D e h i k m n o p q r s t u v w x y). The same search form finds
 	//     'eKGe'. ⚠Not registered with Adobe.
-	e_KCMExportStoryDocx = 'eKGf'	// f = file for Word. app.kcmExportStoryDocx(folder) -> "exported N ... to <folder>"
+	e_KCMExportStoryDocx = 'eKGf',	// f = file for Word. app.kcmExportStoryDocx(folder) -> "exported N ... to <folder>"
+
+	// ★"UNDO THE RESTORE" FROM A SCRIPT (2026-09-19 night, the user: "let us implement the proposal").
+	//   The take-in has had a script door since 09-17 (eKGk / eKGy); its undo had none, so checking the
+	//   four orders of "take out, put back" that day took a right click, a menu choice and a read for
+	//   every one of twelve presses. This is the mirror of eKGk: the change is named by WORDS it holds,
+	//   among the ones already taken in (the replaced ones the panel keeps listing), and the answer is
+	//   the sentence the status line shows.
+	//   ⚠'eKGb' was MEASURED free: 0 files in the four Kohaku plug-ins, docs, work and skills, 0 in
+	//     ScriptingDefs.h / GenericID.h, and no row in the registry ledger (whose used letters for eKG*
+	//     are a c d D e f h i k m n o p q r s t u v w x y). The same search form found 'eKGk' (3 files).
+	//     ⚠Not registered with Adobe.
+	e_KCMUndoRestoreChange = 'eKGb'	// b = back. app.kcmUndoRestore(storyRow, words) -> the undo's sentence
 };
 
 /** Properties KCM adds to the STORY object (at the user's request).

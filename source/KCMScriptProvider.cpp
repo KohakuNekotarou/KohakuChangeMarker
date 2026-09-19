@@ -147,7 +147,8 @@
 #include "SysFileList.h"			// app.kcmImportStoryText hands its one file over as a list
 #include "KCMCore.h"				// KCMActiveDocDB - app.kcmExportStoryText exports the active document
 #include "KCMComparisonRun.h"		// KCMStopComparison - app.kcmStopComparison
-#include "KCMStoryRestore.h"		// KCMRestoreAllStories - app.kcmTakeInAllStories
+#include "KCMStoryRestore.h"		// KCMRestoreAllStories - app.kcmTakeInAllStories; KCMUndoRestoreChange - app.kcmUndoRestore
+#include "KCMStoryDiffRun.h"		// KCMStoryDiffRun::StillReplaced - which taken-in change app.kcmUndoRestore may name
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - app.kcmExportStoryText
 #include "KCMStoryTextImport.h"	// KCMImportStoryText - app.kcmImportStoryText
 // ⚠**KCMTextRead.h WENT WITH THE FEATURE THAT NEEDED IT** (2026-09-08). It was included here for
@@ -293,7 +294,7 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 		if (id == e_KCMImportStoryText || id == e_KCMTakeInAllStories
 			|| id == e_KCMExportStoryText || id == e_KCMStopComparison
 			|| id == e_KCMTakeInChange || id == e_KCMTakeInStory
-			|| id == e_KCMExportStoryDocx)
+			|| id == e_KCMExportStoryDocx || id == e_KCMUndoRestoreChange)
 		{
 			PMString message;
 			message.SetTranslatable(kFalse);
@@ -302,7 +303,7 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 			{
 				KCMRestoreAllStories(message);
 			}
-			else if (id == e_KCMTakeInChange || id == e_KCMTakeInStory)
+			else if (id == e_KCMTakeInChange || id == e_KCMTakeInStory || id == e_KCMUndoRestoreChange)
 			{
 				// ★The story row by index, the change by WORDS it holds - the index space of a row's changes
 				//   moves as changes are taken in (the replaced ones stay listed), so a test naming "the
@@ -330,6 +331,12 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 					}
 					else
 					{
+						// ★TAKE IN, OR PUT BACK - the same search, over the opposite half of the list
+						//   (2026-09-19 night): kcmTakeInChange looks among the changes NOT yet taken in,
+						//   kcmUndoRestore among the ones taken in and still standing so (an undone one is
+						//   already back, and KCMUndoRestoreChange would refuse it anyway).
+						const bool16 undoing = (id == e_KCMUndoRestoreChange) ? kTrue : kFalse;
+						const KCMStoryRow* const row = KCMStoryList::GetRow(storyRow);
 						const std::string wanted = words.GetUTF8String();
 						int32 found = -1;
 						const int32 count = KCMStoryList::GetMergedChangeCount(storyRow);
@@ -337,7 +344,14 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 						{
 							bool16 replaced = kFalse;
 							const KCMStoryChange* const change = KCMStoryList::GetMergedChange(storyRow, k, replaced);
-							if (change == nil || replaced)
+							if (change == nil || change->fWhat == KCMStoryChange::kRefused)
+								continue;
+							if (undoing)
+							{
+								if (!replaced || row == nil || !KCMStoryDiffRun::StillReplaced(*row, *change))
+									continue;
+							}
+							else if (replaced)
 								continue;
 							if (change->fOtherText.GetUTF8String().find(wanted) != std::string::npos
 								|| change->fText.GetUTF8String().find(wanted) != std::string::npos)
@@ -345,8 +359,13 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 						}
 						if (found < 0)
 						{
-							message = "no change not yet taken in holds those words";
+							message = undoing ? "no change taken in holds those words"
+											  : "no change not yet taken in holds those words";
 							message.SetTranslatable(kFalse);
+						}
+						else if (undoing)
+						{
+							KCMUndoRestoreChange(storyRow, found, message);
 						}
 						else
 						{

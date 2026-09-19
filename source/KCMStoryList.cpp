@@ -46,7 +46,10 @@
 #include <vector>
 
 // Project includes:
+#include "IKCMStoryEditsFacade.h"	// RowsAsTsv reads the SHOWN ranges through the facade's GetChange - the one place that cuts a paragraph break off them
+#include "Utils.h"
 #include "KCMCore.h"			// KCMFramePageUID - shared with the overset scan since 2026-08-09
+#include "KCMStoryDiffRun.h"	// KCMStoryDiffRun::StillReplaced - RowsAsTsv's "state" column
 #include "KCMStoryList.h"
 #include "KCMOriginCompare.h"	// KCMOriginToSourceUID - a Removed row's story, under its uid in a Task Start copy
 #include "KCMStoryRowFilter.h"	// KCMStoryRowHasContentChange - which rows belong in the list
@@ -929,12 +932,24 @@ int32 KCMStoryList::ReplacedSlotFor(int32 nth, TextIndex at)
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
 		return 0;
 
-	// "<=" AND NOT "<": a record standing exactly at `at` is BEFORE a write made there - the tie
-	// rule KCMStoryRowMerge shows the panel, written the same way round so the two agree.
+	// "<=" AND NOT "<" for a CARET: a record with no characters standing exactly at `at` is BEFORE a
+	// write made there - the tie rule KCMStoryRowMerge shows the panel, written the same way round so
+	// the two agree. ★A record WITH characters starting at `at` is AFTER it (2026-09-19 night, the
+	// re-check): its words stand from `at` on, so an insertion made at `at` goes in front of them (and
+	// slides them along), and a removal starting there writes over them (and collapses them). Counted
+	// as "before", such a record would have kept a start below the new record's while standing after it
+	// in the list, and the list would no longer have been ascending.
 	const std::vector<KCMStoryChange>& list = gRows[nth].fReplacedChanges;
 	int32 slot = 0;
-	while (slot < static_cast<int32>(list.size()) && list[static_cast<size_t>(slot)].fReplacedStart <= at)
+	while (slot < static_cast<int32>(list.size()))
+	{
+		const KCMStoryChange& r = list[static_cast<size_t>(slot)];
+		if (r.fReplacedStart > at)
+			break;
+		if (r.fReplacedStart == at && r.fReplacedEnd > r.fReplacedStart)
+			break;
 		++slot;
+	}
 	return slot;
 }
 
@@ -1326,6 +1341,33 @@ std::string RubySetting(const KCMStoryChange& c)
 	return s;
 }
 
+/** Where a change's words stand (KCMStoryPlace) - the fact the UI's "Text" / "Cell Text" / "Note Text"
+	and "Paragraph" / "Cell Paragraph" / "Note Paragraph" are made of, not the words themselves
+	(KCMStoryTreeWidgetMgr::PlaceIdLabel owns those). */
+std::string PlaceWord(int32 place)
+{
+	switch (place)
+	{
+		case kKCMPlaceBody:	return "body";
+		case kKCMPlaceCell:	return "cell";
+		case kKCMPlaceNote:	return "note";
+		default:			return "place" + Num(place);
+	}
+}
+
+/** The columns every line carries after `text` (2026-09-19 night), or "-" for each where a line has
+	nothing to say (a story row, a refusal). Listed once so that the header, the parent line and the
+	change line cannot disagree about how many there are. */
+const int32 kTrailingColumns = 8;	// state whole place tstart tend sstart send other
+
+std::string NoTrailing()
+{
+	std::string s;
+	for (int32 i = 0; i < kTrailingColumns; ++i)
+		s += "\t-";
+	return s;
+}
+
 std::string FlagsWord(const KCMStoryRow& row)
 {
 	std::string s;
@@ -1344,41 +1386,75 @@ std::string FlagsWord(const KCMStoryRow& row)
 */
 void KCMStoryList::RowsAsTsv(PMString& out)
 {
-	std::string s = "row\tchange\tuid\tkinds\tflags\tattr\tkind\tset\tvalue\ttext\r\n";
+	std::string s = "row\tchange\tuid\tkinds\tflags\tattr\tkind\tset\tvalue\ttext"
+					"\tstate\twhole\tplace\ttstart\ttend\tsstart\tsend\tother\r\n";
+
+	// ★THE SHOWN RANGES COME THROUGH THE FACADE (2026-09-19 night), because that is the ONE place a whole
+	//   paragraph's break is cut off them (KCMFacades' GetChange, KCMShownSpan): what a test reads here is
+	//   what the marks, the jump and the double click use, not the model's write range.
+	//   ⚠Guarded: the facade lives on kUtilsBoss, which can be gone during teardown (the same test
+	//    KCMStoryMarkBuild's caller makes).
+	Utils<IKCMStoryEditsFacade> utils;
+	InterfacePtr<IKCMStoryEditsFacade> facade(utils ? utils.QueryUtilInterface() : nil);
 
 	for (size_t i = 0; i < gRows.size(); ++i)
 	{
 		const KCMStoryRow& row = gRows[i];
+		const int32 nth = static_cast<int32>(i);
 
 		// The PARENT line: what the story row itself says.
-		s += Num(static_cast<int32>(i)) + "\t-\t"
+		s += Num(nth) + "\t-\t"
 		   + ((row.fStoryUID == kInvalidUID) ? std::string("-") : Num(static_cast<int32>(row.fStoryUID.Get())))	// "-": a row standing for a file (2026-09-19)
 		   + "\t" + KindsWord(row.fKinds)
 		   + "\t" + FlagsWord(row)
 		   + "\t" + AttrWord(static_cast<int32>(row.fAttrKind))
-		   + "\t-\t-\t-\t" + Field(row.fText) + "\r\n";
+		   + "\t-\t-\t-\t" + Field(row.fText) + NoTrailing() + "\r\n";
 
-		// ★One line per REFUSAL first (2026-09-19) - the same index space the panel shows: refusals,
-		//   then the live changes. `kind` says "refused", `set` the kind word, `text` where and why.
-		for (size_t k = 0; k < row.fRefusals.size(); ++k)
+		// ★One line per CHILD, IN THE PANEL'S OWN INDEX SPACE (2026-09-19 night): the refusals first, then
+		//   the live changes and the ones already taken in, merged in text order - exactly the numbers
+		//   kcmTakeInChange / kcmUndoRestore count in and the tree draws. ⚠Until then this printed the
+		//   live changes alone, so after a take-in its `change` column and the panel's rows disagreed.
+		//   `kind` says "refused" for what an import could not put in (`set` the kind word, `text`
+		//   where and why); `state` says live / replaced / undone for the rest.
+		// ⚠**fRuby IS THE VALUE COLUMN**, and it holds a reading for a ruby, a kind for a kenten and a
+		//   NUMBER for a note - which is precisely the field no reader outside could see before this
+		//   port existed.
+		const int32 count = GetMergedChangeCount(nth);
+		for (int32 k = 0; k < count; ++k)
 		{
-			const KCMStoryChange& c = row.fRefusals[k];
-			s += Num(static_cast<int32>(i)) + "\t" + Num(static_cast<int32>(k))
-			   + "\t-\t-\t-\t-\trefused\t" + Field(c.fTextPre) + "\t-\t" + Field(c.fText) + "\r\n";
-		}
+			bool16 isReplaced = kFalse;
+			const KCMStoryChange* const cp = GetMergedChange(nth, k, isReplaced);
+			if (cp == nil)
+				continue;
+			const KCMStoryChange& c = *cp;
 
-		// One line per CHANGE under it. ⚠**fRuby IS THE VALUE COLUMN**, and it holds a reading for
-		//   a ruby, a kind for a kenten and a NUMBER for a note - which is precisely the field no
-		//   reader outside could see before this port existed.
-		for (size_t k = 0; k < row.fChanges.size(); ++k)
-		{
-			const KCMStoryChange& c = row.fChanges[k];
-			s += Num(static_cast<int32>(i)) + "\t" + Num(static_cast<int32>(k + row.fRefusals.size()))
+			if (c.fWhat == KCMStoryChange::kRefused)
+			{
+				s += Num(nth) + "\t" + Num(k)
+				   + "\t-\t-\t-\t-\trefused\t" + Field(c.fTextPre) + "\t-\t" + Field(c.fText) + NoTrailing() + "\r\n";
+				continue;
+			}
+
+			const std::string state = isReplaced
+				? (KCMStoryDiffRun::StillReplaced(row, c) ? "replaced" : "undone") : "live";
+
+			IKCMStoryEditsFacade::Change shown;
+			const bool16 haveShown = (facade != nil && facade->GetChange(nth, k, shown)) ? kTrue : kFalse;
+
+			s += Num(nth) + "\t" + Num(k)
 			   + "\t-\t-\t-\t" + AttrWord(static_cast<int32>(c.fAttrKind))
 			   + "\t" + ChangeKindWord(static_cast<int32>(c.fKind))
 			   + "\t" + RubySetting(c)
 			   + "\t" + Field(c.fRuby)
-			   + "\t" + Field(c.fText) + "\r\n";
+			   + "\t" + Field(c.fText)
+			   + "\t" + state
+			   + "\t" + (c.fWholeParagraph ? "1" : "0")
+			   + "\t" + PlaceWord(c.fPlace)
+			   + "\t" + (haveShown ? Num(shown.fTargetStart) : std::string("-"))
+			   + "\t" + (haveShown ? Num(shown.fTargetEnd) : std::string("-"))
+			   + "\t" + (haveShown ? Num(shown.fSourceStart) : std::string("-"))
+			   + "\t" + (haveShown ? Num(shown.fSourceEnd) : std::string("-"))
+			   + "\t" + Field(c.fOtherText) + "\r\n";
 		}
 	}
 

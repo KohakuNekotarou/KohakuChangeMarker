@@ -686,11 +686,12 @@ namespace KCMStoryList
 	void AddReplacedChange(int32 nth, const KCMStoryChange& done);
 
 	/** ★**WHERE A RECORD FOR A WRITE AT `at` BELONGS** in row nth's replaced list (2026-09-19): after
-		every record whose fReplacedStart is at or before `at`, and before the rest. ⚠**ASK BEFORE THE
-		WRITE**, while the positions are the ones the write is about to be made against. A record
-		standing exactly at `at` is BEFORE the write - the same tie rule KCMStoryRowMerge shows the
-		panel (a replaced change is the thing standing there; the live one is beside it) - so the
-		two rules cannot disagree about which of two rows at one position comes first.
+		every record whose fReplacedStart is before `at`, and after every CARET (a record with no
+		characters) standing exactly at `at` - the same tie rule KCMStoryRowMerge shows the panel (a
+		replaced change is the thing standing there; the live one is beside it) - and before the rest,
+		a record WITH characters starting at `at` included (its words stand from `at` on, so the write
+		goes in front of them or over them; the re-check of 2026-09-19 night). ⚠**ASK BEFORE THE
+		WRITE**, while the positions are the ones the write is about to be made against.
 		@return the slot: also the first slot ShiftReplacedChanges moves for this write. */
 	int32 ReplacedSlotFor(int32 nth, TextIndex at);
 
@@ -863,6 +864,12 @@ namespace KCMStoryList
 		@param out [out] the text. A header line, then the rows. Empty list = header only, which is
 			a real answer and reads differently from the property being missing.
 	*/
+	/** ★**THE CHILDREN ARE IN THE PANEL'S INDEX SPACE** (2026-09-19 night): refusals, then the live
+		and the taken-in changes merged in text order - the numbers kcmTakeInChange / kcmUndoRestore
+		count in. Eight columns follow `text`: `state` (live / replaced / undone), `whole` (1 for a
+		paragraph added or removed whole), `place` (body / cell / note), the SHOWN ranges
+		`tstart tend sstart send` (through the facade, so a whole paragraph's break is already cut
+		off them - what the marks and the jump use), and `other` (the source side's words). */
 	void RowsAsTsv(PMString& out);
 }
 
