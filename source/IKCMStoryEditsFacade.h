@@ -174,10 +174,15 @@ public:
 			`== 1` at that call site would be a bare number three files away from the only place
 			that explains it. */
 		enum { kWhatText = 0, kWhatAttr = 1,
-			   kWhatRefused = 2 };	// ★2: one thing an IMPORT could not put in (2026-09-19). fTextPre is
+			   kWhatRefused = 2,	// ★2: one thing an IMPORT could not put in (2026-09-19). fTextPre is
 									//   the kind word for the ID column, fText the place and the reason;
 									//   no position, no other side, fWriteBlock set. The panel draws a
 									//   red "!" and offers no menu on it.
+			   kWhatTable = 3 };	// ★3: a TABLE whose shape differs from Task Start's (2026-09-19 night):
+									//   its cell changes folded into one row. fKind is +/-/≠ as for words,
+									//   fText opens with the shape word ("2×2→3×2"), the ranges are the
+									//   table's anchor characters, and the cells that changed are asked
+									//   for one by one through GetChangeMarkSpan (fMarkSpanCount of them).
 
 		int32		fKind;			// 0 = replace, 1 = insert, 2 = delete
 		// 0 = text, 1 = attribute (ruby, so far), 2 = refused (see the enum above).
@@ -332,13 +337,18 @@ public:
 			the other side (KCMStoryList.h's fWholeCell, 2026-09-19 night). The ID column says "Cell" for it,
 			where an ordinary whole paragraph says "Paragraph". Only meaningful with fWholeParagraph.
 			⚠Appended at the END, for the reason stated above fReplaced. */
-		bool16			fWholeCell;
+		bool16			fWholeCell;		// ⚠retired the night it was made (2026-09-19): always kFalse; kept for the layout
+
+		/** How many cells a TABLE change (kWhatTable) marks - each one read with GetChangeMarkSpan.
+			0 for every other kind. ⚠Appended at the END, for the reason stated above fReplaced. */
+		int32			fMarkSpanCount;
 
 		Change()
 			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),
 			  fSourceStart(0), fSourceEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
 			  fAttrKind(0), fReplaced(kFalse), fOverset(kFalse), fWriteBlock(0),
-			  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse), fPlace(0), fWholeCell(kFalse) {}
+			  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse), fPlace(0), fWholeCell(kFalse),
+			  fMarkSpanCount(0) {}
 	};
 
 	/** How many differences row nth holds.
@@ -618,6 +628,14 @@ public:
 		  ([[facade-vtable-slot-append-only]]). Adding this means rebuilding both halves and KIDMCP. */
 	virtual bool16	ExportStoryTextAs(const IDFile& parent, const UIDList& onlyThese, int32 format,
 									  PMString& outMessage) = 0;
+
+	/** One of the cells a TABLE change marks on the page (2026-09-19 night, the user: "the changed cells
+		should be marked" / "jump to the top-left of them"): [outFrom, outTo) in Target coordinates, a
+		caret when they are equal. `i` runs 0..Change::fMarkSpanCount-1. kFalse out of range, or for a
+		change that is not a table.
+		⚠Appended at the END of the class ([[facade-vtable-slot-append-only]]). Nothing outside KCM
+		 includes this facade (measured by grep, 2026-09-20), so only KCM's two halves are rebuilt. */
+	virtual bool16	GetChangeMarkSpan(int32 nth, int32 which, int32 i, TextIndex& outFrom, TextIndex& outTo) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

@@ -534,6 +534,7 @@ public:
 		out.fAfterNewParagraph	= change.fAfterNewParagraph;	// the second "+" of "+ +": the panel asks first
 		out.fPlace				= change.fPlace;				// the body, a cell or a note - the ID column's word
 		out.fWholeCell			= kFalse;						// retired the night it was made (2026-09-19): a table's cells fold into a Table row now; the field keeps the layout
+		out.fMarkSpanCount		= static_cast<int32>(change.fMarkSpans.size());	// the cells a Table change marks (GetChangeMarkSpan)
 		out.fReplaced		= (isReplaced && StillReplaced(*row, change)) ? kTrue : kFalse;
 		out.fBeforeTextPre	= change.fBeforeTextPre;
 		out.fBeforeText		= change.fBeforeText;
@@ -729,6 +730,19 @@ public:
 
 	virtual void	StoreStatusLayers(const KCMStoryLayers& layers)	{ KCMStoreSessionStatusLayers(layers); }
 	virtual void	GetStatusLayers(KCMStoryLayers& out)			{ KCMGetSessionStatusLayers(out); }
+
+	virtual bool16	GetChangeMarkSpan(int32 nth, int32 which, int32 i, TextIndex& outFrom, TextIndex& outTo)
+	{
+		// The same merged index space as GetChange, so the panel names the same change here as there.
+		bool16 isReplaced = kFalse;
+		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which, isReplaced);
+		if (found == nil || found->fWhat != KCMStoryChange::kTable
+			|| i < 0 || static_cast<size_t>(i) >= found->fMarkSpans.size())
+			return kFalse;
+		outFrom = found->fMarkSpans[static_cast<size_t>(i)].fFrom;
+		outTo   = found->fMarkSpans[static_cast<size_t>(i)].fTo;
+		return kTrue;
+	}
 
 	virtual bool16	RestoreAllStories(PMString& outMessage)
 	{

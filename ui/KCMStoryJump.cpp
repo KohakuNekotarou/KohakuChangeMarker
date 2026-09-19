@@ -638,8 +638,41 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   for one (fSourceEnd == fSourceStart) and centring works off the start, so nothing else has
 	//   to change.
 	const TextIndex sourceFocus = change.fSourceStart;
+
+	// ★★A TABLE ROW GOES TO THE TOP-LEFT OF THE CELLS THAT CHANGED (2026-09-19 night, the user: "the
+	//   jump lands on the top-most, left-most coordinate of the changed cells" - not the table's own
+	//   corner). Each changed cell's first character is asked for its point (the same composition the
+	//   caret's point comes from - the dirty guard above covers it), and the smallest x and the smallest
+	//   y are put together into one point, which is handed to the goto the way the overset "+" is: a
+	//   pasteboard point to centre instead of a character.
+	PBPMPoint tableCorner;
+	bool16 haveCorner = kFalse;
+	if (change.fWhat == IKCMStoryEditsFacade::Change::kWhatTable && !wentToOverset)
+	{
+		for (int32 s = 0; s < change.fMarkSpanCount; ++s)
+		{
+			TextIndex a = 0;
+			TextIndex b = 0;
+			PBPMPoint p;
+			if (!Utils<IKCMStoryEditsFacade>()->GetChangeMarkSpan(rowIndex, changeIndex, s, a, b))
+				continue;
+			if (!Utils<IKCMStoryEditsFacade>()->GetStoryPointAt(db, row.fStoryUID, a, p))
+				continue;
+			if (!haveCorner)
+			{
+				tableCorner = p;
+				haveCorner = kTrue;
+			}
+			else
+			{
+				if (p.X() < tableCorner.X()) tableCorner.X(p.X());
+				if (p.Y() < tableCorner.Y()) tableCorner.Y(p.Y());
+			}
+		}
+	}
+
 	const bool16 moved = KCMGotoStoryFrame(db, frameUID, pageUID, row.fStoryUID, from, sourceFocus,
-										   wentToOverset ? &oversetPb : nil);
+										   haveCorner ? &tableCorner : (wentToOverset ? &oversetPb : nil));
 
 	// ***** AND LIGHT THE CHARACTERS UP FOR A MOMENT. *****
 	//

@@ -172,16 +172,18 @@ PMString AttrKindIdLabel(int32 attrKind)
 	★**A WHOLE PARAGRAPH SAYS SO** (2026-09-19 evening, the user: "a + alone does not say whether
 	  characters were added or a paragraph was - write Paragraph in the ID column"): "Paragraph" for a
 	  row that adds or removes a paragraph whole (Change::fWholeParagraph).
-	★★**AND A WHOLE CELL SAYS "Cell"** (the same night, the user: "when a table appears where there was
-	  nothing, the rows should say Cell +" / "a second paragraph inside a cell can just be Paragraph"):
-	  Change::fWholeCell, decided by the diff. ⚠**"Cell Paragraph" and "Note Paragraph" went with it** -
+	★★**AND A TABLE WHOSE SHAPE CHANGED SAYS "Table"** (the same night, the user's decision, replacing
+	  the "Cell" that had stood here for one evening): Change::fWhat == kWhatTable - its cell changes
+	  are folded into that one row. ⚠**"Cell Paragraph" and "Note Paragraph" went the same night** -
 	  a paragraph added or removed says "Paragraph" wherever it stands; the place is told by the story
 	  row's table sign and by where the click lands. The WORDS of a change keep their place: "Text" /
 	  "Cell Text" / "Note Text". */
-const char* PlaceIdLabel(int32 place, bool16 wholeParagraph, bool16 wholeCell)
+const char* PlaceIdLabel(int32 place, bool16 wholeParagraph, int32 what)
 {
+	if (what == IKCMStoryEditsFacade::Change::kWhatTable)
+		return "Table";
 	if (wholeParagraph)
-		return wholeCell ? "Cell" : "Paragraph";
+		return "Paragraph";
 	switch (place)
 	{
 		case 1:		return "Cell Text";		// KCMStoryList.h's kKCMPlaceCell
@@ -1051,7 +1053,7 @@ private:
 		{
 			if (change.fOverset)
 				idText.Append("OV ");
-			idText.Append(PlaceIdLabel(change.fPlace, change.fWholeParagraph, change.fWholeCell));
+			idText.Append(PlaceIdLabel(change.fPlace, change.fWholeParagraph, change.fWhat));
 		}
 		idText.SetTranslatable(kFalse);
 		this->SetNodeName(widgetList, idText, kKCMStoryRowUIDWidgetID);
@@ -1244,8 +1246,9 @@ void KCMRecomputeListLeftColumnWidth()
 		//   Text", then "OV Cell Paragraph", and since the night of the same day the candidates are "Cell
 		//   Text" / "Note Text" / "Paragraph" (PlaceIdLabel), so every one of them is measured.
 		{
-			const char* const candidates[] = { PlaceIdLabel(1, kFalse, kFalse), PlaceIdLabel(2, kFalse, kFalse),
-											   PlaceIdLabel(0, kTrue, kFalse), PlaceIdLabel(0, kTrue, kTrue) };
+			const char* const candidates[] = { PlaceIdLabel(1, kFalse, 0), PlaceIdLabel(2, kFalse, 0),
+											   PlaceIdLabel(0, kTrue, 0),
+											   PlaceIdLabel(0, kFalse, IKCMStoryEditsFacade::Change::kWhatTable) };
 			for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); ++i)
 			{
 				PMString widestPlace("OV ");

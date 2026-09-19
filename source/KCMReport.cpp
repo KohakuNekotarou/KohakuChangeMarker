@@ -575,7 +575,10 @@ void BuildStoryRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KCMRep
 			r.fRight.fPost = ch.fTextPost;
 			// An empty middle on one side is a PLACE (the words were typed in here / taken out
 			// from here): a bar marks it, as the panel's caret does.
-			if (ch.fWhat == KCMStoryChange::kText)
+			// ★A TABLE row (2026-09-19 night) carries its words already: Task Start's shape and first
+			//   words on the left, the live table's on the right ("2×2→3×2 P2"); a side with no table
+			//   is left blank, as the panel's message area leaves it.
+			if (ch.fWhat == KCMStoryChange::kText || ch.fWhat == KCMStoryChange::kTable)
 			{
 				if (r.fLeft.fMid.IsEmpty() && !r.fRight.fMid.IsEmpty())  r.fLeft.fMid = Ascii("|");
 				if (r.fRight.fMid.IsEmpty() && !r.fLeft.fMid.IsEmpty()) r.fRight.fMid = Ascii("|");

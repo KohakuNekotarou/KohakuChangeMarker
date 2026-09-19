@@ -199,6 +199,23 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 			if (change.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused)
 				continue;
 
+			// ★★A TABLE ROW MARKS ITS CHANGED CELLS, ONE SPAN EACH (2026-09-19 night, the user: "the
+			//   changed cells should be marked" - even though the list shows one row). The spans are
+			//   Target coordinates, so only the Target's marks read them; the Source side lights the
+			//   table's anchor range below, as any change would.
+			if (change.fWhat == IKCMStoryEditsFacade::Change::kWhatTable && !useSourceDocument)
+			{
+				for (int32 s = 0; s < change.fMarkSpanCount; ++s)
+				{
+					TextIndex a = 0;
+					TextIndex b = 0;
+					if (!edits->GetChangeMarkSpan(n, i, s, a, b))
+						continue;
+					ranges.push_back((b > a) ? KCMMarkRange(a, b) : KCMMarkRange::Caret(a));
+				}
+				continue;
+			}
+
 			TextIndex from = 0;
 			TextIndex to = 0;
 			if (useSourceDocument)
