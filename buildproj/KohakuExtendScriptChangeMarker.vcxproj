@@ -247,6 +247,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpike.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableCopySpike.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableShape.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReport.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReportTable.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReportPaws.cpp" />

@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  KCMTableCopySpike.h -- THE EXPERIMENT that has to answer before a "Table" row can be
 //  put back from the Task Start copy.
