@@ -282,13 +282,29 @@ struct KCMStoryChange
 		request). */
 	bool16		fAfterNewParagraph;
 
+	/** ★**WHERE THE CHANGED WORDS STAND: the body, a table cell, or a footnote** (2026-09-19, the user:
+		"for a change inside a cell, show Cell Text in the ID column; Text for an ordinary one"). A
+		KCMStoryPlace value. Decided by the diff from the paragraph the change's target position falls
+		in (KCMStoryDiffRun's MarkPlaces), the way fOverset is; the panel only reads it.
+		⚠Appended at the END, for the reason stated above fReplacedCount's neighbours. */
+	int32		fPlace;
+
 	KCMStoryChange()
 		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
 		  fSourceStart(0), fSourceEnd(0),
 		  fAttrKind(kKCMStoryAttrNone), fOverset(kFalse),
 		  fReplacedCount(0), fReplacedStart(0), fReplacedEnd(0),
 		  fBeforeStart(0), fBeforeEnd(0), fWriteBlock(kKCMWriteAllowed),
-		  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse) {}
+		  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse), fPlace(0) {}
+};
+
+/** KCMStoryChange::fPlace - and IKCMStoryEditsFacade::Change::fPlace, which carries the same value.
+	★Numbers, not an enum class, so that the facade's plain int32 and this agree by definition. */
+enum KCMStoryPlace
+{
+	kKCMPlaceBody = 0,
+	kKCMPlaceCell = 1,
+	kKCMPlaceNote = 2
 };
 
 /** One row of the Story Edits section. */

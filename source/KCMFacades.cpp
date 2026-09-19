@@ -532,6 +532,7 @@ public:
 		out.fWriteBlock		= change.fWriteBlock;	// decided by the diff too; the menu hides the write on it
 		out.fWholeParagraph		= change.fWholeParagraph;		// a paragraph added or removed whole
 		out.fAfterNewParagraph	= change.fAfterNewParagraph;	// the second "+" of "+ +": the panel asks first
+		out.fPlace				= change.fPlace;				// the body, a cell or a note - the ID column's word
 		out.fReplaced		= (isReplaced && StillReplaced(*row, change)) ? kTrue : kFalse;
 		out.fBeforeTextPre	= change.fBeforeTextPre;
 		out.fBeforeText		= change.fBeforeText;

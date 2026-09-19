@@ -315,11 +315,16 @@ public:
 		bool16			fWholeParagraph;
 		bool16			fAfterNewParagraph;
 
+		/** Where the changed words stand: 0 = the body, 1 = a table cell, 2 = a footnote (KCMStoryList.h's
+			KCMStoryPlace, 2026-09-19). The panel's ID column says "Text", "Cell Text" or "Note Text" by it
+			(the user's request). ⚠Appended at the END, for the reason stated above fReplaced. */
+		int32			fPlace;
+
 		Change()
 			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),
 			  fSourceStart(0), fSourceEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
 			  fAttrKind(0), fReplaced(kFalse), fOverset(kFalse), fWriteBlock(0),
-			  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse) {}
+			  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse), fPlace(0) {}
 	};
 
 	/** How many differences row nth holds.

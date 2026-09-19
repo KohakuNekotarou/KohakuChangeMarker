@@ -166,6 +166,19 @@ PMString AttrKindIdLabel(int32 attrKind)
 	return label;
 }
 
+/** What a change row's ID column names a TEXT change as, by where its words stand (2026-09-19, the
+	user's request). ★ONE PLACE for the words, like AttrKindIdLabel: the row shows them and the column
+	is fitted to them (KCMRecomputeListLeftColumnWidth measures the widest). */
+const char* PlaceIdLabel(int32 place)
+{
+	switch (place)
+	{
+		case 1:		return "Cell Text";		// KCMStoryList.h's kKCMPlaceCell
+		case 2:		return "Note Text";		// kKCMPlaceNote
+		default:	return "Text";			// kKCMPlaceBody
+	}
+}
+
 /** Which sign a story row's change column shows.
 
 	★★★**FOUR SIGNS, NOT WORDS** (2026-09-10, the user's call, arrived at in three steps: the
@@ -944,12 +957,20 @@ private:
 		//   縦中横 / Footnote / Endnote, on the line the sign stands on. ⚠Such a row is two or three
 		//   lines, and "OV" is not shown on it - which is how those rows already were: until this day
 		//   their template had no ID cell at all, so an overset ruby never said OV either.
+		// ★★AND A TEXT CHANGE SAYS WHERE ITS WORDS STAND (2026-09-19, the user's request: "Cell Text for a
+		//   change inside a cell, Text for an ordinary one - and if it is too noisy we stop"): "Text" /
+		//   "Cell Text" / "Note Text", decided by the diff (Change::fPlace). "OV" keeps its place in front
+		//   of it - "OV Text" - so an overset change still says so before anybody presses it.
 		PMString idText;
 		idText.SetTranslatable(kFalse);
 		if (have && KCMAttrKindHasMarkLine(change.fAttrKind))
 			idText = AttrKindIdLabel(change.fAttrKind);
-		else if (have && change.fOverset)
-			idText.Append("OV");
+		else if (have)
+		{
+			if (change.fOverset)
+				idText.Append("OV ");
+			idText.Append(PlaceIdLabel(change.fPlace));
+		}
 		idText.SetTranslatable(kFalse);
 		this->SetNodeName(widgetList, idText, kKCMStoryRowUIDWidgetID);
 
@@ -1135,6 +1156,15 @@ void KCMRecomputeListLeftColumnWidth()
 			return;
 
 		PMReal widestUid(0.0);
+		// ★THE TEXT CHANGES' OWN WORDS (2026-09-19): "OV Cell Text" is the widest thing this column can
+		//   hold, and it is measured whether or not a row shows it today - the column must not jump
+		//   the first time one does.
+		{
+			PMString widestPlace("OV ");
+			widestPlace.Append(PlaceIdLabel(1));
+			widestPlace.SetTranslatable(kFalse);
+			widestUid = StringUtils::PMMeasureString(widestPlace, font, kFalse).X();
+		}
 		const int32 storyRows = stories->GetRowCount();
 		for (int32 i = 0; i < storyRows; ++i)
 		{

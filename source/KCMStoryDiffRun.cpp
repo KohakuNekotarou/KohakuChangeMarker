@@ -1330,6 +1330,34 @@ void MarkOverset(IDataBase* targetDB, UID storyUID, std::vector<KCMStoryChange>&
 		changes[i].fOverset = KCMIsTextIndexOverset(model, changes[i].fTargetStart);
 }
 
+/* MarkPlaces
+   Says of each change where its words stand - the body, a cell, a footnote - for the ID column
+   (2026-09-19, the user: "Cell Text" for a change inside a cell, "Text" for an ordinary one).
+
+   ★THE TARGET SIDE'S PARAGRAPHS, BY POSITION: the paragraph whose start is the last one at or before
+     the change's target position. starts[] runs in document order, and a cell's thread stands after
+     the whole body (ITableTextContent.h), so the search is one pass from the end. A removed paragraph
+     has no paragraph of its own in the target; its caret stands in the paragraph next to where it was,
+     which is the right place to name.
+*/
+void MarkPlaces(const std::vector<KCMParaAttrs>& targetAttrs, const std::vector<int32>& targetStarts,
+				std::vector<KCMStoryChange>& changes)
+{
+	for (size_t c = 0; c < changes.size(); ++c)
+	{
+		int32 which = -1;
+		for (size_t i = 0; i < targetStarts.size() && i < targetAttrs.size(); ++i)
+		{
+			if (targetStarts[i] <= changes[c].fTargetStart)
+				which = static_cast<int32>(i);
+		}
+		if (which < 0)
+			continue;			// before the first paragraph: the body's default stands
+		const KCMParaAttrs& a = targetAttrs[static_cast<size_t>(which)];
+		changes[c].fPlace = a.IsCell() ? kKCMPlaceCell : (a.IsFootnote() ? kKCMPlaceNote : kKCMPlaceBody);
+	}
+}
+
 bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 					   std::vector<KCMStoryChange>& out)
 {
@@ -1645,6 +1673,7 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	//   story twice. STABLE, so that two changes at the same position keep the order they were
 	//   made in.
 	std::stable_sort(out.begin(), out.end(), ChangeIsBefore);
+	MarkPlaces(targetAttrs, targetStarts, out);		// the body, a cell or a note - for the ID column
 
 	return kTrue;
 }
