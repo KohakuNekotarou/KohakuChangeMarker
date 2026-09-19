@@ -533,7 +533,7 @@ public:
 		out.fWholeParagraph		= change.fWholeParagraph;		// a paragraph added or removed whole
 		out.fAfterNewParagraph	= change.fAfterNewParagraph;	// the second "+" of "+ +": the panel asks first
 		out.fPlace				= change.fPlace;				// the body, a cell or a note - the ID column's word
-		out.fWholeCell			= change.fWholeCell;			// a whole cell added or removed - "Cell" in the ID column
+		out.fWholeCell			= kFalse;						// retired the night it was made (2026-09-19): a table's cells fold into a Table row now; the field keeps the layout
 		out.fReplaced		= (isReplaced && StillReplaced(*row, change)) ? kTrue : kFalse;
 		out.fBeforeTextPre	= change.fBeforeTextPre;
 		out.fBeforeText		= change.fBeforeText;

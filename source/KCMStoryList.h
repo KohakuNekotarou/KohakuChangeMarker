@@ -40,6 +40,26 @@
 
 class IDataBase;
 
+/** A span of Target text, [fFrom, fTo) - one cell a table change marks (KCMStoryChange::fMarkSpans). */
+struct KCMTextSpan
+{
+	TextIndex	fFrom;
+	TextIndex	fTo;
+	KCMTextSpan() : fFrom(0), fTo(0) {}
+	KCMTextSpan(TextIndex from, TextIndex to) : fFrom(from), fTo(to) {}
+};
+
+/** A cell a table restore keeps the words of: its address in TASK START's grid, and where its live
+	words stand now (the cell thread's range in the Target, the final return included). */
+struct KCMKeptCell
+{
+	int32		fRow;
+	int32		fCol;
+	TextIndex	fLiveStart;
+	TextIndex	fLiveEnd;
+	KCMKeptCell() : fRow(0), fCol(0), fLiveStart(0), fLiveEnd(0) {}
+};
+
 /** One difference inside one story: where it is, what sort it is, and what it reads.
 
 	**ONLY THE STORY CHANGES MODE PRODUCES THESE.** The change counters KCMStoryStamp reads can
@@ -65,11 +85,18 @@ struct KCMStoryChange
 		  in one place (Add / AddAttributeChange: SetExcerptPieces from the target into fText and
 		  from the source into fOtherText) and that place, not this comment, is the authority. */
 	enum What { kText, kAttr,
-				kRefused };	// ★one thing an IMPORT could not put in (2026-09-19). fTextPre holds the
+				kRefused,	// ★one thing an IMPORT could not put in (2026-09-19). fTextPre holds the
 							//   KIND word for the ID column ("Word" / "Table" / "Place" / "Para" /
 							//   "Attr" / "File") and fText the place and the reason; fWriteBlock is
 							//   kKCMWriteBlockedKind so no menu offers to write it. Nothing else on
 							//   the change means anything, and it never carries a position.
+				kTable };	// ★★A TABLE WHOSE SHAPE DIFFERS FROM TASK START'S (2026-09-19 night, the
+							//   user: "fold every change of that table into one row"). fKind says how:
+							//   kInsert = the table is only here, kDelete = only in Task Start, kReplace =
+							//   rows, columns or merged cells differ. The ranges are the table's ANCHOR
+							//   characters on each side (a caret on the side that lacks it); the cells
+							//   that changed are in fMarkSpans; fText opens with the shape word
+							//   ("2×2→3×2"). The fields it uses are at the end of the struct.
 
 	Kind		fKind;
 	What		fWhat;
@@ -333,20 +360,46 @@ struct KCMStoryChange
 		  never checked: the write just gave it whatever it inherited. */
 	std::vector<UID>	fAfterParaStyles;
 
-	/** ★**A WHOLE CELL, ADDED OR REMOVED** (2026-09-19 night, the user: "when a table appears where there
-		was nothing, the rows should say Cell +"). kTrue on a whole-paragraph change whose paragraph is a
-		cell paragraph AND whose cell has NO paragraph outside the run the change came from - every
-		paragraph of that cell was added (or removed) together, so the cell itself is what is new (or gone).
-		A paragraph added INSIDE a cell that already stood - the cell's other paragraphs are paired with the
-		other side - keeps kFalse and is a "Paragraph" like any other.
-		★Decided from the paragraphs, not from the grid address: a column inserted at the left shifts every
-		  address after it, while "does this cell have a paired paragraph" does not move. Which column it
-		  was is not named (the user: "knowing that a column was added is enough").
-		★The ID column says "Cell" for it (KCMStoryTreeWidgetMgr::PlaceIdLabel), the script door's `whole`
-		  column says 2. Nothing is written back for it - no menu offers to (kKCMWriteBlockedPlaces stands;
-		  the user: "to remove a table, select it and delete it").
-		⚠Appended at the END, for the reason stated above fReplacedCount's neighbours. */
-	bool16		fWholeCell;
+	// ---- a TABLE change (fWhat == kTable), 2026-09-19 night ------------------------------------------
+	//
+	// ⚠**`fWholeCell` ("Cell" in the ID column) stood here for one evening** and went the same night: the
+	//   user chose to fold a table's cell changes into one Table row instead. The facade's field of that
+	//   name stays for its layout and answers kFalse.
+
+	/** Which table of the story this is - KCMTextRead's ordinal (0..), the numbering KCMTableShape
+		reads in. -1 for every change that is not a table. */
+	int32		fTableOrdinal;
+
+	/** ★**THE CELLS THAT CHANGED**, in Target coordinates - what the marks light and what the jump aims at
+		(the user: "the changed cells should be marked; jump to the top-left of them"). One span per cell:
+		the words that changed in a paired cell, a whole cell that is only here (a new row or column), a cell
+		whose merge differs. Empty for Table −, whose one span is the caret where the table stood. */
+	std::vector<KCMTextSpan>	fMarkSpans;
+
+	/** What the Story column opens with: "2×2→3×2" / "2×2 merged" / "2×2" (UTF-8; KCMTableShapeWord). */
+	std::string	fShapeWord;
+
+	/** The two shapes as signatures (KCMTableShapeSignature): Task Start's and the live one's. A restore
+		compares the live table against fShapeSigAfter before it writes, and records the shape it left. */
+	std::string	fShapeSigBefore;
+	std::string	fShapeSigAfter;
+
+	/** ★**THE CELLS THAT EXIST ON BOTH SIDES AND WHOSE WORDS DIFFER** (2026-09-19 night, the user: "a cell
+		that was not added or removed but whose words changed - do not put that back too; be clever"). A
+		restore replaces the whole table with Task Start's and then writes each of these cells' LIVE words
+		into the cell of the same TASK START address (the addresses are Task Start's own once the table is
+		back). Paired by the diff - a text change inside a paragraph that exists on both sides - never by
+		address alone, so a row inserted at the top does not pair the wrong cells. */
+	std::vector<KCMKeptCell>	fKeptCells;
+
+	/** After a restore: the snippet that puts the LIVE table back ("Undo the Restore"), built from the
+		Target's own XML (KCMTableSnippet). Empty until a restore, and dropped once it is redone. */
+	std::string	fRedoSnippet;
+
+	/** After a restore: the signature of the table as the restore left it (= Task Start's shape). "Is
+		this table still as I left it" is one comparison against the live table (KCMStoryDiffRun's
+		StillReplaced for a kTable change). */
+	std::string	fReplacedShapeSig;
 
 	KCMStoryChange()
 		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
@@ -354,7 +407,7 @@ struct KCMStoryChange
 		  fAttrKind(kKCMStoryAttrNone), fOverset(kFalse),
 		  fReplacedCount(0), fReplacedStart(0), fReplacedEnd(0),
 		  fBeforeStart(0), fBeforeEnd(0), fWriteBlock(kKCMWriteAllowed),
-		  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse), fPlace(0), fBreakAt(0), fWholeCell(kFalse) {}
+		  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse), fPlace(0), fBreakAt(0), fTableOrdinal(-1) {}
 };
 
 /** KCMStoryChange::fBreakAt - which end of a whole paragraph's range holds the paragraph break that the

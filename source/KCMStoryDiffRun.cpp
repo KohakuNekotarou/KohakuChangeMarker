@@ -49,6 +49,7 @@
 #include "KCMStoryDiffRun.h"
 #include "KCMCore.h"			// KCMArmedTargetDB / KCMIsDocDBOpen - which document a replaced change is measured against
 #include "KCMSourceCache.h"	// the Source side, read once per origin instead of once per press
+#include "KCMTableShape.h"	// KCMReadTableShapes / KCMTableShapesDiffer - the Table row (2026-09-19 night)
 #include "KCMOriginCompare.h"	// KCMOriginToSourceUID - the older side's uid when the Source is a Task Start copy
 #include "KCMTextRead.h"		// the reader: paragraphs, their positions and their attributes, straight from the text model
 #include "KCMStoryList.h"
@@ -568,43 +569,12 @@ void AddWholeParagraphs(std::vector<KCMStoryChange>& out, const KCMTextDiff::Cha
 							  ? kTrue : kFalse;
 	outPlacesAgree = (afterReturn || beforeNext) ? kTrue : kFalse;
 
-	// ★★**IS THE CELL ITSELF WHAT IS NEW (OR GONE)?** (2026-09-19 night, the user: "when a table appears
-	//   where there was nothing, say Cell +"). A cell's paragraphs stand together in the list (one thread,
-	//   read in order - KCMTextRead), so the cell is whole exactly when its first and last paragraph both
-	//   fall inside THIS run: every paragraph it has was added or removed with it, none is paired with the
-	//   other side. A paragraph added inside a cell that already stood leaves the cell's other paragraphs
-	//   outside the run, and the answer is kFalse - that row stays a "Paragraph".
-	//   ★Asked of the paragraphs, not of the grid address, so a column inserted at the left - which
-	//     shifts every address after it - still names the right rows (which column is not named at all;
-	//     the user: "knowing that a column was added is enough").
-	auto cellIsWhole = [&](int32 p) -> bool16
-	{
-		const KCMParaAttrs& here = ownAttrs[static_cast<size_t>(p)];
-		if (!here.IsCell())
-			return kFalse;
-		auto sameCell = [&](int32 q) -> bool
-		{
-			const KCMParaAttrs& other = ownAttrs[static_cast<size_t>(q)];
-			return other.IsCell() && other.fTableOrdinal == here.fTableOrdinal
-				&& other.fCellRow == here.fCellRow && other.fCellCol == here.fCellCol;
-		};
-		int32 cellFirst = p;
-		while (cellFirst > 0 && sameCell(cellFirst - 1))
-			--cellFirst;
-		int32 cellLast = p;
-		const int32 size = static_cast<int32>(ownAttrs.size());
-		while (cellLast + 1 < size && sameCell(cellLast + 1))
-			++cellLast;
-		return (cellFirst >= first && cellLast < first + count) ? kTrue : kFalse;
-	};
-
 	for (int32 k = 0; k < count; ++k)
 	{
 		const int32 p = first + k;
 		KCMStoryChange change;
 		change.fWhat = KCMStoryChange::kText;
 		change.fWholeParagraph = kTrue;
-		change.fWholeCell = cellIsWhole(p);
 
 		// ★**AND WHICH END OF THE RANGE THE BREAK IS AT** (2026-09-19, the user: the mark reached the end
 		//   of the paragraph above). The ranges below are cut for the WRITE; the facade cuts the break
@@ -1402,6 +1372,222 @@ void MarkPlaces(const std::vector<KCMParaAttrs>& targetAttrs, const std::vector<
 	}
 }
 
+/* ParagraphIndexAt
+   The paragraph whose start is the last one at or before `at` - the same walk MarkPlaces makes.
+   -1 before the first paragraph. */
+int32 ParagraphIndexAt(const std::vector<int32>& starts, TextIndex at)
+{
+	int32 which = -1;
+	for (size_t i = 0; i < starts.size(); ++i)
+		if (starts[i] <= at)
+			which = static_cast<int32>(i);
+	return which;
+}
+
+/* FirstTableWords
+   The first paragraph of table `ordinal` (in `paras`, whose attrs name the table) that holds any
+   text - what the Table row shows after its shape word. Empty when every cell is empty. */
+std::string FirstTableWords(int32 ordinal, const std::vector<std::string>& paras, const std::vector<KCMParaAttrs>& attrs)
+{
+	for (size_t p = 0; p < paras.size() && p < attrs.size(); ++p)
+		if (attrs[p].IsCell() && attrs[p].fTableOrdinal == ordinal && !paras[p].empty())
+			return paras[p];
+	return std::string();
+}
+
+/* FoldTableChanges
+   ★★★A TABLE WHOSE SHAPE DIFFERS FROM TASK START'S BECOMES ONE CHANGE (2026-09-19 night, the user:
+   "fold every change of that table - rows, columns, merged cells, and the words inside - into one row,
+   Table ≠"). The cell-level changes the paragraph diff found inside it are taken out, and what they said
+   about PAIRED cells is kept on the table change (fKeptCells), so that a restore can put those cells'
+   words back after the whole table has been replaced (the user: "a cell that was not added or removed but
+   whose words changed - do not put that back too").
+   A table with no partner is Table + (only here) or Table − (only in Task Start).
+
+   ⚠TABLES ARE PAIRED BY ORDINAL - the numbering KCMTextRead gives the cells, in the order the tables'
+    cell blocks begin - which is exact when tables were added or removed at the END of the story and
+    merely noisy when one was added in the middle (every table after it then pairs with the wrong one
+    and comes out as ≠). The spec accepts that: nothing is named falsely, there are just more rows.
+   ⚠THE SOURCE'S SHAPES come from the source model when it is open, and from what was kept beside its
+    text otherwise (KCMSourceCache) - a re-diff after a restore has no copy to ask. */
+void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
+					  ITextModel* targetModel, ITextModel* sourceModel,
+					  const std::vector<std::string>& targetParas, const std::vector<KCMParaAttrs>& targetAttrs,
+					  const std::vector<int32>& targetStarts,
+					  const std::vector<std::string>& sourceParas, const std::vector<KCMParaAttrs>& sourceAttrs,
+					  const std::vector<int32>& sourceStarts)
+{
+	std::vector<KCMTableShape> tShapes, sShapes;
+	if (targetModel == nil || !KCMReadTableShapes(targetModel, tShapes))
+		return;
+	if (sourceModel != nil)
+	{
+		if (!KCMReadTableShapes(sourceModel, sShapes))
+			return;
+	}
+	else if (!KCMSourceCacheGetTableShapes(targetStoryUID, sShapes))
+		return;
+
+	const size_t n = (tShapes.size() > sShapes.size()) ? tShapes.size() : sShapes.size();
+	for (size_t ord = 0; ord < n; ++ord)
+	{
+		const bool16 haveT = (ord < tShapes.size()) ? kTrue : kFalse;
+		const bool16 haveS = (ord < sShapes.size()) ? kTrue : kFalse;
+		if (haveT && haveS && !KCMTableShapesDiffer(tShapes[ord], sShapes[ord]))
+			continue;					// the same shape: the cell rows stay as the diff made them
+
+		const int32 ordinal = static_cast<int32>(ord);
+		KCMStoryChange table;
+		table.fWhat = KCMStoryChange::kTable;
+		table.fTableOrdinal = ordinal;
+		table.fPlace = kKCMPlaceCell;
+		table.fKind = (!haveS) ? KCMStoryChange::kInsert
+					: (!haveT) ? KCMStoryChange::kDelete
+					: KCMStoryChange::kReplace;
+		// ⚠Until the table restore exists (the plan's Task 6) EVERY table row is shown and never written:
+		//   RestoreOne would otherwise take a kTable change down its attribute branch.
+		table.fWriteBlock = kKCMWriteBlockedPlaces;
+		if (haveT)
+		{
+			table.fTargetStart = tShapes[ord].fAnchorStart;
+			table.fTargetEnd = tShapes[ord].fAnchorEnd;
+			table.fShapeSigAfter = KCMTableShapeSignature(tShapes[ord]);
+		}
+		if (haveS)
+		{
+			table.fSourceStart = sShapes[ord].fAnchorStart;
+			table.fSourceEnd = sShapes[ord].fAnchorEnd;
+			table.fShapeSigBefore = KCMTableShapeSignature(sShapes[ord]);
+		}
+
+		// The cell-level changes of THIS table come out; what they say about paired cells stays.
+		std::vector<KCMStoryChange> kept;
+		kept.reserve(out.size());
+		TextIndex deletedCaret = -1;
+		for (size_t c = 0; c < out.size(); ++c)
+		{
+			const KCMStoryChange& ch = out[c];
+			if (ch.fWhat == KCMStoryChange::kTable || ch.fWhat == KCMStoryChange::kRefused)
+			{
+				kept.push_back(ch);
+				continue;
+			}
+			// Where the change stands on each side: the SHOWN range's start (a whole paragraph's range
+			// carries the return of the paragraph before, and asking about that character would name the
+			// neighbour; an EMPTY paragraph's range has no width at all - a new empty cell, measured
+			// 2026-09-20 - so the range's width cannot be what decides). The side that has the change
+			// is told by its kind: an insertion is on the target side, a deletion on the source side, a
+			// replacement (and an attribute) on both.
+			TextIndex tFrom = ch.fTargetStart, tTo = ch.fTargetEnd;
+			TextIndex sFrom = ch.fSourceStart, sTo = ch.fSourceEnd;
+			KCMShownSpan(ch.fBreakAt, tFrom, tTo);
+			KCMShownSpan(ch.fBreakAt, sFrom, sTo);
+			const bool16 sideT = (ch.fKind != KCMStoryChange::kDelete) ? kTrue : kFalse;
+			const bool16 sideS = (ch.fKind != KCMStoryChange::kInsert) ? kTrue : kFalse;
+			const int32 tPara = sideT ? ParagraphIndexAt(targetStarts, tFrom) : -1;
+			const int32 sPara = sideS ? ParagraphIndexAt(sourceStarts, sFrom) : -1;
+			const bool16 tHolds = (tPara >= 0 && static_cast<size_t>(tPara) < targetAttrs.size()
+								   && targetAttrs[tPara].IsCell() && targetAttrs[tPara].fTableOrdinal == ordinal) ? kTrue : kFalse;
+			const bool16 sHolds = (sPara >= 0 && static_cast<size_t>(sPara) < sourceAttrs.size()
+								   && sourceAttrs[sPara].IsCell() && sourceAttrs[sPara].fTableOrdinal == ordinal) ? kTrue : kFalse;
+			const bool16 inTable = (haveT && tHolds) || (haveS && sHolds);
+			if (!inTable)
+			{
+				kept.push_back(ch);
+				continue;
+			}
+
+			if (tHolds)
+				table.fMarkSpans.push_back(KCMTextSpan(tFrom, tTo));
+			else if (!haveT && deletedCaret < 0)
+				deletedCaret = ch.fTargetStart;
+
+			// ★A PAIRED CELL WHOSE WORDS DIFFER: a text change with characters on BOTH sides, inside a
+			//   paragraph that exists on both - never a whole paragraph (its caret pairs nothing).
+			if (haveT && haveS && ch.fWhat == KCMStoryChange::kText && !ch.fWholeParagraph && tHolds && sHolds)
+			{
+				const KCMTableCellPlace* const live = KCMTableCellAt(tShapes[ord], targetAttrs[tPara].fCellRow, targetAttrs[tPara].fCellCol);
+				if (live != nil)
+				{
+					KCMKeptCell cell;
+					cell.fRow = sourceAttrs[sPara].fCellRow;
+					cell.fCol = sourceAttrs[sPara].fCellCol;
+					cell.fLiveStart = live->fStart;
+					cell.fLiveEnd = live->fEnd;
+					bool16 seen = kFalse;
+					for (size_t k = 0; k < table.fKeptCells.size() && !seen; ++k)
+						if (table.fKeptCells[k].fRow == cell.fRow && table.fKeptCells[k].fCol == cell.fCol)
+							seen = kTrue;
+					if (!seen)
+						table.fKeptCells.push_back(cell);
+				}
+			}
+		}
+
+		// Cells only here (a new row or column, by address) and cells whose merge differs: marked whole.
+		if (haveT)
+		{
+			for (size_t i = 0; i < tShapes[ord].fCells.size(); ++i)
+			{
+				const KCMTableCellPlace& cell = tShapes[ord].fCells[i];
+				bool16 mark = !haveS;
+				if (haveS)
+				{
+					const KCMTableCellPlace* const partner = KCMTableCellAt(sShapes[ord], cell.fRow, cell.fCol);
+					mark = (partner == nil) ? kTrue : kFalse;
+					if (!mark)
+					{
+						// The merge at this address on each side (1x1 when not listed).
+						int32 tr = 1, tc = 1, sr = 1, sc = 1;
+						for (size_t m = 0; m < tShapes[ord].fMerges.size(); ++m)
+							if (tShapes[ord].fMerges[m].fRow == cell.fRow && tShapes[ord].fMerges[m].fCol == cell.fCol)
+							{ tr = tShapes[ord].fMerges[m].fRowSpan; tc = tShapes[ord].fMerges[m].fColSpan; }
+						for (size_t m = 0; m < sShapes[ord].fMerges.size(); ++m)
+							if (sShapes[ord].fMerges[m].fRow == cell.fRow && sShapes[ord].fMerges[m].fCol == cell.fCol)
+							{ sr = sShapes[ord].fMerges[m].fRowSpan; sc = sShapes[ord].fMerges[m].fColSpan; }
+						mark = (tr != sr || tc != sc) ? kTrue : kFalse;
+					}
+				}
+				if (mark)
+					table.fMarkSpans.push_back(KCMTextSpan(cell.fStart, cell.fEnd));
+			}
+		}
+		else
+		{
+			// Table −: the place it stood, as a caret.
+			const TextIndex at = (deletedCaret >= 0) ? deletedCaret : 0;
+			table.fTargetStart = at;
+			table.fTargetEnd = at;
+			table.fMarkSpans.push_back(KCMTextSpan(at, at));
+		}
+
+		// The Story column: the shape word, then the table's first words (on the side that has it).
+		table.fShapeWord = (haveT && haveS) ? KCMTableShapeWord(sShapes[ord], tShapes[ord])
+						 : KCMTableShapeAlone(haveT ? tShapes[ord] : sShapes[ord]);
+		std::string words = table.fShapeWord;
+		const std::string first = haveT ? FirstTableWords(ordinal, targetParas, targetAttrs)
+										: FirstTableWords(ordinal, sourceParas, sourceAttrs);
+		if (!first.empty())
+		{
+			words += " ";
+			words += first;
+		}
+		SetDocumentText(table.fText, words);
+		// The other side, for the message area: Task Start's shape and first words.
+		std::string other = haveS ? KCMTableShapeAlone(sShapes[ord]) : std::string();
+		const std::string otherFirst = haveS ? FirstTableWords(ordinal, sourceParas, sourceAttrs) : std::string();
+		if (!otherFirst.empty())
+		{
+			other += " ";
+			other += otherFirst;
+		}
+		SetDocumentText(table.fOtherText, other);
+
+		kept.push_back(table);
+		out.swap(kept);
+	}
+}
+
 bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 					   std::vector<KCMStoryChange>& out)
 {
@@ -1469,6 +1655,15 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 			}
 		}
 		KCMSourceCachePut(targetStory.GetUID(), sourceParas, sourceAttrs, sourceStarts, raw);
+
+		// ★AND THE SOURCE'S TABLES, FOR THE SAME REASON (2026-09-20): the Table row compares shapes on
+		//   every re-diff, and the copy is not there to be asked then.
+		if (sourceModel != nil)
+		{
+			std::vector<KCMTableShape> sourceTables;
+			if (KCMReadTableShapes(sourceModel, sourceTables))
+				KCMSourceCachePutTableShapes(targetStory.GetUID(), sourceTables);
+		}
 	}
 
 	// **ONE TABLE FOR BOTH SEQUENCES.** Numbering them from separate tables would give equal
@@ -1718,6 +1913,11 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	//   made in.
 	std::stable_sort(out.begin(), out.end(), ChangeIsBefore);
 	MarkPlaces(targetAttrs, targetStarts, out);		// the body, a cell or a note - for the ID column
+
+	// ★★A TABLE WHOSE SHAPE CHANGED IS ONE ROW (2026-09-19 night): its cell changes fold into it.
+	FoldTableChanges(out, targetStory.GetUID(), targetModel, sourceModel,
+					 targetParas, targetAttrs, targetStarts, sourceParas, sourceAttrs, sourceStarts);
+	std::stable_sort(out.begin(), out.end(), ChangeIsBefore);
 
 	return kTrue;
 }

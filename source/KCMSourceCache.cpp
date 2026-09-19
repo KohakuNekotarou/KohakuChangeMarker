@@ -23,6 +23,9 @@ struct Entry
 	std::vector<KCMParaAttrs>	fAttrs;
 	std::vector<int32>			fStarts;
 	WideString					fRaw;		// the write's own copy - the header says why
+	std::vector<KCMTableShape>	fTables;	// the story's tables, for the Table row's compare (2026-09-20)
+	bool16						fHaveTables;
+	Entry() : fHaveTables(kFalse) {}
 };
 
 /** Keyed by the TARGET story's uid: the copy's own uids are new ones on every rehydration, so
@@ -78,6 +81,24 @@ bool16 KCMSourceCacheGetRaw(UID targetStoryUID, WideString& outRaw)
 bool16 KCMSourceCacheHas(UID targetStoryUID)
 {
 	return (gStories.find(targetStoryUID) != gStories.end()) ? kTrue : kFalse;
+}
+
+void KCMSourceCachePutTableShapes(UID targetStoryUID, const std::vector<KCMTableShape>& shapes)
+{
+	if (!KCMSourceCacheMayKeep())
+		return;
+	Entry& entry = gStories[targetStoryUID];
+	entry.fTables = shapes;
+	entry.fHaveTables = kTrue;
+}
+
+bool16 KCMSourceCacheGetTableShapes(UID targetStoryUID, std::vector<KCMTableShape>& outShapes)
+{
+	const std::map<UID, Entry>::const_iterator it = gStories.find(targetStoryUID);
+	if (it == gStories.end() || !it->second.fHaveTables)
+		return kFalse;
+	outShapes = it->second.fTables;
+	return kTrue;
 }
 
 bool16 KCMSourceCacheMayKeep()

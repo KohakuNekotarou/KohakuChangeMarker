@@ -49,6 +49,7 @@
 #include <vector>
 
 #include "KCMParaText.h"	// KCMParaAttrs - the shape KCMTextRead answers in
+#include "KCMTableShape.h"	// KCMTableShape - the Source story's tables, kept with its text (2026-09-20)
 
 /** What was read for one story, or kFalse when nothing has been kept for it.
 
@@ -89,6 +90,11 @@ bool16 KCMSourceCacheGetRaw(UID targetStoryUID, WideString& outRaw);
 /** Whether anything at all has been kept for that story - asked by the callers that decide
 	whether a copy of the origin has to be rehydrated at all. */
 bool16 KCMSourceCacheHas(UID targetStoryUID);
+
+/** ★The Source story's TABLES, read in the same breath as its text (2026-09-20): the shape of each,
+	which the Table row compares against the live one on every re-diff - without the copy. */
+void KCMSourceCachePutTableShapes(UID targetStoryUID, const std::vector<KCMTableShape>& shapes);
+bool16 KCMSourceCacheGetTableShapes(UID targetStoryUID, std::vector<KCMTableShape>& outShapes);
 
 /** Whether anything may be kept at all right now: kTrue while a rehydrated origin is standing.
 	Asked by the one place that fills the cache, so that the rule lives beside the cache rather

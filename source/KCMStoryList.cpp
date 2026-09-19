@@ -1262,7 +1262,9 @@ void KCMStoryList::SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& c
 		if (changes[i].fWhat != KCMStoryChange::kAttr ||
 			changes[i].fAttrKind == kKCMStoryAttrNone)
 		{
-			if (changes[i].fWhat == KCMStoryChange::kText)
+			// ★A table's row counts as the words having changed (2026-09-19 night): its cells' text
+			//   changes were folded into it, and the row's Change column must not fall back to "Attr".
+			if (changes[i].fWhat == KCMStoryChange::kText || changes[i].fWhat == KCMStoryChange::kTable)
 				gRows[nth].fHasTextChange = kTrue;
 			continue;
 		}
@@ -1541,7 +1543,7 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 			   + "\t" + Field(c.fRuby)
 			   + "\t" + Field(c.fText)
 			   + "\t" + state
-			   + "\t" + (c.fWholeCell ? "2" : (c.fWholeParagraph ? "1" : "0"))	// 2 = a whole CELL (2026-09-19 night)
+			   + "\t" + ((c.fWhat == KCMStoryChange::kTable) ? "3" : (c.fWholeParagraph ? "1" : "0"))	// 3 = a TABLE (2026-09-19 night; 2, a whole cell, lived one evening)
 			   + "\t" + PlaceWord(c.fPlace)
 			   + "\t" + (haveShown ? Num(shown.fTargetStart) : std::string("-"))
 			   + "\t" + (haveShown ? Num(shown.fTargetEnd) : std::string("-"))
