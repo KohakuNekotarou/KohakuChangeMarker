@@ -236,13 +236,36 @@ bool16 OriginMatchesTag(const ReadResult& r, std::string& outWhy);
 /** What this spelling cannot tell apart, made the same - so that a story can be compared with
 	itself read back (Same), the way the export checks itself.
 
-	★ONE THING ONLY: a MONO reading standing over SEVERAL characters becomes GROUP. A <w:ruby> holds
-	  one reading over its base, and one reading over two characters is what Word calls a group
-	  ruby; the reader answers GROUP for it, and it cannot answer anything else. The HTML format
-	  keeps the distinction by putting several <rt> in one <ruby> - a shape Word has not got.
+	★TWO THINGS: WHERE A TABLE STANDS IN ITS PARAGRAPH (SplitAtTables, below - run first), and a
+	  MONO reading standing over SEVERAL characters, which becomes GROUP. A <w:ruby> holds one
+	  reading over its base, and one reading over two characters is what Word calls a group ruby;
+	  the reader answers GROUP for it, and it cannot answer anything else. The HTML format keeps the
+	  distinction by putting several <rt> in one <ruby> - a shape Word has not got.
 	  ⚠That this is a loss the comparison does not mind is the user's own rule (2026-09-12: "mono
 	   turned into group is not a change"); KCMParaText's SpansDiffer says the same. */
 void SettleForThisFormat(KCMStoryHtml::Story& s);
+
+/** The SPLIT SHAPE - the one shape this file writes and reads (2026-09-19 evening, the user's rule:
+	"the document decides"). Every table stands alone in an empty paragraph of its own; the words
+	before it are a paragraph, the words after it another; an empty paragraph stands exactly where
+	Word asks for one (after a table that ends its run, between two tables) and nowhere else.
+	Word cannot say whether "A[T]B" was one InDesign paragraph or three, so the file does not try:
+	SplitAtTables makes the two the same, the fingerprint is taken of the result, and a story read
+	back from the file is in this shape already.
+	★ONLY the shape: the readings are not touched (SettleForThisFormat does both).
+	@param asRead kTrue (the default): the pieces as the reader reads them back - a ruby cut by the
+		   table stands on the piece before it only, so that a story whose ruby straddles a table
+		   differs from itself read back and the export's check refuses it. kFalse is the writer's
+		   own call: the pieces exactly as written, the cut ruby on both. */
+void SplitAtTables(KCMStoryHtml::Story& s, bool16 asRead = kTrue);
+
+/** The split shape put back into the shape `shape` holds - the document as it stands, read by
+	KCMStoryFromDocument - table by table: the k-th table of the body (or of a cell) goes where the
+	document's k-th table stands, the words after it join that paragraph when the document's do,
+	and an empty paragraph that stood there only because Word asked for one is dropped. Words the
+	file added or took away stay; only the breaks next to a table are decided, and by `shape`.
+	⚠A run whose table count differs from `shape`'s is left as it is (TablesAgree refuses it). */
+void RejoinTables(KCMStoryHtml::Story& s, const KCMStoryHtml::Story& shape);
 
 }	// namespace KCMStoryDocx
 

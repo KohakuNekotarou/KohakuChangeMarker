@@ -60,6 +60,9 @@ struct KCMStoryTextSet
 	std::vector<bool16>					fOriginKnown;
 	std::vector<PMString>				fFileNames;		// parallel: the file's own name, for a "!" row
 														// that stands for a file with no story (2026-09-19)
+	std::vector<bool16>					fIsDocx;		// parallel: read from a .docx, whose paragraphs stand in
+														// the SPLIT shape around tables (KCMStoryDocx.h, SplitAtTables)
+														// and are put back into the document's shape at the pour
 };
 
 /** One thing the last import could not put in - the material of a "!" row in Story Edits

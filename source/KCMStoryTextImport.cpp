@@ -1237,6 +1237,7 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 			out.fOrigins.push_back(KCMStoryHtml::Story());
 			out.fOriginKnown.push_back(kFalse);
 			out.fFileNames.push_back(PMStringOfLeaf(leaf));
+			out.fIsDocx.push_back(kFalse);
 			continue;
 		}
 		if (!IsDocxLeaf(leaf, leading))
@@ -1309,6 +1310,7 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 		out.fOrigins.push_back(tracked ? result.fOrigin : KCMStoryHtml::Story());
 		out.fOriginKnown.push_back(tracked);
 		out.fFileNames.push_back(PMStringOfLeaf(leaf));
+		out.fIsDocx.push_back(kTrue);
 		if (tracked)
 		{
 			++trackedCount;
@@ -1354,6 +1356,7 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 			kept.fOrigins.push_back(out.fOrigins[i]);
 			kept.fOriginKnown.push_back(out.fOriginKnown[i]);
 			kept.fFileNames.push_back(out.fFileNames[i]);
+			kept.fIsDocx.push_back(out.fIsDocx[i]);
 		}
 		out = kept;
 	}
@@ -1625,13 +1628,27 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 		//   written from that reader's shape to begin with.
 		const KCMStoryHtml::Story* file = &set.fStories[which];
 		KCMStoryMerge::Result merged;
+		KCMStoryHtml::Story rejoined;
+		// ★A .docx HOLDS ITS PARAGRAPHS IN THE SPLIT SHAPE AROUND TABLES (KCMStoryDocx.h, SplitAtTables -
+		//   2026-09-19 evening, the user's rule: "the document decides"): every table alone in a paragraph
+		//   of its own, whatever paragraph it stands in here. So the document's story is read for every
+		//   .docx (not only for a merge), the merge runs in that same shape, and the result is put back
+		//   into the document's shape (RejoinTables) before the pour pairs its paragraphs.
+		const bool16 fromDocx = (which < set.fIsDocx.size() && set.fIsDocx[which]) ? kTrue : kFalse;
+		KCMStoryHtml::Story now;
+		bool16 haveNow = kFalse;
+		if (fromDocx)
+		{
+			bool16 placed = kTrue;
+			haveNow = KCMStoryFromDocument(storyRef, now, placed);
+		}
 		if (which < set.fOriginKnown.size() && set.fOriginKnown[which])
 		{
-			KCMStoryHtml::Story now;
-			bool16 placed = kTrue;
-			if (KCMStoryFromDocument(storyRef, now, placed))
+			if (haveNow)
 			{
-				KCMStoryMerge::Merge(set.fOrigins[which], set.fStories[which], now, merged);
+				KCMStoryHtml::Story nowSplit = now;
+				KCMStoryDocx::SplitAtTables(nowSplit);
+				KCMStoryMerge::Merge(set.fOrigins[which], set.fStories[which], nowSplit, merged);
 				wordChanges += merged.fApplied;
 				conflicts += static_cast<int32>(merged.fConflicts.size());
 				for (size_t c = 0; c < merged.fConflicts.size(); ++c)
@@ -1657,6 +1674,15 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 				}
 				file = &merged.fMerged;
 			}
+		}
+		if (fromDocx && haveNow)
+		{
+			// ★BACK INTO THE DOCUMENT'S SHAPE: which paragraph a table stands in, and whether the words
+			//   after it are that paragraph's, is what the document says - a break a person put next to
+			//   a table in Word, or took away there, is not carried (KCMStoryDocx.h, RejoinTables).
+			rejoined = *file;
+			KCMStoryDocx::RejoinTables(rejoined, now);
+			file = &rejoined;
 		}
 
 		// ★★★**THE TABLE SHAPES DECIDE WHETHER THIS STORY IS TOUCHED AT ALL** (the user's rule,

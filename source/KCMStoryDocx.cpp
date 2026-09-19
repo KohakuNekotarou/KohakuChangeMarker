@@ -362,42 +362,26 @@ bool16 WriteParagraphContent(const KCMStoryHtml::Para& p, std::string& out, std:
 namespace
 {
 
-/*	The two marks a paragraph carries when it goes on past a table (the design, 4-5; stage 3b,
-	2026-09-19). Word has no table inside a paragraph - a table stands between paragraphs - so
-	which paragraph a table belongs to, and whether the paragraph after it is the same paragraph,
-	is said by a mark at the paragraph's END (before the table: "this paragraph goes on past the
-	table") and one at the START (after it: "this is the paragraph from before the table"). One
-	mark cancels one of Word's breaks, so "A[T]B" in one paragraph carries both.
-	★A LOCKED CONTROL, the shape of the placeholders (AppendPlaceholder): the TAG is the truth, the
-	  text inside is an English explanation for whoever opens the file. Measured in Word 2007: a
-	  control copied whole (its boundaries included) is pasted with its tag, but the paste is NOT
-	  recorded as a revision - so a person's pasted mark stands on both sides of the reader and
-	  the origin's fingerprint then differs (a whole comparison, said as such). The TYPED form,
-	  KCM:continued (the reader's kTypedToken), IS recorded, so it is the one the legend recommends.
-	★NOT THE PARAGRAPH STYLE. Until stage 3b the "continued" half carried a paragraph style,
-	  kcm-continued. That slot (w:pStyle) is left empty now, for the day the paragraph style
-	  carries InDesign's paragraph style name (the design, 11-4). */
-const char* const kMarkContinues =
-	"<w:sdt><w:sdtPr><w:alias w:val=\"KCM: continues past the table\"/><w:tag w:val=\"kcm-continues\"/>"
-	"<w:lock w:val=\"sdtContentLocked\"/></w:sdtPr><w:sdtContent><w:r><w:t>\xE2\x9F\xA6"
-	"continues past the table" "\xE2\x9F\xA7</w:t></w:r></w:sdtContent></w:sdt>";
-const char* const kMarkContinued =
-	"<w:sdt><w:sdtPr><w:alias w:val=\"KCM: continued from before the table\"/><w:tag w:val=\"kcm-continued\"/>"
-	"<w:lock w:val=\"sdtContentLocked\"/></w:sdtPr><w:sdtContent><w:r><w:t>\xE2\x9F\xA6"
-	"continued from before the table" "\xE2\x9F\xA7</w:t></w:r></w:sdtContent></w:sdt>";
-/*	The legend (the design, 4-6): how to use the file, and one of each mark to copy, first in the
-	body. NOT locked: the reader skips the whole control by its tag (ReadBlocks), so whatever is done
-	to it does no harm, and a person may delete it. ⚠Measured: a control-locked legend cannot be
-	deleted by selecting it and pressing Delete, and that was found to be a nuisance, not a guard. */
-const char* const kLegendHead =
-	"<w:sdt><w:sdtPr><w:alias w:val=\"KCM: how to use this file\"/><w:tag w:val=\"kcm-legend\"/></w:sdtPr><w:sdtContent>"
-	"<w:p><w:r><w:t xml:space=\"preserve\">KCM: keep Track Changes on. A paragraph that goes on past a table "
-	"carries a mark at its end (before the table) or at its start (after the table). Copy a mark from here, "
-	"or type KCM:continued at the end or the start of the paragraph.</w:t></w:r></w:p>"
-	"<w:p><w:r><w:t xml:space=\"preserve\">end of a paragraph, before a table: </w:t></w:r>";
-const char* const kLegendMiddle =
-	"</w:p><w:p><w:r><w:t xml:space=\"preserve\">start of a paragraph, after a table: </w:t></w:r>";
-const char* const kLegendTail = "</w:p></w:sdtContent></w:sdt>";
+/*	★★★A TABLE INSIDE A PARAGRAPH IS NOT CARRIED TO WORD, AND NOT READ BACK FROM IT (the design,
+	4-5 as rewritten 2026-09-19 evening - the user's rule: "the document decides").
+
+	Word has no table inside a paragraph: a table stands between paragraphs. InDesign's one paragraph
+	"A[T]B" and its three paragraphs "A / [T] / B" are therefore written the same way - A, the
+	table, B - and NOTHING in the file says which it was. Two spellings tried before this one said
+	it: a paragraph style (stages 1-3), then a pair of locked marks (stage 3b), and both were found
+	hard to use in Word (the user: the marks were in the way, a copied one could not be deleted).
+
+	What settles the shape instead is the DOCUMENT AS IT STANDS when the file comes back: the import
+	rejoins the read paragraphs around each table exactly as the document holds that table
+	(RejoinTables), and a paragraph break a person put next to a table in Word, or took away there,
+	carries no meaning. The cost, taken knowingly: splitting or joining a paragraph AT a table cannot
+	be done from Word - that is done in InDesign.
+
+	The one shape this file writes and reads is the SPLIT one (SplitAtTables): every table alone in
+	an empty paragraph of its own, the words before it a paragraph, the words after it a paragraph;
+	and Word's two rules kept - a table cannot end its container, and two tables cannot touch - by
+	an empty paragraph exactly where they ask for one. The fingerprint is taken of that shape, so it
+	is the same whether InDesign's own shape was one paragraph or three. */
 
 // A table inside a table inside a table... The data cannot really do this (a nested table comes
 // later in Story::fTables than the one it stands in), so this only stops a malformed Story from
@@ -457,26 +441,20 @@ KCMStoryHtml::Para Slice(const KCMStoryHtml::Para& p, const std::vector<int32>& 
 	return piece;
 }
 
-/** One <w:p>, with the mark at its start when it is the piece after a table and the mark at its
-	end when it is the piece before one. An empty one with nothing to say about itself is <w:p/>. */
-bool16 AppendParagraph(const KCMStoryHtml::Para& piece, bool16 continuedFromTable, bool16 continuesPastTable,
-					   std::string& out, std::string& whyNot)
+/** One <w:p>. An empty one is <w:p/>. */
+bool16 AppendParagraph(const KCMStoryHtml::Para& piece, std::string& out, std::string& whyNot)
 {
 	std::string content;
 	if (!WriteParagraphContent(piece, content, whyNot))
 		return kFalse;
 
-	if (content.empty() && !continuedFromTable && !continuesPastTable)
+	if (content.empty())
 	{
 		out += "<w:p/>";
 		return kTrue;
 	}
 	out += "<w:p>";
-	if (continuedFromTable)
-		out += kMarkContinued;
 	out += content;
-	if (continuesPastTable)
-		out += kMarkContinues;
 	out += "</w:p>";
 	return kTrue;
 }
@@ -650,18 +628,14 @@ bool16 AppendBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml
 		return kTrue;
 	}
 
+	// ★THE STORY IS IN THE SPLIT SHAPE BY THE TIME IT GETS HERE (SplitAtTables, run by WriteBlocks on
+	//   a copy): every table stands alone in an empty paragraph of its own, so a paragraph either IS
+	//   a table or holds words, and the blocks come out one per paragraph. Where the split shape has
+	//   an empty paragraph, Word wants one - after a table at the end of its container, and between
+	//   two tables - and it is written as <w:p/> like any other.
 	for (size_t i = 0; i < paras.size(); ++i)
 	{
-		const KCMStoryHtml::Para& p = paras[i];
-		std::vector<int32> byteAt;
-		KCMTextDiff::ToCodePoints(p.fText, nil, &byteAt);
-		const int32 n = static_cast<int32>(byteAt.size());
-
-		int32 pos = 0;
-		bool16 first = kTrue;
-
-		// Story::fTables is in document order, so the ones standing in this paragraph come out
-		// in the order of their places.
+		bool16 wasTable = kFalse;
 		for (size_t t = 0; t < s.fTables.size(); ++t)
 		{
 			const KCMStoryHtml::Table& table = s.fTables[t];
@@ -669,35 +643,14 @@ bool16 AppendBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml
 				continue;
 			if (inTable >= 0 && (table.fInRow != inRow || table.fInCell != inCell))
 				continue;
-
-			int32 at = table.fOffset;
-			if (at < pos)	at = pos;
-			if (at > n)		at = n;
-
-			// ★A TABLE AT THE HEAD OF ITS PARAGRAPH STARTS THE PARAGRAPH ITSELF: the empty first piece
-			//   is not written, and the reader's rule (a table with no mark in front of it opens a
-			//   paragraph of its own) puts it back. Between two tables, though, an empty piece IS
-			//   written - the two marks alone - because Word joins tables that touch.
-			//   ⚠A reference standing at that very place belongs to the first piece (Slice), so an
-			//   empty first piece that carries one is written after all - the reference has nowhere
-			//   else to go.
-			{
-				const KCMStoryHtml::Para piece = Slice(p, byteAt, pos, at, first);
-				if (!(first && at == 0 && piece.fNoteRefs.empty()))
-				{
-					if (!AppendParagraph(piece, first ? kFalse : kTrue, kTrue, out, whyNot))
-						return kFalse;
-				}
-			}
 			if (!AppendTable(s, t, depth, out, whyNot))
 				return kFalse;
-			pos = at;
-			first = kFalse;
+			wasTable = kTrue;
+			break;			// one table per paragraph in this shape; the split put it there
 		}
-
-		// ⚠THE TAIL IS ALWAYS WRITTEN - the header says which two rules of Word's ask for it. After a
-		//   table it is the mark alone when there are no words left.
-		if (!AppendParagraph(Slice(p, byteAt, pos, n, first), first ? kFalse : kTrue, kFalse, out, whyNot))
+		if (wasTable)
+			continue;
+		if (!AppendParagraph(paras[i], out, whyNot))
 			return kFalse;
 	}
 	return kTrue;
@@ -708,9 +661,28 @@ bool16 AppendBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml
 bool16 WriteBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml::Para>& paras,
 				   int32 inTable, int32 inRow, int32 inCell, std::string& out, std::string& whyNot)
 {
+	// ★ON A COPY IN THE SPLIT SHAPE (SplitAtTables): the one shape this file writes, whatever shape the
+	//   story came in - see the note above AppendParagraph. `paras` names WHICH run of paragraphs
+	//   (the body, or a cell), and the same run of the copy is what is written.
+	KCMStoryHtml::Story split = s;
+	SplitAtTables(split, kFalse /*as written: a ruby cut by a table is written on both sides*/);
+	const std::vector<KCMStoryHtml::Para>* run = &split.fBody;
+	if (inTable >= 0)
+	{
+		if (static_cast<size_t>(inTable) >= split.fTables.size()
+			|| static_cast<size_t>(inRow) >= split.fTables[static_cast<size_t>(inTable)].fRows.size()
+			|| static_cast<size_t>(inCell) >= split.fTables[static_cast<size_t>(inTable)].fRows[static_cast<size_t>(inRow)].fCells.size())
+		{
+			whyNot = "no such cell";
+			return kFalse;
+		}
+		run = &split.fTables[static_cast<size_t>(inTable)].fRows[static_cast<size_t>(inRow)].fCells[static_cast<size_t>(inCell)].fParas;
+	}
+	(void)paras;		// the caller's run, named; the copy's is what is written
+
 	// Into a string of its own: a refusal from deep inside a cell leaves `out` as it was found.
 	std::string made;
-	if (!AppendBlocks(s, paras, inTable, inRow, inCell, 0, made, whyNot))
+	if (!AppendBlocks(split, *run, inTable, inRow, inCell, 0, made, whyNot))
 		return kFalse;
 	out += made;
 	return kTrue;
@@ -945,12 +917,8 @@ bool16 WriteStoryElements(const KCMStoryHtml::Story& s, std::string& outDocument
 	outDocument = "<w:document ";
 	outDocument += kWordNamespace;
 	outDocument += "><w:body>";
-	// the legend first (kLegendHead says what it is for); constant, so the fingerprint stays one
-	outDocument += kLegendHead;
-	outDocument += kMarkContinues;
-	outDocument += kLegendMiddle;
-	outDocument += kMarkContinued;
-	outDocument += kLegendTail;
+	// (No legend since 2026-09-19 evening - the user's call: a plain file. The marks it explained
+	//  are gone too; see the note above AppendParagraph.)
 	if (!WriteBlocks(s, s.fBody, -1, 0, 0, outDocument, whyNot))
 		return kFalse;
 	outDocument += "<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/>";
@@ -1237,8 +1205,6 @@ struct Building
 	KCMAttrSpanList						fTcy;			// fValue filled by Finish
 	KCMAttrSpanList						fWarichu;
 	std::vector<KCMStoryHtml::NoteRef>	fNoteRefs;		// fNote holds the footnote ID until ResolveNotes ranks it
-	bool16								fContinuedFromTable;	// the mark at the start (or the typed token there): the paragraph from before the table
-	bool16								fContinuesPastTable;	// the mark at the end (or the typed token there): goes on past the table after it
 	int32								fMarkRevision;	// 0 none, +1 the paragraph mark was inserted, -1 deleted
 	// the field being collected, if any
 	int32								fFieldDepth;	// 0 none, 1 between begin and end
@@ -1246,109 +1212,19 @@ struct Building
 	std::string							fFieldCode;
 	RLook								fFieldLook;		// the look of the run holding the begin
 
-	Building() : fLen(0), fContinuedFromTable(kFalse), fContinuesPastTable(kFalse), fMarkRevision(0),
-				 fFieldDepth(0), fInResult(kFalse) {}
+	Building() : fLen(0), fMarkRevision(0), fFieldDepth(0), fInResult(kFalse) {}
 };
 
-/** The mark a person types where a control would stand (the design, 4-5): compared in lower case,
-	with full-width ASCII folded, spaces (U+0020, U+3000) allowed between it and the paragraph's edge. */
-const char* const kTypedToken = "kcm:continued";
-
-int32 FoldForToken(int32 cp)
+/** kTrue for a content control that was ours and is no longer read: the two table marks and the
+	legend of stage 3b (kcm-continues / kcm-continued / kcm-legend). A file written that day still
+	opens; what those controls said is decided by the document now (the note above AppendParagraph),
+	so their contents are passed over rather than read as words. */
+bool16 IsRetiredOwnControl(const KCMXmlTree& t, int32 sdt)
 {
-	if (cp >= 0xFF01 && cp <= 0xFF5E)	cp -= 0xFEE0;
-	if (cp >= 'A' && cp <= 'Z')			cp += 'a' - 'A';
-	return cp;
-}
-
-bool16 IsTokenSpace(int32 cp)
-{
-	return (cp == 0x20 || cp == 0x3000) ? kTrue : kFalse;
-}
-
-/** kTrue when the typed token stands at the paragraph's start (atStart) or at its end; outFrom and
-	outCount are then the code points to drop - the token and the spaces between it and the edge. */
-bool16 TypedTokenAt(const Building& b, bool16 atStart, int32& outFrom, int32& outCount)
-{
-	std::vector<int32> cps;
-	KCMTextDiff::ToCodePoints(b.fText, &cps, nil);
-	const int32 n = static_cast<int32>(cps.size());
-	const int32 len = static_cast<int32>(::strlen(kTypedToken));
-	if (atStart)
-	{
-		int32 i = 0;
-		while (i < n && IsTokenSpace(cps[i]))
-			++i;
-		if (i + len > n)
-			return kFalse;
-		for (int32 k = 0; k < len; ++k)
-			if (FoldForToken(cps[i + k]) != kTypedToken[k])
-				return kFalse;
-		// (no separator is asked for after it: Japanese text has no spaces, so "KCM:continuedい" is
-		//  what a person types at the head of い)
-		int32 e = i + len;
-		while (e < n && IsTokenSpace(cps[e]))
-			++e;
-		outFrom = 0;
-		outCount = e;
-		return kTrue;
-	}
-	int32 e = n;
-	while (e > 0 && IsTokenSpace(cps[e - 1]))
-		--e;
-	if (e < len)
-		return kFalse;
-	for (int32 k = 0; k < len; ++k)
-		if (FoldForToken(cps[e - len + k]) != kTypedToken[k])
-			return kFalse;
-	int32 i = e - len;
-	while (i > 0 && IsTokenSpace(cps[i - 1]))
-		--i;
-	outFrom = i;
-	outCount = n - i;
-	return kTrue;
-}
-
-/** Take code points [from, from+count) out of a paragraph being built: the text, and every span
-	and note reference moved or cut to match. */
-void DropCodePoints(Building& b, int32 from, int32 count)
-{
-	std::vector<int32> cps;
-	std::vector<int32> byteAt;
-	KCMTextDiff::ToCodePoints(b.fText, &cps, &byteAt);
-	const int32 n = static_cast<int32>(cps.size());
-	if (count <= 0 || from < 0 || from + count > n)
-		return;
-	const size_t b0 = static_cast<size_t>(byteAt[static_cast<size_t>(from)]);
-	const size_t b1 = (from + count < n) ? static_cast<size_t>(byteAt[static_cast<size_t>(from + count)]) : b.fText.size();
-	b.fText.erase(b0, b1 - b0);
-	b.fLen -= count;
-	KCMAttrSpanList* const lists[4] = { &b.fRuby, &b.fKenten, &b.fTcy, &b.fWarichu };
-	for (int32 which = 0; which < 4; ++which)
-	{
-		KCMAttrSpanList kept;
-		for (size_t k = 0; k < lists[which]->size(); ++k)
-		{
-			KCMAttrSpan sp = (*lists[which])[k];
-			const int32 s0 = sp.fStart, s1 = sp.fStart + sp.fLen;
-			const int32 t0 = (s0 < from) ? s0 : ((s0 >= from + count) ? s0 - count : from);
-			const int32 t1 = (s1 <= from) ? s1 : ((s1 >= from + count) ? s1 - count : from);
-			if (t1 > t0)
-			{
-				sp.fStart = t0;
-				sp.fLen = t1 - t0;
-				kept.push_back(sp);
-			}
-		}
-		lists[which]->swap(kept);
-	}
-	for (size_t k = 0; k < b.fNoteRefs.size(); ++k)
-	{
-		if (b.fNoteRefs[k].fAt >= from + count)
-			b.fNoteRefs[k].fAt -= count;
-		else if (b.fNoteRefs[k].fAt > from)
-			b.fNoteRefs[k].fAt = from;
-	}
+	const int32 pr = t.Child(sdt, kW, "sdtPr");
+	const int32 tag = (pr >= 0) ? t.Child(pr, kW, "tag") : -1;
+	const std::string* v = (tag >= 0) ? t.Attr(tag, "val") : nil;
+	return (v != nil && v->size() > 4 && v->compare(0, 4, "kcm-") == 0) ? kTrue : kFalse;
 }
 
 typedef std::vector< std::pair<std::string, std::string> > StyleNames;	// styleId -> w:name
@@ -1946,15 +1822,9 @@ bool16 ReadContent(Reader& rd, int32 node, Building& b)
 		}
 		else if (name == "sdt")
 		{
-			// ours by tag, first: the two table marks (a flag, not text) and the legend (never text)
-			{
-				const int32 pr = t.Child(c, kW, "sdtPr");
-				const int32 tag = (pr >= 0) ? t.Child(pr, kW, "tag") : -1;
-				const std::string* v = (tag >= 0) ? t.Attr(tag, "val") : nil;
-				if (v != nil && *v == "kcm-continued")	{ b.fContinuedFromTable = kTrue; continue; }
-				if (v != nil && *v == "kcm-continues")	{ b.fContinuesPastTable = kTrue; continue; }
-				if (v != nil && *v == "kcm-legend")		{ continue; }
-			}
+			// a control of ours from stage 3b (a table mark, the legend): passed over, never words
+			if (IsRetiredOwnControl(t, c))
+				continue;
 			int32 cp = 0;
 			if (PlaceholderOf(t, c, cp))
 			{
@@ -2007,8 +1877,8 @@ bool16 ReadParagraph(Reader& rd, int32 p, Building& b)
 	const int32 pPr = t.Child(p, kW, "pPr");
 	if (pPr >= 0)
 	{
-		// (w:pStyle is not read: since stage 3b the marks carry "continued", and the style slot is
-		//  left for the day it carries InDesign's paragraph style name)
+		// (w:pStyle is not read: the style slot is left for the day it carries InDesign's paragraph
+		//  style name - the design, 11-4)
 		if (t.Child(pPr, kW, "numPr") >= 0)
 			return Refuse(rd, "an automatic number: the number is not a character, so it would be lost");
 		if (t.Child(pPr, kW, "sectPr") >= 0)
@@ -2039,20 +1909,6 @@ bool16 ReadParagraph(Reader& rd, int32 p, Building& b)
 		return kFalse;
 	if (b.fFieldDepth > 0)
 		return Refuse(rd, "a field runs past the end of its paragraph");
-
-	// the typed token at either edge (the design, 4-5): the same words a person types where a mark
-	// would stand, read the same way - and dropped from the text, as a mark is not text
-	int32 dropFrom = 0, dropCount = 0;
-	if (TypedTokenAt(b, kTrue, dropFrom, dropCount))
-	{
-		DropCodePoints(b, dropFrom, dropCount);
-		b.fContinuedFromTable = kTrue;
-	}
-	if (TypedTokenAt(b, kFalse, dropFrom, dropCount))
-	{
-		DropCodePoints(b, dropFrom, dropCount);
-		b.fContinuesPastTable = kTrue;
-	}
 	return kTrue;
 }
 
@@ -2363,11 +2219,13 @@ bool16 ReadTable(Reader& rd, int32 tbl, int32 inTable, int32 inRow, int32 inCell
 }
 
 /*	ReadBlocks
-	The children of a <w:body>, a <w:tc> or a <w:footnote>: paragraphs, and tables among them,
-	settled as they come.
+	The children of a <w:body>, a <w:tc> or a <w:footnote>: paragraphs, and tables among them, read
+	in THE SPLIT SHAPE (the note above AppendParagraph): a table is a paragraph of its own holding
+	nothing else, and the paragraph after it is a paragraph of its own. Which paragraph of the
+	document a table belongs to is not this reader's to say (RejoinTables, at the import).
 
-	★A CONTINUED PARAGRAPH JOINS THE ONE BEFORE IT, and so does the paragraph after a mark that
-	  this side treats as gone (inserted, on the origin side; deleted, on the after side).
+	★THE PARAGRAPH AFTER A MARK THAT THIS SIDE TREATS AS GONE JOINS THE ONE BEFORE IT (inserted, on
+	  the origin side; deleted, on the after side) - a paragraph split or joined in Word.
 */
 bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32 inCell,
 				  std::vector<KCMStoryHtml::Para>& out)
@@ -2375,8 +2233,6 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 	const KCMXmlTree& t = *rd.fTree;
 	const KCMXmlNode& n = t.At(container);
 	bool16 pendingJoin = kFalse;
-	bool16 prevWasTable = kFalse;		// the block before this one was a <w:tbl>
-	bool16 lastContinues = kFalse;		// the paragraph before this one ends with the mark
 
 	for (size_t k = 0; k < n.fChildren.size(); ++k)
 	{
@@ -2408,14 +2264,10 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 			Finish(b, para);
 			const bool16 marksJoin = ((rd.fSide == kSideOriginAsWritten && b.fMarkRevision > 0)
 									  || (rd.fSide == kSideAfterWord && b.fMarkRevision < 0)) ? kTrue : kFalse;
-			// ★A MARK AT THE START JOINS THE PARAGRAPH ONTO THE ONE BEFORE THE TABLE - when a table
-			//   is what stands before it. A mark with no table before it is IGNORED, not refused:
-			//   pressing Enter in front of a mark leaves it standing at the head of a paragraph the
-			//   table does not touch, and that is the person's own doing, kept as they did it.
-			if (pendingJoin || (b.fContinuedFromTable && prevWasTable))
+			if (pendingJoin)
 			{
 				if (out.empty())
-					return Refuse(rd, "a continued paragraph stands first: there is nothing for it to continue");
+					return Refuse(rd, "a joined paragraph stands first: there is nothing for it to join");
 				JoinOnto(out.back(), para);
 			}
 			else
@@ -2423,8 +2275,6 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 				out.push_back(para);
 			}
 			pendingJoin = marksJoin;
-			lastContinues = b.fContinuesPastTable;
-			prevWasTable = kFalse;
 		}
 		else if (name == "tbl")
 		{
@@ -2432,19 +2282,11 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 				return Refuse(rd, "a table stands inside a footnote");
 			if (pendingJoin)
 				return Refuse(rd, "a paragraph mark next to a table was inserted or deleted");
-			// ★WHOSE PARAGRAPH (the design, 4-5): the one before it when that paragraph ends with the
-			//   mark (or the typed token) - and then at however far it has come - OR WHEN IT IS EMPTY
-			//   (no words: Enter pressed after a mark leaves exactly that, and the table is what the
-			//   person meant that paragraph to hold); otherwise the table opens a paragraph of its own.
-			//   A mark at the end of a paragraph that is NOT followed by a table is ignored, for the
-			//   reason given above.
-			if (out.empty() || prevWasTable || !(lastContinues || out.back().fText.empty()))
-				out.push_back(KCMStoryHtml::Para());
-			if (!ReadTable(rd, c, inTable, inRow, inCell, static_cast<int32>(out.size()) - 1,
-						   CodePointsIn(out.back().fText)))
+			// ★A PARAGRAPH OF ITS OWN, ALWAYS - the split shape. Whose paragraph it is in the document
+			//   is settled at the import (RejoinTables), from the document.
+			out.push_back(KCMStoryHtml::Para());
+			if (!ReadTable(rd, c, inTable, inRow, inCell, static_cast<int32>(out.size()) - 1, 0))
 				return kFalse;
-			prevWasTable = kTrue;
-			lastContinues = kFalse;
 		}
 		else if (name == "sectPr" || name == "tcPr")
 		{
@@ -2452,14 +2294,8 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 		}
 		else if (name == "sdt" || name == "customXml")
 		{
-			if (name == "sdt")
-			{
-				const int32 pr = t.Child(c, kW, "sdtPr");
-				const int32 tag = (pr >= 0) ? t.Child(pr, kW, "tag") : -1;
-				const std::string* v = (tag >= 0) ? t.Attr(tag, "val") : nil;
-				if (v != nil && *v == "kcm-legend")
-					continue;				// the legend (kLegendHead): ours, and never text
-			}
+			if (name == "sdt" && IsRetiredOwnControl(t, c))
+				continue;					// the legend of stage 3b: ours, and never text
 			const int32 content = (name == "sdt") ? t.Child(c, kW, "sdtContent") : c;
 			if (content >= 0 && !ReadBlocks(rd, content, inTable, inRow, inCell, out))
 				return kFalse;
@@ -2731,8 +2567,265 @@ bool16 OriginMatchesTag(const ReadResult& r, std::string& outWhy)
 	return kTrue;
 }
 
+namespace
+{
+
+/** The tables standing in one run of paragraphs (the body, or one cell), in document order. */
+void TablesIn(const KCMStoryHtml::Story& s, int32 inTable, int32 inRow, int32 inCell, std::vector<size_t>& out)
+{
+	out.clear();
+	for (size_t t = 0; t < s.fTables.size(); ++t)
+	{
+		const KCMStoryHtml::Table& table = s.fTables[t];
+		if (table.fInTable != inTable)
+			continue;
+		if (inTable >= 0 && (table.fInRow != inRow || table.fInCell != inCell))
+			continue;
+		out.push_back(t);
+	}
+}
+
+/** Whether a paragraph says nothing: no words, no reference. */
+bool16 SaysNothing(const KCMStoryHtml::Para& p)
+{
+	return (p.fText.empty() && p.fNoteRefs.empty()) ? kTrue : kFalse;
+}
+
+/** A piece of a paragraph cut at `from`, as the reader would read it back: a tate-chu-yoko's and a
+	warichu's value is the characters it now covers, and A RUBY THAT BEGAN BEFORE THE CUT IS NOT ON
+	THIS PIECE. The reader reads such a ruby as two readings, one on each side - and that is not
+	what the story said, so the export's own check has to see a difference here and refuse the
+	story (Slice's note). The kenten, tate-chu-yoko and warichu cut the same way ARE rejoined by the
+	reader (JoinOnto), so their halves stay. */
+KCMStoryHtml::Para PieceAsRead(const KCMStoryHtml::Para& p, const std::vector<int32>& byteAt,
+								int32 from, int32 to, bool16 first)
+{
+	KCMStoryHtml::Para piece = Slice(p, byteAt, from, to, first);
+	KCMParaText::SetSpanValuesToText(piece.fTcy, piece.fText);
+	KCMParaText::SetSpanValuesToText(piece.fWarichu, piece.fText);
+	if (from > 0)
+	{
+		KCMAttrSpanList kept;
+		for (size_t k = 0; k < piece.fRuby.size(); ++k)
+		{
+			const KCMAttrSpan& r = piece.fRuby[k];
+			bool16 beganBefore = kFalse;
+			for (size_t o = 0; o < p.fRuby.size() && !beganBefore; ++o)
+			{
+				const KCMAttrSpan& orig = p.fRuby[o];
+				if (orig.fStart < from && orig.fStart + orig.fLen > from && r.fStart == 0
+					&& orig.fValue == r.fValue && orig.fStart + orig.fLen - from >= r.fLen)
+					beganBefore = kTrue;
+			}
+			if (!beganBefore)
+				kept.push_back(r);
+		}
+		piece.fRuby.swap(kept);
+	}
+	return piece;
+}
+
+/*	SplitParas
+	One run of paragraphs into the split shape. Every table becomes an empty paragraph of its own;
+	the words before it and after it become paragraphs. Where Word needs a paragraph and the story
+	has no words for one - after a table that ends its run, and between two tables - an empty
+	paragraph is put there; where Word does not need one, none is made: a table at the head of its
+	paragraph opens with the table (unless a note's reference stands at that very place, which
+	belongs in front of the table and has nowhere else to go - Slice), and an empty tail before an
+	ordinary paragraph is not written.
+	★THIS IS THE ONE PLACE THAT DECIDES THE SHAPE: the writer writes it block for block, the reader
+	  reads it back the same, and RejoinTables undoes it from the document's shape. */
+void SplitParas(KCMStoryHtml::Story& s, std::vector<KCMStoryHtml::Para>& paras, int32 inTable, int32 inRow, int32 inCell,
+				bool16 asRead)
+{
+	std::vector<size_t> tables;
+	TablesIn(s, inTable, inRow, inCell, tables);
+
+	std::vector<KCMStoryHtml::Para> made;
+	size_t k = 0;			// the next table of this run
+	for (size_t i = 0; i < paras.size(); ++i)
+	{
+		const KCMStoryHtml::Para& p = paras[i];
+		std::vector<int32> byteAt;
+		KCMTextDiff::ToCodePoints(p.fText, nil, &byteAt);
+		const int32 n = static_cast<int32>(byteAt.size());
+
+		int32 pos = 0;
+		bool16 first = kTrue;
+		while (k < tables.size() && s.fTables[tables[k]].fParaIndex == static_cast<int32>(i))
+		{
+			int32 at = s.fTables[tables[k]].fOffset;
+			if (at < pos)	at = pos;
+			if (at > n)		at = n;
+
+			// ★AS WRITTEN (Slice: a ruby cut by the table goes on both pieces) for the writer, AS READ
+			//   (PieceAsRead: on the first only) for the settle - so that the export's own check sees
+			//   the difference and refuses such a story, rather than writing half a reading.
+			const KCMStoryHtml::Para piece = asRead ? PieceAsRead(p, byteAt, pos, at, first)
+													 : Slice(p, byteAt, pos, at, first);
+			if (!(first && at == 0 && piece.fNoteRefs.empty()))
+				made.push_back(piece);
+
+			made.push_back(KCMStoryHtml::Para());			// the table, alone
+			s.fTables[tables[k]].fParaIndex = static_cast<int32>(made.size()) - 1;
+			s.fTables[tables[k]].fOffset = 0;
+			pos = at;
+			first = kFalse;
+			++k;
+		}
+
+		const KCMStoryHtml::Para tail = asRead ? PieceAsRead(p, byteAt, pos, n, first)
+											   : Slice(p, byteAt, pos, n, first);
+		if (first || !SaysNothing(tail))
+		{
+			made.push_back(tail);
+			continue;
+		}
+		// an empty tail after a table: only where Word asks for a paragraph
+		const bool16 last = (i + 1 == paras.size());
+		bool16 nextOpensWithTable = kFalse;
+		if (!last && k < tables.size() && s.fTables[tables[k]].fParaIndex == static_cast<int32>(i + 1)
+			&& s.fTables[tables[k]].fOffset == 0)
+		{
+			nextOpensWithTable = kTrue;
+			for (size_t r = 0; r < paras[i + 1].fNoteRefs.size(); ++r)
+				if (paras[i + 1].fNoteRefs[r].fAt == 0)
+					nextOpensWithTable = kFalse;		// its head piece is written, with the reference
+		}
+		if (last || nextOpensWithTable)
+			made.push_back(tail);
+	}
+	paras.swap(made);
+}
+
+/*	RejoinParas
+	One run of paragraphs from the split shape back into the shape `shape` holds - the document's
+	- table by table: the k-th table of this run goes where the k-th table of the document's run
+	stands. Words the file added or took away stay as they are; only the breaks NEXT TO a table are
+	decided here, and they are decided by the document.
+	⚠When the two runs do not hold the same number of tables nothing is done: the import's own
+	 check (TablesAgree) refuses such a story by name. */
+void RejoinParas(KCMStoryHtml::Story& s, std::vector<KCMStoryHtml::Para>& paras,
+				 const KCMStoryHtml::Story& shape, const std::vector<KCMStoryHtml::Para>& shapeParas,
+				 int32 inTable, int32 inRow, int32 inCell)
+{
+	std::vector<size_t> mine, theirs;
+	TablesIn(s, inTable, inRow, inCell, mine);
+	TablesIn(shape, inTable, inRow, inCell, theirs);
+	if (mine.size() != theirs.size())
+		return;
+
+	std::vector<KCMStoryHtml::Para> made;
+	size_t k = 0;
+	for (size_t i = 0; i < paras.size(); ++i)
+	{
+		if (!(k < mine.size() && s.fTables[mine[k]].fParaIndex == static_cast<int32>(i)))
+		{
+			made.push_back(paras[i]);
+			continue;
+		}
+
+		// what the document says about ITS k-th table of this run
+		const KCMStoryHtml::Table& theirTable = shape.fTables[theirs[k]];
+		const int32 p = theirTable.fParaIndex;
+		const bool16 pValid = (p >= 0 && static_cast<size_t>(p) < shapeParas.size()) ? kTrue : kFalse;
+		const int32 pLen = pValid ? CodePointsIn(shapeParas[static_cast<size_t>(p)].fText) : 0;
+		bool16 joinBefore = (theirTable.fOffset > 0) ? kTrue : kFalse;
+		if (k > 0 && shape.fTables[theirs[k - 1]].fParaIndex == p)
+			joinBefore = kTrue;
+		if (pValid)
+		{
+			for (size_t r = 0; r < shapeParas[static_cast<size_t>(p)].fNoteRefs.size(); ++r)
+				if (shapeParas[static_cast<size_t>(p)].fNoteRefs[r].fAt <= theirTable.fOffset)
+					joinBefore = kTrue;		// a reference in front of the table: the head piece was written
+		}
+		bool16 joinAfter = (theirTable.fOffset < pLen) ? kTrue : kFalse;
+		if (k + 1 < theirs.size() && shape.fTables[theirs[k + 1]].fParaIndex == p)
+			joinAfter = kTrue;
+
+		// the table goes onto the paragraph before it, or opens one
+		if (joinBefore && !made.empty())
+		{
+			s.fTables[mine[k]].fParaIndex = static_cast<int32>(made.size()) - 1;
+			s.fTables[mine[k]].fOffset = CodePointsIn(made.back().fText);
+		}
+		else
+		{
+			made.push_back(KCMStoryHtml::Para());
+			s.fTables[mine[k]].fParaIndex = static_cast<int32>(made.size()) - 1;
+			s.fTables[mine[k]].fOffset = 0;
+		}
+
+		// the paragraph after the table, when it is words rather than the next table
+		const bool16 nextIsTable = (k + 1 < mine.size() && s.fTables[mine[k + 1]].fParaIndex == static_cast<int32>(i + 1)) ? kTrue : kFalse;
+		if (i + 1 < paras.size() && !nextIsTable)
+		{
+			const KCMStoryHtml::Para& next = paras[i + 1];
+			if (joinAfter)
+			{
+				JoinOnto(made.back(), next);
+				++i;
+			}
+			else if (SaysNothing(next))
+			{
+				// Word's own paragraph, or the document's? The document's when it holds an empty
+				// paragraph right after the table's; Word's otherwise, and then it is not a paragraph.
+				bool16 theirsHasEmptyAfter = kFalse;
+				if (pValid && static_cast<size_t>(p + 1) < shapeParas.size() && SaysNothing(shapeParas[static_cast<size_t>(p + 1)]))
+				{
+					theirsHasEmptyAfter = kTrue;
+					if (k + 1 < theirs.size() && shape.fTables[theirs[k + 1]].fParaIndex == p + 1)
+						theirsHasEmptyAfter = kFalse;	// that "empty" paragraph is the next table's
+				}
+				if (!theirsHasEmptyAfter)
+					++i;
+			}
+		}
+		++k;
+	}
+	paras.swap(made);
+}
+
+}	// anonymous namespace
+
+void SplitAtTables(KCMStoryHtml::Story& s, bool16 asRead)
+{
+	// ⚠The body first, then the cells in table order: SplitParas renumbers the tables of the run it
+	//   is given and no other, and a cell's run is named by the ordinal of the table that holds it,
+	//   which the split never changes.
+	SplitParas(s, s.fBody, -1, 0, 0, asRead);
+	for (size_t t = 0; t < s.fTables.size(); ++t)
+		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
+			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
+				SplitParas(s, s.fTables[t].fRows[r].fCells[c].fParas, static_cast<int32>(t), static_cast<int32>(r), static_cast<int32>(c), asRead);
+}
+
+void RejoinTables(KCMStoryHtml::Story& s, const KCMStoryHtml::Story& shape)
+{
+	if (s.fTables.size() != shape.fTables.size())
+		return;
+	RejoinParas(s, s.fBody, shape, shape.fBody, -1, 0, 0);
+	for (size_t t = 0; t < s.fTables.size(); ++t)
+	{
+		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
+		{
+			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
+			{
+				if (r < shape.fTables[t].fRows.size() && c < shape.fTables[t].fRows[r].fCells.size())
+					RejoinParas(s, s.fTables[t].fRows[r].fCells[c].fParas, shape,
+								shape.fTables[t].fRows[r].fCells[c].fParas,
+								static_cast<int32>(t), static_cast<int32>(r), static_cast<int32>(c));
+			}
+		}
+	}
+}
+
 void SettleForThisFormat(KCMStoryHtml::Story& s)
 {
+	// ★THE SHAPE FIRST: what this spelling cannot tell apart begins with where a table stands in its
+	//   paragraph (SplitAtTables says why), and the readings and the empty cells below are settled
+	//   on the split paragraphs.
+	SplitAtTables(s);
 	SettleParas(s.fBody);
 	for (size_t t = 0; t < s.fTables.size(); ++t)
 	{
