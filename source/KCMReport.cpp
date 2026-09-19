@@ -541,7 +541,10 @@ void BuildStoryRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KCMRep
 		h.Append("p.");
 		h.Append(PageLabel(db, row->fPageUID));
 		h.Append("  ");
-		h.Append(row->fText);
+		// ★The table sign spelled as a word: this text is typeset in the report document, whose font
+		//   has no glyph for the sign the panel draws (KCMStoryList::RowTextForTypesetting says why).
+		const PMString rowText = KCMStoryList::RowTextForTypesetting(row->fText);
+		h.Append(rowText);
 		out.push_back(head);
 
 		if (unpaired)
@@ -549,8 +552,8 @@ void BuildStoryRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KCMRep
 			KCMReportRow r;
 			r.fJoinLabel = kTrue;		// under its story's ID
 			r.fSign = head.fSign;
-			if (removed) { r.fLeft.fMid = row->fText; r.fRight.fMid = Ascii("(removed story)"); }
-			else         { r.fLeft.fMid = Ascii("(added story)"); r.fRight.fMid = row->fText; }
+			if (removed) { r.fLeft.fMid = rowText; r.fRight.fMid = Ascii("(removed story)"); }
+			else         { r.fLeft.fMid = Ascii("(added story)"); r.fRight.fMid = rowText; }
 			out.push_back(r);
 			continue;
 		}

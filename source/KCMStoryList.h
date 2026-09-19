@@ -386,7 +386,9 @@ struct KCMStoryRow
 		fFrameUID, fPageUID and fPageIndex all come from one db, chosen per row in Build. */
 	UID			fStoryUID;
 	PMString	fText;		// first readable words. NOT shortened for display - the row's text cell
-							// is kEllipsizeMiddle and does that itself, at whatever width it has
+							// is kEllipsizeMiddle and does that itself, at whatever width it has.
+							// ★A table in them stands as the sign U+25A6 (2026-09-19; KCMStoryList.cpp,
+							//   kKCMTableSign) - display only, the child rows and the diff never see it
 	uint32		fKinds;		// OR of KCMStoryChangeKind - named on the right of the row
 	UID			fFrameUID;	// the story's FIRST frame - what a click scrolls to. kInvalidUID for an
 							// unplaced story (no frame at all), which cannot be jumped to
@@ -640,6 +642,12 @@ namespace KCMStoryList
 		so that an index the tree asks for after the list was rebuilt cannot walk off the end.
 	*/
 	const KCMStoryRow* GetRow(int32 nth);
+
+	/** A row's fText for text INDESIGN WILL TYPESET (the PDF report), with the table sign spelled
+		as the word `[table]`: the palette's UI font draws U+25A6, a document's default font does
+		not (2026-09-19 - it came out as the notdef box). The panel, the facade and the script door
+		keep the sign; only what goes into a document passes through here. */
+	PMString RowTextForTypesetting(const PMString& rowText);
 
 	/** Give row nth the differences the text diff found inside it (Story Changes mode).
 

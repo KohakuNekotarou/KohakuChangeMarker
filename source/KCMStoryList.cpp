@@ -105,6 +105,23 @@ std::vector<KCMStoryRow> gRows;
 // ending in "..." would be shortened again around it.
 const int32 kRowTextSafetyLimit = 2000;
 
+// ★★THE SIGN A TABLE LEAVES IN A STORY ROW (2026-09-19, the user: "a picture that says table at a
+// glance"): SQUARE WITH ORTHOGONAL CROSSHATCH FILL, U+25A6 - a square ruled into a grid.
+// Until today the anchor read as a GAP (`a b` for a-table-b), which said nothing about what stood
+// there; the child rows, cut by KCMTextRead, still read `ab`, because there the table's characters
+// are positions and not text (KCMTextRead.cpp says why they have to come out).
+// ⚠NOT a CJK character on purpose (the user turned 田 down: "that is Japanese") - the sign has to
+//   read the same to an English reader, and has to come from a font the palette is sure to have
+//   on either locale. It is a code point rather than a literal because it is not in CP932: a
+//   literal would fail to build here, which is the safe way round (cpp-japanese-needs-bom).
+// ⚠★**U+229E (SQUARED PLUS) WAS TRIED FIRST AND TURNED DOWN ON SIGHT** (the same evening): in the
+//   palette font its plus does not touch the square, and a box with a loose plus in it is what
+//   InDesign draws for OVERSET text - the one thing a row in this list must not seem to say.
+//   Measured, not guessed: it was built, looked at in the panel, and replaced.
+// ★KIDMCP's twin (KIDMCPRuby.cpp, Readable) stands `#` in the same place for the same reason -
+//   one character per position; this list shows it to a person, so it gets the picture.
+const UTF32TextChar kKCMTableSign(0x25A6);
+
 /* IsReadable
 	Is this character worth putting in a row? Only characters a reader would recognise as the story's
 	opening words qualify.
@@ -119,6 +136,9 @@ bool16 IsReadable(const UTF32TextChar& ch)
 	// characters into the control range -- which is what IsK2SpecificChar is for: "the low-ascii
 	// characters that have meaning to InDesign ... standard values like tab, carriage return and
 	// special ones like IndentToHere, Table" (TextChar.h, at its declaration).
+	// ★The table's two characters are not readable, and FirstReadableText asks about them BEFORE
+	//   it asks this: the anchor becomes the table sign (kKCMTableSign), the per-row continuation
+	//   nothing at all. This test is only reached by what is left.
 	//
 	// @warning **IsIllegalControlChar draws a different line and cannot stand in for this.** It is
 	// (n < kTextChar_Space && !IsK2SpecificChar(n)), so it EXCLUDES the very characters this test
@@ -157,6 +177,21 @@ bool16 IsReadable(const UTF32TextChar& ch)
 	SKIPPED so the scan moves on to the next one, which cannot be decided without looking at the
 	characters anyway. Filtering also steps around the snippet's edge case, where span-1 eats a real
 	character in the last paragraph of a story that ends without a CR.
+
+	★★**A TABLE STANDS IN THE ROW AS A SIGN** (2026-09-19, kKCMTableSign), where its anchor stands
+	in the text: `a-table-b` reads as `a▦b`, with nothing between - the anchor IS the gap, so it
+	spends no space of its own. The continuation characters behind it (one per further row) are
+	dropped without leaving a gap either; a table is one sign however many rows it has.
+	**The sign is carried, not counted.** A paragraph holding nothing but a table is still not a
+	paragraph with words in it, so the scan goes on exactly as before - into the next paragraph, or
+	into the table's own cells (they are further threads of the same model, see above) - and the
+	sign is put in front of the first words found: `▦ c` for a story that opens with a table, and
+	`▦ 品名` for a frame holding nothing but one, which used to read `品名` and now says what it is.
+	The gap between them is the paragraph break's, the same one a tab leaves. A story with tables
+	and no words at all (empty cells) answers with the signs alone rather than with nothing.
+	⚠**The sign is a DISPLAY of the anchor and goes nowhere else**: the child rows, the diff, the
+	  Story Text files and the write-back all read the text through KCMTextRead / KCMParaText,
+	  which drop the table's characters, and none of them is touched by this.
 */
 PMString FirstReadableText(ITextModel* model)
 {
@@ -169,6 +204,12 @@ PMString FirstReadableText(ITextModel* model)
 
 	const TextIndex total = model->TotalLength();
 	TextIndex pos = 0;
+
+	// ★Both outlive one paragraph on purpose: a table sign met in a paragraph with no words is
+	//   carried into the next, and so is the gap its paragraph break leaves (see the header).
+	WideString kept;
+	bool16 pendingGap = kFalse;
+	int32 wordsKept = 0;		// readable characters in `kept` - the signs are not counted
 
 	while (pos < total)
 	{
@@ -194,13 +235,28 @@ PMString FirstReadableText(ITextModel* model)
 		WideString para;
 		scanner->CopyText(paraStart, span, &para);
 
-		WideString kept;
-		bool16 pendingGap = kFalse;
 		const int32 charCount = para.CharCount();
 
 		for (int32 i = 0; i < charCount && kept.CharCount() < kRowTextSafetyLimit; ++i)
 		{
 			const UTF32TextChar ch = para.GetChar(i);
+			const uint32 v = ch.GetValue();
+
+			// A table: its anchor becomes the sign, its per-row continuations become nothing. Asked
+			// before IsReadable, which would turn either into a gap. A gap already owed is paid
+			// first, so `a<tab><table>b` keeps the tab's space in front of the sign.
+			if (v == kTextChar_Table)
+			{
+				if (pendingGap)
+				{
+					kept.Append(UTF32TextChar(kTextChar_Space));
+					pendingGap = kFalse;
+				}
+				kept.Append(kKCMTableSign);
+				continue;
+			}
+			if (v == kTextChar_TableContinued)
+				continue;
 
 			if (!IsReadable(ch))
 			{
@@ -218,9 +274,11 @@ PMString FirstReadableText(ITextModel* model)
 				pendingGap = kFalse;
 			}
 			kept.Append(ch);
+			++wordsKept;
 		}
 
-		if (!kept.empty())
+		// Words found: this is the row. Signs alone are not (see the header) - they are carried on.
+		if (wordsKept > 0)
 		{
 			out = PMString(kept);
 			out.SetTranslatable(kFalse);
@@ -236,6 +294,12 @@ PMString FirstReadableText(ITextModel* model)
 		pos = next;
 	}
 
+	// No words anywhere, but a table (or several) was passed: say so rather than nothing.
+	if (!kept.empty())
+	{
+		out = PMString(kept);
+		out.SetTranslatable(kFalse);
+	}
 	return out;
 }
 
@@ -819,6 +883,35 @@ const KCMStoryRow* KCMStoryList::GetRow(int32 nth)
 		return nil;
 
 	return &gRows[nth];
+}
+
+/* RowTextForTypesetting
+	★★THE PALETTE DRAWS THE SIGN; INDESIGN'S COMPOSER DOES NOT (measured 2026-09-19, the first
+	report exported with the sign in it): the report document is set in the document's default
+	font, and U+25A6 is not in Minion, Kozuka or the other fonts a default is likely to be, so
+	every sign came out as the notdef box - a box with a cross through it, which is exactly the
+	"something is broken" mark a report must never carry. The palette has no such trouble because
+	the UI font falls back through the system's fonts on its own; typeset text does not.
+	So the report is handed WORDS, which every font has: `a[table]b`, `[table] 品名`.
+	⚠A real U+25A6 typed into a story would be spelled the same way - and it would have been a
+	  notdef box otherwise, so nothing is lost that the report could have shown.
+*/
+PMString KCMStoryList::RowTextForTypesetting(const PMString& rowText)
+{
+	const WideString in(rowText);
+	WideString outWide;
+	const int32 count = in.CharCount();
+	for (int32 i = 0; i < count; ++i)
+	{
+		const UTF32TextChar ch = in.GetChar(i);
+		if (ch.GetValue() == kKCMTableSign.GetValue())
+			outWide.Append(WideString("[table]"));
+		else
+			outWide.Append(ch);
+	}
+	PMString out(outWide);
+	out.SetTranslatable(kFalse);
+	return out;
 }
 
 /* SetRowChanges
