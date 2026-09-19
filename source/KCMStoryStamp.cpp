@@ -17,7 +17,6 @@
 
 // Project includes:
 #include "KCMStoryStamp.h"
-#include "KCMStoryTextImport.h"	// KCMInImportMode - the one mode this sieve cannot answer for
 
 #include <map>
 #include <set>		// which story UIDs the target holds - see the Removed sweep in Compare
@@ -100,15 +99,10 @@ void KCMStoryEdits::Compare(const std::vector<KCMStoryStamp>& source,
 
 		// Whether the story is reported is still the aggregate counter's call. See the header: the
 		// sub-counters name what moved, they are not the test.
-		// ★★★**THE IMPORT MODE CANNOT USE THIS SIEVE, AND THAT IS NOT AN EXCEPTION BUT THE REASON
-		//   IT IS A MODE.** The counter answers "has this story changed since the task start?",
-		//   which in an import is always no: what changed is the COPY, poured full of the words
-		//   the reader edited outside InDesign, while the document itself has not moved. Measured
-		//   2026-09-15 - a word edited in the file went into the copy and the comparison reported
-		//   nothing at all, twice, before this line existed.
-		//   ⚠So in that mode every paired story is diffed, which is slower and is the price of
-		//     asking a different question.
-		if (found->second.fChangeCount == it->fChangeCount && !KCMInImportMode())
+		// (Until 2026-09-19 the fourth, Import, mode declined this sieve: its words went into the
+		//  COPY, so no counter of the document moved. An import puts its words into the document
+		//  now, and the counters answer for it like for any other edit.)
+		if (found->second.fChangeCount == it->fChangeCount)
 			continue;	// text AND attributes AND everything else read the same
 
 		uint32 kinds = kKCMStoryKindNone;

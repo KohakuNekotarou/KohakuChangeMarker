@@ -71,6 +71,7 @@
 // and the peek's held-down state are all the UI's property. What used to be called directly from
 // here now happens in KCMModelChangeObserver, which receives the notifications this file sends.
 #include "KCMStoryList.h"          // KCMStoryList::ShutdownCleanup (letting go of the rows' PMStrings)
+#include "KCMStoryTextImport.h"    // KCMClearImportRefusals - what the last import could not put in (PMStrings again)
 #include "KCMSourceCache.h"        // KCMSourceCacheClear - the Source text kept from the origin
 #include "KCMResourceStore.h"      // the Resources list, emptied on the same routes
 #include "KCMStoryMarker.h"        // KCMStoryMarker::Shutdown (the Story mode's marks are never drawn again)
@@ -791,6 +792,8 @@ void KCMPeekStartup::Shutdown()
 	//   it three times (see ShutdownCleanup in KBSResultTree.h). It touches no UI, only drops the
 	//   rows, so it is safe during shutdown.
 	KCMStoryList::ShutdownCleanup();
+	// What the last import could not put in (2026-09-19) - PMStrings again, the same rule.
+	KCMClearImportRefusals();
 	// The Source text kept from the origin (2026-09-16). **Its rule is the same one**: a std::map
 	//   of std::strings and WideStrings, so leaving it to static destruction is the very thing the
 	//   paragraph above records. It only empties a container.

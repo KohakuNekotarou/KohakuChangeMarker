@@ -95,9 +95,9 @@ void FileTablesByParagraph(const KCMStoryHtml::Story& story,
 }
 
 /** The import's one progress bar, in thousandths of the whole job (2026-09-17). Each constant is where
-	a stage STARTS: reading the files runs up to the state, taking the state up to the copy, building
-	the copy up to the comparison, and the comparison to the end. ⚠A guess at where the time goes, not a
-	measurement - see KCMImportStoryText. */
+	a stage STARTS: reading the files runs up to the state, taking the state up to the pour, the pour
+	(into the document, since 2026-09-19; the names below are older) up to the comparison, and the
+	comparison to the end. ⚠A guess at where the time goes, not a measurement - see KCMImportStoryText. */
 const int32		kImportUnitsState	= 100;
 const int32		kImportUnitsCopy	= 350;
 const int32		kImportUnitsCompare	= 650;
@@ -133,6 +133,41 @@ bool16			sHolding = kFalse;
 	pour merged nothing. Dropped with the words (KCMReleaseStoryText). */
 PMString		sLastMergeNote;
 
+/** What the last import could not put in, one entry each - the material of the "!" rows
+	(KCMStoryList::Build reads it through KCMImportRefusals; 2026-09-19). ⚠A static holding
+	PMStrings, so the model's shutdown empties it (KCMPeek.cpp, beside the story list). Dropped with
+	the origin (KCMReleaseOrigin) and at the start of the next import. */
+std::vector<KCMImportRefusal>	sRefusals;
+
+/** One more thing the pour could not put in. `kind` is the ID column's word. */
+void NoteRefusal(UID story, const char* kind, const PMString& whereAndWhy, bool16 wholeStory = kFalse,
+				 const PMString& fileName = PMString())
+{
+	KCMImportRefusal r;
+	r.fStory = story;
+	r.fKind = kind;
+	r.fKind.SetTranslatable(kFalse);
+	r.fWhereAndWhy = whereAndWhy;
+	r.fWhereAndWhy.SetTranslatable(kFalse);
+	r.fFileName = fileName;
+	r.fFileName.SetTranslatable(kFalse);
+	r.fWholeStory = wholeStory;
+	sRefusals.push_back(r);
+}
+
+/** The same, for a reason the merge gives as std::strings. */
+void NoteRefusal(UID story, const char* kind, const std::string& where, const std::string& why)
+{
+	PMString text(where.c_str());
+	text.SetTranslatable(kFalse);
+	if (!why.empty())
+	{
+		text.Append(" - ");
+		text.Append(why.c_str());
+	}
+	NoteRefusal(story, kind, text);
+}
+
 /** A PMString as wide characters. (KCMStoryTextExport.cpp has these four lines inside its own
 	WidePath, which takes an IDFile instead - the two files share nothing else, and a header holding
 	one helper would be a worse thing to maintain.) */
@@ -151,6 +186,15 @@ std::wstring LeafOf(const IDFile& file)
 	PMString leaf;
 	FileUtils::GetFileName(file, leaf);
 	return WideOf(leaf);
+}
+
+/** The leaf back as a PMString, untranslatable - what a "!" row shows for a file with no story. */
+PMString PMStringOfLeaf(const std::wstring& leaf)
+{
+	PMString s;
+	s.AppendW(reinterpret_cast<const UTF16TextChar*>(leaf.c_str()));
+	s.SetTranslatable(kFalse);
+	return s;
 }
 
 /** The whole file, as bytes. kFalse when it could not be opened.
@@ -1192,6 +1236,7 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 			out.fStories.push_back(story);
 			out.fOrigins.push_back(KCMStoryHtml::Story());
 			out.fOriginKnown.push_back(kFalse);
+			out.fFileNames.push_back(PMStringOfLeaf(leaf));
 			continue;
 		}
 		if (!IsDocxLeaf(leaf, leading))
@@ -1263,6 +1308,7 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 		const bool16 tracked = KCMStoryDocx::OriginMatchesTag(result, whole);
 		out.fOrigins.push_back(tracked ? result.fOrigin : KCMStoryHtml::Story());
 		out.fOriginKnown.push_back(tracked);
+		out.fFileNames.push_back(PMStringOfLeaf(leaf));
 		if (tracked)
 		{
 			++trackedCount;
@@ -1307,6 +1353,7 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 			kept.fStories.push_back(out.fStories[i]);
 			kept.fOrigins.push_back(out.fOrigins[i]);
 			kept.fOriginKnown.push_back(out.fOriginKnown[i]);
+			kept.fFileNames.push_back(out.fFileNames[i]);
 		}
 		out = kept;
 	}
@@ -1378,13 +1425,13 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 		return kFalse;
 	}
 
-	// 2. ★★★THE READER'S OWN TASK START IS MOVED ASIDE, NOT THROWN AWAY (the user's requirement).
-	//    The import needs this slot for its own snapshot - the document as it stands a moment
-	//    before the words go in - and gives it back when the mode ends.
+	// 2. ★★★THE IMPORT TAKES A TASK START (2026-09-19, the user's rule: "an import always takes a
+	//    Task"). One the reader had taken before is moved aside ONLY so that a cancel or a failure
+	//    below can put it back exactly as it was; on success it is dropped, and this one is theirs.
+	//    ⚠KCMTakeTaskStart stops a running comparison and clears the pair first - the menu item is
+	//     greyed while one runs (KCMActionComponent.cpp), so that is for a script's sake.
+	KCMClearImportRefusals();
 	const bool16 parked = KCMParkOrigin();
-
-	// 3. The import's own origin: the document as it is NOW, before a single character is written.
-	//    That is what makes the mode show exactly what the import did and nothing else.
 	PMString stateStep("Taking the document's state");
 	stateStep.SetTranslatable(kFalse);
 	progress.Step(kImportUnitsState, stateStep);	// ★before the call: the bar can only appear at a Step
@@ -1400,8 +1447,7 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 		return kFalse;
 	}
 	// ★A CANCEL PRESSED WHILE THE STATE WAS TAKEN is answered here, the first safe point after it: the
-	//   import's own origin goes, and the reader's comes back - the two halves KCMEndImportMode does,
-	//   which cannot be called yet because no words are held.
+	//   import's own origin goes, and the reader's comes back.
 	if (progress.WasCancelled())
 	{
 		if (parked)
@@ -1412,69 +1458,72 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 		outMessage.SetTranslatable(kFalse);
 		return kFalse;
 	}
-	// 4. ★★★THE WORDS ARE HELD, NOT WRITTEN. They go into the COPY when the comparison makes one
-	//    (KCMRehydrate, the one place), and into the reader's document only through "Restore
-	//    Source Text", one change at a time. An import changes nothing by itself.
-	// ★KCMHoldStoryText IS what puts the mode up: holding the words and being in the import mode
-	//   are one fact (see sHolding). The mode to come back to is noted a line before it.
-	sModeBeforeImport = KCMGetCompareMode();
-	KCMHoldStoryText(set);
 
-	// 5. The fourth mode, and the comparison that shows the edited words against the document.
-	//    ★The copy is built first inside the start (KCMRehydrate, where the words are poured), then the
-	//     stories are compared - which is the loop that steps the last slice.
-	PMString copyStep("Building the copy with the edited text");
-	copyStep.SetTranslatable(kFalse);
-	progress.Step(kImportUnitsCopy, copyStep);
-	outer.Slice(kImportUnitsCompare, kImportUnitsAll);
-	KCMSetCompareMode(kKCMModeImport);
-	KCMToggleStartStop();
-
-	// ★★★A START THAT DID NOT ARM LEAVES THE MODE UP WITH NOTHING UNDER IT (found while adding the bar,
-	//   2026-09-17). A cancelled comparison does not start (KCMStartComparisonOn: "do not arm on
-	//   cancel"), and it does not go through Stop either - so the words stayed held, the mode stayed
-	//   Import and every mode and Task Start stayed greyed. The import is ended here instead, the way
-	//   Finish Import ends it, and the panel is told the mode came back.
-	if (!(KCMIsArmed() && KCMArmedTargetDB() != nil))
+	// 3. ★★★THE WORDS GO INTO THE DOCUMENT - all of them, as one undo step (KCMPourStoryText). What
+	//    could not go in is noted for the "!" rows. A cancel between two stories aborts the whole
+	//    pour, and the reader's own Task Start comes back as if nothing had happened.
+	PMString pourStep("Putting the edited text into the document");
+	pourStep.SetTranslatable(kFalse);
+	progress.Step(kImportUnitsCopy, pourStep);
+	outer.Slice(kImportUnitsCopy, kImportUnitsCompare);
+	PMString poured;
+	bool16 cancelledPour = kFalse;
+	const bool16 anyIn = KCMPourStoryText(db, set, poured, cancelledPour);
+	if (cancelledPour)
 	{
-		const bool16 cancelled = progress.WasCancelled();
-		KCMEndImportMode();
-		KCMNotify(kKCMMarksClearedMessage);
-		if (cancelled)
-			outMessage = kImportCancelledMessage;
+		if (parked)
+			KCMUnparkOrigin();
 		else
-			outMessage = "import: the comparison did not start - your document is unchanged";
+			KCMReleaseOrigin();
+		outMessage = kImportCancelledMessage;
 		outMessage.SetTranslatable(kFalse);
 		return kFalse;
 	}
+	if (parked)
+		KCMDropParkedOrigin();		// the import's Task Start is the reader's now
+
+	// 4. THE STORY MODE, against the Task Start just taken: the Source is the moment before the
+	//    import, the Target is the document with the edits in. The comparison's story loop steps
+	//    the last slice of the bar.
+	outer.Slice(kImportUnitsCompare, kImportUnitsAll);
+	KCMSetCompareMode(kKCMModeStory);
+	KCMToggleStartStop();
 
 	outMessage = "import: ";
 	outMessage.SetTranslatable(kFalse);
 	outMessage.Append(readMessage);
-	// ★What the merge did, when there was one (stage 3): the pour's own sentence, kept for this line.
-	if (!sLastMergeNote.IsEmpty())
+	outMessage.Append("; ");
+	outMessage.Append(poured);			// carries the merge's own sentence when there was one
+	if (!KCMImportRefusals().empty())
 	{
-		outMessage.Append("; ");
-		outMessage.Append(sLastMergeNote);
+		AppendCount(outMessage, " - ", static_cast<int32>(KCMImportRefusals().size()),
+					" could not go in (the rows marked !)");
 	}
-	// ★The two menu names as the Import mode spells them (2026-09-17): the row item is "Change to Imported
-	//   Text" in this mode (it read "Restore Source Text", the Task Start mode's name), and the way out is
-	//   "Finish Import" (the Start/Stop item, renamed while importing).
-	outMessage.Append(" - your document is unchanged; Change to Imported Text puts a change in, "
-					  "Finish Import ends the import");
-	return kTrue;
+	// ★A START THAT DID NOT ARM (a Cancel pressed on the comparison's own loop, say) is not the
+	//   import's failure any more: the words are in, Ctrl+Z takes them out, and the reader is told
+	//   which of the two states they are looking at.
+	if (!(KCMIsArmed() && KCMArmedTargetDB() != nil))
+	{
+		KCMNotify(kKCMMarksClearedMessage);
+		outMessage.Append(". The edits are in the document but the comparison did not start"
+						  " - Start Comparison shows them; Ctrl+Z takes the whole import back");
+		return anyIn;
+	}
+	outMessage.Append(". Ctrl+Z takes the whole import back; Restore Source Text puts one change back");
+	return anyIn || !KCMImportRefusals().empty();
 }
 
-bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
+bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& outMessage,
+						bool16& outCancelled)
 {
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
+	outCancelled = kFalse;
 
-	const KCMStoryTextSet* const set = KCMHeldStoryText();
-	if (set == nil || set->fUids.empty() || copyDB == nil)
+	if (set.fUids.empty() || db == nil)
 		return kFalse;
 
-	InterfacePtr<IStoryList> stories(copyDB, copyDB->GetRootUID(), UseDefaultIID());
+	InterfacePtr<IStoryList> stories(db, db->GetRootUID(), UseDefaultIID());
 	if (stories == nil)
 		return kFalse;
 
@@ -1485,7 +1534,6 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 	int32 refusedParas = 0;
 	int32 refusedPlaces = 0;
 	int32 skippedByTables = 0;		// stories left alone entirely: their table shape changed
-	int32 matchedFiles = 0;			// files whose story the copy really does carry
 	int32 unmatched = 0;
 	int32 wordChanges = 0;			// a .docx whose marks are whole: Word's changes taken by the merge (stage 3)
 	int32 conflicts = 0;			// ...and the ones the document's own edits kept out
@@ -1493,29 +1541,55 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 	firstRefusal.SetTranslatable(kFalse);
 	PMString firstConflict;
 	firstConflict.SetTranslatable(kFalse);
+	// ★**PAIRED IS PAIRED, WHATEVER HAPPENS NEXT** (2026-09-16). The count at the end used to be
+	//   "files minus stories WRITTEN", which said "had no story" about a file the reader had simply
+	//   not edited - and about every story TablesAgree left alone, naming that one twice, once under
+	//   each heading. Kept per file now, so that the ones with no story can be NAMED (a "!" row each).
+	std::vector<bool16> matched(set.fUids.size(), kFalse);
 
-	// ★ONE STEP. The copy has no window and nobody presses Ctrl+Z in it, but a sequence keeps the
-	//   writes from arriving as a hundred separate entries in a history the peek shares.
-	ICommandSequence* sequence = CmdUtils::BeginCommandSequence("KCMPourStoryText");
+	// ★★★ONE ABORTABLE STEP (2026-09-19). The words go into the reader's own document now, so this
+	//   IS the undo step Ctrl+Z takes back - and a Cancel between two stories aborts it, leaving the
+	//   document as it was. (Until 2026-09-19 a plain sequence poured into the windowless copy.)
+	IAbortableCmdSeq* sequence = CmdUtils::BeginAbortableCmdSeq("KCMPourStoryText");
 	if (sequence != nil)
-		sequence->SetName(PMString("Edited story text"));
+		sequence->SetName(PMString("Import Story Text"));
 
+	// ★The import's bar when there is one (a slice of it), a bar of its own otherwise - the same
+	//   shape as the reading loop. Stepped per story; asked for a cancel BETWEEN two stories only,
+	//   because WasCancelled pumps events and a story half written is not a place to stop.
 	const int32 count = stories->GetUserAccessibleStoryCount();
+	PMString barTitle("Putting the edited text into the document...");
+	barTitle.SetTranslatable(kFalse);
+	KCMProgressStepper progress(barTitle, count);
+
 	for (int32 s = 0; s < count; ++s)
 	{
+		if (s > 0 && progress.WasCancelled())
+		{
+			outCancelled = kTrue;
+			break;
+		}
+		{
+			PMString step("Putting the edited text into the document (");
+			step.AppendNumber(s + 1);
+			step.Append(" / ");
+			step.AppendNumber(count);
+			step.Append(")");
+			step.SetTranslatable(kFalse);
+			progress.Step(s, step);
+		}
+
 		const UIDRef storyRef = stories->GetNthUserAccessibleStoryUID(s);
 
-		// ⚠**THE COPY'S UIDS ARE NEW ONES.** What pairs a file with a story is the label the
-		//   rehydration wrote, which carries the ORIGINAL uid - the one the file is named after.
-		UID original = kInvalidUID;
-		if (!KCMReadOriginUidLabel(copyDB, storyRef.GetUID(), original))
-			continue;
+		// ★THE STORY'S OWN UID IS THE PAIRING (2026-09-19): the file is named after it, and the words
+		//   go into this very document. (The copy's uids were new ones and went through a label.)
+		const UID original = storyRef.GetUID();
 
 		size_t which = 0;
 		bool16 found = kFalse;
-		for (size_t k = 0; k < set->fUids.size(); ++k)
+		for (size_t k = 0; k < set.fUids.size(); ++k)
 		{
-			if (set->fUids[k] == original)
+			if (set.fUids[k] == original)
 			{
 				which = k;
 				found = kTrue;
@@ -1525,17 +1599,16 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 		if (!found)
 			continue;					// a story nobody exported, or exported and then deleted
 
-		// ★**PAIRED IS PAIRED, WHATEVER HAPPENS NEXT** (2026-09-16). The count at the end used to
-		//   be "files minus stories WRITTEN", which said "had no story" about a file the reader
-		//   had simply not edited - and about every story TablesAgree left alone, naming that one
-		//   twice, once under each heading.
-		++matchedFiles;
+		matched[which] = kTrue;
 
 		std::vector<std::string> paras;
 		std::vector<KCMParaAttrs> attrs;
 		std::vector<int32> starts;
 		if (!KCMTextRead::ReadStory(storyRef, paras, attrs, starts))
+		{
+			NoteRefusal(original, "Story", PMString("the story could not be read"), kTrue);
 			continue;
+		}
 
 		InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
 		if (model == nil)
@@ -1543,24 +1616,26 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 
 		// ★★★**A .docx WHOSE MARKS ACCOUNT FOR EVERYTHING IS MERGED, NOT COMPARED WHOLE** (stage 3 of the
 		//   docx plan, 2026-09-19; the design's section 6). The story as written, as Word left it and as
-		//   the copy holds it now go into KCMStoryMerge, and what is poured is the copy plus Word's
-		//   changes - so the rows that follow are Word's changes and nothing else, however much the
-		//   document has been edited in InDesign since the export. A conflict keeps the document's words
-		//   and is named. An .html, or a .docx whose tracking was off, is poured as before.
-		// ★THE COPY IS READ WITH THE EXPORT'S OWN READER (KCMStoryFromDocument): the merge compares
+		//   the document holds it now go into KCMStoryMerge, and what is poured is the document plus
+		//   Word's changes - so the rows that follow are Word's changes and nothing else, however much
+		//   the document has been edited in InDesign since the export. A conflict keeps the document's
+		//   words and is named. An .html, or a .docx whose tracking was off, is poured as before.
+		// ★THE DOCUMENT IS READ WITH THE EXPORT'S OWN READER (KCMStoryFromDocument): the merge compares
 		//   three stories that have to be in one shape, and the two that came from the file were
 		//   written from that reader's shape to begin with.
-		const KCMStoryHtml::Story* file = &set->fStories[which];
+		const KCMStoryHtml::Story* file = &set.fStories[which];
 		KCMStoryMerge::Result merged;
-		if (which < set->fOriginKnown.size() && set->fOriginKnown[which])
+		if (which < set.fOriginKnown.size() && set.fOriginKnown[which])
 		{
 			KCMStoryHtml::Story now;
 			bool16 placed = kTrue;
 			if (KCMStoryFromDocument(storyRef, now, placed))
 			{
-				KCMStoryMerge::Merge(set->fOrigins[which], set->fStories[which], now, merged);
+				KCMStoryMerge::Merge(set.fOrigins[which], set.fStories[which], now, merged);
 				wordChanges += merged.fApplied;
 				conflicts += static_cast<int32>(merged.fConflicts.size());
+				for (size_t c = 0; c < merged.fConflicts.size(); ++c)
+					NoteRefusal(original, "Word", merged.fConflicts[c].fWhere, merged.fConflicts[c].fWhy);
 				if (!merged.fConflicts.empty() && firstConflict.IsEmpty())
 				{
 					firstConflict.AppendNumber(static_cast<int32>(original.Get()));
@@ -1577,6 +1652,7 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 						firstRefusal = merged.fWhy.c_str();
 						firstRefusal.SetTranslatable(kFalse);
 					}
+					NoteRefusal(original, "Table", PMString(merged.fWhy.c_str()), kTrue);
 					continue;
 				}
 				file = &merged.fMerged;
@@ -1593,6 +1669,7 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 			++skippedByTables;
 			if (firstRefusal.IsEmpty())
 				firstRefusal = tableWhyNot;
+			NoteRefusal(original, "Table", tableWhyNot, kTrue);
 			continue;
 		}
 
@@ -1625,11 +1702,11 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 			if (place.fFile == nil)
 			{
 				++refusedPlaces;
+				PMString placeWhy("a cell or note in the document is not in the file");
+				placeWhy.SetTranslatable(kFalse);
 				if (firstRefusal.IsEmpty())
-				{
-					firstRefusal = "a cell or note in the document is not in the file";
-					firstRefusal.SetTranslatable(kFalse);
-				}
+					firstRefusal = placeWhy;
+				NoteRefusal(original, "Place", placeWhy);
 				continue;
 			}
 
@@ -1657,6 +1734,7 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 				++refusedPlaces;
 				if (firstRefusal.IsEmpty())
 					firstRefusal = placeWhyNot;
+				NoteRefusal(original, "Place", placeWhyNot);
 				continue;
 			}
 			jobs.insert(jobs.end(), placeJobs.begin(), placeJobs.end());
@@ -1699,6 +1777,7 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 				++refusedParas;
 				if (firstRefusal.IsEmpty())
 					firstRefusal = whyNot;
+				NoteRefusal(original, "Para", whyNot);
 			}
 			if (n > 0)
 			{
@@ -1750,6 +1829,7 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 							++refusedAttrs;
 							if (firstRefusal.IsEmpty())
 								firstRefusal = attrWhyNot;
+							NoteRefusal(original, "Attr", attrWhyNot);
 						}
 						if (n > 0)
 						{
@@ -1765,19 +1845,37 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 			++storiesTouched;
 	}
 
-	// Files whose story the copy does not carry, counted by the pairing above - the only place
-	// that can tell. ⚠**A PAIRING, NOT A WRITE**: a file that matched and changed nothing has a
-	// story, and so has one whose story was left alone because its tables had moved.
-	unmatched = static_cast<int32>(set->fUids.size()) - matchedFiles;
-	if (unmatched < 0)
-		unmatched = 0;
+	// ★A CANCEL TAKES THE WHOLE POUR BACK - and says nothing else: what was noted so far is dropped
+	//   too, because the document those refusals were about is the document as it was.
+	if (outCancelled)
+	{
+		if (sequence != nil)
+			CmdUtils::AbortCommandSequence(sequence);
+		KCMClearImportRefusals();
+		outMessage = "cancelled";
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	// Files whose story the document does not carry, by the pairing above - the only place that
+	// can tell. ⚠**A PAIRING, NOT A WRITE**: a file that matched and changed nothing has a story,
+	// and so has one whose story was left alone because its tables had moved. Each is a "!" row
+	// standing for the file (2026-09-19).
+	for (size_t k = 0; k < matched.size(); ++k)
+	{
+		if (matched[k])
+			continue;
+		++unmatched;
+		NoteRefusal(set.fUids[k], "File", PMString("no story with this ID in the document"), kTrue,
+					(k < set.fFileNames.size()) ? set.fFileNames[k] : PMString());
+	}
 
 	if (sequence != nil)
 		CmdUtils::EndCommandSequence(sequence);
 
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
-	AppendCount(outMessage, "", edits, " change(s) poured into the copy");
+	AppendCount(outMessage, "", edits, " change(s) put into the document");
 	AppendCount(outMessage, " in ", storiesTouched, " story(ies)");
 	// ★COUNTED APART FROM THE WORDS, because an import that changed nothing else is exactly the
 	//   case this pass was written for ("I only changed the ruby") - and a line saying "0 changes"
@@ -1827,6 +1925,17 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 	//   until the attributes were poured, so a file whose only edit was a reading came back as
 	//   "nothing could be applied" - the very case the user asked for.
 	return (edits > 0 || attrEdits > 0) ? kTrue : kFalse;
+}
+
+const std::vector<KCMImportRefusal>& KCMImportRefusals()
+{
+	return sRefusals;
+}
+
+void KCMClearImportRefusals()
+{
+	// A fresh vector releases the storage too (the same reason KCMStoryList::ShutdownCleanup gives).
+	sRefusals = std::vector<KCMImportRefusal>();
 }
 
 const KCMStoryTextSet* KCMHeldStoryText()

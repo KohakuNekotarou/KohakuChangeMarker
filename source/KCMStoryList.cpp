@@ -51,6 +51,7 @@
 #include "KCMOriginCompare.h"	// KCMOriginToSourceUID - a Removed row's story, under its uid in a Task Start copy
 #include "KCMStoryRowFilter.h"	// KCMStoryRowHasContentChange - which rows belong in the list
 #include "KCMStoryRowMerge.h"	// the order the live changes and the replaced ones stand in
+#include "KCMStoryTextImport.h"	// KCMImportRefusals - what the last import could not put in, put back as rows on every Build
 
 namespace
 {
@@ -767,6 +768,19 @@ void KCMStoryList::Build(IDataBase* targetDB, IDataBase* sourceDB,
 	//   @warning a nil sourceDB is not an error here: those rows simply do not appear, which is
 	//     the same thing that happens to a story whose ITextModel cannot be read.
 	AddRowsFromDocument(sourceDB, diffs, kTrue, gRows);
+
+	// ★★WHAT THE LAST IMPORT COULD NOT PUT IN (2026-09-19): a row for each such story - the one the
+	//   comparison built, or one made here when no counter moved - and a child per refusal.
+	//   ⚠Refilled on EVERY build, because the list starts empty each time; the material lives with
+	//    the origin (KCMImportRefusals) and is not the list's own. Rows first, then the children, so
+	//    that a story refused twice gets one row and two children whatever the order they were noted.
+	{
+		const std::vector<KCMImportRefusal>& refusals = KCMImportRefusals();
+		for (size_t i = 0; i < refusals.size(); ++i)
+			AddRefusalRow(targetDB, refusals[i].fStory, refusals[i].fFileName);
+		for (size_t i = 0; i < refusals.size(); ++i)
+			AddRefusalChange(refusals[i].fStory, refusals[i].fKind, refusals[i].fWhereAndWhy);
+	}
 
 	std::sort(gRows.begin(), gRows.end(), RowIsBefore);
 }
