@@ -621,14 +621,19 @@ namespace KCMStoryList
 		row when the comparison built none - the story's counter did not move because nothing went in.
 
 		★**CALLED FROM Build AND NOWHERE ELSE** (2026-09-19): the list starts empty on every build,
-		  so the "!" rows are put back each time from KCMImportRefusals. A story the document does not
-		  hold (a file named after a uid that is not there) gets a row that stands for the FILE:
-		  `textWhenNoStory` in the text cell, no frame and no page. ⚠Before the sort. */
-	void AddRefusalRow(IDataBase* targetDB, UID storyUID, const PMString& textWhenNoStory);
+		  so the "!" rows are put back each time from KCMImportRefusals. ⚠Before the sort.
+		★★**A STORY THE DOCUMENT DOES NOT HOLD** (a file named after a uid that is not there, or names
+		  something that is not a story) gets a row that stands for the FILE: `textWhenNoStory` in the
+		  text cell, no frame, no page - **and fStoryUID = kInvalidUID**. That is the one value every
+		  reader of this list already passes over (the diff, the undo observer, the marks, the jump),
+		  so a uid that names nothing - or a different object - is never handed to the document.
+		@return the row's index, for AddRefusalChange. */
+	int32 AddRefusalRow(IDataBase* targetDB, UID storyUID, const PMString& textWhenNoStory);
 
-	/** One refusal under that row: `kind` for the ID column, `whereAndWhy` for the text cell. Does
-		nothing when no row of `storyUID` carries kKCMStoryKindRefused (AddRefusalRow comes first). */
-	void AddRefusalChange(UID storyUID, const PMString& kind, const PMString& whereAndWhy);
+	/** One refusal under row `nth`: `kind` for the ID column, `whereAndWhy` for the text cell.
+		By index rather than by uid, because a row standing for a file has no uid. Out of range does
+		nothing. ⚠Before the sort, like AddRefusalRow: the index is only good until then. */
+	void AddRefusalChange(int32 nth, const PMString& kind, const PMString& whereAndWhy);
 
 	/** Move row nth's replaced changes that stand at or after `from` by `delta` characters.
 

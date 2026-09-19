@@ -776,10 +776,19 @@ void KCMStoryList::Build(IDataBase* targetDB, IDataBase* sourceDB,
 	//    that a story refused twice gets one row and two children whatever the order they were noted.
 	{
 		const std::vector<KCMImportRefusal>& refusals = KCMImportRefusals();
+		std::vector<int32> rowOf(refusals.size(), -1);
 		for (size_t i = 0; i < refusals.size(); ++i)
-			AddRefusalRow(targetDB, refusals[i].fStory, refusals[i].fFileName);
+		{
+			// A file with no story shows its own name, and the uid it was named after, in the text cell.
+			PMString fileText = refusals[i].fFileName;
+			fileText.SetTranslatable(kFalse);
+			fileText.Append(" - no story ");
+			fileText.AppendNumber(static_cast<int32>(refusals[i].fStory.Get()));
+			fileText.Append(" in the document");
+			rowOf[i] = AddRefusalRow(targetDB, refusals[i].fStory, fileText);
+		}
 		for (size_t i = 0; i < refusals.size(); ++i)
-			AddRefusalChange(refusals[i].fStory, refusals[i].fKind, refusals[i].fWhereAndWhy);
+			AddRefusalChange(rowOf[i], refusals[i].fKind, refusals[i].fWhereAndWhy);
 	}
 
 	std::sort(gRows.begin(), gRows.end(), RowIsBefore);
@@ -847,18 +856,20 @@ void KCMStoryList::ClearReplacedChanges(int32 nth)
 
 /* AddRefusalRow
 */
-void KCMStoryList::AddRefusalRow(IDataBase* targetDB, UID storyUID, const PMString& textWhenNoStory)
+int32 KCMStoryList::AddRefusalRow(IDataBase* targetDB, UID storyUID, const PMString& textWhenNoStory)
 {
 	// The comparison's own row for this story, when it built one: a story that took some of the
 	// words and refused others has moved its counter, and is in the list already.
 	// ⚠A Removed row of the same uid is NOT that row: it lives in the Source, and a refusal is about
-	//   the Target's story (the file was named after it).
+	//   the Target's story (the file was named after it). ⚠Nor is a row standing for a file
+	//   (kInvalidUID): two files with no story are two rows.
 	for (size_t i = 0; i < gRows.size(); ++i)
 	{
-		if (gRows[i].fStoryUID == storyUID && (gRows[i].fKinds & kKCMStoryKindRemoved) == 0)
+		if (gRows[i].fStoryUID != kInvalidUID && gRows[i].fStoryUID == storyUID
+			&& (gRows[i].fKinds & kKCMStoryKindRemoved) == 0)
 		{
 			gRows[i].fKinds |= kKCMStoryKindRefused;
-			return;
+			return static_cast<int32>(i);
 		}
 	}
 
@@ -879,34 +890,36 @@ void KCMStoryList::AddRefusalRow(IDataBase* targetDB, UID storyUID, const PMStri
 	}
 	else
 	{
-		// No such story in the document: the row stands for the FILE. Nothing to jump to.
+		// ★★NO SUCH STORY IN THE DOCUMENT - or the uid names something that is not one (ReadRowFromDocument
+		//   asks for ITextModel): the row stands for the FILE. **Its uid is kInvalidUID from here on**,
+		//   the value every reader of this list passes over (the header says which), so that a number
+		//   that names nothing here - or a swatch, or a page - is never handed to the document as a
+		//   story. The file's own uid is in the text, for the reader.
+		row.fStoryUID = kInvalidUID;
 		row.fText = textWhenNoStory;
 		row.fText.SetTranslatable(kFalse);
 		row.fFrameUID = kInvalidUID;
 		row.fPageUID = kInvalidUID;
 	}
 	gRows.push_back(row);
+	return static_cast<int32>(gRows.size()) - 1;
 }
 
 /* AddRefusalChange
 */
-void KCMStoryList::AddRefusalChange(UID storyUID, const PMString& kind, const PMString& whereAndWhy)
+void KCMStoryList::AddRefusalChange(int32 nth, const PMString& kind, const PMString& whereAndWhy)
 {
-	for (size_t i = 0; i < gRows.size(); ++i)
-	{
-		if (gRows[i].fStoryUID != storyUID || (gRows[i].fKinds & kKCMStoryKindRefused) == 0)
-			continue;
-
-		KCMStoryChange c;
-		c.fWhat = KCMStoryChange::kRefused;
-		c.fTextPre = kind;
-		c.fTextPre.SetTranslatable(kFalse);
-		c.fText = whereAndWhy;
-		c.fText.SetTranslatable(kFalse);
-		c.fWriteBlock = kKCMWriteBlockedKind;	// nothing to write back; the menu asks this first
-		gRows[i].fRefusals.push_back(c);
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
 		return;
-	}
+
+	KCMStoryChange c;
+	c.fWhat = KCMStoryChange::kRefused;
+	c.fTextPre = kind;
+	c.fTextPre.SetTranslatable(kFalse);
+	c.fText = whereAndWhy;
+	c.fText.SetTranslatable(kFalse);
+	c.fWriteBlock = kKCMWriteBlockedKind;	// nothing to write back; the menu asks this first
+	gRows[nth].fRefusals.push_back(c);
 }
 
 /* ShiftReplacedChanges
@@ -1275,7 +1288,8 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 		const KCMStoryRow& row = gRows[i];
 
 		// The PARENT line: what the story row itself says.
-		s += Num(static_cast<int32>(i)) + "\t-\t" + Num(static_cast<int32>(row.fStoryUID.Get()))
+		s += Num(static_cast<int32>(i)) + "\t-\t"
+		   + ((row.fStoryUID == kInvalidUID) ? std::string("-") : Num(static_cast<int32>(row.fStoryUID.Get())))	// "-": a row standing for a file (2026-09-19)
 		   + "\t" + KindsWord(row.fKinds)
 		   + "\t" + FlagsWord(row)
 		   + "\t" + AttrWord(static_cast<int32>(row.fAttrKind))

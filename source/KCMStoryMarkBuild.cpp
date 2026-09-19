@@ -193,6 +193,12 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 			if (change.fReplaced)
 				continue;
 
+			// ★**AND WHAT AN IMPORT COULD NOT PUT IN IS NOT A PLACE** (2026-09-19): a "!" child names a
+			//   reason, not a range - its positions are zero - and a mark drawn from it would be a
+			//   caret at the start of the story pointing at nothing.
+			if (change.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused)
+				continue;
+
 			TextIndex from = 0;
 			TextIndex to = 0;
 			if (useSourceDocument)

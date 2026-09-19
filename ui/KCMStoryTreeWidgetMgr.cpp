@@ -553,7 +553,12 @@ public:
 			//   AppendNumber takes (PMString.h:568); UID::Get() answers uint32 (OMTypes.h:78), and a
 			//   document's object numbers are counted in thousands, nowhere near where the two types
 			//   part company.
-			uid.AppendNumber(static_cast<int32>(row.fStoryUID.Get()));
+			// ★A row standing for a FILE with no story (2026-09-19) has no uid to show - kInvalidUID,
+			//   which every reader of the list passes over - so the column names what it is instead.
+			if (row.fStoryUID == kInvalidUID)
+				uid = PMString("File");
+			else
+				uid.AppendNumber(static_cast<int32>(row.fStoryUID.Get()));
 			text = row.fText;
 			// ★"the text was diffed" AND "nothing came of it" - both halves are needed, and they
 			//   live in different places on purpose: the fact that somebody looked is the row's

@@ -455,6 +455,15 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 		return kFalse;
 	}
 
+	// ★A ROW STANDING FOR A FILE (2026-09-19): an import was handed a file named after a story the
+	//   document does not hold. There is no story, so there is nowhere to go; the row's text says
+	//   which file, and this says why the page did not move.
+	if (row.fStoryUID == kInvalidUID)
+	{
+		KCMSetStatus("That file names no story in this document - nothing to go to.");
+		return kFalse;
+	}
+
 	// A story with no frame at all is a real edit - it is in the document and it changed - but there
 	// is nowhere on a page to show it. Say so rather than moving to an arbitrary place.
 	if (row.fFrameUID == kInvalidUID)
@@ -515,6 +524,24 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 		return kFalse;
 	if (!Utils<IKCMStoryEditsFacade>()->GetChange(rowIndex, changeIndex, change))
 		return kFalse;
+
+	// ★★**A "!" CHILD HAS NO PLACE TO GO TO** (2026-09-19): it names something an import could not
+	//   put in, and its positions are zero. The page goes to the STORY (what a click on the row does -
+	//   a story the document lacks says so on the status line), and the message area shows the
+	//   reason in full, which is the one thing the row's narrow cell may have cut short.
+	if (change.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused)
+	{
+		const bool16 moved = KCMStoryJumpToRow(rowIndex);	// notes the stop as (row, -1) ...
+		KCMNoteStoryStop(rowIndex, changeIndex);			// ... and the walk stands on this child
+		PMString label("Could not go in (");
+		label.SetTranslatable(kFalse);
+		label.Append(change.fTextPre);						// the kind word: Word / Table / Place / ...
+		label.Append("):");
+		PMString none;
+		none.SetTranslatable(kFalse);
+		KCMSetStatusSegments(label, none, change.fText, none, none, kKCMStoryAttrNone);
+		return moved;
+	}
 
 	// The walk stands on this change from now on - see the note in KCMStoryJumpToRow for why this
 	// is done before the refusals below, and KCMChangeNav.h for what it means on a parent row.
@@ -781,6 +808,11 @@ bool16 KCMStorySelectChange(int32 rowIndex, int32 changeIndex)
 	if (!Utils<IKCMStoryEditsFacade>()->GetRow(rowIndex, row))
 		return kFalse;
 	if (!Utils<IKCMStoryEditsFacade>()->GetChange(rowIndex, changeIndex, change))
+		return kFalse;
+
+	// ★A "!" CHILD HAS NOTHING TO SELECT (2026-09-19): no range, no words of its own. The single
+	//   click before this double click has already shown the reason (KCMStoryJumpToChange).
+	if (change.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused)
 		return kFalse;
 
 	// ★A CHILD ROW IS ALWAYS A TARGET ROW. Only a story that exists in both versions is diffed, so
