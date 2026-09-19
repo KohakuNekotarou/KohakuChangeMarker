@@ -278,7 +278,10 @@ struct KCMStoryChange
 		follows - the way pressing Return puts a paragraph in, and joining two paragraphs keeps the upper
 		one's style), or the paragraph's own when it is the first of its place ("NEW\r" at the start of
 		the one it precedes). KCMStoryDiffRun's AddWholeParagraphs makes them; KCMStoryRestore gives a
-		paragraph taken in the next style of the one before it. */
+		paragraph taken in the next style of the one before it.
+		⚠**THE BREAK IS FOR THE WRITE, NOT FOR THE READER** (2026-09-19): shown as it stands, the range
+		put the mark and the selection on the END OF THE PARAGRAPH ABOVE (its return). fBreakAt below
+		says which end holds it, and the facade cuts it off everything it hands out (KCMShownSpan). */
 	bool16		fWholeParagraph;
 
 	/** kTrue for a paragraph to take in whose paragraph BEFORE it is also one to take in - the second
@@ -294,14 +297,73 @@ struct KCMStoryChange
 		⚠Appended at the END, for the reason stated above fReplacedCount's neighbours. */
 	int32		fPlace;
 
+	/** ★**WHERE IN A WHOLE PARAGRAPH'S RANGES THE BREAK STANDS** - a KCMStoryBreakAt value (2026-09-19,
+		the user: "the mark reaches the end of the paragraph above - I want that gone").
+		The ranges above are what the WRITE uses, and they hold the break on purpose (fWholeParagraph says
+		why). What the reader is SHOWN - the standing marks, the jump's flash and centring, the double
+		click's selection - is the paragraph's words alone, and this says which end to cut to get them.
+		The cutting is done in ONE place, the facade's GetChange (KCMFacades.cpp, through KCMShownSpan), so
+		that nothing on the UI side has to know the break is there. kKCMBreakNone for every other change. */
+	int32		fBreakAt;
+
+	/** ★**THE PARAGRAPH STYLES A WHOLE-PARAGRAPH TAKE-IN FOUND, BEFORE IT WROTE** (2026-09-19, the user:
+		"a b c styled A B C: take b out and put it back, and everything reads C"). Read by KCMStoryRestore
+		at the moment of the take-in, one entry per paragraph from the one holding fBeforeStart on: the
+		paragraph before (when fBreakAt is kKCMBreakLeads), the paragraph going out, and the following
+		paragraphs the take-out moved along their next styles. Empty for every other change.
+		★**"Undo the Restore" puts them back in TWO LAYERS** (the user's rule): the paragraph before gets
+		  what it had; the paragraph put back and the ones after it get the NEXT STYLE of the paragraph above
+		  when that style names one, and what is remembered here when it does not ([Same Style]) -
+		  KCMRestoreParagraphStyles. Without a record the chain alone is used, as the take-in itself does.
+		⚠UIDs, not names: a style renamed meanwhile still applies; one deleted meanwhile is skipped. */
+	std::vector<UID>	fBeforeParaStyles;
+
+	/** ★**AND WHAT THE TAKE-IN LEFT THOSE SAME PARAGRAPHS WEARING** - one entry per entry of
+		fBeforeParaStyles: the paragraph before as the take-in left it, kInvalidUID for the paragraph that
+		went out (it is not there to read), and for each following paragraph the style the take-out moved
+		it to (its own, where the chain did not move it).
+		★**THE UNDO PUTS A FOLLOWING PARAGRAPH BACK ONLY WHILE IT STILL WEARS THIS** (2026-09-19 evening,
+		  measured: a, b, c taken out in turn and a put back gave z - the paragraph that had stood after
+		  c all along - the next style of A, because the record made for a still counted b and c below it
+		  and z was standing in b's place). The paragraphs below a change can be taken out and put back
+		  by OTHER changes between its take-in and its undo, so the record cannot know by position which
+		  paragraph it is looking at; what it can know is whether the paragraph there still looks the way
+		  it left it. One that does not stops the walk - a different paragraph, or one the reader
+		  restyled by hand, and neither is this record's to change. The paragraph put back itself is
+		  never checked: the write just gave it whatever it inherited. */
+	std::vector<UID>	fAfterParaStyles;
+
 	KCMStoryChange()
 		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
 		  fSourceStart(0), fSourceEnd(0),
 		  fAttrKind(kKCMStoryAttrNone), fOverset(kFalse),
 		  fReplacedCount(0), fReplacedStart(0), fReplacedEnd(0),
 		  fBeforeStart(0), fBeforeEnd(0), fWriteBlock(kKCMWriteAllowed),
-		  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse), fPlace(0) {}
+		  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse), fPlace(0), fBreakAt(0) {}
 };
+
+/** KCMStoryChange::fBreakAt - which end of a whole paragraph's range holds the paragraph break that the
+	write needs and the reader is not shown. */
+enum KCMStoryBreakAt
+{
+	kKCMBreakNone	= 0,	///< no break in the range (every change that is not a whole paragraph)
+	kKCMBreakLeads	= 1,	///< the FIRST character is the return of the paragraph before ("\rNEW")
+	kKCMBreakTrails	= 2		///< the LAST character is the paragraph's own return ("NEW\r")
+};
+
+/** The span the reader is SHOWN for a change: [from, to) with the paragraph break cut off it, as fBreakAt
+	says. An empty range (a caret) is left alone - there is nothing in it to cut. Applied by the facade to
+	every range it hands out (KCMFacades.cpp) and by the diff where it asks a question on the reader's
+	behalf (KCMStoryDiffRun's MarkOverset). */
+inline void KCMShownSpan(int32 breakAt, TextIndex& from, TextIndex& to)
+{
+	if (to <= from)
+		return;
+	if (breakAt == kKCMBreakLeads)
+		++from;
+	else if (breakAt == kKCMBreakTrails)
+		--to;
+}
 
 /** KCMStoryChange::fPlace - and IKCMStoryEditsFacade::Change::fPlace, which carries the same value.
 	★Numbers, not an enum class, so that the facade's plain int32 and this agree by definition. */
@@ -404,8 +466,14 @@ struct KCMStoryRow
 		⚠It is the diff's answer, so it means nothing unless fTextCompared is kTrue. */
 	bool16			fHasTextChange;
 
-	/** The changes in this row's story that the reader has already replaced, in the order they
-		were replaced (the Import mode only).
+	/** The changes in this row's story that the reader has already replaced, ★**IN READING ORDER**
+		(2026-09-19): ascending by fReplacedStart, and two that stand at the SAME position in the
+		order their words stood in the text. ⚠Until 2026-09-19 two at one position stood in the order
+		they were taken in, and that order is not knowable from the positions - so a write at that
+		position could not tell which of them it was in front of, and pushed the wrong one: two new
+		paragraphs taken out and put back came back as "¶ba", or the first was refused as "no longer
+		where it was" (its record pushed to -2). ReplacedSlotFor / AddReplacedChangeAt keep the order;
+		ShiftReplacedChanges moves only the records from a given slot on.
 
 		★★**THEY ARE NOT IN fChanges, AND THAT IS WHAT MAKES THE RE-DIFF SAFE.** Every replacement
 		is followed by comparing the story again (KCMStoryRestore.cpp), which clears fChanges and
@@ -608,10 +676,36 @@ namespace KCMStoryList
 		different moment than the diff's children are - after the story has been compared again.
 		Out-of-range nth is ignored, as everywhere else here.
 
-		⚠**INSERTED IN fReplacedStart ORDER, NOT APPENDED.** The reader replaces changes in
-		whatever order they please, and KCMStoryRowMerge is promised two ASCENDING lists.
+		⚠**INSERTED IN fReplacedStart ORDER, NOT APPENDED**, after any record standing at the same
+		position. ★**FOR PUTTING A KEPT LIST BACK** (DropUndoneReplaced), where the records come in
+		the order they already had. ⚠**NOT for a record that has just been WRITTEN** - a write can
+		leave its record at the same position as one that stands AFTER it in the text (a take-out
+		of two adjacent paragraphs), and only the slot asked for BEFORE the write knows which side it
+		belongs on: ReplacedSlotFor, then AddReplacedChangeAt.
 		@see KCMStoryRow::fReplacedChanges for why it is not simply appended to fChanges. */
 	void AddReplacedChange(int32 nth, const KCMStoryChange& done);
+
+	/** ★**WHERE A RECORD FOR A WRITE AT `at` BELONGS** in row nth's replaced list (2026-09-19): after
+		every record whose fReplacedStart is at or before `at`, and before the rest. ⚠**ASK BEFORE THE
+		WRITE**, while the positions are the ones the write is about to be made against. A record
+		standing exactly at `at` is BEFORE the write - the same tie rule KCMStoryRowMerge shows the
+		panel (a replaced change is the thing standing there; the live one is beside it) - so the
+		two rules cannot disagree about which of two rows at one position comes first.
+		@return the slot: also the first slot ShiftReplacedChanges moves for this write. */
+	int32 ReplacedSlotFor(int32 nth, TextIndex at);
+
+	/** Put `done` into row nth's replaced list at `slot` (from ReplacedSlotFor, plus however many
+		records the caller has put in before it since). Out-of-range slots are clamped. */
+	void AddReplacedChangeAt(int32 nth, int32 slot, const KCMStoryChange& done);
+
+	/** The slot in row nth's replaced list that merged index `which` names, or -1 when that index
+		is out of range or names a refusal or a LIVE change. The one place the merged index is turned
+		into a position in fReplacedChanges (GetMergedChange makes the same walk). */
+	int32 ReplacedSlotOfMerged(int32 nth, int32 which);
+
+	/** Take the record at `slot` out of row nth's replaced list. Out of range does nothing.
+		@return kTrue when a record went. */
+	bool16 RemoveReplacedChangeAt(int32 nth, int32 slot);
 
 	/** Forget row nth's replaced changes. "Refresh Story Comparison" is a fresh start (the user's
 		call, 2026-09-15), so it clears these as well as the diff. Out-of-range nth is ignored. */
@@ -635,17 +729,33 @@ namespace KCMStoryList
 		nothing. ⚠Before the sort, like AddRefusalRow: the index is only good until then. */
 	void AddRefusalChange(int32 nth, const PMString& kind, const PMString& whereAndWhy);
 
-	/** Move row nth's replaced changes that stand at or after `from` by `delta` characters.
+	/** Move row nth's replaced records FROM `firstSlot` ON to follow a write that removed `removed`
+		characters at `from` and put `inserted` in their place.
 
 		★★**BECAUSE THE RE-DIFF DOES NOT TOUCH THEM.** Comparing the story again names the LIVE
 		changes afresh against the text as it now stands, which is exactly why a second
 		replacement works at all - but a change that has already been replaced is no longer in
 		that comparison, so nothing would move it. Replacing words earlier in the story makes the
 		text longer or shorter, and everything after it slides by that much.
-		⚠Call it BEFORE the new replacement is added (the new one is already in the coordinates
-		the write left behind), and with the delta of THAT write: `source length - target length`.
-		Out-of-range nth, and delta 0, do nothing. */
-	void ShiftReplacedChanges(int32 nth, TextIndex from, int32 delta);
+
+		★★★**WHICH RECORDS MOVE IS DECIDED BY SLOT, NOT BY POSITION ALONE** (2026-09-19). A record
+		is a CARET when what it took in was an insertion (its words are gone), and two carets can
+		stand at one position - the two new paragraphs of the user's report, after both were taken
+		out. Position cannot say which of them the write is in front of; the list's order can, and it
+		is kept in reading order for exactly this. The caller names the first slot to move: for a
+		take-in, ReplacedSlotFor (the records at or before the write stay); for "Undo the Restore",
+		the slot after the record being undone (everything before it in the text stays).
+		★A record from that slot on that stands past the removed characters slides by
+		 `inserted - removed`; one standing INSIDE them (its words were just overwritten by another
+		 change - possible only when the diff swallowed it into a wider one) is collapsed to a caret
+		 after the new words, where an undo of it is refused rather than written somewhere wrong.
+		⚠**THE OLD RULE WAS "position >= from moves, by delta"** and it did two wrong things to a
+		 caret standing exactly at `from`: a removal starting there pushed it NEGATIVE (the first
+		 paragraph's record went to -2 and its undo was refused as "no longer where it was"), and an
+		 insertion there pushed a record that stood BEFORE the write along with the ones after it
+		 (two paragraphs put back came out as "¶ba"). Both measured on the running application.
+		⚠Call it BEFORE the new record is added. Out-of-range nth does nothing. */
+	void ShiftReplacedChanges(int32 nth, int32 firstSlot, TextIndex from, int32 removed, int32 inserted);
 
 	// ---- what the panel sees: the two lists as one ------------------------------------------
 	//
@@ -668,16 +778,6 @@ namespace KCMStoryList
 			looking at the change itself**: fReplacedCount says when it was replaced, not whether
 			it is being SHOWN as replaced, and the two differ after an undo. */
 	const KCMStoryChange* GetMergedChange(int32 nth, int32 which, bool16& outIsReplaced);
-
-	/** Take one REPLACED record out of the list, named by its place in the merged index space.
-
-		★**THE MERGED INDEX IS RESOLVED HERE AND NOWHERE ELSE**, for the reason stated above: the
-		  caller ("Undo the Restore") holds the number the menu handed it, and turning that into a
-		  position in fReplacedChanges is this file's own knowledge.
-		@return kFalse when the index is out of range or names a LIVE change rather than a
-			replaced one - a caller that has just written the older words back is expected to know
-			which it asked about, so this answers rather than guessing. */
-	bool16 RemoveMergedReplacedChange(int32 nth, int32 which);
 
 	/** Drop the rows whose story differs only in HOW IT IS SET -- a font, a colour, a style, a
 		table stroke -- and keep the ones whose CONTENT differs: the words, or the ruby written over

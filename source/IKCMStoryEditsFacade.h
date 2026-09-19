@@ -315,6 +315,10 @@ public:
 		/** A whole paragraph added or removed, and whether the paragraph before it is one to take in as
 			well (2026-09-17 afternoon) - KCMStoryList.h's fields of the same names say what each means.
 			The panel asks before taking in the second "+" of "+ +" on its own (the user's request).
+			★**ITS RANGES HERE ARE THE PARAGRAPH'S WORDS ALONE** (2026-09-19): the model's own record
+			holds the paragraph break as well, for the write, and GetChange cuts it off before handing
+			the ranges over - so a mark, a flash or a selection made from them never reaches the end of
+			the paragraph above. Nothing on this side needs to know the break exists.
 			⚠Appended at the END, for the reason stated above fReplaced. */
 		bool16			fWholeParagraph;
 		bool16			fAfterNewParagraph;

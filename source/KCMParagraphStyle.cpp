@@ -135,18 +135,35 @@ void KCMSnapshotChainAfter(ITextModel* model, TextIndex removedFrom, TextIndex r
 
 //----------------------------------------------------------------------------------------
 ErrorCode KCMRechainAfterRemoval(ITextModel* model, TextIndex removedFrom, int32 removedCount,
-								 const KCMChainAfter& chain)
+								 const KCMChainAfter& chain, bool16 returnBefore)
 {
 	if (model == nil || chain.fStarts.empty())
 		return kSuccess;
 	TextIndex threadStart = 0;
 	int32 threadSpan = 0;
 	InterfacePtr<ITextStoryThread> thread(model->QueryStoryThread(removedFrom, &threadStart, &threadSpan));
-	if (thread == nil || removedFrom <= threadStart)
-		return kSuccess;				// the first paragraph of its place went: nothing stands before the chain
+	if (thread == nil)
+		return kSuccess;
+
+	// Where the paragraph now standing before the chain is read. "\rTEXT" took the return of that
+	// paragraph and left TEXT's return in its place, AT removedFrom - and a paragraph is its return,
+	// so that is where an empty one is found too (the header says what reading removedFrom - 1
+	// missed). "TEXT\r" at the start of its place has nothing before the chain at all.
+	TextIndex prevAt = 0;
+	if (returnBefore)
+	{
+		if (removedFrom < threadStart)
+			return kSuccess;
+		prevAt = removedFrom;
+	}
+	else
+	{
+		if (removedFrom <= threadStart)
+			return kSuccess;			// the first paragraph of its place went: nothing stands before the chain
+		prevAt = removedFrom - 1;
+	}
 
 	IDataBase* db = ::GetDataBase(model);
-	TextIndex prevAt = removedFrom - 1;		// the last character of the paragraph now standing before the chain
 	ErrorCode err = kSuccess;
 	for (size_t i = 0; i < chain.fStarts.size(); ++i)
 	{
@@ -213,6 +230,178 @@ ErrorCode KCMApplyParagraphStyle(ITextModel* model, TextIndex start, int32 lengt
 	const ErrorCode err = CmdUtils::ProcessCommand(apply);
 	if (err != kSuccess)
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	return err;
+}
+
+//----------------------------------------------------------------------------------------
+namespace
+{
+
+/* ParagraphPositions
+   One position inside each of up to `count` consecutive paragraphs: `anchor` itself for the paragraph
+   that holds it, then the character after each return, stopping at the thread's end (its final return
+   ends the last paragraph and starts none). outThreadStart is where the thread begins, for a caller that
+   wants to look at the paragraph BEFORE the first one.
+*/
+void ParagraphPositions(ITextModel* model, TextIndex anchor, int32 count,
+						std::vector<TextIndex>& out, TextIndex& outThreadStart)
+{
+	out.clear();
+	outThreadStart = 0;
+	if (model == nil || count <= 0 || anchor < 0)
+		return;
+	TextIndex threadStart = 0;
+	int32 threadSpan = 0;
+	InterfacePtr<ITextStoryThread> thread(model->QueryStoryThread(anchor, &threadStart, &threadSpan));
+	if (thread == nil)
+		return;
+	outThreadStart = threadStart;
+	const TextIndex threadEnd = threadStart + threadSpan;
+	if (anchor >= threadEnd)
+		return;
+	out.push_back(anchor);
+	TextIterator iter(model, anchor);
+	for (TextIndex i = anchor; i < threadEnd && static_cast<int32>(out.size()) < count; ++i, ++iter)
+	{
+		if (static_cast<int32>((*iter).GetValue()) != kTextChar_CR)
+			continue;
+		if (i + 1 >= threadEnd)
+			break;						// the thread's final return: no paragraph follows it
+		out.push_back(i + 1);
+	}
+}
+
+}	// namespace
+
+//----------------------------------------------------------------------------------------
+void KCMReadParagraphStyles(ITextModel* model, TextIndex anchor, int32 count, std::vector<UID>& out)
+{
+	out.clear();
+	std::vector<TextIndex> at;
+	TextIndex threadStart = 0;
+	ParagraphPositions(model, anchor, count, at, threadStart);
+	for (size_t i = 0; i < at.size(); ++i)
+		out.push_back(KCMParagraphStyleAt(model, at[i]));
+}
+
+//----------------------------------------------------------------------------------------
+void KCMSnapshotChainFrom(ITextModel* model, TextIndex firstAt, TextIndex prevAt, KCMChainAfter& out)
+{
+	out.fStarts.clear();
+	out.fChained.clear();
+	if (model == nil || firstAt < 0)
+		return;
+	TextIndex threadStart = 0;
+	int32 threadSpan = 0;
+	InterfacePtr<ITextStoryThread> thread(model->QueryStoryThread(firstAt, &threadStart, &threadSpan));
+	if (thread == nil)
+		return;
+	const TextIndex threadEnd = threadStart + threadSpan;
+	if (firstAt >= threadEnd)
+		return;
+	IDataBase* db = ::GetDataBase(model);
+	UID previous = (prevAt >= threadStart && prevAt < firstAt) ? KCMParagraphStyleAt(model, prevAt) : kInvalidUID;
+
+	TextIndex start = firstAt;
+	TextIterator iter(model, start);
+	for (TextIndex i = start; i < threadEnd; ++i, ++iter)
+	{
+		if (static_cast<int32>((*iter).GetValue()) != kTextChar_CR)
+			continue;
+		const UID own = KCMParagraphStyleAt(model, start);
+		out.fStarts.push_back(start);
+		out.fChained.push_back((previous != kInvalidUID && own != kInvalidUID
+								&& own == KCMNextParagraphStyle(db, previous)) ? kTrue : kFalse);
+		previous = own;
+		start = i + 1;
+	}
+}
+
+//----------------------------------------------------------------------------------------
+ErrorCode KCMRestoreParagraphStyles(ITextModel* model, TextIndex anchor, const std::vector<UID>& remembered,
+									const std::vector<UID>& asLeft, int32 firstDerived,
+									const KCMChainAfter& followersBefore)
+{
+	if (model == nil)
+		return kSuccess;
+	IDataBase* db = ::GetDataBase(model);
+
+	// The paragraphs to look at: the one before (when firstDerived says there is one), the one put back,
+	// and every follower either the record or the chain snapshot knows about.
+	const int32 xIndex = (firstDerived > 0) ? 1 : 0;
+	const int32 byChain = xIndex + 1 + static_cast<int32>(followersBefore.fChained.size());
+	const int32 byRecord = static_cast<int32>(remembered.size());
+	std::vector<TextIndex> at;
+	TextIndex threadStart = 0;
+	ParagraphPositions(model, anchor, (byChain > byRecord) ? byChain : byRecord, at, threadStart);
+
+	ErrorCode err = kSuccess;
+	bool16 recordStands = kTrue;		// goes kFalse at the first follower the record no longer describes
+	for (size_t i = 0; i < at.size(); ++i)
+	{
+		const UID current = KCMParagraphStyleAt(model, at[i]);
+		const bool16 recorded = (recordStands && i < remembered.size()) ? kTrue : kFalse;
+		// ★IS THIS STILL THE PARAGRAPH THE RECORD WAS MADE FOR? Only if it wears what the take-in left it
+		//   wearing (the header says what went wrong without this test). The paragraph put back is not
+		//   tested - asLeft holds kInvalidUID for it - because the write just gave it whatever it inherited.
+		const bool16 agrees = (recorded && (i >= asLeft.size() || asLeft[i] == kInvalidUID || current == asLeft[i]))
+							  ? kTrue : kFalse;
+
+		// The paragraph above, as it stands NOW - restored a moment ago when it is one of ours. For the
+		// first paragraph of the list `anchor` is its start (the take-in cut it there), so the one above
+		// ends at anchor - 1, unless the thread begins here.
+		UID previous = kInvalidUID;
+		if (i > 0)
+			previous = KCMParagraphStyleAt(model, at[i - 1]);
+		else if (anchor - 1 >= threadStart)
+			previous = KCMParagraphStyleAt(model, anchor - 1);
+		UID next = kInvalidUID;			// what the paragraph above hands down, when it names one
+		if (previous != kInvalidUID)
+		{
+			const UID n = KCMNextParagraphStyle(db, previous);
+			if (n != previous)
+				next = n;
+		}
+
+		UID wanted = kInvalidUID;
+		if (static_cast<int32>(i) < xIndex)
+		{
+			// The paragraph before: what it wore, and only while it still looks the way it was left
+			// (restyled by hand since, it is theirs to keep).
+			if (recorded && agrees)
+				wanted = remembered[i];
+		}
+		else if (static_cast<int32>(i) == xIndex)
+		{
+			// The paragraph put back: the first layer, then the second.
+			wanted = (next != kInvalidUID) ? next : (recorded ? remembered[i] : kInvalidUID);
+		}
+		else
+		{
+			// A follower. The record, while it still describes what stands there; the chain from there on.
+			if (recorded && !agrees)
+				recordStands = kFalse;
+			if (recorded && agrees)
+			{
+				wanted = (next != kInvalidUID) ? next : remembered[i];
+			}
+			else
+			{
+				const size_t k = i - static_cast<size_t>(xIndex) - 1;
+				if (k >= followersBefore.fChained.size() || !followersBefore.fChained[k])
+					break;				// chosen by hand (or unknown): the chain ends here, and so does the walk
+				if (next == kInvalidUID)
+					continue;			// chained, but the paragraph now above names no next style: left as it is
+				wanted = next;
+			}
+		}
+
+		if (wanted == kInvalidUID || current == wanted)
+			continue;
+		const ErrorCode e = KCMApplyParagraphStyle(model, at[i], 1, wanted, kFalse /*keep its overrides*/);
+		if (e != kSuccess)
+			err = e;					// a style that cannot be applied leaves the one it had
+	}
 	return err;
 }
 

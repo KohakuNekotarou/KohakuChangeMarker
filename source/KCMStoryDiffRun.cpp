@@ -575,6 +575,11 @@ void AddWholeParagraphs(std::vector<KCMStoryChange>& out, const KCMTextDiff::Cha
 		change.fWhat = KCMStoryChange::kText;
 		change.fWholeParagraph = kTrue;
 
+		// ★**AND WHICH END OF THE RANGE THE BREAK IS AT** (2026-09-19, the user: the mark reached the end
+		//   of the paragraph above). The ranges below are cut for the WRITE; the facade cuts the break
+		//   back off them for everything the reader sees (KCMStoryList.h, KCMShownSpan).
+		change.fBreakAt = afterReturn ? kKCMBreakLeads : (beforeNext ? kKCMBreakTrails : kKCMBreakNone);
+
 		// The side that holds the paragraph: its range. The side that lacks it: the caret.
 		int32 ownStart = 0;
 		int32 ownEnd = 0;
@@ -1327,7 +1332,15 @@ void MarkOverset(IDataBase* targetDB, UID storyUID, std::vector<KCMStoryChange>&
 		return;		// every change keeps kFalse, which is what the panel did before this existed
 
 	for (size_t i = 0; i < changes.size(); ++i)
-		changes[i].fOverset = KCMIsTextIndexOverset(model, changes[i].fTargetStart);
+	{
+		// ★The position the reader is SHOWN, not the write's (2026-09-19): a whole paragraph's write
+		//   range starts at the return of the paragraph ABOVE, and asking about that character said
+		//   "composed" for a new paragraph that had itself gone over the edge.
+		TextIndex from = changes[i].fTargetStart;
+		TextIndex to = changes[i].fTargetEnd;
+		KCMShownSpan(changes[i].fBreakAt, from, to);
+		changes[i].fOverset = KCMIsTextIndexOverset(model, from);
+	}
 }
 
 /* MarkPlaces

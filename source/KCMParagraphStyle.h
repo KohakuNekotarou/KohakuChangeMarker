@@ -74,9 +74,60 @@ void KCMSnapshotChainAfter(ITextModel* model, TextIndex removedFrom, TextIndex r
 	predecessor's next style was chosen by hand, and stops the walk; the overrides of a re-styled
 	paragraph are kept (they are its own). Nothing is written where the style already agrees.
 	@param removedCount how many characters the removal took out (every start in `chain` moved by it).
+	@param returnBefore kTrue for the "\rTEXT" shape: the removal began with the return of the paragraph
+		before, and that paragraph now ends with the return standing AT removedFrom - which is where its
+		style is read, so that an EMPTY paragraph before (its return was the thread's first character)
+		still counts as standing there. ⚠Until 2026-09-19 evening removedFrom == threadStart was read as
+		"the first paragraph of its place went" for both shapes, and an empty first paragraph's followers
+		were never re-chained (measured: a taken out, then b - c stayed C instead of A's next, B).
+		kFalse for "TEXT\r" at the start of its place: nothing stands before the chain.
 	@return kSuccess when nothing needed writing too. */
 ErrorCode KCMRechainAfterRemoval(ITextModel* model, TextIndex removedFrom, int32 removedCount,
-								 const KCMChainAfter& chain);
+								 const KCMChainAfter& chain, bool16 returnBefore);
+
+/** The styles of `count` consecutive paragraphs, the first being the one that holds `anchor`, the rest
+	the ones after it in the same thread (fewer when the thread ends first). What a whole-paragraph
+	take-in remembers before it writes (2026-09-19, KCMStoryChange::fBeforeParaStyles). */
+void KCMReadParagraphStyles(ITextModel* model, TextIndex anchor, int32 count, std::vector<UID>& out);
+
+/** Reads the chain of the paragraphs from `firstAt` to the end of its thread - whether each wears the
+	NEXT STYLE of the paragraph before it - the way KCMSnapshotChainAfter does for a removal, here for a
+	paragraph about to be PUT BACK in front of them ("Undo the Restore"). `prevAt` is a character of the
+	paragraph standing before `firstAt`, or -1 (or a position before the thread) when none does: the first
+	paragraph is then "not chained". fStarts are BEFORE the write; only fChained is read afterwards. */
+void KCMSnapshotChainFrom(ITextModel* model, TextIndex firstAt, TextIndex prevAt, KCMChainAfter& out);
+
+/** Puts the styles back after "Undo the Restore" has written a whole paragraph's words - on the paragraph
+	before it, on the paragraph put back, and on the paragraphs after it (2026-09-19, the user's rule, in
+	TWO LAYERS):
+	  the paragraph before (`firstDerived` == 1)  -> exactly what was remembered: nothing about it changed,
+	                                                 so nothing is derived (and only while it still wears
+	                                                 what the take-in left it, `asLeft`);
+	  the paragraph put back (index firstDerived) -> the NEXT STYLE of the paragraph above when that style
+	                                                 names one, else what was remembered ([Same Style] names
+	                                                 none); with no record, the next style or nothing;
+	  the paragraphs after it                     -> the same two layers while the record still describes
+	                                                 them (`asLeft` agrees); from the first one it does not -
+	                                                 or beyond the record - the CHAIN alone, the mirror of
+	                                                 the take-out's KCMRechainAfterRemoval: a paragraph that
+	                                                 wore the next style of the paragraph before it BEFORE
+	                                                 the write (`followersBefore`) gets the next style of
+	                                                 the paragraph now before it, when that names one; the
+	                                                 first that did not stops the walk.
+	★Why both: measured 2026-09-19 evening. Three new paragraphs a b c taken out in the order c, b, a and
+	 put back in the order c, b, a: c came back under the empty first paragraph and rightly took its next
+	 style (B); b then came back between them, and c - which b's record could not hold, c having been gone
+	 when b was taken out - stayed B where the chain says C. The chain is what knows about paragraphs the
+	 record never saw; the record is what knows a style the chain cannot derive ([Same Style], a style
+	 chosen by hand).
+	The paragraph above is read after IT has been restored, so a chain propagates. Overrides are kept; a
+	style that no longer exists is skipped; nothing is written where the style already agrees.
+	@param remembered / asLeft KCMStoryChange::fBeforeParaStyles / fAfterParaStyles (either may be empty).
+	@param followersBefore KCMSnapshotChainFrom, taken BEFORE the words were written.
+	@return kSuccess when nothing needed writing too. */
+ErrorCode KCMRestoreParagraphStyles(ITextModel* model, TextIndex anchor, const std::vector<UID>& remembered,
+									const std::vector<UID>& asLeft, int32 firstDerived,
+									const KCMChainAfter& followersBefore);
 
 #endif // __KCMParagraphStyle_h__
 

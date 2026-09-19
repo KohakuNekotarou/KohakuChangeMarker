@@ -637,7 +637,7 @@ bool16 RefindAfterEdit(int32 nth, IDataBase* targetDB, IDataBase* sourceDB,
 	  pour follows (KCMStoryTextImport's ApplyParagraph, "back to front").
 */
 bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessage,
-				  KCMStoryChange* outDone, IDataBase* sourceDBIn)
+				  KCMStoryChange* outDone, int32* outSlot, IDataBase* sourceDBIn)
 {
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
@@ -798,6 +798,12 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 	KCMStoryChange done  = change;
 	done.fBeforeStart    = change.fTargetStart;
 	done.fBeforeEnd      = change.fTargetEnd;
+
+	// ★**WHERE THIS RECORD WILL STAND AMONG THE ONES ALREADY REPLACED** (2026-09-19) - asked of the
+	//   list BEFORE the write shifts it, because after the write two records can share a position
+	//   and the position alone no longer says which came first (KCMStoryList.h, fReplacedChanges).
+	//   Each branch below asks at the place it writes.
+	int32 slot = 0;
 	done.fBeforeTextPre  = change.fTextPre;
 	done.fBeforeText     = change.fText;
 	done.fBeforeTextPost = change.fTextPost;
@@ -881,6 +887,23 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 			if (removesParagraph)
 				KCMSnapshotChainAfter(target, writeAt, writeAt + targetCount, chain);
 
+			// ★★**AND THE STYLES THOSE PARAGRAPHS WEAR ARE REMEMBERED ON THE RECORD** (2026-09-19, the
+			//   user: "a b c styled A B C - take b out, put it back, and everything reads C"). "Undo the
+			//   Restore" writes the WORDS back; the paragraph put back then inherits the style of the one
+			//   before it, and the ones the chain below moved along stay moved. Measured: a:A b:A c:B.
+			//   Remembered from the paragraph holding writeAt on: the paragraph before (for "\rNEW" -
+			//   its own style can go too, see the guard below), the paragraph going out, and as many
+			//   following paragraphs as the chain will move. KCMStoryList.h says how they go back on.
+			if (change.fWholeParagraph)
+			{
+				int32 chained = 0;
+				for (size_t k = 0; removesParagraph && k < chain.fChained.size() && chain.fChained[k]; ++k)
+					++chained;
+				const int32 count = ((change.fBreakAt == kKCMBreakLeads) ? 1 : 0)
+								  + (removesParagraph ? 1 + chained : 0);
+				KCMReadParagraphStyles(target, writeAt, count, done.fBeforeParaStyles);
+			}
+
 			InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(target, writeAt, targetCount, *words));
 			if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
 			{
@@ -888,8 +911,39 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 				outMessage = Refused("the write failed (a locked story or layer?).");
 				return kFalse;
 			}
+			// ★★**THE PARAGRAPH BEFORE KEEPS ITS OWN STYLE** (2026-09-19, measured on InDesign itself:
+			//   deleting "\rY" after an EMPTY paragraph leaves that paragraph in Y's style - the join keeps
+			//   the upper paragraph's style only when it has characters). Nothing about that paragraph
+			//   changed, so it gets back what it wore - and BEFORE the chain below reads it as the "before"
+			//   of the paragraphs that follow.
+			if (removesParagraph && change.fBreakAt == kKCMBreakLeads && !done.fBeforeParaStyles.empty())
+			{
+				const UID kept = done.fBeforeParaStyles[0];
+				if (kept != kInvalidUID && KCMParagraphStyleAt(target, writeAt) != kept)
+					KCMApplyParagraphStyle(target, writeAt, 1, kept, kFalse /*keep its overrides*/);
+			}
 			if (removesParagraph)
-				KCMRechainAfterRemoval(target, writeAt, targetCount, chain);		// a style that cannot be applied leaves the one it had
+				KCMRechainAfterRemoval(target, writeAt, targetCount, chain,		// a style that cannot be applied leaves the one it had
+									   (change.fBreakAt == kKCMBreakLeads) ? kTrue : kFalse);
+
+			// ★★**AND HOW THE TAKE-IN LEFT THOSE PARAGRAPHS, FOR THE UNDO TO RECOGNISE THEM BY**
+			//   (KCMStoryList.h, fAfterParaStyles): the paragraph before and the followers, read where
+			//   they stand now - the paragraph that went out gets no entry. Aligned with fBeforeParaStyles.
+			if (change.fWholeParagraph && !done.fBeforeParaStyles.empty())
+			{
+				const int32 total  = static_cast<int32>(done.fBeforeParaStyles.size());
+				const int32 pCount = (change.fBreakAt == kKCMBreakLeads) ? 1 : 0;
+				const int32 xCount = removesParagraph ? 1 : 0;
+				const int32 fCount = total - pCount - xCount;
+				std::vector<UID> now;
+				KCMReadParagraphStyles(target, writeAt, pCount + fCount, now);	// P (when it is ours), then the followers
+				done.fAfterParaStyles.assign(static_cast<size_t>(total), kInvalidUID);
+				size_t n = 0;
+				for (int32 i = 0; i < pCount && n < now.size(); ++i)
+					done.fAfterParaStyles[static_cast<size_t>(i)] = now[n++];
+				for (int32 i = 0; i < fCount && n < now.size(); ++i)
+					done.fAfterParaStyles[static_cast<size_t>(pCount + xCount + i)] = now[n++];
+			}
 			// ★★**A WHOLE PARAGRAPH TAKEN IN AFTER ANOTHER GETS THAT PARAGRAPH'S NEXT STYLE** (2026-09-17
 			//   afternoon, the user's rule - both the Import and the Task Start, and taken from the document
 			//   AS IT STANDS: "\rNEW" went in right before the return of the paragraph it follows, so it
@@ -913,8 +967,12 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 		//   words with five pushes every later replaced row along by two, and a row whose
 		//   position quietly rots is a row whose jump lands in the wrong place.
 		//   ⚠BEFORE the new one is added, so that it is not shifted by its own write.
-		KCMStoryList::ShiftReplacedChanges(nth, writeAt,
-										   static_cast<int32>(words->Length()) - targetCount);
+		//   ★**"FURTHER DOWN" IS DECIDED BY SLOT** (2026-09-19): the records at or before writeAt
+		//     stay, the rest follow the write - by what it removed and what it put in, not by one
+		//     delta, so that a caret standing where the removed text began is not pushed under
+		//     zero (the user's report: the first of two new paragraphs could not be put back).
+		slot = KCMStoryList::ReplacedSlotFor(nth, writeAt);
+		KCMStoryList::ShiftReplacedChanges(nth, slot, writeAt, targetCount, static_cast<int32>(words->Length()));
 
 		if (words->Length() > 0)
 		{
@@ -1062,16 +1120,21 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 		// the cell's highlight are for.
 		done.fReplacedStart = change.fTargetStart;
 		done.fReplacedEnd   = change.fTargetEnd;
+		slot = KCMStoryList::ReplacedSlotFor(nth, done.fReplacedStart);	// no length changed: nothing to shift
 	}
 
 	// ***** THE BOOKKEEPING, WHICH A BULK CALLER OWNS INSTEAD. *****
 	// Handing `done` back is what lets it: the replaced row cannot be added here, because the
 	// counter that decides whether it is DRAWN as replaced is the one the re-diff records, and the
-	// bulk run re-diffs once, at the end, for all of them at once.
+	// bulk run re-diffs once, at the end, for all of them at once. ★The slot goes with it: it was
+	// asked before the write and stays true (records never cross one another), so the bulk run can
+	// put the record where it belongs once it is done.
 	if (!standalone)
 	{
 		if (outDone != nil)
 			*outDone = done;
+		if (outSlot != nil)
+			*outSlot = slot;
 		return kTrue;
 	}
 
@@ -1109,7 +1172,10 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 			//   be visible here. The choosing lives in ONE place, and CountForKind is it.
 			done.fReplacedCount = KCMStoryDiffRun::CountForKind(
 										UIDRef(targetDB, after->fStoryUID), done.fAttrKind);
-			KCMStoryList::AddReplacedChange(nth, done);
+			// ★At the slot asked for before the write, not sorted in by position: after a
+			//   take-out the record can share its position with one that stands AFTER it, and
+			//   sorting would put it behind that one (KCMStoryList.h, fReplacedChanges).
+			KCMStoryList::AddReplacedChangeAt(nth, slot, done);
 		}
 	}
 
@@ -1195,6 +1261,7 @@ bool16 BulkRun(int32 nth, IDataBase* sourceDBIn, int32& outWritten, int32& outSk
 		return kFalse;
 
 	std::vector<KCMStoryChange> dones;
+	std::vector<int32> slots;		// where each of `dones` belongs among the records already in the list
 	const int32 count = KCMStoryList::GetMergedChangeCount(nth);
 	for (int32 i = count - 1; i >= 0; --i)
 	{
@@ -1205,7 +1272,8 @@ bool16 BulkRun(int32 nth, IDataBase* sourceDBIn, int32& outWritten, int32& outSk
 
 		PMString whyNot;
 		KCMStoryChange done;
-		if (RestoreOne(nth, i, kFalse, whyNot, &done, sourceDB))
+		int32 slot = 0;
+		if (RestoreOne(nth, i, kFalse, whyNot, &done, &slot, sourceDB))
 		{
 			// ★**WHAT THIS WRITE DID TO THE ONES ALREADY DONE.** They all lie AFTER this change
 			//   (the walk is backwards), so a write that changed the length slides every one of
@@ -1221,6 +1289,7 @@ bool16 BulkRun(int32 nth, IDataBase* sourceDBIn, int32& outWritten, int32& outSk
 						dones[k].fReplacedEnd   += delta;
 					}
 			dones.push_back(done);
+			slots.push_back(slot);
 			++outWritten;
 		}
 		else
@@ -1277,14 +1346,24 @@ bool16 BulkRun(int32 nth, IDataBase* sourceDBIn, int32& outWritten, int32& outSk
 	{
 		const KCMStoryRow* const after = KCMStoryList::GetRow(nth);
 		if (after != nil)
-			for (size_t k = 0; k < dones.size(); ++k)
+		{
+			// ★**IN READING ORDER, EACH AT ITS OWN SLOT** (2026-09-19). `dones` was collected walking
+			//   BACKWARDS, so the last collected is the first in the text: it goes in first, at the
+			//   slot asked for before its write; every later one goes in after it, its slot moved
+			//   along by the ones already put in (all of which stand before it in the text). Sorting
+			//   them in by position put two new paragraphs the wrong way round - they end at the
+			//   same caret - and their undo then wrote "¶ba" (KCMStoryList.h, fReplacedChanges).
+			int32 putIn = 0;
+			for (size_t k = dones.size(); k > 0; --k, ++putIn)
 			{
+				KCMStoryChange& d = dones[k - 1];
 				// ⚠Each change by ITS OWN instrument - a bulk run can hold words and rubies
 				//   together, and the two are not measured by the same counter (CountForKind).
-				dones[k].fReplacedCount = KCMStoryDiffRun::CountForKind(
-												UIDRef(targetDB, after->fStoryUID), dones[k].fAttrKind);
-				KCMStoryList::AddReplacedChange(nth, dones[k]);
+				d.fReplacedCount = KCMStoryDiffRun::CountForKind(
+										UIDRef(targetDB, after->fStoryUID), d.fAttrKind);
+				KCMStoryList::AddReplacedChangeAt(nth, slots[k - 1] + putIn, d);
 			}
+		}
 	}
 	return kTrue;
 }
@@ -1342,7 +1421,7 @@ PMString BulkSequenceName(bool16 wholeList)
 
 bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 {
-	return RestoreOne(nth, which, kTrue, outMessage, nil, nil);
+	return RestoreOne(nth, which, kTrue, outMessage, nil, nil, nil);
 }
 
 bool16 KCMStoryWritesAllowed()
@@ -1404,6 +1483,14 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 	// ⚠**COPIES FIRST**: the list is rewritten below and both pointers go stale with it.
 	const KCMStoryChange change = *found;
 	const UID storyUID = row->fStoryUID;
+	// ★Its slot in the replaced list: what decides which records the write below moves (the ones
+	//   AFTER it in the text, however many share its position), and which record is taken out.
+	const int32 slot = KCMStoryList::ReplacedSlotOfMerged(nth, which);
+	if (slot < 0)
+	{
+		outMessage = Refused("no such change (the list was rebuilt - right-click the row again).");
+		return kFalse;
+	}
 
 	IDataBase* const targetDB = KCMArmedTargetDB();
 	if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
@@ -1586,9 +1673,46 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 			// The words: the Target's own characters as the take-in found them (fBeforeRaw, checked
 			//   above). An insertion taken in is put back by deleting what went in; a deletion taken
 			//   in (nothing went in, len 0) by inserting them (KCMCreateWordsWriteCmd picks which).
+			// ★The chain of the paragraphs the put-back paragraph will stand in front of, read BEFORE the
+			//   write (KCMRestoreParagraphStyles says what it is for). "\rNEW" goes in at the return of
+			//   the paragraph before, so the followers begin after it; "NEW\r" at the start of its place,
+			//   so they begin at `at` itself, and the paragraph before ends at at - 1 if there is one.
+			KCMChainAfter followersBefore;
+			if (change.fWholeParagraph && change.fBeforeRaw.CharCount() > 0)
+			{
+				const bool16 leadsHere = (change.fBreakAt == kKCMBreakLeads) ? kTrue : kFalse;
+				KCMSnapshotChainFrom(target, leadsHere ? at + 1 : at, leadsHere ? at : at - 1, followersBefore);
+			}
+
 			InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(target, at, len, change.fBeforeRaw));
 			err = (write != nil) ? CmdUtils::ProcessCommand(write) : kFailure;
 			outMessage = Ascii("Put back ");
+
+			// ★★**AND A WHOLE PARAGRAPH GETS ITS STYLES BACK** (2026-09-19, the user's rule - in the same undo
+			//   step as the words). The take-in remembered them (fBeforeParaStyles, KCMStoryList.h); the
+			//   paragraph before gets exactly what it had, the paragraph put back and the ones after it
+			//   the next style of the paragraph above when it names one, else what was remembered
+			//   (KCMRestoreParagraphStyles). Without a record - none was made - the chain alone, the way the
+			//   take-in itself styles a paragraph it puts in.
+			//   ⚠For a paragraph the take-in had PUT IN ("\rNEW", now taken out again), only the paragraph
+			//    before is at stake: an empty one takes NEW's style when the join removes its return.
+			if (err == kSuccess && change.fWholeParagraph)
+			{
+				const int32 wentBack = change.fBeforeRaw.CharCount();
+				const bool16 leads = (change.fBreakAt == kKCMBreakLeads) ? kTrue : kFalse;
+				if (wentBack > 0)
+				{
+					// With or without a record: the function takes the chain when the record is silent.
+					KCMRestoreParagraphStyles(target, at, change.fBeforeParaStyles, change.fAfterParaStyles,
+											  leads ? 1 : 0, followersBefore);
+				}
+				else if (leads && !change.fBeforeParaStyles.empty())
+				{
+					const UID kept = change.fBeforeParaStyles[0];
+					if (kept != kInvalidUID && KCMParagraphStyleAt(target, at) != kept)
+						KCMApplyParagraphStyle(target, at, 1, kept, kFalse /*keep its overrides*/);
+				}
+			}
 		}
 
 		if (seq != nil)
@@ -1613,16 +1737,20 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 	//   so that the walk sees the list as it stood when the write happened.
 	//   ⚠An attribute write changes no lengths, so the delta is zero and the call is a no-op -
 	//    stated rather than branched on, because the reason it is zero is worth reading.
+	//   ★**ONLY THE RECORDS AFTER THIS ONE IN THE LIST** (2026-09-19): a record sharing its
+	//    position but standing BEFORE it in the text (the earlier of two paragraphs taken out to
+	//    the same caret) must not move when this one's words go back in front of it. By position
+	//    alone it did, and the pair came back as "¶ba".
 	{
 		const int32 wentBack = (change.fAttrKind == kKCMStoryAttrNone)
 							 ? change.fBeforeRaw.CharCount() : len;
-		KCMStoryList::ShiftReplacedChanges(nth, at, wentBack - len);
+		KCMStoryList::ShiftReplacedChanges(nth, slot + 1, at, len, wentBack);
 	}
 
 	// ***** THE RECORD GOES, AND THE STORY IS COMPARED AGAIN. *****
 	// The change is a live difference once more - which is exactly what it was before the reader
 	// took it in - so the row shows it that way and can take it in again.
-	KCMStoryList::RemoveMergedReplacedChange(nth, which);
+	KCMStoryList::RemoveReplacedChangeAt(nth, slot);
 
 	// ⚠**AND NO COPY IS BUILT FOR IT WHEN THE STORY IS KEPT** - this item would otherwise carry
 	//   the very cost that was taken out of the take-in the same day (KCMSourceCache.h): a whole

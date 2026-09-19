@@ -585,6 +585,19 @@ public:
 				out.fTextPost		= change.fBeforeTextPost;
 			}
 		}
+
+		// ★★**A WHOLE PARAGRAPH IS HANDED OUT AS ITS WORDS, WITHOUT THE BREAK** (2026-09-19, the user:
+		//   "the mark reaches the end of the paragraph above - I want that gone"). The model's ranges
+		//   carry the return of the paragraph before (or the paragraph's own) because the WRITE needs
+		//   it (KCMStoryList.h, fWholeParagraph); shown as they stand, the standing mark, the jump's
+		//   flash and the double click's selection all began on that return - at the END OF THE
+		//   PARAGRAPH ABOVE. This is the ONE place the UI and the marks read a change's ranges from, so
+		//   the break is cut off here and nothing over there has to know it was ever in the range.
+		//   ★All four pairs, because all four are shown: the target's (whichever of the three the
+		//     branches above chose - a replaced paragraph's range holds the break it wrote), and the
+		//     source's. A caret is left as it is (KCMShownSpan).
+		KCMShownSpan(change.fBreakAt, out.fTargetStart, out.fTargetEnd);
+		KCMShownSpan(change.fBreakAt, out.fSourceStart, out.fSourceEnd);
 		return kTrue;
 	}
 

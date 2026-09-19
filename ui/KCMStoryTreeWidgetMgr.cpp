@@ -168,14 +168,18 @@ PMString AttrKindIdLabel(int32 attrKind)
 
 /** What a change row's ID column names a TEXT change as, by where its words stand (2026-09-19, the
 	user's request). ★ONE PLACE for the words, like AttrKindIdLabel: the row shows them and the column
-	is fitted to them (KCMRecomputeListLeftColumnWidth measures the widest). */
-const char* PlaceIdLabel(int32 place)
+	is fitted to them (KCMRecomputeListLeftColumnWidth measures the widest).
+	★**A WHOLE PARAGRAPH SAYS SO** (2026-09-19 evening, the user: "a + alone does not say whether
+	  characters were added or a paragraph was - write Paragraph in the ID column"): "Paragraph" /
+	  "Cell Paragraph" / "Note Paragraph" for a row that adds or removes a paragraph whole
+	  (Change::fWholeParagraph), the same three places as the words. */
+const char* PlaceIdLabel(int32 place, bool16 wholeParagraph)
 {
 	switch (place)
 	{
-		case 1:		return "Cell Text";		// KCMStoryList.h's kKCMPlaceCell
-		case 2:		return "Note Text";		// kKCMPlaceNote
-		default:	return "Text";			// kKCMPlaceBody
+		case 1:		return wholeParagraph ? "Cell Paragraph" : "Cell Text";	// KCMStoryList.h's kKCMPlaceCell
+		case 2:		return wholeParagraph ? "Note Paragraph" : "Note Text";	// kKCMPlaceNote
+		default:	return wholeParagraph ? "Paragraph" : "Text";			// kKCMPlaceBody
 	}
 }
 
@@ -1033,7 +1037,7 @@ private:
 		{
 			if (change.fOverset)
 				idText.Append("OV ");
-			idText.Append(PlaceIdLabel(change.fPlace));
+			idText.Append(PlaceIdLabel(change.fPlace, change.fWholeParagraph));
 		}
 		idText.SetTranslatable(kFalse);
 		this->SetNodeName(widgetList, idText, kKCMStoryRowUIDWidgetID);
@@ -1220,12 +1224,12 @@ void KCMRecomputeListLeftColumnWidth()
 			return;
 
 		PMReal widestUid(0.0);
-		// ★THE TEXT CHANGES' OWN WORDS (2026-09-19): "OV Cell Text" is the widest thing this column can
-		//   hold, and it is measured whether or not a row shows it today - the column must not jump
-		//   the first time one does.
+		// ★THE TEXT CHANGES' OWN WORDS (2026-09-19): "OV Cell Paragraph" is the widest thing this column
+		//   can hold (it was "OV Cell Text" until the evening of the same day), and it is measured whether
+		//   or not a row shows it today - the column must not jump the first time one does.
 		{
 			PMString widestPlace("OV ");
-			widestPlace.Append(PlaceIdLabel(1));
+			widestPlace.Append(PlaceIdLabel(1, kTrue));
 			widestPlace.SetTranslatable(kFalse);
 			widestUid = StringUtils::PMMeasureString(widestPlace, font, kFalse).X();
 		}
