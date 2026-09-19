@@ -362,7 +362,42 @@ bool16 WriteParagraphContent(const KCMStoryHtml::Para& p, std::string& out, std:
 namespace
 {
 
-const char* const kContinuedProps = "<w:pPr><w:pStyle w:val=\"kcm-continued\"/></w:pPr>";
+/*	The two marks a paragraph carries when it goes on past a table (the design, 4-5; stage 3b,
+	2026-09-19). Word has no table inside a paragraph - a table stands between paragraphs - so
+	which paragraph a table belongs to, and whether the paragraph after it is the same paragraph,
+	is said by a mark at the paragraph's END (before the table: "this paragraph goes on past the
+	table") and one at the START (after it: "this is the paragraph from before the table"). One
+	mark cancels one of Word's breaks, so "A[T]B" in one paragraph carries both.
+	★A LOCKED CONTROL, the shape of the placeholders (AppendPlaceholder): the TAG is the truth, the
+	  text inside is an English explanation for whoever opens the file. Measured in Word 2007: a
+	  control copied whole (its boundaries included) is pasted with its tag, but the paste is NOT
+	  recorded as a revision - so a person's pasted mark stands on both sides of the reader and
+	  the origin's fingerprint then differs (a whole comparison, said as such). The TYPED form,
+	  KCM:continued (the reader's kTypedToken), IS recorded, so it is the one the legend recommends.
+	★NOT THE PARAGRAPH STYLE. Until stage 3b the "continued" half carried a paragraph style,
+	  kcm-continued. That slot (w:pStyle) is left empty now, for the day the paragraph style
+	  carries InDesign's paragraph style name (the design, 11-4). */
+const char* const kMarkContinues =
+	"<w:sdt><w:sdtPr><w:alias w:val=\"KCM: continues past the table\"/><w:tag w:val=\"kcm-continues\"/>"
+	"<w:lock w:val=\"sdtContentLocked\"/></w:sdtPr><w:sdtContent><w:r><w:t>\xE2\x9F\xA6"
+	"continues past the table" "\xE2\x9F\xA7</w:t></w:r></w:sdtContent></w:sdt>";
+const char* const kMarkContinued =
+	"<w:sdt><w:sdtPr><w:alias w:val=\"KCM: continued from before the table\"/><w:tag w:val=\"kcm-continued\"/>"
+	"<w:lock w:val=\"sdtContentLocked\"/></w:sdtPr><w:sdtContent><w:r><w:t>\xE2\x9F\xA6"
+	"continued from before the table" "\xE2\x9F\xA7</w:t></w:r></w:sdtContent></w:sdt>";
+/*	The legend (the design, 4-6): how to use the file, and one of each mark to copy, first in the
+	body. NOT locked: the reader skips the whole control by its tag (ReadBlocks), so whatever is done
+	to it does no harm, and a person may delete it. ⚠Measured: a control-locked legend cannot be
+	deleted by selecting it and pressing Delete, and that was found to be a nuisance, not a guard. */
+const char* const kLegendHead =
+	"<w:sdt><w:sdtPr><w:alias w:val=\"KCM: how to use this file\"/><w:tag w:val=\"kcm-legend\"/></w:sdtPr><w:sdtContent>"
+	"<w:p><w:r><w:t xml:space=\"preserve\">KCM: keep Track Changes on. A paragraph that goes on past a table "
+	"carries a mark at its end (before the table) or at its start (after the table). Copy a mark from here, "
+	"or type KCM:continued at the end or the start of the paragraph.</w:t></w:r></w:p>"
+	"<w:p><w:r><w:t xml:space=\"preserve\">end of a paragraph, before a table: </w:t></w:r>";
+const char* const kLegendMiddle =
+	"</w:p><w:p><w:r><w:t xml:space=\"preserve\">start of a paragraph, after a table: </w:t></w:r>";
+const char* const kLegendTail = "</w:p></w:sdtContent></w:sdt>";
 
 // A table inside a table inside a table... The data cannot really do this (a nested table comes
 // later in Story::fTables than the one it stands in), so this only stops a malformed Story from
@@ -422,23 +457,26 @@ KCMStoryHtml::Para Slice(const KCMStoryHtml::Para& p, const std::vector<int32>& 
 	return piece;
 }
 
-/** One <w:p>. An empty one with nothing to say about itself is <w:p/>. */
-bool16 AppendParagraph(const KCMStoryHtml::Para& piece, bool16 continued, std::string& out,
-					   std::string& whyNot)
+/** One <w:p>, with the mark at its start when it is the piece after a table and the mark at its
+	end when it is the piece before one. An empty one with nothing to say about itself is <w:p/>. */
+bool16 AppendParagraph(const KCMStoryHtml::Para& piece, bool16 continuedFromTable, bool16 continuesPastTable,
+					   std::string& out, std::string& whyNot)
 {
 	std::string content;
 	if (!WriteParagraphContent(piece, content, whyNot))
 		return kFalse;
 
-	if (content.empty() && !continued)
+	if (content.empty() && !continuedFromTable && !continuesPastTable)
 	{
 		out += "<w:p/>";
 		return kTrue;
 	}
 	out += "<w:p>";
-	if (continued)
-		out += kContinuedProps;
+	if (continuedFromTable)
+		out += kMarkContinued;
 	out += content;
+	if (continuesPastTable)
+		out += kMarkContinues;
 	out += "</w:p>";
 	return kTrue;
 }
@@ -636,16 +674,30 @@ bool16 AppendBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml
 			if (at < pos)	at = pos;
 			if (at > n)		at = n;
 
-			if (!AppendParagraph(Slice(p, byteAt, pos, at, first), first ? kFalse : kTrue, out, whyNot))
-				return kFalse;
+			// ★A TABLE AT THE HEAD OF ITS PARAGRAPH STARTS THE PARAGRAPH ITSELF: the empty first piece
+			//   is not written, and the reader's rule (a table with no mark in front of it opens a
+			//   paragraph of its own) puts it back. Between two tables, though, an empty piece IS
+			//   written - the two marks alone - because Word joins tables that touch.
+			//   ⚠A reference standing at that very place belongs to the first piece (Slice), so an
+			//   empty first piece that carries one is written after all - the reference has nowhere
+			//   else to go.
+			{
+				const KCMStoryHtml::Para piece = Slice(p, byteAt, pos, at, first);
+				if (!(first && at == 0 && piece.fNoteRefs.empty()))
+				{
+					if (!AppendParagraph(piece, first ? kFalse : kTrue, kTrue, out, whyNot))
+						return kFalse;
+				}
+			}
 			if (!AppendTable(s, t, depth, out, whyNot))
 				return kFalse;
 			pos = at;
 			first = kFalse;
 		}
 
-		// ⚠THE TAIL IS ALWAYS WRITTEN - the header says which two rules of Word's ask for it.
-		if (!AppendParagraph(Slice(p, byteAt, pos, n, first), first ? kFalse : kTrue, out, whyNot))
+		// ⚠THE TAIL IS ALWAYS WRITTEN - the header says which two rules of Word's ask for it. After a
+		//   table it is the mark alone when there are no words left.
+		if (!AppendParagraph(Slice(p, byteAt, pos, n, first), first ? kFalse : kTrue, kFalse, out, whyNot))
 			return kFalse;
 	}
 	return kTrue;
@@ -727,9 +779,8 @@ bool16 WriteStyles(const KCMStoryHtml::Story& s, std::string& out, std::string& 
 		   "<w:style w:type=\"paragraph\" w:default=\"1\" w:styleId=\"Normal\"><w:name w:val=\"Normal\"/>"
 		   "<w:qFormat/></w:style>"
 		   "<w:style w:type=\"character\" w:default=\"1\" w:styleId=\"DefaultParagraphFont\">"
-		   "<w:name w:val=\"Default Paragraph Font\"/><w:uiPriority w:val=\"1\"/><w:semiHidden/></w:style>"
-		   "<w:style w:type=\"paragraph\" w:customStyle=\"1\" w:styleId=\"kcm-continued\">"
-		   "<w:name w:val=\"kcm-continued\"/><w:basedOn w:val=\"Normal\"/><w:qFormat/></w:style>";
+		   "<w:name w:val=\"Default Paragraph Font\"/><w:uiPriority w:val=\"1\"/><w:semiHidden/></w:style>";
+	// (no paragraph style of ours: the slot is left for InDesign's paragraph style names - kMarkContinues says why)
 
 	for (size_t i = 0; i < kBuiltInKentenCount; ++i)
 		AppendKentenStyle(kBuiltInKenten[i].fClass, kBuiltInKenten[i].fWordMark, out);
@@ -894,6 +945,12 @@ bool16 WriteStoryElements(const KCMStoryHtml::Story& s, std::string& outDocument
 	outDocument = "<w:document ";
 	outDocument += kWordNamespace;
 	outDocument += "><w:body>";
+	// the legend first (kLegendHead says what it is for); constant, so the fingerprint stays one
+	outDocument += kLegendHead;
+	outDocument += kMarkContinues;
+	outDocument += kLegendMiddle;
+	outDocument += kMarkContinued;
+	outDocument += kLegendTail;
 	if (!WriteBlocks(s, s.fBody, -1, 0, 0, outDocument, whyNot))
 		return kFalse;
 	outDocument += "<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/>";
@@ -1180,7 +1237,8 @@ struct Building
 	KCMAttrSpanList						fTcy;			// fValue filled by Finish
 	KCMAttrSpanList						fWarichu;
 	std::vector<KCMStoryHtml::NoteRef>	fNoteRefs;		// fNote holds the footnote ID until ResolveNotes ranks it
-	bool16								fContinued;		// pStyle kcm-continued: the rest of the paragraph before
+	bool16								fContinuedFromTable;	// the mark at the start (or the typed token there): the paragraph from before the table
+	bool16								fContinuesPastTable;	// the mark at the end (or the typed token there): goes on past the table after it
 	int32								fMarkRevision;	// 0 none, +1 the paragraph mark was inserted, -1 deleted
 	// the field being collected, if any
 	int32								fFieldDepth;	// 0 none, 1 between begin and end
@@ -1188,8 +1246,110 @@ struct Building
 	std::string							fFieldCode;
 	RLook								fFieldLook;		// the look of the run holding the begin
 
-	Building() : fLen(0), fContinued(kFalse), fMarkRevision(0), fFieldDepth(0), fInResult(kFalse) {}
+	Building() : fLen(0), fContinuedFromTable(kFalse), fContinuesPastTable(kFalse), fMarkRevision(0),
+				 fFieldDepth(0), fInResult(kFalse) {}
 };
+
+/** The mark a person types where a control would stand (the design, 4-5): compared in lower case,
+	with full-width ASCII folded, spaces (U+0020, U+3000) allowed between it and the paragraph's edge. */
+const char* const kTypedToken = "kcm:continued";
+
+int32 FoldForToken(int32 cp)
+{
+	if (cp >= 0xFF01 && cp <= 0xFF5E)	cp -= 0xFEE0;
+	if (cp >= 'A' && cp <= 'Z')			cp += 'a' - 'A';
+	return cp;
+}
+
+bool16 IsTokenSpace(int32 cp)
+{
+	return (cp == 0x20 || cp == 0x3000) ? kTrue : kFalse;
+}
+
+/** kTrue when the typed token stands at the paragraph's start (atStart) or at its end; outFrom and
+	outCount are then the code points to drop - the token and the spaces between it and the edge. */
+bool16 TypedTokenAt(const Building& b, bool16 atStart, int32& outFrom, int32& outCount)
+{
+	std::vector<int32> cps;
+	KCMTextDiff::ToCodePoints(b.fText, &cps, nil);
+	const int32 n = static_cast<int32>(cps.size());
+	const int32 len = static_cast<int32>(::strlen(kTypedToken));
+	if (atStart)
+	{
+		int32 i = 0;
+		while (i < n && IsTokenSpace(cps[i]))
+			++i;
+		if (i + len > n)
+			return kFalse;
+		for (int32 k = 0; k < len; ++k)
+			if (FoldForToken(cps[i + k]) != kTypedToken[k])
+				return kFalse;
+		// (no separator is asked for after it: Japanese text has no spaces, so "KCM:continuedい" is
+		//  what a person types at the head of い)
+		int32 e = i + len;
+		while (e < n && IsTokenSpace(cps[e]))
+			++e;
+		outFrom = 0;
+		outCount = e;
+		return kTrue;
+	}
+	int32 e = n;
+	while (e > 0 && IsTokenSpace(cps[e - 1]))
+		--e;
+	if (e < len)
+		return kFalse;
+	for (int32 k = 0; k < len; ++k)
+		if (FoldForToken(cps[e - len + k]) != kTypedToken[k])
+			return kFalse;
+	int32 i = e - len;
+	while (i > 0 && IsTokenSpace(cps[i - 1]))
+		--i;
+	outFrom = i;
+	outCount = n - i;
+	return kTrue;
+}
+
+/** Take code points [from, from+count) out of a paragraph being built: the text, and every span
+	and note reference moved or cut to match. */
+void DropCodePoints(Building& b, int32 from, int32 count)
+{
+	std::vector<int32> cps;
+	std::vector<int32> byteAt;
+	KCMTextDiff::ToCodePoints(b.fText, &cps, &byteAt);
+	const int32 n = static_cast<int32>(cps.size());
+	if (count <= 0 || from < 0 || from + count > n)
+		return;
+	const size_t b0 = static_cast<size_t>(byteAt[static_cast<size_t>(from)]);
+	const size_t b1 = (from + count < n) ? static_cast<size_t>(byteAt[static_cast<size_t>(from + count)]) : b.fText.size();
+	b.fText.erase(b0, b1 - b0);
+	b.fLen -= count;
+	KCMAttrSpanList* const lists[4] = { &b.fRuby, &b.fKenten, &b.fTcy, &b.fWarichu };
+	for (int32 which = 0; which < 4; ++which)
+	{
+		KCMAttrSpanList kept;
+		for (size_t k = 0; k < lists[which]->size(); ++k)
+		{
+			KCMAttrSpan sp = (*lists[which])[k];
+			const int32 s0 = sp.fStart, s1 = sp.fStart + sp.fLen;
+			const int32 t0 = (s0 < from) ? s0 : ((s0 >= from + count) ? s0 - count : from);
+			const int32 t1 = (s1 <= from) ? s1 : ((s1 >= from + count) ? s1 - count : from);
+			if (t1 > t0)
+			{
+				sp.fStart = t0;
+				sp.fLen = t1 - t0;
+				kept.push_back(sp);
+			}
+		}
+		lists[which]->swap(kept);
+	}
+	for (size_t k = 0; k < b.fNoteRefs.size(); ++k)
+	{
+		if (b.fNoteRefs[k].fAt >= from + count)
+			b.fNoteRefs[k].fAt -= count;
+		else if (b.fNoteRefs[k].fAt > from)
+			b.fNoteRefs[k].fAt = from;
+	}
+}
 
 typedef std::vector< std::pair<std::string, std::string> > StyleNames;	// styleId -> w:name
 
@@ -1786,6 +1946,15 @@ bool16 ReadContent(Reader& rd, int32 node, Building& b)
 		}
 		else if (name == "sdt")
 		{
+			// ours by tag, first: the two table marks (a flag, not text) and the legend (never text)
+			{
+				const int32 pr = t.Child(c, kW, "sdtPr");
+				const int32 tag = (pr >= 0) ? t.Child(pr, kW, "tag") : -1;
+				const std::string* v = (tag >= 0) ? t.Attr(tag, "val") : nil;
+				if (v != nil && *v == "kcm-continued")	{ b.fContinuedFromTable = kTrue; continue; }
+				if (v != nil && *v == "kcm-continues")	{ b.fContinuesPastTable = kTrue; continue; }
+				if (v != nil && *v == "kcm-legend")		{ continue; }
+			}
 			int32 cp = 0;
 			if (PlaceholderOf(t, c, cp))
 			{
@@ -1838,10 +2007,8 @@ bool16 ReadParagraph(Reader& rd, int32 p, Building& b)
 	const int32 pPr = t.Child(p, kW, "pPr");
 	if (pPr >= 0)
 	{
-		const int32 style = t.Child(pPr, kW, "pStyle");
-		const std::string* v = (style >= 0) ? t.Attr(style, "val") : nil;
-		if (v != nil && *v == "kcm-continued")
-			b.fContinued = kTrue;
+		// (w:pStyle is not read: since stage 3b the marks carry "continued", and the style slot is
+		//  left for the day it carries InDesign's paragraph style name)
 		if (t.Child(pPr, kW, "numPr") >= 0)
 			return Refuse(rd, "an automatic number: the number is not a character, so it would be lost");
 		if (t.Child(pPr, kW, "sectPr") >= 0)
@@ -1872,6 +2039,20 @@ bool16 ReadParagraph(Reader& rd, int32 p, Building& b)
 		return kFalse;
 	if (b.fFieldDepth > 0)
 		return Refuse(rd, "a field runs past the end of its paragraph");
+
+	// the typed token at either edge (the design, 4-5): the same words a person types where a mark
+	// would stand, read the same way - and dropped from the text, as a mark is not text
+	int32 dropFrom = 0, dropCount = 0;
+	if (TypedTokenAt(b, kTrue, dropFrom, dropCount))
+	{
+		DropCodePoints(b, dropFrom, dropCount);
+		b.fContinuedFromTable = kTrue;
+	}
+	if (TypedTokenAt(b, kFalse, dropFrom, dropCount))
+	{
+		DropCodePoints(b, dropFrom, dropCount);
+		b.fContinuesPastTable = kTrue;
+	}
 	return kTrue;
 }
 
@@ -2194,6 +2375,8 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 	const KCMXmlTree& t = *rd.fTree;
 	const KCMXmlNode& n = t.At(container);
 	bool16 pendingJoin = kFalse;
+	bool16 prevWasTable = kFalse;		// the block before this one was a <w:tbl>
+	bool16 lastContinues = kFalse;		// the paragraph before this one ends with the mark
 
 	for (size_t k = 0; k < n.fChildren.size(); ++k)
 	{
@@ -2225,7 +2408,11 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 			Finish(b, para);
 			const bool16 marksJoin = ((rd.fSide == kSideOriginAsWritten && b.fMarkRevision > 0)
 									  || (rd.fSide == kSideAfterWord && b.fMarkRevision < 0)) ? kTrue : kFalse;
-			if (b.fContinued || pendingJoin)
+			// ★A MARK AT THE START JOINS THE PARAGRAPH ONTO THE ONE BEFORE THE TABLE - when a table
+			//   is what stands before it. A mark with no table before it is IGNORED, not refused:
+			//   pressing Enter in front of a mark leaves it standing at the head of a paragraph the
+			//   table does not touch, and that is the person's own doing, kept as they did it.
+			if (pendingJoin || (b.fContinuedFromTable && prevWasTable))
 			{
 				if (out.empty())
 					return Refuse(rd, "a continued paragraph stands first: there is nothing for it to continue");
@@ -2236,20 +2423,28 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 				out.push_back(para);
 			}
 			pendingJoin = marksJoin;
+			lastContinues = b.fContinuesPastTable;
+			prevWasTable = kFalse;
 		}
 		else if (name == "tbl")
 		{
 			if (inTable == kInNote)
 				return Refuse(rd, "a table stands inside a footnote");
-			if (out.empty())
-				return Refuse(rd, "a table stands before any paragraph: every table belongs to the paragraph in front of it");
 			if (pendingJoin)
 				return Refuse(rd, "a paragraph mark next to a table was inserted or deleted");
-			// ★WHERE IN THAT PARAGRAPH: however far it has come when the table arrives (the HTML
-			//   reader's rule). The continued half, if any, joins on behind it.
+			// ★WHOSE PARAGRAPH (the design, 4-5): the one before it when that paragraph ends with the
+			//   mark (or the typed token) - and then at however far it has come - OR WHEN IT IS EMPTY
+			//   (no words: Enter pressed after a mark leaves exactly that, and the table is what the
+			//   person meant that paragraph to hold); otherwise the table opens a paragraph of its own.
+			//   A mark at the end of a paragraph that is NOT followed by a table is ignored, for the
+			//   reason given above.
+			if (out.empty() || prevWasTable || !(lastContinues || out.back().fText.empty()))
+				out.push_back(KCMStoryHtml::Para());
 			if (!ReadTable(rd, c, inTable, inRow, inCell, static_cast<int32>(out.size()) - 1,
 						   CodePointsIn(out.back().fText)))
 				return kFalse;
+			prevWasTable = kTrue;
+			lastContinues = kFalse;
 		}
 		else if (name == "sectPr" || name == "tcPr")
 		{
@@ -2257,6 +2452,14 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 		}
 		else if (name == "sdt" || name == "customXml")
 		{
+			if (name == "sdt")
+			{
+				const int32 pr = t.Child(c, kW, "sdtPr");
+				const int32 tag = (pr >= 0) ? t.Child(pr, kW, "tag") : -1;
+				const std::string* v = (tag >= 0) ? t.Attr(tag, "val") : nil;
+				if (v != nil && *v == "kcm-legend")
+					continue;				// the legend (kLegendHead): ours, and never text
+			}
 			const int32 content = (name == "sdt") ? t.Child(c, kW, "sdtContent") : c;
 			if (content >= 0 && !ReadBlocks(rd, content, inTable, inRow, inCell, out))
 				return kFalse;

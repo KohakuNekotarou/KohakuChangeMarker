@@ -77,13 +77,19 @@ bool16 WriteParagraphContent(const KCMStoryHtml::Para& p, std::string& out, std:
 
 /** A run of paragraphs with the tables standing among them: the body, or one cell.
 
-	★**A TABLE STANDS BETWEEN PARAGRAPHS AND BELONGS TO THE ONE BEFORE IT**, exactly as in the HTML
-	  format: "AB" with a table after the A is <w:p>A</w:p>, the <w:tbl>, and then B in a paragraph
-	  whose style is kcm-continued - the reader's sign to join it back on.
-	⚠**UNLIKE THE HTML FORMAT, THE CONTINUED HALF IS ALWAYS WRITTEN, EMPTY OR NOT.** Two of Word's
-	  own rules ask for it: a cell has to END with a paragraph (so a nested table cannot be a cell's
-	  last thing), and two tables that touch are joined into one. An empty continued paragraph
-	  joins back on as nothing, so it costs the round trip nothing.
+	★**A TABLE STANDS BETWEEN PARAGRAPHS, AND MARKS SAY WHOSE IT IS** (stage 3b, 2026-09-19; the
+	  design, 4-5): "AB" with a table after the A is <w:p>A + a mark at its end</w:p>, the <w:tbl>,
+	  then <w:p>a mark at its start + B</w:p>. The end mark says "this paragraph goes on past the
+	  table", the start mark "this is the paragraph from before the table"; one mark cancels one of
+	  Word's breaks. A table with no mark in front of it opens a paragraph of its own, so a table at
+	  the head of its paragraph is written with no piece in front of it at all. The marks are locked
+	  controls with a tag; a person may type KCM:continued instead, at either edge.
+	⚠**UNLIKE THE HTML FORMAT, THE PIECE AFTER A TABLE IS ALWAYS WRITTEN, EMPTY OR NOT** (the mark
+	  alone, then). Two of Word's own rules ask for it: a cell has to END with a paragraph (so a nested
+	  table cannot be a cell's last thing), and two tables that touch are joined into one. An empty
+	  piece joins back on as nothing, so it costs the round trip nothing.
+	★**THE BODY OPENS WITH A LEGEND** (WriteParts): a control tagged kcm-legend holding the rules and
+	  one of each mark to copy; the reader skips it whole.
 	★A MERGED CELL: Story's rows hold the ANCHORS only, and Word wants a cell in every row a
 	  vertical merge covers, so the covered ones are made up here (<w:vMerge/>, an empty paragraph).
 
