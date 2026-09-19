@@ -41,6 +41,8 @@
 #include "KCMTextRead.h"			// ReadStory - the document, read the way the export read it
 #include "KCMProgressBar.h"			// the import's one bar, and the slot its inner loops step (2026-09-17)
 #include "KCMDocxPackage.h"			// KCMReadDocxParts - a .docx on disk as its parts (2026-09-19)
+#include "KCMStoryMerge.h"			// Merge - Word's changes onto the copy as it stands (stage 3, 2026-09-19)
+#include "KCMStoryTextExport.h"		// KCMStoryFromDocument - the copy's story in the shape the merge takes
 #include "KCMStoryDocx.h"			// Read / OriginMatchesTag - the parts as two stories, and whether the marks are whole
 #include "KCMZipStore.h"			// Entry - a part, named
 #include "KCMModelNotify.h"			// KCMNotify - a cancelled import tells the panel the mode came back
@@ -1473,8 +1475,12 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 	int32 skippedByTables = 0;		// stories left alone entirely: their table shape changed
 	int32 matchedFiles = 0;			// files whose story the copy really does carry
 	int32 unmatched = 0;
+	int32 wordChanges = 0;			// a .docx whose marks are whole: Word's changes taken by the merge (stage 3)
+	int32 conflicts = 0;			// ...and the ones the document's own edits kept out
 	PMString firstRefusal;
 	firstRefusal.SetTranslatable(kFalse);
+	PMString firstConflict;
+	firstConflict.SetTranslatable(kFalse);
 
 	// ★ONE STEP. The copy has no window and nobody presses Ctrl+Z in it, but a sequence keeps the
 	//   writes from arriving as a hundred separate entries in a history the peek shares.
@@ -1523,12 +1529,54 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 		if (model == nil)
 			continue;
 
+		// ★★★**A .docx WHOSE MARKS ACCOUNT FOR EVERYTHING IS MERGED, NOT COMPARED WHOLE** (stage 3 of the
+		//   docx plan, 2026-09-19; the design's section 6). The story as written, as Word left it and as
+		//   the copy holds it now go into KCMStoryMerge, and what is poured is the copy plus Word's
+		//   changes - so the rows that follow are Word's changes and nothing else, however much the
+		//   document has been edited in InDesign since the export. A conflict keeps the document's words
+		//   and is named. An .html, or a .docx whose tracking was off, is poured as before.
+		// ★THE COPY IS READ WITH THE EXPORT'S OWN READER (KCMStoryFromDocument): the merge compares
+		//   three stories that have to be in one shape, and the two that came from the file were
+		//   written from that reader's shape to begin with.
+		const KCMStoryHtml::Story* file = &set->fStories[which];
+		KCMStoryMerge::Result merged;
+		if (which < set->fOriginKnown.size() && set->fOriginKnown[which])
+		{
+			KCMStoryHtml::Story now;
+			bool16 placed = kTrue;
+			if (KCMStoryFromDocument(storyRef, now, placed))
+			{
+				KCMStoryMerge::Merge(set->fOrigins[which], set->fStories[which], now, merged);
+				wordChanges += merged.fApplied;
+				conflicts += static_cast<int32>(merged.fConflicts.size());
+				if (!merged.fConflicts.empty() && firstConflict.IsEmpty())
+				{
+					firstConflict.AppendNumber(static_cast<int32>(original.Get()));
+					firstConflict.Append(": ");
+					firstConflict.Append(merged.fConflicts[0].fWhere.c_str());
+					firstConflict.Append(" - ");
+					firstConflict.Append(merged.fConflicts[0].fWhy.c_str());
+				}
+				if (merged.fStoryRefused)
+				{
+					++skippedByTables;
+					if (firstRefusal.IsEmpty())
+					{
+						firstRefusal = merged.fWhy.c_str();
+						firstRefusal.SetTranslatable(kFalse);
+					}
+					continue;
+				}
+				file = &merged.fMerged;
+			}
+		}
+
 		// ★★★**THE TABLE SHAPES DECIDE WHETHER THIS STORY IS TOUCHED AT ALL** (the user's rule,
 		//   2026-09-16). Asked BEFORE the places are built, because the pairing inside BuildPlaces
 		//   is by position and would happily pour the file's cell into a different cell of the
 		//   document. Nothing of this story is written when the answer is no.
 		PMString tableWhyNot;
-		if (!TablesAgree(attrs, set->fStories[which], tableWhyNot))
+		if (!TablesAgree(attrs, *file, tableWhyNot))
 		{
 			++skippedByTables;
 			if (firstRefusal.IsEmpty())
@@ -1537,7 +1585,7 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 		}
 
 		std::vector<Place> places;
-		BuildPlaces(attrs, set->fStories[which], places);
+		BuildPlaces(attrs, *file, places);
 
 		// ★★★**EVERY WRITE OF THE STORY GOES IN BACK TO FRONT - ACROSS PLACES, NOT ONLY INSIDE ONE**
 		//   (2026-09-17, measured with a trace). The body, each cell and each note are separate PLACES,
@@ -1556,7 +1604,7 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 		// ★The file's own table positions, per paragraph - which side of a table an insertion goes (G1),
 		//   and whether a paragraph added or removed would move a table into another paragraph.
 		std::map<const KCMStoryHtml::Para*, std::vector<int32> > fileTables;
-		FileTablesByParagraph(set->fStories[which], fileTables);
+		FileTablesByParagraph(*file, fileTables);
 
 		bool16 touched = kFalse;
 		for (size_t p = 0; p < places.size(); ++p)
@@ -1664,7 +1712,7 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 			if (KCMTextRead::ReadStory(storyRef, paras2, attrs2, starts2))
 			{
 				std::vector<Place> places2;
-				BuildPlaces(attrs2, set->fStories[which], places2);
+				BuildPlaces(attrs2, *file, places2);
 
 				for (size_t p = 0; p < places2.size(); ++p)
 				{
@@ -1724,6 +1772,22 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage)
 	//   under it would be the plug-in denying what it had just done.
 	if (attrEdits > 0)
 		AppendCount(outMessage, ", ", attrEdits, " ruby/kenten write(s)");
+	// ★A .docx MERGED THREE WAYS SAYS SO (stage 3): how many of Word's changes went in, and how many
+	//   the document's own edits kept out - the first of those named, so the reader knows where to look.
+	if (wordChanges > 0 || conflicts > 0)
+	{
+		AppendCount(outMessage, ", ", wordChanges, " change(s) from Word");
+		if (conflicts > 0)
+		{
+			AppendCount(outMessage, ", ", conflicts, " conflict(s) kept the document's words");
+			if (!firstConflict.IsEmpty())
+			{
+				outMessage.Append(" (");
+				outMessage.Append(firstConflict);
+				outMessage.Append(")");
+			}
+		}
+	}
 	if (skippedByTables > 0)
 		AppendCount(outMessage, ", ", skippedByTables, " story(ies) left alone (table structure changed)");
 	if (refusedPlaces > 0)

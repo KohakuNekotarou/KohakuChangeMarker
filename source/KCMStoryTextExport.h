@@ -24,6 +24,8 @@
 
 #include "BaseType.h"
 #include "PMString.h"
+#include "UIDRef.h"
+#include "KCMStoryHtml.h"		// Story - the shape a story is read into
 
 class IDataBase;
 class IDFile;
@@ -32,9 +34,9 @@ class UIDList;
 /** Which spelling the stories are written in.
 
     kKCMStoryTextHtml is "<uid>.html", checked against its own reader before it is written.
-    kKCMStoryTextDocx is "<uid>.docx" for Word (2026-09-19, KCMStoryDocx.h). ⚠It has no reader yet,
-    so it is NOT checked that way: until it is, what it writes is for looking at in Word. It refuses
-    what Word's format cannot hold, and says which story and why. */
+    kKCMStoryTextDocx is "<uid>.docx" for Word (2026-09-19, KCMStoryDocx.h), checked the same way since
+    stage 2 of its plan gave it a reader (both sides of Word's revision marks read back and compared).
+    It refuses what Word's format cannot hold, and says which story and why. */
 enum KCMStoryTextFormat
 {
 	kKCMStoryTextHtml = 0,
@@ -68,6 +70,15 @@ enum KCMStoryTextFormat
     @return kFalse when the folder could not be made or no story could be read. */
 bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& onlyThese,
 						  PMString& outMessage, KCMStoryTextFormat format = kKCMStoryTextHtml);
+
+/** The story as the export reads it - body, tables, notes, the spans over them, the notes' reference
+	positions: the SHAPE both the .html and the .docx are written from. ★Since stage 3 of the docx plan
+	it is also the "now" the import merges Word's changes onto (KCMStoryMerge): one reader, so that
+	what the export wrote and what the import compares with are the same reading of the document.
+	@param outNoteRefsPlaced kFalse when a footnote's reference could not be placed - the .docx export
+	  then refuses the story; the merge does not need the places and reads it all the same.
+	@return kFalse when the story could not be read at all. Nothing in the document is changed. */
+bool16 KCMStoryFromDocument(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outNoteRefsPlaced);
 
 #endif // __KCMStoryTextExport_h__
 

@@ -691,6 +691,13 @@ std::string DocumentNameUtf8(IDataBase* db)
 
 }	// anonymous namespace
 
+bool16 KCMStoryFromDocument(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outNoteRefsPlaced)
+{
+	// The one reader, made public for the import's merge (the header says why); BuildStory stays where
+	// the export's other helpers are.
+	return BuildStory(storyRef, out, outNoteRefsPlaced);
+}
+
 bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& onlyThese,
 						  PMString& outMessage, KCMStoryTextFormat format)
 {
