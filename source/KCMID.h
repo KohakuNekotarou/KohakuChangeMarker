@@ -358,6 +358,7 @@ DECLARE_PMID(kScriptInfoIDSpace, kKCMTakeInChangeMethodScriptElement, kKCMPrefix
 DECLARE_PMID(kScriptInfoIDSpace, kKCMTakeInStoryMethodScriptElement, kKCMPrefix + 32)	// app.kcmTakeInStory(storyRow) -> the story row's take-in-all sentence
 DECLARE_PMID(kScriptInfoIDSpace, kKCMExportStoryDocxMethodScriptElement, kKCMPrefix + 33)	// app.kcmExportStoryDocx(folder) -> the export's sentence, for the .docx road (2026-09-19)
 DECLARE_PMID(kScriptInfoIDSpace, kKCMUndoRestoreChangeMethodScriptElement, kKCMPrefix + 34)	// app.kcmUndoRestore(storyRow, words) -> the undo's sentence: "Undo the Restore" on the first change already taken in whose words hold `words` (2026-09-19 night)
+DECLARE_PMID(kScriptInfoIDSpace, kKCMProbeTableCopyMethodScriptElement, kKCMPrefix + 35)	// ⚠A SPIKE (2026-09-19 night, KCMTableCopySpike.h): app.kcmProbeTableCopy(storyRow, tableOrdinal) -> one line per step. Retire it with the file, as +25 is to be; never reuse the number
 // (The tool's enumerator goes on the application's own kToolBoxEnumScriptElement, so this side
 //  needs no ID for it.)
 

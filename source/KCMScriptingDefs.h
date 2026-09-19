@@ -263,7 +263,13 @@ enum KCMScriptMethods
 	//     ScriptingDefs.h / GenericID.h, and no row in the registry ledger (whose used letters for eKG*
 	//     are a c d D e f h i k m n o p q r s t u v w x y). The same search form found 'eKGk' (3 files).
 	//     ⚠Not registered with Adobe.
-	e_KCMUndoRestoreChange = 'eKGb'	// b = back. app.kcmUndoRestore(storyRow, words) -> the undo's sentence
+	e_KCMUndoRestoreChange = 'eKGb',	// b = back. app.kcmUndoRestore(storyRow, words) -> the undo's sentence
+
+	// ★A MEASURING DOOR FOR THE "Table" ROW (2026-09-19 night, KCMTableCopySpike.h): can the Task
+	//   Start copy's table be copied over the live one with kCopyStoryRangeCmdBoss, across documents,
+	//   styles included. ⚠'eKGz' was MEASURED free: 0 files under source/sdksamples, docs, work and
+	//   .claude. ⚠Not registered with Adobe - a spike, to be retired with the file once the answer is in.
+	e_KCMProbeTableCopy = 'eKGz'		// z = the last letter, for the last experiment of the night. app.kcmProbeTableCopy(storyRow, tableOrdinal) -> one line per step
 };
 
 /** Properties KCM adds to the STORY object (at the user's request).

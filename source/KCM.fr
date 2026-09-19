@@ -916,6 +916,23 @@ resource VersionedScriptElementInfo(10)
 			}
 		}
 
+		// ⚠A SPIKE (2026-09-19 night, KCMTableCopySpike.h): the measuring door for the "Table" row's
+		// restore. The table's number travels as a string in p_Contents only because the two parameters
+		// every other method here uses are p_Index and p_Contents; a spike borrows, it does not add.
+		Method
+		{
+			kKCMProbeTableCopyMethodScriptElement,
+			e_KCMProbeTableCopy,
+			"kcm probe table copy",				// name -> app.kcmProbeTableCopy(storyRow, tableOrdinal)
+			"Measure whether the Task Start copy's table can be copied over the live one, with its styles, across documents.",
+			StringType,
+			"One line per step of the experiment"
+			{
+				p_Index, "story row", "The story row, from 0 (app.kcmStoryRows)", Int32Type, kRequired,
+				p_Contents, "table", "Which table of the story, from 0, as text", StringType, kRequired,
+			}
+		}
+
 		// Puts the property ON the application object.
 		//
 		// Object{}, not Parent{}: Object names an EXISTING scripting object to add members to,
@@ -958,6 +975,8 @@ resource VersionedScriptElementInfo(10)
 				Method{ kKCMExportStoryDocxMethodScriptElement },
 				// ...and the undo of a take-in (2026-09-19 night).
 				Method{ kKCMUndoRestoreChangeMethodScriptElement },
+				// ...and the table copy spike's (the same night; retire with KCMTableCopySpike).
+				Method{ kKCMProbeTableCopyMethodScriptElement },
 			}
 		}
 

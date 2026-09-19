@@ -151,6 +151,7 @@
 #include "KCMStoryDiffRun.h"		// KCMStoryDiffRun::StillReplaced - which taken-in change app.kcmUndoRestore may name
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - app.kcmExportStoryText
 #include "KCMStoryTextImport.h"	// KCMImportStoryText - app.kcmImportStoryText
+#include "KCMTableCopySpike.h"	// ⚠KCMProbeTableCopy - app.kcmProbeTableCopy, a spike (2026-09-19 night)
 // ⚠**KCMTextRead.h WENT WITH THE FEATURE THAT NEEDED IT** (2026-09-08). It was included here for
 //   app.kcmStoryReadCompare - the direct-read migration's parallel run - and its own comment said
 //   "temporary". The property was removed on 2026-09-03; the include outlived it by five days and
@@ -278,6 +279,31 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 	{
 		PMString reading;
 		KCMProbePdfRoute(reading);
+		ScriptData returnData;
+		returnData.SetWideString(WideString(reading));
+		data->AppendReturnData(script, methodID, returnData);
+		return kSuccess;
+	}
+
+	// ⚠A SPIKE (2026-09-19 night): the table copy experiment, KCMTableCopySpike.h. Same shape as the
+	//   one above - the reading comes back whatever happened - with the two arguments read first.
+	if (methodID.Get() == e_KCMProbeTableCopy)
+	{
+		PMString reading;
+		ScriptData rowArg, tableArg;
+		int32 storyRow = -1;
+		PMString tableText;
+		if (data->ExtractRequestData(p_Index, rowArg) != kSuccess || rowArg.GetInt32(&storyRow) != kSuccess
+			|| data->ExtractRequestData(p_Contents, tableArg) != kSuccess || tableArg.GetPMString(tableText) != kSuccess)
+		{
+			reading = "S0 FAILED: the arguments could not be read";
+		}
+		else
+		{
+			const int32 tableOrdinal = tableText.GetAsNumber();
+			KCMProbeTableCopy(storyRow, tableOrdinal, reading);
+		}
+		reading.SetTranslatable(kFalse);
 		ScriptData returnData;
 		returnData.SetWideString(WideString(reading));
 		data->AppendReturnData(script, methodID, returnData);
