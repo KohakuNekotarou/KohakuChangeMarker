@@ -32,6 +32,27 @@
 //      first story (measured on every export so far). Were it not, the loss would be the first
 //      story's second range = its first REAL paragraph; the shape check would then refuse the
 //      copy rather than hand a shortened one to the comparison.
+//      ★★★**AND THE STORY THAT LOSES THAT INSERTION LOSES THE TEXT OF EVERY TABLE CELL IN IT**
+//      (measured 2026-09-19, twelve variants through a file probe: a one-story document with a
+//      table came back with the dummy gone AND its cell empty - `あい[表]うえ` kept its words, the
+//      cell kept only its return - wherever the table stood, one cell or two, one paragraph or
+//      two; a second story placed before it took the drop instead and the cells came back whole,
+//      which is why matrix.indd, whose first story has no table, never showed it). So the
+//      dummies are not enough on their own: the drop has to land somewhere that is neither a
+//      story nor a cell, and that is 3.
+//
+//   3. A DECOY BACKING STORY. An <XmlStory> of two sacrificial ranges is written once, right
+//      before the first <Story. Measured 2026-09-19: with it in place - before or after the real
+//      <XmlStory>, both were tried - the import drops the decoy's range, every story's dummy
+//      survives (and is deleted, 1.), and a table's cells come back whole: the copy matched the
+//      origin in spreads, pages, stories and text (1/1/1/12). ⚠One range is not enough: a decoy
+//      with a single range absorbed nothing (the count that treats the real <XmlStory> as one
+//      insertion however many ranges it has does not extend to this one - measured, not
+//      explained). The decoy is not user-accessible, so it is invisible to the story count, the
+//      Story mode and the Pixel mode; it stays in the throwaway copy as a hidden story of one
+//      token paragraph. The per-story dummies of 1. are kept as well: if a document shape nobody
+//      has measured lets the drop past the decoy, they take it as before, and the shape check
+//      still refuses a copy that lost anything.
 //
 //   2. A LABEL NAMING THE ORIGINAL UID. The import renumbers everything, and the Story mode pairs
 //      stories by UID. <Story Self="ufe"> carries the old UID in its Self, so a script label
@@ -93,6 +114,7 @@ extern const char* const kKCMOriginUidLabelKey;
 
     @param sacrificialText  the token of the sacrificial range (ASCII, non-empty, no XML
                             specials - the caller makes it of hex digits: NewSacrificialToken).
+    The decoy backing story (3. above) is written in front of the first <Story that has a Self.
     @param outStories  how many <Story> elements were labelled (and given a sacrificial range).
     @param outSpreads  how many <Spread> elements were labelled.
     @param outPages    (optional) how many <Page> elements were labelled - the pages of the master

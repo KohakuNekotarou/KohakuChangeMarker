@@ -132,6 +132,10 @@ std::string NewSacrificialToken()
 	a story whose first paragraph is exactly the sacrificial text loses that paragraph. Through a
 	command, because the text model takes no other route; the copy is ours and windowless, so the
 	undo step lands on nobody's stack.
+	★★★SINCE 2026-09-19 THIS IS THE USUAL PATH, NOT THE EXCEPTION: the drop is taken by the decoy
+	backing story (KCMXmlInject.h, 3.), so EVERY story's dummy survives the import and is deleted
+	here. It had to be so - the story that takes the drop loses the text of its table cells as
+	well (measured; the header says how), and no story of the reader's may take it.
 	@param dummy the token this rehydration injected (NewSacrificialToken) - the one string both
 	       halves of the rule share.
 	@return how many paragraphs were deleted (the caller only reports it). */

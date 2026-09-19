@@ -3,9 +3,10 @@
 //  KCMXmlInject.cpp -- see the header. Pure byte work; nothing here touches the SDK.
 //
 //  The scan is a single pass with one output position (`pos`, the first input byte not yet
-//  written) and one search position (`scan`). Each event -- a <Story or <Spread open tag, and
-//  inside a story its first <ParagraphStyleRange or its </Story> -- writes the input up to that
-//  point, writes what the event calls for, and moves on. Nothing is buffered.
+//  written) and one search position (`scan`). Each event -- a <Story, <Spread or <Page open tag,
+//  and inside a story its first <ParagraphStyleRange or its </Story> -- writes the input up to
+//  that point, writes what the event calls for, and moves on. The first <Story also has the decoy
+//  backing story written in front of it. Nothing is buffered.
 //
 //========================================================================================
 
@@ -36,6 +37,13 @@ const char* const kDummyHead   =
 	"<CharacterStyleRange AppliedCharacterStyle=\"CharacterStyle/$ID/[No character style]\">"
 	"<Content>";
 const char* const kDummyTail   = "</Content><Br /></CharacterStyleRange></ParagraphStyleRange>";
+// The decoy backing story (the header's 3.): an <XmlStory> of two sacrificial ranges, written once,
+// right before the first <Story. Its Self is a uid no document reaches; the import renumbers it
+// anyway. The attributes are the ones ExportINX writes on the real <XmlStory>.
+const char* const kDecoyOpen   =
+	"<XmlStory Self=\"u7ffffff9\" AppliedTOCStyle=\"n\" UserText=\"true\" IsEndnoteStory=\"false\""
+	" TrackChanges=\"false\" StoryTitle=\"$ID/\" AppliedNamedGrid=\"n\">";
+const char* const kDecoyClose  = "</XmlStory>";
 
 bool16 StartsWith(const char* xml, size_t size, size_t at, const char* literal)
 {
@@ -352,6 +360,17 @@ bool16 KCMInjectForRehydration(const char* xml, size_t size, const char* sacrifi
 		{
 			scan = tagEnd + 1;				// self-closing, or an unterminated Self: leave it alone
 			continue;
+		}
+
+		// 3. the decoy, once, in front of the first story (the header says what it absorbs)
+		if (isStory && stories == 0)
+		{
+			if (!Emit(out, xml + pos, next - pos) || !EmitLiteral(out, kDecoyOpen)
+				|| !EmitLiteral(out, kDummyHead) || !EmitLiteral(out, sacrificialText) || !EmitLiteral(out, kDummyTail)
+				|| !EmitLiteral(out, kDummyHead) || !EmitLiteral(out, sacrificialText) || !EmitLiteral(out, kDummyTail)
+				|| !EmitLiteral(out, kDecoyClose))
+				return kFalse;
+			pos = next;
 		}
 
 		if (!Emit(out, xml + pos, tagEnd + 1 - pos))
