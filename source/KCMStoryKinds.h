@@ -41,10 +41,16 @@ enum KCMStoryChangeKind
 									// header defines it, and because Compare names it for the row
 									// whose aggregate moved while no sub-counter did
 	kKCMStoryKindAdded	= 8,	// no story with this UID on the source side
-	kKCMStoryKindRemoved	= 16	// no story with this UID on the TARGET side: the story was in the
+	kKCMStoryKindRemoved	= 16,	// no story with this UID on the TARGET side: the story was in the
 									// older version and is gone from the newer one.
 									// **THE ROW THEN LIVES IN THE SOURCE DOCUMENT**, and it is the only
 									// kind for which that is true -- see KCMStoryDiff::fStoryUID
+	kKCMStoryKindRefused	= 32	// ★a story an IMPORT could not put words into, wholly or in part
+									// (2026-09-19, the user's ask: "what could not be imported - a red !
+									// in the Δ column, at the top of the list"). Not a counter and not a
+									// pairing: the import notes it (KCMStoryTextImport's refusals) and
+									// KCMStoryList::Build sets it, so it goes with the origin. The row's
+									// fRefusals name each thing that did not go in.
 };
 
 /** Which kind of attribute a row's CHILDREN found a difference in.

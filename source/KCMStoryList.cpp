@@ -240,6 +240,14 @@ PMString FirstReadableText(ITextModel* model)
 */
 bool RowIsBefore(const KCMStoryRow& a, const KCMStoryRow& b)
 {
+	// ★★**BEFORE EVERYTHING: WHAT AN IMPORT COULD NOT PUT IN** (2026-09-19, the user: "the ! rows at
+	//   the top of the Story Edits list"). A reader who has just imported wants to know first what
+	//   did NOT go in; the rows that did are the ordinary comparison and follow in their own order.
+	const bool aRefused = (a.fKinds & kKCMStoryKindRefused) != 0;
+	const bool bRefused = (b.fKinds & kKCMStoryKindRefused) != 0;
+	if (aRefused != bRefused)
+		return aRefused;
+
 	// **FIRST KEY: WHICH DOCUMENT THE ROW LIVES IN.** Every target row comes before every removed
 	//   one, and only then does the page order below apply -- within each group. The page numbers
 	//   in the column then come from ONE document at a time, in order, and the reader is not asked
@@ -823,6 +831,70 @@ void KCMStoryList::ClearReplacedChanges(int32 nth)
 	gRows[nth].fReplacedChanges.clear();
 }
 
+/* AddRefusalRow
+*/
+void KCMStoryList::AddRefusalRow(IDataBase* targetDB, UID storyUID, const PMString& textWhenNoStory)
+{
+	// The comparison's own row for this story, when it built one: a story that took some of the
+	// words and refused others has moved its counter, and is in the list already.
+	// ⚠A Removed row of the same uid is NOT that row: it lives in the Source, and a refusal is about
+	//   the Target's story (the file was named after it).
+	for (size_t i = 0; i < gRows.size(); ++i)
+	{
+		if (gRows[i].fStoryUID == storyUID && (gRows[i].fKinds & kKCMStoryKindRemoved) == 0)
+		{
+			gRows[i].fKinds |= kKCMStoryKindRefused;
+			return;
+		}
+	}
+
+	KCMStoryRow row;
+	row.fStoryUID = storyUID;
+	row.fKinds = kKCMStoryKindRefused;
+	if (targetDB != nil && ReadRowFromDocument(targetDB, row, storyUID))
+	{
+		// The same page lookup AddRowsFromDocument makes, for the same reason (a master-page story
+		// keeps kMaxInt32 and sorts to the end of its group).
+		InterfacePtr<IPageList> pageList(targetDB, targetDB->GetRootUID(), UseDefaultIID());
+		if (row.fPageUID != kInvalidUID && pageList != nil)
+		{
+			const int32 idx = pageList->GetPageIndex(row.fPageUID);
+			if (idx >= 0)
+				row.fPageIndex = idx;
+		}
+	}
+	else
+	{
+		// No such story in the document: the row stands for the FILE. Nothing to jump to.
+		row.fText = textWhenNoStory;
+		row.fText.SetTranslatable(kFalse);
+		row.fFrameUID = kInvalidUID;
+		row.fPageUID = kInvalidUID;
+	}
+	gRows.push_back(row);
+}
+
+/* AddRefusalChange
+*/
+void KCMStoryList::AddRefusalChange(UID storyUID, const PMString& kind, const PMString& whereAndWhy)
+{
+	for (size_t i = 0; i < gRows.size(); ++i)
+	{
+		if (gRows[i].fStoryUID != storyUID || (gRows[i].fKinds & kKCMStoryKindRefused) == 0)
+			continue;
+
+		KCMStoryChange c;
+		c.fWhat = KCMStoryChange::kRefused;
+		c.fTextPre = kind;
+		c.fTextPre.SetTranslatable(kFalse);
+		c.fText = whereAndWhy;
+		c.fText.SetTranslatable(kFalse);
+		c.fWriteBlock = kKCMWriteBlockedKind;	// nothing to write back; the menu asks this first
+		gRows[i].fRefusals.push_back(c);
+		return;
+	}
+}
+
 /* ShiftReplacedChanges
 */
 void KCMStoryList::ShiftReplacedChanges(int32 nth, TextIndex from, int32 delta)
@@ -877,7 +949,7 @@ int32 KCMStoryList::GetMergedChangeCount(int32 nth)
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
 		return 0;
 	const KCMStoryRow& row = gRows[nth];
-	return static_cast<int32>(row.fChanges.size() + row.fReplacedChanges.size());
+	return static_cast<int32>(row.fRefusals.size() + row.fChanges.size() + row.fReplacedChanges.size());
 }
 
 /* GetMergedChange
@@ -889,6 +961,12 @@ const KCMStoryChange* KCMStoryList::GetMergedChange(int32 nth, int32 which, bool
 		return nil;
 
 	const KCMStoryRow& row = gRows[nth];
+
+	// ★THE REFUSALS COME FIRST (2026-09-19): what an import could not put in, before the changes it
+	//   did. They take the first fRefusals.size() indices, and everything below counts from there.
+	if (which < static_cast<int32>(row.fRefusals.size()))
+		return &row.fRefusals[which];
+	which -= static_cast<int32>(row.fRefusals.size());
 
 	// ★THE COMMON CASE COSTS NOTHING. With no replaced changes the merged index IS the live
 	//   index, so the whole of the Story mode - and the Import mode until the reader takes
@@ -924,7 +1002,11 @@ bool16 KCMStoryList::RemoveMergedReplacedChange(int32 nth, int32 which)
 		return kFalse;
 
 	// The same walk GetMergedChange makes, so the two cannot disagree about which list an index
-	// fell in - and the reason both of them are in this file.
+	// fell in - and the reason both of them are in this file. The refusals stand first there too.
+	if (which < static_cast<int32>(row.fRefusals.size()))
+		return kFalse;			// a refusal: not a replaced change, and not this function's business
+	which -= static_cast<int32>(row.fRefusals.size());
+
 	std::vector<KCMStoryRowMerge::Slot> slots;
 	MergedSlots(row, slots);
 	if (which >= static_cast<int32>(slots.size()))
@@ -1089,6 +1171,7 @@ std::string KindsWord(uint32 kinds)
 	if (kinds & kKCMStoryKindText)    s += (s.empty() ? "" : ",") + std::string("Text");
 	if (kinds & kKCMStoryKindAttr)    s += (s.empty() ? "" : ",") + std::string("Attr");
 	if (kinds & kKCMStoryKindOther)   s += (s.empty() ? "" : ",") + std::string("Other");
+	if (kinds & kKCMStoryKindRefused) s += (s.empty() ? "" : ",") + std::string("Refused");	// an import could not fill it (2026-09-19)
 	return s.empty() ? std::string("-") : s;
 }
 
@@ -1160,6 +1243,8 @@ std::string FlagsWord(const KCMStoryRow& row)
 	if (row.fHasTextChange) s += (s.empty() ? "" : ",") + std::string("hasText");
 	s += (s.empty() ? "" : ",") + std::string("attrs=") + Num(row.fAttrKindCount);
 	s += ",changes=" + Num(static_cast<int32>(row.fChanges.size()));
+	if (!row.fRefusals.empty())
+		s += ",refused=" + Num(static_cast<int32>(row.fRefusals.size()));
 	return s;
 }
 
@@ -1182,13 +1267,22 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 		   + "\t" + AttrWord(static_cast<int32>(row.fAttrKind))
 		   + "\t-\t-\t-\t" + Field(row.fText) + "\r\n";
 
+		// ★One line per REFUSAL first (2026-09-19) - the same index space the panel shows: refusals,
+		//   then the live changes. `kind` says "refused", `set` the kind word, `text` where and why.
+		for (size_t k = 0; k < row.fRefusals.size(); ++k)
+		{
+			const KCMStoryChange& c = row.fRefusals[k];
+			s += Num(static_cast<int32>(i)) + "\t" + Num(static_cast<int32>(k))
+			   + "\t-\t-\t-\t-\trefused\t" + Field(c.fTextPre) + "\t-\t" + Field(c.fText) + "\r\n";
+		}
+
 		// One line per CHANGE under it. ⚠**fRuby IS THE VALUE COLUMN**, and it holds a reading for
 		//   a ruby, a kind for a kenten and a NUMBER for a note - which is precisely the field no
 		//   reader outside could see before this port existed.
 		for (size_t k = 0; k < row.fChanges.size(); ++k)
 		{
 			const KCMStoryChange& c = row.fChanges[k];
-			s += Num(static_cast<int32>(i)) + "\t" + Num(static_cast<int32>(k))
+			s += Num(static_cast<int32>(i)) + "\t" + Num(static_cast<int32>(k + row.fRefusals.size()))
 			   + "\t-\t-\t-\t" + AttrWord(static_cast<int32>(c.fAttrKind))
 			   + "\t" + ChangeKindWord(static_cast<int32>(c.fKind))
 			   + "\t" + RubySetting(c)
