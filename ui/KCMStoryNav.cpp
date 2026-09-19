@@ -119,7 +119,20 @@ void KCMBuildStoryNavStops(std::vector<KCMStoryNavStop>& out)
 		// then, one press later, the first edit inside it: the same place twice, and the count in
 		// the readout inflated by the number of stories.
 		const int32 changeCount = edits->GetChangeCount(r);
-		if (changeCount <= 0)
+
+		// ★**A "!" CHILD IS NOT A STOP** (2026-09-19): what an import could not put in names a reason,
+		//   not a place, so Prev / Next walk past it. A row whose children are all of that kind is a
+		//   row with nothing to stop on inside it, and it is visited as a whole, like the rows below.
+		int32 places = 0;
+		for (int32 c = 0; c < changeCount; ++c)
+		{
+			IKCMStoryEditsFacade::Change change;
+			if (edits->GetChange(r, c, change)
+				&& change.fWhat != IKCMStoryEditsFacade::Change::kWhatRefused)
+				++places;
+		}
+
+		if (places <= 0)
 		{
 			// No children at all - and that is a row worth visiting rather than one to skip. It
 			// means the story changed but the edits could not be located (an added story, a diff
@@ -132,6 +145,10 @@ void KCMBuildStoryNavStops(std::vector<KCMStoryNavStop>& out)
 
 		for (int32 c = 0; c < changeCount; ++c)
 		{
+			IKCMStoryEditsFacade::Change change;
+			if (edits->GetChange(r, c, change)
+				&& change.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused)
+				continue;
 			stop.fChange = c;
 			out.push_back(stop);
 		}

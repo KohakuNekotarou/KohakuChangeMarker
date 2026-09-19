@@ -173,10 +173,14 @@ public:
 			value is this one number: the tree asks it of every row to decide the row's height, and
 			`== 1` at that call site would be a bare number three files away from the only place
 			that explains it. */
-		enum { kWhatText = 0, kWhatAttr = 1 };
+		enum { kWhatText = 0, kWhatAttr = 1,
+			   kWhatRefused = 2 };	// ★2: one thing an IMPORT could not put in (2026-09-19). fTextPre is
+									//   the kind word for the ID column, fText the place and the reason;
+									//   no position, no other side, fWriteBlock set. The panel draws a
+									//   red "!" and offers no menu on it.
 
 		int32		fKind;			// 0 = replace, 1 = insert, 2 = delete
-		// 0 = text, 1 = attribute (ruby, so far).
+		// 0 = text, 1 = attribute (ruby, so far), 2 = refused (see the enum above).
 		// ★fText / fOtherText are read the SAME WAY whatever this says: fText is the TARGET (newer)
 		//   side and fOtherText the SOURCE (older) side, for a text change and a ruby change alike.
 		//   ⚠This comment said until 2026-09-12 that a text deletion "puts the NEWER text in

@@ -8,20 +8,23 @@
 //  outside InDesign - in an editor, in a browser, or by handing the file to somebody else - and
 //  now hands the files back. This file reads them and writes those words into the document.
 //
-//  ★★★**AN IMPORT DOES NOT CHANGE THE DOCUMENT** (the user's decision, 2026-09-15 - taken, tried
-//  the other way round on a real document, and taken again). The edited words go into the
-//  task-start COPY; the Import mode shows them as ordinary comparison rows; "Restore Source Text"
-//  is what puts any of them into the reader's own document, one at a time, through the door that
-//  already exists and already refuses what it cannot write.
+//  ★★★**AN IMPORT PUTS EVERYTHING INTO THE DOCUMENT, AND THE STORY MODE SHOWS WHAT IT DID** (the
+//  user's decision, 2026-09-19 - a trial; the design is
+//  docs/superpowers/specs/2026-09-19-kcm-import-direct-design.md). The import takes a Task Start of
+//  the document as it stands, pours the edited words into the document itself as ONE undo step, and
+//  starts the Story comparison against that Task Start: the Source is the moment before, the Target
+//  is the document with the edits in. "Restore Source Text" takes one change back, "Undo the
+//  Restore" puts it in again, Ctrl+Z takes the whole import back. What could NOT go in is listed
+//  first, with a red "!" (KCMImportRefusals below).
 //
-//  ★★**THE IMPORT MODE IS WHAT MAKES THAT WORK**, and not merely a label. The Story mode's cheap
-//  sieve asks "has the document changed since the task start?" and skips the stories whose counter
-//  has not moved - which is EVERY story in an import, because what changed is the copy. Measured
-//  2026-09-15: a word edited in the file went into the copy and the Story comparison reported
-//  nothing at all. A mode of its own is a mode that can decline that sieve (KCMStoryStamp.cpp).
+//  ⚠**UNTIL 2026-09-19 THIS WAS THE OTHER WAY ROUND** - the words went into the task-start COPY and a
+//  fourth "Import" mode showed them, with "Change to Imported Text" putting one in at a time. That
+//  mode's code is still here (KCMInImportMode, KCMEndImportMode, the held set) and is never entered
+//  now; it sleeps until the trial is decided (the backup is the tag
+//  backup/2026-09-19-import-as-4th-mode). Do not wire anything new to it.
 //
-//  ★**THE FILE NAMES ARE THE DOCUMENT'S OWN STORY UIDS**, because the export read that document.
-//  The copy's UIDs are new ones, so the pairing goes through the copy's KcmOriginUid label.
+//  ★**THE FILE NAMES ARE THE DOCUMENT'S OWN STORY UIDS**, because the export read that document -
+//  and the words go into that document, so the pairing is the uid itself.
 //
 //========================================================================================
 #ifndef __KCMStoryTextImport_h__
@@ -55,7 +58,32 @@ struct KCMStoryTextSet
 	//   fStories alone until then. ⚠ALWAYS kFalse and empty for an .html - that format has no origin.
 	std::vector<KCMStoryHtml::Story>	fOrigins;		// parallel; empty unless fOriginKnown
 	std::vector<bool16>					fOriginKnown;
+	std::vector<PMString>				fFileNames;		// parallel: the file's own name, for a "!" row
+														// that stands for a file with no story (2026-09-19)
 };
+
+/** One thing the last import could not put in - the material of a "!" row in Story Edits
+	(2026-09-19, the user's ask: "what could not be imported, a red ! in the Δ column, at the top").
+
+	★**EVERY REFUSAL THE POUR ALREADY COUNTS, AND NO NEW JUDGEMENT**: a conflict the three-way merge
+	  named, a story whose tables disagree, a cell or note not in the file, a paragraph the write
+	  refused, an attribute kept back, a file with no story. KCMStoryList::Build turns them into rows. */
+struct KCMImportRefusal
+{
+	UID			fStory;			// the document's story (the uid the file is named after)
+	PMString	fKind;			// the ID column's word: "Word" / "Table" / "Place" / "Para" / "Attr" / "File"
+	PMString	fWhereAndWhy;	// the text cell: where, and why the document's words were kept
+	PMString	fFileName;		// the file's own name - what a row for a story the document lacks shows
+	bool16		fWholeStory;	// the whole story was left as it stands (tables, or no story)
+
+	KCMImportRefusal() : fStory(kInvalidUID), fWholeStory(kFalse) {}
+};
+
+/** What the last import could not put in, in the order the pour met it. Empty when nothing was.
+	Lives as long as the origin the import took: dropped by KCMReleaseOrigin (a new Task Start, Stop,
+	Clear, a close), by the next import, and by the model's shutdown. */
+const std::vector<KCMImportRefusal>& KCMImportRefusals();
+void KCMClearImportRefusals();
 
 /** Read each chosen file. A name has to be "<decimal uid>.html" to be one of ours.
 
@@ -87,20 +115,26 @@ void KCMHoldStoryText(const KCMStoryTextSet& set);
     and what forgetting it costs). */
 void KCMReleaseStoryText();
 
-/** Pour the held words into `copyDB` - a rehydrated task-start copy, never a real document.
+/** Pour `set` into `db` - the reader's own document (2026-09-19; until then the task-start copy).
 
-    ★★★**THE COPY, AND ONLY EVER THE COPY** (the user's decision, 2026-09-15, kept after trying the
-      other way): an import does not change the reader's document. The words go into the copy, the
-      Import mode shows them as ordinary rows, and "Restore Source Text" is what puts any of them
-      in, one at a time.
-    ★**THE STORIES ARE PAIRED BY THE ORIGINAL UID**, read from the copy's own KcmOriginUid label -
-      the copy's UIDs are new ones, so the file names cannot be matched against them directly.
+    ★**THE STORIES ARE PAIRED BY THEIR OWN UID**: the file is named after the document's story, and
+      the words go into that document, so nothing else has to be matched.
+    ★**ONE ABORTABLE COMMAND SEQUENCE.** Every write of every story is one undo step, and a Cancel
+      on the progress bar - asked between two stories, the safe point KCMProgressBar.h names -
+      aborts the sequence: nothing of the pour stays. `outCancelled` says so.
+    ★**WHAT COULD NOT GO IN IS NOTED** (KCMImportRefusals) as well as counted in `outMessage`, so
+      that the "!" rows and the status line come from one walk.
 
     @return kFalse when nothing at all could be applied. */
-bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage);
+bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& outMessage,
+						bool16& outCancelled);
 
-/** "Import Story Text..." from end to end: read the chosen files, take the document's state as
-    this mode's origin, hold the words, and start the comparison in the Import mode.
+/** "Import Story Text..." from end to end (2026-09-19): read the chosen files, take a Task Start,
+    pour the words into the document, and start the Story comparison against that Task Start.
+
+    ★**THE TASK START IS THE IMPORT'S** (the user's rule: "an import always takes a Task"). One the
+      reader had taken before is replaced - How to Use says so; no dialog asks. It is parked only so
+      that a cancel or a failure can put it back exactly as it was.
 
     ⚠**ONLY CHANGES INSIDE A PARAGRAPH ARE APPLIED, so far.** A place whose paragraph COUNT differs
       is refused with a reason rather than guessed at: adding and removing paragraphs needs the end
@@ -126,7 +160,9 @@ bool16 KCMApplyStoryTextToCopy(IDataBase* copyDB, PMString& outMessage);
     @return kFalse when nothing could be read or nothing could be applied, or the reader cancelled. */
 bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage);
 
-/** Whether the fourth mode is up.
+/** Whether the fourth mode is up. ⚠**ALWAYS kFalse SINCE 2026-09-19**: nothing holds the words any
+    more (KCMImportStoryText pours them straight in), so the mode is never entered. Kept, with what
+    follows, for the trial's sake - see the file comment.
 
     ★★★**IT IS MODAL, AND THAT IS THE POINT** (the user's rule): while an import is showing, the
       other three modes and Task Start are greyed, and Finish Import (the Start/Stop item, renamed

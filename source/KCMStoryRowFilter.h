@@ -93,7 +93,9 @@
 */
 inline bool16 KCMStoryRowHasContentChange(uint32 kinds, bool16 textCompared, int32 changeCount)
 {
-	if ((kinds & kKCMStoryKindUnpaired) != 0)
+	// ★A row an import could not fill is kept as well (2026-09-19): its story's counter may not have
+	//   moved at all - nothing went in - and the row is there to say so, not to report a difference.
+	if ((kinds & (kKCMStoryKindUnpaired | kKCMStoryKindRefused)) != 0)
 		return kTrue;
 
 	if (textCompared)

@@ -489,6 +489,19 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// The Δ cell of a "!" row (2026-09-19): a red "!" for a story an import could not fill. Built
+	// the same way as the cell above and for the same reason - a stock static text draws in ONE
+	// colour, the theme's, and the user asked for this mark in red. It carries no data interface:
+	// the cell says one thing, always, and the row beside it says where and why.
+	Class
+	{
+		kKCMStoryBangCellBoss,
+		kGenericPanelWidgetBoss,
+		{
+			IID_ICONTROLVIEW, kKCMStoryBangViewImpl,
+		}
+	},
+
 	// The panel's MESSAGE AREA (2026-08-20), built the same way as the cell above and for the same
 	// reason: it shows the OTHER side of the edit whose row was clicked, and "which characters
 	// differ" is a question one colour cannot answer. ★It replaces a StaticMultiLineTextWidget, and
@@ -2278,6 +2291,11 @@ type KCMStoryRowCellWidget(kViewRsrcType) : InfoStaticTextWidget(ClassID = kKCMS
 //  it ends with a child list rather than a text string.
 type KCMStoryChangeCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMStoryChangeCellBoss) { };
 
+// The Δ cell of a "!" row: a red "!" drawn by hand (see kKCMStoryBangCellBoss above). The same
+// GenericPanelWidget field list as the cell above - no text, no font, no alignment: the drawing
+// code decides all of it (KCMStoryBangView.cpp).
+type KCMStoryBangCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMStoryBangCellBoss) { };
+
 // The panel's message area: drawn by hand for the same reason (see kKCMStatusTextWidgetBoss).
 // ⚠The field list is GenericPanelWidget's, NOT StaticMultiLineTextWidget's - gone from the line
 //  that uses it are the alignment, the ellipsize style, the ampersand flag, the font ID, the LINE
@@ -2961,6 +2979,161 @@ resource KCMStoryRowWidget(kKCMStoryTallRowRsrcID + index_enUS)
 			"",								// Text Control Data
 			0,								// WidgetId for associated control for shortcut focus
 			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+	}
+};
+
+// ---------------------------------------------------------------------------------------
+// ★★A "!" STORY ROW (2026-09-19, the user's ask: "what could not be imported - a red ! in the Δ
+// column, at the top of the list"). The story row (kKCMStoryRowRsrcID) cell for cell - the
+// expander, the UID, the opening words - with ONE difference: the Δ cell is the hand-drawn red
+// "!" (KCMStoryBangCellWidget) instead of a stock static text, which cannot be coloured.
+// ⚠Its own WidgetID (kKCMStoryBangRowWidgetID): the tree decides from GetWidgetTypeForNode's
+//   answer whether a widget may be recycled onto a node, and a plain story row handed this
+//   widget would show a red "!" it has no business showing.
+// ★The same three cell WidgetIDs, so KCMApplyListColumnWidths lays the columns out exactly as
+//   it does for every other row (it moves the Δ cell by frame, which a hand-drawn view has too).
+// ---------------------------------------------------------------------------------------
+resource LocaleIndex (kKCMStoryBangRowRsrcID)
+{
+	kViewRsrcType,
+	{
+		kWildFS, k_Wild, kKCMStoryBangRowRsrcID + index_enUS
+	}
+};
+
+resource KCMStoryRowWidget(kKCMStoryBangRowRsrcID + index_enUS)
+{
+	__FILE__, __LINE__,
+	kKCMStoryBangRowWidgetID, kPMRsrcID_None,	// WidgetId (★NOT the story row's - see above)
+	kBindLeft | kBindRight,				// Frame binding: follow the list's width
+	Frame(0, 0, 224, kKCMStoryRowHeight),	// Frame (left, top, right, bottom)
+	kTrue, kTrue,						// Visible, Enabled
+	"",									// Panel name
+	{
+		TreeExpanderWidget
+		(
+			kTreeNodeExpanderWidgetID,		// WidgetId (stock - the base class looks for exactly this)
+			kTreeBranchCollapsedRsrcID,		// RsrcId for collapsed node icon
+			kApplicationRsrcPluginID,		// RsrcPlugin for collapsed node icon
+			kBindNone,						// Frame binding
+			Frame(4, 1, 20, kKCMStoryRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			kTreeBranchExpandedRsrcID,		// RsrcId for expanded node icon
+			kApplicationRsrcPluginID,		// RsrcPlugin for expanded node icon
+			kTrue,							// Cmd-Click expands/collapses children
+			kFalse,							// Scroll to show children when expanded
+			kIconNoCentering,
+			kIconRaisedLook,				// Icon look
+			kFalse							// Draws a well
+		),
+
+		KCMStoryRowCellWidget
+		(
+			kKCMStoryRowUIDWidgetID,		// WidgetId
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft,						// Frame binding: stay at the row's left edge
+			Frame(24, 1, 64, kKCMStoryRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+
+		KCMStoryRowCellWidget
+		(
+			kKCMStoryRowTextWidgetID,		// WidgetId
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft | kBindRight,			// Frame binding: take the space the kind cell leaves
+			Frame(68, 1, 154, kKCMStoryRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+
+		// ★THE ONE DIFFERENCE: the Δ cell, drawn by hand in red.
+		KCMStoryBangCellWidget
+		(
+			kKCMStoryRowKindWidgetID,		// WidgetId (the same column as every other row's Δ)
+			kPMRsrcID_None,					// RsrcId
+			kBindRight,						// Frame binding (the widget manager rebinds it to the left when it lays the column out)
+			Frame(154, 1, 216, kKCMStoryRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			"",								// Panel name (none)
+			{
+			}
+		),
+	}
+};
+
+// ---------------------------------------------------------------------------------------
+// ★★A "!" CHILD ROW (2026-09-19): one thing the import could not put in, under the "!" story row.
+// The change row (kKCMStoryChangeRowRsrcID) with two differences: the text cell is a STOCK static
+// text (the place and the reason need no colour split, and a hand-drawn cell would want three
+// pieces it does not have), and the Δ cell is the red "!". Own WidgetID, for the reason above.
+// ---------------------------------------------------------------------------------------
+resource LocaleIndex (kKCMStoryBangChangeRowRsrcID)
+{
+	kViewRsrcType,
+	{
+		kWildFS, k_Wild, kKCMStoryBangChangeRowRsrcID + index_enUS
+	}
+};
+
+resource KCMStoryRowWidget(kKCMStoryBangChangeRowRsrcID + index_enUS)
+{
+	__FILE__, __LINE__,
+	kKCMStoryBangChangeRowWidgetID, kPMRsrcID_None,	// WidgetId (★NOT the change row's)
+	kBindLeft | kBindRight,				// Frame binding: follow the list's width
+	Frame(0, 0, 224, kKCMStoryRowHeight),	// Frame (left, top, right, bottom)
+	kTrue, kTrue,						// Visible, Enabled
+	"",									// Panel name
+	{
+		// The ID column: the kind word - Word / Table / Place / Para / Attr / File.
+		KCMStoryRowCellWidget
+		(
+			kKCMStoryRowUIDWidgetID,		// WidgetId (the story row's left column, reused)
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft,						// Frame binding: a fixed column at the row's left edge
+			Frame(24, 1, 64, kKCMStoryRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+
+		// Where, and why the document's words were kept. Read from the left, so it ends with "...".
+		KCMStoryRowCellWidget
+		(
+			kKCMStoryRowTextWidgetID,		// WidgetId (reused)
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft | kBindRight,			// Frame binding: this is the cell that grows
+			Frame(68, 1, 154, kKCMStoryRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kEllipsizeEnd, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+
+		KCMStoryBangCellWidget
+		(
+			kKCMStoryRowKindWidgetID,		// WidgetId (reused)
+			kPMRsrcID_None,					// RsrcId
+			kBindRight,						// Frame binding (rebound per apply, like every Δ cell)
+			Frame(154, 1, 216, kKCMStoryRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			"",								// Panel name (none)
+			{
+			}
 		),
 	}
 };

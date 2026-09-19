@@ -64,7 +64,12 @@ struct KCMStoryChange
 		  to be written from it and grey itself on every deleted paragraph. The fields are filled
 		  in one place (Add / AddAttributeChange: SetExcerptPieces from the target into fText and
 		  from the source into fOtherText) and that place, not this comment, is the authority. */
-	enum What { kText, kAttr };
+	enum What { kText, kAttr,
+				kRefused };	// ★one thing an IMPORT could not put in (2026-09-19). fTextPre holds the
+							//   KIND word for the ID column ("Word" / "Table" / "Place" / "Para" /
+							//   "Attr" / "File") and fText the place and the reason; fWriteBlock is
+							//   kKCMWriteBlockedKind so no menu offers to write it. Nothing else on
+							//   the change means anything, and it never carries a position.
 
 	Kind		fKind;
 	What		fWhat;
@@ -412,6 +417,16 @@ struct KCMStoryRow
 		2026-09-15) and so clears this as well as the diff. Empty in every other mode. */
 	std::vector<KCMStoryChange> fReplacedChanges;
 
+	/** ★What an IMPORT could not put into this story, one entry each (2026-09-19, the user's ask).
+		Shown BEFORE fChanges and fReplacedChanges, each with a red "!" in the Δ column - and the row
+		itself carries kKCMStoryKindRefused, which is what puts it at the top of the list (RowIsBefore).
+
+		**NOT IN fChanges, for the reason fReplacedChanges is not:** RunOne empties that on every
+		refresh. These are facts about the FILE the reader handed over, not about the text, so a
+		refresh cannot find them again. Build refills them from the import's own list
+		(KCMImportRefusals), which lives as long as the origin does. */
+	std::vector<KCMStoryChange> fRefusals;
+
 	KCMStoryRow()
 		: fStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fFrameUID(kInvalidUID),
 		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32), fTextCompared(kFalse),
@@ -602,6 +617,24 @@ namespace KCMStoryList
 		call, 2026-09-15), so it clears these as well as the diff. Out-of-range nth is ignored. */
 	void ClearReplacedChanges(int32 nth);
 
+	/** Mark the row of `storyUID` as one an import could not fill (kKCMStoryKindRefused), making the
+		row when the comparison built none - the story's counter did not move because nothing went in.
+
+		★**CALLED FROM Build AND NOWHERE ELSE** (2026-09-19): the list starts empty on every build,
+		  so the "!" rows are put back each time from KCMImportRefusals. ⚠Before the sort.
+		★★**A STORY THE DOCUMENT DOES NOT HOLD** (a file named after a uid that is not there, or names
+		  something that is not a story) gets a row that stands for the FILE: `textWhenNoStory` in the
+		  text cell, no frame, no page - **and fStoryUID = kInvalidUID**. That is the one value every
+		  reader of this list already passes over (the diff, the undo observer, the marks, the jump),
+		  so a uid that names nothing - or a different object - is never handed to the document.
+		@return the row's index, for AddRefusalChange. */
+	int32 AddRefusalRow(IDataBase* targetDB, UID storyUID, const PMString& textWhenNoStory);
+
+	/** One refusal under row `nth`: `kind` for the ID column, `whereAndWhy` for the text cell.
+		By index rather than by uid, because a row standing for a file has no uid. Out of range does
+		nothing. ⚠Before the sort, like AddRefusalRow: the index is only good until then. */
+	void AddRefusalChange(int32 nth, const PMString& kind, const PMString& whereAndWhy);
+
 	/** Move row nth's replaced changes that stand at or after `from` by `delta` characters.
 
 		★★**BECAUSE THE RE-DIFF DOES NOT TOUCH THEM.** Comparing the story again names the LIVE
@@ -623,11 +656,14 @@ namespace KCMStoryList
 	//   CHANGE, which is the shape of bug this plug-in has spent the most time on
 	//   ([[one-question-one-place]]). So every one of them goes through the two below.
 
-	/** How many children row nth shows: the live diff's changes plus the replaced ones. */
+	/** How many children row nth shows: the refusals first (2026-09-19), then the live diff's changes
+		and the replaced ones merged in text order. */
 	int32 GetMergedChangeCount(int32 nth);
 
 	/** The change a merged index names, or nil when either index is out of range.
 
+		★The first fRefusals.size() indices are the refusals, in the order the import noted them; the
+		  rest are the live and the replaced changes in text order (KCMStoryRowMerge).
 		@param outIsReplaced kTrue when it came from fReplacedChanges. ⚠**Ask this rather than
 			looking at the change itself**: fReplacedCount says when it was replaced, not whether
 			it is being SHOWN as replaced, and the two differ after an undo. */

@@ -165,6 +165,18 @@ namespace KCMJa
 		u"・使い方: パネルのフライアウトメニューの「Show Story IDs」を ON にします(既定は OFF。パネル設定に保存されます)\n"
 		u"・画面では常に、ズームによらず同じ大きさで表示します。印刷・PDF には「Print comparison marks」が ON のときだけ出ます(Before/After PDF 報告書には After 側だけに出ます。Task Start の写しは ID が振り直されるため Before 側には出しません)\n"
 		u"・パスにもテキストが載っているフレームはラベルが2つ並びます\n\n"
+		// ★The story text round trip (2026-09-19) sits here, after Story IDs and before the books - the
+		//   same seam the English side puts kKCMHint4Key at (DoUsage reads hint / hint3 / hint4 / hint2).
+		u"【ストーリーの往復(Export Story Text / Import Story Text)】\n"
+		u"ストーリーをファイルに書き出し、InDesign の外で編集してもらい、その編集を文書に戻します。\n"
+		u"・「Export Story Text...」は HTML、「Export Story Text as Word...」は変更履歴の記録を ON にしてロックした .docx を書き出します。"
+		u"Word 方式では「Word で変えられた所だけ」が戻り、書き出した後に InDesign 側で行った編集はそのまま残ります。フレームを選択していればそのストーリーだけ、何も選択していなければ全ストーリーを書き出します\n"
+		u"・「Import Story Text...」は、今の文書の状態を Task Start として記録し、編集を「すべて」文書に入れてから、その Task Start との Story 比較を始めます。"
+		u"Source が Import 前、Target が編集の入った文書です。先に取ってあった Task Start は Import のものに置き換わります\n"
+		u"・入らなかったもの(書き出し後に InDesign 側で編集した箇所と重なる Word の変更、構成の変わった表、ファイルに無いセルや脚注、対応するストーリーの無いファイル)は"
+		u"一覧の「先頭」に、Change 列に赤い「!」と、場所と理由を添えて並びます\n"
+		u"・Ctrl+Z で Import 全体が1回で戻ります。1件だけ戻すには、その行を右クリックして「Restore Source Text」。もう一度入れるには「Undo the Restore」。どちらでも行は一覧に残ります\n"
+		u"・あふれはすぐ見えます。入れた編集がフレームに収まらなければ、他の Story 比較と同じく行に OV が出ます\n\n"
 		u"【ブックの比較(Compare Books)】\n"
 		u"ブック(.indb)どうしを章(ドキュメント)単位で比べ、どの章が変わったかを一覧します。\n"
 		u"・使い方: ブックパネルで比べたいブックのタブを前面にし、もう1冊のブックも開いてから、"

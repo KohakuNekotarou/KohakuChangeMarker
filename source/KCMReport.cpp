@@ -517,6 +517,11 @@ void BuildStoryRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KCMRep
 		const KCMStoryRow* row = KCMStoryList::GetRow(i);
 		if (row == nil)
 			continue;
+		// ★A row standing for a FILE an import could not place (2026-09-19, kInvalidUID) is not a
+		//   story of either version, so it is not a row of this table. (What the import could not
+		//   put into a story that does exist is not in fChanges, and so not in the table either.)
+		if (row->fStoryUID == kInvalidUID)
+			continue;
 		++outStories;
 		const bool16 removed = (row->fKinds & kKCMStoryKindRemoved) ? kTrue : kFalse;
 		const bool16 unpaired = (row->fKinds & kKCMStoryKindUnpaired) ? kTrue : kFalse;

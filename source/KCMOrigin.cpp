@@ -345,6 +345,9 @@ void KCMReleaseOrigin(bool16 deferPeekClose)
 	// ★THE EDITED WORDS GO WITH IT. They are only meaningful against this origin's copy, so holding
 	//   them past its release would leave text waiting to be poured into a copy that is gone.
 	KCMReleaseStoryText();
+	// ★AND WHAT THE LAST IMPORT COULD NOT PUT IN (2026-09-19): the "!" rows were about the document
+	//   as it stood at this origin. A new Task Start, Stop, Clear and a close all come through here.
+	KCMClearImportRefusals();
 	// ★★**AND SO DOES WHAT WAS READ OUT OF IT** (2026-09-16). The Source text kept for the story
 	//   comparison was read from THESE bytes; against any other origin it is simply wrong, and
 	//   wrong in the quietest way there is - a comparison against text nobody has any more.

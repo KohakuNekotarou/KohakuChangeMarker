@@ -63,7 +63,17 @@ bool16 StashedChange(IKCMStoryEditsFacade::Change& out)
 	if (!KCMModeUsesStoryRows(Utils<IKCMCompareFacade>()->GetCompareMode()))
 		return kFalse;
 
-	return Utils<IKCMStoryEditsFacade>()->GetChange(gMenuRow, gMenuChange, out);
+	if (!Utils<IKCMStoryEditsFacade>()->GetChange(gMenuRow, gMenuChange, out))
+		return kFalse;
+
+	// ★A "!" CHILD - one thing an import could not put in (2026-09-19) - OFFERS NOTHING. It has no
+	//   words to copy, no position to write at, no other side to restore. Every item of the child
+	//   row's menu asks this function first, so answering kFalse here greys them all, and a menu
+	//   with nothing live does not open (the existing rule).
+	if (out.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused)
+		return kFalse;
+
+	return kTrue;
 }
 
 }	// anonymous namespace
