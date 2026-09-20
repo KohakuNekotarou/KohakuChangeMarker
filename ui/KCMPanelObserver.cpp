@@ -783,7 +783,8 @@ namespace
 */
 void KCMWriteStatusToPanel(const PMString& label, const PMString& pre,
 							 const PMString& mid, const PMString& post, const PMString& ruby,
-							 int32 attrKind, const KCMStoryLayers& layers, bool16 forceRedrawNow)
+							 int32 attrKind, const KCMStoryLayers& layers, bool16 forceRedrawNow,
+							 bool16 warning = kFalse)
 {
 	IControlView* panel = KCMGetVisibleOwnPanel();
 	if (panel == nil)
@@ -799,6 +800,10 @@ void KCMWriteStatusToPanel(const PMString& label, const PMString& pre,
 		return;
 
 	data->SetSegments(label, pre, mid, post, ruby, attrKind, layers);
+	// ⚠**AFTER the pieces, never before**: SetSegments clears the flag on purpose, so that a
+	//   warning cannot outlive the message it belonged to (IKCMStatusTextData.h).
+	if (warning)
+		data->SetWarning(kTrue);
 	cv->Invalidate();
 
 	// When a blocking stretch of work (a comparison loop, say) follows immediately, an Invalidate
@@ -823,6 +828,20 @@ void KCMSetStatus(const PMString& s, bool16 forceRedrawNow)
 	//   to change.
 	const PMString kNothing;
 	KCMWriteStatusToPanel(kNothing, kNothing, s, kNothing, kNothing, 0, KCMStoryLayers(), forceRedrawNow);
+}
+
+void KCMSetStatusWarning(const PMString& s, bool16 forceRedrawNow)
+{
+	// ★Everything an ordinary message does - it is remembered in the same one place, and
+	//   app.kcmStatus answers with the same words - and then the box is told it is a warning, so
+	//   the view draws it red (IKCMStatusTextData.h).
+	// ⚠**The colour is NOT remembered.** What outlives the panel is the sentence (KCMModelNotify),
+	//   and a message restored after the panel was hidden comes back in the ordinary colour. That
+	//   is the right way round: red says "this just happened", not "this is how things are".
+	Utils<IKCMCompareFacade>()->StoreSessionStatus(s);
+	const PMString kNothing;
+	KCMWriteStatusToPanel(kNothing, kNothing, s, kNothing, kNothing, 0, KCMStoryLayers(),
+						  forceRedrawNow, kTrue /*warning*/);
 }
 
 // A message written out where it is used (declared in KCMUIShared.h, with the reason).

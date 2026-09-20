@@ -100,6 +100,22 @@ public:
 	virtual void GetSegments(PMString& outLabel, PMString& outPre,
 							 PMString& outMid, PMString& outPost, PMString& outRuby,
 							 int32& outAttrKind, KCMStoryLayers& outLayers) const = 0;
+
+	// ★★**ADDED AT THE TAIL, 2026-09-20** (the user: "そういう特別なメッセージの時は赤色に"). Appending
+	//   is the rule for anything with a vtable here - inserting in the middle lands a caller on a
+	//   different method (the facade learned that the hard way: memory facade-vtable-slot-append-only).
+
+	/** ★**THIS MESSAGE IS A WARNING - DRAW IT IN RED.** Not a colour and not a string: the box is
+	    told WHAT KIND of message it holds, and the view decides what that looks like, so a theme or
+	    a second kind of warning changes one place.
+	    ⚠**It is cleared by every SetSegments**, like every other piece: there is one message area
+	     and one message in it, and a warning that outlived its message would be a lie about the
+	     next one. So a caller that wants red sets it AFTER writing the text. */
+	virtual void SetWarning(bool16 warning) = 0;
+
+	/** kFalse before the first message, and after any SetSegments that was not followed by
+	    SetWarning(kTrue). */
+	virtual bool16 IsWarning() const = 0;
 };
 
 #endif // __IKCMStatusTextData_h__

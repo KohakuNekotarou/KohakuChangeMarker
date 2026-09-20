@@ -120,8 +120,12 @@ bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, U
      (KBSBookScope.cpp asks the same for a windowless chapter, and checks the presentation rather
      than the return code) and says so when none appeared - the document is in app.documents either
      way, so nothing is lost when it does not.
-    @return kTrue when a document was made - whether or not it matched, and whether or not it got a
-     window. outMessage says which of those happened. */
+    @return ★**kTrue when EVERYTHING IS WELL** - a document was made, it matched the origin's shape,
+     AND the round-trip check found nothing missing (2026-09-20; it used to answer "a document was
+     made", which the one caller ignored). The caller colours the status line with it: red is for
+     bad news, and what counts as bad news is decided here rather than by reading the words.
+     ⚠**kFalse does not mean "no document"** - outMessage says which of the three went wrong, and a
+      copy that failed is still open for the reader to look at. */
 bool16 KCMOpenOriginForInspection(PMString& outMessage);
 
 /** ★★★**THE ROUND-TRIP CHECK** (2026-09-20, the user's design: "turn the INX into a hidden

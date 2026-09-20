@@ -739,7 +739,11 @@ bool16 KCMOpenOriginForInspection(PMString& outMessage)
 		outMessage.Append(" - ");
 		outMessage.Append(whyNot);
 	}
-	return kTrue;
+	// ★★**THE ANSWER IS "IS EVERYTHING WELL", NOT "WAS A DOCUMENT MADE"** (2026-09-20). The caller
+	//   uses it to choose the colour of the status line, and what a reader needs coloured is the
+	//   bad news. Whether a document appeared is in outMessage, which is the only caller's other
+	//   interest. ⚠The one caller ignored the old answer entirely, so nothing was reinterpreted.
+	return (checkPassed && matched) ? kTrue : kFalse;
 }
 
 void KCMCloseRehydrated(const UIDRef& doc, bool16 deferred)

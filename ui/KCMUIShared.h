@@ -57,6 +57,14 @@ void			KCMRefreshPanel();
 //   still returns the right value with the panel closed.
 void			KCMSetStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 
+/** ★★**THE SAME MESSAGE, DRAWN IN RED** (2026-09-20, the user: "そういう特別なメッセージの時は赤色に").
+    For the ones that say something did not come out right - a round-trip check that found the copy
+    short, for one. Everything else is identical to KCMSetStatus: the words are remembered in the
+    same place and app.kcmStatus answers with them.
+    ⚠**The red is not remembered**: a message restored after the panel was hidden comes back in the
+     ordinary colour, because red says "this just happened", not "this is how things are". */
+void			KCMSetStatusWarning(const PMString& s, bool16 forceRedrawNow = kFalse);
+
 // The same, for a message written out where it is used.
 // ★IT MARKS THE STRING UNTRANSLATABLE, which every one of these call sites did by hand: a
 //   finished sentence left translatable turns into something else the moment it matches an entry

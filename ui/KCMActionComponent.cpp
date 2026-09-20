@@ -821,9 +821,14 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			//    (KCMOriginIdml.h says so where the function that would have done it lives).
 			//   ⚠Everything that could go wrong is the model's to know (no origin, the import, the
 			//    open command), so the whole of the UI's part is to say what came back.
+			// ★The answer is "is everything well" - a document was made AND it came back whole -
+			//   so a copy that is short says so in red (KCMSetStatusWarning).
 			PMString said;
-			Utils<IKCMCompareFacade>()->OpenOriginAsIdml(said);
-			KCMSetStatus(said);
+			const bool16 allWell = Utils<IKCMCompareFacade>()->OpenOriginAsIdml(said);
+			if (allWell)
+				KCMSetStatus(said);
+			else
+				KCMSetStatusWarning(said);
 			break;
 		}
 

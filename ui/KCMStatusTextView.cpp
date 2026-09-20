@@ -424,7 +424,8 @@ PMString KCMTrimTrailingContext(const PMString& post, int32 keep)
 class KCMStatusTextData : public CPMUnknown<IKCMStatusTextData>
 {
 public:
-	KCMStatusTextData(IPMUnknown* boss) : CPMUnknown<IKCMStatusTextData>(boss), fAttrKind(0) {}
+	KCMStatusTextData(IPMUnknown* boss)
+		: CPMUnknown<IKCMStatusTextData>(boss), fAttrKind(0), fWarning(kFalse) {}
 	virtual ~KCMStatusTextData() {}
 
 	virtual void SetSegments(const PMString& label, const PMString& pre,
@@ -442,6 +443,9 @@ public:
 		fRuby  = ruby;  fRuby.SetTranslatable(kFalse);
 		fAttrKind = attrKind;
 		fLayers = layers;
+		// ⚠**A WARNING BELONGS TO ONE MESSAGE** (IKCMStatusTextData.h): cleared here, so it cannot
+		//   outlive the text it was about. A caller wanting red sets it after writing.
+		fWarning = kFalse;
 	}
 
 	virtual void GetSegments(PMString& outLabel, PMString& outPre,
@@ -457,7 +461,13 @@ public:
 		outLayers = fLayers;
 	}
 
+	virtual void SetWarning(bool16 warning)	{ fWarning = warning; }
+	virtual bool16 IsWarning() const		{ return fWarning; }
+
 private:
+	/** This message is a warning - the view draws it red (IKCMStatusTextData.h). */
+	bool16   fWarning;
+
 	PMString fLabel;
 	PMString fPre;
 	PMString fMid;
@@ -603,7 +613,20 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		colors->GetRealAGMColor(kInterfacePaletteFill, bg);
 		colors->GetRealAGMColor(kInterfaceTextColor, fg);
 	}
-	const RealAGMColor kChangeColor = fg;
+	// ★★**A WARNING IS RED** (2026-09-20, the user's ask). The one place a colour is not taken from
+	//   the theme, and it is deliberate: this says "what you are reading is not the ordinary case",
+	//   which a theme colour cannot say. ⚠**The FADED colour is still blended from the theme's
+	//   background**, so the context around it stays legible in a light UI and a dark one - only the
+	//   strong colour changes.
+	// ⚠★★**MEASURED 2026-09-20, AND THE FIRST TRY WAS WRONG**: a dark red (0.80, 0.10, 0.10) on the
+	//   dark palette came out barely legible - captured and looked at. Red has to be LIGHTER than
+	//   the theme's text colour here, not darker, because the panel's own background is dark.
+	// ⚠★★**AND THE FADED COLOUR STAYS THE THEME'S.** Blending the warning colour toward the
+	//   background sank it into the panel; the context around a warning is still context, and only
+	//   the strong colour carries the alarm. `data` cannot be nil here - the draw returned above.
+	const RealAGMColor kWarningColor(1.00, 0.35, 0.30);
+	const bool16 warning = data->IsWarning();
+	const RealAGMColor kChangeColor = warning ? kWarningColor : fg;
 	const RealAGMColor kContextColor = KCMBlendColor(bg, fg, PMReal(kKCMContextTextWeight));
 
 	// ---- a warichu / tate-chu-yoko: the heading, then its lines, top line first -----------------
