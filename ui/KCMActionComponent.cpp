@@ -813,6 +813,18 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// is chosen (Target = that document, Source = the origin). No comparison runs - Start does
 		// that. The panel refresh and the status line are done here, as with the two "Set as" items
 		// ([[one-question-one-place]]: the facade changes the state, the UI decides what it shows).
+		case kKCMPopupOpenOriginIdmlActionID:
+		{
+			// ★"Open Task Start as IDML" (2026-09-20, the user's request). One call: the model
+			//   writes the held origin into %TEMP% as an IDML and opens it as an untitled copy.
+			//   ⚠Everything that could go wrong is the model's to know (no origin, the write, the
+			//    open command), so the whole of the UI's part is to say what came back.
+			PMString said;
+			Utils<IKCMCompareFacade>()->OpenOriginAsIdml(said);
+			KCMSetStatus(said);
+			break;
+		}
+
 		case kKCMPopupTaskStartActionID:
 		{
 			// ★**It can be pressed while an origin is already held, or while a comparison runs**
@@ -1468,6 +1480,16 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			const bool16 live = (compare != nil && compare->CanTakeTaskStart()
 								 && !compare->IsArmed()) ? kTrue : kFalse;
 			listToUpdate->SetNthActionState(i, live ? kEnabledAction : kDisabled_Unselected);
+		}
+		else if (action == kKCMPopupOpenOriginIdmlActionID)
+		{
+			// ★AN ORIGIN BEING HELD IS THE WHOLE CONDITION (2026-09-20): with none there is nothing
+			//   to open, and every other state - comparing or not - can show one.
+			// ⚠**HasOrigin, NOT IsOriginArmed**: the latter means "a comparison is running whose
+			//  Source is the origin", so it is false in the very case this item is most wanted -
+			//  a Task Start just taken, before Start is pressed.
+			listToUpdate->SetNthActionState(i,
+				Utils<IKCMCompareFacade>()->HasOrigin() ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupExportStoryTextActionID
 				 || action == kKCMPopupExportStoryDocxActionID)

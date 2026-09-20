@@ -55,8 +55,37 @@ struct KCMOriginShape;
 /** Rehydrate inx into a fresh windowless document.
     @param expect  the shape the origin had; the result must match it or it is closed and refused.
     @param outDoc  the document, when kTrue. Windowless, untitled, in app.documents.
-    @param whyNot  when kFalse, the step that failed. */
-bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, UIDRef& outDoc, PMString& whyNot);
+    @param whyNot  when kFalse, the step that failed.
+    @param forInspection ★★**THE COPY IS BEING MADE TO BE LOOKED AT** (2026-09-20, the user's
+        request), not handed to a comparison. Two things change, and both are the point:
+        ①**the sacrificial paragraphs are LEFT IN** - which of them the import ate and which
+          survived is precisely what names the story it took its bite out of (the user: "leave the
+          sacrificial ones where they are"). ⚠A copy with them in is ALWAYS longer than the origin,
+          so the check below always fails for one - which is why ② goes with it and not without.
+        ②**a copy that does not match is KEPT** and handed back in outDoc, with the reason in
+          whyNot, instead of being closed. ⚠**The return is still kFalse for it**: "it was made" and
+          "it matches" are two statements, and no comparison may be given the first one alone. */
+bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, UIDRef& outDoc,
+                    PMString& whyNot, bool16 forInspection = kFalse);
+
+/** ★★**THE TASK START COPY, OPENED WHERE IT CAN BE SEEN** (2026-09-20, the user's request: "open
+    the internal IDML of the Task Start as a document that is not hidden - the internal one as it
+    is, and leave the sacrificial paragraphs in").
+
+    ★**IT IS THE SAME COPY THE COMPARISON MAKES** - the same injection, the same ImportINX, the same
+    bytes - and that is the whole value of it. The copy whose contents are in question is the one
+    the reader gets to look at: a nested table that vanishes from the comparison vanishes here too,
+    in front of them, and the surviving sacrificial paragraphs say which story the import bit into.
+
+    ⚠**A COPY THAT FAILS THE CHECK IS THE INTERESTING ONE**, so it is opened anyway and the mismatch
+     goes on the status line rather than into a refusal.
+    ⚠**A WINDOWLESS DOCUMENT CANNOT ALWAYS BE GIVEN A WINDOW.** This asks kOpenLayoutCmdBoss for one
+     (KBSBookScope.cpp asks the same for a windowless chapter, and checks the presentation rather
+     than the return code) and says so when none appeared - the document is in app.documents either
+     way, so nothing is lost when it does not.
+    @return kTrue when a document was made - whether or not it matched, and whether or not it got a
+     window. outMessage says which of those happened. */
+bool16 KCMOpenOriginForInspection(PMString& outMessage);
 
 /** Close a document this file made. Nothing else may be handed to it. A document that is already
     gone, or UIDRef::gNull, is ignored.

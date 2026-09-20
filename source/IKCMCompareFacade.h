@@ -642,6 +642,16 @@ public:
 
 	virtual bool16		GetShowStoryIds() = 0;
 	virtual void		SetShowStoryIds(bool16 on) = 0;
+
+	/** ★★**OPEN THE TASK START COPY WHERE IT CAN BE SEEN** (2026-09-20, the user's request).
+		★**It is the copy the COMPARISON makes** - the same internal IDML, the same injection, the
+		same ImportINX - opened in a window with **the sacrificial paragraphs left in**, so that what
+		the import ate and what survived can be read off the document itself. A copy that does not
+		match the origin is opened anyway, with the mismatch on the status line: that is the
+		interesting one. KCMRehydrate.h carries the whole of why.
+		@return kTrue when a document was made; outMessage says whether it matched and whether a
+		 window appeared. */
+	virtual bool16		OpenOriginAsIdml(PMString& outMessage) = 0;
 };
 
 /** THE ABI STAMP OF THE CLASS ABOVE. ★BUMP IT (the date, YYYYMMDD) EVERY TIME A VIRTUAL IS ADDED,
@@ -650,6 +660,6 @@ public:
 	compares it with the value ITS build saw in this header before it calls anything here
 	(KIDMCPKcmBridge::AbiState). Two binaries built from different versions of this class then
 	refuse each other instead of running the wrong method (2026-09-13: the header's warning). */
-const int32 kKCMCompareFacadeAbi = 2026091402;	// 02 = the second change of 2026-09-14 (SaveOriginRawToDesktop removed: the script method app.kcmSaveOriginXml reaches KCMOriginSaveRaw from inside this plug-in, so the facade door had no caller left). 01 was the first change that day (ExportChangedPagesTSV, RehydrateOriginRaw, RehydrateOriginAsCompared, removed with the menu items that called them)
+const int32 kKCMCompareFacadeAbi = 2026092001;	// 2026-09-20: OpenOriginAsIdml appended (the menu item that shows the Task Start state as a document). ⚠KIDMCP must be rebuilt with it. Previously 2026091402 = the second change of 2026-09-14 (SaveOriginRawToDesktop removed: the script method app.kcmSaveOriginXml reaches KCMOriginSaveRaw from inside this plug-in, so the facade door had no caller left). 01 was the first change that day (ExportChangedPagesTSV, RehydrateOriginRaw, RehydrateOriginAsCompared, removed with the menu items that called them)
 
 #endif // __IKCMCompareFacade_h__

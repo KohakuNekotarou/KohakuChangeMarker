@@ -60,6 +60,7 @@
 #include "KCMRingAdornment.h"	// the story ID labels' toggle (Get/SetShowStoryIds)
 #include "KCMExternalSource.h"	// KCMExternalSourceLabel -- the lent Source's words for the panel
 #include "KCMOrigin.h"			// Task Start: the origin slot the five methods at the end forward to
+#include "KCMRehydrate.h"		// KCMOpenOriginForInspection - the Task Start copy, where it can be seen
 #include "KCMOriginCompare.h"	// KCMOriginArmed / KCMOriginScopedCopy - armed with the origin as the Source; RefreshRow's temporary Source
 #include "KCMStoryMarkBuild.h"	// what the Story mode should be lighting up (Refresh / SetPress)
 #include "KCMStoryMarker.h"		// the adornment that draws it - the flash and the shutdown
@@ -219,6 +220,10 @@ public:
 
 	virtual bool16		GetShowStoryIds()			{ return KCMGetShowStoryIds(); }
 	virtual void		SetShowStoryIds(bool16 on)	{ KCMSetShowStoryIds(on); }
+
+	// ★Appended 2026-09-20 (the ABI stamp went with it). Making the copy is the model's work - the
+	//   UI half could not reach ImportINX at all - so this is the usual one-liner.
+	virtual bool16		OpenOriginAsIdml(PMString& outMessage)	{ return KCMOpenOriginForInspection(outMessage); }
 
 
 	// The lent Source (see the interface). Three one-line transfers; the rules are model-side.

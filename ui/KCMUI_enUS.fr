@@ -67,6 +67,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMSetTargetMenuKey,				"Set as Target",
                 kKCMSetSourceMenuKey,				"Set as Source",
                 kKCMTaskStartMenuKey,				"Task Start",
+		kKCMOpenOriginIdmlMenuKey,		"Open Task Start as IDML",
 		kKCMExportStoryTextMenuKey,			"Export Story Text...",
 		kKCMExportStoryDocxMenuKey,			"Export Story Text as Word...",
 		kKCMImportStoryTextMenuKey,			"Import Story Text...",

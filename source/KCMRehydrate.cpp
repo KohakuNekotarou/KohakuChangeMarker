@@ -44,6 +44,9 @@
 #include "INXCoreID.h"				// IID_IINXIMPORTPOLICY
 #include "PMPageSize.h"				// NewDocumentLike
 #include "UIDList.h"				// the new-document command's item list
+#include "IOpenLayoutCmdData.h"	// GetResultingPresentation - did the window actually appear? (the class is IOpenLayoutPresentationCmdData)
+#include "IWindow.h"				// ...and the thing it checks came out, rather than the return code
+#include "LayoutUIID.h"			// kOpenLayoutCmdBoss / IID_IOPENLAYOUTCMDDATA (KBSBookScope.cpp does the same)
 #include "SnippetID.h"				// kDocElementImportBoss
 
 #include <string>
@@ -403,7 +406,7 @@ void NameCopyAfterOrigin(const UIDRef& copyRef, IDataBase* originDB)
 }
 
 bool16 ImportAndCheck(const UIDRef& ref, KCMResourceBytes& copy, const KCMOriginShape& expect,
-					  const char* dummy, PMString& whyNot)
+					  const char* dummy, PMString& whyNot, bool16 forInspection)
 {
 	if (!ImportOnly(ref, copy, whyNot))
 		return kFalse;
@@ -411,6 +414,10 @@ bool16 ImportAndCheck(const UIDRef& ref, KCMResourceBytes& copy, const KCMOrigin
 
 	// 3b. the sacrificial ranges the import did NOT drop (DeleteSurvivingDummies says why there
 	//     can be any). Before the compose, so that what is composed is the text as it should be.
+	// ★★**LEFT IN FOR AN INSPECTION COPY** (2026-09-20, the user: "leave the sacrificial ones
+	//   where they are"). Which of them the import ate and which survived is the one thing that
+	//   NAMES the story it took its bite out of - delete them and that evidence goes with them.
+	if (!forInspection)
 	{
 		GlobalErrorStatePreserver errorState;
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
@@ -461,7 +468,8 @@ bool16 ImportAndCheck(const UIDRef& ref, KCMResourceBytes& copy, const KCMOrigin
 
 }	// namespace
 
-bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, UIDRef& outDoc, PMString& whyNot)
+bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, UIDRef& outDoc,
+					PMString& whyNot, bool16 forInspection)
 {
 	outDoc = UIDRef::gNull;
 	whyNot.Clear();
@@ -489,9 +497,20 @@ bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, U
 		return kFalse;
 	// 3-5. import, compose, check - in a function of their own, so that every interface taken on
 	//      the document is gone before the close below (ImportAndCheck says why that is the rule).
-	if (!ImportAndCheck(ref, copy, expect, dummy.c_str(), whyNot))
+	if (!ImportAndCheck(ref, copy, expect, dummy.c_str(), whyNot, forInspection))
 	{
-		KCMCloseRehydrated(ref);	// nothing of ours stands on it any more
+		// ★★**AN INSPECTION COPY IS KEPT EVEN SO** (2026-09-20): the copy that FAILS the check is
+		//   the one worth looking at - it is how a nested table was found to vanish - and with the
+		//   sacrificial paragraphs left in it fails every time by construction.
+		//   ⚠The answer stays kFalse: "a document was made" and "it matches the origin" are two
+		//    statements, and every other caller acts on the second one.
+		if (!forInspection)
+		{
+			KCMCloseRehydrated(ref);	// nothing of ours stands on it any more
+			return kFalse;
+		}
+		KCMMarkRehydratedClean(ref.GetDataBase());
+		outDoc = ref;					// with whyNot saying what did not line up
 		return kFalse;
 	}
 	// (Until 2026-09-19 an import's edited words were poured into THIS copy here, for the fourth
@@ -508,6 +527,70 @@ void KCMMarkRehydratedClean(IDataBase* db)
 {
 	if (db != nil && db->IsModified())
 		db->SetModified(kFalse);
+}
+
+bool16 KCMOpenOriginForInspection(PMString& outMessage)
+{
+	outMessage.Clear();
+	outMessage.SetTranslatable(kFalse);
+
+	const KCMResourceBytes* const bytes = KCMOriginBytes();
+	const KCMOriginShape* const shape = KCMOriginShapeOf();
+	if (bytes == nil || shape == nil)
+	{
+		outMessage = "no Task Start is held - take one first.";
+		return kFalse;
+	}
+
+	// 1. THE SAME COPY THE COMPARISON MAKES, with the two inspection rules on (the header says
+	//    what they are and why). ⚠kFalse here does NOT mean "no document": for an inspection copy
+	//    it is the usual answer, because the sacrificial paragraphs make it longer than the origin.
+	UIDRef doc = UIDRef::gNull;
+	PMString whyNot;
+	const bool16 matched = KCMRehydrate(*bytes, *shape, doc, whyNot, kTrue /*forInspection*/);
+	if (doc == UIDRef::gNull)
+	{
+		outMessage = "the Task Start copy could not be made at all: ";
+		outMessage.Append(whyNot);
+		return kFalse;
+	}
+
+	// 2. ★A WINDOW, ASKED FOR THE WAY KBSBookScope ASKS FOR ONE (KBSBookScope.cpp, a windowless
+	//    chapter): the data interface first - no data interface, no command run - and afterwards
+	//    the PRESENTATION is read rather than the return code, because "the command succeeded" and
+	//    "there is a window" are two different statements.
+	//    ⚠**IT IS ALLOWED TO FAIL.** The document is in app.documents either way, and a windowless
+	//     one can still be read by a script; the status line says which happened.
+	bool16 hasWindow = kFalse;
+	{
+		GlobalErrorStatePreserver windowErrorState;
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+		InterfacePtr<ICommand> cmd(CmdUtils::CreateCommand(kOpenLayoutCmdBoss));
+		InterfacePtr<IOpenLayoutPresentationCmdData> openData(cmd, IID_IOPENLAYOUTCMDDATA);
+		if (cmd != nil && openData != nil)
+		{
+			cmd->SetItemList(UIDList(doc));
+			if (CmdUtils::ProcessCommand(cmd) == kSuccess)
+			{
+				InterfacePtr<IWindow> window(openData->GetResultingPresentation(), UseDefaultIID());
+				hasWindow = (window != nil) ? kTrue : kFalse;
+			}
+		}
+	}
+
+	// 3. ⚠**IT IS LEFT DIRTY-FREE BUT NOT TIDIED AWAY.** Whoever opened it closes it; nothing here
+	//    remembers it, because it is not a copy any comparison will be given.
+	outMessage = hasWindow ? "the Task Start copy is open in a window"
+						   : "the Task Start copy was made but no window would open for it (it is in app.documents)";
+	if (!matched)
+	{
+		// ★THE WHOLE REASON THE ITEM EXISTS. With the sacrificial paragraphs left in, this is the
+		//   ordinary case - and the numbers say by how much, which is how a missing nested table
+		//   announces itself.
+		outMessage.Append(" - ");
+		outMessage.Append(whyNot);
+	}
+	return kTrue;
 }
 
 void KCMCloseRehydrated(const UIDRef& doc, bool16 deferred)

@@ -86,6 +86,11 @@ bool16 KCMInxToDesignmap(KCMResourceBytes& bytes, PMString& whyNot);
 */
 int32 KCMOriginSaveIdml(const IDFile& file, PMString& whyNot);
 
+// (⛔"Open Task Start as IDML" was written here for an hour on 2026-09-20, writing the origin out
+//  and opening the FILE. The user's decision moved it: what the menu shows must be the copy the
+//  COMPARISON makes - same injection, same ImportINX, sacrificial paragraphs left in place - because
+//  that is the copy whose contents are in question. It lives in KCMRehydrate.h now.)
+
 #endif // __KCMOriginIdml_h__
 
 // End, KCMOriginIdml.h.
