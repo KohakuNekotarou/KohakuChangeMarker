@@ -190,7 +190,8 @@ UID TableIdAt(const std::string& text, size_t open, size_t limit)
 	@param outEmptyTag kTrue for <Cell … />, which has no contents and is left alone.
 	@return kFalse when there is no next cell. */
 bool16 NextCell(const std::string& table, size_t from, size_t& outBodyStart, size_t& outBodyEnd,
-				size_t& outEnd, std::string& outName, std::string& outSelf, bool16& outEmptyTag)
+				size_t& outEnd, std::string& outName, std::string& outSelf, std::string& outSpan,
+				bool16& outEmptyTag)
 {
 	static const char kOpen[] = "<Cell";
 	static const char kClose[] = "</Cell>";
@@ -210,6 +211,11 @@ bool16 NextCell(const std::string& table, size_t from, size_t& outBodyStart, siz
 		return kFalse;
 	outName = AttributeIn(table, open, tagEnd, "Name");
 	outSelf = AttributeIn(table, open, tagEnd, "Self");
+	// ★**HOW FAR THE CELL REACHES** (2026-09-20, the user: "when a merge is put back, the words that
+	//   were run together should come back apart too"). Read as the two attributes say them, never
+	//   parsed into numbers: the only question asked of this is whether the two sides say the SAME
+	//   thing, and a cell that carries neither attribute answers "x" on both sides alike.
+	outSpan = AttributeIn(table, open, tagEnd, "RowSpan") + "x" + AttributeIn(table, open, tagEnd, "ColumnSpan");
 	if (tagEnd > open && table[tagEnd - 1] == '/')
 	{
 		outEmptyTag = kTrue;
@@ -256,6 +262,7 @@ struct MergeCell
 {
 	std::string	fId;			///< Self with the table's own Self taken off: "i4". Empty when absent.
 	std::string	fName;			///< "col:row"
+	std::string	fSpan;			///< "RowSpanxColumnSpan" as the tag spells them ("1x2"); "x" when neither is there
 	int32		fCol;
 	int32		fRow;
 	size_t		fBodyStart;		///< the contents between the tags - what a merge replaces
@@ -270,9 +277,9 @@ void ReadMergeCells(const std::string& table, std::vector<MergeCell>& out)
 	out.clear();
 	const std::string selfPrefix = TableSelf(table);
 	size_t at = 0, bodyStart = 0, bodyEnd = 0, end = 0;
-	std::string name, self;
+	std::string name, self, span;
 	bool16 emptyTag = kFalse;
-	while (NextCell(table, at, bodyStart, bodyEnd, end, name, self, emptyTag))
+	while (NextCell(table, at, bodyStart, bodyEnd, end, name, self, span, emptyTag))
 	{
 		at = end;
 		if (name.empty() || emptyTag)
@@ -281,6 +288,7 @@ void ReadMergeCells(const std::string& table, std::vector<MergeCell>& out)
 		if (!SplitCellName(name, cell.fCol, cell.fRow))
 			continue;
 		cell.fName = name;
+		cell.fSpan = span;
 		cell.fBodyStart = bodyStart;
 		cell.fBodyEnd = bodyEnd;
 		// The cell's id inside its table: its Self with the table's Self taken off. ⚠Taken off on
@@ -633,6 +641,18 @@ bool16 KCMMergeTableCells(const std::string& olderTableXml, const std::string& l
 		if (older[i].fBodyStart < copiedTo)
 			continue;
 		const MergeCell& from = live[at->second];
+		// ★★★**A CELL WHOSE MERGE CHANGED KEEPS NOTHING** (2026-09-20, the user: "when the merge is
+		//   put back, I want the words that were run together to come back apart - and the cell style
+		//   with them"). Merging two cells makes InDesign run their paragraphs into one ("A0\rA1"),
+		//   and unmerging leaves one of them holding the lot. Read as CONTENTS those are "different
+		//   from Task Start", so the rule above handed them back as if the reader had typed them -
+		//   and the words stayed run together through the restore (measured on the running
+		//   application: 0:0 came back as "A0\rA1" beside a 1:0 of "A1").
+		//   ⇒ When the two sides disagree about how far the cell REACHES, the cell is not the same
+		//   cell in any useful sense: Task Start's own tag and its own contents go back whole, which
+		//   is also how the cell style returns (the tag carries AppliedCellStyle).
+		if (from.fSpan != older[i].fSpan)
+			continue;
 		const std::string words = liveTableXml.substr(from.fBodyStart, from.fBodyEnd - from.fBodyStart);
 		if (words == olderTableXml.substr(older[i].fBodyStart, older[i].fBodyEnd - older[i].fBodyStart))
 			continue;									// the same on both sides: nothing to keep
