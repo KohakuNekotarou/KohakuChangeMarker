@@ -49,9 +49,11 @@
 class IDataBase;
 class KCMMemXferBytes;
 
-/** Cut the `ordinal`-th <Table …>…</Table> (0-based, document order, nested tables counted) out of
-    the <Story Self="u<hex>"> of an INX/IDML text. kFalse when the story or the table is not there. */
-bool16 KCMCutTableXml(const char* xml, size_t size, UID storyUID, int32 ordinal, std::string& outTable);
+// ⛔**CUTTING A TABLE OUT BY ITS ORDINAL IS GONE** (2026-09-20, with the pairing that counted tables).
+//   KCMCutTableXml took the n-th <Table …> of a story; every caller moved to the cut BY ID below on
+//   the day the user asked "a table has an id too - can that not say which is which?", and the
+//   declaration outlived its last caller by a few hours. A position answers about the wrong table as
+//   soon as another one is inserted before it, so nothing here should offer one again.
 
 /** ★★★EVERY TABLE OF THE STORY, IN DOCUMENT ORDER, NAMED BY ITS OWN ID (2026-09-20, the user: "a
     table has an id too - can that not say which is which?"). The id is the last "i<hex>" of the

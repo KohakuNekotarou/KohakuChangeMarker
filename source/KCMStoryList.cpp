@@ -1061,6 +1061,30 @@ void KCMStoryList::AddReplacedChangeAt(int32 nth, int32 slot, const KCMStoryChan
 	list.insert(list.begin() + slot, done);
 }
 
+namespace
+{
+
+/* ShiftOnePlace
+   One [start, end) of Target text, moved by a write made elsewhere in the same story - the two rules
+   ShiftReplacedChanges states for a record's own positions, written over one pair of indexes so that
+   they can be applied to a record's other positions as well.
+*/
+void ShiftOnePlace(TextIndex& start, TextIndex& end, TextIndex from, int32 removed, int32 inserted, int32 delta)
+{
+	if (start >= from + removed)
+	{
+		start += delta;
+		end   += delta;
+	}
+	else if (start > from || removed > 0)
+	{
+		start = from + inserted;
+		end   = start;
+	}
+}
+
+}	// namespace
+
 /* ShiftReplacedChanges
    The header carries the rule and the two measured faults of the one it replaced.
 */
@@ -1076,6 +1100,19 @@ void KCMStoryList::ShiftReplacedChanges(int32 nth, int32 firstSlot, TextIndex fr
 	for (size_t i = static_cast<size_t>(firstSlot); i < list.size(); ++i)
 	{
 		KCMStoryChange& r = list[i];
+
+		// ★★**AND THE SPANS A TABLE ROW MARKS** (2026-09-20, found re-reading this file). fMarkSpans
+		//   holds the only positions on a replaced record that are not among the four below, and they
+		//   are what a Table row's JUMP aims at (KCMStoryJump's tableCorner, through
+		//   GetChangeMarkSpan). Left alone, a restore made earlier in the same story slid the record's
+		//   own start correctly while these went on naming where the table stood BEFORE that write -
+		//   so the jump landed at a stale index, or at none when the story had since grown shorter.
+		//   ⚠**Span by span**: the record's own start cannot answer for a span that stands elsewhere.
+		//   ⚠The standing MARKS are not affected either way - KCMStoryMarkBuild draws nothing at all
+		//    for a change the reader has taken in - so this is the jump's own correction.
+		for (size_t s = 0; s < r.fMarkSpans.size(); ++s)
+			ShiftOnePlace(r.fMarkSpans[s].fFrom, r.fMarkSpans[s].fTo, from, removed, inserted, delta);
+
 		if (r.fReplacedStart >= from + removed)
 		{
 			// Past the removed characters: it slides by what the write changed the length by. A

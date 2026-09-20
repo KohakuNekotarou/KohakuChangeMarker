@@ -667,10 +667,15 @@ bool16 KCMRestoreTable(int32 nth, const KCMStoryChange& changeIn, PMString& outM
 	change.fReplacedTextPre = PMString();
 	change.fReplacedText = change.fOtherText;		// Task Start's shape and first words - what stands there now
 	change.fReplacedTextPost = PMString();
-	// ★THE MARKS THE REPLACED ROW DRAWS: the table standing there now, whole - or, for a removal, the
-	//   caret where it stood. ⚠The spans the diff made name CELLS OF THE TABLE THAT IS GONE, and
-	//   KCMStoryMarkBuild.cpp:206 draws a Table row from fMarkSpans whether it is live or replaced -
-	//   left alone they would light a grid of another shape, or cells that no longer exist at all.
+	// ★THE SPANS THE REPLACED ROW CARRIES: the table standing there now, whole - or, for a removal, the
+	//   caret where it stood. ⚠The spans the diff made name CELLS OF THE TABLE THAT IS GONE, and the
+	//   JUMP reads them off the record whether it is live or replaced (KCMStoryJump's tableCorner,
+	//   through the facade's GetChangeMarkSpan) - left alone they would aim at a grid of another shape,
+	//   or at cells that no longer exist at all.
+	//   ⚠**THE STANDING MARKS DO NOT READ THEM WHILE THE ROW IS REPLACED**: KCMStoryMarkBuild skips a
+	//    change the reader has taken in before it ever asks what kind it is. And once they are written
+	//    here, KCMStoryList's ShiftReplacedChanges keeps them abreast of later writes in this story,
+	//    the same as the record's own positions.
 	change.fMarkSpans.clear();
 	change.fMarkSpans.push_back(removing ? KCMTextSpan(writeAt, writeAt)
 										 : KCMTextSpan(now.fAnchorStart, now.fAnchorEnd));
@@ -698,8 +703,9 @@ bool16 KCMRestoreTable(int32 nth, const KCMStoryChange& changeIn, PMString& outM
 	const int32 left = KCMStoryDiffRun::RunOne(db, nil, nth);
 	// ★The counter this record is measured by, asked AFTER the re-diff has recorded it on the row -
 	//   the order the words restore keeps (RestoreOne's own tail). ⚠The Table row's StillReplaced
-	//   answers by SHAPE and never reads this; it is kept true so that one record cannot mean two
-	//   things depending on what made it.
+	//   answers by the SHAPE of the table rather than by this count - but it does read it: a record
+	//   whose count is 0 is "never replaced" for every kind alike, before the kinds are told apart.
+	//   So recording it truly is what keeps a Table row from being read as one that was never written.
 	change.fReplacedCount = KCMStoryDiffRun::CountForKind(UIDRef(db, storyUID), kKCMStoryAttrNone);
 	KCMStoryList::AddReplacedChangeAt(nth, slot, change);
 	KCMNotify(kKCMStoryEditsRebuiltMessage);

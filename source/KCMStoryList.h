@@ -416,10 +416,13 @@ struct KCMStoryChange
 	//  carried from the time of the comparison to the time of the write. That is what took the
 	//  position bugs out - see KCMTableSnippet.h, KCMMergeTableCells.)
 
-	// (THE TABLE'S OWN SNIPPET IS NOT HERE. It is kept per (story, ordinal) in KCMTableCache, which
-	//  lives and dies with the comparison - so a snippet is taken once rather than on every re-diff,
-	//  a STORY REFRESH takes that story's again, and the several kilobytes never travel through the
-	//  facade to the UI, which has no use for them. 2026-09-20.)
+	// (NO SNIPPET IS KEPT PER TABLE. The redo snippet below is built at the moment a restore writes,
+	//  out of the live story's own export; what the COMPARISON read is one INX per changed STORY, in
+	//  KCMStorySnapshot, taken once and dropped when that story is refreshed - so the several
+	//  kilobytes never travel through the facade to the UI, which has no use for them.
+	//  ⚠A cache of one snippet per table was planned as KCMTableCache and never built, and the key it
+	//   would have had - the table's POSITION in the story - is the very thing the tables' own ids
+	//   replaced later the same day. 2026-09-20.)
 
 	/** After a restore: the snippet that puts the LIVE table back ("Undo the Restore"), built from the
 		Target's own XML (KCMTableSnippet). Empty until a restore, and dropped once it is redone. */

@@ -17,7 +17,6 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>		// atoi - the addresses in Name="col:row"
-#include <cstring>
 #include <map>
 #include <string>
 #include <vector>
@@ -48,23 +47,8 @@
 namespace
 {
 
-#ifndef KCM_TABLESNIPPET_STANDALONE
-/** The start of the `nth` occurrence of `needle` in [from, end) of text, or std::string::npos. */
-size_t FindNth(const std::string& text, const char* needle, size_t from, size_t end, int32 nth)
-{
-	size_t at = from;
-	const size_t len = std::strlen(needle);
-	for (int32 seen = 0; ; ++seen)
-	{
-		at = text.find(needle, at);
-		if (at == std::string::npos || at >= end)
-			return std::string::npos;
-		if (seen == nth)
-			return at;
-		at += len;
-	}
-}
-#endif // KCM_TABLESNIPPET_STANDALONE
+// (⛔FindNth - the n-th occurrence of a needle - went with KCMCutTableXml on 2026-09-20: counting
+//  <Table> tags was the ordinal pairing's own way of naming a table, and the id replaced it.)
 
 /** [start, end) of the element whose start tag begins at `open` (open must point at "<Name"),
     matching nested elements of the SAME name. end = one past "</Name>". npos when unbalanced. */
@@ -662,29 +646,6 @@ bool16 KCMMergeTableCells(const std::string& olderTableXml, const std::string& l
 }
 
 #ifndef KCM_TABLESNIPPET_STANDALONE
-bool16 KCMCutTableXml(const char* xml, size_t size, UID storyUID, int32 ordinal, std::string& outTable)
-{
-	outTable.clear();
-	if (xml == nil || size == 0 || ordinal < 0)
-		return kFalse;
-	const std::string text(xml, size);
-	size_t storyOpen = 0;
-	size_t storyEnd = 0;
-	if (!FindStoryRange(text, storyUID, storyOpen, storyEnd))
-		return kFalse;
-
-	// The ordinal-th "<Table " inside it, in document order - nested tables counted, which is the order
-	// KCMTextRead numbers them in (a nested table's cells begin after the cell that holds it).
-	const size_t tableOpen = FindNth(text, "<Table ", storyOpen, storyEnd, ordinal);
-	if (tableOpen == std::string::npos)
-		return kFalse;
-	const size_t tableEnd = ElementEnd(text, tableOpen, "Table");
-	if (tableEnd == std::string::npos || tableEnd > storyEnd)
-		return kFalse;
-	outTable = text.substr(tableOpen, tableEnd - tableOpen);
-	return kTrue;
-}
-
 bool16 KCMReadTableIdsInStory(const char* xml, size_t size, UID storyUID, std::vector<UID>& out)
 {
 	out.clear();
