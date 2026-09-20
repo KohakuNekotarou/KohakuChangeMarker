@@ -16,6 +16,7 @@
 #define __KCMStoryTree_h__
 
 #include "BaseType.h"
+#include "PMString.h"			// KCMChangeIdLabel returns one (ルビ・圏点… are UTF-16, not char*)
 #include "KCMResourceKinds.h"	// KCMResourceChangeKind - KCMResourceRowHasChildren (a types-only model header, the one IKCMResourcesFacade.h includes)
 
 /** Redraw the Story Edits list from whatever KCMStoryList holds right now.
@@ -140,6 +141,23 @@ int32 KCMClampListLeftColumnWidth(int32 px);
 */
 void KCMApplyListColumnWidths(IControlView* leftCell, IControlView* middleCell,
 							  IControlView* rightCell, int32 leftIndent);
+
+/** ★★**WHAT THE ID COLUMN CALLS ONE CHANGE** - "Text" / "Cell Text" / "Note Text" / "Paragraph" /
+	"Table", or the attribute's own name (ルビ・圏点・割注・縦中横 / Footnote / Endnote).
+
+	★**ONE PLACE FOR THE WORDS** (2026-09-20, the user: "put the ID part after the colon of
+	  Source:"). Until then the rule lived in the row manager alone; the message area's heading now
+	  says the same word, and a second copy of "which name goes with which change" is exactly the
+	  thing that goes out of step ([[one-question-one-place]]).
+
+	@param attrKind        Change::fAttrKind
+	@param place           Change::fPlace
+	@param wholeParagraph  Change::fWholeParagraph
+	@param what            Change::fWhat
+	@param overset ★puts "OV " in front. **The ROW wants it** (an overset change says so before
+		anybody presses it); the heading does not, because it appends " (overset)" of its own.
+	@return the words, never translated. Empty when the change is one this does not name. */
+PMString KCMChangeIdLabel(int32 attrKind, int32 place, bool16 wholeParagraph, int32 what, bool16 overset);
 
 #endif // __KCMStoryTree_h__
 

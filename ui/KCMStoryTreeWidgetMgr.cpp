@@ -258,6 +258,28 @@ PMString KindLabel(uint32 kinds, bool16 sameKind, int32 /*attrKind*/, int32 /*at
 
 }	// anonymous namespace
 
+/*	KCMChangeIdLabel
+	The header (KCMStoryTree.h) carries what this is for. Here: the two private namers above, joined
+	by the one rule that decides between them - an attribute that draws a mark line is named by its
+	own word, everything else by where its words stand.
+	★It lives OUTSIDE the anonymous namespace so that the message area can ask the same question the
+	 row asks (2026-09-20, the user: "Source: Text, Source: Ruby"). The two namers stay private: the
+	 rule is what the rest of the plug-in needs, not the pieces.
+*/
+PMString KCMChangeIdLabel(int32 attrKind, int32 place, bool16 wholeParagraph, int32 what, bool16 overset)
+{
+	if (KCMAttrKindHasMarkLine(attrKind))
+		return AttrKindIdLabel(attrKind);		// ルビ・圏点・割注・縦中横 / Footnote / Endnote
+
+	PMString words;
+	words.SetTranslatable(kFalse);
+	if (overset)
+		words.Append("OV ");
+	words.Append(PlaceIdLabel(place, wholeParagraph, what));
+	words.SetTranslatable(kFalse);
+	return words;
+}
+
 /** Builds and fills the rows of the Story Edits list.
 */
 class KCMStoryTreeWidgetMgr : public CTreeViewWidgetMgr
@@ -1045,16 +1067,14 @@ private:
 		//   change inside a cell, Text for an ordinary one - and if it is too noisy we stop"): "Text" /
 		//   "Cell Text" / "Note Text", decided by the diff (Change::fPlace). "OV" keeps its place in front
 		//   of it - "OV Text" - so an overset change still says so before anybody presses it.
+		// ⚠**THE RULE MOVED OUT OF THIS FUNCTION ON 2026-09-20** (KCMChangeIdLabel, above the class):
+		//   the message area's heading asks the same question now, and two copies of "which name goes
+		//   with which change" is the kind of pair that goes out of step.
 		PMString idText;
 		idText.SetTranslatable(kFalse);
-		if (have && KCMAttrKindHasMarkLine(change.fAttrKind))
-			idText = AttrKindIdLabel(change.fAttrKind);
-		else if (have)
-		{
-			if (change.fOverset)
-				idText.Append("OV ");
-			idText.Append(PlaceIdLabel(change.fPlace, change.fWholeParagraph, change.fWhat));
-		}
+		if (have)
+			idText = KCMChangeIdLabel(change.fAttrKind, change.fPlace, change.fWholeParagraph,
+									  change.fWhat, change.fOverset);
 		idText.SetTranslatable(kFalse);
 		this->SetNodeName(widgetList, idText, kKCMStoryRowUIDWidgetID);
 

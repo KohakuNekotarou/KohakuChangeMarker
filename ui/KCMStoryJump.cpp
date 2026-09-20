@@ -777,9 +777,25 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	// ⚠**THE WIDTH IS NOT SETTLED.** This is a narrow box and the phrase is long; it may have to
 	//   come down to "Before:". That is a thing to look at rather than to argue about, and it is
 	//   one line here.
+	// ★★★**AND THE HEADING NAMES THE KIND OF CHANGE** (2026-09-20, the user: "put the ID part after
+	//   the colon - Source: Text, Source: Ruby"). The word is the ID column's own (KCMChangeIdLabel),
+	//   so the heading and the row cannot disagree about what a change is called.
+	//   ⚠**"Source Text:" BECAME "Source:" FOR THIS** - the reader's own point: with the kind
+	//    appended, the old wording read "Source Text: Text". "Before the replacement:" came down to
+	//    "Before:" with it, which is also what the note above this block had been asking for on
+	//    width grounds.
+	//   ⚠No "OV " prefix here: this label appends its own " (overset)" below, and saying it twice
+	//    in one line is worse than not saying it at all.
 	PMString label;
 	label.SetTranslatable(kFalse);
-	label.Append(change.fReplaced ? "Before the replacement:" : "Source Text:");
+	label.Append(change.fReplaced ? "Before:" : "Source:");
+	const PMString kindWord = KCMChangeIdLabel(change.fAttrKind, change.fPlace,
+											   change.fWholeParagraph, change.fWhat, kFalse);
+	if (!kindWord.IsEmpty())
+	{
+		label.Append(" ");
+		label.Append(kindWord);
+	}
 
 	// ★AND A WORD WHEN THE WINDOW WENT TO THE "+" RATHER THAN TO THE TEXT. The row's ID column
 	//   already says OV, but the label is what the reader is looking at the instant after they

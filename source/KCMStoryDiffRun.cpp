@@ -1689,15 +1689,24 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		}
 
 		// The Story column: the shape word, then the table's first words (on the side that has it).
+		// ★★**A TABLE THIS VERSION ADDED SHOWS ITS SHAPE ALONE** (2026-09-20, the user: "when a table
+		//   is added, the Story column shows its contents too - that is not wanted, 2×1 or so is
+		//   enough"). A Table + has no partner in the older version, so what it SAYS is not the
+		//   difference - the whole table is - and the shape is the whole of what names it.
+		//   ⚠The other two keep their words on purpose: a Table ≠ and a Table − are about ONE table
+		//    among several, and the first words are how the reader tells which.
 		table.fShapeWord = (haveT && haveS) ? KCMTableShapeWord(sShapes[sI], tShapes[tI])
 						 : KCMTableShapeAlone(haveT ? tShapes[tI] : sShapes[sI]);
 		std::string words = table.fShapeWord;
-		const std::string first = haveT ? FirstTableWords(tOrdinal, targetParas, targetAttrs)
-										: FirstTableWords(sOrdinal, sourceParas, sourceAttrs);
-		if (!first.empty())
+		if (haveS)
 		{
-			words += " ";
-			words += first;
+			const std::string first = haveT ? FirstTableWords(tOrdinal, targetParas, targetAttrs)
+											: FirstTableWords(sOrdinal, sourceParas, sourceAttrs);
+			if (!first.empty())
+			{
+				words += " ";
+				words += first;
+			}
 		}
 		SetDocumentText(table.fText, words);
 		// The other side, for the message area: Task Start's shape and first words.
