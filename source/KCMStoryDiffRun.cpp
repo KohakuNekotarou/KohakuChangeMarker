@@ -50,6 +50,9 @@
 #include "KCMCore.h"			// KCMArmedTargetDB / KCMIsDocDBOpen - which document a replaced change is measured against
 #include "KCMSourceCache.h"	// the Source side, read once per origin instead of once per press
 #include "KCMTableShape.h"	// KCMReadTableShapes / KCMTableShapesDiffer - the Table row (2026-09-19 night)
+#include "KCMTableSnippet.h"	// KCMReadTableIdsInStory - Task Start's tables, by their own ids (2026-09-20)
+#include "KCMOrigin.h"		// KCMOriginBytes - Task Start's internal IDML, where those ids are read
+#include "KCMResourceBytes.h"
 #include "KCMStoryRestore.h"	// KCMStoryWritesAllowed - is there a restore for this comparison at all
 #include "KCMStorySnapshot.h"	// the story as the comparison read it - taken here, read elsewhere
 #include "KCMOriginCompare.h"	// KCMOriginToSourceUID - the older side's uid when the Source is a Task Start copy
@@ -1451,36 +1454,139 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 	const bool16 restorable = KCMStoryWritesAllowed();
 	IDataBase* const targetDB = (targetModel != nil && restorable) ? ::GetDataBase(targetModel) : nil;
 
-	const size_t n = (tShapes.size() > sShapes.size()) ? tShapes.size() : sShapes.size();
-	for (size_t ord = 0; ord < n; ++ord)
+	// ★★★**WHICH TABLE IS WHICH, BY THE TABLES' OWN IDS** (2026-09-20, the user: "is it looking at
+	//   tables by position? a table has an id too - can that not say which is which?"). Task Start's
+	//   ids are read out of the origin's INX, which THIS document wrote, so they are the very numbers
+	//   the live tables carry (KCMTableSnippet.h; measured the same day, including that an id moves
+	//   for no insertion, no removal and no undo).
+	// ⚠**ONLY WHEN THE ORIGIN CAN ANSWER FOR EVERY ONE OF THEM.** A comparison against another
+	//   DOCUMENT has a Source whose uids mean nothing here, and a text that names one table without
+	//   a Self of its own can name any of them wrongly - in both cases the pairing falls back to the
+	//   position, which is what it always was.
+	std::vector<UID> sIds;
+	bool16 byId = kFalse;
 	{
-		const bool16 haveT = (ord < tShapes.size()) ? kTrue : kFalse;
-		const bool16 haveS = (ord < sShapes.size()) ? kTrue : kFalse;
-		if (haveT && haveS && !KCMTableShapesDiffer(tShapes[ord], sShapes[ord]))
+		const KCMResourceBytes* const origin = KCMOriginBytes();
+		if (origin != nil && KCMReadTableIdsInStory(origin->Bytes(), origin->Size(), targetStoryUID, sIds)
+			&& sIds.size() == sShapes.size() && !sIds.empty())
+		{
+			// ⚠**THE n-TH TABLE OF THE TEXT HAS TO BE THE n-TH TABLE OF THE MODEL.** Both walk the
+			//   story in document order with nested tables counted where they stand (KCMTableShape.h),
+			//   but that is a claim about two separate pieces of code, so what can be checked cheaply
+			//   is checked: an id that is missing, or one that appears twice, means the text was not
+			//   read the way this assumes - and the pairing falls back to the position rather than
+			//   naming the wrong table with great confidence.
+			byId = kTrue;
+			for (size_t i = 0; i < sIds.size() && byId; ++i)
+			{
+				if (sIds[i] == kInvalidUID)
+					byId = kFalse;
+				for (size_t j = i + 1; j < sIds.size() && byId; ++j)
+					if (sIds[i] == sIds[j])
+						byId = kFalse;
+			}
+		}
+	}
+
+	// The pairs: every Target table with the Task Start table it IS, then Task Start's tables that
+	// nothing paired with (Table −). ⚠A table pairs with at most one - an id is taken once, so a
+	// recycled id cannot make two tables claim the same partner.
+	std::vector<std::pair<int32, int32> > pairs;		// (target index, source index); -1 for neither
+	std::vector<bool16> sTaken(sShapes.size(), kFalse);
+	for (size_t i = 0; i < tShapes.size(); ++i)
+	{
+		int32 partner = -1;
+		if (byId)
+		{
+			// ★Through the translation first: a table KCM has put back carries an id Task Start never
+			//   saw, and what it IS was recorded at the moment it was written (KCMStorySnapshot.h).
+			const UID mine = KCMStorySnapshotTranslateTableId(targetStoryUID, tShapes[i].fDictUID);
+			for (size_t j = 0; j < sShapes.size(); ++j)
+				if (!sTaken[j] && sIds[j] == mine)
+				{
+					partner = static_cast<int32>(j);
+					break;
+				}
+		}
+		else if (i < sShapes.size() && !sTaken[i])
+			partner = static_cast<int32>(i);
+		if (partner >= 0)
+			sTaken[static_cast<size_t>(partner)] = kTrue;
+		pairs.push_back(std::make_pair(static_cast<int32>(i), partner));
+	}
+	for (size_t j = 0; j < sShapes.size(); ++j)
+		if (!sTaken[j])
+			pairs.push_back(std::make_pair(-1, static_cast<int32>(j)));
+
+	for (size_t p = 0; p < pairs.size(); ++p)
+	{
+		const int32 tAt = pairs[p].first;
+		const int32 sAt = pairs[p].second;
+		const bool16 haveT = (tAt >= 0) ? kTrue : kFalse;
+		const bool16 haveS = (sAt >= 0) ? kTrue : kFalse;
+		// ⚠**tI AND sI ARE ONLY MEANINGFUL UNDER haveT / haveS.** Each falls back to 0 for a side that
+		//   has no table, and 0 is out of range when that side's list is EMPTY - so every use below
+		//   stands inside an `if (haveT)`, an `if (haveS)`, or the short-circuiting side of a `&&` or
+		//   a `?:`. Re-checked line by line 2026-09-20; keep it that way when adding to this loop.
+		const size_t tI = static_cast<size_t>(haveT ? tAt : 0);
+		const size_t sI = static_cast<size_t>(haveS ? sAt : 0);
+		if (haveT && haveS && !KCMTableShapesDiffer(tShapes[tI], sShapes[sI]))
 			continue;					// the same shape: the cell rows stay as the diff made them
 
-		const int32 ordinal = static_cast<int32>(ord);
+		// ⚠**THE TWO SIDES NUMBER THEIR TABLES SEPARATELY** now that they are paired by id: the cells
+		//   of this table are the ones whose own side's ordinal is this side's index.
+		const int32 tOrdinal = haveT ? tAt : -1;
+		const int32 sOrdinal = haveS ? sAt : -1;
 		KCMStoryChange table;
 		table.fWhat = KCMStoryChange::kTable;
-		table.fTableOrdinal = ordinal;
+		table.fTableId = haveT ? tShapes[tI].fDictUID : kInvalidUID;
+		// ⚠kInvalidUID when the pairing fell back to the position: nothing may then be written by
+		//   name, and every write below asks for this id before it touches the document.
+		table.fSourceTableId = (haveS && byId) ? sIds[sI] : kInvalidUID;
 		table.fPlace = kKCMPlaceCell;
 		table.fKind = (!haveS) ? KCMStoryChange::kInsert
 					: (!haveT) ? KCMStoryChange::kDelete
 					: KCMStoryChange::kReplace;
-		// Only a table whose SHAPE changed can be put back (KCMTableRestore); Table + and Table − offer
-		// no menu - the user: "to remove a table, select it and delete it".
-		table.fWriteBlock = (table.fKind == KCMStoryChange::kReplace) ? kKCMWriteAllowed : kKCMWriteBlockedPlaces;
+		// ★**TABLE + AND TABLE − CAN BE PUT BACK TOO** (2026-09-20, the user: "I want to be able to put
+		//   them back"). The older rule - "to remove a table, select it and delete it" - was withdrawn
+		//   the same day; KCMTableRestore removes the one and brings the other in.
+		// ⚠★★**EXCEPT WHEN THE OLDER SIDE'S TABLE CANNOT BE NAMED** (found re-reading this before the
+		//   live run). Every write that has to fetch a table out of Task Start asks for it BY ID, so a
+		//   row whose pairing fell back to the position must not offer one - it would be a write by a
+		//   number that moves. A Table +, which fetches nothing and only removes, is unaffected.
+		table.fWriteBlock = (haveS && !byId) ? kKCMWriteBlockedTable : kKCMWriteAllowed;
 		if (haveT)
 		{
-			table.fTargetStart = tShapes[ord].fAnchorStart;
-			table.fTargetEnd = tShapes[ord].fAnchorEnd;
-			table.fShapeSigAfter = KCMTableShapeSignature(tShapes[ord]);
+			table.fTargetStart = tShapes[tI].fAnchorStart;
+			table.fTargetEnd = tShapes[tI].fAnchorEnd;
+			table.fShapeSigAfter = KCMTableShapeSignature(tShapes[tI]);
 		}
 		if (haveS)
 		{
-			table.fSourceStart = sShapes[ord].fAnchorStart;
-			table.fSourceEnd = sShapes[ord].fAnchorEnd;
-			table.fShapeSigBefore = KCMTableShapeSignature(sShapes[ord]);
+			table.fSourceStart = sShapes[sI].fAnchorStart;
+			table.fSourceEnd = sShapes[sI].fAnchorEnd;
+			table.fShapeSigBefore = KCMTableShapeSignature(sShapes[sI]);
+
+			// ★★★**AND WHERE IT STOOD, MEASURED FROM THE TABLE BEFORE IT** (KCMStoryList.h says why -
+			//   Task Start's anchor alone landed inside a word once another table had changed). The
+			//   one that stands nearest before it, by anchor; with none, the distance from the start
+			//   of the story.
+			// ⚠A nested table's anchor lives inside a cell, which stands past the whole body
+			//   (ITableTextContent.h), so a body table's search never picks one up: their anchors are
+			//   all larger than any body anchor.
+			TextIndex prevEnd = 0;
+			table.fPrevTableId = kInvalidUID;
+			for (size_t q = 0; q < sShapes.size(); ++q)
+			{
+				if (q == sI || sShapes[q].fAnchorEnd > sShapes[sI].fAnchorStart)
+					continue;
+				if (sShapes[q].fAnchorEnd >= prevEnd)
+				{
+					prevEnd = sShapes[q].fAnchorEnd;
+					table.fPrevTableId = byId ? sIds[q] : kInvalidUID;
+				}
+			}
+			table.fGapFromPrev = sShapes[sI].fAnchorStart - prevEnd;
 		}
 
 		// The cell-level changes of THIS table come out; what they say about paired cells stays.
@@ -1508,8 +1614,8 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 			const bool16 sideS = (ch.fKind != KCMStoryChange::kInsert) ? kTrue : kFalse;
 			const int32 tPara = sideT ? ParagraphIndexAt(targetStarts, tFrom) : -1;
 			const int32 sPara = sideS ? ParagraphIndexAt(sourceStarts, sFrom) : -1;
-			const bool16 tHolds = ParaIsCellOfTable(targetAttrs, tPara, ordinal);
-			const bool16 sHolds = ParaIsCellOfTable(sourceAttrs, sPara, ordinal);
+			const bool16 tHolds = ParaIsCellOfTable(targetAttrs, tPara, tOrdinal);
+			const bool16 sHolds = ParaIsCellOfTable(sourceAttrs, sPara, sOrdinal);
 			const bool16 inTable = (haveT && tHolds) || (haveS && sHolds);
 			if (!inTable)
 			{
@@ -1534,24 +1640,24 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		// Cells only here (a new row or column, by address) and cells whose merge differs: marked whole.
 		if (haveT)
 		{
-			for (size_t i = 0; i < tShapes[ord].fCells.size(); ++i)
+			for (size_t i = 0; i < tShapes[tI].fCells.size(); ++i)
 			{
-				const KCMTableCellPlace& cell = tShapes[ord].fCells[i];
+				const KCMTableCellPlace& cell = tShapes[tI].fCells[i];
 				bool16 mark = !haveS;
 				if (haveS)
 				{
-					const KCMTableCellPlace* const partner = KCMTableCellAt(sShapes[ord], cell.fRow, cell.fCol);
+					const KCMTableCellPlace* const partner = KCMTableCellAt(sShapes[sI], cell.fRow, cell.fCol);
 					mark = (partner == nil) ? kTrue : kFalse;
 					if (!mark)
 					{
 						// The merge at this address on each side (1x1 when not listed).
 						int32 tr = 1, tc = 1, sr = 1, sc = 1;
-						for (size_t m = 0; m < tShapes[ord].fMerges.size(); ++m)
-							if (tShapes[ord].fMerges[m].fRow == cell.fRow && tShapes[ord].fMerges[m].fCol == cell.fCol)
-							{ tr = tShapes[ord].fMerges[m].fRowSpan; tc = tShapes[ord].fMerges[m].fColSpan; }
-						for (size_t m = 0; m < sShapes[ord].fMerges.size(); ++m)
-							if (sShapes[ord].fMerges[m].fRow == cell.fRow && sShapes[ord].fMerges[m].fCol == cell.fCol)
-							{ sr = sShapes[ord].fMerges[m].fRowSpan; sc = sShapes[ord].fMerges[m].fColSpan; }
+						for (size_t m = 0; m < tShapes[tI].fMerges.size(); ++m)
+							if (tShapes[tI].fMerges[m].fRow == cell.fRow && tShapes[tI].fMerges[m].fCol == cell.fCol)
+							{ tr = tShapes[tI].fMerges[m].fRowSpan; tc = tShapes[tI].fMerges[m].fColSpan; }
+						for (size_t m = 0; m < sShapes[sI].fMerges.size(); ++m)
+							if (sShapes[sI].fMerges[m].fRow == cell.fRow && sShapes[sI].fMerges[m].fCol == cell.fCol)
+							{ sr = sShapes[sI].fMerges[m].fRowSpan; sc = sShapes[sI].fMerges[m].fColSpan; }
 						mark = (tr != sr || tc != sc) ? kTrue : kFalse;
 					}
 				}
@@ -1571,7 +1677,7 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 			//   would have said the real reason, so even the refusal was misleading.
 			//   ★The anchor stood in the BODY, and the body agrees on both sides unless it was edited
 			//   too - and an edit there is a row of its own.
-			TextIndex at = haveS ? sShapes[ord].fAnchorStart : 0;
+			TextIndex at = haveS ? sShapes[sI].fAnchorStart : 0;
 			const TextIndex total = (targetModel != nil) ? targetModel->TotalLength() : at;
 			if (at > total)
 				at = total;
@@ -1583,11 +1689,11 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		}
 
 		// The Story column: the shape word, then the table's first words (on the side that has it).
-		table.fShapeWord = (haveT && haveS) ? KCMTableShapeWord(sShapes[ord], tShapes[ord])
-						 : KCMTableShapeAlone(haveT ? tShapes[ord] : sShapes[ord]);
+		table.fShapeWord = (haveT && haveS) ? KCMTableShapeWord(sShapes[sI], tShapes[tI])
+						 : KCMTableShapeAlone(haveT ? tShapes[tI] : sShapes[sI]);
 		std::string words = table.fShapeWord;
-		const std::string first = haveT ? FirstTableWords(ordinal, targetParas, targetAttrs)
-										: FirstTableWords(ordinal, sourceParas, sourceAttrs);
+		const std::string first = haveT ? FirstTableWords(tOrdinal, targetParas, targetAttrs)
+										: FirstTableWords(sOrdinal, sourceParas, sourceAttrs);
 		if (!first.empty())
 		{
 			words += " ";
@@ -1595,8 +1701,8 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		}
 		SetDocumentText(table.fText, words);
 		// The other side, for the message area: Task Start's shape and first words.
-		std::string other = haveS ? KCMTableShapeAlone(sShapes[ord]) : std::string();
-		const std::string otherFirst = haveS ? FirstTableWords(ordinal, sourceParas, sourceAttrs) : std::string();
+		std::string other = haveS ? KCMTableShapeAlone(sShapes[sI]) : std::string();
+		const std::string otherFirst = haveS ? FirstTableWords(sOrdinal, sourceParas, sourceAttrs) : std::string();
 		if (!otherFirst.empty())
 		{
 			other += " ";
@@ -1608,9 +1714,9 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		//   taken**, because this is the only place that is the comparison's own moment - and it is
 		//   taken at most ONCE for the story however many of its tables changed, because Take keeps
 		//   what it took. A story refresh drops it first (RunOne), so the refresh takes it again.
-		// ⚠Only for a table that can be put back at all (kReplace); Table + and Table − offer no
-		//   restore, so nothing would read it.
-		if (haveT && table.fKind == KCMStoryChange::kReplace && targetDB != nil)
+		// ⚠**FOR EVERY TABLE ROW** since 2026-09-20: Table + and Table − can be put back as well, and
+		//   the style groups a restore dresses its snippet in are looked for here before the origin.
+		if (targetDB != nil)
 			KCMStorySnapshotTake(targetDB, targetStoryUID);
 
 		kept.push_back(table);
@@ -2075,18 +2181,33 @@ bool16 KCMStoryDiffRun::StillReplaced(const KCMStoryRow& row, const KCMStoryChan
 	if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
 		return kFalse;
 
-	// ★A TABLE ROW IS "STILL REPLACED" WHILE THE TABLE KEEPS THE SHAPE THE RESTORE LEFT (2026-09-20):
-	//   one comparison of signatures against the live table, no counter - Ctrl+Z gives the table its
-	//   old shape back and the answer falls away with it.
+	// ★A TABLE ROW IS "STILL REPLACED" WHILE THE TABLE THE RESTORE LEFT IS STANDING AS IT LEFT IT
+	//   (2026-09-20): the table is found BY ITS ID - the one the restore wrote down, not a position -
+	//   and its shape is compared with the one that was left. No counter: Ctrl+Z gives the table its
+	//   old shape (and its old id) back, and the answer falls away with it.
+	// ★★**A RESTORED Table + LEFT NO TABLE AT ALL** (fReplacedTableId == kInvalidUID): what says it is
+	//   still restored is that the table it removed is still absent. Ctrl+Z brings that table back
+	//   WITH THE ID IT HAD (measured 2026-09-20), so looking for that id answers both ways round.
 	if (change.fWhat == KCMStoryChange::kTable)
 	{
 		InterfacePtr<ITextModel> model(UIDRef(targetDB, row.fStoryUID), UseDefaultIID());
 		std::vector<KCMTableShape> shapes;
-		if (model == nil || !KCMReadTableShapes(model, shapes) || change.fTableOrdinal < 0
-			|| static_cast<size_t>(change.fTableOrdinal) >= shapes.size())
+		if (model == nil || !KCMReadTableShapes(model, shapes))
 			return kFalse;
-		return (KCMTableShapeSignature(shapes[static_cast<size_t>(change.fTableOrdinal)]) == change.fReplacedShapeSig)
-			   ? kTrue : kFalse;
+		if (change.fReplacedTableId == kInvalidUID)
+		{
+			// The removal: still restored while the table that was removed is nowhere in the story.
+			if (change.fTableId == kInvalidUID)
+				return kFalse;
+			for (size_t i = 0; i < shapes.size(); ++i)
+				if (shapes[i].fDictUID == change.fTableId)
+					return kFalse;
+			return kTrue;
+		}
+		for (size_t i = 0; i < shapes.size(); ++i)
+			if (shapes[i].fDictUID == change.fReplacedTableId)
+				return (KCMTableShapeSignature(shapes[i]) == change.fReplacedShapeSig) ? kTrue : kFalse;
+		return kFalse;			// the table the restore left is gone: undone, or removed by hand
 	}
 
 	// ⚠★★★**">=", NOT "==" - MEASURED ON THE APPLICATION, 2026-09-15.** It was "==" until the

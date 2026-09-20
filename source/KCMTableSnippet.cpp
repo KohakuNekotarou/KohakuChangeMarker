@@ -132,6 +132,70 @@ std::string AttributeIn(const std::string& text, size_t open, size_t tagEnd, con
 	return text.substr(from, to - from);
 }
 
+#ifndef KCM_TABLESNIPPET_STANDALONE
+/** [outOpen, outEnd) of the <Story Self="u<hex>"> named by `storyUID`. The origin's INX and a
+	story's own INX both name a story by the document's uid (measured 2026-09-19, u15a = 346). */
+bool16 FindStoryRange(const std::string& text, UID storyUID, size_t& outOpen, size_t& outEnd)
+{
+	char self[32];
+	std::snprintf(self, sizeof(self), "Self=\"u%x\"", static_cast<unsigned>(storyUID.Get()));
+	size_t open = 0;
+	for (;;)
+	{
+		open = text.find("<Story ", open);
+		if (open == std::string::npos)
+			return kFalse;
+		const size_t tagEnd = text.find('>', open);
+		if (tagEnd == std::string::npos)
+			return kFalse;
+		if (text.substr(open, tagEnd - open).find(self) != std::string::npos)
+		{
+			const size_t end = ElementEnd(text, open, "Story");
+			if (end == std::string::npos)
+				return kFalse;
+			outOpen = open;
+			outEnd = end;
+			return kTrue;
+		}
+		open = tagEnd;
+	}
+}
+
+/** ★THE ID AT THE END OF A Self VALUE, as a UID - the last "i<hex>" of it. "u101i119" -> 0x119, and
+	a nested table's "u101i119i0i123" -> 0x123 (both measured 2026-09-20; 0x119 is what the DOM calls
+	table.id = 281). kInvalidUID when the value ends in no such id.
+	⚠**A CELL'S Self ENDS THE SAME WAY AND ITS ID IS NOT A UID** ("u101i119i4" -> 4 = Cell.id, an
+	 index inside its table). This is only ever asked of a <Table> start tag, where the last step of
+	 the path IS the table's own uid - a table is a boss and a cell is not. */
+UID IdOfSelf(const std::string& self)
+{
+	const size_t at = self.rfind('i');
+	if (at == std::string::npos || at + 1 >= self.size())
+		return kInvalidUID;
+	uint32 value = 0;
+	for (size_t i = at + 1; i < self.size(); ++i)
+	{
+		const char c = self[i];
+		uint32 digit = 0;
+		if (c >= '0' && c <= '9')		digit = static_cast<uint32>(c - '0');
+		else if (c >= 'a' && c <= 'f')	digit = static_cast<uint32>(c - 'a') + 10;
+		else if (c >= 'A' && c <= 'F')	digit = static_cast<uint32>(c - 'A') + 10;
+		else return kInvalidUID;
+		value = value * 16 + digit;
+	}
+	return UID(value);
+}
+
+/** The own id of the <Table …> start tag that begins at `open`. kInvalidUID when it carries no Self. */
+UID TableIdAt(const std::string& text, size_t open, size_t limit)
+{
+	const size_t tagEnd = text.find('>', open);
+	if (tagEnd == std::string::npos || tagEnd >= limit)
+		return kInvalidUID;
+	return IdOfSelf(AttributeIn(text, open, tagEnd, "Self"));
+}
+#endif // KCM_TABLESNIPPET_STANDALONE
+
 /** One outermost <Cell> of a table's XML, at or after `from`.
 	@param outBodyStart, outBodyEnd the contents BETWEEN the tags - what a merge replaces.
 	@param outEnd one past </Cell>, where the next search starts (so a nested table's cells, which
@@ -604,29 +668,9 @@ bool16 KCMCutTableXml(const char* xml, size_t size, UID storyUID, int32 ordinal,
 	if (xml == nil || size == 0 || ordinal < 0)
 		return kFalse;
 	const std::string text(xml, size);
-
-	// The story: the <Story …> whose start tag carries Self="u<hex>" (the origin's INX and a story's
-	// own INX both name it by the document's uid - measured 2026-09-19, u15a = 346).
-	char self[32];
-	std::snprintf(self, sizeof(self), "Self=\"u%x\"", static_cast<unsigned>(storyUID.Get()));
 	size_t storyOpen = 0;
-	size_t storyEnd = std::string::npos;
-	for (;;)
-	{
-		storyOpen = text.find("<Story ", storyOpen);
-		if (storyOpen == std::string::npos)
-			return kFalse;
-		const size_t tagEnd = text.find('>', storyOpen);
-		if (tagEnd == std::string::npos)
-			return kFalse;
-		if (text.substr(storyOpen, tagEnd - storyOpen).find(self) != std::string::npos)
-		{
-			storyEnd = ElementEnd(text, storyOpen, "Story");
-			break;
-		}
-		storyOpen = tagEnd;
-	}
-	if (storyEnd == std::string::npos)
+	size_t storyEnd = 0;
+	if (!FindStoryRange(text, storyUID, storyOpen, storyEnd))
 		return kFalse;
 
 	// The ordinal-th "<Table " inside it, in document order - nested tables counted, which is the order
@@ -639,6 +683,59 @@ bool16 KCMCutTableXml(const char* xml, size_t size, UID storyUID, int32 ordinal,
 		return kFalse;
 	outTable = text.substr(tableOpen, tableEnd - tableOpen);
 	return kTrue;
+}
+
+bool16 KCMReadTableIdsInStory(const char* xml, size_t size, UID storyUID, std::vector<UID>& out)
+{
+	out.clear();
+	if (xml == nil || size == 0)
+		return kFalse;
+	const std::string text(xml, size);
+	size_t storyOpen = 0;
+	size_t storyEnd = 0;
+	if (!FindStoryRange(text, storyUID, storyOpen, storyEnd))
+		return kFalse;
+
+	// ⚠**IN THE SAME ORDER KCMReadTableShapes PUTS THEM IN** - document order, nested tables counted
+	//   where they stand. A table that carries no Self of its own is kept as kInvalidUID rather than
+	//   dropped, so that the n-th entry here is the n-th table there whatever happens.
+	for (size_t at = storyOpen; ; )
+	{
+		at = text.find("<Table ", at);
+		if (at == std::string::npos || at >= storyEnd)
+			break;
+		out.push_back(TableIdAt(text, at, storyEnd));
+		at += 7;		// std::strlen("<Table ")
+	}
+	return kTrue;
+}
+
+bool16 KCMCutTableXmlById(const char* xml, size_t size, UID storyUID, UID tableUID, std::string& outTable)
+{
+	outTable.clear();
+	if (xml == nil || size == 0 || tableUID == kInvalidUID)
+		return kFalse;
+	const std::string text(xml, size);
+	size_t storyOpen = 0;
+	size_t storyEnd = 0;
+	if (!FindStoryRange(text, storyUID, storyOpen, storyEnd))
+		return kFalse;
+
+	for (size_t at = storyOpen; ; )
+	{
+		at = text.find("<Table ", at);
+		if (at == std::string::npos || at >= storyEnd)
+			return kFalse;
+		if (TableIdAt(text, at, storyEnd) == tableUID)
+		{
+			const size_t end = ElementEnd(text, at, "Table");
+			if (end == std::string::npos || end > storyEnd)
+				return kFalse;
+			outTable = text.substr(at, end - at);
+			return kTrue;
+		}
+		at += 7;
+	}
 }
 #endif // KCM_TABLESNIPPET_STANDALONE
 

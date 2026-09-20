@@ -198,6 +198,13 @@ enum KCMStoryWriteBlock
 	kKCMWriteBlockedObjects = 2,	// the words going in or coming out hold a character InDesign hangs
 									// an object on (KCMParaText::IsObjectCharacter) - measured, an
 									// anchored rectangle came back as U+FFFC alone
+	kKCMWriteBlockedTable = 4,		// ★★a table the two sides cannot name to each other (2026-09-20): the
+									// pairing fell back to the POSITION because Task Start's text could
+									// not be asked for its tables' ids, and a write that went by a
+									// number would put one table's shape into another the moment a
+									// table had been inserted before it. Shown, and not offered.
+									// ⚠Listed after the one below only because the values are the
+									//  contract; it is the newest of them.
 	kKCMWriteBlockedKind = 3		// ★a row that has nothing to write back: the "!" note of something an
 									// import could not put in (KCMStoryList's refusals). ⚠**IT MEANT A
 									// WARICHU OR A TATE-CHU-YOKO UNTIL 2026-09-20** - the diff marked

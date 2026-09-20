@@ -237,6 +237,9 @@ PMString WriteBlockedMessage(int32 writeBlock)
 	if (writeBlock == kKCMWriteBlockedKind)
 		return Refused("this row is a note about something an import could not put in - "
 					   "there is nothing to write back.");
+	if (writeBlock == kKCMWriteBlockedTable)
+		return Refused("this comparison cannot tell which table of Task Start this one is, so it "
+					   "cannot fetch it - refresh the comparison and try again.");
 	return (writeBlock == kKCMWriteBlockedPlaces)
 		? Refused("this change is in a table cell or a footnote that the other version does not have - "
 				  "its words cannot be put back as text.")
@@ -790,15 +793,6 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 	done.fReplacedText     = change.fOtherText;
 	done.fReplacedTextPost = change.fTextPost;
 
-	const TextIndex targetLength = target->TotalLength();
-	if (change.fTargetStart < 0 || change.fTargetEnd < change.fTargetStart || change.fTargetEnd > targetLength)
-	{
-		outMessage = Refused("the change's range is outside the story.");
-		return kFalse;
-	}
-	const int32 targetCount = change.fTargetEnd - change.fTargetStart;
-	const int32 sourceCount = change.fSourceEnd - change.fSourceStart;
-
 	// ★★**NOT A CHANGE THE DIFF SAID CANNOT GO BACK** (2026-09-16, the user's rule). The menu hides
 	//   the item for these; a bulk run reaches them anyway, and skips them with this reason.
 	// ⚠**ASKED BEFORE THE WORDS/ATTRIBUTE SPLIT** since the same day: it sat inside the words branch
@@ -813,8 +807,22 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 	// ===== a table ==============================================================================
 	// ★A TABLE ROW IS PUT BACK WHOLE (2026-09-20, KCMTableRestore): never through the words below,
 	//   and never through the attribute branch either.
+	// ⚠★★**AND ASKED BEFORE THE RANGE TEST BELOW** (2026-09-20, when Table − learned to come back):
+	//   a table that this version does not have HAS no range here - its position is a caret where it
+	//   stood - so the words' test would turn it away with "the change's range is outside the story"
+	//   the moment the body had grown shorter, which says nothing true about a table. The table road
+	//   clamps that caret and makes its own checks, by the tables' ids.
 	if (change.fWhat == KCMStoryChange::kTable)
 		return KCMRestoreTable(nth, change, outMessage);
+
+	const TextIndex targetLength = target->TotalLength();
+	if (change.fTargetStart < 0 || change.fTargetEnd < change.fTargetStart || change.fTargetEnd > targetLength)
+	{
+		outMessage = Refused("the change's range is outside the story.");
+		return kFalse;
+	}
+	const int32 targetCount = change.fTargetEnd - change.fTargetStart;
+	const int32 sourceCount = change.fSourceEnd - change.fSourceStart;
 
 	// ===== the words =============================================================================
 	if (change.fWhat == KCMStoryChange::kText)

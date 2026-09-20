@@ -80,7 +80,15 @@ struct KCMTableShape
 	TextIndex	fAnchorEnd;		///< one past the last continuation character (one per further row)
 	std::vector<KCMTableCellPlace>	fCells;		///< every anchor cell, in (row, col) order
 
-	KCMTableShape() : fOrdinal(-1), fRows(0), fCols(0), fAnchorStart(0), fAnchorEnd(0) {}
+	KCMTableShape() : fOrdinal(-1), fRows(0), fCols(0), fAnchorStart(0), fAnchorEnd(0)
+	{
+		// ⚠**fDictUID TOO** (2026-09-20). A default-made shape is handed to a write that may not fill
+		//   it in - a removal leaves no table - and its id is then read to decide what to record. An
+		//   uninitialised uid there would name whatever happened to be on the stack.
+#ifndef KCM_TABLESHAPE_STANDALONE
+		fDictUID = kInvalidUID;
+#endif
+	}
 };
 
 /** kTrue when the two shapes differ in rows, columns or merged cells. */

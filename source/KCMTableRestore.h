@@ -31,8 +31,26 @@
 //   sequence would put them into what Ctrl+Z takes back; the step the reader asked for is "the table
 //   went back". So the scratch document is opened before the sequence begins and closed after it ends.
 //
-//  ⚠Table + and Table − offer no menu (kKCMWriteBlockedPlaces): the user's call - "to remove a
-//   table, select it and delete it". Task Start only, as every write here is.
+//  ★★★**TABLE + AND TABLE − COME BACK TOO** (2026-09-20, the user: "I want to be able to put them
+//   back"; the earlier "to remove a table, select it and delete it" was withdrawn the same day).
+//   Two more roads, each the other's mirror:
+//     Table + (kInsert - the table is only in this version): the restore REMOVES it, by deleting its
+//        anchor character; InDesign takes the table with the character (measured). Its undo brings
+//        the table back from the snippet the restore kept, at a destination of no width.
+//     Table − (kDelete - the table is only in Task Start): the restore INSERTS Task Start's table at
+//        the caret where it stood, clamped to the story. Its undo removes it again.
+//
+//  ★★★**WHICH TABLE IS WHICH IS ASKED BY THE TABLE'S OWN ID** (2026-09-20, the user: "is it looking
+//   at tables by position? a table has an id too"). Every lookup here is TableById, never an
+//   ordinal: a table inserted before another one renumbers it, and a restore that went by number
+//   would put one table's shape into another. The id is KCMTableShape::fDictUID on the model's side
+//   and the last step of the Self on the XML's, and they are the same number (KCMTableSnippet.h).
+//  ⚠**A TABLE THIS FILE WRITES GETS A NEW ID**, because it arrives through a snippet import - so
+//   what it IS is recorded at the moment it lands (KCMStorySnapshotPutTableId) and the next
+//   comparison reads it back. Without that line a table just put back would be called a table added
+//   here, with Task Start's one still missing.
+//
+//  Task Start only, as every write here is.
 //
 //========================================================================================
 

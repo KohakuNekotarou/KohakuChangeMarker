@@ -55,8 +55,28 @@ const std::string* KCMStorySnapshotTake(IDataBase* db, UID story);
 /** What is held for this story, taking nothing. nil when none is. */
 const std::string* KCMStorySnapshotPeek(UID story);
 
+/** ★★★"THE TABLE STANDING HERE NOW, WHOSE ID IS <liveTable>, IS TASK START'S TABLE <taskStartTable>"
+    (2026-09-20, the user: "if you bring a table in from a snippet its id changes - is putting it
+    back still all right?"). It is not, without this: a snippet import hands out new ids (measured
+    281,291,301,311 -> 282,292,302,312), so a table KCM has just put back shares NO id with Task
+    Start's, and the next comparison would call it a table added here and Task Start's one removed.
+
+    ⚠**KEYED BY THE TABLE'S OWN ID, NEVER BY ITS POSITION.** Everything else about a table in KCM is
+     now asked by id for the same reason the user gave: inserting one table renumbers every table
+     after it, and a map keyed by the number would then answer about somebody else's table.
+    @return `liveTable` itself when nothing is held for it - an id that has not been through one of
+     our imports means what it says. */
+UID KCMStorySnapshotTranslateTableId(UID story, UID liveTable);
+
+/** Keep what a restore learned: the table it has just written is Task Start's `taskStartTable`. */
+void KCMStorySnapshotPutTableId(UID story, UID liveTable, UID taskStartTable);
+
+/** Forget what was learned about one table - what an Undo the Restore does, having just put a
+    different table (with, again, a new id) where that one stood. */
+void KCMStorySnapshotDropTableId(UID story, UID liveTable);
+
 /** ★"the cell whose id is now <key> WAS Task Start's cell <value>" - what a restore left behind, for
-    one table (its ordinal in KCMTextRead's order).
+    one table (named by its own id - see the translation above).
 
     A snippet import REPACKS a table's cell ids (0,1,4,5 -> 0,1,2,3, measured 2026-09-20), so once a
     table has been put back it shares no id with Task Start's and the pairing would fall back to the
@@ -64,10 +84,10 @@ const std::string* KCMStorySnapshotPeek(UID story);
     it builds, reads the labels back out of the SCRATCH document and clears them there, so nothing of
     ours is ever copied into the reader's document (the user's design). What it learned is kept here.
     @return nil when this table has not been put back during this comparison. */
-const std::map<std::string, std::string>* KCMStorySnapshotGetCellIds(UID story, int32 ordinal);
+const std::map<std::string, std::string>* KCMStorySnapshotGetCellIds(UID story, UID table);
 
 /** Keep what a restore learned about one table's cells. Replaces whatever was kept for it. */
-void KCMStorySnapshotPutCellIds(UID story, int32 ordinal, const std::map<std::string, std::string>& wasTaskStart);
+void KCMStorySnapshotPutCellIds(UID story, UID table, const std::map<std::string, std::string>& wasTaskStart);
 
 /** Forget one story's INX - what REFRESHING THAT STORY does, so that the fold takes it again.
     ⚠★**WHAT A RESTORE LEARNED ABOUT ITS CELLS IS KEPT** (2026-09-20, found re-reading this before
@@ -80,7 +100,7 @@ void KCMStorySnapshotDropStory(UID story);
 /** Forget what a restore learned about ONE table's cells - what an Undo the Restore does, having
     just put a different table there. ⚠**The "it has been through an import" mark below is NOT
     dropped with it**: that is the whole point of the pair. */
-void KCMStorySnapshotDropCellIds(UID story, int32 ordinal);
+void KCMStorySnapshotDropCellIds(UID story, UID table);
 
 /** ★★★**THIS TABLE HAS BEEN WRITTEN BY AN IMPORT DURING THIS COMPARISON** - so the ids its cells
     carry now were handed out by that import and mean NOTHING to Task Start (measured 2026-09-20: a
@@ -93,10 +113,10 @@ void KCMStorySnapshotDropCellIds(UID story, int32 ordinal);
      and the pairing then fell back to the RAW ids of a table that had been through two imports. The
      guard "a cell the map does not name cannot vote" only ever ran when a map was there.
      ⇒ the fact that the ids are meaningless has to outlive the map that explained them. */
-void KCMStorySnapshotMarkTableImported(UID story, int32 ordinal);
+void KCMStorySnapshotMarkTableImported(UID story, UID table);
 
 /** kTrue once MarkTableImported has been called for this table in this comparison. */
-bool16 KCMStorySnapshotTableWasImported(UID story, int32 ordinal);
+bool16 KCMStorySnapshotTableWasImported(UID story, UID table);
 
 /** Forget every story's INX, keeping what restores learned about cells - what a WHOLE comparison
     does (KCMStoryDiffRun::Run). ⚠★★★The same rule as DropStory, and the same trap: a full Refresh

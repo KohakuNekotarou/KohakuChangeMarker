@@ -19,6 +19,7 @@
 #include "ITableCommands.h"		// ClearCellOverrides - the official way to take one off
 #include "ITableModel.h"
 #include "ITextModel.h"
+#include "ITextModelCmds.h"		// DeleteCmd - how a Table + is taken out (its anchor goes, and the table with it)
 #include "IUIDData.h"					// the source story of kCopyStoryRangeCmdBoss
 #include "CmdUtils.h"
 #include "CommandID.h"					// IID_IRANGEDATA2
@@ -196,6 +197,177 @@ void ClearCellLabels(IDataBase* db, const KCMTableShape& shape)
 	ErrorUtils::PMSetGlobalErrorCode(kSuccess);		// a scratch document's tidy-up is never the caller's error
 }
 
+/** The table of `shapes` whose own id is `id`, or nil. ★**HOW EVERY TABLE IS FOUND HERE SINCE
+	2026-09-20** (the user: "a table has an id too - can that not say which is which?"): a position
+	answers about the wrong table as soon as another one is inserted before it. */
+const KCMTableShape* TableById(const std::vector<KCMTableShape>& shapes, UID id)
+{
+	if (id == kInvalidUID)
+		return nil;
+	for (size_t i = 0; i < shapes.size(); ++i)
+		if (shapes[i].fDictUID == id)
+			return &shapes[i];
+	return nil;
+}
+
+/** The one table `after` holds that `before` did not - what a write has just brought in. An import
+	always hands out a new id, so the table that arrived names itself by not having been there.
+	@param fallbackAt when every id is accounted for (an id CAN be recycled), the table whose anchor
+		starts here instead. nil when neither answers. */
+const KCMTableShape* TableThatArrived(const std::vector<KCMTableShape>& before,
+									  const std::vector<KCMTableShape>& after, TextIndex fallbackAt)
+{
+	for (size_t a = 0; a < after.size(); ++a)
+	{
+		bool16 seen = kFalse;
+		for (size_t b = 0; b < before.size() && !seen; ++b)
+			if (before[b].fDictUID == after[a].fDictUID)
+				seen = kTrue;
+		if (!seen)
+			return &after[a];
+	}
+	for (size_t a = 0; a < after.size(); ++a)
+		if (after[a].fAnchorStart == fallbackAt)
+			return &after[a];
+	return nil;
+}
+
+/** The live table's own XML and the snippet that would put it back - EXPORTED NOW, not cut out of
+	anything kept earlier (the reason is in KCMRestoreTable's step 2). kFalse when the story or the
+	table could not be written out. */
+bool16 KeepLiveTable(IDataBase* db, UID storyUID, UID tableId,
+					 std::string& outTableXml, std::string& outSnippet)
+{
+	outTableXml.clear();
+	outSnippet.clear();
+	KCMMemXferBytes storyInx;
+	std::string groups;
+	// ★WITH THE STYLE ROOTS: one small export carries the live table AND the style groups, as fresh
+	//   as each other - a cell style MADE since the comparison started is in them.
+	if (!KCMExportStoryInx(db, storyUID, storyInx, kTrue)
+		|| !KCMCutTableXmlById(storyInx.GetData(), storyInx.GetSize(), storyUID, tableId, outTableXml))
+		return kFalse;
+	KCMCutTableStyleGroups(storyInx.GetData(), storyInx.GetSize(), groups);
+	// A story's own INX carries no style groups of its own, so the comparison's snapshot answers
+	// next, and the origin last - which differs only in styles MADE since Task Start.
+	if (groups.empty())
+	{
+		const std::string* const seen = KCMStorySnapshotPeek(storyUID);
+		if (seen != nil)
+			KCMCutTableStyleGroups(seen->c_str(), seen->size(), groups);
+	}
+	if (groups.empty())
+	{
+		const KCMResourceBytes* const origin = KCMOriginBytes();
+		if (origin != nil)
+			KCMCutTableStyleGroups(origin->Bytes(), origin->Size(), groups);
+	}
+	KCMBuildTableSnippet(outTableXml, groups, outSnippet);
+	return kTrue;
+}
+
+/** ★★★THE ONE WRITE: `snippet` is brought into a scratch document and its table copied over
+	[dstStart, dstEnd) of the Target story. **A destination of no width INSERTS the table** - which is
+	how a Table − comes back (2026-09-20).
+
+	★THE SCRATCH DOCUMENT LIVES OUTSIDE THE UNDO STEP, the step holds the copy alone: making and
+	closing a document inside BeginCommandSequence would put those into what Ctrl+Z takes back, and
+	the step the reader asked for is "the table went back".
+
+	@param before the story's tables as they stood before this call - how the table that arrives is
+		recognised (TableThatArrived).
+	@param outLabelled "col:row" -> the Task Start cell id the label on that cell carried, read in the
+		scratch document and cleared there, so the reader's document never sees a label of ours.
+	@param outNow the table as it stands after the write. */
+bool16 BringInAndCopy(const std::string& snippet, IDataBase* db, UID storyUID, ITextModel* target,
+					  TextIndex dstStart, TextIndex dstEnd, const char* stepName,
+					  const std::vector<KCMTableShape>& before,
+					  std::map<std::string, std::string>& outLabelled,
+					  KCMTableShape& outNow, PMString& outMessage)
+{
+	outLabelled.clear();
+	bool16 done = kFalse;
+	{
+		KCMScratchDoc scratch;
+		std::vector<UIDRef> stories;
+		UIDRef tableStory = UIDRef::gNull;
+		TextIndex srcStart = 0;
+		TextIndex srcEnd = 0;
+		KCMTableShape broughtIn;
+		PMString why;
+		if (!scratch.Open(why) || !scratch.ImportSnippet(snippet, stories, why))
+		{
+			outMessage = Refused("the table could not be brought in: ");
+			outMessage.Append(why);
+		}
+		else if (!FindTableStory(stories, tableStory, srcStart, srcEnd, broughtIn))
+		{
+			outMessage = Refused("the brought-in table could not be read.");
+		}
+		else
+		{
+			// The labels, read and then taken off - in that order, and both BEFORE the copy.
+			ReadCellLabels(scratch.DB(), broughtIn, outLabelled);
+			ClearCellLabels(scratch.DB(), broughtIn);
+
+			TableSequence undo(stepName);
+			std::vector<KCMTableShape> after;
+			if (!CopyTableOver(tableStory, srcStart, srcEnd, db, storyUID, dstStart, dstEnd, outMessage))
+			{
+				// outMessage says why; the sequence closes over nothing.
+			}
+			else if (!KCMReadTableShapes(target, after))
+			{
+				outMessage = Refused("the table was put back but the story could not be read again.");
+			}
+			else
+			{
+				const KCMTableShape* const now = TableThatArrived(before, after, dstStart);
+				if (now == nil)
+					outMessage = Refused("the table was put back but could not be found again.");
+				else
+				{
+					outNow = *now;
+					done = kTrue;
+				}
+			}
+		}
+	}	// the sequence ended above; the scratch document closes HERE, every InterfacePtr on it gone
+	return done;
+}
+
+/** Remove the table standing at [start, end) of the story - its anchor character and the row
+	continuations after it. ★**INDESIGN TAKES THE TABLE WITH THE CHARACTER** (measured 2026-09-20 on
+	the running application: removing the anchor left tables.length 0 and the story one character
+	shorter; an Undo brought the table back with the same id). */
+bool16 RemoveTableAt(ITextModel* target, TextIndex start, TextIndex end, const char* stepName,
+					 PMString& outMessage)
+{
+	const int32 count = end - start;
+	if (count <= 0)
+	{
+		outMessage = Refused("the table stands nowhere that can be removed.");
+		return kFalse;
+	}
+	TableSequence undo(stepName);
+	InterfacePtr<ITextModelCmds> cmds(target, UseDefaultIID());
+	if (cmds == nil)
+	{
+		outMessage = Refused("the story would not take a delete command.");
+		return kFalse;
+	}
+	// ★The official shape of a deletion: DeleteCmd, never a ReplaceCmd with nothing to put in
+	//   (KCMStoryRestore's KCMCreateWordsWriteCmd states the rule and where it came from).
+	InterfacePtr<ICommand> del(cmds->DeleteCmd(start, count));
+	if (del == nil || CmdUtils::ProcessCommand(del) != kSuccess)
+	{
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+		outMessage = Refused("the table could not be removed.");
+		return kFalse;
+	}
+	return kTrue;
+}
+
 void AppendReChecks(PMString& outMessage, const KCMTargetItemCountGuard& guard)
 {
 	// ★THE TWO RE-CHECKS the user asked for (2026-09-20): the scratch document is gone, and the
@@ -225,9 +397,9 @@ bool16 KCMRestoreTable(int32 nth, const KCMStoryChange& changeIn, PMString& outM
 		outMessage = Refused("no such row, or the Target document is not open.");
 		return kFalse;
 	}
-	if (change.fWhat != KCMStoryChange::kTable || change.fKind != KCMStoryChange::kReplace)
+	if (change.fWhat != KCMStoryChange::kTable)
 	{
-		outMessage = Refused("only a table whose shape changed can be put back this way.");
+		outMessage = Refused("this row is not a table.");
 		return kFalse;
 	}
 	const UID storyUID = row->fStoryUID;
@@ -238,20 +410,53 @@ bool16 KCMRestoreTable(int32 nth, const KCMStoryChange& changeIn, PMString& outM
 		return kFalse;
 	}
 
-	// 1. The live table as it stands NOW, and the check that it is the one the diff described.
+	// ★★★THE THREE ROADS (2026-09-20, the user: "I want to be able to put a table that was added or
+	//   removed back too"). They differ only in what is written:
+	//     Table ≠ (kReplace) - Task Start's table, with the live cells' contents merged in, copied
+	//                          over the live one;
+	//     Table + (kInsert)  - the table this version added is REMOVED (its anchor deleted);
+	//     Table − (kDelete)  - Task Start's table is INSERTED where it stood (a destination of no
+	//                          width), the position being Task Start's anchor clamped to the story.
+	const bool16 removing = (change.fKind == KCMStoryChange::kInsert) ? kTrue : kFalse;
+	const bool16 bringingBack = (change.fKind == KCMStoryChange::kDelete) ? kTrue : kFalse;
+
+	// 1. The story's tables as they stand NOW, and the checks that this row still describes them.
+	//    ⚠**FOUND BY ID, NOT BY POSITION** - see TableById.
 	std::vector<KCMTableShape> live;
-	if (!KCMReadTableShapes(target, live) || change.fTableOrdinal < 0
-		|| static_cast<size_t>(change.fTableOrdinal) >= live.size())
+	if (!KCMReadTableShapes(target, live))
 	{
-		outMessage = Refused("the table is no longer where it was - run Refresh Story Comparison on its row.");
+		outMessage = Refused("the story's tables could not be read.");
 		return kFalse;
 	}
-	const KCMTableShape liveShape = live[static_cast<size_t>(change.fTableOrdinal)];
-	if (KCMTableShapeSignature(liveShape) != change.fShapeSigAfter)
+	const KCMTableShape* const standing = TableById(live, change.fTableId);
+	if (!bringingBack)
 	{
-		outMessage = Refused("the table has been edited since the comparison - run Refresh Story Comparison on its row.");
-		return kFalse;
+		if (standing == nil)
+		{
+			outMessage = Refused("the table is no longer in this story - run Refresh Story Comparison on its row.");
+			return kFalse;
+		}
+		if (KCMTableShapeSignature(*standing) != change.fShapeSigAfter)
+		{
+			outMessage = Refused("the table has been edited since the comparison - run Refresh Story Comparison on its row.");
+			return kFalse;
+		}
 	}
+	else
+	{
+		if (change.fSourceTableId == kInvalidUID)
+		{
+			outMessage = Refused("this comparison cannot name Task Start's table by its id, so it cannot bring it back.");
+			return kFalse;
+		}
+		// ⚠Already there: the story has been put back some other way since the comparison read it.
+		if (TableById(live, change.fSourceTableId) != nil)
+		{
+			outMessage = Refused("that table is in the story already - run Refresh Story Comparison on its row.");
+			return kFalse;
+		}
+	}
+	const KCMTableShape liveShape = (standing != nil) ? *standing : KCMTableShape();
 
 	// 2. THE LIVE TABLE, EXPORTED NOW: the snippet an Undo the Restore will put back, and the source
 	//    of the cell contents that are about to be kept.
@@ -263,40 +468,14 @@ bool16 KCMRestoreTable(int32 nth, const KCMStoryChange& changeIn, PMString& outM
 	//   table from before the reader's own edit. A column width or a table style leaves the text
 	//   counter exactly where it was, so the test could not see those at all.
 	//   ★One story's export is cheap, and it is the only answer that cannot be stale.
+	// ⚠**TABLE − HAS NOTHING TO KEEP**: no table stands here, and its Undo the Restore removes the one
+	//   this restore is about to insert.
 	std::string redo;
 	std::string liveTableXml;
+	if (!bringingBack && !KeepLiveTable(db, storyUID, change.fTableId, liveTableXml, redo))
 	{
-		KCMMemXferBytes storyInx;
-		std::string groups;
-		// ★WITH THE STYLE ROOTS (2026-09-20): one small export then carries both the live table AND the
-		//   style groups, and the groups are as fresh as the table - a cell style MADE since the
-		//   comparison started is in them. The kept snippet below stays as the fallback.
-		if (!KCMExportStoryInx(db, storyUID, storyInx, kTrue)
-			|| !KCMCutTableXml(storyInx.GetData(), storyInx.GetSize(), storyUID, change.fTableOrdinal, liveTableXml))
-		{
-			outMessage = Refused("the table could not be written out for a later Undo the Restore.");
-			return kFalse;
-		}
-		KCMCutTableStyleGroups(storyInx.GetData(), storyInx.GetSize(), groups);
-		// ★THE STYLE GROUPS COME FROM THE SNIPPET THE DIFF KEPT FOR THIS TABLE (2026-09-20, the user:
-		//   "stop making the Target's whole IDML when the comparison starts - prepare a snippet for
-		//   the tables that changed, and only for those"). Without them the table lands on
-		//   "[No table style]" instead of the document's existing style of that name
-		//   (KCMTableSnippet.h). A story's own INX carries none, so they are taken from the kept
-		//   snippet; the origin is the last resort, and differs only in styles MADE since Task Start.
-		if (groups.empty())
-		{
-			const std::string* const seen = KCMStorySnapshotPeek(storyUID);
-			if (seen != nil)
-				KCMCutTableStyleGroups(seen->c_str(), seen->size(), groups);
-		}
-		if (groups.empty())
-		{
-			const KCMResourceBytes* const origin = KCMOriginBytes();
-			if (origin != nil)
-				KCMCutTableStyleGroups(origin->Bytes(), origin->Size(), groups);
-		}
-		KCMBuildTableSnippet(liveTableXml, groups, redo);
+		outMessage = Refused("the table could not be written out for a later Undo the Restore.");
+		return kFalse;
 	}
 
 	// 3. ★★★TASK START'S TABLE, WITH THE LIVE CELLS' CONTENTS MERGED IN, AS TEXT (2026-09-20, the
@@ -304,29 +483,42 @@ bool16 KCMRestoreTable(int32 nth, const KCMStoryChange& changeIn, PMString& outM
 	//    changed can be told from the difference"). The shape comes back from Task Start; a cell both
 	//    tables have keeps what the reader wrote in it. One snippet, one replacement, and nothing is
 	//    written into cells afterwards - which is where every position bug of this feature lived.
+	// ⚠**TABLE + PUTS NOTHING IN**: the table this version added is simply removed.
 	std::string snippet;
 	int32 kept = 0;
 	std::string how;
+	if (!removing)
 	{
 		const KCMResourceBytes* const origin = KCMOriginBytes();
 		std::string olderTableXml, groups, merged;
-		if (origin == nil || !KCMCutTableXml(origin->Bytes(), origin->Size(), storyUID, change.fTableOrdinal, olderTableXml))
+		if (origin == nil || change.fSourceTableId == kInvalidUID
+			|| !KCMCutTableXmlById(origin->Bytes(), origin->Size(), storyUID, change.fSourceTableId, olderTableXml))
 		{
 			outMessage = Refused("the Task Start copy holds no such table.");
 			return kFalse;
 		}
-		const std::map<std::string, std::string>* const wasTaskStart =
-			KCMStorySnapshotGetCellIds(storyUID, change.fTableOrdinal);
-		// ★AND WHETHER THE LIVE IDS MEAN ANYTHING AT ALL (2026-09-20 evening, found on the running
-		//   application): a table an import has written carries ids that import handed out, and when
-		//   no translation survives - which is what an Undo the Restore leaves behind - they must not
-		//   vote. KCMTableSnippet.h says what went wrong while they did.
-		const bool16 staleIds = KCMStorySnapshotTableWasImported(storyUID, change.fTableOrdinal);
-		if (!KCMMergeTableCells(olderTableXml, liveTableXml, merged, kept, how, wasTaskStart, staleIds))
+		if (bringingBack)
 		{
-			merged = olderTableXml;		// the whole table goes back; the sentence below says 0 kept
-			kept = 0;
-			how = "the Task Start table could not be walked";
+			// Nothing stands here, so there are no cells of the reader's to keep - Task Start's table
+			// goes in exactly as it was.
+			merged = olderTableXml;
+			how = "the table was not in this version";
+		}
+		else
+		{
+			const std::map<std::string, std::string>* const wasTaskStart =
+				KCMStorySnapshotGetCellIds(storyUID, change.fTableId);
+			// ★AND WHETHER THE LIVE IDS MEAN ANYTHING AT ALL (2026-09-20 evening, found on the running
+			//   application): a table an import has written carries ids that import handed out, and when
+			//   no translation survives - which is what an Undo the Restore leaves behind - they must not
+			//   vote. KCMTableSnippet.h says what went wrong while they did.
+			const bool16 staleIds = KCMStorySnapshotTableWasImported(storyUID, change.fTableId);
+			if (!KCMMergeTableCells(olderTableXml, liveTableXml, merged, kept, how, wasTaskStart, staleIds))
+			{
+				merged = olderTableXml;		// the whole table goes back; the sentence below says 0 kept
+				kept = 0;
+				how = "the Task Start table could not be walked";
+			}
 		}
 		KCMCutTableStyleGroups(origin->Bytes(), origin->Size(), groups);
 		// ★EVERY CELL LABELLED WITH ITS TASK START ID, so that the table can still be recognised cell
@@ -343,56 +535,54 @@ bool16 KCMRestoreTable(int32 nth, const KCMStoryChange& changeIn, PMString& outM
 	//   not "and a document appeared". KCMRehydrate makes its copy outside every sequence too.
 	// ★**THE SLOT IS ASKED BEFORE THE WRITE**, while the positions are still the ones the write is
 	//   about to be made against (the rule KCMStoryList.h:769 states for every replaced record).
-	const int32 slot = KCMStoryList::ReplacedSlotFor(nth, liveShape.fAnchorStart);
+	// ★WHERE THE WRITE GOES. For a table that stands here, its own anchor range. For a table that is
+	//   coming BACK, Task Start's anchor position - clamped to the story, because the body may have
+	//   grown or shrunk since (the user's "plan A": the surrounding text's own differences are rows
+	//   of their own, so putting those back first makes this land exactly).
+	TextIndex writeAt = liveShape.fAnchorStart;
+	TextIndex writeTo = liveShape.fAnchorEnd;
+	const char* placedBy = "Task Start's own position";
+	if (bringingBack)
+	{
+		// ★★★**MEASURED FROM THE TABLE THAT STOOD BEFORE IT** (2026-09-20, found on the running
+		//   application - KCMStoryList.h, fPrevTableId, states the measurement). Task Start's anchor
+		//   alone is right only while no OTHER table has changed; a row added to an earlier table, or
+		//   a table inserted before this one, moves every later anchor, and those are folded into
+		//   Table rows that say nothing about the body's length. Measured: anchor 12 landed inside
+		//   the word "two".
+		writeAt = change.fTargetStart;
+		if (change.fPrevTableId != kInvalidUID && change.fGapFromPrev >= 0)
+		{
+			for (size_t i = 0; i < live.size(); ++i)
+				if (KCMStorySnapshotTranslateTableId(storyUID, live[i].fDictUID) == change.fPrevTableId)
+				{
+					writeAt = live[i].fAnchorEnd + change.fGapFromPrev;
+					placedBy = "after the table before it";
+					break;
+				}
+		}
+		else if (change.fGapFromPrev >= 0)
+		{
+			writeAt = change.fGapFromPrev;		// no table stood before it: from the story's start
+			placedBy = "from the start of the story";
+		}
+		const TextIndex total = target->TotalLength();
+		if (writeAt > total)
+			writeAt = total;
+		if (writeAt < 0)
+			writeAt = 0;
+		writeTo = writeAt;			// no width: the copy INSERTS
+	}
+
+	const int32 slot = KCMStoryList::ReplacedSlotFor(nth, writeAt);
 	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 	KCMTargetItemCountGuard guard(db);
 	KCMTableShape now;
 	std::map<std::string, std::string> labelledAs;	// "col:row" -> the Task Start id that cell had
-	bool16 putBack = kFalse;
-	{
-		KCMScratchDoc scratch;
-		std::vector<UIDRef> stories;
-		UIDRef tableStory = UIDRef::gNull;
-		TextIndex srcStart = 0;
-		TextIndex srcEnd = 0;
-		KCMTableShape broughtIn;
-		PMString why;
-		if (!scratch.Open(why) || !scratch.ImportSnippet(snippet, stories, why))
-		{
-			outMessage = Refused("the Task Start table could not be brought in: ");
-			outMessage.Append(why);
-		}
-		else if (!FindTableStory(stories, tableStory, srcStart, srcEnd, broughtIn))
-		{
-			outMessage = Refused("the brought-in table could not be read.");
-		}
-		else
-		{
-			// ★THE LABELS, READ AND THEN TAKEN OFF - in that order, and both BEFORE the copy. What
-			//   they say is "the cell standing at this address was Task Start's cell <id>", which is
-			//   the one thing the import throws away (it repacks the ids). Taking them off here is
-			//   what keeps them out of the reader's document.
-			ReadCellLabels(scratch.DB(), broughtIn, labelledAs);
-			ClearCellLabels(scratch.DB(), broughtIn);
-
-			TableSequence undo("Restore Source Text");
-			std::vector<KCMTableShape> after;
-			if (!CopyTableOver(tableStory, srcStart, srcEnd, db, storyUID,
-							   liveShape.fAnchorStart, liveShape.fAnchorEnd, outMessage))
-			{
-				// outMessage says why; the sequence closes over nothing.
-			}
-			else if (!KCMReadTableShapes(target, after) || static_cast<size_t>(change.fTableOrdinal) >= after.size())
-			{
-				outMessage = Refused("the table was put back but could not be read again.");
-			}
-			else
-			{
-				now = after[static_cast<size_t>(change.fTableOrdinal)];
-				putBack = kTrue;
-			}
-		}
-	}	// the sequence ended above; the scratch document closes HERE, every InterfacePtr on it gone
+	const bool16 putBack = removing
+		? RemoveTableAt(target, writeAt, writeTo, "Restore Source Text", outMessage)
+		: BringInAndCopy(snippet, db, storyUID, target, writeAt, writeTo, "Restore Source Text",
+						 live, labelledAs, now, outMessage);
 	if (!putBack)
 	{
 		AppendReChecks(outMessage, guard);	// said on the way out too: a scratch document must not linger
@@ -402,7 +592,24 @@ bool16 KCMRestoreTable(int32 nth, const KCMStoryChange& changeIn, PMString& outM
 	// 7a. ★**THIS TABLE HAS NOW BEEN THROUGH AN IMPORT** - said BEFORE anything below can fail, because
 	//     it is true the moment the copy landed and it is what stops the next restore from trusting
 	//     the ids that import handed out (KCMStorySnapshot.h).
-	KCMStorySnapshotMarkTableImported(storyUID, change.fTableOrdinal);
+	// ★★★**AND WHICH TASK START TABLE IT IS** (2026-09-20, the user: "if you bring a table in from a
+	//     snippet its id changes - is putting it back still all right?"). It is, because of this line:
+	//     the table standing there now carries an id Task Start never saw, and without the translation
+	//     the next comparison would call it a table added here and Task Start's one removed.
+	//     ⚠Nothing to say for a removal - there is no table to name.
+	if (!removing)
+	{
+		KCMStorySnapshotMarkTableImported(storyUID, now.fDictUID);
+		KCMStorySnapshotPutTableId(storyUID, now.fDictUID, change.fSourceTableId);
+	}
+	else
+	{
+		// ⚠**AND WHAT WAS KNOWN ABOUT THE TABLE JUST TAKEN OUT GOES WITH IT** (found re-reading this,
+		//   2026-09-20). Ids ARE recycled - measured for cells the same day - so an entry left behind
+		//   for a table that no longer exists is an answer waiting to be given about somebody else.
+		KCMStorySnapshotDropTableId(storyUID, change.fTableId);
+		KCMStorySnapshotDropCellIds(storyUID, change.fTableId);
+	}
 
 	// 7b. ★**WHICH TASK START CELL EACH CELL STANDING THERE NOW IS** (2026-09-20, the user's design).
 	//     The import repacked the ids, so the table that has just gone in shares none with Task
@@ -417,7 +624,7 @@ bool16 KCMRestoreTable(int32 nth, const KCMStoryChange& changeIn, PMString& outM
 		std::string afterTableXml;
 		std::map<std::string, std::string> idAt;		// "col:row" -> the id it has now
 		if (KCMExportStoryInx(db, storyUID, after)
-			&& KCMCutTableXml(after.GetData(), after.GetSize(), storyUID, change.fTableOrdinal, afterTableXml))
+			&& KCMCutTableXmlById(after.GetData(), after.GetSize(), storyUID, now.fDictUID, afterTableXml))
 		{
 			KCMReadTableCellIds(afterTableXml, idAt);
 			std::map<std::string, std::string> wasTaskStart;
@@ -428,7 +635,7 @@ bool16 KCMRestoreTable(int32 nth, const KCMStoryChange& changeIn, PMString& outM
 					wasTaskStart[it->second] = said->second;
 			}
 			if (!wasTaskStart.empty())
-				KCMStorySnapshotPutCellIds(storyUID, change.fTableOrdinal, wasTaskStart);
+				KCMStorySnapshotPutCellIds(storyUID, now.fDictUID, wasTaskStart);
 		}
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 	}
@@ -438,34 +645,54 @@ bool16 KCMRestoreTable(int32 nth, const KCMStoryChange& changeIn, PMString& outM
 	//    a record whose position quietly rots is a row whose jump lands in the wrong place.
 	//    ⚠A table's cells stand past the body (ITableTextContent.h), so what one shift can carry is the
 	//     ANCHOR's delta - which is exactly what the records in the BODY need.
-	KCMStoryList::ShiftReplacedChanges(nth, slot, liveShape.fAnchorStart,
-									   liveShape.fAnchorEnd - liveShape.fAnchorStart,
-									   now.fAnchorEnd - now.fAnchorStart);
+	const int32 wasWide = removing ? (writeTo - writeAt)
+					   : bringingBack ? 0
+					   : (liveShape.fAnchorEnd - liveShape.fAnchorStart);
+	const int32 nowWide = removing ? 0 : (now.fAnchorEnd - now.fAnchorStart);
+	KCMStoryList::ShiftReplacedChanges(nth, slot, writeAt, wasWide, nowWide);
 
-	// 9. The record: the row stays, drawn as replaced while the table keeps Task Start's shape.
+	// 9. The record: the row stays, drawn as replaced while what the restore did is still standing.
 	change.fRedoSnippet = redo;
-	change.fReplacedShapeSig = KCMTableShapeSignature(now);
-	change.fReplacedStart = now.fAnchorStart;
-	change.fReplacedEnd = now.fAnchorEnd;
-	change.fBeforeStart = liveShape.fAnchorStart;
-	change.fBeforeEnd = liveShape.fAnchorEnd;
+	// ★**THE TABLE THE RESTORE LEFT, BY ITS ID** - kInvalidUID for a removal, which is how
+	//   StillReplaced knows to ask whether the table is still absent rather than still there.
+	change.fReplacedTableId = removing ? kInvalidUID : now.fDictUID;
+	change.fReplacedShapeSig = removing ? std::string() : KCMTableShapeSignature(now);
+	change.fReplacedStart = removing ? writeAt : now.fAnchorStart;
+	change.fReplacedEnd = removing ? writeAt : now.fAnchorEnd;
+	change.fBeforeStart = writeAt;
+	change.fBeforeEnd = writeTo;
 	change.fBeforeTextPre = change.fTextPre;
 	change.fBeforeText = change.fText;
 	change.fBeforeTextPost = change.fTextPost;
 	change.fReplacedTextPre = PMString();
 	change.fReplacedText = change.fOtherText;		// Task Start's shape and first words - what stands there now
 	change.fReplacedTextPost = PMString();
-	// ★THE MARKS THE REPLACED ROW DRAWS: the table standing there now, whole. ⚠The spans the diff made
-	//   name CELLS OF THE TABLE THAT IS GONE, and KCMStoryMarkBuild.cpp:206 draws a Table row from
-	//   fMarkSpans whether it is live or replaced - left alone they would light a grid of another shape.
+	// ★THE MARKS THE REPLACED ROW DRAWS: the table standing there now, whole - or, for a removal, the
+	//   caret where it stood. ⚠The spans the diff made name CELLS OF THE TABLE THAT IS GONE, and
+	//   KCMStoryMarkBuild.cpp:206 draws a Table row from fMarkSpans whether it is live or replaced -
+	//   left alone they would light a grid of another shape, or cells that no longer exist at all.
 	change.fMarkSpans.clear();
-	change.fMarkSpans.push_back(KCMTextSpan(now.fAnchorStart, now.fAnchorEnd));
+	change.fMarkSpans.push_back(removing ? KCMTextSpan(writeAt, writeAt)
+										 : KCMTextSpan(now.fAnchorStart, now.fAnchorEnd));
 
-	outMessage = "table put back - ";
-	outMessage.AppendNumber(kept);
-	outMessage.Append(" cell(s) keep what you wrote in them (");
-	outMessage.Append(how.c_str());		// which evidence paired the two tables' cells
-	outMessage.Append(")");
+	if (removing)
+	{
+		outMessage = "the table this version added has been taken out";
+	}
+	else if (bringingBack)
+	{
+		outMessage = "the table Task Start had is back (placed ";
+		outMessage.Append(placedBy);		// which measurement decided where - see KCMStoryList.h
+		outMessage.Append(")");
+	}
+	else
+	{
+		outMessage = "table put back - ";
+		outMessage.AppendNumber(kept);
+		outMessage.Append(" cell(s) keep what you wrote in them (");
+		outMessage.Append(how.c_str());		// which evidence paired the two tables' cells
+		outMessage.Append(")");
+	}
 	AppendReChecks(outMessage, guard);
 
 	const int32 left = KCMStoryDiffRun::RunOne(db, nil, nth);
@@ -498,7 +725,12 @@ bool16 KCMUndoRestoreTable(int32 nth, int32 which, const KCMStoryChange& change,
 		outMessage = Refused("no such row, or the Target document is not open.");
 		return kFalse;
 	}
-	if (change.fRedoSnippet.empty())
+	// The three roads again, mirrored: a Table + was REMOVED, so its undo brings that table back from
+	// the snippet the restore kept; a Table − was INSERTED, so its undo takes that table out again;
+	// a Table ≠ was replaced, so its undo replaces it the other way round.
+	const bool16 removing = (change.fKind == KCMStoryChange::kInsert) ? kTrue : kFalse;
+	const bool16 bringingBack = (change.fKind == KCMStoryChange::kDelete) ? kTrue : kFalse;
+	if (!bringingBack && change.fRedoSnippet.empty())
 	{
 		outMessage = Refused("the table that stood here before was not kept, so it cannot be put back - Ctrl+Z still can.");
 		return kFalse;
@@ -506,14 +738,33 @@ bool16 KCMUndoRestoreTable(int32 nth, int32 which, const KCMStoryChange& change,
 	const UID storyUID = row->fStoryUID;
 	InterfacePtr<ITextModel> target(UIDRef(db, storyUID), UseDefaultIID());
 	std::vector<KCMTableShape> live;
-	if (target == nil || !KCMReadTableShapes(target, live) || change.fTableOrdinal < 0
-		|| static_cast<size_t>(change.fTableOrdinal) >= live.size()
-		|| KCMTableShapeSignature(live[static_cast<size_t>(change.fTableOrdinal)]) != change.fReplacedShapeSig)
+	if (target == nil || !KCMReadTableShapes(target, live))
 	{
-		outMessage = Refused("the table has been edited since it was put back - run Refresh Story Comparison on its row.");
+		outMessage = Refused("the story is no longer in the Target document.");
 		return kFalse;
 	}
-	const KCMTableShape liveShape = live[static_cast<size_t>(change.fTableOrdinal)];
+
+	// ★IS WHAT THE RESTORE DID STILL STANDING? For a removal that means the table is still absent;
+	//   for the other two, that the table it left is there with the shape it left.
+	KCMTableShape liveShape;
+	if (removing)
+	{
+		if (TableById(live, change.fTableId) != nil)
+		{
+			outMessage = Refused("that table is back in the story already - run Refresh Story Comparison on its row.");
+			return kFalse;
+		}
+	}
+	else
+	{
+		const KCMTableShape* const standing = TableById(live, change.fReplacedTableId);
+		if (standing == nil || KCMTableShapeSignature(*standing) != change.fReplacedShapeSig)
+		{
+			outMessage = Refused("the table has been edited since it was put back - run Refresh Story Comparison on its row.");
+			return kFalse;
+		}
+		liveShape = *standing;
+	}
 	const int32 slot = KCMStoryList::ReplacedSlotOfMerged(nth, which);
 	if (slot < 0)
 	{
@@ -523,35 +774,33 @@ bool16 KCMUndoRestoreTable(int32 nth, int32 which, const KCMStoryChange& change,
 
 	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 	KCMTargetItemCountGuard guard(db);
+	KCMTableShape now;
+	std::map<std::string, std::string> ignored;	// (the redo snippet carries no labels: it is the LIVE table)
+	TextIndex writeAt = liveShape.fAnchorStart;
+	TextIndex writeTo = liveShape.fAnchorEnd;
 	bool16 putBack = kFalse;
+	if (removing)
 	{
-		// The scratch document outside the undo step, and the step inside - the shape KCMRestoreTable
-		// explains. ⚠Declared together they would be destroyed the other way round (the document
-		// first, while the sequence is still open), which is the very thing being avoided.
-		KCMScratchDoc scratch;
-		std::vector<UIDRef> stories;
-		UIDRef tableStory = UIDRef::gNull;
-		TextIndex srcStart = 0;
-		TextIndex srcEnd = 0;
-		KCMTableShape broughtIn;		// (the redo snippet carries no labels of ours: it is the LIVE table)
-		PMString why;
-		if (!scratch.Open(why) || !scratch.ImportSnippet(change.fRedoSnippet, stories, why))
-		{
-			outMessage = Refused("the kept table could not be brought in: ");
-			outMessage.Append(why);
-		}
-		else if (!FindTableStory(stories, tableStory, srcStart, srcEnd, broughtIn))
-		{
-			outMessage = Refused("the kept table could not be read.");
-		}
-		else
-		{
-			TableSequence undo("Undo the Restore");
-			if (CopyTableOver(tableStory, srcStart, srcEnd, db, storyUID,
-							  liveShape.fAnchorStart, liveShape.fAnchorEnd, outMessage))
-				putBack = kTrue;
-		}
-	}	// the sequence ended above; the scratch document closes here
+		// Back where it stood - a destination of no width, so the copy inserts.
+		writeAt = change.fReplacedStart;
+		const TextIndex total = target->TotalLength();
+		if (writeAt > total)
+			writeAt = total;
+		if (writeAt < 0)
+			writeAt = 0;
+		writeTo = writeAt;
+		putBack = BringInAndCopy(change.fRedoSnippet, db, storyUID, target, writeAt, writeTo,
+								 "Undo the Restore", live, ignored, now, outMessage);
+	}
+	else if (bringingBack)
+	{
+		putBack = RemoveTableAt(target, writeAt, writeTo, "Undo the Restore", outMessage);
+	}
+	else
+	{
+		putBack = BringInAndCopy(change.fRedoSnippet, db, storyUID, target, writeAt, writeTo,
+								 "Undo the Restore", live, ignored, now, outMessage);
+	}
 	if (!putBack)
 	{
 		AppendReChecks(outMessage, guard);
@@ -559,29 +808,36 @@ bool16 KCMUndoRestoreTable(int32 nth, int32 which, const KCMStoryChange& change,
 	}
 
 	// What went back in, so that the records standing further down can follow it.
-	int32 inserted = liveShape.fAnchorEnd - liveShape.fAnchorStart;
-	{
-		std::vector<KCMTableShape> after;
-		if (KCMReadTableShapes(target, after) && static_cast<size_t>(change.fTableOrdinal) < after.size())
-		{
-			const KCMTableShape& t = after[static_cast<size_t>(change.fTableOrdinal)];
-			inserted = t.fAnchorEnd - t.fAnchorStart;
-		}
-	}
+	const int32 inserted = bringingBack ? 0 : (now.fAnchorEnd - now.fAnchorStart);
 	// ★**ONLY THE RECORDS AFTER THIS ONE** (slot + 1, the rule KCMStoryRestore.cpp:1751 states), and
 	//   ⚠BEFORE this change's own record is taken out, so that the walk sees the list as the write
 	//   left it.
-	KCMStoryList::ShiftReplacedChanges(nth, slot + 1, liveShape.fAnchorStart,
-									   liveShape.fAnchorEnd - liveShape.fAnchorStart, inserted);
+	KCMStoryList::ShiftReplacedChanges(nth, slot + 1, writeAt, writeTo - writeAt, inserted);
 
-	// ★AND WHAT THE RESTORE LEARNED ABOUT THOSE CELLS GOES WITH IT: the table standing there now is
+	// ★AND WHAT THE RESTORE LEARNED ABOUT THAT TABLE GOES WITH IT: the table standing there now is
 	//   the LIVE one again, brought in by another import, so its cells have yet another set of ids
-	//   and the map would be describing a table that is gone (2026-09-20).
+	//   and both maps would be describing a table that is gone (2026-09-20).
 	// ⚠★★★**BUT THE TABLE IS STILL A TABLE AN IMPORT HAS WRITTEN**, and that has to be said out loud
 	//   here, because dropping the map alone is exactly what let the NEXT restore pair Task Start's
 	//   cells with a row that never was theirs (measured the same evening - KCMStorySnapshot.h).
-	KCMStorySnapshotDropCellIds(storyUID, change.fTableOrdinal);
-	KCMStorySnapshotMarkTableImported(storyUID, change.fTableOrdinal);
+	if (change.fReplacedTableId != kInvalidUID)
+	{
+		KCMStorySnapshotDropCellIds(storyUID, change.fReplacedTableId);
+		KCMStorySnapshotDropTableId(storyUID, change.fReplacedTableId);
+	}
+	if (now.fDictUID != kInvalidUID)
+	{
+		KCMStorySnapshotMarkTableImported(storyUID, now.fDictUID);
+		// ★★★**AND THE TABLE THAT HAS JUST COME BACK IS STILL TASK START'S TABLE** (found re-reading
+		//   this before the live run, 2026-09-20). The undo brings the LIVE table in through another
+		//   import, so it too arrives with an id Task Start never saw - and without this line the next
+		//   comparison would pair nothing with Task Start's table and show the story as "a table added
+		//   here, and Task Start's one missing" where it had shown one shape change.
+		//   ⚠Nothing to record when Task Start had no such table at all: a Table + that was taken out
+		//    and put back is, rightly, a table this version alone has.
+		if (change.fSourceTableId != kInvalidUID)
+			KCMStorySnapshotPutTableId(storyUID, now.fDictUID, change.fSourceTableId);
+	}
 
 	// The record goes - and the kept snippet with it (the user: discard it once it is redone).
 	KCMStoryList::RemoveReplacedChangeAt(nth, slot);

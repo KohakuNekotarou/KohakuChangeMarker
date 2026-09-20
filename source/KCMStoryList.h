@@ -355,9 +355,46 @@ struct KCMStoryChange
 	//   user chose to fold a table's cell changes into one Table row instead. The facade's field of that
 	//   name stays for its layout and answers kFalse.
 
-	/** Which table of the story this is - KCMTextRead's ordinal (0..), the numbering KCMTableShape
-		reads in. -1 for every change that is not a table. */
-	int32		fTableOrdinal;
+	/** ★★★**WHICH TABLE THIS IS - BY THE TABLE'S OWN ID** (2026-09-20, the user: "is it looking at
+		tables by position? a table has an id too - can that not say which is which?").
+
+		`fTableId` is the table standing in the TARGET, `fSourceTableId` Task Start's; one of them is
+		kInvalidUID for a table that only one side has (Table + and Table −). The id is the table's
+		uid in the document, read off the model as KCMTableShape::fDictUID and out of the INX as the
+		last step of its Self - **the same number on both sides, because Task Start's origin was
+		written by this very document** (KCMTableSnippet.h).
+
+		⚠**IT WAS AN ORDINAL UNTIL 2026-09-20** - the table's position among the story's tables - and
+		 that is what made a table inserted in the MIDDLE shift every table after it into a wrong
+		 pairing: each came out as a shape change against its neighbour's, and a restore would have
+		 put ANOTHER table's shape back. Measured the same day: inserting a table at the start of a
+		 story moves no other table's id, removing one moves none of the rest, and an Undo of a
+		 removal brings the id back unchanged.
+		⚠**A TABLE KCM HAS PUT BACK CARRIES AN ID TASK START NEVER SAW** (a snippet import hands out
+		 new ones), which is why the live id is translated through KCMStorySnapshotTranslateTableId
+		 before it is compared with the older side's. */
+	UID			fTableId;
+	UID			fSourceTableId;
+
+	/** ★★★**WHERE A TABLE − GOES BACK, MEASURED FROM THE TABLE BEFORE IT** (2026-09-20, found on the
+		running application while putting three table changes back in one story).
+
+		`fPrevTableId` is the table that stood nearest BEFORE this one in Task Start (kInvalidUID when
+		it was the story's first), and `fGapFromPrev` how many characters of body stood between that
+		table's anchor and this one's - or, with no table before it, how far this one stood from the
+		start of the story.
+
+		⚠**WHY NOT TASK START'S ANCHOR ALONE** (which is what it was, the "plan A" the user chose).
+		 The plan's reasoning holds for differences in the WORDS - those are rows of their own, so
+		 putting them back first makes the position land - but not for differences in the TABLES: a
+		 table added earlier in the story, or a row added to one, moves every later anchor, and those
+		 changes are folded into Table rows that say nothing about the body's length. Measured: with a
+		 row added to the first table and a table inserted before the second, Task Start's anchor 12
+		 landed **inside the word "two"** - and the comparison said "0 change(s) left", because a
+		 table's anchor is not part of what the paragraph diff reads.
+		⇒ Measuring from the table before it takes every table change out of the sum. */
+	UID			fPrevTableId;
+	int32		fGapFromPrev;
 
 	/** ★**THE CELLS THAT CHANGED**, in Target coordinates - what the marks light and what the jump aims at
 		(the user: "the changed cells should be marked; jump to the top-left of them"). One span per cell:
@@ -393,13 +430,21 @@ struct KCMStoryChange
 		StillReplaced for a kTable change). */
 	std::string	fReplacedShapeSig;
 
+	/** ★After a restore: the id of the table the restore LEFT STANDING - which is a new one, since the
+		table came in through a snippet import. **kInvalidUID means "and it left none"**, which is what
+		a restored Table + is: the table was removed, and "is it still restored?" is answered by that
+		table still being absent. Read by StillReplaced and by the Undo the Restore. */
+	UID			fReplacedTableId;
+
 	KCMStoryChange()
 		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
 		  fSourceStart(0), fSourceEnd(0),
 		  fAttrKind(kKCMStoryAttrNone), fOverset(kFalse),
 		  fReplacedCount(0), fReplacedStart(0), fReplacedEnd(0),
 		  fBeforeStart(0), fBeforeEnd(0), fWriteBlock(kKCMWriteAllowed),
-		  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse), fPlace(0), fBreakAt(0), fTableOrdinal(-1) {}
+		  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse), fPlace(0), fBreakAt(0),
+		  fTableId(kInvalidUID), fSourceTableId(kInvalidUID), fPrevTableId(kInvalidUID),
+		  fGapFromPrev(-1), fReplacedTableId(kInvalidUID) {}
 };
 
 /** KCMStoryChange::fBreakAt - which end of a whole paragraph's range holds the paragraph break that the

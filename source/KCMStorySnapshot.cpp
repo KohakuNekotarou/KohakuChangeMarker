@@ -17,26 +17,30 @@
 namespace
 {
 
-/** One table, named the way the rest of KCM names one: the story it stands in, and its ordinal among
-    that story's tables in KCMTextRead's order. */
+/** One table, named the way the rest of KCM names one: the story it stands in, and the table's OWN
+    ID - the last step of its Self, which is its uid in the document (KCMTableSnippet.h).
+    ⚠**IT WAS THE TABLE'S ORDINAL UNTIL 2026-09-20**, and a key by position is a key that answers
+     about the wrong table the moment another one is inserted before it - which is exactly what the
+     user asked about ("is it looking at tables by position?"). */
 struct TableKey
 {
 	UID		fStory;
-	int32	fOrdinal;
+	UID		fTable;
 
-	TableKey(UID story, int32 ordinal) : fStory(story), fOrdinal(ordinal) {}
+	TableKey(UID story, UID table) : fStory(story), fTable(table) {}
 
 	bool operator<(const TableKey& other) const
 	{
 		if (fStory != other.fStory)
 			return fStory < other.fStory;
-		return fOrdinal < other.fOrdinal;
+		return fTable < other.fTable;
 	}
 };
 
 typedef std::map<UID, std::string>								StoryMap;
 typedef std::map<TableKey, std::map<std::string, std::string> >	CellIdMap;
 typedef std::set<TableKey>										TableSet;
+typedef std::map<TableKey, UID>									TableIdMap;
 
 // ⚠Statics holding containers: each has a line in the model's shutdown (KCMPeek.cpp's
 //   ShutdownCleanup), the rule KCMStoryList.h states for every static of ours. All either of them
@@ -47,6 +51,9 @@ CellIdMap	sCellIds;
 // ★Which tables an import has written during this comparison - see the header. It outlives sCellIds
 //   on purpose: an Undo the Restore throws the translation away and this stays.
 TableSet	sImported;
+// ★★★"the table whose id is now <key.fTable> is Task Start's <value>" - what keeps a table KCM has
+//   put back recognisable, since an import gives it an id Task Start never saw (the user, 2026-09-20).
+TableIdMap	sTableIds;
 
 }	// anonymous namespace
 
@@ -77,15 +84,40 @@ const std::string* KCMStorySnapshotPeek(UID story)
 	return (it == sStories.end()) ? nil : &it->second;
 }
 
-const std::map<std::string, std::string>* KCMStorySnapshotGetCellIds(UID story, int32 ordinal)
+UID KCMStorySnapshotTranslateTableId(UID story, UID liveTable)
 {
-	const CellIdMap::const_iterator it = sCellIds.find(TableKey(story, ordinal));
+	const TableIdMap::const_iterator it = sTableIds.find(TableKey(story, liveTable));
+	return (it == sTableIds.end()) ? liveTable : it->second;
+}
+
+void KCMStorySnapshotPutTableId(UID story, UID liveTable, UID taskStartTable)
+{
+	if (liveTable == kInvalidUID || taskStartTable == kInvalidUID)
+		return;
+	if (liveTable == taskStartTable)
+	{
+		// Nothing to translate - and saying so is not the same as keeping an identity entry, which
+		// would have to be dropped as carefully as a real one.
+		sTableIds.erase(TableKey(story, liveTable));
+		return;
+	}
+	sTableIds[TableKey(story, liveTable)] = taskStartTable;
+}
+
+void KCMStorySnapshotDropTableId(UID story, UID liveTable)
+{
+	sTableIds.erase(TableKey(story, liveTable));
+}
+
+const std::map<std::string, std::string>* KCMStorySnapshotGetCellIds(UID story, UID table)
+{
+	const CellIdMap::const_iterator it = sCellIds.find(TableKey(story, table));
 	return (it == sCellIds.end()) ? nil : &it->second;
 }
 
-void KCMStorySnapshotPutCellIds(UID story, int32 ordinal, const std::map<std::string, std::string>& wasTaskStart)
+void KCMStorySnapshotPutCellIds(UID story, UID table, const std::map<std::string, std::string>& wasTaskStart)
 {
-	sCellIds[TableKey(story, ordinal)] = wasTaskStart;
+	sCellIds[TableKey(story, table)] = wasTaskStart;
 }
 
 void KCMStorySnapshotDropStory(UID story)
@@ -95,21 +127,21 @@ void KCMStorySnapshotDropStory(UID story)
 	sStories.erase(story);
 }
 
-void KCMStorySnapshotDropCellIds(UID story, int32 ordinal)
+void KCMStorySnapshotDropCellIds(UID story, UID table)
 {
 	// ⚠**sImported IS NOT TOUCHED HERE** - the header says why: the translation goes, the fact that
 	//   the ids mean nothing stays.
-	sCellIds.erase(TableKey(story, ordinal));
+	sCellIds.erase(TableKey(story, table));
 }
 
-void KCMStorySnapshotMarkTableImported(UID story, int32 ordinal)
+void KCMStorySnapshotMarkTableImported(UID story, UID table)
 {
-	sImported.insert(TableKey(story, ordinal));
+	sImported.insert(TableKey(story, table));
 }
 
-bool16 KCMStorySnapshotTableWasImported(UID story, int32 ordinal)
+bool16 KCMStorySnapshotTableWasImported(UID story, UID table)
 {
-	return (sImported.find(TableKey(story, ordinal)) != sImported.end()) ? kTrue : kFalse;
+	return (sImported.find(TableKey(story, table)) != sImported.end()) ? kTrue : kFalse;
 }
 
 void KCMStorySnapshotDropAllStories()
@@ -122,6 +154,7 @@ void KCMStorySnapshotClear()
 	sStories.clear();
 	sCellIds.clear();
 	sImported.clear();
+	sTableIds.clear();
 }
 
 // End, KCMStorySnapshot.cpp.

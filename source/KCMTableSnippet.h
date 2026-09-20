@@ -43,6 +43,7 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 #ifndef KCM_TABLESNIPPET_STANDALONE
 class IDataBase;
@@ -51,6 +52,26 @@ class KCMMemXferBytes;
 /** Cut the `ordinal`-th <Table …>…</Table> (0-based, document order, nested tables counted) out of
     the <Story Self="u<hex>"> of an INX/IDML text. kFalse when the story or the table is not there. */
 bool16 KCMCutTableXml(const char* xml, size_t size, UID storyUID, int32 ordinal, std::string& outTable);
+
+/** ★★★EVERY TABLE OF THE STORY, IN DOCUMENT ORDER, NAMED BY ITS OWN ID (2026-09-20, the user: "a
+    table has an id too - can that not say which is which?"). The id is the last "i<hex>" of the
+    table's Self: "u101i119" -> 0x119, and a nested table's "u101i119i0i123" -> 0x123 (both measured
+    on the running application, and 0x119 is exactly what the DOM calls table.id = 281).
+
+    ⇒ **THE ID IS THE TABLE'S UID IN THE DOCUMENT THAT WROTE THE TEXT.** Task Start's origin and the
+    live story's own export are written by the SAME document, so the same table is named alike in
+    both - which is what lets a comparison pair tables without counting them. Measured the same day:
+    inserting a table at the START of a story moves no other table's id, removing one moves none of
+    the rest, and an Undo of a removal brings the id back unchanged.
+    ⚠**A SNIPPET IMPORT HANDS OUT NEW IDS** (281,291,301,311 -> 282,292,302,312), so a table KCM has
+     put back shares none with Task Start's - KCMStorySnapshot keeps what it learned instead.
+
+    @return kFalse when the story is not in this text; kTrue with an empty list when it holds no table. */
+bool16 KCMReadTableIdsInStory(const char* xml, size_t size, UID storyUID, std::vector<UID>& out);
+
+/** The <Table …>…</Table> whose own id is `tableUID`, cut out of the story - the same text
+    KCMCutTableXml returns for that table's ordinal, asked for by name instead of by position. */
+bool16 KCMCutTableXmlById(const char* xml, size_t size, UID storyUID, UID tableUID, std::string& outTable);
 #endif
 
 /** The style groups a table refers to, cut out whole: <RootCellStyleGroup …>…</RootCellStyleGroup>
