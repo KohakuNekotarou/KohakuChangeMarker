@@ -22,7 +22,6 @@
 
 #include "KCMComparisonRun.h"		// KCMStartComparisonOn / KCMStopComparison / KCMChosenSourceIsOrigin
 #include "KCMCore.h"				// KCMIsArmed / KCMArmedTargetDB / KCMArmedSourceDB / KCMDetachArmedSource
-#include "KCMTargetSnapshot.h"		// KCMTargetSnapshotTake / Drop - the Target's own IDML, taken with a Story comparison (2026-09-20)
 #include "KCMID.h"				// kKCMMarksRebuiltMessage
 #include "KCMModelNotify.h"			// KCMSayStatus / KCMNotifyStatus / KCMNotify
 #include "KCMOrigin.h"
@@ -107,23 +106,15 @@ bool16 Run(bool16 isRefresh)
 		KCMDetachArmedSource();
 	}
 
-	// ★THE TARGET'S OWN INTERNAL IDML, TAKEN WITH THE COMPARISON (2026-09-20, the user: "take the
-	//   Target's internal IDML the moment a Story comparison against a Task Start starts - it will be
-	//   useful later"). Its first use is the Table row's Undo the Restore (KCMTableRestore). Only in
-	//   the Story mode, only against a Task Start; a failure is said, never a reason not to compare.
-	if (compared && KCMGetCompareMode() == kKCMModeStory)
-	{
-		PMString whyNot;
-		if (!KCMTargetSnapshotTake(targetDB, whyNot))
-		{
-			PMString msg("target snapshot not taken: ");
-			msg.SetTranslatable(kFalse);
-			msg.Append(whyNot);
-			KCMNotifyStatus(msg);
-		}
-	}
-	else
-		KCMTargetSnapshotDrop();
+	// ⚠**THE TARGET'S WHOLE INTERNAL IDML WAS TAKEN HERE FOR ONE DAY** (2026-09-20) and is gone the
+	//   same day. It was taken "because it will be useful later", and by the evening it had exactly
+	//   ONE reader left - the style groups a Table restore's snippet needs - while the table itself
+	//   was being exported fresh at the moment of the restore instead (A-2). A document held in
+	//   memory for the length of a comparison, to carry a few KB of style names.
+	//   ★What replaced it (the user: "prepare a snippet for the tables that changed, and only for
+	//    those"): KCMStoryDiffRun builds a snippet for each table it calls changed, and the story's
+	//    own INX export carries the style roots with it - KCMStoryChange::fTableSnippet,
+	//    KCMExportStoryInx's includeStyleRoots. Nothing is held for a story whose tables all agree.
 
 	if (compared)
 	{

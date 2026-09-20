@@ -72,8 +72,8 @@
 // here now happens in KCMModelChangeObserver, which receives the notifications this file sends.
 #include "KCMStoryList.h"          // KCMStoryList::ShutdownCleanup (letting go of the rows' PMStrings)
 #include "KCMStoryTextImport.h"    // KCMClearImportRefusals - what the last import could not put in (PMStrings again)
+#include "KCMStorySnapshot.h"  // KCMStorySnapshotClear - the stories this comparison had read
 #include "KCMSourceCache.h"        // KCMSourceCacheClear - the Source text kept from the origin
-#include "KCMTargetSnapshot.h"     // KCMTargetSnapshotDrop - the Target's own IDML, held beside the origin
 #include "KCMResourceStore.h"      // the Resources list, emptied on the same routes
 #include "KCMStoryMarker.h"        // KCMStoryMarker::Shutdown (the Story mode's marks are never drawn again)
 #include "KCMBookCompare.h"        // KCMClearBookResultText (the book comparison's result text)
@@ -799,9 +799,9 @@ void KCMPeekStartup::Shutdown()
 	//   of std::strings and WideStrings, so leaving it to static destruction is the very thing the
 	//   paragraph above records. It only empties a container.
 	KCMSourceCacheClear();
-	// The Target's own IDML, held beside the origin during a Story comparison (2026-09-20) - a buffer
-	//   in a static, the same rule.
-	KCMTargetSnapshotDrop();
+	// And the stories this comparison had read, with what a restore learned about their tables -
+	//   two maps of strings, the same rule again.
+	KCMStorySnapshotClear();
 	// The Story mode's marks. **Until they moved into the model plug-in this clean-up had no
 	//   caller at all**: while the marks lived in the UI there was no main-thread-only entry point
 	//   to pair it with, and moving them here is what created the right doorway. All it does is

@@ -6,6 +6,7 @@
 
 #include "VCPlugInHeaders.h"
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -13,11 +14,17 @@
 #include "ICommandSequence.h"
 #include "IDataBase.h"
 #include "IRangeData.h"				// the source range, and (as IID_IRANGEDATA2) the destination range
+#include "IScriptLabel.h"			// the cell label KCM puts on and takes off again
+#include "ITableAttrAccessor.h"	// QueryCellAttribute - a cell's label IS a cell attribute
+#include "ITableCommands.h"		// ClearCellOverrides - the official way to take one off
+#include "ITableModel.h"
 #include "ITextModel.h"
 #include "IUIDData.h"					// the source story of kCopyStoryRangeCmdBoss
 #include "CmdUtils.h"
 #include "CommandID.h"					// IID_IRANGEDATA2
 #include "ErrorUtils.h"
+#include "AttributeBossList.h"			// the list that names the override to remove, by its class
+#include "TablesID.h"					// kCellAttrScriptLabelBoss / IID_ISCRIPTLABEL
 #include "TextID.h"						// kCopyStoryRangeCmdBoss
 #include "UIDList.h"
 
@@ -30,9 +37,9 @@
 #include "KCMScratchDoc.h"
 #include "KCMStoryDiffRun.h"			// RunOne / CountForKind
 #include "KCMStoryList.h"
+#include "KCMStorySnapshot.h"			// the story as the comparison read it
 #include "KCMTableShape.h"
 #include "KCMTableSnippet.h"
-#include "KCMTargetSnapshot.h"
 
 namespace
 {
@@ -75,7 +82,8 @@ private:
     one whose anchor stands earliest - a nested table's anchor is inside a cell, which lives past
     the body). ⚠Asked rather than assumed: a snippet whose cells hold anchored objects brings in a
     frame for each of them, and the import names none of them (KCMScratchDoc.h). */
-bool16 FindTableStory(const std::vector<UIDRef>& stories, UIDRef& outStory, TextIndex& outStart, TextIndex& outEnd)
+bool16 FindTableStory(const std::vector<UIDRef>& stories, UIDRef& outStory, TextIndex& outStart, TextIndex& outEnd,
+					  KCMTableShape& outShape)
 {
 	for (size_t i = 0; i < stories.size(); ++i)
 	{
@@ -90,6 +98,7 @@ bool16 FindTableStory(const std::vector<UIDRef>& stories, UIDRef& outStory, Text
 		outStory = stories[i];
 		outStart = shapes[outer].fAnchorStart;
 		outEnd = shapes[outer].fAnchorEnd;
+		outShape = shapes[outer];		// the labels are read and cleared off THIS table
 		return kTrue;
 	}
 	return kFalse;
@@ -123,6 +132,67 @@ bool16 CopyTableOver(const UIDRef& srcStory, TextIndex srcStart, TextIndex srcEn
 		return kFalse;
 	}
 	return kTrue;
+}
+
+/** ★THE KEY OF THE LABEL KCM PUTS ON THE CELLS OF THE SNIPPET IT BUILDS - and takes off again in the
+    scratch document, before one byte is copied out of it (the user's design, 2026-09-20: "make the
+    script labels when you make the snippet, and once the frame has been made from the snippet, take
+    off the labels KCM put on; then paste"). So the reader's document never carries a mark of ours,
+    and whether a copy would have carried one is a question nobody has to answer. */
+const char* const kCellLabelKey = "kcmCell";
+
+/** What each anchor cell's label says, as "col:row" -> the id it carries. Empty when none of them
+    does - a table put back by a version of this that did not label them, or a failure to label.
+    ⚠A cell's script label is a CELL ATTRIBUTE: `kCellAttrScriptLabelBoss` is the SDK's one and only
+     implementer of IScriptLabel, which is why it is read through ITableAttrAccessor and not off the
+     cell itself. */
+void ReadCellLabels(IDataBase* db, const KCMTableShape& shape, std::map<std::string, std::string>& out)
+{
+	out.clear();
+	InterfacePtr<ITableModel> model(db, shape.fDictUID, UseDefaultIID());
+	InterfacePtr<ITableAttrAccessor> attrs(model, UseDefaultIID());
+	if (attrs == nil)
+		return;
+	PMString key(kCellLabelKey);
+	key.SetTranslatable(kFalse);
+	for (size_t i = 0; i < shape.fCells.size(); ++i)
+	{
+		const GridAddress at(shape.fCells[i].fRow, shape.fCells[i].fCol);
+		InterfacePtr<IScriptLabel> label(
+			(IScriptLabel*)attrs->QueryCellAttribute(at, kCellAttrScriptLabelBoss, IID_ISCRIPTLABEL));
+		if (label == nil)
+			continue;
+		const PMString said = label->GetTag(key);
+		if (said.IsEmpty())
+			continue;
+		char address[32];
+		std::snprintf(address, sizeof(address), "%d:%d",
+					  static_cast<int>(shape.fCells[i].fCol), static_cast<int>(shape.fCells[i].fRow));
+		out[address] = said.GetPlatformString();
+	}
+}
+
+/** Take our label off every cell of the table. ⚠Done in the SCRATCH document and OUTSIDE the undo
+    step, like everything else that happens to it - the reader's Ctrl+Z is "the table went back", not
+    "and some labels were tidied up". */
+void ClearCellLabels(IDataBase* db, const KCMTableShape& shape)
+{
+	InterfacePtr<ITableModel> model(db, shape.fDictUID, UseDefaultIID());
+	InterfacePtr<ITableCommands> cmds(model, UseDefaultIID());
+	InterfacePtr<IScriptLabel> blank((IScriptLabel*)::CreateObject(kCellAttrScriptLabelBoss, IID_ISCRIPTLABEL));
+	if (model == nil || cmds == nil || blank == nil || shape.fRows <= 0 || shape.fCols <= 0)
+		return;
+	// The list names the override to remove BY ITS CLASS - the boss itself carries nothing
+	// (ITableCommands.h: "a list of boss objects specifying by their ClassID the override to remove").
+	AttributeBossList attrs;
+	attrs.ApplyAttribute(blank, kCellAttrScriptLabelBoss);
+	// ⚠THE WHOLE TABLE, BY ITS OWN RANGES. The four-number GridArea takes a bottom row and a right
+	//   column, and whether either is inclusive is not written down anywhere I could find - and a
+	//   row left out here is a label left on a cell that is about to be copied into the reader's
+	//   document. RowRange/ColRange are start+count, which cannot be read two ways.
+	const GridArea whole(model->GetTotalRows(), model->GetTotalCols());
+	cmds->ClearCellOverrides(whole, &attrs);
+	ErrorUtils::PMSetGlobalErrorCode(kSuccess);		// a scratch document's tidy-up is never the caller's error
 }
 
 void AppendReChecks(PMString& outMessage, const KCMTargetItemCountGuard& guard)
@@ -198,20 +268,33 @@ bool16 KCMRestoreTable(int32 nth, int32 which, const KCMStoryChange& changeIn, b
 	{
 		KCMMemXferBytes storyInx;
 		std::string groups;
-		if (!KCMExportStoryInx(db, storyUID, storyInx)
+		// ★WITH THE STYLE ROOTS (2026-09-20): one small export then carries both the live table AND the
+		//   style groups, and the groups are as fresh as the table - a cell style MADE since the
+		//   comparison started is in them. The kept snippet below stays as the fallback.
+		if (!KCMExportStoryInx(db, storyUID, storyInx, kTrue)
 			|| !KCMCutTableXml(storyInx.GetData(), storyInx.GetSize(), storyUID, change.fTableOrdinal, liveTableXml))
 		{
 			outMessage = Refused("the table could not be written out for a later Undo the Restore.");
 			return kFalse;
 		}
 		KCMCutTableStyleGroups(storyInx.GetData(), storyInx.GetSize(), groups);
-		// A story's own INX carries no style groups of its own; the document's snapshot has them, and
-		// with them the table lands on the document's EXISTING styles of those names (KCMTableSnippet.h).
+		// ★THE STYLE GROUPS COME FROM THE SNIPPET THE DIFF KEPT FOR THIS TABLE (2026-09-20, the user:
+		//   "stop making the Target's whole IDML when the comparison starts - prepare a snippet for
+		//   the tables that changed, and only for those"). Without them the table lands on
+		//   "[No table style]" instead of the document's existing style of that name
+		//   (KCMTableSnippet.h). A story's own INX carries none, so they are taken from the kept
+		//   snippet; the origin is the last resort, and differs only in styles MADE since Task Start.
 		if (groups.empty())
 		{
-			const KCMResourceBytes* const snap = KCMTargetSnapshotBytes();
-			if (snap != nil)
-				KCMCutTableStyleGroups(snap->Bytes(), snap->Size(), groups);
+			const std::string* const seen = KCMStorySnapshotPeek(storyUID);
+			if (seen != nil)
+				KCMCutTableStyleGroups(seen->c_str(), seen->size(), groups);
+		}
+		if (groups.empty())
+		{
+			const KCMResourceBytes* const origin = KCMOriginBytes();
+			if (origin != nil)
+				KCMCutTableStyleGroups(origin->Bytes(), origin->Size(), groups);
 		}
 		KCMBuildTableSnippet(liveTableXml, groups, redo);
 	}
@@ -223,6 +306,7 @@ bool16 KCMRestoreTable(int32 nth, int32 which, const KCMStoryChange& changeIn, b
 	//    written into cells afterwards - which is where every position bug of this feature lived.
 	std::string snippet;
 	int32 kept = 0;
+	std::string how;
 	{
 		const KCMResourceBytes* const origin = KCMOriginBytes();
 		std::string olderTableXml, groups, merged;
@@ -231,12 +315,19 @@ bool16 KCMRestoreTable(int32 nth, int32 which, const KCMStoryChange& changeIn, b
 			outMessage = Refused("the Task Start copy holds no such table.");
 			return kFalse;
 		}
-		if (!KCMMergeTableCells(olderTableXml, liveTableXml, merged, kept))
+		const std::map<std::string, std::string>* const wasTaskStart =
+			KCMStorySnapshotGetCellIds(storyUID, change.fTableOrdinal);
+		if (!KCMMergeTableCells(olderTableXml, liveTableXml, merged, kept, how, wasTaskStart))
 		{
 			merged = olderTableXml;		// the whole table goes back; the sentence below says 0 kept
 			kept = 0;
+			how = "the Task Start table could not be walked";
 		}
 		KCMCutTableStyleGroups(origin->Bytes(), origin->Size(), groups);
+		// ★EVERY CELL LABELLED WITH ITS TASK START ID, so that the table can still be recognised cell
+		//   by cell after the import has repacked the ids. Read and taken off again in the scratch
+		//   document below; the reader's document never sees one (KCMTableSnippet.h).
+		KCMLabelTableCells(merged, kCellLabelKey);
 		KCMBuildTableSnippet(merged, groups, snippet);
 	}
 
@@ -251,6 +342,7 @@ bool16 KCMRestoreTable(int32 nth, int32 which, const KCMStoryChange& changeIn, b
 	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 	KCMTargetItemCountGuard guard(db);
 	KCMTableShape now;
+	std::map<std::string, std::string> labelledAs;	// "col:row" -> the Task Start id that cell had
 	bool16 putBack = kFalse;
 	{
 		KCMScratchDoc scratch;
@@ -258,18 +350,26 @@ bool16 KCMRestoreTable(int32 nth, int32 which, const KCMStoryChange& changeIn, b
 		UIDRef tableStory = UIDRef::gNull;
 		TextIndex srcStart = 0;
 		TextIndex srcEnd = 0;
+		KCMTableShape broughtIn;
 		PMString why;
 		if (!scratch.Open(why) || !scratch.ImportSnippet(snippet, stories, why))
 		{
 			outMessage = Refused("the Task Start table could not be brought in: ");
 			outMessage.Append(why);
 		}
-		else if (!FindTableStory(stories, tableStory, srcStart, srcEnd))
+		else if (!FindTableStory(stories, tableStory, srcStart, srcEnd, broughtIn))
 		{
 			outMessage = Refused("the brought-in table could not be read.");
 		}
 		else
 		{
+			// ★THE LABELS, READ AND THEN TAKEN OFF - in that order, and both BEFORE the copy. What
+			//   they say is "the cell standing at this address was Task Start's cell <id>", which is
+			//   the one thing the import throws away (it repacks the ids). Taking them off here is
+			//   what keeps them out of the reader's document.
+			ReadCellLabels(scratch.DB(), broughtIn, labelledAs);
+			ClearCellLabels(scratch.DB(), broughtIn);
+
 			TableSequence undo(standalone, "Restore Source Text");
 			std::vector<KCMTableShape> after;
 			if (!CopyTableOver(tableStory, srcStart, srcEnd, db, storyUID,
@@ -292,6 +392,35 @@ bool16 KCMRestoreTable(int32 nth, int32 which, const KCMStoryChange& changeIn, b
 	{
 		AppendReChecks(outMessage, guard);	// said on the way out too: a scratch document must not linger
 		return kFalse;
+	}
+
+	// 7b. ★**WHICH TASK START CELL EACH CELL STANDING THERE NOW IS** (2026-09-20, the user's design).
+	//     The import repacked the ids, so the table that has just gone in shares none with Task
+	//     Start's - and the next comparison would have to pair its cells by what they say. What the
+	//     labels said in the scratch document is tied here to the ids the Target's own export gives,
+	//     and kept for as long as the comparison lasts.
+	//     ⚠Best effort: a failure here costs the NEXT restore its strongest evidence and nothing else,
+	//      so it is never a reason to refuse a restore that has already been made.
+	if (!labelledAs.empty())
+	{
+		KCMMemXferBytes after;
+		std::string afterTableXml;
+		std::map<std::string, std::string> idAt;		// "col:row" -> the id it has now
+		if (KCMExportStoryInx(db, storyUID, after)
+			&& KCMCutTableXml(after.GetData(), after.GetSize(), storyUID, change.fTableOrdinal, afterTableXml))
+		{
+			KCMReadTableCellIds(afterTableXml, idAt);
+			std::map<std::string, std::string> wasTaskStart;
+			for (std::map<std::string, std::string>::const_iterator it = idAt.begin(); it != idAt.end(); ++it)
+			{
+				const std::map<std::string, std::string>::const_iterator said = labelledAs.find(it->first);
+				if (said != labelledAs.end())
+					wasTaskStart[it->second] = said->second;
+			}
+			if (!wasTaskStart.empty())
+				KCMStorySnapshotPutCellIds(storyUID, change.fTableOrdinal, wasTaskStart);
+		}
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 	}
 
 	// 8. **EVERYTHING ALREADY REPLACED FURTHER DOWN THIS STORY SLIDES WITH THE WRITE** - the rule
@@ -324,7 +453,9 @@ bool16 KCMRestoreTable(int32 nth, int32 which, const KCMStoryChange& changeIn, b
 
 	outMessage = "table put back - ";
 	outMessage.AppendNumber(kept);
-	outMessage.Append(" cell(s) keep what you wrote in them");
+	outMessage.Append(" cell(s) keep what you wrote in them (");
+	outMessage.Append(how.c_str());		// which evidence paired the two tables' cells
+	outMessage.Append(")");
 	AppendReChecks(outMessage, guard);
 
 	if (!standalone)
@@ -403,13 +534,14 @@ bool16 KCMUndoRestoreTable(int32 nth, int32 which, const KCMStoryChange& change,
 		UIDRef tableStory = UIDRef::gNull;
 		TextIndex srcStart = 0;
 		TextIndex srcEnd = 0;
+		KCMTableShape broughtIn;		// (the redo snippet carries no labels of ours: it is the LIVE table)
 		PMString why;
 		if (!scratch.Open(why) || !scratch.ImportSnippet(change.fRedoSnippet, stories, why))
 		{
 			outMessage = Refused("the kept table could not be brought in: ");
 			outMessage.Append(why);
 		}
-		else if (!FindTableStory(stories, tableStory, srcStart, srcEnd))
+		else if (!FindTableStory(stories, tableStory, srcStart, srcEnd, broughtIn))
 		{
 			outMessage = Refused("the kept table could not be read.");
 		}
@@ -442,6 +574,11 @@ bool16 KCMUndoRestoreTable(int32 nth, int32 which, const KCMStoryChange& change,
 	//   left it.
 	KCMStoryList::ShiftReplacedChanges(nth, slot + 1, liveShape.fAnchorStart,
 									   liveShape.fAnchorEnd - liveShape.fAnchorStart, inserted);
+
+	// ★AND WHAT THE RESTORE LEARNED ABOUT THOSE CELLS GOES WITH IT: the table standing there now is
+	//   the LIVE one again, brought in by another import, so its cells have yet another set of ids
+	//   and the map would be describing a table that is gone (2026-09-20).
+	KCMStorySnapshotDropCellIds(storyUID, change.fTableOrdinal);
 
 	// The record goes - and the kept snippet with it (the user: discard it once it is redone).
 	KCMStoryList::RemoveReplacedChangeAt(nth, slot);

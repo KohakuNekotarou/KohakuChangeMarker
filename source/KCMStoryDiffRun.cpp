@@ -50,6 +50,8 @@
 #include "KCMCore.h"			// KCMArmedTargetDB / KCMIsDocDBOpen - which document a replaced change is measured against
 #include "KCMSourceCache.h"	// the Source side, read once per origin instead of once per press
 #include "KCMTableShape.h"	// KCMReadTableShapes / KCMTableShapesDiffer - the Table row (2026-09-19 night)
+#include "KCMStoryRestore.h"	// KCMStoryWritesAllowed - is there a restore for this comparison at all
+#include "KCMStorySnapshot.h"	// the story as the comparison read it - taken here, read elsewhere
 #include "KCMOriginCompare.h"	// KCMOriginToSourceUID - the older side's uid when the Source is a Task Start copy
 #include "KCMTextRead.h"		// the reader: paragraphs, their positions and their attributes, straight from the text model
 #include "KCMStoryList.h"
@@ -1437,6 +1439,17 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 	else if (!KCMSourceCacheGetTableShapes(targetStoryUID, sShapes))
 		return;
 
+	// ★THE STORY'S OWN INX, FOR THE TABLES THIS CALL CALLS CHANGED (2026-09-20, the user: "stop making
+	//   the Target's whole IDML when the comparison starts - prepare a snippet for the tables that
+	//   changed, and only for those"). Exported AT MOST ONCE for the story however many of its tables
+	//   changed, and NOT AT ALL when none did - which is every story in almost every document.
+	// ⚠AND NOT AT ALL WHEN NOTHING COULD READ IT: a comparison against another DOCUMENT, and a KIDMCP
+	//   one, offer no "Restore Source Text" at all (the user's rule of 2026-09-16), so a snippet kept
+	//   for those would be an export on every re-diff that no menu can reach. The question is asked
+	//   where it is always asked - KCMStoryWritesAllowed, the one place it is decided.
+	const bool16 restorable = KCMStoryWritesAllowed();
+	IDataBase* const targetDB = (targetModel != nil && restorable) ? ::GetDataBase(targetModel) : nil;
+
 	const size_t n = (tShapes.size() > sShapes.size()) ? tShapes.size() : sShapes.size();
 	for (size_t ord = 0; ord < n; ++ord)
 	{
@@ -1589,6 +1602,15 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 			other += otherFirst;
 		}
 		SetDocumentText(table.fOtherText, other);
+
+		// ★THE STORY AS THIS COMPARISON READ IT (KCMStorySnapshot). **This is the only place it is
+		//   taken**, because this is the only place that is the comparison's own moment - and it is
+		//   taken at most ONCE for the story however many of its tables changed, because Take keeps
+		//   what it took. A story refresh drops it first (RunOne), so the refresh takes it again.
+		// ⚠Only for a table that can be put back at all (kReplace); Table + and Table − offer no
+		//   restore, so nothing would read it.
+		if (haveT && table.fKind == KCMStoryChange::kReplace && targetDB != nil)
+			KCMStorySnapshotTake(targetDB, targetStoryUID);
 
 		kept.push_back(table);
 		out.swap(kept);
@@ -1949,6 +1971,13 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 	IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
 	IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
 
+	// ★A WHOLE COMPARISON IS EVERY STORY READ AGAIN, so every story's INX goes. Refreshing ONE story
+	//   drops that story's alone; this is the same rule at the whole document.
+	// ⚠**AND WHAT RESTORES LEARNED ABOUT CELLS STAYS** - see KCMStorySnapshotDropAllStories. Clearing
+	//   it here wiped it on every Refresh Comparison, and the restore afterwards paired Task Start's
+	//   cells with a newly added row that had been handed their old ids.
+	KCMStorySnapshotDropAllStories();
+
 	int32 total = 0;
 
 	// How many rows will actually be read -- the progress bar's range. The same test as the loop's,
@@ -2132,6 +2161,12 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	const UID storyUID = row->fStoryUID;
 	const bool16 unpaired = ((row->fKinds & kKCMStoryKindUnpaired) != 0);
 	row = nil;
+
+	// ★REFRESHING A STORY IS COMPARING THAT STORY AGAIN (the user, 2026-09-20: "and if there is a
+	//   table there and it has changed, let us take the snippet again"). So what this comparison
+	//   remembered about THIS story's tables goes first, and the fold below takes it afresh. The
+	//   other stories keep theirs - they are not being compared again.
+	KCMStorySnapshotDropStory(storyUID);
 
 	// Nothing open and nothing kept: there is no older side to compare against at all.
 	if (sourceDB == nil && !KCMSourceCacheHas(storyUID))

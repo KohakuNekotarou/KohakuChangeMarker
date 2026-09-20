@@ -31,17 +31,27 @@
 #ifndef __KCMTableSnippet_h__
 #define __KCMTableSnippet_h__
 
+// ★THE TEXT SIDE OF THIS FILE IS BUILT OUTSIDE INDESIGN TOO (2026-09-20), the way KCMTableShape.h is:
+//   KCMMergeTableCells, KCMCutTableStyleGroups and KCMBuildTableSnippet are functions over std::string
+//   and nothing else, so work/kcm-tablemerge-test exercises the pairing - including the cases that are
+//   awkward to make by hand in a document - with no application in the room. Only the two calls that
+//   talk to the object model are left out of that build.
 #include "BaseType.h"
+#ifndef KCM_TABLESNIPPET_STANDALONE
 #include "OMTypes.h"		// UID
+#endif
 
+#include <map>
 #include <string>
 
+#ifndef KCM_TABLESNIPPET_STANDALONE
 class IDataBase;
 class KCMMemXferBytes;
 
 /** Cut the `ordinal`-th <Table …>…</Table> (0-based, document order, nested tables counted) out of
     the <Story Self="u<hex>"> of an INX/IDML text. kFalse when the story or the table is not there. */
 bool16 KCMCutTableXml(const char* xml, size_t size, UID storyUID, int32 ordinal, std::string& outTable);
+#endif
 
 /** The style groups a table refers to, cut out whole: <RootCellStyleGroup …>…</RootCellStyleGroup>
     and <RootTableStyleGroup …>…</RootTableStyleGroup>. Empty for a text that has neither. */
@@ -56,28 +66,83 @@ void KCMCutTableStyleGroups(const char* xml, size_t size, std::string& outGroups
     Start's - its rows, columns, merges, and each cell's start tag with its style and spans - while
     what the reader wrote inside a cell that was neither added nor removed stays where it is.
 
-    ★WHY THE ADDRESS IS EXACT HERE and was not before: every <Cell> in IDML carries Name="col:row",
-    so an EMPTY cell is named as plainly as a full one. The earlier road asked the model which
-    paragraph stood at a position, and an emptied cell has no width - it answered with the NEXT
-    cell, and the restore wrote a new row's words into the old cell (measured 2026-09-20).
+    ★★★HOW THE TWO SIDES' CELLS ARE PAIRED (2026-09-20, measured on the running application -
+    docs/ai-notes/kcm-table-cell-id-2026-09-20.md). NOT by Name: a row or column added above shifts
+    every address below it, so the same Name is a different cell on the two sides. The pairing is
+    built from EVIDENCE, in this order:
+
+     1. ★**THE CELL'S OWN ID.** `<Cell Self="u101i119i4">` ends in the cell's id inside its table -
+        `Cell.id` in the DOM - and that id DOES NOT MOVE when a row or a column is inserted:
+            before      : 0:0[A]#0  1:0[B]#1  0:1[C]#4  1:1[D]#5
+            column at 0 : 0:0[ ]#13 1:0[A]#0  2:0[B]#1  0:1[ ]#12 1:1[C]#4  2:1[D]#5
+        So the cells both sides still have say, by themselves, where the insertion was - even in a
+        table whose cells are all EMPTY, where nothing about the text could.
+        ⚠**IDS ARE RECYCLED**: an id freed by a delete is handed to the next cell created, measured
+         in the same run. So an id match is strong evidence and not a proof.
+     2. **WHAT THE CELLS SAY**, when the ids answer nothing - which is what a table that has already
+        been put back once looks like, because a snippet import REPACKS the ids (0,1,4,5 -> 0,1,2,3).
+     3. **THE ADDRESS**, when neither answers and the two shapes have the same extents: the identity
+        map, which is what this function did before any of this existed.
+     4. Nothing: the shape goes back whole and no cell keeps anything (`outKept` is 0).
+
+    Either way the votes are filtered to a STRICTLY INCREASING map in both directions, which is what
+    throws a recycled id out: a vote that would make row 1 land above row 0 cannot be true.
     ⚠Only the OUTERMOST cells are walked: a nested table's cells sit inside one of these and travel
      with it, contents and all - which is how a cell holding a table or an anchored object is kept
      at all (the words road could not carry one).
-    ⚠What this cannot answer: a row or column added ABOVE shifts every address below it, so the same
-     Name is a different cell on the two sides. Nothing in the two texts distinguishes that case.
 
     @param outKept how many cells kept their live contents.
+    @param outHow which of the four roads above answered, for the sentence the reader is shown.
+    @param liveWasTaskStart optional: "the live cell whose id is <key> WAS Task Start's cell
+        <value>" - what a restore of THIS table left behind earlier in this comparison
+        (KCMStorySnapshot). It is applied to the live ids before they are matched, which is what
+        keeps road 1 working after an import has repacked them. nil when there is none.
     @return kFalse when Task Start's text could not be walked; `outMerged` is then empty. */
 bool16 KCMMergeTableCells(const std::string& olderTableXml, const std::string& liveTableXml,
-						  std::string& outMerged, int32& outKept);
+						  std::string& outMerged, int32& outKept, std::string& outHow,
+						  const std::map<std::string, std::string>* liveWasTaskStart = nil);
+
+/** ★★★EVERY OUTERMOST CELL LABELLED WITH ITS OWN ID (2026-09-20, the user's design).
+
+    A snippet import REPACKS the cells' ids (0,1,4,5 -> 0,1,2,3, measured), so a table that has been
+    put back once no longer shares an id with Task Start's - and the pairing above would have to fall
+    back to the words. A script label survives the import, and a cell's script label is a CELL
+    ATTRIBUTE (`kCellAttrScriptLabelBoss` is the SDK's one implementer of IScriptLabel), written into
+    <Cell> as <Properties><Label>, which is where IDML itself puts one.
+
+    ⚠**THE LABEL IS NEVER MEANT TO REACH THE READER'S DOCUMENT** (the user: "delete the label KCM put
+     on once the frame has been made from the snippet, and then paste"). It is read and then cleared
+     in the scratch document, so what is copied into the Target carries no mark of ours - and the
+     question of whether the copy would have carried a label at all is never asked.
+
+    The value written is the cell's own id - its Self with the table's Self taken off, "i4". A cell
+    that already has <Properties>, or a <Label> of its own, keeps them: ours joins the list.
+
+    @param key the label's key, the same one the reader is given back.
+    @return how many cells were labelled. */
+int32 KCMLabelTableCells(std::string& tableXml, const char* key);
+
+/** Every outermost cell of a table's XML as "col:row" -> its own id ("i4"). What a restore reads off
+    the table it has just written, so that the new ids can be tied back to Task Start's. */
+void KCMReadTableCellIds(const std::string& tableXml, std::map<std::string, std::string>& out);
 
 /** The minimal page-item snippet: the PI header, <Document>, the style groups, one <Spread> with one
     <TextFrame>, and one <Story> whose only content is `tableXml`. UTF-8. */
 void KCMBuildTableSnippet(const std::string& tableXml, const std::string& styleGroups, std::string& outSnippet);
 
+#ifndef KCM_TABLESNIPPET_STANDALONE
 /** The live story as INX text (IINXManager::ExportINX with the story as the root - the call
-    KCMPdfSpike's S17.8 measured), into `out`. kFalse when the export failed. */
-bool16 KCMExportStoryInx(IDataBase* db, UID storyUID, KCMMemXferBytes& out);
+    KCMPdfSpike's S17.8 measured), into `out`. kFalse when the export failed.
+
+    @param includeStyleRoots ★also hand the export the document's CELL and TABLE style roots as roots
+        of their own, so that one small export carries the <Story> AND the two style groups a table's
+        snippet needs (2026-09-20). ⚠**ExportINX takes a LIST of roots** - it always did; this passed
+        one. Without the groups a table lands on "[No table style]" rather than on the document's own
+        style of that name, which is why the Target's WHOLE internal IDML used to be held for a whole
+        comparison just to supply them. */
+bool16 KCMExportStoryInx(IDataBase* db, UID storyUID, KCMMemXferBytes& out,
+						 bool16 includeStyleRoots = kFalse);
+#endif // KCM_TABLESNIPPET_STANDALONE
 
 #endif // __KCMTableSnippet_h__
 
