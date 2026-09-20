@@ -830,9 +830,10 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Open Task Start as IDML" on the panel flyout (2026-09-20, the user's request). Plain
-		// command, directly under Task Start: the held origin is rehydrated exactly as the
-		// comparison does it and opened in a window, sacrificial paragraphs and all, so that the
-		// state a comparison measures against can be looked at as it really is.
+		// command, directly under Task Start: the held origin is made into a document and opened in
+		// a window, so that the state a comparison measures against can be looked at as it really
+		// is. ★**The bytes go in UNTOUCHED** (the user, the same day: "doing nothing to it") -
+		// no injection, nothing written into the copy afterwards (KCMRehydrate.h, `untouched`).
 		kKCMPopupOpenOriginIdmlActionID,
 		kKCMPopupMenuPath,
 		kKCMOpenOriginIdmlMenuItemPosition,

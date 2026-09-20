@@ -17,8 +17,11 @@
 #include "KCMXmlInject.h"
 #include <string.h>
 #include <stdlib.h>				// strtod - the page size of <DocumentPreference>
+#include <algorithm>			// sort - the element-count rows, largest difference first
+#include <map>					// the element-name counts of the two sides
 
 const char* const kKCMOriginUidLabelKey = "KcmOriginUid";
+const char* const kKCMDummyStoryLabelKey = "KcmDummyStory";
 
 namespace
 {
@@ -26,8 +29,7 @@ namespace
 const char* const kStoryOpen   = "<Story ";
 const char* const kSpreadOpen  = "<Spread ";
 const char* const kPageOpen    = "<Page ";		// the pages of <Spread> and <MasterSpread> alike (2026-09-13)
-const char* const kStoryClose  = "</Story>";
-const char* const kRangeOpen   = "<ParagraphStyleRange";
+const char* const kStoryClose  = "</Story>";		// also closes the dummy story written below
 const char* const kPropsOpen   = "<Properties>";
 const char* const kLabelOpen   = "<Label>";
 const char* const kSelfAttr    = "Self=\"";
@@ -37,13 +39,44 @@ const char* const kDummyHead   =
 	"<CharacterStyleRange AppliedCharacterStyle=\"CharacterStyle/$ID/[No character style]\">"
 	"<Content>";
 const char* const kDummyTail   = "</Content><Br /></CharacterStyleRange></ParagraphStyleRange>";
-// The decoy backing story (the header's 3.): an <XmlStory> of two sacrificial ranges, written once,
-// right before the first <Story. Its Self is a uid no document reaches; the import renumbers it
-// anyway. The attributes are the ones ExportINX writes on the real <XmlStory>.
-const char* const kDecoyOpen   =
-	"<XmlStory Self=\"u7ffffff9\" AppliedTOCStyle=\"n\" UserText=\"true\" IsEndnoteStory=\"false\""
-	" TrackChanges=\"false\" StoryTitle=\"$ID/\" AppliedNamedGrid=\"n\">";
-const char* const kDecoyClose  = "</XmlStory>";
+
+// ★★★THE DUMMY STORY AND ITS FRAME (the header's 1.) - 2026-09-20, the user's design. An ORDINARY
+// story, written once, right before the first real <Story, with an ordinary frame of its own on the
+// first spread. It takes the drop, and then it is deleted outright (KCMRehydrate.cpp,
+// DeleteDummyStory) - frame and story together, because deleting the frame takes the story with it.
+//
+// ⚠**THE FRAME SITS FAR OUT ON THE PASTEBOARD** (ItemTransform's last two numbers): if a deletion
+//  ever fails, a frame out there is on no page, so it cannot print, cannot rasterise into a Pixel
+//  comparison and cannot be mistaken for the reader's own work. It is the cheap insurance against
+//  the one failure this design can have.
+// ⚠**ALL FOUR PathPoints CARRY LeftDirection AND RightDirection.** Anchor alone opens, but the
+//  frame comes out collapsed (measured 2026-09-15: 47.98mm -> 3.53mm), which would be a frame of a
+//  different size from the one written here - and a thing that "opens" is not the same as a thing
+//  that is right.
+// ⚠The two Selfs are uids no document reaches; the import renumbers them anyway.
+// ★★★AND IT CARRIES A LABEL, WHICH IS THE ONLY WAY IT CAN BE FOUND AFTERWARDS (2026-09-20,
+// measured): **the dummy is EMPTIED by the import** - that is its whole job - so the token is gone
+// from it by the time anything looks, and a search for the token finds nothing. The label survives:
+// the import keeps the labels of stories and spreads (only pages lose theirs, 2. below). So the
+// deletion asks for the label, never for the words.
+const char* const kDummyStoryOpen =
+	"<Story Self=\"u7ffffff8\" AppliedTOCStyle=\"n\" UserText=\"true\" IsEndnoteStory=\"false\""
+	" TrackChanges=\"false\" StoryTitle=\"$ID/\" AppliedNamedGrid=\"n\">"
+	"<Properties><Label><KeyValuePair Key=\"KcmDummyStory\" Value=\"1\" /></Label></Properties>";
+const char* const kDummyFrame =
+	"<TextFrame Self=\"u7ffffff7\" ParentStory=\"u7ffffff8\" ContentType=\"TextType\""
+	" ItemTransform=\"1 0 0 1 -5000 -5000\">"
+	"<Properties><PathGeometry><GeometryPath PathOpen=\"false\"><PathPointArray>"
+	"<PathPoint Anchor=\"0 0\" LeftDirection=\"0 0\" RightDirection=\"0 0\"/>"
+	"<PathPoint Anchor=\"0 50\" LeftDirection=\"0 50\" RightDirection=\"0 50\"/>"
+	"<PathPoint Anchor=\"100 50\" LeftDirection=\"100 50\" RightDirection=\"100 50\"/>"
+	"<PathPoint Anchor=\"100 0\" LeftDirection=\"100 0\" RightDirection=\"100 0\"/>"
+	"</PathPointArray></GeometryPath></PathGeometry></Properties>"
+	"</TextFrame>";
+/** The frame goes in front of this, so that every <Page> and every page item of the first spread
+    is already written. ⚠"</Spread>" is NOT a substring of "</MasterSpread>", so a master spread
+    cannot be mistaken for the first spread here. */
+const char* const kSpreadClose = "</Spread>";
 
 bool16 StartsWith(const char* xml, size_t size, size_t at, const char* literal)
 {
@@ -116,6 +149,108 @@ bool16 EmitLabel(const char* xml, size_t size, size_t& pos, KCMByteSink& out, co
 }
 
 }	// namespace
+
+namespace
+{
+
+/** kTrue for a character an XML element name may begin with. */
+bool16 IsNameStart(char c)
+{
+	return ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_') ? kTrue : kFalse;
+}
+
+/** kTrue for a character an XML element name may continue with. */
+bool16 IsNameChar(char c)
+{
+	return (IsNameStart(c) || (c >= '0' && c <= '9') || c == ':' || c == '.' || c == '-')
+		? kTrue : kFalse;
+}
+
+/** Count the element names of xml[0..size) into out. An opening tag only: "</x", "<?x", "<!x" and
+    "< " are all skipped, so an element is counted once however it ends. */
+void CountElementNames(const char* xml, size_t size, std::map<std::string, int32>& out)
+{
+	size_t i = 0;
+	while (i + 1 < size)
+	{
+		if (xml[i] != '<' || !IsNameStart(xml[i + 1]))
+		{
+			++i;
+			continue;
+		}
+		size_t j = i + 1;
+		while (j < size && IsNameChar(xml[j]))
+			++j;
+		out[std::string(xml + i + 1, j - i - 1)] += 1;
+		i = j;
+	}
+}
+
+/** Largest difference first; ties by name, so the same input always reads the same way. */
+bool16 BySizeOfDifference(const KCMElementCount& l, const KCMElementCount& r)
+{
+	const int32 dl = (l.fInB > l.fInA) ? (l.fInB - l.fInA) : (l.fInA - l.fInB);
+	const int32 dr = (r.fInB > r.fInA) ? (r.fInB - r.fInA) : (r.fInA - r.fInB);
+	if (dl != dr)
+		return (dl > dr) ? true : false;
+	return (l.fName < r.fName) ? true : false;
+}
+
+}	// namespace
+
+bool16 KCMCompareElementCounts(const char* a, size_t aSize, const char* b, size_t bSize,
+							   std::vector<KCMElementCount>& outDiffs, int32* outSame)
+{
+	outDiffs.clear();
+	if (outSame != nil)
+		*outSame = 0;
+	if (a == nil || b == nil)
+		return kFalse;
+
+	std::map<std::string, int32> inA, inB;
+	CountElementNames(a, aSize, inA);
+	CountElementNames(b, bSize, inB);
+
+	// ⚠**Language is left out, and the header says why**: 66 in a document just created, 1 in one
+	//   opened from a file. It reports how a document was OPENED, not what is in it - the same
+	//   reason the Resources mode drops it.
+	static const char* const kIgnored = "Language";
+
+	int32 same = 0;
+	for (std::map<std::string, int32>::const_iterator it = inA.begin(); it != inA.end(); ++it)
+	{
+		if (it->first == kIgnored)
+			continue;
+		const std::map<std::string, int32>::const_iterator other = inB.find(it->first);
+		const int32 countB = (other != inB.end()) ? other->second : 0;
+		if (countB == it->second)
+		{
+			++same;
+			continue;
+		}
+		KCMElementCount row;
+		row.fName = it->first;
+		row.fInA = it->second;
+		row.fInB = countB;
+		outDiffs.push_back(row);
+	}
+	// ...and the names that are in B alone (nothing in the loop above could have seen them).
+	for (std::map<std::string, int32>::const_iterator it = inB.begin(); it != inB.end(); ++it)
+	{
+		if (it->first == kIgnored || inA.find(it->first) != inA.end())
+			continue;
+		KCMElementCount row;
+		row.fName = it->first;
+		row.fInA = 0;
+		row.fInB = it->second;
+		outDiffs.push_back(row);
+	}
+
+	std::sort(outDiffs.begin(), outDiffs.end(), BySizeOfDifference);
+	if (outSame != nil)
+		*outSame = same;
+	return outDiffs.empty() ? kTrue : kFalse;
+}
 
 bool16 KCMCollectSpreadPages(const char* xml, size_t size, std::vector<KCMXmlSpreadPages>& out)
 {
@@ -302,43 +437,34 @@ bool16 KCMInjectForRehydration(const char* xml, size_t size, const char* sacrifi
 
 	size_t pos = 0;			// the first input byte not yet written
 	size_t scan = 0;		// where the search for the next event starts
-	bool16 storyWantsDummy = kFalse;	// inside a <Story>, before its first range
+	bool16 frameWritten = kFalse;		// the dummy's frame goes at the end of the FIRST spread
 
 	while (scan < size)
 	{
 		const size_t story  = Find(xml, size, scan, kStoryOpen);
 		const size_t spread = Find(xml, size, scan, kSpreadOpen);
 		const size_t page   = Find(xml, size, scan, kPageOpen);
-		size_t range = size, storyEnd = size;
-		if (storyWantsDummy)
-		{
-			range    = Find(xml, size, scan, kRangeOpen);
-			storyEnd = Find(xml, size, scan, kStoryClose);
-		}
+		// Only looked for while it is still wanted: the search is a scan of the remaining bytes,
+		// and after the frame is placed there is nothing to find it for.
+		const size_t spreadEnd = frameWritten ? size : Find(xml, size, scan, kSpreadClose);
 
 		// the nearest event decides
 		size_t next = story;
-		if (spread < next)   next = spread;
-		if (page < next)     next = page;
-		if (range < next)    next = range;
-		if (storyEnd < next) next = storyEnd;
+		if (spread < next)    next = spread;
+		if (page < next)      next = page;
+		if (spreadEnd < next) next = spreadEnd;
 		if (next >= size)
 			break;
 
-		if (storyWantsDummy && next == range)
+		// 1a. the dummy's FRAME, once, at the end of the first spread - after every <Page> and
+		//     every page item that spread holds (the literal says why it sits on the pasteboard).
+		if (!frameWritten && next == spreadEnd)
 		{
-			if (!Emit(out, xml + pos, next - pos) || !EmitLiteral(out, kDummyHead)
-				|| !EmitLiteral(out, sacrificialText) || !EmitLiteral(out, kDummyTail))
+			if (!Emit(out, xml + pos, next - pos) || !EmitLiteral(out, kDummyFrame))
 				return kFalse;
 			pos = next;
 			scan = next + 1;
-			storyWantsDummy = kFalse;
-			continue;
-		}
-		if (storyWantsDummy && next == storyEnd)
-		{
-			storyWantsDummy = kFalse;		// an empty story: no range, no dummy
-			scan = next + 1;
+			frameWritten = kTrue;
 			continue;
 		}
 
@@ -362,13 +488,15 @@ bool16 KCMInjectForRehydration(const char* xml, size_t size, const char* sacrifi
 			continue;
 		}
 
-		// 3. the decoy, once, in front of the first story (the header says what it absorbs)
+		// 1b. the DUMMY STORY, once, in front of the first real story. The real <XmlStory> is the
+		//     first text insertion in file order, so this one is the SECOND - which is the one the
+		//     import swallows. It is swallowed in place of the reader's first story, and what is
+		//     left of it is deleted afterwards, frame and all (KCMRehydrate.cpp, DeleteDummyStory).
 		if (isStory && stories == 0)
 		{
-			if (!Emit(out, xml + pos, next - pos) || !EmitLiteral(out, kDecoyOpen)
-				|| !EmitLiteral(out, kDummyHead) || !EmitLiteral(out, sacrificialText) || !EmitLiteral(out, kDummyTail)
-				|| !EmitLiteral(out, kDummyHead) || !EmitLiteral(out, sacrificialText) || !EmitLiteral(out, kDummyTail)
-				|| !EmitLiteral(out, kDecoyClose))
+			if (!Emit(out, xml + pos, next - pos) || !EmitLiteral(out, kDummyStoryOpen)
+				|| !EmitLiteral(out, kDummyHead) || !EmitLiteral(out, sacrificialText)
+				|| !EmitLiteral(out, kDummyTail) || !EmitLiteral(out, kStoryClose))
 				return kFalse;
 			pos = next;
 		}
@@ -379,7 +507,7 @@ bool16 KCMInjectForRehydration(const char* xml, size_t size, const char* sacrifi
 		if (!EmitLabel(xml, size, pos, out, xml + selfBegin, selfEnd - selfBegin))
 			return kFalse;
 		scan = pos;
-		if (isStory)     { ++stories; storyWantsDummy = kTrue; }
+		if (isStory)     { ++stories; }
 		else if (isPage) { ++pages; }
 		else             { ++spreads; }
 	}

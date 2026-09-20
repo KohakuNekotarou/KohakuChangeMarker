@@ -60,7 +60,7 @@
 #include "KCMRingAdornment.h"	// the story ID labels' toggle (Get/SetShowStoryIds)
 #include "KCMExternalSource.h"	// KCMExternalSourceLabel -- the lent Source's words for the panel
 #include "KCMOrigin.h"			// Task Start: the origin slot the five methods at the end forward to
-#include "KCMRehydrate.h"		// KCMOpenOriginForInspection - the Task Start copy, where it can be seen
+#include "KCMRehydrate.h"		// KCMOpenOriginForInspection - the held IDML, untouched, where it can be seen
 #include "KCMOriginCompare.h"	// KCMOriginArmed / KCMOriginScopedCopy - armed with the origin as the Source; RefreshRow's temporary Source
 #include "KCMStoryMarkBuild.h"	// what the Story mode should be lighting up (Refresh / SetPress)
 #include "KCMStoryMarker.h"		// the adornment that draws it - the flash and the shutdown

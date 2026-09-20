@@ -780,6 +780,32 @@ resource VersionedScriptElementInfo(10)
 			}
 		}
 
+		// ★★THE OTHER SIDE OF THE COMPARISON (2026-09-20, the user's ask): the two above write the
+		// ORIGIN; app.kcmSaveDocXml(file) writes the internal IDML of the document that is IN
+		// FRONT. With both, a rehydrated copy can be checked as XML - element by element - instead
+		// of by the four numbers of its shape.
+		//
+		// ★Same two steps as Task Start, in the same order (ExportINX into memory, then labelled as
+		// a designmap), which is what makes the two files comparable at all.
+		// ⚠They will NOT be byte-identical: ImportINX renumbers every UID it takes in. What is
+		//   stable is everything else - two exports of an unchanged document are byte-for-byte the
+		//   same, across sessions (KCMOriginIdml.h says it at length).
+		//
+		// ⚠Status 1 means something different here than it does above - "nothing could be
+		//   photographed" rather than "no origin is held" - because there is no origin in this one.
+		Method
+		{
+			kKCMSaveDocXmlMethodScriptElement,
+			e_KCMSaveDocXml,
+			"kcm save doc xml",					// name -> app.kcmSaveDocXml(file)
+			"Write the active document's own internal IDML (its designmap) out to a file.",
+			Int32Type,							// status code
+			"Status: 0 written, 1 nothing could be photographed, 2 the file could not be created, 3 the write failed, 4 the file argument could not be read"
+			{
+				keyAEFile, "file path", "File path to write the document's XML to", FileType, kRequired
+			}
+		}
+
 		// ★A MEASURING DOOR, not a feature (2026-09-14): app.kcmProbePdfRoute() runs the
 		// experiment in KCMPdfSpike.cpp and hands the whole reading back as one string, a line
 		// per step. The question it exists to answer is whether the Before/After report can stop
@@ -937,6 +963,8 @@ resource VersionedScriptElementInfo(10)
 				// properties: no build error, no warning, ERR:55 at the first touch.
 				Method{ kKCMSaveOriginXmlMethodScriptElement },
 				Method{ kKCMSaveOriginIdmlMethodScriptElement },
+				// ...and the one that photographs the document in front instead of the origin.
+				Method{ kKCMSaveDocXmlMethodScriptElement },
 				// The measuring door's half of the same pair (see the Method block above).
 				Method{ kKCMProbePdfRouteMethodScriptElement },
 				// ...and the round trip's four (2026-09-17) - the other half of each Method block above.

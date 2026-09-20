@@ -809,15 +809,17 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			Utils<IKCMPageFlagsFacade>()->ClearPawsInDoc(Utils<IKCMCompareFacade>()->GetActiveDocDB());
 			break;
 
-		// Flyout "Task Start" (2026-09-12): the active document's INX becomes the origin, and the pair
-		// is chosen (Target = that document, Source = the origin). No comparison runs - Start does
-		// that. The panel refresh and the status line are done here, as with the two "Set as" items
-		// ([[one-question-one-place]]: the facade changes the state, the UI decides what it shows).
 		case kKCMPopupOpenOriginIdmlActionID:
 		{
 			// ★"Open Task Start as IDML" (2026-09-20, the user's request). One call: the model
-			//   writes the held origin into %TEMP% as an IDML and opens it as an untitled copy.
-			//   ⚠Everything that could go wrong is the model's to know (no origin, the write, the
+			//   makes a document out of the held IDML and asks for a window onto it.
+			//   ★★**THE BYTES GO IN AS THEY ARE** (the same day, the user: "without the sacrificial
+			//    text - just make a document out of it doing nothing to it"): nothing is injected,
+			//    and nothing is written into the copy afterwards. What opens is the import's own
+			//    answer, which is the thing being looked at (KCMRehydrate.h, `untouched`).
+			//   ⛔No file is written for it - the %TEMP% route was dropped the same day
+			//    (KCMOriginIdml.h says so where the function that would have done it lives).
+			//   ⚠Everything that could go wrong is the model's to know (no origin, the import, the
 			//    open command), so the whole of the UI's part is to say what came back.
 			PMString said;
 			Utils<IKCMCompareFacade>()->OpenOriginAsIdml(said);
@@ -825,6 +827,10 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
+		// Flyout "Task Start" (2026-09-12): the active document's INX becomes the origin, and the pair
+		// is chosen (Target = that document, Source = the origin). No comparison runs - Start does
+		// that. The panel refresh and the status line are done here, as with the two "Set as" items
+		// ([[one-question-one-place]]: the facade changes the state, the UI decides what it shows).
 		case kKCMPopupTaskStartActionID:
 		{
 			// ★**It can be pressed while an origin is already held, or while a comparison runs**

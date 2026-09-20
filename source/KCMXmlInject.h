@@ -4,55 +4,39 @@
 //
 //  KohakuChangeMarker (KCM) - Task Start
 //
-//  What is done to the XML of a task-start copy BEFORE it is handed to ImportINX. Two things,
-//  both measured on 2026-09-12 (docs/ai-notes/kcm-inx-rehydration-2026-09-12.md):
+//  What is done to the XML of a task-start copy BEFORE it is handed to ImportINX. Two things:
 //
-//   1. A SACRIFICIAL FIRST RANGE. ImportINX drops the first <ParagraphStyleRange> of a story
-//      whole (13,106 characters came back as 6,298; a five-paragraph story lost exactly its first
-//      paragraph), so a range of throwaway text is put first and is what goes.
-//      ★WHAT IS ACTUALLY DROPPED (measured 2026-09-12 evening, 13 variants through a throwaway
-//      app.kcmInxFileProbe; docs/ai-notes/kcm-inx-first-range-drop-cause-2026-09-12.md):
-//      **EXACTLY ONE range per import - the SECOND text insertion in file order, counted ACROSS
-//      stories, with an <XmlStory> counting as one insertion however many ranges it has.** The
-//      whole-document export always puts the document's <XmlStory> (the XML backing store, one
-//      range) before the stories, so the second insertion is the first range of the FIRST story
-//      in file order - which is why it looked like "the first range of a story", and why a
-//      document with a single range in a snippet-shaped file loses nothing. The XML is innocent:
-//      the same bytes through ISnippetImport (the PI rewritten to type="snippet") come back
-//      whole. It is the kDocElementImportBoss policy's doing; why it swallows the second
-//      insertion is inside the application and was not pursued.
-//      !NOT OF EVERY STORY - and now the count says why. That was measured on one-story
-//      documents. With TWO stories one of them kept its sacrificial range (2026-09-12: the
-//      copy came back "KCMDUMMY" + a return = 9 characters longer than the origin - ⚠that WAS the
-//      token on the day; it is 32 hex digits now - and the shape
-//      check refused it): only one range is ever lost, so only the first story's dummy goes. So
-//      the injection is only half of the rule: after the import, a story whose first paragraph
-//      is exactly the sacrificial token loses that paragraph (KCMRehydrate.cpp,
-//      DeleteSurvivingDummies). ⚠The scheme stands on the XmlStory being exported BEFORE the
-//      first story (measured on every export so far). Were it not, the loss would be the first
-//      story's second range = its first REAL paragraph; the shape check would then refuse the
-//      copy rather than hand a shortened one to the comparison.
-//      ★★★**AND THE STORY THAT LOSES THAT INSERTION LOSES THE TEXT OF EVERY TABLE CELL IN IT**
-//      (measured 2026-09-19, twelve variants through a file probe: a one-story document with a
-//      table came back with the dummy gone AND its cell empty - `あい[表]うえ` kept its words, the
-//      cell kept only its return - wherever the table stood, one cell or two, one paragraph or
-//      two; a second story placed before it took the drop instead and the cells came back whole,
-//      which is why matrix.indd, whose first story has no table, never showed it). So the
-//      dummies are not enough on their own: the drop has to land somewhere that is neither a
-//      story nor a cell, and that is 3.
-//
-//   3. A DECOY BACKING STORY. An <XmlStory> of two sacrificial ranges is written once, right
-//      before the first <Story. Measured 2026-09-19: with it in place - before or after the real
-//      <XmlStory>, both were tried - the import drops the decoy's range, every story's dummy
-//      survives (and is deleted, 1.), and a table's cells come back whole: the copy matched the
-//      origin in spreads, pages, stories and text (1/1/1/12). ⚠One range is not enough: a decoy
-//      with a single range absorbed nothing (the count that treats the real <XmlStory> as one
-//      insertion however many ranges it has does not extend to this one - measured, not
-//      explained). The decoy is not user-accessible, so it is invisible to the story count, the
-//      Story mode and the Pixel mode; it stays in the throwaway copy as a hidden story of one
-//      token paragraph. The per-story dummies of 1. are kept as well: if a document shape nobody
-//      has measured lets the drop past the decoy, they take it as before, and the shape check
-//      still refuses a copy that lost anything.
+//   1. A DUMMY STORY, AND A FRAME OF ITS OWN. ImportINX swallows EXACTLY ONE text insertion per
+//      import - the SECOND in file order, counted across stories, with an <XmlStory> counting as
+//      one insertion however many ranges it has (measured 2026-09-12, thirteen variants through a
+//      throwaway file probe). The whole-document export always writes the document's own
+//      <XmlStory> - the XML backing store - first, so the second insertion is THE FIRST <Story>
+//      IN THE FILE, and that one is the reader's.
+//      ★So a dummy story of one paragraph is written in front of it, with an ordinary frame far
+//      out on the pasteboard, and IT is swallowed instead. Whatever survives of it is then
+//      deleted outright - the FRAME is deleted, which takes the story with it (KCMRehydrate.cpp,
+//      DeleteDummyStory; a deleted paragraph would leave an empty story standing, and the shape
+//      check counts stories).
+//      ★★★WHAT IT COSTS TO GET THIS WRONG (measured 2026-09-20, with nothing injected at all):
+//      the story that takes the drop loses EVERYTHING IN IT. A document whose single story held a
+//      nested table came back with **Table 2->0, Cell 8->0, Row 4->0, Column 4->0, Content 11->1**
+//      - the skeleton of the table, not merely the words in its cells - while 292 OTHER element
+//      names were identical. A story with no table in it fares better but not well: the
+//      paragraph's container survives and its text does not.
+//      ⚠★★★**THE SAME BYTES OPENED AS A .idml FILE LOSE NOTHING**, with a dummy or without one
+//       (measured the same day, both ways, on the same nested-table origin). What drops the
+//       insertion is ImportINX's own route - not the IDML, and not the bytes.
+//      ⚠**FILE ORDER IS NOT THE ORDER THE STORIES WERE MADE IN** (measured 2026-09-20): a frame
+//       created second came out first in the XML and was the one that lost its text. Nothing may
+//       predict which story is at risk from how the document was built.
+//      ⚠WHAT STOOD HERE UNTIL 2026-09-20 was a different scheme with the same purpose: a
+//       sacrificial range at the head of EVERY story, plus a decoy <XmlStory> of two ranges in
+//       front of the first one. It worked (measured 2026-09-19: cells came back whole), but it
+//       left a forged backing store in the copy and a token paragraph in every story, and it
+//       rested on an unexplained detail - a decoy of ONE range absorbed nothing. The user's
+//       design replaced it: one ordinary story, one ordinary frame, deleted when it has done its
+//       work. ⚠**The per-story sacrificial ranges went with it**, on the reasoning that a seat
+//       which is already taken does not need a second occupant.
 //
 //   2. A LABEL NAMING THE ORIGINAL UID. The import renumbers everything, and the Story mode pairs
 //      stories by UID. <Story Self="ufe"> carries the old UID in its Self, so a script label
@@ -76,6 +60,7 @@
 
 #include "BaseType.h"
 #include <stddef.h>
+#include <string>
 #include <vector>
 
 /** Where the injected copy is written. Write returns kFalse when it could not keep the bytes. */
@@ -89,8 +74,15 @@ public:
 /** The label key the rehydrated copy carries. The value is the element's Self ("ufe"). */
 extern const char* const kKCMOriginUidLabelKey;
 
-/** The words of the sacrificial first range: ONE token, so that a paragraph made of exactly this
-    can be recognised after the import and deleted if the import left it standing (see 1. above).
+/** ★The label the DUMMY STORY carries (value "1"), and the only way to find it after the import.
+    ⚠**The dummy is emptied by the import - that is what it is for** - so by the time anything
+    looks for it, its token is gone and only the label is left (measured 2026-09-20: the copy came
+    back with two stories, the reader's whole and the dummy's length 0). A deletion that looked for
+    the words found nothing and left the dummy standing. */
+extern const char* const kKCMDummyStoryLabelKey;
+
+/** The words of the dummy story's one paragraph: ONE token, so that a story made of exactly this
+    can be recognised after the import and deleted, frame and all (see 1. above).
     ★THE TOKEN IS MADE FRESH FOR EVERY REHYDRATION (the user's ask, 2026-09-12): 32 hex digits of
     a random nonce, and nothing else (KCMRehydrate.cpp, NewSacrificialToken).
 
@@ -101,7 +93,7 @@ extern const char* const kKCMOriginUidLabelKey;
     where "KCMDUMMY-" gets typed. **32 hex digits nobody has seen cannot be typed at all**, so
     dropping the name makes the token strictly safer, not merely tidier.
     ★And nothing depended on the prefix: the deletion compares the WHOLE token character by
-      character (KCMRehydrate.cpp, DeleteSurvivingDummies), never its first nine characters.
+      character (KCMRehydrate.cpp, DeleteDummyStory), never its first nine characters.
 
     The same string is handed to the injection and to the deletion, so the two cannot disagree.
 
@@ -112,10 +104,12 @@ extern const char* const kKCMOriginUidLabelKey;
 
 /** Copy xml[0..size) into out with the two injections above.
 
-    @param sacrificialText  the token of the sacrificial range (ASCII, non-empty, no XML
+    @param sacrificialText  the token of the dummy story's paragraph (ASCII, non-empty, no XML
                             specials - the caller makes it of hex digits: NewSacrificialToken).
-    The decoy backing story (3. above) is written in front of the first <Story that has a Self.
-    @param outStories  how many <Story> elements were labelled (and given a sacrificial range).
+    The dummy story (1. above) is written in front of the first <Story that has a Self, and its
+    frame in front of the first </Spread> - after every page and page item that spread holds.
+    @param outStories  how many <Story> elements were labelled. ⚠The dummy is not among them: it is
+                       written, not labelled, and nothing counts it.
     @param outSpreads  how many <Spread> elements were labelled.
     @param outPages    (optional) how many <Page> elements were labelled - the pages of the master
                        spreads included, since a <Page is a <Page wherever it sits.
@@ -149,6 +143,48 @@ bool16 KCMCollectSpreadPages(const char* xml, size_t size, std::vector<KCMXmlSpr
 /** "ufe" -> 0xfe. The Self of a story, spread or page is "u" + the UID in lower-case hex.
     @return kFalse for anything else ("d", "", "ug", "u"). */
 bool16 KCMParseSelfUid(const char* text, size_t length, uint32& outUid);
+
+/** ★★★**COUNT EVERY ELEMENT NAME IN a AND IN b, AND REPORT THE NAMES WHOSE COUNTS DIFFER.**
+    The round-trip check (KCMOriginIdml.h, KCMVerifyOriginRoundTrip) stands on this one function.
+
+    ★★**WHY COUNTS, AND NOT A DIFF** (measured 2026-09-20). A textual diff of two designmaps is
+    useless: **ImportINX renumbers every UID it brings in**, so `Self="ufe"` and everything pointing
+    at it differ on the two sides of a perfectly good round trip. Counting element names sidesteps
+    that entirely - **a UID is never an element name** - while still catching the failure that
+    matters, which is things going MISSING. Measured on the day: an untouched copy of a document
+    with a nested table came back with Table 2->0, Cell 8->0, Row 4->0, Column 4->0, Content 11->1,
+    **and 292 other element names identical**. The two numbers that moved named the fault exactly.
+
+    ⚠★★**ONE NAME IS EXCLUDED: `Language`.** A freshly created document carries 66 of them and a
+    document opened from a file carries 1 (measured 2026-09-09, and again on 2026-09-20 where it
+    accounted for +6,982 bytes of a copy that was otherwise whole). It reports how a document was
+    OPENED, not what is in it - which is why the Resources mode drops it too. Leaving it in would
+    make every single round trip report a difference, and a check that always fails is a check
+    nobody reads.
+
+    ⚠**WHAT THIS CANNOT SEE**: a value that CHANGED. Fourteen colours on each side pass even if one
+    of them is a different colour, because both sides have fourteen <Color> elements. This is the
+    cheap sieve - "did anything go missing" - and the Resources mode is the expensive one that
+    compares definitions attribute by attribute. **Neither replaces the other.**
+
+    ⚠**NO SDK TYPE CROSSES THIS LINE** (the head of this file says why: work/kcm-origin-test builds
+    these functions with no application in the room). The caller turns the rows into words.
+
+    @param outDiffs  one row per element name whose counts differ, ★**largest difference first**:
+                     the biggest loss is what a reader needs in the first few words, and a status
+                     line has to end somewhere. Emptied first.
+    @param outSame   (optional) how many element names appear the same number of times on both.
+    @return kTrue when outDiffs comes back EMPTY - every counted element name appears the same
+            number of times on both sides. */
+struct KCMElementCount
+{
+	std::string	fName;
+	int32		fInA;
+	int32		fInB;
+};
+
+bool16 KCMCompareElementCounts(const char* a, size_t aSize, const char* b, size_t bSize,
+							   std::vector<KCMElementCount>& outDiffs, int32* outSame = nil);
 
 /** What the origin's <DocumentPreference> says about the page setup - the part a document has to
     be CREATED with, because ImportINX does not apply it to a document that already exists.

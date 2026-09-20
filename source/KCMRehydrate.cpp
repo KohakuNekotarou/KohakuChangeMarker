@@ -8,7 +8,9 @@
 
 // Interface includes:
 #include "ICommand.h"
-#include "IComposeScanner.h"		// DeleteSurvivingDummies: the first paragraph of each story
+#include "IComposeScanner.h"		// DeleteDummyStory: the first paragraph of each story
+#include "IFrameList.h"			// ...its columns, on the way to the frame that holds it
+#include "IHierarchy.h"			// column -> multi-column frame -> the item (the two steps)
 #include "IDataBase.h"
 #include "IDocFileHandler.h"
 #include "IDocument.h"
@@ -31,7 +33,7 @@
 #include "ISession.h"
 #include "IStoryList.h"
 #include "ITextModel.h"
-#include "ITextModelCmds.h"		// DeleteCmd - the one edit ever made to a rehydrated copy
+#include "PageItemScrapID.h"		// kDeleteCmdBoss - the dummy's frame goes, and its story with it
 #include "IStringData.h"			// NameCopyAfterOrigin: kSetDocNameCmdBoss carries the name here
 #include "KCMOrigin.h"				// KCMOriginDocDB - the document the copy stands for
 
@@ -58,6 +60,7 @@
 #include "KCMRehydrate.h"
 #include "KCMOrigin.h"				// KCMOriginShape / KCMMeasureShape
 #include "KCMResourceBytes.h"
+#include "KCMResourceSnapshot.h"	// KCMTakeResourceSnapshot - the copy, photographed for the check
 #include "KCMXmlInject.h"
 
 class IINXImportPolicy;				// forward-declared only in the SDK; held through IPMUnknown
@@ -141,43 +144,63 @@ std::string NewSacrificialToken()
 	@param dummy the token this rehydration injected (NewSacrificialToken) - the one string both
 	       halves of the rule share.
 	@return how many paragraphs were deleted (the caller only reports it). */
-int32 DeleteSurvivingDummies(IDataBase* db, const char* dummy)
+int32 DeleteDummyStory(IDataBase* db)
 {
 	int32 deleted = 0;
-	if (db == nil || dummy == nil || dummy[0] == '\0')
+	if (db == nil)
 		return 0;
-	const int32 dummyLen = static_cast<int32>(::strlen(dummy));
 	InterfacePtr<IStoryList> stories(db, db->GetRootUID(), UseDefaultIID());
 	if (stories == nil)
 		return 0;
-	const int32 n = stories->GetUserAccessibleStoryCount();
-	for (int32 i = 0; i < n; ++i)
+	// ⚠The list is walked BACKWARDS and the frame is deleted inside the walk: a deletion takes a
+	//  story out of this very list, and an index already passed cannot be disturbed by that.
+	for (int32 i = stories->GetUserAccessibleStoryCount() - 1; i >= 0; --i)
 	{
-		InterfacePtr<ITextModel> model(stories->GetNthUserAccessibleStoryUID(i), UseDefaultIID());
+		// ⚠Named ...UID, returns a UIDRef (the database is already in it).
+		const UIDRef storyRef = stories->GetNthUserAccessibleStoryUID(i);
+		// ★★★FOUND BY ITS LABEL, NEVER BY ITS WORDS (measured 2026-09-20). The dummy is EMPTIED by
+		//   the import - being emptied is its entire purpose - so a search for the token finds
+		//   nothing and leaves it standing, which is exactly what happened the first time this ran.
+		//   The label survives the import (stories and spreads keep theirs; only pages lose them),
+		//   and nothing of the reader's can carry it: KCMXmlInject.cpp writes it into a story it
+		//   invented, in bytes the reader never sees.
+		InterfacePtr<IScript> script(storyRef, UseDefaultIID());
+		if (script == nil)
+			continue;
+		const IScriptLabel::ScriptLabelValue value =
+			script->GetTag(PMString(kKCMDummyStoryLabelKey));
+		if (value.GetUTF8String().empty())
+			continue;
+
+		InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
 		if (model == nil)
 			continue;
-		InterfacePtr<IComposeScanner> scanner(model, UseDefaultIID());
-		if (scanner == nil)
+
+		// ★THE FRAME IS DELETED, AND THE STORY GOES WITH IT. Deleting the text would leave an
+		//   empty story and its frame standing, and the shape check counts stories.
+		//   column -> multi-column frame -> the item that holds the story: the two steps
+		//   KCMRingAdornment.cpp walks, for the same reason (a frame's text is never reached in
+		//   one). The dummy is a plain frame written by KCMXmlInject.cpp, so there is no
+		//   text-on-path case to allow for here.
+		InterfacePtr<IFrameList> frames(model->QueryFrameList());
+		if (frames == nil || frames->GetFrameCount() == 0)
 			continue;
-		int32 span = 0;
-		// excludeEOS = kFalse, as FirstReadableText reads (KCMStoryList.cpp): the whole paragraph,
-		// return included - so a surviving dummy spans exactly the text plus one.
-		const TextIndex start = scanner->FindSurroundingParagraph(0, &span, kFalse);
-		if (start != 0 || span != dummyLen + 1)
+		InterfacePtr<IHierarchy> column(db, frames->GetNthFrameUID(0), UseDefaultIID());
+		if (column == nil)
 			continue;
-		WideString para;
-		scanner->CopyText(0, dummyLen, &para);
-		bool16 same = (para.CharCount() == dummyLen) ? kTrue : kFalse;
-		for (int32 c = 0; same && c < dummyLen; ++c)
-			if (para.GetChar(c) != UTF32TextChar(dummy[c]))
-				same = kFalse;
-		if (!same)
+		InterfacePtr<IHierarchy> multiColumn(column->QueryParent());
+		if (multiColumn == nil)
 			continue;
-		InterfacePtr<ITextModelCmds> cmds(model, UseDefaultIID());
-		if (cmds == nil)
+		const UID holder = multiColumn->GetParentUID();
+		if (holder == kInvalidUID)
 			continue;
-		InterfacePtr<ICommand> cmd(cmds->DeleteCmd(0, span));
-		if (cmd != nil && CmdUtils::ProcessCommand(cmd) == kSuccess)
+		// kDeleteCmdBoss with the item in its list - codesnippets/SnpManipulateTextFrame.cpp
+		// (DeleteTextFrame) is the official shape, minus the ASSERTs and the do-while(false).
+		InterfacePtr<ICommand> cmd(CmdUtils::CreateCommand(kDeleteCmdBoss));
+		if (cmd == nil)
+			continue;
+		cmd->SetItemList(UIDList(UIDRef(db, holder)));
+		if (CmdUtils::ProcessCommand(cmd) == kSuccess)
 			++deleted;
 	}
 	return deleted;
@@ -406,37 +429,44 @@ void NameCopyAfterOrigin(const UIDRef& copyRef, IDataBase* originDB)
 }
 
 bool16 ImportAndCheck(const UIDRef& ref, KCMResourceBytes& copy, const KCMOriginShape& expect,
-					  const char* dummy, PMString& whyNot, bool16 forInspection)
+					  PMString& whyNot, KCMRehydrateMode mode)
 {
 	if (!ImportOnly(ref, copy, whyNot))
 		return kFalse;
 	IDocument* const doc = DocOf(ref.GetDataBase());
 
-	// 3b. the sacrificial ranges the import did NOT drop (DeleteSurvivingDummies says why there
-	//     can be any). Before the compose, so that what is composed is the text as it should be.
-	// ★★**LEFT IN FOR AN INSPECTION COPY** (2026-09-20, the user: "leave the sacrificial ones
-	//   where they are"). Which of them the import ate and which survived is the one thing that
-	//   NAMES the story it took its bite out of - delete them and that evidence goes with them.
-	if (!forInspection)
+	// 3b-3d. ★★**NOT ONE OF THESE IS DONE TO AN UNTOUCHED COPY** (2026-09-20, the user: "doing
+	//   nothing to it"). They are the three writes that make a copy fit to be compared - the
+	//   surviving dummies deleted, the pages named after the origin's, the document named after the
+	//   origin - and every one of them is a correction of something the import did. What is wanted
+	//   here is the import's own answer, uncorrected. ⚠So the copy comes out untitled, its pages
+	//   unlabelled and whatever the import left in it left in it.
+	//   ★kKCMRehydrateKeepForCheck DOES all three: it is the comparison's copy in every respect
+	//     but the refusal, which is what makes it worth measuring.
+	if (mode != kKCMRehydrateUntouched)
 	{
-		GlobalErrorStatePreserver errorState;
-		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		DeleteSurvivingDummies(ref.GetDataBase(), dummy);
-	}
+		// 3b. the dummy story, whatever the import left of it, frame and all (DeleteDummyStory).
+		//     Before the compose, so that what is composed is the document as it should be.
+		{
+			GlobalErrorStatePreserver errorState;
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+			DeleteDummyStory(ref.GetDataBase());
+		}
 
-	// 3c. the pages' origin uids, which the import did not carry (LabelCopyPages says why)
-	{
-		GlobalErrorStatePreserver errorState;
-		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		LabelCopyPages(ref.GetDataBase(), copy);
-	}
+		// 3c. the pages' origin uids, which the import did not carry (LabelCopyPages says why)
+		{
+			GlobalErrorStatePreserver errorState;
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+			LabelCopyPages(ref.GetDataBase(), copy);
+		}
 
-	// 3d. the copy answers as the document it was taken from (NameCopyAfterOrigin says why).
-	//     Before the compose, so that what is composed already reads the right name.
-	{
-		GlobalErrorStatePreserver errorState;
-		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		NameCopyAfterOrigin(ref, KCMOriginDocDB());
+		// 3d. the copy answers as the document it was taken from (NameCopyAfterOrigin says why).
+		//     Before the compose, so that what is composed already reads the right name.
+		{
+			GlobalErrorStatePreserver errorState;
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+			NameCopyAfterOrigin(ref, KCMOriginDocDB());
+		}
 	}
 
 	// 4. compose BEFORE anything reads pixels or text positions. A document straight out of the
@@ -469,7 +499,7 @@ bool16 ImportAndCheck(const UIDRef& ref, KCMResourceBytes& copy, const KCMOrigin
 }	// namespace
 
 bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, UIDRef& outDoc,
-					PMString& whyNot, bool16 forInspection)
+					PMString& whyNot, KCMRehydrateMode mode)
 {
 	outDoc = UIDRef::gNull;
 	whyNot.Clear();
@@ -480,12 +510,26 @@ bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, U
 		return kFalse;
 	}
 
-	// 1. the injected copy, with this rehydration's own sacrificial token (KCMXmlInject.h)
-	const std::string dummy = NewSacrificialToken();
+	// 1. the bytes the import is handed.
+	//    ★**UNTOUCHED: THE ORIGIN'S OWN, COPIED AND PASSED ON AS THEY ARE** (the header says what
+	//      that measures). No token is made for it either - there is nothing to recognise afterwards.
+	//    Otherwise the injected copy, with this rehydration's own sacrificial token (KCMXmlInject.h).
+	const bool16 untouched = (mode == kKCMRehydrateUntouched) ? kTrue : kFalse;
+	const std::string dummy = untouched ? std::string() : NewSacrificialToken();
 	KCMResourceBytes copy;
 	BytesSink sink(copy);
 	int32 stories = 0, spreads = 0;
-	if (!KCMInjectForRehydration(inx.Bytes(), inx.Size(), dummy.c_str(), sink, &stories, &spreads))
+	if (untouched)
+	{
+		// The copy exists only because the import seeks on the stream it is given, and `inx` is
+		// the caller's (the held origin). Not one byte is changed on the way through.
+		if (!sink.Write(inx.Bytes(), inx.Size()))
+		{
+			whyNot = "could not take a copy of the origin's bytes (out of memory)";
+			return kFalse;
+		}
+	}
+	else if (!KCMInjectForRehydration(inx.Bytes(), inx.Size(), dummy.c_str(), sink, &stories, &spreads))
 	{
 		whyNot = "could not prepare the XML (out of memory, or malformed)";
 		return kFalse;
@@ -497,14 +541,14 @@ bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, U
 		return kFalse;
 	// 3-5. import, compose, check - in a function of their own, so that every interface taken on
 	//      the document is gone before the close below (ImportAndCheck says why that is the rule).
-	if (!ImportAndCheck(ref, copy, expect, dummy.c_str(), whyNot, forInspection))
+	if (!ImportAndCheck(ref, copy, expect, whyNot, mode))
 	{
-		// ★★**AN INSPECTION COPY IS KEPT EVEN SO** (2026-09-20): the copy that FAILS the check is
-		//   the one worth looking at - it is how a nested table was found to vanish - and with the
-		//   sacrificial paragraphs left in it fails every time by construction.
-		//   ⚠The answer stays kFalse: "a document was made" and "it matches the origin" are two
-		//    statements, and every other caller acts on the second one.
-		if (!forInspection)
+		// ★★**TWO OF THE THREE MODES KEEP THE COPY EVEN SO** (2026-09-20): the copy that FAILS the
+		//   check is the one worth having - it is how a nested table was found to vanish, and a
+		//   round-trip check has nothing to measure if the thing it measures is closed first.
+		//   ⚠The answer stays kFalse for them: "a document was made" and "it matches the origin"
+		//    are two statements, and the comparison acts on the second one.
+		if (mode == kKCMRehydrateForComparison)
 		{
 			KCMCloseRehydrated(ref);	// nothing of ours stands on it any more
 			return kFalse;
@@ -521,6 +565,91 @@ bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, U
 	KCMMarkRehydratedClean(ref.GetDataBase());
 	outDoc = ref;
 	return kTrue;
+}
+
+bool16 KCMVerifyRehydration(IDataBase* copyDB, PMString& out)
+{
+	out.Clear();
+	out.SetTranslatable(kFalse);
+
+	const KCMResourceBytes* const origin = KCMOriginBytes();
+	if (origin == nil || origin->Size() == 0)
+	{
+		out = "no Task Start is held to check against";
+		return kFalse;
+	}
+
+	// The copy, photographed the way the origin was: ExportINX into memory, nothing on disk.
+	// ⚠The designmap labelling (KCMInxToDesignmap) is deliberately NOT done - it rewrites one word
+	//  of the processing instruction and one attribute of <Document>, and neither is an element
+	//  NAME, so it cannot change a single count on either side.
+	KCMResourceBytes copyXml;
+	PMString why;
+	if (!KCMTakeResourceSnapshot(DocOf(copyDB), copyXml, why))
+	{
+		out = "the copy could not be photographed: ";
+		out.Append(why);
+		return kFalse;
+	}
+
+	std::vector<KCMElementCount> diffs;
+	int32 same = 0;
+	KCMCompareElementCounts(origin->Bytes(), origin->Size(), copyXml.Bytes(), copyXml.Size(),
+							diffs, &same);
+
+	// ★THE THREE THAT GROW ON PURPOSE (the header says why). A DROP in any of them is still a real
+	//   difference, so the test is on the direction as well as the name.
+	int32 real = 0, expected = 0;
+	PMString detail;
+	detail.SetTranslatable(kFalse);
+	for (size_t i = 0; i < diffs.size(); ++i)
+	{
+		const KCMElementCount& row = diffs[i];
+		const bool16 isLabelName = (row.fName == "Label" || row.fName == "KeyValuePair"
+									|| row.fName == "Properties") ? kTrue : kFalse;
+		if (isLabelName && row.fInB > row.fInA)
+		{
+			++expected;
+			continue;
+		}
+		++real;
+		if (real <= 6)			// a status line has to end somewhere; the largest come first
+		{
+			detail.Append(real == 1 ? " " : ", ");
+			PMString name(row.fName.c_str());
+			name.SetTranslatable(kFalse);
+			detail.Append(name);
+			detail.Append(" ");
+			detail.AppendNumber(row.fInA);
+			detail.Append("/");
+			detail.AppendNumber(row.fInB);
+		}
+	}
+
+	if (real == 0)
+	{
+		out = "the copy matches the origin: ";
+		out.AppendNumber(same);
+		out.Append(" element names equal");
+		if (expected > 0)
+		{
+			out.Append(", ");
+			out.AppendNumber(expected);
+			out.Append(" grown by our own labels");
+		}
+		return kTrue;
+	}
+
+	out = "the copy DIFFERS from the origin in ";
+	out.AppendNumber(real);
+	out.Append(real == 1 ? " element name:" : " element names:");
+	out.Append(detail);
+	if (real > 6)
+		out.Append(", ...");
+	out.Append(" (");
+	out.AppendNumber(same);
+	out.Append(" equal)");
+	return kFalse;
 }
 
 void KCMMarkRehydratedClean(IDataBase* db)
@@ -542,12 +671,16 @@ bool16 KCMOpenOriginForInspection(PMString& outMessage)
 		return kFalse;
 	}
 
-	// 1. THE SAME COPY THE COMPARISON MAKES, with the two inspection rules on (the header says
-	//    what they are and why). ⚠kFalse here does NOT mean "no document": for an inspection copy
-	//    it is the usual answer, because the sacrificial paragraphs make it longer than the origin.
+	// 1. ★**THE COPY THE COMPARISON WOULD BE GIVEN**, kept whether or not it matches
+	//    (kKCMRehydrateKeepForCheck - the enum says what the three modes are for). ⚠kFalse here
+	//    does NOT mean "no document": a mismatched copy is exactly the one worth opening, and it
+	//    comes back in doc either way, with whyNot saying what did not line up.
+	//    ⚠**kKCMRehydrateUntouched is what this asked for on the evening of 2026-09-20** - the held
+	//     bytes with nothing injected - which is how the import's own damage was measured. It is
+	//     still there to switch back to when that question comes up again.
 	UIDRef doc = UIDRef::gNull;
 	PMString whyNot;
-	const bool16 matched = KCMRehydrate(*bytes, *shape, doc, whyNot, kTrue /*forInspection*/);
+	const bool16 matched = KCMRehydrate(*bytes, *shape, doc, whyNot, kKCMRehydrateKeepForCheck);
 	if (doc == UIDRef::gNull)
 	{
 		outMessage = "the Task Start copy could not be made at all: ";
@@ -580,13 +713,29 @@ bool16 KCMOpenOriginForInspection(PMString& outMessage)
 
 	// 3. ⚠**IT IS LEFT DIRTY-FREE BUT NOT TIDIED AWAY.** Whoever opened it closes it; nothing here
 	//    remembers it, because it is not a copy any comparison will be given.
+	// 2b. ★**THE ROUND-TRIP CHECK, ON THE COPY THAT WAS JUST MADE** (2026-09-20, the user's design).
+	//     It is run here - on the menu's copy - before anything is said about it, so that what the
+	//     status line reports is what the XML says rather than what the shape counters say. The
+	//     shape check answers "is it whole enough to compare"; this one answers "what is missing".
+	PMString checkSaid;
+	const bool16 checkPassed = KCMVerifyRehydration(doc.GetDataBase(), checkSaid);
+
 	outMessage = hasWindow ? "the Task Start copy is open in a window"
 						   : "the Task Start copy was made but no window would open for it (it is in app.documents)";
+	outMessage.Append(" - ");
+	outMessage.Append(checkSaid);
+	if (!checkPassed && matched)
+	{
+		// ⚠**THE TWO INSTRUMENTS CAN DISAGREE, AND THAT IS WORTH SAYING.** The shape check counts
+		//   spreads, pages, stories and characters; a nested table that vanishes changes the last
+		//   of those, but a fault that does not change any of the four would pass the shape check
+		//   and fail here. Saying so is how the next such fault gets noticed.
+		outMessage.Append(" [the shape check passed - only the XML saw this]");
+	}
 	if (!matched)
 	{
-		// ★THE WHOLE REASON THE ITEM EXISTS. With the sacrificial paragraphs left in, this is the
-		//   ordinary case - and the numbers say by how much, which is how a missing nested table
-		//   announces itself.
+		// The shape counters, after the XML's account of it: four numbers that say how far off the
+		// whole thing is, where the line above says what is missing by name.
 		outMessage.Append(" - ");
 		outMessage.Append(whyNot);
 	}

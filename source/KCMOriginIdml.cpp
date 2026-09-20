@@ -16,9 +16,11 @@
 #include "Utils.h"
 #include "WideString.h"
 
+#include "KCMCore.h"				// KCMActiveDoc - the document in front (KCMSaveActiveDocXml)
 #include "KCMOrigin.h"				// KCMOriginBytes - the held snapshot
 #include "KCMOriginIdml.h"
 #include "KCMResourceBytes.h"
+#include "KCMResourceSnapshot.h"	// KCMTakeResourceSnapshot - ExportINX into memory
 
 namespace
 {
@@ -194,6 +196,55 @@ int32 KCMOriginSaveIdml(const IDFile& file, PMString& whyNot)
 	{
 		whyNot = "the IDML container could not be closed, UCFErrorCode ";
 		whyNot.AppendNumber(static_cast<int32>(closed));
+		return 3;
+	}
+	return 0;
+}
+
+int32 KCMSaveActiveDocXml(const IDFile& file, PMString& whyNot)
+{
+	whyNot.Clear();
+	whyNot.SetTranslatable(kFalse);
+
+	// 1. the same photograph the Resources mode takes, of the document in front. KCMActiveDoc
+	//    resolves through IActiveContext::GetContextDocument - the only one of the three "front
+	//    document" routes that means what it says. ⚠A nil document is KCMTakeResourceSnapshot's to
+	//    refuse, with a reason, so it is not tested twice here.
+	KCMResourceBytes bytes;
+	PMString why;
+	if (!KCMTakeResourceSnapshot(KCMActiveDoc(), bytes, why))
+	{
+		whyNot = why;
+		return 1;
+	}
+
+	// 2. ...labelled as a designmap, exactly as Task Start labels the origin (KCMInxToDesignmap).
+	//    ⚠A failure here leaves the bytes UNCHANGED and they are still a perfectly good INX - but
+	//     the two sides would then not be the same kind of thing, which is the whole point of
+	//     writing this one, so it is reported rather than shrugged off.
+	PMString labelWhy;
+	if (!KCMInxToDesignmap(bytes, labelWhy))
+	{
+		whyNot = "the snapshot could not be labelled as a designmap: ";
+		whyNot.Append(labelWhy);
+		return 1;
+	}
+
+	// 3. write, Flush, THEN read the state - XferByte may only reach the buffer, so a failed write
+	//    can surface at the Flush (the same three steps, and the same reason, as KCMOriginSaveRaw).
+	InterfacePtr<IPMStream> stream(StreamUtil::CreateFileStreamWrite(file, kOpenOut | kOpenTrunc, 'TEXT', 'CWIE'));
+	if (stream == nil)
+	{
+		whyNot = "the file could not be created";
+		return 2;
+	}
+	stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(bytes.Bytes())), static_cast<int32>(bytes.Size()));
+	stream->Flush();
+	const bool16 failed = (stream->GetStreamState() == kStreamStateFailure) ? kTrue : kFalse;
+	stream->Close();
+	if (failed)
+	{
+		whyNot = "the file could not be written";
 		return 3;
 	}
 	return 0;

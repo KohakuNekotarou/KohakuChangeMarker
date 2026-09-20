@@ -15,8 +15,10 @@
 //      stories[n].kcmAttrChangeCount     - formatting, applied styles and overrides
 //      stories[n].kcmOtherChangeCount    - everything else
 //      document.kcmTransparencyItemCount - entries in the host's item-has-transparency list
-//      app.kcmSaveOriginXml(file)        - ★THE ONE METHOD (2026-09-14). Everything above it is a
-//                                          read-only property.
+//      app.kcmSaveOriginXml(file)        - the held Task Start origin, as Task Start took it
+//      app.kcmSaveDocXml(file)           - ★the ACTIVE DOCUMENT's own internal IDML (2026-09-20),
+//                                          so the two can be compared as XML. Everything above
+//                                          these is a read-only property.
 //
 //  ⚠**THE LIST ABOVE IS A READER'S MAP, NOT THE COUNT -- re-read it from KCM.fr's Provider blocks.**
 //    It had gone FOUR properties stale by 2026-09-14: kcmStoryRows, kcmOriginStatus and the two
@@ -135,7 +137,8 @@
 // of the widget-touching functions in it -- a dead dependency. What it reads is
 // KCMGetSessionStatus (declared in KCMModelNotify.h), which is not a reverse dependency.
 #include "KCMOrigin.h"			// KCMOriginStatusLine - the Task Start origin, read from outside
-#include "KCMOriginIdml.h"		// KCMOriginSaveIdml - the same origin, in an IDML container
+#include "KCMOriginIdml.h"		// KCMOriginSaveIdml - the same origin, in an IDML container;
+								// KCMSaveActiveDocXml - the document in front, as its own designmap
 #include "KCMPdfSpike.h"		// KCMProbePdfRoute - the measuring door for the report's temp-file question
 #include "KCMResourceSnapshot.h"	// KCMDescribeResourceSnapshot - the Resources mode's export
 #include "KCMResourceDiff.h"	// KCMDescribeResourceDiff - the same mode's comparison of the two
@@ -172,7 +175,7 @@ public:
 	    whichever object we were asked about. */
 	virtual ErrorCode AccessProperty(ScriptID propID, IScriptRequestData* data, IScript* script);
 
-	/** Serve the methods on app: kcmSaveOriginXml / kcmSaveOriginIdml (file), kcmProbePdfRoute(), and
+	/** Serve the methods on app: kcmSaveOriginXml / kcmSaveOriginIdml / kcmSaveDocXml (file), kcmProbePdfRoute(), and
 	    the story text round trip's four (2026-09-17). ("the only method this plug-in publishes" stood
 	    here until then, and had stopped being true on 2026-09-15.) Anything else goes to the base
 	    class, which is what keeps the rest of the scripting working on whichever object we were
@@ -443,13 +446,18 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 		}
 	}
 
-	// ★TWO METHODS, ONE BODY (2026-09-15). app.kcmSaveOriginXml(file) and
-	//   app.kcmSaveOriginIdml(file) differ in exactly one call: one writes the origin's bytes, the
-	//   other wraps the same bytes in an IDML container. Everything around it - the argument, the
-	//   status numbers, the shape of the answer - is identical, so writing it twice would be two
-	//   places to keep agreeing about the same four numbers.
+	// ★THREE METHODS, ONE BODY (two since 2026-09-15, three since 2026-09-20). They differ in
+	//   exactly one call: kcmSaveOriginXml writes the origin's bytes, kcmSaveOriginIdml wraps those
+	//   same bytes in an IDML container, and kcmSaveDocXml photographs the ACTIVE DOCUMENT instead
+	//   of reading the origin at all. Everything around it - the argument, the status scale, the
+	//   shape of the answer - is identical, so writing it three times would be three places to keep
+	//   agreeing about the same four numbers.
+	//   ⚠**The third one's status 1 reads differently**: "nothing could be photographed" rather
+	//    than "no origin is held". Same number, same position on the scale (nothing to write), and
+	//    the wording that differs lives in KCM.fr where the caller reads it.
 	const bool16 wantsIdml = (methodID.Get() == e_KCMSaveOriginIdml) ? kTrue : kFalse;
-	if (methodID.Get() != e_KCMSaveOriginXml && !wantsIdml)
+	const bool16 wantsDoc  = (methodID.Get() == e_KCMSaveDocXml) ? kTrue : kFalse;
+	if (methodID.Get() != e_KCMSaveOriginXml && !wantsIdml && !wantsDoc)
 		return CScriptProvider::HandleMethod(methodID, data, script);
 
 	// 4 = "the file argument could not be read", shared by the two failures below because a caller
@@ -467,9 +475,15 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 		if (arg.GetFile(&file, data->GetRequestContext()) == kSuccess)
 		{
 			PMString whyNot;	// the same answer in words; nothing outside reads it yet
-			// ★the numbers are decided in KCMOrigin.h, once, and both writers answer on that scale
-			status = wantsIdml ? KCMOriginSaveIdml(file, whyNot)
-			                   : KCMOriginSaveRaw(file, whyNot);
+			// ★the numbers are decided in KCMOrigin.h, once, and all three writers answer on that
+			//   scale. Spelled out rather than nested in one expression: three branches read as
+			//   three branches.
+			if (wantsDoc)
+				status = KCMSaveActiveDocXml(file, whyNot);
+			else if (wantsIdml)
+				status = KCMOriginSaveIdml(file, whyNot);
+			else
+				status = KCMOriginSaveRaw(file, whyNot);
 		}
 	}
 

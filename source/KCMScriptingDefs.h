@@ -198,6 +198,18 @@ enum KCMScriptMethods
 	//     submission (the unit of registration is the code-and-name pair, so the name is settled now).
 	e_KCMSaveOriginIdml = 'eKGi',
 
+	// ★★g = **g**et this document's XML. app.kcmSaveDocXml(file) - the ACTIVE document's own
+	//   internal IDML, so that a rehydrated copy and the origin it came from can be compared as
+	//   XML rather than by the four numbers of a shape (2026-09-20, the user's ask).
+	//   ⚠**'d' - the obvious letter for "document" - is NOT free**: it is in the ledger as the
+	//     retired KESCM method kescmDisarmMousePeek, and the ledger decides, not source/.
+	//   ⚠'eKGg' was MEASURED free, not assumed: 0 files across the four home-grown plug-ins, docs
+	//     and work, ★with the search validated in the same run - 'eKGs' answered 6 files and
+	//     'eKGj' answered 1, so a pattern that matches nothing was not being mistaken for a free
+	//     code (the 2026-08-18 near-miss is what that check is for).
+	//   ⚠Not registered with Adobe.
+	e_KCMSaveDocXml = 'eKGg',
+
 	// ★A MEASURING DOOR, not a feature (2026-09-14). app.kcmProbePdfRoute() runs the experiment
 	// in KCMPdfSpike.cpp on the active document's first page and returns the whole reading as one
 	// string, a line per step. It exists because the Before/After report has to stop writing
