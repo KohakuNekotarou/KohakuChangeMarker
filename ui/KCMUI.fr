@@ -1345,27 +1345,15 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMChangeRowRestoreMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Change to Imported Text" (2026-09-15): the same command in the Import mode, where the Source
-		// is the copy the reader's own edited words were poured into - so taking a change in is a
-		// replacement, not a restoration. Exactly one of the two is ever live, and a greyed item
-		// does not appear, so the menu shows one name or the other and never both.
-		kKCMChangeRowImportActionID,
-		kKCMChangeRowMenuName,
-		kKCMChangeRowImportMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
-		// "Undo the Restore" / "Change Back to the Original" (2026-09-16, the user's ask: "Ctrl+Z
-		// puts it back, but I want it on the right-click menu too"). The opposite of the pair
-		// above, and built the same way: one ActionID per mode, each greyed in the other's, so the
-		// menu shows one name and never both. Live only on a change that is standing as taken in.
+		// "Undo the Restore" (2026-09-16, the user's ask: "Ctrl+Z puts it back, but I want it on the
+		// right-click menu too"): the opposite of the item above. Live only on a change that is
+		// standing as taken in.
+		// ⚠Both were PAIRS until 2026-09-20 - one ActionID per mode, each greyed in the other's, so
+		//   that the Import mode could call them "Change to Imported Text" and "Change Back to the
+		//   Original". The fourth mode is gone and so are its two names.
 		kKCMChangeRowUndoRestoreActionID,
 		kKCMChangeRowMenuName,
 		kKCMChangeRowUndoRestoreMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
-		kKCMChangeRowUndoImportActionID,
-		kKCMChangeRowMenuName,
-		kKCMChangeRowUndoImportMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 	}
@@ -1789,37 +1777,16 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// ★"Change to Imported Text" - the same action as the one above, under the name the Import mode
-		//   calls for, and greyed wherever that mode is not up (KCMChangeRowCanImport). Two items
-		//   rather than one renaming item because nothing in KCM is a dynamic menu, and because the
-		//   panel already tells items apart by mode through their enabling.
-		kKCMActionComponentBoss,
-		kKCMChangeRowImportActionID,
-		kKCMChangeRowImportMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// live only in the Import mode, on a change not taken in yet (KCMChangeRowCanImport)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		// ★"Undo the Restore" / "Change Back to the Original" (2026-09-16) - the opposite of the
-		//   pair above, built as a pair for the same reason. ⚠It is a COMMAND, not Edit > Undo: it
-		//   works whatever has been done since, and it can itself be undone.
+		// ★"Undo the Restore" (2026-09-16) - the opposite of the item above. ⚠It is a COMMAND, not
+		//   Edit > Undo: it works whatever has been done since, and it can itself be undone.
+		//   (Its Import-mode twin, "Change Back to the Original", went with the fourth mode on
+		//    2026-09-20, as did "Change to Imported Text" above.)
 		kKCMActionComponentBoss,
 		kKCMChangeRowUndoRestoreActionID,
 		kKCMChangeRowUndoRestoreMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// live in the Story mode on a change standing as taken in (KCMChangeRowCanUndoRestore)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		kKCMActionComponentBoss,
-		kKCMChangeRowUndoImportActionID,
-		kKCMChangeRowUndoImportMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// the same, in the Import mode (KCMChangeRowCanUndoImport)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

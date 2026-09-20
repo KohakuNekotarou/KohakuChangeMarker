@@ -175,21 +175,20 @@ enum KCMCompareMode
 {
 	kKCMModePixel = 0,	// the default: rasterize the pages and compare pixels (KCM's original comparison)
 	kKCMModeStory = 1,		// compare the stories' text, paragraph by paragraph and then character by character
-	kKCMModeResources = 2,	// compare the DEFINITIONS - styles, swatches, layers - by exporting each document as
+	kKCMModeResources = 2	// compare the DEFINITIONS - styles, swatches, layers - by exporting each document as
 							// XML and pairing the definitions by name. It is the only mode that sees a change
 							// to something nobody has applied: such a change cannot move a pixel and does not
 							// touch a word, so neither of the other two can report it.
 
-	// ★★★**THE FOURTH IS NOT LIKE THE OTHER THREE** (2026-09-15, the user's design). They answer
-	//   "what is being compared"; this one answers "WHERE THE CHANGE CAME FROM" - a folder of HTML
-	//   the reader edited outside InDesign and imported. It is named after the action that makes
-	//   it, so the panel and the menu say the same word.
-	// ⚠**IT IS MODAL, AND THAT IS WHAT MAKES IT CHEAP.** While it is up, the other three and Task
-	//   Start are greyed, and Finish Import (the Start/Stop item's name while importing) is the way
-	//   out. Because no other comparison can run
-	//   inside it, the reader's own Task Start can simply be PARKED for its duration and put back
-	//   afterwards (KCMOrigin.h, KCMParkOrigin) instead of the plug-in carrying two origins.
-	kKCMModeImport = 3
+	// ⛔**THERE WAS A FOURTH, `kKCMModeImport = 3`, AND IT IS GONE** (2026-09-20, with the
+	//   Import-mode code it belonged to). It did not answer "what is being compared" like these
+	//   three - it answered "where the change came from", a folder the reader had edited outside
+	//   InDesign, and it was MODAL: while it was up the other three and Task Start were greyed and
+	//   "Finish Import" was the way out. ★An import now puts its words into the document and shows
+	//   them in the STORY mode against the Task Start it took, so there is nothing to be modal about.
+	//   ⚠The VALUE 3 is free again as far as anything saved goes: the settings file never wrote
+	//    this mode (KCMPanelState spells out the three it knows and treats anything else as "leave
+	//    it alone"), which was measured before the removal.
 };
 
 // ⚠★★**EVERYTHING BELOW IS HIDDEN FROM ODFRC.** This header is included by KCMUI.fr, and the
@@ -199,16 +198,15 @@ enum KCMCompareMode
 
 /** Does this mode show the Story Edits rows - the paragraph and character comparison?
 
-	★★★**ONE QUESTION, ONE PLACE.** The Import mode IS the Story comparison, with a different
-	Source: the copy holds the words the reader edited outside InDesign. Twelve places asked
-	`== kKCMModeStory` before it existed, five of them deciding real behaviour, and a fourth mode
-	spelled `(a || b)` in five files is a fourth mode that works in four of them.
-	⚠**MEASURED 2026-09-15**: the first import reported nothing at all because ONE of those five -
-	 the line that runs the text diff - had not been taught the new mode. The rest of the machinery
-	 was working perfectly. */
+	★★★**ONE QUESTION, ONE PLACE** - and it stays a function although only one mode answers
+	yes today. ⚠When a fourth mode shared this answer (the Import mode, 2026-09-15), TWELVE places
+	asked `== kKCMModeStory` by hand and five of them decided real behaviour; the first import
+	reported nothing at all because ONE of those five - the line that runs the text diff - had not
+	been taught the new mode. **A question spelled out at each call site is a question that will be
+	answered differently at one of them.** */
 inline bool16 KCMModeUsesStoryRows(KCMCompareMode mode)
 {
-	return (mode == kKCMModeStory || mode == kKCMModeImport) ? kTrue : kFalse;
+	return (mode == kKCMModeStory) ? kTrue : kFalse;
 }
 
 #endif // __ODFRC__

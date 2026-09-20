@@ -814,7 +814,7 @@ resource VersionedScriptElementInfo(10)
 			kKCMImportStoryTextMethodScriptElement,
 			e_KCMImportStoryText,
 			"kcm import story text",			// name -> app.kcmImportStoryText(file)
-			"Import one edited story file into the active document's Import mode, as Import Story Text does, without the dialog.",
+			"Import one edited story file into the active document, as Import Story Text does, without the dialog.",
 			StringType,
 			"The sentence the status line shows"
 			{
@@ -853,7 +853,7 @@ resource VersionedScriptElementInfo(10)
 			kKCMStopComparisonMethodScriptElement,
 			e_KCMStopComparison,
 			"kcm stop comparison",				// name -> app.kcmStopComparison()
-			"Stop the comparison - which ends an import - as Stop Comparison (Finish Import while importing) does.",
+			"Stop the comparison, as the flyout's Stop Comparison does.",
 			StringType,
 			"The status line afterwards"
 			{ /* void */ }

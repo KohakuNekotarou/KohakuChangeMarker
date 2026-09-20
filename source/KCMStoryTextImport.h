@@ -17,11 +17,10 @@
 //  Restore" puts it in again, Ctrl+Z takes the whole import back. What could NOT go in is listed
 //  first, with a red "!" (KCMImportRefusals below).
 //
-//  ⚠**UNTIL 2026-09-19 THIS WAS THE OTHER WAY ROUND** - the words went into the task-start COPY and a
+//  ⛔**UNTIL 2026-09-19 THIS WAS THE OTHER WAY ROUND** - the words went into the task-start COPY and a
 //  fourth "Import" mode showed them, with "Change to Imported Text" putting one in at a time. That
-//  mode's code is still here (KCMInImportMode, KCMEndImportMode, the held set) and is never entered
-//  now; it sleeps until the trial is decided (the backup is the tag
-//  backup/2026-09-19-import-as-4th-mode). Do not wire anything new to it.
+//  mode slept here, entered by nothing, until the trial was decided; **its code went on 2026-09-20**
+//  (the user's instruction). The backup is the tag backup/2026-09-19-import-as-4th-mode.
 //
 //  ★**THE FILE NAMES ARE THE DOCUMENT'S OWN STORY UIDS**, because the export read that document -
 //  and the words go into that document, so the pairing is the uid itself.
@@ -107,17 +106,6 @@ void KCMClearImportRefusals();
 bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMString& whyNot,
 							 bool16* outCancelled = nil);
 
-/** The set held for the import mode, or nil when none is held. */
-const KCMStoryTextSet* KCMHeldStoryText();
-
-/** Hold a copy of `set`, dropping whatever was held before. */
-void KCMHoldStoryText(const KCMStoryTextSet& set);
-
-/** Drop it. Called by KCMReleaseOrigin - the two belong to each other - and by the model's
-    shutdown, because this static holds PMStrings and std::strings (KCMStoryList.h states the rule
-    and what forgetting it costs). */
-void KCMReleaseStoryText();
-
 /** Pour `set` into `db` - the reader's own document (2026-09-19; until then the task-start copy).
 
     ★**THE STORIES ARE PAIRED BY THEIR OWN UID**: the file is named after the document's story, and
@@ -162,22 +150,6 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
     @param outMessage what happened, for the panel's status line.
     @return kFalse when nothing could be read or nothing could be applied, or the reader cancelled. */
 bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage);
-
-/** Whether the fourth mode is up. ⚠**ALWAYS kFalse SINCE 2026-09-19**: nothing holds the words any
-    more (KCMImportStoryText pours them straight in), so the mode is never entered. Kept, with what
-    follows, for the trial's sake - see the file comment.
-
-    ★★★**IT IS MODAL, AND THAT IS THE POINT** (the user's rule): while an import is showing, the
-      other three modes and Task Start are greyed, and Finish Import (the Start/Stop item, renamed
-      while importing - 2026-09-17) is the way out. Because no
-      other comparison can run inside it, the reader's own Task Start can simply be parked for its
-      duration - which is what lets one origin slot serve both. */
-bool16 KCMInImportMode();
-
-/** Leave it: the import's own origin goes, the reader's parked Task Start comes back, and the mode
-    that was showing before returns. Called by Stop Comparison (Finish Import while importing); doing
-    nothing when no import is up. */
-void KCMEndImportMode();
 
 #endif // __KCMStoryTextImport_h__
 

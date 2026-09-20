@@ -35,7 +35,6 @@
 #include "KCMExternalSource.h"	// the lent Source: registered and chosen by KCMStartComparisonWithSourceDB, forgotten by the lender's Release
 #include "KCMOrigin.h"			// the origin (Task Start): the third kind of Source, chosen by KCMChooseOriginPair
 #include "KCMOriginCompare.h"	// KCMOriginStart / KCMOriginRefresh / KCMOriginArmed / KCMOriginOnStop - the origin's Start and Refresh
-#include "KCMStoryTextImport.h"	// KCMEndImportMode - Stop is the way out of the fourth mode
 
 //----------------------------------------------------------------------------------------
 // The resolver: which two documents to compare
@@ -310,12 +309,6 @@ bool16 KCMCanStartComparison()
 // one place** ([[one-question-one-place]]).
 void KCMStopComparison()
 {
-	// ★★**STOP IS THE WAY OUT OF THE IMPORT MODE** (2026-09-15, the user's design): it already
-	//   means "this comparison is over", so a second gesture saying the same thing would be a
-	//   second place to keep in step. Leaving gives the reader their parked Task Start back and
-	//   restores the mode that was showing. It does nothing when no import is up.
-	KCMEndImportMode();
-
 	// **The transparency-list insurance, on the pair being stopped** (KCMRingAdornment.h says what
 	//   it is for). Asked through KCMIsDocDBOpen first: an armed db whose document has since closed
 	//   is a pointer nothing may dereference, and Stop is reachable in exactly that state.

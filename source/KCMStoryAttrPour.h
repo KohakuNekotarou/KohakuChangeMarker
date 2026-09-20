@@ -50,7 +50,7 @@ class ITextModel;
 	the twenty-seven that are its look are not).
 
 	@param model the copy's story. ⚠**NEVER THE READER'S OWN DOCUMENT** - an import does not change
-		   that, and the one door into it is "Change to Imported Text" (KCMStoryRestore).
+		   that (KCMStoryRestore). (⛔The door was called "Change to Imported Text" until 2026-09-20.)
 	@param paraStart where this paragraph begins, as a TextIndex, from the re-read.
 	@param docAttrs the paragraph's attributes as the copy now carries them - fRuby, fKenten and
 		   fUncountedAt are read.

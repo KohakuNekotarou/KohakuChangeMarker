@@ -55,7 +55,7 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage);
 bool16 KCMStoryWritesAllowed();
 
 /** The opposite: put change `which` of row `nth` back the way it was before it was taken in
-    ("Undo the Restore" / "Change Back to the Original", 2026-09-16).
+    ("Undo the Restore", 2026-09-16).
 
     ★★**A COMMAND, NOT Edit > Undo.** Ctrl+Z reaches only the last thing done; this reaches the one
       change the reader points at, whatever they have done since - and is itself one undo step.
@@ -68,7 +68,7 @@ bool16 KCMStoryWritesAllowed();
 bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage);
 
 /** The one command that makes [at, at+count) of `model` read `words` - for every writer of WORDS: the
-    restore, "Change Back to the Original" and the import's pour into the copy (2026-09-17).
+    restore, the undo of one, and the import's pour into the document (2026-09-17).
 
     ★★**A DELETION IS A DeleteCmd** (the user's call: "match the official way"). Every deletion in the
      SDK's samples is one (codesnippets/SnpTextModelHelper.cpp:109, hiddentext/HidTxtCommands.cpp:264,
@@ -112,11 +112,13 @@ ErrorCode KCMApplyKentenKind(ITextModel* model, TextIndex at, int32 len, int16 k
 bool16 KCMKentenKindOf(const PMString& name, int16& outKind);
 
 /** Tate-chu-yoko ON or OFF over [at, at+len) - kTATatechuyokoAttrBoss alone, OFF written as kFalse
-    (2026-09-17: the Import mode takes it in). Its X/Y offsets are its look and are left alone. */
+    (2026-09-17; restorable wherever it stands since 2026-09-20). Its X/Y offsets are its look and
+    are left alone. */
 ErrorCode KCMApplyTcy(ITextModel* model, TextIndex at, int32 len, bool16 on);
 
-/** Warichu ON or OFF over [at, at+len) - kTAWarichuAttrBoss alone, OFF written as kFalse (2026-09-17:
-    the Import mode takes it in). Its settings (lines, size, alignment...) are its look and are left alone. */
+/** Warichu ON or OFF over [at, at+len) - kTAWarichuAttrBoss alone, OFF written as kFalse
+    (2026-09-17; restorable wherever it stands since 2026-09-20). Its settings (lines, size,
+    alignment...) are its look and are left alone. */
 ErrorCode KCMApplyWarichu(ITextModel* model, TextIndex at, int32 len, bool16 on);
 
 #endif // __KCMStoryRestore_h__

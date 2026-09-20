@@ -87,9 +87,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMResourceRowEditMenuKey,		"Edit...",
                 kKCMResourceAttrEditMenuKey,		"Edit...",
                 kKCMChangeRowRestoreMenuKey,		"Restore Source Text",
-                kKCMChangeRowImportMenuKey,		"Change to Imported Text",
                 kKCMChangeRowUndoRestoreMenuKey,	"Undo the Restore",
-                kKCMChangeRowUndoImportMenuKey,	"Change Back to the Original",
                 kKCMIgnorePageNumMenuKey,			"Ignore Page Number Marker",
                 kKCMPairByUidMenuKey,				"Pair Pages by UID",
                 // ("Hold to Hide Marks" was retired on 2026-08-22 - see KCMUI.fr's MenuDef note.)

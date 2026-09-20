@@ -54,12 +54,9 @@ bool16 StashedChange(IKCMStoryEditsFacade::Change& out)
 
 	// ★THE MODES WHOSE CHILD ROWS ARE TEXT CHANGES. The list is shared with the Resources mode,
 	//   whose child rows carry the same node class and index shape but are not changes in a
-	//   story's words at all.
-	// ⚠★★**AND THE IMPORT MODE IS ONE OF THEM** (2026-09-15). This read `!= kKCMModeStory` until
-	//   today, which quietly shut the whole child-row menu in the Import mode - the mode whose
-	//   entire purpose is to take those changes in one at a time. The question is asked in one
-	//   place for exactly this reason (KCMModeUsesStoryRows, in the boundary header), and this
-	//   was the one caller still spelling it out by hand.
+	//   story's words at all. ★The question is asked in ONE place (KCMModeUsesStoryRows, in the
+	//   boundary header) - this was once the one caller that spelled it out by hand, and doing so
+	//   quietly shut the whole child-row menu in a mode that needed it.
 	if (!KCMModeUsesStoryRows(Utils<IKCMCompareFacade>()->GetCompareMode()))
 		return kFalse;
 
@@ -105,11 +102,8 @@ bool16 KCMChangeRowCanRestore()
 	if (!StashedChange(change))
 		return kFalse;
 
-	// ★NOT IN THE IMPORT MODE, where the same command is offered under its own name and
-	//   ActionID ("Change to Imported Text", KCMChangeRowCanImport below). Exactly one of the two is
-	//   ever live, so the menu shows one name and never both.
-	if (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeImport)
-		return kFalse;
+	// (⛔Until 2026-09-20 this also refused in the fourth mode, where the same command was offered
+	//  under its own name - "Change to Imported Text". The mode and the second name are gone.)
 
 	// ★★**AND NOT WHEN TWO DOCUMENTS ARE COMPARED** (2026-09-16, the user's rule: the Source is
 	//   there to copy from). The model decides (CanWriteToTarget) and its writes refuse on it too.
@@ -119,7 +113,7 @@ bool16 KCMChangeRowCanRestore()
 	// ★**AND NOT ON ONE ALREADY RESTORED** (2026-09-15, when the Story mode started keeping those
 	//   rows too, so that a Ctrl+Z has something to come back to). The older words are in the
 	//   document and the row is showing them: offering to write them again would be offering to do
-	//   nothing. The Import half has asked this from its first day.
+	//   nothing.
 	if (change.fReplaced)
 		return kFalse;
 
@@ -135,29 +129,6 @@ bool16 KCMChangeRowCanRestore()
 	// one. What cannot be written back (a custom kenten mark, an attribute whose paragraph's
 	// words also changed) is refused by the model with a reason on the status line.
 	return kTrue;
-}
-
-bool16 KCMChangeRowCanImport()
-{
-	IKCMStoryEditsFacade::Change change;
-	if (!StashedChange(change))
-		return kFalse;
-
-	// The Import mode's half of the pair above.
-	if (Utils<IKCMCompareFacade>()->GetCompareMode() != kKCMModeImport)
-		return kFalse;
-
-	// ★A CHANGE ALREADY TAKEN IN CANNOT BE TAKEN IN AGAIN. Its row is kept so that the reader can
-	//   see what they did - not so that they can do it twice over words that already match.
-	// ⚠fReplaced is the model's answer about the DOCUMENT (the story's counter has not moved
-	//   since the write), so after an undo this goes live again and the model refuses with its
-	//   own reason. Whether that refusal should instead be a greyed item is a thing to look at on
-	//   screen; both halves of it are one line.
-	if (change.fReplaced)
-		return kFalse;
-
-	// The same rule as the Story mode's half above, for the same reason (fWriteBlock).
-	return (change.fWriteBlock != 0) ? kFalse : kTrue;
 }
 
 bool16 KCMChangeRowRestore()
@@ -204,20 +175,16 @@ namespace
 {
 
 /*	CanUndoRestore
-	The one question both halves of the pair ask: the right mode, and a change that is STANDING as
-	taken in. ⚠fReplaced is the MODEL's answer, worked out from the document's own counter - so a
-	change the reader has already put back with Ctrl+Z greys the item instead of offering a second
-	road to something that is done.
+	A change that is STANDING as taken in. ⚠fReplaced is the MODEL's answer, worked out from the
+	document's own counter - so a change the reader has already put back with Ctrl+Z greys the item
+	instead of offering a second road to something that is done.
+	⚠It took a `wantImport` flag until 2026-09-20, when the item was a pair (this one and "Change
+	 Back to the Original"). The fourth mode is gone and so is the second name.
 */
-bool16 CanUndoRestore(bool16 wantImport)
+bool16 CanUndoRestore()
 {
 	IKCMStoryEditsFacade::Change change;
 	if (!StashedChange(change))
-		return kFalse;
-
-	const bool16 isImport = (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeImport)
-						  ? kTrue : kFalse;
-	if (isImport != wantImport)
 		return kFalse;
 
 	// Not when two documents are compared - the same rule and the same one answer as the take-in.
@@ -231,12 +198,7 @@ bool16 CanUndoRestore(bool16 wantImport)
 
 bool16 KCMChangeRowCanUndoRestore()
 {
-	return CanUndoRestore(kFalse);
-}
-
-bool16 KCMChangeRowCanUndoImport()
-{
-	return CanUndoRestore(kTrue);
+	return CanUndoRestore();
 }
 
 bool16 KCMChangeRowUndoRestore()

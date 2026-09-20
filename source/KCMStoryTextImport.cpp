@@ -31,7 +31,7 @@
 #include "KCMComparisonRun.h"		// KCMToggleStartStop - the start, through the one resolver
 #include "KCMStoryAttrPour.h"		// the ruby and the kenten, after the words are in
 #include "KCMStoryRestore.h"		// KCMCreateWordsWriteCmd - one answer to "replace, insert or delete"
-#include "KCMCore.h"				// KCMActiveDocDB / KCMGetCompareMode / KCMSetCompareMode
+#include "KCMCore.h"				// KCMActiveDocDB / KCMSetCompareMode - the import shows its result in the Story mode
 #include "KCMOrigin.h"				// the origin slot: taken for this mode, parked for the reader's
 #include "KCMRehydrate.h"			// KCMReadOriginUidLabel - the copy's stories carry the original UID
 #include "KCMParaText.h"			// ModelOffsetInParagraph / AppendUtf8
@@ -105,33 +105,6 @@ const int32		kImportUnitsAll		= 1000;
 
 /** What the status line says whenever the reader pressed Cancel, wherever in the import it landed. */
 const char* const	kImportCancelledMessage = "import: cancelled - your document is unchanged";
-
-/** Which mode was showing before the import took over.
-
-	⚠A file-static, so the model's shutdown empties nothing here on purpose: it is a plain value.
-	 (KCMStoryList.h's rule is about statics holding strings and rows.) */
-KCMCompareMode	sModeBeforeImport = kKCMModePixel;
-
-/** The words waiting to go into the next copy. ⚠A static holding PMStrings and std::strings, so it
-	has a line in the model's shutdown (KCMStoryList.h says what forgetting that costs).
-
-	★★★**sHolding IS ALSO THE ANSWER TO "IS THE IMPORT MODE UP?"** (2026-09-15). A second flag
-	stood here, and the two parted company the first time a document was CLOSED with an import
-	showing: the words went - KCMReleaseOrigin drops them - and the flag stayed. The UI greys
-	Pixel, Story, Resources and Task Start whenever that flag is set (KCMActionComponent.cpp), and
-	Stop Comparison (named Finish Import while importing, 2026-09-17) - the only caller of
-	KCMEndImportMode - is itself greyed once nothing is armed,
-	so there was no way out but restarting InDesign. Measured, then predicted by the user in the
-	same minute ("Import モードが解除されない気がしました").
-	⇒ **the mode IS the words being held**, asked in one place ([[one-question-one-place]]). */
-KCMStoryTextSet	sHeld;
-bool16			sHolding = kFalse;
-
-/** What the last pour said about a three-way merge - "N change(s) from Word, M conflict(s) kept the
-	document's words (...)" - for the import's status line (2026-09-19, live test: the pour runs inside
-	the rehydration and its sentence went nowhere, so a conflict was invisible). Empty when the last
-	pour merged nothing. Dropped with the words (KCMReleaseStoryText). */
-PMString		sLastMergeNote;
 
 /** What the last import could not put in, one entry each - the material of the "!" rows
 	(KCMStoryList::Build reads it through KCMImportRefusals; 2026-09-19). ⚠A static holding
@@ -1910,9 +1883,9 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 		AppendCount(outMessage, ", ", attrEdits, " ruby/kenten write(s)");
 	// ★A .docx MERGED THREE WAYS SAYS SO (stage 3): how many of Word's changes went in, and how many
 	//   the document's own edits kept out - the first of those named, so the reader knows where to look.
-	//   ⚠Kept in sLastMergeNote as well: this sentence is the pour's, and the pour runs inside the
-	//    rehydration, whose caller has no status line - the import's own sentence picks it up.
-	sLastMergeNote.Clear();
+	//   ⚠It was kept in a file-static until 2026-09-20, for a caller that has not existed since the
+	//    pour moved out of the rehydration: the pour and this sentence are now one function.
+	PMString sLastMergeNote;
 	sLastMergeNote.SetTranslatable(kFalse);
 	if (wordChanges > 0 || conflicts > 0)
 	{
@@ -1962,59 +1935,6 @@ void KCMClearImportRefusals()
 {
 	// A fresh vector releases the storage too (the same reason KCMStoryList::ShutdownCleanup gives).
 	sRefusals = std::vector<KCMImportRefusal>();
-}
-
-const KCMStoryTextSet* KCMHeldStoryText()
-{
-	return sHolding ? &sHeld : nil;
-}
-
-void KCMHoldStoryText(const KCMStoryTextSet& set)
-{
-	sHeld = set;
-	sHolding = kTrue;
-}
-
-void KCMReleaseStoryText()
-{
-	sLastMergeNote.Clear();
-	const bool16 wasImporting = sHolding;
-	sHeld = KCMStoryTextSet();
-	sHolding = kFalse;
-
-	// ★★★**THE MODE COMES DOWN WITH THE WORDS, AND THIS IS THE ONLY PLACE THAT CAN DO IT.** A
-	//   document closed while an import was showing arrives here through KCMReleaseOrigin and
-	//   through nothing else: Stop Comparison (Finish Import while importing), which is the one
-	//   caller of KCMEndImportMode, is
-	//   greyed by then. Leaving kKCMModeImport set stranded the reader with every mode and Task
-	//   Start greyed (measured 2026-09-15).
-	// ⚠Guarded on BOTH counts on purpose: a release that was not an import must not move the
-	//   reader's mode, and neither must the second, empty pass KCMEndImportMode makes through
-	//   KCMReleaseOrigin.
-	if (wasImporting && KCMGetCompareMode() == kKCMModeImport)
-		KCMSetCompareMode(sModeBeforeImport);
-}
-
-bool16 KCMInImportMode()
-{
-	// ★One fact, one place: holding the edited words IS the mode (see sHolding).
-	return sHolding;
-}
-
-void KCMEndImportMode()
-{
-	if (!KCMInImportMode())
-		return;
-
-	// ★THE ORDER: the words go first, so that nothing asks "are we importing?" while the origin is
-	//   being moved back underneath it. Dropping them takes the mode down with them.
-	KCMReleaseStoryText();
-
-	// The import's own origin goes; the reader's own comes back exactly as they left it.
-	if (KCMHasParkedOrigin())
-		KCMUnparkOrigin();
-	else
-		KCMReleaseOrigin();
 }
 
 // End, KCMStoryTextImport.cpp.

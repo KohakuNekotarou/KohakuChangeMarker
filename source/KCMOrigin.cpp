@@ -36,7 +36,7 @@
 #include "KCMComparisonRun.h"		// KCMChooseOriginPair
 #include "KCMExternalSource.h"		// KCMIsDbAlive
 #include "KCMOriginPeek.h"			// KCMOriginPeekDrop / KCMOriginPeekDescribe
-#include "KCMStoryTextImport.h"	// KCMReleaseStoryText - the edited words go with the origin
+#include "KCMStoryTextImport.h"	// KCMClearImportRefusals - what the last import could not put in
 #include "KCMStorySnapshot.h"	// KCMStorySnapshotClear - released with the origin (2026-09-20)
 #include "KCMSourceCache.h"		// KCMSourceCacheClear - and so does the Source text read out of it
 #include "KCMRehydrate.h"			// KCMRehydrateRaw - the test instrument's import
@@ -318,11 +318,6 @@ bool16 KCMUnparkOrigin()
 	return kTrue;
 }
 
-bool16 KCMHasParkedOrigin()
-{
-	return sParked;
-}
-
 void KCMDropParkedOrigin()
 {
 	sParkedBytes.reset();
@@ -344,9 +339,9 @@ void KCMReleaseOrigin(bool16 deferPeekClose)
 	sDocDB = nil;
 	sDocName.Clear();
 	sTakenAt.Clear();
-	// ★THE EDITED WORDS GO WITH IT. They are only meaningful against this origin's copy, so holding
-	//   them past its release would leave text waiting to be poured into a copy that is gone.
-	KCMReleaseStoryText();
+	// (⛔The edited words were held here for the fourth mode and went with the origin. Nothing holds
+	//  them since the import started pouring them straight into the document; the last of that code
+	//  went on 2026-09-20.)
 	// ★AND WHAT THE LAST IMPORT COULD NOT PUT IN (2026-09-19): the "!" rows were about the document
 	//   as it stood at this origin. A new Task Start, Stop, Clear and a close all come through here.
 	KCMClearImportRefusals();

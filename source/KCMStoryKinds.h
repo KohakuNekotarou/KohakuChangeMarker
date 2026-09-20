@@ -116,9 +116,10 @@ enum KCMStoryAttrKind
 								// and the automatic tate-chu-yoko (a paragraph setting) are not
 								// compared. ★ITS VALUE IS THE CHARACTERS IT COVERS; LAYERED, over a
 								// warichu when it stands inside one.
-								// ⚠**Neither of the two is written back** (user's call): their changes
-								// carry kKCMWriteBlockedKind - ★**except in the Import mode**, which takes
-								// them in (the user's calls of 2026-09-17: tate-chu-yoko, then warichu).
+								// ★★**BOTH ARE WRITTEN BACK** (2026-09-20, the user's decision). They were
+								// shown for reading only (2026-09-16), with the Import mode as the one
+								// exception (2026-09-17); when that mode was retired the exception became
+								// the rule rather than going with it.
 };
 
 /** Whether a change of this kind is drawn on TWO LINES - a value (or a mark) standing over the
@@ -197,11 +198,12 @@ enum KCMStoryWriteBlock
 	kKCMWriteBlockedObjects = 2,	// the words going in or coming out hold a character InDesign hangs
 									// an object on (KCMParaText::IsObjectCharacter) - measured, an
 									// anchored rectangle came back as U+FFFC alone
-	kKCMWriteBlockedKind = 3		// ★a kind of change that is shown and never written back - warichu
-									// and tate-chu-yoko (2026-09-16, user's call; the Import mode takes a
-									// tate-chu-yoko and a warichu in since 2026-09-17). Set by the diff
-									// (KCMStoryDiffRun's AddAttrChange), so the menu hides the item
-									// rather than offering one that then refuses
+	kKCMWriteBlockedKind = 3		// ★a row that has nothing to write back: the "!" note of something an
+									// import could not put in (KCMStoryList's refusals). ⚠**IT MEANT A
+									// WARICHU OR A TATE-CHU-YOKO UNTIL 2026-09-20** - the diff marked
+									// those and the menu hid the item; since the fourth mode was retired
+									// they are restorable wherever they stand (the user's decision), and
+									// the diff sets this for none of them
 };
 
 #endif // __KCMStoryKinds_h__

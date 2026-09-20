@@ -68,7 +68,7 @@ bool16 KCMTakeTaskStart(PMString& whyNot);
 
 bool16 KCMHasOrigin();
 
-/** Move the held origin aside so that the import mode can use the slot, and put it back after.
+/** Move the held origin aside so that an import can use the slot, and put it back after.
 
     ★★★**WHY A PARK RATHER THAN A SECOND ORIGIN** (2026-09-15, the user's requirement: the task
       they made is to keep existing). An import needs the document as it stood a moment ago, which
@@ -82,7 +82,8 @@ bool16 KCMHasOrigin();
     @return kFalse when something was already parked (park), or nothing was (unpark). */
 bool16 KCMParkOrigin();
 bool16 KCMUnparkOrigin();
-bool16 KCMHasParkedOrigin();
+// (⛔KCMHasParkedOrigin went on 2026-09-20 with its one caller, the fourth mode's way out. What
+//  parked it already knows - KCMParkOrigin answers that as it parks.)
 
 /** Throw the parked origin away, for a document closing: putting it back would restore an origin
     whose document is gone. */

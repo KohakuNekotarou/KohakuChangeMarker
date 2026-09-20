@@ -847,17 +847,18 @@ void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 	//   side without the mark is drawn differently from one with it (KCMParaText::PlanLayers).
 	//   ★Neither kind is written back (user's call): named here, where the change is made, so the
 	//   menu hides the item instead of offering one that refuses.
-	//   ★★**EXCEPT IN THE IMPORT MODE** (the user's calls of 2026-09-17, a tate-chu-yoko and then a
-	//     warichu): there the reader edited it in the file on purpose, and taking it in is what the
-	//     mode is for. A Task Start and KIDMCP's Compare stay as they were. ⚠The mode is set BEFORE the
-	//     comparison runs (KCMImportStoryText), and every re-diff of a row happens inside the mode.
+	//   ★★★**AND SINCE 2026-09-20 THEY CAN ALWAYS BE PUT BACK** (the user's decision, taken when the
+	//     fourth mode was retired). The rule used to be "not restorable, EXCEPT in the Import mode",
+	//     where the reader had edited them in the file on purpose - and that mode was the only thing
+	//     carrying the exception. Rather than let the capability go with it, the exception became the
+	//     rule: a warichu or a tate-chu-yoko change is restorable wherever it stands.
+	//     ⚠This reverses the "戻さない" of 2026-09-16 for these two attributes. The writes themselves
+	//      have existed since 2026-09-17 (KCMApplyWarichu / KCMApplyTcy, ON/OFF only).
 	if (KCMAttrKindIsLayered(attrKind))
 	{
 		const bool16 isWarichu = (attrKind == kKCMStoryAttrWarichu) ? kTrue : kFalse;
 		BuildLayers(target, isWarichu, tStart, tCount, newRuby.empty() ? kFalse : kTrue, change.fLayers);
 		BuildLayers(source, isWarichu, sStart, sCount, oldRuby.empty() ? kFalse : kTrue, change.fOtherLayers);
-		if (KCMGetCompareMode() != kKCMModeImport)
-			change.fWriteBlock = kKCMWriteBlockedKind;
 	}
 
 	out.push_back(change);

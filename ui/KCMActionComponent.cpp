@@ -62,7 +62,7 @@
 #include "KCMStoryRefresh.h"		// KCMStoryRowCanRefresh / KCMStoryRefreshMenuRow (the "Refresh Story Comparison" row item)
 #include "KCMResourceXml.h"			// KCMResourceRowHasXml / KCMShowResourceXml (the "Show as XML" row item)
 #include "KCMResourceEdit.h"			// KCMResourceRowCanEdit / KCMEditMenuResourceRow and the attribute pair (the "Edit..." row items)
-#include "KCMStoryCopy.h"			// the CHANGE row's items: Restore Source Text / Change to Imported Text
+#include "KCMStoryCopy.h"			// the CHANGE row's items: Restore Source Text, Undo the Restore
 #include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / Set / Apply (the "Translucent Panel" flyout item)
 #include "KCMStoryPressMarks.h"	// KCMStoryMarksRefresh (rebuild the always-on marks of Story mode)
 // (★`IActiveContext.h` / `IDocument.h` / `PersistUtils.h` were removed: **none of them was ever
@@ -176,7 +176,6 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 	{
 		case kKCMModeStory:		modeWord = "story";		break;
 		case kKCMModeResources:	modeWord = "resources";	break;
-		case kKCMModeImport:	modeWord = "import";	break;
 		default:				modeWord = "pixel";		break;
 	}
 	PMString msg("Compare mode: ");
@@ -1094,23 +1093,16 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// Change-row context menu "Restore Source Text" (2026-09-13): the older words written over
 		// that one change, undoable. The model decides and reports (KCMStoryRestore.cpp); this side
 		// only names the stashed change.
-		// ★TWO IDS, ONE COMMAND (2026-09-15). The Import mode calls it "Change to Imported Text",
-		//   because there the Source is the copy the reader's own edited words were poured into -
-		//   taking a change in is a replacement, not a restoration. The work is identical, so
-		//   they share this line rather than a copy of it; which of the two the reader sees is
-		//   decided by their enabling, and a greyed item does not appear at all.
+		// ⚠It took TWO IDS until 2026-09-20, because the fourth mode called it "Change to Imported
+		//   Text" - one item per name, since KCM has no dynamic menu. The mode is gone with its name.
 		case kKCMChangeRowRestoreActionID:
-		case kKCMChangeRowImportActionID:
 			KCMChangeRowRestore();
 			break;
 
 		// The opposite (2026-09-16, the user's ask: "Ctrl+Z puts it back, but I want it on the
-		// right-click menu too"). ★Two IDs and one line again, for the same reason as above:
-		// "Undo the Restore" in the Story mode, "Change Back to the Original" in the Import mode.
-		// ⚠It is a COMMAND, not Edit > Undo - it reaches the change the reader points at whatever
-		//   they have done since, and it is itself one undo step.
+		// right-click menu too"). ⚠It is a COMMAND, not Edit > Undo - it reaches the change the
+		// reader points at whatever they have done since, and it is itself one undo step.
 		case kKCMChangeRowUndoRestoreActionID:
-		case kKCMChangeRowUndoImportActionID:
 			KCMChangeRowUndoRestore();
 			break;
 
@@ -1178,21 +1170,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			continue;
 		}
 
-		// ★★★**THE IMPORT MODE IS MODAL** (2026-09-15, the user's rule: "inside this mode you
-		//   cannot do other comparisons"). The three modes and Task Start are greyed while it is
-		//   up, and Finish Import (the Start/Stop item under its import name) is the way out.
-		//   ⚠**THAT RULE IS WHAT MAKES THE MODE CHEAP**: because nothing else can run inside it,
-		//     the reader's own Task Start is simply PARKED for its duration instead of the plug-in
-		//     carrying two origins (KCMOrigin.h says what the second one would have cost).
-		if ((action == kKCMPopupModePixelActionID ||
-		     action == kKCMPopupModeStoryActionID ||
-		     action == kKCMPopupModeResourcesActionID ||
-		     action == kKCMPopupTaskStartActionID) &&
-		    Utils<IKCMStoryEditsFacade>()->InImportMode())
-		{
-			listToUpdate->SetNthActionState(i, kDisabled_Unselected);
-			continue;
-		}
+		// (⛔**THE IMPORT MODE WAS MODAL** - the three modes and Task Start were greyed while it was
+		//  up, and "Finish Import" was the way out. The fourth mode went on 2026-09-20: an import now
+		//  puts its words into the document and shows them in the STORY mode, where nothing needs to
+		//  be greyed because nothing is being held.)
 
 		if (action == kKCMPopupStartStopActionID)
 		{
@@ -1202,10 +1183,8 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//   which is what the other branches of this file already do.
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
-			// ★While importing, the way out says what it ends (2026-09-17, the user).
-			PMString name(!armed ? kKCMStartMenuText
-						  : Utils<IKCMStoryEditsFacade>()->InImportMode() ? kKCMFinishImportMenuText
-						  : kKCMStopMenuText);
+			// (⛔It read "Finish Import" while the fourth mode was up - that mode went on 2026-09-20.)
+			PMString name(!armed ? kKCMStartMenuText : kKCMStopMenuText);
 			name.SetTranslatable(kFalse);
 			listToUpdate->SetNthActionName(i, name);
 			// ★Stop is always live: clearing the marks and ending a peek must work even with no document
@@ -1634,26 +1613,13 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			listToUpdate->SetNthActionState(i, KCMChangeRowCanRestore() ? kEnabledAction
 			                                                            : kDisabled_Unselected);
 		}
-		else if (action == kKCMChangeRowImportActionID)
-		{
-			// The same test, asked of the other mode - and additionally refusing a change that
-			// has already been taken in (KCMChangeRowCanImport). The two are exclusive, so the
-			// child row's menu carries one name or the other.
-			listToUpdate->SetNthActionState(i, KCMChangeRowCanImport() ? kEnabledAction
-			                                                           : kDisabled_Unselected);
-		}
-		// "Undo the Restore" / "Change Back to the Original" (2026-09-16): live on a change that is
+		// "Undo the Restore" (2026-09-16): live on a change that is
 		// STANDING as taken in - which is the model's answer about the document, so a change the
-		// reader has already put back with Ctrl+Z greys them both.
+		// reader has already put back with Ctrl+Z greys it.
 		else if (action == kKCMChangeRowUndoRestoreActionID)
 		{
 			listToUpdate->SetNthActionState(i, KCMChangeRowCanUndoRestore() ? kEnabledAction
 			                                                                : kDisabled_Unselected);
-		}
-		else if (action == kKCMChangeRowUndoImportActionID)
-		{
-			listToUpdate->SetNthActionState(i, KCMChangeRowCanUndoImport() ? kEnabledAction
-			                                                               : kDisabled_Unselected);
 		}
 	}
 }

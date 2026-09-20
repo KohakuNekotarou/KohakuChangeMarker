@@ -70,16 +70,17 @@ PMString Ascii(const char* text)
 
 /** A refusal, named after the act the reader pressed.
 
-	★**THE SAME COMMAND WEARS TWO NAMES** (2026-09-15). In the Import mode the Source is the copy
-	the reader's own edited words were poured into, so taking a change in is a REPLACEMENT - the
-	item there is called "Change to Imported Text". A message beginning "restore:" under that item
-	is the plug-in disagreeing with itself in the one line the reader reads after pressing.
+	(⛔**IT WORE TWO NAMES UNTIL 2026-09-20.** In the fourth mode the Source was the copy the
+	reader's own edited words had been poured into, so taking a change in was a REPLACEMENT and the
+	item was called "Change to Imported Text" - a message beginning "restore:" under it would have
+	been the plug-in disagreeing with itself in the one line the reader reads after pressing. The
+	mode is gone and one name is left.)
 */
 PMString Refused(const char* what)
 {
 	PMString s;
 	s.SetTranslatable(kFalse);
-	s.Append((KCMGetCompareMode() == kKCMModeImport) ? "import: " : "restore: ");
+	s.Append("restore: ");		// (it read "import: " in the fourth mode, gone 2026-09-20)
 	s.Append(what);
 	return s;
 }
@@ -234,8 +235,8 @@ bool16 HoldsObjectCharacter(const WideString& words)
 PMString WriteBlockedMessage(int32 writeBlock)
 {
 	if (writeBlock == kKCMWriteBlockedKind)
-		return Refused("a warichu or tate-chu-yoko change outside the Import mode is shown for reading - "
-					   "it is not written back.");
+		return Refused("this row is a note about something an import could not put in - "
+					   "there is nothing to write back.");
 	return (writeBlock == kKCMWriteBlockedPlaces)
 		? Refused("this change is in a table cell or a footnote that the other version does not have - "
 				  "its words cannot be put back as text.")
@@ -501,14 +502,11 @@ public:
 		: fSequence(CmdUtils::BeginCommandSequence("KCMRestoreChange"))
 	{
 		// ★THE NAME THE READER PRESSED, because this one goes on the Edit menu beside Undo. In the
-		//   Import mode the source is the copy their own edited words were poured into, so the
-		//   item there is called "Change to Imported Text" (the user, 2026-09-15: "taking it in and
-		//   swapping it over is a replacement") - and an undo step calling itself something the
-		//   panel never offered would be the plug-in disagreeing with itself.
+		//   fourth mode the item was called "Change to Imported Text" and this said so - an undo step
+		//   calling itself something the panel never offered would be the plug-in disagreeing with
+		//   itself. The mode went on 2026-09-20 and one name is left.
 		if (fSequence != nil)
-			fSequence->SetName(KCMGetCompareMode() == kKCMModeImport
-							   ? Ascii("Change to Imported Text")
-							   : Ascii("Restore Source Text"));
+			fSequence->SetName(Ascii("Restore Source Text"));
 	}
 	~RestoreSequence()
 	{
@@ -1040,9 +1038,9 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 		}
 		else if (change.fAttrKind == kKCMStoryAttrTcy || change.fAttrKind == kKCMStoryAttrWarichu)
 		{
-			// ★★TATE-CHU-YOKO AND WARICHU (2026-09-17) - the user's calls: the Import mode
-			//   takes them in; the diff still blocks them everywhere else, so only an Import row gets
-			//   this far. Each is one ON/OFF whose value IS its characters, so the Source's value says
+			// ★★TATE-CHU-YOKO AND WARICHU (2026-09-17, and restorable EVERYWHERE since 2026-09-20 -
+			//   the user's decision when the fourth mode was retired: the exception that mode carried
+			//   became the rule). Each is one ON/OFF whose value IS its characters, so the Source's value says
 			//   only one thing: where it is ON. Off over the Target's stretch, then on over the Source's
 			//   reach from the same start - which is one write when the stretch kept its length, and
 			//   right either way when it grew or shrank.
@@ -1341,9 +1339,7 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 	{
 		ICommandSequence* const seq = CmdUtils::BeginCommandSequence("KCMUndoRestoreChange");
 		if (seq != nil)
-			seq->SetName(KCMGetCompareMode() == kKCMModeImport
-						 ? Ascii("Change Back to the Original")
-						 : Ascii("Undo the Restore"));
+			seq->SetName(Ascii("Undo the Restore"));		// ("Change Back to the Original" in the fourth mode, gone 2026-09-20)
 
 		if (change.fAttrKind == kKCMStoryAttrRuby)
 		{

@@ -795,9 +795,9 @@ public:
 								  (format == 1) ? kKCMStoryTextDocx : kKCMStoryTextHtml);
 	}
 
-	virtual bool16	InImportMode()
+	virtual bool16	InImportMode()		// ⛔retired with the fourth mode (2026-09-20) - the slot stays
 	{
-		return KCMInImportMode();
+		return kFalse;
 	}
 
 	virtual bool16	ImportStoryText(const SysFileList& files, PMString& outMessage)

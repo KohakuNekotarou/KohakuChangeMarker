@@ -432,7 +432,7 @@ DECLARE_PMID(kActionIDSpace, kKCMResourceRowXmlActionID, kKCMUIPrefix + 58)
 // ⛔**+63 IS A DEAD SLOT - DO NOT REUSE IT.** "Copy Source Text" lived on a CHANGE row's context
 //   menu from 2026-09-12 and was taken out on 2026-09-15 at the user's request. It put the older
 //   side's words on the clipboard as plain text. The subtree it introduced (kKCMChangeRowMenuName)
-//   stays: Restore Source Text / Change to Imported Text live on it now.
+//   stays: Restore Source Text and Undo the Restore live on it now.
 //   ⚠Kept out of use for the same reason as the retired slots listed above - a user's .indk stores
 //    a shortcut by its NUMBER, so a new item here would inherit a binding meant for the old one.
 DECLARE_PMID(kActionIDSpace, kKCMChangeRowRestoreActionID, kKCMUIPrefix + 66)	// ★"Restore Source Text" on a CHANGE row's context menu (2026-09-13, the user's pick: "put this part back the way it was at Task Start"): the older side's words are written over that one change's newer range, one undoable command, and the row's story is diffed again. Live in the Story mode on every change row: words (an insertion is restorable, its words come out), ruby (changed / added / removed, mono and group told apart) and kenten (its kind) - since the evening of 2026-09-13; the model refuses with a reason what it cannot write (a custom kenten, an attribute in a paragraph whose words changed too). Facade RestoreChange -> KCMStoryRestore.cpp
@@ -444,17 +444,12 @@ DECLARE_PMID(kActionIDSpace, kKCMResourceAttrEditActionID, kKCMUIPrefix + 69)	//
 DECLARE_PMID(kActionIDSpace, kKCMPopupTaskStartActionID, kKCMUIPrefix + 59)	// ★"Task Start" on the panel flyout (a plain command, 2026-09-12): the ACTIVE document's INX is taken as the origin and the pair is chosen (Target = that document, Source = the origin). ★**Live whenever a document is active** (facade CanTakeTaskStart - the one place). ⚠**2026-09-14: it used to be greyed while an origin was held or a comparison was armed.** The user's instruction was to let it be pressed at any time: pressing it then stops the comparison, clears Target and Source (which drops the old origin), and takes a fresh one - the status line says so. Released otherwise by Clear Target and Source or the document closing.
 DECLARE_PMID(kActionIDSpace, kKCMPopupExportStoryTextActionID, kKCMUIPrefix + 70)	// ★"Export Story Text..." on the panel flyout (a plain command, 2026-09-15), directly under Task Start: every story of the active document is written as one HTML file in a dated folder under one the reader picks, for editing outside InDesign and importing again. **It only reads** - nothing is written into the document, and the walk is wrapped in IDataBase::SaveRestoreModifiedState so it is not even dirtied. ★Live whenever there is an active document (facade CanTakeTaskStart, the same one question Task Start asks). Facade ExportStoryText; the work is KCMStoryTextExport.cpp and the format is KCMStoryHtml.cpp (pure functions, tested outside InDesign in work/kcm-storyhtml-test)
 DECLARE_PMID(kActionIDSpace, kKCMPopupImportStoryTextActionID, kKCMUIPrefix + 71)	// ★"Import Story Text..." on the panel flyout (a plain command, 2026-09-15), under Export: the folder of edited HTML is read, the document's state is taken as the origin, and the Story comparison starts against a COPY with the edited words poured into it. ★★★**THE DOCUMENT IS NOT CHANGED BY THIS** - what puts any of it in is "Restore Source Text", one change at a time. ★Live with an active document and no comparison running (⚠unlike Task Start, it does NOT stop one and take over). Facade ImportStoryText; the work is KCMStoryTextImport.cpp, and the pouring happens in KCMRehydrate - the one place a copy is made
-DECLARE_PMID(kActionIDSpace, kKCMChangeRowImportActionID, kKCMUIPrefix + 72)	// ★"Change to Imported Text" on a CHANGE row's context menu (2026-09-15) - the SAME action as Restore Source Text, wearing the name the Import mode calls for. In that mode the Source is the copy the reader's own edited HTML was poured into, so taking a change in is a REPLACEMENT rather than a restoration (the user: "taking it in and swapping it over is a replacement"). ⚠A second ActionID rather than a dynamic menu: KCM has no IDynamicMenu anywhere, and the panel already tells items apart by mode through their enabling - a greyed item does not appear at all. Live in the Import mode on a change that has not been taken in yet (kCustomEnabling -> KCMChangeRowCanImport); Restore Source Text is greyed there, and this is greyed everywhere else. Both run KCMChangeRowRestore -> facade RestoreChange -> KCMStoryRestore.cpp
-// ★★**THE TWO BULK ITEMS, IN FOUR ActionIDs** (2026-09-15, the user's ask: "the same thing on the
-//   parent menu, for that story" and "and for every story that has edits"). Four rather than two
-//   for the reason kKCMChangeRowImportActionID gives one screen up: KCM has no IDynamicMenu, so an
-//   item whose NAME changes with the mode is two items, each greyed in the other's mode. The pairs
-//   are (Story mode / Import mode), and both of each pair run the same facade call.
-//   ⚠A change already taken in is never taken in twice, and one that cannot go in is SKIPPED with
-//    a count rather than stopping the run (the user's call: pressing a bulk item says "all").
+// ⛔**+72 IS RETIRED** (2026-09-20, with the fourth mode): "Change to Imported Text", the name the
+//   Import mode gave "Restore Source Text". The mode is gone; one item, one name. Never reused.
 // ⛔**+73..+76 ARE RETIRED** (2026-09-20, the user's decision to drop Restore All): "Restore All in This Story" / "Change All in This Story" / "Restore All Stories" / "Change All Stories to Imported Text". **The numbers are never reused** - the rule ActionID +38 (Translucent Toolbox) set.
 DECLARE_PMID(kActionIDSpace, kKCMChangeRowUndoRestoreActionID, kKCMUIPrefix + 77)	// ★"Undo the Restore" on a CHANGE row's context menu (2026-09-16, the user's ask: "Ctrl+Z puts it back, but I want it on the right-click menu too"). Writes the words the row remembers from BEFORE the take-in back over what went in, drops that row's record of having been taken in, and diffs the story again - so the change returns to the list as a live difference. ⚠**NOT Edit > Undo**: it is a command of its own, so it works whatever else has been done since, and it is itself undoable. Live in the Story mode on a change that is standing as taken-in (kCustomEnabling -> KCMChangeRowCanUndoRestore). Facade UndoRestoreChange -> KCMStoryRestore.cpp
-DECLARE_PMID(kActionIDSpace, kKCMChangeRowUndoImportActionID, kKCMUIPrefix + 78)	// ★"Change Back to the Original" - the same action under the name the Import mode calls for (the user's pick, 2026-09-16: the two modes keep separate names, as Restore Source Text / Change to Imported Text already do). Greyed everywhere else, so one name shows and never both
+// ⛔**+78 IS RETIRED** (2026-09-20, with the fourth mode): "Change Back to the Original", the
+//   Import mode's name for "Undo the Restore". Never reused.
 
 DECLARE_PMID(kActionIDSpace, kKCMPopupExportStoryDocxActionID, kKCMUIPrefix + 79)	// ★"Export Story Text as Word..." on the flyout (2026-09-19): the same stories, the same selection rule and the same dated folder as Export Story Text..., written as .docx for Word instead of .html (the model's KCMStoryDocx). Greyed on the same one condition - no active document. ⚠+79 was MEASURED free: the highest in this space was +78. Facade ExportStoryTextAs(..., 1, ...)
 
@@ -764,12 +759,9 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 // ★Its root name never reaches the screen either, so a plain literal will do.
 #define kKCMStoryRowMenuName		"KCMRtMenuStoryRow"
 #define kKCMChangeRowRestoreMenuKey	kKCMStringPrefix "kKCMChangeRowRestoreMenuKey"		// the "Restore Source Text" item on a CHANGE row's context menu (2026-09-13)
-#define kKCMChangeRowImportMenuKey	kKCMStringPrefix "kKCMChangeRowImportMenuKey"		// the "Change to Imported Text" item - the same action under the name the Import mode calls for (2026-09-15)
 #define kKCMChangeRowUndoRestoreMenuKey	kKCMStringPrefix "kKCMChangeRowUndoRestoreMenuKey"	// the "Undo the Restore" item on a CHANGE row's context menu (2026-09-16)
-#define kKCMChangeRowUndoImportMenuKey	kKCMStringPrefix "kKCMChangeRowUndoImportMenuKey"	// the same item under the Import mode's name, "Change Back to the Original"
-// The four bulk items (2026-09-15): a STORY row's menu takes the whole story, the flyout takes the
-// whole list, and each has a Story-mode name and an Import-mode one.
-// ⛔The four bulk items' menu keys went with them on 2026-09-20 (see the ActionID note above).
+// ⛔The two Import-mode names went with the fourth mode on 2026-09-20 ("Change to Imported Text",
+//   "Change Back to the Original"), and the four bulk items' keys went the same day with them.
 // (The flyout pair's question carries the counts, so it is built in code and marked untranslatable,
 //  the way the status line and the book comparison's own question are - not a string key here.)
 // The CHANGE row (child row) context menu - a subtree of its own, so that the story row's items
@@ -840,9 +832,6 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 //   Refresh Comparison / Refresh Story Comparison / Refresh Page Comparison.
 #define kKCMStartMenuText	"Start Comparison"
 #define kKCMStopMenuText	"Stop Comparison"
-// ★The same item while the Import mode is up (2026-09-17, the user: "Stop Comparison" read wrong there).
-//   It does exactly what Stop does - KCMStopComparison ends the import first - so only the name moves.
-#define kKCMFinishImportMenuText	"Finish Import"
 #define kKCMPrintCheckKey		kKCMStringPrefix "kKCMPrintCheckKey"	// the menu name of the "Print comparison marks" toggle on the flyout (inherited from the old panel checkbox caption)
 // ★The body of the alert shown **only when "Print comparison marks" is switched ON**
 //   (user's instruction).
@@ -1133,7 +1122,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 //   ⇒ **Read the values below in ascending order: that IS the flyout.**
 // ※Menu names are English in every locale. The separators are Sep1 / OversetSep / Sep3 / Sep2.
 // -- run the comparison, and choose what it runs on --
-#define kKCMStartStopMenuItemPosition		9.0	// "Start Comparison" at the head of the flyout; UpdateActionStates swaps the name to "Stop Comparison" once armed ("Finish Import" while importing)
+#define kKCMStartStopMenuItemPosition		9.0	// "Start Comparison" at the head of the flyout; UpdateActionStates swaps the name to "Stop Comparison" once armed (it read "Finish Import" in the fourth mode, gone 2026-09-20)
 #define kKCMRefreshCompareMenuItemPosition	9.01	// "Refresh Comparison", directly under it: both are VERBS that run the comparison on the pair already chosen
 #define kKCMCompareModeSubmenuMenuItemPosition	9.015	// the "Compare mode" submenu (Pixel / Story / Resources Changes). ★Under the two verbs: WHAT is compared is settled before how it is shown
 #define kKCMModePixelSubMenuItemPosition		1.0	// inside "Compare mode": Pixel Changes (checked when selected)
@@ -1195,9 +1184,9 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMStoryRowRefreshMenuItemPosition	1.0	// Story Edits row context menu: "Refresh Story Comparison" (a different subtree, so it may share 1.0 with the chapter row)
 #define kKCMResourceRowXmlMenuItemPosition	2.0	// ★the SAME subtree: "Show as XML" sits under the refresh item. The two are never live at once (opposite modes), so the order only decides what a future third item would sit between
 #define kKCMChangeRowRestoreMenuItemPosition	2.0	// CHANGE row context menu (its own subtree, kKCMChangeRowMenuName): "Restore Source Text". ⚠2.0 rather than 1.0 because "Copy Source Text" held 1.0 until 2026-09-15; the number is left where it is so that a user's shortcut keeps pointing at the same item
-#define kKCMChangeRowImportMenuItemPosition		2.5	// CHANGE row context menu: "Change to Imported Text" - the same place, in the mode where the item is called that. ★The two are never live together, so what this number really decides is where a future item would sit between them
 #define kKCMChangeRowUndoRestoreMenuItemPosition	2.7	// CHANGE row context menu: "Undo the Restore" (2026-09-16), directly under the item that takes a change in - the two are opposites and belong beside each other
-#define kKCMChangeRowUndoImportMenuItemPosition		2.8	// the same place, under the Import mode's name "Change Back to the Original". ★Never live together with the one above
+// ⛔2.5 and 2.8 held the two Import-mode names until 2026-09-20 and are free again (a position is a
+//   sort key, not a reservation - unlike an ActionID).
 // ⛔The four bulk items' menu positions went with them on 2026-09-20. ★A POSITION IS NOT RESERVED the
 //   way an ActionID is - it is only a sort key, and the two the flyout pair used (9.03 / 9.04) were
 //   ALREADY shared with "Set as Target" / "Set as Source" above. That collision goes with them.

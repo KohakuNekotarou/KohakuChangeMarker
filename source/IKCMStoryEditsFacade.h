@@ -539,9 +539,10 @@ public:
 		⚠Appended at the END of the class, like the one above and for the same reason. */
 	virtual bool16	ImportStoryText(const SysFileList& files, PMString& outMessage) = 0;
 
-	/** Whether the import mode is up, which the UI asks in order to grey the other three modes and
-		Task Start while it is (the user's rule: no other comparison inside it).
-		⚠Appended at the END, like the two above. */
+	/** ⛔**RETIRED 2026-09-20 - ALWAYS kFalse, AND THE SLOT STAYS.** It said whether the fourth mode
+		was up, which the UI asked in order to grey the other three modes and Task Start while it was.
+		The mode is gone; the slot stays because KIDMCP calls this facade through its vtable
+		([[facade-vtable-slot-append-only]]). */
 	virtual bool16	InImportMode() = 0;
 
 	/** Where InDesign draws the "+" for the overflow that swallowed `at` (2026-09-15).

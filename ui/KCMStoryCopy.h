@@ -5,8 +5,8 @@
 //  Kohaku Change Marker (KCM)
 //
 //  The right-click menu of a CHANGE row (a child row of the Story Edits list): which change the
-//  menu was popped over, and the items that act on that one change - "Restore Source Text", and
-//  the same command under the name the Import mode calls for, "Change to Imported Text".
+//  menu was popped over, and the items that act on that one change - "Restore Source Text" and
+//  "Undo the Restore". (⛔Each wore a second name in the fourth mode, which went on 2026-09-20.)
 //
 //  ★THIS SUBTREE REVERSED A DECISION OF 2026-08-21. Until 2026-09-12 a right click on a child row
 //  raised no menu at all (the user's call at the time), because the only menu there acted on the
@@ -70,33 +70,22 @@ bool16 KCMStoryGetMenuChange(int32& outRow, int32& outChange);
     the model with a reason, not greyed here. */
 bool16 KCMChangeRowCanRestore();
 
-/** Whether "Change to Imported Text" may be offered on the change the menu was popped over.
-
-	★The same command as Restore, under the name the Import mode calls for - there the Source is
-	the copy the reader's own edited words were poured into, so taking a change in is a
-	replacement rather than a restoration. Live only in that mode, and only on a change that has
-	not been taken in yet. @see KCMChangeRowCanRestore, which is live everywhere else. */
-bool16 KCMChangeRowCanImport();
-
 /** Runs "Restore Source Text" on the stashed change through the facade (KCMStoryRestore.h on
     the model side) and puts its message on the status line. kTrue when something was written. */
 bool16 KCMChangeRowRestore();
 
 // ---- putting one change back (2026-09-16) ---------------------------------------------------
-// ★**THE OPPOSITE OF THE PAIR ABOVE, AND A PAIR FOR THE SAME REASON**: "Undo the Restore" in the
-//   Story mode, "Change Back to the Original" in the Import mode (the user's pick - the two modes
-//   keep separate names, as the take-in items already do).
+// ★**THE OPPOSITE OF THE ITEM ABOVE.**
 // ⚠**NOT Edit > Undo.** Ctrl+Z reaches only the last thing done; this reaches the change the
 //   reader points at, whatever they have done since, and is itself one undo step.
+// (⛔Both were PAIRS until 2026-09-20: the fourth mode called them "Change to Imported Text" and
+//  "Change Back to the Original". The mode is gone and one name is left for each.)
 
 /** Whether "Undo the Restore" may be offered: the Story mode, and a change that is STANDING as
     taken in. ⚠Asks the model's fReplaced, which is the document's own answer - so a change the
     reader has already put back with Ctrl+Z greys the item rather than offering a second way to
     do what is done. */
 bool16 KCMChangeRowCanUndoRestore();
-
-/** The same in the Import mode, under the name that mode calls for. */
-bool16 KCMChangeRowCanUndoImport();
 
 /** Runs it through the facade and puts the model's message on the status line. */
 bool16 KCMChangeRowUndoRestore();

@@ -95,9 +95,6 @@ void KCMPanelTitle::Update()
 	{
 		case kKCMModeStory:		title.Append("Story");		break;
 		case kKCMModeResources:	title.Append("Resources");	break;
-		// ★The fourth is named after the action that makes it, so the tab and the menu say the
-		//   same word (2026-09-15, the user's pick).
-		case kKCMModeImport:	title.Append("Import");		break;
 		default:				title.Append("Pixel");		break;
 	}
 	// ⚠A palette label is treated as **a candidate translation key** as well ＝ without clearing the
