@@ -435,7 +435,8 @@ void Extents(const std::vector<MergeCell>& cells, int32& outCols, int32& outRows
 
 bool16 KCMMergeTableCells(const std::string& olderTableXml, const std::string& liveTableXml,
 						  std::string& outMerged, int32& outKept, std::string& outHow,
-						  const std::map<std::string, std::string>* liveWasTaskStart)
+						  const std::map<std::string, std::string>* liveWasTaskStart,
+						  bool16 liveIdsAreStale)
 {
 	outMerged.clear();
 	outKept = 0;
@@ -453,7 +454,14 @@ bool16 KCMMergeTableCells(const std::string& olderTableXml, const std::string& l
 		liveByName[live[i].fName] = i;
 
 	// ---- 1. the cells' own ids ------------------------------------------------------------------
+	// ⚠★★★**AN ID IS EVIDENCE ONLY WHILE IT IS THE ID TASK START KNOWS THE CELL BY** (2026-09-20
+	//   evening, measured on the running application - see the header's `liveIdsAreStale`). A table
+	//   that has been through an import carries ids that import handed out; if nothing records what
+	//   they WERE, this road has nothing to say and taking it pairs cells at random - which is how
+	//   "Restore -> Undo the Restore -> Restore" put a third row's cells into the second row.
+	const bool16 idsMayVote = (liveWasTaskStart != nil || !liveIdsAreStale) ? kTrue : kFalse;
 	std::vector<CellPair> pairs;
+	if (idsMayVote)
 	{
 		std::map<std::string, size_t> liveById;
 		for (size_t i = 0; i < live.size(); ++i)
@@ -505,7 +513,8 @@ bool16 KCMMergeTableCells(const std::string& olderTableXml, const std::string& l
 
 	// ---- 2. what the cells say, when the ids answered nothing ------------------------------------
 	// ⚠This is the state a table that has ALREADY been put back once is in: a snippet import repacks
-	//   the ids, so Task Start's and the live table's no longer name the same cells.
+	//   the ids, so Task Start's and the live table's no longer name the same cells - and it is also
+	//   where a table whose ids were REFUSED above lands (idsMayVote).
 	if (colMap.empty() || rowMap.empty())
 	{
 		pairs.clear();

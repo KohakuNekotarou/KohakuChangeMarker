@@ -824,17 +824,6 @@ resource VersionedScriptElementInfo(10)
 
 		Method
 		{
-			kKCMTakeInAllStoriesMethodScriptElement,
-			e_KCMTakeInAllStories,
-			"kcm take in all stories",			// name -> app.kcmTakeInAllStories()
-			"Take every change of the list in, as Change All Stories to Imported Text does, without asking.",
-			StringType,
-			"The sentence the status line shows"
-			{ /* void */ }
-		}
-
-		Method
-		{
 			kKCMExportStoryTextMethodScriptElement,
 			e_KCMExportStoryText,
 			"kcm export story text",			// name -> app.kcmExportStoryText(folder)
@@ -883,19 +872,6 @@ resource VersionedScriptElementInfo(10)
 			{
 				p_Index, "story row", "The story row, from 0 (app.kcmStoryRows)", Int32Type, kRequired,
 				p_Contents, "words", "Words the change holds, on either side", StringType, kRequired,
-			}
-		}
-
-		Method
-		{
-			kKCMTakeInStoryMethodScriptElement,
-			e_KCMTakeInStory,
-			"kcm take in story",				// name -> app.kcmTakeInStory(storyRow)
-			"Take in every change of one story row, as the story row's menu does, without asking.",
-			StringType,
-			"The sentence the status line shows"
-			{
-				p_Index, "story row", "The story row, from 0 (app.kcmStoryRows)", Int32Type, kRequired,
 			}
 		}
 
@@ -965,12 +941,10 @@ resource VersionedScriptElementInfo(10)
 				Method{ kKCMProbePdfRouteMethodScriptElement },
 				// ...and the round trip's four (2026-09-17) - the other half of each Method block above.
 				Method{ kKCMImportStoryTextMethodScriptElement },
-				Method{ kKCMTakeInAllStoriesMethodScriptElement },
 				Method{ kKCMExportStoryTextMethodScriptElement },
 				Method{ kKCMStopComparisonMethodScriptElement },
 				// ...and the two order checks' (2026-09-17 afternoon).
 				Method{ kKCMTakeInChangeMethodScriptElement },
-				Method{ kKCMTakeInStoryMethodScriptElement },
 				// ...and the export's .docx road (2026-09-19).
 				Method{ kKCMExportStoryDocxMethodScriptElement },
 				// ...and the undo of a take-in (2026-09-19 night).

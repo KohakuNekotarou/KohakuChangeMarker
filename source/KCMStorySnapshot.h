@@ -78,8 +78,25 @@ void KCMStorySnapshotPutCellIds(UID story, int32 ordinal, const std::map<std::st
 void KCMStorySnapshotDropStory(UID story);
 
 /** Forget what a restore learned about ONE table's cells - what an Undo the Restore does, having
-    just put a different table there. */
+    just put a different table there. ⚠**The "it has been through an import" mark below is NOT
+    dropped with it**: that is the whole point of the pair. */
 void KCMStorySnapshotDropCellIds(UID story, int32 ordinal);
+
+/** ★★★**THIS TABLE HAS BEEN WRITTEN BY AN IMPORT DURING THIS COMPARISON** - so the ids its cells
+    carry now were handed out by that import and mean NOTHING to Task Start (measured 2026-09-20: a
+    snippet import repacks them, 0,1,4,5 -> 0,1,2,3).
+
+    ⚠★★★**WHY A SEPARATE MARK FROM THE TRANSLATION ABOVE** (found on the running application,
+     2026-09-20 evening). "Restore -> Undo the Restore -> Restore" put the THIRD ROW's cells into the
+     second row and lost what the reader had written, while reporting "2 cell(s) keep what you wrote
+     in them". The undo drops the translation - rightly, the table standing there is a different one -
+     and the pairing then fell back to the RAW ids of a table that had been through two imports. The
+     guard "a cell the map does not name cannot vote" only ever ran when a map was there.
+     ⇒ the fact that the ids are meaningless has to outlive the map that explained them. */
+void KCMStorySnapshotMarkTableImported(UID story, int32 ordinal);
+
+/** kTrue once MarkTableImported has been called for this table in this comparison. */
+bool16 KCMStorySnapshotTableWasImported(UID story, int32 ordinal);
 
 /** Forget every story's INX, keeping what restores learned about cells - what a WHOLE comparison
     does (KCMStoryDiffRun::Run). ⚠★★★The same rule as DropStory, and the same trap: a full Refresh

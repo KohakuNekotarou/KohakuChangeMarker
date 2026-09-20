@@ -222,28 +222,27 @@ enum KCMScriptMethods
 	//   from the menu, so a run of dozens was not possible; these four are the menu items' own model
 	//   calls with the dialogs left out, and each answers with the sentence the status line shows.
 	//   ⚠**THE DOCUMENT IS THE ACTIVE ONE**, exactly as for the menu items.
-	//   ⚠**kcmTakeInAllStories DOES NOT ASK.** The menu asks because a person pressed one item for the
-	//     whole document; a script that calls this has already decided.
 	//   ⚠'eKGn' / 'eKGw' / 'eKGe' / 'eKGq' were MEASURED free: 0 hits anywhere in the tree (headers,
 	//     .fr and the notes), and no row in the registry ledger, whose used letters for eKG* are
 	//     c r s v i m D x o h u a d t p - retired rows counted, 'm' 'x' and 'a' avoided for that
 	//     reason. The same search form found 'eKGs'. ⚠Not registered with Adobe yet.
+	// ⛔**'eKGw' (app.kcmTakeInAllStories) IS RETIRED** (2026-09-20, with the "Restore All Stories"
+	//   item itself - the user's decision to drop taking changes in by the bulk). The row stays here
+	//   as a retired one: **the code is never reused**, which is the rule the registry ledger keeps.
 	e_KCMImportStoryText = 'eKGn',	// n = in.    app.kcmImportStoryText(file)  -> the import's sentence
-	e_KCMTakeInAllStories = 'eKGw',	// w = write. app.kcmTakeInAllStories()     -> "N changes taken in..."
 	e_KCMExportStoryText = 'eKGe',	// e = export. app.kcmExportStoryText(folder) -> "exported N ... to <folder>"
 	e_KCMStopComparison = 'eKGq',	// q = quit.  app.kcmStopComparison()       -> the status line after it
 
-	// ★★ONE CHANGE, AND ONE STORY, TAKEN IN FROM A SCRIPT (2026-09-17 afternoon). The user asked for the
-	//   order checks - "1 became 1..5, and the user takes in 3, then 5, then 4, then 2: does the order
-	//   hold?" and "one change taken in on its child row, the rest on the story's row" - which the
-	//   all-stories method above cannot drive. The change is named by WORDS it holds rather than by an
-	//   index, because the index space moves under a test as changes are taken in (the replaced ones stay
-	//   in the list). ⚠No confirmation here either: the panel asks before a second "+" goes in alone, a
-	//   script has already decided.
+	// ★★ONE CHANGE TAKEN IN FROM A SCRIPT (2026-09-17 afternoon). The user asked for the order checks -
+	//   "1 became 1..5, and the user takes in 3, then 5, then 4, then 2: does the order hold?" The change
+	//   is named by WORDS it holds rather than by an index, because the index space moves under a test as
+	//   changes are taken in (the replaced ones stay in the list). ⚠No confirmation here: the panel asks
+	//   before a second "+" goes in alone, a script has already decided.
 	//   ⚠'eKGk' / 'eKGy' were MEASURED free: 0 hits in headers, .fr, sources, notes, scripts; the same
 	//     search form finds 'eKGs'. The parameters are Adobe's own p_Index and p_Contents. ⚠Not registered.
+	// ⛔**'eKGy' (app.kcmTakeInStory) IS RETIRED** (2026-09-20, with "Restore All in This Story").
+	//   Same rule as 'eKGw' above: the code is never reused.
 	e_KCMTakeInChange = 'eKGk',		// k = keep one. app.kcmTakeInChange(storyRow, words) -> the take-in's sentence
-	e_KCMTakeInStory = 'eKGy',		// y = storY.   app.kcmTakeInStory(storyRow)          -> "N changes taken in..."
 
 	// ★THE .DOCX ROAD OF THE EXPORT, WITHOUT A DIALOG (2026-09-19). The menu item opens the system's
 	//   folder chooser, which a test cannot answer; this is the same model call with the folder

@@ -67,25 +67,6 @@ bool16 KCMStoryWritesAllowed();
       custom kenten mark - the same one the take-in cannot write either. */
 bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage);
 
-/** Every change of row `nth`, in ONE undo step (2026-09-15, the user's ask: the same thing for a
-    whole story, and for the whole list).
-
-    ★★**THE WALK IS BACKWARDS, SO THE STORY IS COMPARED TWICE RATHER THAN 2N TIMES** - once at the
-      start when the reader has typed since the comparison, once at the end to rebuild the row.
-      Writing from the end means each write disturbs only text the walk has already passed. The
-      obvious loop over KCMRestoreChange would re-diff the whole story for every change.
-    ★**A CHANGE THAT CANNOT GO IN IS SKIPPED, NOT A STOP** (the user's call, 2026-09-15): pressing a
-      bulk item says "all of them", so the run finishes and the status line counts what went in and
-      what did not, naming the first reason.
-    ⚠A change already taken in - the Import mode's `=` rows - is not a candidate to take in again.
-
-    @return kTrue when at least one change went in. */
-bool16 KCMRestoreAllInStory(int32 nth, PMString& outMessage);
-
-/** The same across every row of the list, still in ONE undo step. @see the note above, which holds
-    per story; the rows are walked in order and the counts add up across them. */
-bool16 KCMRestoreAllStories(PMString& outMessage);
-
 /** The one command that makes [at, at+count) of `model` read `words` - for every writer of WORDS: the
     restore, "Change Back to the Original" and the import's pour into the copy (2026-09-17).
 

@@ -852,20 +852,6 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMImportStoryTextMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Restore All Stories" / "Change All Stories to Imported Text" on the panel flyout
-		// (2026-09-15): every change of every story in the list, one press, one undo step.
-		// ⚠**This pair asks before it writes** (the per-story item on the row's menu does not): it
-		// reaches across the whole document at once, so the reader is told how much and can stop.
-		kKCMPopupRestoreAllStoriesActionID,
-		kKCMPopupMenuPath,
-		kKCMRestoreAllStoriesMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
-		kKCMPopupImportAllStoriesActionID,
-		kKCMPopupMenuPath,
-		kKCMImportAllStoriesMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
 		// "Clear Target and Source" on the panel flyout (popup) menu. Plain command: stops a running
 		// comparison and drops both chosen documents, so the next Start falls back to the automatic
 		// rule (active = Target, the earliest-opened other document = Source). Directly below the two
@@ -1382,20 +1368,6 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMChangeRowUndoImportMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// ----- The bulk items (2026-09-15) -----
-		// "Restore All in This Story" / "Change All in This Story" on the STORY row's menu, under
-		// Refresh Story Comparison. One press, one undo step, every change of that story.
-		// ★Each of the pair is greyed in the other's mode, which is how one name shows and not both
-		// - the same construction as the change row's pair above.
-		kKCMStoryRowRestoreAllActionID,
-		kKCMStoryRowMenuName,
-		kKCMStoryRowRestoreAllMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
-		kKCMStoryRowImportAllActionID,
-		kKCMStoryRowMenuName,
-		kKCMStoryRowImportAllMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
 	}
 };
 
@@ -1848,46 +1820,6 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// the same, in the Import mode (KCMChangeRowCanUndoImport)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		// ----- The four bulk items (2026-09-15) -----
-		// Two places (the STORY row's menu, the flyout) times two modes. ⚠Not on the flyout for the
-		// per-story pair, for the reason the change-row items give: they act on the row the menu was
-		// popped over, which a flyout has no way of naming.
-		kKCMActionComponentBoss,
-		kKCMStoryRowRestoreAllActionID,
-		kKCMStoryRowRestoreAllMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// the Story mode, on a row with changes left (KCMStoryRowCanRestoreAll)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		kKCMActionComponentBoss,
-		kKCMStoryRowImportAllActionID,
-		kKCMStoryRowImportAllMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// the Import mode's half of the pair above
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		kKCMActionComponentBoss,
-		kKCMPopupRestoreAllStoriesActionID,
-		kKCMRestoreAllStoriesMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// the Story mode, while the list holds a change (KCMCanRestoreAllStories)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		kKCMActionComponentBoss,
-		kKCMPopupImportAllStoriesActionID,
-		kKCMImportAllStoriesMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// the Import mode's half of the pair above
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

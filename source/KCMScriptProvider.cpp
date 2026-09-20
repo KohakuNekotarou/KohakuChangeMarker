@@ -147,7 +147,7 @@
 #include "SysFileList.h"			// app.kcmImportStoryText hands its one file over as a list
 #include "KCMCore.h"				// KCMActiveDocDB - app.kcmExportStoryText exports the active document
 #include "KCMComparisonRun.h"		// KCMStopComparison - app.kcmStopComparison
-#include "KCMStoryRestore.h"		// KCMRestoreAllStories - app.kcmTakeInAllStories; KCMUndoRestoreChange - app.kcmUndoRestore
+#include "KCMStoryRestore.h"		// KCMRestoreChange / KCMUndoRestoreChange - app.kcmTakeInChange, app.kcmUndoRestore
 #include "KCMStoryDiffRun.h"		// KCMStoryDiffRun::StillReplaced - which taken-in change app.kcmUndoRestore may name
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - app.kcmExportStoryText
 #include "KCMStoryTextImport.h"	// KCMImportStoryText - app.kcmImportStoryText
@@ -317,19 +317,15 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 	//    as the status number below: "0 changes taken in, 2 skipped" is an answer, not an error.
 	{
 		const int32 id = methodID.Get();
-		if (id == e_KCMImportStoryText || id == e_KCMTakeInAllStories
+		if (id == e_KCMImportStoryText
 			|| id == e_KCMExportStoryText || id == e_KCMStopComparison
-			|| id == e_KCMTakeInChange || id == e_KCMTakeInStory
+			|| id == e_KCMTakeInChange
 			|| id == e_KCMExportStoryDocx || id == e_KCMUndoRestoreChange)
 		{
 			PMString message;
 			message.SetTranslatable(kFalse);
 
-			if (id == e_KCMTakeInAllStories)
-			{
-				KCMRestoreAllStories(message);
-			}
-			else if (id == e_KCMTakeInChange || id == e_KCMTakeInStory || id == e_KCMUndoRestoreChange)
+			if (id == e_KCMTakeInChange || id == e_KCMUndoRestoreChange)
 			{
 				// ★The story row by index, the change by WORDS it holds - the index space of a row's changes
 				//   moves as changes are taken in (the replaced ones stay listed), so a test naming "the
@@ -340,10 +336,6 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 				{
 					message = "the story row argument could not be read";
 					message.SetTranslatable(kFalse);
-				}
-				else if (id == e_KCMTakeInStory)
-				{
-					KCMRestoreAllInStory(storyRow, message);
 				}
 				else
 				{

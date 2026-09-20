@@ -97,10 +97,19 @@ void KCMCutTableStyleGroups(const char* xml, size_t size, std::string& outGroups
         <value>" - what a restore of THIS table left behind earlier in this comparison
         (KCMStorySnapshot). It is applied to the live ids before they are matched, which is what
         keeps road 1 working after an import has repacked them. nil when there is none.
+    @param liveIdsAreStale ★**THE LIVE TABLE HAS BEEN THROUGH AN IMPORT AND NO TRANSLATION SURVIVES**
+        - then road 1 is not taken at all. ⚠**Measured on the running application, 2026-09-20
+        evening**: "Restore -> Undo the Restore -> Restore" wrote the THIRD ROW's cells into the
+        second row, because the undo drops the translation (the table standing there IS a different
+        one) while the raw ids of a twice-imported table went on voting. An id is evidence only
+        while it is the id Task Start knows the cell by; once an import has handed out new ones and
+        nothing records what they were, it is a number that happens to exist. Ignored when
+        `liveWasTaskStart` is given, which is the case where the ids CAN be translated.
     @return kFalse when Task Start's text could not be walked; `outMerged` is then empty. */
 bool16 KCMMergeTableCells(const std::string& olderTableXml, const std::string& liveTableXml,
 						  std::string& outMerged, int32& outKept, std::string& outHow,
-						  const std::map<std::string, std::string>* liveWasTaskStart = nil);
+						  const std::map<std::string, std::string>* liveWasTaskStart = nil,
+						  bool16 liveIdsAreStale = kFalse);
 
 /** ★★★EVERY OUTERMOST CELL LABELLED WITH ITS OWN ID (2026-09-20, the user's design).
 

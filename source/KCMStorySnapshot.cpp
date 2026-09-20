@@ -7,6 +7,7 @@
 #include "VCPlugInHeaders.h"
 
 #include <map>
+#include <set>
 #include <string>
 
 #include "KCMStorySnapshot.h"
@@ -35,6 +36,7 @@ struct TableKey
 
 typedef std::map<UID, std::string>								StoryMap;
 typedef std::map<TableKey, std::map<std::string, std::string> >	CellIdMap;
+typedef std::set<TableKey>										TableSet;
 
 // ⚠Statics holding containers: each has a line in the model's shutdown (KCMPeek.cpp's
 //   ShutdownCleanup), the rule KCMStoryList.h states for every static of ours. All either of them
@@ -42,6 +44,9 @@ typedef std::map<TableKey, std::map<std::string, std::string> >	CellIdMap;
 //   the same thing.
 StoryMap	sStories;
 CellIdMap	sCellIds;
+// ★Which tables an import has written during this comparison - see the header. It outlives sCellIds
+//   on purpose: an Undo the Restore throws the translation away and this stays.
+TableSet	sImported;
 
 }	// anonymous namespace
 
@@ -92,7 +97,19 @@ void KCMStorySnapshotDropStory(UID story)
 
 void KCMStorySnapshotDropCellIds(UID story, int32 ordinal)
 {
+	// ⚠**sImported IS NOT TOUCHED HERE** - the header says why: the translation goes, the fact that
+	//   the ids mean nothing stays.
 	sCellIds.erase(TableKey(story, ordinal));
+}
+
+void KCMStorySnapshotMarkTableImported(UID story, int32 ordinal)
+{
+	sImported.insert(TableKey(story, ordinal));
+}
+
+bool16 KCMStorySnapshotTableWasImported(UID story, int32 ordinal)
+{
+	return (sImported.find(TableKey(story, ordinal)) != sImported.end()) ? kTrue : kFalse;
 }
 
 void KCMStorySnapshotDropAllStories()
@@ -104,6 +121,7 @@ void KCMStorySnapshotClear()
 {
 	sStories.clear();
 	sCellIds.clear();
+	sImported.clear();
 }
 
 // End, KCMStorySnapshot.cpp.

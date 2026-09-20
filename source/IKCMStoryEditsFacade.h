@@ -563,22 +563,17 @@ public:
 	virtual bool16	GetOversetPoint(IDataBase* db, UID storyUID, TextIndex at,
 									UID& outFrame, PBPMPoint& outPb) = 0;
 
-	/** Every change of row `nth`, taken in together as ONE undo step (2026-09-15, the user's ask:
-		"the same thing on the parent menu, for that story").
+	/** ⛔**RETIRED 2026-09-20 - ALWAYS kFalse, AND THE SLOT STAYS** (the user's decision: "Restore All
+		is going"). It took every change of row `nth` in as one undo step; both bulk items and the
+		whole backwards walk behind them are gone, and one change at a time is the only road left.
 
-		★**ONE PRESS, ONE UNDO STEP, TWO COMPARISONS** - not one comparison per change: the row is
-		walked BACKWARDS, so a write only disturbs text the walk has already passed
-		(KCMStoryRestore.h says why that is the whole trick).
-		★**A CHANGE THAT CANNOT GO IN IS SKIPPED, NOT A STOP**: outMessage counts what went in and
-		what did not and names the first reason. Pressing a bulk item says "all of them".
-
-		@return kTrue when at least one change went in.
-		⚠Appended at the END of the class - new virtuals go nowhere else, because KIDMCP calls this
-		  facade through its vtable ([[facade-vtable-slot-append-only]]). */
+		⚠**THE DECLARATION IS NOT DELETED, AND THAT IS THE POINT.** KIDMCP calls this facade through
+		 its VTABLE ([[facade-vtable-slot-append-only]]): taking a virtual OUT of the middle moves
+		 every slot after it, so a caller built against the old header would land on a different
+		 method entirely. A retired one keeps its slot and answers kFalse. */
 	virtual bool16	RestoreAllInStory(int32 nth, PMString& outMessage) = 0;
 
-	/** The same across every row of the Story Edits list, still one undo step. @see the note above.
-		⚠Appended at the END, like the one before it. */
+	/** ⛔**RETIRED 2026-09-20 - ALWAYS kFalse.** @see the slot rule above. */
 	virtual bool16	RestoreAllStories(PMString& outMessage) = 0;
 
 	/** Put change `which` of row `nth` back the way it stood before it was taken in

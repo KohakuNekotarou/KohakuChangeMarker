@@ -52,13 +52,14 @@ PMString Refused(const char* what)
 	return s;
 }
 
-/** One undo step for the whole of a table restore (the same shape as KCMStoryRestore's RestoreSequence;
-    a bulk run brings its own, and then this makes none). */
+/** One undo step for the whole of a table restore (the same shape as KCMStoryRestore's
+    RestoreSequence). ⚠It could be told to make none, for the bulk items dropped on 2026-09-20 -
+    which is also what put the scratch document inside somebody else's sequence. One press, one step. */
 class TableSequence
 {
 public:
-	explicit TableSequence(bool16 own, const char* name)
-		: fSequence(own ? CmdUtils::BeginCommandSequence("KCMTableRestore") : nil)
+	explicit TableSequence(const char* name)
+		: fSequence(CmdUtils::BeginCommandSequence("KCMTableRestore"))
 	{
 		if (fSequence != nil)
 		{
@@ -211,8 +212,7 @@ void AppendReChecks(PMString& outMessage, const KCMTargetItemCountGuard& guard)
 
 }	// anonymous namespace
 
-bool16 KCMRestoreTable(int32 nth, int32 which, const KCMStoryChange& changeIn, bool16 standalone,
-					   PMString& outMessage, KCMStoryChange* outDone, int32* outSlot)
+bool16 KCMRestoreTable(int32 nth, const KCMStoryChange& changeIn, PMString& outMessage)
 {
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
@@ -317,7 +317,12 @@ bool16 KCMRestoreTable(int32 nth, int32 which, const KCMStoryChange& changeIn, b
 		}
 		const std::map<std::string, std::string>* const wasTaskStart =
 			KCMStorySnapshotGetCellIds(storyUID, change.fTableOrdinal);
-		if (!KCMMergeTableCells(olderTableXml, liveTableXml, merged, kept, how, wasTaskStart))
+		// ★AND WHETHER THE LIVE IDS MEAN ANYTHING AT ALL (2026-09-20 evening, found on the running
+		//   application): a table an import has written carries ids that import handed out, and when
+		//   no translation survives - which is what an Undo the Restore leaves behind - they must not
+		//   vote. KCMTableSnippet.h says what went wrong while they did.
+		const bool16 staleIds = KCMStorySnapshotTableWasImported(storyUID, change.fTableOrdinal);
+		if (!KCMMergeTableCells(olderTableXml, liveTableXml, merged, kept, how, wasTaskStart, staleIds))
 		{
 			merged = olderTableXml;		// the whole table goes back; the sentence below says 0 kept
 			kept = 0;
@@ -370,7 +375,7 @@ bool16 KCMRestoreTable(int32 nth, int32 which, const KCMStoryChange& changeIn, b
 			ReadCellLabels(scratch.DB(), broughtIn, labelledAs);
 			ClearCellLabels(scratch.DB(), broughtIn);
 
-			TableSequence undo(standalone, "Restore Source Text");
+			TableSequence undo("Restore Source Text");
 			std::vector<KCMTableShape> after;
 			if (!CopyTableOver(tableStory, srcStart, srcEnd, db, storyUID,
 							   liveShape.fAnchorStart, liveShape.fAnchorEnd, outMessage))
@@ -393,6 +398,11 @@ bool16 KCMRestoreTable(int32 nth, int32 which, const KCMStoryChange& changeIn, b
 		AppendReChecks(outMessage, guard);	// said on the way out too: a scratch document must not linger
 		return kFalse;
 	}
+
+	// 7a. ★**THIS TABLE HAS NOW BEEN THROUGH AN IMPORT** - said BEFORE anything below can fail, because
+	//     it is true the moment the copy landed and it is what stops the next restore from trusting
+	//     the ids that import handed out (KCMStorySnapshot.h).
+	KCMStorySnapshotMarkTableImported(storyUID, change.fTableOrdinal);
 
 	// 7b. ★**WHICH TASK START CELL EACH CELL STANDING THERE NOW IS** (2026-09-20, the user's design).
 	//     The import repacked the ids, so the table that has just gone in shares none with Task
@@ -458,20 +468,9 @@ bool16 KCMRestoreTable(int32 nth, int32 which, const KCMStoryChange& changeIn, b
 	outMessage.Append(")");
 	AppendReChecks(outMessage, guard);
 
-	if (!standalone)
-	{
-		// A bulk run owns the bookkeeping - including fReplacedCount, which it measures once for all
-		// of them after its single re-diff (KCMStoryRestore.cpp:1369).
-		if (outDone != nil)
-			*outDone = change;
-		if (outSlot != nil)
-			*outSlot = slot;
-		return kTrue;
-	}
-
 	const int32 left = KCMStoryDiffRun::RunOne(db, nil, nth);
 	// ★The counter this record is measured by, asked AFTER the re-diff has recorded it on the row -
-	//   the order the words restore keeps (KCMStoryRestore.cpp:1180). ⚠The Table row's StillReplaced
+	//   the order the words restore keeps (RestoreOne's own tail). ⚠The Table row's StillReplaced
 	//   answers by SHAPE and never reads this; it is kept true so that one record cannot mean two
 	//   things depending on what made it.
 	change.fReplacedCount = KCMStoryDiffRun::CountForKind(UIDRef(db, storyUID), kKCMStoryAttrNone);
@@ -547,7 +546,7 @@ bool16 KCMUndoRestoreTable(int32 nth, int32 which, const KCMStoryChange& change,
 		}
 		else
 		{
-			TableSequence undo(kTrue, "Undo the Restore");
+			TableSequence undo("Undo the Restore");
 			if (CopyTableOver(tableStory, srcStart, srcEnd, db, storyUID,
 							  liveShape.fAnchorStart, liveShape.fAnchorEnd, outMessage))
 				putBack = kTrue;
@@ -578,7 +577,11 @@ bool16 KCMUndoRestoreTable(int32 nth, int32 which, const KCMStoryChange& change,
 	// ★AND WHAT THE RESTORE LEARNED ABOUT THOSE CELLS GOES WITH IT: the table standing there now is
 	//   the LIVE one again, brought in by another import, so its cells have yet another set of ids
 	//   and the map would be describing a table that is gone (2026-09-20).
+	// ⚠★★★**BUT THE TABLE IS STILL A TABLE AN IMPORT HAS WRITTEN**, and that has to be said out loud
+	//   here, because dropping the map alone is exactly what let the NEXT restore pair Task Start's
+	//   cells with a row that never was theirs (measured the same evening - KCMStorySnapshot.h).
 	KCMStorySnapshotDropCellIds(storyUID, change.fTableOrdinal);
+	KCMStorySnapshotMarkTableImported(storyUID, change.fTableOrdinal);
 
 	// The record goes - and the kept snippet with it (the user: discard it once it is redone).
 	KCMStoryList::RemoveReplacedChangeAt(nth, slot);

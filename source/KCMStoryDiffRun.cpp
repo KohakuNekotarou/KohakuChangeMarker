@@ -538,10 +538,10 @@ void AddCutAtObjects(std::vector<KCMStoryChange>& out,
    ⚠**A PLACE'S FIRST PARAGRAPH HAS NO RETURN BEFORE IT IN ITS PLACE**, so it is cut at its own start
    instead: [its start, just past its return), before the paragraph that follows.
    ⚠**ONE CARET FOR ALL OF A RUN'S PARAGRAPHS ON THE SIDE THAT LACKS THEM.** Taken in one by one they
-   all go in right before the same return; each press writes in front of the ones already in, so a bulk
-   run walking backwards puts them in their order (and gives them the next style chained afterwards -
-   KCMStoryRestore's BulkRun). Taken in singly and out of order, the panel asks first
-   (fAfterNewParagraph).
+   all go in right before the same return, each press writing in front of the ones already in - so taken
+   in from the last to the first they come out in their order. Out of order, the panel asks first
+   (fAfterNewParagraph). ⚠A bulk run used to do that walk (and chain the run's next styles afterwards);
+   the bulk items went on 2026-09-20 and the order is the reader's own.
    @param placesAgree OUT whether the paragraphs can be placed at all - the paragraph they follow (or
           precede) stands in the same place on both sides. */
 void AddWholeParagraphs(std::vector<KCMStoryChange>& out, const KCMTextDiff::Change& run,

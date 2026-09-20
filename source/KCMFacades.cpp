@@ -685,12 +685,14 @@ public:
 		return KCMRestoreChange(nth, which, outMessage);
 	}
 
-	// The two bulk items (2026-09-15). ★The order of the DEFINITIONS here does not matter - the
-	//   vtable follows the order of the DECLARATIONS in IKCMStoryEditsFacade.h, where both are at
-	//   the end - but they are kept beside the single-change one so that a reader finds the family.
+	// ⛔**THE TWO BULK ITEMS ARE RETIRED** (2026-09-20, the user's decision). The slots stay - KIDMCP
+	//   calls this facade by vtable, so a virtual taken out of the middle moves every one after it
+	//   ([[facade-vtable-slot-append-only]]) - and they answer kFalse with the reason.
 	virtual bool16	RestoreAllInStory(int32 nth, PMString& outMessage)
 	{
-		return KCMRestoreAllInStory(nth, outMessage);
+		outMessage = PMString("Restore All was removed on 2026-09-20 - take changes in one at a time.");
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
 	}
 
 	virtual bool16	UndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
@@ -744,9 +746,11 @@ public:
 		return kTrue;
 	}
 
-	virtual bool16	RestoreAllStories(PMString& outMessage)
+	virtual bool16	RestoreAllStories(PMString& outMessage)		// ⛔retired - see RestoreAllInStory above
 	{
-		return KCMRestoreAllStories(outMessage);
+		outMessage = PMString("Restore All was removed on 2026-09-20 - take changes in one at a time.");
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
 	}
 
 	virtual bool16	GetOversetPoint(IDataBase* db, UID storyUID, TextIndex at,
