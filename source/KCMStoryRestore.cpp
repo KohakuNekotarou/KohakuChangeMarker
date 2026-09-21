@@ -1178,10 +1178,22 @@ bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 
 bool16 KCMStoryWritesAllowed()
 {
-	// KCMOriginArmed is true exactly while the armed Source is a rehydrated origin: a Task Start, or
-	// the Import mode's snapshot (it takes the origin slot too). Two open documents, and the lent
-	// database, arm a real Source database instead - KCMArmedSourceDB is then non-nil.
-	return KCMOriginArmed();
+	// ★★**THE SOURCE IS SOMETHING THE OLDER WORDS CAN BE READ OUT OF.** Two open documents, a Task
+	//   Start copy that Start has opened, the lent database - all three are a live database, and
+	//   the restore has read from one the same way since it was written (it asks KCMArmedSourceDB
+	//   first and only falls to a rehydration when that is nil).
+	//
+	// ⚠★★**THE 2026-09-16 RULE IS WITHDRAWN** (the user, 2026-09-21). Comparing two documents used
+	//   to offer no restore at all, on the grounds that the Source was a document the reader could
+	//   open and copy from themselves, while against a Task Start the older text existed nowhere
+	//   else. **A Task Start is now a document like any other**, so the two cases stopped being
+	//   different - and leaving the rule standing would have taken the items away from the very
+	//   mode they were written for.
+	//   ⇒ The lent database (KIDMCP's Compare) comes in with them, by the same reasoning.
+	//
+	// ⛔The origin is still a way to be armed with no Source database, so it stays in this answer
+	//   until the origin itself goes.
+	return (KCMArmedSourceDB() != nil || KCMOriginArmed()) ? kTrue : kFalse;
 }
 
 /*	KCMUndoRestoreChange

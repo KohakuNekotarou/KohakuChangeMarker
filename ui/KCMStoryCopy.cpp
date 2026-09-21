@@ -105,8 +105,10 @@ bool16 KCMChangeRowCanRestore()
 	// (⛔Until 2026-09-20 this also refused in the fourth mode, where the same command was offered
 	//  under its own name - "Change to Imported Text". The mode and the second name are gone.)
 
-	// ★★**AND NOT WHEN TWO DOCUMENTS ARE COMPARED** (2026-09-16, the user's rule: the Source is
-	//   there to copy from). The model decides (CanWriteToTarget) and its writes refuse on it too.
+	// ★**AND ONLY WITH A SOURCE THE OLDER WORDS CAN BE READ OUT OF.** The model decides
+	//   (CanWriteToTarget) and its writes refuse on the same answer.
+	//   ⚠(Until 2026-09-21 this also refused whenever two documents were compared - the user's
+	//    rule of 2026-09-16, withdrawn when a Task Start became a document like any other.)
 	if (!Utils<IKCMStoryEditsFacade>()->CanWriteToTarget())
 		return kFalse;
 
@@ -187,7 +189,7 @@ bool16 CanUndoRestore()
 	if (!StashedChange(change))
 		return kFalse;
 
-	// Not when two documents are compared - the same rule and the same one answer as the take-in.
+	// The same rule and the same one answer as the take-in: a Source to read the older words from.
 	if (!Utils<IKCMStoryEditsFacade>()->CanWriteToTarget())
 		return kFalse;
 

@@ -43,14 +43,16 @@ class WideString;
     says how many); kFalse with the reason in outMessage. */
 bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage);
 
-/** Whether anything may be written back into the Target at all: kTrue only while the Source is a
-    rehydrated ORIGIN - a Task Start, or the Import mode's own snapshot.
+/** Whether anything may be written back into the Target at all: kTrue while there is a SOURCE THE
+    OLDER WORDS CAN BE READ OUT OF - two open documents, a Task Start copy Start has opened, or the
+    lent database.
 
-    ★★**THE USER'S RULE (2026-09-16): COMPARING TWO DOCUMENTS OFFERS NO RESTORE.** The Source is a
-      document the reader can open and copy from, so the plug-in does not write for them there.
-      Against a Task Start the older text exists nowhere else, which is what the items are for.
-    ⚠The lent database (KIDMCP's Compare, an invisible copy) counts as two documents here - the
-     rule read literally as "only against a Task Start". One line to change if that is to differ.
+    ⚠★★**THE 2026-09-16 RULE IS WITHDRAWN** (the user, 2026-09-21). Comparing two documents used to
+      offer no restore, on the grounds that the Source was a document the reader could open and copy
+      from themselves, while against a Task Start the older text existed nowhere else. **A Task
+      Start is now a copy saved on disk and opened by Start** - a document like any other - so the
+      two cases stopped being different, and the rule would have taken the items away from the mode
+      they were written for.
     ★ONE PLACE: the UI hides the items on it (facade CanWriteToTarget) and every write refuses on it. */
 bool16 KCMStoryWritesAllowed();
 

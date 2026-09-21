@@ -590,8 +590,11 @@ public:
 	virtual bool16	UndoRestoreChange(int32 nth, int32 which, PMString& outMessage) = 0;
 
 	/** Whether the comparison standing now lets anything be written back into the Target - kTrue
-		only against a Task Start (or the Import mode's snapshot). 2026-09-16, the user's rule:
-		comparing two documents offers no restore, because the Source is there to copy from.
+		whenever there is a SOURCE THE OLDER WORDS CAN BE READ OUT OF: two open documents, a Task
+		Start copy that Start has opened, or the lent database.
+		⚠**The 2026-09-16 rule - "comparing two documents offers no restore, because the Source is
+		  there to copy from" - is WITHDRAWN** (the user, 2026-09-21), a Task Start having become a
+		  copy saved on disk and so a document like any other.
 		★The UI hides every write item on it; the model's writes refuse on the same answer
 		  (KCMStoryWritesAllowed - the one place it is decided).
 		⚠Appended at the END, like every virtual added since the split. */
