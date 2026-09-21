@@ -65,8 +65,9 @@ class KCMMemXferBytes;
     both - which is what lets a comparison pair tables without counting them. Measured the same day:
     inserting a table at the START of a story moves no other table's id, removing one moves none of
     the rest, and an Undo of a removal brings the id back unchanged.
-    ⚠**A SNIPPET IMPORT HANDS OUT NEW IDS** (281,291,301,311 -> 282,292,302,312), so a table KCM has
-     put back shares none with Task Start's - KCMStorySnapshot keeps what it learned instead.
+    ⚠**A SNIPPET IMPORT HANDS OUT NEW IDS** (281,291,301,311 -> 282,292,302,312), so a table KCM had
+     put back shared none with Task Start's, and KCMStorySnapshot kept the translation. (⛔Both went
+     with the restore on 2026-09-21: KCM puts no table back now, so every id is the document's own.)
 
     @return kFalse when the story is not in this text; kTrue with an empty list when it holds no table. */
 bool16 KCMReadTableIdsInStory(const char* xml, size_t size, UID storyUID, std::vector<UID>& out);
@@ -117,9 +118,9 @@ void KCMCutTableStyleGroups(const char* xml, size_t size, std::string& outGroups
     @param outKept how many cells kept their live contents.
     @param outHow which of the four roads above answered, for the sentence the reader is shown.
     @param liveWasTaskStart optional: "the live cell whose id is <key> WAS Task Start's cell
-        <value>" - what a restore of THIS table left behind earlier in this comparison
-        (KCMStorySnapshot). It is applied to the live ids before they are matched, which is what
-        keeps road 1 working after an import has repacked them. nil when there is none.
+        <value>" - what a restore of THIS table left behind earlier in the same comparison. It is
+        applied to the live ids before they are matched. (⛔Nothing fills it since the restore went
+        on 2026-09-21; the parameter is kept because the four roads are still the four roads.)
     @param liveIdsAreStale ★**THE LIVE TABLE HAS BEEN THROUGH AN IMPORT AND NO TRANSLATION SURVIVES**
         - then road 1 is not taken at all. ⚠**Measured on the running application, 2026-09-20
         evening**: "Restore -> Undo the Restore -> Restore" wrote the THIRD ROW's cells into the

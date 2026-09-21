@@ -446,7 +446,7 @@ struct KCMStoryRow
 	//  two new paragraphs taken out and put back came back as "¶ba".)
 
 	/** ★What an IMPORT could not put into this story, one entry each (2026-09-19, the user's ask).
-		Shown BEFORE fChanges and fReplacedChanges, each with a red "!" in the Δ column - and the row
+		Shown BEFORE fChanges, each with a red "!" in the Δ column - and the row
 		itself carries kKCMStoryKindRefused, which is what puts it at the top of the list (RowIsBefore).
 
 		**NOT IN fChanges, for the reason fReplacedChanges is not:** RunOne empties that on every
