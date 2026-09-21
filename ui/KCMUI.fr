@@ -1286,26 +1286,14 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// not answer the second question anyway).
 		// ★Enabled ONLY in the Story mode, while armed, on a row that has a partner to compare
 		// against (kCustomEnabling -> KCMStoryRowCanRefresh). ⚠It was the ONLY item on this menu
-		// until 2026-09-15, when "Restore All in This Story" joined it below; that item went on
-		// 2026-09-20 and came back on 2026-09-21. Greyed still means no menu, but only when EVERY
-		// item on it is greyed - which the Pixel mode still does.
+		// until 2026-09-15, when "Restore All in This Story" joined it below; **that item is gone
+		// again since 2026-09-21** (it went on 2026-09-20, came back that morning, and went for good
+		// with the whole restore), so in the Story mode this is once more the only item here.
+		// Greyed still means no menu, but only when EVERY item on it is greyed - which the Pixel
+		// mode still does.
 		kKCMStoryRowRefreshActionID,
 		kKCMStoryRowMenuName,
 		kKCMStoryRowRefreshMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
-		// ----- The Story Edits STORY rows: "Restore All in This Story" (back 2026-09-21) -----
-		// Every change of that story put back in ONE press and ONE undo step. The model walks the
-		// row backwards and re-diffs only at the ends (KCMStoryRestore.h).
-		// ★**Live on the same conditions as the single item, plus "the row still has changes"**
-		//   (KCMStoryCopy's StoryBulkLive), so the item appears exactly when pressing it would do
-		//   something - and pressing it on a row whose changes are all taken in answers rather than
-		//   writing.
-		// ⛔**"Restore All Stories" did not come back with it** (the user asked for the story-sized
-		//   one), so there is no flyout twin of this item.
-		kKCMStoryRowRestoreAllActionID,
-		kKCMStoryRowMenuName,
-		kKCMStoryRowRestoreAllMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// ----- The Resources rows: "Edit..." (2026-09-13), at the TOP of the menu -----
@@ -1337,38 +1325,25 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// items here act on the CHANGE the cursor is over, and the story row's items are not on it -
 		// so neither row is ever offered the other's commands.
 		// ("Copy Source Text" was the first of them, from 2026-09-12 to 2026-09-15.)
+		// ⚠★★**SINCE 2026-09-21 THE SUBTREE IS EMPTY IN THE STORY MODE** - the restore was the whole
+		//   of what a change row offered - so a right click there raises no menu, exactly as it did
+		//   before 2026-09-12. The subtree is kept for the Resources mode's item below.
 		//
 		// "Edit..." (2026-09-13), at the TOP of this menu too. An ATTRIBUTE row's editor is the same
 		// dialog its definition row opens, shown AT THE PAGE THAT HOLDS THAT ATTRIBUTE. ★Live only
-		// in the Resources mode (kCustomEnabling -> KCMResourceAttrCanEdit), so a Story change row
-		// still sees only the two items below - AND only on an attribute whose page is known, since
-		// landing on the General page is not a smaller version of this item but a different one.
+		// in the Resources mode (kCustomEnabling -> KCMResourceAttrCanEdit) - AND only on an
+		// attribute whose page is known, since landing on the General page is not a smaller version
+		// of this item but a different one. It is now the ONLY item on this menu.
 		kKCMResourceAttrEditActionID,
 		kKCMChangeRowMenuName,
 		kKCMResourceAttrEditMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Restore Source Text" (2026-09-13): write the OLDER side's words over that one change in
-		// the newer document - one undo step - and diff the story again. Since the evening of
-		// 2026-09-13 the older RUBY (changed / added / removed, mono or group) and the older KENTEN
-		// kind go back the same way. Enabled in the Story mode on every change row
-		// (kCustomEnabling -> KCMChangeRowCanRestore); with this item present the menu appears on
-		// every change, the copy item alone deciding whether IT is greyed.
-		kKCMChangeRowRestoreActionID,
-		kKCMChangeRowMenuName,
-		kKCMChangeRowRestoreMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
-		// "Undo the Restore" (2026-09-16, the user's ask: "Ctrl+Z puts it back, but I want it on the
-		// right-click menu too"): the opposite of the item above. Live only on a change that is
-		// standing as taken in.
-		// ⚠Both were PAIRS until 2026-09-20 - one ActionID per mode, each greyed in the other's, so
-		//   that the Import mode could call them "Change to Imported Text" and "Change Back to the
-		//   Original". The fourth mode is gone and so are its two names.
-		kKCMChangeRowUndoRestoreActionID,
-		kKCMChangeRowMenuName,
-		kKCMChangeRowUndoRestoreMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
+		// (⛔"Restore Source Text" and "Undo the Restore" stood here from 2026-09-13 and 2026-09-16 and
+		//  went on 2026-09-21 with the restore itself - the user: "the Source document is in front of
+		//  you, so if you want it back, take it from there". ⇒ **In the Story mode this subtree now
+		//  holds nothing and so raises no menu at all**, which is what a change row did before
+		//  2026-09-12. "Edit..." above is the only item left, and it is live in the Resources mode.)
 
 	}
 };
@@ -1751,18 +1726,6 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// "Restore All in This Story" on a STORY row's context menu (back 2026-09-21).
-		// ⚠ Not on the flyout, for the same reason as the item above: it acts on the ROW the menu
-		// was popped over, which a flyout has no way of naming (KCMStoryRowEH stashes it).
-		kKCMActionComponentBoss,
-		kKCMStoryRowRestoreAllActionID,
-		kKCMStoryRowRestoreAllMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it on KCMStoryRowCanRestoreAll
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
 		// "Show as XML" on a definition row's context menu (2026-09-09).
 		// ⚠ Not on the flyout, for the same reason as the two items above: it acts on the ROW the
 		// menu was popped over, which a flyout has no way of naming (KCMStoryRowEH stashes it).
@@ -1796,29 +1759,9 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// ("Copy Source Text" stood here from 2026-09-12 and was taken out on 2026-09-15 at the
-		//  user's request. Its ActionID is a dead slot now - KCMUIID.h says why it is not reused.)
-		kKCMActionComponentBoss,
-		kKCMChangeRowRestoreActionID,
-		kKCMChangeRowRestoreMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it on a ruby/kenten change (KCMChangeRowCanRestore)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		// ★"Undo the Restore" (2026-09-16) - the opposite of the item above. ⚠It is a COMMAND, not
-		//   Edit > Undo: it works whatever has been done since, and it can itself be undone.
-		//   (Its Import-mode twin, "Change Back to the Original", went with the fourth mode on
-		//    2026-09-20, as did "Change to Imported Text" above.)
-		kKCMActionComponentBoss,
-		kKCMChangeRowUndoRestoreActionID,
-		kKCMChangeRowUndoRestoreMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// live in the Story mode on a change standing as taken in (KCMChangeRowCanUndoRestore)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
+		// (Three ActionDefs stood here and are gone: "Copy Source Text" on 2026-09-15, and
+		//  "Restore Source Text" / "Undo the Restore" on 2026-09-21 with the restore itself. All three
+		//  ActionIDs are dead slots - KCMUIID.h says why a retired number is never reused.)
 
 		// (The ActionDef for "Find Overset" stood here and went with its menu item on 2026-09-08.)
 

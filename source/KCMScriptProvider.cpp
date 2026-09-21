@@ -145,8 +145,8 @@
 #include "SysFileList.h"			// app.kcmImportStoryText hands its one file over as a list
 #include "KCMCore.h"				// KCMActiveDocDB - app.kcmExportStoryText exports the active document
 #include "KCMComparisonRun.h"		// KCMStopComparison - app.kcmStopComparison
-#include "KCMStoryRestore.h"		// KCMRestoreChange / KCMUndoRestoreChange - app.kcmTakeInChange, app.kcmUndoRestore
-#include "KCMStoryDiffRun.h"		// KCMStoryDiffRun::StillReplaced - which taken-in change app.kcmUndoRestore may name
+// (⛔KCMStoryRestore.h and KCMStoryDiffRun.h were included here for app.kcmTakeInChange and
+//  app.kcmUndoRestore, and went with those two methods on 2026-09-21.)
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - app.kcmExportStoryText
 #include "KCMStoryTextImport.h"	// KCMImportStoryText - app.kcmImportStoryText
 // ⚠**KCMTextRead.h WENT WITH THE FEATURE THAT NEEDED IT** (2026-09-08). It was included here for
@@ -293,80 +293,17 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 		const int32 id = methodID.Get();
 		if (id == e_KCMImportStoryText
 			|| id == e_KCMExportStoryText || id == e_KCMStopComparison
-			|| id == e_KCMTakeInChange
-			|| id == e_KCMExportStoryDocx || id == e_KCMUndoRestoreChange)
+			|| id == e_KCMExportStoryDocx)
 		{
 			PMString message;
 			message.SetTranslatable(kFalse);
 
-			if (id == e_KCMTakeInChange || id == e_KCMUndoRestoreChange)
-			{
-				// ★The story row by index, the change by WORDS it holds - the index space of a row's changes
-				//   moves as changes are taken in (the replaced ones stay listed), so a test naming "the
-				//   paragraph that says 3" cannot be pointed at the wrong one by an earlier take-in.
-				ScriptData rowArg;
-				int32 storyRow = -1;
-				if (data->ExtractRequestData(p_Index, rowArg) != kSuccess || rowArg.GetInt32(&storyRow) != kSuccess)
-				{
-					message = "the story row argument could not be read";
-					message.SetTranslatable(kFalse);
-				}
-				else
-				{
-					ScriptData wordsArg;
-					PMString words;
-					if (data->ExtractRequestData(p_Contents, wordsArg) != kSuccess
-						|| wordsArg.GetPMString(words) != kSuccess)
-					{
-						message = "the words argument could not be read";
-						message.SetTranslatable(kFalse);
-					}
-					else
-					{
-						// ★TAKE IN, OR PUT BACK - the same search, over the opposite half of the list
-						//   (2026-09-19 night): kcmTakeInChange looks among the changes NOT yet taken in,
-						//   kcmUndoRestore among the ones taken in and still standing so (an undone one is
-						//   already back, and KCMUndoRestoreChange would refuse it anyway).
-						const bool16 undoing = (id == e_KCMUndoRestoreChange) ? kTrue : kFalse;
-						const KCMStoryRow* const row = KCMStoryList::GetRow(storyRow);
-						const std::string wanted = words.GetUTF8String();
-						int32 found = -1;
-						const int32 count = KCMStoryList::GetMergedChangeCount(storyRow);
-						for (int32 k = 0; k < count && found < 0; ++k)
-						{
-							bool16 replaced = kFalse;
-							const KCMStoryChange* const change = KCMStoryList::GetMergedChange(storyRow, k, replaced);
-							if (change == nil || change->fWhat == KCMStoryChange::kRefused)
-								continue;
-							if (undoing)
-							{
-								if (!replaced || row == nil || !KCMStoryDiffRun::StillReplaced(*row, *change))
-									continue;
-							}
-							else if (replaced)
-								continue;
-							if (change->fOtherText.GetUTF8String().find(wanted) != std::string::npos
-								|| change->fText.GetUTF8String().find(wanted) != std::string::npos)
-								found = k;
-						}
-						if (found < 0)
-						{
-							message = undoing ? "no change taken in holds those words"
-											  : "no change not yet taken in holds those words";
-							message.SetTranslatable(kFalse);
-						}
-						else if (undoing)
-						{
-							KCMUndoRestoreChange(storyRow, found, message);
-						}
-						else
-						{
-							KCMRestoreChange(storyRow, found, message);
-						}
-					}
-				}
-			}
-			else if (id == e_KCMStopComparison)
+			// (⛔**app.kcmTakeInChange AND app.kcmUndoRestore WENT ON 2026-09-21**, with the restore they
+			//  drove. The branch that stood here found a change by the WORDS it holds - the index space
+			//  of a row's changes moves as changes are taken in - and then called KCMRestoreChange or
+			//  KCMUndoRestoreChange. ★Both ScriptIDs are retired in KCMScriptingDefs.h, neither having
+			//  been registered with Adobe.)
+			if (id == e_KCMStopComparison)
 			{
 				KCMStopComparison();
 				KCMGetSessionStatus(message);

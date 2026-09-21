@@ -1,0 +1,12 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryRestore.h",
+    "find": "/** The one command that makes [at, at+count) of `model` read `words` - for every writer of WORDS: the\n    restore, the undo of one, and the import's pour into the document (2026-09-17).",
+    "replace": "/** The one command that makes [at, at+count) of `model` read `words` - for every writer of WORDS.\n    It had three callers until 2026-09-21 (the restore, the undo of one, and the import's pour);\n    since the restore went, the import's pour is the whole of it."
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryRestore.h",
+    "find": "// ---- the attribute writers, shared with the PDF report (2026-09-13) ------------------------\n// The report's Story section (KCMReportTable.cpp) sets real ruby and real kenten over the changed\n// characters of a table cell, with exactly the recipe the restore uses on the user's document.\n// One recipe, two callers; the report document is a throwaway, so no undo step is wanted there.",
+    "replace": "// ---- the attribute writers, shared with the PDF report (2026-09-13) ------------------------\n// The report's Story section (KCMReportTable.cpp) sets real ruby and real kenten over the changed\n// characters of a table cell, with exactly the recipe the import pours into the document with.\n// One recipe, two callers; the report document is a throwaway, so no undo step is wanted there.\n// (\u26d4The third caller was the restore, until 2026-09-21. The recipe stayed because the other two\n//  were never its own - it shared theirs.)"
+  }
+]

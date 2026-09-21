@@ -4,9 +4,14 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  The right-click menu of a CHANGE row (a child row of the Story Edits list): which change the
-//  menu was popped over, and the items that act on that one change - "Restore Source Text" and
-//  "Undo the Restore". (⛔Each wore a second name in the fourth mode, which went on 2026-09-20.)
+//  The right-click menu of a CHANGE row (a child row of the Story Edits list): WHICH CHANGE the
+//  menu was popped over.
+//
+//  ⛔**THE ITEMS THAT ACTED ON THAT CHANGE ARE GONE** (2026-09-21). "Restore Source Text" and "Undo
+//  the Restore" went with the whole restore, on the user's word - "the Source document is in front
+//  of you, so if you want it back, take it from there" - as "Copy Source Text" had gone before them.
+//  ⇒ **In the Story mode this subtree is empty and raises no menu at all**, which is what a child
+//  row did before 2026-09-12. What is left here is the stash, read by the Resources mode's "Edit...".
 //
 //  ★THIS SUBTREE REVERSED A DECISION OF 2026-08-21. Until 2026-09-12 a right click on a child row
 //  raised no menu at all (the user's call at the time), because the only menu there acted on the
@@ -64,44 +69,10 @@ void KCMStorySetMenuChange(int32 rowIndex, int32 changeIndex);
 */
 bool16 KCMStoryGetMenuChange(int32& outRow, int32& outChange);
 
-/** Whether "Restore Source Text" may be enabled for the stashed change: the Story mode, and any
-    change - words, ruby or kenten (since the evening of 2026-09-13). An insertion counts -
-    restoring it takes the inserted words out again. What cannot be written back is refused by
-    the model with a reason, not greyed here. */
-bool16 KCMChangeRowCanRestore();
-
-/** Runs "Restore Source Text" on the stashed change through the facade (KCMStoryRestore.h on
-    the model side) and puts its message on the status line. kTrue when something was written. */
-bool16 KCMChangeRowRestore();
-
-// ---- putting one change back (2026-09-16) ---------------------------------------------------
-// ★**THE OPPOSITE OF THE ITEM ABOVE.**
-// ⚠**NOT Edit > Undo.** Ctrl+Z reaches only the last thing done; this reaches the change the
-//   reader points at, whatever they have done since, and is itself one undo step.
-// (⛔Both were PAIRS until 2026-09-20: the fourth mode called them "Change to Imported Text" and
-//  "Change Back to the Original". The mode is gone and one name is left for each.)
-
-/** Whether "Undo the Restore" may be offered: the Story mode, and a change that is STANDING as
-    taken in. ⚠Asks the model's fReplaced, which is the document's own answer - so a change the
-    reader has already put back with Ctrl+Z greys the item rather than offering a second way to
-    do what is done. */
-bool16 KCMChangeRowCanUndoRestore();
-
-/** Runs it through the facade and puts the model's message on the status line. */
-bool16 KCMChangeRowUndoRestore();
-
-// ---- the one-story item (2026-09-15, gone 2026-09-20, back 2026-09-21) ----------------------
-// ★**THE SAME ACT AT TWO SIZES**: one change (above) and one story. The model does the work in one
-//   undo step either way (KCMStoryRestore.h); these decide when the item is offered and name which
-//   story. ⛔**"Restore All Stories" did not come back** - the user asked for the story-sized one.
-
-/** Whether "Restore All in This Story" may be offered on the STORY row the menu was popped over:
-    a comparison running in a mode with story rows, a Source to read from, and a row with something
-    under it. */
-bool16 KCMStoryRowCanRestoreAll();
-
-/** Take in every change of that story - one press, one undo step. Reports on the status line. */
-bool16 KCMStoryRowRestoreAll();
+// (⛔Six declarations stood here: KCMChangeRowCanRestore / KCMChangeRowRestore, the "Undo the
+//  Restore" pair (2026-09-16), and the one-story pair (2026-09-15, gone 2026-09-20, back and gone
+//  again 2026-09-21). All six went with the restore on 2026-09-21. ⚠**The row's own menu file,
+//  KCMStoryRefresh, kept its items** - Refresh Story Comparison reads, it does not write.)
 
 #endif // __KCMStoryCopy_h__
 

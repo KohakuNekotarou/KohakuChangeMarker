@@ -62,7 +62,8 @@
 #include "KCMStoryRefresh.h"		// KCMStoryRowCanRefresh / KCMStoryRefreshMenuRow (the "Refresh Story Comparison" row item)
 #include "KCMResourceXml.h"			// KCMResourceRowHasXml / KCMShowResourceXml (the "Show as XML" row item)
 #include "KCMResourceEdit.h"			// KCMResourceRowCanEdit / KCMEditMenuResourceRow and the attribute pair (the "Edit..." row items)
-#include "KCMStoryCopy.h"			// the CHANGE row's items: Restore Source Text, Undo the Restore
+// (KCMStoryCopy.h was included here for the CHANGE row's items - Restore Source Text and Undo the
+//  Restore - and both went on 2026-09-21. Nothing in this file reads that stash.)
 #include "KCMStoryJump.h"			// KCMBringArmedTargetToFront - the Target is what the reader looks at once a comparison runs
 #include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / Set / Apply (the "Translucent Panel" flyout item)
 #include "KCMStoryPressMarks.h"	// KCMStoryMarksRefresh (rebuild the always-on marks of Story mode)
@@ -982,8 +983,10 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// .docx) are read, a Task Start is taken, the edits go INTO THE DOCUMENT as one undo step,
 		// and the Story comparison starts against that Task Start (2026-09-19, the user's call - a
 		// trial; the design is docs/superpowers/specs/2026-09-19-kcm-import-direct-design.md).
-		// ★What could not go in is listed first, with a red "!". "Restore Source Text" takes one
-		//   change back; Ctrl+Z takes the whole import back.
+		// ★What could not go in is listed first, with a red "!". ⚠**Ctrl+Z takes the whole import
+		//   back, and since 2026-09-21 nothing takes ONE change back** - the restore went that day,
+		//   so a change the reader does not want is copied from the Source document, which Start
+		//   has open in a window.
 		// ★★**FILES, AND AS MANY AS THEY LIKE** (the user's decision, 2026-09-15). A folder was
 		//   what this asked for until now, which meant handing over everything that happened to be
 		//   in one.
@@ -1070,15 +1073,6 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMStoryRefreshMenuRow();
 			break;
 
-		// "Restore All in This Story" on a STORY row's context menu (2026-09-15, gone 2026-09-20,
-		// back 2026-09-21 on the user's word). Every change of that story put back in one press and
-		// one undo step; the model walks the row backwards and re-diffs only at its ends.
-		// ★Which row it was is noted the same way as for the item above, by KCMStorySetMenuRow at
-		//   the right click - this item hangs on the STORY row's menu, not the change row's.
-		case kKCMStoryRowRestoreAllActionID:
-			KCMStoryRowRestoreAll();
-			break;
-
 		// "Show as XML" on a DEFINITION row's context menu (2026-09-09). Shows the element the row
 		// names, from both documents, in a modal alert. ★Which row it was is noted the same way as
 		// for the item above, by KCMStorySetMenuRow at the right click.
@@ -1101,21 +1095,9 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMEditMenuResourceAttr();
 			break;
 
-		// Change-row context menu "Restore Source Text" (2026-09-13): the older words written over
-		// that one change, undoable. The model decides and reports (KCMStoryRestore.cpp); this side
-		// only names the stashed change.
-		// ⚠It took TWO IDS until 2026-09-20, because the fourth mode called it "Change to Imported
-		//   Text" - one item per name, since KCM has no dynamic menu. The mode is gone with its name.
-		case kKCMChangeRowRestoreActionID:
-			KCMChangeRowRestore();
-			break;
-
-		// The opposite (2026-09-16, the user's ask: "Ctrl+Z puts it back, but I want it on the
-		// right-click menu too"). ⚠It is a COMMAND, not Edit > Undo - it reaches the change the
-		// reader points at whatever they have done since, and it is itself one undo step.
-		case kKCMChangeRowUndoRestoreActionID:
-			KCMChangeRowUndoRestore();
-			break;
+		// (⛔The change row's two cases - "Restore Source Text" and "Undo the Restore" - went on
+		//  2026-09-21 with the restore itself. **Nothing on a menu of KCM's writes the reader's text
+		//  now**; the older words are taken from the Source document, which Start has open.)
 
 		// (The panel tool button's flyout had two cases here for a few hours on 2026-09-04. They
 		//  are gone with their ActionDefs: the flyout is a Win32 popup raised by KCMToolButtonEH,
@@ -1593,17 +1575,6 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			listToUpdate->SetNthActionState(i, KCMBookRowCanStart(KCMBookMenuRow()) ? kEnabledAction
 			                                                                            : kDisabled_Unselected);
 		}
-		else if (action == kKCMStoryRowRestoreAllActionID)
-		{
-			// ★The same test as the execution (KCMStoryRowCanRestoreAll -> StoryBulkLive), so the
-			//   menu and the result cannot part company: a comparison running in a mode with story
-			//   rows, a Source to read the older words from, and a row that still has changes.
-			// ⚠**It shares this row menu with "Refresh Story Comparison" and "Show as XML"**, and a
-			//   greyed item does not appear at all - so the Pixel mode, where all three are grey,
-			//   shows no menu, which is what it did before this item existed.
-			listToUpdate->SetNthActionState(i,
-				KCMStoryRowCanRestoreAll() ? kEnabledAction : kDisabled_Unselected);
-		}
 		else if (action == kKCMStoryRowRefreshActionID)
 		{
 			// ★It goes through the same test as the execution (KCMStoryRowCanRefresh), so the menu and the
@@ -1643,21 +1614,6 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//   above it still offers Edit..., so the style itself is never out of reach.
 			listToUpdate->SetNthActionState(i, KCMResourceAttrCanEdit() ? kEnabledAction
 			                                                            : kDisabled_Unselected);
-		}
-		else if (action == kKCMChangeRowRestoreActionID)
-		{
-			// The same test the action runs (a text change, in the Story mode). Unlike the copy
-			// item, an insertion is live: restoring it takes the inserted words out again.
-			listToUpdate->SetNthActionState(i, KCMChangeRowCanRestore() ? kEnabledAction
-			                                                            : kDisabled_Unselected);
-		}
-		// "Undo the Restore" (2026-09-16): live on a change that is
-		// STANDING as taken in - which is the model's answer about the document, so a change the
-		// reader has already put back with Ctrl+Z greys it.
-		else if (action == kKCMChangeRowUndoRestoreActionID)
-		{
-			listToUpdate->SetNthActionState(i, KCMChangeRowCanUndoRestore() ? kEnabledAction
-			                                                                : kDisabled_Unselected);
 		}
 	}
 }

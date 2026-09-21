@@ -1,0 +1,12 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\ui\\KCMUI_enUS.fr",
+    "find": "- Ctrl+Z takes the whole import back in one step. To take one change back, right-click its row and choose \\\"Restore Source Text\\\"; to put it in again, \\\"Undo the Restore\\\". The rows stay in the list either way",
+    "replace": "- Ctrl+Z takes the whole import back in one step. There is no way to take ONE change back: the restore was removed on 2026-09-21, so copy whatever you did not want from the Source document, which Start has open in a window"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\ui\\KCMUI_enUS.fr",
+    "find": "- Right-click a change (the lines under a story) for \\\"Restore Source Text\\\", which writes the older side back into the newer document for that one change: the words, the ruby (changed, added or removed; mono and group ruby each come back as what they were) or the kenten kind. One Ctrl+Z undoes it, and the story is compared again at once. Editing the story after the comparison no longer stops it: that one story is compared again first, and the change is found afresh. If you edited the very words being replaced, it stops once so you can see what the paragraph says now - press again to take it in. It refuses, with the reason on the status line, when the kenten was a custom mark, and when a paragraph's words changed as well as its ruby or kenten (restore the words first).\\n- Right-click the STORY row itself for \\\"Restore All in This Story\\\": the same act for every change of that story, in one press and one undo step.\\n- The older words are read from the Source AS IT STANDS. If you edit the Source document after the comparison, what goes back may no longer be what you saw on the row - compare again first.",
+    "replace": "- Nothing on these menus writes into your document. When you want the older wording back, copy it from the Source document itself: Start opens the Source in a window and leaves it open, whether it is a Task Start copy or the other document you chose. (\\\"Restore Source Text\\\", \\\"Undo the Restore\\\" and \\\"Restore All in This Story\\\" were removed on 2026-09-21.)"
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryList.h",
+    "find": "\t/** The Target story's text change counter (ITextModel::GetTextChangeCount) at the moment\n\t\tfChanges were built. \"Restore Source Text\" (KCMStoryRestore.cpp) refuses to write into a\n\t\tstory whose counter has moved since: the change's positions name the text as it was then,\n\t\tand an edit in between would put the older words somewhere else. 0 until the diff runs. */",
+    "replace": "\t/** The Target story's text change counter (ITextModel::GetTextChangeCount) at the moment\n\t\tfChanges were built. 0 until the diff runs.\n\t\t(\u26d4The restore read it to refuse writing into a story whose counter had moved since - the\n\t\t change's positions name the text as it was then. It went on 2026-09-21.) */"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryList.h",
+    "find": "\t//   \"change number N of row M\" (how many, which one, which attribute, does it carry a value)\n\t//   and \"Restore Source Text\" asks a fifth. Letting some of them count the live changes and\n\t//   others count the merged list would not fail loudly - it would answer about the WRONG",
+    "replace": "\t//   \"change number N of row M\" (how many, which one, which attribute, does it carry a value),\n\t//   and the restore asked a fifth until 2026-09-21. Letting some of them count the live changes\n\t//   and others count the merged list would not fail loudly - it would answer about the WRONG"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMSourceCache.h",
+    "find": "//  WHAT THIS IS FOR. Comparing against a TASK START (or against an Import, which uses the same\n//  slot) means the Source is not an open document at all: it is a byte string, and every press of\n//  \"Restore Source Text\" / \"Change to Imported Text\" rebuilt a whole document out of it -\n//  kNewDocumentCmdBoss, ImportINX, the page names - used it for a moment, and closed it again.\n//  The reader feels that as the panel going away for a second on every single change they take in\n//  (the user, 2026-09-16: \"it is too heavy to work with\").",
+    "replace": "//  WHAT THIS WAS FOR. Comparing against a TASK START used to mean the Source was not an open\n//  document at all: it was a byte string, and every press of \"Restore Source Text\" rebuilt a whole\n//  document out of it - kNewDocumentCmdBoss, ImportINX, the page names - used it for a moment, and\n//  closed it again. The reader felt that as the panel going away for a second on every single\n//  change they took in (the user, 2026-09-16: \"it is too heavy to work with\").\n//  \u26d4**BOTH ENDS OF THAT ARE GONE NOW**: a Task Start became a saved document on 2026-09-21, so\n//  nothing is rehydrated, and the restore went the same day, so nothing presses. What is left is a\n//  cache that keeps nothing (KCMSourceCacheMayKeep answers kFalse) and the readers that ask it."
+  }
+]

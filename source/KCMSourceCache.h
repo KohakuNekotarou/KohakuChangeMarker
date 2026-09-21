@@ -4,12 +4,14 @@
 //
 //  KohakuChangeMarker (KCM) - the Source side of a story, read once and kept
 //
-//  WHAT THIS IS FOR. Comparing against a TASK START (or against an Import, which uses the same
-//  slot) means the Source is not an open document at all: it is a byte string, and every press of
-//  "Restore Source Text" / "Change to Imported Text" rebuilt a whole document out of it -
-//  kNewDocumentCmdBoss, ImportINX, the page names - used it for a moment, and closed it again.
-//  The reader feels that as the panel going away for a second on every single change they take in
-//  (the user, 2026-09-16: "it is too heavy to work with").
+//  WHAT THIS WAS FOR. Comparing against a TASK START used to mean the Source was not an open
+//  document at all: it was a byte string, and every press of "Restore Source Text" rebuilt a whole
+//  document out of it - kNewDocumentCmdBoss, ImportINX, the page names - used it for a moment, and
+//  closed it again. The reader felt that as the panel going away for a second on every single
+//  change they took in (the user, 2026-09-16: "it is too heavy to work with").
+//  ⛔**BOTH ENDS OF THAT ARE GONE NOW**: a Task Start became a saved document on 2026-09-21, so
+//  nothing is rehydrated, and the restore went the same day, so nothing presses. What is left is a
+//  cache that keeps nothing (KCMSourceCacheMayKeep answers kFalse) and the readers that ask it.
 //
 //  ★★★**THE CASE THAT IS SLOW IS THE CASE THAT IS SAFE TO KEEP.** When two documents are open and
 //  armed, nothing is rehydrated - KCMArmedSourceDB hands back the real document and the press is

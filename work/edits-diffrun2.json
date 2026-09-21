@@ -1,0 +1,22 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryDiffRun.cpp",
+    "find": "\t\ttable.fTableId = haveT ? tShapes[tI].fDictUID : kInvalidUID;\n\t\t// \u26a0kInvalidUID when the pairing fell back to the position: nothing may then be written by\n\t\t//   name, and every write below asks for this id before it touches the document.\n\t\ttable.fSourceTableId = (haveS && byId) ? sIds[sI] : kInvalidUID;\n\t\ttable.fPlace = kKCMPlaceCell;",
+    "replace": "\t\ttable.fPlace = kKCMPlaceCell;"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryDiffRun.cpp",
+    "find": "\t\t// \u2605**TABLE + AND TABLE \u2212 CAN BE PUT BACK TOO** (2026-09-20, the user: \"I want to be able to put\n\t\t//   them back\"). The older rule - \"to remove a table, select it and delete it\" - was withdrawn\n\t\t//   the same day; KCMTableRestore removes the one and brings the other in.\n\t\t// \u26a0\u2605\u2605**EXCEPT WHEN THE OLDER SIDE'S TABLE CANNOT BE NAMED** (found re-reading this before the\n\t\t//   live run). Every write that has to fetch a table out of Task Start asks for it BY ID, so a\n\t\t//   row whose pairing fell back to the position must not offer one - it would be a write by a\n\t\t//   number that moves. A Table +, which fetches nothing and only removes, is unaffected.\n\t\ttable.fWriteBlock = (haveS && !byId) ? kKCMWriteBlockedTable : kKCMWriteAllowed;\n\t\tif (haveT)\n\t\t{\n\t\t\ttable.fTargetStart = tShapes[tI].fAnchorStart;\n\t\t\ttable.fTargetEnd = tShapes[tI].fAnchorEnd;\n\t\t\ttable.fShapeSigAfter = KCMTableShapeSignature(tShapes[tI]);\n\t\t}\n\t\tif (haveS)\n\t\t{\n\t\t\ttable.fSourceStart = sShapes[sI].fAnchorStart;\n\t\t\ttable.fSourceEnd = sShapes[sI].fAnchorEnd;\n\t\t\ttable.fShapeSigBefore = KCMTableShapeSignature(sShapes[sI]);\n\n\t\t\t// \u2605\u2605\u2605**AND WHERE IT STOOD, MEASURED FROM THE TABLE BEFORE IT** (KCMStoryList.h says why -\n\t\t\t//   Task Start's anchor alone landed inside a word once another table had changed). The\n\t\t\t//   one that stands nearest before it, by anchor; with none, the distance from the start\n\t\t\t//   of the story.\n\t\t\t// \u26a0A nested table's anchor lives inside a cell, which stands past the whole body\n\t\t\t//   (ITableTextContent.h), so a body table's search never picks one up: their anchors are\n\t\t\t//   all larger than any body anchor.\n\t\t\tTextIndex prevEnd = 0;\n\t\t\ttable.fPrevTableId = kInvalidUID;\n\t\t\tfor (size_t q = 0; q < sShapes.size(); ++q)\n\t\t\t{\n\t\t\t\tif (q == sI || sShapes[q].fAnchorEnd > sShapes[sI].fAnchorStart)\n\t\t\t\t\tcontinue;\n\t\t\t\tif (sShapes[q].fAnchorEnd >= prevEnd)\n\t\t\t\t{\n\t\t\t\t\tprevEnd = sShapes[q].fAnchorEnd;\n\t\t\t\t\ttable.fPrevTableId = byId ? sIds[q] : kInvalidUID;\n\t\t\t\t}\n\t\t\t}\n\t\t\ttable.fGapFromPrev = sShapes[sI].fAnchorStart - prevEnd;\n\t\t}",
+    "replace": "\t\t// (\u26d4**SEVEN THINGS A TABLE ROW RECORDED FOR THE RESTORE WENT ON 2026-09-21**: the two tables'\n\t\t//  own ids, the write block for a pairing that had fallen back to the position, the two shape\n\t\t//  signatures, and where the table stood measured from the table before it. Every one of them\n\t\t//  was written here and read only by a write into the document. \u2605The ID PAIRING ITSELF STAYS -\n\t\t//  it is what tells this call WHICH table is which, and the row is drawn from it.)\n\t\tif (haveT)\n\t\t{\n\t\t\ttable.fTargetStart = tShapes[tI].fAnchorStart;\n\t\t\ttable.fTargetEnd = tShapes[tI].fAnchorEnd;\n\t\t}\n\t\tif (haveS)\n\t\t{\n\t\t\ttable.fSourceStart = sShapes[sI].fAnchorStart;\n\t\t\ttable.fSourceEnd = sShapes[sI].fAnchorEnd;\n\t\t}"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryDiffRun.cpp",
+    "find": "\t\t\tchange.fWriteBlock = kKCMWriteBlockedPlaces;",
+    "replace": "\t\t\t// (\u26d4The write block was recorded here until 2026-09-21 - the menu greyed its item on it.)"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryDiffRun.cpp",
+    "find": "\t\t\tchange.fWriteBlock = kKCMWriteBlockedObjects;",
+    "replace": "\t\t\t// (\u26d4...and here, for a change holding a table, a note or an anchored object.)"
+  }
+]

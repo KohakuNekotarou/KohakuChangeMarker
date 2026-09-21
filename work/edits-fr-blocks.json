@@ -1,0 +1,30 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\ui\\KCMUI.fr",
+    "start": "// ----- The Story Edits STORY rows: \"Restore All in This Story\" (back 2026-09-21) -----",
+    "end": "\t\tkKCMStoryRowRestoreAllMenuItemPosition,",
+    "after": 2,
+    "replacement": null
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\ui\\KCMUI.fr",
+    "start": "\t\t// \"Restore Source Text\" (2026-09-13): write the OLDER side's words over that one change in",
+    "end": "\t\tkKCMChangeRowUndoRestoreMenuItemPosition,",
+    "after": 2,
+    "replacement": "\t\t// (\u26d4\"Restore Source Text\" and \"Undo the Restore\" stood here from 2026-09-13 and 2026-09-16 and\n\t\t//  went on 2026-09-21 with the restore itself - the user: \"the Source document is in front of\n\t\t//  you, so if you want it back, take it from there\". \u21d2 **In the Story mode this subtree now\n\t\t//  holds nothing and so raises no menu at all**, which is what a change row did before\n\t\t//  2026-09-12. \"Edit...\" above is the only item left, and it is live in the Resources mode.)\n"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\ui\\KCMUI.fr",
+    "start": "\t\t// \"Restore All in This Story\" on a STORY row's context menu (back 2026-09-21).",
+    "end": "\t\tkCustomEnabling|kDisableIfLowMem,\t// UpdateActionStates greys it on KCMStoryRowCanRestoreAll",
+    "after": 3,
+    "replacement": null
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\ui\\KCMUI.fr",
+    "start": "\t\t// (\"Copy Source Text\" stood here from 2026-09-12 and was taken out on 2026-09-15 at the",
+    "end": "\t\tkCustomEnabling|kDisableIfLowMem,\t// live in the Story mode on a change standing as taken in (KCMChangeRowCanUndoRestore)",
+    "after": 3,
+    "replacement": "\t\t// (Three ActionDefs stood here and are gone: \"Copy Source Text\" on 2026-09-15, and\n\t\t//  \"Restore Source Text\" / \"Undo the Restore\" on 2026-09-21 with the restore itself. All three\n\t\t//  ActionIDs are dead slots - KCMUIID.h says why a retired number is never reused.)\n"
+  }
+]

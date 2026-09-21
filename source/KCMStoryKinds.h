@@ -178,40 +178,14 @@ inline bool16 KCMAttrKindIsLayered(int32 attrKind)
 */
 const uint32 kKCMStoryKindUnpaired = kKCMStoryKindAdded | kKCMStoryKindRemoved;
 
-/** Why a TEXT change cannot be written back into the reader's document (2026-09-16, the user's rule:
-	"in the Task Start mode, restore only when the range holds no special character - and only then
-	show the item").
-
-	★**DECIDED BY THE DIFF, CARRIED TO THE MENU, ASKED AGAIN BY THE WRITE.** The comparison knows
-	  both sides' paragraphs and characters, so it names the reason once per change; the UI hides
-	  "Restore Source Text" / "Change to Imported Text" on a change that has one; and the write
-	  itself asks the same questions of the characters as they stand at that moment, because the
-	  reader can type between the two (KCMStoryRestore.cpp).
-	@warning carried across the model/UI boundary as a plain int32 (IKCMStoryEditsFacade's
-	  Change::fWriteBlock) - the values are the contract and must not be renumbered. */
-enum KCMStoryWriteBlock
-{
-	kKCMWriteAllowed = 0,
-	kKCMWriteBlockedPlaces = 1,		// a table cell or a footnote whose place is not on the other side
-									// (KCMParaText::WordsCanBeWrittenAcross) - measured, a deleted
-									// table's cell "restored" into a position nothing could see
-	kKCMWriteBlockedObjects = 2,	// the words going in or coming out hold a character InDesign hangs
-									// an object on (KCMParaText::IsObjectCharacter) - measured, an
-									// anchored rectangle came back as U+FFFC alone
-	kKCMWriteBlockedTable = 4,		// ★★a table the two sides cannot name to each other (2026-09-20): the
-									// pairing fell back to the POSITION because Task Start's text could
-									// not be asked for its tables' ids, and a write that went by a
-									// number would put one table's shape into another the moment a
-									// table had been inserted before it. Shown, and not offered.
-									// ⚠Listed after the one below only because the values are the
-									//  contract; it is the newest of them.
-	kKCMWriteBlockedKind = 3		// ★a row that has nothing to write back: the "!" note of something an
-									// import could not put in (KCMStoryList's refusals). ⚠**IT MEANT A
-									// WARICHU OR A TATE-CHU-YOKO UNTIL 2026-09-20** - the diff marked
-									// those and the menu hid the item; since the fourth mode was retired
-									// they are restorable wherever they stand (the user's decision), and
-									// the diff sets this for none of them
-};
+// (⛔**KCMStoryWriteBlock WENT ON 2026-09-21** with the restore, which was the only thing that could
+//  be blocked. It named, once per change, why a TEXT change could not be written back into the
+//  reader's document: a table cell or a footnote whose place is not on the other side (measured - a
+//  deleted table's cell "restored" into a position nothing could see); a range holding a character
+//  InDesign hangs an object on (measured - an anchored rectangle came back as U+FFFC alone); a table
+//  the two sides could not name to each other; and a row with nothing to write back at all.
+//  ★The values were a contract across the model/UI boundary and are listed in
+//  docs/ai-notes/kcm-restore-retired-2026-09-21.md, in case anything is ever written back again.)
 
 #endif // __KCMStoryKinds_h__
 

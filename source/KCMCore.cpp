@@ -52,7 +52,6 @@
 #include "KCMStoryList.h"          // the list of changed stories (the model the Story Edits section reads)
 #include "KCMResourceStore.h"      // the list of changed DEFINITIONS - emptied at the same moment
 #include "KCMStoryDiffRun.h"       // in the Story mode, what changed inside each row
-#include "KCMStoryUndoObserver.h"  // so that a Ctrl+Z after a restore redraws the list
 #include "KCMHideUnchanged.h"      // KCMResetHideUnchanged
 #include "KCMExternalSource.h"     // KCMIsDbAlive -- "still there" includes the lent Source
 // **No UI header is included here.** Everything this file used to do to the screen is now a
@@ -589,12 +588,13 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	//   mode reports text changes and gives up the rest.
 	KCMStoryList::DropRowsWithNoContentChange();
 
-	// ***** AND FROM NOW ON, AN UNDO REDRAWS THE LIST (2026-09-15). *****
-	// ⚠**AFTER the drop, not before**: a row that has just been dropped has nothing on the panel to
-	//   redraw, and attaching to its story would be work for a notification nobody reads.
-	// The observer writes nothing - it says "the text of a story you are showing has changed", which
-	// is as true of a Ctrl+Z as of the restore that preceded it (KCMStoryUndoObserver.h).
-	KCMStoryUndoEnsureObservers(targetDB);
+	// (⛔**AN OBSERVER WAS ATTACHED HERE TO EVERY LISTED STORY** (2026-09-15), so that a Ctrl+Z after
+	//  a restore redrew the list: whether a change was drawn as taken in came from the story's own
+	//  counter, which an undo winds back, and the only thing missing was the signal. ★It went with
+	//  the restore on 2026-09-21 - nothing a row draws depends on the live document any more, so the
+	//  redraw would show exactly what was already there. The file is KCMStoryUndoObserver in the
+	//  history, and the lazy-attachment reasoning it carried is in
+	//  docs/ai-notes/kcm-restore-retired-2026-09-21.md.)
 
 	// Once the model is built, say so. It is safe to do with the panel closed or the section
 	// collapsed (both give up quietly inside), so the caller does not have to know whether anything

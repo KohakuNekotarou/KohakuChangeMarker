@@ -1,0 +1,12 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryList.cpp",
+    "find": "\tc.fWriteBlock = kKCMWriteBlockedKind;\t// nothing to write back; the menu asks this first\n",
+    "replace": "\t// (\u26d4It also said \"nothing here can be written back\", which the menu asked first, until 2026-09-21.)\n"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryDiffRun.cpp",
+    "find": "\t\t\tchange.fKind = KCMStoryChange::kDelete;\t\t// the target lacks it (Add's naming: tCount == 0)\n\t\t\tchange.fAfterNewParagraph = (k > 0) ? kTrue : kFalse;",
+    "replace": "\t\t\tchange.fKind = KCMStoryChange::kDelete;\t\t// the target lacks it (Add's naming: tCount == 0)\n\t\t\t// (\u26d4The second \"+\" of \"+ +\" was marked here until 2026-09-21, so that the panel could ask\n\t\t\t//  before one was taken in ahead of the other.)"
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\ui\\KCMStoryJump.cpp",
+    "find": "\tlabel.Append(change.fReplaced ? \"Before:\" : \"Source:\");",
+    "replace": "\tlabel.Append(\"Source:\");\t// (\u26d4\"Before:\" for a change taken in, until the restore went 2026-09-21)"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\ui\\KCMStoryJump.cpp",
+    "find": "\t// The other side of this edit, in the three pieces the box draws in two colours - and for a\n\t// replaced row, the side that is no longer anywhere else (see the label above). The model\n\t// decided which words those are; both triples arrive filled in, and this picks the one that\n\t// matches what the row is showing.\n\tconst PMString& otherPre  = change.fReplaced ? change.fBeforeTextPre  : change.fOtherTextPre;\n\tconst PMString& otherMid  = change.fReplaced ? change.fBeforeText     : change.fOtherText;\n\tconst PMString& otherPost = change.fReplaced ? change.fBeforeTextPost : change.fOtherTextPost;",
+    "replace": "\t// The other side of this edit, in the three pieces the box draws in two colours.\n\t// (\u26d4A row the reader had taken in showed its BEFORE side here instead - the side that was no\n\t//  longer anywhere else - until the restore went on 2026-09-21.)\n\tconst PMString& otherPre  = change.fOtherTextPre;\n\tconst PMString& otherMid  = change.fOtherText;\n\tconst PMString& otherPost = change.fOtherTextPost;"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryMarkBuild.cpp",
+    "find": "\t\t\t// \u2605\u2605**A CHANGE THE READER HAS TAKEN IN IS NOT A DIFFERENCE ANY MORE** (the Import\n\t\t\t//   mode, 2026-09-15). Its row stays in the list so that they can see what they did -\n\t\t\t//   that is the list's job - but these marks say \"the two versions differ HERE\", and\n\t\t\t//   at that place they no longer do. Lighting it would point at text that now matches\n\t\t\t//   the source, which is the one thing a comparison mark must never do.\n\t\t\t//   \u26a0It comes back on its own after an undo: fReplaced is the model comparing the\n\t\t\t//   story's counter with the one it recorded, so the mark returns with the old words.\n\t\t\tif (change.fReplaced)\n\t\t\t\tcontinue;\n\n",
+    "replace": "\t\t\t// (\u26d4**A CHANGE THE READER HAD TAKEN IN WAS NOT MARKED** - its row stayed in the list, but\n\t\t\t//  the marks say \"the two versions differ HERE\" and at that place they no longer did.\n\t\t\t//  Nothing is taken in since the restore went on 2026-09-21.)\n\n"
+  }
+]

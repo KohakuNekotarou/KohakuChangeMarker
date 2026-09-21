@@ -1,0 +1,26 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryList.cpp",
+    "start": "void KCMStoryList::AddReplacedChange(int32 nth, const KCMStoryChange& done)",
+    "before": 2,
+    "end": "\tgRows[nth].fReplacedChanges.clear();",
+    "after": 2,
+    "replacement": "// (\u26d4AddReplacedChange and ClearReplacedChanges stood here and went on 2026-09-21 with the restore.\n//  They kept, in fReplacedStart order, the changes the reader had taken in - the records that let a\n//  row stay in the list after a write, so that an undo had something to come back to.)\n"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryList.cpp",
+    "start": "int32 KCMStoryList::ReplacedSlotFor(int32 nth, TextIndex at)",
+    "before": 2,
+    "end": "\tKCMStoryRowMerge::Merge(live, done, out);",
+    "after": 3,
+    "replacement": "// (\u26d4**FIVE MORE WENT ON 2026-09-21**, all of them the restore's bookkeeping: ReplacedSlotFor (where\n//  a new record belonged, with the caret tie rule the panel was shown); AddReplacedChangeAt;\n//  ShiftOnePlace and ShiftReplacedChanges, which slid the records a later write in the same story\n//  had moved - including the mark spans a Table row's jump aimed at; and MergedSlots, which fed the\n//  two ascending lists to KCMStoryRowMerge. \u2605**KCMStoryRowMerge went with them** - it had no other\n//  caller - and with it the offline test that covered the tie rules.)\n"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryList.cpp",
+    "start": "int32 KCMStoryList::ReplacedSlotOfMerged(int32 nth, int32 which)",
+    "before": 2,
+    "end": "\tlist.erase(list.begin() + slot);",
+    "after": 2,
+    "replacement": "// (\u26d4ReplacedSlotOfMerged and RemoveReplacedChangeAt went the same day: the first answered which\n//  record a merged index had fallen on, the second dropped one an undo had put back.)\n"
+  }
+]

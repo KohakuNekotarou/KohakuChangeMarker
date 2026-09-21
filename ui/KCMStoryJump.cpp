@@ -806,7 +806,7 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//    in one line is worse than not saying it at all.
 	PMString label;
 	label.SetTranslatable(kFalse);
-	label.Append(change.fReplaced ? "Before:" : "Source:");
+	label.Append("Source:");	// (⛔"Before:" for a change taken in, until the restore went 2026-09-21)
 	const PMString kindWord = KCMChangeIdLabel(change.fAttrKind, change.fPlace,
 											   change.fWholeParagraph, change.fWhat, kFalse);
 	if (!kindWord.IsEmpty())
@@ -852,13 +852,12 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 		otherRuby.SetTranslatable(kFalse);
 	}
 
-	// The other side of this edit, in the three pieces the box draws in two colours - and for a
-	// replaced row, the side that is no longer anywhere else (see the label above). The model
-	// decided which words those are; both triples arrive filled in, and this picks the one that
-	// matches what the row is showing.
-	const PMString& otherPre  = change.fReplaced ? change.fBeforeTextPre  : change.fOtherTextPre;
-	const PMString& otherMid  = change.fReplaced ? change.fBeforeText     : change.fOtherText;
-	const PMString& otherPost = change.fReplaced ? change.fBeforeTextPost : change.fOtherTextPost;
+	// The other side of this edit, in the three pieces the box draws in two colours.
+	// (⛔A row the reader had taken in showed its BEFORE side here instead - the side that was no
+	//  longer anywhere else - until the restore went on 2026-09-21.)
+	const PMString& otherPre  = change.fOtherTextPre;
+	const PMString& otherMid  = change.fOtherText;
+	const PMString& otherPost = change.fOtherTextPost;
 
 	// ★A WARICHU / TATE-CHU-YOKO carries its other side's LINES too (2026-09-16), cut by the model;
 	//   the box draws them in layers. fCount is 0 for every other kind, and then nothing changes.

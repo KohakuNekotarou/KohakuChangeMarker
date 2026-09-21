@@ -145,31 +145,12 @@ namespace KCMStoryDiffRun
 		@return 0 when the story cannot be opened. */
 	uint32 CountForKind(const UIDRef& story, int32 kind);
 
-	/** ★★★**IS THIS REPLACED CHANGE STILL STANDING AS REPLACED?** - the one question, in the one
-		place, asked by everything that draws a row AND by everything that writes (2026-09-16).
-
-		It was a static inside KCMFacades while only the DRAWING asked it, and the writing side had
-		a test of its own: "already replaced" meant the record existed at all. The two then said
-		different things the moment the reader pressed Ctrl+Z - the row went back to unreplaced,
-		correctly, while the menu went on refusing to take it in ("this change has already been
-		taken in"). One question, two answers, which is the fault this file has the most scars from
-		([[one-question-one-place]]).
-
-		★The answer is the document's own: the story's counter, of the kind this change is measured
-		 by (CountForKind), against the counter recorded when the change went in. An undo takes the
-		 counter back and this answers kFalse with no undo-specific code anywhere.
-		@return kFalse for a change that was never replaced, and for one an undo has taken back. */
-	bool16 StillReplaced(const KCMStoryRow& row, const KCMStoryChange& change);
-
-	/** Drop the row's replaced records that an undo has taken back (StillReplaced answers kFalse).
-
-		★**THE RECORD IS THE READER'S OWN HISTORY, so only the ones that are no longer true go.**
-		  Undo in InDesign is a stack: undoing once takes back the LAST take-in, and the ones
-		  before it are still in the document. Clearing the row outright - what "Refresh Story
-		  Comparison" does, deliberately, as a fresh start - would throw those away as well.
-		@return kTrue when any went, which is also "this story now needs comparing again": the
-			change that came back is not in the live list until it is. */
-	bool16 DropUndoneReplaced(int32 nth);
+	// (⛔**StillReplaced and DropUndoneReplaced went on 2026-09-21** with the restore. The first was
+	//  "is this change the reader took in still standing as taken in", asked in ONE place by
+	//  everything that drew a row and everything that wrote - the two had had separate answers once,
+	//  and said different things the moment the reader pressed Ctrl+Z ([[one-question-one-place]]).
+	//  The second dropped the records an undo had taken back, keeping the ones still true, because
+	//  undo in InDesign is a stack. ★Nothing is taken in now.)
 }
 
 #endif // __KCMStoryDiffRun_h__

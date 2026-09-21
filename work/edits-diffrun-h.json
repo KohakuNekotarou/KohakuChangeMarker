@@ -1,0 +1,8 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryDiffRun.h",
+    "start": "\t/** \u2605\u2605\u2605**IS THIS REPLACED CHANGE STILL STANDING AS REPLACED?** - the one question, in the one",
+    "end": "\tbool16 DropUndoneReplaced(int32 nth);",
+    "replacement": "\t// (\u26d4**StillReplaced and DropUndoneReplaced went on 2026-09-21** with the restore. The first was\n\t//  \"is this change the reader took in still standing as taken in\", asked in ONE place by\n\t//  everything that drew a row and everything that wrote - the two had had separate answers once,\n\t//  and said different things the moment the reader pressed Ctrl+Z ([[one-question-one-place]]).\n\t//  The second dropped the records an undo had taken back, keeping the ones still true, because\n\t//  undo in InDesign is a stack. \u2605Nothing is taken in now.)"
+  }
+]

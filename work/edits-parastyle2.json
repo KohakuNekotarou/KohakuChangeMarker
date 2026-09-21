@@ -1,0 +1,17 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMParagraphStyle.cpp",
+    "find": "#include \"IAttributeStrand.h\"\n#include \"ICommand.h\"\n#include \"IDocument.h\"\n#include \"IStyleGroupHierarchy.h\"\n#include \"IStyleGroupManager.h\"\n#include \"IStyleInfo.h\"\n#include \"ITextModel.h\"\n#include \"ITextModelCmds.h\"\n#include \"ITextStoryThread.h\"\n\n#include \"CmdUtils.h\"\n#include \"ErrorUtils.h\"\n#include \"TextChar.h\"\n#include \"TextID.h\"\n#include \"TextIterator.h\"\n",
+    "replace": "#include \"IAttributeStrand.h\"\n#include \"ICommand.h\"\n#include \"IStyleInfo.h\"\n#include \"ITextModel.h\"\n#include \"ITextModelCmds.h\"\n\n#include \"CmdUtils.h\"\n#include \"ErrorUtils.h\"\n#include \"TextID.h\"\n\n// (Six more includes went with the restore's eight functions on 2026-09-21: the document, the two\n//  style-group headers, the story thread, TextChar and TextIterator.)\n"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMParagraphStyle.h",
+    "find": "//  Paragraph styles for the paragraphs an import or a restore puts in (2026-09-17, the user's rule):",
+    "replace": "//  Paragraph styles for the paragraphs an import puts in (2026-09-17, the user's rule; the restore\n//  was the other caller until 2026-09-21):"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMParagraphStyle.h",
+    "find": "#include \"BaseType.h\"\t\t// int32 / TextIndex / ErrorCode\n#include \"PMString.h\"\n#include \"UIDRef.h\"\n\n#include <vector>\n",
+    "replace": "#include \"BaseType.h\"\t\t// int32 / TextIndex / ErrorCode\n#include \"UIDRef.h\"\t\t\t// UID\n"
+  }
+]

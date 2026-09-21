@@ -269,25 +269,26 @@ public:
 		//   only kind reported; that is exactly the state in which a stand-in survives unnoticed.
 		int32		fAttrKind;
 
-		// ---- the Import mode's replaced changes (2026-09-15) --------------------------------
+		// ---- what a change the reader had TAKEN IN carried (2026-09-15; retired 2026-09-21) -----
 		//
 		// ★**Added at the END of the struct.** The UI reads Change BY VALUE, so both halves have
 		//   to be built together whenever it changes, and a field inserted in the middle lands
 		//   the other side's reads on the wrong bytes - the same accident as inserting a virtual
 		//   into a facade ([[facade-vtable-slot-append-only]]), wearing different clothes.
 		//   ⚠KIDMCP reads this struct too. Three plug-ins are rebuilt together or none is.
+		// ⛔**THE FOUR BELOW ARE RETIRED AND KEPT FOR THE LAYOUT** (2026-09-21, with the restore):
+		//   a row has one face again, so fReplaced is always kFalse and the three pieces are empty.
+		//   Taking them OUT would move every field after them - the very accident the note above is
+		//   about - so they stay until something else has to move anyway.
 
-		/** Whether this change is being SHOWN as replaced right now.
-
-			★**IT IS NOT STORED ANYWHERE** - the model works it out by asking whether the story's
-			text change counter still stands where it stood when the write happened. An undo
-			takes that counter back, so this goes kFalse on its own and the row draws itself as
-			it was; a redo brings it back. ⇒ The panel never has to know that undo exists. */
+		/** ⛔Always kFalse since 2026-09-21. It said whether this change was being SHOWN as taken
+			in, which the model worked out by asking whether the story's text change counter still
+			stood where it stood when the write happened - so an undo took it back on its own and
+			the panel never had to know that undo exists. */
 		bool16		fReplaced;
 
-		/** The three pieces AS THEY STOOD BEFORE the replacement - what the message area shows
-			for a replaced row, in place of the source text (which is now IN the row).
-			Meaningless while fReplaced is kFalse. */
+		/** ⛔Always empty since 2026-09-21. The three pieces AS THEY STOOD BEFORE the write, which
+			the message area showed for a taken-in row in place of the source text. */
 		PMString	fBeforeTextPre;
 		PMString	fBeforeText;
 		PMString	fBeforeTextPost;
@@ -303,11 +304,10 @@ public:
 			(KCMStoryList.h says why). */
 		bool16		fOverset;
 
-		/** Why this change must not be written back into the reader's document - KCMStoryWriteBlock
-			(0 = it may). 2026-09-16, the user's rule: offer "Restore Source Text" / "Change to
-			Imported Text" only when the text holds no special character, and never for a cell or a
-			footnote whose place is gone. ★Decided by the diff; the model's write asks again.
-			⚠Appended at the END, for the reason stated above fReplaced. */
+		/** ⛔Always 0 since 2026-09-21, and kept for the layout. It said why this change must not be
+			written back into the reader's document (KCMStoryWriteBlock) - the user's rule of
+			2026-09-16: offer the restore only when the text holds no special character, and never for
+			a cell or a footnote whose place is gone. Nothing writes back now. */
 		int32		fWriteBlock;
 
 		/** The lines a WARICHU or TATE-CHU-YOKO change is drawn on (2026-09-16) - fLayers for the row
@@ -317,9 +317,9 @@ public:
 		KCMStoryLayers	fLayers;
 		KCMStoryLayers	fOtherLayers;
 
-		/** A whole paragraph added or removed, and whether the paragraph before it is one to take in as
-			well (2026-09-17 afternoon) - KCMStoryList.h's fields of the same names say what each means.
-			The panel asks before taking in the second "+" of "+ +" on its own (the user's request).
+		/** A whole paragraph added or removed. (⛔fAfterNewParagraph said whether the paragraph before
+			it was one to take in as well - the second "+" of "+ +", which the panel asked about before
+			taking it in alone. It is always kFalse since the restore went on 2026-09-21.)
 			★**ITS RANGES HERE ARE THE PARAGRAPH'S WORDS ALONE** (2026-09-19): the model's own record
 			holds the paragraph break as well, for the write, and GetChange cuts it off before handing
 			the ranges over - so a mark, a flash or a selection made from them never reaches the end of
@@ -483,18 +483,16 @@ public:
 			frame - callers keep the fallback frame they already had. */
 	virtual UID		GetStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index) = 0;
 
-	/** "Restore Source Text" (2026-09-13): write the older side's words of change `which` of
-		row `nth` over the newer side's range - one undoable command - then diff the row's story
-		again. kTrue when written; outMessage either way (how many characters, or why not:
-		a ruby/kenten change, a closed document). The words are read raw from the Source, never
-		from the row's display excerpt (KCMStoryRestore.h).
+	/** ⛔**RETIRED 2026-09-21 - ALWAYS kFalse, AND THE SLOT STAYS.** "Restore Source Text" wrote the
+		older side's words of one change over the newer side's range, in one undoable command, and then
+		diffed that story again.
 
-		★★**A STORY EDITED SINCE THE COMPARISON IS NO LONGER A REFUSAL** (2026-09-15, the user's
-		decision). That one story is compared again and this change looked up afresh by its SOURCE
-		range - the side an edit in the Target cannot move. The one time it still answers kFalse
-		for an edit is when the paragraph now READS differently from what the reader had in front
-		of them: it says so, redraws the row, and the press after that one goes through.
-		⚠Appended at the END of the class (new virtuals go nowhere else). */
+		★**WHY IT WENT** (the user's word): "the Source document is in front of you, so if you want it
+		  back, take it from there". A Task Start became a copy saved to a file and opened by Start on
+		  2026-09-21, so EVERY comparison now has its older side open in a window - and KCM stopped
+		  writing into the reader's text altogether.
+		⚠**THE DECLARATION IS NOT DELETED, AND THAT IS THE POINT** - the reason RestoreAllStories gives
+		 below: KIDMCP calls this facade through its VTABLE ([[facade-vtable-slot-append-only]]). */
 	virtual bool16	RestoreChange(int32 nth, int32 which, PMString& outMessage) = 0;
 
 	/** "Export Story Text..." (2026-09-15): write stories of the ACTIVE document into a new folder
@@ -529,7 +527,8 @@ public:
 		★★★**THE DOCUMENT IS CHANGED BY THIS, AND EVERYTHING GOES IN AT ONCE** (2026-09-19, the
 		  reader's own proposal, adopted the same day). What decided it: overset shows itself on the
 		  real page the moment the words are in. The Story mode then lists what went in - against the
-		  copy taken a moment earlier - and "Undo the Restore" sends a change back one at a time.
+		  copy taken a moment earlier. ⚠**NOTHING SENDS ONE CHANGE BACK SINCE 2026-09-21**: Ctrl+Z takes
+		  the whole import, and anything else is copied out of the Source document Start has open.
 		  ⚠**The line that stood here until 2026-09-21, "the document is not changed by this", was
 		    the 2026-09-15 design; it was measured false on the application.**
 		★**A TASK START OF ITS OWN** (2026-09-21): the save dialog comes up once the files have been
@@ -569,15 +568,17 @@ public:
 	virtual bool16	GetOversetPoint(IDataBase* db, UID storyUID, TextIndex at,
 									UID& outFrame, PBPMPoint& outPb) = 0;
 
-	/** Every change of row `nth` put back in ONE press and ONE undo step ("Restore All in This
-		Story"). The walk goes backwards and re-diffs only at its ends - KCMStoryRestore.h says why.
+	/** ⛔**RETIRED 2026-09-21 - ALWAYS kFalse, AND THE SLOT STAYS.** "Restore All in This Story" put
+		every change of one row back in ONE press and ONE undo step, walking the row backwards.
 
-		★**Retired on 2026-09-20 and BACK ON 2026-09-21** (the user: one at a time AND by story).
-		  It kept its slot while it was retired, which is why it can simply be filled in again. */
+		★It was retired on 2026-09-20, came back on the morning of 2026-09-21 (the user: one at a time
+		  AND by story), and went the same day with the whole restore. **The slot has been filled and
+		  emptied twice**, which is what a kept slot is for. */
 	virtual bool16	RestoreAllInStory(int32 nth, PMString& outMessage) = 0;
 
 	/** ⛔**RETIRED 2026-09-20 - ALWAYS kFalse, AND THE SLOT STAYS.** "Restore All Stories" did NOT
-		come back with the one-story item on 2026-09-21: the user asked for that one alone.
+		come back with the one-story item on 2026-09-21 - and that item went the same day, with every
+		other restore. ★**Since then no restore of any size exists.**
 
 		⚠**THE DECLARATION IS NOT DELETED, AND THAT IS THE POINT.** KIDMCP calls this facade through
 		 its VTABLE ([[facade-vtable-slot-append-only]]): taking a virtual OUT of the middle moves
@@ -585,27 +586,16 @@ public:
 		 method entirely. A retired one keeps its slot and answers kFalse. */
 	virtual bool16	RestoreAllStories(PMString& outMessage) = 0;
 
-	/** Put change `which` of row `nth` back the way it stood before it was taken in
-		("Undo the Restore" / "Change Back to the Original", 2026-09-16, the user's ask).
-
-		★**A COMMAND OF ITS OWN, NOT Edit > Undo**: it reaches the change the reader points at
-		  whatever has been done since, and it is itself one undo step.
-		⚠Refused when the change was never taken in, when an undo has already put it back, and for
-		  a custom kenten mark. outMessage says which.
-		⚠Appended at the END, like every virtual added since the split
-		  ([[facade-vtable-slot-append-only]]: KIDMCP calls this facade through its vtable, so a
-		  virtual inserted anywhere else lands its callers on a different method). */
+	/** ⛔**RETIRED 2026-09-21 - ALWAYS kFalse, AND THE SLOT STAYS.** "Undo the Restore" put one change
+		back the way it stood before a restore had written over it - a command of its own and one undo
+		step, not Edit > Undo. It went with the restore it undid. */
 	virtual bool16	UndoRestoreChange(int32 nth, int32 which, PMString& outMessage) = 0;
 
-	/** Whether the comparison standing now lets anything be written back into the Target - kTrue
-		whenever there is a SOURCE THE OLDER WORDS CAN BE READ OUT OF: two open documents, a Task
-		Start copy that Start has opened, or the lent database.
-		⚠**The 2026-09-16 rule - "comparing two documents offers no restore, because the Source is
-		  there to copy from" - is WITHDRAWN** (the user, 2026-09-21), a Task Start having become a
-		  copy saved on disk and so a document like any other.
-		★The UI hides every write item on it; the model's writes refuse on the same answer
-		  (KCMStoryWritesAllowed - the one place it is decided).
-		⚠Appended at the END, like every virtual added since the split. */
+	/** ⛔**RETIRED 2026-09-21 - ALWAYS kFalse, AND THE SLOT STAYS.** It said whether the comparison
+		standing now let anything be written back into the Target, and the UI hid every write item on
+		its answer. **Nothing writes into the Target from a menu any more**, so the answer is kFalse.
+		⚠The IMPORT still writes - but it never asked this: it is the reader choosing files, not an item
+		 offered on a change. */
 	virtual bool16	CanWriteToTarget() = 0;
 
 	/** How many LINES change `which` of row `nth` is drawn on in the list: 1 for a text change, 2 for

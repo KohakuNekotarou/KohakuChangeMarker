@@ -1,0 +1,22 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMScriptProvider.cpp",
+    "anchor": "|| id == e_KCMTakeInChange",
+    "replacement": null
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMScriptProvider.cpp",
+    "anchor": "|| id == e_KCMExportStoryDocx || id == e_KCMUndoRestoreChange)",
+    "replacement": "\t\t\t|| id == e_KCMExportStoryDocx)"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMScriptProvider.cpp",
+    "anchor": "#include \"KCMStoryRestore.h\"",
+    "replacement": "// (\u26d4KCMStoryRestore.h and KCMStoryDiffRun.h were included here for app.kcmTakeInChange and\n//  app.kcmUndoRestore, and went with those two methods on 2026-09-21.)"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMScriptProvider.cpp",
+    "anchor": "#include \"KCMStoryDiffRun.h\"",
+    "replacement": null
+  }
+]

@@ -1,0 +1,30 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\ui\\KCMActionComponent.cpp",
+    "start": "\t\t// \"Restore All in This Story\" on a STORY row's context menu (2026-09-15, gone 2026-09-20,",
+    "end": "\t\tcase kKCMStoryRowRestoreAllActionID:",
+    "after": 3,
+    "replacement": null
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\ui\\KCMActionComponent.cpp",
+    "start": "\t\t// Change-row context menu \"Restore Source Text\" (2026-09-13): the older words written over",
+    "end": "\t\tcase kKCMChangeRowUndoRestoreActionID:",
+    "after": 3,
+    "replacement": "\t\t// (\u26d4The change row's two cases - \"Restore Source Text\" and \"Undo the Restore\" - went on\n\t\t//  2026-09-21 with the restore itself. **Nothing on a menu of KCM's writes the reader's text\n\t\t//  now**; the older words are taken from the Source document, which Start has open.)\n"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\ui\\KCMActionComponent.cpp",
+    "start": "\t\telse if (action == kKCMStoryRowRestoreAllActionID)",
+    "end": "\t\t\t\tKCMStoryRowCanRestoreAll() ? kEnabledAction",
+    "after": 1,
+    "replacement": null
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\ui\\KCMActionComponent.cpp",
+    "start": "\t\telse if (action == kKCMChangeRowRestoreActionID)",
+    "end": "\t\t\tlistToUpdate->SetNthActionState(i, KCMChangeRowCanUndoRestore() ? kEnabledAction",
+    "after": 2,
+    "replacement": null
+  }
+]

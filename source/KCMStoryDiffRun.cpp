@@ -53,8 +53,8 @@
 #include "KCMTableSnippet.h"	// KCMReadTableIdsInStory / KCMExportStoryInx - the Source's tables, by their own ids
 #include "KCMMemXferBytes.h"	// ...and the buffer that export writes into
 #include "KCMResourceBytes.h"
-#include "KCMStoryRestore.h"	// KCMStoryWritesAllowed - is there a restore for this comparison at all
-#include "KCMStorySnapshot.h"	// the story as the comparison read it - taken here, read elsewhere
+// (⛔KCMStoryRestore.h and KCMStorySnapshot.h were included here for the restore, and went with it
+//  on 2026-09-21 - KCMStorySnapshot as a whole file, having had no other reader.)
 #include "KCMTextRead.h"		// the reader: paragraphs, their positions and their attributes, straight from the text model
 #include "KCMStoryList.h"
 #include "KCMStoryStamp.h"	// kKCMStoryKindAdded - which rows have no partner to compare against
@@ -346,69 +346,14 @@ void SetExcerptPieces(PMString& outPre, PMString& outMid, PMString& outPost,
 	SetDocumentText(outPost, post);
 }
 
-/* SliceHoldsObjectCharacter
-   Whether [from, to) of one side holds a character InDesign hangs an object on
-   (KCMParaText::IsObjectCharacter).
-
-   ★**READ FROM THE SAME CHARACTERS A WRITE WOULD USE**: the text kept for the origin when there is
-   any (KCMSourceCache - the Source side of a Task Start or an Import), the text model otherwise.
-   The paragraphs cannot answer it: the reader takes a table's characters and a note's reference
-   OUT of them, which is exactly what is being looked for.
-   @param kept the kept raw text, or nil to read `model`. */
-bool16 SliceHoldsObjectCharacter(ITextModel* model, const WideString* kept, TextIndex from, TextIndex to)
-{
-	if (from < 0 || to <= from)
-		return kFalse;
-
-	if (kept != nil)
-	{
-		const int32 end = (to < kept->CharCount()) ? to : kept->CharCount();
-		for (int32 i = from; i < end; ++i)
-		{
-			if (KCMParaText::IsObjectCharacter(static_cast<int32>(kept->GetChar(i).GetValue())))
-				return kTrue;
-		}
-		return kFalse;
-	}
-
-	if (model == nil)
-		return kFalse;			// nothing to read; the write asks again against what it writes
-	const int32 total = model->TotalLength();
-	const int32 end = (to < total) ? to : total;
-	if (from >= end)
-		return kFalse;
-	TextIterator iter(model, from);
-	for (int32 i = from; i < end; ++i, ++iter)
-	{
-		if (KCMParaText::IsObjectCharacter(static_cast<int32>((*iter).GetValue())))
-			return kTrue;
-	}
-	return kFalse;
-}
-
-/* MarkWriteBlocks
-   Names, on every TEXT change made from one run, why it must not be written back - or nothing.
-
-   ★**ONE RUN, ONE ANSWER ABOUT PLACES; ONE CHANGE, ONE ANSWER ABOUT CHARACTERS.** Whether the run's
-   two sides stand in the same cells and footnotes is a property of the run (the paragraphs are
-   what know it); which characters a change would write or remove is a property of the change.
-   ⚠Attribute changes are left alone: they write no characters.
-   @param first the first of `out` made from this run. */
-void MarkWriteBlocks(std::vector<KCMStoryChange>& out, size_t first, bool16 placesAgree,
-					 ITextModel* targetModel, ITextModel* sourceModel, const WideString* keptSource)
-{
-	for (size_t i = first; i < out.size(); ++i)
-	{
-		KCMStoryChange& change = out[i];
-		if (change.fWhat != KCMStoryChange::kText)
-			continue;
-		if (!placesAgree)
-			change.fWriteBlock = kKCMWriteBlockedPlaces;
-		else if (SliceHoldsObjectCharacter(targetModel, nil, change.fTargetStart, change.fTargetEnd)
-				 || SliceHoldsObjectCharacter(sourceModel, keptSource, change.fSourceStart, change.fSourceEnd))
-			change.fWriteBlock = kKCMWriteBlockedObjects;
-	}
-}
+/* (⛔SliceHoldsObjectCharacter and MarkWriteBlocks stood here and went on 2026-09-21 with the
+   restore. Together they answered "why must this change not be written back" - the two sides
+   standing in different cells or footnotes, or a range holding a table, a note or an anchored
+   object, which text commands bring back as a bare character without its object. The answer was
+   put on every change of a run and read by the menu, which greyed its item on it.
+   ★The MEASUREMENT that made them necessary is kept in docs/ai-notes/kcm-restore-retired-2026-09-21.md:
+   a deleted table's cell "restored" into a position nothing could see, and an anchored object that
+   came back as U+FFFC alone.) */
 
 /* Add
    Builds one change and appends it. Kept in one place so that the two callers below - a run that
@@ -544,13 +489,14 @@ void AddCutAtObjects(std::vector<KCMStoryChange>& out,
    in from the last to the first they come out in their order. Out of order, the panel asks first
    (fAfterNewParagraph). ⚠A bulk run used to do that walk (and chain the run's next styles afterwards);
    the bulk items went on 2026-09-20 and the order is the reader's own.
-   @param placesAgree OUT whether the paragraphs can be placed at all - the paragraph they follow (or
-          precede) stands in the same place on both sides. */
+   (⛔It also said OUT whether the paragraphs could be PLACED at all - whether the paragraph they
+   follow, or precede, stands in the same place on both sides. Only a write back needed to know,
+   and that went on 2026-09-21.) */
 void AddWholeParagraphs(std::vector<KCMStoryChange>& out, const KCMTextDiff::Change& run,
 						const std::vector<std::string>& sourceParas, const std::vector<int32>& sourceStarts,
 						const std::vector<KCMParaAttrs>& sourceAttrs,
 						const std::vector<std::string>& targetParas, const std::vector<int32>& targetStarts,
-						const std::vector<KCMParaAttrs>& targetAttrs, bool16& outPlacesAgree)
+						const std::vector<KCMParaAttrs>& targetAttrs)
 {
 	// The source holds them and the target lacks them - taking in ADDS them - or the other way round.
 	const bool16 adds = (run.aCount > 0) ? kTrue : kFalse;
@@ -571,7 +517,8 @@ void AddWholeParagraphs(std::vector<KCMStoryChange>& out, const KCMTextDiff::Cha
 							   && KCMParaText::ParagraphsSharePlace(ownAttrs, first, sourceAttrs, nextA)
 							   && KCMParaText::ParagraphsSharePlace(ownAttrs, first, targetAttrs, nextB))
 							  ? kTrue : kFalse;
-	outPlacesAgree = (afterReturn || beforeNext) ? kTrue : kFalse;
+	// (⛔"...and can they be placed at all" was reported to the caller here until 2026-09-21. The two
+	//  answers above are still what decides WHERE the caret of a one-sided paragraph goes.)
 
 	for (int32 k = 0; k < count; ++k)
 	{
@@ -616,7 +563,7 @@ void AddWholeParagraphs(std::vector<KCMStoryChange>& out, const KCMTextDiff::Cha
 		}
 		else
 		{
-			// Nowhere to put it: shown, and marked as not writable by the caller (placesAgree).
+			// Nowhere to put it: shown all the same (it was marked as not writable until 2026-09-21).
 			ownStart = ownStarts[static_cast<size_t>(p)];
 			ownEnd = KCMParaText::ParagraphReturn(ownParas, ownStarts, ownAttrs, p);
 			caret = ownStart;
@@ -632,7 +579,8 @@ void AddWholeParagraphs(std::vector<KCMStoryChange>& out, const KCMTextDiff::Cha
 		if (adds)
 		{
 			change.fKind = KCMStoryChange::kDelete;		// the target lacks it (Add's naming: tCount == 0)
-			change.fAfterNewParagraph = (k > 0) ? kTrue : kFalse;
+			// (⛔The second "+" of "+ +" was marked here until 2026-09-21, so that the panel could ask
+			//  before one was taken in ahead of the other.)
 			change.fTargetStart = caret;
 			change.fTargetEnd = caret;
 			change.fSourceStart = ownStart;
@@ -1442,21 +1390,10 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 	else if (!KCMSourceCacheGetTableShapes(targetStoryUID, sShapes))
 		return;
 
-	// ★THE STORY'S OWN INX, FOR THE TABLES THIS CALL CALLS CHANGED (2026-09-20, the user: "stop making
-	//   the Target's whole IDML when the comparison starts - prepare a snippet for the tables that
-	//   changed, and only for those"). Exported AT MOST ONCE for the story however many of its tables
-	//   changed, and NOT AT ALL when none did - which is every story in almost every document.
-	// ⚠AND NOT AT ALL WHEN NOTHING COULD READ IT: with no Source there is no "Restore Source Text",
-	//   so a snippet kept then would be an export on every re-diff that no menu can reach. The
-	//   question is asked where it is always asked - KCMStoryWritesAllowed, the one place it is
-	//   decided.
-	//   ⚠★★**THAT TEST ADMITS MORE THAN IT DID** (2026-09-21). It used to exclude a comparison against
-	//    another DOCUMENT and a KIDMCP one, on the 2026-09-16 rule that neither offered a restore at
-	//    all; **the rule was withdrawn the day Task Start became a file**, so what is left is "is
-	//    there a Source database". ⇒ Those two comparisons now export here as well - which is what
-	//    lets the ids below pair THEIR tables by name instead of by position.
-	const bool16 restorable = KCMStoryWritesAllowed();
-	IDataBase* const targetDB = (targetModel != nil && restorable) ? ::GetDataBase(targetModel) : nil;
+	// (⛔**THE STORY'S OWN INX IS NO LONGER KEPT** (2026-09-21). It was exported here, at most once per
+	//  story with a changed table, so that a restore could cut Task Start's table out of it - and with
+	//  the restore gone nothing reads it. ★What that removes is an INX export per story with a changed
+	//  table, on every comparison and every re-diff.)
 
 	// ★★★**WHICH TABLE IS WHICH, BY THE TABLES' OWN IDS** (2026-09-20, the user: "is it looking at
 	//   tables by position? a table has an id too - can that not say which is which?"). The ids come
@@ -1478,7 +1415,7 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		//   THIS story's uid answers only when the two are the same document - which is exactly the
 		//   condition the origin's version rested on ("a Source whose uids mean nothing here"), now
 		//   measured instead of inferred from which kind of comparison is running.
-		IDataBase* const sourceDB = (sourceModel != nil && restorable) ? ::GetDataBase(sourceModel) : nil;
+		IDataBase* const sourceDB = (sourceModel != nil) ? ::GetDataBase(sourceModel) : nil;
 		KCMMemXferBytes sourceInx;
 		if (sourceDB != nil
 			&& KCMExportStoryInx(sourceDB, targetStoryUID, sourceInx)
@@ -1513,9 +1450,11 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		int32 partner = -1;
 		if (byId)
 		{
-			// ★Through the translation first: a table KCM has put back carries an id Task Start never
-			//   saw, and what it IS was recorded at the moment it was written (KCMStorySnapshot.h).
-			const UID mine = KCMStorySnapshotTranslateTableId(targetStoryUID, tShapes[i].fDictUID);
+			// (⛔A translation step stood here until 2026-09-21: a table KCM had PUT BACK carried an id
+			//  Task Start never saw - a snippet import hands out new ones - so the live id was mapped
+			//  back through what the restore had recorded. KCM writes no table now, so every id in this
+			//  story is one the document itself gave.)
+			const UID mine = tShapes[i].fDictUID;
 			for (size_t j = 0; j < sShapes.size(); ++j)
 				if (!sTaken[j] && sIds[j] == mine)
 				{
@@ -1554,54 +1493,24 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		const int32 sOrdinal = haveS ? sAt : -1;
 		KCMStoryChange table;
 		table.fWhat = KCMStoryChange::kTable;
-		table.fTableId = haveT ? tShapes[tI].fDictUID : kInvalidUID;
-		// ⚠kInvalidUID when the pairing fell back to the position: nothing may then be written by
-		//   name, and every write below asks for this id before it touches the document.
-		table.fSourceTableId = (haveS && byId) ? sIds[sI] : kInvalidUID;
 		table.fPlace = kKCMPlaceCell;
 		table.fKind = (!haveS) ? KCMStoryChange::kInsert
 					: (!haveT) ? KCMStoryChange::kDelete
 					: KCMStoryChange::kReplace;
-		// ★**TABLE + AND TABLE − CAN BE PUT BACK TOO** (2026-09-20, the user: "I want to be able to put
-		//   them back"). The older rule - "to remove a table, select it and delete it" - was withdrawn
-		//   the same day; KCMTableRestore removes the one and brings the other in.
-		// ⚠★★**EXCEPT WHEN THE OLDER SIDE'S TABLE CANNOT BE NAMED** (found re-reading this before the
-		//   live run). Every write that has to fetch a table out of Task Start asks for it BY ID, so a
-		//   row whose pairing fell back to the position must not offer one - it would be a write by a
-		//   number that moves. A Table +, which fetches nothing and only removes, is unaffected.
-		table.fWriteBlock = (haveS && !byId) ? kKCMWriteBlockedTable : kKCMWriteAllowed;
+		// (⛔**SEVEN THINGS A TABLE ROW RECORDED FOR THE RESTORE WENT ON 2026-09-21**: the two tables'
+		//  own ids, the write block for a pairing that had fallen back to the position, the two shape
+		//  signatures, and where the table stood measured from the table before it. Every one of them
+		//  was written here and read only by a write into the document. ★The ID PAIRING ITSELF STAYS -
+		//  it is what tells this call WHICH table is which, and the row is drawn from it.)
 		if (haveT)
 		{
 			table.fTargetStart = tShapes[tI].fAnchorStart;
 			table.fTargetEnd = tShapes[tI].fAnchorEnd;
-			table.fShapeSigAfter = KCMTableShapeSignature(tShapes[tI]);
 		}
 		if (haveS)
 		{
 			table.fSourceStart = sShapes[sI].fAnchorStart;
 			table.fSourceEnd = sShapes[sI].fAnchorEnd;
-			table.fShapeSigBefore = KCMTableShapeSignature(sShapes[sI]);
-
-			// ★★★**AND WHERE IT STOOD, MEASURED FROM THE TABLE BEFORE IT** (KCMStoryList.h says why -
-			//   Task Start's anchor alone landed inside a word once another table had changed). The
-			//   one that stands nearest before it, by anchor; with none, the distance from the start
-			//   of the story.
-			// ⚠A nested table's anchor lives inside a cell, which stands past the whole body
-			//   (ITableTextContent.h), so a body table's search never picks one up: their anchors are
-			//   all larger than any body anchor.
-			TextIndex prevEnd = 0;
-			table.fPrevTableId = kInvalidUID;
-			for (size_t q = 0; q < sShapes.size(); ++q)
-			{
-				if (q == sI || sShapes[q].fAnchorEnd > sShapes[sI].fAnchorStart)
-					continue;
-				if (sShapes[q].fAnchorEnd >= prevEnd)
-				{
-					prevEnd = sShapes[q].fAnchorEnd;
-					table.fPrevTableId = byId ? sIds[q] : kInvalidUID;
-				}
-			}
-			table.fGapFromPrev = sShapes[sI].fAnchorStart - prevEnd;
 		}
 
 		// The cell-level changes of THIS table come out; what they say about paired cells stays.
@@ -1734,15 +1643,6 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		}
 		SetDocumentText(table.fOtherText, other);
 
-		// ★THE STORY AS THIS COMPARISON READ IT (KCMStorySnapshot). **This is the only place it is
-		//   taken**, because this is the only place that is the comparison's own moment - and it is
-		//   taken at most ONCE for the story however many of its tables changed, because Take keeps
-		//   what it took. A story refresh drops it first (RunOne), so the refresh takes it again.
-		// ⚠**FOR EVERY TABLE ROW** since 2026-09-20: Table + and Table − can be put back as well, and
-		//   the style groups a restore dresses its snippet in are looked for here before the origin.
-		if (targetDB != nil)
-			KCMStorySnapshotTake(targetDB, targetStoryUID);
-
 		kept.push_back(table);
 		out.swap(kept);
 	}
@@ -1799,7 +1699,7 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 		if (!KCMTextRead::ReadStory(sourceStory, sourceParas, sourceAttrs, sourceStarts))
 			return kFalse;
 
-		// ★**THE RAW TEXT IS TAKEN IN THE SAME BREATH**, from the same API "Restore Source Text"
+		// ★**THE RAW TEXT IS TAKEN IN THE SAME BREATH**, from the same API the restore used
 		//   used to call on every press - so what the write puts in is the document's own
 		//   characters and not a re-assembly of the paragraphs above (KCMSourceCache.h says what
 		//   re-assembling them would get wrong, and it is the paragraph break itself).
@@ -1954,35 +1854,20 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 	//     ⚠**With them went the only instrument that could dump what the reader read** - the user's
 	//     call; the reader's answer now reaches the outside only through the rows themselves.
 
-	// ★**WHAT A WRITE BACK WOULD USE FOR THE SOURCE'S CHARACTERS** (2026-09-16): the text kept for the
-	//   origin when there is any - the Source document is then a copy that may not even be open -
-	//   and the Source's own text model otherwise. See MarkWriteBlocks.
-	WideString keptSourceRaw;
-	const bool16 haveKeptSource = KCMSourceCacheGetRaw(targetStory.GetUID(), keptSourceRaw);
+	// (⛔The Source's raw characters were read here until 2026-09-21, to ask whether a write back
+	//  would have to carry an object. Nothing writes back now.)
 
 	for (size_t c = 0; c < paragraphChanges.size(); ++c)
 	{
 		const KCMTextDiff::Change& change = paragraphChanges[c];
 
-		// ★★**WHETHER THE WORDS OF THIS RUN CAN BE WRITTEN BACK AT ALL** (2026-09-16, measured: a
-		//   deleted table's cell "restored" into a position nothing could see, and an anchored
-		//   object came back as U+FFFC alone). Asked once per run; MarkWriteBlocks puts the answer
-		//   on every change the run produces, which is what hides the menu item.
-		const size_t firstOfRun = out.size();
-
 		// ★★Paragraphs on one side only: one change per paragraph, its break in its range (AddWholeParagraphs).
 		if ((change.aCount == 0) != (change.bCount == 0))
 		{
-			bool16 wholePlacesAgree = kFalse;
 			AddWholeParagraphs(out, change, sourceParas, sourceStarts, sourceAttrs,
-							   targetParas, targetStarts, targetAttrs, wholePlacesAgree);
-			MarkWriteBlocks(out, firstOfRun, wholePlacesAgree, targetModel, sourceModel,
-							haveKeptSource ? &keptSourceRaw : nil);
+							   targetParas, targetStarts, targetAttrs);
 			continue;
 		}
-
-		const bool16 placesAgree = KCMParaText::WordsCanBeWrittenAcross(
-			sourceAttrs, change.aStart, change.aCount, targetAttrs, change.bStart, change.bCount);
 
 		const std::string sourceText = KCMParaText::JoinParagraphs(sourceParas, change.aStart, change.aCount);
 		const std::string targetText = KCMParaText::JoinParagraphs(targetParas, change.bStart, change.bCount);
@@ -2045,8 +1930,6 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 			// cannot place it - not an error, just a coarser answer.
 			AddCutAtObjects(out, targetText, targetBytes, tRun, 0, static_cast<int32>(targetCodePoints.size()),
 							sourceText, sourceBytes, sRun, 0, static_cast<int32>(sourceCodePoints.size()));
-			MarkWriteBlocks(out, firstOfRun, placesAgree, targetModel, sourceModel,
-							haveKeptSource ? &keptSourceRaw : nil);
 			continue;
 		}
 
@@ -2056,8 +1939,6 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 			AddCutAtObjects(out, targetText, targetBytes, tRun, fine.bStart, fine.bCount,
 							sourceText, sourceBytes, sRun, fine.aStart, fine.aCount);
 		}
-		MarkWriteBlocks(out, firstOfRun, placesAgree, targetModel, sourceModel,
-						haveKeptSource ? &keptSourceRaw : nil);
 	}
 
 	// **AND THEN THE RUBY.** Everything above compared <Content> and nothing else, so a story
@@ -2102,12 +1983,8 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 	IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
 	IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
 
-	// ★A WHOLE COMPARISON IS EVERY STORY READ AGAIN, so every story's INX goes. Refreshing ONE story
-	//   drops that story's alone; this is the same rule at the whole document.
-	// ⚠**AND WHAT RESTORES LEARNED ABOUT CELLS STAYS** - see KCMStorySnapshotDropAllStories. Clearing
-	//   it here wiped it on every Refresh Comparison, and the restore afterwards paired Task Start's
-	//   cells with a newly added row that had been handed their old ids.
-	KCMStorySnapshotDropAllStories();
+	// (⛔A whole comparison used to drop every story's kept INX here, and a story refresh dropped its
+	//  own below. Both went with the restore on 2026-09-21: nothing is kept to drop.)
 
 	int32 total = 0;
 
@@ -2198,85 +2075,14 @@ uint32 KCMStoryDiffRun::TextCountOf(const UIDRef& story)
 	return (model != nil) ? model->GetTextChangeCount() : 0;
 }
 
-bool16 KCMStoryDiffRun::StillReplaced(const KCMStoryRow& row, const KCMStoryChange& change)
-{
-	if (change.fReplacedCount == 0)
-		return kFalse;		// never replaced
-
-	IDataBase* const targetDB = KCMArmedTargetDB();
-	if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
-		return kFalse;
-
-	// ★A TABLE ROW IS "STILL REPLACED" WHILE THE TABLE THE RESTORE LEFT IS STANDING AS IT LEFT IT
-	//   (2026-09-20): the table is found BY ITS ID - the one the restore wrote down, not a position -
-	//   and its shape is compared with the one that was left. No counter: Ctrl+Z gives the table its
-	//   old shape (and its old id) back, and the answer falls away with it.
-	// ★★**A RESTORED Table + LEFT NO TABLE AT ALL** (fReplacedTableId == kInvalidUID): what says it is
-	//   still restored is that the table it removed is still absent. Ctrl+Z brings that table back
-	//   WITH THE ID IT HAD (measured 2026-09-20), so looking for that id answers both ways round.
-	if (change.fWhat == KCMStoryChange::kTable)
-	{
-		InterfacePtr<ITextModel> model(UIDRef(targetDB, row.fStoryUID), UseDefaultIID());
-		std::vector<KCMTableShape> shapes;
-		if (model == nil || !KCMReadTableShapes(model, shapes))
-			return kFalse;
-		if (change.fReplacedTableId == kInvalidUID)
-		{
-			// The removal: still restored while the table that was removed is nowhere in the story.
-			if (change.fTableId == kInvalidUID)
-				return kFalse;
-			for (size_t i = 0; i < shapes.size(); ++i)
-				if (shapes[i].fDictUID == change.fTableId)
-					return kFalse;
-			return kTrue;
-		}
-		for (size_t i = 0; i < shapes.size(); ++i)
-			if (shapes[i].fDictUID == change.fReplacedTableId)
-				return (KCMTableShapeSignature(shapes[i]) == change.fReplacedShapeSig) ? kTrue : kFalse;
-		return kFalse;			// the table the restore left is gone: undone, or removed by hand
-	}
-
-	// ⚠★★★**">=", NOT "==" - MEASURED ON THE APPLICATION, 2026-09-15.** It was "==" until the
-	//   first live run, where taking in a SECOND change in the same story made the FIRST one's
-	//   sign fall back to "-" while the panel said "0 change(s) left". The counter had moved on
-	//   for the second write, so the first change's record no longer matched it - and the row went
-	//   on being replaced while its mark said otherwise.
-	//   The counter only ever climbs as work is done and winds back as it is undone, so the
-	//   question a replaced change has to ask is not "is the story exactly where I left it" but
-	//   **"has the story got at least as far as the write I made"**. Undo takes it below that mark
-	//   and the sign falls away; redo lifts it back over and the sign returns.
-	//   ⚠An ordinary edit also lifts it, so an edited story keeps its marks. That is the right side
-	//   to err on: the marks are a record of what the reader took in, and the WRITING path looks
-	//   the change up again rather than trusting them (KCMStoryRestore's RefindAfterEdit).
-	return (KCMStoryDiffRun::CountForKind(UIDRef(targetDB, row.fStoryUID), change.fAttrKind)
-			>= change.fReplacedCount)
-		   ? kTrue : kFalse;
-}
-
-bool16 KCMStoryDiffRun::DropUndoneReplaced(int32 nth)
-{
-	const KCMStoryRow* const row = KCMStoryList::GetRow(nth);
-	if (row == nil || row->fReplacedChanges.empty())
-		return kFalse;
-
-	std::vector<KCMStoryChange> keep;
-	keep.reserve(row->fReplacedChanges.size());
-	for (size_t i = 0; i < row->fReplacedChanges.size(); ++i)
-	{
-		if (KCMStoryDiffRun::StillReplaced(*row, row->fReplacedChanges[i]))
-			keep.push_back(row->fReplacedChanges[i]);
-	}
-
-	if (keep.size() == row->fReplacedChanges.size())
-		return kFalse;			// nothing was undone; the list is left exactly as it was
-
-	// ⚠**THE COPIES ARE TAKEN BEFORE THE CLEAR**: `row` points into the list being emptied, and
-	//   `keep` holds values rather than references precisely so that this is safe to say.
-	KCMStoryList::ClearReplacedChanges(nth);
-	for (size_t i = 0; i < keep.size(); ++i)
-		KCMStoryList::AddReplacedChange(nth, keep[i]);
-	return kTrue;
-}
+// (⛔**StillReplaced AND DropUndoneReplaced WENT ON 2026-09-21** with the restore. The first asked
+//  whether a change the reader had taken in was STANDING as taken in - by comparing the story's
+//  counter with the one recorded at the write (">=", not "==", measured on the application: a
+//  second write in the same story moved the counter past the first one's mark), or, for a table,
+//  by looking for the table the restore had left, by its id. The second dropped the records an
+//  undo had taken back. ★Nothing is ever taken in now, so nothing is ever "standing as taken in".
+//  ⚠**CountForKind below is NOT the restore's**: it is what a comparison records and reads, and the
+//   reasoning about which counter belongs to which kind of change is still live.)
 
 uint32 KCMStoryDiffRun::CountForKind(const UIDRef& story, int32 kind)
 {
@@ -2309,12 +2115,6 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	const UID storyUID = row->fStoryUID;
 	const bool16 unpaired = ((row->fKinds & kKCMStoryKindUnpaired) != 0);
 	row = nil;
-
-	// ★REFRESHING A STORY IS COMPARING THAT STORY AGAIN (the user, 2026-09-20: "and if there is a
-	//   table there and it has changed, let us take the snippet again"). So what this comparison
-	//   remembered about THIS story's tables goes first, and the fold below takes it afresh. The
-	//   other stories keep theirs - they are not being compared again.
-	KCMStorySnapshotDropStory(storyUID);
 
 	// Nothing open and nothing kept: there is no older side to compare against at all.
 	if (sourceDB == nil && !KCMSourceCacheHas(storyUID))

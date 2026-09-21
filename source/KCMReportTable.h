@@ -16,7 +16,7 @@
 //  the cell's own story thread (ITableModel::QueryCellContentBoss -> ITextStoryThread ->
 //  ITextModelCmds::InsertCmd), and then the attributes go on by range: the context at 40% tint,
 //  the change at full strength, a reading as REAL ruby over the change (KCMApplyRuby, the same
-//  recipe "Restore Source Text" writes into the user's document), a kenten kind as real kenten,
+//  recipe the import pours into the user's document with), a kenten kind as real kenten,
 //  a note number as a superscript after the change.
 //
 //  THE PAGE HELPERS (page rectangle, typing into a new frame, appending a page) moved here from

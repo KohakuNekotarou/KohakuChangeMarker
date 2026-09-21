@@ -270,7 +270,9 @@ enum KCMScriptMethods
 	//     search form finds 'eKGs'. The parameters are Adobe's own p_Index and p_Contents. ⚠Not registered.
 	// ⛔**'eKGy' (app.kcmTakeInStory) IS RETIRED** (2026-09-20, with "Restore All in This Story").
 	//   Same rule as 'eKGw' above: the code is never reused.
-	e_KCMTakeInChange = 'eKGk',		// k = keep one. app.kcmTakeInChange(storyRow, words) -> the take-in's sentence
+	// ⛔**'eKGk' (app.kcmTakeInChange) IS RETIRED** (2026-09-21), with "Restore Source Text" itself.
+	//   Same rule as 'eKGw' and 'eKGy' above: **the code is never reused.** ★Never registered with Adobe,
+	//   so nothing outside this repo can be looking for it.
 
 	// ★THE .DOCX ROAD OF THE EXPORT, WITHOUT A DIALOG (2026-09-19). The menu item opens the system's
 	//   folder chooser, which a test cannot answer; this is the same model call with the folder
@@ -290,7 +292,8 @@ enum KCMScriptMethods
 	//     ScriptingDefs.h / GenericID.h, and no row in the registry ledger (whose used letters for eKG*
 	//     are a c d D e f h i k m n o p q r s t u v w x y). The same search form found 'eKGk' (3 files).
 	//     ⚠Not registered with Adobe.
-	e_KCMUndoRestoreChange = 'eKGb',	// b = back. app.kcmUndoRestore(storyRow, words) -> the undo's sentence
+	// ⛔**'eKGb' (app.kcmUndoRestore) IS RETIRED** (2026-09-21), with "Undo the Restore" itself.
+	//   Never reused, and never registered with Adobe.
 
 	// ★A MEASURING DOOR FOR THE "Table" ROW (2026-09-19 night, KCMTableCopySpike.h): can the Task
 	//   Start copy's table be copied over the live one with kCopyStoryRangeCmdBoss, across documents,

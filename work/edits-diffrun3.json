@@ -1,0 +1,9 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryDiffRun.cpp",
+    "start": "/* SliceHoldsObjectCharacter",
+    "end": "void MarkWriteBlocks(std::vector<KCMStoryChange>& out, size_t first, bool16 placesAgree,",
+    "after": 14,
+    "replacement": "/* (⛔SliceHoldsObjectCharacter and MarkWriteBlocks stood here and went on 2026-09-21 with the\n   restore. Together they answered \"why must this change not be written back\" - the two sides\n   standing in different cells or footnotes, or a range holding a table, a note or an anchored\n   object, which text commands bring back as a bare character without its object. The answer was\n   put on every change of a run and read by the menu, which greyed its item on it.\n   ★The MEASUREMENT that made them necessary is kept in docs/ai-notes/kcm-restore-retired-2026-09-21.md:\n   a deleted table's cell \"restored\" into a position nothing could see, and an anchored object that\n   came back as U+FFFC alone.) */"
+  }
+]

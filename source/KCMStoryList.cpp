@@ -49,10 +49,8 @@
 #include "IKCMStoryEditsFacade.h"	// RowsAsTsv reads the SHOWN ranges through the facade's GetChange - the one place that cuts a paragraph break off them
 #include "Utils.h"
 #include "KCMCore.h"			// KCMFramePageUID - shared with the overset scan since 2026-08-09
-#include "KCMStoryDiffRun.h"	// KCMStoryDiffRun::StillReplaced - RowsAsTsv's "state" column
 #include "KCMStoryList.h"
 #include "KCMStoryRowFilter.h"	// KCMStoryRowHasContentChange - which rows belong in the list
-#include "KCMStoryRowMerge.h"	// the order the live changes and the replaced ones stand in
 #include "KCMStoryTextImport.h"	// KCMImportRefusals - what the last import could not put in, put back as rows on every Build
 
 namespace
@@ -925,32 +923,9 @@ void KCMStoryList::SetRowTargetTextCount(int32 nth, uint32 count)
 	gRows[nth].fTargetTextCount = count;
 }
 
-/* AddReplacedChange
-*/
-void KCMStoryList::AddReplacedChange(int32 nth, const KCMStoryChange& done)
-{
-	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
-		return;
-
-	// ⚠KEPT IN fReplacedStart ORDER. The reader replaces changes in whatever order they like -
-	//   the last row first, if that is what they read first - and KCMStoryRowMerge is promised an
-	//   ascending list. Sorting at the door costs nothing here (a handful of entries) and means
-	//   the promise is kept by construction rather than by everyone remembering.
-	std::vector<KCMStoryChange>& list = gRows[nth].fReplacedChanges;
-	size_t at = list.size();
-	while (at > 0 && list[at - 1].fReplacedStart > done.fReplacedStart)
-		--at;
-	list.insert(list.begin() + at, done);
-}
-
-/* ClearReplacedChanges
-*/
-void KCMStoryList::ClearReplacedChanges(int32 nth)
-{
-	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
-		return;
-	gRows[nth].fReplacedChanges.clear();
-}
+// (⛔AddReplacedChange and ClearReplacedChanges stood here and went on 2026-09-21 with the restore.
+//  They kept, in fReplacedStart order, the changes the reader had taken in - the records that let a
+//  row stay in the list after a write, so that an undo had something to come back to.)
 
 /* AddRefusalRow
 */
@@ -1016,156 +991,17 @@ void KCMStoryList::AddRefusalChange(int32 nth, const PMString& kind, const PMStr
 	c.fTextPre.SetTranslatable(kFalse);
 	c.fText = whereAndWhy;
 	c.fText.SetTranslatable(kFalse);
-	c.fWriteBlock = kKCMWriteBlockedKind;	// nothing to write back; the menu asks this first
+	// (⛔It also said "nothing here can be written back", which the menu asked first, until 2026-09-21.)
 	gRows[nth].fRefusals.push_back(c);
 }
 
-/* ReplacedSlotFor
-*/
-int32 KCMStoryList::ReplacedSlotFor(int32 nth, TextIndex at)
-{
-	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
-		return 0;
+// (⛔**FIVE MORE WENT ON 2026-09-21**, all of them the restore's bookkeeping: ReplacedSlotFor (where
+//  a new record belonged, with the caret tie rule the panel was shown); AddReplacedChangeAt;
+//  ShiftOnePlace and ShiftReplacedChanges, which slid the records a later write in the same story
+//  had moved - including the mark spans a Table row's jump aimed at; and MergedSlots, which fed the
+//  two ascending lists to KCMStoryRowMerge. ★**KCMStoryRowMerge went with them** - it had no other
+//  caller - and with it the offline test that covered the tie rules.)
 
-	// "<=" AND NOT "<" for a CARET: a record with no characters standing exactly at `at` is BEFORE a
-	// write made there - the tie rule KCMStoryRowMerge shows the panel, written the same way round so
-	// the two agree. ★A record WITH characters starting at `at` is AFTER it (2026-09-19 night, the
-	// re-check): its words stand from `at` on, so an insertion made at `at` goes in front of them (and
-	// slides them along), and a removal starting there writes over them (and collapses them). Counted
-	// as "before", such a record would have kept a start below the new record's while standing after it
-	// in the list, and the list would no longer have been ascending.
-	const std::vector<KCMStoryChange>& list = gRows[nth].fReplacedChanges;
-	int32 slot = 0;
-	while (slot < static_cast<int32>(list.size()))
-	{
-		const KCMStoryChange& r = list[static_cast<size_t>(slot)];
-		if (r.fReplacedStart > at)
-			break;
-		if (r.fReplacedStart == at && r.fReplacedEnd > r.fReplacedStart)
-			break;
-		++slot;
-	}
-	return slot;
-}
-
-/* AddReplacedChangeAt
-*/
-void KCMStoryList::AddReplacedChangeAt(int32 nth, int32 slot, const KCMStoryChange& done)
-{
-	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
-		return;
-
-	std::vector<KCMStoryChange>& list = gRows[nth].fReplacedChanges;
-	if (slot < 0)
-		slot = 0;
-	if (slot > static_cast<int32>(list.size()))
-		slot = static_cast<int32>(list.size());
-	list.insert(list.begin() + slot, done);
-}
-
-namespace
-{
-
-/* ShiftOnePlace
-   One [start, end) of Target text, moved by a write made elsewhere in the same story - the two rules
-   ShiftReplacedChanges states for a record's own positions, written over one pair of indexes so that
-   they can be applied to a record's other positions as well.
-*/
-void ShiftOnePlace(TextIndex& start, TextIndex& end, TextIndex from, int32 removed, int32 inserted, int32 delta)
-{
-	if (start >= from + removed)
-	{
-		start += delta;
-		end   += delta;
-	}
-	else if (start > from || removed > 0)
-	{
-		start = from + inserted;
-		end   = start;
-	}
-}
-
-}	// namespace
-
-/* ShiftReplacedChanges
-   The header carries the rule and the two measured faults of the one it replaced.
-*/
-void KCMStoryList::ShiftReplacedChanges(int32 nth, int32 firstSlot, TextIndex from, int32 removed, int32 inserted)
-{
-	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
-		return;
-	if (firstSlot < 0)
-		firstSlot = 0;
-
-	const int32 delta = inserted - removed;
-	std::vector<KCMStoryChange>& list = gRows[nth].fReplacedChanges;
-	for (size_t i = static_cast<size_t>(firstSlot); i < list.size(); ++i)
-	{
-		KCMStoryChange& r = list[i];
-
-		// ★★**AND THE SPANS A TABLE ROW MARKS** (2026-09-20, found re-reading this file). fMarkSpans
-		//   holds the only positions on a replaced record that are not among the four below, and they
-		//   are what a Table row's JUMP aims at (KCMStoryJump's tableCorner, through
-		//   GetChangeMarkSpan). Left alone, a restore made earlier in the same story slid the record's
-		//   own start correctly while these went on naming where the table stood BEFORE that write -
-		//   so the jump landed at a stale index, or at none when the story had since grown shorter.
-		//   ⚠**Span by span**: the record's own start cannot answer for a span that stands elsewhere.
-		//   ⚠The standing MARKS are not affected either way - KCMStoryMarkBuild draws nothing at all
-		//    for a change the reader has taken in - so this is the jump's own correction.
-		for (size_t s = 0; s < r.fMarkSpans.size(); ++s)
-			ShiftOnePlace(r.fMarkSpans[s].fFrom, r.fMarkSpans[s].fTo, from, removed, inserted, delta);
-
-		if (r.fReplacedStart >= from + removed)
-		{
-			// Past the removed characters: it slides by what the write changed the length by. A
-			// caret standing right where they ended slides too (">="): it stood after them.
-			if (delta == 0)
-				continue;
-			r.fReplacedStart += delta;
-			r.fReplacedEnd   += delta;
-			r.fBeforeStart   += delta;
-			r.fBeforeEnd     += delta;
-		}
-		else if (r.fReplacedStart > from || removed > 0)
-		{
-			// Inside the removed characters (or a non-empty record starting where they start): its
-			// words have just been written over by another change. Nothing it recorded is in the
-			// story any more, so it becomes a caret after the new words - a position, not a claim.
-			// "Undo the Restore" then compares the words and refuses it rather than writing blind.
-			r.fReplacedStart = from + inserted;
-			r.fReplacedEnd   = r.fReplacedStart;
-			r.fBeforeStart   = r.fReplacedStart;
-			r.fBeforeEnd     = r.fReplacedStart;
-		}
-		// else: a caret exactly at `from` with nothing removed - the caller said it is from this
-		// slot on, so it stands AFTER the write, and the branch above has already moved it
-		// (from + 0 <= start). Not reached; written out so the three cases read as three.
-	}
-}
-
-namespace
-{
-
-/* MergedSlots
-   The one place the panel's child index is defined: the live changes and the replaced ones, in
-   the order they stand in the text. KCMStoryRowMerge owns the rule (and is tested outside
-   InDesign); this only feeds it the two ascending lists of starts.
-*/
-void MergedSlots(const KCMStoryRow& row, std::vector<KCMStoryRowMerge::Slot>& out)
-{
-	std::vector<TextIndex> live, done;
-	live.reserve(row.fChanges.size());
-	for (size_t i = 0; i < row.fChanges.size(); ++i)
-		live.push_back(row.fChanges[i].fTargetStart);
-
-	done.reserve(row.fReplacedChanges.size());
-	for (size_t i = 0; i < row.fReplacedChanges.size(); ++i)
-		done.push_back(row.fReplacedChanges[i].fReplacedStart);
-
-	KCMStoryRowMerge::Merge(live, done, out);
-}
-
-}	// namespace
 
 /* GetMergedChangeCount
 */
@@ -1174,89 +1010,34 @@ int32 KCMStoryList::GetMergedChangeCount(int32 nth)
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
 		return 0;
 	const KCMStoryRow& row = gRows[nth];
-	return static_cast<int32>(row.fRefusals.size() + row.fChanges.size() + row.fReplacedChanges.size());
+	return static_cast<int32>(row.fRefusals.size() + row.fChanges.size());
 }
 
 /* GetMergedChange
 */
-const KCMStoryChange* KCMStoryList::GetMergedChange(int32 nth, int32 which, bool16& outIsReplaced)
+const KCMStoryChange* KCMStoryList::GetMergedChange(int32 nth, int32 which)
 {
-	outIsReplaced = kFalse;
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || which < 0)
 		return nil;
 
 	const KCMStoryRow& row = gRows[nth];
 
 	// ★THE REFUSALS COME FIRST (2026-09-19): what an import could not put in, before the changes it
-	//   did. They take the first fRefusals.size() indices, and everything below counts from there.
+	//   did. They take the first fRefusals.size() indices, and the live changes count from there.
 	if (which < static_cast<int32>(row.fRefusals.size()))
 		return &row.fRefusals[which];
 	which -= static_cast<int32>(row.fRefusals.size());
 
-	// ★THE COMMON CASE COSTS NOTHING. With no replaced changes the merged index IS the live
-	//   index, so the whole of the Story mode - and the Import mode until the reader takes
-	//   something in - skips the merge entirely.
-	if (row.fReplacedChanges.empty())
-	{
-		return (which < static_cast<int32>(row.fChanges.size())) ? &row.fChanges[which] : nil;
-	}
-
-	std::vector<KCMStoryRowMerge::Slot> slots;
-	MergedSlots(row, slots);
-	if (which >= static_cast<int32>(slots.size()))
-		return nil;
-
-	const KCMStoryRowMerge::Slot& slot = slots[which];
-	if (slot.fDone)
-	{
-		outIsReplaced = kTrue;
-		return &row.fReplacedChanges[slot.fIndex];
-	}
-	return &row.fChanges[slot.fIndex];
+	// (⛔**A THIRD LIST STOOD BETWEEN THEM UNTIL 2026-09-21**: the changes the reader had taken in,
+	//  kept so that a row stayed in the list after a restore wrote, and merged with the live ones in
+	//  TEXT order - which is why this was ever more than an index. Nothing is taken in now, so the
+	//  merged index is the refusals followed by the live changes, and the name "merged" is history.)
+	return (which < static_cast<int32>(row.fChanges.size())) ? &row.fChanges[which] : nil;
 }
 
-/* ReplacedSlotOfMerged
-*/
-int32 KCMStoryList::ReplacedSlotOfMerged(int32 nth, int32 which)
-{
-	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || which < 0)
-		return -1;
+// (⛔ReplacedSlotOfMerged and RemoveReplacedChangeAt went the same day: the first answered which
+//  record a merged index had fallen on, the second dropped one an undo had put back.)
 
-	const KCMStoryRow& row = gRows[nth];
-	if (row.fReplacedChanges.empty())
-		return -1;
-
-	// The same walk GetMergedChange makes, so the two cannot disagree about which list an index
-	// fell in - and the reason both of them are in this file. The refusals stand first there too.
-	if (which < static_cast<int32>(row.fRefusals.size()))
-		return -1;			// a refusal: not a replaced change
-	which -= static_cast<int32>(row.fRefusals.size());
-
-	std::vector<KCMStoryRowMerge::Slot> slots;
-	MergedSlots(row, slots);
-	if (which >= static_cast<int32>(slots.size()))
-		return -1;
-
-	const KCMStoryRowMerge::Slot& slot = slots[which];
-	if (!slot.fDone || slot.fIndex < 0
-		|| slot.fIndex >= static_cast<int32>(row.fReplacedChanges.size()))
-		return -1;			// a live change
-	return slot.fIndex;
-}
-
-/* RemoveReplacedChangeAt
-*/
-bool16 KCMStoryList::RemoveReplacedChangeAt(int32 nth, int32 slot)
-{
-	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || slot < 0)
-		return kFalse;
-
-	std::vector<KCMStoryChange>& list = gRows[nth].fReplacedChanges;
-	if (slot >= static_cast<int32>(list.size()))
-		return kFalse;
-	list.erase(list.begin() + slot);
-	return kTrue;
-}
 
 void KCMStoryList::SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& changes,
 								   bool16 textCompared)
@@ -1556,8 +1337,7 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 		const int32 count = GetMergedChangeCount(nth);
 		for (int32 k = 0; k < count; ++k)
 		{
-			bool16 isReplaced = kFalse;
-			const KCMStoryChange* const cp = GetMergedChange(nth, k, isReplaced);
+			const KCMStoryChange* const cp = GetMergedChange(nth, k);
 			if (cp == nil)
 				continue;
 			const KCMStoryChange& c = *cp;
@@ -1569,8 +1349,10 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 				continue;
 			}
 
-			const std::string state = isReplaced
-				? (KCMStoryDiffRun::StillReplaced(row, c) ? "replaced" : "undone") : "live";
+			// ⛔The column said "replaced" or "undone" for a change the reader had taken in, until the
+			//  restore went on 2026-09-21. It is kept, and says "live", so that a reader of the TSV
+			//  written before that date and one written after can still be put side by side.
+			const std::string state = "live";
 
 			IKCMStoryEditsFacade::Change shown;
 			const bool16 haveShown = (facade != nil && facade->GetChange(nth, k, shown)) ? kTrue : kFalse;

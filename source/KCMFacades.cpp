@@ -50,7 +50,6 @@
 #include "KCMPawStamp.h"			// the cat-paw stamps (place / lift / count / the one size)
 #include "KCMStoryList.h"			// the Story Edits rows, and where a story begins in a document
 #include "KCMStoryDiffRun.h"		// RunOne - re-comparing one row's story ("Refresh Story Comparison")
-#include "KCMStoryRestore.h"		// KCMRestoreChange - "Restore Source Text" on a change row
 #include "KCMOversetPoint.h"		// KCMFindOversetOutport - where the "+" of an overflow is
 #include "ITextModel.h"			// the story the two above are asked about
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - "Export Story Text..." on the flyout
@@ -489,38 +488,26 @@ public:
 		return kTrue;
 	}
 
-	// ***** IS THIS REPLACED CHANGE STILL STANDING AS REPLACED? *****
-	// ★★★The question is asked of the DOCUMENT, never of a flag: the story's text change counter
-	//   now, against the counter as it stood when the write happened. Undo takes that counter
-	//   back, so a replaced row stops being drawn as replaced the moment the reader presses
-	//   Ctrl+Z, and a redo brings it back - with no undo-specific code anywhere in the plug-in
-	//   ([[command-history-and-undo-stack]]: the counter is undone along with the text).
-	// ⚠It also answers kFalse after an ORDINARY edit, which is right for a different reason: the
-	//   row's positions were named against a text that has since moved, so what it is showing
-	//   can no longer be trusted. "Refresh Story Comparison" is the way back.
-	// ★★★**THE BODY MOVED TO KCMStoryDiffRun ON 2026-09-16**, because the WRITING side has to ask
-	//   exactly the same question. While it lived here the two had separate answers: a row went
-	//   back to unreplaced when the reader pressed Ctrl+Z - correctly - while the menu went on
-	//   refusing to take it in, because its own test was merely "a record exists". The
-	//   measurement and the reasoning went with it ([[one-question-one-place]]).
-	static bool16 StillReplaced(const KCMStoryRow& row, const KCMStoryChange& change)
-	{
-		return KCMStoryDiffRun::StillReplaced(row, change);
-	}
+	// (⛔**THE WHOLE OF THIS QUESTION WENT ON 2026-09-21** with the restore: whether a change the
+	//  reader had taken in was still standing as taken in. It was asked of the DOCUMENT, never of a
+	//  flag - the story counter now against the counter recorded at the write - so a row stopped
+	//  being drawn as taken in the moment Ctrl+Z was pressed, with no undo-specific code anywhere
+	//  ([[command-history-and-undo-stack]]). It moved to KCMStoryDiffRun on 2026-09-16 because the
+	//  WRITING side had to ask exactly the same question, and the two had disagreed
+	//  ([[one-question-one-place]]).)
 
 	virtual int32	GetChangeCount(int32 nth)
 	{
-		// The live diff's changes AND the ones already replaced - one index space, defined in
+		// The refusals an import left, then the live diff's changes - one index space, defined in
 		// KCMStoryList and asked for the same way by every question below.
+		// (⛔A third list, the changes the reader had taken in, was in it until 2026-09-21.)
 		return KCMStoryList::GetMergedChangeCount(nth);
 	}
 
 	virtual bool16	GetChange(int32 nth, int32 which, Change& out)
 	{
-		bool16 isReplaced = kFalse;
-		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which, isReplaced);
-		const KCMStoryRow* row = KCMStoryList::GetRow(nth);
-		if (found == nil || row == nil)
+		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which);
+		if (found == nil)
 			return kFalse;
 
 		const KCMStoryChange& change = *found;
@@ -544,71 +531,20 @@ public:
 		out.fLayers			= change.fLayers;		// a warichu / tate-chu-yoko change, line by line
 		out.fOtherLayers	= change.fOtherLayers;	// (traded below once a tate-chu-yoko or warichu is taken in)
 
-		// ---- the Import mode: which of its two states this row is in ---------------------------
-		//
-		// ★★**THE MODEL DECIDES WHICH FACE TO SHOW, NOT THE PANEL.** A replaced change carries the
-		//   words as they stand now AND as they stood before, and which of the two belongs in
-		//   fText* is a question about the document's counter - which is this side's business.
-		//   The cell then draws whatever it is handed, exactly as it always has.
+		// (⛔**THE TWO FACES OF A ROW WENT ON 2026-09-21.** A change the reader had taken in carried the
+		//  words as they stood now AND as they stood before, and the model - not the panel - chose
+		//  which of them belonged in fText*, by asking the document's own counter. It traded the two
+		//  sides' ruby and the two sides' layers over as well, so that a taken-in row described the
+		//  story rather than the comparison. Nothing is taken in now: a row has one face.)
 		out.fOverset		= change.fOverset;		// decided by the diff; see KCMStoryList.h
-		out.fWriteBlock		= change.fWriteBlock;	// decided by the diff too; the menu hides the write on it
 		out.fWholeParagraph		= change.fWholeParagraph;		// a paragraph added or removed whole
-		out.fAfterNewParagraph	= change.fAfterNewParagraph;	// the second "+" of "+ +": the panel asks first
 		out.fPlace				= change.fPlace;				// the body, a cell or a note - the ID column's word
 		out.fWholeCell			= kFalse;						// retired the night it was made (2026-09-19): a table's cells fold into a Table row now; the field keeps the layout
 		out.fMarkSpanCount		= static_cast<int32>(change.fMarkSpans.size());	// the cells a Table change marks (GetChangeMarkSpan)
-		out.fReplaced		= (isReplaced && StillReplaced(*row, change)) ? kTrue : kFalse;
-		out.fBeforeTextPre	= change.fBeforeTextPre;
-		out.fBeforeText		= change.fBeforeText;
-		out.fBeforeTextPost	= change.fBeforeTextPost;
+		out.fReplaced		= kFalse;						// ⛔nothing is taken in since 2026-09-21; the field keeps the layout
+		out.fWriteBlock		= 0;							// ⛔the same, for the reason above: nothing writes
+		out.fAfterNewParagraph	= kFalse;					// ⛔the same
 
-		if (isReplaced)
-		{
-			if (out.fReplaced)
-			{
-				// As it stands: the source's words are in the story now, and the range is where
-				// the write left them.
-				out.fTargetStart	= change.fReplacedStart;
-				out.fTargetEnd		= change.fReplacedEnd;
-				out.fTextPre		= change.fReplacedTextPre;
-				out.fText			= change.fReplacedText;
-				out.fTextPost		= change.fReplacedTextPost;
-
-				// ⚠**AND THE READING, FOR THE SAME REASON AS THE WORDS.** A ruby row draws fRuby
-				//   over its base text; after the write, what is over those characters is the
-				//   SOURCE's reading. Leaving fRuby alone would draw the old reading above text
-				//   that no longer carries it - the row lying about the document it describes.
-				//   (Empty when the ruby was taken off, which draws an empty upper line: right,
-				//   because that is what the story now has.)
-				out.fRuby			= change.fOtherRuby;
-				out.fRubyGroup		= change.fOtherRubyGroup;
-
-				// ⚠**AND THE TWO SIDES TRADE PLACES.** fOtherRuby is "the side the row is not
-				//   showing", and for a replaced row that is no longer the source - the source's
-				//   reading is the one now in the document. What the message area has to show is
-				//   the reading that was there BEFORE, which is the target's.
-				out.fOtherRuby		= change.fRuby;
-				out.fOtherRubyGroup	= change.fRubyGroup;
-
-				// ★★**AND A TATE-CHU-YOKO'S OR WARICHU'S LINES, FOR THE SAME TWO REASONS** (2026-09-17,
-				//   when the Import mode began to take them in). A layered row is drawn from its lines rather
-				//   than from fRuby, and after the write the lines that describe the story are the
-				//   SOURCE's. ⚠GetChangeLineCount asks the same side for the height - one without the
-				//   other and the row's picture and its height disagree.
-				out.fLayers			= change.fOtherLayers;
-				out.fOtherLayers	= change.fLayers;
-			}
-			else
-			{
-				// Undone (or the story was edited): the row goes back to the change it was, so
-				// that what the reader sees and what the story holds agree again.
-				out.fTargetStart	= change.fBeforeStart;
-				out.fTargetEnd		= change.fBeforeEnd;
-				out.fTextPre		= change.fBeforeTextPre;
-				out.fText			= change.fBeforeText;
-				out.fTextPost		= change.fBeforeTextPost;
-			}
-		}
 
 		// ★★**A WHOLE PARAGRAPH IS HANDED OUT AS ITS WORDS, WITHOUT THE BREAK** (2026-09-19, the user:
 		//   "the mark reaches the end of the paragraph above - I want that gone"). The model's ranges
@@ -631,8 +567,7 @@ public:
 		// tall a row is, and a row it cannot identify gets the ordinary height - the same shape the
 		// list has had all along. (GetChange returns kFalse for this case because its caller is
 		// about to DRAW the change and must not draw a stale one.)
-		bool16 isReplaced = kFalse;
-		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which, isReplaced);
+		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which);
 		if (found == nil)
 			return static_cast<int32>(kKCMStoryAttrNone);
 
@@ -643,8 +578,7 @@ public:
 	{
 		// Same out-of-range rule as the kind above, and for the same caller: an unknown row gets
 		// the ordinary one-line height rather than an error.
-		bool16 isReplaced = kFalse;
-		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which, isReplaced);
+		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which);
 		if (found == nil)
 			return kFalse;
 
@@ -680,62 +614,66 @@ public:
 		// done leaves the list alone rather than shaking it for no result.
 		if (count >= 0)
 		{
-			// ★★**A REFRESH IS A FRESH START** (the user's call, 2026-09-15), so the changes the
-			//   Import mode was keeping on this row as already replaced go with it. The row is
-			//   now whatever comparing the two versions says it is, and nothing besides.
-			//   ⚠Inside the same test as the notification on purpose: a refresh that could not
-			//   run must not quietly throw away the reader's record of what they took in.
-			//   ★**THE OTHER CALLER OF RunOne DOES THE OPPOSITE** - KCMStoryRestore adds one here
-			//   - which is why the two are worth reading together. Both were found by grepping
-			//   for RunOne( rather than by remembering.
-			KCMStoryList::ClearReplacedChanges(nth);
+			// (⛔A refresh also cleared what this row was keeping as already taken in - "a refresh is
+			//  a fresh start", the user's call of 2026-09-15 - until the restore went on 2026-09-21.)
 			KCMNotify(kKCMStoryEditsRebuiltMessage);
 		}
 
 		return count;
 	}
 
-	virtual bool16	RestoreChange(int32 nth, int32 which, PMString& outMessage)
+	// The one wording every retired restore slot answers with. ★It is NOT translatable, like every
+	// other sentence this facade puts on the status line.
+	bool16	RestoreIsGone(PMString& outMessage)
 	{
-		return KCMRestoreChange(nth, which, outMessage);
+		outMessage = PMString("The restore was removed on 2026-09-21 - copy the older words from the "
+							  "Source document, which Start leaves open.");
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
 	}
 
-	// The one-story bulk item, back on 2026-09-21. Transfer; the rules are model-side.
+	// ⛔**THE FOUR RETIRED RESTORE SLOTS** (2026-09-21). They kept their places for the reason
+	//   RestoreAllStories below has kept its since 2026-09-20: KIDMCP calls this facade through its
+	//   VTABLE, so taking a virtual out of the middle would land its callers on another method
+	//   ([[facade-vtable-slot-append-only]]). ★The feature itself went on the user's word - "the
+	//   Source document is in front of you, so if you want it back, take it from there" - once a Task
+	//   Start had become a saved copy that Start opens in a window.
+	// ⚠**ONE WORDING, whichever slot is called**, so a caller built against the old header is told the
+	//   same thing wherever it lands.
+	virtual bool16	RestoreChange(int32 nth, int32 which, PMString& outMessage)
+	{
+		return this->RestoreIsGone(outMessage);
+	}
+
 	virtual bool16	RestoreAllInStory(int32 nth, PMString& outMessage)
 	{
-		return KCMRestoreAllInStory(nth, outMessage);
+		return this->RestoreIsGone(outMessage);
 	}
 
 	virtual bool16	UndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 	{
-		return KCMUndoRestoreChange(nth, which, outMessage);
+		return this->RestoreIsGone(outMessage);
 	}
 
+	// ★It answered "is there a Source the older words can be read out of". Nothing writes the Target
+	//   from a menu now, so there is one answer. (The IMPORT writes, and never asked this.)
 	virtual bool16	CanWriteToTarget()
 	{
-		return KCMStoryWritesAllowed();
+		return kFalse;
 	}
 
 	virtual int32	GetChangeLineCount(int32 nth, int32 which)
 	{
 		// Same out-of-range rule as GetChangeAttrKind, for the same caller (the tree asking a height).
-		bool16 isReplaced = kFalse;
-		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which, isReplaced);
+		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which);
 		if (found == nil)
 			return 1;
 
 		// ★The layered kinds say how many lines themselves; every other mark is two, whether or not
 		//   this side carries it (the side without draws a bar - KCMAttrKindHasMarkLine).
-		// ★★A TATE-CHU-YOKO OR WARICHU STANDING AS TAKEN IN is drawn from the Source's lines (GetChange
-		//   trades them, 2026-09-17), so its height comes from the same side - the same question
-		//   GetChange asks (StillReplaced), not a second one.
-		const KCMStoryLayers* layers = &found->fLayers;
-		if (isReplaced)
-		{
-			const KCMStoryRow* const row = KCMStoryList::GetRow(nth);
-			if (row != nil && StillReplaced(*row, *found))
-				layers = &found->fOtherLayers;
-		}
+		// (⛔A tate-chu-yoko or warichu STANDING AS TAKEN IN was drawn from the Source's lines, and its
+		//  height was taken from the same side, until the restore went on 2026-09-21.)
+		const KCMStoryLayers* const layers = &found->fLayers;
 		if (KCMAttrKindIsLayered(found->fAttrKind) && layers->fCount >= 2)
 			return layers->fCount;
 		return KCMAttrKindHasMarkLine(found->fAttrKind) ? 2 : 1;
@@ -746,9 +684,8 @@ public:
 
 	virtual bool16	GetChangeMarkSpan(int32 nth, int32 which, int32 i, TextIndex& outFrom, TextIndex& outTo)
 	{
-		// The same merged index space as GetChange, so the panel names the same change here as there.
-		bool16 isReplaced = kFalse;
-		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which, isReplaced);
+		// The same index space as GetChange, so the panel names the same change here as there.
+		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which);
 		if (found == nil || found->fWhat != KCMStoryChange::kTable
 			|| i < 0 || static_cast<size_t>(i) >= found->fMarkSpans.size())
 			return kFalse;
@@ -757,13 +694,11 @@ public:
 		return kTrue;
 	}
 
-	// ⛔**STILL RETIRED** (2026-09-20). Only the ONE-STORY item came back on 2026-09-21; the slot
-	//   stays because KIDMCP calls this facade by vtable ([[facade-vtable-slot-append-only]]).
+	// ⛔**RETIRED SINCE 2026-09-20**, and since 2026-09-21 no restore of any size is left to come back
+	//   to. The slot stays for the vtable reason given above.
 	virtual bool16	RestoreAllStories(PMString& outMessage)
 	{
-		outMessage = PMString("Restore All Stories was removed on 2026-09-20 - take one story at a time.");
-		outMessage.SetTranslatable(kFalse);
-		return kFalse;
+		return this->RestoreIsGone(outMessage);
 	}
 
 	virtual bool16	GetOversetPoint(IDataBase* db, UID storyUID, TextIndex at,

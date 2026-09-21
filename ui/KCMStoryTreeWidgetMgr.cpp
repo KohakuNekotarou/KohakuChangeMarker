@@ -932,23 +932,11 @@ private:
 			//   literal - MSVC would convert a narrow "≠" to the system code page and the cell
 			//   would show whatever that came to (memory cpp-japanese-needs-bom, and the same
 			//   reason KCMLoc.h keeps its Japanese in u"..." and calls SetXString).
-			// ★★**AND A FOURTH SIGN, FOR A CHANGE THE READER HAS TAKEN IN** (the Import mode,
-			//   2026-09-15). The row stays in the list after the source's words are written into
-			//   the document, so it needs a mark of its own - and the one the user reached for
-			//   first was "=", read straight off the sign it replaces: the two sides were not
-			//   equal, and now they are.
-			//   ⚠**WHICH CHARACTER IT IS HAS NOT BEEN SETTLED** (the user, 2026-09-15: "'=' or
-			//   maybe a tick - I will not know until I see it"). It is one line, deliberately, so
-			//   that trying the other is one line. A tick is the other candidate; note that KCM
-			//   already uses one on the PAGE for a mark the reader leaves, which is a near enough
-			//   meaning that it is worth looking at both before choosing.
-			static const char16_t kReplacedMark[] = u"=";
-
-			if (change.fReplaced)
-			{
-				kind.SetXString(reinterpret_cast<const UTF16TextChar*>(kReplacedMark), 1);
-			}
-			else switch (change.fKind)
+			// (⛔**A FOURTH SIGN, "=", STOOD FOR A CHANGE THE READER HAD TAKEN IN** (2026-09-15): the
+			//  row stayed in the list after the source's words were written into the document, so it
+			//  needed a mark of its own, and "=" was read straight off the sign it replaced - the two
+			//  sides were not equal, and now they were. It went with the restore on 2026-09-21.)
+			switch (change.fKind)
 			{
 				case 1:  kind = PMString("+"); break;	// insert
 				case 2:  kind = PMString("-"); break;	// delete

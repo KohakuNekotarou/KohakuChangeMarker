@@ -31,7 +31,8 @@
 #include "PMString.h"
 #include "PMPoint.h"	// PBPMPoint - where a story begins, for the jump
 #include "UIDRef.h"
-#include "WideString.h"	// KCMStoryChange::fBeforeRaw - the characters themselves, not a quote of them
+// (⛔WideString.h was included for KCMStoryChange::fBeforeRaw - the characters themselves rather
+//  than a quote of them - which went with the restore on 2026-09-21.)
 
 #include <vector>
 
@@ -76,9 +77,10 @@ struct KCMStoryChange
 	enum What { kText, kAttr,
 				kRefused,	// ★one thing an IMPORT could not put in (2026-09-19). fTextPre holds the
 							//   KIND word for the ID column ("Word" / "Table" / "Place" / "Para" /
-							//   "Attr" / "File") and fText the place and the reason; fWriteBlock is
-							//   kKCMWriteBlockedKind so no menu offers to write it. Nothing else on
+							//   "Attr" / "File") and fText the place and the reason. Nothing else on
 							//   the change means anything, and it never carries a position.
+							//   (⛔It also carried kKCMWriteBlockedKind, so that no menu offered to
+							//    write it back, until the restore went on 2026-09-21.)
 				kTable };	// ★★A TABLE WHOSE SHAPE DIFFERS FROM TASK START'S (2026-09-19 night, the
 							//   user: "fold every change of that table into one row"). fKind says how:
 							//   kInsert = the table is only here, kDelete = only in Task Start, kReplace =
@@ -217,67 +219,16 @@ struct KCMStoryChange
 		else in this list uses. */
 	bool16		fOverset;
 
-	// ---- what a REPLACED change remembers (the Import mode only, 2026-09-15) ------------------
-	//
-	// ★**A REPLACED CHANGE KEEPS BOTH SIDES OF ITSELF.** The row has to be drawable in two states:
-	//   as it stands now (replaced), and as it stood before (after the reader presses Ctrl+Z).
-	//   Working the older one out again is not possible - the words it named are no longer in the
-	//   story - so it is kept at the moment of the write and never recomputed.
-	//
-	// ⚠**THERE IS NO "replaced" FLAG HERE, AND THAT IS DELIBERATE.** A flag would be a second
-	//   answer to a question fReplacedCount already answers, and the two would part company the
-	//   first time the reader undid the write: the flag would still say yes over text that had
-	//   gone back ([[one-question-one-place]]). The row is drawn as replaced when, and only when,
-	//   this equals the story's text change counter NOW - and that counter goes back on an undo.
+	// (⛔**WHAT A REPLACED CHANGE REMEMBERED WENT ON 2026-09-21**, with the restore that made one.
+	//  Eleven fields: the Target story's counter at the moment of the write (which is how "is it
+	//  still taken in" was answered without a flag - the counter winds back on an undo, so the two
+	//  could never disagree); the range and the three pieces as they stood AFTER the write; the same
+	//  four as they stood BEFORE it, held apart from the change's own because the story is diffed
+	//  again straight afterwards; and fBeforeRaw, the Target's own characters, read before anything
+	//  was written. ⚠That last one was NEVER the row's quote - measured 2026-09-16: written back,
+	//  eighty characters came back as sixty and a paragraph break came back as the character U+00B6.)
 
-	/** The Target story's counter at the moment this change was replaced, or 0 when it never was.
-		⇒ **"Is it replaced?" is `fReplacedCount != 0 && the story has got at least this far`**,
-		asked wherever the answer is needed and stored nowhere (KCMFacades' StillReplaced).
-
-		⚠★★★**WHICH COUNTER DEPENDS ON THE KIND, AND ONLY KCMStoryDiffRun::CountForKind KNOWS**
-		 (2026-09-16). A change to the WORDS is measured by the story's TEXT change counter; a
-		 ruby or a kenten by the AGGREGATE one, because the text counter does not move for an
-		 attribute at all - measured 4, 4, 4 across a ruby write and its undo, against 13, 14, 13
-		 from the aggregate. Written and read through that one function, so the two ends cannot
-		 disagree about what the number means. */
-	uint32		fReplacedCount;
-
-	/** The range the replacement occupies NOW, in the Target -- what a jump aims at and what the
-		cell draws as the changed part. Meaningless while fReplacedCount is 0. */
-	TextIndex	fReplacedStart;
-	TextIndex	fReplacedEnd;
-
-	/** The three pieces AS THEY STAND AFTER the replacement (context, the words that went in,
-		context), cut the way the diff cuts its own -- KCMStoryDiffRun::SliceAround. */
-	PMString	fReplacedTextPre;
-	PMString	fReplacedText;
-	PMString	fReplacedTextPost;
-
-	/** The range and the three pieces AS THEY STOOD BEFORE it.
-
-		★**THEY CANNOT SHARE fTargetStart / fText***: after the write the story is diffed again,
-		and those fields then belong to a different comparison of a text this change is no longer
-		part of. The before-state has to be held apart from them or it is quietly overwritten. */
-	TextIndex	fBeforeStart;
-	TextIndex	fBeforeEnd;
-	PMString	fBeforeTextPre;
-	PMString	fBeforeText;
-	PMString	fBeforeTextPost;
-
-	/** The Target's OWN CHARACTERS over [fBeforeStart, fBeforeEnd), read from the text model at the
-		moment of the take-in, before anything was written - what "Undo the Restore" writes back.
-
-		⚠★★★**NEVER fBeforeText.** That is the ROW'S QUOTE: KCMStoryDiffRun's Slice cuts it to
-		 kExcerptCodePoints and MarkUpBreaks turns a paragraph break into a pilcrow. Written back
-		 into the story it cost the reader their words - measured 2026-09-16: eighty characters came
-		 back as sixty, and a paragraph break came back as the character U+00B6 in a single paragraph.
-		Empty for a change that is not a replaced TEXT change. */
-	WideString	fBeforeRaw;
-
-	/** Why this change must not be written back - KCMStoryWriteBlock, kKCMWriteAllowed for a change
-		that may. Decided by the diff for a TEXT change (KCMStoryDiffRun), shown by the menu, and asked
-		again by the write against the characters as they stand then (KCMStoryRestore). */
-	int32		fWriteBlock;
+	// (⛔fWriteBlock went on 2026-09-21: why this change must not be written back. Nothing writes.)
 
 	/** ★**THE LINES A WARICHU OR TATE-CHU-YOKO CHANGE IS DRAWN ON** (2026-09-16) - fLayers for the
 		side the row shows (Target), fOtherLayers for the message area's side (Source), the same
@@ -300,11 +251,8 @@ struct KCMStoryChange
 		says which end holds it, and the facade cuts it off everything it hands out (KCMShownSpan). */
 	bool16		fWholeParagraph;
 
-	/** kTrue for a paragraph to take in whose paragraph BEFORE it is also one to take in - the second
-		"+" of "+ +". Taking it in first gives it the next style of whatever stands before it in the
-		document then, which is not what taking them in order gives; the panel asks first (the user's
-		request). */
-	bool16		fAfterNewParagraph;
+	// (⛔fAfterNewParagraph went the same day: it marked the second "+" of "+ +", so that the panel
+	//  could ask before one was taken in ahead of the other and given a different style.)
 
 	/** ★**WHERE THE CHANGED WORDS STAND: the body, a table cell, or a footnote** (2026-09-19, the user:
 		"for a change inside a cell, show Cell Text in the ID column; Text for an ordinary one"). A
@@ -322,32 +270,11 @@ struct KCMStoryChange
 		that nothing on the UI side has to know the break is there. kKCMBreakNone for every other change. */
 	int32		fBreakAt;
 
-	/** ★**THE PARAGRAPH STYLES A WHOLE-PARAGRAPH TAKE-IN FOUND, BEFORE IT WROTE** (2026-09-19, the user:
-		"a b c styled A B C: take b out and put it back, and everything reads C"). Read by KCMStoryRestore
-		at the moment of the take-in, one entry per paragraph from the one holding fBeforeStart on: the
-		paragraph before (when fBreakAt is kKCMBreakLeads), the paragraph going out, and the following
-		paragraphs the take-out moved along their next styles. Empty for every other change.
-		★**"Undo the Restore" puts them back in TWO LAYERS** (the user's rule): the paragraph before gets
-		  what it had; the paragraph put back and the ones after it get the NEXT STYLE of the paragraph above
-		  when that style names one, and what is remembered here when it does not ([Same Style]) -
-		  KCMRestoreParagraphStyles. Without a record the chain alone is used, as the take-in itself does.
-		⚠UIDs, not names: a style renamed meanwhile still applies; one deleted meanwhile is skipped. */
-	std::vector<UID>	fBeforeParaStyles;
-
-	/** ★**AND WHAT THE TAKE-IN LEFT THOSE SAME PARAGRAPHS WEARING** - one entry per entry of
-		fBeforeParaStyles: the paragraph before as the take-in left it, kInvalidUID for the paragraph that
-		went out (it is not there to read), and for each following paragraph the style the take-out moved
-		it to (its own, where the chain did not move it).
-		★**THE UNDO PUTS A FOLLOWING PARAGRAPH BACK ONLY WHILE IT STILL WEARS THIS** (2026-09-19 evening,
-		  measured: a, b, c taken out in turn and a put back gave z - the paragraph that had stood after
-		  c all along - the next style of A, because the record made for a still counted b and c below it
-		  and z was standing in b's place). The paragraphs below a change can be taken out and put back
-		  by OTHER changes between its take-in and its undo, so the record cannot know by position which
-		  paragraph it is looking at; what it can know is whether the paragraph there still looks the way
-		  it left it. One that does not stops the walk - a different paragraph, or one the reader
-		  restyled by hand, and neither is this record's to change. The paragraph put back itself is
-		  never checked: the write just gave it whatever it inherited. */
-	std::vector<UID>	fAfterParaStyles;
+	// (⛔**THE TWO PARAGRAPH-STYLE RECORDS WENT ON 2026-09-21**: what the paragraphs wore before a
+	//  whole-paragraph take-in wrote, and what the take-in left them wearing. They were how "a b c
+	//  styled A B C: take b out and put it back, and everything reads C" was answered - the undo put
+	//  the styles back in two layers, and only while a following paragraph still wore what the
+	//  take-in had left it. ★The reasoning is kept in docs/ai-notes/kcm-restore-retired-2026-09-21.md.)
 
 	// ---- a TABLE change (fWhat == kTable), 2026-09-19 night ------------------------------------------
 	//
@@ -355,46 +282,13 @@ struct KCMStoryChange
 	//   user chose to fold a table's cell changes into one Table row instead. The facade's field of that
 	//   name stays for its layout and answers kFalse.
 
-	/** ★★★**WHICH TABLE THIS IS - BY THE TABLE'S OWN ID** (2026-09-20, the user: "is it looking at
-		tables by position? a table has an id too - can that not say which is which?").
-
-		`fTableId` is the table standing in the TARGET, `fSourceTableId` Task Start's; one of them is
-		kInvalidUID for a table that only one side has (Table + and Table −). The id is the table's
-		uid in the document, read off the model as KCMTableShape::fDictUID and out of the INX as the
-		last step of its Self - **the same number on both sides, because Task Start's origin was
-		written by this very document** (KCMTableSnippet.h).
-
-		⚠**IT WAS AN ORDINAL UNTIL 2026-09-20** - the table's position among the story's tables - and
-		 that is what made a table inserted in the MIDDLE shift every table after it into a wrong
-		 pairing: each came out as a shape change against its neighbour's, and a restore would have
-		 put ANOTHER table's shape back. Measured the same day: inserting a table at the start of a
-		 story moves no other table's id, removing one moves none of the rest, and an Undo of a
-		 removal brings the id back unchanged.
-		⚠**A TABLE KCM HAS PUT BACK CARRIES AN ID TASK START NEVER SAW** (a snippet import hands out
-		 new ones), which is why the live id is translated through KCMStorySnapshotTranslateTableId
-		 before it is compared with the older side's. */
-	UID			fTableId;
-	UID			fSourceTableId;
-
-	/** ★★★**WHERE A TABLE − GOES BACK, MEASURED FROM THE TABLE BEFORE IT** (2026-09-20, found on the
-		running application while putting three table changes back in one story).
-
-		`fPrevTableId` is the table that stood nearest BEFORE this one in Task Start (kInvalidUID when
-		it was the story's first), and `fGapFromPrev` how many characters of body stood between that
-		table's anchor and this one's - or, with no table before it, how far this one stood from the
-		start of the story.
-
-		⚠**WHY NOT TASK START'S ANCHOR ALONE** (which is what it was, the "plan A" the user chose).
-		 The plan's reasoning holds for differences in the WORDS - those are rows of their own, so
-		 putting them back first makes the position land - but not for differences in the TABLES: a
-		 table added earlier in the story, or a row added to one, moves every later anchor, and those
-		 changes are folded into Table rows that say nothing about the body's length. Measured: with a
-		 row added to the first table and a table inserted before the second, Task Start's anchor 12
-		 landed **inside the word "two"** - and the comparison said "0 change(s) left", because a
-		 table's anchor is not part of what the paragraph diff reads.
-		⇒ Measuring from the table before it takes every table change out of the sum. */
-	UID			fPrevTableId;
-	int32		fGapFromPrev;
+	// (⛔**FOUR IDS WENT ON 2026-09-21**: the Target's table and Task Start's (a table is named by its
+	//  own uid, never by its position - an ordinal made a table inserted in the MIDDLE shift every
+	//  table after it into a wrong pairing), the table that stood nearest before it in Task Start,
+	//  and the characters of body between the two. The last pair was how a Table − knew where to go
+	//  back: Task Start's anchor alone landed INSIDE a word once another table had changed.
+	//  ★**The PAIRING by id is still done** - KCMStoryDiffRun does it while it builds the row - it is
+	//  only no longer carried on the row, because only a write into the document needed it there.)
 
 	/** ★**THE CELLS THAT CHANGED**, in Target coordinates - what the marks light and what the jump aims at
 		(the user: "the changed cells should be marked; jump to the top-left of them"). One span per cell:
@@ -405,49 +299,16 @@ struct KCMStoryChange
 	/** What the Story column opens with: "2×2→3×2" / "2×2 merged" / "2×2" (UTF-8; KCMTableShapeWord). */
 	std::string	fShapeWord;
 
-	/** The two shapes as signatures (KCMTableShapeSignature): Task Start's and the live one's. A restore
-		compares the live table against fShapeSigAfter before it writes, and records the shape it left. */
-	std::string	fShapeSigBefore;
-	std::string	fShapeSigAfter;
-
-	// (The cells whose live words a restore keeps were recorded here until 2026-09-20 - fKeptCells,
-	//  paired by the diff. They are not recorded at all any more: KCMTableRestore asks the two XML
-	//  texts at the moment it restores and merges the cells there, so nothing about cells has to be
-	//  carried from the time of the comparison to the time of the write. That is what took the
-	//  position bugs out - see KCMTableSnippet.h, KCMMergeTableCells.)
-
-	// (NO SNIPPET IS KEPT PER TABLE. The redo snippet below is built at the moment a restore writes,
-	//  out of the live story's own export; what the COMPARISON read is one INX per changed STORY, in
-	//  KCMStorySnapshot, taken once and dropped when that story is refreshed - so the several
-	//  kilobytes never travel through the facade to the UI, which has no use for them.
-	//  ⚠A cache of one snippet per table was planned as KCMTableCache and never built, and the key it
-	//   would have had - the table's POSITION in the story - is the very thing the tables' own ids
-	//   replaced later the same day. 2026-09-20.)
-
-	/** After a restore: the snippet that puts the LIVE table back ("Undo the Restore"), built from the
-		Target's own XML (KCMTableSnippet). Empty until a restore, and dropped once it is redone. */
-	std::string	fRedoSnippet;
-
-	/** After a restore: the signature of the table as the restore left it (= Task Start's shape). "Is
-		this table still as I left it" is one comparison against the live table (KCMStoryDiffRun's
-		StillReplaced for a kTable change). */
-	std::string	fReplacedShapeSig;
-
-	/** ★After a restore: the id of the table the restore LEFT STANDING - which is a new one, since the
-		table came in through a snippet import. **kInvalidUID means "and it left none"**, which is what
-		a restored Table + is: the table was removed, and "is it still restored?" is answered by that
-		table still being absent. Read by StillReplaced and by the Undo the Restore. */
-	UID			fReplacedTableId;
+	// (⛔**AND FIVE MORE THINGS A TABLE ROW CARRIED FOR THE RESTORE**, all gone 2026-09-21: the two
+	//  shape signatures; the note that no snippet is kept per table; fRedoSnippet, the live table's
+	//  own XML kept so that "Undo the Restore" could put it back; and the id and shape the restore
+	//  left standing, which is how "is this table still as I left it" was answered.)
 
 	KCMStoryChange()
 		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
 		  fSourceStart(0), fSourceEnd(0),
 		  fAttrKind(kKCMStoryAttrNone), fOverset(kFalse),
-		  fReplacedCount(0), fReplacedStart(0), fReplacedEnd(0),
-		  fBeforeStart(0), fBeforeEnd(0), fWriteBlock(kKCMWriteAllowed),
-		  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse), fPlace(0), fBreakAt(0),
-		  fTableId(kInvalidUID), fSourceTableId(kInvalidUID), fPrevTableId(kInvalidUID),
-		  fGapFromPrev(-1), fReplacedTableId(kInvalidUID) {}
+		  fWholeParagraph(kFalse), fPlace(0), fBreakAt(0) {}
 };
 
 /** KCMStoryChange::fBreakAt - which end of a whole paragraph's range holds the paragraph break that the
@@ -518,9 +379,9 @@ struct KCMStoryRow
 	std::vector<KCMStoryChange> fChanges;
 
 	/** The Target story's text change counter (ITextModel::GetTextChangeCount) at the moment
-		fChanges were built. "Restore Source Text" (KCMStoryRestore.cpp) refuses to write into a
-		story whose counter has moved since: the change's positions name the text as it was then,
-		and an edit in between would put the older words somewhere else. 0 until the diff runs. */
+		fChanges were built. 0 until the diff runs.
+		(⛔The restore read it to refuse writing into a story whose counter had moved since - the
+		 change's positions name the text as it was then. It went on 2026-09-21.) */
 	uint32		fTargetTextCount;
 
 	/** Whether the two versions' TEXT was actually put side by side for this row.
@@ -576,24 +437,13 @@ struct KCMStoryRow
 		⚠It is the diff's answer, so it means nothing unless fTextCompared is kTrue. */
 	bool16			fHasTextChange;
 
-	/** The changes in this row's story that the reader has already replaced, ★**IN READING ORDER**
-		(2026-09-19): ascending by fReplacedStart, and two that stand at the SAME position in the
-		order their words stood in the text. ⚠Until 2026-09-19 two at one position stood in the order
-		they were taken in, and that order is not knowable from the positions - so a write at that
-		position could not tell which of them it was in front of, and pushed the wrong one: two new
-		paragraphs taken out and put back came back as "¶ba", or the first was refused as "no longer
-		where it was" (its record pushed to -2). ReplacedSlotFor / AddReplacedChangeAt keep the order;
-		ShiftReplacedChanges moves only the records from a given slot on.
-
-		★★**THEY ARE NOT IN fChanges, AND THAT IS WHAT MAKES THE RE-DIFF SAFE.** Every replacement
-		is followed by comparing the story again (KCMStoryRestore.cpp), which clears fChanges and
-		refills it from what the comparison finds - and finds nothing where the words now agree.
-		Anything living there would be thrown away on the next write. This list survives it, and
-		the panel is handed the two merged in text order (KCMStoryRowMerge).
-
-		**EMPTIED BY "Refresh Story Comparison"**, which is a fresh start (the user's call,
-		2026-09-15) and so clears this as well as the diff. Empty in every other mode. */
-	std::vector<KCMStoryChange> fReplacedChanges;
+	// (⛔**fReplacedChanges WENT ON 2026-09-21** with the restore: the changes the reader had already
+	//  taken in, kept in READING order and merged with the live ones in text order for the panel.
+	//  ★**They were not in fChanges, and that is what made the re-diff safe** - every write was
+	//  followed by comparing the story again, which empties fChanges and refills it from what the
+	//  comparison finds. ⚠The ordering rule was paid for: until 2026-09-19 two records at one
+	//  position stood in the order they were taken in, which is not knowable from the positions, and
+	//  two new paragraphs taken out and put back came back as "¶ba".)
 
 	/** ★What an IMPORT could not put into this story, one entry each (2026-09-19, the user's ask).
 		Shown BEFORE fChanges and fReplacedChanges, each with a red "!" in the Δ column - and the row
@@ -785,48 +635,10 @@ namespace KCMStoryList
 		read by the caller at the moment it attached the row's changes. Out-of-range nth is ignored. */
 	void SetRowTargetTextCount(int32 nth, uint32 count);
 
-	/** Keep `done` on row nth as a change the reader has already replaced (the Import mode).
-
-		★**A DOOR OF ITS OWN, BESIDE SetRowChanges.** GetRow hands out a const pointer precisely so
-		that nothing edits a row behind the list's back, and a replaced change is written at a
-		different moment than the diff's children are - after the story has been compared again.
-		Out-of-range nth is ignored, as everywhere else here.
-
-		⚠**INSERTED IN fReplacedStart ORDER, NOT APPENDED**, after any record standing at the same
-		position. ★**FOR PUTTING A KEPT LIST BACK** (DropUndoneReplaced), where the records come in
-		the order they already had. ⚠**NOT for a record that has just been WRITTEN** - a write can
-		leave its record at the same position as one that stands AFTER it in the text (a take-out
-		of two adjacent paragraphs), and only the slot asked for BEFORE the write knows which side it
-		belongs on: ReplacedSlotFor, then AddReplacedChangeAt.
-		@see KCMStoryRow::fReplacedChanges for why it is not simply appended to fChanges. */
-	void AddReplacedChange(int32 nth, const KCMStoryChange& done);
-
-	/** ★**WHERE A RECORD FOR A WRITE AT `at` BELONGS** in row nth's replaced list (2026-09-19): after
-		every record whose fReplacedStart is before `at`, and after every CARET (a record with no
-		characters) standing exactly at `at` - the same tie rule KCMStoryRowMerge shows the panel (a
-		replaced change is the thing standing there; the live one is beside it) - and before the rest,
-		a record WITH characters starting at `at` included (its words stand from `at` on, so the write
-		goes in front of them or over them; the re-check of 2026-09-19 night). ⚠**ASK BEFORE THE
-		WRITE**, while the positions are the ones the write is about to be made against.
-		@return the slot: also the first slot ShiftReplacedChanges moves for this write. */
-	int32 ReplacedSlotFor(int32 nth, TextIndex at);
-
-	/** Put `done` into row nth's replaced list at `slot` (from ReplacedSlotFor, plus however many
-		records the caller has put in before it since). Out-of-range slots are clamped. */
-	void AddReplacedChangeAt(int32 nth, int32 slot, const KCMStoryChange& done);
-
-	/** The slot in row nth's replaced list that merged index `which` names, or -1 when that index
-		is out of range or names a refusal or a LIVE change. The one place the merged index is turned
-		into a position in fReplacedChanges (GetMergedChange makes the same walk). */
-	int32 ReplacedSlotOfMerged(int32 nth, int32 which);
-
-	/** Take the record at `slot` out of row nth's replaced list. Out of range does nothing.
-		@return kTrue when a record went. */
-	bool16 RemoveReplacedChangeAt(int32 nth, int32 slot);
-
-	/** Forget row nth's replaced changes. "Refresh Story Comparison" is a fresh start (the user's
-		call, 2026-09-15), so it clears these as well as the diff. Out-of-range nth is ignored. */
-	void ClearReplacedChanges(int32 nth);
+	// (⛔**SEVEN DECLARATIONS WENT ON 2026-09-21** with the restore they served: AddReplacedChange,
+	//  ReplacedSlotFor, AddReplacedChangeAt, ReplacedSlotOfMerged, RemoveReplacedChangeAt,
+	//  ClearReplacedChanges and ShiftReplacedChanges. They kept the row's record of what the reader
+	//  had taken in - in reading order, slid along by later writes in the same story.)
 
 	/** Mark the row of `storyUID` as one an import could not fill (kKCMStoryKindRefused), making the
 		row when the comparison built none - the story's counter did not move because nothing went in.
@@ -836,8 +648,8 @@ namespace KCMStoryList
 		★★**A STORY THE DOCUMENT DOES NOT HOLD** (a file named after a uid that is not there, or names
 		  something that is not a story) gets a row that stands for the FILE: `textWhenNoStory` in the
 		  text cell, no frame, no page - **and fStoryUID = kInvalidUID**. That is the one value every
-		  reader of this list already passes over (the diff, the undo observer, the marks, the jump),
-		  so a uid that names nothing - or a different object - is never handed to the document.
+		  reader of this list already passes over (the diff, the marks, the jump), so a uid that names
+		  nothing - or a different object - is never handed to the document.
 		@return the row's index, for AddRefusalChange. */
 	int32 AddRefusalRow(IDataBase* targetDB, UID storyUID, const PMString& textWhenNoStory);
 
@@ -846,55 +658,26 @@ namespace KCMStoryList
 		nothing. ⚠Before the sort, like AddRefusalRow: the index is only good until then. */
 	void AddRefusalChange(int32 nth, const PMString& kind, const PMString& whereAndWhy);
 
-	/** Move row nth's replaced records FROM `firstSlot` ON to follow a write that removed `removed`
-		characters at `from` and put `inserted` in their place.
-
-		★★**BECAUSE THE RE-DIFF DOES NOT TOUCH THEM.** Comparing the story again names the LIVE
-		changes afresh against the text as it now stands, which is exactly why a second
-		replacement works at all - but a change that has already been replaced is no longer in
-		that comparison, so nothing would move it. Replacing words earlier in the story makes the
-		text longer or shorter, and everything after it slides by that much.
-
-		★★★**WHICH RECORDS MOVE IS DECIDED BY SLOT, NOT BY POSITION ALONE** (2026-09-19). A record
-		is a CARET when what it took in was an insertion (its words are gone), and two carets can
-		stand at one position - the two new paragraphs of the user's report, after both were taken
-		out. Position cannot say which of them the write is in front of; the list's order can, and it
-		is kept in reading order for exactly this. The caller names the first slot to move: for a
-		take-in, ReplacedSlotFor (the records at or before the write stay); for "Undo the Restore",
-		the slot after the record being undone (everything before it in the text stays).
-		★A record from that slot on that stands past the removed characters slides by
-		 `inserted - removed`; one standing INSIDE them (its words were just overwritten by another
-		 change - possible only when the diff swallowed it into a wider one) is collapsed to a caret
-		 after the new words, where an undo of it is refused rather than written somewhere wrong.
-		⚠**THE OLD RULE WAS "position >= from moves, by delta"** and it did two wrong things to a
-		 caret standing exactly at `from`: a removal starting there pushed it NEGATIVE (the first
-		 paragraph's record went to -2 and its undo was refused as "no longer where it was"), and an
-		 insertion there pushed a record that stood BEFORE the write along with the ones after it
-		 (two paragraphs put back came out as "¶ba"). Both measured on the running application.
-		⚠Call it BEFORE the new record is added. Out-of-range nth does nothing. */
-	void ShiftReplacedChanges(int32 nth, int32 firstSlot, TextIndex from, int32 removed, int32 inserted);
-
 	// ---- what the panel sees: the two lists as one ------------------------------------------
 	//
 	// ★★★**ONE INDEX SPACE, DEFINED IN ONE PLACE.** The panel asks four separate questions about
-	//   "change number N of row M" (how many, which one, which attribute, does it carry a value)
-	//   and "Restore Source Text" asks a fifth. Letting some of them count the live changes and
-	//   others count the merged list would not fail loudly - it would answer about the WRONG
+	//   "change number N of row M" (how many, which one, which attribute, does it carry a value),
+	//   and the restore asked a fifth until 2026-09-21. Letting some of them count the live changes
+	//   and others count the merged list would not fail loudly - it would answer about the WRONG
 	//   CHANGE, which is the shape of bug this plug-in has spent the most time on
 	//   ([[one-question-one-place]]). So every one of them goes through the two below.
 
-	/** How many children row nth shows: the refusals first (2026-09-19), then the live diff's changes
-		and the replaced ones merged in text order. */
+	/** How many children row nth shows: the refusals first (2026-09-19), then the live diff's changes.
+		(⛔A third list - the changes the reader had taken in - was merged in between until 2026-09-21.) */
 	int32 GetMergedChangeCount(int32 nth);
 
-	/** The change a merged index names, or nil when either index is out of range.
+	/** The change an index names, or nil when either index is out of range.
 
 		★The first fRefusals.size() indices are the refusals, in the order the import noted them; the
-		  rest are the live and the replaced changes in text order (KCMStoryRowMerge).
-		@param outIsReplaced kTrue when it came from fReplacedChanges. ⚠**Ask this rather than
-			looking at the change itself**: fReplacedCount says when it was replaced, not whether
-			it is being SHOWN as replaced, and the two differ after an undo. */
-	const KCMStoryChange* GetMergedChange(int32 nth, int32 which, bool16& outIsReplaced);
+		  rest are the live changes, in the order the diff made them.
+		⚠**The name is history**: it merged three lists until the restore went on 2026-09-21, and it is
+		 kept so that the panel's child index means the same thing on both sides of that day. */
+	const KCMStoryChange* GetMergedChange(int32 nth, int32 which);
 
 	/** Drop the rows whose story differs only in HOW IT IS SET -- a font, a colour, a style, a
 		table stroke -- and keep the ones whose CONTENT differs: the words, or the ruby written over

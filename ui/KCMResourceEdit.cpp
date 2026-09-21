@@ -839,8 +839,8 @@ namespace
 /** Whether row `row` of the Resources list is one this can open an editor for.
 
 	★THE SAME QUESTION THE ACTION ASKS ITSELF, so the menu and the outcome cannot part company -
-	the shape every other item on these menus follows (KCMResourceRowHasXml,
-	KCMChangeRowCanRestore).
+	the shape every other item on these menus follows (KCMResourceRowHasXml, and the restore's own
+	tests until they went on 2026-09-21).
 	⚠The MODE is asked first: the stashed row is an index into whichever list was on screen, so in
 	  the Story mode it names a story and reading it as a definition would answer about whatever
 	  definition happens to sit at that number.

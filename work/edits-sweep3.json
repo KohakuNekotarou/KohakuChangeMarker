@@ -1,0 +1,12 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryList.h",
+    "find": "#include \"WideString.h\"\t// KCMStoryChange::fBeforeRaw - the characters themselves, not a quote of them\n",
+    "replace": "// (⛔WideString.h was included for KCMStoryChange::fBeforeRaw - the characters themselves rather\n//  than a quote of them - which went with the restore on 2026-09-21.)\n"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryList.h",
+    "find": "\t\t\t\t\t\t\t//   \"Attr\" / \"File\") and fText the place and the reason; fWriteBlock is\n\t\t\t\t\t\t\t//   kKCMWriteBlockedKind so no menu offers to write it. Nothing else on\n\t\t\t\t\t\t\t//   the change means anything, and it never carries a position.",
+    "replace": "\t\t\t\t\t\t\t//   \"Attr\" / \"File\") and fText the place and the reason. Nothing else on\n\t\t\t\t\t\t\t//   the change means anything, and it never carries a position.\n\t\t\t\t\t\t\t//   (⛔It also carried kKCMWriteBlockedKind, so that no menu offered to\n\t\t\t\t\t\t\t//    write it back, until the restore went on 2026-09-21.)"
+  }
+]

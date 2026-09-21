@@ -2,31 +2,20 @@
 //
 //  KCMStoryRestore.h
 //
-//  "Restore Source Text" on a change row of Story Edits (2026-09-13, the user's pick: "put this
-//  part back the way it was at Task Start"): the older side's words are written over the newer
-//  side's range of that one change, through ITextModelCmds - one command, one undo step.
+//  The shared TEXT WRITERS of KCM: the one command that makes a range read given words, and the
+//  attribute writers for ruby, kenten, tate-chu-yoko and warichu.
 //
-//  ★THE FIRST FEATURE THAT EDITS THE USER'S DOCUMENT beyond checks and paws. Its rules:
-//   1. one change, one command (ReplaceCmd, InsertCmd or DeleteCmd - KCMCreateWordsWriteCmd picks),
-//      so Ctrl+Z is the whole of it;
-//   2. it writes only where the change's positions still mean what they meant when the diff ran:
-//      the Target story's text change counter must equal the one recorded on the row
-//      (KCMStoryRow::fTargetTextCount). ★★**WHEN IT DOES NOT, THE STORY IS COMPARED AGAIN**
-//      (2026-09-15, the user's decision - until then it refused and asked for a refresh by hand,
-//      which made an accidental keystroke a dead end for every remaining change in that story).
-//      That one story is re-diffed and this change looked up afresh by its SOURCE range - the
-//      side an edit in the Target cannot move. Only a paragraph that now READS differently stops
-//      the write, and only once, so that nothing goes in that the reader has not seen;
-//   3. the older words are read RAW from the Source story (the armed Source, or the task-start
-//      copy rehydrated for the call) at the change's fSourceStart..fSourceEnd - never from the
-//      row's excerpt, which is cut and has its break characters replaced for display;
-//   4. words, ruby and kenten (2026-09-13, the user's ask: "ruby too - changed, added, removed;
-//      mono and group told apart; kenten if it can be done"). The ruby is written as the three
-//      attributes that ARE a reading (on / the string / mono-or-group), the kenten as its KIND;
-//      the look of either is left alone. Local formatting of restored words follows the
-//      Target's surroundings. Refused with a reason: a custom kenten mark, and an attribute
-//      change in a paragraph whose words changed too (the words go back first).
-//  After the write the row's story is diffed again (KCMStoryDiffRun::RunOne) and the panel told.
+//  ⛔**THIS FILE WAS THE RESTORE UNTIL 2026-09-21** ("Restore Source Text", 2026-09-13; "Undo the
+//  Restore", 2026-09-16; "Restore All in This Story"). All of it went on the user's word - "the
+//  Source document is in front of you, so if you want it back, take it from there" - once a Task
+//  Start had become a copy saved to a file that Start opens in a window. ⇒ **KCM writes nothing
+//  into the reader's text from a menu any more.** What survives is what the restore SHARED:
+//    - the import's pour into the document (KCMStoryTextImport.cpp / KCMStoryAttrPour.cpp), which
+//      is still how edits made outside InDesign come back;
+//    - the PDF report's Story table (KCMReportTable.cpp / KCMReport.cpp), which sets real ruby and
+//      real kenten over the changed characters of its cells - one recipe, never two.
+//  ⚠The report's document is a throwaway, so no undo step is wanted there, and the import makes a
+//   sequence of its own: **nothing in this file begins one.**
 //
 //========================================================================================
 #ifndef __KCMStoryRestore_h__
@@ -39,50 +28,15 @@ class ICommand;
 class ITextModel;
 class WideString;
 
-/** Restore change `which` of Story Edits row `nth`. kTrue when the words were written (outMessage
-    says how many); kFalse with the reason in outMessage. */
-bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage);
+// (⛔Four declarations stood here and went on 2026-09-21 with the restore: KCMRestoreChange,
+//  KCMRestoreAllInStory, KCMUndoRestoreChange, and KCMStoryWritesAllowed - the ONE place that
+//  decided whether anything could be written back into the Target at all. ★The facade slots that
+//  called them are KEPT AND EMPTY, because KIDMCP calls that facade through its vtable
+//  ([[facade-vtable-slot-append-only]]) - IKCMStoryEditsFacade.h says so at each one.)
 
-/** Every change of row `nth`, put back in ONE press and ONE undo step ("Restore All in This Story").
-
-    ★**Back on 2026-09-21** (the user: "ひとつづつ、および、Story単位"). It went on 2026-09-20 with
-      "Restore All Stories", and only this one was asked for again.
-    ★★**THE WALK GOES BACKWARDS AND RE-DIFFS ONLY AT ITS ENDS.** Writing a change makes the story
-      longer or shorter, so every position after it moves; walking from the end means each write
-      only disturbs text the walk has already passed. One re-diff at the start if the reader had
-      typed since the comparison, one at the end to rebuild the row. The alternative - re-diffing
-      between writes - measured out as one full story comparison per change.
-    @return kTrue when at least one change went in; outMessage counts what did and what did not. */
-bool16 KCMRestoreAllInStory(int32 nth, PMString& outMessage);
-
-/** Whether anything may be written back into the Target at all: kTrue while there is a SOURCE THE
-    OLDER WORDS CAN BE READ OUT OF - two open documents, a Task Start copy Start has opened, or the
-    lent database.
-
-    ⚠★★**THE 2026-09-16 RULE IS WITHDRAWN** (the user, 2026-09-21). Comparing two documents used to
-      offer no restore, on the grounds that the Source was a document the reader could open and copy
-      from themselves, while against a Task Start the older text existed nowhere else. **A Task
-      Start is now a copy saved on disk and opened by Start** - a document like any other - so the
-      two cases stopped being different, and the rule would have taken the items away from the mode
-      they were written for.
-    ★ONE PLACE: the UI hides the items on it (facade CanWriteToTarget) and every write refuses on it. */
-bool16 KCMStoryWritesAllowed();
-
-/** The opposite: put change `which` of row `nth` back the way it was before it was taken in
-    ("Undo the Restore", 2026-09-16).
-
-    ★★**A COMMAND, NOT Edit > Undo.** Ctrl+Z reaches only the last thing done; this reaches the one
-      change the reader points at, whatever they have done since - and is itself one undo step.
-    ★The row remembers both sides of itself, which is why it stays in the list after a take-in, so
-      nothing is worked out again: the words come from fBeforeRaw (the Target's own characters,
-      read before the take-in wrote - ⚠never fBeforeText, which is the row's quote), a ruby or
-      kenten from fRuby - the Target's own value, the one the take-in wrote over.
-    ⚠Refused when the change was never taken in, when an undo has already put it back, and for a
-      custom kenten mark - the same one the take-in cannot write either. */
-bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage);
-
-/** The one command that makes [at, at+count) of `model` read `words` - for every writer of WORDS: the
-    restore, the undo of one, and the import's pour into the document (2026-09-17).
+/** The one command that makes [at, at+count) of `model` read `words` - for every writer of WORDS.
+    It had three callers until 2026-09-21 (the restore, the undo of one, and the import's pour);
+    since the restore went, the import's pour is the whole of it.
 
     ★★**A DELETION IS A DeleteCmd** (the user's call: "match the official way"). Every deletion in the
      SDK's samples is one (codesnippets/SnpTextModelHelper.cpp:109, hiddentext/HidTxtCommands.cpp:264,
@@ -98,8 +52,10 @@ ICommand* KCMCreateWordsWriteCmd(ITextModel* model, TextIndex at, int32 count, c
 
 // ---- the attribute writers, shared with the PDF report (2026-09-13) ------------------------
 // The report's Story section (KCMReportTable.cpp) sets real ruby and real kenten over the changed
-// characters of a table cell, with exactly the recipe the restore uses on the user's document.
+// characters of a table cell, with exactly the recipe the import pours into the document with.
 // One recipe, two callers; the report document is a throwaway, so no undo step is wanted there.
+// (⛔The third caller was the restore, until 2026-09-21. The recipe stayed because the other two
+//  were never its own - it shared theirs.)
 
 /** The ruby strand exists on a story only once something put ruby on it; a story that never had
     any needs it made first. kSuccess when it exists afterwards. */

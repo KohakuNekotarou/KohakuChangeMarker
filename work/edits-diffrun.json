@@ -1,0 +1,22 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryDiffRun.cpp",
+    "find": "\t// \u2605THE STORY'S OWN INX, FOR THE TABLES THIS CALL CALLS CHANGED (2026-09-20, the user: \"stop making\n\t//   the Target's whole IDML when the comparison starts - prepare a snippet for the tables that\n\t//   changed, and only for those\"). Exported AT MOST ONCE for the story however many of its tables\n\t//   changed, and NOT AT ALL when none did - which is every story in almost every document.\n\t// \u26a0AND NOT AT ALL WHEN NOTHING COULD READ IT: with no Source there is no \"Restore Source Text\",\n\t//   so a snippet kept then would be an export on every re-diff that no menu can reach. The\n\t//   question is asked where it is always asked - KCMStoryWritesAllowed, the one place it is\n\t//   decided.\n\t//   \u26a0\u2605\u2605**THAT TEST ADMITS MORE THAN IT DID** (2026-09-21). It used to exclude a comparison against\n\t//    another DOCUMENT and a KIDMCP one, on the 2026-09-16 rule that neither offered a restore at\n\t//    all; **the rule was withdrawn the day Task Start became a file**, so what is left is \"is\n\t//    there a Source database\". \u21d2 Those two comparisons now export here as well - which is what\n\t//    lets the ids below pair THEIR tables by name instead of by position.\n\tconst bool16 restorable = KCMStoryWritesAllowed();\n\tIDataBase* const targetDB = (targetModel != nil && restorable) ? ::GetDataBase(targetModel) : nil;\n",
+    "replace": "\t// (\u26d4**THE STORY'S OWN INX IS NO LONGER KEPT** (2026-09-21). It was exported here, at most once per\n\t//  story with a changed table, so that a restore could cut Task Start's table out of it - and with\n\t//  the restore gone nothing reads it. \u2605What that removes is an INX export per story with a changed\n\t//  table, on every comparison and every re-diff.)\n"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryDiffRun.cpp",
+    "find": "\t\tIDataBase* const sourceDB = (sourceModel != nil && restorable) ? ::GetDataBase(sourceModel) : nil;",
+    "replace": "\t\tIDataBase* const sourceDB = (sourceModel != nil) ? ::GetDataBase(sourceModel) : nil;"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryDiffRun.cpp",
+    "find": "\t\t\t// \u2605Through the translation first: a table KCM has put back carries an id Task Start never\n\t\t\t//   saw, and what it IS was recorded at the moment it was written (KCMStorySnapshot.h).\n\t\t\tconst UID mine = KCMStorySnapshotTranslateTableId(targetStoryUID, tShapes[i].fDictUID);",
+    "replace": "\t\t\t// (\u26d4A translation step stood here until 2026-09-21: a table KCM had PUT BACK carried an id\n\t\t\t//  Task Start never saw - a snippet import hands out new ones - so the live id was mapped\n\t\t\t//  back through what the restore had recorded. KCM writes no table now, so every id in this\n\t\t\t//  story is one the document itself gave.)\n\t\t\tconst UID mine = tShapes[i].fDictUID;"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryDiffRun.cpp",
+    "find": "\t\t// \u2605THE STORY AS THIS COMPARISON READ IT (KCMStorySnapshot). **This is the only place it is\n\t\t//   taken**, because this is the only place that is the comparison's own moment - and it is\n\t\t//   taken at most ONCE for the story however many of its tables changed, because Take keeps\n\t\t//   what it took. A story refresh drops it first (RunOne), so the refresh takes it again.\n\t\t// \u26a0**FOR EVERY TABLE ROW** since 2026-09-20: Table + and Table \u2212 can be put back as well, and\n\t\t//   the style groups a restore dresses its snippet in are looked for here before the origin.\n\t\tif (targetDB != nil)\n\t\t\tKCMStorySnapshotTake(targetDB, targetStoryUID);\n\n",
+    "replace": ""
+  }
+]

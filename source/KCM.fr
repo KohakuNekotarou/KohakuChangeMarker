@@ -468,20 +468,11 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// ***** THE PANEL FOLLOWS AN UNDO (2026-09-15). *****
-	// One observer per COMPARED story - attached at run time by KCMStoryUndoEnsureObservers, never
-	// persistently - so that Ctrl+Z after a restore redraws the list. It listens under the SDK's own
-	// IID_ITEXTMODEL, because the change is InDesign's and not a KCM command's, and it listens
-	// LAZILY, because lazy is the only notification broadcast on undo and redo (ISubject.h:78-82).
-	AddIn
-	{
-		kTextStoryBoss,
-		kInvalidClass,
-		{
-			// Implementation: KCMStoryUndoObserver.cpp
-			IID_IKCMSTORYUNDOOBSERVER, kKCMStoryUndoObserverImpl,
-		}
-	},
+	// (⛔**AN ADDIN ON kTextStoryBoss STOOD HERE** (2026-09-15) - one observer per COMPARED story,
+	//  attached at run time and never persistently, so that Ctrl+Z after a restore redrew the list.
+	//  It listened under the SDK's own IID_ITEXTMODEL, because the change was InDesign's and not a
+	//  KCM command's, and LAZILY, because lazy is the only notification broadcast on undo and redo
+	//  (ISubject.h:78-82). It went with the restore on 2026-09-21.)
 
 	// Tasks 12-15 add their four interfaces to THIS block - they do not open a second AddIn.
 	AddIn
@@ -789,38 +780,11 @@ resource VersionedScriptElementInfo(10)
 			{ /* void */ }
 		}
 
-		// ★ONE CHANGE, AND ONE STORY, FROM A SCRIPT (2026-09-17 afternoon) - the order checks the user asked
-		// for (KCMScriptingDefs.h). The parameters are Adobe's p_Index and p_Contents.
-		Method
-		{
-			kKCMTakeInChangeMethodScriptElement,
-			e_KCMTakeInChange,
-			"kcm take in change",				// name -> app.kcmTakeInChange(storyRow, words)
-			"Take in one change of a story row, as the change row's menu does, without asking: the first change not yet taken in whose words hold the text given.",
-			StringType,
-			"The sentence the status line shows"
-			{
-				p_Index, "story row", "The story row, from 0 (app.kcmStoryRows)", Int32Type, kRequired,
-				p_Contents, "words", "Words the change holds, on either side", StringType, kRequired,
-			}
-		}
-
-		// ★THE MIRROR OF "kcm take in change" (2026-09-19 night): "Undo the Restore" on a change already
-		// taken in, named by words it holds - so that a test can take paragraphs out and put them back in
-		// any order without a right click per press (KCMScriptingDefs.h).
-		Method
-		{
-			kKCMUndoRestoreChangeMethodScriptElement,
-			e_KCMUndoRestoreChange,
-			"kcm undo restore",					// name -> app.kcmUndoRestore(storyRow, words)
-			"Put back one change already taken in, as the change row's Undo the Restore does: the first change taken in whose words hold the text given.",
-			StringType,
-			"The sentence the status line shows"
-			{
-				p_Index, "story row", "The story row, from 0 (app.kcmStoryRows)", Int32Type, kRequired,
-				p_Contents, "words", "Words the change holds, on either side", StringType, kRequired,
-			}
-		}
+		// (⛔**TWO METHODS STOOD HERE AND WENT ON 2026-09-21** with the restore they drove:
+		//  "kcm take in change" (app.kcmTakeInChange, e_KCMTakeInChange) and "kcm undo restore"
+		//  (app.kcmUndoRestore, e_KCMUndoRestoreChange). Each named a change by WORDS it holds, so that
+		//  a test could take changes in and put them back in any order without a right click per press.
+		//  ★Neither ScriptID was ever registered with Adobe, so nothing outside this repo can miss them.)
 
 		// ⛔The table copy spike's door went on 2026-09-21 with the origin it measured against.
 
@@ -854,12 +818,9 @@ resource VersionedScriptElementInfo(10)
 				Method{ kKCMImportStoryTextMethodScriptElement },
 				Method{ kKCMExportStoryTextMethodScriptElement },
 				Method{ kKCMStopComparisonMethodScriptElement },
-				// ...and the two order checks' (2026-09-17 afternoon).
-				Method{ kKCMTakeInChangeMethodScriptElement },
 				// ...and the export's .docx road (2026-09-19).
 				Method{ kKCMExportStoryDocxMethodScriptElement },
-				// ...and the undo of a take-in (2026-09-19 night).
-				Method{ kKCMUndoRestoreChangeMethodScriptElement },
+				// (⛔The two halves of "kcm take in change" and "kcm undo restore" went on 2026-09-21.)
 			}
 		}
 

@@ -1,0 +1,12 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMCore.cpp",
+    "find": "#include \"KCMStoryUndoObserver.h\"  // so that a Ctrl+Z after a restore redraws the list\n",
+    "replace": ""
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMCore.cpp",
+    "find": "\t// ***** AND FROM NOW ON, AN UNDO REDRAWS THE LIST (2026-09-15). *****\n\t// \u26a0**AFTER the drop, not before**: a row that has just been dropped has nothing on the panel to\n\t//   redraw, and attaching to its story would be work for a notification nobody reads.\n\t// The observer writes nothing - it says \"the text of a story you are showing has changed\", which\n\t// is as true of a Ctrl+Z as of the restore that preceded it (KCMStoryUndoObserver.h).\n\tKCMStoryUndoEnsureObservers(targetDB);\n\n",
+    "replace": "\t// (\u26d4**AN OBSERVER WAS ATTACHED HERE TO EVERY LISTED STORY** (2026-09-15), so that a Ctrl+Z after\n\t//  a restore redrew the list: whether a change was drawn as taken in came from the story's own\n\t//  counter, which an undo winds back, and the only thing missing was the signal. \u2605It went with\n\t//  the restore on 2026-09-21 - nothing a row draws depends on the live document any more, so the\n\t//  redraw would show exactly what was already there. The file is KCMStoryUndoObserver in the\n\t//  history, and the lazy-attachment reasoning it carried is in\n\t//  docs/ai-notes/kcm-restore-retired-2026-09-21.md.)\n\n"
+  }
+]

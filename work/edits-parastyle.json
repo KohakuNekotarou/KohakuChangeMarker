@@ -1,0 +1,15 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMParagraphStyle.cpp",
+    "start": "void KCMSnapshotChainAfter(ITextModel* model, TextIndex removedFrom, TextIndex removedTo, KCMChainAfter& out)",
+    "before": 1,
+    "end": "// End, KCMParagraphStyle.cpp.",
+    "replacement": "// (\u26d4**EIGHT FUNCTIONS STOOD HERE AND WENT ON 2026-09-21**, every one of them the restore's:\n//  KCMSnapshotChainAfter and KCMRechainAfterRemoval (the paragraphs after one taken out, and the\n//  next-style chain moved along so that the styles below a removal stayed right); the style path\n//  and the lookup by path; KCMApplyParagraphStyle; ParagraphPositions and KCMReadParagraphStyles;\n//  KCMSnapshotChainFrom; and KCMRestoreParagraphStyles, which put the styles back in two layers\n//  when a whole paragraph was written back. \u2605What is left is the one the IMPORT calls.\n//  The reasoning they carried - why the chain is read before the write, and why a following\n//  paragraph is only put back while it still wears what the take-in left it - is kept in\n//  docs/ai-notes/kcm-restore-retired-2026-09-21.md.)\n\n// End, KCMParagraphStyle.cpp."
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMParagraphStyle.h",
+    "start": "/** A paragraph style's full path, \"Group:Sub:Name\" (IStyleGroupHierarchy::GetFullPath), or empty. */",
+    "end": "#endif // __KCMParagraphStyle_h__",
+    "replacement": "// (\u26d4The rest of this header went on 2026-09-21 with the restore: the style path and the lookup by\n//  it, KCMApplyParagraphStyle, the KCMChainAfter snapshot pair, KCMReadParagraphStyles and\n//  KCMRestoreParagraphStyles. \u2605Only the three above are left, and only the third has a caller\n//  outside this file - the import's pour, which puts new paragraphs in.)\n\n#endif // __KCMParagraphStyle_h__"
+  }
+]

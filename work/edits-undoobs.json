@@ -1,0 +1,22 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCM.fr",
+    "find": "\t// ***** THE PANEL FOLLOWS AN UNDO (2026-09-15). *****\n\t// One observer per COMPARED story - attached at run time by KCMStoryUndoEnsureObservers, never\n\t// persistently - so that Ctrl+Z after a restore redraws the list. It listens under the SDK's own\n\t// IID_ITEXTMODEL, because the change is InDesign's and not a KCM command's, and it listens\n\t// LAZILY, because lazy is the only notification broadcast on undo and redo (ISubject.h:78-82).\n\tAddIn\n\t{\n\t\tkTextStoryBoss,\n\t\tkInvalidClass,\n\t\t{\n\t\t\t// Implementation: KCMStoryUndoObserver.cpp\n\t\t\tIID_IKCMSTORYUNDOOBSERVER, kKCMStoryUndoObserverImpl,\n\t\t}\n\t},\n",
+    "replace": "\t// (\u26d4**AN ADDIN ON kTextStoryBoss STOOD HERE** (2026-09-15) - one observer per COMPARED story,\n\t//  attached at run time and never persistently, so that Ctrl+Z after a restore redrew the list.\n\t//  It listened under the SDK's own IID_ITEXTMODEL, because the change was InDesign's and not a\n\t//  KCM command's, and LAZILY, because lazy is the only notification broadcast on undo and redo\n\t//  (ISubject.h:78-82). It went with the restore on 2026-09-21.)\n"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMFactoryList.h",
+    "find": "REGISTER_PMINTERFACE(KCMStoryUndoObserver, kKCMStoryUndoObserverImpl)\t// \u2605The lazy observer AddIn'd on kTextStoryBoss (KCMStoryUndoObserver.cpp, 2026-09-15): one KCMNotify when a compared story's text changes, so the panel follows a Ctrl+Z. It writes nothing - whether a change is drawn as taken in is derived from the story's counter, which the undo has already put back.\n",
+    "replace": "// \u26d4KCMStoryUndoObserver went on 2026-09-21 with the restore (the panel followed a Ctrl+Z on it).\n"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMID.h",
+    "find": "DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYUNDOOBSERVER, kKCMPrefix + 16)",
+    "replace": "// \u26d4**+16 IS RETIRED** (2026-09-21): IID_IKCMSTORYUNDOOBSERVER, the observer AddIn'd on kTextStoryBoss\n//   so that the panel followed an undo of a restore. Never reused. The old note said:\n// DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYUNDOOBSERVER, kKCMPrefix + 16)"
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMID.h",
+    "find": "DECLARE_PMID(kImplementationIDSpace, kKCMStoryUndoObserverImpl, kKCMPrefix + 60)",
+    "replace": "// \u26d4**+60 IS RETIRED** (2026-09-21): kKCMStoryUndoObserverImpl, with the observer itself. The old note said:\n// DECLARE_PMID(kImplementationIDSpace, kKCMStoryUndoObserverImpl, kKCMPrefix + 60)"
+  }
+]

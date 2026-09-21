@@ -1,0 +1,14 @@
+[
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\ui\\KCMLoc.h",
+    "start": "u\"・Ctrl+Z で Import 全体が1回で戻ります。",
+    "end": "u\"・Ctrl+Z で Import 全体が1回で戻ります。",
+    "replacement": "\t\tu\"・Ctrl+Z で Import 全体が1回で戻ります。1件だけ戻す機能はありません(2026-09-21 に廃止)。\"\n\t\tu\"入れたくなかった箇所は、Start が開いている Source の文書から取ってください\\n\""
+  },
+  {
+    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\ui\\KCMLoc.h",
+    "start": "u\"・変更の行(ストーリーの下にぶら下がる行)を右クリックすると「Restore Source Text」が出ます。",
+    "end": "u\"戻る中身が行に見えているものと違うことがあります(先に比べ直してください)",
+    "replacement": "\t\tu\"・変更を文書に書き戻すメニューはありません(「Restore Source Text」「Undo the Restore」\"\n\t\tu\"「Restore All in This Story」は 2026-09-21 に廃止)。\"\n\t\tu\"旧版の文字が要るときは、Source の文書から直接コピーしてください。\"\n\t\tu\"Source は Task Start の写しでも比較相手の文書でも Start が窓を開くので、常に目の前にあります\\n\\n\""
+  }
+]

@@ -303,14 +303,18 @@ bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 // story the menu was about. Both the action and its enabling test read it back.
 //
 // ***** TWO MENUS, ONE PER KIND OF ROW. ***** A STORY row pops kKCMStoryRowMenuName; a CHANGE row
-// pops kKCMChangeRowMenuName (2026-09-12; "Restore Source Text" and "Undo the Restore"). Neither
-// row is offered the other's.
+// pops kKCMChangeRowMenuName (2026-09-12). Neither row is offered the other's.
+// ⚠★★**SINCE 2026-09-21 THE CHANGE ROW'S MENU IS EMPTY IN THE STORY MODE**: "Restore Source Text"
+// and "Undo the Restore" were the whole of it and went with the restore, so a right click on a
+// change row raises nothing there - which is what it did before 2026-09-12. The subtree is still
+// popped, because the Resources mode's "Edit..." hangs on it.
 // ⚠This reverses a decision of 2026-08-21 ("do not bring the context menu up on a child row"),
 // and the reason that decision was right then is exactly why this is right now: the first build
 // offered the STORY row's menu on a child row, aimed at the change's parent story - so the reader,
 // pointing at ONE difference, was handed an action over the whole story. A menu doing something
-// other than what it appears to is worse than none. The child row's menu today carries only an
-// item about the CHANGE itself, and stashes the change (KCMStorySetMenuChange) rather than the row.
+// other than what it appears to is worse than none. The child row's menu carries only items about
+// the CHANGE the cursor is over, and stashes the change (KCMStorySetMenuChange) rather than the
+// row - and since the restore went there is only one such item left, the Resources mode's "Edit...".
 //
 // Deliberately NOT calling the stock handler and NOT changing the selection: a right click that is
 // only asking for a menu should not move the user's place in the list - the same rule the chapter
