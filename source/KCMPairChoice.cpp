@@ -20,10 +20,14 @@
 #include "IDataBase.h"
 #include "IDocument.h"
 #include "IDocumentList.h"
-#include "FileUtils.h"			// DoesFileExist -- all a file choice is asked before a Start
+#include "FileUtils.h"			// DoesFileExist / IsEqual -- what a file choice is asked
+#include "IGlobalRecompose.h"		// ForceRecompositionToComplete -- a document just opened is not composed
+#include "ErrorUtils.h"			// GlobalErrorStatePreserver -- an open that may fail must not poison the next command
 #include "PersistUtils.h"			// ::GetUIDRef
 #include "PMString.h"
 #include "SDKFileHelper.h"		// GetPath -- a file choice shows its path on the panel
+#include "SDKLayoutHelper.h"		// OpenDocument / OpenLayoutWindow -- the SDK's own recipe
+#include "UIDRef.h"
 
 // Project includes:
 #include "KCMPairChoice.h"
@@ -208,9 +212,34 @@ bool16 KCMResolveComparisonPair(KCMPairEnd& outTarget, KCMPairEnd& outSource)
 // Realising an end (declared in KCMPairChoice.h)
 //----------------------------------------------------------------------------------------
 
+/*	The open document whose file is this one, or nil when no open document has it.
+
+	★**IDENTITY IS ASKED OF GetSysFile THROUGH FileUtils::IsEqual, NEVER OF THE PATH STRING** -
+	  the same door KCMIsSameDoc uses (KCMThreadSafety.cpp). One file can be spelled two ways.
+*/
+static IDataBase* KCMOpenDocOnFile(const IDFile& file)
+{
+	ISession* const session = GetExecutionContextSession();
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
+	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
+	if (docList == nil)
+		return nil;
+	const int32 n = docList->GetDocCount();
+	for (int32 i = 0; i < n; ++i)
+	{
+		IDocument* const d = docList->GetNthDoc(i);
+		IDataBase* const db = (d != nil) ? ::GetUIDRef(d).GetDataBase() : nil;
+		const IDFile* const f = (db != nil) ? db->GetSysFile() : nil;
+		if (f != nil && FileUtils::IsEqual(*f, file))
+			return db;
+	}
+	return nil;
+}
+
 bool16 KCMRealisePairEnd(const KCMPairEnd& end, IDataBase*& outDB, PMString& why)
 {
 	why.Clear();
+	why.SetTranslatable(kFalse);
 	outDB = nil;
 
 	if (!end.fIsFile)
@@ -219,12 +248,59 @@ bool16 KCMRealisePairEnd(const KCMPairEnd& end, IDataBase*& outDB, PMString& why
 		return (outDB != nil) ? kTrue : kFalse;
 	}
 
-	// ⬜**THE OPENING GOES HERE** (the next step of the 2026-09-21 rework). Nothing chooses a file
-	//   yet, so no caller can reach this line; it answers rather than asserting so that the step
-	//   that adds the first file chooser cannot be taken without this one.
-	why = PMString("The chosen file cannot be opened yet.");
-	why.SetTranslatable(kFalse);
-	return kFalse;
+	// ★**ALREADY OPEN? THEN THAT DOCUMENT IS THIS END.** Opening it a second time would give the
+	//   reader two windows onto one file and the comparison two databases for one document.
+	outDB = KCMOpenDocOnFile(end.fFile);
+	if (outDB != nil)
+		return kTrue;
+
+	if (!FileUtils::DoesFileExist(end.fFile))
+	{
+		SDKFileHelper helper(end.fFile);
+		why = "The chosen file is no longer there: ";
+		why.Append(helper.GetPath());
+		return kFalse;
+	}
+
+	// ⚠An open that is allowed to fail must not poison the caller's next command.
+	GlobalErrorStatePreserver openErrorState;
+	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+
+	SDKLayoutHelper helper;
+	const UIDRef docRef = helper.OpenDocument(end.fFile, kFullUI);
+	if (docRef.GetDataBase() == nil)
+	{
+		why = "The chosen file could not be opened.";
+		return kFalse;
+	}
+	// ★**IN A WINDOW, because the reader is meant to see it** (the user's decision, 2026-09-21:
+	//   the copy is saved unopened and Start is what opens it). ⚠SDKLayoutHelper checks that a
+	//   window really appeared, not just that the command returned - "the command succeeded" and
+	//   "there is a window" are two different statements (KCMBookOpen.cpp says the same).
+	if (helper.OpenLayoutWindow(docRef) != kSuccess)
+	{
+		why = "The chosen file opened without a window.";
+		return kFalse;
+	}
+
+	// ★★★**A DOCUMENT THAT HAS JUST BEEN OPENED IS NOT COMPOSED YET**, and rasterising it in that
+	//   state paints composition in progress: two documents with identical content then come out
+	//   different (KCMBookCompare.cpp's RecomposeChapter, and KESHR measured the same thing as
+	//   "identical content gave different hashes").
+	//   ⚠★★**THE PANEL'S START NEVER NEEDED THIS** - it only ever compared documents the reader
+	//    already had open, which are composed by the time anyone asks. **That stopped being true
+	//    the moment Start could open one itself**, which is this very function.
+	//   ⚠**MakeEntry is deliberately not called**: recomposing from a path reachable inside a draw
+	//    event re-enters ([[text-composition-damage-and-recompose]]).
+	{
+		InterfacePtr<IDocument> doc(docRef, UseDefaultIID());
+		InterfacePtr<IGlobalRecompose> recompose(doc, IID_IGLOBALRECOMPOSE);
+		if (recompose != nil)
+			recompose->ForceRecompositionToComplete();
+	}
+
+	outDB = docRef.GetDataBase();
+	return (outDB != nil) ? kTrue : kFalse;
 }
 
 //----------------------------------------------------------------------------------------
