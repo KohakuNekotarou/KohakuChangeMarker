@@ -458,39 +458,56 @@ std::string Num(int32 n)
 	return std::string(buf);
 }
 
-/** kTrue when the three stories' tables are the same shape: as many, standing in the same places,
-	with the same rows and the same cells. */
-bool16 TablesAgreeThreeWays(const KCMStoryShape::Story& o, const KCMStoryShape::Story& w, const KCMStoryShape::Story& n,
-							std::string& why)
+/** kTrue when the three stories hold the same NUMBER of tables.
+
+	★★**THIS IS THE ONE QUESTION THAT IS STILL THE WHOLE STORY'S** (2026-09-22). A table added or
+	  taken away in Word moves the paragraphs around it - in the split shape a table IS a paragraph
+	  of its own - so the three sides' paragraph lists no longer name the same places and nothing
+	  can be lined up. Every other disagreement is one table's business; see TableAgreesThreeWays. */
+bool16 TablesLineUp(const KCMStoryShape::Story& o, const KCMStoryShape::Story& w, const KCMStoryShape::Story& n,
+					std::string& why)
 {
 	if (o.fTables.size() != w.fTables.size() || o.fTables.size() != n.fTables.size())
 	{
 		why = "the number of tables changed";
 		return kFalse;
 	}
-	for (size_t t = 0; t < o.fTables.size(); ++t)
+	return kTrue;
+}
+
+/** kTrue when the three stories agree about table `t`: standing in the same place, with the same
+	rows and the same cells in each row.
+
+	★**ONE TABLE AT A TIME** (2026-09-22, the user's call: "or refusing is fine too" - but refusing
+	  the story for one table's sake is not). A table the three sides disagree about is left exactly
+	  as the document has it; the body, the notes and the other tables are merged as usual.
+	⚠**WHY THIS IS STILL JUDGED BEFORE ANY CELL IS MERGED**: the cells are paired BY POSITION, so a
+	  merge in Word does not read as a missing cell - it reads as a DIFFERENT cell, and the file's
+	  words would go into it without anything looking wrong. Only comparing the shapes catches that,
+	  and it has to be done before the pairing, not during it. */
+bool16 TableAgreesThreeWays(const KCMStoryShape::Story& o, const KCMStoryShape::Story& w, const KCMStoryShape::Story& n,
+							size_t t, std::string& why)
+{
+	const KCMStoryShape::Table& a = o.fTables[t];
+	const KCMStoryShape::Table& b = w.fTables[t];
+	const KCMStoryShape::Table& c = n.fTables[t];
+	if (a.fInTable != b.fInTable || a.fInTable != c.fInTable || a.fInRow != b.fInRow || a.fInRow != c.fInRow
+		|| a.fInCell != b.fInCell || a.fInCell != c.fInCell)
 	{
-		const KCMStoryShape::Table& a = o.fTables[t];
-		const KCMStoryShape::Table& b = w.fTables[t];
-		const KCMStoryShape::Table& c = n.fTables[t];
-		if (a.fInTable != b.fInTable || a.fInTable != c.fInTable || a.fInRow != b.fInRow || a.fInRow != c.fInRow
-			|| a.fInCell != b.fInCell || a.fInCell != c.fInCell)
+		why = "it stands somewhere else";
+		return kFalse;
+	}
+	if (a.fRows.size() != b.fRows.size() || a.fRows.size() != c.fRows.size())
+	{
+		why = "the number of rows changed";
+		return kFalse;
+	}
+	for (size_t r = 0; r < a.fRows.size(); ++r)
+	{
+		if (a.fRows[r].fCells.size() != b.fRows[r].fCells.size() || a.fRows[r].fCells.size() != c.fRows[r].fCells.size())
 		{
-			why = "table " + Num(static_cast<int32>(t)) + " stands somewhere else";
+			why = "row " + Num(static_cast<int32>(r)) + ": the number of cells changed (a merge, a split, a row or a column)";
 			return kFalse;
-		}
-		if (a.fRows.size() != b.fRows.size() || a.fRows.size() != c.fRows.size())
-		{
-			why = "table " + Num(static_cast<int32>(t)) + ": the number of rows changed";
-			return kFalse;
-		}
-		for (size_t r = 0; r < a.fRows.size(); ++r)
-		{
-			if (a.fRows[r].fCells.size() != b.fRows[r].fCells.size() || a.fRows[r].fCells.size() != c.fRows[r].fCells.size())
-			{
-				why = "table " + Num(static_cast<int32>(t)) + " row " + Num(static_cast<int32>(r)) + ": the number of cells changed";
-				return kFalse;
-			}
 		}
 	}
 	return kTrue;
@@ -747,10 +764,28 @@ void Merge(const KCMStoryShape::Story& origin, const KCMStoryShape::Story& after
 	out = Result();
 	out.fMerged = now;
 
-	if (!TablesAgreeThreeWays(origin, after, now, out.fWhy))
+	if (!TablesLineUp(origin, after, now, out.fWhy))
 	{
 		out.fStoryRefused = kTrue;
 		return;
+	}
+
+	// ★**WHICH TABLES THE THREE SIDES DISAGREE ABOUT** (2026-09-22). Judged here, before anything is
+	//   merged, and remembered: such a table keeps the document's own cells, and the rest of the
+	//   story goes on being merged. ⚠A nested table is an ordinal of its own, so a table inside a
+	//   refused one is judged on its own account - its place is part of what is compared, so a
+	//   parent that changed shape shows up as "it stands somewhere else" here as well.
+	std::vector<bool16> tableRefused(now.fTables.size(), kFalse);
+	for (size_t t = 0; t < now.fTables.size(); ++t)
+	{
+		std::string tableWhy;
+		if (TableAgreesThreeWays(origin, after, now, t, tableWhy))
+			continue;
+		tableRefused[t] = kTrue;
+		Refusal r;
+		r.fWhere = "table " + Num(static_cast<int32>(t));
+		r.fWhy = tableWhy + " - that table was left as the document has it";
+		out.fTableRefusals.push_back(r);
 	}
 
 	// ---- the body ------------------------------------------------------------------------------
@@ -765,6 +800,8 @@ void Merge(const KCMStoryShape::Story& origin, const KCMStoryShape::Story& after
 	// ---- the cells -----------------------------------------------------------------------------
 	for (size_t t = 0; t < now.fTables.size(); ++t)
 	{
+		if (tableRefused[t])
+			continue;			// ★left exactly as the document has it, and already named above
 		for (size_t r = 0; r < now.fTables[t].fRows.size(); ++r)
 		{
 			for (size_t c = 0; c < now.fTables[t].fRows[r].fCells.size(); ++c)

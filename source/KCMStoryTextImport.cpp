@@ -316,19 +316,27 @@ void ColumnsOfRow(const std::vector<KCMParaAttrs>& attrs, int32 table, int32 row
 /** kTrue when the document's tables and the file's are the SAME SHAPE.
 
 	★★★**THE USER'S RULE (2026-09-16): A TABLE IS A LANDMARK, NOT SOMETHING THIS EDITS.** The table
-	  tags in the file say WHERE the words sit; they are not an instruction to build a table. So if
-	  the shapes disagree - a table added or removed, a row or a column added, cells merged or split
-	  - the story this file names is left ENTIRELY ALONE. Not the body, not the notes, not the cells
-	  that happen to still line up: the whole story.
-	⚠**WHY THE WHOLE STORY AND NOT THE CELL.** The cells are paired BY POSITION (ColumnsOfRow's
+	  tags in the file say WHERE the words sit; they are not an instruction to build a table. So a
+	  table whose shape the file does not agree with is left alone - a row or a column added, cells
+	  merged or split - and none of its cells is written.
+	★★**WHAT THAT COSTS WAS MADE SMALLER ON 2026-09-22** (the user's call: "or refusing is fine
+	  too"). It used to be the WHOLE STORY - not the body, not the notes, not the other tables. Now
+	  only the table itself is left alone, and it is named in a "!" row; the reader's edits to the
+	  body were never in question, and losing them for a table's sake was the expensive half of this
+	  rule. ⚠**The whole story is still refused when the NUMBER of tables differs**: a table added or
+	  taken away moves the paragraphs around it, so nothing can be lined up at all.
+	⚠**WHY THE TABLE AND NOT THE CELL.** The cells are paired BY POSITION (ColumnsOfRow's
 	  order against the row's <td> order), so a merge does not read as a miss - it reads as a
 	  DIFFERENT CELL. Merging B and C of [A][B][C] leaves the document with two cells, and the
 	  file's B would be poured into the merged BC without anything looking wrong. Refusing per cell
 	  cannot catch that; only comparing the shapes first can.
 	@param whyNot filled with the first disagreement found, for the panel's status line. */
 bool16 TablesAgree(const std::vector<KCMParaAttrs>& attrs, const KCMStoryShape::Story& file,
-				   PMString& whyNot)
+				   PMString& whyNot, std::vector<int32>& outRefusedTables,
+				   std::vector<PMString>& outRefusedWhy)
 {
+	outRefusedTables.clear();
+	outRefusedWhy.clear();
 	// The document's shape is read off the paragraph attributes: the ordinals are assigned in
 	// document order, depth first, which is the order the file writes its <table>s in - so a
 	// nested table is just another ordinal and needs no special case here.
@@ -389,9 +397,17 @@ bool16 TablesAgree(const std::vector<KCMParaAttrs>& attrs, const KCMStoryShape::
 				: 0;
 			if (cols.size() != fileCells)
 			{
-				whyNot = "a table row's number of cells changed (a merge, a split, a row or a column)";
-				whyNot.SetTranslatable(kFalse);
-				return kFalse;
+				// ★**ONE TABLE, NOT THE WHOLE STORY** (2026-09-22, the user's call). This table is
+				//   left exactly as the document has it - none of its cells is written - and the
+				//   body, the notes and the other tables go in as usual.
+				PMString why("table ");
+				why.AppendNumber(tbl);
+				why.Append(": a row's number of cells changed (a merge, a split, a row or a column)"
+						   " - that table was left as it is");
+				why.SetTranslatable(kFalse);
+				outRefusedTables.push_back(tbl);
+				outRefusedWhy.push_back(why);
+				break;			// one reason per table is enough; on to the next table
 			}
 		}
 	}
@@ -399,9 +415,14 @@ bool16 TablesAgree(const std::vector<KCMParaAttrs>& attrs, const KCMStoryShape::
 	return kTrue;
 }
 
-/** Every place of one story, with the file's paragraphs for each. */
+/** Every place of one story, with the file's paragraphs for each.
+
+	@param refusedTables the ordinals of tables the shapes disagree about (TablesAgree). ★**Their
+		   cells are not places at all**: no place, no job, nothing written, and no refusal of their
+		   own either - the table itself has already been named once, and one reason per table reads
+		   better than one per cell (2026-09-22). */
 void BuildPlaces(const std::vector<KCMParaAttrs>& attrs, const KCMStoryShape::Story& file,
-				 std::vector<Place>& out)
+				 const std::vector<int32>& refusedTables, std::vector<Place>& out)
 {
 	out.clear();
 
@@ -419,6 +440,12 @@ void BuildPlaces(const std::vector<KCMParaAttrs>& attrs, const KCMStoryShape::St
 	{
 		if (!attrs[i].IsCell())
 			continue;
+
+		bool16 refused = kFalse;
+		for (size_t k = 0; k < refusedTables.size() && !refused; ++k)
+			refused = (refusedTables[k] == attrs[i].fTableOrdinal) ? kTrue : kFalse;
+		if (refused)
+			continue;			// this table is left as the document has it - see the header
 
 		bool16 already = kFalse;
 		for (size_t k = 0; k < out.size() && !already; ++k)
@@ -1565,6 +1592,20 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 				conflicts += static_cast<int32>(merged.fConflicts.size());
 				for (size_t c = 0; c < merged.fConflicts.size(); ++c)
 					NoteRefusal(original, "Word", merged.fConflicts[c].fWhere, merged.fConflicts[c].fWhy);
+				// ★**THE TABLES THE MERGE LEFT ALONE** (2026-09-22). Their cells keep the document's
+				//   own words, so the pour below finds them already in agreement and writes nothing;
+				//   what the reader needs is to be TOLD, once per table.
+				for (size_t c = 0; c < merged.fTableRefusals.size(); ++c)
+				{
+					NoteRefusal(original, "Table", merged.fTableRefusals[c].fWhere, merged.fTableRefusals[c].fWhy);
+					if (firstRefusal.IsEmpty())
+					{
+						firstRefusal = merged.fTableRefusals[c].fWhere.c_str();
+						firstRefusal.Append(" - ");
+						firstRefusal.Append(merged.fTableRefusals[c].fWhy.c_str());
+						firstRefusal.SetTranslatable(kFalse);
+					}
+				}
 				if (!merged.fConflicts.empty() && firstConflict.IsEmpty())
 				{
 					firstConflict.AppendNumber(static_cast<int32>(original.Get()));
@@ -1602,7 +1643,9 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 		//   is by position and would happily pour the file's cell into a different cell of the
 		//   document. Nothing of this story is written when the answer is no.
 		PMString tableWhyNot;
-		if (!TablesAgree(attrs, *file, tableWhyNot))
+		std::vector<int32> refusedTables;
+		std::vector<PMString> refusedTableWhy;
+		if (!TablesAgree(attrs, *file, tableWhyNot, refusedTables, refusedTableWhy))
 		{
 			++skippedByTables;
 			if (firstRefusal.IsEmpty())
@@ -1611,8 +1654,18 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 			continue;
 		}
 
+		// ★**A TABLE LEFT ALONE IS NAMED, AND THE STORY GOES ON** (2026-09-22, the user's call:
+		//   refusing is the right answer for a table whose shape changed, but refusing the story
+		//   for its sake is not - the reader's edits to the body were never in question).
+		for (size_t k = 0; k < refusedTableWhy.size(); ++k)
+		{
+			if (firstRefusal.IsEmpty())
+				firstRefusal = refusedTableWhy[k];
+			NoteRefusal(original, "Table", refusedTableWhy[k]);
+		}
+
 		std::vector<Place> places;
-		BuildPlaces(attrs, *file, places);
+		BuildPlaces(attrs, *file, refusedTables, places);
 
 		// ★★★**EVERY WRITE OF THE STORY GOES IN BACK TO FRONT - ACROSS PLACES, NOT ONLY INSIDE ONE**
 		//   (2026-09-17, measured with a trace). The body, each cell and each note are separate PLACES,
@@ -1741,7 +1794,11 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 			if (KCMTextRead::ReadStory(storyRef, paras2, attrs2, starts2))
 			{
 				std::vector<Place> places2;
-				BuildPlaces(attrs2, *file, places2);
+				// ⚠**THE SAME TABLES ARE LEFT ALONE HERE.** The attribute pass pairs cells by
+				//   position exactly as the text pass does, so a table whose shape disagrees would
+				//   have its ruby and kenten written into a DIFFERENT cell - the one failure this
+				//   whole rule exists to prevent.
+				BuildPlaces(attrs2, *file, refusedTables, places2);
 
 				for (size_t p = 0; p < places2.size(); ++p)
 				{

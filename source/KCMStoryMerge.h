@@ -79,8 +79,13 @@ struct Result
 	KCMStoryShape::Story		fMerged;		// the document as it stands now, plus Word's changes
 	int32					fApplied;		// Word's changes taken, each counted once
 	std::vector<Refusal>	fConflicts;		// Word's changes not taken, each named
-	bool16					fStoryRefused;	// the whole story was left as it stands: its tables disagree
+	bool16					fStoryRefused;	// the whole story was left as it stands: its tables cannot be lined up
 	std::string				fWhy;			// when fStoryRefused
+	// ★**ONE TABLE LEFT ALONE IS NOT THE WHOLE STORY LEFT ALONE** (2026-09-22, the user's call).
+	//   A table whose shape the three sides do not agree about keeps the document's own contents,
+	//   cell for cell, and is named here; everything else in the story is merged as usual. ⚠The
+	//   whole story is still refused when the NUMBER of tables differs - see Merge.
+	std::vector<Refusal>	fTableRefusals;	// tables left exactly as the document has them
 
 	Result() : fApplied(0), fStoryRefused(kFalse) {}
 };
@@ -92,10 +97,14 @@ struct Result
 	  B = Diff(origin, now) over the paragraphs' texts), then, for a paragraph both sides kept,
 	  character by character (MergePara). A paragraph Word added, took out or split is taken when
 	  the document did not touch the paragraphs around it; else it is a conflict (6-5).
-	★**THE TABLES HAVE TO AGREE THREE WAYS** (6-1) - the same count, rows and cells on every side -
-	  or the whole story is left as it stands (fStoryRefused). A paragraph-level change that holds
-	  a table is a conflict; a character-level change moves a table standing after it in its
-	  paragraph, and one straddling the table's place is a conflict.
+	★**THE TABLES HAVE TO AGREE THREE WAYS** (6-1) - the same count, rows and cells on every side.
+	  ⚠**WHAT A DISAGREEMENT COSTS CHANGED ON 2026-09-22** (the user's call): only the NUMBER of
+	  tables still refuses the whole story (fStoryRefused), because a table added or taken away
+	  moves the paragraphs around it and nothing can be lined up. A table whose ROWS or CELLS
+	  disagree is left exactly as the document has it and named in fTableRefusals - the body, the
+	  notes and the other tables are merged as usual. A paragraph-level change that holds a table is
+	  a conflict; a character-level change moves a table standing after it in its paragraph, and one
+	  straddling the table's place is a conflict.
 	★**THE NOTES' NUMBER HAS TO AGREE THREE WAYS** too; when it does not, the notes stand as they are
 	  (one conflict, "the notes") and the body and the cells are merged all the same.
 	★**THE OUTPUT IS "NOW PLUS WORD'S CHANGES"**: with nothing from Word it is Same as `now` (6-7). */
