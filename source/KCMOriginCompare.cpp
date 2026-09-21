@@ -104,6 +104,28 @@ bool16 Run(bool16 isRefresh)
 		// The copy leaves the armed state BEFORE it is closed (the scope's end), so that the close
 		// sweep finds no pointer of ours at it (KCMHandleDocsClosed would otherwise clear everything).
 		KCMDetachArmedSource();
+
+		// ★★**AND IF THE COPY WAS SHORT, SAY SO IN RED** (2026-09-21). The comparison has just
+		//   written its own line ("pages compared=N changed=M"), and that line is worth keeping - so
+		//   the check's words are appended to it rather than written over it, and the whole sentence
+		//   is raised again as a warning. ⚠KCMNotifyStatusWarning, not the UI's own setter: this is
+		//   model code ([[model-plugin-must-not-drive-ui]]).
+		if (!copy.CheckPassed())
+		{
+			PMString said;
+			copy.CheckSaid(said);
+			PMString msg;
+			KCMGetSessionStatus(msg);			// what the comparison itself just said
+			// ⚠**THE MARK GOES ON AFTER THE ASSIGNMENT, NOT BEFORE IT** (found in review): the Get
+			//  assigns a whole PMString and takes its translatable flag with it, so a mark set first
+			//  is thrown away - and a finished sentence left translatable comes back out of the
+			//  string table as something else (KCMUIShared.h says it in full).
+			msg.SetTranslatable(kFalse);
+			if (!msg.IsEmpty())
+				msg.Append(" - ");
+			msg.Append(said);
+			KCMNotifyStatusWarning(msg);
+		}
 	}
 
 	// ⚠**THE TARGET'S WHOLE INTERNAL IDML WAS TAKEN HERE FOR ONE DAY** (2026-09-20) and is gone the
@@ -138,7 +160,11 @@ bool16 Run(bool16 isRefresh)
 // KCMOriginScopedCopy
 //----------------------------------------------------------------------------------------
 
-KCMOriginScopedCopy::KCMOriginScopedCopy() : fDoc(UIDRef::gNull) {}
+KCMOriginScopedCopy::KCMOriginScopedCopy()
+	: fDoc(UIDRef::gNull), fCheckPassed(kTrue)	// kTrue: nothing opened, nothing wrong
+{
+	fCheckSaid.SetTranslatable(kFalse);
+}
 
 KCMOriginScopedCopy::~KCMOriginScopedCopy()
 {
@@ -175,7 +201,33 @@ bool16 KCMOriginScopedCopy::Open(PMString& whyNot)
 	}
 	sRunSourceDB = fDoc.GetDataBase();
 	BuildTables(sRunSourceDB);
+
+	// ★★**THE ROUND-TRIP CHECK, ON THE COPY THE COMPARISON IS ABOUT TO USE** (2026-09-21, the user:
+	//   "put it in the comparison path as well"). Until today it ran only on the menu's copy
+	//   ("Open Task Start as IDML"), which means a comparison could run against a copy that was
+	//   short and say nothing. It does not veto the comparison - see the header - it is reported.
+	//   ⚠It costs one ExportINX of the copy (78-160ms measured at 190KB) plus the comparison of the
+	//    two element tallies. The user's rule for this plug-in is accuracy over speed
+	//    ([[accuracy-over-speed-in-mcp]]), and this is the instrument that catches a copy the reader
+	//    would otherwise be shown as if it were the origin.
+	fCheckPassed = KCMVerifyRehydration(sRunSourceDB, fCheckSaid);
+	// ⚠**AND LEAVE IT CLEAN AGAIN.** The check photographs the copy, which calls Reset() on its DOM
+	//  element - enough to mark the database modified. The copy is closed with kSuppressUI so
+	//  nothing would be asked, but "ours, and nothing in it to save" is the state the rest of this
+	//  plug-in relies on (KCMRehydrate.h), and a check must not change what it measures.
+	KCMMarkRehydratedClean(sRunSourceDB);
 	return kTrue;
+}
+
+bool16 KCMOriginScopedCopy::CheckPassed() const
+{
+	return fCheckPassed;
+}
+
+void KCMOriginScopedCopy::CheckSaid(PMString& out) const
+{
+	out = fCheckSaid;
+	out.SetTranslatable(kFalse);
 }
 
 IDataBase* KCMOriginScopedCopy::DB() const

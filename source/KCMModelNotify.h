@@ -120,6 +120,20 @@ void	KCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, IDataBas
 // does not (the text is session state that app.kcmStatus answers from at any time).
 void	KCMNotifyStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 
+/** ★★**THE SAME NOTIFICATION, MARKED AS BAD NEWS** (2026-09-21) - the panel paints it red.
+    For the model's own "that did not come out right": the round-trip check on a task-start copy is
+    the first one (KCMOriginCompare.cpp).
+    ★**THE MODEL DOES NOT REACH FOR THE RED.** The colour is the UI's (KCMSetStatusWarning in
+      KCMUIShared.h); what crosses the line is one bit, which the observer takes with
+      KCMTakeSessionStatusWarning below and turns into a colour. [[model-plugin-must-not-drive-ui]]
+    ⚠**ONE MESSAGE, ONE WARNING**: the bit is TAKEN, and every store clears it, so the sentence
+     after this one comes back in the ordinary colour. Red says "this just happened". */
+void	KCMNotifyStatusWarning(const PMString& s, bool16 forceRedrawNow = kFalse);
+
+/** Was the message now stored raised as a warning? **Reading it clears it** - the caller is the
+    one observer that paints the message area, and it asks once per notification. */
+bool16	KCMTakeSessionStatusWarning();
+
 // The same, for a message that is a plain literal -- which is what almost every one of them is.
 //
 // **Every message KCM raises is fixed English** (there is no jaJP string table; the few strings

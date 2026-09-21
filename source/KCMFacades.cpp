@@ -241,6 +241,9 @@ public:
 	virtual bool16		IsOriginArmed()						{ return KCMOriginArmed(); }
 	// (SaveOriginRawToDesktop went on 2026-09-14 - the interface says why. KCMOriginSaveRaw is
 	//  called by KCMScriptProvider now, which is model-side and needs no facade to reach it.)
+
+	// The warning bit that rides with a status notification (2026-09-21). Asking clears it.
+	virtual bool16		TakeStatusWarning()					{ return KCMTakeSessionStatusWarning(); }
 };
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)

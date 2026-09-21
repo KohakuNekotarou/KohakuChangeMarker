@@ -37,6 +37,15 @@
 //       design replaced it: one ordinary story, one ordinary frame, deleted when it has done its
 //       work. ⚠**The per-story sacrificial ranges went with it**, on the reasoning that a seat
 //       which is already taken does not need a second occupant.
+//      ⚠★★★**THAT REASONING WAS INCOMPLETE, AND 2026-09-21 MEASURED WHERE**: when the document
+//       holds a table the import bites a SECOND time, on the first <Content> runs of the FIRST
+//       table in file order (up to two), ONCE PER IMPORT - not per story, not per cell, not per
+//       table. A document with no table came back whole; every document with one lost exactly
+//       those runs. ⇒ The dummy story now carries a DECOY TABLE (kDecoyTable in the .cpp) so that
+//       its table is the first one, and the second bite lands there. ★★★This is also what made a
+//       nested table "vanish": it sat in the first cell of the first table, which is the bitten
+//       position; moved into the second table it came back entire. Eleven documents, the rule and
+//       the correction: docs/ai-notes/kcm-inx-roundtrip-and-nested-tables-2026-09-20.md §11.
 //
 //   2. A LABEL NAMING THE ORIGINAL UID. The import renumbers everything, and the Story mode pairs
 //      stories by UID. <Story Self="ufe"> carries the old UID in its Self, so a script label

@@ -33,12 +33,15 @@ const char* const kStoryClose  = "</Story>";		// also closes the dummy story wri
 const char* const kPropsOpen   = "<Properties>";
 const char* const kLabelOpen   = "<Label>";
 const char* const kSelfAttr    = "Self=\"";
-// The sacrificial range, in two halves around the token the caller supplies.
+// The sacrificial range, in pieces around the token the caller supplies: head, token, the break
+// that ends the paragraph, the decoy table below, and the closing tags.
 const char* const kDummyHead   =
 	"<ParagraphStyleRange AppliedParagraphStyle=\"ParagraphStyle/$ID/NormalParagraphStyle\">"
 	"<CharacterStyleRange AppliedCharacterStyle=\"CharacterStyle/$ID/[No character style]\">"
 	"<Content>";
-const char* const kDummyTail   = "</Content><Br /></CharacterStyleRange></ParagraphStyleRange>";
+const char* const kDummyMid    = "</Content><Br />";
+const char* const kDummyTail   = "</CharacterStyleRange></ParagraphStyleRange>";
+
 
 // ★★★THE DUMMY STORY AND ITS FRAME (the header's 1.) - 2026-09-20, the user's design. An ORDINARY
 // story, written once, right before the first real <Story, with an ordinary frame of its own on the
@@ -425,6 +428,137 @@ bool16 KCMReadDocumentPreference(const char* xml, size_t size, KCMDocSetupFromXm
 	return kTrue;
 }
 
+// ★★★THE DECOY TABLE (2026-09-21, the user's design), WRITTEN INSIDE THE DUMMY STORY. Measured the
+// same day on twenty-eight documents (docs/ai-notes/kcm-inx-roundtrip-and-nested-tables-2026-09-20.md
+// §11, §12): when the document holds a table, the import takes a SECOND bite, and it lands on the
+// first <Content> runs of the FIRST table in file order - up to two of them.
+//   ⚠It is not per cell, per row or per table: a three-column table of six filled cells lost two
+//    runs, a cell holding two paragraphs lost both of its own, a table holding a single run lost
+//    that one and stopped, and the second and third tables of a story came back whole.
+//   ⚠It is ONCE PER IMPORT, not once per story: with a table in each of two stories, only the
+//    table of the first story in FILE ORDER lost anything. That is why ONE decoy is enough, and why
+//    it belongs here - the dummy story is already first, and it is already deleted afterwards
+//    (KCMRehydrate.cpp, DeleteDummyStory), so this costs no new clean-up.
+//   ★★★AND IT IS WHY A NESTED TABLE SEEMED TO VANISH: a nested table in the first cell of the
+//    first table IS what stands at the bitten position, so the bite took the whole subtree. The
+//    same nested table placed in the SECOND table came back entire. ⇒ "ImportINX drops nested
+//    tables" was never the rule; the position was.
+//   ★★★**AND THE BITE IS TAKEN AT EVERY DEPTH**: with a flat decoy a nested table came back with
+//    its first two cells empty, and with a two-level decoy a THREE-level table lost the innermost
+//    cell's text (measured). ⇒ **the decoy is nested as deep as the origin's deepest table**, which
+//    is what DecoyDepthFor measures. A document with no table gets one flat decoy, which costs
+//    nothing and keeps the shape of this code the same in both cases.
+//   ⚠FOUR runs per level, not two: the measured bite is "up to two", and the decoy <XmlStory> this
+//    design replaced needed two ranges where one absorbed nothing - never explained. Two spare runs
+//    cost nothing, because the whole story goes.
+//   ⚠The Selfs are uids no document reaches (the import renumbers them anyway), and they must not
+//    collide with the dummy story's own u7ffffff8 / u7ffffff7.
+
+/** How deep the origin's tables nest: 1 for a document with a plain table, 2 when a table stands in
+    a cell, 0 when there is no table at all. ★The decoy is built to this depth, so the bite at every
+    level lands on the decoy rather than on the reader's table. */
+int32 DecoyDepthFor(const char* xml, size_t size)
+{
+    int32 depth = 0, deepest = 0;
+    size_t at = 0;
+    while (at + 1 < size)
+    {
+        if (xml[at] == '<')
+        {
+            if (StartsWith(xml, size, at, "<Table "))
+            {
+                ++depth;
+                if (depth > deepest)
+                    deepest = depth;
+            }
+            else if (StartsWith(xml, size, at, "</Table>") && depth > 0)
+                --depth;
+        }
+        ++at;
+    }
+    // ⚠**CLAMPED, BECAUSE THE DECOY'S UIDS ARE HEX** (found in review): DecoyName writes one hex
+    //  digit per level, so a document nesting deeper than 15 would produce a uid that is not one.
+    //  Eight levels of nested tables is already past anything a page carries, and the levels past
+    //  the clamp simply go unprotected rather than writing a broken document.
+    const int32 kDeepestDecoy = 8;
+    return (deepest > kDeepestDecoy) ? kDeepestDecoy : deepest;
+}
+
+/** The cell that holds the next level down: text of its own, then the nested decoy table. */
+bool16 EmitDecoyTable(KCMByteSink& out, int32 level, int32 maxLevel);
+
+/** "u7fffe" + the level and cell in hex, without <cstdio> (sprintf is an error in this build). */
+void DecoyName(char* buf, const char* prefix, int32 a, const char* mid, int32 b)
+{
+    size_t at = 0;
+    for (const char* p = prefix; *p != 0; ++p) buf[at++] = *p;
+    buf[at++] = (char)((a < 10) ? ('0' + a) : ('a' + a - 10));
+    if (mid != nil)
+    {
+        for (const char* p = mid; *p != 0; ++p) buf[at++] = *p;
+        buf[at++] = (char)('0' + b);
+    }
+    buf[at] = 0;
+}
+
+bool16 EmitDecoyCell(KCMByteSink& out, int32 level, int32 cell, int32 maxLevel, bool16 withNested)
+{
+    // Name is "column:row" - the same spelling the application writes (measured on a real table).
+    const char* const kNames[] = { "0:0", "1:0", "0:1", "1:1" };
+    char self[32];
+    DecoyName(self, "u7fffe", level, "i", cell);
+    char token[32];
+    DecoyName(token, "KCMDECOY-L", level, "-C", cell);
+    if (!EmitLiteral(out, "<Cell Self=\"") || !EmitLiteral(out, self)
+        || !EmitLiteral(out, "\" Name=\"") || !EmitLiteral(out, kNames[cell])
+        || !EmitLiteral(out, "\" RowSpan=\"1\" ColumnSpan=\"1\" CellType=\"TextTypeCell\""
+                             " AppliedCellStyle=\"CellStyle/$ID/[None]\">"
+                             "<ParagraphStyleRange AppliedParagraphStyle=\"ParagraphStyle/$ID/NormalParagraphStyle\">"
+                             "<CharacterStyleRange AppliedCharacterStyle=\"CharacterStyle/$ID/[No character style]\">"
+                             "<Content>")
+        || !EmitLiteral(out, token) || !EmitLiteral(out, "</Content>"))
+        return kFalse;
+    if (withNested && level < maxLevel)
+    {
+        if (!EmitLiteral(out, "<Br />") || !EmitDecoyTable(out, level + 1, maxLevel))
+            return kFalse;
+    }
+    return EmitLiteral(out, "</CharacterStyleRange></ParagraphStyleRange></Cell>");
+}
+
+bool16 EmitDecoyTable(KCMByteSink& out, int32 level, int32 maxLevel)
+{
+    char self[24];
+    DecoyName(self, "u7fffe", level, nil, 0);
+    if (!EmitLiteral(out, "<Table Self=\"") || !EmitLiteral(out, self)
+        || !EmitLiteral(out, "\" HeaderRowCount=\"0\" FooterRowCount=\"0\" BodyRowCount=\"2\""
+                             " ColumnCount=\"2\" AppliedTableStyle=\"TableStyle/$ID/[No table style]\""
+                             " TableDirection=\"LeftToRightDirection\">"))
+        return kFalse;
+    for (int32 r = 0; r < 2; ++r)
+    {
+        char row[32];
+        DecoyName(row, "u7fffe", level, "Row", r);
+        if (!EmitLiteral(out, "<Row Self=\"") || !EmitLiteral(out, row)
+            || !EmitLiteral(out, "\" Name=\"") || !EmitLiteral(out, (r == 0) ? "0" : "1")
+            || !EmitLiteral(out, "\" SingleRowHeight=\"12\" />"))
+            return kFalse;
+    }
+    for (int32 c = 0; c < 2; ++c)
+    {
+        char col[32];
+        DecoyName(col, "u7fffe", level, "Column", c);
+        if (!EmitLiteral(out, "<Column Self=\"") || !EmitLiteral(out, col)
+            || !EmitLiteral(out, "\" Name=\"") || !EmitLiteral(out, (c == 0) ? "0" : "1")
+            || !EmitLiteral(out, "\" SingleColumnWidth=\"40\" />"))
+            return kFalse;
+    }
+    for (int32 cell = 0; cell < 4; ++cell)
+        if (!EmitDecoyCell(out, level, cell, maxLevel, (cell == 0) ? kTrue : kFalse))
+            return kFalse;
+    return EmitLiteral(out, "</Table>");
+}
+
 bool16 KCMInjectForRehydration(const char* xml, size_t size, const char* sacrificialText,
 							   KCMByteSink& out, int32* outStories, int32* outSpreads, int32* outPages)
 {
@@ -492,10 +626,16 @@ bool16 KCMInjectForRehydration(const char* xml, size_t size, const char* sacrifi
 		//     first text insertion in file order, so this one is the SECOND - which is the one the
 		//     import swallows. It is swallowed in place of the reader's first story, and what is
 		//     left of it is deleted afterwards, frame and all (KCMRehydrate.cpp, DeleteDummyStory).
+		//     ★AND IT CARRIES THE DECOY TABLE (kDecoyTable, 2026-09-21): the import bites a second
+		//     time when the document holds a table, and this makes the dummy's table the first one
+		//     in file order, so that bite lands here instead of on the reader's first table.
 		if (isStory && stories == 0)
 		{
+			const int32 decoyDepth = DecoyDepthFor(xml, size);
 			if (!Emit(out, xml + pos, next - pos) || !EmitLiteral(out, kDummyStoryOpen)
 				|| !EmitLiteral(out, kDummyHead) || !EmitLiteral(out, sacrificialText)
+				|| !EmitLiteral(out, kDummyMid)
+				|| !EmitDecoyTable(out, 1, (decoyDepth > 0) ? decoyDepth : 1)
 				|| !EmitLiteral(out, kDummyTail) || !EmitLiteral(out, kStoryClose))
 				return kFalse;
 			pos = next;

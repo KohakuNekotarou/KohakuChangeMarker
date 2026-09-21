@@ -62,6 +62,8 @@
 #include "KCMResourceBytes.h"
 #include "KCMResourceSnapshot.h"	// KCMTakeResourceSnapshot - the copy, photographed for the check
 #include "KCMXmlInject.h"
+#include "KCMXmlDeepCompare.h"	// the deep pass of the round-trip check (2026-09-21)
+#include "KCMOriginIdml.h"		// KCMInxToDesignmap - so the copy is compared as the same kind of document
 
 class IINXImportPolicy;				// forward-declared only in the SDK; held through IPMUnknown
 
@@ -580,15 +582,26 @@ bool16 KCMVerifyRehydration(IDataBase* copyDB, PMString& out)
 	}
 
 	// The copy, photographed the way the origin was: ExportINX into memory, nothing on disk.
-	// ⚠The designmap labelling (KCMInxToDesignmap) is deliberately NOT done - it rewrites one word
-	//  of the processing instruction and one attribute of <Document>, and neither is an element
-	//  NAME, so it cannot change a single count on either side.
+	// ★★**AND LABELLED AS A DESIGNMAP, BECAUSE THE ORIGIN IS** (2026-09-21). For the element-name
+	//   pass it made no difference - the labelling rewrites one word of the processing instruction
+	//   and one attribute of <Document>, and neither is a NAME, which is what the old comment here
+	//   said and it was true. The deep pass compares attributes, so the same two sides must be the
+	//   same KIND of document: without this the copy was reported as missing <Document>'s
+	//   xmlns:idPkg on every single run (measured, the first thing the deep pass ever found).
+	//   ⇒ **Make the two comparable rather than forgive the difference.**
 	KCMResourceBytes copyXml;
 	PMString why;
 	if (!KCMTakeResourceSnapshot(DocOf(copyDB), copyXml, why))
 	{
 		out = "the copy could not be photographed: ";
 		out.Append(why);
+		return kFalse;
+	}
+	PMString labelWhy;
+	if (!KCMInxToDesignmap(copyXml, labelWhy))
+	{
+		out = "the copy could not be labelled as a designmap: ";
+		out.Append(labelWhy);
 		return kFalse;
 	}
 
@@ -628,14 +641,113 @@ bool16 KCMVerifyRehydration(IDataBase* copyDB, PMString& out)
 
 	if (real == 0)
 	{
+		// ★★**THE CHEAP PASS IS CLEAN - NOW THE EXPENSIVE ONE** (2026-09-21, the user: "is it only
+		//   the count of the elements? compare the contents too, even if it takes longer"). Element
+		//   names going missing is what the pass above sees; a VALUE that changed - a frame setting,
+		//   a cell stroke, a table style, a row height - adds and removes nothing, so only a walk
+		//   that compares every attribute can see it (KCMXmlDeepCompare.h).
+		// ⚠It runs ONLY when the counts agree, because a walk past a structural difference reports
+		//  every attribute after it as changed - noise that would bury the one line that matters.
+		std::vector<KCMXmlDifference> deep;
+		KCMXmlDeepTally tally;
+		const bool16 deepClean = KCMCompareXmlDeep(origin->Bytes(), origin->Size(),
+												   copyXml.Bytes(), copyXml.Size(), deep, tally);
+		if (!deepClean)
+		{
+			out = "the copy's ELEMENTS all match (";
+			out.AppendNumber(same);
+			out.Append(" names) but its CONTENTS do not:");
+			if (tally.fDivergedAt >= 0 && tally.fRealDiffs == 0)
+			{
+				// The shapes stopped lining up although the tallies agreed - the same number of the
+				// same names in a different order. Worth its own sentence: it is not a value change.
+				out.Append(" the two shapes diverge at element ");
+				out.AppendNumber(tally.fDivergedAt);
+				out.Append(" (");
+				PMString where(tally.fDivergedPath.c_str());
+				where.SetTranslatable(kFalse);
+				out.Append(where);
+				out.Append(")");
+				return kFalse;
+			}
+			out.Append(" ");
+			out.AppendNumber(tally.fRealDiffs);
+			out.Append(tally.fRealDiffs == 1 ? " difference" : " differences");
+			int32 shown = 0;
+			for (size_t i = 0; i < deep.size() && shown < 4; ++i)
+			{
+				if (deep[i].fKind != kKCMXmlDiffReal)
+					continue;
+				++shown;
+				out.Append(shown == 1 ? " - " : ", ");
+				PMString piece(deep[i].fPath.c_str());
+				piece.SetTranslatable(kFalse);
+				out.Append(piece);
+				out.Append(" ");
+				PMString what(deep[i].fWhat.c_str());
+				what.SetTranslatable(kFalse);
+				out.Append(what);
+				out.Append(" ");
+				PMString va(deep[i].fInA.c_str());
+				va.SetTranslatable(kFalse);
+				out.Append(va);
+				out.Append("/");
+				PMString vb(deep[i].fInB.c_str());
+				vb.SetTranslatable(kFalse);
+				out.Append(vb);
+			}
+			if (tally.fRealDiffs > shown)
+				out.Append(", ...");
+			return kFalse;
+		}
+
 		out = "the copy matches the origin: ";
 		out.AppendNumber(same);
-		out.Append(" element names equal");
+		out.Append(" element names, ");
+		out.AppendNumber(tally.fAttributes);
+		out.Append(" attributes and ");
+		out.AppendNumber(tally.fTexts);
+		out.Append(" texts equal");
 		if (expected > 0)
 		{
 			out.Append(", ");
 			out.AppendNumber(expected);
 			out.Append(" grown by our own labels");
+		}
+		// ★**WHAT WAS FORGIVEN, IN THE OPEN.** A check that hides its exceptions is how a check
+		//   starts lying: the counts are printed so that a new kind cannot grow inside them.
+		// ⚠**EVERY KIND, NOT THREE OF THEM**: a sum that leaves a kind out is exactly the place a
+		//   new kind would grow unseen, which is what this sentence exists to prevent.
+		const int32 known = tally.fUids + tally.fOurLabels + tally.fLanguage + tally.fMetadata
+						  + tally.fNewDocPrefs + tally.fImportDefaults + tally.fMarkers;
+		if (known > 0)
+		{
+			out.Append(" (");
+			out.AppendNumber(known);
+			out.Append(" known: ");
+			out.AppendNumber(tally.fUids);
+			out.Append(" uids, ");
+			out.AppendNumber(tally.fOurLabels);
+			out.Append(" labels, ");
+			out.AppendNumber(tally.fImportDefaults);
+			out.Append(" written-out defaults, ");
+			out.AppendNumber(tally.fMetadata);
+			out.Append(" xmp, ");
+			out.AppendNumber(tally.fNewDocPrefs);
+			out.Append(" view prefs, ");
+			out.AppendNumber(tally.fMarkers);
+			out.Append(" markers, ");
+			out.AppendNumber(tally.fLanguage);
+			out.Append(" language)");
+		}
+		// ★**AND WHETHER THE STORIES HAD TO BE PUT BACK IN ORDER** - the import writes them in its
+		//   own order, and a walk that silently reordered them would be hiding the one fact that
+		//   explains why the pairing is by label and not by position.
+		if (tally.fStoriesReordered > 0)
+		{
+			out.Append(" [");
+			out.AppendNumber(tally.fStoriesReordered);
+			out.Append(" stories came back in another order]");
 		}
 		return kTrue;
 	}

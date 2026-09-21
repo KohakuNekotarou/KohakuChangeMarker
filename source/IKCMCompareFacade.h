@@ -652,6 +652,13 @@ public:
 		@return kTrue when a document was made; outMessage says whether it matched and whether a
 		 window appeared. */
 	virtual bool16		OpenOriginAsIdml(PMString& outMessage) = 0;
+
+	/** ★**WAS THE MESSAGE THE MODEL JUST RAISED BAD NEWS?** (2026-09-21) **Asking clears it.**
+		The model raises words plus one bit (KCMNotifyStatusWarning, KCMModelNotify.h); the colour is
+		the UI's to decide, and this is the one door the bit comes through. The single caller is
+		KCMModelChangeObserver, once per kKCMStatusTextMessage.
+		⚠Do not call it to "find out how things are": one message, one warning. */
+	virtual bool16		TakeStatusWarning() = 0;
 };
 
 /** THE ABI STAMP OF THE CLASS ABOVE. ★BUMP IT (the date, YYYYMMDD) EVERY TIME A VIRTUAL IS ADDED,
@@ -660,6 +667,6 @@ public:
 	compares it with the value ITS build saw in this header before it calls anything here
 	(KIDMCPKcmBridge::AbiState). Two binaries built from different versions of this class then
 	refuse each other instead of running the wrong method (2026-09-13: the header's warning). */
-const int32 kKCMCompareFacadeAbi = 2026092001;	// 2026-09-20: OpenOriginAsIdml appended (the menu item that shows the Task Start state as a document). ⚠KIDMCP must be rebuilt with it. Previously 2026091402 = the second change of 2026-09-14 (SaveOriginRawToDesktop removed: the script method app.kcmSaveOriginXml reaches KCMOriginSaveRaw from inside this plug-in, so the facade door had no caller left). 01 was the first change that day (ExportChangedPagesTSV, RehydrateOriginRaw, RehydrateOriginAsCompared, removed with the menu items that called them)
+const int32 kKCMCompareFacadeAbi = 2026092101;	// 2026-09-21: TakeStatusWarning appended (the model can now raise a red message: the round-trip check on the comparison's own copy). ⚠KIDMCP must be rebuilt with it. Previously 2026092001 = OpenOriginAsIdml appended (the menu item that shows the Task Start state as a document). ⚠KIDMCP must be rebuilt with it. Previously 2026091402 = the second change of 2026-09-14 (SaveOriginRawToDesktop removed: the script method app.kcmSaveOriginXml reaches KCMOriginSaveRaw from inside this plug-in, so the facade door had no caller left). 01 was the first change that day (ExportChangedPagesTSV, RehydrateOriginRaw, RehydrateOriginAsCompared, removed with the menu items that called them)
 
 #endif // __IKCMCompareFacade_h__

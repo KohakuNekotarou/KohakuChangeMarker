@@ -89,7 +89,14 @@ void KCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theSub
 		//   one notification, so it comes from the payload.
 		PMString s;
 		Utils<IKCMCompareFacade>()->GetSessionStatus(s);
-		KCMSetStatus(s, n.fStatusForceRedraw);
+		// ★**AND WHETHER IT IS BAD NEWS** (2026-09-21): the model raises the words and one bit
+		//   (KCMNotifyStatusWarning), and the colour is decided here, on the UI side, which is the
+		//   only side allowed to know what red means. ⚠The bit is TAKEN, so the next message is
+		//   ordinary again unless it says otherwise.
+		if (Utils<IKCMCompareFacade>()->TakeStatusWarning())
+			KCMSetStatusWarning(s, n.fStatusForceRedraw);
+		else
+			KCMSetStatus(s, n.fStatusForceRedraw);
 		return;
 	}
 

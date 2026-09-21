@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  Owner: KohakuNekotarou
 //
@@ -65,8 +65,22 @@ public:
 	/** The copy's database, or nil before Open / after a failed one. */
 	IDataBase*	DB() const;
 
+	/** ★★**DID THE ROUND-TRIP CHECK PASS?** (2026-09-21, the user: "put it in the comparison path
+		too") Open runs KCMVerifyRehydration on the copy it just made - the origin's XML against the
+		copy's own - and keeps the answer here, where it outlives the comparison but not the copy.
+		⚠**A FAILED CHECK DOES NOT FAIL Open**: a copy that is short is still the best Source there
+		 is, and a comparison that refuses to start tells the reader less than a comparison plus a
+		 red line saying what is missing. The caller reports it; the check does not veto.
+		 ★kTrue before Open, so a caller that never opened reads "nothing wrong". */
+	bool16		CheckPassed() const;
+
+	/** What the check said, in words, for the message area. Empty when it passed. */
+	void		CheckSaid(PMString& out) const;
+
 private:
 	UIDRef		fDoc;
+	bool16		fCheckPassed;
+	PMString	fCheckSaid;
 	KCMOriginScopedCopy(const KCMOriginScopedCopy&);
 	KCMOriginScopedCopy& operator=(const KCMOriginScopedCopy&);
 };
