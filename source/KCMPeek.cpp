@@ -55,8 +55,6 @@
 #include "KCMComparisonRun.h"      // KCMStartComparisonFor / KCMStopComparison / KCMRefreshComparison
 #include "KCMPairChoice.h"         // KCMForgetChosenDocsThatClosed -- the chosen Target/Source lose whichever document closed
 #include "KCMExternalSource.h"     // KCMIsDbAlive (the lent Source counts as alive)
-#include "KCMOriginCompare.h"      // KCMOriginArmed / KCMOriginScopedCopy -- Task Start: armed with no Source database; a page refresh's temporary Source
-#include "KCMOriginPeek.h"         // the one-spread peek document that stands in for the Source
 #include "KCMResourceBytes.h"
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 // The UI's KCMViewLookup.h is deliberately absent. Resolving which view the mouse is over belongs
@@ -148,12 +146,9 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 {
 	if (targetDB == nil)
 		return;
-	// Task Start: there is no Source database while armed; the peek document stands in for it,
-	// built for the spread under the mouse (below, once that spread is known). Its pages are
-	// paired by KCMOriginPeek rather than by KCMBuildFullPairing - a one-spread copy cannot be
-	// paired by walking both documents.
-	const bool16 originMode = (sourceDB == nil && KCMOriginArmed() && targetDB == KCMArmedTargetDB()) ? kTrue : kFalse;
-	if (sourceDB == nil && !originMode)
+	// ⛔Until 2026-09-21 there was a second way to be armed: an ORIGIN, with no Source database at
+	//   all, for which a one-spread peek document was built under the mouse and paired by itself.
+	if (sourceDB == nil)
 		return;
 
 	// Turn the scale the caller measured (content -> window = zoom x device scale) into the
@@ -190,15 +185,6 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 	InterfacePtr<ISpread> spread(targetDB, hit.spreadUID, UseDefaultIID());
 	if (spread == nil)
 		return;
-
-	// Task Start: the peek document for THIS spread (built now if the held one is for another).
-	if (originMode)
-	{
-		UID copySpreadUID = kInvalidUID;
-		sourceDB = KCMOriginPeekDBFor(targetDB, hit.spreadUID, copySpreadUID);
-		if (sourceDB == nil)
-			return;
-	}
 
 	// **Skipping an unchanged spread**, and only in the Pixel mode. If this document has already
 	// been compared (sDB == targetDB) and none of this spread's pages is in the changed entries
@@ -271,20 +257,13 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 		KCMDrawEventHandler::sOrigDB = targetDB;
 		KCMDrawEventHandler::sOrigScale = effScale;	// remembered so a later peek can tell whether to rebuild
 		// The pairing is the same for every page of the spread, so it is built once before the loop.
-		// (Not in the Task Start mode: the one-spread copy is paired by KCMOriginPeekMapPage.)
+		// ⛔It was skipped in the Task Start mode, where a one-spread copy paired itself.
 		std::map<UID, UID> targetToSource;
-		if (!originMode)
-			KCMBuildFullPairing(targetDB, sourceDB, targetToSource);
+		KCMBuildFullPairing(targetDB, sourceDB, targetToSource);
 		for (int32 p = 0; p < np; ++p)
 		{
 			const UID tPageUID = spread->GetNthPageUID(p);
 			UID sPageUID = kInvalidUID;
-			if (originMode)
-			{
-				if (!KCMOriginPeekMapPage(targetDB, tPageUID, sPageUID))
-					continue;
-			}
-			else
 			{
 				std::map<UID, UID>::const_iterator mi = targetToSource.find(tPageUID);
 				if (mi == targetToSource.end())
@@ -544,9 +523,7 @@ static bool16 KCMQueryPixelComparePair(IDataBase*& outTarget, IDataBase*& outSou
 
 	outTarget = KCMArmedTargetDB();
 	outSource = KCMArmedSourceDB();
-	// Task Start: the pair is (the Target, no database) while armed; the caller that needs a
-	// Source rehydrates one for the call (KCMRefreshComparisonForSelectedPages).
-	return (outTarget != nil && (outSource != nil || KCMOriginArmed())) ? kTrue : kFalse;
+	return (outTarget != nil && outSource != nil) ? kTrue : kFalse;
 }
 
 
@@ -571,25 +548,10 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 	if (!KCMQueryPixelComparePair(targetDB, sourceDB))
 		return kFalse;
 
-	// Task Start: rehydrate a Source for this call and close it afterwards (the ordinary route
-	// holds one). The whole document comes back, so the order pairing below holds as it stands.
-	// ★HELD AS THE RUN HOLDS ITS SOURCE (KCMOriginScopedCopy), and that is not a nicety: the
-	//   Story Edits rebuild at the end pairs stories by uid and reads the older side's change
-	//   counters, and a bare copy has new uids and blank counters - every story came back "Added".
-	KCMOriginScopedCopy originCopy;
+	// ⛔A Source was rehydrated here for the call, and closed afterwards, whenever the armed pair
+	//   was an origin - it had no Source database of its own. Every armed pair has one now.
 	if (sourceDB == nil)
-	{
-		PMString whyNot;
-		if (!originCopy.Open(whyNot))
-		{
-			PMString msg("could not rebuild the task-start copy: ");
-			msg.SetTranslatable(kFalse);
-			msg.Append(whyNot);
-			KCMNotifyStatus(msg);
-			return kFalse;
-		}
-		sourceDB = originCopy.DB();
-	}
+		return kFalse;
 
 	// Read the Pages panel's selection through the reader Register and Check share
 	// (KCMPageMap.cpp). Nothing happens unless the document that selection belongs to is the
@@ -670,17 +632,16 @@ bool16 KCMArmedDocsAlive()
 {
 	if (!sPeekArmed || sPeekTargetDB == nil)
 		return kFalse;
-	// Task Start: an armed origin pair has no Source database (the copy was closed after the
-	// comparison), so only the Target is asked about. Any other armed pair with no Source is dead.
-	const bool16 sourceIsOrigin = (sPeekSourceDB == nil && KCMOriginArmed()) ? kTrue : kFalse;
-	if (sPeekSourceDB == nil && !sourceIsOrigin)
+	// ⛔An armed ORIGIN pair had no Source database at all (its copy was closed after the
+	//   comparison), so only the Target was asked about. An armed pair with no Source is dead now.
+	if (sPeekSourceDB == nil)
 		return kFalse;
 	ISession* session = GetExecutionContextSession();	// nil is possible during the shutdown sequence
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	if (docList == nil ||
 	    !KCMIsDbAlive(docList, sPeekTargetDB) ||
-	    (!sourceIsOrigin && !KCMIsDbAlive(docList, sPeekSourceDB)))
+	    !KCMIsDbAlive(docList, sPeekSourceDB))
 	{
 		KCMHandleDocsClosed();
 		return kFalse;

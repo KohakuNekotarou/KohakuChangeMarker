@@ -815,29 +815,6 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			Utils<IKCMPageFlagsFacade>()->ClearPawsInDoc(Utils<IKCMCompareFacade>()->GetActiveDocDB());
 			break;
 
-		case kKCMPopupOpenOriginIdmlActionID:
-		{
-			// ★"Open Task Start as IDML" (2026-09-20, the user's request). One call: the model
-			//   makes a document out of the held IDML and asks for a window onto it.
-			//   ★★**THE BYTES GO IN AS THEY ARE** (the same day, the user: "without the sacrificial
-			//    text - just make a document out of it doing nothing to it"): nothing is injected,
-			//    and nothing is written into the copy afterwards. What opens is the import's own
-			//    answer, which is the thing being looked at (KCMRehydrate.h, `untouched`).
-			//   ⛔No file is written for it - the %TEMP% route was dropped the same day
-			//    (KCMOriginIdml.h says so where the function that would have done it lives).
-			//   ⚠Everything that could go wrong is the model's to know (no origin, the import, the
-			//    open command), so the whole of the UI's part is to say what came back.
-			// ★The answer is "is everything well" - a document was made AND it came back whole -
-			//   so a copy that is short says so in red (KCMSetStatusWarning).
-			PMString said;
-			const bool16 allWell = Utils<IKCMCompareFacade>()->OpenOriginAsIdml(said);
-			if (allWell)
-				KCMSetStatus(said);
-			else
-				KCMSetStatusWarning(said);
-			break;
-		}
-
 		// Flyout "Task Start" (2026-09-21, remade): a COPY OF THE DOCUMENT IS SAVED to a file the
 		// reader picks, and that file is chosen as the Source. No comparison runs - Start does
 		// that, and Start is also what opens the copy. The panel refresh and the status line are
@@ -1519,16 +1496,6 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			const bool16 live = (compare != nil && compare->CanTakeTaskStartCopy()
 								 && !compare->IsArmed()) ? kTrue : kFalse;
 			listToUpdate->SetNthActionState(i, live ? kEnabledAction : kDisabled_Unselected);
-		}
-		else if (action == kKCMPopupOpenOriginIdmlActionID)
-		{
-			// ★AN ORIGIN BEING HELD IS THE WHOLE CONDITION (2026-09-20): with none there is nothing
-			//   to open, and every other state - comparing or not - can show one.
-			// ⚠**HasOrigin, NOT IsOriginArmed**: the latter means "a comparison is running whose
-			//  Source is the origin", so it is false in the very case this item is most wanted -
-			//  a Task Start just taken, before Start is pressed.
-			listToUpdate->SetNthActionState(i,
-				Utils<IKCMCompareFacade>()->HasOrigin() ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupExportStoryTextActionID
 				 || action == kKCMPopupExportStoryDocxActionID)

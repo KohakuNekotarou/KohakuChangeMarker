@@ -61,9 +61,6 @@
 #include "KCMReport.h"			// the Before/After report
 #include "KCMRingAdornment.h"	// the story ID labels' toggle (Get/SetShowStoryIds)
 #include "KCMExternalSource.h"	// KCMExternalSourceLabel -- the lent Source's words for the panel
-#include "KCMOrigin.h"			// Task Start: the origin slot the five methods at the end forward to
-#include "KCMRehydrate.h"		// KCMOpenOriginForInspection - the held IDML, untouched, where it can be seen
-#include "KCMOriginCompare.h"	// KCMOriginArmed / KCMOriginScopedCopy - armed with the origin as the Source; RefreshRow's temporary Source
 #include "KCMStoryMarkBuild.h"	// what the Story mode should be lighting up (Refresh / SetPress)
 #include "KCMStoryMarker.h"		// the adornment that draws it - the flash and the shutdown
 #include "IKCMResourcesFacade.h"	// the Resources mode's boundary
@@ -225,7 +222,10 @@ public:
 
 	// ★Appended 2026-09-20 (the ABI stamp went with it). Making the copy is the model's work - the
 	//   UI half could not reach ImportINX at all - so this is the usual one-liner.
-	virtual bool16		OpenOriginAsIdml(PMString& outMessage)	{ return KCMOpenOriginForInspection(outMessage); }
+	// ⛔**HOLLOW SINCE 2026-09-21**: the origin went, and with it the only thing this could open.
+	//   The SLOT stays - KIDMCP calls this facade through its vtable, so removing a virtual moves
+	//   every one below it onto the wrong method ([[facade-vtable-slot-append-only]]).
+	virtual bool16		OpenOriginAsIdml(PMString& outMessage)	{ outMessage.Clear(); return kFalse; }
 
 
 	// The lent Source (see the interface). Three one-line transfers; the rules are model-side.
@@ -235,14 +235,18 @@ public:
 	virtual bool16		GetExternalSourceLabel(IDataBase* db, PMString& outLabel)
 													{ return KCMExternalSourceLabel(db, outLabel); }
 
-	// Task Start (see the interface). Transfers; the rules are model-side (KCMOrigin.h).
-	virtual bool16		CanTakeTaskStart()					{ return KCMCanTakeTaskStart(); }
-	virtual bool16		TakeTaskStart(PMString& outWhyNot)	{ return KCMTakeTaskStart(outWhyNot); }
-	virtual bool16		HasOrigin()							{ return KCMHasOrigin(); }
-	virtual void		GetOriginLabel(PMString& outLabel)	{ KCMOriginLabel(outLabel); }
-	virtual bool16		IsOriginArmed()						{ return KCMOriginArmed(); }
-	// (SaveOriginRawToDesktop went on 2026-09-14 - the interface says why. KCMOriginSaveRaw is
-	//  called by KCMScriptProvider now, which is model-side and needs no facade to reach it.)
+	// ⛔**THE OLD TASK START'S FIVE SLOTS, HOLLOW SINCE 2026-09-21.** Task Start saves a copy of
+	//   the document to a FILE and chooses that file as the Source (KCMTaskStartSave.h); nothing
+	//   holds an "origin" any more, so all five answer as though none were ever taken - which is
+	//   exactly what every caller then does with them.
+	//   ⚠**THE SLOTS STAY.** KIDMCP calls this facade through its vtable, so deleting a virtual
+	//   moves every one below it onto the wrong method ([[facade-vtable-slot-append-only]]).
+	//   ★The live pair is CanTakeTaskStartCopy / TakeTaskStartCopy, appended at the end.
+	virtual bool16		CanTakeTaskStart()					{ return kFalse; }
+	virtual bool16		TakeTaskStart(PMString& outWhyNot)	{ outWhyNot.Clear(); return kFalse; }
+	virtual bool16		HasOrigin()							{ return kFalse; }
+	virtual void		GetOriginLabel(PMString& outLabel)	{ outLabel.Clear(); }
+	virtual bool16		IsOriginArmed()						{ return kFalse; }
 
 	// The warning bit that rides with a status notification (2026-09-21). Asking clears it.
 	virtual bool16		TakeStatusWarning()					{ return KCMTakeSessionStatusWarning(); }
@@ -662,17 +666,10 @@ public:
 		IDataBase* sourceDB = KCMArmedSourceDB();
 		if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
 			return -1;
-		// Task Start: no Source database while armed - a copy is rehydrated for this one row and
-		// closed on the way out, held as the run holds its Source so that the row's story is found
-		// under its new uid (KCMOriginToSourceUID inside RunOne).
-		KCMOriginScopedCopy originCopy;
-		if (sourceDB == nil && KCMOriginArmed())
-		{
-			PMString whyNot;
-			if (!originCopy.Open(whyNot))
-				return -1;
-			sourceDB = originCopy.DB();
-		}
+		// ⛔**THE ORIGIN'S BRANCH WENT ON 2026-09-21.** A Task Start used to arm with NO Source
+		//   database at all, so refreshing one row meant rehydrating a copy here and closing it on
+		//   the way out. A Task Start is a file Start opens now, so both ends are always live
+		//   databases and the question is only whether they are still open.
 		if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
 			return -1;
 

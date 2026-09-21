@@ -126,7 +126,7 @@ bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, U
      bad news, and what counts as bad news is decided here rather than by reading the words.
      ⚠**kFalse does not mean "no document"** - outMessage says which of the three went wrong, and a
       copy that failed is still open for the reader to look at. */
-bool16 KCMOpenOriginForInspection(PMString& outMessage);
+// ⛔KCMOpenOriginForInspection went on 2026-09-21 with the origin (see the .cpp).
 
 /** ★★★**THE ROUND-TRIP CHECK** (2026-09-20, the user's design: "turn the INX into a hidden
     document, take THAT document's INX, compare it with the Task Start's - and if what differs is a
@@ -151,7 +151,7 @@ bool16 KCMOpenOriginForInspection(PMString& outMessage);
     @param copyDB the rehydrated copy's database.
     @param out    one line: what matches, and what does not, largest difference first.
     @return kTrue when nothing but the expected differences were found. */
-bool16 KCMVerifyRehydration(IDataBase* copyDB, PMString& out);
+// ⛔KCMVerifyRehydration went on 2026-09-21 with the origin (see the .cpp).
 
 /** Close a document this file made. Nothing else may be handed to it. A document that is already
     gone, or UIDRef::gNull, is ignored.

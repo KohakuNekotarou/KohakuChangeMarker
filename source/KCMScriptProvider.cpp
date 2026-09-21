@@ -15,10 +15,8 @@
 //      stories[n].kcmAttrChangeCount     - formatting, applied styles and overrides
 //      stories[n].kcmOtherChangeCount    - everything else
 //      document.kcmTransparencyItemCount - entries in the host's item-has-transparency list
-//      app.kcmSaveOriginXml(file)        - the held Task Start origin, as Task Start took it
-//      app.kcmSaveDocXml(file)           - ★the ACTIVE DOCUMENT's own internal IDML (2026-09-20),
-//                                          so the two can be compared as XML. Everything above
-//                                          these is a read-only property.
+//  ⛔app.kcmSaveOriginXml / kcmSaveOriginIdml / kcmSaveDocXml stood here until 2026-09-21 and
+//    went with the origin they read. Everything listed above is a read-only property.
 //
 //  ⚠**THE LIST ABOVE IS A READER'S MAP, NOT THE COUNT -- re-read it from KCM.fr's Provider blocks.**
 //    It had gone FOUR properties stale by 2026-09-14: kcmStoryRows, kcmOriginStatus and the two
@@ -136,9 +134,6 @@
 // KCMUIShared.h is deliberately NOT included: it was added once, but this provider called none
 // of the widget-touching functions in it -- a dead dependency. What it reads is
 // KCMGetSessionStatus (declared in KCMModelNotify.h), which is not a reverse dependency.
-#include "KCMOrigin.h"			// KCMOriginStatusLine - the Task Start origin, read from outside
-#include "KCMOriginIdml.h"		// KCMOriginSaveIdml - the same origin, in an IDML container;
-								// KCMSaveActiveDocXml - the document in front, as its own designmap
 #include "KCMPdfSpike.h"		// KCMProbePdfRoute - the measuring door for the report's temp-file question
 #include "KCMResourceSnapshot.h"	// KCMDescribeResourceSnapshot - the Resources mode's export
 #include "KCMResourceDiff.h"	// KCMDescribeResourceDiff - the same mode's comparison of the two
@@ -154,7 +149,6 @@
 #include "KCMStoryDiffRun.h"		// KCMStoryDiffRun::StillReplaced - which taken-in change app.kcmUndoRestore may name
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - app.kcmExportStoryText
 #include "KCMStoryTextImport.h"	// KCMImportStoryText - app.kcmImportStoryText
-#include "KCMTableCopySpike.h"	// ⚠KCMProbeTableCopy - app.kcmProbeTableCopy, a spike (2026-09-19 night)
 // ⚠**KCMTextRead.h WENT WITH THE FEATURE THAT NEEDED IT** (2026-09-08). It was included here for
 //   app.kcmStoryReadCompare - the direct-read migration's parallel run - and its own comment said
 //   "temporary". The property was removed on 2026-09-03; the include outlived it by five days and
@@ -175,9 +169,9 @@ public:
 	    whichever object we were asked about. */
 	virtual ErrorCode AccessProperty(ScriptID propID, IScriptRequestData* data, IScript* script);
 
-	/** Serve the methods on app: kcmSaveOriginXml / kcmSaveOriginIdml / kcmSaveDocXml (file), kcmProbePdfRoute(), and
-	    the story text round trip's four (2026-09-17). ("the only method this plug-in publishes" stood
-	    here until then, and had stopped being true on 2026-09-15.) Anything else goes to the base
+	/** Serve the methods on app: kcmProbePdfRoute() and the story text round trip's four
+	    (2026-09-17). ⛔The three origin writers went on 2026-09-21 with the origin itself.
+	    Anything else goes to the base
 	    class, which is what keeps the rest of the scripting working on whichever object we were
 	    asked about. */
 	virtual ErrorCode HandleMethod(ScriptID methodID, IScriptRequestData* data, IScript* script);
@@ -282,31 +276,6 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 	{
 		PMString reading;
 		KCMProbePdfRoute(reading);
-		ScriptData returnData;
-		returnData.SetWideString(WideString(reading));
-		data->AppendReturnData(script, methodID, returnData);
-		return kSuccess;
-	}
-
-	// ⚠A SPIKE (2026-09-19 night): the table copy experiment, KCMTableCopySpike.h. Same shape as the
-	//   one above - the reading comes back whatever happened - with the two arguments read first.
-	if (methodID.Get() == e_KCMProbeTableCopy)
-	{
-		PMString reading;
-		ScriptData rowArg, tableArg;
-		int32 storyRow = -1;
-		PMString tableText;
-		if (data->ExtractRequestData(p_Index, rowArg) != kSuccess || rowArg.GetInt32(&storyRow) != kSuccess
-			|| data->ExtractRequestData(p_Contents, tableArg) != kSuccess || tableArg.GetPMString(tableText) != kSuccess)
-		{
-			reading = "S0 FAILED: the arguments could not be read";
-		}
-		else
-		{
-			const int32 tableOrdinal = tableText.GetAsNumber();
-			KCMProbeTableCopy(storyRow, tableOrdinal, reading);
-		}
-		reading.SetTranslatable(kFalse);
 		ScriptData returnData;
 		returnData.SetWideString(WideString(reading));
 		data->AppendReturnData(script, methodID, returnData);
@@ -446,57 +415,10 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 		}
 	}
 
-	// ★THREE METHODS, ONE BODY (two since 2026-09-15, three since 2026-09-20). They differ in
-	//   exactly one call: kcmSaveOriginXml writes the origin's bytes, kcmSaveOriginIdml wraps those
-	//   same bytes in an IDML container, and kcmSaveDocXml photographs the ACTIVE DOCUMENT instead
-	//   of reading the origin at all. Everything around it - the argument, the status scale, the
-	//   shape of the answer - is identical, so writing it three times would be three places to keep
-	//   agreeing about the same four numbers.
-	//   ⚠**The third one's status 1 reads differently**: "nothing could be photographed" rather
-	//    than "no origin is held". Same number, same position on the scale (nothing to write), and
-	//    the wording that differs lives in KCM.fr where the caller reads it.
-	const bool16 wantsIdml = (methodID.Get() == e_KCMSaveOriginIdml) ? kTrue : kFalse;
-	const bool16 wantsDoc  = (methodID.Get() == e_KCMSaveDocXml) ? kTrue : kFalse;
-	if (methodID.Get() != e_KCMSaveOriginXml && !wantsIdml && !wantsDoc)
-		return CScriptProvider::HandleMethod(methodID, data, script);
-
-	// 4 = "the file argument could not be read", shared by the two failures below because a caller
-	// cannot act differently on them and neither says anything about the origin. KCM.fr declares
-	// the argument kRequired, so the engine refuses the call outright when it is missing: getting
-	// here at all takes an argument that IS present and cannot be turned into a file.
-	int32 status = 4;
-	ScriptData arg;
-	if (data->ExtractRequestData(keyAEFile, arg) == kSuccess)
-	{
-		IDFile file;
-		// ★GetFile resolves the path AND validates the PARENT FOLDER on the way in (validateFolder
-		//   defaults to kTrue), so "C:\\no-such-folder\\x.xml" is refused right here instead of
-		//   arriving downstream as the much vaguer "the file could not be created".
-		if (arg.GetFile(&file, data->GetRequestContext()) == kSuccess)
-		{
-			PMString whyNot;	// the same answer in words; nothing outside reads it yet
-			// ★the numbers are decided in KCMOrigin.h, once, and all three writers answer on that
-			//   scale. Spelled out rather than nested in one expression: three branches read as
-			//   three branches.
-			if (wantsDoc)
-				status = KCMSaveActiveDocXml(file, whyNot);
-			else if (wantsIdml)
-				status = KCMOriginSaveIdml(file, whyNot);
-			else
-				status = KCMOriginSaveRaw(file, whyNot);
-		}
-	}
-
-	// **kSuccess, with the outcome in the return DATA.** That is snippetrunner's shape (its own
-	// comment on these two lines is "NOTE: this is hardcoded"), and the guide gives the reason: a
-	// kFailure out of a script provider raises an ASSERT under a Debug build - a stopped test
-	// rather than a message - while a status number lets a script branch without a try/catch.
-	// ⚠A failure here is NOT an error in the scripting sense: "no origin is held" is a perfectly
-	//   ordinary answer to give a caller who asked before pressing Task Start.
-	ScriptData returnData;
-	returnData.SetInt32(status);
-	data->AppendReturnData(script, methodID, returnData);
-	return kSuccess;
+	// ⛔**THE THREE ORIGIN WRITERS WENT ON 2026-09-21** (kcmSaveOriginXml / kcmSaveOriginIdml /
+	//   kcmSaveDocXml). They shared one body and one status scale, and all three read something
+	//   this plug-in no longer holds. Their ScriptIDs are graves - see KCMScriptingDefs.h.
+	return CScriptProvider::HandleMethod(methodID, data, script);
 }
 
 ErrorCode KCMScriptProvider::ReadAppString(int32 id, ScriptID propID, IScriptRequestData* data, IScript* script)
@@ -504,8 +426,6 @@ ErrorCode KCMScriptProvider::ReadAppString(int32 id, ScriptID propID, IScriptReq
 	PMString value;
 	if (id == p_KCMStatus)
 		KCMGetSessionStatus(value);		// the panel's status line
-	else if (id == p_KCMOriginStatus)
-		KCMOriginStatusLine(value);		// the Task Start origin, in one line
 	else if (id == p_KCMResourceSnapshot)
 		// The Resources mode's export, measured from outside while it has no panel of its own.
 		KCMDescribeResourceSnapshot(value);

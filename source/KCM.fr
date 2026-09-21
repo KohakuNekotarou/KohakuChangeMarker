@@ -705,106 +705,10 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
-		// app.kcmOriginStatus - the Task Start origin (2026-09-12), in one line: whether one is
-		// held, of which document, when it was taken, how many bytes, its shape, how many story
-		// stamps, and which spread the peek document holds. The feature's reading from outside.
-		Property
-		{
-			kKCMOriginStatusPropertyScriptElement,
-			p_KCMOriginStatus,
-			"kcm origin status",					// name -> app.kcmOriginStatus
-			"Task Start: whether an origin is held, of which document, when, how many bytes, its shape, its story stamps, and the peek spread.",
-			StringType,
-			{}
-			kNoAttributeClass,
-		}
-
-		// ★★THE ONE METHOD (2026-09-14): app.kcmSaveOriginXml(file) writes the held Task Start
-		// origin's XML to the file the CALLER names, exactly as Task Start took it.
-		//
-		// ⚠The flyout item that used to do this ("Save Task Start XML to Desktop") was removed the
-		// same day along with five of its neighbours; the user's decision was to keep the writer and
-		// reach it from a script instead, with the caller choosing the place and the name. So the
-		// plug-in no longer asks the shell for the Desktop, and no longer invents a file name.
-		//
-		// Shape follows the official example, snippetrunner's "save snip log" (SnipRun.fr:1485-1497):
-		// the file as keyAEFile, Int32Type for the answer, and a return-value string that spells the
-		// numbers out. ⚠**The numbers are decided in KCMOrigin.h** - this string and the comment in
-		// KCMScriptingDefs.h restate them, so all three move in one edit.
-		//
-		// ⚠kRequired: the engine refuses app.kcmSaveOriginXml() with no argument before this
-		//   plug-in's provider ever runs. (The opposite is kOptional, which KESCM's old
-		//   kescmShowOverset used for its BoolDefaultType flag.)
-		// ★A method needs NO entry in the INX-only resource at the end of this file: methods are
-		//   not serialised into IDML. Only properties on document-resident objects are, which is
-		//   what that resource exists to undo.
-		Method
-		{
-			kKCMSaveOriginXmlMethodScriptElement,
-			e_KCMSaveOriginXml,
-			"kcm save origin xml",				// name -> app.kcmSaveOriginXml(file)
-			"Write the held Task Start origin's XML out to a file, exactly as Task Start took it.",
-			Int32Type,							// status code
-			"Status: 0 written, 1 no origin is held, 2 the file could not be created, 3 the write failed, 4 the file argument could not be read"
-			{
-				keyAEFile, "file path", "File path to write the origin's XML to", FileType, kRequired
-			}
-		}
-
-		// ★★THE SAME ORIGIN, IN A CONTAINER (2026-09-15): app.kcmSaveOriginIdml(file) writes a
-		// REAL IDML package - a file InDesign opens as a document, and an outside tool reads as
-		// an IDML.
-		//
-		// ★Why this is a second method and not a flag on the one above: the two answer different
-		// questions. The XML one hands over the bytes Task Start took, for a diff or a store; this
-		// one hands over a PACKAGE, for anything that expects the file format. A flag would make
-		// the caller say which, in a place where the method name says it better.
-		//
-		// ★THREE ENTRIES, and the reason is not economy: measured 2026-09-14, InDesign opens a
-		// package whose designmap was never cut into parts - and measured 2026-09-15, a designmap
-		// that HAS been cut cannot be read back, because its <idPkg:* src="..."/> references crash
-		// ImportINX inside the plug-in that resolves them. So the uncut package is the one that
-		// travels BOTH ways, which is what "build a diff outside and put it back" needs.
-		//
-		// ⚠Same status numbers as the method above, decided in KCMOrigin.h and restated here.
-		Method
-		{
-			kKCMSaveOriginIdmlMethodScriptElement,
-			e_KCMSaveOriginIdml,
-			"kcm save origin idml",				// name -> app.kcmSaveOriginIdml(file)
-			"Write the held Task Start origin out as a real IDML package.",
-			Int32Type,							// status code
-			"Status: 0 written, 1 no origin is held, 2 the file could not be created, 3 the write failed, 4 the file argument could not be read"
-			{
-				keyAEFile, "file path", "File path to write the IDML package to", FileType, kRequired
-			}
-		}
-
-		// ★★THE OTHER SIDE OF THE COMPARISON (2026-09-20, the user's ask): the two above write the
-		// ORIGIN; app.kcmSaveDocXml(file) writes the internal IDML of the document that is IN
-		// FRONT. With both, a rehydrated copy can be checked as XML - element by element - instead
-		// of by the four numbers of its shape.
-		//
-		// ★Same two steps as Task Start, in the same order (ExportINX into memory, then labelled as
-		// a designmap), which is what makes the two files comparable at all.
-		// ⚠They will NOT be byte-identical: ImportINX renumbers every UID it takes in. What is
-		//   stable is everything else - two exports of an unchanged document are byte-for-byte the
-		//   same, across sessions (KCMOriginIdml.h says it at length).
-		//
-		// ⚠Status 1 means something different here than it does above - "nothing could be
-		//   photographed" rather than "no origin is held" - because there is no origin in this one.
-		Method
-		{
-			kKCMSaveDocXmlMethodScriptElement,
-			e_KCMSaveDocXml,
-			"kcm save doc xml",					// name -> app.kcmSaveDocXml(file)
-			"Write the active document's own internal IDML (its designmap) out to a file.",
-			Int32Type,							// status code
-			"Status: 0 written, 1 nothing could be photographed, 2 the file could not be created, 3 the write failed, 4 the file argument could not be read"
-			{
-				keyAEFile, "file path", "File path to write the document's XML to", FileType, kRequired
-			}
-		}
+		// ⛔**THE ORIGIN'S PROPERTY AND ITS THREE WRITERS WENT ON 2026-09-21** - app.kcmOriginStatus,
+		// app.kcmSaveOriginXml, app.kcmSaveOriginIdml and app.kcmSaveDocXml. All four read a Task
+		// Start that is a file on disk now, not bytes this plug-in holds. Their ScriptIDs are graves
+		// (KCMScriptingDefs.h) and their ScriptElements are too (KCMID.h).
 
 		// ★A MEASURING DOOR, not a feature (2026-09-14): app.kcmProbePdfRoute() runs the
 		// experiment in KCMPdfSpike.cpp and hands the whole reading back as one string, a line
@@ -918,22 +822,7 @@ resource VersionedScriptElementInfo(10)
 			}
 		}
 
-		// ⚠A SPIKE (2026-09-19 night, KCMTableCopySpike.h): the measuring door for the "Table" row's
-		// restore. The table's number travels as a string in p_Contents only because the two parameters
-		// every other method here uses are p_Index and p_Contents; a spike borrows, it does not add.
-		Method
-		{
-			kKCMProbeTableCopyMethodScriptElement,
-			e_KCMProbeTableCopy,
-			"kcm probe table copy",				// name -> app.kcmProbeTableCopy(storyRow, tableOrdinal)
-			"Measure whether the Task Start copy's table can be copied over the live one, with its styles, across documents.",
-			StringType,
-			"One line per step of the experiment"
-			{
-				p_Index, "story row", "The story row, from 0 (app.kcmStoryRows)", Int32Type, kRequired,
-				p_Contents, "table", "Which table of the story, from 0, as text", StringType, kRequired,
-			}
-		}
+		// ⛔The table copy spike's door went on 2026-09-21 with the origin it measured against.
 
 		// Puts the property ON the application object.
 		//
@@ -954,18 +843,12 @@ resource VersionedScriptElementInfo(10)
 				//   shows up as ERR:55 the first time a script touches it (memory
 				//   kes-custom-dom-extensions). Both or neither.
 				Property{ kKCMStoryRowsPropertyScriptElement, kReadOnly },
-				Property{ kKCMOriginStatusPropertyScriptElement, kReadOnly },
 				Property{ kKCMResourceSnapshotPropertyScriptElement, kReadOnly },
 				Property{ kKCMResourceDiffPropertyScriptElement, kReadOnly },
-				// The method's half of the same pair - and it has no access-right field, a method
-				// being a thing you call rather than a thing you read. Leave this line out and
-				// app.kcmSaveOriginXml is simply not there, exactly as described above for the
-				// properties: no build error, no warning, ERR:55 at the first touch.
-				Method{ kKCMSaveOriginXmlMethodScriptElement },
-				Method{ kKCMSaveOriginIdmlMethodScriptElement },
-				// ...and the one that photographs the document in front instead of the origin.
-				Method{ kKCMSaveDocXmlMethodScriptElement },
-				// The measuring door's half of the same pair (see the Method block above).
+				// A method's half of the same pair - and it has no access-right field, a method being a
+				// thing you call rather than a thing you read. Leave one of these lines out and the
+				// method is simply not there, exactly as described above for the properties: no build
+				// error, no warning, ERR:55 at the first touch.
 				Method{ kKCMProbePdfRouteMethodScriptElement },
 				// ...and the round trip's four (2026-09-17) - the other half of each Method block above.
 				Method{ kKCMImportStoryTextMethodScriptElement },
@@ -977,8 +860,6 @@ resource VersionedScriptElementInfo(10)
 				Method{ kKCMExportStoryDocxMethodScriptElement },
 				// ...and the undo of a take-in (2026-09-19 night).
 				Method{ kKCMUndoRestoreChangeMethodScriptElement },
-				// ...and the table copy spike's (the same night; retire with KCMTableCopySpike).
-				Method{ kKCMProbeTableCopyMethodScriptElement },
 			}
 		}
 

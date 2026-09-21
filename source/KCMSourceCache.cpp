@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "KCMSourceCache.h"
-#include "KCMOriginCompare.h"	// KCMOriginRunInProgress - is a rehydrated origin standing?
 
 namespace
 {
@@ -103,11 +102,16 @@ bool16 KCMSourceCacheGetTableShapes(UID targetStoryUID, std::vector<KCMTableShap
 
 bool16 KCMSourceCacheMayKeep()
 {
-	// ★**THE ONE TEST, IN ONE PLACE.** A rehydrated origin is standing: what is being read is a
-	//   byte string's document, which nobody can edit and which will be built again identically
-	//   the next time somebody asks. An ARMED Source document answers kFalse here and is never
-	//   kept - the reader can type in it, and it costs nothing to read anyway.
-	return KCMOriginRunInProgress();
+	// ⛔★★**NOTHING MAY BE KEPT SINCE 2026-09-21, AND THAT IS NOT A SETTING.** This cache existed
+	//   for ONE case: a rehydrated origin - a byte string's document that nobody could edit and
+	//   that would be rebuilt identically the next time anyone asked. A Task Start is a file Start
+	//   opens now, so every Source is a document THE READER CAN TYPE IN, and a Source that can
+	//   change must not be remembered. The test that answered this (KCMOriginRunInProgress) went
+	//   with the origin.
+	// ⬜**The machinery around it is dead weight now.** Taking it out reaches into the middle of
+	//   the Story comparison and of the restore, so it is left standing - empty - rather than
+	//   bundled into the origin's removal: Put keeps nothing and Get finds nothing.
+	return kFalse;
 }
 
 void KCMSourceCacheClear()

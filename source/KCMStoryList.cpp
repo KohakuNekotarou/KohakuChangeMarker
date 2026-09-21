@@ -51,7 +51,6 @@
 #include "KCMCore.h"			// KCMFramePageUID - shared with the overset scan since 2026-08-09
 #include "KCMStoryDiffRun.h"	// KCMStoryDiffRun::StillReplaced - RowsAsTsv's "state" column
 #include "KCMStoryList.h"
-#include "KCMOriginCompare.h"	// KCMOriginToSourceUID - a Removed row's story, under its uid in a Task Start copy
 #include "KCMStoryRowFilter.h"	// KCMStoryRowHasContentChange - which rows belong in the list
 #include "KCMStoryRowMerge.h"	// the order the live changes and the replaced ones stand in
 #include "KCMStoryTextImport.h"	// KCMImportRefusals - what the last import could not put in, put back as rows on every Build
@@ -780,9 +779,10 @@ static void AddRowsFromDocument(IDataBase* db, const std::vector<KCMStoryDiff>& 
 		KCMStoryRow row;
 		row.fStoryUID = it->fStoryUID;
 		row.fKinds = it->fKinds;
-		// A Removed row is read from the Source; when that is a Task Start copy the story sits
-		// there under a new uid (identity for any other Source, and for every Target row).
-		const UID storyInDb = wantRemoved ? KCMOriginToSourceUID(db, row.fStoryUID) : row.fStoryUID;
+		// ⛔The uid translation went on 2026-09-21. A Task Start copy was REHYDRATED then and its
+		//   stories carried numbers the import had handed out; a copy saved to a file carries the
+		//   originals, so a Removed row is read under the uid it already holds.
+		const UID storyInDb = row.fStoryUID;
 		if (!ReadRowFromDocument(db, row, storyInDb))
 			continue;
 

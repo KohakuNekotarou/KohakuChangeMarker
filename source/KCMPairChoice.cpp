@@ -33,7 +33,6 @@
 #include "KCMPairChoice.h"
 #include "KCMCore.h"				// KCMActiveDoc / KCMActiveDocDB / KCMArmedSourceDB
 #include "KCMExternalSource.h"	// the lent Source: KCMIsExternalSource / KCMForgetExternalSource / KCMIsDbAlive
-#include "KCMOrigin.h"			// ⛔the origin, until it goes
 
 //----------------------------------------------------------------------------------------
 // The slots
@@ -56,7 +55,6 @@ static IDataBase* sChosenSourceDB = nil;
 // ⛔The chosen Source could be THE ORIGIN (KCMOrigin.h) rather than a database - a third kind of
 // Source with nothing to point at until a comparison rehydrated it, so the choice was a flag.
 // It goes with the origin itself.
-static bool16 sChosenSourceIsOrigin = kFalse;
 
 // ★**THE FILE CHOICES** (2026-09-21). A file is chosen with no document behind it: a Task Start
 // saves a copy and names it, and Start is what opens one.
@@ -147,15 +145,6 @@ bool16 KCMResolveComparisonPair(KCMPairEnd& outTarget, KCMPairEnd& outSource)
 	outSource = KCMPairEnd();
 
 	// ⛔THE ORIGIN WINS while it is chosen (Task Start as it was): the Target is the document it
-	//  was taken from, and the Source is not a database at all. The callers that start ask
-	//  KCMChosenSourceIsOrigin FIRST and go to KCMOriginCompare; here the pair is reported as
-	//  resolvable with an empty Source, which is what the menu's grey state needs to know.
-	if (KCMChosenSourceIsOrigin())
-	{
-		outTarget.fDB = KCMOriginDocDB();
-		return (outTarget.fDB != nil) ? kTrue : kFalse;
-	}
-
 	// The Target: a file choice, then a chosen document, then the active document.
 	if (sTargetIsFile)
 	{
@@ -341,12 +330,6 @@ bool16 KCMSetChosenSourceToActive()
 	// (KCMExternalSource.h: registered while chosen OR armed).
 	if (KCMIsExternalSource(sChosenSourceDB) && KCMArmedSourceDB() != sChosenSourceDB)
 		KCMForgetExternalSource();
-	// ⛔A real document replaces the origin as well, and the origin is released with the choice.
-	if (sChosenSourceIsOrigin)
-	{
-		sChosenSourceIsOrigin = kFalse;
-		KCMReleaseOrigin();
-	}
 	sChosenSourceDB = db;
 	sSourceIsFile = kFalse;		// ★a document replaces a file choice on the same end
 	return kTrue;
@@ -362,13 +345,6 @@ void KCMSetChosenTargetDB(IDataBase* db)
 
 void KCMChooseDBPair(IDataBase* targetDB, IDataBase* sourceDB)
 {
-	// ⛔The origin gives way, exactly as it does to "Set as Source". Left standing, the resolver
-	//   would go on preferring it over the pair chosen right here.
-	if (sChosenSourceIsOrigin)
-	{
-		sChosenSourceIsOrigin = kFalse;
-		KCMReleaseOrigin();
-	}
 	sChosenTargetDB = targetDB;
 	sChosenSourceDB = sourceDB;
 	sTargetIsFile = kFalse;		// ★one end, one kind of choice
@@ -410,11 +386,6 @@ void KCMSetChosenSourceFile(const IDFile& file)
 	// Source" pays when a document replaces them.
 	if (KCMIsExternalSource(sChosenSourceDB) && KCMArmedSourceDB() != sChosenSourceDB)
 		KCMForgetExternalSource();
-	if (sChosenSourceIsOrigin)
-	{
-		sChosenSourceIsOrigin = kFalse;
-		KCMReleaseOrigin();
-	}
 	sChosenSourceFile = file;
 	sSourceIsFile = kTrue;
 	sChosenSourceDB = nil;		// ★one end, one kind of choice
@@ -477,10 +448,6 @@ void KCMForgetChosenDocsThatClosed(IDocumentList* docList)
 	// unrelated document closing. Its own end is the lender's Release, never this sweep.
 	if (sChosenSourceDB != nil && !KCMIsDbAlive(docList, sChosenSourceDB))
 		sChosenSourceDB = nil;
-	// ⛔The origin goes with its document (the user's rule), and the choice with the origin.
-	KCMForgetOriginIfDocClosed(docList);
-	if (sChosenSourceIsOrigin && !KCMHasOrigin())
-		sChosenSourceIsOrigin = kFalse;
 }
 
 // The model's Shutdown drops everything, in the same slot and for the same reason as the peek's
@@ -494,29 +461,14 @@ void KCMClearChosenDocs()
 	sChosenTargetDB = nil;
 	sChosenSourceDB = nil;
 	KCMForgetExternalSource();	// the lent Source is a choice too, and this is the shutdown slot for choices
-	sChosenSourceIsOrigin = kFalse;
-	KCMReleaseOrigin();			// "Clear Target and Source" drops the origin too (the user's rule, 2026-09-12)
 	sTargetIsFile = kFalse;		// ★the file choices go here and NOWHERE ELSE - a closing document
 	sSourceIsFile = kFalse;		//   leaves them standing (KCMForgetChosenDocsThatClosed)
 }
 
 //----------------------------------------------------------------------------------------
-// ⛔The origin's two (declared in KCMPairChoice.h), until the origin goes
+// ⛔**THE ORIGIN'S TWO WENT ON 2026-09-21** - KCMChosenSourceIsOrigin and KCMChooseOriginPair.
+//   A Source could once be a thing that was not a database at all (bytes this plug-in held);
+//   the three kinds an end can be now are a document, a lent database and a FILE.
 //----------------------------------------------------------------------------------------
-
-bool16 KCMChosenSourceIsOrigin()	{ return (sChosenSourceIsOrigin && KCMOriginDocDB() != nil) ? kTrue : kFalse; }
-
-void KCMChooseOriginPair(IDataBase* originDocDB)
-{
-	if (originDocDB == nil)
-		return;
-	if (KCMIsExternalSource(sChosenSourceDB))
-		KCMForgetExternalSource();		// the lent database gives way, as it does to "Set as Source"
-	sChosenTargetDB = originDocDB;
-	sChosenSourceDB = nil;
-	sChosenSourceIsOrigin = kTrue;
-	sTargetIsFile = kFalse;
-	sSourceIsFile = kFalse;
-}
 
 // End, KCMPairChoice.cpp.

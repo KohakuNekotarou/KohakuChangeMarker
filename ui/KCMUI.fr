@@ -829,16 +829,6 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMTaskStartMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Open Task Start as IDML" on the panel flyout (2026-09-20, the user's request). Plain
-		// command, directly under Task Start: the held origin is made into a document and opened in
-		// a window, so that the state a comparison measures against can be looked at as it really
-		// is. ★**The bytes go in UNTOUCHED** (the user, the same day: "doing nothing to it") -
-		// no injection, nothing written into the copy afterwards (KCMRehydrate.h, `untouched`).
-		kKCMPopupOpenOriginIdmlActionID,
-		kKCMPopupMenuPath,
-		kKCMOpenOriginIdmlMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
 		// "Export Story Text..." on the panel flyout (2026-09-15). Plain command: every story of
 		// the active document is written out as HTML, one file each, into a dated folder under the
 		// one the reader chooses. Directly under Task Start - the two belong together.
@@ -1437,18 +1427,6 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKCMActionComponentBoss,
 		kKCMPopupTaskStartActionID,
 		kKCMTaskStartMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		// "Open Task Start as IDML" (2026-09-20): the held origin, opened as an untitled document.
-		// Greyed when no origin is held - there is nothing to open then (facade HasOrigin,
-		// asked in UpdateActionStates beside the others).
-		kKCMActionComponentBoss,
-		kKCMPopupOpenOriginIdmlActionID,
-		kKCMOpenOriginIdmlMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,

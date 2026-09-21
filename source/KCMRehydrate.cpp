@@ -35,7 +35,6 @@
 #include "ITextModel.h"
 #include "PageItemScrapID.h"		// kDeleteCmdBoss - the dummy's frame goes, and its story with it
 #include "IStringData.h"			// NameCopyAfterOrigin: kSetDocNameCmdBoss carries the name here
-#include "KCMOrigin.h"				// KCMOriginDocDB - the document the copy stands for
 
 // General includes:
 #include "CmdUtils.h"
@@ -63,7 +62,6 @@
 #include "KCMResourceSnapshot.h"	// KCMTakeResourceSnapshot - the copy, photographed for the check
 #include "KCMXmlInject.h"
 #include "KCMXmlDeepCompare.h"	// the deep pass of the round-trip check (2026-09-21)
-#include "KCMOriginIdml.h"		// KCMInxToDesignmap - so the copy is compared as the same kind of document
 
 class IINXImportPolicy;				// forward-declared only in the SDK; held through IPMUnknown
 
@@ -462,13 +460,10 @@ bool16 ImportAndCheck(const UIDRef& ref, KCMResourceBytes& copy, const KCMOrigin
 			LabelCopyPages(ref.GetDataBase(), copy);
 		}
 
-		// 3d. the copy answers as the document it was taken from (NameCopyAfterOrigin says why).
-		//     Before the compose, so that what is composed already reads the right name.
-		{
-			GlobalErrorStatePreserver errorState;
-			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-			NameCopyAfterOrigin(ref, KCMOriginDocDB());
-		}
+		// ⛔**3d WENT ON 2026-09-21.** The copy used to be renamed after the document the ORIGIN was
+		//   taken from, so that a rehydrated document did not answer "Untitled-3" to everything that
+		//   asked. Nothing holds an origin now, so there is no name to copy - and the one caller left
+		//   here (the report) names what it builds itself.
 	}
 
 	// 4. compose BEFORE anything reads pixels or text positions. A document straight out of the
@@ -569,200 +564,10 @@ bool16 KCMRehydrate(const KCMResourceBytes& inx, const KCMOriginShape& expect, U
 	return kTrue;
 }
 
-bool16 KCMVerifyRehydration(IDataBase* copyDB, PMString& out)
-{
-	out.Clear();
-	out.SetTranslatable(kFalse);
-
-	const KCMResourceBytes* const origin = KCMOriginBytes();
-	if (origin == nil || origin->Size() == 0)
-	{
-		out = "no Task Start is held to check against";
-		return kFalse;
-	}
-
-	// The copy, photographed the way the origin was: ExportINX into memory, nothing on disk.
-	// ★★**AND LABELLED AS A DESIGNMAP, BECAUSE THE ORIGIN IS** (2026-09-21). For the element-name
-	//   pass it made no difference - the labelling rewrites one word of the processing instruction
-	//   and one attribute of <Document>, and neither is a NAME, which is what the old comment here
-	//   said and it was true. The deep pass compares attributes, so the same two sides must be the
-	//   same KIND of document: without this the copy was reported as missing <Document>'s
-	//   xmlns:idPkg on every single run (measured, the first thing the deep pass ever found).
-	//   ⇒ **Make the two comparable rather than forgive the difference.**
-	KCMResourceBytes copyXml;
-	PMString why;
-	if (!KCMTakeResourceSnapshot(DocOf(copyDB), copyXml, why))
-	{
-		out = "the copy could not be photographed: ";
-		out.Append(why);
-		return kFalse;
-	}
-	PMString labelWhy;
-	if (!KCMInxToDesignmap(copyXml, labelWhy))
-	{
-		out = "the copy could not be labelled as a designmap: ";
-		out.Append(labelWhy);
-		return kFalse;
-	}
-
-	std::vector<KCMElementCount> diffs;
-	int32 same = 0;
-	KCMCompareElementCounts(origin->Bytes(), origin->Size(), copyXml.Bytes(), copyXml.Size(),
-							diffs, &same);
-
-	// ★THE THREE THAT GROW ON PURPOSE (the header says why). A DROP in any of them is still a real
-	//   difference, so the test is on the direction as well as the name.
-	int32 real = 0, expected = 0;
-	PMString detail;
-	detail.SetTranslatable(kFalse);
-	for (size_t i = 0; i < diffs.size(); ++i)
-	{
-		const KCMElementCount& row = diffs[i];
-		const bool16 isLabelName = (row.fName == "Label" || row.fName == "KeyValuePair"
-									|| row.fName == "Properties") ? kTrue : kFalse;
-		if (isLabelName && row.fInB > row.fInA)
-		{
-			++expected;
-			continue;
-		}
-		++real;
-		if (real <= 6)			// a status line has to end somewhere; the largest come first
-		{
-			detail.Append(real == 1 ? " " : ", ");
-			PMString name(row.fName.c_str());
-			name.SetTranslatable(kFalse);
-			detail.Append(name);
-			detail.Append(" ");
-			detail.AppendNumber(row.fInA);
-			detail.Append("/");
-			detail.AppendNumber(row.fInB);
-		}
-	}
-
-	if (real == 0)
-	{
-		// ★★**THE CHEAP PASS IS CLEAN - NOW THE EXPENSIVE ONE** (2026-09-21, the user: "is it only
-		//   the count of the elements? compare the contents too, even if it takes longer"). Element
-		//   names going missing is what the pass above sees; a VALUE that changed - a frame setting,
-		//   a cell stroke, a table style, a row height - adds and removes nothing, so only a walk
-		//   that compares every attribute can see it (KCMXmlDeepCompare.h).
-		// ⚠It runs ONLY when the counts agree, because a walk past a structural difference reports
-		//  every attribute after it as changed - noise that would bury the one line that matters.
-		std::vector<KCMXmlDifference> deep;
-		KCMXmlDeepTally tally;
-		const bool16 deepClean = KCMCompareXmlDeep(origin->Bytes(), origin->Size(),
-												   copyXml.Bytes(), copyXml.Size(), deep, tally);
-		if (!deepClean)
-		{
-			out = "the copy's ELEMENTS all match (";
-			out.AppendNumber(same);
-			out.Append(" names) but its CONTENTS do not:");
-			if (tally.fDivergedAt >= 0 && tally.fRealDiffs == 0)
-			{
-				// The shapes stopped lining up although the tallies agreed - the same number of the
-				// same names in a different order. Worth its own sentence: it is not a value change.
-				out.Append(" the two shapes diverge at element ");
-				out.AppendNumber(tally.fDivergedAt);
-				out.Append(" (");
-				PMString where(tally.fDivergedPath.c_str());
-				where.SetTranslatable(kFalse);
-				out.Append(where);
-				out.Append(")");
-				return kFalse;
-			}
-			out.Append(" ");
-			out.AppendNumber(tally.fRealDiffs);
-			out.Append(tally.fRealDiffs == 1 ? " difference" : " differences");
-			int32 shown = 0;
-			for (size_t i = 0; i < deep.size() && shown < 4; ++i)
-			{
-				if (deep[i].fKind != kKCMXmlDiffReal)
-					continue;
-				++shown;
-				out.Append(shown == 1 ? " - " : ", ");
-				PMString piece(deep[i].fPath.c_str());
-				piece.SetTranslatable(kFalse);
-				out.Append(piece);
-				out.Append(" ");
-				PMString what(deep[i].fWhat.c_str());
-				what.SetTranslatable(kFalse);
-				out.Append(what);
-				out.Append(" ");
-				PMString va(deep[i].fInA.c_str());
-				va.SetTranslatable(kFalse);
-				out.Append(va);
-				out.Append("/");
-				PMString vb(deep[i].fInB.c_str());
-				vb.SetTranslatable(kFalse);
-				out.Append(vb);
-			}
-			if (tally.fRealDiffs > shown)
-				out.Append(", ...");
-			return kFalse;
-		}
-
-		out = "the copy matches the origin: ";
-		out.AppendNumber(same);
-		out.Append(" element names, ");
-		out.AppendNumber(tally.fAttributes);
-		out.Append(" attributes and ");
-		out.AppendNumber(tally.fTexts);
-		out.Append(" texts equal");
-		if (expected > 0)
-		{
-			out.Append(", ");
-			out.AppendNumber(expected);
-			out.Append(" grown by our own labels");
-		}
-		// ★**WHAT WAS FORGIVEN, IN THE OPEN.** A check that hides its exceptions is how a check
-		//   starts lying: the counts are printed so that a new kind cannot grow inside them.
-		// ⚠**EVERY KIND, NOT THREE OF THEM**: a sum that leaves a kind out is exactly the place a
-		//   new kind would grow unseen, which is what this sentence exists to prevent.
-		const int32 known = tally.fUids + tally.fOurLabels + tally.fLanguage + tally.fMetadata
-						  + tally.fNewDocPrefs + tally.fImportDefaults + tally.fMarkers;
-		if (known > 0)
-		{
-			out.Append(" (");
-			out.AppendNumber(known);
-			out.Append(" known: ");
-			out.AppendNumber(tally.fUids);
-			out.Append(" uids, ");
-			out.AppendNumber(tally.fOurLabels);
-			out.Append(" labels, ");
-			out.AppendNumber(tally.fImportDefaults);
-			out.Append(" written-out defaults, ");
-			out.AppendNumber(tally.fMetadata);
-			out.Append(" xmp, ");
-			out.AppendNumber(tally.fNewDocPrefs);
-			out.Append(" view prefs, ");
-			out.AppendNumber(tally.fMarkers);
-			out.Append(" markers, ");
-			out.AppendNumber(tally.fLanguage);
-			out.Append(" language)");
-		}
-		// ★**AND WHETHER THE STORIES HAD TO BE PUT BACK IN ORDER** - the import writes them in its
-		//   own order, and a walk that silently reordered them would be hiding the one fact that
-		//   explains why the pairing is by label and not by position.
-		if (tally.fStoriesReordered > 0)
-		{
-			out.Append(" [");
-			out.AppendNumber(tally.fStoriesReordered);
-			out.Append(" stories came back in another order]");
-		}
-		return kTrue;
-	}
-
-	out = "the copy DIFFERS from the origin in ";
-	out.AppendNumber(real);
-	out.Append(real == 1 ? " element name:" : " element names:");
-	out.Append(detail);
-	if (real > 6)
-		out.Append(", ...");
-	out.Append(" (");
-	out.AppendNumber(same);
-	out.Append(" equal)");
-	return kFalse;
-}
+// ⛔**KCMVerifyRehydration WENT ON 2026-09-21.** It photographed a rehydrated copy and compared
+//   it with the origin's own bytes, element by element, so that a copy which had lost something
+//   in the import could say so. Nothing is rehydrated for a comparison any more - Start opens the
+//   copy Task Start saved - so there is no import to check and no held bytes to check against.
 
 void KCMMarkRehydratedClean(IDataBase* db)
 {
@@ -770,93 +575,9 @@ void KCMMarkRehydratedClean(IDataBase* db)
 		db->SetModified(kFalse);
 }
 
-bool16 KCMOpenOriginForInspection(PMString& outMessage)
-{
-	outMessage.Clear();
-	outMessage.SetTranslatable(kFalse);
-
-	const KCMResourceBytes* const bytes = KCMOriginBytes();
-	const KCMOriginShape* const shape = KCMOriginShapeOf();
-	if (bytes == nil || shape == nil)
-	{
-		outMessage = "no Task Start is held - take one first.";
-		return kFalse;
-	}
-
-	// 1. ★**THE COPY THE COMPARISON WOULD BE GIVEN**, kept whether or not it matches
-	//    (kKCMRehydrateKeepForCheck - the enum says what the three modes are for). ⚠kFalse here
-	//    does NOT mean "no document": a mismatched copy is exactly the one worth opening, and it
-	//    comes back in doc either way, with whyNot saying what did not line up.
-	//    ⚠**kKCMRehydrateUntouched is what this asked for on the evening of 2026-09-20** - the held
-	//     bytes with nothing injected - which is how the import's own damage was measured. It is
-	//     still there to switch back to when that question comes up again.
-	UIDRef doc = UIDRef::gNull;
-	PMString whyNot;
-	const bool16 matched = KCMRehydrate(*bytes, *shape, doc, whyNot, kKCMRehydrateKeepForCheck);
-	if (doc == UIDRef::gNull)
-	{
-		outMessage = "the Task Start copy could not be made at all: ";
-		outMessage.Append(whyNot);
-		return kFalse;
-	}
-
-	// 2. ★A WINDOW, ASKED FOR THE WAY KBSBookScope ASKS FOR ONE (KBSBookScope.cpp, a windowless
-	//    chapter): the data interface first - no data interface, no command run - and afterwards
-	//    the PRESENTATION is read rather than the return code, because "the command succeeded" and
-	//    "there is a window" are two different statements.
-	//    ⚠**IT IS ALLOWED TO FAIL.** The document is in app.documents either way, and a windowless
-	//     one can still be read by a script; the status line says which happened.
-	bool16 hasWindow = kFalse;
-	{
-		GlobalErrorStatePreserver windowErrorState;
-		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		InterfacePtr<ICommand> cmd(CmdUtils::CreateCommand(kOpenLayoutCmdBoss));
-		InterfacePtr<IOpenLayoutPresentationCmdData> openData(cmd, IID_IOPENLAYOUTCMDDATA);
-		if (cmd != nil && openData != nil)
-		{
-			cmd->SetItemList(UIDList(doc));
-			if (CmdUtils::ProcessCommand(cmd) == kSuccess)
-			{
-				InterfacePtr<IWindow> window(openData->GetResultingPresentation(), UseDefaultIID());
-				hasWindow = (window != nil) ? kTrue : kFalse;
-			}
-		}
-	}
-
-	// 3. ⚠**IT IS LEFT DIRTY-FREE BUT NOT TIDIED AWAY.** Whoever opened it closes it; nothing here
-	//    remembers it, because it is not a copy any comparison will be given.
-	// 2b. ★**THE ROUND-TRIP CHECK, ON THE COPY THAT WAS JUST MADE** (2026-09-20, the user's design).
-	//     It is run here - on the menu's copy - before anything is said about it, so that what the
-	//     status line reports is what the XML says rather than what the shape counters say. The
-	//     shape check answers "is it whole enough to compare"; this one answers "what is missing".
-	PMString checkSaid;
-	const bool16 checkPassed = KCMVerifyRehydration(doc.GetDataBase(), checkSaid);
-
-	outMessage = hasWindow ? "the Task Start copy is open in a window"
-						   : "the Task Start copy was made but no window would open for it (it is in app.documents)";
-	outMessage.Append(" - ");
-	outMessage.Append(checkSaid);
-	if (!checkPassed && matched)
-	{
-		// ⚠**THE TWO INSTRUMENTS CAN DISAGREE, AND THAT IS WORTH SAYING.** The shape check counts
-		//   spreads, pages, stories and characters; a nested table that vanishes changes the last
-		//   of those, but a fault that does not change any of the four would pass the shape check
-		//   and fail here. Saying so is how the next such fault gets noticed.
-		outMessage.Append(" [the shape check passed - only the XML saw this]");
-	}
-	if (!matched)
-	{
-		// The shape counters, after the XML's account of it: four numbers that say how far off the
-		// whole thing is, where the line above says what is missing by name.
-		outMessage.Append(" - ");
-		outMessage.Append(whyNot);
-	}
-	// ★★**THE ANSWER IS "IS EVERYTHING WELL", NOT "WAS A DOCUMENT MADE"** (2026-09-20). The caller
-	//   uses it to choose the colour of the status line, and what a reader needs coloured is the
-	//   bad news. Whether a document appeared is in outMessage, which is the only caller's other
-	//   interest. ⚠The one caller ignored the old answer entirely, so nothing was reinterpreted.
-	return (checkPassed && matched) ? kTrue : kFalse;
-}
+// ⛔**KCMOpenOriginForInspection WENT ON 2026-09-21** with the menu item that called it ("Open
+//   Task Start as IDML", ActionID +80). It made a document out of the held IDML, untouched, so
+//   that what an import does to a copy was visible in front of the reader. There is no held IDML.
 
 void KCMCloseRehydrated(const UIDRef& doc, bool16 deferred)
 {

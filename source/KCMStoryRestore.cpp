@@ -49,7 +49,6 @@
 #include "KCMStoryRestore.h"
 #include "KCMSourceCache.h"		// the Source story kept from the origin: no copy per press
 #include "KCMCore.h"				// KCMArmedTargetDB / KCMArmedSourceDB / KCMIsDocDBOpen
-#include "KCMOriginCompare.h"		// KCMOriginArmed / KCMOriginScopedCopy / KCMOriginToSourceUID
 #include "KCMStoryList.h"			// the row and its changes
 #include "KCMStoryKinds.h"			// kKCMStoryAttrRuby / kKCMStoryAttrKenten / KCMStoryWriteBlock
 #include "KCMParaText.h"			// IsObjectCharacter - what text cannot bring back
@@ -121,7 +120,7 @@ bool16 SourceWordsFor(UID storyUID, IDataBase* sourceDB, TextIndex from, int32 c
 	}
 
 	InterfacePtr<ITextModel> source(sourceDB != nil
-		? UIDRef(sourceDB, KCMOriginToSourceUID(sourceDB, storyUID))
+		? UIDRef(sourceDB, storyUID)	// ⛔the uid translation went with the origin (2026-09-21)
 		: UIDRef(nil, kInvalidUID), UseDefaultIID());
 	if (source == nil)
 	{
@@ -735,23 +734,12 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 	//    must not be cached either, because the reader can edit it.
 	const bool16 sourceIsKept = KCMSourceCacheHas(storyUID);
 
-	KCMOriginScopedCopy originCopy;
+	// ⛔**NO COPY IS REBUILT HERE ANY MORE** (2026-09-21). An armed origin had no Source database,
+	//   so one was rehydrated for the press and closed on the way out. A Task Start is a file Start
+	//   opens, so the Source is simply handed over.
 	IDataBase* sourceDB = sourceDBIn;
 	if (sourceDB == nil)
-	{
 		sourceDB = KCMArmedSourceDB();
-		if (sourceDB == nil && KCMOriginArmed() && !sourceIsKept)
-		{
-			PMString whyNot;
-			if (!originCopy.Open(whyNot))
-			{
-				outMessage = Refused("could not rebuild the task-start copy: ");
-				outMessage.Append(whyNot);
-				return kFalse;
-			}
-			sourceDB = originCopy.DB();
-		}
-	}
 	if (sourceDB != nil && !KCMIsDocDBOpen(sourceDB))
 		sourceDB = nil;					// closed under us; the kept text may still answer
 
@@ -1239,24 +1227,12 @@ bool16 BulkRun(int32 nth, IDataBase* sourceDBIn, int32& outWritten, int32& outSk
 	if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
 		return kFalse;
 
-	// The Source: the armed one, the one handed down, or the task-start copy rehydrated for this
-	// run. ⚠The scope is the whole function, so every RestoreOne below still sees it.
-	// ⚠★★**ONE COPY PER PRESS, NOT PER ROW.** The all-stories item opens it once and hands it to
-	//   every row: rehydrating the task-start document once per story would cost that work N times,
-	//   and two of them open at once is refused outright (measured - see RestoreOne).
-	KCMOriginScopedCopy originCopy;
+	// The Source: the one handed down, or the armed one. ⛔A third case stood here until 2026-09-21
+	//   - a task-start copy rehydrated ONCE for the whole press, because doing it per row would have
+	//   cost that work N times over. There is nothing to rehydrate now.
 	IDataBase* sourceDB = sourceDBIn;
 	if (sourceDB == nil)
-	{
 		sourceDB = KCMArmedSourceDB();
-		if (sourceDB == nil && KCMOriginArmed())
-		{
-			PMString whyNot;
-			if (!originCopy.Open(whyNot))
-				return kFalse;
-			sourceDB = originCopy.DB();
-		}
-	}
 	if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
 		return kFalse;
 
@@ -1504,9 +1480,9 @@ bool16 KCMStoryWritesAllowed()
 	//   mode they were written for.
 	//   ⇒ The lent database (KIDMCP's Compare) comes in with them, by the same reasoning.
 	//
-	// ⛔The origin is still a way to be armed with no Source database, so it stays in this answer
-	//   until the origin itself goes.
-	return (KCMArmedSourceDB() != nil || KCMOriginArmed()) ? kTrue : kFalse;
+	// ★**ONE TEST: IS THERE A SOURCE DATABASE.** The origin - the one way to be armed without one -
+	//   went on 2026-09-21, so this is the whole of it.
+	return (KCMArmedSourceDB() != nil) ? kTrue : kFalse;
 }
 
 /*	KCMUndoRestoreChange
@@ -1614,14 +1590,7 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 	//   is the same exposure the take-in itself has had all along, and it takes no words away.
 	if (change.fAttrKind == kKCMStoryAttrNone)
 	{
-		IDataBase* checkSourceDB = KCMArmedSourceDB();
-		KCMOriginScopedCopy checkCopy;
-		if (checkSourceDB == nil && KCMOriginArmed() && !KCMSourceCacheHas(storyUID))
-		{
-			PMString whyNot;
-			if (checkCopy.Open(whyNot))
-				checkSourceDB = checkCopy.DB();
-		}
+		IDataBase* const checkSourceDB = KCMArmedSourceDB();	// ⛔no rehydration since 2026-09-21
 
 		WideString wentIn;
 		const int32 sourceCount = change.fSourceEnd - change.fSourceStart;
@@ -1831,17 +1800,9 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 	// took it in - so the row shows it that way and can take it in again.
 	KCMStoryList::RemoveReplacedChangeAt(nth, slot);
 
-	// ⚠**AND NO COPY IS BUILT FOR IT WHEN THE STORY IS KEPT** - this item would otherwise carry
-	//   the very cost that was taken out of the take-in the same day (KCMSourceCache.h): a whole
-	//   document rebuilt from the origin, per press, to compare one story.
+	// ⛔The rebuilt copy went on 2026-09-21 with the origin: this item would otherwise have carried
+	//   a whole document rebuilt per press, to compare one story.
 	IDataBase* sourceDB = KCMArmedSourceDB();
-	KCMOriginScopedCopy originCopy;
-	if (sourceDB == nil && KCMOriginArmed() && !KCMSourceCacheHas(storyUID))
-	{
-		PMString whyNot;
-		if (originCopy.Open(whyNot))
-			sourceDB = originCopy.DB();
-	}
 	if (sourceDB != nil && !KCMIsDocDBOpen(sourceDB))
 		sourceDB = nil;
 	if (sourceDB != nil || KCMSourceCacheHas(storyUID))

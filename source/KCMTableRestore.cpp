@@ -33,7 +33,6 @@
 #include "KCMCore.h"					// KCMArmedTargetDB / KCMIsDocDBOpen
 #include "KCMMemXferBytes.h"
 #include "KCMModelNotify.h"			// KCMNotify - the panel redraws its list
-#include "KCMOrigin.h"					// KCMOriginBytes - Task Start's internal IDML
 #include "KCMResourceBytes.h"
 #include "KCMScratchDoc.h"
 #include "KCMStoryDiffRun.h"			// RunOne / CountForKind
@@ -258,12 +257,9 @@ bool16 KeepLiveTable(IDataBase* db, UID storyUID, UID tableId,
 		if (seen != nil)
 			KCMCutTableStyleGroups(seen->c_str(), seen->size(), groups);
 	}
-	if (groups.empty())
-	{
-		const KCMResourceBytes* const origin = KCMOriginBytes();
-		if (origin != nil)
-			KCMCutTableStyleGroups(origin->Bytes(), origin->Size(), groups);
-	}
+	// ⛔The origin's bytes were the last resort here until 2026-09-21. What they added over the
+	//   snapshot was a style MADE since Task Start, and the snapshot is taken at the same moment
+	//   the comparison reads the story - so nothing measurable was lost with them.
 	KCMBuildTableSnippet(outTableXml, groups, outSnippet);
 	return kTrue;
 }
@@ -492,12 +488,22 @@ bool16 KCMRestoreTable(int32 nth, int32 which, const KCMStoryChange& changeIn, b
 	std::string how;
 	if (!removing)
 	{
-		const KCMResourceBytes* const origin = KCMOriginBytes();
+		// ★★**THE OLDER TABLE COMES OUT OF THE SOURCE DOCUMENT** (2026-09-21). Until then it was cut
+		//   out of the origin - the INX this plug-in held in memory from Task Start. A Task Start is
+		//   a copy SAVED TO A FILE and opened by Start now, so the older table simply stands in a
+		//   live database and is exported exactly the way the live one is in step 2 (KeepLiveTable).
+		// ★**THE UIDS MATCH, AND THAT IS WHY THIS WORKS**: the copy is the document written out and
+		//   read back, so its story and its tables carry the numbers the original carries. A Source
+		//   that is some OTHER document answers nothing here, and the refusal below says so.
+		IDataBase* const sourceDB = KCMArmedSourceDB();
 		std::string olderTableXml, groups, merged;
-		if (origin == nil || change.fSourceTableId == kInvalidUID
-			|| !KCMCutTableXmlById(origin->Bytes(), origin->Size(), storyUID, change.fSourceTableId, olderTableXml))
+		KCMMemXferBytes sourceInx;
+		if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB) || change.fSourceTableId == kInvalidUID
+			|| !KCMExportStoryInx(sourceDB, storyUID, sourceInx, kTrue)
+			|| !KCMCutTableXmlById(sourceInx.GetData(), sourceInx.GetSize(), storyUID,
+								   change.fSourceTableId, olderTableXml))
 		{
-			outMessage = Refused("the Task Start copy holds no such table.");
+			outMessage = Refused("the Source document holds no such table.");
 			return kFalse;
 		}
 		if (bringingBack)
@@ -523,7 +529,9 @@ bool16 KCMRestoreTable(int32 nth, int32 which, const KCMStoryChange& changeIn, b
 				how = "the Task Start table could not be walked";
 			}
 		}
-		KCMCutTableStyleGroups(origin->Bytes(), origin->Size(), groups);
+		// ★From the SAME export as the table itself (2026-09-21), so the two are as fresh as each
+		//   other - which is what the origin's single set of bytes used to guarantee for free.
+		KCMCutTableStyleGroups(sourceInx.GetData(), sourceInx.GetSize(), groups);
 		// ★EVERY CELL LABELLED WITH ITS TASK START ID, so that the table can still be recognised cell
 		//   by cell after the import has repacked the ids. Read and taken off again in the scratch
 		//   document below; the reader's document never sees one (KCMTableSnippet.h).

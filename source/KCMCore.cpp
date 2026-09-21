@@ -55,8 +55,6 @@
 #include "KCMStoryUndoObserver.h"  // so that a Ctrl+Z after a restore redraws the list
 #include "KCMHideUnchanged.h"      // KCMResetHideUnchanged
 #include "KCMExternalSource.h"     // KCMIsDbAlive -- "still there" includes the lent Source
-#include "KCMOrigin.h"             // KCMOriginStoryStamps / KCMOriginBytes -- Task Start: the older side kept in memory
-#include "KCMOriginCompare.h"      // KCMOriginRunInProgress -- is the Source of this run the rehydrated copy?
 // **No UI header is included here.** Everything this file used to do to the screen is now a
 // KCMNotify*() call, so the comparison engine says only WHAT CHANGED and has zero dependency on
 // the UI.
@@ -547,13 +545,10 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	std::vector<KCMStoryStamp> targetStamps;
 	std::vector<KCMStoryStamp> sourceStamps;
 	KCMStoryEdits::CollectStamps(targetDB, targetStamps);
-	// Task Start: the copy is freshly imported and its change COUNTERS say nothing. The stamps the
-	// origin took at Task Start - the document's own counters at that moment, in its own uids -
-	// stand in for the older version's, exactly as a saved older version's would.
-	if (KCMOriginRunInProgress() && KCMOriginStoryStamps() != nil)
-		sourceStamps = *KCMOriginStoryStamps();
-	else
-		KCMStoryEdits::CollectStamps(sourceDB, sourceStamps);
+	// ⛔The origin's stamps stood here until 2026-09-21. A Task Start copy was REHYDRATED then, so
+	//   its change counters said nothing and the stamps taken at Task Start stood in for them. The
+	//   copy is a saved document now, and its counters are the ones it was saved with.
+	KCMStoryEdits::CollectStamps(sourceDB, sourceStamps);
 
 	// @warning the argument order is (source, target). Reversed, "added" and "removed" swap: a
 	//   story that was deleted is counted as added, and the real additions are silently lost.

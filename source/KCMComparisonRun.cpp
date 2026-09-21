@@ -35,7 +35,6 @@
 #include "KCMThreadSafety.h"		// KCMIsSameDoc -- the one place this plug-in asks whether two dbs are one document
 #include "KCMExternalSource.h"	// the lent Source: registered and chosen by KCMStartComparisonWithSourceDB, forgotten by the lender's Release
 #include "KCMOrigin.h"			// the origin (Task Start): the third kind of Source, chosen by KCMChooseOriginPair
-#include "KCMOriginCompare.h"	// KCMOriginStart / KCMOriginRefresh / KCMOriginArmed / KCMOriginOnStop - the origin's Start and Refresh
 
 // KCMCanStartComparison (declared in KCMComparisonRun.h) -- whether the flyout's Start may be
 // enabled. Goes through the same resolver as the command, so the two cannot disagree.
@@ -76,7 +75,6 @@ void KCMStopComparison()
 
 	KCMDoClearMarks(db);
 	KCMDoDisarmMousePeek(db);
-	KCMOriginOnStop();			// Task Start: the armed-origin flag goes, and the peek document with it
 	// Scrollbar map: the strips come off every window (Target and Source alike), and that is done
 	// by the UI when it receives the kKCMMarksClearedMessage the KCMDoClearMarks above emits.
 	// If Find Overset is on by itself, re-apply it to the overset document (sOversetDB) so the
@@ -166,12 +164,8 @@ bool16 KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 // one rather than the incremental one.
 void KCMRefreshComparison()
 {
-	// Task Start: an armed origin pair has no Source database; its own Refresh rehydrates one.
-	if (KCMOriginArmed())
-	{
-		KCMOriginRefresh();
-		return;
-	}
+	// ⛔The origin's own Refresh stood here until 2026-09-21: an armed origin pair had no Source
+	//   database, so refreshing meant rehydrating one. Both ends are documents now.
 
 	IDataBase* const targetDB = KCMArmedTargetDB();
 	IDataBase* const sourceDB = KCMArmedSourceDB();
@@ -287,13 +281,9 @@ void KCMToggleStartStop()
 		return;
 	}
 
-	// Task Start: the chosen Source is the origin. Its own procedure rehydrates and compares; the
-	// pair never reaches the resolver's same-document test below (the Source is not a database).
-	if (KCMChosenSourceIsOrigin())
-	{
-		KCMOriginStart();		// its own words on the status line
-		return;
-	}
+	// ⛔The origin's own Start stood here until 2026-09-21, because the chosen Source could be a
+	//   thing that was not a database at all. A Task Start chooses a FILE now, and the resolver
+	//   below opens it like any other end.
 
 	// Start: active (front) document = Target, another open document = Source.
 	// The flyout's Start is grey unless two documents are there (KCMCanStartComparison goes

@@ -186,7 +186,9 @@ enum KCMScriptProperties
 */
 enum KCMScriptMethods
 {
-	e_KCMSaveOriginXml = 'eKGs',	// s = save. app.kcmSaveOriginXml(file)
+	// ⛔**'eKGs' IS A GRAVE** (2026-09-21): app.kcmSaveOriginXml, the origin's own writer. The
+	//   origin went, and a ScriptID is never reused - a script written against the old code would
+	//   otherwise reach whatever took the code.
 
 	// ★i = idml. app.kcmSaveOriginIdml(file) - the same origin, wrapped in a real IDML package
 	//   (2026-09-15). The snapshot is already an IDML's designmap, so this only adds the container.
@@ -196,7 +198,7 @@ enum KCMScriptMethods
 	//     is the one that decides.
 	//   ⚠Not registered with Adobe yet: it goes in with 'eKGs', 'nKGp' and 'pKGx' at the next
 	//     submission (the unit of registration is the code-and-name pair, so the name is settled now).
-	e_KCMSaveOriginIdml = 'eKGi',
+	// ⛔**'eKGi' IS A GRAVE** (2026-09-21): app.kcmSaveOriginIdml, the same bytes in a package.
 
 	// ★★g = **g**et this document's XML. app.kcmSaveDocXml(file) - the ACTIVE document's own
 	//   internal IDML, so that a rehydrated copy and the origin it came from can be compared as
@@ -208,7 +210,9 @@ enum KCMScriptMethods
 	//     'eKGj' answered 1, so a pattern that matches nothing was not being mistaken for a free
 	//     code (the 2026-08-18 near-miss is what that check is for).
 	//   ⚠Not registered with Adobe.
-	e_KCMSaveDocXml = 'eKGg',
+	// ⛔**'eKGg' IS A GRAVE** (2026-09-21): app.kcmSaveDocXml. It photographed the ACTIVE document
+	//   rather than the origin, so it could have been kept - the reader's call was to let it go
+	//   with the file it lived in.
 
 	// ★A MEASURING DOOR, not a feature (2026-09-14). app.kcmProbePdfRoute() runs the experiment
 	// in KCMPdfSpike.cpp on the active document's first page and returns the whole reading as one
@@ -280,7 +284,8 @@ enum KCMScriptMethods
 	//   Start copy's table be copied over the live one with kCopyStoryRangeCmdBoss, across documents,
 	//   styles included. ⚠'eKGz' was MEASURED free: 0 files under source/sdksamples, docs, work and
 	//   .claude. ⚠Not registered with Adobe - a spike, to be retired with the file once the answer is in.
-	e_KCMProbeTableCopy = 'eKGz'		// z = the last letter, for the last experiment of the night. app.kcmProbeTableCopy(storyRow, tableOrdinal) -> one line per step
+	// ⛔**'eKGz' IS A GRAVE** (2026-09-21): app.kcmProbeTableCopy, the table copy spike's door.
+	//   It measured against the origin's copy, so it went with it.
 };
 
 /** Properties KCM adds to the STORY object (at the user's request).

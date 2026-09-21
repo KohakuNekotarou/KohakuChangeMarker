@@ -234,10 +234,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDocx.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMZipStore.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOrigin.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOriginIdml.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOriginPeek.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRehydrate.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOriginCompare.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceSnapshot.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMBookCompare.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMBookChapterModes.cpp" />
@@ -249,7 +246,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPairChoice.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTaskStartSave.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpike.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableCopySpike.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableShape.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableSnippet.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMScratchDoc.cpp" />
@@ -327,10 +323,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDocx.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMZipStore.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOrigin.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOriginIdml.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOriginPeek.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMRehydrate.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOriginCompare.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceSnapshot.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookCompare.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookChapterModes.h" />

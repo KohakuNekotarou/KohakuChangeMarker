@@ -557,34 +557,29 @@ public:
 		advice.** */
 	virtual void		RefreshComparison() = 0;
 
-	// ---- Task Start (2026-09-12) --------------------------------------------------------
+	// ---- ⛔The old Task Start's five slots (2026-09-12; HOLLOW SINCE 2026-09-21) -----------
 	//
-	// The origin: the active document's INX, taken when the flyout's Task Start is pressed and
-	// held in memory until "Clear Target and Source" or that document closing. Start / Refresh
-	// then compare the document against a rehydration of it (KCMOriginCompare.h). ONE SLOT.
-	// ★AT THE END OF THE INTERFACE, after RefreshComparison: the vtable is an ABI (see the head
-	//  of this file).
+	// The ORIGIN was the active document's INX, taken when Task Start was pressed and held in
+	// memory until "Clear Target and Source" or that document closed; Start and Refresh compared
+	// the document against a rehydration of those bytes.
+	// **Task Start saves a copy to a FILE now, and Start opens it** (KCMTaskStartSave.h), so
+	// nothing holds an origin and all five of these answer as though none had ever been taken.
+	// ⚠**THE SLOTS STAY, AND THEY STAY IN THIS ORDER.** KIDMCP calls this facade through its
+	//  vtable, so deleting a virtual moves every one below it onto a different method
+	//  ([[facade-vtable-slot-append-only]]). ★The live pair is CanTakeTaskStartCopy /
+	//  TakeTaskStartCopy, appended at the end of this interface.
 
-	/** Whether Task Start may be pressed: no origin held, nothing armed, an active document. */
-	virtual bool16		CanTakeTaskStart() = 0;
+	virtual bool16		CanTakeTaskStart() = 0;					// ⛔always kFalse
+	virtual bool16		TakeTaskStart(PMString& outWhyNot) = 0;	// ⛔always kFalse, reason empty
+	virtual bool16		HasOrigin() = 0;						// ⛔always kFalse
+	virtual void		GetOriginLabel(PMString& outLabel) = 0;	// ⛔always empty
+	virtual bool16		IsOriginArmed() = 0;					// ⛔always kFalse
 
-	/** Take it, and choose the pair. kFalse with a reason (for the status line) when it could not. */
-	virtual bool16		TakeTaskStart(PMString& outWhyNot) = 0;
-
-	virtual bool16		HasOrigin() = 0;
-
-	/** "Task Start 12:34:56" for the panel's Source: line; empty when nothing is held. */
-	virtual void		GetOriginLabel(PMString& outLabel) = 0;
-
-	/** kTrue while a comparison is armed whose Source is the origin (GetArmedSourceDB is nil then). */
-	virtual bool16		IsOriginArmed() = 0;
-
-	// ⚠**SaveOriginRawToDesktop WENT LATER THE SAME DAY** (2026-09-14), and for the very reason the
-	//   comment that stood here gave for keeping it. It said the way in was "the script method on
-	//   app" - and a script method is served by KCMScriptProvider, which lives in THIS plug-in and
-	//   calls KCMOriginSaveRaw directly. A facade is the UI half's way into the model half; the
-	//   flyout item that used to come through this door had already been removed, so nothing was
-	//   left on the other side of it. The writer itself is very much alive: app.kcmSaveOriginXml.
+	// ⛔**AND THE WRITER BEHIND THEM WENT ON 2026-09-21.** SaveOriginRawToDesktop had already left
+	//   this interface on 2026-09-14, on the grounds that its script method reached the model
+	//   directly and needed no facade door; app.kcmSaveOriginXml, app.kcmSaveOriginIdml and
+	//   app.kcmSaveDocXml have now gone the same way as the bytes they wrote. Their ScriptIDs are
+	//   graves (KCMScriptingDefs.h).
 
 	// ---- the page pairing rule ------------------------------------------------------------
 	//

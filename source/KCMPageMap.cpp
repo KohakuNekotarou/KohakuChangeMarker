@@ -52,7 +52,6 @@
 #include "KCMCore.h"			// KCMCollectPageUIDs / KCMCollectMasterPageUIDs / KCMArmedTargetDB / KCMArmedSourceDB
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 #include "KCMComparisonRun.h"	// KCMStopComparison
-#include "KCMOriginCompare.h"	// KCMOriginArmed / KCMOriginRefresh - Task Start: the re-comparison when there is no Source database
 #include "KCMPageMap.h"
 #include "KCMPagePairRule.h"	// KCMPairPagesByIdentity - THE pairing rule (pure; proved in work/kcm-pagepair-test)
 #include "KCMRehydrate.h"		// KCMReadOriginUidLabel - a task-start copy's page names the origin's page
@@ -254,17 +253,10 @@ void KCMPageMapToggleSelectedPages()
 	// The report string is deliberately dropped in favour of a short suffix: the status area is
 	// small and appending the report overflows it.
 	bool16 recompared = kFalse;
-	// Task Start: an armed origin pair has no Source database, and no previous rasterisation of
-	// the copy to reuse either - its Refresh rehydrates and compares everything again, and a
-	// cancel inside stops the comparison and says so itself.
-	if (KCMOriginArmed())
-	{
-		if (!KCMOriginRefresh())
-			return;
-		msg.Append(" (recompared)");
-		recompared = kTrue;
-	}
-	else if (KCMIsArmed() && KCMArmedTargetDB() != nil && KCMArmedSourceDB() != nil)
+	// ⛔The origin's branch went on 2026-09-21: an armed origin pair had NO Source database and no
+	//   earlier rasterisation of the copy to reuse, so its own Refresh rehydrated and compared
+	//   everything again. Both ends are ordinary documents now.
+	if (KCMIsArmed() && KCMArmedTargetDB() != nil && KCMArmedSourceDB() != nil)
 	{
 		// An incremental re-comparison (allowIncremental=kTrue). Registering and unregistering
 		// changes no page's content, only the pairing, so pages whose partner is unchanged reuse

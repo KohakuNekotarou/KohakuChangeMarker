@@ -50,12 +50,11 @@
 #include "KCMCore.h"			// KCMArmedTargetDB / KCMIsDocDBOpen - which document a replaced change is measured against
 #include "KCMSourceCache.h"	// the Source side, read once per origin instead of once per press
 #include "KCMTableShape.h"	// KCMReadTableShapes / KCMTableShapesDiffer - the Table row (2026-09-19 night)
-#include "KCMTableSnippet.h"	// KCMReadTableIdsInStory - Task Start's tables, by their own ids (2026-09-20)
-#include "KCMOrigin.h"		// KCMOriginBytes - Task Start's internal IDML, where those ids are read
+#include "KCMTableSnippet.h"	// KCMReadTableIdsInStory / KCMExportStoryInx - the Source's tables, by their own ids
+#include "KCMMemXferBytes.h"	// ...and the buffer that export writes into
 #include "KCMResourceBytes.h"
 #include "KCMStoryRestore.h"	// KCMStoryWritesAllowed - is there a restore for this comparison at all
 #include "KCMStorySnapshot.h"	// the story as the comparison read it - taken here, read elsewhere
-#include "KCMOriginCompare.h"	// KCMOriginToSourceUID - the older side's uid when the Source is a Task Start copy
 #include "KCMTextRead.h"		// the reader: paragraphs, their positions and their attributes, straight from the text model
 #include "KCMStoryList.h"
 #include "KCMStoryStamp.h"	// kKCMStoryKindAdded - which rows have no partner to compare against
@@ -1466,8 +1465,19 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 	std::vector<UID> sIds;
 	bool16 byId = kFalse;
 	{
-		const KCMResourceBytes* const origin = KCMOriginBytes();
-		if (origin != nil && KCMReadTableIdsInStory(origin->Bytes(), origin->Size(), targetStoryUID, sIds)
+		// ★★**THE SOURCE'S OWN INX, NOT AN ORIGIN'S** (2026-09-21). These ids used to be read from
+		//   the bytes Task Start held; a Task Start is a document now, so they are exported from it
+		//   the same way the Target's are.
+		// ★★★**AND THE TEST FOR "IS THE SOURCE A COPY OF THIS DOCUMENT" IS THE UID ITSELF.** A copy
+		//   saved and opened carries the numbers the original carries, so asking the Source's INX for
+		//   THIS story's uid answers only when the two are the same document - which is exactly the
+		//   condition the origin's version rested on ("a Source whose uids mean nothing here"), now
+		//   measured instead of inferred from which kind of comparison is running.
+		IDataBase* const sourceDB = (sourceModel != nil && restorable) ? ::GetDataBase(sourceModel) : nil;
+		KCMMemXferBytes sourceInx;
+		if (sourceDB != nil
+			&& KCMExportStoryInx(sourceDB, targetStoryUID, sourceInx)
+			&& KCMReadTableIdsInStory(sourceInx.GetData(), sourceInx.GetSize(), targetStoryUID, sIds)
 			&& sIds.size() == sShapes.size() && !sIds.empty())
 		{
 			// ⚠**THE n-TH TABLE OF THE TEXT HAS TO BE THE n-TH TABLE OF THE MODEL.** Both walk the
@@ -2141,8 +2151,10 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 		progress.Step(done, item);		// `done` stories are read; this is also where the bar first appears, once the delay has passed
 
 		std::vector<KCMStoryChange> changes;
+		// ⛔The uid translation went on 2026-09-21: a Task Start copy was rehydrated and its stories
+		//   carried new numbers. A copy saved to a file carries the originals.
 		if (CompareOneStory(UIDRef(targetDB, row->fStoryUID),
-							UIDRef(sourceDB, KCMOriginToSourceUID(sourceDB, row->fStoryUID)), changes))
+							UIDRef(sourceDB, row->fStoryUID), changes))
 		{
 			// **WRITTEN EVEN WHEN NOTHING DIFFERS.** It used to `continue` here, on the grounds that
 			//   writing an empty list changes nothing -- which was true of the CHANGES and false of the
@@ -2331,7 +2343,7 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	//   CompareOneStory never opens it - the cache answers first - so an invalid ref is the honest
 	//   thing to hand it, and the uid translator is not asked about a database that is not there.
 	const UIDRef sourceRef = (sourceDB != nil)
-		? UIDRef(sourceDB, KCMOriginToSourceUID(sourceDB, storyUID))
+		? UIDRef(sourceDB, storyUID)		// ⛔the uid translation went with the origin (2026-09-21)
 		: UIDRef(nil, kInvalidUID);
 
 	std::vector<KCMStoryChange> changes;

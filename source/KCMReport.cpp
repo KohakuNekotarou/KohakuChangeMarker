@@ -65,8 +65,6 @@
 #include "KCMComparisonRun.h"		// KCMToggleStartStop / KCMCanStartComparison - the report runs the comparison it needs
 #include "KCMDrawEventHandler.h"	// sEntries / sOverflowT / sPrintMarks - what "changed" means, and the rings
 #include "KCMPageMap.h"			// KCMBuildPairing / KCMMapTargetToSource - the partner of a changed page
-#include "KCMOriginCompare.h"		// KCMOriginArmed / KCMOriginScopedCopy - the task-start copy, rehydrated for the report
-#include "KCMOrigin.h"				// KCMOriginLabel - "Task Start HH:MM:SS"
 #include "KCMRehydrate.h"			// KCMMarkRehydratedClean - the report document is closed without a save prompt
 #include "KCMStoryList.h"			// the Story Edits rows and their changes
 #include "KCMStoryKinds.h"
@@ -992,26 +990,12 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 		return kFalse;
 	}
 
-	// The Source for the report: the armed Source, or the task-start copy rehydrated for the
-	// occasion (its page pairing works through the labels the copy's pages carry; while the copy
-	// stands, the uid translators know it, so the borrowed story diff reads it as the run did).
-	KCMOriginScopedCopy copy;
+	// The Source for the report is the armed Source, and there is always one.
+	// ⛔Until 2026-09-21 there was a second case: an armed ORIGIN had no Source database at all, so
+	//   a copy was rehydrated here for the occasion and named "Task Start HH:MM:SS". A Task Start is
+	//   a file Start opens now, so the Before side is a document with a name of its own.
 	IDataBase* sourceDB = KCMArmedSourceDB();
-	PMString sourceName;
-	if (KCMOriginArmed())
-	{
-		PMString whyNot;
-		if (!copy.Open(whyNot))
-		{
-			outMessage = Ascii("could not rebuild the task-start copy: ");
-			outMessage.Append(whyNot);
-			return kFalse;
-		}
-		sourceDB = copy.DB();
-		KCMOriginLabel(sourceName);
-	}
-	else
-		sourceName = NameOf(sourceDB);
+	PMString sourceName = NameOf(sourceDB);
 	if (sourceDB == nil)
 	{
 		outMessage = Ascii("the comparison has no Source to show on the Before side.");

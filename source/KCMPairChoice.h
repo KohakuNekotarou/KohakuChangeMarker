@@ -168,8 +168,9 @@ void	KCMClearChosenDocs();
 // The Source used to have a third kind - a moment rather than a document - and these are what
 // the resolver asked about it.
 //----------------------------------------------------------------------------------------
-bool16	KCMChosenSourceIsOrigin();
-void	KCMChooseOriginPair(IDataBase* originDocDB);
+// ⛔**THE ORIGIN'S TWO WENT ON 2026-09-21.** KCMChosenSourceIsOrigin answered whether the chosen
+//   Source was a thing that was not a database at all, and KCMChooseOriginPair set that up. A
+//   Task Start chooses a FILE now (KCMSetChosenSourceFile), which Start opens like any other end.
 
 #endif // __KCMPairChoice_h__
 
