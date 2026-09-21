@@ -276,6 +276,14 @@ bool16 KCMSetChosenSourceToActive()
 	return kTrue;
 }
 
+void KCMSetChosenTargetDB(IDataBase* db)
+{
+	if (db == nil)
+		return;
+	sChosenTargetDB = db;
+	sTargetIsFile = kFalse;		// ★one end, one kind of choice
+}
+
 void KCMChooseDBPair(IDataBase* targetDB, IDataBase* sourceDB)
 {
 	// ⛔The origin gives way, exactly as it does to "Set as Source". Left standing, the resolver

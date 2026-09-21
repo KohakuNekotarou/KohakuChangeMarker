@@ -102,6 +102,13 @@ bool16 KCMRealisePairEnd(const KCMPairEnd& end, IDataBase*& outDB, PMString& why
 bool16	KCMSetChosenTargetToActive();
 bool16	KCMSetChosenSourceToActive();
 
+/** Choose this database as the Target outright, for a caller that already knows which document it
+    means and must NOT re-ask what is active.
+    ★**A Task Start is why**: it copies one document, and that document is the Target - but the
+      stop it runs on the way can bring a different window to the front, so asking "what is
+      active" afterwards could answer with another document than the one that was copied. */
+void	KCMSetChosenTargetDB(IDataBase* db);
+
 /** Choose both ends outright, from databases the caller already holds - "Set as Target" plus
     "Set as Source" in one, for a route that knows both (the lent Source: KIDMCP's Compare).
     ★**It does not ask what is active**, which is the whole difference from the two above.

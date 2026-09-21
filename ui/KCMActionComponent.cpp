@@ -832,40 +832,39 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
-		// Flyout "Task Start" (2026-09-12): the active document's INX becomes the origin, and the pair
-		// is chosen (Target = that document, Source = the origin). No comparison runs - Start does
-		// that. The panel refresh and the status line are done here, as with the two "Set as" items
-		// ([[one-question-one-place]]: the facade changes the state, the UI decides what it shows).
+		// Flyout "Task Start" (2026-09-21, remade): a COPY OF THE DOCUMENT IS SAVED to a file the
+		// reader picks, and that file is chosen as the Source. No comparison runs - Start does
+		// that, and Start is also what opens the copy. The panel refresh and the status line are
+		// done here, as with the two "Set as" items ([[one-question-one-place]]: the facade
+		// changes the state, the UI decides what it shows).
 		case kKCMPopupTaskStartActionID:
 		{
-			// ★**It can be pressed while an origin is already held, or while a comparison runs**
-			//   (the user's instruction, 2026-09-14): the model stops and clears first and then
-			//   takes a fresh origin (KCMTakeTaskStart).
-			// ⚠**What is observed here is only what to SAY.** Both facts have to be read BEFORE the
-			//   call, because afterwards the state looks identical whether anything was dropped or
-			//   not - and a reader who pressed this by accident needs the status line to tell them
-			//   that a comparison ended.
+			// ★**It can be pressed while a comparison runs** (the user's instruction, 2026-09-14,
+			//   kept): the model stops first (KCMTaskStartSave.h).
+			// ⚠**What is observed here is only what to SAY.** It has to be read BEFORE the call,
+			//   because afterwards the state looks identical whether a comparison ended or not -
+			//   and a reader who pressed this by accident needs the status line to say that one did.
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-			const bool16 wasArmed  = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
-			const bool16 hadOrigin = compare->HasOrigin();
+			const bool16 wasArmed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
 			PMString whyNot;
-			if (compare->TakeTaskStart(whyNot))
+			if (compare->TakeTaskStartCopy(whyNot))
 			{
 				KCMRefreshPanel();
 				if (wasArmed)
-					KCMSetStatus("Stopped and cleared, then Task Start taken. Edit, then Start to compare against it.");
-				else if (hadOrigin)
-					KCMSetStatus("The earlier Task Start was dropped and a new one taken. Edit, then Start to compare against it.");
+					KCMSetStatus("Stopped, and the Task Start copy saved and chosen as the Source. Edit, then Start to compare against it.");
 				else
-					KCMSetStatus("Task Start taken. Edit, then Start to compare against it.");
+					KCMSetStatus("Task Start copy saved and chosen as the Source. Edit, then Start to compare against it.");
 			}
-			else
+			else if (whyNot.CharCount() > 0)
 			{
 				PMString msg("Task Start not taken: ");
 				msg.SetTranslatable(kFalse);
 				msg.Append(whyNot);
 				KCMSetStatus(msg);
 			}
+			// ★★**AN EMPTY REASON MEANS THE READER CANCELLED THE SAVE DIALOG**, and a cancel says
+			//   NOTHING AT ALL - not even "cancelled" (the user's rule, 2026-09-21: "cancelled,
+			//   and that is the end of it"). Nothing was changed, so there is nothing to report.
 			break;
 		}
 
@@ -1237,9 +1236,11 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		//     that one is to bring the other document to the front.
 		else if (action == kKCMPopupTaskStartActionID)
 		{
-			// The one place (KCMCanTakeTaskStart): no origin held, nothing armed, an active document.
+			// The one place (KCMCanTakeTaskStartCopy): a document to copy - the chosen Target, or
+			// the active document. Nothing else: a comparison running is stopped by the press
+			// itself, not refused here.
 			listToUpdate->SetNthActionState(i,
-				Utils<IKCMCompareFacade>()->CanTakeTaskStart() ? kEnabledAction : kDisabled_Unselected);
+				Utils<IKCMCompareFacade>()->CanTakeTaskStartCopy() ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupSetTargetActionID || action == kKCMPopupSetSourceActionID)
 		{

@@ -37,6 +37,7 @@
 #include "IKCMStoryMarkFacade.h"
 #include "KCMComparisonRun.h"		// ToggleStartStop / Stop / StartFor / CanStart / print marks
 #include "KCMPairChoice.h"		// the chosen pair: set it, read it, clear it
+#include "KCMTaskStartSave.h"	// Task Start: save a copy, choose the file as the Source
 #include "KCMCore.h"				// MarkChanges / ClearMarks / DoSetPrintMarks / getters
 #include "KCMPeek.h"				// armed docs alive / peek / RefreshSelectedPages / base opacity
 #include "KCMColorSampler.h"		// the Alt+left CMYK sample and its drag-time pairing cache
@@ -249,6 +250,10 @@ public:
 	// A file choice's path, for the panel's Target:/Source: lines (2026-09-21). Transfers.
 	virtual void		GetChosenSourceFileLabel(PMString& outLabel)	{ KCMChosenSourceFileLabel(outLabel); }
 	virtual void		GetChosenTargetFileLabel(PMString& outLabel)	{ KCMChosenTargetFileLabel(outLabel); }
+
+	// Task Start, the file way (2026-09-21). Transfers; the rules are model-side.
+	virtual bool16		CanTakeTaskStartCopy()					{ return KCMCanTakeTaskStartCopy(); }
+	virtual bool16		TakeTaskStartCopy(PMString& outWhyNot)	{ return KCMTakeTaskStartCopy(outWhyNot); }
 };
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)

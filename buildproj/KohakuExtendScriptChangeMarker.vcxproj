@@ -247,6 +247,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDrawEventHandler.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPairChoice.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTaskStartSave.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpike.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableCopySpike.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableShape.cpp" />
@@ -347,6 +348,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageFlagState.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPairChoice.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTaskStartSave.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPagePairRule.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpike.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReport.h" />
