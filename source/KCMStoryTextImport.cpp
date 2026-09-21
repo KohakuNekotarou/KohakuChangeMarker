@@ -1452,6 +1452,16 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 	//   ★What takes its place is what the user said when they removed it - "the Source document is
 	//   in front of you, so if you want it back, take it from there" - and Start has it open.
 	outMessage.Append(". Ctrl+Z takes the whole import back; the older words are in the Source document");
+
+	// ★**AND THE TARGET IS WHAT THE READER IS LEFT LOOKING AT** (2026-09-22, the user's rule from
+	//   2026-09-21 carried to the second road). Start opens the Source copy in a window of its own and
+	//   InDesign leaves what it has just opened in front, so without this an import ends on the OLDER
+	//   version of the reader's own work. Measured on the application through the script door:
+	//   activeDocument WAS the Task Start copy, and the next thing typed would have gone into it.
+	//   ⚠**SAID HERE, WHERE BOTH ROADS MEET**, rather than by the caller: the flyout item did it for
+	//     itself until today (KCMActionComponent) and the script door could not, because doing it
+	//     means touching the UI - the reason the message exists is beside it in KCMBoundaryID.h.
+	KCMNotify(kKCMTargetToFrontMessage);
 	return anyIn || !KCMImportRefusals().empty();
 }
 

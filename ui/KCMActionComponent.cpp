@@ -1029,9 +1029,13 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 					Utils<IKCMStoryEditsFacade>()->ImportStoryText(chosen, importMsg);
 					if (importMsg.CharCount() > 0)
 						KCMSetStatus(importMsg);
-					// ★The import starts a comparison of its own, so the same rule applies - and here the Target
-					//   is the document the edited words went into, which is exactly what there is to look at.
-					KCMBringArmedTargetToFront();
+					// (⛔**THE CALL TO KCMBringArmedTargetToFront WENT ON 2026-09-22.** The import starts a
+					//   comparison of its own and its Target - the document the edited words went into - is
+					//   what there is to look at; that has not changed. What changed is WHO says so. The
+					//   model's own import now sends kKCMTargetToFrontMessage at the one point BOTH of its
+					//   roads meet, so app.kcmImportStoryText ends the same way this item does, instead of
+					//   on the copy it had just saved. Saying it here as well would be a second answer to
+					//   one question ([[one-question-one-place]]).)
 				}
 			}
 			break;

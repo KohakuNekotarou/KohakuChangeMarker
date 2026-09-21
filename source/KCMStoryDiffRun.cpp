@@ -200,6 +200,15 @@ void Slice(const std::string& text, const std::vector<int32>& byteOffsets,
 	if (last <= first)
 		return;
 
+	// (⛔**THE CONTEXT WAS CUT AT EVERY PARAGRAPH END FOR ONE BUILD, ON 2026-09-22, AND THAT WENT THE
+	//   SAME DAY.** The reader asked for it after seeing three rows draw the same "え¶お¶か", then
+	//   looked at the result and asked for the breaks back - the words on both sides of a break read
+	//   better than the change alone. What must NOT be crossed is a PLACE - the next cell, the next
+	//   footnote, the words of somebody else's row - and that
+	//   cut is made before this function is ever reached, where the run itself is split
+	//   (SplitRunAtPlaces, KCMParaText.h: "a cell is a place"). So a break inside one place is
+	//   context like any other character, and this function has nothing to say about it.)
+
 	// Long enough to fill the cell and no longer. The cell ellipsizes for itself.
 	//
 	// Counted on the WHOLE excerpt, exactly as it was when this returned one string: the cut

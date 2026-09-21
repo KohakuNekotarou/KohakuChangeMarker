@@ -150,6 +150,16 @@ DECLARE_PMID(kMessageIDSpace, kKCMComparisonDocsClosedMessage, kKCMPrefix + 6)	/
 																					// The payload carries up to three databases of documents that are STILL ALIVE (target, older
 																					// version, source-side frames). Never pass a closed one: the listener dereferences it.
 
+// ★**WHY A MESSAGE AND NOT A CALL** (2026-09-22, the user: a script import must leave the Target in
+//   front too): making a document active goes through IDocumentPresentation, which is the UI's world
+//   and which no model-side code may reach - the guide names that shape "crashes or corrupt
+//   documents", and this family of plug-ins has paid for it six times. The import's two roads (the
+//   flyout item and app.kcmImportStoryText) meet in the MODEL, so the model says this and the UI does
+//   the work. Nobody listening means nothing happens, which is exactly right when only the model half
+//   is loaded. No payload, and no command: MakeActive changes nothing in the document and raises no
+//   undo step.
+DECLARE_PMID(kMessageIDSpace, kKCMTargetToFrontMessage,     kKCMPrefix + 7)	// an import armed a comparison: bring its Target to the front
+
 //----------------------------------------------------------------------------------------
 // The comparison mode
 //----------------------------------------------------------------------------------------
