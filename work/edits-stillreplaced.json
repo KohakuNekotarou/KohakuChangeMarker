@@ -1,9 +1,0 @@
-[
-  {
-    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMStoryDiffRun.cpp",
-    "start": "bool16 KCMStoryDiffRun::StillReplaced(const KCMStoryRow& row, const KCMStoryChange& change)",
-    "end": "\t\tKCMStoryList::AddReplacedChange(nth, keep[i]);",
-    "after": 2,
-    "replacement": "// (\u26d4**StillReplaced AND DropUndoneReplaced WENT ON 2026-09-21** with the restore. The first asked\n//  whether a change the reader had taken in was STANDING as taken in - by comparing the story's\n//  counter with the one recorded at the write (\">=\", not \"==\", measured on the application: a\n//  second write in the same story moved the counter past the first one's mark), or, for a table,\n//  by looking for the table the restore had left, by its id. The second dropped the records an\n//  undo had taken back. \u2605Nothing is ever taken in now, so nothing is ever \"standing as taken in\".\n//  \u26a0**CountForKind below is NOT the restore's**: it is what a comparison records and reads, and the\n//   reasoning about which counter belongs to which kind of change is still live.)"
-  }
-]

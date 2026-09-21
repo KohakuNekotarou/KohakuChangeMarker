@@ -1,8 +1,0 @@
-[
-  {
-    "file": "C:\\Users\\user\\Desktop\\plugin_sdk_21.0.0.192\\source\\sdksamples\\KCM\\source\\KCMScriptProvider.cpp",
-    "start": "\t\t\tif (id == e_KCMTakeInChange || id == e_KCMUndoRestoreChange)",
-    "end": "\t\t\telse if (id == e_KCMStopComparison)",
-    "replacement": "\t\t\t// (\u26d4**app.kcmTakeInChange AND app.kcmUndoRestore WENT ON 2026-09-21**, with the restore they\n\t\t\t//  drove. The branch that stood here found a change by the WORDS it holds - the index space\n\t\t\t//  of a row's changes moves as changes are taken in - and then called KCMRestoreChange or\n\t\t\t//  KCMUndoRestoreChange. \u2605Both ScriptIDs are retired in KCMScriptingDefs.h, neither having\n\t\t\t//  been registered with Adobe.)\n\t\t\tif (id == e_KCMStopComparison)"
-  }
-]
