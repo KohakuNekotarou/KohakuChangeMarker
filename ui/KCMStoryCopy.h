@@ -90,6 +90,19 @@ bool16 KCMChangeRowCanUndoRestore();
 /** Runs it through the facade and puts the model's message on the status line. */
 bool16 KCMChangeRowUndoRestore();
 
+// ---- the one-story item (2026-09-15, gone 2026-09-20, back 2026-09-21) ----------------------
+// ★**THE SAME ACT AT TWO SIZES**: one change (above) and one story. The model does the work in one
+//   undo step either way (KCMStoryRestore.h); these decide when the item is offered and name which
+//   story. ⛔**"Restore All Stories" did not come back** - the user asked for the story-sized one.
+
+/** Whether "Restore All in This Story" may be offered on the STORY row the menu was popped over:
+    a comparison running in a mode with story rows, a Source to read from, and a row with something
+    under it. */
+bool16 KCMStoryRowCanRestoreAll();
+
+/** Take in every change of that story - one press, one undo step. Reports on the status line. */
+bool16 KCMStoryRowRestoreAll();
+
 #endif // __KCMStoryCopy_h__
 
 // End, KCMStoryCopy.h.

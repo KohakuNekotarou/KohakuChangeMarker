@@ -43,6 +43,18 @@ class WideString;
     says how many); kFalse with the reason in outMessage. */
 bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage);
 
+/** Every change of row `nth`, put back in ONE press and ONE undo step ("Restore All in This Story").
+
+    ★**Back on 2026-09-21** (the user: "ひとつづつ、および、Story単位"). It went on 2026-09-20 with
+      "Restore All Stories", and only this one was asked for again.
+    ★★**THE WALK GOES BACKWARDS AND RE-DIFFS ONLY AT ITS ENDS.** Writing a change makes the story
+      longer or shorter, so every position after it moves; walking from the end means each write
+      only disturbs text the walk has already passed. One re-diff at the start if the reader had
+      typed since the comparison, one at the end to rebuild the row. The alternative - re-diffing
+      between writes - measured out as one full story comparison per change.
+    @return kTrue when at least one change went in; outMessage counts what did and what did not. */
+bool16 KCMRestoreAllInStory(int32 nth, PMString& outMessage);
+
 /** Whether anything may be written back into the Target at all: kTrue while there is a SOURCE THE
     OLDER WORDS CAN BE READ OUT OF - two open documents, a Task Start copy Start has opened, or the
     lent database.

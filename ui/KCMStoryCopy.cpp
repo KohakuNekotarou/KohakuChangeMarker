@@ -217,4 +217,55 @@ bool16 KCMChangeRowUndoRestore()
 	return ok;
 }
 
+/*	StoryBulkLive
+	The one place that asks "is this the mode this item belongs to, and is there anything to act
+	on" - so the item's grey state and what pressing it does cannot answer differently.
+
+	⚠It took a `wantImport` flag and a "-1 means the whole list" convention until 2026-09-20, when
+	 there were four bulk items. One is left (2026-09-21) and the fourth mode is gone, so both went.
+*/
+static bool16 StoryBulkLive(int32 nth)
+{
+	if (nth < 0)
+		return kFalse;
+
+	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+	if (compare == nil || !compare->IsArmed())
+		return kFalse;
+	if (!KCMModeUsesStoryRows(compare->GetCompareMode()))
+		return kFalse;
+
+	// Asked of the model, which refuses the write on the same answer.
+	if (!Utils<IKCMStoryEditsFacade>()->CanWriteToTarget())
+		return kFalse;
+
+	// ⚠**THE MERGED COUNT**, so a story whose changes have ALL been taken in still offers the item;
+	//   pressing it then answers "nothing to take in" rather than writing. It is the cheap question
+	//   here and the exact one in the model (BulkRun skips what is already taken in). Walking every
+	//   change to grey the item would cost that walk every time a menu opens.
+	return (Utils<IKCMStoryEditsFacade>()->GetChangeCount(nth) > 0) ? kTrue : kFalse;
+}
+
+bool16 KCMStoryRowCanRestoreAll()
+{
+	return StoryBulkLive(KCMStoryMenuRow());
+}
+
+bool16 KCMStoryRowRestoreAll()
+{
+	// ⚠**THE STORY ROW'S OWN STASH**, not the change row's: this item hangs on the parent menu, and
+	//   the two menus keep their rows apart on purpose (KCMStoryRefresh.h).
+	const int32 nth = KCMStoryMenuRow();
+	if (nth < 0)
+	{
+		KCMSetStatus("no story row to take in.");
+		return kFalse;
+	}
+	PMString msg;
+	const bool16 ok = Utils<IKCMStoryEditsFacade>()->RestoreAllInStory(nth, msg);
+	if (msg.CharCount() > 0)
+		KCMSetStatus(msg);
+	return ok;
+}
+
 // End, KCMStoryCopy.cpp.

@@ -247,14 +247,16 @@ PMString WriteBlockedMessage(int32 writeBlock)
 				  "text cannot bring it back, and removing it would delete the object.");
 }
 
-/*	NotAgainstTwoDocumentsMessage
+/*	NoSourceToReadFromMessage
 	The refusal every write gives when KCMStoryWritesAllowed says no - one wording, whichever item
 	was pressed (the menu hides them all, so this is what a script or a stale menu reaches).
 */
-PMString NotAgainstTwoDocumentsMessage()
+PMString NoSourceToReadFromMessage()
 {
-	return Refused("the Source is a document of its own, so nothing is written back from here - "
-				   "take what you need from the Source. (Restore works against a Task Start.)");
+	// ⚠**It was NotAgainstTwoDocumentsMessage, with the wording to match, until 2026-09-21** - when
+	//  comparing two documents began offering the restore. The refusal stopped being about WHAT KIND
+	//  of Source there is and became "there is none".
+	return Refused("there is no Source to read the older words from - start a comparison first.");
 }
 
 }	// namespace
@@ -495,14 +497,16 @@ namespace
 
 /** One undo step around whatever the restore writes, named for the Edit menu.
 
-	⚠It took an `own` flag until 2026-09-20, for the bulk items that owned ONE step around a whole
-	 run (a sequence per change inside it would have put a dozen entries on the Edit menu for one
-	 press). They are gone: one press, one step, always. */
+	@param own kFalse builds nothing: a bulk restore owns ONE step around the whole run, and a
+		sequence per change inside it would put a dozen entries on the Edit menu for one press.
+		★The name is then the bulk caller's, which is why this class does not know about it.
+	⚠**The flag went on 2026-09-20 with the bulk items and came back on 2026-09-21 with the
+	 one-story one** (the user asked for that one back; "Restore All Stories" did not come with it). */
 class RestoreSequence
 {
 public:
-	RestoreSequence()
-		: fSequence(CmdUtils::BeginCommandSequence("KCMRestoreChange"))
+	explicit RestoreSequence(bool16 own = kTrue)
+		: fSequence(own ? CmdUtils::BeginCommandSequence("KCMRestoreChange") : nil)
 	{
 		// ★THE NAME THE READER PRESSED, because this one goes on the Edit menu beside Undo. In the
 		//   fourth mode the item was called "Change to Imported Text" and this said so - an undo step
@@ -628,14 +632,20 @@ bool16 RefindAfterEdit(int32 nth, IDataBase* targetDB, IDataBase* sourceDB,
 /*	RestoreOne
 	One change written back into the newer document.
 
-	★**ONE PRESS IS THE WHOLE ACT** (2026-09-20, the user's decision to drop the bulk items): this
-	  call owns the undo step, the counter test, the re-diff afterwards and the panel's redraw.
-	  ⚠It took a `standalone` flag until then, because "Restore All in This Story" and "Restore All
-	   Stories" walked a row backwards with ONE undo step around the lot and re-diffed once at the
-	   end. Both items are gone, so the flag, the `outDone`/`outSlot` hand-back it existed for, and
-	   the lent Source database went with them.
+	@param standalone kTrue when this call IS the act - the reader pressed the item on one change -
+		so it owns the undo step, the counter test, the re-diff afterwards and the panel's redraw.
+		kFalse when a bulk restore is walking the row: that caller has already tested the counter,
+		owns ONE undo step around the whole run, and re-diffs and redraws once at the end.
+	⚠★★★**A BULK CALLER MUST WALK BACKWARDS.** With no re-diff between writes, the positions this
+	  function was handed stay true only for the changes BEFORE the one being written - a
+	  replacement makes the text longer or shorter and slides everything after it. Walking from the
+	  end is what makes "no re-diff between writes" safe, and it is the same rule the import's own
+	  pour follows (KCMStoryTextImport's ApplyParagraph, "back to front").
+	⚠**The flag went on 2026-09-20 with both bulk items and came back on 2026-09-21 with the
+	  one-story one alone** - "Restore All Stories" stays gone, so there is one bulk caller now.
 */
-bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
+bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessage,
+				  KCMStoryChange* outDone, int32* outSlot, IDataBase* sourceDBIn)
 {
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
@@ -643,7 +653,7 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 	// ★★**NOT AGAINST TWO DOCUMENTS** (2026-09-16, the user's rule - KCMStoryRestore.h says why).
 	if (!KCMStoryWritesAllowed())
 	{
-		outMessage = NotAgainstTwoDocumentsMessage();
+		outMessage = NoSourceToReadFromMessage();
 		return kFalse;
 	}
 
@@ -678,7 +688,12 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 	bool16 takingInAnUndoneOne = kFalse;
 	if (alreadyReplaced)
 	{
-		if (KCMStoryDiffRun::StillReplaced(*row, *found))
+		// ⚠**THE RE-DIFF BELONGS TO THE SINGLE PRESS** (`standalone`), the same way the counter
+		//   case does: a bulk run refreshes ONCE at its start and walks backwards so that its own
+		//   writes cannot invalidate what it has not reached - and it therefore never hands an
+		//   already-replaced index down here. Refusing rather than dropping records for a caller
+		//   that is not going to re-diff is what keeps that true whoever calls next.
+		if (!standalone || KCMStoryDiffRun::StillReplaced(*row, *found))
 		{
 			// Still standing as replaced: the row is kept in the list precisely so the reader can
 			// see what they took in, and taking it in twice would write the same words over words
@@ -706,7 +721,11 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 
 	// The Source: the armed one, or the task-start copy rehydrated for this call (and closed on
 	// the way out - the scope is the whole function, so RunOne below still sees it).
-	// ★★★**MOST PRESSES NEED NO SOURCE DOCUMENT AT ALL** (2026-09-16, the user: "it is too
+	// ⚠★★**A BULK RUN HANDS ITS OWN COPY DOWN, AND THAT IS NOT AN OPTIMISATION.** There is one
+	//   rehydrated task-start document at a time, so a second Open fails outright - measured on the
+	//   first live run of the bulk item, which answered "0 changes taken in, 2 skipped (a
+	//   task-start copy is already open)" and left the document untouched.
+	// ★★★**AND MOST PRESSES NOW NEED NO SOURCE DOCUMENT AT ALL** (2026-09-16, the user: "it is too
 	//   heavy to work with"). Against a Task Start the Source was a byte string rebuilt into a
 	//   whole document - kNewDocumentCmdBoss, ImportINX, the page names - for every single change
 	//   taken in. What that document was asked for is kept instead, read once when the comparison
@@ -717,17 +736,21 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 	const bool16 sourceIsKept = KCMSourceCacheHas(storyUID);
 
 	KCMOriginScopedCopy originCopy;
-	IDataBase* sourceDB = KCMArmedSourceDB();
-	if (sourceDB == nil && KCMOriginArmed() && !sourceIsKept)
+	IDataBase* sourceDB = sourceDBIn;
+	if (sourceDB == nil)
 	{
-		PMString whyNot;
-		if (!originCopy.Open(whyNot))
+		sourceDB = KCMArmedSourceDB();
+		if (sourceDB == nil && KCMOriginArmed() && !sourceIsKept)
 		{
-			outMessage = Refused("could not rebuild the task-start copy: ");
-			outMessage.Append(whyNot);
-			return kFalse;
+			PMString whyNot;
+			if (!originCopy.Open(whyNot))
+			{
+				outMessage = Refused("could not rebuild the task-start copy: ");
+				outMessage.Append(whyNot);
+				return kFalse;
+			}
+			sourceDB = originCopy.DB();
 		}
-		sourceDB = originCopy.DB();
 	}
 	if (sourceDB != nil && !KCMIsDocDBOpen(sourceDB))
 		sourceDB = nil;					// closed under us; the kept text may still answer
@@ -750,6 +773,9 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 	// document - by accident as often as not - and every remaining change in that story could only
 	// be taken in after running "Refresh Story Comparison" by hand. The positions are what an edit
 	// invalidates, so the positions are what is fetched again; nothing is taken on trust.
+	// ⚠**ONLY WHEN THIS CALL IS THE ACT.** A bulk run tested the counter once before it started, and
+	//   walks backwards so that its own writes cannot invalidate what it has not reached yet.
+	//   Re-diffing here would throw that away and cost one comparison per change.
 	// ⚠**THE UNDONE RECORDS GO FIRST, AND ONLY THEN THE RE-DIFF.** RefindAfterEdit looks through
 	//   the MERGED list and skips anything marked replaced, so the stale record of this very
 	//   change would hide the live one the re-diff is about to produce - and the change would come
@@ -760,7 +786,7 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 	if (takingInAnUndoneOne)
 		KCMStoryDiffRun::DropUndoneReplaced(nth);
 
-	if ((takingInAnUndoneOne || target->GetTextChangeCount() != countThen)
+	if (standalone && (takingInAnUndoneOne || target->GetTextChangeCount() != countThen)
 		&& !RefindAfterEdit(nth, targetDB, sourceDB, change, outMessage))
 		return kFalse;
 
@@ -813,7 +839,7 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 	//   the moment the body had grown shorter, which says nothing true about a table. The table road
 	//   clamps that caret and makes its own checks, by the tables' ids.
 	if (change.fWhat == KCMStoryChange::kTable)
-		return KCMRestoreTable(nth, change, outMessage);
+		return KCMRestoreTable(nth, which, change, standalone, outMessage, outDone, outSlot);
 
 	const TextIndex targetLength = target->TotalLength();
 	if (change.fTargetStart < 0 || change.fTargetEnd < change.fTargetStart || change.fTargetEnd > targetLength)
@@ -868,7 +894,7 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 								  : change.fTargetStart;
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 		{
-			RestoreSequence undo;
+			RestoreSequence undo(standalone);
 
 			// ★★**A WHOLE PARAGRAPH TAKEN OUT MOVES THE STYLES AFTER IT ALONG THEIR CHAIN** (2026-09-19, the
 			//   user: "1 2 3 4 and 2 goes - 3 and 4 have to get the next styles, or the styles are wrong
@@ -940,10 +966,9 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 			// ★★**A WHOLE PARAGRAPH TAKEN IN AFTER ANOTHER GETS THAT PARAGRAPH'S NEXT STYLE** (2026-09-17
 			//   afternoon, the user's rule - both the Import and the Task Start, and taken from the document
 			//   AS IT STANDS: "\rNEW" went in right before the return of the paragraph it follows, so it
-			//   starts in that paragraph's style, the way Return starts it).
+			//   starts in that paragraph's style, the way Return starts it). A bulk run chains its runs of
+			//   new paragraphs again once they are all in (BulkRun).
 			//   ⚠In the same undo step as the words.
-			//   ⚠A bulk run used to chain a whole RUN of new paragraphs again once they were all in; the
-			//    bulk items went on 2026-09-20, and one press styles the one paragraph it puts in.
 			if (change.fWholeParagraph && targetCount == 0 && words->Length() > 1
 				&& static_cast<int32>(words->GetChar(0).GetValue()) == kTextChar_CR)
 				KCMApplyNextStyleAfter(target, writeAt, writeAt + 1, static_cast<int32>(words->Length()) - 1);
@@ -996,7 +1021,7 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 		ErrorCode err = kFailure;
 		if (change.fAttrKind == kKCMStoryAttrRuby)
 		{
-			RestoreSequence undo;
+			RestoreSequence undo(standalone);
 			if (change.fOtherRuby.IsEmpty())
 			{
 				// ruby ADDED since the older version: take it off
@@ -1037,7 +1062,7 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 				outMessage = Refused("this kenten kind cannot be written back (a custom mark carries a character the row does not hold).");
 				return kFalse;
 			}
-			RestoreSequence undo;
+			RestoreSequence undo(standalone);
 			err = KCMApplyKentenKind(target, change.fTargetStart, targetCount, kind);
 			outMessage = (kind == IKentenStyle::Kenten_None) ? Ascii("Took the kenten off ") : Ascii("Restored the kenten \"");
 			if (kind != IKentenStyle::Kenten_None) { outMessage.Append(change.fOtherRuby); outMessage.Append("\" over "); }
@@ -1083,7 +1108,7 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 				}
 			}
 
-			RestoreSequence undo;
+			RestoreSequence undo(standalone);
 			err = kSuccess;
 			if (!sourceHasIt || len != targetCount)
 				err = apply(target, change.fTargetStart, targetCount, kFalse);
@@ -1115,6 +1140,21 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 		done.fReplacedStart = change.fTargetStart;
 		done.fReplacedEnd   = change.fTargetEnd;
 		slot = KCMStoryList::ReplacedSlotFor(nth, done.fReplacedStart);	// no length changed: nothing to shift
+	}
+
+	// ***** THE BOOKKEEPING, WHICH A BULK CALLER OWNS INSTEAD. *****
+	// Handing `done` back is what lets it: the replaced row cannot be added here, because the
+	// counter that decides whether it is DRAWN as replaced is the one the re-diff records, and the
+	// bulk run re-diffs once, at the end, for all of them at once. ★The slot goes with it: it was
+	// asked before the write and stays true (records never cross one another), so the bulk run can
+	// put the record where it belongs once it is done.
+	if (!standalone)
+	{
+		if (outDone != nil)
+			*outDone = done;
+		if (outSlot != nil)
+			*outSlot = slot;
+		return kTrue;
 	}
 
 	// The row's story, diffed again: the restored change leaves the list, and every other
@@ -1169,11 +1209,284 @@ bool16 RestoreOne(int32 nth, int32 which, PMString& outMessage)
 	return kTrue;
 }
 
+/*	BulkRun
+	Everything both bulk items need: the two documents, the one counter test, the backwards walk,
+	the one undo step, and the replaced rows put back afterwards.
+
+	★★★**BACKWARDS, AND THAT IS THE WHOLE TRICK.** Writing a change makes the story longer or
+	shorter, so every position AFTER it moves. Walking from the end means each write only disturbs
+	text the walk has already passed, and no re-diff is needed between writes - one at the start if
+	the reader had typed since the comparison, one at the end to rebuild the row. The alternative
+	measured out as one full story comparison per change.
+
+	@param nth which row.
+	@param seq the undo step, owned by the caller (one step per PRESS, not per story).
+	@param outWritten / outSkipped counted, never reset - the all-stories item adds across rows.
+	@param outFirstWhyNot the first refusal's reason, for the status line.
+	@return kFalse only when the row could not be started on at all.
+*/
+bool16 BulkRun(int32 nth, IDataBase* sourceDBIn, int32& outWritten, int32& outSkipped,
+			   PMString& outFirstWhyNot)
+{
+	const KCMStoryRow* row = KCMStoryList::GetRow(nth);
+	if (row == nil)
+		return kFalse;
+	const UID storyUID = row->fStoryUID;
+	const uint32 countThen = row->fTargetTextCount;
+	row = nil;
+
+	IDataBase* const targetDB = KCMArmedTargetDB();
+	if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
+		return kFalse;
+
+	// The Source: the armed one, the one handed down, or the task-start copy rehydrated for this
+	// run. ⚠The scope is the whole function, so every RestoreOne below still sees it.
+	// ⚠★★**ONE COPY PER PRESS, NOT PER ROW.** The all-stories item opens it once and hands it to
+	//   every row: rehydrating the task-start document once per story would cost that work N times,
+	//   and two of them open at once is refused outright (measured - see RestoreOne).
+	KCMOriginScopedCopy originCopy;
+	IDataBase* sourceDB = sourceDBIn;
+	if (sourceDB == nil)
+	{
+		sourceDB = KCMArmedSourceDB();
+		if (sourceDB == nil && KCMOriginArmed())
+		{
+			PMString whyNot;
+			if (!originCopy.Open(whyNot))
+				return kFalse;
+			sourceDB = originCopy.DB();
+		}
+	}
+	if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
+		return kFalse;
+
+	InterfacePtr<ITextModel> target(UIDRef(targetDB, storyUID), UseDefaultIID());
+	if (target == nil)
+		return kFalse;
+
+	// ***** THE COUNTER, TESTED ONCE FOR THE WHOLE RUN. *****
+	// The reader may have typed since the comparison - the same case the single item now handles by
+	// looking the change up again. Here one re-diff at the start makes every position in the row
+	// true at once, and the backwards walk keeps them true.
+	// ★★**AND THE RECORDS AN UNDO HAS TAKEN BACK GO WITH IT** (2026-09-16): a change taken in and
+	//   then undone is a candidate again, and it only returns to the LIVE list when the story is
+	//   compared afresh. Dropping first, then re-diffing, is the same order the single press uses
+	//   and for the same reason - a stale record hides the live change behind it.
+	// ⚠**DropUndoneReplaced IS ASKED FIRST AND THE `||` IS DELIBERATE**: the text counter does not
+	//   move for a ruby, so an undone ruby would not be caught by the counter test beside it.
+	const bool16 someWereUndone = KCMStoryDiffRun::DropUndoneReplaced(nth);
+	if ((someWereUndone || target->GetTextChangeCount() != countThen)
+		&& KCMStoryDiffRun::RunOne(targetDB, sourceDB, nth) < 0)
+		return kFalse;
+
+	std::vector<KCMStoryChange> dones;
+	std::vector<int32> slots;		// where each of `dones` belongs among the records already in the list
+	const int32 count = KCMStoryList::GetMergedChangeCount(nth);
+	for (int32 i = count - 1; i >= 0; --i)
+	{
+		bool16 isReplaced = kFalse;
+		const KCMStoryChange* const c = KCMStoryList::GetMergedChange(nth, i, isReplaced);
+		if (c == nil || isReplaced)
+			continue;				// already taken in; not a candidate to take in twice
+
+		PMString whyNot;
+		KCMStoryChange done;
+		int32 slot = 0;
+		if (RestoreOne(nth, i, kFalse, whyNot, &done, &slot, sourceDB))
+		{
+			// ★**WHAT THIS WRITE DID TO THE ONES ALREADY DONE.** They all lie AFTER this change
+			//   (the walk is backwards), so a write that changed the length slides every one of
+			//   them. They are not in the list yet - that is what makes them invisible to
+			//   ShiftReplacedChanges, which moves the rows the list already holds.
+			const int32 delta = (done.fReplacedEnd - done.fReplacedStart)
+							  - (done.fBeforeEnd - done.fBeforeStart);
+			if (delta != 0)
+				for (size_t k = 0; k < dones.size(); ++k)
+					if (dones[k].fReplacedStart >= done.fBeforeStart)
+					{
+						dones[k].fReplacedStart += delta;
+						dones[k].fReplacedEnd   += delta;
+					}
+			dones.push_back(done);
+			slots.push_back(slot);
+			++outWritten;
+		}
+		else
+		{
+			++outSkipped;
+			if (outFirstWhyNot.IsEmpty())
+				outFirstWhyNot = whyNot;
+		}
+	}
+
+	// ★★**RUNS OF NEW PARAGRAPHS GET THEIR NEXT STYLES CHAINED, ONCE THEY ARE ALL IN** (2026-09-17 afternoon,
+	//   the user: "only the bulk take-in needs to care"). Walking backwards puts the paragraphs of one run
+	//   in right before the same return, each in front of the last - the right order, but each styled after
+	//   the paragraph before the run, not after the new one before it. Chained over the whole run from the
+	//   paragraph before it, they come out as pressing Return in order gives them.
+	//   The run is found by the caret the diff named for all of its paragraphs (fBeforeStart), and where it
+	//   stands now by the replaced ranges, which have followed every write since.
+	{
+		std::vector<bool16> chained(dones.size(), kFalse);
+		for (size_t k = 0; k < dones.size(); ++k)
+		{
+			if (chained[k] || !dones[k].fWholeParagraph || dones[k].fBeforeEnd != dones[k].fBeforeStart)
+				continue;
+			TextIndex from = dones[k].fReplacedStart;
+			TextIndex to = dones[k].fReplacedEnd;
+			int32 members = 1;
+			for (size_t m = k + 1; m < dones.size(); ++m)
+			{
+				if (!chained[m] && dones[m].fWholeParagraph && dones[m].fBeforeEnd == dones[m].fBeforeStart
+					&& dones[m].fBeforeStart == dones[k].fBeforeStart)
+				{
+					chained[m] = kTrue;
+					from = (dones[m].fReplacedStart < from) ? dones[m].fReplacedStart : from;
+					to = (dones[m].fReplacedEnd > to) ? dones[m].fReplacedEnd : to;
+					++members;
+				}
+			}
+			chained[k] = kTrue;
+			WideString first;
+			TargetWordsAt(target, from, 1, first);
+			if (members > 1 && to - from > 1 && first.CharCount() == 1
+				&& static_cast<int32>(first.GetChar(0).GetValue()) == kTextChar_CR)
+				KCMApplyNextStyleAfter(target, from, from + 1, to - from - 1);
+		}
+	}
+
+	// ***** ONE RE-DIFF, AT THE END, FOR ALL OF THEM. *****
+	KCMStoryDiffRun::RunOne(targetDB, sourceDB, nth);
+
+	// And the replaced rows, with the counter the re-diff has just recorded - the number that makes
+	// them draw as replaced, and that an undo takes back (see RestoreOne's own tail).
+	// (Both modes, since 2026-09-15 - see RestoreOne's tail for why the Story mode joined.)
+	if (!dones.empty())
+	{
+		const KCMStoryRow* const after = KCMStoryList::GetRow(nth);
+		if (after != nil)
+		{
+			// ★**IN READING ORDER, EACH AT ITS OWN SLOT** (2026-09-19). `dones` was collected walking
+			//   BACKWARDS, so the last collected is the first in the text: it goes in first, at the
+			//   slot asked for before its write; every later one goes in after it, its slot moved
+			//   along by the ones already put in (all of which stand before it in the text). Sorting
+			//   them in by position put two new paragraphs the wrong way round - they end at the
+			//   same caret - and their undo then wrote "¶ba" (KCMStoryList.h, fReplacedChanges).
+			int32 putIn = 0;
+			for (size_t k = dones.size(); k > 0; --k, ++putIn)
+			{
+				KCMStoryChange& d = dones[k - 1];
+				// ⚠Each change by ITS OWN instrument - a bulk run can hold words and rubies
+				//   together, and the two are not measured by the same counter (CountForKind).
+				d.fReplacedCount = KCMStoryDiffRun::CountForKind(
+										UIDRef(targetDB, after->fStoryUID), d.fAttrKind);
+				KCMStoryList::AddReplacedChangeAt(nth, slots[k - 1] + putIn, d);
+			}
+		}
+	}
+	return kTrue;
+}
+
+/*	BulkReport
+	The one sentence both items end on, so that they cannot describe the same run differently.
+*/
+void BulkReport(PMString& outMessage, int32 written, int32 skipped, int32 stories,
+				const PMString& firstWhyNot)
+{
+	outMessage.Clear();
+	outMessage.SetTranslatable(kFalse);
+	if (written == 0 && skipped == 0)
+	{
+		outMessage.Append("nothing to take in.");
+		return;
+	}
+	outMessage.AppendNumber(written);
+	outMessage.Append(written == 1 ? " change taken in" : " changes taken in");
+	if (stories > 1)
+	{
+		outMessage.Append(" across ");
+		outMessage.AppendNumber(stories);
+		outMessage.Append(" stories");
+	}
+	if (skipped > 0)
+	{
+		outMessage.Append(", ");
+		outMessage.AppendNumber(skipped);
+		outMessage.Append(" skipped");		// the word is the same either way; no plural here
+		if (!firstWhyNot.IsEmpty())
+		{
+			outMessage.Append(" (");
+			outMessage.Append(firstWhyNot);
+			outMessage.Append(")");
+		}
+	}
+	if (written > 0)
+		outMessage.Append(". Ctrl+Z undoes it.");
+}
+
+/*	BulkSequenceName
+	★The undo step says what the reader pressed, in the words the menu used (the same rule the
+	single item's RestoreSequence follows).
+	⚠It took a `wholeList` flag and asked about the fourth mode until 2026-09-20. "Restore All
+	 Stories" did not come back with this one (the user, 2026-09-21), and the fourth mode is gone,
+	 so there is one name left to give.
+*/
+PMString BulkSequenceName()
+{
+	return Ascii("Restore All in This Story");
+}
+
 }	// namespace
 
 bool16 KCMRestoreChange(int32 nth, int32 which, PMString& outMessage)
 {
-	return RestoreOne(nth, which, outMessage);
+	return RestoreOne(nth, which, kTrue, outMessage, nil, nil, nil);
+}
+
+/*	KCMRestoreAllInStory
+	Every change of one row, put back in one press and one undo step.
+
+	★**BACK ON 2026-09-21** (the user: "ひとつづつ、および、Story単位"). It went on 2026-09-20 with
+	  "Restore All Stories", and only this one was asked for again - so BulkRun has one caller now
+	  and there is no across-rows counting left to do.
+	★**THE WALK IS BulkRun's, AND IT GOES BACKWARDS**: writing a change slides every position after
+	  it, so walking from the end means each write only disturbs text already passed. One re-diff at
+	  the start if the reader had typed, one at the end to rebuild the row - the alternative measured
+	  out as one full story comparison per change.
+*/
+bool16 KCMRestoreAllInStory(int32 nth, PMString& outMessage)
+{
+	outMessage.Clear();
+	outMessage.SetTranslatable(kFalse);
+
+	// Asked before the undo step is opened, so a refusal leaves no empty step on the Edit menu.
+	if (!KCMStoryWritesAllowed())
+	{
+		outMessage = NoSourceToReadFromMessage();
+		return kFalse;
+	}
+
+	ICommandSequence* const seq = CmdUtils::BeginCommandSequence("KCMRestoreAllInStory");
+	if (seq != nil)
+		seq->SetName(BulkSequenceName());
+
+	int32 written = 0, skipped = 0;
+	PMString firstWhyNot;
+	firstWhyNot.SetTranslatable(kFalse);
+	const bool16 ok = BulkRun(nth, nil, written, skipped, firstWhyNot);
+
+	if (seq != nil)
+		CmdUtils::EndCommandSequence(seq);
+
+	KCMNotify(kKCMStoryEditsRebuiltMessage);
+
+	if (!ok && written == 0)
+	{
+		outMessage = Refused("this story could not be taken in (is the comparison still running?).");
+		return kFalse;
+	}
+	BulkReport(outMessage, written, skipped, 1, firstWhyNot);
+	return (written > 0) ? kTrue : kFalse;
 }
 
 bool16 KCMStoryWritesAllowed()
@@ -1220,7 +1533,7 @@ bool16 KCMUndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
 
 	if (!KCMStoryWritesAllowed())
 	{
-		outMessage = NotAgainstTwoDocumentsMessage();
+		outMessage = NoSourceToReadFromMessage();
 		return kFalse;
 	}
 

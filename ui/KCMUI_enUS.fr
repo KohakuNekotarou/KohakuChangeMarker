@@ -84,6 +84,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMImportTaskStartAdviceKey,	"It is best to take a Task Start just before an import. Compared against it afterwards, the document shows exactly what the import changed - a Task Start taken earlier shows your other edits as well. OK imports now; Cancel stops here so that you can take a Task Start first.",
                 kKCMBookRowStartMenuKey,			"Start Change Marker",
                 kKCMStoryRowRefreshMenuKey,		"Refresh Story Comparison",
+                kKCMStoryRowRestoreAllMenuKey,	"Restore All in This Story",
                 kKCMResourceRowXmlMenuKey,		"Show as XML",
                 kKCMResourceRowEditMenuKey,		"Edit...",
                 kKCMResourceAttrEditMenuKey,		"Edit...",

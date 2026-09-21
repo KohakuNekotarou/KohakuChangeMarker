@@ -452,6 +452,7 @@ DECLARE_PMID(kActionIDSpace, kKCMChangeRowUndoRestoreActionID, kKCMUIPrefix + 77
 // ⛔**+78 IS RETIRED** (2026-09-20, with the fourth mode): "Change Back to the Original", the
 //   Import mode's name for "Undo the Restore". Never reused.
 
+DECLARE_PMID(kActionIDSpace, kKCMStoryRowRestoreAllActionID, kKCMUIPrefix + 81)	// ★"Restore All in This Story" on a STORY row's context menu (2026-09-15, gone 2026-09-20, BACK 2026-09-21 on the user's word: one change at a time AND one story at a time). Every change of that row put back in one press and one undo step; the model walks the row BACKWARDS and re-diffs only at the ends (KCMStoryRestore.h). Live while a comparison runs in a mode with story rows, there is a Source to read from, and the row has changes left. Facade RestoreAllInStory. ⚠**+81 and NOT +73**: the old number is retired and retired numbers are never reused (the rule ActionID +38 set), so a shortcut somebody had on the old item does not come back with it. ⛔"Restore All Stories" (+75) did not return
 DECLARE_PMID(kActionIDSpace, kKCMPopupExportStoryDocxActionID, kKCMUIPrefix + 79)	// ★"Export Story Text as Word..." on the flyout (2026-09-19): the same stories, the same selection rule and the same dated folder as Export Story Text..., written as .docx for Word instead of .html (the model's KCMStoryDocx). Greyed on the same one condition - no active document. ⚠+79 was MEASURED free: the highest in this space was +78. Facade ExportStoryTextAs(..., 1, ...)
 
 DECLARE_PMID(kActionIDSpace, kKCMPopupModeResourcesActionID, kKCMUIPrefix + 57)	// ★"Compare mode > Resources Changes" on the flyout (2026-09-09). The third mode: export each document as XML and compare the DEFINITIONS - styles, swatches, layers - so that a change to something nobody has applied is reported. It moves no pixel and touches no word, which is why neither of the other two modes can see it. Exclusive with Pixel and Story, the selected one carrying the check (kCustomEnabling + kSelectedAction). KCMActionComponent.cpp
@@ -751,6 +752,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMBookRowMenuName		"KCMRtMenuBookRow"
 // (kKCMToolFlyoutMenuName was here on 2026-09-04 and is gone with the MenuDef it named: the panel
 //  tool button's flyout is a Win32 popup, built in code by KCMToolButtonEH.)
+#define kKCMStoryRowRestoreAllMenuKey	kKCMStringPrefix "kKCMStoryRowRestoreAllMenuKey"	// the "Restore All in This Story" item on a Story Edits STORY row context menu (back 2026-09-21)
 #define kKCMStoryRowRefreshMenuKey	kKCMStringPrefix "kKCMStoryRowRefreshMenuKey"	// the "Refresh Story Comparison" item on a Story Edits row context menu
 #define kKCMResourceRowXmlMenuKey	kKCMStringPrefix "kKCMResourceRowXmlMenuKey"	// the "Show as XML" item on a definition row's context menu (the Resources mode)
 #define kKCMResourceRowEditMenuKey	kKCMStringPrefix "kKCMResourceRowEditMenuKey"	// the "Edit..." item at the top of a definition row's context menu (2026-09-13)
@@ -1184,6 +1186,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMBookRowStartMenuItemPosition	1.0		// chapter row context menu: "Start Change Marker"
 #define kKCMResourceRowEditMenuItemPosition	0.5	// ★ABOVE the two items below, which is what "at the top" costs here: positions are read in order and the existing pair already hold 1.0 and 2.0, so the new one goes between 0 and 1 rather than renumbering items whose shortcuts users may have set
 #define kKCMResourceAttrEditMenuItemPosition	0.5	// the same, at the top of the CHANGE row menu (its own subtree, so the value may repeat)
+#define kKCMStoryRowRestoreAllMenuItemPosition	3.0	// STORY row context menu: "Restore All in This Story", under Refresh Story Comparison (1.0) and Show as XML (2.0). ★The POSITION is the one it had before 2026-09-20 - positions are not identities, so nothing is inherited by reusing it
 #define kKCMStoryRowRefreshMenuItemPosition	1.0	// Story Edits row context menu: "Refresh Story Comparison" (a different subtree, so it may share 1.0 with the chapter row)
 #define kKCMResourceRowXmlMenuItemPosition	2.0	// ★the SAME subtree: "Show as XML" sits under the refresh item. The two are never live at once (opposite modes), so the order only decides what a future third item would sit between
 #define kKCMChangeRowRestoreMenuItemPosition	2.0	// CHANGE row context menu (its own subtree, kKCMChangeRowMenuName): "Restore Source Text". ⚠2.0 rather than 1.0 because "Copy Source Text" held 1.0 until 2026-09-15; the number is left where it is so that a user's shortcut keeps pointing at the same item

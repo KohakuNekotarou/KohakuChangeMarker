@@ -703,14 +703,10 @@ public:
 		return KCMRestoreChange(nth, which, outMessage);
 	}
 
-	// ⛔**THE TWO BULK ITEMS ARE RETIRED** (2026-09-20, the user's decision). The slots stay - KIDMCP
-	//   calls this facade by vtable, so a virtual taken out of the middle moves every one after it
-	//   ([[facade-vtable-slot-append-only]]) - and they answer kFalse with the reason.
+	// The one-story bulk item, back on 2026-09-21. Transfer; the rules are model-side.
 	virtual bool16	RestoreAllInStory(int32 nth, PMString& outMessage)
 	{
-		outMessage = PMString("Restore All was removed on 2026-09-20 - take changes in one at a time.");
-		outMessage.SetTranslatable(kFalse);
-		return kFalse;
+		return KCMRestoreAllInStory(nth, outMessage);
 	}
 
 	virtual bool16	UndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
@@ -764,9 +760,11 @@ public:
 		return kTrue;
 	}
 
-	virtual bool16	RestoreAllStories(PMString& outMessage)		// ⛔retired - see RestoreAllInStory above
+	// ⛔**STILL RETIRED** (2026-09-20). Only the ONE-STORY item came back on 2026-09-21; the slot
+	//   stays because KIDMCP calls this facade by vtable ([[facade-vtable-slot-append-only]]).
+	virtual bool16	RestoreAllStories(PMString& outMessage)
 	{
-		outMessage = PMString("Restore All was removed on 2026-09-20 - take changes in one at a time.");
+		outMessage = PMString("Restore All Stories was removed on 2026-09-20 - take one story at a time.");
 		outMessage.SetTranslatable(kFalse);
 		return kFalse;
 	}

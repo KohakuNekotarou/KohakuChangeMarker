@@ -564,17 +564,20 @@ public:
 	virtual bool16	GetOversetPoint(IDataBase* db, UID storyUID, TextIndex at,
 									UID& outFrame, PBPMPoint& outPb) = 0;
 
-	/** ⛔**RETIRED 2026-09-20 - ALWAYS kFalse, AND THE SLOT STAYS** (the user's decision: "Restore All
-		is going"). It took every change of row `nth` in as one undo step; both bulk items and the
-		whole backwards walk behind them are gone, and one change at a time is the only road left.
+	/** Every change of row `nth` put back in ONE press and ONE undo step ("Restore All in This
+		Story"). The walk goes backwards and re-diffs only at its ends - KCMStoryRestore.h says why.
+
+		★**Retired on 2026-09-20 and BACK ON 2026-09-21** (the user: one at a time AND by story).
+		  It kept its slot while it was retired, which is why it can simply be filled in again. */
+	virtual bool16	RestoreAllInStory(int32 nth, PMString& outMessage) = 0;
+
+	/** ⛔**RETIRED 2026-09-20 - ALWAYS kFalse, AND THE SLOT STAYS.** "Restore All Stories" did NOT
+		come back with the one-story item on 2026-09-21: the user asked for that one alone.
 
 		⚠**THE DECLARATION IS NOT DELETED, AND THAT IS THE POINT.** KIDMCP calls this facade through
 		 its VTABLE ([[facade-vtable-slot-append-only]]): taking a virtual OUT of the middle moves
 		 every slot after it, so a caller built against the old header would land on a different
 		 method entirely. A retired one keeps its slot and answers kFalse. */
-	virtual bool16	RestoreAllInStory(int32 nth, PMString& outMessage) = 0;
-
-	/** ⛔**RETIRED 2026-09-20 - ALWAYS kFalse.** @see the slot rule above. */
 	virtual bool16	RestoreAllStories(PMString& outMessage) = 0;
 
 	/** Put change `which` of row `nth` back the way it stood before it was taken in

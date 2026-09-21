@@ -1090,6 +1090,15 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMStoryRefreshMenuRow();
 			break;
 
+		// "Restore All in This Story" on a STORY row's context menu (2026-09-15, gone 2026-09-20,
+		// back 2026-09-21 on the user's word). Every change of that story put back in one press and
+		// one undo step; the model walks the row backwards and re-diffs only at its ends.
+		// ★Which row it was is noted the same way as for the item above, by KCMStorySetMenuRow at
+		//   the right click - this item hangs on the STORY row's menu, not the change row's.
+		case kKCMStoryRowRestoreAllActionID:
+			KCMStoryRowRestoreAll();
+			break;
+
 		// "Show as XML" on a DEFINITION row's context menu (2026-09-09). Shows the element the row
 		// names, from both documents, in a modal alert. ★Which row it was is noted the same way as
 		// for the item above, by KCMStorySetMenuRow at the right click.
@@ -1599,6 +1608,17 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//     something that shows an empty menu.
 			listToUpdate->SetNthActionState(i, KCMBookRowCanStart(KCMBookMenuRow()) ? kEnabledAction
 			                                                                            : kDisabled_Unselected);
+		}
+		else if (action == kKCMStoryRowRestoreAllActionID)
+		{
+			// ★The same test as the execution (KCMStoryRowCanRestoreAll -> StoryBulkLive), so the
+			//   menu and the result cannot part company: a comparison running in a mode with story
+			//   rows, a Source to read the older words from, and a row that still has changes.
+			// ⚠**It shares this row menu with "Refresh Story Comparison" and "Show as XML"**, and a
+			//   greyed item does not appear at all - so the Pixel mode, where all three are grey,
+			//   shows no menu, which is what it did before this item existed.
+			listToUpdate->SetNthActionState(i,
+				KCMStoryRowCanRestoreAll() ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMStoryRowRefreshActionID)
 		{

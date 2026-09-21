@@ -1296,12 +1296,26 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// not answer the second question anyway).
 		// ★Enabled ONLY in the Story mode, while armed, on a row that has a partner to compare
 		// against (kCustomEnabling -> KCMStoryRowCanRefresh). ⚠It was the ONLY item on this menu
-		// until 2026-09-15, when the bulk pair below joined it: greyed still means no menu, but
-		// only when every item on it is greyed - which the Pixel and Resources modes still do,
-		// the bulk pair being confined to the same two modes as this one.
+		// until 2026-09-15, when "Restore All in This Story" joined it below; that item went on
+		// 2026-09-20 and came back on 2026-09-21. Greyed still means no menu, but only when EVERY
+		// item on it is greyed - which the Pixel mode still does.
 		kKCMStoryRowRefreshActionID,
 		kKCMStoryRowMenuName,
 		kKCMStoryRowRefreshMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// ----- The Story Edits STORY rows: "Restore All in This Story" (back 2026-09-21) -----
+		// Every change of that story put back in ONE press and ONE undo step. The model walks the
+		// row backwards and re-diffs only at the ends (KCMStoryRestore.h).
+		// ★**Live on the same conditions as the single item, plus "the row still has changes"**
+		//   (KCMStoryCopy's StoryBulkLive), so the item appears exactly when pressing it would do
+		//   something - and pressing it on a row whose changes are all taken in answers rather than
+		//   writing.
+		// ⛔**"Restore All Stories" did not come back with it** (the user asked for the story-sized
+		//   one), so there is no flyout twin of this item.
+		kKCMStoryRowRestoreAllActionID,
+		kKCMStoryRowMenuName,
+		kKCMStoryRowRestoreAllMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// ----- The Resources rows: "Edit..." (2026-09-13), at the TOP of the menu -----
@@ -1752,6 +1766,18 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it outside the Story mode (KCMStoryRowCanRefresh)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Restore All in This Story" on a STORY row's context menu (back 2026-09-21).
+		// ⚠ Not on the flyout, for the same reason as the item above: it acts on the ROW the menu
+		// was popped over, which a flyout has no way of naming (KCMStoryRowEH stashes it).
+		kKCMActionComponentBoss,
+		kKCMStoryRowRestoreAllActionID,
+		kKCMStoryRowRestoreAllMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it on KCMStoryRowCanRestoreAll
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

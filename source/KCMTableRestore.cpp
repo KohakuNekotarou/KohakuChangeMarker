@@ -53,14 +53,16 @@ PMString Refused(const char* what)
 	return s;
 }
 
-/** One undo step for the whole of a table restore (the same shape as KCMStoryRestore's
-    RestoreSequence). ⚠It could be told to make none, for the bulk items dropped on 2026-09-20 -
-    which is also what put the scratch document inside somebody else's sequence. One press, one step. */
+/** One undo step for the whole of a table restore (the same shape as KCMStoryRestore's RestoreSequence;
+    a bulk run brings its own, and then this makes none).
+    ⚠★**THE SCRATCH DOCUMENT MUST NOT BE OPENED INSIDE SOMEBODY ELSE'S SEQUENCE** - that is what the
+     bulk run did wrong before 2026-09-20, and it is why the bulk caller opens its Source ahead of
+     its own sequence rather than letting this one nest. */
 class TableSequence
 {
 public:
-	explicit TableSequence(const char* name)
-		: fSequence(CmdUtils::BeginCommandSequence("KCMTableRestore"))
+	explicit TableSequence(bool16 own, const char* name)
+		: fSequence(own ? CmdUtils::BeginCommandSequence("KCMTableRestore") : nil)
 	{
 		if (fSequence != nil)
 		{
@@ -280,7 +282,7 @@ bool16 KeepLiveTable(IDataBase* db, UID storyUID, UID tableId,
 		scratch document and cleared there, so the reader's document never sees a label of ours.
 	@param outNow the table as it stands after the write. */
 bool16 BringInAndCopy(const std::string& snippet, IDataBase* db, UID storyUID, ITextModel* target,
-					  TextIndex dstStart, TextIndex dstEnd, const char* stepName,
+					  TextIndex dstStart, TextIndex dstEnd, const char* stepName, bool16 ownSequence,
 					  const std::vector<KCMTableShape>& before,
 					  std::map<std::string, std::string>& outLabelled,
 					  KCMTableShape& outNow, PMString& outMessage)
@@ -310,7 +312,7 @@ bool16 BringInAndCopy(const std::string& snippet, IDataBase* db, UID storyUID, I
 			ReadCellLabels(scratch.DB(), broughtIn, outLabelled);
 			ClearCellLabels(scratch.DB(), broughtIn);
 
-			TableSequence undo(stepName);
+			TableSequence undo(ownSequence, stepName);
 			std::vector<KCMTableShape> after;
 			if (!CopyTableOver(tableStory, srcStart, srcEnd, db, storyUID, dstStart, dstEnd, outMessage))
 			{
@@ -341,7 +343,7 @@ bool16 BringInAndCopy(const std::string& snippet, IDataBase* db, UID storyUID, I
 	the running application: removing the anchor left tables.length 0 and the story one character
 	shorter; an Undo brought the table back with the same id). */
 bool16 RemoveTableAt(ITextModel* target, TextIndex start, TextIndex end, const char* stepName,
-					 PMString& outMessage)
+					 bool16 ownSequence, PMString& outMessage)
 {
 	const int32 count = end - start;
 	if (count <= 0)
@@ -349,7 +351,7 @@ bool16 RemoveTableAt(ITextModel* target, TextIndex start, TextIndex end, const c
 		outMessage = Refused("the table stands nowhere that can be removed.");
 		return kFalse;
 	}
-	TableSequence undo(stepName);
+	TableSequence undo(ownSequence, stepName);
 	InterfacePtr<ITextModelCmds> cmds(target, UseDefaultIID());
 	if (cmds == nil)
 	{
@@ -384,7 +386,8 @@ void AppendReChecks(PMString& outMessage, const KCMTargetItemCountGuard& guard)
 
 }	// anonymous namespace
 
-bool16 KCMRestoreTable(int32 nth, const KCMStoryChange& changeIn, PMString& outMessage)
+bool16 KCMRestoreTable(int32 nth, int32 which, const KCMStoryChange& changeIn, bool16 standalone,
+					   PMString& outMessage, KCMStoryChange* outDone, int32* outSlot)
 {
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
@@ -580,9 +583,9 @@ bool16 KCMRestoreTable(int32 nth, const KCMStoryChange& changeIn, PMString& outM
 	KCMTableShape now;
 	std::map<std::string, std::string> labelledAs;	// "col:row" -> the Task Start id that cell had
 	const bool16 putBack = removing
-		? RemoveTableAt(target, writeAt, writeTo, "Restore Source Text", outMessage)
+		? RemoveTableAt(target, writeAt, writeTo, "Restore Source Text", standalone, outMessage)
 		: BringInAndCopy(snippet, db, storyUID, target, writeAt, writeTo, "Restore Source Text",
-						 live, labelledAs, now, outMessage);
+						 standalone, live, labelledAs, now, outMessage);
 	if (!putBack)
 	{
 		AppendReChecks(outMessage, guard);	// said on the way out too: a scratch document must not linger
@@ -700,6 +703,17 @@ bool16 KCMRestoreTable(int32 nth, const KCMStoryChange& changeIn, PMString& outM
 	}
 	AppendReChecks(outMessage, guard);
 
+	if (!standalone)
+	{
+		// A bulk run owns the bookkeeping - including fReplacedCount, which it measures once for all
+		// of them after its single re-diff (KCMStoryRestore.cpp's BulkRun).
+		if (outDone != nil)
+			*outDone = change;
+		if (outSlot != nil)
+			*outSlot = slot;
+		return kTrue;
+	}
+
 	const int32 left = KCMStoryDiffRun::RunOne(db, nil, nth);
 	// ★The counter this record is measured by, asked AFTER the re-diff has recorded it on the row -
 	//   the order the words restore keeps (RestoreOne's own tail). ⚠The Table row's StillReplaced
@@ -796,16 +810,16 @@ bool16 KCMUndoRestoreTable(int32 nth, int32 which, const KCMStoryChange& change,
 			writeAt = 0;
 		writeTo = writeAt;
 		putBack = BringInAndCopy(change.fRedoSnippet, db, storyUID, target, writeAt, writeTo,
-								 "Undo the Restore", live, ignored, now, outMessage);
+								 "Undo the Restore", kTrue, live, ignored, now, outMessage);
 	}
 	else if (bringingBack)
 	{
-		putBack = RemoveTableAt(target, writeAt, writeTo, "Undo the Restore", outMessage);
+		putBack = RemoveTableAt(target, writeAt, writeTo, "Undo the Restore", kTrue, outMessage);
 	}
 	else
 	{
 		putBack = BringInAndCopy(change.fRedoSnippet, db, storyUID, target, writeAt, writeTo,
-								 "Undo the Restore", live, ignored, now, outMessage);
+								 "Undo the Restore", kTrue, live, ignored, now, outMessage);
 	}
 	if (!putBack)
 	{

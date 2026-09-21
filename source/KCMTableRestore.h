@@ -63,12 +63,15 @@
 
 struct KCMStoryChange;
 
-/** Restore the table of `change`, in row `nth`, from Task Start. Called by RestoreOne once it has
-    done the checks every restore shares (mode, index, write block). One press, one undo step, one
-    re-diff - ⚠it took a `standalone` flag and an outDone/outSlot hand-back until 2026-09-20, for
-    the bulk items that have since been dropped (the user's decision).
+/** Restore the table of `change` (merged index `which` of row `nth`) from Task Start. Called by
+    RestoreOne once it has done the checks every restore shares (mode, index, write block).
+    @param standalone kTrue for one press (its own undo step, its own re-diff); kFalse inside a bulk
+           run, which then records outDone at outSlot itself.
+    ⚠**The three bulk parameters went on 2026-09-20 and came back on 2026-09-21** with "Restore All
+     in This Story" (the user asked for that one back; "Restore All Stories" did not come with it).
     @return kTrue when the table was put back; outMessage says what happened. */
-bool16 KCMRestoreTable(int32 nth, const KCMStoryChange& change, PMString& outMessage);
+bool16 KCMRestoreTable(int32 nth, int32 which, const KCMStoryChange& change, bool16 standalone,
+					   PMString& outMessage, KCMStoryChange* outDone, int32* outSlot);
 
 /** Put the live table back from the snippet the restore kept. Called by KCMUndoRestoreChange once
     it has found the replaced record and seen it still standing. */
