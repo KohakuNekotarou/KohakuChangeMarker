@@ -172,6 +172,20 @@ class IDataBase;
 */
 void KCMActivateDocument(IDataBase* db);
 
+/** Bring the comparison's Target to the front, when a comparison is armed.
+
+	★**The reader's rule of 2026-09-21**: "once the comparison has started, the Target document
+	must be the active one". Start OPENS the Source when the Source is a file - a Task Start copy,
+	or a document named while it was closed - and InDesign leaves what it has just opened in
+	front, so without this the reader is left looking at the OLDER version of their own work.
+	★**Nothing happens when nothing is armed**, which is what makes this safe to call from the
+	Start/Stop toggle: the Stop half finds no armed Target and raises nothing.
+	⚠**A UI-SIDE JOB ON PURPOSE.** A document is made active through IDocumentPresentation, and
+	the model must not drive the UI, so the model's own start cannot do this for itself - every
+	UI caller that begins a comparison ends with this call instead.
+*/
+void KCMBringArmedTargetToFront();
+
 #endif // __KCMStoryJump_h__
 
 // End, KCMStoryJump.h.

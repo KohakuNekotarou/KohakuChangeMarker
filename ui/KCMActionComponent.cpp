@@ -63,6 +63,7 @@
 #include "KCMResourceXml.h"			// KCMResourceRowHasXml / KCMShowResourceXml (the "Show as XML" row item)
 #include "KCMResourceEdit.h"			// KCMResourceRowCanEdit / KCMEditMenuResourceRow and the attribute pair (the "Edit..." row items)
 #include "KCMStoryCopy.h"			// the CHANGE row's items: Restore Source Text, Undo the Restore
+#include "KCMStoryJump.h"			// KCMBringArmedTargetToFront - the Target is what the reader looks at once a comparison runs
 #include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / Set / Apply (the "Translucent Panel" flyout item)
 #include "KCMStoryPressMarks.h"	// KCMStoryMarksRefresh (rebuild the always-on marks of Story mode)
 // (★`IActiveContext.h` / `IDocument.h` / `PersistUtils.h` were removed: **none of them was ever
@@ -253,6 +254,11 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// the armed state, starts or clears, then refreshes the panel).
 		case kKCMPopupStartStopActionID:
 			Utils<IKCMCompareFacade>()->ToggleStartStop();
+			// ★**AND THE TARGET IS LEFT IN FRONT** (2026-09-21, the reader's rule). A start whose Source
+			//   is a file opens that file, and InDesign leaves what it opened in front - so the reader
+			//   would otherwise be looking at the older version. The Stop half raises nothing, because
+			//   nothing is armed by the time it returns.
+			KCMBringArmedTargetToFront();
 			break;
 
 		// ★"Set as Target" / "Set as Source" directly below Start: the active document becomes the
@@ -910,6 +916,9 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				Utils<IKCMCompareFacade>()->ExportBeforeAfterReport(reportMsg);
 				if (reportMsg.CharCount() > 0)
 					KCMSetStatus(reportMsg);
+				// ★This one may have STARTED a comparison to have something to report (it stays armed), so
+				//   it ends the same way. When one was already running nothing moves: the Target is in front.
+				KCMBringArmedTargetToFront();
 			}
 			break;
 
@@ -1061,6 +1070,9 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 					Utils<IKCMStoryEditsFacade>()->ImportStoryText(chosen, importMsg);
 					if (importMsg.CharCount() > 0)
 						KCMSetStatus(importMsg);
+					// ★The import starts a comparison of its own, so the same rule applies - and here the Target
+					//   is the document the edited words went into, which is exactly what there is to look at.
+					KCMBringArmedTargetToFront();
 				}
 			}
 			break;
@@ -1077,6 +1089,10 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		//   (the same construction as KBS’s result rows).
 		case kKCMBookRowStartActionID:
 			KCMBookStartComparisonForRow(KCMBookMenuRow());
+			// ★The same rule as the panel's own Start (2026-09-21). This path already opened the Target
+			//   LAST so that it would be the one left in front; saying it here as well means the rule no
+			//   longer rests on the order of two opens.
+			KCMBringArmedTargetToFront();
 			break;
 
 		// "Refresh Story Comparison" on **a Story Edits row’s context menu**: re-run the text diff for

@@ -385,6 +385,24 @@ void KCMActivateDocument(IDataBase* db)
 }
 
 //----------------------------------------------------------------------------------------
+// KCMBringArmedTargetToFront (declared in KCMStoryJump.h)
+//----------------------------------------------------------------------------------------
+void KCMBringArmedTargetToFront()
+{
+	// ★ONE PLACE ANSWERS "which document is the reader looking at now" (2026-09-21): every UI
+	//   caller that begins a comparison ends here, rather than each one deciding for itself.
+	IDataBase* const targetDB = Utils<IKCMCompareFacade>()->GetArmedTargetDB();
+	if (targetDB == nil)
+		return;	// nothing armed: the Stop half of the toggle, or a start that did not take
+
+	// ⚠**ASKED OF THE FACADE, NOT REMEMBERED BY THE CALLER.** The Target a start settles on is
+	//   not always the one the caller had in mind - a chosen Target, the document that happened
+	//   to be in front, or the one a Task Start copied - and the armed state is the only place
+	//   that knows which it became.
+	ActivateDocument(targetDB);
+}
+
+//----------------------------------------------------------------------------------------
 // KCMStoryJumpToRow (declared in KCMStoryJump.h)
 //----------------------------------------------------------------------------------------
 bool16 KCMStoryJumpToRow(int32 rowIndex)
