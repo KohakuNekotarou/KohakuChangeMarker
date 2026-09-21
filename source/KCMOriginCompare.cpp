@@ -20,7 +20,8 @@
 // Project includes:
 #include "KCMOriginCompare.h"
 
-#include "KCMComparisonRun.h"		// KCMStartComparisonOn / KCMStopComparison / KCMChosenSourceIsOrigin
+#include "KCMComparisonRun.h"		// KCMStartComparisonOn / KCMStopComparison
+#include "KCMPairChoice.h"		// KCMChosenSourceIsOrigin
 #include "KCMCore.h"				// KCMIsArmed / KCMArmedTargetDB / KCMArmedSourceDB / KCMDetachArmedSource
 #include "KCMID.h"				// kKCMMarksRebuiltMessage
 #include "KCMModelNotify.h"			// KCMSayStatus / KCMNotifyStatus / KCMNotify

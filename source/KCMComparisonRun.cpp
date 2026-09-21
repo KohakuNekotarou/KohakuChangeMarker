@@ -25,6 +25,7 @@
 
 // Project includes:
 #include "KCMComparisonRun.h"
+#include "KCMPairChoice.h"		// which two: the chosen pair, the resolver, and realising a file end
 #include "KCMCore.h"				// arm/disarm, running the comparison, the print-mark settings
 #include "KCMID.h"				// kKCMMarksRebuiltMessage / kKCMMarksClearedMessage
 #include "KCMModelNotify.h"	// KCMNotifyStatus / KCMNotify - the model tells the UI, it never calls it
@@ -36,268 +37,15 @@
 #include "KCMOrigin.h"			// the origin (Task Start): the third kind of Source, chosen by KCMChooseOriginPair
 #include "KCMOriginCompare.h"	// KCMOriginStart / KCMOriginRefresh / KCMOriginArmed / KCMOriginOnStop - the origin's Start and Refresh
 
-//----------------------------------------------------------------------------------------
-// The resolver: which two documents to compare
-//----------------------------------------------------------------------------------------
-
-// The ONE place that resolves Target and Source: the active (front) document is the Target, and
-// the first other open document is the Source. kTrue only when both were found; whichever could
-// not be resolved comes back nil, so the caller can word its message from which is missing.
-// Resolving in one place is the point: "can a comparison be started" is asked by the menu's grey
-// state (KCMCanStartComparison) and by the command itself (KCMToggleStartStop), and written twice
-// the two answers would drift ([[one-question-one-place]]).
-static bool16 KCMResolveComparisonPair(IDataBase*& outTargetDB, IDataBase*& outSourceDB);
-
-//----------------------------------------------------------------------------------------
-// The chosen Target and Source (the flyout's "Set as Target" / "Set as Source")
-//
-// **Databases, not documents, and never dereferenced.** The pointer is only ever handed to
-// IDocumentList::FindDocByDataBase, which is how the rest of this plug-in asks whether a
-// database is still open (KCMArmedDocsAlive, KCMHandleDocsClosed). A closed document's
-// IDataBase may already be freed and its address reused, so a raw IDocument* held across a
-// close would be worse, not better ([[uidref-reuse-after-close]]).
-//
-// **The address-reuse window is closed at the other end**: kAfterCloseDoc runs
-// KCMForgetChosenDocsThatClosed the moment a document goes, so a stale pointer does not
-// survive long enough for a newly opened document to be given its address. The liveness test
-// inside KCMLiveChosenDoc below is the second line, not the first.
-//----------------------------------------------------------------------------------------
-
-static IDataBase* sChosenTargetDB = nil;
-static IDataBase* sChosenSourceDB = nil;
-
-// The chosen Source may be THE ORIGIN (KCMOrigin.h) rather than a database - a third kind of
-// Source next to "a document" and "the lent database". There is nothing to point at until a
-// comparison rehydrates it, so the choice is a flag, and KCMOriginDocDB is asked for the Target.
-static bool16 sChosenSourceIsOrigin = kFalse;
-
-// KCMChosenSourceIsOrigin / KCMChooseOriginPair (declared in KCMComparisonRun.h).
-bool16 KCMChosenSourceIsOrigin()	{ return (sChosenSourceIsOrigin && KCMOriginDocDB() != nil) ? kTrue : kFalse; }
-
-void KCMChooseOriginPair(IDataBase* originDocDB)
-{
-	if (originDocDB == nil)
-		return;
-	if (KCMIsExternalSource(sChosenSourceDB))
-		KCMForgetExternalSource();		// the lent database gives way, as it does to "Set as Source"
-	sChosenTargetDB = originDocDB;
-	sChosenSourceDB = nil;
-	sChosenSourceIsOrigin = kTrue;
-}
-
-// The document `db` names, or nil when it is not (or no longer) an open document.
-// Takes the list rather than fetching it so that the close sweep, which already holds one, can
-// use the same test.
-static IDocument* KCMLiveChosenDoc(IDataBase* db, IDocumentList* docList)
-{
-	if (db == nil || docList == nil)
-		return nil;
-	return docList->FindDocByDataBase(db);
-}
-
-// The same test for callers that have no list in hand. nil during the shutdown sequence, which
-// is the right answer: with no session there is no way to judge liveness at all.
-static IDocument* KCMLiveChosenDoc(IDataBase* db)
-{
-	if (db == nil)
-		return nil;
-	ISession* session = GetExecutionContextSession();
-	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
-	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
-	return KCMLiveChosenDoc(db, docList);
-}
-
-// KCMChosenTargetDB / KCMChosenSourceDB (declared in KCMComparisonRun.h).
-IDataBase* KCMChosenTargetDB()	{ return (KCMLiveChosenDoc(sChosenTargetDB) != nil) ? sChosenTargetDB : nil; }
-// ★THE SOURCE MAY BE THE LENT DATABASE (KCMExternalSource.h), which is in no document list: it is
-//  "live" for exactly as long as it is registered, and the lender's Release is what ends that.
-IDataBase* KCMChosenSourceDB()
-{
-	if (KCMIsExternalSource(sChosenSourceDB))
-		return sChosenSourceDB;
-	return (KCMLiveChosenDoc(sChosenSourceDB) != nil) ? sChosenSourceDB : nil;
-}
-
-// KCMSetChosenTargetToActive / KCMSetChosenSourceToActive (declared in KCMComparisonRun.h).
-//
-// **The active document is resolved here, on the model side.** The flyout item that calls this
-// has no business naming a document -- IActiveContext::GetContextDocument is what "the active
-// document" means in this plug-in (KCMActiveDoc), and asking it in one place is what keeps the
-// menu and the comparison agreeing about which document that is
-// ([[document-activation-is-presentation]] -- GetNthDoc(0) and GetFrontDocument each mean
-// something else).
-//   **Asked through KCMActiveDocDB, not KCMActiveDoc plus a GetUIDRef written out here**: that
-//   pair IS KCMActiveDocDB (KCMCore.cpp), and it is what the UI's UpdateActionStates already goes
-//   through the facade to reach (GetActiveDocDB) when it decides whether to grey these two items.
-//   Spelled out a second time, the greying and the setting would be two answers to one question.
-//
-// **Setting the same document as both is allowed.** The reader may well want to point at one
-// document twice while working out which is which; what refuses is the Start
-// (KCMToggleStartStop), where a comparison of a document against itself is meaningless.
-bool16 KCMSetChosenTargetToActive()
-{
-	IDataBase* db = KCMActiveDocDB();
-	if (db == nil)
-		return kFalse;			// the flyout greys the item in this case; this guards a document closing while the menu stands open
-	sChosenTargetDB = db;
-	return kTrue;
-}
-
-bool16 KCMSetChosenSourceToActive()
-{
-	IDataBase* db = KCMActiveDocDB();
-	if (db == nil)
-		return kFalse;
-	// A real document replaces the lent Source. Its registration goes with it -- unless a
-	// comparison is still drawing from it, in which case the lender's Release ends it later
-	// (KCMExternalSource.h: registered while chosen OR armed).
-	if (KCMIsExternalSource(sChosenSourceDB) && KCMArmedSourceDB() != sChosenSourceDB)
-		KCMForgetExternalSource();
-	// A real document replaces the origin as well, and the origin is released with the choice:
-	// the flyout greys "Set as Source" while an origin is held, so this is the guard, not the route.
-	if (sChosenSourceIsOrigin)
-	{
-		sChosenSourceIsOrigin = kFalse;
-		KCMReleaseOrigin();
-	}
-	sChosenSourceDB = db;
-	return kTrue;
-}
-
-// KCMForgetChosenDocsThatClosed (declared in KCMComparisonRun.h) -- the close sweep's half of
-// the rule. **Each choice is judged on its own**, so closing one of the two documents leaves the
-// other one chosen: that is the whole point of stating the pair rather than inferring it. The
-// pointers are compared, never dereferenced.
-void KCMForgetChosenDocsThatClosed(IDocumentList* docList)
-{
-	if (docList == nil)
-		return;					// no way to judge liveness; the choices stay, and KCMLiveChosenDoc still guards every read
-	if (sChosenTargetDB != nil && docList->FindDocByDataBase(sChosenTargetDB) == nil)
-		sChosenTargetDB = nil;
-	// KCMIsDbAlive, not the bare list test: the lent Source is in no list and must survive an
-	// unrelated document closing. Its own end is the lender's Release, never this sweep.
-	if (sChosenSourceDB != nil && !KCMIsDbAlive(docList, sChosenSourceDB))
-		sChosenSourceDB = nil;
-	// The origin goes with its document (the user's rule), and the choice with the origin.
-	KCMForgetOriginIfDocClosed(docList);
-	if (sChosenSourceIsOrigin && !KCMHasOrigin())
-		sChosenSourceIsOrigin = kFalse;
-}
-
-// KCMClearChosenDocs (declared in KCMComparisonRun.h) -- the model's Shutdown drops both, in the
-// same slot and for the same reason as the peek's armed state (KCMPeekStartup::Shutdown): left
-// standing, a kAfterCloseDoc responder arriving after shutdown reaches
-// KCMForgetChosenDocsThatClosed and weighs a stale pointer against the live document list. The
-// normal order -- documents close, then Shutdown -- should never allow that, so this is
-// defensive. Assignment only, nothing dereferenced, and idempotent, so it is safe at any point in
-// the shutdown sequence.
-void KCMClearChosenDocs()
-{
-	sChosenTargetDB = nil;
-	sChosenSourceDB = nil;
-	KCMForgetExternalSource();	// the lent Source is a choice too, and this is the shutdown slot for choices
-	sChosenSourceIsOrigin = kFalse;
-	KCMReleaseOrigin();			// "Clear Target and Source" drops the origin too (the user's rule, 2026-09-12)
-}
-
-// The first open document that is not `target` = the Source (the older version).
-//
-// ★**"First" is IDocumentList's order, which is the order the documents were OPENED -- and it is
-//   NOT the order scripting reports.** app.documents is most-recently-active first, so a test
-//   written against the DOM predicts the wrong Source. Measured 2026-08-31: with the DOM listing
-//   third / new / old and `third` chosen as the Target, this returned `old` -- the one opened
-//   earliest of the remaining two, where the DOM's own "first other" would have been `new`.
-//   [[document-activation-is-presentation]] is the same trap for "which document is in front";
-//   this is its ordering half.
-//
-// ⚠**`d != target` is a pointer comparison on purpose, and KCMIsSameDoc is deliberately NOT used
-//   here.** That function answers "are these two databases one document" -- the question for a
-//   pair that reached the caller by two different roads (KCMToggleStartStop, where a clone
-//   database is possible). Here both sides come off the SAME IDocumentList within one call, so
-//   the question is not identity but "skip this element", and one document has one IDocument*.
-//   Measured the same day: a Target chosen through FindDocByDataBase was correctly skipped by the
-//   pointer GetNthDoc handed back. ⇒ Two comparisons, two questions; do not fold them into one.
-static IDocument* KCMFirstOtherDoc(IDocument* target)
-{
-	InterfacePtr<IApplication> app(GetExecutionContextSession() ? GetExecutionContextSession()->QueryApplication() : nil);
-	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
-	if (docList == nil)
-		return nil;
-	const int32 n = docList->GetDocCount();
-	for (int32 i = 0; i < n; ++i)
-	{
-		IDocument* d = docList->GetNthDoc(i);
-		if (d != nil && d != target)
-			return d;
-	}
-	return nil;
-}
-
-// The resolver declared above.
-//
-// **A chosen document wins; an unchosen one falls to the old rule.** Choosing neither leaves
-// the behaviour exactly as it was before the two flyout items existed, and choosing one leaves
-// the other to be worked out -- "Set as Source" on the older version, then Start from whichever
-// document is in front, is a perfectly good way to work.
-//
-// @warning **the automatic Source is still "the first document that is not the Target"**, and
-// the Target may now be a document that is not in front. That is what makes the pair right:
-// picking "not the active document" instead would let the chosen Target be handed to itself as
-// the Source the moment the reader brought a third document forward.
-//
-// **Whether the two come out the same is not decided here.** This answers "which two", and the
-// menu's grey state rests on it; "are they the same document" is a different question with a
-// different answer (a message, not a grey item), and it is asked once, in KCMToggleStartStop
-// ([[one-question-one-place]] is kept by having each question in one place, not by folding two
-// questions into one function).
-//
-// **Databases out, not documents** (2026-09-02): the chosen Source may be the lent database
-// (KCMExternalSource.h), which has no IDocument in any list. Both callers only ever needed the
-// databases -- the procedure (KCMStartComparisonOn) runs on those.
-static bool16 KCMResolveComparisonPair(IDataBase*& outTargetDB, IDataBase*& outSourceDB)
-{
-	// ★THE ORIGIN WINS while it is chosen (Task Start): the Target is the document it was taken
-	//  from, and the Source is not a database at all. The callers that start ask
-	//  KCMChosenSourceIsOrigin FIRST and go to KCMOriginCompare; here the pair is reported as
-	//  resolvable with a nil Source, which is what the menu's grey state needs to know.
-	if (KCMChosenSourceIsOrigin())
-	{
-		outTargetDB = KCMOriginDocDB();
-		outSourceDB = nil;
-		return (outTargetDB != nil) ? kTrue : kFalse;
-	}
-
-	IDocument* target = KCMLiveChosenDoc(sChosenTargetDB);
-	if (target == nil)
-		target = KCMActiveDoc();
-	outTargetDB = (target != nil) ? ::GetUIDRef(target).GetDataBase() : nil;
-
-	// ★THE LENT SOURCE WINS while it is chosen: that is what lets the flyout's own Start compare
-	//  against the task-start copy again after a Stop, exactly as it would against a chosen
-	//  document. It stops being chosen when the lender releases it (KCMReleaseExternalSource) or
-	//  when "Set as Source" names a real document instead.
-	if (KCMIsExternalSource(sChosenSourceDB))
-	{
-		outSourceDB = sChosenSourceDB;
-	}
-	else
-	{
-		IDocument* source = KCMLiveChosenDoc(sChosenSourceDB);
-		if (source == nil)
-			source = (target != nil) ? KCMFirstOtherDoc(target) : nil;
-		outSourceDB = (source != nil) ? ::GetUIDRef(source).GetDataBase() : nil;
-	}
-
-	return (outTargetDB != nil && outSourceDB != nil) ? kTrue : kFalse;
-}
-
 // KCMCanStartComparison (declared in KCMComparisonRun.h) -- whether the flyout's Start may be
 // enabled. Goes through the same resolver as the command, so the two cannot disagree.
 bool16 KCMCanStartComparison()
 {
-	IDataBase* targetDB = nil;
-	IDataBase* sourceDB = nil;
-	return KCMResolveComparisonPair(targetDB, sourceDB);
+	// ⚠**THIS RUNS EVERY TIME THE FLYOUT IS OPENED**, which is why resolving may not open
+	// anything: a file end stays a file here and is turned into a document only by the Start
+	// (KCMPairChoice.h explains the two stages).
+	KCMPairEnd target, source;
+	return KCMResolveComparisonPair(target, source);
 }
 
 //----------------------------------------------------------------------------------------
@@ -493,22 +241,16 @@ void KCMStartComparisonWithSourceDB(IDocument* target, IDataBase* sourceDB, cons
 	// "yes" about this database while its pages are being drawn.
 	KCMRegisterExternalSource(sourceDB, sourceLabel);
 
-	// The lent database replaces the origin as the Source, as a real document does in
-	// KCMSetChosenSourceToActive - and the origin is released with the choice. Left standing,
-	// the resolver would have gone on preferring it over the pair chosen two lines below.
-	if (sChosenSourceIsOrigin)
-	{
-		sChosenSourceIsOrigin = kFalse;
-		KCMReleaseOrigin();
-	}
-
 	// ★★CHOSEN AS WELL AS STARTED (the user's ask, 2026-09-02: "keep Target and Source after a
 	//  Stop, as a chosen pair is kept"). This is "Set as Target" + "Set as Source" + Start in one:
 	//  the panel keeps naming both after a Stop, and the flyout's own Start compares against the
 	//  same copy again, until the lender releases it. A cancel inside the run leaves the choice
 	//  standing too -- the copy is still there, and Start is the way to try again.
-	sChosenTargetDB = targetDB;
-	sChosenSourceDB = sourceDB;
+	//   The lent database replaces the origin as the Source, as a real document does in
+	//   KCMSetChosenSourceToActive - and the origin is released with the choice; left standing,
+	//   the resolver would have gone on preferring it over the pair chosen here. KCMChooseDBPair
+	//   is where all of that happens now (KCMPairChoice.h holds every slot).
+	KCMChooseDBPair(targetDB, sourceDB);
 
 	KCMStartComparisonOn(targetDB, sourceDB);
 }
@@ -528,8 +270,7 @@ void KCMReleaseExternalSource(IDataBase* sourceDB)
 
 	// The choice goes with it -- the panel's Source: line must not go on naming a copy that no
 	// longer exists -- and so does the registration, here and nowhere else on the lender's side.
-	if (sChosenSourceDB == sourceDB)
-		sChosenSourceDB = nil;
+	KCMForgetChosenSourceIfDB(sourceDB);
 	KCMForgetExternalSource();
 
 	KCMSayStatus(wasArmed ? "Stopped: the task-start copy used as Source was released."
@@ -558,17 +299,36 @@ void KCMToggleStartStop()
 	// The flyout's Start is grey unless two documents are there (KCMCanStartComparison goes
 	// through the same resolver), so this normally cannot fail. It is the guard for the case
 	// where a document is closed while the menu stands open.
-	IDataBase* targetDB = nil;
-	IDataBase* sourceDB = nil;
-	if (!KCMResolveComparisonPair(targetDB, sourceDB))
+	KCMPairEnd targetEnd;
+	KCMPairEnd sourceEnd;
+	if (!KCMResolveComparisonPair(targetEnd, sourceEnd))
 	{
 		// Name what is actually missing: if the target resolved, only the Source is absent.
-		KCMSayStatus(targetDB == nil ? "Target and source documents not found."
+		KCMSayStatus(targetEnd.IsEmpty() ? "Target and source documents not found."
 		                           : "Source document not found.");
 		// This branch needs the notification too. It returns from inside the else, so it never
 		// reaches the end of the function -- an early implementation refreshed the panel only at
 		// the end and left this path without a redraw.
 		// No document travels with it: the display is only being brought up to the current state.
+		KCMNotify(kKCMMarksRebuiltMessage);
+		return;
+	}
+
+	// ★★★**THE ONE PLACE A DOCUMENT IS OPENED FOR A COMPARISON** (2026-09-21). A chosen end may be
+	// a FILE - a Task Start saves a copy of the document and names that file without opening it -
+	// and here is where it becomes a database: the document already open on that file when there
+	// is one, otherwise the file opened in a window.
+	// ⚠**AFTER the resolver and never inside it.** The resolver is what the flyout's grey state
+	//  rests on, and it is asked every time the menu is opened; opening a document from there
+	//  would mean opening the flyout opened a document (KCMPairChoice.h).
+	// ⚠**AND BEFORE THE SAME-DOCUMENT TEST BELOW**, which needs two databases to compare.
+	IDataBase* targetDB = nil;
+	IDataBase* sourceDB = nil;
+	PMString whyNotRealised;
+	if (!KCMRealisePairEnd(targetEnd, targetDB, whyNotRealised)
+		|| !KCMRealisePairEnd(sourceEnd, sourceDB, whyNotRealised))
+	{
+		KCMNotifyStatus(whyNotRealised);
 		KCMNotify(kKCMMarksRebuiltMessage);
 		return;
 	}

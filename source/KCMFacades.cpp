@@ -36,6 +36,7 @@
 #include "IKCMBookFacade.h"
 #include "IKCMStoryMarkFacade.h"
 #include "KCMComparisonRun.h"		// ToggleStartStop / Stop / StartFor / CanStart / print marks
+#include "KCMPairChoice.h"		// the chosen pair: set it, read it, clear it
 #include "KCMCore.h"				// MarkChanges / ClearMarks / DoSetPrintMarks / getters
 #include "KCMPeek.h"				// armed docs alive / peek / RefreshSelectedPages / base opacity
 #include "KCMColorSampler.h"		// the Alt+left CMYK sample and its drag-time pairing cache

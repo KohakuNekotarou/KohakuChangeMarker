@@ -90,59 +90,14 @@ void	KCMReleaseExternalSource(IDataBase* sourceDB);
 bool16	KCMCanStartComparison();
 
 //----------------------------------------------------------------------------------------
-// The chosen Target and Source ("Set as Target" / "Set as Source" on the flyout)
-//
-// A choice the reader makes BEFORE starting, so that which two documents are compared is
-// stated rather than inferred. Whichever of the two has not been chosen still falls to the
-// automatic rule inside the resolver, so a reader who chooses nothing keeps the behaviour
-// this plug-in has always had.
-//
-// **A Stop does not clear them.** Stopping ends the comparison, not the choice: the usual
-// shape of the work is start, stop, edit, start again on the same pair.
-// What does clear one is that document closing -- KCMForgetChosenDocsThatClosed below.
+// ★**THE CHOSEN PAIR MOVED TO KCMPairChoice.h** (2026-09-21), and the resolver that reads it
+// went with it. A chosen end may now be a FILE as well as a document - a Task Start saves a copy
+// and names it - so "which two has the reader chosen" grew a second kind of answer. It is still
+// ONE question, so it lives in one file ([[one-question-one-place]]).
+//   Moved: KCMSetChosenTargetToActive / KCMSetChosenSourceToActive / KCMChosenTargetDB /
+//   KCMChosenSourceDB / KCMForgetChosenDocsThatClosed / KCMClearChosenDocs, and the origin's
+//   KCMChosenSourceIsOrigin / KCMChooseOriginPair.
 //----------------------------------------------------------------------------------------
-
-// Make the active (front) document the Target / the Source. kFalse, and nothing set, when there
-// is no active document -- the flyout greys both items in that case, so this is the guard for a
-// document closing while the menu stands open, and it is what lets the caller not say "Target
-// set." when nothing was.
-// **They only set.** Refreshing the panel and putting a word on the status line are the caller's,
-// the same division as SetCompareMode ([[one-question-one-place]]: the UI decides what the UI
-// shows).
-bool16	KCMSetChosenTargetToActive();
-bool16	KCMSetChosenSourceToActive();
-
-// The chosen documents, for the panel's Target:/Source: labels and for the resolver.
-// **nil unless the document is still open**: a closed IDataBase* is only ever compared
-// against IDocumentList, never dereferenced, and never handed to a caller
-// ([[uidref-reuse-after-close]]).
-IDataBase*	KCMChosenTargetDB();
-IDataBase*	KCMChosenSourceDB();
-
-// Task Start (2026-09-12): the chosen Source is THE ORIGIN (KCMOrigin.h) - a moment, not a
-// document. The pair is then (the origin's document, the origin), and KCMChosenSourceDB answers
-// nil: there is no database until a comparison rehydrates one. kFalse once the origin's
-// document has closed (the origin goes with it).
-bool16	KCMChosenSourceIsOrigin();
-
-// Choose the pair for a fresh origin: Target = originDocDB, Source = the origin. Called by
-// KCMTakeTaskStart and nowhere else.
-void	KCMChooseOriginPair(IDataBase* originDocDB);
-
-// Drop whichever choice names a document that is no longer in `docList`, and leave the other
-// one standing. Called from the close sweep (KCMHandleDocsClosed), which has the list in hand
-// and has already established that it is on the main thread -- the one place that may conclude
-// "not in the list" means "closed" (a background thread sees clones, guide vol1-07).
-void	KCMForgetChosenDocsThatClosed(IDocumentList* docList);
-
-// Drop both choices. **Two callers, and only one of them is a shutdown**: the flyout's "Clear
-// Target and Source" (through the facade -- ★it stops a running comparison BEFORE calling this,
-// so this function never runs under one; the stop belongs to the UI, not here), and the model's
-// Shutdown (KCMPeekStartup::Shutdown), which closes
-// every model-side static on the principle that nothing live may reach static destruction -- the
-// same slot as the peek's armed state, and defensive for the same reason (a close responder
-// firing after shutdown). Assignment only, so it is safe anywhere in the shutdown sequence.
-void	KCMClearChosenDocs();
 
 // The print-marks toggle: flips the current print flag and keeps the current opacity choice.
 void	KCMTogglePrintMarks();

@@ -52,7 +52,8 @@
 #include "KCMDrawEventHandler.h"   // the engine's shared statics
 #include "KCMRingAdornment.h"      // KCMForgetStoryHolders - the story ID labels' tables go when documents close
 #include "KCMCore.h"               // the arm/disarm/state declarations
-#include "KCMComparisonRun.h"      // KCMForgetChosenDocsThatClosed -- the chosen Target/Source lose whichever document closed
+#include "KCMComparisonRun.h"      // KCMStartComparisonFor / KCMStopComparison / KCMRefreshComparison
+#include "KCMPairChoice.h"         // KCMForgetChosenDocsThatClosed -- the chosen Target/Source lose whichever document closed
 #include "KCMExternalSource.h"     // KCMIsDbAlive (the lent Source counts as alive)
 #include "KCMOriginCompare.h"      // KCMOriginArmed / KCMOriginScopedCopy -- Task Start: armed with no Source database; a page refresh's temporary Source
 #include "KCMOriginPeek.h"         // the one-spread peek document that stands in for the Source

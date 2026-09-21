@@ -33,7 +33,8 @@
 // Project includes:
 #include "KCMOrigin.h"
 #include "KCMCore.h"				// KCMActiveDoc / KCMIsArmed / KCMArmedTargetDB
-#include "KCMComparisonRun.h"		// KCMChooseOriginPair
+#include "KCMComparisonRun.h"		// KCMStopComparison - a fresh Task Start stops a running comparison
+#include "KCMPairChoice.h"		// KCMChooseOriginPair / KCMClearChosenDocs
 #include "KCMExternalSource.h"		// KCMIsDbAlive
 #include "KCMOriginPeek.h"			// KCMOriginPeekDrop / KCMOriginPeekDescribe
 #include "KCMStoryTextImport.h"	// KCMClearImportRefusals - what the last import could not put in
