@@ -512,11 +512,28 @@ static void KCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 	IDataBase* const targetDB = started ? compare->GetArmedTargetDB() : compare->GetChosenTargetDB();
 	IDataBase* const sourceDB = started ? compare->GetArmedSourceDB() : compare->GetChosenSourceDB();
 
+	// ★**A THIRD THING AN END CAN BE: A FILE** (2026-09-21). A Task Start saves a copy of the
+	//   document and chooses THAT FILE without opening it, so there is a path to show and no
+	//   document to ask for a name. The path is shown exactly as any other name is - the reader is
+	//   not told whether it is open, because Start opens it either way (the user's decision).
+	// ⚠**Only while not armed.** An armed pair is always two databases, because Start realises a
+	//  file end before it compares; so `started` has already been answered above and a file label
+	//  here could only be a stale one.
 	PMString target("Target:"); target.SetTranslatable(kFalse);
 	if (targetDB != nil)
 	{
 		target.Append(" ");
 		target.Append(KCMDocPathFromDB(targetDB));
+	}
+	else if (!started)
+	{
+		PMString fileLabel;
+		compare->GetChosenTargetFileLabel(fileLabel);
+		if (fileLabel.CharCount() > 0)
+		{
+			target.Append(" ");
+			target.Append(fileLabel);
+		}
 	}
 	PMString source("Source:"); source.SetTranslatable(kFalse);
 	if (sourceDB != nil)
@@ -524,14 +541,26 @@ static void KCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 		source.Append(" ");
 		source.Append(KCMDocPathFromDB(sourceDB));
 	}
-	else if (compare->HasOrigin())
+	else
 	{
-		// Task Start: the Source is the origin - a moment, not a document - whether chosen or armed
-		// (an armed origin pair has no Source database either). Named by the model.
-		PMString originLabel;
-		compare->GetOriginLabel(originLabel);
-		source.Append(" ");
-		source.Append(originLabel);
+		PMString fileLabel;
+		if (!started)
+			compare->GetChosenSourceFileLabel(fileLabel);
+		if (fileLabel.CharCount() > 0)
+		{
+			source.Append(" ");
+			source.Append(fileLabel);
+		}
+		else if (compare->HasOrigin())
+		{
+			// ⛔Task Start as it was: the Source is the origin - a moment, not a document - whether
+			// chosen or armed (an armed origin pair has no Source database either). Named by the
+			// model. This branch goes when the origin does.
+			PMString originLabel;
+			compare->GetOriginLabel(originLabel);
+			source.Append(" ");
+			source.Append(originLabel);
+		}
 	}
 
 	IControlView* tView = pcd->FindWidget(kKCMTargetTextWidgetID);

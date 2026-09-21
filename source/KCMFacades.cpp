@@ -245,6 +245,10 @@ public:
 
 	// The warning bit that rides with a status notification (2026-09-21). Asking clears it.
 	virtual bool16		TakeStatusWarning()					{ return KCMTakeSessionStatusWarning(); }
+
+	// A file choice's path, for the panel's Target:/Source: lines (2026-09-21). Transfers.
+	virtual void		GetChosenSourceFileLabel(PMString& outLabel)	{ KCMChosenSourceFileLabel(outLabel); }
+	virtual void		GetChosenTargetFileLabel(PMString& outLabel)	{ KCMChosenTargetFileLabel(outLabel); }
 };
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)

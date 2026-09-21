@@ -659,6 +659,14 @@ public:
 		KCMModelChangeObserver, once per kKCMStatusTextMessage.
 		⚠Do not call it to "find out how things are": one message, one warning. */
 	virtual bool16		TakeStatusWarning() = 0;
+
+	/** ★**THE PATH SHOWN WHEN THAT END OF THE PAIR IS A FILE** (2026-09-21). A Task Start saves a
+		copy of the document and chooses THAT FILE as the Source without opening it, so the panel
+		has a path to show and no document to ask for a name. Empty when that end is a document,
+		the lent database, or nothing at all - which is how the caller tells the cases apart.
+		⚠**The file is not read.** A path is the whole of it. */
+	virtual void		GetChosenSourceFileLabel(PMString& outLabel) = 0;
+	virtual void		GetChosenTargetFileLabel(PMString& outLabel) = 0;
 };
 
 /** THE ABI STAMP OF THE CLASS ABOVE. ★BUMP IT (the date, YYYYMMDD) EVERY TIME A VIRTUAL IS ADDED,
@@ -667,6 +675,6 @@ public:
 	compares it with the value ITS build saw in this header before it calls anything here
 	(KIDMCPKcmBridge::AbiState). Two binaries built from different versions of this class then
 	refuse each other instead of running the wrong method (2026-09-13: the header's warning). */
-const int32 kKCMCompareFacadeAbi = 2026092101;	// 2026-09-21: TakeStatusWarning appended (the model can now raise a red message: the round-trip check on the comparison's own copy). ⚠KIDMCP must be rebuilt with it. Previously 2026092001 = OpenOriginAsIdml appended (the menu item that shows the Task Start state as a document). ⚠KIDMCP must be rebuilt with it. Previously 2026091402 = the second change of 2026-09-14 (SaveOriginRawToDesktop removed: the script method app.kcmSaveOriginXml reaches KCMOriginSaveRaw from inside this plug-in, so the facade door had no caller left). 01 was the first change that day (ExportChangedPagesTSV, RehydrateOriginRaw, RehydrateOriginAsCompared, removed with the menu items that called them)
+const int32 kKCMCompareFacadeAbi = 2026092102;	// 2026-09-21 (the second change of that day): GetChosenSourceFileLabel / GetChosenTargetFileLabel appended - a chosen end may now be a FILE, which the panel names by its path. ⚠KIDMCP must be rebuilt with it. Previously 2026092101 = TakeStatusWarning appended (the model can now raise a red message: the round-trip check on the comparison's own copy). ⚠KIDMCP must be rebuilt with it. Previously 2026092001 = OpenOriginAsIdml appended (the menu item that shows the Task Start state as a document). ⚠KIDMCP must be rebuilt with it. Previously 2026091402 = the second change of 2026-09-14 (SaveOriginRawToDesktop removed: the script method app.kcmSaveOriginXml reaches KCMOriginSaveRaw from inside this plug-in, so the facade door had no caller left). 01 was the first change that day (ExportChangedPagesTSV, RehydrateOriginRaw, RehydrateOriginAsCompared, removed with the menu items that called them)
 
 #endif // __IKCMCompareFacade_h__
