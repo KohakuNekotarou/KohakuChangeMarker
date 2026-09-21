@@ -71,7 +71,9 @@
 #include "KCMUIID.h"
 #include "KCMStoryJump.h"
 #include "KCMStoryRefresh.h"		// where the right-click menu's row is stashed for the action to read
-#include "KCMStoryCopy.h"			// the same, for a CHANGE row's menu: row AND change (2026-09-12)
+// (⛔KCMStoryCopy.h - where a CHANGE row's menu stashed the row AND the change - went on
+//  2026-09-21 with the last item that read it, the Resources mode's "Edit...". Nothing here has a
+//  second stash to write, because a change row no longer raises a menu to write one for.)
 #include "KCMStoryTree.h"			// KCMListShowsResources - which kind of row the double click landed on
 
 namespace
@@ -232,9 +234,10 @@ bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 	{
 		// ***** A RESOURCES ROW HAS NOTHING TO SELECT, AND A DOUBLE CLICK DOES NOTHING. *****
 		// A definition is not text, so there is no "select the words this names". Opening its
-		// editor lived here for a few hours on 2026-09-13 and was moved to the row menu the same
-		// day (the user's call): **a double click is silent about what it is going to do, and a
-		// menu saying "Edit..." is not.** ⇒ KCMResourceEdit.h, the two menu items.
+		// editor lived here for a few hours on 2026-09-13 and moved to the row menu the same day (a
+		// double click is silent about what it is going to do, and a menu saying "Edit..." is not) -
+		// and ⛔**on 2026-09-21 it went altogether**, on the user's word. Nothing in this list opens
+		// an editor from either kind of click now.
 		// ⚠BEFORE the story path, for the reason KCMStoryJumpToRow gives: the story facade's list
 		//   is a different list, and reading a Resources row out of it answers about nothing.
 		if (KCMListShowsResources())
@@ -302,19 +305,14 @@ bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 // later, from the menu, knowing only its ActionID - so KCMStorySetMenuRow is how it learns which
 // story the menu was about. Both the action and its enabling test read it back.
 //
-// ***** TWO MENUS, ONE PER KIND OF ROW. ***** A STORY row pops kKCMStoryRowMenuName; a CHANGE row
-// pops kKCMChangeRowMenuName (2026-09-12). Neither row is offered the other's.
-// ⚠★★**SINCE 2026-09-21 THE CHANGE ROW'S MENU IS EMPTY IN THE STORY MODE**: "Restore Source Text"
-// and "Undo the Restore" were the whole of it and went with the restore, so a right click on a
-// change row raises nothing there - which is what it did before 2026-09-12. The subtree is still
-// popped, because the Resources mode's "Edit..." hangs on it.
-// ⚠This reverses a decision of 2026-08-21 ("do not bring the context menu up on a child row"),
-// and the reason that decision was right then is exactly why this is right now: the first build
-// offered the STORY row's menu on a child row, aimed at the change's parent story - so the reader,
-// pointing at ONE difference, was handed an action over the whole story. A menu doing something
-// other than what it appears to is worse than none. The child row's menu carries only items about
-// the CHANGE the cursor is over, and stashes the change (KCMStorySetMenuChange) rather than the
-// row - and since the restore went there is only one such item left, the Resources mode's "Edit...".
+// ***** A CHANGE ROW RAISES NO MENU AT ALL. ***** It had a subtree of its own from 2026-09-12
+// (kKCMChangeRowMenuName), carrying only items about the CHANGE under the cursor, and the last of
+// those items - the Resources mode's "Edit..." - went on 2026-09-21, as "Copy Source Text" and the
+// restore had gone before it. **The subtree went with it**: a menu that can only come up empty is
+// one InDesign never shows, and the code that pops it is code nothing can reach.
+// ⇒ A right click on a child row does what it did before 2026-09-12: nothing. ★The decision of
+// 2026-08-21 that made that right the first time holds again - the only menu here acts on a STORY,
+// and a reader pointing at ONE difference must not be handed an action over the whole of it.
 //
 // Deliberately NOT calling the stock handler and NOT changing the selection: a right click that is
 // only asking for a menu should not move the user's place in the list - the same rule the chapter
@@ -334,15 +332,13 @@ bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 	if (rowIndex < 0 || e == nil)
 		return TreeNodeEventHandler::RButtonDn(e);
 
-	// Each kind of row stashes for its own menu, and only its own: the story row's actions read
-	// KCMStoryMenuRow, the change row's read the pair below, and neither stash is written by the
-	// other kind of click - so a stale value can never point a story action at a change or the
-	// reverse.
-	const bool16 isChangeRow = (changeIndex >= 0);
-	if (isChangeRow)
-		KCMStorySetMenuChange(rowIndex, changeIndex);
-	else
-		KCMStorySetMenuRow(rowIndex);
+	// A CHANGE row has no menu of its own any more (see above), and must never be offered the STORY
+	// row's: it would come up looking right and act on the whole story the change hangs under.
+	// ⇒ Handed to the stock handler, the same as a click that landed on no row at all.
+	if (changeIndex >= 0)
+		return TreeNodeEventHandler::RButtonDn(e);
+
+	KCMStorySetMenuRow(rowIndex);	// for the action and its enabling test to read (see above)
 
 	ISession* session = GetExecutionContextSession();
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
@@ -355,8 +351,7 @@ bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 	if (menuMgr == nil)
 		return kTrue;
 
-	menuMgr->HandlePopupMenu(isChangeRow ? kKCMChangeRowMenuName : kKCMStoryRowMenuName,
-							 e->GlobalWhere(), e->GlobalWhere(), kTrue, this);
+	menuMgr->HandlePopupMenu(kKCMStoryRowMenuName, e->GlobalWhere(), e->GlobalWhere(), kTrue, this);
 	return kTrue;
 }
 

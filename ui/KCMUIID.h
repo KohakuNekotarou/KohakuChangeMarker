@@ -434,8 +434,9 @@ DECLARE_PMID(kActionIDSpace, kKCMResourceRowXmlActionID, kKCMUIPrefix + 58)
 // ⛔**+63 IS A DEAD SLOT - DO NOT REUSE IT.** "Copy Source Text" lived on a CHANGE row's context
 //   menu from 2026-09-12 and was taken out on 2026-09-15 at the user's request. It put the older
 //   side's words on the clipboard as plain text. The subtree it introduced (kKCMChangeRowMenuName)
-//   stays - but with the restore gone (+66 / +77 below) the only item left on it is the Resources
-//   mode's "Edit...", so a right click on a STORY change row raises no menu at all.
+//   went too, on the evening of 2026-09-21, with +69 below: the restore having gone that morning,
+//   the Resources mode's "Edit..." was the last item on it, and a subtree with no item is a menu
+//   InDesign never shows. A right click on a change row raises nothing, in either mode.
 //   ⚠Kept out of use for the same reason as the retired slots listed above - a user's .indk stores
 //    a shortcut by its NUMBER, so a new item here would inherit a binding meant for the old one.
 // ⛔**+66 IS RETIRED** (2026-09-21): "Restore Source Text" on a CHANGE row's context menu - the
@@ -447,8 +448,19 @@ DECLARE_PMID(kActionIDSpace, kKCMResourceRowXmlActionID, kKCMUIPrefix + 58)
 DECLARE_PMID(kActionIDSpace, kKCMPopupExportReportActionID, kKCMUIPrefix + 65)	// ★"Export Before/After PDF Report" on the panel flyout (a plain command, 2026-09-13, the user's pick; "PDF" in the name the same day): one PDF in three parts - a first page, every changed page of the pixel comparison with the older version (rings printed) on the left and the newer on the right, then the Story table and the Resources table (older on the left, newer on the right). ★**Live while a comparison is running OR while one could be started** (2026-09-14, the user's instruction "let it be pressed whenever a Target and a Source are there, and run whatever comparison it needs"): pressed before a Start, the model runs the comparison itself through the toggle's own start branch, and ⚠**that comparison stays armed** (a pixel comparison cannot be borrowed and given back the way the Story and Resources results are). Facade ExportBeforeAfterReport; the work is KCMReport.cpp / KCMReportTable.cpp
 DECLARE_PMID(kActionIDSpace, kKCMPopupPairByUidActionID, kKCMUIPrefix + 64)	// ★"Pair Pages by UID" check toggle on the panel flyout (2026-09-13, the user's ask: choose between UID and order). ON (the default) = ordinary pages pair with the page of the same UID on the other side, a UID found on one side only being an added / removed page (the red "/"); OFF = the rule that stood before, by position. The model holds it (KCMPageMap.cpp, sPairPagesByUid); flipping it re-compares like Ignore Page Number Marker. Saved with the panel settings ("pairPagesByUid")
 DECLARE_PMID(kActionIDSpace, kKCMPopupShowStoryIdsActionID, kKCMUIPrefix + 67)	// ★"Show Story IDs" check toggle on the panel flyout (2026-09-13, the user's ask: the story's UID on the layout, found from the story and put on the item that holds it; then "the number alone, outside the frame, above it, twice the size"). ON = every page item holding a story - a text frame, text on a path, an anchored frame alike - has its story's UID written as a bare number above its box; on screen always, in print and PDF with "Print comparison marks" on. Default OFF. The model draws it from the same global adornment as the rings (KCMRingAdornment.cpp §1.5); facade Get/SetShowStoryIds; saved with the panel settings ("showStoryIds"). (It was "Show Frame UIDs" with "ID:/Story:" inside the frame for two hours that afternoon.)
-DECLARE_PMID(kActionIDSpace, kKCMResourceRowEditActionID, kKCMUIPrefix + 68)	// ★"Edit..." at the TOP of a DEFINITION row's context menu (2026-09-13, the user's call: "not a double click - from the right-click menu, named Edit, and the parent row gets it too, at the top"). Selects that definition in the panel that edits it and opens the product's own editor. Character styles so far. Live only in the Resources mode on a row the Target still has (kCustomEnabling -> KCMResourceRowCanEdit). KCMResourceEdit.cpp
-DECLARE_PMID(kActionIDSpace, kKCMResourceAttrEditActionID, kKCMUIPrefix + 69)	// ★"Edit..." at the TOP of an ATTRIBUTE row's context menu (2026-09-13). The same editor, opened AT THE PAGE THAT HOLDS THAT ATTRIBUTE (AppliedFont -> Basic Character Formats, second from the top). ⚠A SECOND ActionID rather than the one above because the two menus keep SEPARATE stashes of which row was clicked, and an item must read its own. Live only in the Resources mode (kCustomEnabling -> KCMResourceAttrCanEdit). KCMResourceEdit.cpp
+// ⛔**+68 AND +69 ARE RETIRED** (2026-09-21, the user's instruction: "take Edit out of the Resources
+//   mode's row menu, and the code with it"). They were the two "Edit..." items, at the top of a
+//   DEFINITION row's context menu (+68) and of an ATTRIBUTE row's (+69). Each selected the
+//   definition in the panel that edits it - the Character Styles panel, WITHOUT broadcasting the
+//   selection, which is what kept the reader's document from changing - and fired the product's own
+//   "Style Options..."; the attribute one then switched the dialog to the page holding that
+//   attribute, and pressed the fill/stroke proxy when the attribute was one of those. ★**Everything
+//   behind them went too**: ui/KCMResourceEdit.{h,cpp} and the change row's stash
+//   ui/KCMStoryCopy.{h,cpp}, whose last reader +69 was. What a definition row offers now is "Show
+//   as XML" alone, and an attribute row offers no menu at all. **The numbers are never reused** -
+//   the rule +38 set: a reader's .indk stores a shortcut as a plain number.
+//   ★What was measured while building them is kept, because the route out-lives the feature:
+//   docs/ai-notes/kcm-resources-edit-style-dialog-2026-09-13.md and the removal note of 2026-09-21.
 DECLARE_PMID(kActionIDSpace, kKCMPopupTaskStartActionID, kKCMUIPrefix + 59)	// ★"Task Start" on the panel flyout (a plain command; **remade 2026-09-21**): a COPY of the document is saved to a file the reader picks through a save dialog, and THAT FILE is chosen as the Source. Nothing is opened and no comparison runs - Start opens the copy, in a window, and leaves it open. ★**Which document is copied**: the chosen Target if there is one, else the document in front; that same document becomes the Target. ★**Live whenever there is a document to copy** (facade CanTakeTaskStartCopy - the one place). ⚠**Pressing it while a comparison runs stops that comparison first** (the user's instruction of 2026-09-14, kept). ⚠**A cancelled save dialog changes nothing and says nothing.** (Until 2026-09-21 this took the document's INX into memory as "the origin" instead, and the copy was rebuilt from those bytes for every comparison.)
 DECLARE_PMID(kActionIDSpace, kKCMPopupExportStoryTextActionID, kKCMUIPrefix + 70)	// ★"Export Story Text..." on the panel flyout (a plain command, 2026-09-15), directly under Task Start: every story of the active document is written as one **Word document (.docx)** in a dated folder under one the reader picks, for editing in Word and importing again. **It only reads** - nothing is written into the document, and the walk is wrapped in IDataBase::SaveRestoreModifiedState so it is not even dirtied. ★Live whenever there is an active document (facade GetActiveDocDB). ⚠It borrowed CanTakeTaskStart for this until 2026-09-21, when the two stopped being the same question - Task Start copies the chosen Target when there is one. ⚠**IT WROTE .html UNTIL 2026-09-21** and a second item (+79) wrote the .docx; the HTML road was retired on the user's word ("Word format only") and this item took the one spelling left. Facade ExportStoryText; the work is KCMStoryTextExport.cpp and the format is KCMStoryDocx.cpp on KCMStoryShape.cpp (pure functions, tested outside InDesign in work/kcm-storydocx-test)
 // ⛔**+80 IS RETIRED** (2026-09-21): it was "Open Task Start as IDML", and it went with the origin itself. By then it could not be pressed at all - its one condition was HasOrigin, which nothing had made true since Task Start began saving a copy to a file. **The number is never reused** (the rule ActionID +38 set: a reader's .indk stores a shortcut as a plain number).
@@ -770,8 +782,9 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 //   restore. ⚠A string key is not reserved the way an ActionID is - it is gone from the enUS table.
 #define kKCMStoryRowRefreshMenuKey	kKCMStringPrefix "kKCMStoryRowRefreshMenuKey"	// the "Refresh Story Comparison" item on a Story Edits row context menu
 #define kKCMResourceRowXmlMenuKey	kKCMStringPrefix "kKCMResourceRowXmlMenuKey"	// the "Show as XML" item on a definition row's context menu (the Resources mode)
-#define kKCMResourceRowEditMenuKey	kKCMStringPrefix "kKCMResourceRowEditMenuKey"	// the "Edit..." item at the top of a definition row's context menu (2026-09-13)
-#define kKCMResourceAttrEditMenuKey	kKCMStringPrefix "kKCMResourceAttrEditMenuKey"	// the "Edit..." item at the top of an ATTRIBUTE row's context menu (2026-09-13). ⚠A key of its own although the words are the same: the two are different actions on different menus, and a shared key would tie their wording together for good
+// ⛔kKCMResourceRowEditMenuKey and kKCMResourceAttrEditMenuKey (both "Edit...") went on 2026-09-21
+//   with the two items they named and the editor behind them. ⚠A string key is not reserved the way
+//   an ActionID is - both are gone from the enUS table as well.
 // The Story Edits row context menu. The same mechanism as the chapter menu above:
 // KCMStoryRowEH::RButtonDn puts the MenuDef subtree of this name up at the cursor through
 // HandlePopupMenu.
@@ -779,17 +792,17 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMStoryRowMenuName		"KCMRtMenuStoryRow"
 // ⛔kKCMChangeRowRestoreMenuKey ("Restore Source Text") and kKCMChangeRowUndoRestoreMenuKey ("Undo
 //   the Restore") went on 2026-09-21 with the restore itself, and are gone from the enUS table.
-//   ★**In the Story mode this subtree holds nothing now**, so a right click on a change row raises no
-//   menu at all - what it did before 2026-09-12. The Resources mode's "Edit..." is the only item on it.
 // ⛔The two Import-mode names went with the fourth mode on 2026-09-20 ("Change to Imported Text",
 //   "Change Back to the Original"), and the four bulk items' keys went the same day with them.
 // (The flyout pair's question carries the counts, so it is built in code and marked untranslatable,
 //  the way the status line and the book comparison's own question are - not a string key here.)
-// The CHANGE row (child row) context menu - a subtree of its own, so that the story row's items
-// (Refresh / Show as XML) are never offered on a child row. KCMStoryRowEH::RButtonDn puts it up
-// through HandlePopupMenu exactly as it does the story row's. ★Its root name never reaches the
-// screen either.
-#define kKCMChangeRowMenuName		"KCMRtMenuChangeRow"
+// ⛔**kKCMChangeRowMenuName IS GONE TOO** (2026-09-21, the evening): it named the CHANGE row's own
+//   subtree, which existed from 2026-09-12 so that a child row would never be offered the STORY
+//   row's items. Its last item was the Resources mode's "Edit..."; when that went there was nothing
+//   left for the subtree to hold, and a menu with no live item is one InDesign never shows.
+//   ⇒ **KCMStoryRowEH pops no menu for a child row at all now** - what a right click there did
+//   before 2026-09-12. ⚠Unlike an ActionID a menu-root literal is nothing to reserve: it never
+//   reached the screen and nothing outside the plug-in stores it.
 #define kKCMTranslucentPanelMenuKey	kKCMStringPrefix "kKCMTranslucentPanelMenuKey"	// the menu name of the "Translucent Panel" toggle on the panel flyout
 #define kKCMTranslucentPagesPanelMenuKey	kKCMStringPrefix "kKCMTranslucentPagesPanelMenuKey"	// the menu name of the "Translucent Pages Panel" toggle on the panel flyout (its target is InDesign's own Pages panel)
 #define kKCMTranslucentBookDialogMenuKey	kKCMStringPrefix "kKCMTranslucentBookDialogMenuKey"	// the menu name of the "Translucent Dialog" toggle on the panel flyout (its target is the book comparison dialog)
@@ -1201,13 +1214,15 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 // one item, so the value itself carries no meaning (it is a different tree from the panel
 // flyout, under kKCMBookRowMenuName).
 #define kKCMBookRowStartMenuItemPosition	1.0		// chapter row context menu: "Start Change Marker"
-#define kKCMResourceRowEditMenuItemPosition	0.5	// ★ABOVE the two items below, which is what "at the top" costs here: positions are read in order and the existing pair already hold 1.0 and 2.0, so the new one goes between 0 and 1 rather than renumbering items whose shortcuts users may have set
-#define kKCMResourceAttrEditMenuItemPosition	0.5	// the same, at the top of the CHANGE row menu (its own subtree, so the value may repeat)
+// ⛔The two "Edit..." positions (0.5 at the top of the definition row's menu, 0.5 at the top of the
+//   CHANGE row's own subtree) went on 2026-09-21 with the items. ★A position is a sort key, not a
+//   reservation - unlike an ActionID, a later item may take the number.
 // ⛔The STORY row's "Restore All in This Story" position (3.0) went with the item on 2026-09-21.
 #define kKCMStoryRowRefreshMenuItemPosition	1.0	// Story Edits row context menu: "Refresh Story Comparison" (a different subtree, so it may share 1.0 with the chapter row)
 #define kKCMResourceRowXmlMenuItemPosition	2.0	// ★the SAME subtree: "Show as XML" sits under the refresh item. The two are never live at once (opposite modes), so the order only decides what a future third item would sit between
 // ⛔The CHANGE row's two restore positions (2.0 "Restore Source Text", 2.7 "Undo the Restore") went
-//   with the items on 2026-09-21. Only "Edit..." (0.5) is left on that subtree, in the Resources mode.
+//   with the items on the morning of 2026-09-21, and "Edit..." (0.5) went that evening - **so the
+//   subtree they sorted within is gone as well** (kKCMChangeRowMenuName above).
 // ⛔2.5 and 2.8 held the two Import-mode names until 2026-09-20 and are free again (a position is a
 //   sort key, not a reservation - unlike an ActionID).
 // ⛔The four bulk items' menu positions went with them on 2026-09-20. ★A POSITION IS NOT RESERVED the

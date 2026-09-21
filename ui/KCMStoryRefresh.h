@@ -35,9 +35,10 @@
 
 	Called by KCMStoryRowEH::RButtonDn as the menu is popped, and read back by the actions on that
 	menu and by their enabling tests. ★TOP-LEVEL ROWS ONLY - a right click on a child row never
-	reaches here. ⚠Since 2026-09-12 a child row HAS a menu of its own ("Restore Source Text"), with a
-	stash of its own (KCMStorySetMenuChange in KCMStoryCopy.h); until then it raised none at all
-	(user's call, 2026-08-21; the reasoning is at that function).
+	reaches here. ⚠A child row had a menu of its own from 2026-09-12, with a stash of its own
+	(KCMStoryCopy), and ⛔**both went on 2026-09-21** when the last item on it did. A right click on
+	a child row raises nothing again, as it did before 2026-09-12 (user's call, 2026-08-21; the
+	reasoning is at KCMStoryRowEH::RButtonDn).
 
 	⚠★★**WHICH LIST THE INDEX BELONGS TO DEPENDS ON THE MODE** (2026-09-09). The list is shared:
 	  in the Story mode this is a story of IKCMStoryEditsFacade, and in the Resources mode it is a

@@ -82,8 +82,9 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMBookRowStartMenuKey,			"Start Change Marker",
                 kKCMStoryRowRefreshMenuKey,		"Refresh Story Comparison",
                 kKCMResourceRowXmlMenuKey,		"Show as XML",
-                kKCMResourceRowEditMenuKey,		"Edit...",
-                kKCMResourceAttrEditMenuKey,		"Edit...",
+                // (⛔Two "Edit..." strings stood here from 2026-09-13 and went on 2026-09-21 with
+                //  the items that carried them - one on a definition row's menu, one on an
+                //  attribute row's - and with the editor they opened.)
                 // (⛔Four strings went on 2026-09-21 with the restore: "Restore Source Text",
                 //  "Undo the Restore", "Restore All in This Story", and the question asked before a new
                 //  paragraph was taken in ahead of the one before it.)

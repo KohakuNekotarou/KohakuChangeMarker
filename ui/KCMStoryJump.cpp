@@ -374,15 +374,10 @@ bool16 SelectRangeIn(IDataBase* db, UID storyUID, TextIndex from, TextIndex to)
 
 }	// anonymous namespace
 
-//----------------------------------------------------------------------------------------
-// KCMActivateDocument (declared in KCMStoryJump.h)
-//----------------------------------------------------------------------------------------
-void KCMActivateDocument(IDataBase* db)
-{
-	// The definition stays in the anonymous namespace above, with the notes that explain it; this
-	// is the one door out of this file for it (2026-09-13, the Resources editor).
-	ActivateDocument(db);
-}
+// (⛔KCMActivateDocument stood here from 2026-09-13 to 2026-09-21: a one-line door out of this
+//  file for ActivateDocument, opened for the Resources mode's editor and closed when that editor
+//  went. ActivateDocument itself is unchanged, in the anonymous namespace above, with its callers
+//  inside this file.)
 
 //----------------------------------------------------------------------------------------
 // KCMBringArmedTargetToFront (declared in KCMStoryJump.h)

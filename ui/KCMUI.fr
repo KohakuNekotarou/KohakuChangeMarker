@@ -1292,22 +1292,19 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMStoryRowRefreshMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// ----- The Resources rows: "Edit..." (2026-09-13), at the TOP of the menu -----
-		// ★It selects the definition in the panel that edits it and opens the product's own editor
-		// (KCMResourceEdit.h carries the route and the three that were measured and rejected).
-		// ★Live only in the Resources mode, on a row the Target still has
-		// (kCustomEnabling -> KCMResourceRowCanEdit), so the Story mode's menu is unchanged.
-		kKCMResourceRowEditActionID,
-		kKCMStoryRowMenuName,
-		kKCMResourceRowEditMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
+		// (⛔"Edit..." stood here from 2026-09-13 to 2026-09-21, at the TOP of a DEFINITION row's
+		//  menu: it selected the definition in the panel that edits it and opened the product's own
+		//  editor at the page that held the attribute. It went on the user's word - "take Edit out of
+		//  the Resources row menu, and the code with it" - and the whole editor went with it.
+		//  ⇒ **"Show as XML" below is all a definition row offers now**, and it is the only item this
+		//  subtree carries in the Resources mode. ActionID +68 is a dead slot; KCMUIID.h says why.)
 
 		// ----- The Resources rows: "Show as XML" (2026-09-09) -----
-		// ★THE SAME SUBTREE AS THE ITEM ABOVE, on purpose. The list is shared between the two
-		// modes, so one right-click menu serves both, and **the two items are enabled in opposite
-		// modes** (kCustomEnabling -> KCMStoryRowCanRefresh / KCMResourceRowHasXml). A greyed item
-		// does not appear at all, so each mode shows a menu with exactly one command on it and
-		// neither mode ever sees the other's.
+		// ★THE SAME SUBTREE AS "Refresh Story Comparison" ABOVE, on purpose. The list is shared
+		// between the two modes, so one right-click menu serves both, and **the two items are enabled
+		// in opposite modes** (kCustomEnabling -> KCMStoryRowCanRefresh / KCMResourceRowHasXml). A
+		// greyed item does not appear at all, so each mode shows a menu with exactly one command on it
+		// and neither mode ever sees the other's.
 		// ⚠That also means the menu is EMPTY - and so does not appear - in the Pixel mode, which is
 		// what it did before this item existed.
 		kKCMResourceRowXmlActionID,
@@ -1315,31 +1312,18 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMResourceRowXmlMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// ----- The Story Edits CHANGE rows (child rows): right-click menu (2026-09-12) -----
-		// ★A SUBTREE OF ITS OWN, not the story row's. Until 2026-09-12 a child row raised no menu at
-		// all (user's call, 2026-08-21) because the only menu there acted on the whole STORY. The
-		// items here act on the CHANGE the cursor is over, and the story row's items are not on it -
-		// so neither row is ever offered the other's commands.
-		// ("Copy Source Text" was the first of them, from 2026-09-12 to 2026-09-15.)
-		// ⚠★★**SINCE 2026-09-21 THE SUBTREE IS EMPTY IN THE STORY MODE** - the restore was the whole
-		//   of what a change row offered - so a right click there raises no menu, exactly as it did
-		//   before 2026-09-12. The subtree is kept for the Resources mode's item below.
-		//
-		// "Edit..." (2026-09-13), at the TOP of this menu too. An ATTRIBUTE row's editor is the same
-		// dialog its definition row opens, shown AT THE PAGE THAT HOLDS THAT ATTRIBUTE. ★Live only
-		// in the Resources mode (kCustomEnabling -> KCMResourceAttrCanEdit) - AND only on an
-		// attribute whose page is known, since landing on the General page is not a smaller version
-		// of this item but a different one. It is now the ONLY item on this menu.
-		kKCMResourceAttrEditActionID,
-		kKCMChangeRowMenuName,
-		kKCMResourceAttrEditMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
-		// (⛔"Restore Source Text" and "Undo the Restore" stood here from 2026-09-13 and 2026-09-16 and
-		//  went on 2026-09-21 with the restore itself - the user: "the Source document is in front of
-		//  you, so if you want it back, take it from there". ⇒ **In the Story mode this subtree now
-		//  holds nothing and so raises no menu at all**, which is what a change row did before
-		//  2026-09-12. "Edit..." above is the only item left, and it is live in the Resources mode.)
+		// ----- The Story Edits CHANGE rows (child rows): ⛔THE SUBTREE IS GONE (2026-09-21) -----
+		// A subtree of its own (kKCMChangeRowMenuName) stood here from 2026-09-12, carrying only items
+		// about the CHANGE the cursor was over: "Copy Source Text" until 2026-09-15, then "Restore
+		// Source Text" and "Undo the Restore" until the morning of 2026-09-21 (they went with the
+		// restore), and last the Resources mode's "Edit...", which went that evening with the editor.
+		// ⇒ **Nothing was left to name the subtree, so it went too.** A menu whose every item is gone
+		// is a menu InDesign never shows, so KCMStoryRowEH stopped popping one for a child row: a
+		// right click there now does what it did before 2026-09-12, which is nothing.
+		// ⚠The decision of 2026-08-21 that made that right the first time holds again - the row menu
+		// that is left acts on a STORY (or, in the Resources mode, on a DEFINITION), and a reader
+		// pointing at ONE difference must not be handed an action over the whole of it.
+		// (ActionIDs +63, +66, +69 and +77 are dead slots - KCMUIID.h says why a number is not reused.)
 
 	}
 };
@@ -1723,26 +1707,11 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// "Edit..." on a DEFINITION row's context menu (2026-09-13), and the same words on an
-		// ATTRIBUTE row's. ⚠Not on the flyout, for the same reason as every item above: they act on
-		// the row the menu was popped over, which a flyout has no way of naming.
-		kKCMActionComponentBoss,
-		kKCMResourceRowEditActionID,
-		kKCMResourceRowEditMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it outside the Resources mode (KCMResourceRowCanEdit)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		kKCMActionComponentBoss,
-		kKCMResourceAttrEditActionID,
-		kKCMResourceAttrEditMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it outside the Resources mode (KCMResourceAttrCanEdit)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
+		// (⛔Two ActionDefs stood here from 2026-09-13 and went on 2026-09-21 with the items they
+		//  defined: "Edit..." on a DEFINITION row's context menu and the same words on an ATTRIBUTE
+		//  row's. Both were kCustomEnabling, live only in the Resources mode, and both are dead slots
+		//  now (+68 and +69) for the reason KCMUIID.h gives - a reader's .indk stores a shortcut as a
+		//  plain number, so a new item on an old number would inherit its binding.)
 
 		// (Three ActionDefs stood here and are gone: "Copy Source Text" on 2026-09-15, and
 		//  "Restore Source Text" / "Undo the Restore" on 2026-09-21 with the restore itself. All three

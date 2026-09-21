@@ -61,9 +61,9 @@
 #include "KCMChangeNav.h"			// KCMRefreshNavPosition (the overset toggle changes what Prev/Next walks)
 #include "KCMStoryRefresh.h"		// KCMStoryRowCanRefresh / KCMStoryRefreshMenuRow (the "Refresh Story Comparison" row item)
 #include "KCMResourceXml.h"			// KCMResourceRowHasXml / KCMShowResourceXml (the "Show as XML" row item)
-#include "KCMResourceEdit.h"			// KCMResourceRowCanEdit / KCMEditMenuResourceRow and the attribute pair (the "Edit..." row items)
-// (KCMStoryCopy.h was included here for the CHANGE row's items - Restore Source Text and Undo the
-//  Restore - and both went on 2026-09-21. Nothing in this file reads that stash.)
+// (⛔KCMResourceEdit.h stood here for the two "Edit..." items and went with them on 2026-09-21, as
+//  KCMStoryCopy.h had gone earlier that day with the CHANGE row's restore items. This file reads
+//  neither now: a definition row's menu is "Show as XML" alone, and a change row raises no menu.)
 #include "KCMStoryJump.h"			// KCMBringArmedTargetToFront - the Target is what the reader looks at once a comparison runs
 #include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / Set / Apply (the "Translucent Panel" flyout item)
 #include "KCMStoryPressMarks.h"	// KCMStoryMarksRefresh (rebuild the always-on marks of Story mode)
@@ -1072,23 +1072,15 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMShowResourceXml();
 			break;
 
-		// "Edit..." at the top of a DEFINITION row's context menu (2026-09-13): select that
-		// definition in the panel that edits it and open the product's own editor. ★Which row it
-		// was is noted by KCMStorySetMenuRow at the right click, the same stash the two items above
-		// read.
-		case kKCMResourceRowEditActionID:
-			KCMEditMenuResourceRow();
-			break;
+		// (⛔"Edit..." stood here in two cases from 2026-09-13 and went on 2026-09-21, on the user's
+		//  word - one on a DEFINITION row and one on an ATTRIBUTE row, each selecting the definition
+		//  in the panel that edits it and opening the product's own editor, the attribute one at the
+		//  page that held its attribute. **The whole editor went with them** (KCMResourceEdit, and
+		//  the change row's stash KCMStoryCopy). ⇒ A definition row now offers "Show as XML" alone,
+		//  and an attribute row offers nothing at all.)
 
-		// The same on an ATTRIBUTE row, opening the dialog AT THE PAGE that holds that attribute.
-		// ★A stash of its own (KCMStorySetMenuChange), which is why it is a second action and not
-		//   the one above with an argument.
-		case kKCMResourceAttrEditActionID:
-			KCMEditMenuResourceAttr();
-			break;
-
-		// (⛔The change row's two cases - "Restore Source Text" and "Undo the Restore" - went on
-		//  2026-09-21 with the restore itself. **Nothing on a menu of KCM's writes the reader's text
+		// (⛔The change row's two cases - "Restore Source Text" and "Undo the Restore" - went earlier
+		//  that day with the restore itself. **Nothing on a menu of KCM's writes the reader's text
 		//  now**; the older words are taken from the Source document, which Start has open.)
 
 		// (The panel tool button's flyout had two cases here for a few hours on 2026-09-04. They
@@ -1587,25 +1579,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			listToUpdate->SetNthActionState(i, KCMResourceRowHasXml() ? kEnabledAction
 			                                                          : kDisabled_Unselected);
 		}
-		else if (action == kKCMResourceRowEditActionID)
-		{
-			// ★The same test the action runs (KCMResourceRowCanEdit). Live only in the Resources
-			//   mode, while comparing, on a definition the Target still has and this knows an
-			//   editor for - character styles so far.
-			listToUpdate->SetNthActionState(i, KCMResourceRowCanEdit() ? kEnabledAction
-			                                                           : kDisabled_Unselected);
-		}
-		else if (action == kKCMResourceAttrEditActionID)
-		{
-			// ★The same test the action runs (KCMResourceAttrCanEdit), which asks ONE MORE THING
-			//   than its sibling above: the attribute has to be one whose page of the editor is
-			//   known. ⚠**An attribute this does not know is greyed rather than opened at whatever
-			//   page the dialog opens itself at** (2026-09-13, the user's call) - the reader would
-			//   have no way to tell that landing on General meant "not handled". The definition row
-			//   above it still offers Edit..., so the style itself is never out of reach.
-			listToUpdate->SetNthActionState(i, KCMResourceAttrCanEdit() ? kEnabledAction
-			                                                            : kDisabled_Unselected);
-		}
+		// (⛔The two "Edit..." branches stood here from 2026-09-13 and went on 2026-09-21 with the
+		//  items themselves. Each asked exactly what its action asked - may this definition be edited,
+		//  and for the attribute one, is the page of the editor that holds it known - so that the menu
+		//  and the result could never part company. Neither question has anything left to ask.)
 	}
 }
 
