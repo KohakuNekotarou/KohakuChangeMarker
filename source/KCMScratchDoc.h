@@ -12,9 +12,12 @@
 //  across documents on 2026-09-19); and when the call ends this document is closed and CHECKED to
 //  be gone, while KCMTargetItemCountGuard checks the Target gained no page item.
 //
-//  THE DOCUMENT is made the way KCMRehydrate makes the Task Start copy (IDocumentCommands'
+//  THE DOCUMENT is made the way the Task Start copy used to be made (IDocumentCommands'
 //  CreateNewCommand with kSuppressUI, one page, the defaults) and closed the same way
-//  (KCMCloseRehydrated, after being marked clean). ⚠THE CLOSE RULE IS KCMRehydrate's: a close under
+//  (KCMCloseRehydrated, after being marked clean). ⛔**The making half it was copied from went on
+//  2026-09-21** with the rehydration (KCMRehydrate.cpp, NewDocumentLike) - what that measured is in
+//  docs/ai-notes/kcm-rehydration-retired-2026-09-21.md. ⚠THE CLOSE RULE IS KCMRehydrate.h's, and
+//  that half is still standing: a close under
 //  an outstanding InterfacePtr is a protective shutdown, so every InterfacePtr a caller takes on this
 //  document lives in an inner block that ends before this object does.
 //

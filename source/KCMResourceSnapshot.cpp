@@ -137,7 +137,7 @@ bool16 KCMTakeResourceSnapshot(IDocument* doc, KCMResourceBytes& out, PMString& 
 		//   error is set, later Sets are ignored until it is cleared). The preserver restores what
 		//   was there before, and the clear gives the export a clean slate to fail on. It is the
 		//   product's own two-line shape (CDialogObserver.cpp:392-394), and the import in
-		//   KCMRehydrate.cpp already wraps ImportINX the same way; until 2026-09-12 the export was the
+		//   KCMRehydrate.cpp wrapped ImportINX the same way (⛔until 2026-09-21); until 2026-09-12 the export was the
 		//   odd one out. ⚠Whether ExportINX raises the global error at all is unmeasured - this is
 		//   the shape a failure would need, not a measured fault.
 		GlobalErrorStatePreserver errorState;

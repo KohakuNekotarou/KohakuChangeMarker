@@ -121,8 +121,9 @@ void	KCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, IDataBas
 void	KCMNotifyStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 
 /** ★★**THE SAME NOTIFICATION, MARKED AS BAD NEWS** (2026-09-21) - the panel paints it red.
-    For the model's own "that did not come out right": the round-trip check on a task-start copy is
-    the first one (KCMOriginCompare.cpp).
+    For the model's own "that did not come out right". ⛔The first one was the round-trip check on a
+    task-start copy (KCMOriginCompare.cpp), which went on 2026-09-21 with the origin; the bit itself
+    is unchanged and waiting for the next model-side thing that can go wrong.
     ★**THE MODEL DOES NOT REACH FOR THE RED.** The colour is the UI's (KCMSetStatusWarning in
       KCMUIShared.h); what crosses the line is one bit, which the observer takes with
       KCMTakeSessionStatusWarning below and turns into a colour. [[model-plugin-must-not-drive-ui]]

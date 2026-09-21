@@ -57,7 +57,8 @@ IDataBase* DocumentToCopy()
 }
 
 /*	"20260921-143052" - what makes the suggested name unique.
-	★Built the way KCMOrigin's own clock was (time / localtime_s / sprintf_s), with the date in
+	★Built the way KCMOrigin's own clock was (time / localtime_s / sprintf_s - ⛔that file went on
+	  2026-09-21, and this is the last of it), with the date in
 	  front: a Task Start copy outlives the session that made it, so the time alone would collide.
 */
 void NowStamp(PMString& out)

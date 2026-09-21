@@ -204,8 +204,10 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 	const int32 id = propID.Get();
 
 	const bool16 isAppString = (id == p_KCMStatus || id == p_KCMBookResult || id == p_KCMStoryRows
-								|| id == p_KCMResourceSnapshot || id == p_KCMResourceDiff
-								|| id == p_KCMOriginStatus);
+								|| id == p_KCMResourceSnapshot || id == p_KCMResourceDiff);
+	// ⛔p_KCMOriginStatus stood in that list until 2026-09-21. Its Property block went from KCM.fr
+	//   with the origin, so the engine can no longer name it and this branch could not be reached -
+	//   and nothing below served it either. The ScriptID itself stays retired (KCMScriptingDefs.h).
 	const bool16 isStoryCounter = (id == p_KCMChangeCount || id == p_KCMTextChangeCount ||
 								   id == p_KCMAttrChangeCount || id == p_KCMOtherChangeCount);
 	const bool16 isDocXPCount = (id == p_KCMTransparencyItemCount);

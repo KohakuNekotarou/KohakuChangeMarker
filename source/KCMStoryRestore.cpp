@@ -1159,8 +1159,10 @@ bool16 RestoreOne(int32 nth, int32 which, bool16 standalone, PMString& outMessag
 	//   in leaves them nothing to read afterwards ("I want the child row to stay, the way KBS keeps
 	//   a replaced hit"). What made it both was measuring what a Ctrl+Z can and cannot put back:
 	//   a row the Story mode had DELETED needs the story diffed again to come back, and that needs
-	//   the task-start copy rehydrated - which runs commands (KCMRehydrate: three ProcessCommand
-	//   calls, a new document, ImportINX) and so cannot be done from inside a lazy notification.
+	//   the Source read again. ⛔When this was written that meant REHYDRATING the task-start copy -
+	//   three ProcessCommand calls, a new document and an ImportINX - which is what could not be done
+	//   from inside a lazy notification. The Source is an open document now and the re-diff is cheap,
+	//   but **the rule stands on the re-diff itself**, not on what it used to cost.
 	//   A row that STAYS needs none of it: the sign is DERIVED from the story's change counter,
 	//   which the undo takes back by itself, so redrawing is the whole of the work.
 	// ⚠**AFTER RunOne, NEVER BEFORE IT**: RunOne rebuilds the row, and a replaced change added

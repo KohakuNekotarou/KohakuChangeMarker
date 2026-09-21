@@ -427,8 +427,10 @@ DECLARE_PMID(kActionIDSpace, kKCMClearChosenActionID, kKCMUIPrefix + 54)	// "Cle
 DECLARE_PMID(kActionIDSpace, kKCMResourceRowXmlActionID, kKCMUIPrefix + 58)
 // (kKCMUIPrefix + 60, 61 and 62 in the ACTION space are retired: they were Task Start's three
 //  XML instruments - Open raw / Open copy / Save to Desktop - removed from the menu 2026-09-14.
-//  ★The WRITER itself survives as a debugging door (KCMOriginSaveRaw, reached from a script
-//   method on app rather than from a menu); the other two were deleted outright.)
+//  ★The WRITER outlived them as a debugging door (KCMOriginSaveRaw, reached from a script method
+//   on app rather than from a menu); the other two were deleted outright. ⛔**The writer went too,
+//   on 2026-09-21**, with the origin whose bytes it wrote - app.kcmSaveOriginXml and its two
+//   neighbours are graves in KCMID.h now.)
 // ⛔**+63 IS A DEAD SLOT - DO NOT REUSE IT.** "Copy Source Text" lived on a CHANGE row's context
 //   menu from 2026-09-12 and was taken out on 2026-09-15 at the user's request. It put the older
 //   side's words on the clipboard as plain text. The subtree it introduced (kKCMChangeRowMenuName)

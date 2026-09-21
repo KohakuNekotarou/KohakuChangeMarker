@@ -11,7 +11,7 @@
 #include "ICommand.h"
 #include "IDataBase.h"
 #include "IDocument.h"
-#include "IDocumentCommands.h"		// CreateNewCommand - the windowless document, as KCMRehydrate makes it
+#include "IDocumentCommands.h"		// CreateNewCommand - the windowless document, as the Task Start copy once was
 #include "IDocumentList.h"
 #include "IDOMElement.h"
 #include "IGraphicFrameData.h"		// GetTextContentUID - the imported spline -> its text frame
@@ -98,9 +98,9 @@ bool16 KCMScratchDoc::Open(PMString& whyNot)
 		whyNot = "could not make the new-document command";
 		return kFalse;
 	}
-	data->SetCreateBasicDocument(kFalse);	// the defaults, as KCMRehydrate's NewDocumentLike leaves them
+	data->SetCreateBasicDocument(kFalse);	// the defaults, as the retired NewDocumentLike left them
 	data->SetNumPages(1);
-	// ★THE CALLER'S ERROR STATE IS KEPT OUT OF THIS, the shape NewDocumentLike uses for the very same
+	// ★THE CALLER'S ERROR STATE IS KEPT OUT OF THIS, the shape NewDocumentLike used for the very same
 	//   command: an error raised here would stand in the global state and pull down the command the
 	//   caller runs next (ErrorUtils.h:41-45 - later Sets are ignored until it is cleared).
 	GlobalErrorStatePreserver errorState;
@@ -163,7 +163,8 @@ bool16 KCMScratchDoc::ImportSnippet(const std::string& snippet, std::vector<UIDR
 	}
 	ErrorCode err = kFailure;
 	{
-		// The caller's error state, kept out of the import - the shape KCMRehydrate wraps ImportINX in.
+		// The caller's error state, kept out of the import - the shape KCMRehydrate wrapped ImportINX
+		// in, and ⛔since 2026-09-21 this snippet import is the only import of the pair left.
 		GlobalErrorStatePreserver errorState;
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 		err = importer->ImportFromStream(read, frag, kInvalidClass, kSuppressUI, nil);

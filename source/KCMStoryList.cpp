@@ -721,8 +721,10 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
 */
 static bool16 ReadRowFromDocument(IDataBase* db, KCMStoryRow& row, UID storyInDb)
 {
-	// storyInDb is the uid the story has IN db. It is row.fStoryUID for every row but a Removed
-	// one read from a Task Start copy, whose uids are new (KCMOriginToSourceUID at the caller).
+	// storyInDb is the uid the story has IN db. ⛔It is row.fStoryUID for EVERY row since 2026-09-21:
+	// a Removed one read from a REHYDRATED Task Start copy used to need translating, those uids
+	// being freshly handed out by the import (KCMOriginToSourceUID, retired with the origin), and a
+	// copy saved to a file carries the originals.
 	InterfacePtr<ITextModel> model(db, storyInDb, UseDefaultIID());
 	if (model == nil)
 		return kFalse;	// a story that cannot be read cannot be shown, or jumped to later

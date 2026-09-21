@@ -4,6 +4,19 @@
 //
 //  KohakuChangeMarker (KCM) - Task Start
 //
+//  ⚠★★**THE OTHER HALF OF THIS FILE'S STORY WENT ON 2026-09-21**, and it is named all through the
+//  text below: KCMRehydrate.cpp's DeleteDummyStory, LabelCopyPages, NewDocumentLike and the import
+//  itself. Task Start saves a copy of the document to a FILE now, so nothing is rebuilt out of
+//  injected bytes, and **every one of those names is a description of what used to happen** - kept
+//  because the measurements behind them are why this file is shaped as it is. The code is in
+//  docs/ai-notes/kcm-rehydration-retired-2026-09-21.md and one `git revert` away.
+//  ⚠★★★**AND SO FOUR OF THE FIVE FUNCTIONS BELOW HAVE NO CALLER LEFT** (measured 2026-09-21):
+//  KCMInjectForRehydration, KCMCollectSpreadPages, KCMCompareElementCounts and
+//  KCMReadDocumentPreference. What is still called is kKCMOriginUidLabelKey and KCMParseSelfUid.
+//  They are left standing rather than bundled into that removal - **this file is the whole of what
+//  is known about feeding InDesign an INX**, and the one plan that would need it again (build a
+//  diff outside InDesign and put it back) is undecided, not abandoned.
+//
 //  What is done to the XML of a task-start copy BEFORE it is handed to ImportINX. Two things:
 //
 //   1. A DUMMY STORY, AND A FRAME OF ITS OWN. ImportINX swallows EXACTLY ONE text insertion per

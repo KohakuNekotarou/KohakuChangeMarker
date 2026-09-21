@@ -19,11 +19,14 @@
 //    and every page of both carries the "/" - that is visible, whereas the wall of false
 //    "changed" rings the positional rule produced was not.
 //
-//  THE ONE EXCEPTION IS INSIDE THE RULE, NOT BESIDE IT: a rehydrated task-start copy is a new
-//  document whose pages have new ids, but each of them carries the origin's id as a label
-//  (KcmOriginUid - written into the copy after the import by KCMRehydrate.cpp, LabelCopyPages,
-//  because ImportINX drops the labels the XML carried; KCMXmlInject.h). The caller hands those
-//  labels in as `sourceKeys`, so the copy's pages pair by the origin's identity like any other.
+//  ⛔**THE ONE EXCEPTION STOPPED BEING NEEDED ON 2026-09-21**, and it was inside the rule rather
+//  than beside it: a REHYDRATED task-start copy was a new document whose pages had new ids, so each
+//  of them carried the origin's id as a label (KcmOriginUid, written into the copy after the import
+//  because ImportINX drops the labels the XML carried - KCMXmlInject.h; the writer was
+//  KCMRehydrate.cpp's LabelCopyPages, retired with the rehydration). **A copy saved to a FILE
+//  carries the numbers the original carries**, so its pages pair by identity with no help at all.
+//  ★The way in is untouched - a caller may still hand labels in as `sourceKeys` - and so is the
+//  rule below.
 //  A source page the write-back could not name (none seen on the real thing, 2026-09-13; the
 //  guard is for a spread the table does not hold) is keyless, and is matched by order against
 //  the target pages that found no namesake. Nothing else is ever matched by order.

@@ -233,7 +233,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMXmlTree.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDocx.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMZipStore.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMOrigin.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRehydrate.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceSnapshot.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMBookCompare.cpp" />
@@ -322,7 +321,6 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMXmlTree.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDocx.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMZipStore.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMOrigin.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMRehydrate.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceSnapshot.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookCompare.h" />

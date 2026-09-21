@@ -105,10 +105,16 @@
 /** Properties KCM adds to the application object. */
 enum KCMScriptProperties
 {
-	p_KCMOriginStatus = 'pKGi',		// i = INX (the code the throwaway probe app.kcmInxProbe had,
-								// 2026-09-08 to 09-09; NEVER REGISTERED WITH ADOBE, so re-used on
-								// 2026-09-12). app.kcmOriginStatus - the Task Start origin, in
-								// one line: held, document, time, bytes, shape, stamps, peek.
+	p_KCMOriginStatus = 'pKGi',		// ⛔**RETIRED 2026-09-21** with the origin it reported. It was
+								// app.kcmOriginStatus - the Task Start origin in one line: held,
+								// document, time, bytes, shape, stamps, peek. Its Property block has
+								// gone from KCM.fr, so a script naming it gets ERR:55.
+								// ★i = INX. The code was the throwaway probe app.kcmInxProbe's
+								// (2026-09-08 to 09-09) and is NEVER REGISTERED WITH ADOBE, which is
+								// why it could be re-used on 2026-09-12 - and why re-using it again
+								// is a question for the registry (kes-scriptid-registry.md) rather
+								// than a refusal. ⚠The member stays so that nothing takes 'pKGi'
+								// back by writing it afresh without looking.
 	p_KCMResourceSnapshot = 'pKGs',	// s = snapshot. app.kcmResourceSnapshot - the Resources mode's
 								// export, measured from outside: "<bytes> bytes, <ms> ms" for the
 								// active document, or "FAILED: <which step>". ★The code 'pKGs' was
@@ -151,16 +157,22 @@ enum KCMScriptProperties
 								// property was also the only READ-WRITE one KCM has ever had.
 };
 
-/** THE ONE METHOD KCM publishes (2026-09-14), on the application object.
+/** ⛔**THE METHOD THIS DESCRIBES WENT ON 2026-09-21** with the origin whose bytes it wrote, and its
+	two neighbours (app.kcmSaveOriginIdml, app.kcmSaveDocXml) went with it. ★**The reasoning is kept
+	on purpose**: this is the worked example of why a door that DOES something is a method and not a
+	property, and every method published here since has been shaped by it.
+
+	THE ONE METHOD KCM PUBLISHED (2026-09-14), on the application object.
 
 		app.kcmSaveOriginXml("C:\\work\\origin.xml")   ->  0
 
 	It writes the held Task Start origin's XML to that file EXACTLY as Task Start took it, and
 	returns a status rather than throwing: **0** written / **1** no origin is held / **2** the file
 	could not be created / **3** the write failed / **4** the file argument could not be read.
-	@warning **the list of numbers lives in THREE places and they are one edit** -- here,
-	  KCMOrigin.h (which decides them) and the return-value string in KCM.fr (which is what a
-	  reader of the DOM sees). KCMOrigin.h is the authority; these two restate it.
+	@warning **the list of numbers lived in THREE places and they were one edit** -- here,
+	  KCMOrigin.h (which decided them) and the return-value string in KCM.fr (which is what a
+	  reader of the DOM sees). ⛔All three went on 2026-09-21. ★**The rule outlives them**: a list of
+	  status numbers is decided in ONE place and restated by the others ([[one-question-one-place]]).
 
 	WHY A METHOD, when everything else here is a property. It DOES something -- it writes a file --
 	and it needs an argument to do it with. A property that wrote a file when it was read would be
