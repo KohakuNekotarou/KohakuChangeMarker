@@ -32,7 +32,8 @@
 #include "KCMStoryAttrPour.h"		// the ruby and the kenten, after the words are in
 #include "KCMStoryRestore.h"		// KCMCreateWordsWriteCmd - one answer to "replace, insert or delete"
 #include "KCMCore.h"				// KCMActiveDocDB / KCMSetCompareMode - the import shows its result in the Story mode
-#include "KCMOrigin.h"				// the origin slot: taken for this mode, parked for the reader's
+#include "KCMOrigin.h"				// ⛔the origin slot, until it goes
+#include "KCMTaskStartSave.h"		// KCMTakeTaskStartCopy - the import's own Task Start, saved to a file
 #include "KCMRehydrate.h"			// KCMReadOriginUidLabel - the copy's stories carry the original UID
 #include "KCMParaText.h"			// ModelOffsetInParagraph / AppendUtf8
 #include "KCMParaPairing.h"			// which paragraph goes with which when <p>s were added or removed
@@ -1402,34 +1403,38 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 	}
 
 	// 2. ★★★THE IMPORT TAKES A TASK START (2026-09-19, the user's rule: "an import always takes a
-	//    Task"). One the reader had taken before is moved aside ONLY so that a cancel or a failure
-	//    below can put it back exactly as it was; on success it is dropped, and this one is theirs.
-	//    ⚠KCMTakeTaskStart stops a running comparison and clears the pair first - the menu item is
-	//     greyed while one runs (KCMActionComponent.cpp), so that is for a script's sake.
+	//    Task"; on 2026-09-21 that Task Start became a COPY SAVED ON DISK).
+	//    ⚠★★**THE READER IS ASKED WHERE TO SAVE IT, AND A CANCEL ENDS THE IMPORT** (the user's
+	//     rule: "ユーザーが保存を拒否したら、そこで終わり"). Nothing has gone into the document at
+	//     this point, so there is nothing to undo - and the call changes nothing of its own when
+	//     the dialog is cancelled.
+	//    ⚠**THERE IS NO PARKING ANY MORE.** The old Task Start was a single in-memory slot that had
+	//     to be moved aside so a failure could put the reader's back; a file choice simply replaces
+	//     the one before it, and the copy stays on disk whatever happens next.
 	KCMClearImportRefusals();
-	const bool16 parked = KCMParkOrigin();
-	PMString stateStep("Taking the document's state");
+	PMString stateStep("Saving a copy of the document");
 	stateStep.SetTranslatable(kFalse);
 	progress.Step(kImportUnitsState, stateStep);	// ★before the call: the bar can only appear at a Step
 	PMString whyNot;
-	if (!KCMTakeTaskStart(whyNot))
+	if (!KCMTakeTaskStartCopy(whyNot))
 	{
-		if (parked)
-			KCMUnparkOrigin();		// nothing happened; the reader's own task comes straight back
-		outMessage = "import: the document's state could not be taken (";
+		// ★★An EMPTY reason means the reader cancelled the save dialog: the import ends here and
+		//   says nothing at all, the same silence the flyout's own Task Start keeps.
+		outMessage.Clear();
 		outMessage.SetTranslatable(kFalse);
-		outMessage.Append(whyNot);
-		outMessage.Append(")");
+		if (whyNot.CharCount() > 0)
+		{
+			outMessage = "import: the document's state could not be saved (";
+			outMessage.Append(whyNot);
+			outMessage.Append(")");
+		}
 		return kFalse;
 	}
-	// ★A CANCEL PRESSED WHILE THE STATE WAS TAKEN is answered here, the first safe point after it: the
-	//   import's own origin goes, and the reader's comes back.
+	// ★A CANCEL PRESSED WHILE THE COPY WAS BEING SAVED is answered here, the first safe point after
+	//   it. ⚠**The copy stays on disk and stays chosen as the Source**: the reader asked for it and
+	//   paid for it with a save dialog, so throwing it away would be worse than keeping it.
 	if (progress.WasCancelled())
 	{
-		if (parked)
-			KCMUnparkOrigin();
-		else
-			KCMReleaseOrigin();
 		outMessage = kImportCancelledMessage;
 		outMessage.SetTranslatable(kFalse);
 		return kFalse;
@@ -1447,16 +1452,12 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 	const bool16 anyIn = KCMPourStoryText(db, set, poured, cancelledPour);
 	if (cancelledPour)
 	{
-		if (parked)
-			KCMUnparkOrigin();
-		else
-			KCMReleaseOrigin();
+		// ⚠The copy stays, for the reason given at the cancel above: it is a Task Start the reader
+		//   saved, and the abandoned pour leaves the document as it was.
 		outMessage = kImportCancelledMessage;
 		outMessage.SetTranslatable(kFalse);
 		return kFalse;
 	}
-	if (parked)
-		KCMDropParkedOrigin();		// the import's Task Start is the reader's now
 
 	// 4. THE STORY MODE, against the Task Start just taken: the Source is the moment before the
 	//    import, the Target is the document with the edits in. The comparison's story loop steps

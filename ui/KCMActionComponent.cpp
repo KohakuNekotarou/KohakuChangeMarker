@@ -1498,7 +1498,7 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//   an import WAITS: it replaces the origin, and doing that underneath a running
 			//   comparison would change what the panel is showing while it is showing it.
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-			const bool16 live = (compare != nil && compare->CanTakeTaskStart()
+			const bool16 live = (compare != nil && compare->CanTakeTaskStartCopy()
 								 && !compare->IsArmed()) ? kTrue : kFalse;
 			listToUpdate->SetNthActionState(i, live ? kEnabledAction : kDisabled_Unselected);
 		}
@@ -1515,11 +1515,13 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		else if (action == kKCMPopupExportStoryTextActionID
 				 || action == kKCMPopupExportStoryDocxActionID)
 		{
-			// ★AN ACTIVE DOCUMENT IS THE WHOLE CONDITION. This item reads and never compares, so
-			//   it needs no Target, no Source and no comparison - and CanTakeTaskStart is already
-			//   exactly that question, asked in one place (KCMCanTakeTaskStart).
+			// ★AN ACTIVE DOCUMENT IS THE WHOLE CONDITION. This item reads and never compares, so it
+			//   needs no Target, no Source and no comparison.
+			//   ⚠**It used to borrow CanTakeTaskStart for this question, and that stopped being the
+			//    same question on 2026-09-21**: Task Start now copies the chosen Target when there
+			//    is one, so it can be live with no active document at all. Asked directly instead.
 			listToUpdate->SetNthActionState(i,
-				Utils<IKCMCompareFacade>()->CanTakeTaskStart() ? kEnabledAction : kDisabled_Unselected);
+				(Utils<IKCMCompareFacade>()->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupExportReportActionID)
 		{
