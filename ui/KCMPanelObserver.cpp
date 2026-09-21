@@ -532,7 +532,11 @@ static void KCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 		if (fileLabel.CharCount() > 0)
 		{
 			target.Append(" ");
-			target.Append(fileLabel);
+			// ★**A FILE END IS SHOWN THE WAY AN OPEN ONE IS** (2026-09-21). The model hands the path
+			//   over as the platform wrote it; the "/" rule lives on this side (KCMPathDisplay.h), and
+			//   without it the SAME file read "C:¥…" while only chosen and "C:/…" once Start had
+			//   opened it - one line, two spellings, measured on the application.
+			target.Append(KCMPathForDisplay(fileLabel));
 		}
 	}
 	PMString source("Source:"); source.SetTranslatable(kFalse);
@@ -549,7 +553,7 @@ static void KCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 		if (fileLabel.CharCount() > 0)
 		{
 			source.Append(" ");
-			source.Append(fileLabel);
+			source.Append(KCMPathForDisplay(fileLabel));	// ★as the Target line above, same reason
 		}
 		else if (compare->HasOrigin())
 		{

@@ -1271,13 +1271,15 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		{
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
-			// Task Start: while an origin is held BOTH are greyed. "Set as Source" would replace the
-			// origin silently; "Set as Target" would name a document the resolver then ignores (the
-			// origin's pair wins while it is chosen), so the panel would say one Target and Start
-			// would compare another. The origin's pair is fixed at Task Start; Clear ends it.
-			const bool16 blocked = compare->HasOrigin();
+			// ⚠**A TASK START NO LONGER GREYS THESE** (2026-09-21, the reader's decision). While the
+			//   Task Start was an origin held in memory both items were greyed so that neither could
+			//   throw it away - "Set as Source" would have replaced the only copy of those words
+			//   silently, and there was nowhere else to get them. **The copy is a file on disk now**,
+			//   so replacing the choice loses nothing: the file stays where it was saved and can be
+			//   chosen again. ⇒ The origin test that stood here is gone - and it could no longer be
+			//   true either, nothing having taken an origin since Task Start began saving to a file.
 			listToUpdate->SetNthActionState(i,
-				(!armed && !blocked && compare->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
+				(!armed && compare->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupPrintMarksActionID)
 		{

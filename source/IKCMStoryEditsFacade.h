@@ -522,13 +522,18 @@ public:
 	virtual bool16	ExportStoryText(const IDFile& parent, const UIDList& onlyThese,
 									PMString& outMessage) = 0;
 
-	/** "Import Story Text..." (2026-09-15): read the chosen files of edited stories, take the
-		document's state as the origin, and start the Story comparison against a copy with those
-		words in it.
+	/** "Import Story Text..." (2026-09-15; remade 2026-09-19 and 2026-09-21): read the chosen
+		files of edited stories, SAVE A TASK START COPY of the document to a file the reader picks,
+		pour the edited words into the DOCUMENT, and start the Story comparison against that copy.
 
-		★★★**THE DOCUMENT IS NOT CHANGED BY THIS.** The edited words go into the COPY; what puts
-		  any of them into the reader's own document is "Restore Source Text", one change at a
-		  time, as it always was.
+		★★★**THE DOCUMENT IS CHANGED BY THIS, AND EVERYTHING GOES IN AT ONCE** (2026-09-19, the
+		  reader's own proposal, adopted the same day). What decided it: overset shows itself on the
+		  real page the moment the words are in. The Story mode then lists what went in - against the
+		  copy taken a moment earlier - and "Undo the Restore" sends a change back one at a time.
+		  ⚠**The line that stood here until 2026-09-21, "the document is not changed by this", was
+		    the 2026-09-15 design; it was measured false on the application.**
+		★**A TASK START OF ITS OWN** (2026-09-21): the save dialog comes up once the files have been
+		  chosen, and a reader who cancels it ends the import - there is nothing to compare against.
 		★**FILES, NOT A FOLDER** (2026-09-15, the user's decision): the reader picks the stories
 		  they mean, several at once, instead of handing over everything that happens to be in a
 		  folder.

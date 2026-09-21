@@ -9,10 +9,16 @@
 //  backslash is drawn as a yen sign - so "…\new\ch01.indd" reads as "…¥new¥ch01.indd". Forward
 //  slashes read the same everywhere.
 //
-//  ★WHY A FILE OF ITS OWN. Three places show a path (the panel, the book dialog, the book
-//  confirmation alert) and they reach it through two different functions. Putting the rule here
-//  means the answer to "how do we show a path?" exists once - the same reason KCMElidePathFront
-//  was moved out of KCMBookPair.h in Stage 1 Task 15.
+//  ★WHY A FILE OF ITS OWN. Several places show a path and they reach it through different
+//  functions, so putting the rule here means the answer to "how do we show a path?" exists
+//  once - the same reason KCMElidePathFront was moved out of KCMBookPair.h in Stage 1 Task 15.
+//
+//  ⚠★★**DO NOT WRITE THE NUMBER OF CALLERS HERE.** This file said "three places" from
+//  2026-08-15 until 2026-09-21, by which time a FOURTH had appeared - the panel's Target:/
+//  Source: lines when that end is a FILE a Task Start chose - and it went straight to the raw
+//  path, so a Japanese reader saw "¥" on one line and "/" on the other of the same panel.
+//  **A total has to be re-counted to stay true; a grep does not.**
+//      grep -rn KCMPathForDisplay ui
 //
 //  ⚠NOT for paths the user is meant to USE. The status line reports where a file was saved
 //  (KCMPanelState.json, KCMPageChecks.json, the changed-pages TSV) and those stay as the
