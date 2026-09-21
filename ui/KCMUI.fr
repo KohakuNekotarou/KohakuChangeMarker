@@ -1428,9 +1428,12 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// "Task Start" (2026-09-12): the active document's state now becomes the Source. Greyed
-		// while an origin is held, while a comparison is armed, and with no document (facade
-		// CanTakeTaskStart, the one place - UpdateActionStates).
+		// "Task Start" (2026-09-21): a COPY of the document is saved to a file the reader picks, and
+		// that file becomes the Source. Greyed only when there is no document to copy - the chosen
+		// Target, or the one in front (facade CanTakeTaskStartCopy, the one place -
+		// UpdateActionStates). ⚠**Not greyed while a comparison runs**: pressing it stops that
+		// comparison first. (Until 2026-09-21 this took the document's state into memory instead,
+		// and this comment still described a greying rule withdrawn on 2026-09-14.)
 		kKCMActionComponentBoss,
 		kKCMPopupTaskStartActionID,
 		kKCMTaskStartMenuKey,
@@ -1454,8 +1457,9 @@ resource ActionDef (kSDKDefActionResourceID)
 
 		// "Export Story Text..." (2026-09-15): the document's words, out to HTML files. Greyed only
 		// when there is no active document - it reads and never compares, so it needs no Target, no
-		// Source and no comparison (UpdateActionStates asks CanTakeTaskStart, which is exactly that
-		// one question).
+		// Source and no comparison (UpdateActionStates asks the facade for the active document).
+		// ⚠It borrowed CanTakeTaskStart for this until 2026-09-21, when the two stopped being the
+		// same question - Task Start copies the chosen Target when there is one.
 		kKCMActionComponentBoss,
 		kKCMPopupExportStoryTextActionID,
 		kKCMExportStoryTextMenuKey,

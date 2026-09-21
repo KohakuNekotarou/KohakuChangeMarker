@@ -328,6 +328,15 @@ void KCMToggleStartStop()
 	if (!KCMRealisePairEnd(targetEnd, targetDB, whyNotRealised)
 		|| !KCMRealisePairEnd(sourceEnd, sourceDB, whyNotRealised))
 	{
+		// ⚠**A resolved end that will not realise AND gives no reason** cannot come out of the
+		//  resolver's own answers - a database end that resolved is non-nil, and a file end that
+		//  resolved exists. This is the guard, not the message: an empty status line would say
+		//  less than nothing.
+		if (whyNotRealised.CharCount() == 0)
+		{
+			whyNotRealised = PMString("The documents to compare could not be opened.");
+			whyNotRealised.SetTranslatable(kFalse);
+		}
 		KCMNotifyStatus(whyNotRealised);
 		KCMNotify(kKCMMarksRebuiltMessage);
 		return;
