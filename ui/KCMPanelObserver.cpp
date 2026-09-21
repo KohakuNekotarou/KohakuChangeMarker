@@ -555,16 +555,10 @@ static void KCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 			source.Append(" ");
 			source.Append(KCMPathForDisplay(fileLabel));	// ★as the Target line above, same reason
 		}
-		else if (compare->HasOrigin())
-		{
-			// ⛔Task Start as it was: the Source is the origin - a moment, not a document - whether
-			// chosen or armed (an armed origin pair has no Source database either). Named by the
-			// model. This branch goes when the origin does.
-			PMString originLabel;
-			compare->GetOriginLabel(originLabel);
-			source.Append(" ");
-			source.Append(originLabel);
-		}
+		// ⛔**THE ORIGIN'S BRANCH WENT ON 2026-09-21.** The Source could be a MOMENT rather than a
+		//   document - "Task Start 12:34:56", named by the model - and this line said so when neither
+		//   a file nor a database stood on that end. A Task Start is a file now, which the branch
+		//   above names by its path, so nothing reaches past it.
 	}
 
 	IControlView* tView = pcd->FindWidget(kKCMTargetTextWidgetID);

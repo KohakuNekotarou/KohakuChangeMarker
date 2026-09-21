@@ -1446,22 +1446,27 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 	//   the Target's whole IDML when the comparison starts - prepare a snippet for the tables that
 	//   changed, and only for those"). Exported AT MOST ONCE for the story however many of its tables
 	//   changed, and NOT AT ALL when none did - which is every story in almost every document.
-	// ⚠AND NOT AT ALL WHEN NOTHING COULD READ IT: a comparison against another DOCUMENT, and a KIDMCP
-	//   one, offer no "Restore Source Text" at all (the user's rule of 2026-09-16), so a snippet kept
-	//   for those would be an export on every re-diff that no menu can reach. The question is asked
-	//   where it is always asked - KCMStoryWritesAllowed, the one place it is decided.
+	// ⚠AND NOT AT ALL WHEN NOTHING COULD READ IT: with no Source there is no "Restore Source Text",
+	//   so a snippet kept then would be an export on every re-diff that no menu can reach. The
+	//   question is asked where it is always asked - KCMStoryWritesAllowed, the one place it is
+	//   decided.
+	//   ⚠★★**THAT TEST ADMITS MORE THAN IT DID** (2026-09-21). It used to exclude a comparison against
+	//    another DOCUMENT and a KIDMCP one, on the 2026-09-16 rule that neither offered a restore at
+	//    all; **the rule was withdrawn the day Task Start became a file**, so what is left is "is
+	//    there a Source database". ⇒ Those two comparisons now export here as well - which is what
+	//    lets the ids below pair THEIR tables by name instead of by position.
 	const bool16 restorable = KCMStoryWritesAllowed();
 	IDataBase* const targetDB = (targetModel != nil && restorable) ? ::GetDataBase(targetModel) : nil;
 
 	// ★★★**WHICH TABLE IS WHICH, BY THE TABLES' OWN IDS** (2026-09-20, the user: "is it looking at
-	//   tables by position? a table has an id too - can that not say which is which?"). Task Start's
-	//   ids are read out of the origin's INX, which THIS document wrote, so they are the very numbers
-	//   the live tables carry (KCMTableSnippet.h; measured the same day, including that an id moves
-	//   for no insertion, no removal and no undo).
-	// ⚠**ONLY WHEN THE ORIGIN CAN ANSWER FOR EVERY ONE OF THEM.** A comparison against another
-	//   DOCUMENT has a Source whose uids mean nothing here, and a text that names one table without
-	//   a Self of its own can name any of them wrongly - in both cases the pairing falls back to the
-	//   position, which is what it always was.
+	//   tables by position? a table has an id too - can that not say which is which?"). The ids come
+	//   out of the SOURCE's own INX, and a table's id is the uid the document that wrote the text
+	//   gave it, so the same table is named alike on both sides (KCMTableSnippet.h; measured the same
+	//   day, including that an id moves for no insertion, no removal and no undo).
+	// ⚠**ONLY WHEN THE TWO SIDES CARRY THE SAME DOCUMENT'S NUMBERS.** A Source that is some OTHER
+	//   document holds no story under this uid and answers nothing, and a text that names one table
+	//   without a Self of its own can name any of them wrongly - in both cases the pairing falls back
+	//   to the position, which is what it always was.
 	std::vector<UID> sIds;
 	bool16 byId = kFalse;
 	{

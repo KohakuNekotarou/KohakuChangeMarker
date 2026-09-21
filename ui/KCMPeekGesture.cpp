@@ -51,8 +51,8 @@
 
 #include "PMReal.h"
 #include "PMString.h"
-#include "AcquireModalCursor.h"		// AcquireWaitCursor -- the first Task Start peek rebuilds the origin
-#include "K2SmartPtr.h"				// K2::scoped_ptr
+// ⛔AcquireModalCursor.h and K2SmartPtr.h went on 2026-09-21 with their one user, the wait cursor
+//   the first Task Start peek raised while it rebuilt the origin (see ShowPeekForGesture).
 #include <new>						// std::nothrow
 
 // The plug-in's own headers:
@@ -250,12 +250,10 @@ static void KCMTrackerBeginPeek(PMReal opacity)
 	IDataBase* const under = overTarget ? compare->GetArmedTargetDB() : compare->GetArmedSourceDB();
 	IDataBase* const over  = overTarget ? compare->GetArmedSourceDB() : compare->GetArmedTargetDB();
 	sPeekUnderDB = under;		// the window the release repaints (see the declaration)
-	// Task Start: `over` is nil while the origin is the Source, and the model builds the peek
-	// document for this spread on the first press (a rehydration, 0.3-1.5s). The cursor says so;
-	// AcquireModalCursor.h puts the arrow back when this goes out of scope.
-	K2::scoped_ptr<AcquireWaitCursor> wait;
-	if (over == nil && compare->IsOriginArmed())
-		wait.reset(new (std::nothrow) AcquireWaitCursor());
+	// ⛔**THE WAIT CURSOR WENT ON 2026-09-21** with the origin it waited for. `over` was nil while an
+	//   origin was the Source, and the first press built a peek document for the spread under the
+	//   mouse - a rehydration of 0.3-1.5s the cursor had to account for. Start opens the Task Start
+	//   copy now, so both ends are open documents and a peek costs what any other peek costs.
 	compare->ShowPeekAt(under, over,
 	                    mx, my, viewScale, uiZoom,
 	                    KCMQuerySpreadUIDForView(view));

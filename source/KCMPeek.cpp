@@ -263,13 +263,12 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 		for (int32 p = 0; p < np; ++p)
 		{
 			const UID tPageUID = spread->GetNthPageUID(p);
-			UID sPageUID = kInvalidUID;
-			{
-				std::map<UID, UID>::const_iterator mi = targetToSource.find(tPageUID);
-				if (mi == targetToSource.end())
-					continue;
-				sPageUID = mi->second;
-			}
+			// ⛔The scope that stood here was the `else` of the Task Start branch, which paired a
+			//   one-spread copy by itself; the branch went on 2026-09-21 and left a bare block.
+			std::map<UID, UID>::const_iterator mi = targetToSource.find(tPageUID);
+			if (mi == targetToSource.end())
+				continue;
+			const UID sPageUID = mi->second;
 			UIDRef tRef(targetDB, tPageUID);
 			UIDRef sRef(sourceDB, sPageUID);
 			KCMDrawEventHandler::MakeOrigImage(tRef, sRef, peekDpi);	// a page that fails is simply not laid over
@@ -548,10 +547,9 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 	if (!KCMQueryPixelComparePair(targetDB, sourceDB))
 		return kFalse;
 
-	// ⛔A Source was rehydrated here for the call, and closed afterwards, whenever the armed pair
-	//   was an origin - it had no Source database of its own. Every armed pair has one now.
-	if (sourceDB == nil)
-		return kFalse;
+	// ⛔A Source was rehydrated here for the call, and closed afterwards, whenever the armed pair was
+	//   an origin - it had no Source database of its own. Every armed pair has one now, and the
+	//   resolver above refuses a pair without one, so the guard that followed this could not fire.
 
 	// Read the Pages panel's selection through the reader Register and Check share
 	// (KCMPageMap.cpp). Nothing happens unless the document that selection belongs to is the

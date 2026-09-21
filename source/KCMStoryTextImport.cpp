@@ -32,7 +32,8 @@
 #include "KCMStoryAttrPour.h"		// the ruby and the kenten, after the words are in
 #include "KCMStoryRestore.h"		// KCMCreateWordsWriteCmd - one answer to "replace, insert or delete"
 #include "KCMCore.h"				// KCMActiveDocDB / KCMSetCompareMode - the import shows its result in the Story mode
-#include "KCMOrigin.h"				// ⛔the origin slot, until it goes
+// ⛔KCMOrigin.h went on 2026-09-21 - "until it goes" was written for the origin slot, and the slot
+//   went that day. Nothing in this file read anything the header declared.
 #include "KCMTaskStartSave.h"		// KCMTakeTaskStartCopy - the import's own Task Start, saved to a file
 #include "KCMRehydrate.h"			// KCMReadOriginUidLabel - the copy's stories carry the original UID
 #include "KCMParaText.h"			// ModelOffsetInParagraph / AppendUtf8

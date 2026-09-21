@@ -568,6 +568,11 @@ public:
 	//  vtable, so deleting a virtual moves every one below it onto a different method
 	//  ([[facade-vtable-slot-append-only]]). ★The live pair is CanTakeTaskStartCopy /
 	//  TakeTaskStartCopy, appended at the end of this interface.
+	// ★★**AND NOT ONE CALLER IS LEFT ANYWHERE** (measured 2026-09-21, the re-check after the
+	//  removal). The UI half still held TEN calls to these - the removal had counted only the
+	//  thirteen branches on the model side - and every one of them had become a branch that could
+	//  not be taken. They went the same day, and nothing outside this plug-in pair ever called
+	//  them. ⇒ **These five are ABI, not API: kept so the vtable does not shift, called by no one.**
 
 	virtual bool16		CanTakeTaskStart() = 0;					// ⛔always kFalse
 	virtual bool16		TakeTaskStart(PMString& outWhyNot) = 0;	// ⛔always kFalse, reason empty
@@ -638,14 +643,14 @@ public:
 	virtual bool16		GetShowStoryIds() = 0;
 	virtual void		SetShowStoryIds(bool16 on) = 0;
 
-	/** ★★**OPEN THE TASK START COPY WHERE IT CAN BE SEEN** (2026-09-20, the user's request).
-		★**It is the copy the COMPARISON makes** - the same internal IDML, the same injection, the
-		same ImportINX - opened in a window with **the sacrificial paragraphs left in**, so that what
-		the import ate and what survived can be read off the document itself. A copy that does not
-		match the origin is opened anyway, with the mismatch on the status line: that is the
-		interesting one. KCMRehydrate.h carries the whole of why.
-		@return kTrue when a document was made; outMessage says whether it matched and whether a
-		 window appeared. */
+	/** ⛔**HOLLOW SINCE 2026-09-21**: always kFalse, outMessage empty, no caller anywhere.
+		It opened the Task Start copy where it could be seen (2026-09-20, the user's request) - the
+		copy the COMPARISON made, same internal IDML, same injection, same ImportINX, opened in a
+		window with **the sacrificial paragraphs left in**, so that what the import ate and what
+		survived could be read off the document itself. The flyout item that called it went with the
+		origin, and so did the bytes it would have opened.
+		⚠**THE SLOT STAYS** for the reason the five above it stay: KIDMCP calls this facade through
+		 its vtable ([[facade-vtable-slot-append-only]]). */
 	virtual bool16		OpenOriginAsIdml(PMString& outMessage) = 0;
 
 	/** ★**WAS THE MESSAGE THE MODEL JUST RAISED BAD NEWS?** (2026-09-21) **Asking clears it.**

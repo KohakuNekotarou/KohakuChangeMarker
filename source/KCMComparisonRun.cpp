@@ -34,7 +34,9 @@
 #include "KCMRingAdornment.h"		// KCMRevalidateItemXPList -- the transparency-list insurance, at Start and at Stop
 #include "KCMThreadSafety.h"		// KCMIsSameDoc -- the one place this plug-in asks whether two dbs are one document
 #include "KCMExternalSource.h"	// the lent Source: registered and chosen by KCMStartComparisonWithSourceDB, forgotten by the lender's Release
-#include "KCMOrigin.h"			// the origin (Task Start): the third kind of Source, chosen by KCMChooseOriginPair
+// ⛔KCMOrigin.h went on 2026-09-21. It was included for "the third kind of Source, chosen by
+//   KCMChooseOriginPair" - and that function had already gone with the origin, leaving an include
+//   this file reads nothing from and a comment naming something that no longer exists.
 
 // KCMCanStartComparison (declared in KCMComparisonRun.h) -- whether the flyout's Start may be
 // enabled. Goes through the same resolver as the command, so the two cannot disagree.

@@ -249,17 +249,18 @@ bool16 KeepLiveTable(IDataBase* db, UID storyUID, UID tableId,
 		|| !KCMCutTableXmlById(storyInx.GetData(), storyInx.GetSize(), storyUID, tableId, outTableXml))
 		return kFalse;
 	KCMCutTableStyleGroups(storyInx.GetData(), storyInx.GetSize(), groups);
-	// A story's own INX carries no style groups of its own, so the comparison's snapshot answers
-	// next, and the origin last - which differs only in styles MADE since Task Start.
+	// ⚠**THE EXPORT CAN COME BACK WITHOUT THEM ANYWAY**: the style roots are handed to it above, but
+	//   a document that defines no cell or table style has no group to write - so the comparison's
+	//   own snapshot answers next.
+	// ⛔The origin's bytes were the last resort behind that snapshot until 2026-09-21. What they
+	//   added over it was a style MADE since Task Start, and the snapshot is taken at the same moment
+	//   the comparison reads the story - so nothing measurable was lost with them.
 	if (groups.empty())
 	{
 		const std::string* const seen = KCMStorySnapshotPeek(storyUID);
 		if (seen != nil)
 			KCMCutTableStyleGroups(seen->c_str(), seen->size(), groups);
 	}
-	// ⛔The origin's bytes were the last resort here until 2026-09-21. What they added over the
-	//   snapshot was a style MADE since Task Start, and the snapshot is taken at the same moment
-	//   the comparison reads the story - so nothing measurable was lost with them.
 	KCMBuildTableSnippet(outTableXml, groups, outSnippet);
 	return kTrue;
 }

@@ -144,7 +144,12 @@ bool16 KCMResolveComparisonPair(KCMPairEnd& outTarget, KCMPairEnd& outSource)
 	outTarget = KCMPairEnd();
 	outSource = KCMPairEnd();
 
-	// ⛔THE ORIGIN WINS while it is chosen (Task Start as it was): the Target is the document it
+	// ⛔**THE ORIGIN WON HERE WHILE IT WAS CHOSEN** (Task Start as it was): the Target was the
+	//   document it had been taken from, the Source was not a database at all, and the pair was
+	//   reported resolvable with an EMPTY Source - which is what the menu's grey state needed to
+	//   know. It went on 2026-09-21, and a Task Start end is a FILE the branch below resolves.
+	//   ⚠The sentence that stood here had lost its second half in the removal; this is it whole.
+
 	// The Target: a file choice, then a chosen document, then the active document.
 	if (sTargetIsFile)
 	{

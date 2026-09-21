@@ -189,18 +189,13 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 	InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
 	IDataBase* const markedDB    = (marks != nil) ? marks->GetMarkedTargetDB() : nil;
 	IDataBase* const markedSrcDB = (marks != nil) ? marks->GetMarkedSourceDB() : nil;
-	if (compare->IsOriginArmed())
-	{
-		// ★Task Start: armed with NO Source database (the copy was closed after the comparison), so
-		//   the test below - "both marked documents are there" - read as "nothing is running" and
-		//   the mode changed without a comparison: Story's rows under a Pixel heading, and the other
-		//   way round (the user saw it: "モードをかえたとき、うまくいってないきがする", 2026-09-12).
-		//   The model's Refresh rehydrates a Source and runs the Start procedure in the new mode;
-		//   a cancel inside it stops the comparison itself, which IsArmed reports afterwards.
-		compare->RefreshComparison();
-		msg.Append(compare->IsArmed() ? " (recompared)" : " (cancelled - stopped)");
-	}
-	else if (markedDB != nil && markedSrcDB != nil)
+	// ⛔**THE ORIGIN'S BRANCH WENT ON 2026-09-21.** A Task Start used to arm with NO Source database,
+	//   so the test below - "both marked documents are there" - read as "nothing is running", and the
+	//   mode changed without a comparison: Story's rows under a Pixel heading, and the other way round
+	//   (the user saw it: "モードをかえたとき、うまくいってないきがする", 2026-09-12). That branch
+	//   refreshed instead, rehydrating a Source. **Both ends are ordinary documents now**, so the
+	//   marked pair answers for a Task Start exactly as it does for any other comparison.
+	if (markedDB != nil && markedSrcDB != nil)
 	{
 		PMString report;
 		// ★allowIncremental is not passed ＝ every page is compared again. An incremental comparison is
@@ -640,14 +635,10 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
 			IDataBase* const markedDB    = marks->GetMarkedTargetDB();
 			IDataBase* const markedSrcDB = marks->GetMarkedSourceDB();
-			if (folio->IsOriginArmed())
-			{
-				// Task Start: no Source database while armed - the same branch as KCMApplyCompareMode,
-				// for the same reason (the two-documents test below would read "not running").
-				folio->RefreshComparison();
-				msg.Append(folio->IsArmed() ? " (recompared)" : " (cancelled - stopped)");
-			}
-			else if (markedDB != nil && markedSrcDB != nil)
+			// ⛔**The origin's branch went on 2026-09-21** - the same one KCMApplyCompareMode carried,
+			//   and for the same reason: an armed origin had no Source database, so the test below
+			//   read "not running". Both ends are ordinary documents now.
+			if (markedDB != nil && markedSrcDB != nil)
 			{
 				PMString report;
 				// ★allowIncremental is not passed here either ＝ every page is compared again, so with many
@@ -684,12 +675,8 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
 			IDataBase* const markedDB    = marks->GetMarkedTargetDB();
 			IDataBase* const markedSrcDB = marks->GetMarkedSourceDB();
-			if (pairing->IsOriginArmed())
-			{
-				pairing->RefreshComparison();
-				msg.Append(pairing->IsArmed() ? " (recompared)" : " (cancelled - stopped)");
-			}
-			else if (markedDB != nil && markedSrcDB != nil)
+			// ⛔The origin's branch went on 2026-09-21 (the folio toggle above says why).
+			if (markedDB != nil && markedSrcDB != nil)
 			{
 				PMString report;
 				if (Utils<IKCMCompareFacade>()->MarkChanges(markedDB, markedSrcDB, report) == kSuccess)
@@ -1368,11 +1355,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		}
 		else if (action == kKCMPopupSyncViewsActionID)
 		{
-			// Task Start: there is no Source window to sync with while the origin is the Source.
-			if (Utils<IKCMCompareFacade>()->IsOriginArmed())
-				listToUpdate->SetNthActionState(i, kDisabled_Unselected);
-			else
-				KCMSetCheckState(listToUpdate, i, KCMGetLayoutSync());
+			// ⛔**The origin's branch went on 2026-09-21.** It greyed this item because an armed origin
+			//   had no Source WINDOW to sync with - the copy existed only as bytes. Start opens the
+			//   Task Start copy now, so there is always a window on the other side.
+			KCMSetCheckState(listToUpdate, i, KCMGetLayoutSync());
 		}
 		else if (action == kKCMPopupTranslucentPanelActionID)
 		{
@@ -1396,11 +1382,9 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		}
 		else if (action == kKCMPopupShowSrcMarksActionID)
 		{
-			// Task Start: no Source window to show marks on while the origin is the Source.
-			if (Utils<IKCMCompareFacade>()->IsOriginArmed())
-				listToUpdate->SetNthActionState(i, kDisabled_Unselected);
-			else
-				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowSourceMarks());
+			// ⛔The origin's branch went on 2026-09-21, with the same reasoning as Sync Layout Views
+			//   above: there is a Source window to show marks on now, always.
+			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowSourceMarks());
 		}
 		else if (action == kKCMPopupShowTgtMarksActionID)
 		{
@@ -1537,7 +1521,7 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		else if (action == kKCMClearChosenActionID)
 		{
 			// ★**Live whenever the panel's two lines have something to clear**: either a comparison
-			//   is running (the lines name the armed pair) or at least one document is chosen (they
+			//   is running (the lines name the armed pair) or at least one END is chosen (they
 			//   name the choice). With neither, they are bare labels already and there is nothing to
 			//   undo.
 			// ⚠**The "not while armed" gate the two "Set as" items carry is deliberately absent**
@@ -1545,11 +1529,24 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//   comparison -- it stops the comparison first and clears both together (DoAction).
 			//   Asked through the same facade the command uses, so the grey and the command cannot
 			//   come to mean different things ([[one-question-one-place]]).
+			// ★★★**AND A CHOSEN END MAY BE A FILE** (2026-09-21). A Task Start saves a copy and chooses
+			//   THAT FILE as the Source with no document behind it, and a closing document does NOT take
+			//   a file choice down with it (KCMPairChoice.h says why it must not). So every database
+			//   question could answer nil while the panel still named a file on the Source line, and
+			//   this item sat grey over a line the reader could see and could not clear.
+			//   ⚠**The origin was the third thing asked here and covered that case by accident** - it
+			//    went the same day, and the hole it left is what this reads instead.
+			// ★**THE SAME FOUR DOORS THE PANEL'S LINES ARE BUILT FROM** (KCMPanelObserver.cpp), which is
+			//   what keeps "has something to clear" and "shows something" ONE question.
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+			PMString chosenTargetFile, chosenSourceFile;
+			compare->GetChosenTargetFileLabel(chosenTargetFile);
+			compare->GetChosenSourceFileLabel(chosenSourceFile);
 			const bool16 anyChosen = (compare->GetChosenTargetDB() != nil) ||
 			                         (compare->GetChosenSourceDB() != nil) ||
-			                         compare->HasOrigin();		// Task Start: the origin is a choice too, and this is what releases it
+			                         (chosenTargetFile.CharCount() > 0) ||
+			                         (chosenSourceFile.CharCount() > 0);
 			listToUpdate->SetNthActionState(i,
 				(armed || anyChosen) ? kEnabledAction : kDisabled_Unselected);
 		}

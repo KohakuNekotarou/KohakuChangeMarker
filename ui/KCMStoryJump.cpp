@@ -465,11 +465,11 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 							   : Utils<IKCMCompareFacade>()->GetArmedTargetDB();
 	if (db == nil || !Utils<IKCMCompareFacade>()->IsDocDBOpen(db))
 	{
-		// Task Start: a Removed row's story exists only in the origin, which has no window - the
-		// comparison IS running, and saying otherwise would send the reader to press Start.
-		KCMSetStatus((removedRow && Utils<IKCMCompareFacade>()->IsOriginArmed())
-			? "That story is only in the Task Start version - there is no window to show it in."
-			: "The comparison is no longer running.");
+		// ⛔**THE ORIGIN'S WORDING WENT ON 2026-09-21.** A Removed row's story existed only in the
+		//   origin, which had no window of its own, so this said so rather than sending the reader
+		//   off to press Start. The Source is an open document now - Start opens it - so a database
+		//   that is not there means exactly what the one remaining sentence says.
+		KCMSetStatus("The comparison is no longer running.");
 		return kFalse;
 	}
 
