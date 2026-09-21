@@ -5,7 +5,7 @@
 //  KohakuChangeMarker (KCM) - the ruby and the kenten of an edited file, poured into the copy
 //
 //  WHAT THIS IS FOR. KCMStoryTextImport pours the reader's edited WORDS into the task-start copy.
-//  Until 2026-09-16 that was all it poured: the file carried ruby and kenten (KCMStoryHtml does
+//  Until 2026-09-16 that was all it poured: the file carried ruby and kenten (the format does
 //  the whole round trip for both), the copy never received them, and so "I only changed the
 //  ruby" produced a comparison with nothing in it at all. This file is the other half - the
 //  reader's ask of 2026-09-16: "ruby only, the base and the ruby together, and kenten too".
@@ -38,7 +38,7 @@
 
 #include <string>
 
-#include "KCMStoryHtml.h"	// KCMStoryHtml::Para - and, through it, KCMParaAttrs
+#include "KCMStoryShape.h"	// KCMStoryShape::Para - and, through it, KCMParaAttrs
 
 class ITextModel;
 
@@ -66,7 +66,7 @@ class ITextModel;
 */
 int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 								 const KCMParaAttrs& docAttrs, const std::string& docText,
-								 const KCMStoryHtml::Para& file,
+								 const KCMStoryShape::Para& file,
 								 PMString& whyNot, bool16& outRefused);
 
 #endif // __KCMStoryAttrPour_h__

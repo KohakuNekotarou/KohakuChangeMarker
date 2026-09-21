@@ -10,7 +10,7 @@
 //  Word's own files are that shape exactly: small, well-formed, namespace-prefixed XML.
 //
 //  *** A PURE FUNCTION. No SDK type, no file. *** Built and run outside InDesign in
-//  work/kcm-storydocx-test, for the reason KCMStoryHtml.h gives: the writer and the reader of a
+//  work/kcm-storydocx-test, for the reason KCMStoryShape.h gives: the writer and the reader of a
 //  format are tested AGAINST EACH OTHER, in one second, on a plain struct - and that is only
 //  possible when neither needs InDesign to run. The SDK's own SAX parser (ISAXServices) would tie
 //  the reader to a running application for a job that is a few hundred lines of plain C++.

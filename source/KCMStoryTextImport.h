@@ -35,7 +35,7 @@
 
 #include <vector>
 
-#include "KCMStoryHtml.h"
+#include "KCMStoryShape.h"
 
 class IDataBase;
 class IDFile;
@@ -48,14 +48,15 @@ class SysFileList;			// what the open dialog hands back - the reader picks sever
 struct KCMStoryTextSet
 {
 	std::vector<UID>					fUids;
-	std::vector<KCMStoryHtml::Story>	fStories;		// what the file says NOW (a .docx: the after-Word side)
+	std::vector<KCMStoryShape::Story>	fStories;		// what the file says NOW (a .docx: the after-Word side)
 
 	// ★★A .docx WHOSE REVISION MARKS ACCOUNT FOR EVERYTHING ALSO SAYS WHAT THE STORY WAS WHEN IT WAS
 	//   WRITTEN (2026-09-19, stage 2 of the docx plan: KCMStoryDocx::Read rebuilds it from the marks,
 	//   and OriginMatchesTag says whether they are the whole truth). Held here for stage 3, which
 	//   will show ONLY Word's changes by merging origin, after and the document; the pour reads
-	//   fStories alone until then. ⚠ALWAYS kFalse and empty for an .html - that format has no origin.
-	std::vector<KCMStoryHtml::Story>	fOrigins;		// parallel; empty unless fOriginKnown
+	//   fStories alone until then. ⚠kFalse and empty when the marks do NOT account for everything -
+	//   tracking was off for part of the editing, or a change was accepted before the file was saved.
+	std::vector<KCMStoryShape::Story>	fOrigins;		// parallel; empty unless fOriginKnown
 	std::vector<bool16>					fOriginKnown;
 	std::vector<PMString>				fFileNames;		// parallel: the file's own name, for a "!" row
 														// that stands for a file with no story (2026-09-19)
@@ -87,13 +88,17 @@ struct KCMImportRefusal
 const std::vector<KCMImportRefusal>& KCMImportRefusals();
 void KCMClearImportRefusals();
 
-/** Read each chosen file. A name has to be "<decimal uid>.html" to be one of ours.
+/** Read each chosen file. It has to be a .docx to be one of ours.
 
-    ★**THE FILE NAME IS THE PAIRING**, and it stays that way now that files are chosen by hand
-      (the user's decision, 2026-09-15). What changed with them is the SILENCE: a folder walk could
-      pass over a stranger's file without a word, because nobody had asked for that one, while a
-      file the reader picked themselves is counted and named in whyNot - they meant it, and the
-      name is the only thing that can tell them why it did not go in.
+    ★**THE TAG INSIDE THE FILE IS THE PAIRING** (2026-09-19), not the name: a .docx carries a
+      customXml part naming the document and the story it was written from, so a file renamed by
+      the reader still goes where it belongs and a file copied onto another story's name does not.
+      ⚠Until 2026-09-21 there was a second spelling whose NAME was the pairing ("269.html"); it was
+      retired with the rest of the HTML road.
+    ★**CHOSEN AND THEN PASSED OVER IS SAID OUT LOUD.** A folder walk could pass over a stranger's
+      file without a word, because nobody had asked for that one; a file the reader picked
+      themselves is counted and named in whyNot - they meant it, and that count is the only thing
+      that can tell them why it did not go in.
     ⚠A file whose markup cannot be read is SKIPPED and named in whyNot, so that one bad file does
       not cost the other twenty. kFalse means nothing at all could be read.
 

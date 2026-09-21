@@ -72,7 +72,7 @@ PMString Utf8(const std::string& text)
 
 int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 								 const KCMParaAttrs& docAttrs, const std::string& docText,
-								 const KCMStoryHtml::Para& file,
+								 const KCMStoryShape::Para& file,
 								 PMString& whyNot, bool16& outRefused)
 {
 	outRefused = kFalse;
@@ -91,7 +91,7 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 	KCMParaText::PlanSpanChanges(docAttrs.fRuby, file.fRuby, clearRuby, applyRuby);
 	KCMParaText::PlanSpanChanges(docAttrs.fKenten, file.fKenten, clearKenten, applyKenten);
 	// ★TATE-CHU-YOKO TOO (2026-09-17). Its value is its characters on both sides - KCMTextRead and
-	//   KCMStoryHtml's reader settle it the same way - so a stretch that did not change pairs off and
+	//   KCMStoryDocx's reader settle it the same way - so a stretch that did not change pairs off and
 	//   nothing is written, exactly as for a reading.
 	KCMParaText::PlanSpanChanges(docAttrs.fTcy, file.fTcy, clearTcy, applyTcy);
 	// ★AND WARICHU (2026-09-17), on exactly the same terms: its value is its characters on both sides.

@@ -9,11 +9,11 @@
 //  needs no compressor, only the container's bookkeeping and a CRC-32.
 //
 //  *** A PURE FUNCTION. No SDK type, no file. *** Built and tested outside InDesign in
-//  work/kcm-storydocx-test, like KCMStoryHtml and for the same reason.
+//  work/kcm-storydocx-test, like KCMStoryShape and KCMStoryDocx and for the same reason.
 //
 //  *** THE SAME INPUT GIVES THE SAME BYTES. *** Every entry carries one fixed date (1980-01-01,
 //  the zip epoch), so two exports of one story are one file and a folder never diffs against
-//  itself - the rule KCMStoryHtml::WriteStylesheet keeps for its own bytes.
+//  itself - the same rule KCMStoryDocx keeps for the parts it builds.
 //
 //  ⚠NOT IUCFPackageUtils::CreatePackage: that writes a "mimetype" entry first (it is the UCF
 //   rule), and whether Word forgives one has not been measured because nothing needs it to.

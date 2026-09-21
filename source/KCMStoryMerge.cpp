@@ -325,7 +325,7 @@ struct SpanMerge
 
 }	// anonymous namespace
 
-void MergePara(const KCMStoryHtml::Para& origin, const KCMStoryHtml::Para& after, const KCMStoryHtml::Para& now,
+void MergePara(const KCMStoryShape::Para& origin, const KCMStoryShape::Para& after, const KCMStoryShape::Para& now,
 			   ParaResult& out, const std::vector<int32>* keep)
 {
 	out = ParaResult();
@@ -449,7 +449,7 @@ void MergePara(const KCMStoryHtml::Para& origin, const KCMStoryHtml::Para& after
 namespace
 {
 
-typedef std::vector<KCMStoryHtml::Para> Paras;
+typedef std::vector<KCMStoryShape::Para> Paras;
 
 std::string Num(int32 n)
 {
@@ -460,7 +460,7 @@ std::string Num(int32 n)
 
 /** kTrue when the three stories' tables are the same shape: as many, standing in the same places,
 	with the same rows and the same cells. */
-bool16 TablesAgreeThreeWays(const KCMStoryHtml::Story& o, const KCMStoryHtml::Story& w, const KCMStoryHtml::Story& n,
+bool16 TablesAgreeThreeWays(const KCMStoryShape::Story& o, const KCMStoryShape::Story& w, const KCMStoryShape::Story& n,
 							std::string& why)
 {
 	if (o.fTables.size() != w.fTables.size() || o.fTables.size() != n.fTables.size())
@@ -470,9 +470,9 @@ bool16 TablesAgreeThreeWays(const KCMStoryHtml::Story& o, const KCMStoryHtml::St
 	}
 	for (size_t t = 0; t < o.fTables.size(); ++t)
 	{
-		const KCMStoryHtml::Table& a = o.fTables[t];
-		const KCMStoryHtml::Table& b = w.fTables[t];
-		const KCMStoryHtml::Table& c = n.fTables[t];
+		const KCMStoryShape::Table& a = o.fTables[t];
+		const KCMStoryShape::Table& b = w.fTables[t];
+		const KCMStoryShape::Table& c = n.fTables[t];
 		if (a.fInTable != b.fInTable || a.fInTable != c.fInTable || a.fInRow != b.fInRow || a.fInRow != c.fInRow
 			|| a.fInCell != b.fInCell || a.fInCell != c.fInCell)
 		{
@@ -497,12 +497,12 @@ bool16 TablesAgreeThreeWays(const KCMStoryHtml::Story& o, const KCMStoryHtml::St
 }
 
 /** The tables of `s` standing in one place, as indices into s.fTables. */
-void TablesIn(const KCMStoryHtml::Story& s, int32 inTable, int32 inRow, int32 inCell, std::vector<size_t>& out)
+void TablesIn(const KCMStoryShape::Story& s, int32 inTable, int32 inRow, int32 inCell, std::vector<size_t>& out)
 {
 	out.clear();
 	for (size_t t = 0; t < s.fTables.size(); ++t)
 	{
-		const KCMStoryHtml::Table& table = s.fTables[t];
+		const KCMStoryShape::Table& table = s.fTables[t];
 		if (table.fInTable != inTable)
 			continue;
 		if (inTable >= 0 && (table.fInRow != inRow || table.fInCell != inCell))
@@ -512,7 +512,7 @@ void TablesIn(const KCMStoryHtml::Story& s, int32 inTable, int32 inRow, int32 in
 }
 
 /** Whether any table of `tables` (indices into s.fTables) stands in paragraphs [from, to) of its place. */
-bool16 TableInParagraphs(const KCMStoryHtml::Story& s, const std::vector<size_t>& tables, int32 from, int32 to)
+bool16 TableInParagraphs(const KCMStoryShape::Story& s, const std::vector<size_t>& tables, int32 from, int32 to)
 {
 	for (size_t k = 0; k < tables.size(); ++k)
 	{
@@ -562,7 +562,7 @@ bool16 InsertsAt(const std::vector<Change>& b, int32 i)
 	because TablesAgreeThreeWays has passed). `merged` starts as a copy of now's paragraphs, and the
 	tables' fParaIndex / fOffset in `out.fMerged` are moved as the paragraphs move.
 */
-void MergePlace(const KCMStoryHtml::Story& o, const KCMStoryHtml::Story& w, const KCMStoryHtml::Story& n,
+void MergePlace(const KCMStoryShape::Story& o, const KCMStoryShape::Story& w, const KCMStoryShape::Story& n,
 				const Paras& oParas, const Paras& wParas, const Paras& nParas,
 				const std::vector<size_t>& tables, const std::string& where,
 				Paras& merged, Result& out)
@@ -731,7 +731,7 @@ void MergePlace(const KCMStoryHtml::Story& o, const KCMStoryHtml::Story& w, cons
 	// ---- the tables of this place, in their new paragraphs --------------------------------------
 	for (size_t k = 0; k < tables.size(); ++k)
 	{
-		KCMStoryHtml::Table& moved = out.fMerged.fTables[tables[k]];
+		KCMStoryShape::Table& moved = out.fMerged.fTables[tables[k]];
 		const int32 idx = mergedIndexOfNow[static_cast<size_t>(tableNowPara[k])];
 		if (idx >= 0)
 			moved.fParaIndex = idx;
@@ -741,7 +741,7 @@ void MergePlace(const KCMStoryHtml::Story& o, const KCMStoryHtml::Story& w, cons
 
 }	// anonymous namespace
 
-void Merge(const KCMStoryHtml::Story& origin, const KCMStoryHtml::Story& after, const KCMStoryHtml::Story& now,
+void Merge(const KCMStoryShape::Story& origin, const KCMStoryShape::Story& after, const KCMStoryShape::Story& now,
 		   Result& out)
 {
 	out = Result();

@@ -5,7 +5,7 @@
 //  The shape of the work: ask KCMTextRead for a story's paragraphs (it already reports, for each
 //  one, whether it is body text, a cell of some table, or a footnote's own words), ask ITableModel
 //  for the things a paragraph cannot know - how many rows the table has, which cells are merged,
-//  which rows are header rows - hand both to KCMStoryHtml::Write, and put the bytes in a file.
+//  which rows are header rows - hand both to KCMStoryDocx::WriteParts, and put the bytes in a file.
 //
 //========================================================================================
 
@@ -37,7 +37,7 @@
 #include "WideString.h"
 
 #include "KCMStoryTextExport.h"
-#include "KCMStoryHtml.h"
+#include "KCMStoryShape.h"
 #include "KCMStoryDocx.h"		// the .docx road (2026-09-19)
 #include "KCMTextRead.h"
 #include "KCMParaText.h"
@@ -204,7 +204,7 @@ bool16 ReadTableShapes(ITextModel* model, std::vector<TableShape>& out)
 		//    file, whatever paragraph each one really stood after.
 		//   ★A NESTED table's anchor is inside a CELL, so it still lands after the last body
 		//    paragraph - which is where the writer puts it anyway (a nested table is a table of
-		//    its own in this format, KCMStoryHtml's WriteTable says why).
+		//    its own in this format, KCMStoryDocx says why).
 		shape.fAnchor = dict->GetAnchorTextRange().Start(nil);
 
 		const RowRange rows = table->GetTotalRows();
@@ -246,16 +246,16 @@ bool16 ReadTableShapes(ITextModel* model, std::vector<TableShape>& out)
 
 	⚠**A NOTE'S REFERENCE DOES NOT TRAVEL** (2026-09-16, the user's decision). The file carries
 	 a note's WORDS - a paragraph of its own, after the body - and not the place in the body
-	 where its marker stood: what the reader edits is the words. KCMStoryHtml::Para says what
+	 where its marker stood: what the reader edits is the words. KCMStoryShape::Para says what
 	 that removed. attrs.fFootnote is therefore read by nobody here. */
-void FillPara(const std::string& text, const KCMParaAttrs& attrs, KCMStoryHtml::Para& out)
+void FillPara(const std::string& text, const KCMParaAttrs& attrs, KCMStoryShape::Para& out)
 {
 	out.fText = text;
 	out.fRuby = attrs.fRuby;
 	out.fKenten = attrs.fKenten;
 	// ★TATE-CHU-YOKO TRAVELS TOO (2026-09-17, the user's request). Its value is already the characters
 	//   it covers - KCMTextRead settles that when it closes the paragraph - which is exactly what
-	//   KCMStoryHtml's reader produces, so the self-check compares like with like.
+	//   KCMStoryDocx's reader produces, so the self-check compares like with like.
 	out.fTcy = attrs.fTcy;
 	// ★AND WARICHU (2026-09-17, the same request for it), the same way: its ON/OFF and the characters
 	//   it covers, none of its settings.
@@ -280,9 +280,9 @@ void FillPara(const std::string& text, const KCMParaAttrs& attrs, KCMStoryHtml::
 /*	BuildStory
 	One story, as the writer wants it: a body, its tables, and its footnotes.
 */
-bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outNoteRefsPlaced)
+bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& outNoteRefsPlaced)
 {
-	out = KCMStoryHtml::Story();
+	out = KCMStoryShape::Story();
 	outNoteRefsPlaced = kTrue;
 
 	std::vector<std::string> paras;
@@ -306,7 +306,7 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outN
 	// ---- the tables, empty of text for the moment ------------------------------------------
 	for (size_t t = 0; t < shapes.size(); ++t)
 	{
-		KCMStoryHtml::Table table;
+		KCMStoryShape::Table table;
 		table.fOrdinal = static_cast<int32>(t);
 		table.fParaIndex = 0;
 		table.fOffset = 0;
@@ -318,14 +318,14 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outN
 
 		for (int32 r = 0; r < shapes[t].fRowCount; ++r)
 		{
-			KCMStoryHtml::Row row;
+			KCMStoryShape::Row row;
 			row.fHeader = (r >= shapes[t].fHeaderStart
 						   && r < shapes[t].fHeaderStart + shapes[t].fHeaderCount) ? kTrue : kFalse;
 			for (size_t c = 0; c < shapes[t].fCells.size(); ++c)
 			{
 				if (shapes[t].fCells[c].fRow != r)
 					continue;
-				KCMStoryHtml::Cell cell;
+				KCMStoryShape::Cell cell;
 				cell.fColSpan = shapes[t].fCells[c].fColSpan;
 				cell.fRowSpan = shapes[t].fCells[c].fRowSpan;
 				row.fCells.push_back(cell);
@@ -357,7 +357,7 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outN
 					  + static_cast<TextIndex>(cps.size())
 					  + static_cast<TextIndex>(attrs[i].fUncountedAt.size());
 
-		KCMStoryHtml::Para p;
+		KCMStoryShape::Para p;
 		FillPara(paras[i], attrs[i], p);
 
 		if (attrs[i].IsCell())
@@ -367,11 +367,11 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outN
 				continue;						// a cell of a table the walk did not find
 
 			// The cell at that grid address, among the anchors of its row.
-			KCMStoryHtml::Table& table = out.fTables[t];
+			KCMStoryShape::Table& table = out.fTables[t];
 			if (attrs[i].fCellRow < 0 || static_cast<size_t>(attrs[i].fCellRow) >= table.fRows.size())
 				continue;
 
-			KCMStoryHtml::Row& row = table.fRows[static_cast<size_t>(attrs[i].fCellRow)];
+			KCMStoryShape::Row& row = table.fRows[static_cast<size_t>(attrs[i].fCellRow)];
 			size_t which = 0;
 			bool16 found = kFalse;
 			for (size_t c = 0; c < shapes[t].fCells.size(); ++c)
@@ -398,7 +398,7 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outN
 		{
 			const size_t n = static_cast<size_t>(attrs[i].fFootnoteOrdinal);
 			while (out.fNotes.size() <= n)
-				out.fNotes.push_back(std::vector<KCMStoryHtml::Para>());
+				out.fNotes.push_back(std::vector<KCMStoryShape::Para>());
 			out.fNotes[n].push_back(p);
 			placeIndex[i] = static_cast<int32>(out.fNotes[n].size()) - 1;
 			continue;
@@ -503,7 +503,7 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outN
 
 	// ---- where each footnote's reference stands (2026-09-19, for the .docx format) ---------------
 	//
-	// ★★**THE HTML FORMAT DOES NOT CARRY THIS AND THE DOCX ONE HAS TO** (KCMStoryHtml::NoteRef): Word
+	// ★★**THE HTML FORMAT DOES NOT CARRY THIS AND THE DOCX ONE HAS TO** (KCMStoryShape::NoteRef): Word
 	//   cannot hold a footnote without its reference in the text. It is filled for both - HTML
 	//   never looks - so that there is one BuildStory and not two.
 	// ★THE WALK IS KCMTextRead::ScanNotes' OWN (CollectOwnedItems, kFootnoteReferenceBoss). What
@@ -584,7 +584,7 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outN
 			}
 
 			// ---- and into the paragraph it belongs to ---------------------------------------------
-			KCMStoryHtml::Para* para = nil;
+			KCMStoryShape::Para* para = nil;
 			if (attrs[h].IsCell())
 			{
 				const size_t t = static_cast<size_t>(attrs[h].fTableOrdinal);
@@ -592,7 +592,7 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outN
 					&& static_cast<size_t>(attrs[h].fCellRow) < out.fTables[t].fRows.size()
 					&& cellWhich[h] >= 0)
 				{
-					KCMStoryHtml::Row& row = out.fTables[t].fRows[static_cast<size_t>(attrs[h].fCellRow)];
+					KCMStoryShape::Row& row = out.fTables[t].fRows[static_cast<size_t>(attrs[h].fCellRow)];
 					if (static_cast<size_t>(cellWhich[h]) < row.fCells.size()
 						&& static_cast<size_t>(placeIndex[h]) < row.fCells[static_cast<size_t>(cellWhich[h])].fParas.size())
 						para = &row.fCells[static_cast<size_t>(cellWhich[h])].fParas[static_cast<size_t>(placeIndex[h])];
@@ -609,7 +609,7 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outN
 				continue;
 			}
 
-			KCMStoryHtml::NoteRef ref;
+			KCMStoryShape::NoteRef ref;
 			ref.fAt = (textOffset > 0) ? textOffset : 0;
 			ref.fNote = note;
 			// ★KEPT IN ORDER OF fAt HERE, NOT TRUSTED TO ARRIVE SO: KCMStoryDocx walks a paragraph's
@@ -617,7 +617,7 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outN
 			//   items do come in TextIndex order on everything measured - this is what makes that an
 			//   observation rather than something the writer's correctness hangs on. Equal places keep
 			//   the order they arrived in.
-			std::vector<KCMStoryHtml::NoteRef>& refs = para->fNoteRefs;
+			std::vector<KCMStoryShape::NoteRef>& refs = para->fNoteRefs;
 			size_t where = refs.size();
 			while (where > 0 && refs[where - 1].fAt > ref.fAt)
 				--where;
@@ -628,12 +628,12 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outN
 	// ⚠A STORY WITH NO PARAGRAPHS AT ALL still gets one, so that "the file is empty" and "there is
 	//   no file" stay different things.
 	if (out.fBody.empty())
-		out.fBody.push_back(KCMStoryHtml::Para());
+		out.fBody.push_back(KCMStoryShape::Para());
 
 	return kTrue;
 }
 
-/** One file's bytes, with the BOM the design asks a FILE to carry (KCMStoryHtml deliberately does
+/** One file's bytes, with a BOM when the caller asks for one (⚠a .docx never does - see below;
 	not put one in the strings it builds).
 
 	★The stylesheet gets one too. A custom kenten mark is a character out of the document, so the
@@ -668,14 +668,16 @@ bool16 WriteFileBytes(const std::wstring& path, const std::string& bytes, bool16
 	return kTrue;
 }
 
-/** The bytes of one story, into "<folder>\<uid>.html" - or ".docx", which carries no BOM. */
-bool16 WriteStoryFile(const std::wstring& folder, int32 uid, const std::string& bytes,
-					  KCMStoryTextFormat format)
+/** The bytes of one story, into "<folder>\<uid>.docx".
+
+	⚠**NO BOM, EVER.** A .docx is a zip, and three bytes in front of a zip's first signature are
+	 three bytes in front of everything its directory points at. (The retired .html spelling asked
+	 for one, which is why WriteFileBytes still takes the question.) */
+bool16 WriteStoryFile(const std::wstring& folder, int32 uid, const std::string& bytes)
 {
 	wchar_t leaf[64] = { 0 };
-	::swprintf_s(leaf, 64, (format == kKCMStoryTextDocx) ? L"\\%d.docx" : L"\\%d.html",
-				 static_cast<int>(uid));
-	return WriteFileBytes(folder + leaf, bytes, (format == kKCMStoryTextDocx) ? kFalse : kTrue);
+	::swprintf_s(leaf, 64, L"\\%d.docx", static_cast<int>(uid));
+	return WriteFileBytes(folder + leaf, bytes, kFalse);
 }
 
 /** The document's name as UTF-8, for the .docx's tag (the import's "is this the right document?"). */
@@ -691,7 +693,7 @@ std::string DocumentNameUtf8(IDataBase* db)
 
 }	// anonymous namespace
 
-bool16 KCMStoryFromDocument(const UIDRef& storyRef, KCMStoryHtml::Story& out, bool16& outNoteRefsPlaced)
+bool16 KCMStoryFromDocument(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& outNoteRefsPlaced)
 {
 	// The one reader, made public for the import's merge (the header says why); BuildStory stays where
 	// the export's other helpers are.
@@ -699,7 +701,7 @@ bool16 KCMStoryFromDocument(const UIDRef& storyRef, KCMStoryHtml::Story& out, bo
 }
 
 bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& onlyThese,
-						  PMString& outMessage, KCMStoryTextFormat format)
+						  PMString& outMessage)
 {
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
@@ -800,7 +802,7 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 	{
 		const UIDRef storyRef = targets[t];
 
-		KCMStoryHtml::Story story;
+		KCMStoryShape::Story story;
 		bool16 noteRefsPlaced = kTrue;
 		if (!BuildStory(storyRef, story, noteRefsPlaced))
 		{
@@ -808,21 +810,21 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 			continue;
 		}
 
-		// ---- the .docx road (2026-09-19) ---------------------------------------------------------
-		//
-		// ★★★**THE FILE CHECKS ITSELF BEFORE IT IS WRITTEN, AS THE .html ROAD BELOW DOES** (stage 2 of
-		//   the docx plan, the same day): the parts are read straight back - BOTH sides of the revision
-		//   marks, since a file nobody has edited has to read the same either way - and compared with
-		//   the story they came from, and the file is only written when they agree. A story this
-		//   format cannot carry (a ruby a table cuts in two; the reader's Slice says why) is refused
-		//   HERE, not after somebody has spent an afternoon editing it.
+		// ★★★**THE FILE CHECKS ITSELF BEFORE IT IS WRITTEN** (stage 2 of the docx plan, 2026-09-19,
+		//   keeping the rule the retired .html road brought in on 2026-09-16): the parts are read
+		//   straight back - BOTH sides of the revision marks, since a file nobody has edited has to
+		//   read the same either way - and compared with the story they came from, and the file is
+		//   only written when they agree. A story this format cannot carry (a ruby a table cuts in
+		//   two; the reader's Slice says why) is refused HERE, not after somebody has spent an
+		//   afternoon editing it and the import turns them away with a count.
 		//   ⚠**COMPARED AS THIS FORMAT SETTLES IT** (KCMStoryDocx::SettleForThisFormat): a mono reading
 		//    over several characters is one <w:ruby> and reads back as group, and that is not a
 		//    difference the comparison minds (the user's rule of 2026-09-12).
-		//   ⚠**IT TOUCHES NOTHING**: pure functions on plain structs, exactly as below.
+		//   ⚠**IT TOUCHES NOTHING**: WriteParts, Read and Same are pure functions on plain structs
+		//    (KCMStoryShape and KCMStoryDocx hold no SDK type at all), so the document is not read a
+		//    second time and cannot be dirtied by this.
 		//   What it also refuses: a story whose footnote references could not be placed, which Word
 		//   would lose.
-		if (format == kKCMStoryTextDocx)
 		{
 			std::vector<KCMZipStore::Entry> parts;
 			std::string why;
@@ -834,12 +836,12 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 													   documentName, parts, why);
 			if (sound)
 			{
-				KCMStoryHtml::Story settled = story;
+				KCMStoryShape::Story settled = story;
 				KCMStoryDocx::SettleForThisFormat(settled);
 				KCMStoryDocx::ReadResult back;
 				sound = KCMStoryDocx::Read(parts, back, why)
-						&& KCMStoryHtml::Same(settled, back.fAfter, why, kTrue)
-						&& KCMStoryHtml::Same(settled, back.fOrigin, why, kTrue);
+						&& KCMStoryShape::Same(settled, back.fAfter, why, kTrue)
+						&& KCMStoryShape::Same(settled, back.fOrigin, why, kTrue);
 			}
 			if (!sound)
 			{
@@ -855,45 +857,11 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 
 			std::string docx;
 			KCMZipStore::Write(parts, docx);
-			if (WriteStoryFile(folder, storyRef.GetUID().Get(), docx, kKCMStoryTextDocx))
+			if (WriteStoryFile(folder, storyRef.GetUID().Get(), docx))
 				++written;
 			else
 				++refused;
-			continue;
 		}
-
-		std::string html;
-		KCMStoryHtml::Write(story, storyRef.GetUID().Get(), html);
-
-		// ★★★**THE FILE CHECKS ITSELF BEFORE IT IS WRITTEN** (2026-09-16, the user's decision). The
-		//   bytes are read straight back and compared against the story they came from, and the
-		//   file is only written when the two agree. A story this format cannot carry is therefore
-		//   refused HERE - not after somebody has spent an afternoon editing it and the import
-		//   turns them away with a count.
-		//   ⚠**IT TOUCHES NOTHING.** Write, Read and Same are pure functions on plain structs
-		//    (KCMStoryHtml holds no SDK type at all), so the document is not read a second time and
-		//    cannot be dirtied by this. What it costs is one parse of a string already in memory.
-		{
-			KCMStoryHtml::Story back;
-			std::string why;
-			if (!KCMStoryHtml::Read(html.c_str(), html.size(), back, why)
-				|| !KCMStoryHtml::Same(story, back, why))
-			{
-				++refused;
-				if (firstRefusal.IsEmpty())
-				{
-					firstRefusal.AppendNumber(static_cast<int32>(storyRef.GetUID().Get()));
-					firstRefusal.Append(": ");
-					firstRefusal.Append(why.c_str());
-				}
-				continue;
-			}
-		}
-
-		if (WriteStoryFile(folder, storyRef.GetUID().Get(), html, kKCMStoryTextHtml))
-			++written;
-		else
-			++refused;
 	}
 
 	PMString path;

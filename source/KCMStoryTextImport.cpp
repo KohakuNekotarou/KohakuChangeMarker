@@ -67,21 +67,21 @@ int32 CharAt(ITextModel* model, TextIndex at)
 /** For every paragraph of the file that has tables standing in it, those tables' text offsets,
 	ascending (2026-09-17, G1). A table stands in the body (fInTable -1) or in one cell of another
 	table, and fParaIndex counts inside whichever holds it - so the paragraph is found the same way. */
-void FileTablesByParagraph(const KCMStoryHtml::Story& story,
-						   std::map<const KCMStoryHtml::Para*, std::vector<int32> >& out)
+void FileTablesByParagraph(const KCMStoryShape::Story& story,
+						   std::map<const KCMStoryShape::Para*, std::vector<int32> >& out)
 {
 	out.clear();
 	for (size_t t = 0; t < story.fTables.size(); ++t)
 	{
-		const KCMStoryHtml::Table& table = story.fTables[t];
-		const std::vector<KCMStoryHtml::Para>* holder = nil;
+		const KCMStoryShape::Table& table = story.fTables[t];
+		const std::vector<KCMStoryShape::Para>* holder = nil;
 		if (table.fInTable < 0)
 		{
 			holder = &story.fBody;
 		}
 		else if (static_cast<size_t>(table.fInTable) < story.fTables.size())
 		{
-			const KCMStoryHtml::Table& parent = story.fTables[static_cast<size_t>(table.fInTable)];
+			const KCMStoryShape::Table& parent = story.fTables[static_cast<size_t>(table.fInTable)];
 			if (table.fInRow >= 0 && static_cast<size_t>(table.fInRow) < parent.fRows.size()
 				&& table.fInCell >= 0
 				&& static_cast<size_t>(table.fInCell) < parent.fRows[static_cast<size_t>(table.fInRow)].fCells.size())
@@ -92,7 +92,7 @@ void FileTablesByParagraph(const KCMStoryHtml::Story& story,
 		if (holder != nil && table.fParaIndex >= 0 && static_cast<size_t>(table.fParaIndex) < holder->size())
 			out[&(*holder)[static_cast<size_t>(table.fParaIndex)]].push_back(table.fOffset);
 	}
-	for (std::map<const KCMStoryHtml::Para*, std::vector<int32> >::iterator it = out.begin(); it != out.end(); ++it)
+	for (std::map<const KCMStoryShape::Para*, std::vector<int32> >::iterator it = out.begin(); it != out.end(); ++it)
 		std::sort(it->second.begin(), it->second.end());
 }
 
@@ -193,51 +193,13 @@ bool16 ReadWholeFile(const IDFile& file, std::string& out)
 	return kTrue;
 }
 
-/** "269.html" -> 269. kFalse for a name that is not one of ours.
-
-	★**THE FILE NAME IS THE PAIRING**, so the test is exact: every character before ".html" has to
-	be a decimal digit. A reader's own notes in that folder ("notes.html", "269 copy.html") are not
-	ours and are passed over rather than guessed at. */
-bool16 UidOfLeaf(const std::wstring& leaf, uint32& outUid)
-{
-	const size_t dot = leaf.find_last_of(L'.');
-	if (dot == std::wstring::npos || dot == 0)
-		return kFalse;
-
-	std::wstring ext = leaf.substr(dot + 1);
-	for (size_t i = 0; i < ext.size(); ++i)
-	{
-		if (ext[i] >= L'A' && ext[i] <= L'Z')
-			ext[i] = static_cast<wchar_t>(ext[i] - L'A' + L'a');
-	}
-	if (ext != L"html")
-		return kFalse;
-
-	const std::wstring stem = leaf.substr(0, dot);
-	if (stem.empty() || stem.size() > 10)
-		return kFalse;
-
-	// ⚠**A PADDED NUMBER IS NOT ONE OF OURS.** The exporter writes "269.html" and never
-	//   "0269.html", and Windows keeps both of those in one folder quite happily (measured
-	//   2026-09-15) - so a padded name is somebody's own copy, and reading it as story 269 would
-	//   let two files claim one story. Refusing it here is what makes that impossible rather than
-	//   merely unlikely, now that the reader hands over files by name instead of a whole folder.
-	if (stem[0] == L'0')
-		return kFalse;
-
-	uint32 value = 0;
-	for (size_t i = 0; i < stem.size(); ++i)
-	{
-		if (stem[i] < L'0' || stem[i] > L'9')
-			return kFalse;
-		value = value * 10 + static_cast<uint32>(stem[i] - L'0');
-	}
-	if (value == 0)
-		return kFalse;
-
-	outUid = value;
-	return kTrue;
-}
+/*	⛔**"269.html" -> 269 STOOD HERE UNTIL 2026-09-21.** For the .html spelling THE NAME WAS THE
+	PAIRING, so it had to be exact - every character before the dot a decimal digit, and a padded
+	"0269.html" refused outright, because two files must never be able to claim one story. The HTML
+	road was retired that day on the user's word ("Word format only") and the rule went with it:
+	★**a .docx is paired by the TAG INSIDE IT**, and its name is a cross-check and a courtesy
+	(IsDocxLeaf, below). The retired measurements are in docs/ai-notes/kcm-html-retired-2026-09-21.md.
+*/
 
 /** ".docx"? and, when the name begins with a decimal number the way the exporter writes it
 	("269.docx", "269 - chapter one.docx"), that number - for the check against the tag (the design,
@@ -307,7 +269,7 @@ void AppendCount(PMString& out, const char* before, int32 n, const char* after)
 struct Place
 {
 	std::vector<size_t>						fDoc;		// indices into the document's flat arrays
-	const std::vector<KCMStoryHtml::Para>*	fFile;		// what the reader edited, or nil
+	const std::vector<KCMStoryShape::Para>*	fFile;		// what the reader edited, or nil
 
 	Place() : fFile(nil) {}
 };
@@ -315,7 +277,7 @@ struct Place
 /** kTrue when any code point of the text in [from, to) is one the reader may not move or delete.
 
 	★**AN OBJECT'S CHARACTER, NOT EVERY INVISIBLE ONE** (2026-09-17 afternoon, the user's request: a forced
-	  line break added or removed is taken in). This asked KCMStoryHtml::IsInvisible until then, which
+	  line break added or removed is taken in). This asked KCMStoryShape::IsInvisible until then, which
 	  turned away a forced line break, a zero width space and an indent-to-here as if they were tables -
 	  while writing the document back asks KCMParaText::IsObjectCharacter. Now the pour asks the same
 	  question: those characters carry nothing, and text commands write them whole. */
@@ -364,7 +326,7 @@ void ColumnsOfRow(const std::vector<KCMParaAttrs>& attrs, int32 table, int32 row
 	  file's B would be poured into the merged BC without anything looking wrong. Refusing per cell
 	  cannot catch that; only comparing the shapes first can.
 	@param whyNot filled with the first disagreement found, for the panel's status line. */
-bool16 TablesAgree(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::Story& file,
+bool16 TablesAgree(const std::vector<KCMParaAttrs>& attrs, const KCMStoryShape::Story& file,
 				   PMString& whyNot)
 {
 	// The document's shape is read off the paragraph attributes: the ordinals are assigned in
@@ -387,7 +349,7 @@ bool16 TablesAgree(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::S
 
 	for (int32 tbl = 0; tbl < docTables; ++tbl)
 	{
-		const KCMStoryHtml::Table& fileTable = file.fTables[static_cast<size_t>(tbl)];
+		const KCMStoryShape::Table& fileTable = file.fTables[static_cast<size_t>(tbl)];
 		const int32 fileRows = static_cast<int32>(fileTable.fRows.size());
 
 		// ★★**THE TWO SIDES COUNT ROWS DIFFERENTLY, SO NEITHER COUNT IS COMPARED.** The writer walks
@@ -438,7 +400,7 @@ bool16 TablesAgree(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::S
 }
 
 /** Every place of one story, with the file's paragraphs for each. */
-void BuildPlaces(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::Story& file,
+void BuildPlaces(const std::vector<KCMParaAttrs>& attrs, const KCMStoryShape::Story& file,
 				 std::vector<Place>& out)
 {
 	out.clear();
@@ -495,7 +457,7 @@ void BuildPlaces(const std::vector<KCMParaAttrs>& attrs, const KCMStoryHtml::Sto
 					break;
 				}
 			}
-			const KCMStoryHtml::Row& row =
+			const KCMStoryShape::Row& row =
 				file.fTables[t].fRows[static_cast<size_t>(attrs[i].fCellRow)];
 			if (found && which < row.fCells.size())
 				cell.fFile = &row.fCells[which].fParas;
@@ -721,7 +683,7 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 			}
 
 			// Then cut where anything else the text leaves out stands BETWEEN two of its characters - a
-			// note's reference, whose place the file does not carry (KCMStoryHtml::Para) - or a table
+			// note's reference, whose place the file does not carry (KCMStoryShape::Para) - or a table
 			// the pairing above could not place.
 			const int32 partEnd = part.fAStart + part.fACount;
 			std::vector<int32> cuts;
@@ -843,11 +805,11 @@ struct Job
 		they were read at). */
 	int64								fKey;
 	size_t								fPara;			// kParagraph: index into paras / attrs / starts
-	const KCMStoryHtml::Para*			fFile;			// kParagraph: the same paragraph in the file
+	const KCMStoryShape::Para*			fFile;			// kParagraph: the same paragraph in the file
 	TextIndex							fAt;			// kInsert: where; kDelete: from
 	TextIndex							fTo;			// kDelete: up to, not including
 	bool16								fAfterReturn;	// kInsert: "\rNEW" after a return, not "NEW\r" before a paragraph
-	std::vector<const KCMStoryHtml::Para*>	fNew;		// kInsert: the file's new paragraphs, in order
+	std::vector<const KCMStoryShape::Para*>	fNew;		// kInsert: the file's new paragraphs, in order
 
 	Job() : fKind(kParagraph), fKey(0), fPara(0), fFile(nil), fAt(0), fTo(0), fAfterReturn(kFalse) {}
 };
@@ -910,14 +872,14 @@ std::vector<Job> PlanParagraphSteps(ITextModel* model, const Place& place,
 									const std::vector<std::string>& paras,
 									const std::vector<KCMParaAttrs>& attrs,
 									const std::vector<int32>& starts,
-									const std::map<const KCMStoryHtml::Para*, std::vector<int32> >& fileTables,
+									const std::map<const KCMStoryShape::Para*, std::vector<int32> >& fileTables,
 									PMString& outWhyNot)
 {
 	std::vector<Job> out;
 	outWhyNot.Clear();
 	outWhyNot.SetTranslatable(kFalse);
 
-	const std::vector<KCMStoryHtml::Para>& fileParas = *place.fFile;
+	const std::vector<KCMStoryShape::Para>& fileParas = *place.fFile;
 	if (fileParas.empty() || place.fDoc.empty())
 	{
 		outWhyNot = "a cell or a note has to keep at least one paragraph (<p>)";
@@ -941,8 +903,8 @@ std::vector<Job> PlanParagraphSteps(ITextModel* model, const Place& place,
 		if (step.fKind == KCMParaPairing::Step::kPair)
 		{
 			const size_t i = place.fDoc[static_cast<size_t>(step.fDoc)];
-			const KCMStoryHtml::Para* file = &fileParas[static_cast<size_t>(step.fFile)];
-			const std::map<const KCMStoryHtml::Para*, std::vector<int32> >::const_iterator ft = fileTables.find(file);
+			const KCMStoryShape::Para* file = &fileParas[static_cast<size_t>(step.fFile)];
+			const std::map<const KCMStoryShape::Para*, std::vector<int32> >::const_iterator ft = fileTables.find(file);
 			const int32 fileTableCount = (ft != fileTables.end()) ? static_cast<int32>(ft->second.size()) : 0;
 			if (DocTablesInParagraph(model, starts[i], attrs[i]) != fileTableCount)
 			{
@@ -964,7 +926,7 @@ std::vector<Job> PlanParagraphSteps(ITextModel* model, const Place& place,
 			job.fKind = Job::kInsert;
 			for (int32 k = 0; k < step.fCount; ++k)
 			{
-				const KCMStoryHtml::Para* file = &fileParas[static_cast<size_t>(step.fFile + k)];
+				const KCMStoryShape::Para* file = &fileParas[static_cast<size_t>(step.fFile + k)];
 				if (fileTables.find(file) != fileTables.end() || TextHoldsObject(file->fText))
 				{
 					outWhyNot = "a new paragraph holds a table, a note reference or an anchored object "
@@ -1030,7 +992,7 @@ std::vector<Job> PlanParagraphSteps(ITextModel* model, const Place& place,
 	the ones after a return the next style (KCMApplyNextStyleAfter).
 	@return how many writes went in. */
 int32 InsertParagraphs(ITextModel* model, TextIndex at, bool16 afterReturn,
-					   const std::vector<const KCMStoryHtml::Para*>& news, PMString& whyNot, bool16& outRefused)
+					   const std::vector<const KCMStoryShape::Para*>& news, PMString& whyNot, bool16& outRefused)
 {
 	outRefused = kFalse;
 	TextIndex threadStart = 0;
@@ -1141,7 +1103,7 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 		return kFalse;
 	}
 
-	int32 skippedName = 0;		// not one of ours: neither "<decimal>.html" nor a .docx
+	int32 skippedName = 0;		// not one of ours: not a .docx at all
 	int32 refused = 0;			// ours, but the markup could not be read
 	int32 fromWord = 0;			// .docx files read
 	int32 trackedCount = 0;		// of those, the ones whose revision marks account for everything
@@ -1184,37 +1146,7 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 		}
 
 		const std::wstring leaf = LeafOf(*file);
-		uint32 uid = 0;
 		uint32 leading = 0;
-		if (UidOfLeaf(leaf, uid))
-		{
-			// ---- an .html: the name is the pairing -------------------------------------------------
-			std::string bytes;
-			if (!ReadWholeFile(*file, bytes))
-			{
-				++refused;
-				continue;
-			}
-
-			KCMStoryHtml::Story story;
-			std::string why;
-			if (!KCMStoryHtml::Read(bytes.c_str(), bytes.size(), story, why))
-			{
-				// ⚠ONE BAD FILE MUST NOT COST THE OTHERS. It is counted and the first reason is kept,
-				//   so the reader is told what to fix rather than left with nothing.
-				++refused;
-				NoteFirstReason(firstReason, leaf, why);
-				continue;
-			}
-
-			out.fUids.push_back(UID(uid));
-			out.fStories.push_back(story);
-			out.fOrigins.push_back(KCMStoryHtml::Story());
-			out.fOriginKnown.push_back(kFalse);
-			out.fFileNames.push_back(PMStringOfLeaf(leaf));
-			out.fIsDocx.push_back(kFalse);
-			continue;
-		}
 		if (!IsDocxLeaf(leaf, leading))
 		{
 			// ⚠**CHOSEN AND THEN PASSED OVER HAS TO BE SAID OUT LOUD.** Walking a folder could
@@ -1228,7 +1160,7 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 		// ---- a .docx (2026-09-19, stage 2 of the docx plan): the tag is the pairing ----------------
 		//
 		// ★What goes into fStories is the story AS WORD SHOWS IT - the after side - so the pour and
-		//   the Import mode treat it exactly as an .html: the whole text against the document. What
+		//   the Import mode compare the whole text against the document. What
 		//   is new is beside it: when the file's revision marks account for every change since it
 		//   was written (OriginMatchesTag), the story AS WRITTEN is kept too, for stage 3 to show
 		//   only Word's changes. Nothing is refused on that account (the user's rule, 2026-09-19).
@@ -1282,7 +1214,7 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 		out.fStories.push_back(result.fAfter);
 		std::string whole;
 		const bool16 tracked = KCMStoryDocx::OriginMatchesTag(result, whole);
-		out.fOrigins.push_back(tracked ? result.fOrigin : KCMStoryHtml::Story());
+		out.fOrigins.push_back(tracked ? result.fOrigin : KCMStoryShape::Story());
 		out.fOriginKnown.push_back(tracked);
 		out.fFileNames.push_back(PMStringOfLeaf(leaf));
 		out.fIsDocx.push_back(kTrue);
@@ -1298,7 +1230,7 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 		}
 	}
 
-	// ★A STORY CHOSEN TWICE - 269.html and 269.docx, say - is refused on both counts (the design,
+	// ★A STORY CHOSEN TWICE - two .docx files whose tags name one story - is refused on both counts (the design,
 	//   section 8): which of the two is meant is not this plug-in's to decide, and the pour would
 	//   otherwise take the first and pass over the second without a word.
 	{
@@ -1487,7 +1419,12 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 						  " - Start Comparison shows them; Ctrl+Z takes the whole import back");
 		return anyIn;
 	}
-	outMessage.Append(". Ctrl+Z takes the whole import back; Restore Source Text puts one change back");
+	// ⚠**THIS LINE OFFERED "Restore Source Text" UNTIL 2026-09-21**, months after that item and the
+	//   whole restore behind it were taken out. A status line is read by the reader and by nobody
+	//   else, so nothing failed and nothing warned: it simply named a menu item that is not there.
+	//   ★What takes its place is what the user said when they removed it - "the Source document is
+	//   in front of you, so if you want it back, take it from there" - and Start has it open.
+	outMessage.Append(". Ctrl+Z takes the whole import back; the older words are in the Source document");
 	return anyIn || !KCMImportRefusals().empty();
 }
 
@@ -1597,20 +1534,20 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 		//   the document holds it now go into KCMStoryMerge, and what is poured is the document plus
 		//   Word's changes - so the rows that follow are Word's changes and nothing else, however much
 		//   the document has been edited in InDesign since the export. A conflict keeps the document's
-		//   words and is named. An .html, or a .docx whose tracking was off, is poured as before.
+		//   words and is named. A .docx whose tracking was off is poured as before: the whole text.
 		// ★THE DOCUMENT IS READ WITH THE EXPORT'S OWN READER (KCMStoryFromDocument): the merge compares
 		//   three stories that have to be in one shape, and the two that came from the file were
 		//   written from that reader's shape to begin with.
-		const KCMStoryHtml::Story* file = &set.fStories[which];
+		const KCMStoryShape::Story* file = &set.fStories[which];
 		KCMStoryMerge::Result merged;
-		KCMStoryHtml::Story rejoined;
+		KCMStoryShape::Story rejoined;
 		// ★A .docx HOLDS ITS PARAGRAPHS IN THE SPLIT SHAPE AROUND TABLES (KCMStoryDocx.h, SplitAtTables -
 		//   2026-09-19 evening, the user's rule: "the document decides"): every table alone in a paragraph
 		//   of its own, whatever paragraph it stands in here. So the document's story is read for every
 		//   .docx (not only for a merge), the merge runs in that same shape, and the result is put back
 		//   into the document's shape (RejoinTables) before the pour pairs its paragraphs.
 		const bool16 fromDocx = (which < set.fIsDocx.size() && set.fIsDocx[which]) ? kTrue : kFalse;
-		KCMStoryHtml::Story now;
+		KCMStoryShape::Story now;
 		bool16 haveNow = kFalse;
 		if (fromDocx)
 		{
@@ -1621,7 +1558,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 		{
 			if (haveNow)
 			{
-				KCMStoryHtml::Story nowSplit = now;
+				KCMStoryShape::Story nowSplit = now;
 				KCMStoryDocx::SplitAtTables(nowSplit);
 				KCMStoryMerge::Merge(set.fOrigins[which], set.fStories[which], nowSplit, merged);
 				wordChanges += merged.fApplied;
@@ -1693,7 +1630,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 
 		// ★The file's own table positions, per paragraph - which side of a table an insertion goes (G1),
 		//   and whether a paragraph added or removed would move a table into another paragraph.
-		std::map<const KCMStoryHtml::Para*, std::vector<int32> > fileTables;
+		std::map<const KCMStoryShape::Para*, std::vector<int32> > fileTables;
 		FileTablesByParagraph(*file, fileTables);
 
 		bool16 touched = kFalse;
@@ -1764,7 +1701,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 			else
 			{
 				const size_t i = job.fPara;
-				const std::map<const KCMStoryHtml::Para*, std::vector<int32> >::const_iterator ft =
+				const std::map<const KCMStoryShape::Para*, std::vector<int32> >::const_iterator ft =
 					fileTables.find(job.fFile);
 				n = ApplyParagraph(model, static_cast<TextIndex>(starts[i]), attrs[i],
 								   paras[i], job.fFile->fText,

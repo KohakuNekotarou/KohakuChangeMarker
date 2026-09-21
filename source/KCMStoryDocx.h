@@ -4,7 +4,8 @@
 //
 //  KohakuChangeMarker (KCM) - a story's text as a Word document (.docx)
 //
-//  WHAT THIS IS FOR. The same round trip KCMStoryHtml serves, for a reader whose editor is Word:
+//  WHAT THIS IS FOR. The story round trip, in the one spelling it has since 2026-09-21 (there was
+//  an HTML one until then, retired on the user's word - "Word format only"):
 //  the stories go out as .docx, are edited there with Word's own revision tracking switched on,
 //  and come back through the Import mode - which then shows ONLY what was changed in Word, because
 //  Word's revision marks say what that was, and the import merges those changes onto the document
@@ -13,10 +14,10 @@
 //  docs/superpowers/specs/2026-09-19-kcm-story-docx-roundtrip-design.md and it, not this header,
 //  is where the decisions and their reasons live.
 //
-//  *** THE STORY IS KCMStoryHtml's STORY. *** That struct knows nothing of HTML - it is the body,
-//  the tables, the notes and the spans over them - so this is a second spelling of the same thing
-//  and every rule upstream and downstream of the format is shared: what is carried, what an
-//  invisible character is (KCMStoryHtml::IsInvisible), what a kenten value is called.
+//  *** THE STORY IS KCMStoryShape's STORY. *** That struct knows nothing of any file format - it is
+//  the body, the tables, the notes and the spans over them - so every rule upstream and downstream
+//  of the format is shared and stated once: what is carried, what an invisible character is
+//  (KCMStoryShape::IsInvisible), what a kenten value is called.
 //
 //  *** EVERYTHING HERE IS A PURE FUNCTION. No SDK type, no document, no file. *** Built and run
 //  outside InDesign in work/kcm-storydocx-test (build.cmd). What Word makes of the result is
@@ -50,14 +51,14 @@
 //    warichu                <w:eastAsianLayout w:combine="1">
 //    a footnote             footnotes.xml plus <w:footnoteReference> in the text. ⚠The HTML format
 //                           does not carry where the reference stands; this one has to, because Word
-//                           cannot hold a note without it (KCMStoryHtml::NoteRef).
+//                           cannot hold a note without it (KCMStoryShape::NoteRef).
 //
 //========================================================================================
 #ifndef __KCMStoryDocx_h__
 #define __KCMStoryDocx_h__
 
 #include "BaseType.h"
-#include "KCMStoryHtml.h"	// Story, Para, NoteRef - the shape both formats write
+#include "KCMStoryShape.h"	// Story, Para, NoteRef - the shape both formats write
 #include "KCMZipStore.h"	// Entry - a part of the package
 
 #include <string>
@@ -72,8 +73,8 @@ namespace KCMStoryDocx
 	  - a ruby standing over an invisible character (a <w:rubyBase> takes runs only, so the
 	    placeholder has nowhere to go - and dropping the character is the one thing not done);
 	  - a footnote reference standing inside a ruby's base text, for the same reason;
-	  - a kenten value KCMStoryHtml::KentenClassOf cannot name. */
-bool16 WriteParagraphContent(const KCMStoryHtml::Para& p, std::string& out, std::string& whyNot);
+	  - a kenten value KCMStoryShape::KentenClassOf cannot name. */
+bool16 WriteParagraphContent(const KCMStoryShape::Para& p, std::string& out, std::string& whyNot);
 
 /** A run of paragraphs with the tables standing among them: the body, or one cell.
 
@@ -95,10 +96,10 @@ bool16 WriteParagraphContent(const KCMStoryHtml::Para& p, std::string& out, std:
 
 	@param paras    the body's paragraphs, or one cell's.
 	@param inTable  -1 for the body, else the index in s.fTables of the table that cell is in -
-	                with inRow and inCell, this is how KCMStoryHtml::Table says where it stands.
+	                with inRow and inCell, this is how KCMStoryShape::Table says where it stands.
 	@param out      appended to - and left exactly as it was when this answers kFalse.
 	@return kFalse with a reason: WriteParagraphContent's refusals, from however deep. */
-bool16 WriteBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml::Para>& paras,
+bool16 WriteBlocks(const KCMStoryShape::Story& s, const std::vector<KCMStoryShape::Para>& paras,
 				   int32 inTable, int32 inRow, int32 inCell, std::string& out, std::string& whyNot);
 
 /** A fingerprint of a story: "<bytes>-<crc32>" of what Write makes of it.
@@ -123,7 +124,7 @@ bool16 WriteBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml:
 	  anybody who sets out to fool it.
 
 	@return kFalse with a reason when the story cannot be written in this format at all. */
-bool16 Fingerprint(const KCMStoryHtml::Story& s, std::string& outFingerprint, std::string& whyNot);
+bool16 Fingerprint(const KCMStoryShape::Story& s, std::string& outFingerprint, std::string& whyNot);
 
 /** Every part of the package, in the order they are zipped.
 
@@ -147,11 +148,11 @@ bool16 Fingerprint(const KCMStoryHtml::Story& s, std::string& outFingerprint, st
 	@param documentNameUtf8  the document's name, for the import's "is this the right document?".
 	@return kFalse with a reason: WriteBlocks' refusals, a note nothing refers to (Word cannot
 	  keep one), or a reference to a note the story does not have. */
-bool16 WriteParts(const KCMStoryHtml::Story& s, int32 uid, const std::string& documentNameUtf8,
+bool16 WriteParts(const KCMStoryShape::Story& s, int32 uid, const std::string& documentNameUtf8,
 				  std::vector<KCMZipStore::Entry>& outParts, std::string& whyNot);
 
 /** The same, zipped: the bytes of the .docx. */
-bool16 Write(const KCMStoryHtml::Story& s, int32 uid, const std::string& documentNameUtf8,
+bool16 Write(const KCMStoryShape::Story& s, int32 uid, const std::string& documentNameUtf8,
 			 std::string& outDocx, std::string& whyNot);
 
 //========================================================================================
@@ -206,18 +207,18 @@ struct Mark
 
 	★**IT REFUSES, BY NAME, WHATEVER IT DOES NOT UNDERSTAND** - a drawing, a field that is not a
 	  ruby, an automatic number, an element it has never heard of - and never skips it: skipping
-	  would drop somebody's words without a word (the rule KCMStoryHtml::Read keeps). What it
+	  would drop somebody's words without a word (the rule every reader of this round trip keeps). What it
 	  ignores is only what carries no text: bookmarks, proofing marks, Word's own formatting-change
 	  records on tables, and every kind of formatting this format does not carry.
 	@param outMarks  every revision mark met, whichever side is being read; nil when not wanted. */
 bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml, const std::string& stylesXml,
-				Side side, KCMStoryHtml::Story& out, std::vector<Mark>* outMarks, std::string& whyNot);
+				Side side, KCMStoryShape::Story& out, std::vector<Mark>* outMarks, std::string& whyNot);
 
 /** What one package holds, once read. */
 struct ReadResult
 {
-	KCMStoryHtml::Story	fAfter;
-	KCMStoryHtml::Story	fOrigin;
+	KCMStoryShape::Story	fAfter;
+	KCMStoryShape::Story	fOrigin;
 	Tag					fTag;		// fPresent kFalse for a file that carries none (not written by us)
 	std::vector<Mark>	fMarks;		// empty = no revision mark anywhere in the file
 };
@@ -243,7 +244,7 @@ bool16 OriginMatchesTag(const ReadResult& r, std::string& outWhy);
 	  distinction by putting several <rt> in one <ruby> - a shape Word has not got.
 	  ⚠That this is a loss the comparison does not mind is the user's own rule (2026-09-12: "mono
 	   turned into group is not a change"); KCMParaText's SpansDiffer says the same. */
-void SettleForThisFormat(KCMStoryHtml::Story& s);
+void SettleForThisFormat(KCMStoryShape::Story& s);
 
 /** The SPLIT SHAPE - the one shape this file writes and reads (2026-09-19 evening, the user's rule:
 	"the document decides"). Every table stands alone in an empty paragraph of its own; the words
@@ -257,7 +258,7 @@ void SettleForThisFormat(KCMStoryHtml::Story& s);
 		   table stands on the piece before it only, so that a story whose ruby straddles a table
 		   differs from itself read back and the export's check refuses it. kFalse is the writer's
 		   own call: the pieces exactly as written, the cut ruby on both. */
-void SplitAtTables(KCMStoryHtml::Story& s, bool16 asRead = kTrue);
+void SplitAtTables(KCMStoryShape::Story& s, bool16 asRead = kTrue);
 
 /** The split shape put back into the shape `shape` holds - the document as it stands, read by
 	KCMStoryFromDocument - table by table: the k-th table of the body (or of a cell) goes where the
@@ -265,7 +266,7 @@ void SplitAtTables(KCMStoryHtml::Story& s, bool16 asRead = kTrue);
 	and an empty paragraph that stood there only because Word asked for one is dropped. Words the
 	file added or took away stay; only the breaks next to a table are decided, and by `shape`.
 	⚠A run whose table count differs from `shape`'s is left as it is (TablesAgree refuses it). */
-void RejoinTables(KCMStoryHtml::Story& s, const KCMStoryHtml::Story& shape);
+void RejoinTables(KCMStoryShape::Story& s, const KCMStoryShape::Story& shape);
 
 }	// namespace KCMStoryDocx
 

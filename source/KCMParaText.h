@@ -1193,8 +1193,8 @@ inline bool16 SpansDiffer(const KCMAttrSpanList& a, const KCMAttrSpanList& b)
 	  ClearRuby names them); a kenten's kind is one attribute and its look is several. Taking the
 	  attributes off a paragraph and writing the incoming ones back would leave the reading right
 	  and throw away every look the reader had set on the parts nobody edited - which is exactly
-	  what the import exists NOT to do (KCMStoryHtml.h: "so that the ruby and the kenten on the
-	  parts nobody edited are still there afterwards").
+	  what the import exists NOT to do: the ruby and the kenten on the parts nobody edited have to
+	  be there afterwards, untouched (KCMStoryAttrPour.h says it at length).
 
 	★**THE ORDER IS ALL THE CLEARS AND THEN ALL THE APPLIES**, and the caller must keep it: two
 	  spans can overlap - a reading that grew covers where the old one stood - and an apply that

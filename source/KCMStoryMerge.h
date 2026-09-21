@@ -21,7 +21,7 @@
 //  Word's changes, so KCMStoryTextImport pours it exactly as it pours an .html: the places, the
 //  paragraph steps, the words, the ruby and the kenten, the Import mode, the rows, Undo - none of
 //  it knows a merge happened. That is the design's section 3, and it is why this file is a pure
-//  function on KCMStoryHtml::Story with no SDK type in it (built and tested outside InDesign in
+//  function on KCMStoryShape::Story with no SDK type in it (built and tested outside InDesign in
 //  work/kcm-storydocx-test, like everything else on this road).
 //
 //  *** A CONFLICT KEEPS THE DOCUMENT'S WORDS, AND IS NAMED. *** Word's change and the document's
@@ -39,7 +39,7 @@
 #define __KCMStoryMerge_h__
 
 #include "BaseType.h"
-#include "KCMStoryHtml.h"	// Story, Para - the shape every side is in
+#include "KCMStoryShape.h"	// Story, Para - the shape every side is in
 
 #include <string>
 #include <vector>
@@ -59,7 +59,7 @@ struct Edit
 /** One paragraph's merge. Exposed for the harness; Merge (below) is what the import calls. */
 struct ParaResult
 {
-	KCMStoryHtml::Para			fMerged;	// `now` plus Word's changes
+	KCMStoryShape::Para			fMerged;	// `now` plus Word's changes
 	int32						fApplied;	// Word's changes taken, each counted once
 	std::vector<std::string>	fWhys;		// one per change of Word's NOT taken: why the document's words were kept
 	std::vector<Edit>			fEdits;		// the word changes taken, in ascending order of fNowAt
@@ -76,7 +76,7 @@ struct Refusal
 
 struct Result
 {
-	KCMStoryHtml::Story		fMerged;		// the document as it stands now, plus Word's changes
+	KCMStoryShape::Story		fMerged;		// the document as it stands now, plus Word's changes
 	int32					fApplied;		// Word's changes taken, each counted once
 	std::vector<Refusal>	fConflicts;		// Word's changes not taken, each named
 	bool16					fStoryRefused;	// the whole story was left as it stands: its tables disagree
@@ -99,7 +99,7 @@ struct Result
 	★**THE NOTES' NUMBER HAS TO AGREE THREE WAYS** too; when it does not, the notes stand as they are
 	  (one conflict, "the notes") and the body and the cells are merged all the same.
 	★**THE OUTPUT IS "NOW PLUS WORD'S CHANGES"**: with nothing from Word it is Same as `now` (6-7). */
-void Merge(const KCMStoryHtml::Story& origin, const KCMStoryHtml::Story& after, const KCMStoryHtml::Story& now,
+void Merge(const KCMStoryShape::Story& origin, const KCMStoryShape::Story& after, const KCMStoryShape::Story& now,
 		   Result& out);
 
 /** origin, after (Word), now (the document) -> now plus Word's changes to these words and to the
@@ -118,7 +118,7 @@ void Merge(const KCMStoryHtml::Story& origin, const KCMStoryHtml::Story& after, 
 	  position in `keep` (a table's place in the paragraph, in now's coordinates): a change may end
 	  or begin there, not straddle it.
 	@param keep positions of `now` no change may straddle; nil for none. */
-void MergePara(const KCMStoryHtml::Para& origin, const KCMStoryHtml::Para& after, const KCMStoryHtml::Para& now,
+void MergePara(const KCMStoryShape::Para& origin, const KCMStoryShape::Para& after, const KCMStoryShape::Para& now,
 			   ParaResult& out, const std::vector<int32>* keep = nil);
 
 }	// namespace KCMStoryMerge

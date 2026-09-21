@@ -135,13 +135,13 @@ bool16 IsBreakOrTab(int32 cp)
 
 /** Whether a character has to travel as a placeholder rather than as itself.
 
-	KCMStoryHtml::IsInvisible is the rule, and XML adds two characters to it: U+FFFE and U+FFFF
+	KCMStoryShape::IsInvisible is the rule, and XML adds two characters to it: U+FFFE and U+FFFF
 	are not characters XML 1.0 allows at all, and ONE of them anywhere makes the whole package
 	unreadable - HTML shrugs at them, which is why the shared rule does not name them. (The
 	control characters, which XML forbids too, are IsInvisible's already.) */
 bool16 NeedsPlaceholder(int32 cp)
 {
-	if (KCMStoryHtml::IsInvisible(cp) || cp == 0xFFFE || cp == 0xFFFF)
+	if (KCMStoryShape::IsInvisible(cp) || cp == 0xFFFE || cp == 0xFFFF)
 		return kTrue;
 
 	// ★TWO MORE, FOUND ON 2026-09-19 BY ASKING "IS THE ESCAPING ENTIRELY SOUND?" and written as
@@ -236,7 +236,7 @@ void PaintSpans(const KCMAttrSpanList& spans, int32 n, std::vector<Look>& looks,
 
 }	// anonymous namespace
 
-bool16 WriteParagraphContent(const KCMStoryHtml::Para& p, std::string& out, std::string& whyNot)
+bool16 WriteParagraphContent(const KCMStoryShape::Para& p, std::string& out, std::string& whyNot)
 {
 	std::vector<int32> cps;
 	std::vector<int32> byteAt;
@@ -251,7 +251,7 @@ bool16 WriteParagraphContent(const KCMStoryHtml::Para& p, std::string& out, std:
 	std::vector<std::string> kentenClasses(p.fKenten.size());
 	for (size_t k = 0; k < p.fKenten.size(); ++k)
 	{
-		if (!KCMStoryHtml::KentenClassOf(p.fKenten[k].fValue, kentenClasses[k]))
+		if (!KCMStoryShape::KentenClassOf(p.fKenten[k].fValue, kentenClasses[k]))
 		{
 			whyNot = "a kenten kind this format cannot name: " + p.fKenten[k].fValue;
 			return kFalse;
@@ -304,7 +304,7 @@ bool16 WriteParagraphContent(const KCMStoryHtml::Para& p, std::string& out, std:
 	//
 	// Written into a string of its own, so that a refusal half way leaves `out` as it was found.
 	std::string made;
-	const std::vector<KCMStoryHtml::NoteRef>& refs = p.fNoteRefs;
+	const std::vector<KCMStoryShape::NoteRef>& refs = p.fNoteRefs;
 	size_t ref = 0;
 	int32 i = 0;
 
@@ -399,10 +399,10 @@ const int32 kDeepestNesting = 32;
 	⚠A RUBY CUT BY A TABLE comes out as two rubies with the same reading, one on each side. That is
 	  what the page shows, and it is not what the Story said - so the export's own check (stage 2)
 	  will refuse such a story rather than let it round-trip into two. */
-KCMStoryHtml::Para Slice(const KCMStoryHtml::Para& p, const std::vector<int32>& byteAt,
+KCMStoryShape::Para Slice(const KCMStoryShape::Para& p, const std::vector<int32>& byteAt,
 						 int32 from, int32 to, bool16 first)
 {
-	KCMStoryHtml::Para piece;
+	KCMStoryShape::Para piece;
 
 	const size_t n = byteAt.size();
 	const size_t b0 = (static_cast<size_t>(from) < n) ? static_cast<size_t>(byteAt[static_cast<size_t>(from)])
@@ -433,7 +433,7 @@ KCMStoryHtml::Para Slice(const KCMStoryHtml::Para& p, const std::vector<int32>& 
 		const int32 at = p.fNoteRefs[k].fAt;
 		if ((at > from && at <= to) || (first && at <= from))
 		{
-			KCMStoryHtml::NoteRef ref = p.fNoteRefs[k];
+			KCMStoryShape::NoteRef ref = p.fNoteRefs[k];
 			ref.fAt = at - from;
 			piece.fNoteRefs.push_back(ref);
 		}
@@ -442,7 +442,7 @@ KCMStoryHtml::Para Slice(const KCMStoryHtml::Para& p, const std::vector<int32>& 
 }
 
 /** One <w:p>. An empty one is <w:p/>. */
-bool16 AppendParagraph(const KCMStoryHtml::Para& piece, std::string& out, std::string& whyNot)
+bool16 AppendParagraph(const KCMStoryShape::Para& piece, std::string& out, std::string& whyNot)
 {
 	std::string content;
 	if (!WriteParagraphContent(piece, content, whyNot))
@@ -482,7 +482,7 @@ struct Carry
 
 /** Lay one row out over the grid. `carry` is the merges reaching down from the rows above, by the
 	grid column each starts at, and is updated for the row below. @return the columns the row used. */
-int32 LayRowOut(const KCMStoryHtml::Row& row, std::vector<Carry>& carry, std::vector<Slot>& outSlots)
+int32 LayRowOut(const KCMStoryShape::Row& row, std::vector<Carry>& carry, std::vector<Slot>& outSlots)
 {
 	outSlots.clear();
 
@@ -513,7 +513,7 @@ int32 LayRowOut(const KCMStoryHtml::Row& row, std::vector<Carry>& carry, std::ve
 			continue;
 		}
 
-		const KCMStoryHtml::Cell& cell = row.fCells[next];
+		const KCMStoryShape::Cell& cell = row.fCells[next];
 		Slot anchor;
 		anchor.fCell = static_cast<int32>(next);
 		anchor.fSpan = (cell.fColSpan > 0) ? cell.fColSpan : 1;
@@ -534,14 +534,14 @@ int32 LayRowOut(const KCMStoryHtml::Row& row, std::vector<Carry>& carry, std::ve
 	return col;
 }
 
-bool16 AppendBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml::Para>& paras,
+bool16 AppendBlocks(const KCMStoryShape::Story& s, const std::vector<KCMStoryShape::Para>& paras,
 					int32 inTable, int32 inRow, int32 inCell, int32 depth, std::string& out,
 					std::string& whyNot);
 
-bool16 AppendTable(const KCMStoryHtml::Story& s, size_t index, int32 depth, std::string& out,
+bool16 AppendTable(const KCMStoryShape::Story& s, size_t index, int32 depth, std::string& out,
 				   std::string& whyNot)
 {
-	const KCMStoryHtml::Table& table = s.fTables[index];
+	const KCMStoryShape::Table& table = s.fTables[index];
 
 	// ---- the grid, settled before a byte is written: <w:tblGrid> comes first in the markup ------
 	std::vector< std::vector<Slot> > rows(table.fRows.size());
@@ -612,7 +612,7 @@ bool16 AppendTable(const KCMStoryHtml::Story& s, size_t index, int32 depth, std:
 	return kTrue;
 }
 
-bool16 AppendBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml::Para>& paras,
+bool16 AppendBlocks(const KCMStoryShape::Story& s, const std::vector<KCMStoryShape::Para>& paras,
 					int32 inTable, int32 inRow, int32 inCell, int32 depth, std::string& out,
 					std::string& whyNot)
 {
@@ -638,7 +638,7 @@ bool16 AppendBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml
 		bool16 wasTable = kFalse;
 		for (size_t t = 0; t < s.fTables.size(); ++t)
 		{
-			const KCMStoryHtml::Table& table = s.fTables[t];
+			const KCMStoryShape::Table& table = s.fTables[t];
 			if (table.fInTable != inTable || table.fParaIndex != static_cast<int32>(i))
 				continue;
 			if (inTable >= 0 && (table.fInRow != inRow || table.fInCell != inCell))
@@ -658,15 +658,15 @@ bool16 AppendBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml
 
 }	// anonymous namespace
 
-bool16 WriteBlocks(const KCMStoryHtml::Story& s, const std::vector<KCMStoryHtml::Para>& paras,
+bool16 WriteBlocks(const KCMStoryShape::Story& s, const std::vector<KCMStoryShape::Para>& paras,
 				   int32 inTable, int32 inRow, int32 inCell, std::string& out, std::string& whyNot)
 {
 	// ★ON A COPY IN THE SPLIT SHAPE (SplitAtTables): the one shape this file writes, whatever shape the
 	//   story came in - see the note above AppendParagraph. `paras` names WHICH run of paragraphs
 	//   (the body, or a cell), and the same run of the copy is what is written.
-	KCMStoryHtml::Story split = s;
+	KCMStoryShape::Story split = s;
 	SplitAtTables(split, kFalse /*as written: a ruby cut by a table is written on both sides*/);
-	const std::vector<KCMStoryHtml::Para>* run = &split.fBody;
+	const std::vector<KCMStoryShape::Para>* run = &split.fBody;
 	if (inTable >= 0)
 	{
 		if (static_cast<size_t>(inTable) >= split.fTables.size()
@@ -697,10 +697,14 @@ const char* const kStoryTagNamespace = "urn:kohaku:kcm:story:1";
 
 /*	The built-in kenten kinds, and the nearest of Word's four emphasis marks for each.
 
-	⚠**THIS LIST IS KCMStoryHtml.cpp's kKentenLooks, A SECOND TIME** - that one is in an anonymous
-	 namespace with CSS beside each name, this one has Word's marks. What says the two still agree
-	 is a test, not a comment: work/kcm-storydocx-test, TestKentenNames, puts every name below
-	 through KCMStoryHtml's KentenValueOfClass and KentenClassOf.
+	★★**THIS IS NOW THE ONLY PLACE THE BUILT-IN KINDS ARE ENUMERATED** (2026-09-21). There used to
+	 be a second copy in KCMStoryHtml.cpp - the same names with CSS beside each instead of Word's
+	 marks - and it went with the HTML spelling. ⚠Nothing else needs such a list: a kind's NAME
+	 travels verbatim (KCMStoryShape::KentenClassOf), so a kind this build has never heard of comes
+	 back untouched whether or not it is written here. What is below is only the LOOK Word is asked
+	 for, and what says the names are still spelt right is a test rather than a comment:
+	 work/kcm-storydocx-test, TestKentenNames, puts every name below through
+	 KCMStoryShape::KentenValueOfClass and KentenClassOf.
 	★The look is only the nearest one - sesame marks are Word's comma, the hollow ones its circle,
 	 everything else its dot. The NAME carries the kind (the header says why).
 */
@@ -736,7 +740,7 @@ void AppendKentenStyle(const std::string& cls, const char* wordMark, std::string
 	out += "\"/></w:rPr></w:style>";
 }
 
-bool16 WriteStyles(const KCMStoryHtml::Story& s, std::string& out, std::string& whyNot)
+bool16 WriteStyles(const KCMStoryShape::Story& s, std::string& out, std::string& whyNot)
 {
 	out = kXmlDeclaration;
 	out += "<w:styles ";
@@ -760,12 +764,12 @@ bool16 WriteStyles(const KCMStoryHtml::Story& s, std::string& out, std::string& 
 	// The custom marks this story uses, sorted: the order the story happens to use them in must
 	// not reach the bytes.
 	std::vector<std::string> values;
-	KCMStoryHtml::CollectKentenValues(s, values);
+	KCMStoryShape::CollectKentenValues(s, values);
 	std::vector<std::string> custom;
 	for (size_t v = 0; v < values.size(); ++v)
 	{
 		std::string cls;
-		if (!KCMStoryHtml::KentenClassOf(values[v], cls))
+		if (!KCMStoryShape::KentenClassOf(values[v], cls))
 		{
 			whyNot = "a kenten kind this format cannot name: " + values[v];
 			return kFalse;
@@ -792,7 +796,7 @@ bool16 WriteStyles(const KCMStoryHtml::Story& s, std::string& out, std::string& 
 }
 
 /** Tick off every note the paragraphs refer to. kFalse for a reference to a note that is not there. */
-bool16 TickReferences(const std::vector<KCMStoryHtml::Para>& paras, std::vector<bool16>& seen,
+bool16 TickReferences(const std::vector<KCMStoryShape::Para>& paras, std::vector<bool16>& seen,
 					  std::string& whyNot)
 {
 	for (size_t i = 0; i < paras.size(); ++i)
@@ -823,7 +827,7 @@ bool16 TickReferences(const std::vector<KCMStoryHtml::Para>& paras, std::vector<
 }
 
 /** Word cannot keep a note nothing refers to, so every note has to be reached from the text. */
-bool16 EveryNoteIsReferredTo(const KCMStoryHtml::Story& s, std::string& whyNot)
+bool16 EveryNoteIsReferredTo(const KCMStoryShape::Story& s, std::string& whyNot)
 {
 	std::vector<bool16> seen(s.fNotes.size(), kFalse);
 
@@ -855,7 +859,7 @@ bool16 EveryNoteIsReferredTo(const KCMStoryHtml::Story& s, std::string& whyNot)
 }
 
 /** <w:footnotes ...>...</w:footnotes>, with no XML declaration in front of it. */
-bool16 WriteFootnotesElement(const KCMStoryHtml::Story& s, std::string& out, std::string& whyNot)
+bool16 WriteFootnotesElement(const KCMStoryShape::Story& s, std::string& out, std::string& whyNot)
 {
 	out = "<w:footnotes ";
 	out += kWordNamespace;
@@ -905,7 +909,7 @@ namespace
 
 /** The two elements that ARE the story - <w:document> and, when it has notes, <w:footnotes> - with
 	no XML declaration in front of either. Everything that can refuse a story refuses it here. */
-bool16 WriteStoryElements(const KCMStoryHtml::Story& s, std::string& outDocument,
+bool16 WriteStoryElements(const KCMStoryShape::Story& s, std::string& outDocument,
 						  std::string& outFootnotes, std::string& whyNot)
 {
 	outDocument.clear();
@@ -944,7 +948,7 @@ void FingerprintOf(const std::string& documentElement, const std::string& footno
 
 }	// anonymous namespace
 
-bool16 Fingerprint(const KCMStoryHtml::Story& s, std::string& outFingerprint, std::string& whyNot)
+bool16 Fingerprint(const KCMStoryShape::Story& s, std::string& outFingerprint, std::string& whyNot)
 {
 	outFingerprint.clear();
 
@@ -957,7 +961,7 @@ bool16 Fingerprint(const KCMStoryHtml::Story& s, std::string& outFingerprint, st
 	return kTrue;
 }
 
-bool16 WriteParts(const KCMStoryHtml::Story& s, int32 uid, const std::string& documentNameUtf8,
+bool16 WriteParts(const KCMStoryShape::Story& s, int32 uid, const std::string& documentNameUtf8,
 				  std::vector<KCMZipStore::Entry>& outParts, std::string& whyNot)
 {
 	outParts.clear();
@@ -1077,7 +1081,7 @@ bool16 WriteParts(const KCMStoryHtml::Story& s, int32 uid, const std::string& do
 	return kTrue;
 }
 
-bool16 Write(const KCMStoryHtml::Story& s, int32 uid, const std::string& documentNameUtf8,
+bool16 Write(const KCMStoryShape::Story& s, int32 uid, const std::string& documentNameUtf8,
 			 std::string& outDocx, std::string& whyNot)
 {
 	outDocx.clear();
@@ -1204,7 +1208,7 @@ struct Building
 	KCMAttrSpanList						fKenten;		// touching runs of one kind are one span
 	KCMAttrSpanList						fTcy;			// fValue filled by Finish
 	KCMAttrSpanList						fWarichu;
-	std::vector<KCMStoryHtml::NoteRef>	fNoteRefs;		// fNote holds the footnote ID until ResolveNotes ranks it
+	std::vector<KCMStoryShape::NoteRef>	fNoteRefs;		// fNote holds the footnote ID until ResolveNotes ranks it
 	int32								fMarkRevision;	// 0 none, +1 the paragraph mark was inserted, -1 deleted
 	// the field being collected, if any
 	int32								fFieldDepth;	// 0 none, 1 between begin and end
@@ -1236,7 +1240,7 @@ struct Reader
 	Side					fSide;
 	std::vector<Mark>*		fMarks;
 	StyleNames				fStyleNames;
-	KCMStoryHtml::Story*	fStory;
+	KCMStoryShape::Story*	fStory;
 	std::string				fWhy;
 
 	Reader() : fTree(nil), fSide(kSideAfterWord), fMarks(nil), fStory(nil) {}
@@ -1368,7 +1372,7 @@ bool16 LookOf(Reader& rd, int32 rPr, RLook& out)
 			const std::string name = StyleName(rd, *id);
 			if (name.size() > 7 && name.compare(0, 7, "kenten-") == 0)
 			{
-				if (!KCMStoryHtml::KentenValueOfClass(name.substr(7), out.fKenten))
+				if (!KCMStoryShape::KentenValueOfClass(name.substr(7), out.fKenten))
 					return Refuse(rd, "a kenten style this reader cannot read: " + name);
 			}
 		}
@@ -1381,7 +1385,7 @@ bool16 LookOf(Reader& rd, int32 rPr, RLook& out)
 		const std::string* v = (em >= 0) ? t.Attr(em, "val") : nil;
 		if (v != nil)
 		{
-			if (*v == "comma")							out.fKenten = KCMStoryHtml::kKentenDefaultValue;
+			if (*v == "comma")							out.fKenten = KCMStoryShape::kKentenDefaultValue;
 			else if (*v == "dot" || *v == "underDot")	out.fKenten = "BlackCircle";
 			else if (*v == "circle")					out.fKenten = "WhiteCircle";
 		}
@@ -1715,7 +1719,7 @@ bool16 ReadRunChildren(Reader& rd, int32 node, const RLook& look, Building& b)
 			int32 value = 0;
 			if (id == nil || !ParseDecimal(*id, value))
 				return Refuse(rd, "a footnote reference with no id");
-			KCMStoryHtml::NoteRef ref;
+			KCMStoryShape::NoteRef ref;
 			ref.fAt = b.fLen;
 			ref.fNote = value;
 			b.fNoteRefs.push_back(ref);
@@ -1912,9 +1916,9 @@ bool16 ReadParagraph(Reader& rd, int32 p, Building& b)
 	return kTrue;
 }
 
-void Finish(Building& b, KCMStoryHtml::Para& out)
+void Finish(Building& b, KCMStoryShape::Para& out)
 {
-	out = KCMStoryHtml::Para();
+	out = KCMStoryShape::Para();
 	out.fText = b.fText;
 	out.fRuby = b.fRuby;
 	out.fKenten = b.fKenten;
@@ -1961,7 +1965,7 @@ void AppendShifted(KCMAttrSpanList& into, const KCMAttrSpanList& more, int32 shi
 	  and comes back as two - which is how the export's own check refuses such a story (the
 	  writer's Slice says so).
 */
-void JoinOnto(KCMStoryHtml::Para& prev, const KCMStoryHtml::Para& next)
+void JoinOnto(KCMStoryShape::Para& prev, const KCMStoryShape::Para& next)
 {
 	const int32 shift = CodePointsIn(prev.fText);
 	prev.fText += next.fText;
@@ -1973,7 +1977,7 @@ void JoinOnto(KCMStoryHtml::Para& prev, const KCMStoryHtml::Para& next)
 	KCMParaText::SetSpanValuesToText(prev.fWarichu, prev.fText);
 	for (size_t k = 0; k < next.fNoteRefs.size(); ++k)
 	{
-		KCMStoryHtml::NoteRef ref = next.fNoteRefs[k];
+		KCMStoryShape::NoteRef ref = next.fNoteRefs[k];
 		ref.fAt += shift;
 		prev.fNoteRefs.push_back(ref);
 	}
@@ -1984,7 +1988,7 @@ const int32 kInBody = -1;
 const int32 kInNote = -2;
 
 bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32 inCell,
-				  std::vector<KCMStoryHtml::Para>& out);
+				  std::vector<KCMStoryShape::Para>& out);
 
 /*	The table, read back.
 
@@ -2003,14 +2007,14 @@ struct GridOpen
 	std::vector<int32>	fCell;		// and which cell of that row
 };
 
-bool16 ReadCells(Reader& rd, int32 container, int32 slot, int32 rowIndex, KCMStoryHtml::Row& row,
+bool16 ReadCells(Reader& rd, int32 container, int32 slot, int32 rowIndex, KCMStoryShape::Row& row,
 				 int32& col, GridOpen& open);
 
-bool16 ReadCell(Reader& rd, int32 tc, int32 slot, int32 rowIndex, KCMStoryHtml::Row& row, int32& col,
+bool16 ReadCell(Reader& rd, int32 tc, int32 slot, int32 rowIndex, KCMStoryShape::Row& row, int32& col,
 				GridOpen& open)
 {
 	const KCMXmlTree& t = *rd.fTree;
-	KCMStoryHtml::Story& s = *rd.fStory;
+	KCMStoryShape::Story& s = *rd.fStory;
 
 	int32 span = 1;
 	bool16 restarts = kFalse;
@@ -2057,7 +2061,7 @@ bool16 ReadCell(Reader& rd, int32 tc, int32 slot, int32 rowIndex, KCMStoryHtml::
 		// A "continue" with nothing open above it (the row above is the other side's): a plain cell.
 	}
 
-	KCMStoryHtml::Cell cell;
+	KCMStoryShape::Cell cell;
 	cell.fColSpan = span;
 	const int32 cellIndex = static_cast<int32>(row.fCells.size());
 	for (int32 c = col; c < col + span; ++c)
@@ -2073,7 +2077,7 @@ bool16 ReadCell(Reader& rd, int32 tc, int32 slot, int32 rowIndex, KCMStoryHtml::
 	return kTrue;
 }
 
-bool16 ReadCells(Reader& rd, int32 container, int32 slot, int32 rowIndex, KCMStoryHtml::Row& row,
+bool16 ReadCells(Reader& rd, int32 container, int32 slot, int32 rowIndex, KCMStoryShape::Row& row,
 				 int32& col, GridOpen& open)
 {
 	const KCMXmlTree& t = *rd.fTree;
@@ -2118,9 +2122,9 @@ bool16 ReadCells(Reader& rd, int32 container, int32 slot, int32 rowIndex, KCMSto
 bool16 ReadRow(Reader& rd, int32 tr, int32 slot, GridOpen& open)
 {
 	const KCMXmlTree& t = *rd.fTree;
-	KCMStoryHtml::Story& s = *rd.fStory;
+	KCMStoryShape::Story& s = *rd.fStory;
 
-	KCMStoryHtml::Row row;
+	KCMStoryShape::Row row;
 	const int32 trPr = t.Child(tr, kW, "trPr");
 	if (trPr >= 0)
 	{
@@ -2198,14 +2202,14 @@ bool16 ReadRows(Reader& rd, int32 container, int32 slot, GridOpen& open)
 /** One <w:tbl>, standing in paragraph `paraIndex` of its holder at `offset` code points. */
 bool16 ReadTable(Reader& rd, int32 tbl, int32 inTable, int32 inRow, int32 inCell, int32 paraIndex, int32 offset)
 {
-	KCMStoryHtml::Story& s = *rd.fStory;
+	KCMStoryShape::Story& s = *rd.fStory;
 
 	// The slot is taken at the opening tag, so the tables inside this one come after it - the
 	// document order Story::fTables promises (and the writer's AppendTable walks).
 	const int32 slot = static_cast<int32>(s.fTables.size());
-	s.fTables.push_back(KCMStoryHtml::Table());
+	s.fTables.push_back(KCMStoryShape::Table());
 	{
-		KCMStoryHtml::Table& table = s.fTables[static_cast<size_t>(slot)];
+		KCMStoryShape::Table& table = s.fTables[static_cast<size_t>(slot)];
 		table.fOrdinal = slot;
 		table.fSplitsPara = kTrue;
 		table.fParaIndex = paraIndex;
@@ -2228,7 +2232,7 @@ bool16 ReadTable(Reader& rd, int32 tbl, int32 inTable, int32 inRow, int32 inCell
 	  the origin side; deleted, on the after side) - a paragraph split or joined in Word.
 */
 bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32 inCell,
-				  std::vector<KCMStoryHtml::Para>& out)
+				  std::vector<KCMStoryShape::Para>& out)
 {
 	const KCMXmlTree& t = *rd.fTree;
 	const KCMXmlNode& n = t.At(container);
@@ -2260,7 +2264,7 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 			Building b;
 			if (!ReadParagraph(rd, c, b))
 				return kFalse;
-			KCMStoryHtml::Para para;
+			KCMStoryShape::Para para;
 			Finish(b, para);
 			const bool16 marksJoin = ((rd.fSide == kSideOriginAsWritten && b.fMarkRevision > 0)
 									  || (rd.fSide == kSideAfterWord && b.fMarkRevision < 0)) ? kTrue : kFalse;
@@ -2284,7 +2288,7 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 				return Refuse(rd, "a paragraph mark next to a table was inserted or deleted");
 			// ★A PARAGRAPH OF ITS OWN, ALWAYS - the split shape. Whose paragraph it is in the document
 			//   is settled at the import (RejoinTables), from the document.
-			out.push_back(KCMStoryHtml::Para());
+			out.push_back(KCMStoryShape::Para());
 			if (!ReadTable(rd, c, inTable, inRow, inCell, static_cast<int32>(out.size()) - 1, 0))
 				return kFalse;
 		}
@@ -2313,7 +2317,7 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 }
 
 /** Every run of paragraphs a story has: the body, then each cell in table order. */
-void HoldersOf(KCMStoryHtml::Story& s, std::vector< std::vector<KCMStoryHtml::Para>* >& out)
+void HoldersOf(KCMStoryShape::Story& s, std::vector< std::vector<KCMStoryShape::Para>* >& out)
 {
 	out.clear();
 	out.push_back(&s.fBody);
@@ -2337,14 +2341,14 @@ void HoldersOf(KCMStoryHtml::Story& s, std::vector< std::vector<KCMStoryHtml::Pa
 */
 bool16 ResolveNotes(Reader& rd, const KCMXmlTree* notesTree)
 {
-	KCMStoryHtml::Story& s = *rd.fStory;
-	std::vector< std::vector<KCMStoryHtml::Para>* > holders;
+	KCMStoryShape::Story& s = *rd.fStory;
+	std::vector< std::vector<KCMStoryShape::Para>* > holders;
 	HoldersOf(s, holders);
 
 	std::vector<int32> ids;			// ascending, each once
 	for (size_t h = 0; h < holders.size(); ++h)
 	{
-		const std::vector<KCMStoryHtml::Para>& paras = *holders[h];
+		const std::vector<KCMStoryShape::Para>& paras = *holders[h];
 		for (size_t i = 0; i < paras.size(); ++i)
 		{
 			for (size_t k = 0; k < paras[i].fNoteRefs.size(); ++k)
@@ -2399,7 +2403,7 @@ bool16 ResolveNotes(Reader& rd, const KCMXmlTree* notesTree)
 			rd.fTree = saved;
 			return Refuse(rd, "a reference to footnote " + wanted + ", which the file does not have");
 		}
-		std::vector<KCMStoryHtml::Para> paras;
+		std::vector<KCMStoryShape::Para> paras;
 		if (!ReadBlocks(rd, found, kInNote, 0, 0, paras))
 		{
 			rd.fTree = saved;
@@ -2411,7 +2415,7 @@ bool16 ResolveNotes(Reader& rd, const KCMXmlTree* notesTree)
 
 	for (size_t h = 0; h < holders.size(); ++h)
 	{
-		std::vector<KCMStoryHtml::Para>& paras = *holders[h];
+		std::vector<KCMStoryShape::Para>& paras = *holders[h];
 		for (size_t i = 0; i < paras.size(); ++i)
 		{
 			for (size_t k = 0; k < paras[i].fNoteRefs.size(); ++k)
@@ -2427,7 +2431,7 @@ bool16 ResolveNotes(Reader& rd, const KCMXmlTree* notesTree)
 	return kTrue;
 }
 
-void SettleParas(std::vector<KCMStoryHtml::Para>& paras)
+void SettleParas(std::vector<KCMStoryShape::Para>& paras)
 {
 	for (size_t i = 0; i < paras.size(); ++i)
 	{
@@ -2442,9 +2446,9 @@ void SettleParas(std::vector<KCMStoryHtml::Para>& paras)
 }	// anonymous namespace
 
 bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml, const std::string& stylesXml,
-				Side side, KCMStoryHtml::Story& out, std::vector<Mark>* outMarks, std::string& whyNot)
+				Side side, KCMStoryShape::Story& out, std::vector<Mark>* outMarks, std::string& whyNot)
 {
-	out = KCMStoryHtml::Story();
+	out = KCMStoryShape::Story();
 	whyNot.clear();
 
 	KCMXmlTree document;
@@ -2571,12 +2575,12 @@ namespace
 {
 
 /** The tables standing in one run of paragraphs (the body, or one cell), in document order. */
-void TablesIn(const KCMStoryHtml::Story& s, int32 inTable, int32 inRow, int32 inCell, std::vector<size_t>& out)
+void TablesIn(const KCMStoryShape::Story& s, int32 inTable, int32 inRow, int32 inCell, std::vector<size_t>& out)
 {
 	out.clear();
 	for (size_t t = 0; t < s.fTables.size(); ++t)
 	{
-		const KCMStoryHtml::Table& table = s.fTables[t];
+		const KCMStoryShape::Table& table = s.fTables[t];
 		if (table.fInTable != inTable)
 			continue;
 		if (inTable >= 0 && (table.fInRow != inRow || table.fInCell != inCell))
@@ -2586,7 +2590,7 @@ void TablesIn(const KCMStoryHtml::Story& s, int32 inTable, int32 inRow, int32 in
 }
 
 /** Whether a paragraph says nothing: no words, no reference. */
-bool16 SaysNothing(const KCMStoryHtml::Para& p)
+bool16 SaysNothing(const KCMStoryShape::Para& p)
 {
 	return (p.fText.empty() && p.fNoteRefs.empty()) ? kTrue : kFalse;
 }
@@ -2597,10 +2601,10 @@ bool16 SaysNothing(const KCMStoryHtml::Para& p)
 	what the story said, so the export's own check has to see a difference here and refuse the
 	story (Slice's note). The kenten, tate-chu-yoko and warichu cut the same way ARE rejoined by the
 	reader (JoinOnto), so their halves stay. */
-KCMStoryHtml::Para PieceAsRead(const KCMStoryHtml::Para& p, const std::vector<int32>& byteAt,
+KCMStoryShape::Para PieceAsRead(const KCMStoryShape::Para& p, const std::vector<int32>& byteAt,
 								int32 from, int32 to, bool16 first)
 {
-	KCMStoryHtml::Para piece = Slice(p, byteAt, from, to, first);
+	KCMStoryShape::Para piece = Slice(p, byteAt, from, to, first);
 	KCMParaText::SetSpanValuesToText(piece.fTcy, piece.fText);
 	KCMParaText::SetSpanValuesToText(piece.fWarichu, piece.fText);
 	if (from > 0)
@@ -2635,17 +2639,17 @@ KCMStoryHtml::Para PieceAsRead(const KCMStoryHtml::Para& p, const std::vector<in
 	ordinary paragraph is not written.
 	★THIS IS THE ONE PLACE THAT DECIDES THE SHAPE: the writer writes it block for block, the reader
 	  reads it back the same, and RejoinTables undoes it from the document's shape. */
-void SplitParas(KCMStoryHtml::Story& s, std::vector<KCMStoryHtml::Para>& paras, int32 inTable, int32 inRow, int32 inCell,
+void SplitParas(KCMStoryShape::Story& s, std::vector<KCMStoryShape::Para>& paras, int32 inTable, int32 inRow, int32 inCell,
 				bool16 asRead)
 {
 	std::vector<size_t> tables;
 	TablesIn(s, inTable, inRow, inCell, tables);
 
-	std::vector<KCMStoryHtml::Para> made;
+	std::vector<KCMStoryShape::Para> made;
 	size_t k = 0;			// the next table of this run
 	for (size_t i = 0; i < paras.size(); ++i)
 	{
-		const KCMStoryHtml::Para& p = paras[i];
+		const KCMStoryShape::Para& p = paras[i];
 		std::vector<int32> byteAt;
 		KCMTextDiff::ToCodePoints(p.fText, nil, &byteAt);
 		const int32 n = static_cast<int32>(byteAt.size());
@@ -2661,12 +2665,12 @@ void SplitParas(KCMStoryHtml::Story& s, std::vector<KCMStoryHtml::Para>& paras, 
 			// ★AS WRITTEN (Slice: a ruby cut by the table goes on both pieces) for the writer, AS READ
 			//   (PieceAsRead: on the first only) for the settle - so that the export's own check sees
 			//   the difference and refuses such a story, rather than writing half a reading.
-			const KCMStoryHtml::Para piece = asRead ? PieceAsRead(p, byteAt, pos, at, first)
+			const KCMStoryShape::Para piece = asRead ? PieceAsRead(p, byteAt, pos, at, first)
 													 : Slice(p, byteAt, pos, at, first);
 			if (!(first && at == 0 && piece.fNoteRefs.empty()))
 				made.push_back(piece);
 
-			made.push_back(KCMStoryHtml::Para());			// the table, alone
+			made.push_back(KCMStoryShape::Para());			// the table, alone
 			s.fTables[tables[k]].fParaIndex = static_cast<int32>(made.size()) - 1;
 			s.fTables[tables[k]].fOffset = 0;
 			pos = at;
@@ -2674,7 +2678,7 @@ void SplitParas(KCMStoryHtml::Story& s, std::vector<KCMStoryHtml::Para>& paras, 
 			++k;
 		}
 
-		const KCMStoryHtml::Para tail = asRead ? PieceAsRead(p, byteAt, pos, n, first)
+		const KCMStoryShape::Para tail = asRead ? PieceAsRead(p, byteAt, pos, n, first)
 											   : Slice(p, byteAt, pos, n, first);
 		if (first || !SaysNothing(tail))
 		{
@@ -2705,8 +2709,8 @@ void SplitParas(KCMStoryHtml::Story& s, std::vector<KCMStoryHtml::Para>& paras, 
 	decided here, and they are decided by the document.
 	⚠When the two runs do not hold the same number of tables nothing is done: the import's own
 	 check (TablesAgree) refuses such a story by name. */
-void RejoinParas(KCMStoryHtml::Story& s, std::vector<KCMStoryHtml::Para>& paras,
-				 const KCMStoryHtml::Story& shape, const std::vector<KCMStoryHtml::Para>& shapeParas,
+void RejoinParas(KCMStoryShape::Story& s, std::vector<KCMStoryShape::Para>& paras,
+				 const KCMStoryShape::Story& shape, const std::vector<KCMStoryShape::Para>& shapeParas,
 				 int32 inTable, int32 inRow, int32 inCell)
 {
 	std::vector<size_t> mine, theirs;
@@ -2715,7 +2719,7 @@ void RejoinParas(KCMStoryHtml::Story& s, std::vector<KCMStoryHtml::Para>& paras,
 	if (mine.size() != theirs.size())
 		return;
 
-	std::vector<KCMStoryHtml::Para> made;
+	std::vector<KCMStoryShape::Para> made;
 	size_t k = 0;
 	for (size_t i = 0; i < paras.size(); ++i)
 	{
@@ -2726,7 +2730,7 @@ void RejoinParas(KCMStoryHtml::Story& s, std::vector<KCMStoryHtml::Para>& paras,
 		}
 
 		// what the document says about ITS k-th table of this run
-		const KCMStoryHtml::Table& theirTable = shape.fTables[theirs[k]];
+		const KCMStoryShape::Table& theirTable = shape.fTables[theirs[k]];
 		const int32 p = theirTable.fParaIndex;
 		const bool16 pValid = (p >= 0 && static_cast<size_t>(p) < shapeParas.size()) ? kTrue : kFalse;
 		const int32 pLen = pValid ? CodePointsIn(shapeParas[static_cast<size_t>(p)].fText) : 0;
@@ -2751,7 +2755,7 @@ void RejoinParas(KCMStoryHtml::Story& s, std::vector<KCMStoryHtml::Para>& paras,
 		}
 		else
 		{
-			made.push_back(KCMStoryHtml::Para());
+			made.push_back(KCMStoryShape::Para());
 			s.fTables[mine[k]].fParaIndex = static_cast<int32>(made.size()) - 1;
 			s.fTables[mine[k]].fOffset = 0;
 		}
@@ -2760,7 +2764,7 @@ void RejoinParas(KCMStoryHtml::Story& s, std::vector<KCMStoryHtml::Para>& paras,
 		const bool16 nextIsTable = (k + 1 < mine.size() && s.fTables[mine[k + 1]].fParaIndex == static_cast<int32>(i + 1)) ? kTrue : kFalse;
 		if (i + 1 < paras.size() && !nextIsTable)
 		{
-			const KCMStoryHtml::Para& next = paras[i + 1];
+			const KCMStoryShape::Para& next = paras[i + 1];
 			if (joinAfter)
 			{
 				JoinOnto(made.back(), next);
@@ -2788,7 +2792,7 @@ void RejoinParas(KCMStoryHtml::Story& s, std::vector<KCMStoryHtml::Para>& paras,
 
 }	// anonymous namespace
 
-void SplitAtTables(KCMStoryHtml::Story& s, bool16 asRead)
+void SplitAtTables(KCMStoryShape::Story& s, bool16 asRead)
 {
 	// ⚠The body first, then the cells in table order: SplitParas renumbers the tables of the run it
 	//   is given and no other, and a cell's run is named by the ordinal of the table that holds it,
@@ -2800,7 +2804,7 @@ void SplitAtTables(KCMStoryHtml::Story& s, bool16 asRead)
 				SplitParas(s, s.fTables[t].fRows[r].fCells[c].fParas, static_cast<int32>(t), static_cast<int32>(r), static_cast<int32>(c), asRead);
 }
 
-void RejoinTables(KCMStoryHtml::Story& s, const KCMStoryHtml::Story& shape)
+void RejoinTables(KCMStoryShape::Story& s, const KCMStoryShape::Story& shape)
 {
 	if (s.fTables.size() != shape.fTables.size())
 		return;
@@ -2820,7 +2824,7 @@ void RejoinTables(KCMStoryHtml::Story& s, const KCMStoryHtml::Story& shape)
 	}
 }
 
-void SettleForThisFormat(KCMStoryHtml::Story& s)
+void SettleForThisFormat(KCMStoryShape::Story& s)
 {
 	// ★THE SHAPE FIRST: what this spelling cannot tell apart begins with where a table stands in its
 	//   paragraph (SplitAtTables says why), and the readings and the empty cells below are settled
@@ -2835,9 +2839,9 @@ void SettleForThisFormat(KCMStoryHtml::Story& s)
 			{
 				// ★A CELL OF WORD'S HOLDS A PARAGRAPH, ALWAYS: the writer puts <w:p/> into one that
 				//   has none, and that is one empty paragraph on the way back.
-				std::vector<KCMStoryHtml::Para>& paras = s.fTables[t].fRows[r].fCells[c].fParas;
+				std::vector<KCMStoryShape::Para>& paras = s.fTables[t].fRows[r].fCells[c].fParas;
 				if (paras.empty())
-					paras.push_back(KCMStoryHtml::Para());
+					paras.push_back(KCMStoryShape::Para());
 				SettleParas(paras);
 			}
 		}
@@ -2846,7 +2850,7 @@ void SettleForThisFormat(KCMStoryHtml::Story& s)
 	{
 		// The same for a note: its mark has to stand in a paragraph, so the writer makes one (R2).
 		if (s.fNotes[n].empty())
-			s.fNotes[n].push_back(KCMStoryHtml::Para());
+			s.fNotes[n].push_back(KCMStoryShape::Para());
 		SettleParas(s.fNotes[n]);
 	}
 }
