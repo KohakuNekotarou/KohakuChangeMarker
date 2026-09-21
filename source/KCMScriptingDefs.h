@@ -259,6 +259,7 @@ enum KCMScriptMethods
 	//   as a retired one: **the code is never reused**, which is the rule the registry ledger keeps.
 	e_KCMImportStoryText = 'eKGn',	// n = in.    app.kcmImportStoryText(file)  -> the import's sentence
 	e_KCMExportStoryText = 'eKGe',	// e = export. app.kcmExportStoryText(folder) -> "exported N ... to <folder>"
+									// ⚠**IT WRITES .docx SINCE 2026-09-21** (it wrote .html until then).
 	e_KCMStopComparison = 'eKGq',	// q = quit.  app.kcmStopComparison()       -> the status line after it
 
 	// ★★ONE CHANGE TAKEN IN FROM A SCRIPT (2026-09-17 afternoon). The user asked for the order checks -
@@ -274,13 +275,12 @@ enum KCMScriptMethods
 	//   Same rule as 'eKGw' and 'eKGy' above: **the code is never reused.** ★Never registered with Adobe,
 	//   so nothing outside this repo can be looking for it.
 
-	// ★THE .DOCX ROAD OF THE EXPORT, WITHOUT A DIALOG (2026-09-19). The menu item opens the system's
-	//   folder chooser, which a test cannot answer; this is the same model call with the folder
-	//   handed in, exactly as 'eKGe' is for the HTML road.
-	//   ⚠'eKGf' was MEASURED free: 0 hits in the tree, no row in the registry ledger (whose used
-	//     letters for eKG* are a c d D e h i k m n o p q r s t u v w x y). The same search form finds
-	//     'eKGe'. ⚠Not registered with Adobe.
-	e_KCMExportStoryDocx = 'eKGf',	// f = file for Word. app.kcmExportStoryDocx(folder) -> "exported N ... to <folder>"
+	// ⛔**'eKGf' (app.kcmExportStoryDocx) IS RETIRED** (2026-09-21). It was added on 2026-09-19 as the
+	//   .docx road of the export, beside 'eKGe' which wrote .html. The HTML road was retired on the
+	//   user's word ("Word format only"), so there is only one road and only one door: **'eKGe' /
+	//   app.kcmExportStoryText writes the .docx now.** Same rule as 'eKGw', 'eKGy' and 'eKGk' above:
+	//   **the code is never reused.** ★Never registered with Adobe, so nothing outside this repo can
+	//   be looking for it - and 'eKGe' was never registered either, so its meaning could change.
 
 	// ★"UNDO THE RESTORE" FROM A SCRIPT (2026-09-19 night, the user: "let us implement the proposal").
 	//   The take-in has had a script door since 09-17 (eKGk / eKGy); its undo had none, so checking the

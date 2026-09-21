@@ -292,8 +292,7 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 	{
 		const int32 id = methodID.Get();
 		if (id == e_KCMImportStoryText
-			|| id == e_KCMExportStoryText || id == e_KCMStopComparison
-			|| id == e_KCMExportStoryDocx)
+			|| id == e_KCMExportStoryText || id == e_KCMStopComparison)
 		{
 			PMString message;
 			message.SetTranslatable(kFalse);
@@ -335,11 +334,10 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 					}
 					else
 					{
-						// ★ONE BRANCH FOR BOTH ROADS: the two methods differ in the spelling and in
-						//   nothing else (KCMStoryTextExport.h, KCMStoryTextFormat).
-						KCMExportStoryText(db, file, UIDList(db), message,
-										   (id == e_KCMExportStoryDocx) ? kKCMStoryTextDocx
-																		: kKCMStoryTextHtml);
+						// ⚠**THERE WERE TWO METHODS HERE UNTIL 2026-09-21**, one per spelling, and this
+						//   call took which one to write. The HTML road was retired on the user's word
+						//   ("Word format only") and app.kcmExportStoryText writes the .docx now.
+						KCMExportStoryText(db, file, UIDList(db), message);
 					}
 				}
 			}

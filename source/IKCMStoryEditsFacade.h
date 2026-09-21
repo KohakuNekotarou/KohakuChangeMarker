@@ -617,14 +617,15 @@ public:
 	virtual void	StoreStatusLayers(const KCMStoryLayers& layers) = 0;
 	virtual void	GetStatusLayers(KCMStoryLayers& out) = 0;
 
-	/** ExportStoryText, in the spelling asked for (2026-09-19): 0 is the .html road, 1 the .docx one
-		for Word - KCMStoryTextExport.h's KCMStoryTextFormat, as a plain number so that this header
-		needs nothing of that one. Everything else is ExportStoryText's, word for word.
-		⚠A NEW VIRTUAL RATHER THAN A FOURTH ARGUMENT ON THE OLD ONE, and APPENDED AT THE END: the old
-		  one keeps its slot and its shape for whoever calls it through the vtable
-		  ([[facade-vtable-slot-append-only]]). Adding this means rebuilding both halves and KIDMCP. */
-	virtual bool16	ExportStoryTextAs(const IDFile& parent, const UIDList& onlyThese, int32 format,
-									  PMString& outMessage) = 0;
+	/*	⛔**ExportStoryTextAs STOOD HERE UNTIL 2026-09-21.** It was ExportStoryText with a spelling to
+		choose - 0 for .html, 1 for .docx - added on 2026-09-19 as a NEW virtual rather than a fourth
+		argument, so that the old slot kept its shape. The HTML road was retired on the user's word
+		("Word format only") and there is nothing left to choose, so the argument went and with it
+		the second method: ExportStoryText, above, writes .docx.
+		★**TAKING A VIRTUAL OUT OF THE MIDDLE MOVES EVERY SLOT BELOW IT** ([[facade-vtable-slot-append-only]]),
+		which is safe here and was measured before it was done: KIDMCP reaches for IKCMCompareFacade
+		and for this facade never, and KCM's own two halves are built and shipped together.
+	*/
 
 	/** One of the cells a TABLE change marks on the page (2026-09-19 night, the user: "the changed cells
 		should be marked" / "jump to the top-left of them"): [outFrom, outTo) in Target coordinates, a

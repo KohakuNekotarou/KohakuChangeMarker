@@ -830,22 +830,18 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Export Story Text..." on the panel flyout (2026-09-15). Plain command: every story of
-		// the active document is written out as HTML, one file each, into a dated folder under the
-		// one the reader chooses. Directly under Task Start - the two belong together.
+		// the active document is written out as a Word document (.docx), one file each, into a dated
+		// folder under the one the reader chooses. Directly under Task Start - the two belong together.
+		// ⛔**THERE WERE TWO OF THESE UNTIL 2026-09-21**: this one wrote .html and "Export Story Text
+		// as Word..." wrote .docx. The HTML road went on the user's word ("Word format only"), and
+		// this item - the one the public version has - is the one that stayed.
 		kKCMPopupExportStoryTextActionID,
 		kKCMPopupMenuPath,
 		kKCMExportStoryTextMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Export Story Text as Word..." on the panel flyout (2026-09-19). The same export in the
-		// other spelling - .docx, for a reader whose editor is Word - directly under the .html one.
-		kKCMPopupExportStoryDocxActionID,
-		kKCMPopupMenuPath,
-		kKCMExportStoryDocxMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
-		// "Import Story Text..." on the panel flyout (2026-09-15). Plain command: a folder of
-		// edited HTML is read and the Story comparison starts against a copy holding those words.
+		// "Import Story Text..." on the panel flyout (2026-09-15). Plain command: the edited Word
+		// documents are read and the Story comparison starts against a copy holding those words.
 		// Directly under Export - the two are one round trip.
 		kKCMPopupImportStoryTextActionID,
 		kKCMPopupMenuPath,
@@ -1408,7 +1404,7 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// "Export Story Text..." (2026-09-15): the document's words, out to HTML files. Greyed only
+		// "Export Story Text..." (2026-09-15): the document's words, out to Word files. Greyed only
 		// when there is no active document - it reads and never compares, so it needs no Target, no
 		// Source and no comparison (UpdateActionStates asks the facade for the active document).
 		// ⚠It borrowed CanTakeTaskStart for this until 2026-09-21, when the two stopped being the
@@ -1416,17 +1412,6 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKCMActionComponentBoss,
 		kKCMPopupExportStoryTextActionID,
 		kKCMExportStoryTextMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		// "Export Story Text as Word..." (2026-09-19): the same export, as .docx. Greyed on the
-		// same one condition as the item above, and by the same branch of UpdateActionStates.
-		kKCMActionComponentBoss,
-		kKCMPopupExportStoryDocxActionID,
-		kKCMExportStoryDocxMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,

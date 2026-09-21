@@ -748,20 +748,7 @@ resource VersionedScriptElementInfo(10)
 			kKCMExportStoryTextMethodScriptElement,
 			e_KCMExportStoryText,
 			"kcm export story text",			// name -> app.kcmExportStoryText(folder)
-			"Export every story of the active document, as Export Story Text does, into a dated folder inside the one given.",
-			StringType,
-			"The sentence the status line shows, with the dated folder in it"
-			{
-				keyAEFile, "folder path", "The folder to make the dated folder in", FileType, kRequired
-			}
-		}
-
-		Method
-		{
-			kKCMExportStoryDocxMethodScriptElement,
-			e_KCMExportStoryDocx,
-			"kcm export story docx",			// name -> app.kcmExportStoryDocx(folder)
-			"Export every story of the active document as a Word document, as Export Story Text as Word does, into a dated folder inside the one given.",
+			"Export every story of the active document as a Word document, as Export Story Text does, into a dated folder inside the one given.",
 			StringType,
 			"The sentence the status line shows, with the dated folder in it"
 			{
@@ -819,7 +806,6 @@ resource VersionedScriptElementInfo(10)
 				Method{ kKCMExportStoryTextMethodScriptElement },
 				Method{ kKCMStopComparisonMethodScriptElement },
 				// ...and the export's .docx road (2026-09-19).
-				Method{ kKCMExportStoryDocxMethodScriptElement },
 				// (⛔The two halves of "kcm take in change" and "kcm undo restore" went on 2026-09-21.)
 			}
 		}

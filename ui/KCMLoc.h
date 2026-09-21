@@ -170,9 +170,9 @@ namespace KCMJa
 		// ★The story text round trip (2026-09-19) sits here, after Story IDs and before the books - the
 		//   same seam the English side puts kKCMHint4Key at (DoUsage reads hint / hint3 / hint4 / hint2).
 		u"【ストーリーの往復(Export Story Text / Import Story Text)】\n"
-		u"ストーリーをファイルに書き出し、InDesign の外で編集してもらい、その編集を文書に戻します。\n"
-		u"・「Export Story Text...」は HTML、「Export Story Text as Word...」は変更履歴の記録を ON にしてロックした .docx を書き出します。"
-		u"Word 方式では「Word で変えられた所だけ」が戻り、書き出した後に InDesign 側で行った編集はそのまま残ります。フレームを選択していればそのストーリーだけ、何も選択していなければ全ストーリーを書き出します\n"
+		u"ストーリーを Word 文書に書き出し、InDesign の外で編集してもらい、その編集を文書に戻します。\n"
+		u"・「Export Story Text...」は 1ストーリー＝1つの .docx を、変更履歴の記録を ON にしてロックした状態で書き出します。"
+		u"「Word で変えられた所だけ」が戻り、書き出した後に InDesign 側で行った編集はそのまま残ります。フレームを選択していればそのストーリーだけ、何も選択していなければ全ストーリーを書き出します\n"
 		u"・「Import Story Text...」は、今の文書の状態を Task Start として保存し(保存ダイアログが出ます。"
 		u"キャンセルするとそこで終わりで、何も取り込みません)、編集を「すべて」文書に入れてから、その写しとの Story 比較を始めます。"
 		u"Source が Import 前、Target が編集の入った文書です。先に選んでいた Task Start は Import のものに置き換わります\n"

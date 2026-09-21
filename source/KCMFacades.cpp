@@ -734,15 +734,6 @@ public:
 		return KCMExportStoryText(KCMActiveDocDB(), parent, onlyThese, outMessage);
 	}
 
-	virtual bool16	ExportStoryTextAs(const IDFile& parent, const UIDList& onlyThese, int32 format,
-									  PMString& outMessage)
-	{
-		// The same two decisions as ExportStoryText, above - which document is the model's, which
-		// stories is the UI's - and the spelling beside them.
-		return KCMExportStoryText(KCMActiveDocDB(), parent, onlyThese, outMessage,
-								  (format == 1) ? kKCMStoryTextDocx : kKCMStoryTextHtml);
-	}
-
 	virtual bool16	InImportMode()		// ⛔retired with the fourth mode (2026-09-20) - the slot stays
 	{
 		return kFalse;

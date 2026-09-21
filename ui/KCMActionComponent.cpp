@@ -905,16 +905,12 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// ★★**A SELECTION NARROWS IT** (the user's decision, 2026-09-15): the frames or the text
 		//   the reader has selected, and the whole document when they have selected nothing.
 		// ⚠A cancelled dialog says nothing, because nothing happened.
-		// ★★**TWO ITEMS, ONE BODY** (2026-09-19): "Export Story Text as Word..." is the same export in
-		//   the other spelling (.docx - the model's KCMStoryDocx), so everything below - the selection
-		//   read first, the refusal of a selection holding no text, the folder chooser, the line
-		//   that says which road the selection took - is shared, and the two differ in the one
-		//   number handed to the facade. Writing it twice would be two places to keep agreeing.
+		// ⛔**THERE WERE TWO ITEMS SHARING THIS BODY UNTIL 2026-09-21** - "Export Story Text..." wrote
+		//   .html and "Export Story Text as Word..." wrote .docx, and they differed in the one number
+		//   handed to the facade. The HTML road went on the user's word ("Word format only"), so
+		//   there is one item, one spelling and nothing to choose.
 		case kKCMPopupExportStoryTextActionID:
-		case kKCMPopupExportStoryDocxActionID:
 			{
-				const bool16 asWord = (actionID.Get() == kKCMPopupExportStoryDocxActionID) ? kTrue : kFalse;
-
 				// ★**THE SELECTION IS READ BEFORE THE DIALOG OPENS.** A modal file dialog takes the
 				//   keyboard focus and is a window in its own right; reading the selection first
 				//   cannot be wrong, while reading it after would depend on what a dialog does to
@@ -938,8 +934,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				}
 
 				SDKFolderChooser chooser;
-				PMString title(asWord ? "Export Story Text as Word - where to put the folder"
-									  : "Export Story Text - where to put the folder");
+				PMString title("Export Story Text - where to put the folder");
 				title.SetTranslatable(kFalse);
 				chooser.SetTitle(title);
 				chooser.ShowDialog();
@@ -948,10 +943,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 					PMString exportMsg;
 					// ⚠An EMPTY list means every story - the rule is stated once, in
 					//   KCMStoryTextExport.h, and this is the only place that leans on it.
-					// ⚠0 and 1 are KCMStoryTextFormat's values (the model's KCMStoryTextExport.h); the
-					//  facade takes a plain number so that this half needs nothing of that header.
-					Utils<IKCMStoryEditsFacade>()->ExportStoryTextAs(chooser.GetIDFile(), stories,
-																	 asWord ? 1 : 0, exportMsg);
+					Utils<IKCMStoryEditsFacade>()->ExportStoryText(chooser.GetIDFile(), stories, exportMsg);
 					// ★**SAY WHICH ROAD IT TOOK.** "4 files" means one thing when the reader
 					//   selected nothing and quite another when they selected one frame - and
 					//   without this line the two are spelt the same in the status line. It is
@@ -1463,8 +1455,7 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 								 && !compare->IsArmed()) ? kTrue : kFalse;
 			listToUpdate->SetNthActionState(i, live ? kEnabledAction : kDisabled_Unselected);
 		}
-		else if (action == kKCMPopupExportStoryTextActionID
-				 || action == kKCMPopupExportStoryDocxActionID)
+		else if (action == kKCMPopupExportStoryTextActionID)
 		{
 			// ★AN ACTIVE DOCUMENT IS THE WHOLE CONDITION. This item reads and never compares, so it
 			//   needs no Target, no Source and no comparison.
