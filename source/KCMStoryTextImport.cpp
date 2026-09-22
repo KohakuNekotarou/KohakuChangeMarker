@@ -1501,6 +1501,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	int32 edits = 0;
 	int32 attrEdits = 0;			// ruby and kenten: a second pass, after the words of a story are in
 	int32 refusedAttrs = 0;
+	int32 keptTcyParas = 0;			// held back, not refused: a tate-chu-yoko under a warichu (2026-09-22)
 	int32 refusedParas = 0;
 	int32 refusedPlaces = 0;
 	int32 skippedByTables = 0;		// stories left alone entirely: their table shape changed
@@ -1857,12 +1858,14 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 						}
 						// ★**HELD BACK, NOT REFUSED** (2026-09-22): the paragraph went in and one
 						//   thing in it was kept as the document has it, because Word cannot carry
-						//   it. It is counted with neither the refusals nor the edits - the reader
-						//   is simply told, on a row of its own, once per paragraph it happened in.
+						//   it. It gets a count and a row of its own.
+						// ⚠**IT MUST NOT TAKE firstRefusal**, which only the FIRST thing to fill it
+						//  ever reaches the status line by: a rescue standing there would push a
+						//  real refusal, found later in the same import, out of the one line the
+						//  reader reads.
 						if (!attrKept.IsEmpty())
 						{
-							if (firstRefusal.IsEmpty())
-								firstRefusal = attrKept;
+							++keptTcyParas;
 							NoteRefusal(original, "Word", attrKept);
 						}
 						if (n > 0)
@@ -1946,6 +1949,8 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 		AppendCount(outMessage, ", ", refusedParas, " paragraph(s) refused");
 	if (refusedAttrs > 0)
 		AppendCount(outMessage, ", ", refusedAttrs, " paragraph(s) kept their own ruby/kenten");
+	if (keptTcyParas > 0)
+		AppendCount(outMessage, ", ", keptTcyParas, " paragraph(s) kept a tate-chu-yoko Word cannot carry");
 	if (unmatched > 0)
 		AppendCount(outMessage, ", ", unmatched, " file(s) had no story");
 	if (!firstRefusal.IsEmpty())

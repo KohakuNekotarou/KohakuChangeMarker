@@ -101,21 +101,6 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 	KCMAttrSpanList applyWarichu;
 	KCMParaText::PlanSpanChanges(docAttrs.fWarichu, file.fWarichu, clearWarichu, applyWarichu);
 
-	// ★★★**A TATE-CHU-YOKO UNDER A WARICHU IS NOT BELIEVED WHEN THE FILE SAYS IT IS GONE**
-	//   (2026-09-22, the user's call: keep it on the import and name it). Word has no way to
-	//   carry one - a run cannot wear w:combine and w:vert at once - and it drops it without a
-	//   revision mark, so the file says there is none and means it. Keeping the document's is the
-	//   only answer that loses nothing; KCMParaText::KeepTcyInsideWarichu holds the measurement.
-	const int32 keptTcy = KCMParaText::KeepTcyInsideWarichu(docAttrs.fWarichu, clearTcy);
-	if (keptTcy > 0)
-	{
-		outKept = "Word cannot carry a tate-chu-yoko inside a warichu, so ";
-		outKept.AppendNumber(keptTcy);
-		outKept.Append(keptTcy == 1 ? " was kept as this document has it"
-									: " were kept as this document has them");
-		outKept.SetTranslatable(kFalse);
-	}
-
 	// ★THE ORDINARY ANSWER, and the one worth being fast and silent about: the reader edited a
 	//   word somewhere else and every reading in this paragraph is where it was.
 	if (clearRuby.empty() && applyRuby.empty() && clearKenten.empty() && applyKenten.empty()
@@ -173,6 +158,26 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 	}
 
 	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+
+	// ★★★**A TATE-CHU-YOKO UNDER A WARICHU IS NOT BELIEVED WHEN THE FILE SAYS IT IS GONE**
+	//   (2026-09-22, the user's call: keep it on the import and name it). Word has no way to carry
+	//   one - a run cannot wear w:combine and w:vert at once - and it drops it without a revision
+	//   mark, so the file says there is none and means it. Keeping the document's is the only
+	//   answer that loses nothing; KCMParaText::KeepTcyInsideWarichu holds the measurement.
+	// ⚠★★**ASKED HERE, PAST EVERY WAY OUT ABOVE**, and not beside PlanSpanChanges where it first
+	//  stood: a paragraph turned away - for words that did not go in, or a kenten this build
+	//  cannot write - has every attribute left alone anyway, and telling its reader that something
+	//  was "kept" would name a rescue that saved nothing they can see. From here on the writes
+	//  happen, so what is held back is held back from a real pour.
+	const int32 keptTcy = KCMParaText::KeepTcyInsideWarichu(docAttrs.fWarichu, clearTcy);
+	if (keptTcy > 0)
+	{
+		outKept = "Word cannot carry a tate-chu-yoko inside a warichu, so ";
+		outKept.AppendNumber(keptTcy);
+		outKept.Append(keptTcy == 1 ? " was kept as this document has it"
+									: " were kept as this document has them");
+		outKept.SetTranslatable(kFalse);
+	}
 
 	int32 written = 0;
 	TextIndex at = 0;
