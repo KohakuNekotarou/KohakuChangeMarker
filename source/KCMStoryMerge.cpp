@@ -754,6 +754,56 @@ void MergePlace(const KCMStoryShape::Story& o, const KCMStoryShape::Story& w, co
 		out.fApplied += (k > m) ? k : m;
 	}
 
+	// ---- the paragraphs whose WORDS Word left alone ----------------------------------------------
+	//
+	// ★★★**WORD CAN CHANGE NO WORDS AND STILL HAVE PUT A RUBY ON OR TAKEN A KENTEN OFF** (2026-09-22).
+	//   Such a paragraph stands in no change of `a`, so the loop above never reaches it - and
+	//   MergePara, which merges the spans and was written for exactly this case, was never called
+	//   for it. ⚠**THE SYMPTOM WAS SILENT**: an import of a .docx whose marks accounted for every
+	//   change said "0 change(s)" with no conflict beside it, because nothing had been CONSIDERED -
+	//   and the same story, with its <w:rPrChange> stripped so that the whole text was compared
+	//   instead, put every mark in. Measured with work/kcm-storydocx-test/kenten_probe.cpp.
+	//   ⚠MergePara's own "NO EARLY RETURN WHEN a IS EMPTY" guards the CHARACTER-level diff; this is
+	//    the same rule one level up, at the PARAGRAPH-level diff that decides who is merged at all.
+	// ★A paragraph the DOCUMENT rewrote is passed over: its words are not the same three ways, so a
+	//   span has no shared position to be carried to - and the loop above has already had its say.
+	for (int32 oi = 0; oi < static_cast<int32>(oParas.size()); ++oi)
+	{
+		if (InsideChange(a, oi) || InsideChange(b, oi))
+			continue;
+		const int32 afterIdx = ToNow(a, oi);
+		const int32 nowIdx = ToNow(b, oi);
+		if (afterIdx < 0 || static_cast<size_t>(afterIdx) >= wParas.size())
+			continue;
+		if (nowIdx < 0 || static_cast<size_t>(nowIdx) >= nParas.size())
+			continue;
+		const int32 mi = mergedIndexOfNow[static_cast<size_t>(nowIdx)];
+		if (mi < 0 || static_cast<size_t>(mi) >= merged.size())
+			continue;
+		std::vector<int32> keep;
+		for (size_t tk = 0; tk < tables.size(); ++tk)
+		{
+			if (tableNowPara[tk] == nowIdx)
+				keep.push_back(tableOffset[tk]);
+		}
+		ParaResult pr;
+		MergePara(oParas[static_cast<size_t>(oi)], wParas[static_cast<size_t>(afterIdx)],
+				  nParas[static_cast<size_t>(nowIdx)], pr, keep.empty() ? nil : &keep);
+		// ★**NOTHING OF WORD'S HERE MEANS THE DOCUMENT'S PARAGRAPH IS LEFT EXACTLY AS IT IS.** Writing
+		//   the merged copy back unconditionally would put this pass's own idea of the paragraph over
+		//   every untouched one in the story, which is a great deal of nothing to risk for no gain.
+		if (pr.fApplied == 0 && pr.fWhys.empty())
+			continue;
+		merged[static_cast<size_t>(mi)] = pr.fMerged;
+		out.fApplied += pr.fApplied;
+		const std::string here = where + " paragraph " + Num(oi + 1);
+		for (size_t y = 0; y < pr.fWhys.size(); ++y)
+		{
+			Refusal r; r.fWhere = here; r.fWhy = pr.fWhys[y];
+			out.fConflicts.push_back(r);
+		}
+	}
+
 	// ---- the tables of this place, in their new paragraphs --------------------------------------
 	for (size_t k = 0; k < tables.size(); ++k)
 	{
