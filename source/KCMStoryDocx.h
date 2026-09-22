@@ -145,14 +145,19 @@ bool16 Fingerprint(const KCMStoryShape::Story& s, std::string& outFingerprint, s
 	  mark the story uses, in a fixed order: the same story is the same bytes.
 
 	@param uid               the story's UID - the pairing, as the file name is for the HTML format.
-	@param documentNameUtf8  the document's name, for the import's "is this the right document?".
 	@return kFalse with a reason: WriteBlocks' refusals, a note nothing refers to (Word cannot
-	  keep one), or a reference to a note the story does not have. */
-bool16 WriteParts(const KCMStoryShape::Story& s, int32 uid, const std::string& documentNameUtf8,
+	  keep one), or a reference to a note the story does not have.
+
+	(⛔**THE DOCUMENT'S NAME WENT ON 2026-09-22**, the user's call: "a document's name can change, so
+	 ignore it - and take it out of the tag". It was written into the story tag for an "is this the
+	 right document?" test that was never made, and a name that can be changed by a Save As is the
+	 wrong thing to have tested with. What pairs a file with a story is the UID, and what says the
+	 file still matches what was exported is the fingerprint; neither moves when a file is renamed.) */
+bool16 WriteParts(const KCMStoryShape::Story& s, int32 uid,
 				  std::vector<KCMZipStore::Entry>& outParts, std::string& whyNot);
 
 /** The same, zipped: the bytes of the .docx. */
-bool16 Write(const KCMStoryShape::Story& s, int32 uid, const std::string& documentNameUtf8,
+bool16 Write(const KCMStoryShape::Story& s, int32 uid,
 			 std::string& outDocx, std::string& whyNot);
 
 //========================================================================================
@@ -167,7 +172,7 @@ struct Tag
 	bool16		fPresent;
 	int32		fUid;
 	int32		fFormat;
-	std::string	fDocument;		// UTF-8, entities decoded
+	// (⛔fDocument stood here until 2026-09-22 and was never read by anything - see WriteParts.)
 	std::string	fFingerprint;	// as written: "<bytes>-<crc32>"
 
 	Tag() : fPresent(kFalse), fUid(0), fFormat(0) {}

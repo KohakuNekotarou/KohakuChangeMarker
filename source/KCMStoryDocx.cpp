@@ -961,7 +961,7 @@ bool16 Fingerprint(const KCMStoryShape::Story& s, std::string& outFingerprint, s
 	return kTrue;
 }
 
-bool16 WriteParts(const KCMStoryShape::Story& s, int32 uid, const std::string& documentNameUtf8,
+bool16 WriteParts(const KCMStoryShape::Story& s, int32 uid,
 				  std::vector<KCMZipStore::Entry>& outParts, std::string& whyNot)
 {
 	outParts.clear();
@@ -1055,8 +1055,11 @@ bool16 WriteParts(const KCMStoryShape::Story& s, int32 uid, const std::string& d
 	tag += kStoryTagNamespace;
 	tag += "\" uid=\"";
 	AppendNumber(uid, tag);
-	tag += "\" document=\"";
-	AppendEscaped(documentNameUtf8, 0, documentNameUtf8.size(), tag);
+	// (⛔`document="<name>"` stood here until 2026-09-22 - the user's call: a document's name can
+	//  change, so it is not something to write down or to check against. The UID pairs the file with
+	//  a story and the fingerprint says whether the file still matches what was exported; a rename
+	//  moves neither. ⚠A .docx written before today still carries the attribute, and the reader
+	//  simply does not look at it.)
 	tag += "\" format=\"1\" fingerprint=\"";
 	tag += fingerprint;
 	tag += "\"/>";
@@ -1081,13 +1084,13 @@ bool16 WriteParts(const KCMStoryShape::Story& s, int32 uid, const std::string& d
 	return kTrue;
 }
 
-bool16 Write(const KCMStoryShape::Story& s, int32 uid, const std::string& documentNameUtf8,
+bool16 Write(const KCMStoryShape::Story& s, int32 uid,
 			 std::string& outDocx, std::string& whyNot)
 {
 	outDocx.clear();
 
 	std::vector<KCMZipStore::Entry> parts;
-	if (!WriteParts(s, uid, documentNameUtf8, parts, whyNot))
+	if (!WriteParts(s, uid, parts, whyNot))
 		return kFalse;
 
 	KCMZipStore::Write(parts, outDocx);
@@ -1160,9 +1163,9 @@ bool16 ReadTag(const std::string& customXmlPart, Tag& out, std::string& whyNot)
 		return kFalse;
 	}
 
-	const std::string* document = tree.Attr(root, "document");
-	if (document != nil)
-		out.fDocument = *document;
+	// (⛔The "document" attribute was read here into out.fDocument until 2026-09-22. Nothing ever
+	//  read the field, and the name it held can change under a Save As - so it is neither written
+	//  nor read now. An older file's attribute is ignored rather than refused.)
 	const std::string* fingerprint = tree.Attr(root, "fingerprint");
 	if (fingerprint == nil || fingerprint->empty())
 	{

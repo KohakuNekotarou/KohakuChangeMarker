@@ -680,16 +680,10 @@ bool16 WriteStoryFile(const std::wstring& folder, int32 uid, const std::string& 
 	return WriteFileBytes(folder + leaf, bytes, kFalse);
 }
 
-/** The document's name as UTF-8, for the .docx's tag (the import's "is this the right document?"). */
-std::string DocumentNameUtf8(IDataBase* db)
-{
-	InterfacePtr<IDocument> doc(db, db->GetRootUID(), UseDefaultIID());
-	if (doc == nil)
-		return std::string();
-	PMString name;
-	doc->GetName(name);
-	return name.GetUTF8String();
-}
+// (⛔DocumentNameUtf8 stood here until 2026-09-22. It read the document's name for the .docx's story
+//  tag, and the tag stopped carrying it that day - the user's call: a name changes under a Save As,
+//  so it is not something to write down or to check a file against. KCMStoryDocx.h says what pairs a
+//  file with a story instead.)
 
 }	// anonymous namespace
 
@@ -789,8 +783,6 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 		return kFalse;
 	}
 
-	const std::string documentName = DocumentNameUtf8(db);
-
 	int32 written = 0;
 	int32 refused = 0;
 	// What stopped the first story that could not be written, so the message can say more than a
@@ -833,7 +825,7 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 
 			bool16 sound = why.empty()
 						   && KCMStoryDocx::WriteParts(story, static_cast<int32>(storyRef.GetUID().Get()),
-													   documentName, parts, why);
+													   parts, why);
 			if (sound)
 			{
 				KCMStoryShape::Story settled = story;

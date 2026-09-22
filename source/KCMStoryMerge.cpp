@@ -742,7 +742,16 @@ void MergePlace(const KCMStoryShape::Story& o, const KCMStoryShape::Story& w, co
 			else if (mergedIndexOfNow[i] >= at + k)
 				mergedIndexOfNow[i] += m - k;
 		}
-		++out.fApplied;
+		// ★**COUNTED THE WAY THE ROWS ARE** (2026-09-22, the user's call: the number the status line
+		//   gives has to agree with what the reader can count in the panel). This change takes k
+		//   paragraphs out and puts m in, and the panel makes A ROW PER PARAGRAPH it touches - so a
+		//   single "++" here said 1 where three rows stood. Measured on the application: three
+		//   paragraphs replaced by three others, three rows, and "1 change(s) from Word" beside them.
+		//   ⚠**THE LARGER OF THE TWO**, because one side is empty for an addition (k = 0) or a
+		//    removal (m = 0), and the rows follow the side that HAS the paragraphs.
+		//   ⚠The 1:1 branch above does not come through here: it counts what MergePara took, which
+		//    is already one per change the reader sees.
+		out.fApplied += (k > m) ? k : m;
 	}
 
 	// ---- the tables of this place, in their new paragraphs --------------------------------------
