@@ -353,6 +353,16 @@ bool16 SameParas(const std::vector<Para>& a, const std::vector<Para>& b, const s
 			return kFalse;
 		if (withNoteRefs && !SameNoteRefs(a[i].fNoteRefs, b[i].fNoteRefs, here, outWhy))
 			return kFalse;
+		// ★**THE ENDNOTE MARKS TRAVEL WITH THE REFERENCES** and are compared on the same terms: a
+		//   format that cannot carry where a note hangs cannot be asked whether it still does.
+		if (withNoteRefs && a[i].fEndnoteAt != b[i].fEndnoteAt)
+		{
+			outWhy = here + ": " + Num(a[i].fEndnoteAt.size()) + " endnote mark(s) became "
+					 + Num(b[i].fEndnoteAt.size());
+			if (a[i].fEndnoteAt.size() == b[i].fEndnoteAt.size())
+				outWhy = here + ": an endnote's marker stands somewhere else";
+			return kFalse;
+		}
 	}
 	return kTrue;
 }

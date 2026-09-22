@@ -67,6 +67,19 @@ struct Para
 	KCMAttrSpanList		fTcy;		// as KCMParaAttrs::fTcy - fValue is the characters it covers
 	KCMAttrSpanList		fWarichu;	// as KCMParaAttrs::fWarichu (2026-09-17) - the same, for a warichu
 	std::vector<NoteRef>	fNoteRefs;	// in order of fAt - see NoteRef
+	/** Where this paragraph's ENDNOTE markers stand, counted the same way NoteRef::fAt is.
+
+		★★★**ONLY THE PLACE, NEVER THE WORDS** (2026-09-23, the user's call: "文末脚注がそこにある
+		  というのがワードでの編集でも分かるようにしたい"). An endnote's text is not this story's at
+		  all - it lives in a story of its own (see Story's warning) and is written out as its own
+		  file, which the reader can already edit. What was missing is any sign IN THE BODY of where
+		  the note hangs, so the writer puts a locked placeholder at each of these offsets.
+		⚠**THE MARKER IS NOT IN fText** - KCMTextRead takes it out, as it does a footnote's - so
+		 these offsets are the only record of it, and nothing here ever writes U+0005 into the text.
+		⚠**TAKEN FROM THE OWNED ITEMS, NOT FROM THE ATTRIBUTE SPANS.** A span sits on the character
+		 BEFORE its marker, so a note at the very start of a paragraph has no span at all
+		 (KCMTextRead says so outright) - and that note would be the one nobody could find. */
+	std::vector<int32>		fEndnoteAt;
 };
 
 /** The mark meant when a format names none. ★Kept as a value of its own rather than spelt into

@@ -125,7 +125,7 @@ void AppendRunProps(const Look& look, std::string& out)
 	★THE RUN INSIDE CARRIES THE CHARACTER'S OWN LOOK (2026-09-19, stage 2): a kenten or a
 	  tate-chu-yoko standing over an invisible character does so in InDesign too, and without the
 	  <w:rPr> here the span came back from the reader cut in two at the placeholder. */
-void AppendPlaceholder(int32 cp, const Look& look, std::string& out)
+void AppendPlaceholderShown(int32 cp, const Look& look, const char* shown, std::string& out)
 {
 	out += "<w:sdt><w:sdtPr><w:alias w:val=\"U+";
 	AppendHex(cp, kTrue, out);
@@ -134,8 +134,31 @@ void AppendPlaceholder(int32 cp, const Look& look, std::string& out)
 	out += "\"/><w:lock w:val=\"sdtContentLocked\"/></w:sdtPr><w:sdtContent><w:r>";
 	AppendRunProps(look, out);
 	out += "<w:t>\xE2\x9F\xA6";
-	AppendHex(cp, kTrue, out);
+	if (shown != nil)
+		out += shown;
+	else
+		AppendHex(cp, kTrue, out);
 	out += "\xE2\x9F\xA7</w:t></w:r></w:sdtContent></w:sdt>";
+}
+
+void AppendPlaceholder(int32 cp, const Look& look, std::string& out)
+{
+	AppendPlaceholderShown(cp, look, nil, out);
+}
+
+/** The mark that says an ENDNOTE hangs here (2026-09-23, the user's call: "文末脚注がそこにある
+	というのが、ワードでの編集でも分かるようにしたい").
+
+	★**IT IS A PLACEHOLDER LIKE ANY OTHER** - same tag, same lock - so the reader takes it back by
+	  the route every placeholder takes, and nobody editing in Word can delete or move it.
+	★**WHAT DIFFERS IS ONLY WHAT IT SHOWS**: "U+0005" tells a reader nothing, and this one exists to
+	  be read by a person. ⚠The tag, not the shown text, is what the reader matches on - so this word
+	  can be changed without touching the round trip.
+	⚠**THE NOTE'S WORDS ARE NOT HERE AND NEVER WILL BE.** They are a story of their own with a file
+	 of its own, which is where they are edited. */
+void AppendEndnoteMark(const Look& look, std::string& out)
+{
+	AppendPlaceholderShown(0x0005, look, "ENDNOTE", out);
 }
 
 void AppendNoteReference(int32 note, std::string& out)
@@ -322,7 +345,9 @@ bool16 WriteParagraphContent(const KCMStoryShape::Para& p, std::string& out, std
 	// Written into a string of its own, so that a refusal half way leaves `out` as it was found.
 	std::string made;
 	const std::vector<KCMStoryShape::NoteRef>& refs = p.fNoteRefs;
+	const std::vector<int32>& endMarks = p.fEndnoteAt;
 	size_t ref = 0;
+	size_t endMark = 0;
 	int32 i = 0;
 
 	while (i < n)
@@ -331,6 +356,13 @@ bool16 WriteParagraphContent(const KCMStoryShape::Para& p, std::string& out, std
 		{
 			AppendNoteReference(refs[ref].fNote, made);
 			++ref;
+		}
+		// ★**THE ENDNOTE MARKS GO IN ON THE SAME WALK** - see AppendEndnoteMark. They carry no
+		//   look of their own (the marker is not in the text, so there is no run to read one from).
+		while (endMark < endMarks.size() && endMarks[endMark] <= i)
+		{
+			AppendEndnoteMark(Look(), made);
+			++endMark;
 		}
 
 		const int32 k = rubyOf[static_cast<size_t>(i)];
@@ -343,6 +375,14 @@ bool16 WriteParagraphContent(const KCMStoryShape::Para& p, std::string& out, std
 			if (ref < refs.size() && refs[ref].fAt < j)
 			{
 				whyNot = "a footnote reference stands inside a ruby's base text, which a Word ruby cannot hold";
+				return kFalse;
+			}
+			// ⚠**A PLACEHOLDER CANNOT STAND IN A <w:rubyBase>** (AppendRuns says so) - and an
+			//  endnote mark IS one, so the same refusal has to cover it rather than writing a
+			//  package Word will not open.
+			if (endMark < endMarks.size() && endMarks[endMark] < j)
+			{
+				whyNot = "an endnote's marker stands inside a ruby's base text, which a Word ruby cannot hold";
 				return kFalse;
 			}
 
@@ -359,9 +399,15 @@ bool16 WriteParagraphContent(const KCMStoryShape::Para& p, std::string& out, std
 			continue;
 		}
 
+		// ⚠**THE RUN HAS TO STOP WHERE A MARK STANDS.** AppendRuns writes [i, j) in one go, so a
+		//  place inside that range is never reached by the walk - which is how the first endnote
+		//  mark written here came out nowhere at all (measured 2026-09-23, by a test that asked for
+		//  the offset back rather than only asking whether the two sides agreed: they agreed on
+		//  NOTHING being there).
 		int32 j = i + 1;
 		while (j < n && rubyOf[static_cast<size_t>(j)] < 0
-			   && !(ref < refs.size() && refs[ref].fAt == j))
+			   && !(ref < refs.size() && refs[ref].fAt == j)
+			   && !(endMark < endMarks.size() && endMarks[endMark] == j))
 			++j;
 		if (!AppendRuns(p.fText, cps, byteAt, looks, i, j, kFalse, made, whyNot))
 			return kFalse;
@@ -371,6 +417,8 @@ bool16 WriteParagraphContent(const KCMStoryShape::Para& p, std::string& out, std
 	// The references standing at the paragraph's end (and any whose place is past it).
 	for (; ref < refs.size(); ++ref)
 		AppendNoteReference(refs[ref].fNote, made);
+	for (; endMark < endMarks.size(); ++endMark)
+		AppendEndnoteMark(Look(), made);
 
 	out += made;
 	return kTrue;
@@ -454,6 +502,17 @@ KCMStoryShape::Para Slice(const KCMStoryShape::Para& p, const std::vector<int32>
 			ref.fAt = at - from;
 			piece.fNoteRefs.push_back(ref);
 		}
+	}
+	// ★**THE ENDNOTE MARKS ARE SHARED OUT ON THE SAME TERMS** (2026-09-23). ⚠Leaving them out of
+	//   this is how the first version of the mark reached no file at all: every paragraph comes
+	//   through here, table or no table, so a field this does not copy simply does not exist by the
+	//   time anything is written. **Measured, not reasoned about** - the test asked for the offset
+	//   back rather than only asking whether the two sides agreed.
+	for (size_t k = 0; k < p.fEndnoteAt.size(); ++k)
+	{
+		const int32 at = p.fEndnoteAt[k];
+		if ((at > from && at <= to) || (first && at <= from))
+			piece.fEndnoteAt.push_back(at - from);
 	}
 	return piece;
 }
@@ -1250,6 +1309,7 @@ struct Building
 	KCMAttrSpanList						fTcy;			// fValue filled by Finish
 	KCMAttrSpanList						fWarichu;
 	std::vector<KCMStoryShape::NoteRef>	fNoteRefs;		// fNote holds the footnote ID until ResolveNotes ranks it
+	std::vector<int32>					fEndnoteAt;		// ★where an ENDNOTE mark stood - never a character of fText
 	int32								fMarkRevision;	// 0 none, +1 the paragraph mark was inserted, -1 deleted
 	// the field being collected, if any
 	int32								fFieldDepth;	// 0 none, 1 between begin and end
@@ -1901,6 +1961,15 @@ bool16 ReadContent(Reader& rd, int32 node, Building& b)
 				const int32 run = (content >= 0) ? t.Child(content, kW, "r") : -1;
 				if (run >= 0 && !LookOf(rd, t.Child(run, kW, "rPr"), look))
 					return kFalse;
+				// ★★★**AN ENDNOTE MARK IS A PLACE, NOT A CHARACTER** (2026-09-23). U+0005 is never a
+				//   character of a story's text on this road - KCMTextRead takes it out of the
+				//   document's side too - so putting one in here would make the file disagree with
+				//   the document about every offset after it, for a character neither side holds.
+				if (cp == 0x0005)
+				{
+					b.fEndnoteAt.push_back(b.fLen);
+					continue;
+				}
 				Put(b, cp, look);
 				continue;
 			}
@@ -1989,6 +2058,7 @@ void Finish(Building& b, KCMStoryShape::Para& out)
 	KCMParaText::SetSpanValuesToText(out.fTcy, out.fText);
 	KCMParaText::SetSpanValuesToText(out.fWarichu, out.fText);
 	out.fNoteRefs = b.fNoteRefs;
+	out.fEndnoteAt = b.fEndnoteAt;
 }
 
 int32 CodePointsIn(const std::string& utf8)

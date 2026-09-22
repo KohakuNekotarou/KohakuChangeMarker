@@ -530,14 +530,23 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 		IDataBase* const db = storyRef.GetDataBase();
 		for (int32 k = 0; k < static_cast<int32>(owned.size()); ++k)
 		{
-			if (owned[k].fClassID != kFootnoteReferenceBoss)
+			// ★★**AN ENDNOTE'S ANCHOR RIDES THE SAME WALK** (2026-09-23, the user's call: the reader
+			//   in Word has to be able to see that a note hangs here). Everything below - which
+			//   paragraph, where in it - is the same question for both; only what is written down at
+			//   the end differs, because an endnote's WORDS are not this story's at all.
+			const bool16 isFootnote = (owned[k].fClassID == kFootnoteReferenceBoss) ? kTrue : kFalse;
+			const bool16 isEndnote = (owned[k].fClassID == kEndnoteAnchorBoss) ? kTrue : kFalse;
+			if (!isFootnote && !isEndnote)
 				continue;
 
 			const TextIndex refAt = owned[k].fAt;
 
 			// ---- which note ---------------------------------------------------------------------
+			// ⚠**ONLY A FOOTNOTE HAS ONE TO FIND.** An endnote's text is a story of its own and
+			//  arrives as its own file, so there is nothing in THIS story to pair it with.
 			int32 note = -1;
-			InterfacePtr<ITextStoryThread> noteThread(db, owned[k].fUID, UseDefaultIID());
+			InterfacePtr<ITextStoryThread> noteThread(db, isEndnote ? kInvalidUID : owned[k].fUID,
+													  UseDefaultIID());
 			if (noteThread != nil)
 			{
 				int32 span = 0;
@@ -563,10 +572,15 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 					host = static_cast<int32>(i);
 			}
 
-			if (note < 0 || host < 0 || attrs[static_cast<size_t>(host)].IsFootnote()
-				|| placeIndex[static_cast<size_t>(host)] < 0)
+			// ⚠**AN ENDNOTE THAT CANNOT BE PLACED DOES NOT REFUSE THE FILE.** A footnote that cannot
+			//  be placed would be LOST by Word, so the story is turned away; an endnote's words are
+			//  safe in their own file either way, and all that is missing is the mark in the body -
+			//  which is exactly what this story was in before the mark existed at all.
+			if (host < 0 || attrs[static_cast<size_t>(host)].IsFootnote()
+				|| placeIndex[static_cast<size_t>(host)] < 0 || (isFootnote && note < 0))
 			{
-				outNoteRefsPlaced = kFalse;
+				if (isFootnote)
+					outNoteRefsPlaced = kFalse;
 				continue;
 			}
 
@@ -605,7 +619,21 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 
 			if (para == nil)
 			{
-				outNoteRefsPlaced = kFalse;
+				if (isFootnote)
+					outNoteRefsPlaced = kFalse;
+				continue;
+			}
+
+			if (isEndnote)
+			{
+				// ★**THE PLACE ALONE** - see KCMStoryShape::Para::fEndnoteAt. Kept in order for the
+				//   same reason the references below are: the writer walks a paragraph once.
+				const int32 at = (textOffset > 0) ? textOffset : 0;
+				std::vector<int32>& marks = para->fEndnoteAt;
+				size_t slot = marks.size();
+				while (slot > 0 && marks[slot - 1] > at)
+					--slot;
+				marks.insert(marks.begin() + static_cast<std::ptrdiff_t>(slot), at);
 				continue;
 			}
 
