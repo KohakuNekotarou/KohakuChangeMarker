@@ -31,7 +31,8 @@
 #include "KCMComparisonRun.h"		// KCMToggleStartStop - the start, through the one resolver
 #include "KCMStoryAttrPour.h"		// the ruby and the kenten, after the words are in
 #include "KCMStoryRestore.h"		// KCMCreateWordsWriteCmd - one answer to "replace, insert or delete"
-#include "KCMCore.h"				// KCMActiveDocDB / KCMSetCompareMode - the import shows its result in the Story mode
+#include "KCMCore.h"				// KCMSetCompareMode - the import shows its result in the Story mode
+#include "KCMPairChoice.h"			// KCMChosenTargetDB - the document the Task Start chose, which is where the words go
 // ⛔KCMOrigin.h went on 2026-09-21 - "until it goes" was written for the origin slot, and the slot
 //   went that day. Nothing in this file read anything the header declared.
 #include "KCMTaskStartSave.h"		// KCMTakeTaskStartCopy - the import's own Task Start, saved to a file
@@ -1354,13 +1355,14 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 		return kFalse;
 	}
 
-	IDataBase* const db = KCMActiveDocDB();
-	if (db == nil)
-	{
-		outMessage = "import: there is no active document";
-		outMessage.SetTranslatable(kFalse);
-		return kFalse;
-	}
+	// (⛔**THE DOCUMENT WAS CHOSEN HERE UNTIL 2026-09-22**, and it was chosen as KCMActiveDocDB().
+	//   That made TWO answers to one question: the Task Start below picks the CHOSEN TARGET when
+	//   there is one and only falls back to the active document (KCMTaskStartSave.cpp,
+	//   DocumentToCopy - the user's rule "if there is a Target, start the task on that Target;
+	//   if not, register the active one as the Target and start"), while this line always took the
+	//   active one. Measured on the application: the panel named one document as the Target and the
+	//   words went into ANOTHER ([[one-question-one-place]]). The question is now asked ONCE, and
+	//   after the Task Start rather than before it - see below.)
 
 	// 2. ★★★THE IMPORT TAKES A TASK START (2026-09-19, the user's rule: "an import always takes a
 	//    Task"; on 2026-09-21 that Task Start became a COPY SAVED ON DISK).
@@ -1396,6 +1398,22 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 	if (progress.WasCancelled())
 	{
 		outMessage = kImportCancelledMessage;
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	// ★**AND THE DOCUMENT IS THE ONE THE TASK START JUST CHOSE** (2026-09-22, the user's rule).
+	//   The Task Start has named the pair by now - the Target is the document it copied, the Source
+	//   is the copy (KCMTaskStartSave.cpp, step 6) - so asking it here makes the three things that
+	//   must agree agree by construction: what was copied, what the panel calls the Target, and
+	//   where the words go. ⚠**ASKED AFTER, NOT BEFORE**: before the Task Start this would be the
+	//   old pair's Target, which is exactly the state the bug was found in.
+	IDataBase* const db = KCMChosenTargetDB();
+	if (db == nil)
+	{
+		// The Task Start said it succeeded, so this cannot normally happen; it is written because a
+		// nil here would otherwise reach the pour as a dereference.
+		outMessage = "import: the Task Start left no Target to put the words into";
 		outMessage.SetTranslatable(kFalse);
 		return kFalse;
 	}
