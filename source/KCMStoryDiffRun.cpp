@@ -201,7 +201,7 @@ void Slice(const std::string& text, const std::vector<int32>& byteOffsets,
 		return;
 
 	// (⛔**THE CONTEXT WAS CUT AT EVERY PARAGRAPH END FOR ONE BUILD, ON 2026-09-22, AND THAT WENT THE
-	//   SAME DAY.** The reader asked for it after seeing three rows draw the same "え¶お¶か", then
+	//   SAME DAY.** The reader asked for it after seeing three rows each draw the same "A¶B¶C", then
 	//   looked at the result and asked for the breaks back - the words on both sides of a break read
 	//   better than the change alone. What must NOT be crossed is a PLACE - the next cell, the next
 	//   footnote, the words of somebody else's row - and that
