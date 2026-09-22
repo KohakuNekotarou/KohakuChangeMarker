@@ -125,7 +125,32 @@ void AppendRunProps(const Look& look, std::string& out)
 	★THE RUN INSIDE CARRIES THE CHARACTER'S OWN LOOK (2026-09-19, stage 2): a kenten or a
 	  tate-chu-yoko standing over an invisible character does so in InDesign too, and without the
 	  <w:rPr> here the span came back from the reader cut in two at the placeholder. */
-void AppendPlaceholderShown(int32 cp, const Look& look, const char* shown, std::string& out)
+/** The word a placeholder shows instead of its four hex digits, or nil for "show the digits".
+
+	★★**ONE MEANING, ONE WORD** (2026-09-23, the user's call: turn the hex into words a few at a
+	  time, because a word is read at a glance where "0018" is not).
+	⚠**ONLY WHERE THE CODE POINT SAYS EXACTLY ONE THING.** U+0018 is the automatic page number AND
+	 the automatic text AND any text variable - InDesign gives all three the same character - so
+	 naming it after one of them would be a lie the reader in Word cannot check. It keeps its
+	 digits until something other than the character itself can tell them apart.
+	⚠**THE TAG IS WHAT THE READER MATCHES ON, NEVER THIS.** A word can be added or changed here
+	 without touching the round trip, and a .docx written before the word existed still reads. */
+const char* WordForPlaceholder(int32 cp)
+{
+	switch (cp)
+	{
+		case 0x0005:	return "ENDNOTE";	// an endnote hangs here; its words are a story of their own
+		case 0xFFFC:	return "OBJECT";	// an anchored object
+		case 0x0018:	return "VARIABLE";	// ★the automatic page number, the automatic text and any
+											//  text variable are ONE character in InDesign. The user's
+											//  call (2026-09-23): all three are variables to a reader,
+											//  and a word they can read beats four digits they cannot.
+		case 0xE02C:	return "INDEX";		// an index marker
+		default:		return nil;
+	}
+}
+
+void AppendPlaceholder(int32 cp, const Look& look, std::string& out)
 {
 	out += "<w:sdt><w:sdtPr><w:alias w:val=\"U+";
 	AppendHex(cp, kTrue, out);
@@ -133,17 +158,72 @@ void AppendPlaceholderShown(int32 cp, const Look& look, const char* shown, std::
 	AppendHex(cp, kFalse, out);
 	out += "\"/><w:lock w:val=\"sdtContentLocked\"/></w:sdtPr><w:sdtContent><w:r>";
 	AppendRunProps(look, out);
+	// ★★★**THE HEX IS WRITTEN HERE, AND THE WORD IS PUT IN AFTERWARDS** - see
+	//   PutWordsIntoPlaceholders. Writing the word here instead makes it part of what the
+	//   fingerprint is taken over, and every .docx written before the word was added stops
+	//   matching its own tag (measured 2026-09-23: four tests failed the moment three characters
+	//   were given words at this spot).
 	out += "<w:t>\xE2\x9F\xA6";
-	if (shown != nil)
-		out += shown;
-	else
-		AppendHex(cp, kTrue, out);
+	AppendHex(cp, kTrue, out);
 	out += "\xE2\x9F\xA7</w:t></w:r></w:sdtContent></w:sdt>";
 }
 
-void AppendPlaceholder(int32 cp, const Look& look, std::string& out)
+/*	PutWordsIntoPlaceholders
+	Replace ⟦XXXX⟧ with ⟦WORD⟧ inside every placeholder whose character has a word, in an element
+	that has already been written.
+
+	★★★**AFTER THE FINGERPRINT, ALWAYS.** The tag's fingerprint is taken over the bytes
+	  WriteStoryElements produces, so whatever those bytes hold is part of a story's IDENTITY. What
+	  a placeholder SHOWS is not identity - it is for the person editing in Word - and the two have
+	  to be kept apart, or adding a word today makes every file written yesterday unreadable as its
+	  own origin. Doing it here costs one pass over the text and keeps the identity on the hex.
+	⚠**EACH REPLACEMENT IS BOUNDED BY ITS OWN <w:sdt>**, so ⟦ ⟧ that a person typed into the story
+	 is never touched - the search starts after that control's alias and stops at its end.
+	⚠**THE READER NEVER LOOKS AT THIS.** It matches on <w:tag>, so a file written before a word
+	 existed, or with a word this build does not know, reads exactly the same.
+*/
+void PutWordsIntoPlaceholders(std::string& xml)
 {
-	AppendPlaceholderShown(cp, look, nil, out);
+	const std::string head = "<w:alias w:val=\"U+";
+	size_t at = 0;
+	for (;;)
+	{
+		const size_t a = xml.find(head, at);
+		if (a == std::string::npos)
+			break;
+		const size_t hexFrom = a + head.size();
+		const size_t quote = xml.find('"', hexFrom);
+		const size_t end = xml.find("</w:sdt>", hexFrom);
+		if (quote == std::string::npos || end == std::string::npos)
+			break;
+
+		const std::string hex = xml.substr(hexFrom, quote - hexFrom);
+		int32 cp = 0;
+		bool16 sound = hex.empty() ? kFalse : kTrue;
+		for (size_t k = 0; k < hex.size() && sound; ++k)
+		{
+			const char c = hex[k];
+			if (c >= '0' && c <= '9')			cp = cp * 16 + (c - '0');
+			else if (c >= 'A' && c <= 'F')		cp = cp * 16 + (c - 'A' + 10);
+			else								sound = kFalse;
+		}
+		const char* const word = sound ? WordForPlaceholder(cp) : nil;
+		if (word != nil)
+		{
+			const std::string shown = "\xE2\x9F\xA6" + hex + "\xE2\x9F\xA7";
+			const size_t found = xml.find(shown, quote);
+			if (found != std::string::npos && found < end)
+			{
+				std::string put = "\xE2\x9F\xA6";
+				put += word;
+				put += "\xE2\x9F\xA7";
+				xml.replace(found, shown.size(), put);
+				at = found + put.size();
+				continue;
+			}
+		}
+		at = quote;
+	}
 }
 
 /** The mark that says an ENDNOTE hangs here (2026-09-23, the user's call: the reader editing in
@@ -158,7 +238,7 @@ void AppendPlaceholder(int32 cp, const Look& look, std::string& out)
 	 of its own, which is where they are edited. */
 void AppendEndnoteMark(const Look& look, std::string& out)
 {
-	AppendPlaceholderShown(0x0005, look, "ENDNOTE", out);
+	AppendPlaceholder(0x0005, look, out);
 }
 
 void AppendNoteReference(int32 note, std::string& out)
@@ -1072,6 +1152,17 @@ bool16 WriteParts(const KCMStoryShape::Story& s, int32 uid,
 	if (!WriteStoryElements(s, documentElement, footnotesElement, whyNot))
 		return kFalse;
 
+	// ★★★**THE FINGERPRINT IS TAKEN HERE, BEFORE THE WORDS GO IN** (2026-09-23). What a placeholder
+	//   SHOWS is for the person editing in Word; what the fingerprint is taken over is the story's
+	//   identity. Keeping the two apart is what lets a word be added to a later build without every
+	//   .docx written by an earlier one ceasing to match its own tag - which is exactly what
+	//   happened when the words were written at the source (four tests, on files kept from earlier
+	//   runs, failed at once).
+	std::string fingerprint;
+	FingerprintOf(documentElement, footnotesElement, fingerprint);
+	PutWordsIntoPlaceholders(documentElement);
+	PutWordsIntoPlaceholders(footnotesElement);
+
 	std::string styles;
 	if (!WriteStyles(s, styles, whyNot))
 		return kFalse;
@@ -1145,8 +1236,8 @@ bool16 WriteParts(const KCMStoryShape::Story& s, int32 uid,
 	//  parses it and writes it out again, and what it writes has none (measured 2026-09-19: the
 	//  part came back two bytes shorter, the CRLF and nothing else). Written the way Word writes
 	//  it, the part is the same bytes before and after - which is what lets a test say so.
-	std::string fingerprint;
-	FingerprintOf(documentElement, footnotesElement, fingerprint);
+	// (the fingerprint was taken at the top of this function, before the placeholders were given
+	//  their words - see PutWordsIntoPlaceholders for why it has to be that way round)
 
 	std::string tag = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><kcm:story xmlns:kcm=\"";
 	tag += kStoryTagNamespace;
