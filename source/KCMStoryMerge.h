@@ -74,6 +74,47 @@ struct Refusal
 	std::string	fWhy;
 };
 
+/** Where in a story a place stands. fTable < 0 is the body; otherwise it is that table's cell.
+
+	★**A NOTE IS NEVER A PLACE HERE.** A footnote cannot hold a footnote's reference in anything
+	  this road carries, so a reference always stands in the body or in a cell. */
+struct PlaceRef
+{
+	int32	fTable;		// -1 = the body
+	int32	fRow;
+	int32	fCell;
+
+	PlaceRef() : fTable(-1), fRow(0), fCell(0) {}
+};
+
+/** One footnote Word ADDED: where its reference goes, and the words the note holds.
+
+	★★★**THE MERGE ONLY PLANS IT.** Nothing here can add a note to KCMStoryShape::Story and have it
+	  mean anything: a note is made in the document by putting its MARKER in the text, and InDesign
+	  builds the note around that character (kCreateFootnoteCmdBoss). So the merged Story still
+	  holds the document's own notes, and this says what the pour has to do besides pouring words.
+	fAt counts the MERGED paragraph's code points, the same way NoteRef::fAt counts its own. */
+struct NoteAdd
+{
+	PlaceRef							fPlace;
+	int32								fPara;		// index into that place's MERGED paragraphs
+	int32								fAt;		// code point offset inside that paragraph
+	std::vector<KCMStoryShape::Para>	fParas;		// the note's own words, as `after` has them
+
+	NoteAdd() : fPara(0), fAt(0) {}
+};
+
+/** One footnote Word TOOK AWAY: which of the DOCUMENT's notes it is.
+
+	★**ONE MOVE UNDOES IT**: the pour deletes that note's reference character, and InDesign takes
+	  the note with it (measured 2026-09-22). ⚠It takes any note nested inside it too. */
+struct NoteRemove
+{
+	int32	fNowNote;	// index into now.fNotes
+
+	NoteRemove() : fNowNote(0) {}
+};
+
 struct Result
 {
 	KCMStoryShape::Story		fMerged;		// the document as it stands now, plus Word's changes
@@ -86,6 +127,11 @@ struct Result
 	//   cell for cell, and is named here; everything else in the story is merged as usual. ⚠The
 	//   whole story is still refused when the NUMBER of tables differs - see Merge.
 	std::vector<Refusal>	fTableRefusals;	// tables left exactly as the document has them
+	// ★**THE NOTES WORD ADDED AND TOOK AWAY** (2026-09-22, the user's call: take them in). These are
+	//   instructions for the pour, not part of fMerged - see NoteAdd. ⚠A note whose words alone
+	//   changed is NOT here: that is an ordinary merge of the note's paragraphs.
+	std::vector<NoteAdd>	fNoteAdds;
+	std::vector<NoteRemove>	fNoteRemoves;
 
 	Result() : fApplied(0), fStoryRefused(kFalse) {}
 };

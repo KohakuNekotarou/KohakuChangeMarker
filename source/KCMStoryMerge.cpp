@@ -815,6 +815,144 @@ void MergePlace(const KCMStoryShape::Story& o, const KCMStoryShape::Story& w, co
 	}
 }
 
+/*	RefsOfPara
+	One paragraph's footnote references, as two lists in the order they stand: where each one is,
+	and which note it points at.
+*/
+void RefsOfPara(const KCMStoryShape::Para& p, std::vector<int32>& outAt, std::vector<int32>& outNote)
+{
+	outAt.clear();
+	outNote.clear();
+	for (size_t r = 0; r < p.fNoteRefs.size(); ++r)
+	{
+		outAt.push_back(p.fNoteRefs[r].fAt);
+		outNote.push_back(p.fNoteRefs[r].fNote);
+	}
+}
+
+/*	PlanNotesForPlace
+	What Word did to the FOOTNOTES whose references stand in this place: which notes it added, which
+	it took away, and - for the ones that stayed - which of `after`'s notes is which of origin's
+	(noteMap, indexed by origin's note, holding after's or -1 for one Word took away).
+
+	★★★**THE REFERENCES ARE PAIRED BY THEIR OFFSETS, WITH A DIFF.** Rank alone cannot do it:
+	  measured on Word's own file 2026-09-22, an added reference landed at the SAME offset as the
+	  one already standing there, so pairing by rank would have called the LAST note the new one.
+	  Myers over the offsets pairs them right, and it is the diff this file uses for everything else.
+
+	⚠**AN OFFSET MEANS NOTHING ACROSS AN EDIT.** A paragraph whose text any side changed is left
+	 alone and named: putting a note at a guessed offset is worse than saying it cannot be placed.
+	⚠**AND SO IS A PLACE WHOSE PARAGRAPHS DO NOT LINE UP THREE WAYS** - kFalse, and the caller says
+	 so once for the whole story.
+
+	@return kFalse when this place's paragraphs cannot be lined up at all.
+*/
+bool16 PlanNotesForPlace(const Paras& oParas, const Paras& wParas, const Paras& nParas,
+						 const PlaceRef& place, const KCMStoryShape::Story& after,
+						 std::vector<int32>& noteMap, const std::string& where, Result& out)
+{
+	// ★★**NOTHING TO PAIR IS NOT A FAILURE TO PAIR** - and most places hold no reference at all.
+	//   Without this, a place whose PARAGRAPHS merely moved (which is the ordinary case: Word adds
+	//   one, the document has one fewer) would refuse notes that nobody touched.
+	bool16 anyRefs = kFalse;
+	for (size_t i = 0; i < oParas.size() && !anyRefs; ++i)
+		if (!oParas[i].fNoteRefs.empty()) anyRefs = kTrue;
+	for (size_t i = 0; i < wParas.size() && !anyRefs; ++i)
+		if (!wParas[i].fNoteRefs.empty()) anyRefs = kTrue;
+	for (size_t i = 0; i < nParas.size() && !anyRefs; ++i)
+		if (!nParas[i].fNoteRefs.empty()) anyRefs = kTrue;
+	if (!anyRefs)
+		return kTrue;
+
+	if (oParas.size() != wParas.size() || oParas.size() != nParas.size())
+		return kFalse;
+
+	for (size_t p = 0; p < oParas.size(); ++p)
+	{
+		std::vector<int32> oAt, oNote, wAt, wNote, nAt, nNote;
+		RefsOfPara(oParas[p], oAt, oNote);
+		RefsOfPara(wParas[p], wAt, wNote);
+		RefsOfPara(nParas[p], nAt, nNote);
+
+		// ★THE PAIRING IS KEPT EVEN WHERE NOTHING HAPPENED: a note whose words Word edited is
+		//   merged through noteMap, so every reference has to put its note in it.
+		if (oAt == wAt)
+		{
+			for (size_t k = 0; k < oNote.size() && k < wNote.size(); ++k)
+			{
+				if (oNote[k] >= 0 && static_cast<size_t>(oNote[k]) < noteMap.size())
+					noteMap[static_cast<size_t>(oNote[k])] = wNote[k];
+			}
+			continue;
+		}
+
+		const std::string here = where + " paragraph " + Num(static_cast<int32>(p) + 1);
+		if (oAt != nAt)
+		{
+			Refusal r; r.fWhere = here; r.fWhy = "the document moved a footnote's reference as well";
+			out.fConflicts.push_back(r);
+			continue;
+		}
+		if (!(oParas[p].fText == wParas[p].fText && oParas[p].fText == nParas[p].fText))
+		{
+			Refusal r; r.fWhere = here;
+			r.fWhy = "a footnote was added or taken away among words that also changed";
+			out.fConflicts.push_back(r);
+			continue;
+		}
+
+		std::vector<Change> d;
+		if (!KCMTextDiff::Diff(oAt, wAt, d))
+		{
+			Refusal r; r.fWhere = here; r.fWhy = "the footnote references differ too much to pair";
+			out.fConflicts.push_back(r);
+			continue;
+		}
+
+		size_t oi = 0, wi = 0;
+		for (size_t c = 0; c <= d.size(); ++c)
+		{
+			const size_t oEnd = (c < d.size()) ? static_cast<size_t>(d[c].aStart) : oAt.size();
+			const size_t wEnd = (c < d.size()) ? static_cast<size_t>(d[c].bStart) : wAt.size();
+			while (oi < oEnd && wi < wEnd)
+			{
+				if (oNote[oi] >= 0 && static_cast<size_t>(oNote[oi]) < noteMap.size())
+					noteMap[static_cast<size_t>(oNote[oi])] = wNote[wi];
+				++oi;
+				++wi;
+			}
+			if (c >= d.size())
+				break;
+
+			for (int32 k = 0; k < d[c].bCount; ++k)
+			{
+				const size_t at = static_cast<size_t>(d[c].bStart + k);
+				NoteAdd add;
+				add.fPlace = place;
+				add.fPara = static_cast<int32>(p);
+				add.fAt = wAt[at];
+				if (wNote[at] >= 0 && static_cast<size_t>(wNote[at]) < after.fNotes.size())
+					add.fParas = after.fNotes[static_cast<size_t>(wNote[at])];
+				out.fNoteAdds.push_back(add);
+			}
+			for (int32 k = 0; k < d[c].aCount; ++k)
+			{
+				const size_t at = static_cast<size_t>(d[c].aStart + k);
+				// ★origin's notes and the document's are the same notes here: the caller has
+				//   already refused the story when their number differs.
+				NoteRemove rem;
+				rem.fNowNote = oNote[at];
+				out.fNoteRemoves.push_back(rem);
+				if (oNote[at] >= 0 && static_cast<size_t>(oNote[at]) < noteMap.size())
+					noteMap[static_cast<size_t>(oNote[at])] = -1;
+			}
+			oi = static_cast<size_t>(d[c].aStart + d[c].aCount);
+			wi = static_cast<size_t>(d[c].bStart + d[c].bCount);
+		}
+	}
+	return kTrue;
+}
+
 }	// anonymous namespace
 
 void Merge(const KCMStoryShape::Story& origin, const KCMStoryShape::Story& after, const KCMStoryShape::Story& now,
@@ -879,18 +1017,66 @@ void Merge(const KCMStoryShape::Story& origin, const KCMStoryShape::Story& after
 	}
 
 	// ---- the notes -----------------------------------------------------------------------------
-	if (origin.fNotes.size() != after.fNotes.size() || origin.fNotes.size() != now.fNotes.size())
+	// ★★★**WHAT WORD DID TO THE NOTES THEMSELVES** (2026-09-22, the user's call: take it in).
+	//   Until that day any change in their NUMBER left every note alone, with one conflict to say
+	//   so. Now the references are paired with a diff, so a note Word added becomes a plan for the
+	//   pour (NoteAdd), one it took away becomes another (NoteRemove), and the notes that stayed
+	//   are merged exactly as they always were.
+	// ⚠**THE DOCUMENT'S OWN NOTES STILL HAVE TO MATCH origin's.** A footnote added or deleted in
+	//   InDesign since the export moves every note's rank, and nothing here can say which is which.
+	if (origin.fNotes.size() != now.fNotes.size())
 	{
-		Refusal r; r.fWhere = "the notes"; r.fWhy = "their number changed";
+		Refusal r; r.fWhere = "the notes";
+		r.fWhy = "the document added or removed a footnote of its own since the export";
 		out.fConflicts.push_back(r);
 		return;					// out.fMerged.fNotes is now's already
 	}
+
+	std::vector<int32> noteMap(now.fNotes.size(), -1);
+	bool16 placesLineUp = PlanNotesForPlace(origin.fBody, after.fBody, now.fBody, PlaceRef(), after,
+											noteMap, "body", out);
+	for (size_t t = 0; t < now.fTables.size() && placesLineUp; ++t)
+	{
+		if (tableRefused[t])
+			continue;			// its cells keep the document's own contents - notes included
+		for (size_t r = 0; r < now.fTables[t].fRows.size() && placesLineUp; ++r)
+		{
+			for (size_t c = 0; c < now.fTables[t].fRows[r].fCells.size() && placesLineUp; ++c)
+			{
+				PlaceRef place;
+				place.fTable = static_cast<int32>(t);
+				place.fRow = static_cast<int32>(r);
+				place.fCell = static_cast<int32>(c);
+				const std::string where = "table " + Num(place.fTable) + " row " + Num(place.fRow)
+										  + " cell " + Num(place.fCell);
+				placesLineUp = PlanNotesForPlace(origin.fTables[t].fRows[r].fCells[c].fParas,
+												 after.fTables[t].fRows[r].fCells[c].fParas,
+												 now.fTables[t].fRows[r].fCells[c].fParas,
+												 place, after, noteMap, where, out);
+			}
+		}
+	}
+	if (!placesLineUp)
+	{
+		// ⛔**NOTHING IS PLANNED OUT OF A PLACE THAT DOES NOT LINE UP.** Half a plan would put a
+		//   note somewhere nobody asked for one, which is the one outcome worse than saying no.
+		out.fNoteAdds.clear();
+		out.fNoteRemoves.clear();
+		Refusal r; r.fWhere = "the notes";
+		r.fWhy = "the paragraphs holding their references do not line up";
+		out.fConflicts.push_back(r);
+		return;
+	}
+
 	for (size_t nn = 0; nn < now.fNotes.size(); ++nn)
 	{
+		const int32 w = noteMap[nn];
+		if (w < 0 || static_cast<size_t>(w) >= after.fNotes.size())
+			continue;			// Word took this one away, or its reference could not be paired
 		std::vector<size_t> noTables;
 		Paras merged;
-		MergePlace(origin, after, now, origin.fNotes[nn], after.fNotes[nn], now.fNotes[nn], noTables,
-				   "note " + Num(static_cast<int32>(nn) + 1), merged, out);
+		MergePlace(origin, after, now, origin.fNotes[nn], after.fNotes[static_cast<size_t>(w)],
+				   now.fNotes[nn], noTables, "note " + Num(static_cast<int32>(nn) + 1), merged, out);
 		out.fMerged.fNotes[nn] = merged;
 	}
 }
