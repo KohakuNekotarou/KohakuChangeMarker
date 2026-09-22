@@ -140,7 +140,11 @@ const char* WordForPlaceholder(int32 cp)
 	switch (cp)
 	{
 		case 0x0005:	return "ENDNOTE";	// an endnote hangs here; its words are a story of their own
-		case 0xFFFC:	return "OBJECT";	// an anchored object
+		case 0xFFFC:	return "ANCHORED";	// ★an anchored object. ⚠"OBJECT" stood here for an hour
+											//  on 2026-09-23 and was changed on the user's call:
+											//  Unicode calls it the OBJECT REPLACEMENT CHARACTER, but
+											//  "object" means anything to anybody, while "anchored"
+											//  is the word InDesign's own panels use for this.
 		case 0x0018:	return "VARIABLE";	// ★the automatic page number, the automatic text and any
 											//  text variable are ONE character in InDesign. The user's
 											//  call (2026-09-23): all three are variables to a reader,
