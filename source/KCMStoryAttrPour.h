@@ -62,12 +62,16 @@ class ITextModel;
 	@param outRefused kTrue when this paragraph's attributes could not all be written. ⚠**REFUSED
 		   AND WRITTEN ARE NOT EXCLUSIVE**, the same way they are not in ApplyParagraph: a command
 		   that fails in the middle leaves the writes that went in ahead of it.
+	@param outKept filled when something the file says was NOT believed and the document's own was
+		   kept instead - today only a tate-chu-yoko under a warichu, which Word drops in silence
+		   (KCMParaText::KeepTcyInsideWarichu holds what was measured). ⚠**THIS IS NOT A REFUSAL**:
+		   the rest of the paragraph went in, and the reader is told rather than left to find it.
 	@return how many attribute writes went in.
 */
 int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 								 const KCMParaAttrs& docAttrs, const std::string& docText,
 								 const KCMStoryShape::Para& file,
-								 PMString& whyNot, bool16& outRefused);
+								 PMString& whyNot, bool16& outRefused, PMString& outKept);
 
 #endif // __KCMStoryAttrPour_h__
 

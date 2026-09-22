@@ -1842,17 +1842,28 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 					{
 						const size_t i = place.fDoc[q];
 						PMString attrWhyNot;
+						PMString attrKept;
 						bool16 attrRefused = kFalse;
 						const int32 n = KCMPourParagraphAttributes(
 											model, static_cast<TextIndex>(starts2[i]),
 											attrs2[i], paras2[i], (*place.fFile)[q],
-											attrWhyNot, attrRefused);
+											attrWhyNot, attrRefused, attrKept);
 						if (attrRefused)
 						{
 							++refusedAttrs;
 							if (firstRefusal.IsEmpty())
 								firstRefusal = attrWhyNot;
 							NoteRefusal(original, "Attr", attrWhyNot);
+						}
+						// ★**HELD BACK, NOT REFUSED** (2026-09-22): the paragraph went in and one
+						//   thing in it was kept as the document has it, because Word cannot carry
+						//   it. It is counted with neither the refusals nor the edits - the reader
+						//   is simply told, on a row of its own, once per paragraph it happened in.
+						if (!attrKept.IsEmpty())
+						{
+							if (firstRefusal.IsEmpty())
+								firstRefusal = attrKept;
+							NoteRefusal(original, "Word", attrKept);
 						}
 						if (n > 0)
 						{

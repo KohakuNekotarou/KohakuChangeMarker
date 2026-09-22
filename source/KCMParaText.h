@@ -1251,6 +1251,59 @@ inline void PlanSpanChanges(const KCMAttrSpanList& doc, const KCMAttrSpanList& f
 	}
 }
 
+/**	Take out of `clearTcy` every stretch a warichu of the document covers, and answer how many were
+	taken out.
+
+	★★★**WORD CANNOT HOLD A TATE-CHU-YOKO INSIDE A WARICHU, AND SAYS NOTHING WHEN IT DROPS ONE**
+	  (measured against real Word 2007 on 2026-09-22 - the notes are in
+	  docs/ai-notes/kcm-tcy-word-roundtrip-2026-09-22.md). One run cannot wear w:combine and
+	  w:vert at once: opening and saving a story that has one is enough for w:vert to go, and it
+	  goes without a revision mark, so the file comes back saying - truthfully, about itself -
+	  that there is no tate-chu-yoko there. Poured as it stands, that would take the reader's own
+	  tate-chu-yoko off a document nobody edited.
+
+	★**THE DIRECTION OF THE TEXT HAS NOTHING TO DO WITH IT.** The same paragraph written once
+	  vertically and once horizontally, with nothing else different, loses it both ways. The one
+	  condition is standing on the same run as a warichu.
+
+	⚠**ONLY THE CLEARS ARE HELD BACK.** A tate-chu-yoko the file ASKS FOR still goes in: Word puts
+	 one on by taking the run out of the warichu, and that is a real edit the reader made and can
+	 see. What cannot be believed is the ABSENCE of one under a warichu.
+
+	⚠**THE WARICHU LIST IS THE DOCUMENT'S**, not the file's: the file's warichu may have been
+	 split by the very edit that is in question, while the document still stands where the export
+	 left it.
+
+	@param docWarichu the warichu spans the document carries now.
+	@param clearTcy   in/out: the tate-chu-yoko spans the pour was about to take off.
+*/
+inline int32 KeepTcyInsideWarichu(const KCMAttrSpanList& docWarichu, KCMAttrSpanList& clearTcy)
+{
+	if (docWarichu.empty() || clearTcy.empty())
+		return 0;
+
+	int32 kept = 0;
+	KCMAttrSpanList keepClearing;
+	for (size_t i = 0; i < clearTcy.size(); ++i)
+	{
+		const int32 s = clearTcy[i].fStart;
+		const int32 e = clearTcy[i].fStart + clearTcy[i].fLen;
+		bool16 underWarichu = kFalse;
+		for (size_t k = 0; k < docWarichu.size() && !underWarichu; ++k)
+		{
+			const int32 ws = docWarichu[k].fStart;
+			const int32 we = docWarichu[k].fStart + docWarichu[k].fLen;
+			underWarichu = (ws < e && s < we) ? kTrue : kFalse;		// one character of overlap is enough
+		}
+		if (underWarichu)
+			++kept;
+		else
+			keepClearing.push_back(clearTcy[i]);
+	}
+	clearTcy.swap(keepClearing);
+	return kept;
+}
+
 }	// namespace KCMParaText
 
 #endif // __KCMParaText_h__
