@@ -54,21 +54,51 @@ namespace
 {
 
 /** The characters a class name may hold. ★The kenten names travel as class names, which is why
-	this rule lives beside them rather than beside any one file format. */
+	this rule lives beside them rather than beside any one file format.
+
+	★★**JAPANESE IS IN, SINCE 2026-09-22** (the user: "圏点は、日本人しかつかわないので"). The class is
+	  what a person READS and PICKS in Word's style gallery, and every byte of a UTF-8 character is
+	  0x80 or above - so letting those through is the whole change. What is still refused is the
+	  ASCII that a style name cannot hold, which includes the comma and the semicolon Word itself
+	  turns away. */
 bool16 IsClassChar(char c)
 {
+	if (static_cast<unsigned char>(c) >= 0x80)
+		return kTrue;
 	return ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 			|| c == '-' || c == '_') ? kTrue : kFalse;
 }
 
-/** One hexadecimal digit, or -1. A custom kenten mark is written as its code point in hex. */
-int32 HexDigit(char c)
+/*	The class a built-in kenten kind travels under, and the kind a class names.
+
+	★★★**THE VALUE DOES NOT MOVE.** "BlackSesameDot" is KCM's own vocabulary - the panel's rows, the
+	  report and KCMTextRead all speak it - and it is the CLASS, the half a reader sees, that is
+	  written in the language of the people who use kenten (2026-09-22, the user's call).
+	⚠★★**WRITTEN AS UTF-8 ESCAPES RATHER THAN AS CHARACTERS**: this project sets no /utf-8, so a
+	  literal would be compiled in the machine's ANSI codepage and land in a UTF-8 XML as mojibake -
+	  the failure that is invisible until somebody opens the file. The codebase spells non-ASCII
+	  this way throughout (KCMStoryDiffRun's own marks). ★GENERATED, NOT TYPED: one wrong byte here
+	  is a mark nobody can read and a story that will not come back.
+*/
+struct KentenName { const char* fValue; const char* fClass; };
+const KentenName kKentenNames[] =
 {
-	if (c >= '0' && c <= '9')	return c - '0';
-	if (c >= 'a' && c <= 'f')	return c - 'a' + 10;
-	if (c >= 'A' && c <= 'F')	return c - 'A' + 10;
-	return -1;
-}
+	{ "BlackSesameDot",     "\xE3\x82\xB4\xE3\x83\x9E" },             // ゴマ
+	{ "WhiteSesameDot",     "\xE7\x99\xBD\xE3\x82\xB4\xE3\x83\x9E" }, // 白ゴマ
+	{ "BlackCircle",        "\xE9\xBB\x92\xE4\xB8\xB8" },             // 黒丸
+	{ "WhiteCircle",        "\xE7\x99\xBD\xE4\xB8\xB8" },             // 白丸
+	{ "SmallBlackCircle",   "\xE5\xB0\x8F\xE9\xBB\x92\xE4\xB8\xB8" }, // 小黒丸
+	{ "SmallWhiteCircle",   "\xE5\xB0\x8F\xE7\x99\xBD\xE4\xB8\xB8" }, // 小白丸
+	{ "BlackTriangle",      "\xE9\xBB\x92\xE4\xB8\x89\xE8\xA7\x92" }, // 黒三角
+	{ "WhiteTriangle",      "\xE7\x99\xBD\xE4\xB8\x89\xE8\xA7\x92" }, // 白三角
+	{ "Bullseye",           "\xE8\x9B\x87\xE3\x81\xAE\xE7\x9B\xAE" }, // 蛇の目
+	{ "Fisheye",            "\xE9\xAD\x9A\xE7\x9C\xBC" }              // 魚眼
+};
+const size_t kKentenNameCount = sizeof(kKentenNames) / sizeof(kKentenNames[0]);
+
+/** "カスタム-", which a custom mark's own character follows. */
+const char kKentenCustomClass[] = "\xE3\x82\xAB\xE3\x82\xB9\xE3\x82\xBF\xE3\x83\xA0\x2D";
+const size_t kKentenCustomClassLen = sizeof(kKentenCustomClass) - 1;
 
 /** Add to `seen` every kenten value these paragraphs use, skipping any already there. */
 void CollectKenten(const std::vector<Para>& paras, std::vector<std::string>& seen)
@@ -109,8 +139,10 @@ bool16 KentenClassOf(const std::string& value, std::string& outClass)
 	if (value.empty())
 		return kFalse;
 
-	// "Custom:X" -> "Custom-<hex of X>". The character is the reader's own, so it is written the
-	// way this format writes every character that cannot be a class: as its code point.
+	// ★★"Custom:X" -> "カスタム-X", THE MARK ITSELF (2026-09-22, the user's call). It was the code
+	//   point in hex until then, which only somebody who could look one up was able to write - and
+	//   the whole point of the class is that a person can type it into a style's name in Word and
+	//   make a mark this build has never seen.
 	const size_t kCustomLen = 7;			// "Custom:"
 	if (value.size() > kCustomLen && value.compare(0, kCustomLen, "Custom:") == 0)
 	{
@@ -119,13 +151,30 @@ bool16 KentenClassOf(const std::string& value, std::string& outClass)
 		if (cps.empty())
 			return kFalse;
 
-		char hex[16];
-		std::snprintf(hex, sizeof(hex), "%x", static_cast<unsigned int>(cps[0]));
-		outClass = "Custom-";
-		outClass += hex;
+		std::string mark;
+		KCMParaText::AppendUtf8(mark, cps[0]);
+		for (size_t i = 0; i < mark.size(); ++i)
+		{
+			if (!IsClassChar(mark[i]))
+				return kFalse;			// a mark a style name cannot hold - named, not written wrong
+		}
+		outClass = kKentenCustomClass;
+		outClass += mark;
 		return kTrue;
 	}
 
+	for (size_t i = 0; i < kKentenNameCount; ++i)
+	{
+		if (value == kKentenNames[i].fValue)
+		{
+			outClass = kKentenNames[i].fClass;
+			return kTrue;
+		}
+	}
+
+	// ★A KIND THIS BUILD HAS NEVER HEARD OF STILL TRAVELS, under its own name: KCMTextRead answers
+	//   "Kind7" for one, and carrying it untouched is what lets a newer InDesign's mark come back
+	//   from a round trip through an older one.
 	for (size_t i = 0; i < value.size(); ++i)
 	{
 		if (!IsClassChar(value[i]))
@@ -147,28 +196,32 @@ bool16 KentenValueOfClass(const std::string& cls, std::string& outValue)
 			return kFalse;
 	}
 
-	const size_t kCustomLen = 7;			// "Custom-"
-	if (cls.size() > kCustomLen && cls.compare(0, kCustomLen, "Custom-") == 0)
+	if (cls.size() > kKentenCustomClassLen
+		&& cls.compare(0, kKentenCustomClassLen, kKentenCustomClass) == 0)
 	{
-		int32 cp = 0;
-		for (size_t i = kCustomLen; i < cls.size(); ++i)
-		{
-			const int32 digit = HexDigit(cls[i]);
-			if (digit < 0)
-				return kFalse;
-			cp = cp * 16 + digit;
-			if (cp > 0x10FFFF)
-				return kFalse;
-		}
-		if (cp <= 0)
+		// ⚠**ONE MARK, AND ONLY ONE.** A name with two characters after the lead-in is not a custom
+		//   kenten somebody meant: a kenten is one glyph, and reading the first of two would put a
+		//   mark on the page that nobody asked for.
+		std::vector<int32> cps;
+		KCMTextDiff::ToCodePoints(cls.substr(kKentenCustomClassLen), &cps, nil);
+		if (cps.size() != 1 || cps[0] <= 0)
 			return kFalse;
 
 		outValue = "Custom:";
-		KCMParaText::AppendUtf8(outValue, cp);
+		KCMParaText::AppendUtf8(outValue, cps[0]);
 		return kTrue;
 	}
 
-	outValue = cls;
+	for (size_t i = 0; i < kKentenNameCount; ++i)
+	{
+		if (cls == kKentenNames[i].fClass)
+		{
+			outValue = kKentenNames[i].fValue;
+			return kTrue;
+		}
+	}
+
+	outValue = cls;			// the unknown kind, back the way it came (KentenClassOf says why)
 	return kTrue;
 }
 

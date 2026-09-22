@@ -23,6 +23,22 @@ namespace KCMStoryDocx
 namespace
 {
 
+/*	What a kenten style is called, before its class: "圏点-" (2026-09-22, the user's call -
+	"圏点は、日本人しかつかわないので"). The name is what a person reads and picks in Word's style
+	gallery, so it is written in the language of the people who use the feature; KCMStoryShape's
+	KentenClassOf gives the half that follows it, in the same language.
+
+	⚠★★★**A .docx WRITTEN BEFORE TODAY SAYS "kenten-" AND IS NO LONGER READ** (the user chose the
+	  clean switch over carrying both spellings). Its kenten arrive as a mark this reader cannot
+	  name, so the story is refused by name rather than coming in wrong - and the words themselves
+	  are unaffected.
+	⚠**A UTF-8 ESCAPE, NOT A LITERAL**: no /utf-8 in this project, so a literal would be compiled in
+	  the machine's ANSI codepage and land in a UTF-8 XML as mojibake (KCMStoryShape says it in
+	  full, beside the class names).
+*/
+const char kKentenStylePrefix[] = "\xE5\x9C\x8F\xE7\x82\xB9\x2D";		// 圏点-
+const size_t kKentenStylePrefixLen = sizeof(kKentenStylePrefix) - 1;
+
 /*	Look
 	What one character carries BESIDES a ruby. Two neighbours with the same Look share a run.
 
@@ -86,7 +102,8 @@ void AppendRunProps(const Look& look, std::string& out)
 	out += "<w:rPr>";
 	if (look.fKentenClass != nil)
 	{
-		out += "<w:rStyle w:val=\"kenten-";
+		out += "<w:rStyle w:val=\"";
+		out += kKentenStylePrefix;
 		AppendEscaped(*look.fKentenClass, 0, look.fKentenClass->size(), out);
 		out += "\"/>";
 	}
@@ -699,21 +716,25 @@ const char* const kStoryTagNamespace = "urn:kohaku:kcm:story:1";
 
 	★★**THIS IS NOW THE ONLY PLACE THE BUILT-IN KINDS ARE ENUMERATED** (2026-09-21). There used to
 	 be a second copy in KCMStoryHtml.cpp - the same names with CSS beside each instead of Word's
-	 marks - and it went with the HTML spelling. ⚠Nothing else needs such a list: a kind's NAME
-	 travels verbatim (KCMStoryShape::KentenClassOf), so a kind this build has never heard of comes
-	 back untouched whether or not it is written here. What is below is only the LOOK Word is asked
-	 for, and what says the names are still spelt right is a test rather than a comment:
-	 work/kcm-storydocx-test, TestKentenNames, puts every name below through
-	 KCMStoryShape::KentenValueOfClass and KentenClassOf.
+	 marks - and it went with the HTML spelling. ⚠Nothing else needs such a list: a kind this build
+	 has never heard of travels under its own name whether or not it is written here
+	 (KCMStoryShape::KentenClassOf). What is below is only the LOOK Word is asked for, and what says
+	 the names are still spelt right is a test rather than a comment: work/kcm-storydocx-test,
+	 TestKentenNames, puts every name below through KCMStoryShape::KentenValueOfClass and
+	 KentenClassOf.
 	★The look is only the nearest one - sesame marks are Word's comma, the hollow ones its circle,
 	 everything else its dot. The NAME carries the kind (the header says why).
 */
 struct KentenStyle
 {
-	const char*	fClass;
+	const char*	fValue;			// KCM's own name for the kind; the class is asked for, not kept here
 	const char*	fWordMark;
 };
 
+// ⚠★★**THE VALUE, NOT THE CLASS** (2026-09-22). The class is Japanese now and KCMStoryShape's table
+//   is the one place that says which Japanese word a kind travels under - so this holds KCM's own
+//   value and asks for the class, rather than keeping a second copy of ten names that would be free
+//   to drift ([[one-question-one-place]]).
 const KentenStyle kBuiltInKenten[] =
 {
 	{ "BlackSesameDot",		"comma" },
@@ -731,9 +752,11 @@ const size_t kBuiltInKentenCount = sizeof(kBuiltInKenten) / sizeof(kBuiltInKente
 
 void AppendKentenStyle(const std::string& cls, const char* wordMark, std::string& out)
 {
-	out += "<w:style w:type=\"character\" w:customStyle=\"1\" w:styleId=\"kenten-";
+	out += "<w:style w:type=\"character\" w:customStyle=\"1\" w:styleId=\"";
+	out += kKentenStylePrefix;
 	AppendEscaped(cls, 0, cls.size(), out);
-	out += "\"><w:name w:val=\"kenten-";
+	out += "\"><w:name w:val=\"";
+	out += kKentenStylePrefix;
 	AppendEscaped(cls, 0, cls.size(), out);
 	out += "\"/><w:basedOn w:val=\"DefaultParagraphFont\"/><w:qFormat/><w:rPr><w:em w:val=\"";
 	out += wordMark;
@@ -759,7 +782,18 @@ bool16 WriteStyles(const KCMStoryShape::Story& s, std::string& out, std::string&
 	// (no paragraph style of ours: the slot is left for InDesign's paragraph style names - kMarkContinues says why)
 
 	for (size_t i = 0; i < kBuiltInKentenCount; ++i)
-		AppendKentenStyle(kBuiltInKenten[i].fClass, kBuiltInKenten[i].fWordMark, out);
+	{
+		std::string builtInClass;
+		if (!KCMStoryShape::KentenClassOf(kBuiltInKenten[i].fValue, builtInClass))
+		{
+			// Only reachable if this table and KCMStoryShape's have drifted apart, which is what
+			// TestKentenNames is there to catch before a build ever runs.
+			whyNot = "a built-in kenten kind has no class: ";
+			whyNot += kBuiltInKenten[i].fValue;
+			return kFalse;
+		}
+		AppendKentenStyle(builtInClass, kBuiltInKenten[i].fWordMark, out);
+	}
 
 	// The custom marks this story uses, sorted: the order the story happens to use them in must
 	// not reach the bytes.
@@ -776,7 +810,11 @@ bool16 WriteStyles(const KCMStoryShape::Story& s, std::string& out, std::string&
 		}
 		bool16 builtIn = kFalse;
 		for (size_t i = 0; i < kBuiltInKentenCount && !builtIn; ++i)
-			builtIn = (cls == kBuiltInKenten[i].fClass) ? kTrue : kFalse;
+		{
+			std::string builtInClass;
+			if (KCMStoryShape::KentenClassOf(kBuiltInKenten[i].fValue, builtInClass))
+				builtIn = (cls == builtInClass) ? kTrue : kFalse;
+		}
 		if (!builtIn)
 			custom.push_back(cls);
 	}
@@ -1373,10 +1411,23 @@ bool16 LookOf(Reader& rd, int32 rPr, RLook& out)
 		if (id != nil)
 		{
 			const std::string name = StyleName(rd, *id);
-			if (name.size() > 7 && name.compare(0, 7, "kenten-") == 0)
+			if (name.size() > kKentenStylePrefixLen
+				&& name.compare(0, kKentenStylePrefixLen, kKentenStylePrefix) == 0)
 			{
-				if (!KCMStoryShape::KentenValueOfClass(name.substr(7), out.fKenten))
+				if (!KCMStoryShape::KentenValueOfClass(name.substr(kKentenStylePrefixLen), out.fKenten))
 					return Refuse(rd, "a kenten style this reader cannot read: " + name);
+			}
+			// ⚠★★★**A .docx WRITTEN BEFORE 2026-09-22 SAYS "kenten-"**, and it is turned away BY NAME.
+			//   The kenten styles were renamed into Japanese that day and the old spelling is not
+			//   read (the user chose the clean switch). Without this the old name would be just
+			//   another character style nobody here cares about, and the mark would go SILENTLY -
+			//   which is the one thing no reader of this round trip is allowed to do. Saying it
+			//   costs a "!" row and tells the reader exactly what happened to their file.
+			else if (name.size() > 7 && name.compare(0, 7, "kenten-") == 0)
+			{
+				return Refuse(rd, "a kenten style from an older Kohaku Change Marker, whose styles "
+								  "were named in English: " + name + " (export the stories again to "
+								  "get a file this build can read)");
 			}
 		}
 	}

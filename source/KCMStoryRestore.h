@@ -74,8 +74,23 @@ ErrorCode KCMApplyRuby(ITextModel* model, TextIndex at, int32 len, const PMStrin
       them as a difference nobody made. Exported for the import's third caller, 2026-09-16. */
 ErrorCode KCMClearRuby(ITextModel* model, TextIndex at, int32 len);
 
-/** The kenten KIND onto [at, at+len) (IKentenStyle::Kenten_None = off; the look is left alone). */
-ErrorCode KCMApplyKentenKind(ITextModel* model, TextIndex at, int32 len, int16 kind);
+/** The kenten KIND onto [at, at+len) (IKentenStyle::Kenten_None = off; the look is left alone).
+
+	★**A CUSTOM MARK CARRIES ITS CHARACTER WITH IT** (2026-09-22). IKentenStyle::Kenten_Custom is a
+	  kind like any other, but on its own it says nothing about WHICH glyph to draw - so when that is
+	  the kind, `customChar` goes on beside it (kTAKentenCharacterBoss), counted in Unicode
+	  (kTAKentenCharacterSetBoss). The official shape is SnpPerformTextAttrKenten.cpp, which carries
+	  the pair in the same AttributeBossList. ⚠Ignored for every other kind. */
+ErrorCode KCMApplyKentenKind(ITextModel* model, TextIndex at, int32 len, int16 kind, int16 customChar = 0);
+
+/** The character a CUSTOM kenten value names: "Custom:X" -> X's code point, for
+	KCMApplyKentenKind's `customChar`.
+
+	kFalse for a value that is not a custom mark at all, and for one whose character this build
+	cannot write. ⚠**THE ATTRIBUTE IS AN int16** (kTAKentenCharacterBoss), so the character has to
+	be in the BMP - InDesign's own limit rather than this format's, and the one KCMStoryShape.h
+	names where it writes a custom mark out. */
+bool16 KCMKentenCustomCharOf(const PMString& value, int16& outChar);
 
 /** The kenten kind for the name the comparison reports ("BlackCircle" ...). kFalse for a name
     this build cannot write ("Custom" among them). */

@@ -207,8 +207,35 @@ bool16 KCMKentenKindOf(const PMString& name, int16& outKind)
 	return kFalse;
 }
 
+/** "Custom:X" -> X's code point. See the header for why it has to fit an int16. */
+bool16 KCMKentenCustomCharOf(const PMString& value, int16& outChar)
+{
+	const std::string v = value.GetUTF8String();
+	const size_t kCustomLen = 7;			// "Custom:" - the spelling KCMTextRead gives a custom mark
+	if (v.size() <= kCustomLen || v.compare(0, kCustomLen, "Custom:") != 0)
+		return kFalse;
+
+	// The first code point after the colon, decoded from UTF-8 by hand: one character is all a
+	// custom mark has, and this saves the whole diff engine being pulled in for it.
+	const unsigned char* p = reinterpret_cast<const unsigned char*>(v.c_str()) + kCustomLen;
+	const size_t left = v.size() - kCustomLen;
+	int32 cp = -1;
+	if ((p[0] & 0x80) == 0)									cp = p[0];
+	else if ((p[0] & 0xE0) == 0xC0 && left >= 2)			cp = ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
+	else if ((p[0] & 0xF0) == 0xE0 && left >= 3)			cp = ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+	else if ((p[0] & 0xF8) == 0xF0 && left >= 4)			cp = ((p[0] & 0x07) << 18) | ((p[1] & 0x3F) << 12) | ((p[2] & 0x3F) << 6) | (p[3] & 0x3F);
+
+	// ⚠**THE BMP, AND NOT THE WHOLE OF IT**: the attribute is a SIGNED int16, so a code point above
+	//   0x7FFF would travel as a negative number. Refusing is better than writing a mark nobody
+	//   asked for - and a refusal is named, where a wrong glyph would not be.
+	if (cp <= 0 || cp > 0x7FFF)
+		return kFalse;
+	outChar = static_cast<int16>(cp);
+	return kTrue;
+}
+
 /** The kenten KIND onto a range (Kenten_None = off; the look is left alone). */
-ErrorCode KCMApplyKentenKind(ITextModel* model, TextIndex at, int32 len, int16 kind)
+ErrorCode KCMApplyKentenKind(ITextModel* model, TextIndex at, int32 len, int16 kind, int16 customChar)
 {
 	boost::shared_ptr<AttributeBossList> attrs(new AttributeBossList);
 	InterfacePtr<ITextAttrInt16> attr(::CreateObject2<ITextAttrInt16>(kTAKentenKindBoss));
@@ -217,6 +244,28 @@ ErrorCode KCMApplyKentenKind(ITextModel* model, TextIndex at, int32 len, int16 k
 	attr->Set(kind);
 	InterfacePtr<IAttrReport> report(attr, UseDefaultIID());
 	attrs->ApplyAttribute(report);
+
+	// ★**A CUSTOM MARK'S GLYPH TRAVELS IN THE SAME LIST AS ITS KIND** (2026-09-22; the official
+	//   shape is SnpPerformTextAttrKenten.cpp, which sets the character set and the character as
+	//   two more int16 attributes beside the kind). Unicode is the set, because the code point is
+	//   what this format carries - KCMStoryShape's "Custom-<hex>" is a code point and nothing else.
+	if (kind == IKentenStyle::Kenten_Custom)
+	{
+		InterfacePtr<ITextAttrInt16> set(::CreateObject2<ITextAttrInt16>(kTAKentenCharacterSetBoss));
+		if (set == nil)
+			return kFailure;
+		set->Set(IKentenStyle::kUnicode);
+		InterfacePtr<IAttrReport> setReport(set, UseDefaultIID());
+		attrs->ApplyAttribute(setReport);
+
+		InterfacePtr<ITextAttrInt16> glyph(::CreateObject2<ITextAttrInt16>(kTAKentenCharacterBoss));
+		if (glyph == nil)
+			return kFailure;
+		glyph->Set(customChar);
+		InterfacePtr<IAttrReport> glyphReport(glyph, UseDefaultIID());
+		attrs->ApplyAttribute(glyphReport);
+	}
+
 	InterfacePtr<ITextModelCmds> cmds(model, UseDefaultIID());
 	if (cmds == nil)
 		return kFailure;

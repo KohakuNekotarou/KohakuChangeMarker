@@ -120,22 +120,39 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 	// ⚠**NOTHING IS WRITTEN UNTIL EVERY KIND HAS BEEN JUDGED**, the same discipline ApplyParagraph
 	//   keeps: a paragraph turned away is turned away whole, rather than half marked.
 	std::vector<int16> kentenKinds(applyKenten.size(), IKentenStyle::Kenten_None);
+	std::vector<int16> kentenChars(applyKenten.size(), 0);		// the glyph, for a custom mark only
 	for (size_t i = 0; i < applyKenten.size(); ++i)
 	{
+		const PMString value = Utf8(applyKenten[i].fValue);
 		int16 kind = IKentenStyle::Kenten_None;
-		if (!KCMKentenKindOf(Utf8(applyKenten[i].fValue), kind))
+		if (KCMKentenKindOf(value, kind))
 		{
-			// The format carries a custom mark's own character and this build's writer does not
-			// take one (KCMStoryRestore's table, "Custom" among the names it refuses). Saying so is
-			// better than writing nine of the ten marks and leaving the tenth silently missing.
-			whyNot = "a kenten mark in the file cannot be written back (\"";
-			whyNot.SetTranslatable(kFalse);
-			whyNot.Append(applyKenten[i].fValue.c_str());
-			whyNot.Append("\" - a custom mark carries a character this version does not write)");
-			outRefused = kTrue;
-			return 0;
+			kentenKinds[i] = kind;
+			continue;
 		}
-		kentenKinds[i] = kind;
+		// ★**A CUSTOM MARK IS WRITTEN BACK TOO** (2026-09-22, the user asked whether it was
+		//   impossible: it was not, it was unimplemented). The format had carried the character all
+		//   along - it is written out as "Custom-<hex>" and read back as "Custom:X" - and what was
+		//   missing was the pair of attributes that put it on the text (KCMStoryRestore).
+		int16 customChar = 0;
+		if (KCMKentenCustomCharOf(value, customChar))
+		{
+			kentenKinds[i] = IKentenStyle::Kenten_Custom;
+			kentenChars[i] = customChar;
+			continue;
+		}
+		// Saying so is better than writing ten of the eleven marks and leaving the last one
+		// silently missing. ⚠**THE VALUE IS UTF-8 AND PMString IS NOT** (measured 2026-09-22):
+		//   Append(c_str()) put the bytes in as the platform's encoding, so a custom mark's own
+		//   character came out as mojibake - "Custom:窶ｻ" for "Custom:※" - in the one message whose
+		//   whole job is to name it.
+		whyNot = "a kenten mark in the file cannot be written back (\"";
+		whyNot.SetTranslatable(kFalse);
+		whyNot.Append(value);
+		whyNot.Append("\" - this build writes the ten built-in kinds, and a custom mark whose "
+					  "character is in the BMP below U+8000)");
+		outRefused = kTrue;
+		return 0;
 	}
 
 	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
@@ -261,7 +278,7 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 		ModelRangeOf(docAttrs, applyKenten[i], paraStart, at, len);
 		if (len <= 0)
 			continue;
-		if (KCMApplyKentenKind(model, at, len, kentenKinds[i]) != kSuccess)
+		if (KCMApplyKentenKind(model, at, len, kentenKinds[i], kentenChars[i]) != kSuccess)
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 			whyNot = "a kenten could not be written (a locked story or layer?)";
