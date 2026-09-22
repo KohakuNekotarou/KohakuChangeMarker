@@ -947,6 +947,24 @@ int32 DocParaOfPlace(const std::vector<KCMParaAttrs>& attrs, const KCMStoryMerge
 	return -1;
 }
 
+/*	DropNotePlaces
+	Take every footnote's place out of the list, leaving the body and the cells.
+
+	★Used when the file's notes cannot be paired with the document's at all (their number differs
+	  and nothing planned it): the rest of the story is still poured, and the notes stand as they
+	  are. ⚠Taken OUT rather than refused one by one - a place the reader never asked about should
+	  not be counted against them.
+*/
+void DropNotePlaces(const std::vector<KCMParaAttrs>& attrs, std::vector<Place>& places)
+{
+	for (size_t p = places.size(); p > 0; --p)
+	{
+		const Place& pl = places[p - 1];
+		if (!pl.fDoc.empty() && pl.fDoc[0] < attrs.size() && attrs[pl.fDoc[0]].IsFootnote())
+			places.erase(places.begin() + static_cast<std::ptrdiff_t>(p - 1));
+	}
+}
+
 /*	PourNoteWords
 	The words of a note just made, put in place of the ones it was born with.
 
@@ -1793,6 +1811,37 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 			continue;
 		}
 
+		// ★★★**THE NOTES HAVE TO LINE UP TOO, FOR THE TABLES' OWN REASON** (2026-09-22, measured on
+		//   the application). BuildPlaces pairs a note with the file's note OF THE SAME RANK, so a
+		//   file holding a different NUMBER of notes pours one note's words into another's.
+		//   ⚠**MEASURED, NOT FEARED**: a .docx whose origin no longer matches its tag falls back to
+		//    comparing the whole text, and that path plans nothing - which is how Word's newly added
+		//    note came to be written OVER the document's second one, silently, before this stood here.
+		//   ★When the merge DID plan the difference (fNoteAdds / fNoteRemoves) the counts are meant
+		//    to differ, and the pour carries that plan out further down - so this asks only when
+		//    there is no plan at all.
+		bool16 notesLeftAlone = kFalse;
+		if (merged.fNoteAdds.empty() && merged.fNoteRemoves.empty())
+		{
+			int32 docNotes = 0;
+			for (size_t i = 0; i < attrs.size(); ++i)
+			{
+				if (attrs[i].IsFootnote() && attrs[i].fFootnoteOrdinal + 1 > docNotes)
+					docNotes = attrs[i].fFootnoteOrdinal + 1;
+			}
+			if (static_cast<size_t>(docNotes) != file->fNotes.size())
+			{
+				++refusedNotes;
+				PMString why("the file holds a different number of footnotes and nothing says which is "
+							 "which, so the document's own were left alone");
+				why.SetTranslatable(kFalse);
+				if (firstRefusal.IsEmpty())
+					firstRefusal = why;
+				NoteRefusal(original, "Note", why);
+				notesLeftAlone = kTrue;
+			}
+		}
+
 		// ★**A TABLE LEFT ALONE IS NAMED, AND THE STORY GOES ON** (2026-09-22, the user's call:
 		//   refusing is the right answer for a table whose shape changed, but refusing the story
 		//   for its sake is not - the reader's edits to the body were never in question).
@@ -1805,6 +1854,10 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 
 		std::vector<Place> places;
 		BuildPlaces(attrs, *file, refusedTables, places);
+		// ⚠A note nobody can pair is not written at all - see notesLeftAlone. Its place is taken out
+		//  rather than refused, because it is the FILE that cannot be trusted here, not the place.
+		if (notesLeftAlone)
+			DropNotePlaces(attrs, places);
 
 		// ★★★**EVERY WRITE OF THE STORY GOES IN BACK TO FRONT - ACROSS PLACES, NOT ONLY INSIDE ONE**
 		//   (2026-09-17, measured with a trace). The body, each cell and each note are separate PLACES,
@@ -2063,6 +2116,10 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 				//   have its ruby and kenten written into a DIFFERENT cell - the one failure this
 				//   whole rule exists to prevent.
 				BuildPlaces(attrs2, *file, refusedTables, places2);
+				// ⚠**THE SAME NOTES ARE LEFT ALONE HERE** - for the reason the same line above gives.
+				//   Their ruby and kenten would land in another note exactly as their words would.
+				if (notesLeftAlone)
+					DropNotePlaces(attrs2, places2);
 
 				for (size_t p = 0; p < places2.size(); ++p)
 				{
