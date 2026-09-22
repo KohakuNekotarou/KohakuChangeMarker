@@ -78,8 +78,15 @@ struct KCMImportRefusal
 	PMString	fWhereAndWhy;	// the text cell: where, and why the document's words were kept
 	PMString	fFileName;		// the file's own name - what a row for a story the document lacks shows
 	bool16		fWholeStory;	// the whole story was left as it stands (tables, or no story)
+	// ★**HELD BACK IS NOT REFUSED** (2026-09-22): the document was protected FROM something the
+	//   file said - today only a tate-chu-yoko under a warichu, which Word cannot carry. It earns
+	//   a "!" row like the rest, because the reader has to know, but it must NOT be counted among
+	//   the things that "could not go in": nothing failed, and the document is the better for it.
+	// ⚠**ADDED AT THE END ON PURPOSE** - the same discipline the facade's vtable keeps, since
+	//  another plug-in may be holding this record's shape ([[facade-vtable-slot-append-only]]).
+	bool16		fHeldBack;
 
-	KCMImportRefusal() : fStory(kInvalidUID), fWholeStory(kFalse) {}
+	KCMImportRefusal() : fStory(kInvalidUID), fWholeStory(kFalse), fHeldBack(kFalse) {}
 };
 
 /** What the last import could not put in, in the order the pour met it. Empty when nothing was.

@@ -131,6 +131,14 @@ void NoteRefusal(UID story, const char* kind, const PMString& whereAndWhy, bool1
 	sRefusals.push_back(r);
 }
 
+/** The same, for something the document was protected FROM rather than something that failed: it
+	gets its "!" row, and the count of what "could not go in" passes it by. */
+void NoteHeldBack(UID story, const char* kind, const PMString& whereAndWhy)
+{
+	NoteRefusal(story, kind, whereAndWhy);
+	sRefusals.back().fHeldBack = kTrue;
+}
+
 /** The same, for a reason the merge gives as std::strings. */
 void NoteRefusal(UID story, const char* kind, const std::string& where, const std::string& why)
 {
@@ -1449,11 +1457,17 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 	outMessage.Append(readMessage);
 	outMessage.Append("; ");
 	outMessage.Append(poured);			// carries the merge's own sentence when there was one
-	if (!KCMImportRefusals().empty())
+	// ⚠**WHAT WAS HELD BACK IS NOT COUNTED HERE** (2026-09-22): it has a "!" row and a count of its
+	//  own in `poured`, and saying "1 could not go in" of a tate-chu-yoko the import deliberately
+	//  kept told the reader the opposite of what happened (seen in the live matrix the same day).
+	int32 couldNotGoIn = 0;
+	for (size_t i = 0; i < KCMImportRefusals().size(); ++i)
 	{
-		AppendCount(outMessage, " - ", static_cast<int32>(KCMImportRefusals().size()),
-					" could not go in (the rows marked !)");
+		if (!KCMImportRefusals()[i].fHeldBack)
+			++couldNotGoIn;
 	}
+	if (couldNotGoIn > 0)
+		AppendCount(outMessage, " - ", couldNotGoIn, " could not go in (the rows marked !)");
 	// ★A START THAT DID NOT ARM (a Cancel pressed on the comparison's own loop, say) is not the
 	//   import's failure any more: the words are in, Ctrl+Z takes them out, and the reader is told
 	//   which of the two states they are looking at.
@@ -1866,7 +1880,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 						if (!attrKept.IsEmpty())
 						{
 							++keptTcyParas;
-							NoteRefusal(original, "Word", attrKept);
+							NoteHeldBack(original, "Word", attrKept);
 						}
 						if (n > 0)
 						{
@@ -1950,7 +1964,8 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	if (refusedAttrs > 0)
 		AppendCount(outMessage, ", ", refusedAttrs, " paragraph(s) kept their own ruby/kenten");
 	if (keptTcyParas > 0)
-		AppendCount(outMessage, ", ", keptTcyParas, " paragraph(s) kept a tate-chu-yoko Word cannot carry");
+		AppendCount(outMessage, ", ", keptTcyParas,
+					" paragraph(s) kept a tate-chu-yoko Word cannot carry (the rows marked !)");
 	if (unmatched > 0)
 		AppendCount(outMessage, ", ", unmatched, " file(s) had no story");
 	if (!firstRefusal.IsEmpty())
