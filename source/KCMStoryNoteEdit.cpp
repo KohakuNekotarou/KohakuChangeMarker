@@ -39,9 +39,11 @@ bool16 KCMCanInsertNoteAt(ITextModel* model, TextIndex at)
 	return (numbering != nil) ? kTrue : kFalse;
 }
 
-ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outNoteStart, PMString& whyNot)
+ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outWordsFrom, TextIndex& outWordsTo,
+						  PMString& whyNot)
 {
-	outNoteStart = kInvalidTextIndex;
+	outWordsFrom = kInvalidTextIndex;
+	outWordsTo = kInvalidTextIndex;
 	if (model == nil)
 		return kFailure;
 	if (!KCMCanInsertNoteAt(model, at))
@@ -81,10 +83,10 @@ ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outNoteSta
 		return kFailure;
 	}
 
-	// ---- 3. where its own words begin ----------------------------------------------------------
-	// ★THE COMMAND HANDS BACK THE NOTE through its IUIDData, and the note's thread is what says
-	//   where its text runs to. GetTextEnd() is one past the thread's own closing return, so the
-	//   words go in just before it.
+	// ---- 3. the range the caller replaces ------------------------------------------------------
+	// ★THE COMMAND HANDS BACK THE NOTE through its IUIDData, and the note's own thread says how far
+	//   its text runs. The thread begins with the note's NUMBER (one character, which is the note
+	//   itself and must not be touched) and ends with its closing return.
 	InterfacePtr<IUIDData> noteData(create, UseDefaultIID());
 	if (noteData == nil)
 	{
@@ -99,7 +101,16 @@ ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outNoteSta
 		whyNot.SetTranslatable(kFalse);
 		return kFailure;
 	}
-	outNoteStart = noteThread->GetTextEnd() - 1;
+	const TextIndex threadStart = noteThread->GetTextStart();
+	const TextIndex threadEnd = noteThread->GetTextEnd();
+	if (threadEnd <= threadStart + 1)
+	{
+		whyNot = "the new footnote is shorter than a footnote can be";
+		whyNot.SetTranslatable(kFalse);
+		return kFailure;
+	}
+	outWordsFrom = threadStart + 1;		// past the number
+	outWordsTo = threadEnd - 1;			// before the closing return
 	return kSuccess;
 }
 

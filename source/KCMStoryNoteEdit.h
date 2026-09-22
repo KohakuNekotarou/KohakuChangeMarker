@@ -39,18 +39,25 @@ class ITextModel;
 */
 bool16 KCMCanInsertNoteAt(ITextModel* model, TextIndex at);
 
-/** Put a footnote at `at`, and say where its own words begin.
+/** Put a footnote at `at`, and say where the note's own words go.
 
 	Three moves, the SDK's: the marker goes into the text, kCreateFootnoteCmdBoss builds the note
-	around it, and the note's own thread says where its text ends.
+	around it, and the note's own thread says how far its text runs.
 
-	@param outNoteStart where the caller may pour the note's words. ⚠**PAST WHAT THE NOTE IS BORN
-	       WITH**: a new note already holds its number and a separator (measured 2026-09-22 - two
-	       characters, the separator a full-width space on this install).
+	★★★**THE RANGE IS WHAT THE CALLER REPLACES, NOT WHAT IT APPENDS TO.** A new note is born
+	  holding its number AND a separator (measured 2026-09-22: two characters, the separator a
+	  full-width space on this install), while a note read out of a .docx carries its own separator
+	  in its text - Word's or the one the export wrote. Pouring the file's words after the ones the
+	  note was born with would print both. So [outWordsFrom, outWordsTo) is the note's text apart
+	  from its number: take it out, put the file's in.
+
+	@param outWordsFrom just past the note's own number - the first character the caller may replace.
+	@param outWordsTo   just past the note's last character, before its closing return.
 	@param whyNot filled when the answer is kFailure, in words a status line can show.
 	@return kFailure when the place will not take a note, or a command would not run.
 */
-ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outNoteStart, PMString& whyNot);
+ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outWordsFrom, TextIndex& outWordsTo,
+						  PMString& whyNot);
 
 /** Take away the footnote whose marker stands at `markerAt`, by deleting that one character.
 

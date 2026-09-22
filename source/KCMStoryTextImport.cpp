@@ -38,6 +38,7 @@
 #include "KCMTaskStartSave.h"		// KCMTakeTaskStartCopy - the import's own Task Start, saved to a file
 #include "KCMRehydrate.h"			// KCMReadOriginUidLabel - the copy's stories carry the original UID
 #include "KCMParaText.h"			// ModelOffsetInParagraph / AppendUtf8
+#include "KCMStoryNoteEdit.h"		// making and unmaking a footnote - what Word's note changes need
 #include "KCMParaPairing.h"			// which paragraph goes with which when <p>s were added or removed
 #include "KCMParagraphStyle.h"		// the next style for a paragraph put in after another
 #include "KCMTextDiff.h"			// ToCodePoints / Diff
@@ -888,6 +889,99 @@ int32 DocTablesInParagraph(ITextModel* model, int32 paraStart, const KCMParaAttr
 	return n;
 }
 
+/*	NoteMarkersOfStory
+	Where every footnote marker stands in the story, in the order the notes are NUMBERED.
+
+	★**THE ORDER IS THE READER'S OWN**: KCMTextRead numbers the notes as it meets their threads,
+	  which is TextIndex order, and a note's thread stands in the same order as its marker. So the
+	  n-th entry here is the marker of the note KCMParaAttrs calls n.
+	⚠**A NOTE'S OWN FIRST CHARACTER IS A MARKER TOO** (it rides the note's leading uncounted
+	 positions), and it is not the body's. Paragraphs inside a note are passed over.
+*/
+void NoteMarkersOfStory(ITextModel* model, const std::vector<KCMParaAttrs>& attrs,
+						const std::vector<int32>& starts, std::vector<TextIndex>& out)
+{
+	out.clear();
+	for (size_t i = 0; i < attrs.size() && i < starts.size(); ++i)
+	{
+		if (attrs[i].IsFootnote())
+			continue;
+		const TextIndex paraStart = static_cast<TextIndex>(starts[i]);
+		// the leading ones stand BEFORE the paragraph's start, nearest last
+		for (int32 k = attrs[i].fLeadingUncounted; k >= 1; --k)
+		{
+			if (CharAt(model, paraStart - k) == kTextChar_FootnoteMarker)
+				out.push_back(paraStart - k);
+		}
+		for (size_t k = 0; k < attrs[i].fUncountedAt.size(); ++k)
+		{
+			const TextIndex m = paraStart + attrs[i].fUncountedAt[k] + static_cast<int32>(k);
+			if (CharAt(model, m) == kTextChar_FootnoteMarker)
+				out.push_back(m);
+		}
+	}
+}
+
+/*	DocParaOfPlace
+	The document's index for the `nth` paragraph of one place, read straight off the paragraph
+	attributes - the same question BuildPlaces answers, asked for one place instead of all of them.
+	@return -1 when the place has no such paragraph.
+*/
+int32 DocParaOfPlace(const std::vector<KCMParaAttrs>& attrs, const KCMStoryMerge::PlaceRef& place, int32 nth)
+{
+	int32 seen = 0;
+	for (size_t i = 0; i < attrs.size(); ++i)
+	{
+		bool16 here = kFalse;
+		if (place.fTable < 0)
+			here = (!attrs[i].IsCell() && !attrs[i].IsFootnote()) ? kTrue : kFalse;
+		else
+			here = (attrs[i].IsCell() && attrs[i].fTableOrdinal == place.fTable
+					&& attrs[i].fCellRow == place.fRow && attrs[i].fCellCol == place.fCell) ? kTrue : kFalse;
+		if (!here)
+			continue;
+		if (seen == nth)
+			return static_cast<int32>(i);
+		++seen;
+	}
+	return -1;
+}
+
+/*	PourNoteWords
+	The words of a note just made, put in place of the ones it was born with.
+
+	★**REPLACE, NOT APPEND** - see KCMInsertNoteAt: the note is born holding a separator of its
+	  own and the file's first paragraph carries one too, so appending would print both.
+	⚠**ONE PARAGRAPH AT A TIME, IN ORDER**: a note with several paragraphs is written as one text
+	 with returns between, which is what a paragraph break is in a story.
+*/
+bool16 PourNoteWords(ITextModel* model, TextIndex from, TextIndex to,
+					 const std::vector<KCMStoryShape::Para>& paras, PMString& whyNot)
+{
+	// ★THE SAME ONE COMMAND THE REST OF THE POUR USES (KCMCreateWordsWriteCmd), which is replace,
+	//   insert and delete in one - so a note's words go in the way every other word does.
+	std::string text;
+	for (size_t p = 0; p < paras.size(); ++p)
+	{
+		if (p > 0)
+			text += '\r';
+		text += paras[p].fText;
+	}
+	PMString asString;
+	asString.SetUTF8String(text);
+	const WideString words(asString);
+
+	InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(model, from, (to > from) ? (to - from) : 0, words));
+	if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
+	{
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+		whyNot = "the new footnote's words could not be put in";
+		whyNot.SetTranslatable(kFalse);
+		return kFalse;
+	}
+	return kTrue;
+}
+
 /** The writes that turn one place's paragraphs into the file's when the file has more or fewer of them
 	(2026-09-17 afternoon, the user's rule: a <p> added or removed is a paragraph added or removed).
 
@@ -1518,6 +1612,8 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	int32 keptTcyParas = 0;			// held back, not refused: a tate-chu-yoko under a warichu (2026-09-22)
 	int32 refusedParas = 0;
 	int32 refusedPlaces = 0;
+	int32 noteEdits = 0;			// footnotes Word added or took away, carried out one at a time
+	int32 refusedNotes = 0;
 	int32 skippedByTables = 0;		// stories left alone entirely: their table shape changed
 	int32 unmatched = 0;
 	int32 wordChanges = 0;			// a .docx whose marks are whole: Word's changes taken by the merge (stage 3)
@@ -1819,6 +1915,131 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 				touched = kTrue;
 			}
 		}
+
+		// ---- the footnotes Word added and took away ---------------------------------------------
+		//
+		// ★★★**A FOOTNOTE IS A CHARACTER, SO THIS IS NOT A POUR** (2026-09-22, the user's call: take
+		//   them in). Every word above went in without once touching a note's marker - the pour
+		//   refuses any change that would, because a note would vanish with nothing said - so what
+		//   Word did to the notes THEMSELVES is carried out here, from the plan the merge made, and
+		//   nowhere else.
+		// ★**THE STORY IS READ AGAIN FIRST**: every write above moved what stood after it, so no
+		//   marker's place can be worked out from the reading the words were planned from.
+		// ★**HIGHEST POSITION FIRST**, for the reason the whole text pass is - a write moves only
+		//   what stands after it, and everything after it has been done already.
+		if (!merged.fNoteRemoves.empty() || !merged.fNoteAdds.empty())
+		{
+			std::vector<std::string> parasN;
+			std::vector<KCMParaAttrs> attrsN;
+			std::vector<int32> startsN;
+			if (!KCMTextRead::ReadStory(storyRef, parasN, attrsN, startsN))
+			{
+				++refusedNotes;
+				PMString why("the story could not be read again, so its footnotes were left alone");
+				why.SetTranslatable(kFalse);
+				if (firstRefusal.IsEmpty())
+					firstRefusal = why;
+				NoteRefusal(original, "Note", why);
+			}
+			else
+			{
+				// ---- the ones Word took away ----------------------------------------------------
+				std::vector<TextIndex> markers;
+				NoteMarkersOfStory(model, attrsN, startsN, markers);
+				std::vector<TextIndex> going;
+				for (size_t d = 0; d < merged.fNoteRemoves.size(); ++d)
+				{
+					const int32 which = merged.fNoteRemoves[d].fNowNote;
+					if (which >= 0 && static_cast<size_t>(which) < markers.size())
+					{
+						going.push_back(markers[static_cast<size_t>(which)]);
+						continue;
+					}
+					++refusedNotes;
+					PMString why("a footnote deleted in Word could not be found in the document");
+					why.SetTranslatable(kFalse);
+					if (firstRefusal.IsEmpty())
+						firstRefusal = why;
+					NoteRefusal(original, "Note", why);
+				}
+				std::sort(going.begin(), going.end());
+				for (size_t d = going.size(); d > 0; --d)
+				{
+					PMString why;
+					if (KCMDeleteNoteAt(model, going[d - 1], why) == kSuccess)
+					{
+						++noteEdits;
+						touched = kTrue;
+						continue;
+					}
+					++refusedNotes;
+					if (firstRefusal.IsEmpty())
+						firstRefusal = why;
+					NoteRefusal(original, "Note", why);
+				}
+
+				// ---- the ones Word added --------------------------------------------------------
+				if (!merged.fNoteAdds.empty())
+				{
+					std::vector<std::string> parasA;
+					std::vector<KCMParaAttrs> attrsA;
+					std::vector<int32> startsA;
+					if (!KCMTextRead::ReadStory(storyRef, parasA, attrsA, startsA))
+					{
+						++refusedNotes;
+						PMString why("the story could not be read again, so no footnote was added");
+						why.SetTranslatable(kFalse);
+						if (firstRefusal.IsEmpty())
+							firstRefusal = why;
+						NoteRefusal(original, "Note", why);
+					}
+					else
+					{
+						std::vector<std::pair<TextIndex, size_t> > pending;
+						for (size_t a = 0; a < merged.fNoteAdds.size(); ++a)
+						{
+							const KCMStoryMerge::NoteAdd& add = merged.fNoteAdds[a];
+							const int32 docPara = DocParaOfPlace(attrsA, add.fPlace, add.fPara);
+							if (docPara < 0 || static_cast<size_t>(docPara) >= startsA.size())
+							{
+								++refusedNotes;
+								PMString why("a footnote added in Word has no paragraph to stand in");
+								why.SetTranslatable(kFalse);
+								if (firstRefusal.IsEmpty())
+									firstRefusal = why;
+								NoteRefusal(original, "Note", why);
+								continue;
+							}
+							const TextIndex at = static_cast<TextIndex>(startsA[static_cast<size_t>(docPara)])
+												 + KCMParaText::ModelOffsetInParagraph(
+													   attrsA[static_cast<size_t>(docPara)], add.fAt);
+							pending.push_back(std::make_pair(at, a));
+						}
+						std::stable_sort(pending.begin(), pending.end());
+						for (size_t k = pending.size(); k > 0; --k)
+						{
+							const TextIndex at = pending[k - 1].first;
+							const KCMStoryMerge::NoteAdd& add = merged.fNoteAdds[pending[k - 1].second];
+							PMString why;
+							TextIndex from = 0;
+							TextIndex to = 0;
+							if (KCMInsertNoteAt(model, at, from, to, why) != kSuccess
+								|| !PourNoteWords(model, from, to, add.fParas, why))
+							{
+								++refusedNotes;
+								if (firstRefusal.IsEmpty())
+									firstRefusal = why;
+								NoteRefusal(original, "Note", why);
+								continue;
+							}
+							++noteEdits;
+							touched = kTrue;
+						}
+					}
+				}
+			}
+		}
+
 		// ---- and now the ruby and the kenten, over the words that went in ----------------------
 		//
 		// ★★★**THE STORY IS READ AGAIN FIRST.** Every write above moved the positions after it, so
@@ -1933,6 +2154,10 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	//   under it would be the plug-in denying what it had just done.
 	if (attrEdits > 0)
 		AppendCount(outMessage, ", ", attrEdits, " ruby/kenten write(s)");
+	// ★AND THE NOTES APART AGAIN, for the same reason: an import whose only change was a footnote
+	//   Word added is a real import, and the line has to say what happened.
+	if (noteEdits > 0)
+		AppendCount(outMessage, ", ", noteEdits, " footnote(s) added or removed");
 	// ★A .docx MERGED THREE WAYS SAYS SO (stage 3): how many of Word's changes went in, and how many
 	//   the document's own edits kept out - the first of those named, so the reader knows where to look.
 	//   ⚠It was kept in a file-static until 2026-09-20, for a caller that has not existed since the
@@ -1963,6 +2188,8 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 		AppendCount(outMessage, ", ", refusedParas, " paragraph(s) refused");
 	if (refusedAttrs > 0)
 		AppendCount(outMessage, ", ", refusedAttrs, " paragraph(s) kept their own ruby/kenten");
+	if (refusedNotes > 0)
+		AppendCount(outMessage, ", ", refusedNotes, " footnote(s) refused");
 	if (keptTcyParas > 0)
 		AppendCount(outMessage, ", ", keptTcyParas,
 					" paragraph(s) kept a tate-chu-yoko Word cannot carry (the rows marked !)");
@@ -1978,7 +2205,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	// ★★★**A RUBY-ONLY IMPORT IS AN IMPORT** (2026-09-16). This answered on the word writes alone
 	//   until the attributes were poured, so a file whose only edit was a reading came back as
 	//   "nothing could be applied" - the very case the user asked for.
-	return (edits > 0 || attrEdits > 0) ? kTrue : kFalse;
+	return (edits > 0 || attrEdits > 0 || noteEdits > 0) ? kTrue : kFalse;
 }
 
 const std::vector<KCMImportRefusal>& KCMImportRefusals()
