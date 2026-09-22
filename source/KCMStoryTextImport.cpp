@@ -990,7 +990,12 @@ bool16 PourNoteWords(ITextModel* model, TextIndex from, TextIndex to,
 	const WideString words(asString);
 
 	InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(model, from, (to > from) ? (to - from) : 0, words));
-	if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
+	// ★**nil MEANS "NOTHING TO WRITE", NOT "COULD NOT WRITE"** (KCMStoryRestore.h says so): no
+	//   characters coming out and none going in. An empty note Word made, into a note born empty,
+	//   is exactly that - and calling it a failure would name a refusal nobody can act on.
+	if (write == nil)
+		return kTrue;
+	if (CmdUtils::ProcessCommand(write) != kSuccess)
 	{
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 		whyNot = "the new footnote's words could not be put in";
@@ -1999,8 +2004,34 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 				// ---- the ones Word took away ----------------------------------------------------
 				std::vector<TextIndex> markers;
 				NoteMarkersOfStory(model, attrsN, startsN, markers);
+
+				// ⚠★★★**THE MARKERS AND THE NOTES MUST COUNT THE SAME, OR NOTHING IS DELETED.**
+				//   markers[n] is taken to be the marker of the note the reader calls n, which holds
+				//   only while every note's marker stands in the body or a cell. A footnote INSIDE
+				//   another has a number of its own and a marker this walk steps over - and InDesign
+				//   does let one be made (measured 2026-09-22, against KCMTextRead's own comment).
+				//   Two lists of different lengths would slip, and a deletion would then take away
+				//   THE WRONG NOTE - which is the one outcome worth refusing the whole step for.
+				int32 docNoteCount = 0;
+				for (size_t i = 0; i < attrsN.size(); ++i)
+				{
+					if (attrsN[i].IsFootnote() && attrsN[i].fFootnoteOrdinal + 1 > docNoteCount)
+						docNoteCount = attrsN[i].fFootnoteOrdinal + 1;
+				}
+				const bool16 markersLineUp = (static_cast<size_t>(docNoteCount) == markers.size())
+											 ? kTrue : kFalse;
+				if (!markersLineUp && !merged.fNoteRemoves.empty())
+				{
+					++refusedNotes;
+					PMString why("this story's footnote markers cannot be told apart one by one "
+								 "(a footnote inside another?), so none was deleted");
+					why.SetTranslatable(kFalse);
+					if (firstRefusal.IsEmpty())
+						firstRefusal = why;
+					NoteRefusal(original, "Note", why);
+				}
 				std::vector<TextIndex> going;
-				for (size_t d = 0; d < merged.fNoteRemoves.size(); ++d)
+				for (size_t d = 0; markersLineUp && d < merged.fNoteRemoves.size(); ++d)
 				{
 					const int32 which = merged.fNoteRemoves[d].fNowNote;
 					if (which >= 0 && static_cast<size_t>(which) < markers.size())
@@ -2076,8 +2107,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 							PMString why;
 							TextIndex from = 0;
 							TextIndex to = 0;
-							if (KCMInsertNoteAt(model, at, from, to, why) != kSuccess
-								|| !PourNoteWords(model, from, to, add.fParas, why))
+							if (KCMInsertNoteAt(model, at, from, to, why) != kSuccess)
 							{
 								++refusedNotes;
 								if (firstRefusal.IsEmpty())
@@ -2085,8 +2115,20 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 								NoteRefusal(original, "Note", why);
 								continue;
 							}
+							// ★**THE NOTE IS IN THE DOCUMENT FROM HERE ON, whatever becomes of its
+							//   words**, so it is counted here and a failure to fill it is named on
+							//   its own. Counting the two together made the status line disagree
+							//   with what the document held - an empty footnote the reader can see
+							//   and fill in beats one nothing admits to.
 							++noteEdits;
 							touched = kTrue;
+							if (!PourNoteWords(model, from, to, add.fParas, why))
+							{
+								++refusedNotes;
+								if (firstRefusal.IsEmpty())
+									firstRefusal = why;
+								NoteRefusal(original, "Note", why);
+							}
 						}
 					}
 				}

@@ -889,6 +889,10 @@ bool16 PlanNotesForPlace(const Paras& oParas, const Paras& wParas, const Paras& 
 		const std::string here = where + " paragraph " + Num(static_cast<int32>(p) + 1);
 		if (oAt != nAt)
 		{
+			// ⚠**AND THE NOTES OF THIS PARAGRAPH ARE NOT PAIRED EITHER** - noteMap keeps the -1 it
+			//  started with, so their WORDS are left alone as well, not only their number. That is
+			//  deliberate: a pairing this cannot trust must not be used for the words either. The
+			//  reader is told by the refusal above, which is what keeps it from being silent.
 			Refusal r; r.fWhere = here; r.fWhy = "the document moved a footnote's reference as well";
 			out.fConflicts.push_back(r);
 			continue;
@@ -927,6 +931,8 @@ bool16 PlanNotesForPlace(const Paras& oParas, const Paras& wParas, const Paras& 
 			for (int32 k = 0; k < d[c].bCount; ++k)
 			{
 				const size_t at = static_cast<size_t>(d[c].bStart + k);
+				if (at >= wAt.size())
+					break;			// a change outside its own side's list is not one this can place
 				NoteAdd add;
 				add.fPlace = place;
 				add.fPara = static_cast<int32>(p);
@@ -938,6 +944,8 @@ bool16 PlanNotesForPlace(const Paras& oParas, const Paras& wParas, const Paras& 
 			for (int32 k = 0; k < d[c].aCount; ++k)
 			{
 				const size_t at = static_cast<size_t>(d[c].aStart + k);
+				if (at >= oAt.size())
+					break;
 				// ★origin's notes and the document's are the same notes here: the caller has
 				//   already refused the story when their number differs.
 				NoteRemove rem;

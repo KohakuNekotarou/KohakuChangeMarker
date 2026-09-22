@@ -68,16 +68,29 @@ ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outWordsFr
 	}
 
 	// ---- 2. the note, built around it ----------------------------------------------------------
+	//
+	// ⚠★★★**FROM HERE ON, EVERY WAY OUT TAKES THE MARKER BACK WITH IT.** The marker is already in
+	//   the text, and a marker with no note behind it is not something a document should be left
+	//   holding - the import goes straight on to the next note, so nothing else would ever clear
+	//   it up. Deleting that one character is also what removes a note that WAS made (the same move
+	//   KCMDeleteNoteAt makes), so one undo serves every failure below.
+	bool16 made = kFalse;
 	InterfacePtr<ICommand> create(CmdUtils::CreateCommand(kCreateFootnoteCmdBoss));
-	if (create == nil)
-		return kFailure;
-	create->SetItemList(UIDList(model));
-	InterfacePtr<IRangeData> range(create, UseDefaultIID());
-	if (range == nil)
-		return kFailure;
-	range->Set(at, at);
-	if (CmdUtils::ProcessCommand(create) != kSuccess)
+	if (create != nil)
 	{
+		create->SetItemList(UIDList(model));
+		InterfacePtr<IRangeData> range(create, UseDefaultIID());
+		if (range != nil)
+		{
+			range->Set(at, at);
+			made = (CmdUtils::ProcessCommand(create) == kSuccess) ? kTrue : kFalse;
+		}
+	}
+	if (!made)
+	{
+		InterfacePtr<ICommand> back(cmds->DeleteCmd(at, 1));
+		if (back != nil)
+			CmdUtils::ProcessCommand(back);
 		whyNot = "the footnote could not be created";
 		whyNot.SetTranslatable(kFalse);
 		return kFailure;
@@ -87,25 +100,27 @@ ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outWordsFr
 	// ★THE COMMAND HANDS BACK THE NOTE through its IUIDData, and the note's own thread says how far
 	//   its text runs. The thread begins with the note's NUMBER (one character, which is the note
 	//   itself and must not be touched) and ends with its closing return.
+	TextIndex threadStart = kInvalidTextIndex;
+	TextIndex threadEnd = kInvalidTextIndex;
 	InterfacePtr<IUIDData> noteData(create, UseDefaultIID());
-	if (noteData == nil)
+	if (noteData != nil)
 	{
-		whyNot = "the new footnote could not be found again";
-		whyNot.SetTranslatable(kFalse);
-		return kFailure;
+		InterfacePtr<ITextStoryThread> noteThread(noteData->GetRef(), UseDefaultIID());
+		if (noteThread != nil)
+		{
+			threadStart = noteThread->GetTextStart();
+			threadEnd = noteThread->GetTextEnd();
+		}
 	}
-	InterfacePtr<ITextStoryThread> noteThread(noteData->GetRef(), UseDefaultIID());
-	if (noteThread == nil)
+	if (threadStart == kInvalidTextIndex || threadEnd <= threadStart + 1)
 	{
-		whyNot = "the new footnote has no text of its own";
-		whyNot.SetTranslatable(kFalse);
-		return kFailure;
-	}
-	const TextIndex threadStart = noteThread->GetTextStart();
-	const TextIndex threadEnd = noteThread->GetTextEnd();
-	if (threadEnd <= threadStart + 1)
-	{
-		whyNot = "the new footnote is shorter than a footnote can be";
+		// ⚠**THE NOTE GOES BACK TOO.** It was made, but nothing here can say where its words are,
+		//   so leaving it would put an empty footnote in the document that nobody asked for and the
+		//   caller has already been told could not be made.
+		InterfacePtr<ICommand> back(cmds->DeleteCmd(at, 1));
+		if (back != nil)
+			CmdUtils::ProcessCommand(back);
+		whyNot = "the new footnote's own text could not be found";
 		whyNot.SetTranslatable(kFalse);
 		return kFailure;
 	}
