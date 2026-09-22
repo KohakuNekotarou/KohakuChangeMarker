@@ -1434,7 +1434,15 @@ bool16 LookOf(Reader& rd, int32 rPr, RLook& out)
 	if (out.fKenten.empty())
 	{
 		// Word's own emphasis mark, put on from its UI: the nearest of InDesign's kinds (the design,
-		// section 4-1; the three lines are still to be confirmed by the user).
+		// section 4-1).
+		// ★★**THE THREE LINES ARE THE USER'S, AS OF 2026-09-22** - they were written "still to be
+		//   confirmed" and now are: 、 is InDesign's default (the sesame mark), ・ is the black
+		//   circle, ○ the white one. ⚠**THIS TABLE ONLY DECIDES WHAT THE BUTTON MEANS.** A person
+		//   who picks a style from Word's gallery instead - which is how all eleven kinds, and a
+		//   custom mark, are applied there - never comes through here: the style's NAME says which
+		//   kind it is and nothing is guessed. ⚠underDot is InDesign's black circle too: the
+		//   position it asks for is a LOOK, and only the kind travels (the user's call the same
+		//   day - "種類だけで良いです").
 		const int32 em = t.Child(use, kW, "em");
 		const std::string* v = (em >= 0) ? t.Attr(em, "val") : nil;
 		if (v != nil)
