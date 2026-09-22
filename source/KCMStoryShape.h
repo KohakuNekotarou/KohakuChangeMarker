@@ -69,8 +69,8 @@ struct Para
 	std::vector<NoteRef>	fNoteRefs;	// in order of fAt - see NoteRef
 	/** Where this paragraph's ENDNOTE markers stand, counted the same way NoteRef::fAt is.
 
-		★★★**ONLY THE PLACE, NEVER THE WORDS** (2026-09-23, the user's call: "文末脚注がそこにある
-		  というのがワードでの編集でも分かるようにしたい"). An endnote's text is not this story's at
+		★★★**ONLY THE PLACE, NEVER THE WORDS** (2026-09-23, the user's call: the reader editing in
+		  Word has to see that a note hangs here). An endnote's text is not this story's at
 		  all - it lives in a story of its own (see Story's warning) and is written out as its own
 		  file, which the reader can already edit. What was missing is any sign IN THE BODY of where
 		  the note hangs, so the writer puts a locked placeholder at each of these offsets.

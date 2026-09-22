@@ -543,22 +543,27 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 
 			// ---- which note ---------------------------------------------------------------------
 			// ⚠**ONLY A FOOTNOTE HAS ONE TO FIND.** An endnote's text is a story of its own and
-			//  arrives as its own file, so there is nothing in THIS story to pair it with.
+			//  arrives as its own file, so there is nothing in THIS story to pair it with - and the
+			//  thread is not even ASKED FOR in that case. ★An InterfacePtr built on kInvalidUID
+			//  would answer nil, but asking the database about a UID that is not one is not a thing
+			//  this code should do to find that out.
 			int32 note = -1;
-			InterfacePtr<ITextStoryThread> noteThread(db, isEndnote ? kInvalidUID : owned[k].fUID,
-													  UseDefaultIID());
-			if (noteThread != nil)
+			if (isFootnote)
 			{
-				int32 span = 0;
-				const TextIndex noteStart = noteThread->GetTextStart(&span);
-				for (size_t j = 0; j < paras.size() && note < 0; ++j)
+				InterfacePtr<ITextStoryThread> noteThread(db, owned[k].fUID, UseDefaultIID());
+				if (noteThread != nil)
 				{
-					if (!attrs[j].IsFootnote())
-						continue;
-					const TextIndex lineStart = static_cast<TextIndex>(starts[j])
-												- static_cast<TextIndex>(attrs[j].fLeadingUncounted);
-					if (lineStart >= noteStart && lineStart < noteStart + span)
-						note = attrs[j].fFootnoteOrdinal;
+					int32 span = 0;
+					const TextIndex noteStart = noteThread->GetTextStart(&span);
+					for (size_t j = 0; j < paras.size() && note < 0; ++j)
+					{
+						if (!attrs[j].IsFootnote())
+							continue;
+						const TextIndex lineStart = static_cast<TextIndex>(starts[j])
+													- static_cast<TextIndex>(attrs[j].fLeadingUncounted);
+						if (lineStart >= noteStart && lineStart < noteStart + span)
+							note = attrs[j].fFootnoteOrdinal;
+					}
 				}
 			}
 
@@ -576,6 +581,12 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 			//  be placed would be LOST by Word, so the story is turned away; an endnote's words are
 			//  safe in their own file either way, and all that is missing is the mark in the body -
 			//  which is exactly what this story was in before the mark existed at all.
+			// ⚠★★**AN ENDNOTE INSIDE A FOOTNOTE LOSES ITS MARK, AND SAYS SO NOWHERE.** The test
+			//  `IsFootnote()` above turns away any anchor standing in a note's own words, which is
+			//  right for a footnote reference (Word cannot hold one there) but for an endnote it
+			//  means the mark is simply not written. **That is the state this road was in for every
+			//  endnote until today**, so it is no worse than before - written down because the next
+			//  person to read this will wonder, and because "no worse than before" is not "right".
 			if (host < 0 || attrs[static_cast<size_t>(host)].IsFootnote()
 				|| placeIndex[static_cast<size_t>(host)] < 0 || (isFootnote && note < 0))
 			{

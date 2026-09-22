@@ -146,8 +146,8 @@ void AppendPlaceholder(int32 cp, const Look& look, std::string& out)
 	AppendPlaceholderShown(cp, look, nil, out);
 }
 
-/** The mark that says an ENDNOTE hangs here (2026-09-23, the user's call: "文末脚注がそこにある
-	というのが、ワードでの編集でも分かるようにしたい").
+/** The mark that says an ENDNOTE hangs here (2026-09-23, the user's call: the reader editing in
+	Word has to be able to see that a note is attached at this point).
 
 	★**IT IS A PLACEHOLDER LIKE ANY OTHER** - same tag, same lock - so the reader takes it back by
 	  the route every placeholder takes, and nobody editing in Word can delete or move it.
