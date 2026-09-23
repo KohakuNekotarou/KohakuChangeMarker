@@ -26,6 +26,11 @@
 #include "ICommand.h"
 #include "ITableCommands.h"			// rows, columns, merges - a table made Word's shape (S1/S2)
 #include "ITableModel.h"
+#include "ITableModelList.h"		// how many tables a story holds - whether InsertTable made one
+#include "ITableUtils.h"			// InsertTable - a table Word added (S3a)
+#include "ITextParcelList.h"		// GetParcelContaining - how wide the frame is where a table goes
+#include "IParcelList.h"			// GetParcelBounds
+#include "PMRect.h"
 #include "ITextModel.h"
 #include "ITextModelCmds.h"
 #include "ITextStoryThread.h"		// the thread a paragraph stands in - a write may not leave it
@@ -956,8 +961,99 @@ void KCMApplySyncPlan(const UIDRef& storyRef, const KCMStoryShape::Story& now,
 	}
 }
 
+namespace
+{
+
+/** How wide each column of a table put in at `pos` should be: the frame's width there, shared evenly
+	(design section 10-1). ★THROUGH THE PARCEL, NOT IFrameList::QueryFrameContaining: that one composes up
+	to the position and crashed once inside a table (KCMID.h, the fix of 2026-09-12). A place not yet
+	composed into a frame (overset) gets a plain default. */
+PMReal ColumnWidthAt(ITextModel* model, TextIndex pos, int32 cols)
+{
+	PMReal total(360.0);
+	InterfacePtr<ITextParcelList> tpl(model != nil ? model->QueryTextParcelList(pos) : nil);
+	if (tpl != nil)
+	{
+		const ParcelKey key = tpl->GetParcelContaining(pos);
+		InterfacePtr<IParcelList> pl(static_cast<IParcelList*>(tpl->QueryInterface(IParcelList::kDefaultIID)));
+		if (key.IsValid() && pl != nil)
+		{
+			const PMRect bounds = pl->GetParcelBounds(key);
+			if (bounds.Width() > 0.0)
+				total = bounds.Width();
+		}
+	}
+	return total / static_cast<PMReal>(cols > 0 ? cols : 1);
+}
+
+/** Stage 0's tables put in (S3a, design section 10-2): every position read before the first goes in, then
+	written from the back of the story - two at one place in Word's order. */
+void InsertTables(const UIDRef& storyRef, const KCMStorySync::Plan& plan, KCMSyncResult& out)
+{
+	std::vector<const KCMStorySync::Step*> wanted;
+	for (size_t i = 0; i < plan.fSteps.size(); ++i)
+		if (plan.fSteps[i].fKind == KCMStorySync::Step::kInsertTable)
+			wanted.push_back(&plan.fSteps[i]);
+	if (wanted.empty())
+		return;
+
+	InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
+	std::vector<std::string> paras;
+	std::vector<KCMParaAttrs> attrs;
+	std::vector<int32> starts;
+	Utils<ITableUtils> tableUtils;
+	if (model == nil || !tableUtils || !KCMTextRead::ReadStory(storyRef, paras, attrs, starts))
+	{
+		out.fRefused += static_cast<int32>(wanted.size());
+		Say(out, "Table", std::string("the story could not be read, so no table Word added was put in"));
+		return;
+	}
+	const std::vector<size_t> body = DocParasOf(attrs, KCMStorySync::Where::Body());
+	std::vector< std::pair< std::pair<TextIndex, int32>, const KCMStorySync::Step*> > at;
+	for (size_t i = 0; i < wanted.size(); ++i)
+	{
+		const KCMStorySync::Step& s = *wanted[i];
+		TextIndex pos = 0;
+		if (s.fPara >= 0 && static_cast<size_t>(s.fPara) < body.size())
+		{
+			const size_t k = body[static_cast<size_t>(s.fPara)];
+			pos = ReturnOfParagraph(starts[k], attrs[k], paras[k]);		// before its return (spike M6)
+		}
+		else if (!body.empty())
+			pos = static_cast<TextIndex>(starts[body[0]] - attrs[body[0]].fLeadingUncounted);
+		at.push_back(std::make_pair(std::make_pair(pos, s.fNote), &s));
+	}
+	std::sort(at.begin(), at.end(), [](const std::pair< std::pair<TextIndex, int32>, const KCMStorySync::Step*>& a,
+										const std::pair< std::pair<TextIndex, int32>, const KCMStorySync::Step*>& b)
+									 { return a.first > b.first; });
+	for (size_t i = 0; i < at.size(); ++i)
+	{
+		const KCMStorySync::Step& s = *at[i].second;
+		InterfacePtr<ITableModelList> list(model, UseDefaultIID());
+		const int32 before = (list != nil) ? list->GetModelCount() : -1;
+		// ★THE WAY KCMReportTable PUTS ITS TABLE IN (codesnippets/SnpCreateTable.cpp): no header or footer
+		//   rows, row height 0 = grows with its content, no selection left behind
+		tableUtils->InsertTable(model, at[i].first.first, 0, s.fCount, s.fAt, 0, 0, PMReal(0.0),
+								ColumnWidthAt(model, at[i].first.first, s.fAt), kTextContentType, ITableUtils::eNoSelection);
+		const int32 after = (list != nil) ? list->GetModelCount() : -1;
+		if (before < 0 || after != before + 1)
+		{
+			++out.fRefused;
+			Say(out, "Table", std::string("a table Word added could not be put in"));
+			continue;
+		}
+		++out.fTableEdits;
+	}
+}
+
+}	// anonymous namespace
+
 void KCMApplyTableShape(const UIDRef& storyRef, const KCMStorySync::Plan& plan, KCMSyncResult& out)
 {
+	// ★TABLES PUT IN FIRST, by the text positions of the reading from before: every other step names its
+	//  table by UIDRef, which a table put in does not move
+	InsertTables(storyRef, plan, out);
+
 	// ★EVERY TABLE HELD BY ITS UIDRef FIRST: the ordinals are the reading's from before any shape moved
 	std::vector<UIDRef> tables;
 	if (!KCMTableRefsOfStory(storyRef, tables))
@@ -969,7 +1065,7 @@ void KCMApplyTableShape(const UIDRef& storyRef, const KCMStorySync::Plan& plan, 
 	for (size_t i = 0; i < plan.fSteps.size(); ++i)
 	{
 		const KCMStorySync::Step& s = plan.fSteps[i];
-		if (!s.IsShape())
+		if (!s.IsShape() || s.fKind == KCMStorySync::Step::kInsertTable)
 			continue;
 		const int32 t = s.fWhere.fTable;
 		if (t < 0 || static_cast<size_t>(t) >= tables.size())
@@ -1021,6 +1117,14 @@ void KCMApplyTableShape(const UIDRef& storyRef, const KCMStorySync::Plan& plan, 
 		{
 			what = "a merged cell could not be taken apart";
 			err = cmds->UnmergeCell(GridAddress(s.fGridRow, s.fGridCol));
+		}
+		else if (s.fKind == KCMStorySync::Step::kDeleteTable)
+		{
+			// ★THE TABLE AND ALL IT HOLDS - its footnotes and anchored objects too (the user's rule, design
+			//   section 10-1). ITableCommands' own command for it.
+			what = "a table Word took away could not be taken away";
+			InterfacePtr<ICommand> del(cmds->QueryDeleteTableCmd(tables[static_cast<size_t>(t)]));
+			err = (del != nil) ? CmdUtils::ProcessCommand(del) : kFailure;
 		}
 		else if (s.fKind == KCMStorySync::Step::kMerge)
 		{
