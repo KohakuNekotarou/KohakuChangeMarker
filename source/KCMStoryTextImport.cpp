@@ -45,7 +45,9 @@
 #include "KCMTextRead.h"			// ReadStory - the document, read the way the export read it
 #include "KCMProgressBar.h"			// the import's one bar, and the slot its inner loops step (2026-09-17)
 #include "KCMDocxPackage.h"			// KCMReadDocxParts - a .docx on disk as its parts (2026-09-19)
-#include "KCMStoryMerge.h"			// Merge - Word's changes onto the copy as it stands (stage 3, 2026-09-19)
+#include "KCMStoryMerge.h"
+#include "KCMStorySync.h"			// Compare - what makes the document's story Word's (2026-09-23)
+#include "KCMStorySyncApply.h"		// KCMApplySyncPlan - and that, carried out			// Merge - Word's changes onto the copy as it stands (stage 3, 2026-09-19)
 #include "KCMStoryTextExport.h"		// KCMStoryFromDocument - the copy's story in the shape the merge takes
 #include "KCMStoryDocx.h"			// Read / OriginMatchesTag - the parts as two stories, and whether the marks are whole
 #include "KCMZipStore.h"			// Entry - a part, named
@@ -56,47 +58,6 @@ namespace
 
 // (A per-write trace to %TEMP% stood here while the 2026-09-17 crash was run down. It is out of the
 //  product - the user's rule - and kept, working, as work/kcm-import-matrix/KCMStoryTextImport-with-trace.cpp.txt.)
-
-/** The one character at `at`, or -1 outside the story. */
-int32 CharAt(ITextModel* model, TextIndex at)
-{
-	if (model == nil || at < 0 || at >= model->TotalLength())
-		return -1;
-	TextIterator iter(model, at);
-	return static_cast<int32>((*iter).GetValue());
-}
-
-/** For every paragraph of the file that has tables standing in it, those tables' text offsets,
-	ascending (2026-09-17, G1). A table stands in the body (fInTable -1) or in one cell of another
-	table, and fParaIndex counts inside whichever holds it - so the paragraph is found the same way. */
-void FileTablesByParagraph(const KCMStoryShape::Story& story,
-						   std::map<const KCMStoryShape::Para*, std::vector<int32> >& out)
-{
-	out.clear();
-	for (size_t t = 0; t < story.fTables.size(); ++t)
-	{
-		const KCMStoryShape::Table& table = story.fTables[t];
-		const std::vector<KCMStoryShape::Para>* holder = nil;
-		if (table.fInTable < 0)
-		{
-			holder = &story.fBody;
-		}
-		else if (static_cast<size_t>(table.fInTable) < story.fTables.size())
-		{
-			const KCMStoryShape::Table& parent = story.fTables[static_cast<size_t>(table.fInTable)];
-			if (table.fInRow >= 0 && static_cast<size_t>(table.fInRow) < parent.fRows.size()
-				&& table.fInCell >= 0
-				&& static_cast<size_t>(table.fInCell) < parent.fRows[static_cast<size_t>(table.fInRow)].fCells.size())
-			{
-				holder = &parent.fRows[static_cast<size_t>(table.fInRow)].fCells[static_cast<size_t>(table.fInCell)].fParas;
-			}
-		}
-		if (holder != nil && table.fParaIndex >= 0 && static_cast<size_t>(table.fParaIndex) < holder->size())
-			out[&(*holder)[static_cast<size_t>(table.fParaIndex)]].push_back(table.fOffset);
-	}
-	for (std::map<const KCMStoryShape::Para*, std::vector<int32> >::iterator it = out.begin(); it != out.end(); ++it)
-		std::sort(it->second.begin(), it->second.end());
-}
 
 /** The import's one progress bar, in thousandths of the whole job (2026-09-17). Each constant is where
 	a stage STARTS: reading the files runs up to the state, taking the state up to the pour, the pour
@@ -267,1002 +228,6 @@ void AppendCount(PMString& out, const char* before, int32 n, const char* after)
 	out.Append(after);
 }
 
-//========================================================================================
-//  Writing the edited text into the document
-//========================================================================================
-
-/** One place in a story - the body, one cell, or one footnote - as the two sides see it.
-
-	★**THE PLACES ARE BUILT THE SAME WAY ON BOTH SIDES**, from KCMParaAttrs on the document and
-	from the Story's own shape in the file, which is how a cell's paragraphs find their cell
-	without anything having to be written down in the file about where they came from. */
-struct Place
-{
-	std::vector<size_t>						fDoc;		// indices into the document's flat arrays
-	const std::vector<KCMStoryShape::Para>*	fFile;		// what the reader edited, or nil
-
-	Place() : fFile(nil) {}
-};
-
-/** kTrue when any code point of the text in [from, to) is one the reader may not move or delete.
-
-	★**AN OBJECT'S CHARACTER, NOT EVERY INVISIBLE ONE** (2026-09-17 afternoon, the user's request: a forced
-	  line break added or removed is taken in). This asked KCMStoryShape::IsInvisible until then, which
-	  turned away a forced line break, a zero width space and an indent-to-here as if they were tables -
-	  while writing the document back asks KCMParaText::IsObjectCharacter. Now the pour asks the same
-	  question: those characters carry nothing, and text commands write them whole. */
-bool16 RangeTouchesObject(const std::vector<int32>& cps, int32 from, int32 to)
-{
-	for (int32 k = from; k < to && k < static_cast<int32>(cps.size()); ++k)
-	{
-		if (k >= 0 && KCMParaText::IsObjectCharacter(cps[k]))
-			return kTrue;
-	}
-	return kFalse;
-}
-
-/** The cells of one row, in the order the exporter wrote them: by column, anchors only.
-
-	The document's paragraphs name their (row, column); the file's cells are a plain list. Sorting
-	the columns that actually occur is what turns one into the other - and it agrees with the
-	exporter by construction, because that walked the anchors in column order too. */
-void ColumnsOfRow(const std::vector<KCMParaAttrs>& attrs, int32 table, int32 row,
-				  std::vector<int32>& outCols)
-{
-	outCols.clear();
-	for (size_t i = 0; i < attrs.size(); ++i)
-	{
-		if (!attrs[i].IsCell() || attrs[i].fTableOrdinal != table || attrs[i].fCellRow != row)
-			continue;
-		bool16 seen = kFalse;
-		for (size_t k = 0; k < outCols.size() && !seen; ++k)
-			seen = (outCols[k] == attrs[i].fCellCol) ? kTrue : kFalse;
-		if (!seen)
-			outCols.push_back(attrs[i].fCellCol);
-	}
-	std::sort(outCols.begin(), outCols.end());
-}
-
-/** kTrue when the document's tables and the file's are the SAME SHAPE.
-
-	★★★**THE USER'S RULE (2026-09-16): A TABLE IS A LANDMARK, NOT SOMETHING THIS EDITS.** The table
-	  tags in the file say WHERE the words sit; they are not an instruction to build a table. So a
-	  table whose shape the file does not agree with is left alone - a row or a column added, cells
-	  merged or split - and none of its cells is written.
-	★★**WHAT THAT COSTS WAS MADE SMALLER ON 2026-09-22** (the user's call: "or refusing is fine
-	  too"). It used to be the WHOLE STORY - not the body, not the notes, not the other tables. Now
-	  only the table itself is left alone, and it is named in a "!" row; the reader's edits to the
-	  body were never in question, and losing them for a table's sake was the expensive half of this
-	  rule. ⚠**The whole story is still refused when the NUMBER of tables differs**: a table added or
-	  taken away moves the paragraphs around it, so nothing can be lined up at all.
-	⚠**WHY THE TABLE AND NOT THE CELL.** The cells are paired BY POSITION (ColumnsOfRow's
-	  order against the row's <td> order), so a merge does not read as a miss - it reads as a
-	  DIFFERENT CELL. Merging B and C of [A][B][C] leaves the document with two cells, and the
-	  file's B would be poured into the merged BC without anything looking wrong. Refusing per cell
-	  cannot catch that; only comparing the shapes first can.
-	@param whyNot filled with the first disagreement found, for the panel's status line.
-	@param now the document's story read by the export's own reader (KCMStoryFromDocument), or nil.
-	  ★**WHEN THE FILE CARRIES NAMES (2026-09-23) each table is checked by name too** - its tables are
-	  in the same order as the ordinals here (both are ReadTableShapes') - so a table replaced in Word,
-	  or a column taken away and another added, is refused although every count agrees. */
-bool16 TablesAgree(const std::vector<KCMParaAttrs>& attrs, const KCMStoryShape::Story& file,
-				   PMString& whyNot, std::vector<int32>& outRefusedTables,
-				   std::vector<PMString>& outRefusedWhy, const KCMStoryShape::Story* now)
-{
-	outRefusedTables.clear();
-	outRefusedWhy.clear();
-	// The document's shape is read off the paragraph attributes: the ordinals are assigned in
-	// document order, depth first, which is the order the file writes its <table>s in - so a
-	// nested table is just another ordinal and needs no special case here.
-	int32 docTables = 0;
-	for (size_t i = 0; i < attrs.size(); ++i)
-	{
-		if (attrs[i].IsCell() && attrs[i].fTableOrdinal + 1 > docTables)
-			docTables = attrs[i].fTableOrdinal + 1;
-	}
-
-	const int32 fileTables = static_cast<int32>(file.fTables.size());
-	if (docTables != fileTables)
-	{
-		whyNot = "the number of tables changed";
-		whyNot.SetTranslatable(kFalse);
-		return kFalse;
-	}
-
-	for (int32 tbl = 0; tbl < docTables; ++tbl)
-	{
-		const KCMStoryShape::Table& fileTable = file.fTables[static_cast<size_t>(tbl)];
-		const int32 fileRows = static_cast<int32>(fileTable.fRows.size());
-
-		// ★★**THE TWO SIDES COUNT ROWS DIFFERENTLY, SO NEITHER COUNT IS COMPARED.** The writer walks
-		//   the MODEL's row count (KCMStoryTextExport's ReadTableShapes -> fRowCount) and emits a
-		//   <tr> for every row, empty or not. Here there are only paragraph attributes, where a row
-		//   with no cell of its own leaves no trace - so "highest fCellRow + 1" and fRows.size()
-		//   are not the same quantity, and comparing them would be comparing two different things.
-		// ★**WHAT IS COMPARED INSTEAD: the cells of each row, over the union of both row ranges.**
-		//   An empty row reads as 0 cells on both sides, so it agrees; a row added or removed shows
-		//   up as a row with cells on one side and none on the other. Nothing is lost.
-		// ⚠**THIS IS A GUARD, NOT A FIX FOR SOMETHING SEEN.** The obvious way to produce an empty
-		//   row - merging every column of a row into the one above - does NOT produce one: InDesign
-		//   REMOVES THE ROW instead (measured 2026-09-16: BodyRowCount 2 -> 1, the row and its last
-		//   cell deleted, RowSpan back to 1). So no such table has been observed, and the earlier
-		//   reading of this code that said every table with one would be refused for ever was WRONG
-		//   - it was read, not measured. The union form costs nothing and is kept because the two
-		//   counts genuinely mean different things; if a row with no cells ever does arrive, by
-		//   some route not tried here, it will agree rather than refuse the story.
-		int32 docRows = 0;
-		for (size_t i = 0; i < attrs.size(); ++i)
-		{
-			if (attrs[i].IsCell() && attrs[i].fTableOrdinal == tbl && attrs[i].fCellRow + 1 > docRows)
-				docRows = attrs[i].fCellRow + 1;
-		}
-
-		const int32 rowsToCheck = (docRows > fileRows) ? docRows : fileRows;
-		for (int32 r = 0; r < rowsToCheck; ++r)
-		{
-			std::vector<int32> cols;
-			ColumnsOfRow(attrs, tbl, r, cols);		// no such row in the document -> empty
-
-			// ⚠**A MERGED CELL IS ONE CELL ON BOTH SIDES.** The document gives it the column it
-			//   starts in and no other; the file writes one <td> with colspan. That is why the
-			//   counts can be compared directly rather than having to add the spans up.
-			const size_t fileCells = (r < fileRows)
-				? fileTable.fRows[static_cast<size_t>(r)].fCells.size()
-				: 0;
-			if (cols.size() != fileCells)
-			{
-				// ★**ONE TABLE, NOT THE WHOLE STORY** (2026-09-22, the user's call). This table is
-				//   left exactly as the document has it - none of its cells is written - and the
-				//   body, the notes and the other tables go in as usual.
-				PMString why("table ");
-				why.AppendNumber(tbl);
-				why.Append(": a row's number of cells changed (a merge, a split, a row or a column)"
-						   " - that table was left as it is");
-				why.SetTranslatable(kFalse);
-				outRefusedTables.push_back(tbl);
-				outRefusedWhy.push_back(why);
-				break;			// one reason per table is enough; on to the next table
-			}
-		}
-
-		// ★★**AND BY NAME** (2026-09-23): the counts above agree for a table replaced in Word and for a
-		//   column taken away and another added; the names do not (KCMStoryMerge::NamesAgree).
-		if (now == nil || !KCMStoryMerge::CarriesNames(file) || static_cast<size_t>(tbl) >= now->fTables.size())
-			continue;
-		if (!outRefusedTables.empty() && outRefusedTables.back() == tbl)
-			continue;						// already left alone for its shape
-		std::string nameWhy;
-		const bool16 shared = KCMStoryMerge::NameIsShared(file, static_cast<size_t>(tbl));
-		if (shared)
-			nameWhy = "its name stands on another table too";
-		if (shared || !KCMStoryMerge::NamesAgree(now->fTables[static_cast<size_t>(tbl)], fileTable, nameWhy))
-		{
-			PMString why("table ");
-			why.AppendNumber(tbl);
-			why.Append(": ");
-			why.Append(nameWhy.c_str());
-			why.Append(" - that table was left as it is");
-			why.SetTranslatable(kFalse);
-			outRefusedTables.push_back(tbl);
-			outRefusedWhy.push_back(why);
-		}
-	}
-
-	return kTrue;
-}
-
-/** Every place of one story, with the file's paragraphs for each.
-
-	@param refusedTables the ordinals of tables the shapes disagree about (TablesAgree). ★**Their
-		   cells are not places at all**: no place, no job, nothing written, and no refusal of their
-		   own either - the table itself has already been named once, and one reason per table reads
-		   better than one per cell (2026-09-22). */
-void BuildPlaces(const std::vector<KCMParaAttrs>& attrs, const KCMStoryShape::Story& file,
-				 const std::vector<int32>& refusedTables, std::vector<Place>& out)
-{
-	out.clear();
-
-	Place body;
-	body.fFile = &file.fBody;
-	for (size_t i = 0; i < attrs.size(); ++i)
-	{
-		if (!attrs[i].IsCell() && !attrs[i].IsFootnote())
-			body.fDoc.push_back(i);
-	}
-	out.push_back(body);
-
-	// ---- the cells ----------------------------------------------------------------------------
-	for (size_t i = 0; i < attrs.size(); ++i)
-	{
-		if (!attrs[i].IsCell())
-			continue;
-
-		bool16 refused = kFalse;
-		for (size_t k = 0; k < refusedTables.size() && !refused; ++k)
-			refused = (refusedTables[k] == attrs[i].fTableOrdinal) ? kTrue : kFalse;
-		if (refused)
-			continue;			// this table is left as the document has it - see the header
-
-		bool16 already = kFalse;
-		for (size_t k = 0; k < out.size() && !already; ++k)
-		{
-			if (out[k].fDoc.empty())
-				continue;
-			const KCMParaAttrs& first = attrs[out[k].fDoc[0]];
-			already = (first.IsCell()
-					   && first.fTableOrdinal == attrs[i].fTableOrdinal
-					   && first.fCellRow == attrs[i].fCellRow
-					   && first.fCellCol == attrs[i].fCellCol) ? kTrue : kFalse;
-			if (already)
-				out[k].fDoc.push_back(i);
-		}
-		if (already)
-			continue;
-
-		Place cell;
-		cell.fDoc.push_back(i);
-
-		const size_t t = static_cast<size_t>(attrs[i].fTableOrdinal);
-		if (t < file.fTables.size() && attrs[i].fCellRow >= 0
-			&& static_cast<size_t>(attrs[i].fCellRow) < file.fTables[t].fRows.size())
-		{
-			std::vector<int32> cols;
-			ColumnsOfRow(attrs, attrs[i].fTableOrdinal, attrs[i].fCellRow, cols);
-
-			size_t which = 0;
-			bool16 found = kFalse;
-			for (size_t k = 0; k < cols.size(); ++k)
-			{
-				if (cols[k] == attrs[i].fCellCol)
-				{
-					which = k;
-					found = kTrue;
-					break;
-				}
-			}
-			const KCMStoryShape::Row& row =
-				file.fTables[t].fRows[static_cast<size_t>(attrs[i].fCellRow)];
-			if (found && which < row.fCells.size())
-				cell.fFile = &row.fCells[which].fParas;
-		}
-		out.push_back(cell);
-	}
-
-	// ---- the footnotes ------------------------------------------------------------------------
-	for (size_t i = 0; i < attrs.size(); ++i)
-	{
-		if (!attrs[i].IsFootnote())
-			continue;
-
-		bool16 already = kFalse;
-		for (size_t k = 0; k < out.size() && !already; ++k)
-		{
-			if (out[k].fDoc.empty())
-				continue;
-			const KCMParaAttrs& first = attrs[out[k].fDoc[0]];
-			already = (first.IsFootnote()
-					   && first.fFootnoteOrdinal == attrs[i].fFootnoteOrdinal) ? kTrue : kFalse;
-			if (already)
-				out[k].fDoc.push_back(i);
-		}
-		if (already)
-			continue;
-
-		Place note;
-		note.fDoc.push_back(i);
-		const size_t n = static_cast<size_t>(attrs[i].fFootnoteOrdinal);
-		if (n < file.fNotes.size())
-			note.fFile = &file.fNotes[n];
-		out.push_back(note);
-	}
-}
-
-/*	ApplyParagraph
-	The edits between one paragraph of the document and the same paragraph of the file.
-
-	★★**MINIMAL EDITS, BACK TO FRONT.** Replacing the whole paragraph would be simpler and would
-	throw away every attribute on the parts nobody touched - the ruby and the kenten this format
-	works so hard to carry. So the two are diffed by code point and only the runs that differ are
-	written, starting from the end so that the earlier positions are still true when they are used.
-
-	@param outRefused kTrue when the paragraph was turned away, or when a write failed part way
-	       through it. ⚠**REFUSED AND WRITTEN ARE NOT EXCLUSIVE, WHICH IS WHY THIS IS NOT THE
-	       RETURN VALUE.** The judging happens before anything is written, so a refusal there
-	       costs nothing - but a command that fails in the MIDDLE of the loop leaves the writes
-	       that went in ahead of it, and the paragraph then holds neither the document's words
-	       nor the file's. Answering with a count alone hid the failure (the old -1 turned into a
-	       success as soon as one write had gone in); answering with -1 alone hid the change.
-	@param fileTableOffsets the text offsets of the tables standing in the FILE's version of this
-	       paragraph, ascending - what decides which side of a table an insertion goes (2026-09-17).
-	@return how many writes went in - 0 when none did, refused or not.
-*/
-int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs& attrs,
-					 const std::string& docText, const std::string& fileText,
-					 const std::vector<int32>& fileTableOffsets,
-					 PMString& whyNot, bool16& outRefused)
-{
-	outRefused = kFalse;
-
-	if (docText == fileText)
-		return 0;
-
-	std::vector<int32> a;
-	std::vector<int32> b;
-	KCMTextDiff::ToCodePoints(docText, &a, nil);
-	KCMTextDiff::ToCodePoints(fileText, &b, nil);
-
-	std::vector<KCMTextDiff::Change> changes;
-	if (!KCMTextDiff::Diff(a, b, changes))
-	{
-		whyNot = "the paragraph differs too much to place the changes";
-		whyNot.SetTranslatable(kFalse);
-		outRefused = kTrue;
-		return 0;
-	}
-
-	// ⚠**NOTHING IS WRITTEN UNTIL EVERY CHANGE HAS BEEN JUDGED**, so a paragraph turned away
-	//   here is turned away whole. ★What that cannot rule out is a write that FAILS half way
-	//   through the loop below; the reader is TOLD about that one (outRefused) rather than it
-	//   being counted as a success, which is what used to happen.
-	for (size_t c = 0; c < changes.size(); ++c)
-	{
-		const KCMTextDiff::Change& ch = changes[c];
-		if (RangeTouchesObject(a, ch.aStart, ch.aStart + ch.aCount)
-			|| RangeTouchesObject(b, ch.bStart, ch.bStart + ch.bCount))
-		{
-			whyNot = "a change would add, move or delete a character InDesign hangs an object on "
-					 "(an anchored object, a note reference, a page number, an index marker)";
-			whyNot.SetTranslatable(kFalse);
-			outRefused = kTrue;
-			return 0;
-		}
-	}
-
-	InterfacePtr<ITextModelCmds> cmds(model, UseDefaultIID());
-	if (cmds == nil)
-	{
-		whyNot = "the story cannot be edited";
-		whyNot.SetTranslatable(kFalse);
-		outRefused = kTrue;
-		return 0;
-	}
-
-	// ---- where each change lands in the MODEL, judged before anything is written ------------------
-	//
-	// ★★★**A RANGE HAS A START AND AN END, AND THEY ARE COUNTED DIFFERENTLY** (2026-09-17). A table
-	//   standing inside the paragraph puts characters in the model that the text does not have, and
-	//   ModelOffsetInParagraph answers for a START - "the character at text offset t" stands AFTER a
-	//   table standing at t (KCMParaText.h says so, and that a range ENDING there comes back one wide).
-	//   This used to take the END from the same function, so changing the last characters before a
-	//   table took the table's own anchor out with them - in the copy, silently. The end is now "just
-	//   past the last character": ModelOffsetInParagraph(last) + 1.
-	// ★★**A CHANGE ACROSS A TABLE IS DONE IN PIECES**, one for each side, so the table stays - and since
-	//   the same day's G1/G2 the FILE's table position says which of the new words go on which side
-	//   (KCMParaText::CutChangeAtObjects). A replacement across a NOTE REFERENCE is still refused: the
-	//   file does not carry where a reference stands, so nothing can say which side its words belong on.
-	// ★★★**AND EVERY PIECE IS CHECKED AGAINST THE DOCUMENT BEFORE ANYTHING GOES IN** (the same day,
-	//   after the crash): the range has to stay inside this paragraph's own story thread, and what it
-	//   takes out has to BE the characters the reading gave. A position that has gone stale fails the
-	//   second test even when it lands inside a thread of the right length - which is exactly how the
-	//   crash began (cell A's deletion landed, three characters long, on cell C).
-	struct Piece
-	{
-		size_t	fChange;	// which change of `changes`
-		int32	fFrom;		// model offset from the paragraph's start
-		int32	fCount;		// model characters it takes out (0 = an insertion)
-		int32	fAStart;	// the same run in the text's count
-		int32	fACount;
-		int32	fBStart;	// the FILE's words this piece puts in (an insertion cut at a table has two)
-		int32	fBCount;
-	};
-	std::vector<Piece> pieces;
-
-	TextIndex threadStart = 0;
-	int32 threadSpan = 0;
-	{
-		InterfacePtr<ITextStoryThread> thread(model->QueryStoryThread(paraStart, &threadStart, &threadSpan));
-		if (thread == nil)
-		{
-			whyNot = "the paragraph's story thread could not be found (nothing was written)";
-			whyNot.SetTranslatable(kFalse);
-			outRefused = kTrue;
-			return 0;
-		}
-	}
-
-	// ★★**THE TABLES STANDING IN THIS PARAGRAPH, AS THE DOCUMENT HAS THEM** (2026-09-17, G1) - read off
-	//   the model, because the paragraph's attributes do not say which of its uncounted positions are
-	//   tables (a note's marker is one too), and a table standing at the very START is not among them
-	//   at all: the reader moved the paragraph's start past it.
-	std::vector<KCMParaText::KCMTableInPara> tables;
-	{
-		TextIndex lead = paraStart;
-		while (lead > threadStart)
-		{
-			const int32 cp = CharAt(model, lead - 1);
-			if (cp != kTextChar_Table && cp != kTextChar_TableContinued)
-				break;
-			--lead;
-		}
-		for (TextIndex m = lead; m < paraStart; ++m)
-		{
-			if (CharAt(model, m) == kTextChar_Table)
-			{
-				KCMParaText::KCMTableInPara t;
-				t.fTextOffset = 0;
-				t.fModelOffset = static_cast<int32>(m - paraStart);
-				tables.push_back(t);
-			}
-		}
-		for (size_t k = 0; k < attrs.fUncountedAt.size(); ++k)
-		{
-			const TextIndex m = paraStart + attrs.fUncountedAt[k] + static_cast<int32>(k);
-			if (CharAt(model, m) == kTextChar_Table)
-			{
-				KCMParaText::KCMTableInPara t;
-				t.fTextOffset = attrs.fUncountedAt[k];
-				t.fModelOffset = static_cast<int32>(m - paraStart);
-				tables.push_back(t);
-			}
-		}
-	}
-
-	std::vector<int32> docTableOffsets;
-	for (size_t j = 0; j < tables.size(); ++j)
-		docTableOffsets.push_back(tables[j].fTextOffset);
-
-	for (size_t c = 0; c < changes.size(); ++c)
-	{
-		const KCMTextDiff::Change& ch = changes[c];
-
-		// ★★**FIRST CUT WHERE THE TABLES STAND, THE DOCUMENT'S PAIRED WITH THE FILE'S** (G1/G2): which side
-		//   of a table words go on, and which of them are before it and which after, only the file's own
-		//   table position says. `表の前の文章` + `後の文` is 章 before the table and 表の gone after it.
-		std::vector<KCMParaText::KCMObjectPiece> parts;
-		KCMParaText::CutChangeAtObjects(docTableOffsets, fileTableOffsets, ch.aStart, ch.aCount,
-										ch.bStart, ch.bCount, parts);
-		for (size_t q = 0; q < parts.size(); ++q)
-		{
-			const KCMParaText::KCMObjectPiece& part = parts[q];
-
-			if (part.fACount <= 0)
-			{
-				// An insertion: in front of the first table the file puts after these words, or after
-				// everything standing there when none does.
-				const int32 ob = part.fObjectsBefore;
-				Piece p;
-				p.fChange = c;
-				p.fFrom = (ob >= 0 && static_cast<size_t>(ob) < tables.size()
-						   && tables[static_cast<size_t>(ob)].fTextOffset == part.fAStart)
-						  ? tables[static_cast<size_t>(ob)].fModelOffset
-						  : KCMParaText::ModelOffsetInParagraph(attrs, part.fAStart);
-				p.fCount = 0;
-				p.fAStart = part.fAStart;
-				p.fACount = 0;
-				p.fBStart = part.fBStart;
-				p.fBCount = part.fBCount;
-				pieces.push_back(p);
-				continue;
-			}
-
-			// Then cut where anything else the text leaves out stands BETWEEN two of its characters - a
-			// note's reference, whose place the file does not carry (KCMStoryShape::Para) - or a table
-			// the pairing above could not place.
-			const int32 partEnd = part.fAStart + part.fACount;
-			std::vector<int32> cuts;
-			for (size_t k = 0; k < attrs.fUncountedAt.size(); ++k)
-			{
-				const int32 u = attrs.fUncountedAt[k];
-				if (u > part.fAStart && u < partEnd && (cuts.empty() || cuts.back() != u))
-					cuts.push_back(u);
-			}
-			if (!cuts.empty() && part.fBCount > 0)
-			{
-				whyNot = "a change replaces words on both sides of a table or a note reference standing inside "
-						 "the paragraph (which side the new words belong on cannot be told - edit the two sides apart)";
-				whyNot.SetTranslatable(kFalse);
-				outRefused = kTrue;
-				return 0;
-			}
-
-			int32 s = part.fAStart;
-			for (size_t k = 0; k <= cuts.size(); ++k)
-			{
-				const int32 e = (k < cuts.size()) ? cuts[k] : partEnd;
-				Piece p;
-				p.fChange = c;
-				p.fFrom = KCMParaText::ModelOffsetInParagraph(attrs, s);
-				p.fCount = KCMParaText::ModelOffsetInParagraph(attrs, e - 1) + 1 - p.fFrom;
-				p.fAStart = s;
-				p.fACount = e - s;
-				p.fBStart = part.fBStart;		// only ever words when there is one piece (a replacement
-				p.fBCount = part.fBCount;		// across a note reference was refused just above)
-				pieces.push_back(p);
-				s = e;
-			}
-		}
-	}
-
-	for (size_t i = 0; i < pieces.size(); ++i)
-	{
-		const Piece& p = pieces[i];
-		const TextIndex at = paraStart + p.fFrom;
-		bool16 inPlace = (at >= threadStart && p.fCount >= 0
-						  && at + p.fCount <= threadStart + threadSpan - 1		// never the thread's own end
-						  && p.fCount == p.fACount) ? kTrue : kFalse;
-		if (inPlace && p.fCount > 0)
-		{
-			WideString standing;
-			TextIterator iter(model, at);
-			iter.AppendToStringAndIncrement(&standing, p.fCount);
-			if (standing.CharCount() != p.fACount)
-				inPlace = kFalse;
-			for (int32 k = 0; inPlace && k < p.fACount; ++k)
-			{
-				if (static_cast<int32>(standing.GetChar(k).GetValue()) != a[static_cast<size_t>(p.fAStart + k)])
-					inPlace = kFalse;
-			}
-		}
-		if (!inPlace)
-		{
-			whyNot = "the copy does not hold the words where they were read, so nothing of this paragraph "
-					 "was written (please report this - it is a fault of the plug-in, not of the file)";
-			whyNot.SetTranslatable(kFalse);
-			outRefused = kTrue;
-			return 0;
-		}
-	}
-
-	int32 written = 0;
-	for (size_t i = pieces.size(); i > 0; --i)
-	{
-		const Piece& piece = pieces[i - 1];
-		const int32 from = piece.fFrom;
-
-		WideString words;
-		if (piece.fBCount > 0)
-		{
-			std::string text;
-			for (int32 k = piece.fBStart; k < piece.fBStart + piece.fBCount
-								   && k < static_cast<int32>(b.size()); ++k)
-				KCMParaText::AppendUtf8(text, b[k]);
-
-			PMString asString;
-			asString.SetUTF8String(text);		// marks it not translatable, which is what we want
-			words = WideString(asString);
-		}
-
-		// ★★A DELETION IS A DeleteCmd (2026-09-17, the user's call: "match the official way") - the one
-		//   place that decides, shared with the restore. (Replace against Delete was NOT what crashed:
-		//   both crashed at the same place - the positions were stale; see KCMApplyStoryTextToCopy.)
-		const int32 count = piece.fCount;
-		InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(model, paraStart + from, count, words));
-		if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
-		{
-			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-			whyNot = (written > 0)
-					 ? "a write failed part way through a paragraph, which now holds neither the "
-					   "document's words nor the file's (a locked story or layer?)"
-					 : "the write failed (a locked story or layer?)";
-			whyNot.SetTranslatable(kFalse);
-			outRefused = kTrue;
-			return written;
-		}
-		++written;
-	}
-	return written;
-}
-
-/** One write of the text pass: a paragraph's words (ApplyParagraph), new paragraphs, or paragraphs
-	taken out. */
-struct Job
-{
-	enum { kParagraph = 0, kInsert = 1, kDelete = 2 };
-
-	int32								fKind;
-	/** ★**THE ORDER**: writes go from the highest key down. Twice the position the write starts at, so
-		that a write standing at the same position can be put before (+1) or after (-1) the paragraph
-		whose start that is - new paragraphs after a paragraph's return go in before that paragraph's own
-		words are rewritten (their position is read before those words move it), and new paragraphs in
-		front of a place's first paragraph go in after (the paragraph's words are written at the positions
-		they were read at). */
-	int64								fKey;
-	size_t								fPara;			// kParagraph: index into paras / attrs / starts
-	const KCMStoryShape::Para*			fFile;			// kParagraph: the same paragraph in the file
-	TextIndex							fAt;			// kInsert: where; kDelete: from
-	TextIndex							fTo;			// kDelete: up to, not including
-	bool16								fAfterReturn;	// kInsert: "\rNEW" after a return, not "NEW\r" before a paragraph
-	std::vector<const KCMStoryShape::Para*>	fNew;		// kInsert: the file's new paragraphs, in order
-
-	Job() : fKind(kParagraph), fKey(0), fPara(0), fFile(nil), fAt(0), fTo(0), fAfterReturn(kFalse) {}
-};
-
-/** kTrue when a code point of the UTF-8 text is one InDesign hangs an object on. */
-bool16 TextHoldsObject(const std::string& utf8)
-{
-	std::vector<int32> cps;
-	KCMTextDiff::ToCodePoints(utf8, &cps, nil);
-	for (size_t k = 0; k < cps.size(); ++k)
-	{
-		if (KCMParaText::IsObjectCharacter(cps[k]))
-			return kTrue;
-	}
-	return kFalse;
-}
-
-/** Where a paragraph's return stands: after its text and anything standing at its end. */
-TextIndex ReturnOfParagraph(int32 paraStart, const KCMParaAttrs& attrs, const std::string& text)
-{
-	return static_cast<TextIndex>(paraStart)
-		   + KCMParaText::ModelOffsetInParagraph(attrs, KCMParaText::CountCodePoints(text));
-}
-
-/** How many tables stand in one paragraph of the document - at its start and inside it. */
-int32 DocTablesInParagraph(ITextModel* model, int32 paraStart, const KCMParaAttrs& attrs)
-{
-	int32 n = 0;
-	for (int32 k = 1; k <= attrs.fLeadingUncounted; ++k)
-	{
-		if (CharAt(model, static_cast<TextIndex>(paraStart - k)) == kTextChar_Table)
-			++n;
-	}
-	for (size_t k = 0; k < attrs.fUncountedAt.size(); ++k)
-	{
-		const TextIndex m = static_cast<TextIndex>(paraStart) + attrs.fUncountedAt[k] + static_cast<int32>(k);
-		if (CharAt(model, m) == kTextChar_Table)
-			++n;
-	}
-	return n;
-}
-
-/*	NoteMarkersOfStory
-	Where every footnote marker stands in the story, in the order the notes are NUMBERED.
-
-	★**THE ORDER IS THE READER'S OWN**: KCMTextRead numbers the notes as it meets their threads,
-	  which is TextIndex order, and a note's thread stands in the same order as its marker. So the
-	  n-th entry here is the marker of the note KCMParaAttrs calls n.
-	⚠**A NOTE'S OWN FIRST CHARACTER IS A MARKER TOO** (it rides the note's leading uncounted
-	 positions), and it is not the body's. Paragraphs inside a note are passed over.
-*/
-void NoteMarkersOfStory(ITextModel* model, const std::vector<KCMParaAttrs>& attrs,
-						const std::vector<int32>& starts, std::vector<TextIndex>& out)
-{
-	out.clear();
-	for (size_t i = 0; i < attrs.size() && i < starts.size(); ++i)
-	{
-		if (attrs[i].IsFootnote())
-			continue;
-		const TextIndex paraStart = static_cast<TextIndex>(starts[i]);
-		// the leading ones stand BEFORE the paragraph's start, nearest last
-		for (int32 k = attrs[i].fLeadingUncounted; k >= 1; --k)
-		{
-			if (CharAt(model, paraStart - k) == kTextChar_FootnoteMarker)
-				out.push_back(paraStart - k);
-		}
-		for (size_t k = 0; k < attrs[i].fUncountedAt.size(); ++k)
-		{
-			const TextIndex m = paraStart + attrs[i].fUncountedAt[k] + static_cast<int32>(k);
-			if (CharAt(model, m) == kTextChar_FootnoteMarker)
-				out.push_back(m);
-		}
-	}
-}
-
-/*	DocParaOfPlace
-	The document's index for the `nth` paragraph of one place, read straight off the paragraph
-	attributes - the same question BuildPlaces answers, asked for one place instead of all of them.
-	@return -1 when the place has no such paragraph.
-*/
-int32 DocParaOfPlace(const std::vector<KCMParaAttrs>& attrs, const KCMStoryMerge::PlaceRef& place, int32 nth)
-{
-	int32 seen = 0;
-	for (size_t i = 0; i < attrs.size(); ++i)
-	{
-		bool16 here = kFalse;
-		if (place.fTable < 0)
-			here = (!attrs[i].IsCell() && !attrs[i].IsFootnote()) ? kTrue : kFalse;
-		else
-			here = (attrs[i].IsCell() && attrs[i].fTableOrdinal == place.fTable
-					&& attrs[i].fCellRow == place.fRow && attrs[i].fCellCol == place.fCell) ? kTrue : kFalse;
-		if (!here)
-			continue;
-		if (seen == nth)
-			return static_cast<int32>(i);
-		++seen;
-	}
-	return -1;
-}
-
-/*	DropNotePlaces
-	Take every footnote's place out of the list, leaving the body and the cells.
-
-	★Used when the file's notes cannot be paired with the document's at all (their number differs
-	  and nothing planned it): the rest of the story is still poured, and the notes stand as they
-	  are. ⚠Taken OUT rather than refused one by one - a place the reader never asked about should
-	  not be counted against them.
-*/
-void DropNotePlaces(const std::vector<KCMParaAttrs>& attrs, std::vector<Place>& places)
-{
-	for (size_t p = places.size(); p > 0; --p)
-	{
-		const Place& pl = places[p - 1];
-		if (!pl.fDoc.empty() && pl.fDoc[0] < attrs.size() && attrs[pl.fDoc[0]].IsFootnote())
-			places.erase(places.begin() + static_cast<std::ptrdiff_t>(p - 1));
-	}
-}
-
-/*	PourNoteWords
-	The words of a note just made, put in place of the ones it was born with.
-
-	★**REPLACE, NOT APPEND** - see KCMInsertNoteAt: the note is born holding a separator of its
-	  own and the file's first paragraph carries one too, so appending would print both.
-	⚠**ONE PARAGRAPH AT A TIME, IN ORDER**: a note with several paragraphs is written as one text
-	 with returns between, which is what a paragraph break is in a story.
-*/
-bool16 PourNoteWords(ITextModel* model, TextIndex from, TextIndex to,
-					 const std::vector<KCMStoryShape::Para>& paras, PMString& whyNot)
-{
-	// ★THE SAME ONE COMMAND THE REST OF THE POUR USES (KCMCreateWordsWriteCmd), which is replace,
-	//   insert and delete in one - so a note's words go in the way every other word does.
-	std::string text;
-	for (size_t p = 0; p < paras.size(); ++p)
-	{
-		if (p > 0)
-			text += '\r';
-		text += paras[p].fText;
-	}
-	PMString asString;
-	asString.SetUTF8String(text);
-	const WideString words(asString);
-
-	InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(model, from, (to > from) ? (to - from) : 0, words));
-	// ★**nil MEANS "NOTHING TO WRITE", NOT "COULD NOT WRITE"** (KCMStoryRestore.h says so): no
-	//   characters coming out and none going in. An empty note Word made, into a note born empty,
-	//   is exactly that - and calling it a failure would name a refusal nobody can act on.
-	if (write == nil)
-		return kTrue;
-	if (CmdUtils::ProcessCommand(write) != kSuccess)
-	{
-		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		whyNot = "the new footnote's words could not be put in";
-		whyNot.SetTranslatable(kFalse);
-		return kFalse;
-	}
-	return kTrue;
-}
-
-/** The writes that turn one place's paragraphs into the file's when the file has more or fewer of them
-	(2026-09-17 afternoon, the user's rule: a <p> added or removed is a paragraph added or removed).
-
-	★**NEW PARAGRAPHS GO IN RIGHT BEFORE THE RETURN OF THE ONE THEY FOLLOW**, as "\rNEW" - the way pressing
-	  Return at the end of that paragraph puts them in, so they start out in its style with its overrides
-	  (measured 2026-09-17), and InsertParagraphs then applies the next style. In front of a place's first
-	  paragraph there is nothing to follow: "NEW\r" goes in at its start and takes its style.
-	★**A REMOVED PARAGRAPH GOES WITH THE RETURN BEFORE IT**, [return of the one before, its own return) -
-	  measured the same day: joining two paragraphs keeps the UPPER one's style and overrides, so the
-	  paragraph before keeps its own. A place's first paragraph has no return before it and goes with its
-	  own.
-	⚠**REFUSED, WHOLE PLACE, NOTHING WRITTEN**: a place the file leaves without a paragraph; a paragraph
-	  holding a table, a note reference or an anchored object taken out (the object would go with it); a
-	  new paragraph holding one (text cannot bring it); a paired paragraph whose tables are not the file's
-	  (a table would have to change paragraphs).
-	@param outWhyNot empty when the place can be written. */
-std::vector<Job> PlanParagraphSteps(ITextModel* model, const Place& place,
-									const std::vector<std::string>& paras,
-									const std::vector<KCMParaAttrs>& attrs,
-									const std::vector<int32>& starts,
-									const std::map<const KCMStoryShape::Para*, std::vector<int32> >& fileTables,
-									PMString& outWhyNot)
-{
-	std::vector<Job> out;
-	outWhyNot.Clear();
-	outWhyNot.SetTranslatable(kFalse);
-
-	const std::vector<KCMStoryShape::Para>& fileParas = *place.fFile;
-	if (fileParas.empty() || place.fDoc.empty())
-	{
-		outWhyNot = "a cell or a note has to keep at least one paragraph (<p>)";
-		outWhyNot.SetTranslatable(kFalse);
-		return std::vector<Job>();
-	}
-
-	std::vector<std::string> docTexts;
-	for (size_t q = 0; q < place.fDoc.size(); ++q)
-		docTexts.push_back(paras[place.fDoc[q]]);
-	std::vector<std::string> fileTexts;
-	for (size_t q = 0; q < fileParas.size(); ++q)
-		fileTexts.push_back(fileParas[q].fText);
-
-	std::vector<KCMParaPairing::Step> steps;
-	KCMParaPairing::Pair(docTexts, fileTexts, steps);
-
-	for (size_t s = 0; s < steps.size(); ++s)
-	{
-		const KCMParaPairing::Step& step = steps[s];
-		if (step.fKind == KCMParaPairing::Step::kPair)
-		{
-			const size_t i = place.fDoc[static_cast<size_t>(step.fDoc)];
-			const KCMStoryShape::Para* file = &fileParas[static_cast<size_t>(step.fFile)];
-			const std::map<const KCMStoryShape::Para*, std::vector<int32> >::const_iterator ft = fileTables.find(file);
-			const int32 fileTableCount = (ft != fileTables.end()) ? static_cast<int32>(ft->second.size()) : 0;
-			if (DocTablesInParagraph(model, starts[i], attrs[i]) != fileTableCount)
-			{
-				outWhyNot = "paragraphs were added or removed next to a table in a way that would move the table "
-							"into another paragraph (a table cannot be moved by text)";
-				outWhyNot.SetTranslatable(kFalse);
-				return std::vector<Job>();
-			}
-			Job job;
-			job.fKind = Job::kParagraph;
-			job.fPara = i;
-			job.fFile = file;
-			job.fKey = 2 * static_cast<int64>(starts[i]);
-			out.push_back(job);
-		}
-		else if (step.fKind == KCMParaPairing::Step::kInsert)
-		{
-			Job job;
-			job.fKind = Job::kInsert;
-			for (int32 k = 0; k < step.fCount; ++k)
-			{
-				const KCMStoryShape::Para* file = &fileParas[static_cast<size_t>(step.fFile + k)];
-				if (fileTables.find(file) != fileTables.end() || TextHoldsObject(file->fText))
-				{
-					outWhyNot = "a new paragraph holds a table, a note reference or an anchored object "
-								"(text cannot bring an object into the document)";
-					outWhyNot.SetTranslatable(kFalse);
-					return std::vector<Job>();
-				}
-				job.fNew.push_back(file);
-			}
-			if (step.fDoc >= 0)
-			{
-				const size_t before = place.fDoc[static_cast<size_t>(step.fDoc)];
-				job.fAt = ReturnOfParagraph(starts[before], attrs[before], paras[before]);
-				job.fAfterReturn = kTrue;
-				job.fKey = 2 * static_cast<int64>(job.fAt) + 1;
-			}
-			else
-			{
-				const size_t first = place.fDoc[0];
-				job.fAt = static_cast<TextIndex>(starts[first] - attrs[first].fLeadingUncounted);
-				job.fAfterReturn = kFalse;
-				job.fKey = 2 * static_cast<int64>(job.fAt) - 1;
-			}
-			out.push_back(job);
-		}
-		else
-		{
-			for (int32 k = 0; k < step.fCount; ++k)
-			{
-				const size_t i = place.fDoc[static_cast<size_t>(step.fDoc + k)];
-				if (attrs[i].fLeadingUncounted > 0 || !attrs[i].fUncountedAt.empty() || TextHoldsObject(paras[i]))
-				{
-					outWhyNot = "a paragraph holding a table, a note reference or an anchored object cannot be "
-								"removed (the object would go with it)";
-					outWhyNot.SetTranslatable(kFalse);
-					return std::vector<Job>();
-				}
-			}
-			const size_t last = place.fDoc[static_cast<size_t>(step.fDoc + step.fCount - 1)];
-			Job job;
-			job.fKind = Job::kDelete;
-			if (step.fDoc > 0)
-			{
-				const size_t before = place.fDoc[static_cast<size_t>(step.fDoc - 1)];
-				job.fAt = ReturnOfParagraph(starts[before], attrs[before], paras[before]);
-				job.fTo = ReturnOfParagraph(starts[last], attrs[last], paras[last]);
-				job.fKey = 2 * static_cast<int64>(job.fAt) + 1;
-			}
-			else
-			{
-				const size_t first = place.fDoc[static_cast<size_t>(step.fDoc)];
-				job.fAt = static_cast<TextIndex>(starts[first] - attrs[first].fLeadingUncounted);
-				job.fTo = ReturnOfParagraph(starts[last], attrs[last], paras[last]) + 1;
-				job.fKey = 2 * static_cast<int64>(job.fAt) - 1;
-			}
-			out.push_back(job);
-		}
-	}
-	return out;
-}
-
-/** Puts new paragraphs in - "\rNEW" right before a return, or "NEW\r" at a paragraph's start - and gives
-	the ones after a return the next style (KCMApplyNextStyleAfter).
-	@return how many writes went in. */
-int32 InsertParagraphs(ITextModel* model, TextIndex at, bool16 afterReturn,
-					   const std::vector<const KCMStoryShape::Para*>& news, PMString& whyNot, bool16& outRefused)
-{
-	outRefused = kFalse;
-	TextIndex threadStart = 0;
-	int32 threadSpan = 0;
-	InterfacePtr<ITextStoryThread> thread(model->QueryStoryThread(at, &threadStart, &threadSpan));
-	const bool16 inPlace = (thread != nil && at >= threadStart && at < threadStart + threadSpan
-							&& (!afterReturn || CharAt(model, at) == kTextChar_CR)) ? kTrue : kFalse;
-	if (!inPlace || news.empty())
-	{
-		whyNot = "the copy does not hold the paragraphs where they were read, so no paragraph was added "
-				 "(please report this - it is a fault of the plug-in, not of the file)";
-		whyNot.SetTranslatable(kFalse);
-		outRefused = kTrue;
-		return 0;
-	}
-
-	std::string text;
-	for (size_t k = 0; k < news.size(); ++k)
-	{
-		if (afterReturn)
-			text += '\r';
-		text += news[k]->fText;
-		if (!afterReturn)
-			text += '\r';
-	}
-	PMString asString;
-	asString.SetUTF8String(text);
-	const WideString words(asString);
-
-	InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(model, at, 0, words));
-	if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
-	{
-		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		whyNot = "adding a paragraph failed (a locked story or layer?)";
-		whyNot.SetTranslatable(kFalse);
-		outRefused = kTrue;
-		return 0;
-	}
-	if (afterReturn)
-		KCMApplyNextStyleAfter(model, at, at + 1, words.CharCount() - 1);	// a style that cannot be applied leaves the inherited one
-	return 1;
-}
-
-/** Takes paragraphs out: [from, to), checked first to be whole paragraphs of one thread holding nothing
-	InDesign hangs an object on.
-	@return how many writes went in. */
-int32 DeleteParagraphs(ITextModel* model, TextIndex from, TextIndex to, PMString& whyNot, bool16& outRefused)
-{
-	outRefused = kFalse;
-	TextIndex threadStart = 0;
-	int32 threadSpan = 0;
-	InterfacePtr<ITextStoryThread> thread(model->QueryStoryThread(from, &threadStart, &threadSpan));
-	bool16 inPlace = (thread != nil && from >= threadStart && to > from
-					  && to <= threadStart + threadSpan - 1			// never the thread's own last return
-					  && CharAt(model, to - 1) != -1) ? kTrue : kFalse;
-	// Either [a return, the next return) or [a paragraph's start, just past its return).
-	if (inPlace && !(CharAt(model, from) == kTextChar_CR && CharAt(model, to) == kTextChar_CR)
-		&& !(CharAt(model, to - 1) == kTextChar_CR && (from == threadStart || CharAt(model, from - 1) == kTextChar_CR)))
-		inPlace = kFalse;
-	if (inPlace)
-	{
-		WideString standing;
-		TextIterator iter(model, from);
-		iter.AppendToStringAndIncrement(&standing, to - from);
-		for (int32 k = 0; inPlace && k < standing.CharCount(); ++k)
-		{
-			if (KCMParaText::IsObjectCharacter(static_cast<int32>(standing.GetChar(k).GetValue())))
-				inPlace = kFalse;
-		}
-	}
-	if (!inPlace)
-	{
-		whyNot = "the copy does not hold the paragraphs where they were read, so no paragraph was removed "
-				 "(please report this - it is a fault of the plug-in, not of the file)";
-		whyNot.SetTranslatable(kFalse);
-		outRefused = kTrue;
-		return 0;
-	}
-
-	InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(model, from, to - from, WideString()));
-	if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
-	{
-		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		whyNot = "removing a paragraph failed (a locked story or layer?)";
-		whyNot.SetTranslatable(kFalse);
-		outRefused = kTrue;
-		return 0;
-	}
-	return 1;
-}
-
 }	// anonymous namespace
 
 bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMString& whyNot,
@@ -1285,11 +250,8 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 	int32 skippedName = 0;		// not one of ours: not a .docx at all
 	int32 refused = 0;			// ours, but the markup could not be read
 	int32 fromWord = 0;			// .docx files read
-	int32 trackedCount = 0;		// of those, the ones whose revision marks account for everything
 	PMString firstReason;
 	firstReason.SetTranslatable(kFalse);
-	PMString firstUntracked;	// the first .docx whose marks do not - named, not refused
-	firstUntracked.SetTranslatable(kFalse);
 
 	// ★The import's bar when there is one (a slice of it), a bar of its own otherwise.
 	PMString barTitle("Reading story files...");
@@ -1336,13 +298,11 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 			continue;
 		}
 
-		// ---- a .docx (2026-09-19, stage 2 of the docx plan): the tag is the pairing ----------------
+		// ---- a .docx: the tag is the pairing, or the name when there is no tag -----------------------
 		//
-		// ★What goes into fStories is the story AS WORD SHOWS IT - the after side - so the pour and
-		//   the Import mode compare the whole text against the document. What
-		//   is new is beside it: when the file's revision marks account for every change since it
-		//   was written (OriginMatchesTag), the story AS WRITTEN is kept too, for stage 3 to show
-		//   only Word's changes. Nothing is refused on that account (the user's rule, 2026-09-19).
+		// ★What goes into fStories is the story AS WORD SHOWS IT - every revision mark accepted - and
+		//   that is all the import needs: since 2026-09-23 it makes the document's story Word's
+		//   (KCMStorySync), whatever the marks say or whether there are any.
 		std::vector<KCMZipStore::Entry> parts;
 		PMString packageWhy;
 		if (!KCMReadDocxParts(*file, parts, packageWhy))
@@ -1364,16 +324,23 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 			NoteFirstReason(firstReason, leaf, why);
 			continue;
 		}
+		int32 uid = result.fTag.fPresent ? result.fTag.fUid : 0;
 		if (!result.fTag.fPresent)
 		{
-			// A .docx nobody exported (written from scratch in Word) is the design's section 7 and a
-			// later stage; until then it is named, not guessed at.
-			++refused;
-			NoteFirstReason(firstReason, leaf,
-							"the file carries no story tag (a Word document not written by Kohaku Change Marker is not imported yet)");
-			continue;
+			// ★★A .docx NOBODY EXPORTED - made in Word from nothing (2026-09-23, the user's request: "a Word
+			//   file a person made from nothing and named with the UID can be imported too"). The name is
+			//   the pairing then, the way the exporter spells it ("269.docx", "269 - chapter one.docx").
+			//   ⚠Without a number in the name there is nothing to say which story it is for, and it is named.
+			if (leading == 0)
+			{
+				++refused;
+				NoteFirstReason(firstReason, leaf,
+								"the file carries no story tag and its name does not begin with a story's number");
+				continue;
+			}
+			uid = static_cast<int32>(leading);
 		}
-		if (leading != 0 && leading != static_cast<uint32>(result.fTag.fUid))
+		else if (leading != 0 && leading != static_cast<uint32>(result.fTag.fUid))
 		{
 			// ★THE FILE COPIED TO ANOTHER STORY'S NAME (the design, 4-3): which of the two is meant is
 			//   not this plug-in's to decide.
@@ -1389,24 +356,13 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 		}
 
 		++fromWord;
-		out.fUids.push_back(UID(static_cast<uint32>(result.fTag.fUid)));
+		out.fUids.push_back(UID(static_cast<uint32>(uid)));
 		out.fStories.push_back(result.fAfter);
-		std::string whole;
-		const bool16 tracked = KCMStoryDocx::OriginMatchesTag(result, whole);
-		out.fOrigins.push_back(tracked ? result.fOrigin : KCMStoryShape::Story());
-		out.fOriginKnown.push_back(tracked);
+		// (the origin is no longer asked for - S0c takes these two out of KCMStoryTextSet)
+		out.fOrigins.push_back(KCMStoryShape::Story());
+		out.fOriginKnown.push_back(kFalse);
 		out.fFileNames.push_back(PMStringOfLeaf(leaf));
 		out.fIsDocx.push_back(kTrue);
-		if (tracked)
-		{
-			++trackedCount;
-		}
-		else if (firstUntracked.IsEmpty())
-		{
-			firstUntracked.AppendNumber(result.fTag.fUid);
-			firstUntracked.Append(": ");
-			firstUntracked.Append(whole.c_str());
-		}
 	}
 
 	// ★A STORY CHOSEN TWICE - two .docx files whose tags name one story - is refused on both counts (the design,
@@ -1452,13 +408,6 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 	if (fromWord > 0)
 	{
 		AppendCount(whyNot, ", ", fromWord, " from Word");
-		AppendCount(whyNot, ", ", trackedCount, " with complete revision marks");
-		if (!firstUntracked.IsEmpty())
-		{
-			whyNot.Append(" (");
-			whyNot.Append(firstUntracked);
-			whyNot.Append(")");
-		}
 	}
 	if (refused > 0)
 	{
@@ -1599,7 +548,7 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 	outMessage.SetTranslatable(kFalse);
 	outMessage.Append(readMessage);
 	outMessage.Append("; ");
-	outMessage.Append(poured);			// carries the merge's own sentence when there was one
+	outMessage.Append(poured);			// what went in, and what was left alone and why (KCMPourStoryText)
 	// ⚠**WHAT WAS HELD BACK IS NOT COUNTED HERE** (2026-09-22): it has a "!" row and a count of its
 	//  own in `poured`, and saying "1 could not go in" of a tate-chu-yoko the import deliberately
 	//  kept told the reader the opposite of what happened (seen in the live matrix the same day).
@@ -1656,21 +605,13 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 
 	int32 storiesTouched = 0;
 	int32 edits = 0;
-	int32 attrEdits = 0;			// ruby and kenten: a second pass, after the words of a story are in
-	int32 refusedAttrs = 0;
-	int32 keptTcyParas = 0;			// held back, not refused: a tate-chu-yoko under a warichu (2026-09-22)
-	int32 refusedParas = 0;
-	int32 refusedPlaces = 0;
-	int32 noteEdits = 0;			// footnotes Word added or took away, carried out one at a time
-	int32 refusedNotes = 0;
-	int32 skippedByTables = 0;		// stories left alone entirely: their table shape changed
+	int32 attrEdits = 0;			// ruby, kenten, tate-chu-yoko, warichu
+	int32 noteEdits = 0;			// footnotes made or taken away
+	int32 storiesHeld = 0;			// stories left exactly as they were, each named
+	int32 heldBack = 0;				// things Word cannot carry, kept as the document has them
 	int32 unmatched = 0;
-	int32 wordChanges = 0;			// a .docx whose marks are whole: Word's changes taken by the merge (stage 3)
-	int32 conflicts = 0;			// ...and the ones the document's own edits kept out
 	PMString firstRefusal;
 	firstRefusal.SetTranslatable(kFalse);
-	PMString firstConflict;
-	firstConflict.SetTranslatable(kFalse);
 	// ★**PAIRED IS PAIRED, WHATEVER HAPPENS NEXT** (2026-09-16). The count at the end used to be
 	//   "files minus stories WRITTEN", which said "had no story" about a file the reader had simply
 	//   not edited - and about every story TablesAgree left alone, naming that one twice, once under
@@ -1731,512 +672,56 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 
 		matched[which] = kTrue;
 
-		std::vector<std::string> paras;
-		std::vector<KCMParaAttrs> attrs;
-		std::vector<int32> starts;
-		if (!KCMTextRead::ReadStory(storyRef, paras, attrs, starts))
-		{
-			NoteRefusal(original, "Story", PMString("the story could not be read"), kTrue);
-			continue;
-		}
-
-		InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
-		if (model == nil)
-			continue;
-
-		// ★★★**A .docx WHOSE MARKS ACCOUNT FOR EVERYTHING IS MERGED, NOT COMPARED WHOLE** (stage 3 of the
-		//   docx plan, 2026-09-19; the design's section 6). The story as written, as Word left it and as
-		//   the document holds it now go into KCMStoryMerge, and what is poured is the document plus
-		//   Word's changes - so the rows that follow are Word's changes and nothing else, however much
-		//   the document has been edited in InDesign since the export. A conflict keeps the document's
-		//   words and is named. A .docx whose tracking was off is poured as before: the whole text.
-		// ★THE DOCUMENT IS READ WITH THE EXPORT'S OWN READER (KCMStoryFromDocument): the merge compares
-		//   three stories that have to be in one shape, and the two that came from the file were
-		//   written from that reader's shape to begin with.
-		const KCMStoryShape::Story* file = &set.fStories[which];
-		KCMStoryMerge::Result merged;
-		KCMStoryShape::Story rejoined;
-		// ★A .docx HOLDS ITS PARAGRAPHS IN THE SPLIT SHAPE AROUND TABLES (KCMStoryDocx.h, SplitAtTables -
-		//   2026-09-19 evening, the user's rule: "the document decides"): every table alone in a paragraph
-		//   of its own, whatever paragraph it stands in here. So the document's story is read for every
-		//   .docx (not only for a merge), the merge runs in that same shape, and the result is put back
-		//   into the document's shape (RejoinTables) before the pour pairs its paragraphs.
-		const bool16 fromDocx = (which < set.fIsDocx.size() && set.fIsDocx[which]) ? kTrue : kFalse;
+		// ★★★**THE DOCUMENT AGAINST WORD, AND THE DOCUMENT MADE WORD'S** (2026-09-23, the user's rule: "Word
+		//   is the one that counts" - and "the processing that is simplest and least likely to be wrong").
+		//   KCMStorySync says what makes the story as the document holds it into the story as Word left it,
+		//   and KCMStorySyncApply carries that out. What was changed in InDesign after the export is written
+		//   over. Design: docs/superpowers/specs/2026-09-23-kcm-import-sync-design.md.
 		KCMStoryShape::Story now;
-		bool16 haveNow = kFalse;
-		if (fromDocx)
+		bool16 placed = kTrue;
+		if (!KCMStoryFromDocument(storyRef, now, placed) || !placed)
 		{
-			bool16 placed = kTrue;
-			haveNow = KCMStoryFromDocument(storyRef, now, placed);
-		}
-		if (which < set.fOriginKnown.size() && set.fOriginKnown[which])
-		{
-			if (haveNow)
-			{
-				KCMStoryShape::Story nowSplit = now;
-				KCMStoryDocx::SplitAtTables(nowSplit);
-				KCMStoryMerge::Merge(set.fOrigins[which], set.fStories[which], nowSplit, merged);
-				wordChanges += merged.fApplied;
-				conflicts += static_cast<int32>(merged.fConflicts.size());
-				for (size_t c = 0; c < merged.fConflicts.size(); ++c)
-					NoteRefusal(original, "Word", merged.fConflicts[c].fWhere, merged.fConflicts[c].fWhy);
-				// ★**THE TABLES THE MERGE LEFT ALONE** (2026-09-22). Their cells keep the document's
-				//   own words, so the pour below finds them already in agreement and writes nothing;
-				//   what the reader needs is to be TOLD, once per table.
-				for (size_t c = 0; c < merged.fTableRefusals.size(); ++c)
-				{
-					NoteRefusal(original, "Table", merged.fTableRefusals[c].fWhere, merged.fTableRefusals[c].fWhy);
-					if (firstRefusal.IsEmpty())
-					{
-						firstRefusal = merged.fTableRefusals[c].fWhere.c_str();
-						firstRefusal.Append(" - ");
-						firstRefusal.Append(merged.fTableRefusals[c].fWhy.c_str());
-						firstRefusal.SetTranslatable(kFalse);
-					}
-				}
-				if (!merged.fConflicts.empty() && firstConflict.IsEmpty())
-				{
-					firstConflict.AppendNumber(static_cast<int32>(original.Get()));
-					firstConflict.Append(": ");
-					firstConflict.Append(merged.fConflicts[0].fWhere.c_str());
-					firstConflict.Append(" - ");
-					firstConflict.Append(merged.fConflicts[0].fWhy.c_str());
-				}
-				if (merged.fStoryRefused)
-				{
-					++skippedByTables;
-					if (firstRefusal.IsEmpty())
-					{
-						firstRefusal = merged.fWhy.c_str();
-						firstRefusal.SetTranslatable(kFalse);
-					}
-					NoteRefusal(original, "Table", PMString(merged.fWhy.c_str()), kTrue);
-					continue;
-				}
-				file = &merged.fMerged;
-			}
-		}
-		if (fromDocx && haveNow)
-		{
-			// ★BACK INTO THE DOCUMENT'S SHAPE: which paragraph a table stands in, and whether the words
-			//   after it are that paragraph's, is what the document says - a break a person put next to
-			//   a table in Word, or took away there, is not carried (KCMStoryDocx.h, RejoinTables).
-			rejoined = *file;
-			KCMStoryDocx::RejoinTables(rejoined, now);
-			file = &rejoined;
-		}
-
-		// ★★★**THE TABLE SHAPES DECIDE WHETHER THIS STORY IS TOUCHED AT ALL** (the user's rule,
-		//   2026-09-16). Asked BEFORE the places are built, because the pairing inside BuildPlaces
-		//   is by position and would happily pour the file's cell into a different cell of the
-		//   document. Nothing of this story is written when the answer is no.
-		PMString tableWhyNot;
-		std::vector<int32> refusedTables;
-		std::vector<PMString> refusedTableWhy;
-		if (!TablesAgree(attrs, *file, tableWhyNot, refusedTables, refusedTableWhy, haveNow ? &now : nil))
-		{
-			++skippedByTables;
+			++storiesHeld;
+			PMString why("the story could not be read the way the export reads it");
+			why.SetTranslatable(kFalse);
 			if (firstRefusal.IsEmpty())
-				firstRefusal = tableWhyNot;
-			NoteRefusal(original, "Table", tableWhyNot, kTrue);
+				firstRefusal = why;
+			NoteRefusal(original, "Story", why, kTrue);
 			continue;
 		}
-
-		// ★★★**THE NOTES HAVE TO LINE UP TOO, FOR THE TABLES' OWN REASON** (2026-09-22, measured on
-		//   the application). BuildPlaces pairs a note with the file's note OF THE SAME RANK, so a
-		//   file holding a different NUMBER of notes pours one note's words into another's.
-		//   ⚠**MEASURED, NOT FEARED**: a .docx whose origin no longer matches its tag falls back to
-		//    comparing the whole text, and that path plans nothing - which is how Word's newly added
-		//    note came to be written OVER the document's second one, silently, before this stood here.
-		//   ★When the merge DID plan the difference (fNoteAdds / fNoteRemoves) the counts are meant
-		//    to differ, and the pour carries that plan out further down - so this asks only when
-		//    there is no plan at all.
-		bool16 notesLeftAlone = kFalse;
-		if (merged.fNoteAdds.empty() && merged.fNoteRemoves.empty())
+		KCMStorySync::Plan plan;
+		KCMStorySync::Compare(now, set.fStories[which], plan);
+		if (plan.fStoryHeld)
 		{
-			int32 docNotes = 0;
-			for (size_t i = 0; i < attrs.size(); ++i)
-			{
-				if (attrs[i].IsFootnote() && attrs[i].fFootnoteOrdinal + 1 > docNotes)
-					docNotes = attrs[i].fFootnoteOrdinal + 1;
-			}
-			if (static_cast<size_t>(docNotes) != file->fNotes.size())
-			{
-				++refusedNotes;
-				PMString why("the file holds a different number of footnotes and nothing says which is "
-							 "which, so the document's own were left alone");
-				why.SetTranslatable(kFalse);
-				if (firstRefusal.IsEmpty())
-					firstRefusal = why;
-				NoteRefusal(original, "Note", why);
-				notesLeftAlone = kTrue;
-			}
-		}
-
-		// ★**A TABLE LEFT ALONE IS NAMED, AND THE STORY GOES ON** (2026-09-22, the user's call:
-		//   refusing is the right answer for a table whose shape changed, but refusing the story
-		//   for its sake is not - the reader's edits to the body were never in question).
-		for (size_t k = 0; k < refusedTableWhy.size(); ++k)
-		{
+			++storiesHeld;
+			PMString why;
+			why.SetUTF8String(plan.fWhy);
+			why.SetTranslatable(kFalse);
 			if (firstRefusal.IsEmpty())
-				firstRefusal = refusedTableWhy[k];
-			NoteRefusal(original, "Table", refusedTableWhy[k]);
+				firstRefusal = why;
+			NoteRefusal(original, "Story", why, kTrue);
+			continue;
 		}
-
-		std::vector<Place> places;
-		BuildPlaces(attrs, *file, refusedTables, places);
-		// ⚠A note nobody can pair is not written at all - see notesLeftAlone. Its place is taken out
-		//  rather than refused, because it is the FILE that cannot be trusted here, not the place.
-		if (notesLeftAlone)
-			DropNotePlaces(attrs, places);
-
-		// ★★★**EVERY WRITE OF THE STORY GOES IN BACK TO FRONT - ACROSS PLACES, NOT ONLY INSIDE ONE**
-		//   (2026-09-17, measured with a trace). The body, each cell and each note are separate PLACES,
-		//   and a cell's thread always stands after the whole body (ITableTextContent.h:41-44). The
-		//   places used to be written in the order BuildPlaces made them - the body first - so a body
-		//   edit that changed the length moved every cell, and the cell writes still used positions
-		//   read before it. Measured on emptytags.indd: eight characters came out of the body, then
-		//   "empty cell A" at 48 took three characters out of cell C, and "empty cell B" at 52 ran
-		//   across the end of its thread - and InDesign crashed inside the text command. Replace
-		//   against Delete had nothing to do with it (both crashed at the same place).
-		//   ⇒ Every place is JUDGED first (nothing is written for a place turned away), and then the
-		//     paragraphs are written from the highest TextIndex down: a write moves only what stands
-		//     after it, and everything after it has been written already.
-		std::vector<Job> jobs;
-
-		// ★The file's own table positions, per paragraph - which side of a table an insertion goes (G1),
-		//   and whether a paragraph added or removed would move a table into another paragraph.
-		std::map<const KCMStoryShape::Para*, std::vector<int32> > fileTables;
-		FileTablesByParagraph(*file, fileTables);
-
-		bool16 touched = kFalse;
-		for (size_t p = 0; p < places.size(); ++p)
+		KCMSyncResult result;
+		KCMApplySyncPlan(storyRef, now, plan, result);
+		for (size_t k = 0; k < result.fNotes.size(); ++k)
 		{
-			const Place& place = places[p];
-			if (place.fFile == nil)
+			const KCMSyncNote& note = result.fNotes[k];
+			if (note.fHeldBack)
 			{
-				++refusedPlaces;
-				PMString placeWhy("a cell or note in the document is not in the file");
-				placeWhy.SetTranslatable(kFalse);
-				if (firstRefusal.IsEmpty())
-					firstRefusal = placeWhy;
-				NoteRefusal(original, "Place", placeWhy);
+				// ⚠A RESCUE MUST NOT TAKE firstRefusal: the status line's one reason is for what failed
+				++heldBack;
+				NoteHeldBack(original, note.fKind, note.fWhy);
 				continue;
 			}
-
-			if (place.fDoc.size() == place.fFile->size())
-			{
-				for (size_t q = 0; q < place.fDoc.size(); ++q)
-				{
-					Job job;
-					job.fPara = place.fDoc[q];
-					job.fFile = &(*place.fFile)[q];
-					job.fKey = 2 * static_cast<int64>(starts[job.fPara]);
-					jobs.push_back(job);
-				}
-				continue;
-			}
-
-			// ★★**<p> ADDED OR REMOVED = A PARAGRAPH ADDED OR REMOVED** (2026-09-17 afternoon, the user's
-			//   rule). Which paragraph goes with which is KCMParaPairing's answer; the place is JUDGED whole
-			//   before anything of it is written, like every other refusal here.
-			PMString placeWhyNot;
-			const std::vector<Job> placeJobs = PlanParagraphSteps(model, place, paras, attrs, starts, fileTables,
-																  placeWhyNot);
-			if (!placeWhyNot.IsEmpty())
-			{
-				++refusedPlaces;
-				if (firstRefusal.IsEmpty())
-					firstRefusal = placeWhyNot;
-				NoteRefusal(original, "Place", placeWhyNot);
-				continue;
-			}
-			jobs.insert(jobs.end(), placeJobs.begin(), placeJobs.end());
+			NoteRefusal(original, note.fKind, note.fWhy, note.fWholeStory);
+			if (firstRefusal.IsEmpty())
+				firstRefusal = note.fWhy;
 		}
-
-		// ★BACK TO FRONT OVER THE WHOLE STORY (the note above) - by Job::fKey, which also says which of two
-		//   writes at one position goes first. Stable, so nothing else about the order is decided here.
-		std::stable_sort(jobs.begin(), jobs.end(), [](const Job& a, const Job& b) { return a.fKey > b.fKey; });
-
-		const std::vector<int32> noTables;
-
-		for (size_t j = 0; j < jobs.size(); ++j)
-		{
-			const Job& job = jobs[j];
-			PMString whyNot;
-			bool16 refused = kFalse;
-			int32 n = 0;
-			if (job.fKind == Job::kInsert)
-			{
-				n = InsertParagraphs(model, job.fAt, job.fAfterReturn, job.fNew, whyNot, refused);
-			}
-			else if (job.fKind == Job::kDelete)
-			{
-				n = DeleteParagraphs(model, job.fAt, job.fTo, whyNot, refused);
-			}
-			else
-			{
-				const size_t i = job.fPara;
-				const std::map<const KCMStoryShape::Para*, std::vector<int32> >::const_iterator ft =
-					fileTables.find(job.fFile);
-				n = ApplyParagraph(model, static_cast<TextIndex>(starts[i]), attrs[i],
-								   paras[i], job.fFile->fText,
-								   (ft != fileTables.end()) ? ft->second : noTables,
-								   whyNot, refused);
-			}
-			// ⚠**BOTH ANSWERS ARE READ, because both can be true of one paragraph**: a write that
-			//  failed half way leaves what went in ahead of it (ApplyParagraph says so).
-			if (refused)
-			{
-				++refusedParas;
-				if (firstRefusal.IsEmpty())
-					firstRefusal = whyNot;
-				NoteRefusal(original, "Para", whyNot);
-			}
-			if (n > 0)
-			{
-				edits += n;
-				touched = kTrue;
-			}
-		}
-
-		// ---- the footnotes Word added and took away ---------------------------------------------
-		//
-		// ★★★**A FOOTNOTE IS A CHARACTER, SO THIS IS NOT A POUR** (2026-09-22, the user's call: take
-		//   them in). Every word above went in without once touching a note's marker - the pour
-		//   refuses any change that would, because a note would vanish with nothing said - so what
-		//   Word did to the notes THEMSELVES is carried out here, from the plan the merge made, and
-		//   nowhere else.
-		// ★**THE STORY IS READ AGAIN FIRST**: every write above moved what stood after it, so no
-		//   marker's place can be worked out from the reading the words were planned from.
-		// ★**HIGHEST POSITION FIRST**, for the reason the whole text pass is - a write moves only
-		//   what stands after it, and everything after it has been done already.
-		if (!merged.fNoteRemoves.empty() || !merged.fNoteAdds.empty())
-		{
-			std::vector<std::string> parasN;
-			std::vector<KCMParaAttrs> attrsN;
-			std::vector<int32> startsN;
-			if (!KCMTextRead::ReadStory(storyRef, parasN, attrsN, startsN))
-			{
-				++refusedNotes;
-				PMString why("the story could not be read again, so its footnotes were left alone");
-				why.SetTranslatable(kFalse);
-				if (firstRefusal.IsEmpty())
-					firstRefusal = why;
-				NoteRefusal(original, "Note", why);
-			}
-			else
-			{
-				// ---- the ones Word took away ----------------------------------------------------
-				std::vector<TextIndex> markers;
-				NoteMarkersOfStory(model, attrsN, startsN, markers);
-
-				// ⚠★★★**THE MARKERS AND THE NOTES MUST COUNT THE SAME, OR NOTHING IS DELETED.**
-				//   markers[n] is taken to be the marker of the note the reader calls n, which holds
-				//   only while every note's marker stands in the body or a cell. A footnote INSIDE
-				//   another has a number of its own and a marker this walk steps over - and InDesign
-				//   does let one be made (measured 2026-09-22, against KCMTextRead's own comment).
-				//   Two lists of different lengths would slip, and a deletion would then take away
-				//   THE WRONG NOTE - which is the one outcome worth refusing the whole step for.
-				int32 docNoteCount = 0;
-				for (size_t i = 0; i < attrsN.size(); ++i)
-				{
-					if (attrsN[i].IsFootnote() && attrsN[i].fFootnoteOrdinal + 1 > docNoteCount)
-						docNoteCount = attrsN[i].fFootnoteOrdinal + 1;
-				}
-				const bool16 markersLineUp = (static_cast<size_t>(docNoteCount) == markers.size())
-											 ? kTrue : kFalse;
-				if (!markersLineUp && !merged.fNoteRemoves.empty())
-				{
-					++refusedNotes;
-					PMString why("this story's footnote markers cannot be told apart one by one "
-								 "(a footnote inside another?), so none was deleted");
-					why.SetTranslatable(kFalse);
-					if (firstRefusal.IsEmpty())
-						firstRefusal = why;
-					NoteRefusal(original, "Note", why);
-				}
-				std::vector<TextIndex> going;
-				for (size_t d = 0; markersLineUp && d < merged.fNoteRemoves.size(); ++d)
-				{
-					const int32 which = merged.fNoteRemoves[d].fNowNote;
-					if (which >= 0 && static_cast<size_t>(which) < markers.size())
-					{
-						going.push_back(markers[static_cast<size_t>(which)]);
-						continue;
-					}
-					++refusedNotes;
-					PMString why("a footnote deleted in Word could not be found in the document");
-					why.SetTranslatable(kFalse);
-					if (firstRefusal.IsEmpty())
-						firstRefusal = why;
-					NoteRefusal(original, "Note", why);
-				}
-				std::sort(going.begin(), going.end());
-				for (size_t d = going.size(); d > 0; --d)
-				{
-					PMString why;
-					if (KCMDeleteNoteAt(model, going[d - 1], why) == kSuccess)
-					{
-						++noteEdits;
-						touched = kTrue;
-						continue;
-					}
-					++refusedNotes;
-					if (firstRefusal.IsEmpty())
-						firstRefusal = why;
-					NoteRefusal(original, "Note", why);
-				}
-
-				// ---- the ones Word added --------------------------------------------------------
-				if (!merged.fNoteAdds.empty())
-				{
-					std::vector<std::string> parasA;
-					std::vector<KCMParaAttrs> attrsA;
-					std::vector<int32> startsA;
-					if (!KCMTextRead::ReadStory(storyRef, parasA, attrsA, startsA))
-					{
-						++refusedNotes;
-						PMString why("the story could not be read again, so no footnote was added");
-						why.SetTranslatable(kFalse);
-						if (firstRefusal.IsEmpty())
-							firstRefusal = why;
-						NoteRefusal(original, "Note", why);
-					}
-					else
-					{
-						std::vector<std::pair<TextIndex, size_t> > pending;
-						for (size_t a = 0; a < merged.fNoteAdds.size(); ++a)
-						{
-							const KCMStoryMerge::NoteAdd& add = merged.fNoteAdds[a];
-							const int32 docPara = DocParaOfPlace(attrsA, add.fPlace, add.fPara);
-							if (docPara < 0 || static_cast<size_t>(docPara) >= startsA.size())
-							{
-								++refusedNotes;
-								PMString why("a footnote added in Word has no paragraph to stand in");
-								why.SetTranslatable(kFalse);
-								if (firstRefusal.IsEmpty())
-									firstRefusal = why;
-								NoteRefusal(original, "Note", why);
-								continue;
-							}
-							const TextIndex at = static_cast<TextIndex>(startsA[static_cast<size_t>(docPara)])
-												 + KCMParaText::ModelOffsetInParagraph(
-													   attrsA[static_cast<size_t>(docPara)], add.fAt);
-							pending.push_back(std::make_pair(at, a));
-						}
-						std::stable_sort(pending.begin(), pending.end());
-						for (size_t k = pending.size(); k > 0; --k)
-						{
-							const TextIndex at = pending[k - 1].first;
-							const KCMStoryMerge::NoteAdd& add = merged.fNoteAdds[pending[k - 1].second];
-							PMString why;
-							TextIndex from = 0;
-							TextIndex to = 0;
-							if (KCMInsertNoteAt(model, at, from, to, why) != kSuccess)
-							{
-								++refusedNotes;
-								if (firstRefusal.IsEmpty())
-									firstRefusal = why;
-								NoteRefusal(original, "Note", why);
-								continue;
-							}
-							// ★**THE NOTE IS IN THE DOCUMENT FROM HERE ON, whatever becomes of its
-							//   words**, so it is counted here and a failure to fill it is named on
-							//   its own. Counting the two together made the status line disagree
-							//   with what the document held - an empty footnote the reader can see
-							//   and fill in beats one nothing admits to.
-							++noteEdits;
-							touched = kTrue;
-							if (!PourNoteWords(model, from, to, add.fParas, why))
-							{
-								++refusedNotes;
-								if (firstRefusal.IsEmpty())
-									firstRefusal = why;
-								NoteRefusal(original, "Note", why);
-							}
-						}
-					}
-				}
-			}
-		}
-
-		// ---- and now the ruby and the kenten, over the words that went in ----------------------
-		//
-		// ★★★**THE STORY IS READ AGAIN FIRST.** Every write above moved the positions after it, so
-		//   an attribute placed from the reading the WORDS were planned from would land on the
-		//   wrong characters. This second reading is also what lets each paragraph be asked the
-		//   one question that makes an offset mean the same thing on both sides - do the words
-		//   match now? - which KCMPourParagraphAttributes asks, and refuses on.
-		// ★**FORWARDS, unlike the text pass**: an attribute never changes how many characters
-		//   there are, so nothing standing after it moves.
-		// ⚠A story whose second read fails keeps the words that went in; only its attributes are
-		//   left alone.
-		{
-			std::vector<std::string> paras2;
-			std::vector<KCMParaAttrs> attrs2;
-			std::vector<int32> starts2;
-			if (KCMTextRead::ReadStory(storyRef, paras2, attrs2, starts2))
-			{
-				std::vector<Place> places2;
-				// ⚠**THE SAME TABLES ARE LEFT ALONE HERE.** The attribute pass pairs cells by
-				//   position exactly as the text pass does, so a table whose shape disagrees would
-				//   have its ruby and kenten written into a DIFFERENT cell - the one failure this
-				//   whole rule exists to prevent.
-				BuildPlaces(attrs2, *file, refusedTables, places2);
-				// ⚠**THE SAME NOTES ARE LEFT ALONE HERE** - for the reason the same line above gives.
-				//   Their ruby and kenten would land in another note exactly as their words would.
-				if (notesLeftAlone)
-					DropNotePlaces(attrs2, places2);
-
-				for (size_t p = 0; p < places2.size(); ++p)
-				{
-					const Place& place = places2[p];
-					// ⚠The two kinds of place the text pass has already counted and named are
-					//   passed over in silence here. Counting them again would tell the reader
-					//   about one cell twice, under two headings - the lesson matchedFiles above
-					//   was written for.
-					if (place.fFile == nil || place.fDoc.size() != place.fFile->size())
-						continue;
-
-					for (size_t q = 0; q < place.fDoc.size(); ++q)
-					{
-						const size_t i = place.fDoc[q];
-						PMString attrWhyNot;
-						PMString attrKept;
-						bool16 attrRefused = kFalse;
-						const int32 n = KCMPourParagraphAttributes(
-											model, static_cast<TextIndex>(starts2[i]),
-											attrs2[i], paras2[i], (*place.fFile)[q],
-											attrWhyNot, attrRefused, attrKept);
-						if (attrRefused)
-						{
-							++refusedAttrs;
-							if (firstRefusal.IsEmpty())
-								firstRefusal = attrWhyNot;
-							NoteRefusal(original, "Attr", attrWhyNot);
-						}
-						// ★**HELD BACK, NOT REFUSED** (2026-09-22): the paragraph went in and one
-						//   thing in it was kept as the document has it, because Word cannot carry
-						//   it. It gets a count and a row of its own.
-						// ⚠**IT MUST NOT TAKE firstRefusal**, which only the FIRST thing to fill it
-						//  ever reaches the status line by: a rescue standing there would push a
-						//  real refusal, found later in the same import, out of the one line the
-						//  reader reads.
-						if (!attrKept.IsEmpty())
-						{
-							++keptTcyParas;
-							NoteHeldBack(original, "Word", attrKept);
-						}
-						if (n > 0)
-						{
-							attrEdits += n;
-							touched = kTrue;
-						}
-					}
-				}
-			}
-		}
+		edits += result.fWrites;
+		attrEdits += result.fAttrWrites;
+		noteEdits += result.fNoteEdits;
+		const bool16 touched = (result.fWrites + result.fAttrWrites + result.fNoteEdits > 0) ? kTrue : kFalse;
 
 		if (touched)
 			++storiesTouched;
@@ -2274,50 +759,14 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	outMessage.SetTranslatable(kFalse);
 	AppendCount(outMessage, "", edits, " change(s) put into the document");
 	AppendCount(outMessage, " in ", storiesTouched, " story(ies)");
-	// ★COUNTED APART FROM THE WORDS, because an import that changed nothing else is exactly the
-	//   case this pass was written for ("I only changed the ruby") - and a line saying "0 changes"
-	//   under it would be the plug-in denying what it had just done.
 	if (attrEdits > 0)
 		AppendCount(outMessage, ", ", attrEdits, " ruby/kenten write(s)");
-	// ★AND THE NOTES APART AGAIN, for the same reason: an import whose only change was a footnote
-	//   Word added is a real import, and the line has to say what happened.
 	if (noteEdits > 0)
 		AppendCount(outMessage, ", ", noteEdits, " footnote(s) added or removed");
-	// ★A .docx MERGED THREE WAYS SAYS SO (stage 3): how many of Word's changes went in, and how many
-	//   the document's own edits kept out - the first of those named, so the reader knows where to look.
-	//   ⚠It was kept in a file-static until 2026-09-20, for a caller that has not existed since the
-	//    pour moved out of the rehydration: the pour and this sentence are now one function.
-	PMString sLastMergeNote;
-	sLastMergeNote.SetTranslatable(kFalse);
-	if (wordChanges > 0 || conflicts > 0)
-	{
-		AppendCount(sLastMergeNote, "", wordChanges, " change(s) from Word");
-		if (conflicts > 0)
-		{
-			AppendCount(sLastMergeNote, ", ", conflicts, " conflict(s) kept the document's words");
-			if (!firstConflict.IsEmpty())
-			{
-				sLastMergeNote.Append(" (");
-				sLastMergeNote.Append(firstConflict);
-				sLastMergeNote.Append(")");
-			}
-		}
-		outMessage.Append(", ");
-		outMessage.Append(sLastMergeNote);
-	}
-	if (skippedByTables > 0)
-		AppendCount(outMessage, ", ", skippedByTables, " story(ies) left alone (table structure changed)");
-	if (refusedPlaces > 0)
-		AppendCount(outMessage, ", ", refusedPlaces, " place(s) refused");
-	if (refusedParas > 0)
-		AppendCount(outMessage, ", ", refusedParas, " paragraph(s) refused");
-	if (refusedAttrs > 0)
-		AppendCount(outMessage, ", ", refusedAttrs, " paragraph(s) kept their own ruby/kenten");
-	if (refusedNotes > 0)
-		AppendCount(outMessage, ", ", refusedNotes, " footnote(s) refused");
-	if (keptTcyParas > 0)
-		AppendCount(outMessage, ", ", keptTcyParas,
-					" paragraph(s) kept a tate-chu-yoko Word cannot carry (the rows marked !)");
+	if (storiesHeld > 0)
+		AppendCount(outMessage, ", ", storiesHeld, " story(ies) left alone (the rows marked !)");
+	if (heldBack > 0)
+		AppendCount(outMessage, ", ", heldBack, " thing(s) Word cannot carry kept as they were (the rows marked !)");
 	if (unmatched > 0)
 		AppendCount(outMessage, ", ", unmatched, " file(s) had no story");
 	if (!firstRefusal.IsEmpty())

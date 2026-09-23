@@ -1300,14 +1300,13 @@ bool16 WriteParts(const KCMStoryShape::Story& s, int32 uid,
 	std::string settings = kXmlDeclaration;
 	settings += "<w:settings ";
 	settings += kWordNamespace;
-	// ★★TRACKING IS ON, AND PROTECTED AS "TRACKED CHANGES ONLY" (2026-09-19, the user's pick): the
-	//   import tells Word's changes from everybody else's by Word's own revision marks, so an editor
-	//   who switches tracking off by accident costs themselves that (the import then compares the
-	//   whole text - Fingerprint, in the header). Word's protection of this kind makes the switch
-	//   unavailable. ⚠NO PASSWORD, deliberately: it is there to stop an accident, not a person -
-	//   whoever means to lift it can, from Word's own Review tab.
-	//   The order is the schema's (CT_Settings): trackRevisions, then documentProtection.
-	settings += "><w:trackRevisions/><w:documentProtection w:edit=\"trackedChanges\" w:enforcement=\"1\"/>";
+	// ★★TRACKING IS NOT SWITCHED ON, AND THE FILE IS NOT PROTECTED (2026-09-23, the user's rule). From
+	//   2026-09-19 to that day every file came with Word's revision tracking on and protected as
+	//   "tracked changes only", because the import told Word's changes from the document's by the
+	//   marks. The import now makes the story what Word shows, marks or none (KCMStorySync), and red
+	//   marks would only tell the reader that the marked parts alone go in - which is no longer true.
+	//   A reader who turns tracking on in Word loses nothing: the import reads every mark accepted.
+	settings += ">";
 	if (hasNotes)
 		settings += "<w:footnotePr><w:footnote w:id=\"-1\"/><w:footnote w:id=\"0\"/></w:footnotePr>";
 	settings += "</w:settings>";
