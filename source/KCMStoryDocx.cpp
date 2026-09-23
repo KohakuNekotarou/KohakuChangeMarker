@@ -717,6 +717,17 @@ bool16 AppendTable(const KCMStoryShape::Story& s, size_t index, int32 depth, std
 	}
 	const int32 columnWidth = 9000 / columns;		// twips; Word re-fits them, this is a start
 
+	// ★THE TABLE'S NAME (2026-09-23): a content control around the whole <w:tbl>, so the reader can
+	//   tell which table of the document this is without counting. ⚠NO w:lock: stage 3 lets the reader
+	//   delete a table in Word, and a locked control would stop exactly that. No w:alias either - Word
+	//   would print it as a heading on the control.
+	if (!table.fName.empty())
+	{
+		out += "<w:sdt><w:sdtPr><w:tag w:val=\"";
+		AppendEscaped(table.fName, 0, table.fName.size(), out);
+		out += "\"/></w:sdtPr><w:sdtContent>";
+	}
+
 	out += "<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/><w:tblBorders>"
 		   "<w:top w:val=\"single\" w:sz=\"4\"/><w:left w:val=\"single\" w:sz=\"4\"/>"
 		   "<w:bottom w:val=\"single\" w:sz=\"4\"/><w:right w:val=\"single\" w:sz=\"4\"/>"
@@ -758,17 +769,38 @@ bool16 AppendTable(const KCMStoryShape::Story& s, size_t index, int32 depth, std
 			{
 				out += "<w:p/>";
 			}
-			else if (!AppendBlocks(s, table.fRows[r].fCells[static_cast<size_t>(slot.fCell)].fParas,
-								   static_cast<int32>(index), static_cast<int32>(r), slot.fCell,
-								   depth + 1, out, whyNot))
+			else
 			{
-				return kFalse;
+				const KCMStoryShape::Cell& cell = table.fRows[r].fCells[static_cast<size_t>(slot.fCell)];
+				// ★TWO NAMES IN ONE CELL IS A MERGE MADE IN WORD (measured 2026-09-22). It is met only when
+				//   the ORIGIN read back from such a file is fingerprinted, and refusing it there sends the
+				//   story to the whole-text comparison - where a merge went before names, too.
+				if (cell.fNames.size() > 1)
+				{
+					whyNot = "a cell holds more than one name (cells merged in Word)";
+					return kFalse;
+				}
+				if (cell.fNames.size() == 1)
+				{
+					out += "<w:sdt><w:sdtPr><w:tag w:val=\"";
+					AppendEscaped(cell.fNames[0], 0, cell.fNames[0].size(), out);
+					out += "\"/></w:sdtPr><w:sdtContent>";
+				}
+				if (!AppendBlocks(s, cell.fParas, static_cast<int32>(index), static_cast<int32>(r), slot.fCell,
+								  depth + 1, out, whyNot))
+				{
+					return kFalse;
+				}
+				if (cell.fNames.size() == 1)
+					out += "</w:sdtContent></w:sdt>";
 			}
 			out += "</w:tc>";
 		}
 		out += "</w:tr>";
 	}
 	out += "</w:tbl>";
+	if (!table.fName.empty())
+		out += "</w:sdtContent></w:sdt>";
 	return kTrue;
 }
 
