@@ -120,15 +120,12 @@ bool16 IsInvisible(int32 cp);
 	count and keeps this header free of a type that contains itself. */
 struct Cell
 {
-	int32						fColSpan;
-	int32						fRowSpan;
-	std::vector<Para>			fParas;
-	// ★THE NAMES THE CELL CARRIES IN A .docx (2026-09-23): "kcm_c_<table uid>_<row>_<col>", where
-	//   it stood when it was written - a bookmark in the file (CellName says why). A LIST, because Word
-	//   keeps both when two named cells are merged, and moves a deleted column's bookmark into the
-	//   next cell (both measured) - one slot would lose what happened. Empty = a cell nobody named:
-	//   one Word made, one copied in Word (a copy takes no bookmark along), or one from an older file.
-	std::vector<std::string>	fNames;
+	int32				fColSpan;
+	int32				fRowSpan;
+	std::vector<Para>	fParas;
+	// (⛔fNames - the cell's name, carried as a bookmark in a .docx - stood here from 2026-09-22 to
+	//  2026-09-23: the import compares a table's shape now, and names nothing. The measurements of how
+	//  Word treats a bookmark in a cell are in docs/ai-notes/kcm-word-table-lock-probe-2026-09-22.md.)
 
 	Cell() : fColSpan(1), fRowSpan(1) {}
 };
@@ -163,10 +160,7 @@ struct Table
 	int32				fInCell;	// and which cell of that row, in the order its cells run
 	bool16				fSplitsPara;
 	std::vector<Row>	fRows;
-	// ★THE TABLE'S NAME (2026-09-23): "kcm_t_<uid>" - the UID of the table in the document. The export
-	//   sets it; a .docx does not carry it - the reader settles it from the table's own cells' names.
-	//   Empty = a table nobody named (a new one, a copy, or cells from two tables mixed).
-	std::string			fName;
+	// (⛔fName - the table's name - stood here from 2026-09-22 to 2026-09-23; see Cell.)
 
 	Table() : fOrdinal(0), fParaIndex(0), fOffset(0), fInTable(-1), fInRow(0), fInCell(0),
 			  fSplitsPara(kFalse) {}
@@ -206,24 +200,8 @@ void CollectKentenValues(const Story& s, std::vector<std::string>& inOutSeen);
 	  exists to keep, and this is that sentence as a function.
 	@param outWhy where the first difference is, in words a status line can show.
 	@param withNoteRefs kTrue compares Para::fNoteRefs as well. ★**KCMStoryDocx's own check passes
-	  kTrue**, because that format carries where a reference stands.
-	@param withNames kTrue compares Table::fName and Cell::fNames as well. ★**KCMStoryDocx's own check
-	  passes kTrue** (a name the writer or the reader drops is caught before a file is written); nothing
-	  else does - a name is who a table is, not what is in it. */
-bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNoteRefs = kFalse,
-			bool16 withNames = kFalse);
-
-/** The names of a table and a cell (2026-09-23). The cell's is where it stood when written.
-	★**A CELL'S NAME TRAVELS AS A BOOKMARK** (KCMStoryDocx), so it is spelt in letters, digits and "_"
-	  only - Word takes no "-" in a bookmark's name. ⚠**A TABLE'S NAME IS NEVER WRITTEN**: the reader
-	  settles it from its cells' names (each carries the table's UID), because Word 2007 re-nests a
-	  content control around a table and around its first cell as it likes (measured 2026-09-23). */
-std::string TableName(uint32 uid);
-std::string CellName(uint32 uid, int32 row, int32 col);
-bool16 IsTableName(const std::string& name);
-bool16 IsCellName(const std::string& name);
-/** The table UID a cell's name carries. kFalse for anything that is not a whole cell name. */
-bool16 TableUidOfCellName(const std::string& name, uint32& outUid);
+	  kTrue**, because that format carries where a reference stands. */
+bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNoteRefs = kFalse);
 
 }	// namespace KCMStoryShape
 

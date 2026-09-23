@@ -369,7 +369,7 @@ bool16 SameParas(const std::vector<Para>& a, const std::vector<Para>& b, const s
 
 }	// anonymous namespace
 
-bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNoteRefs, bool16 withNames)
+bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNoteRefs)
 {
 	outWhy.clear();
 
@@ -404,12 +404,6 @@ bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNote
 		const Table& y = b.fTables[t];
 		const std::string where = "table " + Num(t);
 
-		if (withNames && x.fName != y.fName)
-		{
-			outWhy = where + ": its name changed";
-			return kFalse;
-		}
-
 		if (x.fInTable != y.fInTable || x.fInRow != y.fInRow || x.fInCell != y.fInCell)
 		{
 			outWhy = where + ": it stands somewhere else";
@@ -443,11 +437,6 @@ bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNote
 				const Cell& p = x.fRows[r].fCells[c];
 				const Cell& q = y.fRows[r].fCells[c];
 				const std::string cell = where + " row " + Num(r) + " cell " + Num(c);
-				if (withNames && p.fNames != q.fNames)
-				{
-					outWhy = cell + ": its name changed";
-					return kFalse;
-				}
 				if (p.fColSpan != q.fColSpan || p.fRowSpan != q.fRowSpan)
 				{
 					outWhy = cell + ": its span changed";
@@ -459,63 +448,6 @@ bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNote
 		}
 	}
 
-	return kTrue;
-}
-
-std::string TableName(uint32 uid)
-{
-	char buf[32];
-	std::snprintf(buf, sizeof(buf), "kcm_t_%u", static_cast<unsigned int>(uid));
-	return std::string(buf);
-}
-
-std::string CellName(uint32 uid, int32 row, int32 col)
-{
-	char buf[64];
-	std::snprintf(buf, sizeof(buf), "kcm_c_%u_%d_%d", static_cast<unsigned int>(uid),
-				  static_cast<int>(row), static_cast<int>(col));
-	return std::string(buf);
-}
-
-bool16 IsTableName(const std::string& name)
-{
-	return (name.size() > 6 && name.compare(0, 6, "kcm_t_") == 0) ? kTrue : kFalse;
-}
-
-bool16 IsCellName(const std::string& name)
-{
-	return (name.size() > 6 && name.compare(0, 6, "kcm_c_") == 0) ? kTrue : kFalse;
-}
-
-bool16 TableUidOfCellName(const std::string& name, uint32& outUid)
-{
-	outUid = 0;
-	if (!IsCellName(name))
-		return kFalse;
-	// "kcm_c_" <uid> "_" <row> "_" <col>, each part digits only
-	int32 parts = 0;
-	uint32 uid = 0;
-	bool16 digits = kFalse;
-	for (size_t i = 6; i <= name.size(); ++i)
-	{
-		const char ch = (i < name.size()) ? name[i] : '_';
-		if (ch == '_')
-		{
-			if (!digits)
-				return kFalse;
-			++parts;
-			digits = kFalse;
-			continue;
-		}
-		if (ch < '0' || ch > '9')
-			return kFalse;
-		if (parts == 0)
-			uid = uid * 10 + static_cast<uint32>(ch - '0');
-		digits = kTrue;
-	}
-	if (parts != 3)
-		return kFalse;
-	outUid = uid;
 	return kTrue;
 }
 

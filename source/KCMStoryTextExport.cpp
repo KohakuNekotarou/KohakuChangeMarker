@@ -147,9 +147,8 @@ struct TableShape
 	int32					fHeaderStart;
 	int32					fHeaderCount;
 	std::vector<CellShape>	fCells;			// the anchors only, in row then column order
-	UID						fUID;			// the table's own UID - what its cells' names in a .docx carry
 
-	TableShape() : fStart(0), fAnchor(0), fRowCount(0), fHeaderStart(0), fHeaderCount(0), fUID(kInvalidUID) {}
+	TableShape() : fStart(0), fAnchor(0), fRowCount(0), fHeaderStart(0), fHeaderCount(0) {}
 };
 
 bool16 EarlierTable(const TableShape& a, const TableShape& b)
@@ -207,10 +206,6 @@ bool16 ReadTableShapes(ITextModel* model, std::vector<TableShape>& out)
 		//    paragraph - which is where the writer puts it anyway (a nested table is a table of
 		//    its own in this format, KCMStoryDocx says why).
 		shape.fAnchor = dict->GetAnchorTextRange().Start(nil);
-
-		// ★THE TABLE'S UID IS WHAT ITS CELLS' NAMES CARRY IN A .docx (2026-09-23). The dictionary IS the
-		//   table (the ITableModel above was got from it), so this is the UID the import finds it by.
-		shape.fUID = next;
 
 		const RowRange rows = table->GetTotalRows();
 		const ColRange cols = table->GetTotalCols();
@@ -320,7 +315,6 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 		//   is written after it whole. fSplitsPara is the reader's side of a shape this half does
 		//   not produce.
 		table.fSplitsPara = kFalse;
-		table.fName = KCMStoryShape::TableName(shapes[t].fUID.Get());
 
 		for (int32 r = 0; r < shapes[t].fRowCount; ++r)
 		{
@@ -334,9 +328,6 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 				KCMStoryShape::Cell cell;
 				cell.fColSpan = shapes[t].fCells[c].fColSpan;
 				cell.fRowSpan = shapes[t].fCells[c].fRowSpan;
-				// ★WHERE THE CELL STANDS NOW, in the grid (an anchor's address) - which is what the name says
-				cell.fNames.push_back(KCMStoryShape::CellName(shapes[t].fUID.Get(),
-															  shapes[t].fCells[c].fRow, shapes[t].fCells[c].fCol));
 				row.fCells.push_back(cell);
 			}
 			table.fRows.push_back(row);
@@ -880,7 +871,7 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 				KCMStoryDocx::SettleForThisFormat(settled);
 				KCMStoryDocx::ReadResult back;
 				sound = KCMStoryDocx::Read(parts, back, why)
-						&& KCMStoryShape::Same(settled, back.fAfter, why, kTrue, kTrue);
+						&& KCMStoryShape::Same(settled, back.fAfter, why, kTrue);
 			}
 			if (!sound)
 			{

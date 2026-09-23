@@ -696,64 +696,6 @@ bool16 AppendBlocks(const KCMStoryShape::Story& s, const std::vector<KCMStorySha
 					int32 inTable, int32 inRow, int32 inCell, int32 depth, std::string& out,
 					std::string& whyNot);
 
-/** Put a cell's name - a bookmark, a point with nothing inside it - at the head of the cell's first
-	paragraph of its own, in what was written for that cell from `from` on (after the paragraph's
-	properties, where the schema wants content). A cell that opens with a nested table gets it in the
-	paragraph after that table, which the writer always writes. kFalse when the cell has no paragraph
-	of its own at all.
-	★★**A BOOKMARK, NOT A CONTENT CONTROL** (2026-09-23, measured on Word 2007 and the user's call).
-	  Word re-nests content controls whose ranges start at the same place - the control around a
-	  one-cell table goes into the cell, the one around a nested table's first cell comes out around the
-	  table - so which control a name sits in says nothing reliable. A bookmark stayed in its own cell
-	  through every edit tried, and a table COPIED in Word takes no bookmark along (a bookmark's name is
-	  kept one in a document), so a copy reads as the new table it is. */
-bool16 InsertCellBookmark(std::string& out, size_t from, int32 id, const std::string& name)
-{
-	std::string mark("<w:bookmarkStart w:id=\"");
-	AppendNumber(id, mark);
-	mark += "\" w:name=\"";
-	AppendEscaped(name, 0, name.size(), mark);
-	mark += "\"/><w:bookmarkEnd w:id=\"";
-	AppendNumber(id, mark);
-	mark += "\"/>";
-
-	int32 tables = 0;
-	for (size_t at = from; at < out.size(); ++at)
-	{
-		if (out.compare(at, 7, "<w:tbl>") == 0)
-		{
-			++tables;
-			continue;
-		}
-		if (out.compare(at, 8, "</w:tbl>") == 0)
-		{
-			--tables;
-			continue;
-		}
-		if (tables != 0)
-			continue;					// a nested table's paragraphs are its cells', not this one's
-		if (out.compare(at, 6, "<w:p/>") == 0)
-		{
-			out.replace(at, 6, "<w:p>" + mark + "</w:p>");
-			return kTrue;
-		}
-		if (out.compare(at, 5, "<w:p>") == 0)
-		{
-			size_t head = at + 5;
-			if (out.compare(head, 7, "<w:pPr>") == 0)
-			{
-				const size_t end = out.find("</w:pPr>", head);
-				if (end == std::string::npos)
-					return kFalse;
-				head = end + 8;
-			}
-			out.insert(head, mark);
-			return kTrue;
-		}
-	}
-	return kFalse;
-}
-
 bool16 AppendTable(const KCMStoryShape::Story& s, size_t index, int32 depth, std::string& out,
 				   std::string& whyNot)
 {
@@ -772,10 +714,6 @@ bool16 AppendTable(const KCMStoryShape::Story& s, size_t index, int32 depth, std
 		}
 	}
 	const int32 columnWidth = 9000 / columns;		// twips; Word re-fits them, this is a start
-
-	// ⚠THE TABLE'S OWN NAME IS NOT WRITTEN (2026-09-23): each cell's name carries the table's UID, and
-	//   the reader settles the table's name from them (KCMStoryShape::CellName says why).
-	int32 named = 0;					// the cells named so far: the low half of each bookmark's id
 
 	out += "<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/><w:tblBorders>"
 		   "<w:top w:val=\"single\" w:sz=\"4\"/><w:left w:val=\"single\" w:sz=\"4\"/>"
@@ -818,41 +756,11 @@ bool16 AppendTable(const KCMStoryShape::Story& s, size_t index, int32 depth, std
 			{
 				out += "<w:p/>";
 			}
-			else
+			else if (!AppendBlocks(s, table.fRows[r].fCells[static_cast<size_t>(slot.fCell)].fParas,
+								   static_cast<int32>(index), static_cast<int32>(r), slot.fCell,
+								   depth + 1, out, whyNot))
 			{
-				const KCMStoryShape::Cell& cell = table.fRows[r].fCells[static_cast<size_t>(slot.fCell)];
-				// ★TWO NAMES IN ONE CELL ARE A MERGE MADE IN WORD, OR A COLUMN DELETED THERE (a deleted
-				//   cell's bookmark moves into the next cell - measured 2026-09-23; the span tells the two
-				//   apart). It is met only when the ORIGIN read back from such a file is fingerprinted, and
-				//   refusing it there sends the story to the whole-text comparison - where both went before
-				//   names, too.
-				if (cell.fNames.size() > 1)
-				{
-					whyNot = "a cell holds more than one name (cells merged in Word)";
-					return kFalse;
-				}
-				const size_t from = out.size();
-				if (!AppendBlocks(s, cell.fParas, static_cast<int32>(index), static_cast<int32>(r), slot.fCell,
-								  depth + 1, out, whyNot))
-				{
-					return kFalse;
-				}
-				if (cell.fNames.size() == 1)
-				{
-					// The id only has to be one in the document: the table's number, then the cell's.
-					if (named > 0xFFFF || index > 0x7FFF)
-					{
-						whyNot = "a table with more cells than this format names";
-						return kFalse;
-					}
-					const int32 id = (static_cast<int32>(index) << 16) | named;
-					++named;
-					if (!InsertCellBookmark(out, from, id, cell.fNames[0]))
-					{
-						whyNot = "a cell with no paragraph of its own to hold its name";
-						return kFalse;
-					}
-				}
+				return kFalse;
 			}
 			out += "</w:tc>";
 		}
@@ -1489,32 +1397,8 @@ struct Reader
 	KCMStoryShape::Story*	fStory;
 	std::string				fWhy;
 
-	std::vector<std::string>*	fCellNames;	// the names of the cell being read; nil outside a cell
-
-	Reader() : fTree(nil), fMarks(nil), fStory(nil), fCellNames(nil) {}
+	Reader() : fTree(nil), fMarks(nil), fStory(nil) {}
 };
-
-/** A cell's name - a bookmark of ours (KCMStoryShape::CellName) - found while that cell is read. Kept
-	once: a name counted twice would read as a merge. Outside a cell (rd.fCellNames nil) it is nobody's. */
-void NoteCellName(Reader& rd, const std::string& name)
-{
-	if (rd.fCellNames == nil)
-		return;
-	for (size_t k = 0; k < rd.fCellNames->size(); ++k)
-	{
-		if ((*rd.fCellNames)[k] == name)
-			return;
-	}
-	rd.fCellNames->push_back(name);
-}
-
-/** A <w:bookmarkStart>: when it is one of ours, the name of the cell being read. */
-void NoteBookmark(Reader& rd, int32 node)
-{
-	const std::string* n = rd.fTree->Attr(node, "name");
-	if (n != nil && KCMStoryShape::IsCellName(*n))
-		NoteCellName(rd, *n);
-}
 
 bool16 Refuse(Reader& rd, const std::string& why)
 {
@@ -2145,9 +2029,6 @@ bool16 ReadContent(Reader& rd, int32 node, Building& b)
 				 || name == "moveToRangeStart" || name == "moveToRangeEnd"
 				 || name == "smartTagPr" || name == "customXmlPr")		// the properties of what is seen through (R4)
 		{
-			// ★A CELL'S NAME (2026-09-23): the bookmark the writer puts at the head of a cell's first paragraph
-			if (name == "bookmarkStart")
-				NoteBookmark(rd, c);
 			continue;
 		}
 		else if (name == "fldSimple")
@@ -2361,13 +2242,7 @@ bool16 ReadCell(Reader& rd, int32 tc, int32 slot, int32 rowIndex, KCMStoryShape:
 		open.fCell[static_cast<size_t>(c)] = restarts ? cellIndex : -1;
 	}
 
-	// ★The names on this cell's content controls are collected into it while its blocks are read; a
-	//   nested table's cells collect their own (the pointer is put back on the way out).
-	std::vector<std::string>* const outer = rd.fCellNames;
-	rd.fCellNames = &cell.fNames;
-	const bool16 read = ReadBlocks(rd, tc, slot, rowIndex, cellIndex, cell.fParas);
-	rd.fCellNames = outer;
-	if (!read)
+	if (!ReadBlocks(rd, tc, slot, rowIndex, cellIndex, cell.fParas))
 		return kFalse;
 	row.fCells.push_back(cell);
 	col += span;
@@ -2511,36 +2386,7 @@ bool16 ReadTable(Reader& rd, int32 tbl, int32 inTable, int32 inRow, int32 inCell
 		table.fInCell = inCell;
 	}
 	GridOpen open;
-	if (!ReadRows(rd, tbl, slot, open))
-		return kFalse;
-
-	// ★THE TABLE'S NAME IS ITS CELLS' (2026-09-23): each cell's name carries the table's UID. One UID
-	//   among them all = that table. None, or two (cells of two tables brought together in Word) = no
-	//   name - a table the import will not take for any table of the document.
-	KCMStoryShape::Table& table = s.fTables[static_cast<size_t>(slot)];		// re-taken: nested tables grew the list
-	uint32 uid = 0;
-	bool16 one = kFalse;
-	bool16 mixed = kFalse;
-	for (size_t r = 0; r < table.fRows.size(); ++r)
-	{
-		for (size_t c = 0; c < table.fRows[r].fCells.size(); ++c)
-		{
-			const std::vector<std::string>& names = table.fRows[r].fCells[c].fNames;
-			for (size_t k = 0; k < names.size(); ++k)
-			{
-				uint32 its = 0;
-				if (!KCMStoryShape::TableUidOfCellName(names[k], its))
-					continue;
-				if (one && its != uid)
-					mixed = kTrue;
-				uid = its;
-				one = kTrue;
-			}
-		}
-	}
-	if (one && !mixed)
-		table.fName = KCMStoryShape::TableName(uid);
-	return kTrue;
+	return ReadRows(rd, tbl, slot, open);
 }
 
 /*	ReadBlocks
@@ -2626,8 +2472,6 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 		}
 		else if (name == "bookmarkStart" || name == "bookmarkEnd" || name == "proofErr" || name == "customXmlPr")
 		{
-			if (name == "bookmarkStart")
-				NoteBookmark(rd, c);		// a cell's name, should Word have put it between paragraphs
 			continue;
 		}
 		else
