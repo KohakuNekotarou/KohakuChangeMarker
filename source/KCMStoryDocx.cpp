@@ -1415,16 +1415,25 @@ struct Building
 	Building() : fLen(0), fMarkRevision(0), fFieldDepth(0), fInResult(kFalse) {}
 };
 
-/** kTrue for a content control that was ours and is no longer read: the two table marks and the
-	legend of stage 3b (kcm-continues / kcm-continued / kcm-legend). A file written that day still
-	opens; what those controls said is decided by the document now (the note above AppendParagraph),
-	so their contents are passed over rather than read as words. */
-bool16 IsRetiredOwnControl(const KCMXmlTree& t, int32 sdt)
+/** The w:tag of a content control, or nil when it has none. */
+const std::string* SdtTag(const KCMXmlTree& t, int32 sdt)
 {
 	const int32 pr = t.Child(sdt, kW, "sdtPr");
 	const int32 tag = (pr >= 0) ? t.Child(pr, kW, "tag") : -1;
-	const std::string* v = (tag >= 0) ? t.Attr(tag, "val") : nil;
-	return (v != nil && v->size() > 4 && v->compare(0, 4, "kcm-") == 0) ? kTrue : kFalse;
+	return (tag >= 0) ? t.Attr(tag, "val") : nil;
+}
+
+/** kTrue for a content control that was ours and is no longer read: the two table marks and the
+	legend of stage 3b. A file written that day still opens; what those controls said is decided by
+	the document now (the note above AppendParagraph), so their contents are passed over rather than
+	read as words.
+	★★**BY NAME, THREE OF THEM** (2026-09-23). This used to pass over every tag beginning "kcm-" -
+	  which, the day names were put on tables and cells, would have thrown away a named cell with the
+	  nested table inside it (measured 2026-09-22: three tables read as two, and "read" reported). */
+bool16 IsRetiredOwnControl(const KCMXmlTree& t, int32 sdt)
+{
+	const std::string* v = SdtTag(t, sdt);
+	return (v != nil && (*v == "kcm-continues" || *v == "kcm-continued" || *v == "kcm-legend")) ? kTrue : kFalse;
 }
 
 typedef std::vector< std::pair<std::string, std::string> > StyleNames;	// styleId -> w:name
@@ -1439,7 +1448,10 @@ struct Reader
 	KCMStoryShape::Story*	fStory;
 	std::string				fWhy;
 
-	Reader() : fTree(nil), fSide(kSideAfterWord), fMarks(nil), fStory(nil) {}
+	std::string					fTableName;	// the name on the content control around the next <w:tbl>
+	std::vector<std::string>*	fCellNames;	// the names of the cell being read; nil outside a cell
+
+	Reader() : fTree(nil), fSide(kSideAfterWord), fMarks(nil), fStory(nil), fCellNames(nil) {}
 };
 
 bool16 Refuse(Reader& rd, const std::string& why)
@@ -2297,7 +2309,13 @@ bool16 ReadCell(Reader& rd, int32 tc, int32 slot, int32 rowIndex, KCMStoryShape:
 		open.fCell[static_cast<size_t>(c)] = restarts ? cellIndex : -1;
 	}
 
-	if (!ReadBlocks(rd, tc, slot, rowIndex, cellIndex, cell.fParas))
+	// ★The names on this cell's content controls are collected into it while its blocks are read; a
+	//   nested table's cells collect their own (the pointer is put back on the way out).
+	std::vector<std::string>* const outer = rd.fCellNames;
+	rd.fCellNames = &cell.fNames;
+	const bool16 read = ReadBlocks(rd, tc, slot, rowIndex, cellIndex, cell.fParas);
+	rd.fCellNames = outer;
+	if (!read)
 		return kFalse;
 	row.fCells.push_back(cell);
 	col += span;
@@ -2444,7 +2462,9 @@ bool16 ReadTable(Reader& rd, int32 tbl, int32 inTable, int32 inRow, int32 inCell
 		table.fInTable = inTable;
 		table.fInRow = inRow;
 		table.fInCell = inCell;
+		table.fName = rd.fTableName;		// the content control around this <w:tbl>, if it was named
 	}
+	rd.fTableName.clear();					// not the name of a table nested inside this one
 	GridOpen open;
 	return ReadRows(rd, tbl, slot, open);
 }
@@ -2527,11 +2547,23 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 		{
 			if (name == "sdt" && IsRetiredOwnControl(t, c))
 				continue;					// the legend of stage 3b: ours, and never text
+			// ★A NAME (2026-09-23): a table's goes to the <w:tbl> inside, a cell's to the cell being read.
+			const std::string* tag = (name == "sdt") ? SdtTag(t, c) : nil;
+			if (tag != nil && KCMStoryShape::IsTableName(*tag))
+				rd.fTableName = *tag;
+			else if (tag != nil && KCMStoryShape::IsCellName(*tag) && rd.fCellNames != nil)
+				rd.fCellNames->push_back(*tag);
 			const int32 content = (name == "sdt") ? t.Child(c, kW, "sdtContent") : c;
-			if (content >= 0 && !ReadBlocks(rd, content, inTable, inRow, inCell, out))
+			const bool16 read = (content < 0) ? kTrue : ReadBlocks(rd, content, inTable, inRow, inCell, out);
+			rd.fTableName.clear();			// a name is the table's it wraps, never a later one's
+			if (!read)
 				return kFalse;
 		}
-		else if (name == "bookmarkStart" || name == "bookmarkEnd" || name == "proofErr" || name == "customXmlPr")
+		else if (name == "bookmarkStart" || name == "bookmarkEnd" || name == "proofErr" || name == "customXmlPr"
+				 // ★Word writes these around a NAMED row it deletes with tracking on (measured
+				 //   2026-09-22, out7/row-delete): a mark that a range of content controls went, nothing
+				 //   of the text. (customXmlInsRange* has not been seen; it is added when it is.)
+				 || name == "customXmlDelRangeStart" || name == "customXmlDelRangeEnd")
 		{
 			continue;
 		}
