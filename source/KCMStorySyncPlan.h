@@ -95,7 +95,15 @@ struct Step
 		/** The cells of grid [fGridRow, +fGridRowSpan) x [fGridCol, +fGridColSpan) in table
 			fWhere.fTable, each a plain one by then, become one. Their words run on in it (spike M4) until
 			the words round makes them Word's. The last of the three shape stages. */
-		kMerge = 9
+		kMerge = 9,
+		/** Body table fWhere.fTable (N's ordinal) goes, whatever it holds - its footnotes, its anchored
+			objects and the tables nested in it (the user's rule, design section 10-1). Stage 0: a round of
+			tables added and taken away comes before every other (design section 10-2). */
+		kDeleteTable = 10,
+		/** A body table of fCount rows by fAt columns, each cell one empty paragraph, goes in at the END of
+			N's body paragraph fPara (before its return) - or at the head of the body when fPara is -1.
+			fNote is Word's ordinal for it, which orders two tables put in at one place. Stage 0. */
+		kInsertTable = 11
 	};
 
 	int32									fKind;
@@ -121,7 +129,8 @@ struct Step
 	/** kTrue for the four steps that change a table's shape - a round of those alone (design 9-1). */
 	bool16 IsShape() const
 	{
-		return (fKind == kResizeRows || fKind == kResizeCols || fKind == kUnmerge || fKind == kMerge) ? kTrue : kFalse;
+		return (fKind == kResizeRows || fKind == kResizeCols || fKind == kUnmerge || fKind == kMerge
+				|| fKind == kDeleteTable || fKind == kInsertTable) ? kTrue : kFalse;
 	}
 };
 

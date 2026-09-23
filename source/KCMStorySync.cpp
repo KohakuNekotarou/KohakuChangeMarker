@@ -365,6 +365,160 @@ int32 PlanShape(const KCMStoryShape::Story& ns, const KCMStoryShape::Story& ws, 
 	return 0;
 }
 
+/** A table's own words, row by row - what "the same table" is judged by when the count of tables changes. */
+std::string TableWords(const KCMStoryShape::Table& t)
+{
+	std::string out;
+	for (size_t r = 0; r < t.fRows.size(); ++r)
+		for (size_t c = 0; c < t.fRows[r].fCells.size(); ++c)
+			for (size_t p = 0; p < t.fRows[r].fCells[c].fParas.size(); ++p)
+			{
+				out += t.fRows[r].fCells[c].fParas[p].fText;
+				out += "\n";
+			}
+	return out;
+}
+
+/** How many tables stand directly in the cells of table t. */
+int32 TablesInside(const KCMStoryShape::Story& s, size_t t)
+{
+	int32 n = 0;
+	for (size_t k = 0; k < s.fTables.size(); ++k)
+		if (s.fTables[k].fInTable == static_cast<int32>(t))
+			++n;
+	return n;
+}
+
+/** Stage 0 (S3a, design section 10-2): when the body holds a different number of tables in N and in W,
+	which of them went and which came - matched BY THEIR WORDS (the user's rule), in order - and where a
+	new one goes. `now` is the document's shape, `word` Word's split one. 0 = the body's tables pair k-th
+	with k-th; 1 = the steps; -1 = the story is held, with `why`. */
+int32 PlanTables(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word,
+				 std::vector<Step>& steps, std::string& why)
+{
+	steps.clear();
+	why.clear();
+	std::vector<size_t> nb;
+	std::vector<size_t> wb;
+	for (size_t t = 0; t < now.fTables.size(); ++t)
+		if (now.fTables[t].fInTable < 0)
+			nb.push_back(t);
+	for (size_t t = 0; t < word.fTables.size(); ++t)
+		if (word.fTables[t].fInTable < 0)
+			wb.push_back(t);
+	if (nb.size() == wb.size())
+	{
+		if (now.fTables.size() != word.fTables.size())
+		{
+			why = "a table inside a cell was added or taken away, which the import does not do yet";
+			return -1;
+		}
+		return 0;
+	}
+
+	std::vector<std::string> nt;
+	std::vector<std::string> wt;
+	for (size_t i = 0; i < nb.size(); ++i)
+		nt.push_back(TableWords(now.fTables[nb[i]]));
+	for (size_t i = 0; i < wb.size(); ++i)
+		wt.push_back(TableWords(word.fTables[wb[i]]));
+
+	// ★BY THEIR WORDS, IN ORDER: of the longer list, the ordered choice that shares the most characters
+	//   with the shorter (the paragraphs' own rule, KCMParaPairing::ChooseOrdered)
+	std::vector<int32> nOfW(wb.size(), -1);
+	std::vector<int32> wOfN(nb.size(), -1);
+	std::vector<int32> chosen;
+	if (nb.size() > wb.size())
+	{
+		KCMParaPairing::ChooseOrdered(wt, 0, static_cast<int32>(wt.size()), nt, 0, static_cast<int32>(nt.size()), kFalse, chosen);
+		for (size_t j = 0; j < chosen.size(); ++j)
+		{
+			nOfW[j] = chosen[j];
+			wOfN[static_cast<size_t>(chosen[j])] = static_cast<int32>(j);
+		}
+	}
+	else
+	{
+		KCMParaPairing::ChooseOrdered(nt, 0, static_cast<int32>(nt.size()), wt, 0, static_cast<int32>(wt.size()), kTrue, chosen);
+		for (size_t i = 0; i < chosen.size(); ++i)
+		{
+			wOfN[i] = chosen[i];
+			nOfW[static_cast<size_t>(chosen[i])] = static_cast<int32>(i);
+		}
+	}
+
+	// the tables that pair keep what stands inside them; a table that goes takes its own away
+	for (size_t i = 0; i < nb.size(); ++i)
+	{
+		if (wOfN[i] < 0)
+			continue;
+		if (TablesInside(now, nb[i]) != TablesInside(word, wb[static_cast<size_t>(wOfN[i])]))
+		{
+			why = "a table inside a cell was added or taken away, which the import does not do yet";
+			return -1;
+		}
+	}
+
+	// where a new table goes: after the document paragraph that pairs with the one before it in Word
+	std::vector<std::string> nParas;
+	std::vector<std::string> wParas;
+	for (size_t p = 0; p < now.fBody.size(); ++p)
+		nParas.push_back(now.fBody[p].fText);
+	for (size_t p = 0; p < word.fBody.size(); ++p)
+		wParas.push_back(word.fBody[p].fText);
+	std::vector<KCMParaPairing::Step> pairing;
+	KCMParaPairing::Pair(nParas, wParas, pairing);
+	std::vector<int32> docOfFile(wParas.size(), -1);
+	for (size_t k = 0; k < pairing.size(); ++k)
+		if (pairing[k].fKind == KCMParaPairing::Step::kPair && pairing[k].fFile >= 0
+			&& static_cast<size_t>(pairing[k].fFile) < docOfFile.size())
+			docOfFile[static_cast<size_t>(pairing[k].fFile)] = pairing[k].fDoc;
+
+	for (size_t i = 0; i < nb.size(); ++i)
+		if (wOfN[i] < 0)
+		{
+			Step s;
+			s.fKind = Step::kDeleteTable;
+			s.fWhere = Where::Cell(static_cast<int32>(nb[i]), -1, -1);
+			steps.push_back(s);
+		}
+	for (size_t j = 0; j < wb.size(); ++j)
+	{
+		if (nOfW[j] >= 0)
+			continue;
+		const KCMStoryShape::Table& t = word.fTables[wb[j]];
+		if (TablesInside(word, wb[j]) > 0)
+		{
+			why = "a table Word added holds a table of its own, which the import does not do yet";
+			return -1;
+		}
+		std::vector<GridCell> cells;
+		int32 cols = 0;
+		LayOut(t, cells, cols);
+		const int32 rows = static_cast<int32>(t.fRows.size());
+		if (rows == 0 || cols == 0 || !IsRectangular(cells, rows, cols))
+		{
+			why = "a table Word added has no cell, or rows of different lengths";
+			return -1;
+		}
+		Step s;
+		s.fKind = Step::kInsertTable;
+		s.fWhere = Where::Body();
+		s.fPara = -1;
+		for (int32 q = t.fParaIndex - 1; q >= 0; --q)
+			if (static_cast<size_t>(q) < docOfFile.size() && docOfFile[static_cast<size_t>(q)] >= 0)
+			{
+				s.fPara = docOfFile[static_cast<size_t>(q)];
+				break;
+			}
+		s.fCount = rows;
+		s.fAt = cols;
+		s.fNote = static_cast<int32>(j);
+		steps.push_back(s);
+	}
+	return steps.empty() ? 0 : 1;
+}
+
 /** The tables of `s` standing in one place, in document order. */
 void TablesIn(const KCMStoryShape::Story& s, int32 inTable, int32 inRow, int32 inCell, std::vector<size_t>& out)
 {
@@ -1070,6 +1224,25 @@ void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, 
 	KCMStoryShape::Story n;
 	KCMStoryShape::Story w;
 	std::string why;
+
+	// ---- stage 0: tables added or taken away (S3a, design section 10) - before anything is lined up,
+	//      since everything after pairs the tables k-th with k-th
+	{
+		std::vector<Step> tables;
+		const int32 r = PlanTables(now, word, tables, why);
+		if (r < 0)
+		{
+			out.fStoryHeld = kTrue;
+			out.fWhy = why;
+			return;
+		}
+		if (r > 0)
+		{
+			out.fSteps = tables;
+			return;
+		}
+	}
+
 	if (!Normalize(now, word, n, w, why))
 	{
 		out.fStoryHeld = kTrue;
@@ -1107,8 +1280,8 @@ void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, 
 		if (TableShapeSame(n.fTables[t], w.fTables[t], tw))
 			continue;
 		std::vector<Step> steps;
-		std::string why;
-		const int32 stage = PlanShape(n, w, t, steps, why);
+		std::string tableWhy;
+		const int32 stage = PlanShape(n, w, t, steps, tableWhy);
 		if (stage > 0)
 		{
 			byStage[stage].insert(byStage[stage].end(), steps.begin(), steps.end());
@@ -1116,7 +1289,7 @@ void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, 
 		}
 		run.fTableHeld[t] = kTrue;
 		Hold(run, Where::Cell(static_cast<int32>(t), -1, -1), -1, "Table",
-			 "table " + Num(static_cast<int32>(t)) + ": " + (why.empty() ? tw : why) + " - that table was left as it is");
+			 "table " + Num(static_cast<int32>(t)) + ": " + (tableWhy.empty() ? tw : tableWhy) + " - that table was left as it is");
 	}
 	for (int32 stage = 1; stage <= 3; ++stage)
 	{
@@ -1396,6 +1569,106 @@ KCMStoryShape::Story ReshapeOnPaper(const KCMStoryShape::Story& now, const Plan&
 	KCMStoryShape::Story out = now;
 	std::vector<bool16> noteGone(out.fNotes.size(), kFalse);
 	bool16 any = kFalse;
+
+	// ---- stage 0 (S3a): tables taken away - with what they hold - and tables put in -------------------
+	{
+		std::vector<bool16> tableGone(out.fTables.size(), kFalse);
+		bool16 anyGone = kFalse;
+		for (size_t i = 0; i < plan.fSteps.size(); ++i)
+			if (plan.fSteps[i].fKind == Step::kDeleteTable && plan.fSteps[i].fWhere.fTable >= 0
+				&& static_cast<size_t>(plan.fSteps[i].fWhere.fTable) < tableGone.size())
+			{
+				tableGone[static_cast<size_t>(plan.fSteps[i].fWhere.fTable)] = kTrue;
+				anyGone = kTrue;
+			}
+		// the tables nested in one that goes go too, however deep
+		for (bool16 grew = anyGone; grew; )
+		{
+			grew = kFalse;
+			for (size_t k = 0; k < out.fTables.size(); ++k)
+			{
+				const int32 parent = out.fTables[k].fInTable;
+				if (!tableGone[k] && parent >= 0 && tableGone[static_cast<size_t>(parent)])
+				{
+					tableGone[k] = kTrue;
+					grew = kTrue;
+				}
+			}
+		}
+		if (anyGone)
+		{
+			any = kTrue;
+			std::vector<int32> newIndex(out.fTables.size(), -1);
+			std::vector<KCMStoryShape::Table> kept;
+			for (size_t k = 0; k < out.fTables.size(); ++k)
+			{
+				if (tableGone[k])
+				{
+					const KCMStoryShape::Table& t = out.fTables[k];
+					for (size_t r = 0; r < t.fRows.size(); ++r)
+						for (size_t c = 0; c < t.fRows[r].fCells.size(); ++c)
+							NotesOf(t.fRows[r].fCells[c], noteGone);
+					continue;
+				}
+				newIndex[k] = static_cast<int32>(kept.size());
+				kept.push_back(out.fTables[k]);
+			}
+			for (size_t k = 0; k < kept.size(); ++k)
+			{
+				kept[k].fOrdinal = static_cast<int32>(k);
+				if (kept[k].fInTable >= 0)
+					kept[k].fInTable = newIndex[static_cast<size_t>(kept[k].fInTable)];
+			}
+			out.fTables = kept;
+		}
+		for (size_t i = 0; i < plan.fSteps.size(); ++i)
+		{
+			const Step& s = plan.fSteps[i];
+			if (s.fKind != Step::kInsertTable || s.fCount <= 0 || s.fAt <= 0)
+				continue;
+			any = kTrue;
+			KCMStoryShape::Table t;
+			t.fInTable = -1;
+			if (s.fPara >= 0 && static_cast<size_t>(s.fPara) < out.fBody.size())
+			{
+				// at the END of that paragraph, before its return (spike M6: the anchor stands in the paragraph)
+				std::vector<int32> cps;
+				KCMTextDiff::ToCodePoints(out.fBody[static_cast<size_t>(s.fPara)].fText, &cps, nil);
+				t.fParaIndex = s.fPara;
+				t.fOffset = static_cast<int32>(cps.size());
+			}
+			for (int32 r = 0; r < s.fCount; ++r)
+			{
+				KCMStoryShape::Row row;
+				for (int32 c = 0; c < s.fAt; ++c)
+				{
+					KCMStoryShape::Cell cell;
+					cell.fParas.push_back(KCMStoryShape::Para());
+					row.fCells.push_back(cell);
+				}
+				t.fRows.push_back(row);
+			}
+			// in document order among the body's tables: before the first that stands after it
+			size_t at = out.fTables.size();
+			for (size_t k = 0; k < out.fTables.size(); ++k)
+			{
+				const KCMStoryShape::Table& x = out.fTables[k];
+				if (x.fInTable < 0 && (x.fParaIndex > t.fParaIndex || (x.fParaIndex == t.fParaIndex && x.fOffset > t.fOffset)))
+				{
+					at = k;
+					break;
+				}
+			}
+			out.fTables.insert(out.fTables.begin() + static_cast<std::ptrdiff_t>(at), t);
+			for (size_t k = 0; k < out.fTables.size(); ++k)
+			{
+				out.fTables[k].fOrdinal = static_cast<int32>(k);
+				if (k != at && out.fTables[k].fInTable >= static_cast<int32>(at))
+					++out.fTables[k].fInTable;
+			}
+		}
+	}
+
 	for (size_t t = 0; t < out.fTables.size(); ++t)
 	{
 		std::vector<const Step*> mine;
