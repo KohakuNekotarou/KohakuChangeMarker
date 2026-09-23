@@ -116,86 +116,253 @@ bool16 TableShapeSame(const KCMStoryShape::Table& a, const KCMStoryShape::Table&
 	return kTrue;
 }
 
-/** kTrue when table t of N and W differ ONLY in how many rows they have, in a way stage S1 can make
-	Word's by adding rows at the end or taking them from the bottom (design section 8-1). kFalse with
-	`why` otherwise - empty when the difference is not in the row count at all (the caller's own
-	reason stands then). `ns` / `ws` are the two stories, for the tables standing inside this one. */
-bool16 RowsOnly(const KCMStoryShape::Table& n, const KCMStoryShape::Table& w, const KCMStoryShape::Story& ns,
-				const KCMStoryShape::Story& ws, size_t t, std::string& why)
+/** One cell of a table, laid out on the table's grid. */
+struct GridCell
 {
-	why.clear();
-	if (n.fInTable != w.fInTable || n.fInRow != w.fInRow || n.fInCell != w.fInCell)
-		return kFalse;
-	const size_t nr = n.fRows.size();
-	const size_t wr = w.fRows.size();
-	if (nr == wr || nr == 0)
-		return kFalse;
-	if (wr == 0)
-	{
-		why = "Word's table has no row left";
-		return kFalse;
-	}
+	int32	fRow;		// the grid row - the row it is listed in
+	int32	fIndex;		// its index in that row's fCells (what Table::fInCell counts)
+	int32	fCol;		// the grid column
+	int32	fRowSpan;
+	int32	fColSpan;
+};
 
-	// the rows both have run the same way, cell for cell
-	const size_t common = (nr < wr) ? nr : wr;
-	for (size_t r = 0; r < common; ++r)
+/** A table's cells on its grid: each row's cells left to right, skipping the places a merge from above
+	covers - the way InDesign counts a GridAddress. `columns` is how wide the grid is. */
+void LayOut(const KCMStoryShape::Table& t, std::vector<GridCell>& out, int32& columns)
+{
+	out.clear();
+	columns = 0;
+	const size_t rows = t.fRows.size();
+	std::vector< std::vector<bool16> > taken(rows);
+	for (size_t r = 0; r < rows; ++r)
 	{
-		if (n.fRows[r].fCells.size() != w.fRows[r].fCells.size())
-			return kFalse;
-		for (size_t c = 0; c < n.fRows[r].fCells.size(); ++c)
-			if (n.fRows[r].fCells[c].fColSpan != w.fRows[r].fCells[c].fColSpan
-				|| n.fRows[r].fCells[c].fRowSpan != w.fRows[r].fCells[c].fRowSpan)
-				return kFalse;
-	}
-
-	if (wr > nr)
-	{
-		// ★InDesign gives a row added after the last one the last row's cells (spike M7): Word's added
-		//   rows have to run that way, and nothing may reach down into the last row from above
-		const KCMStoryShape::Row& last = n.fRows[nr - 1];
-		for (size_t r = 0; r + 1 < nr; ++r)
-			for (size_t c = 0; c < n.fRows[r].fCells.size(); ++c)
-				if (static_cast<size_t>(r) + static_cast<size_t>(n.fRows[r].fCells[c].fRowSpan) > nr - 1)
-				{
-					why = "a merged cell reaches its last row, so rows cannot be added after it yet";
-					return kFalse;
-				}
-		for (size_t r = nr; r < wr; ++r)
+		int32 col = 0;
+		for (size_t k = 0; k < t.fRows[r].fCells.size(); ++k)
 		{
-			bool16 same = (w.fRows[r].fCells.size() == last.fCells.size()) ? kTrue : kFalse;
-			for (size_t c = 0; same && c < last.fCells.size(); ++c)
-				if (w.fRows[r].fCells[c].fColSpan != last.fCells[c].fColSpan || w.fRows[r].fCells[c].fRowSpan != 1)
-					same = kFalse;
-			if (!same)
+			const KCMStoryShape::Cell& c = t.fRows[r].fCells[k];
+			while (static_cast<size_t>(col) < taken[r].size() && taken[r][static_cast<size_t>(col)])
+				++col;
+			GridCell g;
+			g.fRow = static_cast<int32>(r);
+			g.fIndex = static_cast<int32>(k);
+			g.fCol = col;
+			g.fRowSpan = (c.fRowSpan > 1) ? c.fRowSpan : 1;
+			g.fColSpan = (c.fColSpan > 1) ? c.fColSpan : 1;
+			out.push_back(g);
+			for (size_t rr = r; rr < r + static_cast<size_t>(g.fRowSpan) && rr < rows; ++rr)
 			{
-				why = "a row Word added runs otherwise than the table's last row (merged or split cells)";
-				return kFalse;
+				if (taken[rr].size() < static_cast<size_t>(col + g.fColSpan))
+					taken[rr].resize(static_cast<size_t>(col + g.fColSpan), kFalse);
+				for (int32 cc = col; cc < col + g.fColSpan; ++cc)
+					taken[rr][static_cast<size_t>(cc)] = kTrue;
 			}
+			col += g.fColSpan;
 		}
-		for (size_t k = 0; k < ws.fTables.size(); ++k)
-			if (ws.fTables[k].fInTable == static_cast<int32>(t) && static_cast<size_t>(ws.fTables[k].fInRow) >= nr)
-			{
-				why = "a table stands in a row Word added";
-				return kFalse;
-			}
-		return kTrue;
+		if (static_cast<int32>(taken[r].size()) > columns)
+			columns = static_cast<int32>(taken[r].size());
 	}
+}
 
-	// fewer rows: the bottom ones go - nothing may reach into them, and no table may stand in them
-	for (size_t r = 0; r < wr; ++r)
-		for (size_t c = 0; c < n.fRows[r].fCells.size(); ++c)
-			if (r + static_cast<size_t>(n.fRows[r].fCells[c].fRowSpan) > wr)
-			{
-				why = "a merged cell reaches into the rows that would be taken away";
-				return kFalse;
-			}
-	for (size_t k = 0; k < ns.fTables.size(); ++k)
-		if (ns.fTables[k].fInTable == static_cast<int32>(t) && static_cast<size_t>(ns.fTables[k].fInRow) >= wr)
-		{
-			why = "a table stands in a row that would be taken away";
+/** kTrue when every row of the grid is filled to `columns` - the only shape an InDesign table can have.
+	Word keeps rows of different lengths (a cell given a wider span with the one beside it left). */
+bool16 IsRectangular(const std::vector<GridCell>& cells, int32 rows, int32 columns)
+{
+	std::vector<int32> filled(static_cast<size_t>(rows > 0 ? rows : 0), 0);
+	for (size_t i = 0; i < cells.size(); ++i)
+		for (int32 r = cells[i].fRow; r < cells[i].fRow + cells[i].fRowSpan && r < rows; ++r)
+			filled[static_cast<size_t>(r)] += cells[i].fColSpan;
+	for (size_t r = 0; r < filled.size(); ++r)
+		if (filled[r] != columns)
 			return kFalse;
-		}
 	return kTrue;
+}
+
+bool16 IsMerged(const GridCell& g)
+{
+	return (g.fRowSpan > 1 || g.fColSpan > 1) ? kTrue : kFalse;
+}
+
+/** kTrue when `cells` holds a cell starting at (row, col) and reaching exactly rowSpan x colSpan. */
+bool16 HasCell(const std::vector<GridCell>& cells, int32 row, int32 col, int32 rowSpan, int32 colSpan)
+{
+	for (size_t i = 0; i < cells.size(); ++i)
+		if (cells[i].fRow == row && cells[i].fCol == col && cells[i].fRowSpan == rowSpan && cells[i].fColSpan == colSpan)
+			return kTrue;
+	return kFalse;
+}
+
+/** kTrue when a table of `s` stands in cell `index` of row `row` of table t. */
+bool16 TableStandsIn(const KCMStoryShape::Story& s, size_t t, int32 row, int32 index)
+{
+	for (size_t k = 0; k < s.fTables.size(); ++k)
+		if (s.fTables[k].fInTable == static_cast<int32>(t) && s.fTables[k].fInRow == row && s.fTables[k].fInCell == index)
+			return kTrue;
+	return kFalse;
+}
+
+Step ShapeStep(int32 kind, size_t t, const GridCell* g)
+{
+	Step s;
+	s.fKind = kind;
+	s.fWhere = Where::Cell(static_cast<int32>(t), -1, -1);
+	if (g != nil)
+	{
+		s.fGridRow = g->fRow;
+		s.fGridCol = g->fCol;
+		s.fGridRowSpan = g->fRowSpan;
+		s.fGridColSpan = g->fColSpan;
+	}
+	return s;
+}
+
+/** What table t needs next to take W's shape (design section 9-1): 1 = take merges apart, 2 = add or take
+	away rows and columns at the end, 3 = merge; the steps for that stage into `steps`. 0 = nothing (the
+	shapes are the same). -1 = held, with `why`. ns / ws are the two stories, normalized. */
+int32 PlanShape(const KCMStoryShape::Story& ns, const KCMStoryShape::Story& ws, size_t t,
+				std::vector<Step>& steps, std::string& why)
+{
+	steps.clear();
+	why.clear();
+	const KCMStoryShape::Table& n = ns.fTables[t];
+	const KCMStoryShape::Table& w = ws.fTables[t];
+	if (n.fInTable != w.fInTable || n.fInRow != w.fInRow || n.fInCell != w.fInCell)
+	{
+		why = "it stands somewhere else";
+		return -1;
+	}
+	std::vector<GridCell> nc;
+	std::vector<GridCell> wc;
+	int32 nCols = 0;
+	int32 wCols = 0;
+	LayOut(n, nc, nCols);
+	LayOut(w, wc, wCols);
+	const int32 nRows = static_cast<int32>(n.fRows.size());
+	const int32 wRows = static_cast<int32>(w.fRows.size());
+	if (wRows == 0 || wCols == 0 || nRows == 0 || nCols == 0)
+	{
+		why = (wRows == 0 || wCols == 0) ? "Word's table has no row or column left" : "the table has no cell";
+		return -1;
+	}
+	// ★BEFORE ANYTHING CHANGES (re-check of S2, the matrix's H37): a shape InDesign cannot hold would be
+	//   found only after rows or merges had already gone in, leaving the table half made
+	if (!IsRectangular(wc, wRows, wCols))
+	{
+		why = "Word's table has rows of different lengths, which an InDesign table cannot";
+		return -1;
+	}
+	// ★AND EVERY LATER STAGE'S REASON TO HOLD, asked now for the same reason: a table standing in a row or
+	//  column that would go (stage 2), or in cells Word's merges would cover (stage 3)
+	for (size_t i = 0; i < nc.size(); ++i)
+		if ((nc[i].fRow >= wRows || nc[i].fCol >= wCols) && TableStandsIn(ns, t, nc[i].fRow, nc[i].fIndex))
+		{
+			why = "a table stands in a row or column that would be taken away";
+			return -1;
+		}
+	for (size_t i = 0; i < wc.size(); ++i)
+	{
+		const GridCell& g = wc[i];
+		if (!IsMerged(g) || HasCell(nc, g.fRow, g.fCol, g.fRowSpan, g.fColSpan))
+			continue;
+		for (size_t k = 0; k < nc.size(); ++k)
+		{
+			const GridCell& x = nc[k];
+			const bool16 overlaps = (x.fRow < g.fRow + g.fRowSpan && x.fRow + x.fRowSpan > g.fRow
+									 && x.fCol < g.fCol + g.fColSpan && x.fCol + x.fColSpan > g.fCol) ? kTrue : kFalse;
+			if (overlaps && TableStandsIn(ns, t, x.fRow, x.fIndex))
+			{
+				why = "a table stands in cells that would be merged";
+				return -1;
+			}
+		}
+	}
+	const bool16 addRows = (wRows > nRows) ? kTrue : kFalse;
+	const bool16 addCols = (wCols > nCols) ? kTrue : kFalse;
+
+	// ---- 1. merges taken apart: Word's does not have them, or rows / columns are about to be added
+	//         next to them (InDesign copies the last row's cells into a new one), or they reach past
+	//         where Word's grid ends
+	for (size_t i = 0; i < nc.size(); ++i)
+	{
+		const GridCell& g = nc[i];
+		if (!IsMerged(g))
+			continue;
+		bool16 keep = HasCell(wc, g.fRow, g.fCol, g.fRowSpan, g.fColSpan);
+		if (addRows && g.fRow + g.fRowSpan == nRows)
+			keep = kFalse;
+		if (addCols && g.fCol + g.fColSpan == nCols)
+			keep = kFalse;
+		if (g.fRow + g.fRowSpan > wRows || g.fCol + g.fColSpan > wCols)
+			keep = kFalse;
+		if (keep)
+			continue;
+		if (TableStandsIn(ns, t, g.fRow, g.fIndex))
+		{
+			why = "a table stands in a merged cell that would be taken apart";
+			return -1;
+		}
+		steps.push_back(ShapeStep(Step::kUnmerge, t, &g));
+	}
+	if (!steps.empty())
+		return 1;
+
+	// ---- 2. rows and columns, at the end ------------------------------------------------------------
+	if (nRows != wRows || nCols != wCols)
+	{
+		for (size_t i = 0; i < nc.size(); ++i)
+			if ((nc[i].fRow >= wRows || nc[i].fCol >= wCols) && TableStandsIn(ns, t, nc[i].fRow, nc[i].fIndex))
+			{
+				why = "a table stands in a row or column that would be taken away";
+				return -1;
+			}
+		if (nRows != wRows)
+		{
+			Step s = ShapeStep(Step::kResizeRows, t, nil);
+			s.fCount = wRows;
+			steps.push_back(s);
+		}
+		if (nCols != wCols)
+		{
+			Step s = ShapeStep(Step::kResizeCols, t, nil);
+			s.fCount = wCols;
+			steps.push_back(s);
+		}
+		return 2;
+	}
+
+	// ---- 3. Word's merges made --------------------------------------------------------------------------
+	for (size_t i = 0; i < wc.size(); ++i)
+	{
+		const GridCell& g = wc[i];
+		if (!IsMerged(g) || HasCell(nc, g.fRow, g.fCol, g.fRowSpan, g.fColSpan))
+			continue;
+		for (size_t k = 0; k < nc.size(); ++k)
+		{
+			const GridCell& x = nc[k];
+			if (x.fRow < g.fRow || x.fRow >= g.fRow + g.fRowSpan || x.fCol < g.fCol || x.fCol >= g.fCol + g.fColSpan)
+				continue;
+			if (IsMerged(x))
+			{
+				why = "the cells to merge are merged otherwise";
+				return -1;
+			}
+			if (TableStandsIn(ns, t, x.fRow, x.fIndex))
+			{
+				why = "a table stands in cells that would be merged";
+				return -1;
+			}
+		}
+		steps.push_back(ShapeStep(Step::kMerge, t, &g));
+	}
+	if (!steps.empty())
+		return 3;
+
+	std::string tw;
+	if (!TableShapeSame(n, w, tw))
+	{
+		why = tw;
+		return -1;
+	}
+	return 0;
 }
 
 /** The tables of `s` standing in one place, in document order. */
@@ -918,12 +1085,16 @@ void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, 
 	run.fWordOfNote.assign(n.fNotes.size(), -1);
 	run.fTableHeld.assign(n.fTables.size(), kFalse);
 
-	// ---- the tables first: a table whose shape changed is left as it is (S2 reshapes it) -----------
+	// ---- the tables first: a table whose shape changed is made Word's, one stage at a time -------------
 	// ★In document order, so a nested table's parent is judged before it: one inside a held table is
 	//   held with it, and named once, with its parent.
-	// ★★ONE WHOSE ROWS ALONE CHANGED IS MADE AS LONG AS WORD'S (S1, design section 8): and then this
-	//   round is ONLY that - see the return below.
-	std::vector<Step> resize;
+	// ★★★A SHAPE ROUND IS ONE STAGE AND NOTHING ELSE (S1/S2, design sections 8-2 and 9-1): merges taken
+	//   apart, then rows and columns at the end, then Word's merges - whichever comes first among all the
+	//   tables. The words are compared once every shape is Word's, against the story read again, so every
+	//   number in that plan is the document's own.
+	// ⚠**A TABLE BEING RESHAPED IS NOT HELD** (re-check 2026-09-23): the tables nested in it are judged
+	//  too; PlanShape holds the parent when one stands in a cell the stage would move or take away.
+	std::vector<Step> byStage[4];
 	for (size_t t = 0; t < n.fTables.size(); ++t)
 	{
 		const int32 parent = n.fTables[t].fInTable;
@@ -933,35 +1104,27 @@ void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, 
 			continue;
 		}
 		std::string tw;
-		if (!TableShapeSame(n.fTables[t], w.fTables[t], tw))
+		if (TableShapeSame(n.fTables[t], w.fTables[t], tw))
+			continue;
+		std::vector<Step> steps;
+		std::string why;
+		const int32 stage = PlanShape(n, w, t, steps, why);
+		if (stage > 0)
 		{
-			std::string rw;
-			// ⚠**A TABLE MADE AS LONG AS WORD'S IS NOT HELD** (re-check 2026-09-23): marking it held made
-			//  a table nested in it skip this round, and its own resize then came back in the second -
-			//  where the import reads "still differs" and leaves the story half done. The tables nested
-			//  in a resized one are judged here too; RowsOnly holds the parent when one stands in rows
-			//  that would go.
-			if (RowsOnly(n.fTables[t], w.fTables[t], n, w, t, rw))
-			{
-				Step s;
-				s.fKind = Step::kResizeRows;
-				s.fWhere = Where::Cell(static_cast<int32>(t), -1, -1);
-				s.fCount = static_cast<int32>(w.fTables[t].fRows.size());
-				resize.push_back(s);
-				continue;
-			}
-			run.fTableHeld[t] = kTrue;
-			Hold(run, Where::Cell(static_cast<int32>(t), -1, -1), -1, "Table",
-				 "table " + Num(static_cast<int32>(t)) + ": " + (rw.empty() ? tw : rw) + " - that table was left as it is");
+			byStage[stage].insert(byStage[stage].end(), steps.begin(), steps.end());
+			continue;
 		}
+		run.fTableHeld[t] = kTrue;
+		Hold(run, Where::Cell(static_cast<int32>(t), -1, -1), -1, "Table",
+			 "table " + Num(static_cast<int32>(t)) + ": " + (why.empty() ? tw : why) + " - that table was left as it is");
 	}
-	// ★★★A FIRST ROUND IS ROWS AND NOTHING ELSE. Taking a row away renumbers the notes after it and a row
-	//   added moves nothing but may end the table elsewhere; the words are compared once the rows are
-	//   right, against the story read again, so every number in that plan is the document's own.
-	if (!resize.empty())
+	for (int32 stage = 1; stage <= 3; ++stage)
 	{
-		out.fSteps = resize;
-		return;
+		if (!byStage[stage].empty())
+		{
+			out.fSteps = byStage[stage];
+			return;
+		}
 	}
 
 	// ---- the places: the body, every cell of a table not held, then the notes that pair ---------
@@ -1036,70 +1199,255 @@ KCMStoryShape::Story ApplyToShape(const KCMStoryShape::Story& normalizedNow, con
 	return out;
 }
 
+namespace
+{
+
+/** A table on paper as a grid of owners: which cell (an index into fCells) holds each place. */
+struct PaperGrid
+{
+	std::vector< std::vector<int32> >	fOwner;		// [row][col] -> cell id
+	std::vector<KCMStoryShape::Cell>	fCells;
+	std::vector< std::pair<int32, int32> >	fAt;	// cell id -> its top-left (row, col)
+	std::vector<bool16>					fGone;		// cell id -> taken away (a row or column that went)
+	std::vector<bool16>					fHeader;	// row -> Row::fHeader
+	int32								fCols;
+
+	PaperGrid() : fCols(0) {}
+
+	int32 NewCell(int32 row, int32 col)
+	{
+		KCMStoryShape::Cell c;
+		c.fParas.push_back(KCMStoryShape::Para());
+		fCells.push_back(c);
+		fAt.push_back(std::make_pair(row, col));
+		fGone.push_back(kFalse);
+		return static_cast<int32>(fCells.size()) - 1;
+	}
+};
+
+/** `t` onto a grid. `idOf[row][index]` is the cell id of a row's index-th cell - for the nested tables. */
+void ToPaper(const KCMStoryShape::Table& t, PaperGrid& g, std::vector< std::vector<int32> >& idOf)
+{
+	std::vector<GridCell> cells;
+	LayOut(t, cells, g.fCols);
+	g.fOwner.assign(t.fRows.size(), std::vector<int32>(static_cast<size_t>(g.fCols), -1));
+	idOf.assign(t.fRows.size(), std::vector<int32>());
+	for (size_t r = 0; r < t.fRows.size(); ++r)
+	{
+		g.fHeader.push_back(t.fRows[r].fHeader);
+		idOf[r].assign(t.fRows[r].fCells.size(), -1);
+	}
+	for (size_t i = 0; i < cells.size(); ++i)
+	{
+		const GridCell& c = cells[i];
+		const int32 id = static_cast<int32>(g.fCells.size());
+		g.fCells.push_back(t.fRows[static_cast<size_t>(c.fRow)].fCells[static_cast<size_t>(c.fIndex)]);
+		g.fAt.push_back(std::make_pair(c.fRow, c.fCol));
+		g.fGone.push_back(kFalse);
+		idOf[static_cast<size_t>(c.fRow)][static_cast<size_t>(c.fIndex)] = id;
+		for (int32 rr = c.fRow; rr < c.fRow + c.fRowSpan && static_cast<size_t>(rr) < g.fOwner.size(); ++rr)
+			for (int32 cc = c.fCol; cc < c.fCol + c.fColSpan && cc < g.fCols; ++cc)
+				g.fOwner[static_cast<size_t>(rr)][static_cast<size_t>(cc)] = id;
+	}
+}
+
+/** The grid back into rows of top-left cells. `rowOf` / `indexOf`: cell id -> where it is listed now. */
+void FromPaper(const PaperGrid& g, KCMStoryShape::Table& t, std::vector<int32>& rowOf, std::vector<int32>& indexOf)
+{
+	t.fRows.clear();
+	rowOf.assign(g.fCells.size(), -1);
+	indexOf.assign(g.fCells.size(), -1);
+	for (size_t r = 0; r < g.fOwner.size(); ++r)
+	{
+		KCMStoryShape::Row row;
+		row.fHeader = (r < g.fHeader.size()) ? g.fHeader[r] : kFalse;
+		for (size_t c = 0; c < g.fOwner[r].size(); ++c)
+		{
+			const int32 id = g.fOwner[r][c];
+			if (id < 0 || g.fGone[static_cast<size_t>(id)] || g.fAt[static_cast<size_t>(id)] != std::make_pair(static_cast<int32>(r), static_cast<int32>(c)))
+				continue;
+			rowOf[static_cast<size_t>(id)] = static_cast<int32>(r);
+			indexOf[static_cast<size_t>(id)] = static_cast<int32>(row.fCells.size());
+			row.fCells.push_back(g.fCells[static_cast<size_t>(id)]);
+		}
+		t.fRows.push_back(row);
+	}
+}
+
+/** Every footnote a cell's paragraphs refer to, marked gone. */
+void NotesOf(const KCMStoryShape::Cell& c, std::vector<bool16>& noteGone)
+{
+	for (size_t p = 0; p < c.fParas.size(); ++p)
+		for (size_t k = 0; k < c.fParas[p].fNoteRefs.size(); ++k)
+		{
+			const int32 note = c.fParas[p].fNoteRefs[k].fNote;
+			if (note >= 0 && static_cast<size_t>(note) < noteGone.size())
+				noteGone[static_cast<size_t>(note)] = kTrue;
+		}
+}
+
+/** One shape step on paper, the way InDesign does it (spike M3-M5, M7). */
+void PaperStep(PaperGrid& g, const Step& s, std::vector<bool16>& noteGone)
+{
+	const int32 rows = static_cast<int32>(g.fOwner.size());
+	if (s.fKind == Step::kUnmerge)
+	{
+		if (s.fGridRow < 0 || s.fGridRow >= rows || s.fGridCol < 0 || s.fGridCol >= g.fCols)
+			return;
+		const int32 id = g.fOwner[static_cast<size_t>(s.fGridRow)][static_cast<size_t>(s.fGridCol)];
+		if (id < 0)
+			return;
+		KCMStoryShape::Cell& a = g.fCells[static_cast<size_t>(id)];
+		const int32 rs = a.fRowSpan > 1 ? a.fRowSpan : 1;
+		const int32 cs = a.fColSpan > 1 ? a.fColSpan : 1;
+		a.fRowSpan = 1;
+		a.fColSpan = 1;
+		for (int32 rr = s.fGridRow; rr < s.fGridRow + rs && rr < rows; ++rr)
+			for (int32 cc = s.fGridCol; cc < s.fGridCol + cs && cc < g.fCols; ++cc)
+				if (!(rr == s.fGridRow && cc == s.fGridCol))
+					g.fOwner[static_cast<size_t>(rr)][static_cast<size_t>(cc)] = g.NewCell(rr, cc);
+	}
+	else if (s.fKind == Step::kMerge)
+	{
+		if (s.fGridRow < 0 || s.fGridRow >= rows || s.fGridCol < 0 || s.fGridCol >= g.fCols)
+			return;
+		const int32 id = g.fOwner[static_cast<size_t>(s.fGridRow)][static_cast<size_t>(s.fGridCol)];
+		if (id < 0)
+			return;
+		// the covered cells' words run on in the top-left one, row by row (spike M4)
+		for (int32 rr = s.fGridRow; rr < s.fGridRow + s.fGridRowSpan && rr < rows; ++rr)
+			for (int32 cc = s.fGridCol; cc < s.fGridCol + s.fGridColSpan && cc < g.fCols; ++cc)
+			{
+				const int32 other = g.fOwner[static_cast<size_t>(rr)][static_cast<size_t>(cc)];
+				if (other >= 0 && other != id && !g.fGone[static_cast<size_t>(other)])
+				{
+					KCMStoryShape::Cell& a = g.fCells[static_cast<size_t>(id)];
+					const KCMStoryShape::Cell& b = g.fCells[static_cast<size_t>(other)];
+					a.fParas.insert(a.fParas.end(), b.fParas.begin(), b.fParas.end());
+					g.fGone[static_cast<size_t>(other)] = kTrue;
+				}
+				g.fOwner[static_cast<size_t>(rr)][static_cast<size_t>(cc)] = id;
+			}
+		g.fCells[static_cast<size_t>(id)].fRowSpan = s.fGridRowSpan;
+		g.fCells[static_cast<size_t>(id)].fColSpan = s.fGridColSpan;
+	}
+	else if (s.fKind == Step::kResizeRows && s.fCount > 0)
+	{
+		if (s.fCount < rows)
+		{
+			// the bottom rows go, and the notes referred to from them (InDesign takes them silently - M2b)
+			for (int32 r = s.fCount; r < rows; ++r)
+				for (int32 c = 0; c < g.fCols; ++c)
+				{
+					const int32 id = g.fOwner[static_cast<size_t>(r)][static_cast<size_t>(c)];
+					if (id >= 0 && !g.fGone[static_cast<size_t>(id)] && g.fAt[static_cast<size_t>(id)].first >= s.fCount)
+					{
+						NotesOf(g.fCells[static_cast<size_t>(id)], noteGone);
+						g.fGone[static_cast<size_t>(id)] = kTrue;
+					}
+				}
+			g.fOwner.resize(static_cast<size_t>(s.fCount));
+			g.fHeader.resize(static_cast<size_t>(s.fCount));
+		}
+		else
+		{
+			// a row added after the last one: one plain cell per column, each one empty paragraph
+			for (int32 r = rows; r < s.fCount; ++r)
+			{
+				g.fOwner.push_back(std::vector<int32>(static_cast<size_t>(g.fCols), -1));
+				g.fHeader.push_back(kFalse);
+				for (int32 c = 0; c < g.fCols; ++c)
+					g.fOwner[static_cast<size_t>(r)][static_cast<size_t>(c)] = g.NewCell(r, c);
+			}
+		}
+	}
+	else if (s.fKind == Step::kResizeCols && s.fCount > 0)
+	{
+		if (s.fCount < g.fCols)
+		{
+			for (int32 r = 0; r < rows; ++r)
+			{
+				for (int32 c = s.fCount; c < g.fCols; ++c)
+				{
+					const int32 id = g.fOwner[static_cast<size_t>(r)][static_cast<size_t>(c)];
+					if (id >= 0 && !g.fGone[static_cast<size_t>(id)] && g.fAt[static_cast<size_t>(id)].second >= s.fCount)
+					{
+						NotesOf(g.fCells[static_cast<size_t>(id)], noteGone);
+						g.fGone[static_cast<size_t>(id)] = kTrue;
+					}
+				}
+				g.fOwner[static_cast<size_t>(r)].resize(static_cast<size_t>(s.fCount));
+			}
+		}
+		else
+		{
+			for (int32 r = 0; r < rows; ++r)
+				for (int32 c = g.fCols; c < s.fCount; ++c)
+					g.fOwner[static_cast<size_t>(r)].push_back(g.NewCell(r, c));
+		}
+		g.fCols = s.fCount;
+	}
+}
+
+}	// anonymous namespace
+
 KCMStoryShape::Story ReshapeOnPaper(const KCMStoryShape::Story& now, const Plan& plan)
 {
 	KCMStoryShape::Story out = now;
 	std::vector<bool16> noteGone(out.fNotes.size(), kFalse);
-	bool16 anyGone = kFalse;
-	for (size_t i = 0; i < plan.fSteps.size(); ++i)
+	bool16 any = kFalse;
+	for (size_t t = 0; t < out.fTables.size(); ++t)
 	{
-		const Step& s = plan.fSteps[i];
-		if (s.fKind != Step::kResizeRows || s.fWhere.fTable < 0 || static_cast<size_t>(s.fWhere.fTable) >= out.fTables.size()
-			|| s.fCount <= 0)
+		std::vector<const Step*> mine;
+		for (size_t i = 0; i < plan.fSteps.size(); ++i)
+			if (plan.fSteps[i].IsShape() && plan.fSteps[i].fWhere.fTable == static_cast<int32>(t))
+				mine.push_back(&plan.fSteps[i]);
+		if (mine.empty())
 			continue;
-		KCMStoryShape::Table& t = out.fTables[static_cast<size_t>(s.fWhere.fTable)];
-		const size_t want = static_cast<size_t>(s.fCount);
-		if (want < t.fRows.size())
+		any = kTrue;
+		PaperGrid g;
+		std::vector< std::vector<int32> > idOf;
+		ToPaper(out.fTables[t], g, idOf);
+		// the tables standing in this one's cells, by cell id - their cell may move in the row
+		std::vector< std::pair<size_t, int32> > nested;
+		for (size_t k = 0; k < out.fTables.size(); ++k)
 		{
-			// the bottom rows go, and the notes referred to from them (InDesign takes them silently - spike M2b)
-			for (size_t r = want; r < t.fRows.size(); ++r)
-				for (size_t c = 0; c < t.fRows[r].fCells.size(); ++c)
-					for (size_t p = 0; p < t.fRows[r].fCells[c].fParas.size(); ++p)
-						for (size_t k = 0; k < t.fRows[r].fCells[c].fParas[p].fNoteRefs.size(); ++k)
-						{
-							const int32 note = t.fRows[r].fCells[c].fParas[p].fNoteRefs[k].fNote;
-							if (note >= 0 && static_cast<size_t>(note) < noteGone.size())
-							{
-								noteGone[static_cast<size_t>(note)] = kTrue;
-								anyGone = kTrue;
-							}
-						}
-			t.fRows.resize(want);
+			const KCMStoryShape::Table& x = out.fTables[k];
+			if (x.fInTable == static_cast<int32>(t) && x.fInRow >= 0 && static_cast<size_t>(x.fInRow) < idOf.size()
+				&& x.fInCell >= 0 && static_cast<size_t>(x.fInCell) < idOf[static_cast<size_t>(x.fInRow)].size())
+				nested.push_back(std::make_pair(k, idOf[static_cast<size_t>(x.fInRow)][static_cast<size_t>(x.fInCell)]));
 		}
-		else if (!t.fRows.empty())
+		for (size_t i = 0; i < mine.size(); ++i)
+			PaperStep(g, *mine[i], noteGone);
+		std::vector<int32> rowOf;
+		std::vector<int32> indexOf;
+		FromPaper(g, out.fTables[t], rowOf, indexOf);
+		for (size_t k = 0; k < nested.size(); ++k)
 		{
-			// a row added after the last one runs like it, and each of its cells holds one empty paragraph
-			const KCMStoryShape::Row last = t.fRows.back();
-			while (t.fRows.size() < want)
+			const int32 id = nested[k].second;
+			if (id >= 0 && static_cast<size_t>(id) < rowOf.size() && rowOf[static_cast<size_t>(id)] >= 0)
 			{
-				KCMStoryShape::Row row;
-				row.fHeader = kFalse;
-				for (size_t c = 0; c < last.fCells.size(); ++c)
-				{
-					KCMStoryShape::Cell cell;
-					cell.fColSpan = last.fCells[c].fColSpan;
-					cell.fRowSpan = 1;
-					cell.fParas.push_back(KCMStoryShape::Para());
-					row.fCells.push_back(cell);
-				}
-				t.fRows.push_back(row);
+				out.fTables[nested[k].first].fInRow = rowOf[static_cast<size_t>(id)];
+				out.fTables[nested[k].first].fInCell = indexOf[static_cast<size_t>(id)];
 			}
 		}
 	}
-	if (anyGone)
+	if (!any)
+		return out;
+
+	std::vector<int32> newOf(out.fNotes.size(), -1);
+	std::vector<Paras> notes;
+	for (size_t k = 0; k < out.fNotes.size(); ++k)
 	{
-		std::vector<int32> newOf(out.fNotes.size(), -1);
-		std::vector<Paras> notes;
-		for (size_t k = 0; k < out.fNotes.size(); ++k)
-		{
-			if (noteGone[k])
-				continue;
-			newOf[k] = static_cast<int32>(notes.size());
-			notes.push_back(out.fNotes[k]);
-		}
-		out.fNotes = notes;
-		RemapAllRefs(out, newOf);
+		if (noteGone[k])
+			continue;
+		newOf[k] = static_cast<int32>(notes.size());
+		notes.push_back(out.fNotes[k]);
 	}
+	out.fNotes = notes;
+	RemapAllRefs(out, newOf);
+	// ★paragraphs moved between cells (a merge) can change which note the story's threads meet first
+	RenumberNotesByThread(out);
 	return out;
 }
 

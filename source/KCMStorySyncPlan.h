@@ -84,7 +84,18 @@ struct Step
 			nothing else, and the side that writes reads the story again and compares once more when it is
 			done (design section 8-2) - a row taken away renumbers the notes and moves the cells, and the
 			second comparison is what keeps every number the document's own. */
-		kResizeRows = 6
+		kResizeRows = 6,
+		/** Table fWhere.fTable is made fCount columns wide, at its right-hand end - kResizeRows' rule
+			for columns (S2, design section 9). A shape step: see kResizeRows. */
+		kResizeCols = 7,
+		/** The merged cell whose top-left is grid (fGridRow, fGridCol) in table fWhere.fTable, reaching
+			fGridRowSpan x fGridColSpan, is taken apart. Its words stay in the top-left cell (spike M5).
+			The first of the three shape stages (design section 9-1). */
+		kUnmerge = 8,
+		/** The cells of grid [fGridRow, +fGridRowSpan) x [fGridCol, +fGridColSpan) in table
+			fWhere.fTable, each a plain one by then, become one. Their words run on in it (spike M4) until
+			the words round makes them Word's. The last of the three shape stages. */
+		kMerge = 9
 	};
 
 	int32									fKind;
@@ -97,8 +108,21 @@ struct Step
 	std::vector< std::pair<int32, int32> >	fTables;	// kSetPara: (N's table ordinal, its offset afterwards)
 	std::string								fWhat;
 	std::string								fWhy;
+	// kUnmerge / kMerge: the cell's place in the table's GRID (rows and columns as InDesign counts
+	// them, a merged cell's covered places included) and how far it reaches (S2, 2026-09-23)
+	int32									fGridRow;
+	int32									fGridCol;
+	int32									fGridRowSpan;
+	int32									fGridColSpan;
 
-	Step() : fKind(kSetPara), fPara(-1), fCount(0), fAt(0), fNote(-1) {}
+	Step() : fKind(kSetPara), fPara(-1), fCount(0), fAt(0), fNote(-1),
+			 fGridRow(0), fGridCol(0), fGridRowSpan(1), fGridColSpan(1) {}
+
+	/** kTrue for the four steps that change a table's shape - a round of those alone (design 9-1). */
+	bool16 IsShape() const
+	{
+		return (fKind == kResizeRows || fKind == kResizeCols || fKind == kUnmerge || fKind == kMerge) ? kTrue : kFalse;
+	}
 };
 
 /** Everything for one story, in document order (the body, then the cells in table order, then the
@@ -118,6 +142,15 @@ struct Plan
 			if (fSteps[i].fKind == kind)
 				++n;
 		return n;
+	}
+
+	/** kTrue when this plan is a shape round (design 9-1): carry it out, read again, compare again. */
+	bool16 IsShapeRound() const
+	{
+		for (size_t i = 0; i < fSteps.size(); ++i)
+			if (fSteps[i].IsShape())
+				return kTrue;
+		return kFalse;
 	}
 };
 
