@@ -138,9 +138,9 @@ bool16 Fingerprint(const KCMStoryShape::Story& s, std::string& outFingerprint, s
 	  would compare against; the user went back on that the same day, because a file is handed on
 	  and used again for other things, and text nobody can see would go with it. ★Measured: Word
 	  keeps a custom XML part of a namespace of our own through a save.
-	★★★**settings.xml SWITCHES REVISION TRACKING ON, AND THE IMPORT DEPENDS ON IT**: what Word
-	  changed is told by Word's own <w:ins> and <w:del>. The fingerprint is what says whether they
-	  are the whole truth - Fingerprint says how, and what happens when they are not.
+	★★★**settings.xml DOES NOT SWITCH REVISION TRACKING ON** (since 2026-09-23 - it did, protected, from
+	  2026-09-19): the import makes the story what Word shows, marks or none (KCMStorySync), and red
+	  marks would tell the reader that only the marked parts go in.
 	★**styles.xml HOLDS EVERY BUILT-IN KENTEN KIND, USED OR NOT**, plus one style for each custom
 	  mark the story uses, in a fixed order: the same story is the same bytes.
 
@@ -189,11 +189,12 @@ bool16 ReadTag(const std::string& customXmlPart, Tag& out, std::string& whyNot);
 
 /** Which of the two stories a revision-marked file holds.
 
-	★★★**ONE FILE, TWO STORIES.** With Word's revision tracking on (settings.xml switches it on and
-	  protects it), what an editor changed is in the file as <w:ins> and <w:del>, and the file can be
-	  read either way: as the editor left it, or as it stood when it was written. The import needs
-	  both - the second one's fingerprint is what says whether the marks are the whole truth
-	  (Fingerprint, above), and the difference between the two is what the import shows. */
+	★★★**ONE FILE, TWO STORIES.** With Word's revision tracking on, what an editor changed is in the
+	  file as <w:ins> and <w:del>, and the file can be read either way: as the editor left it, or as
+	  it stood when it was written.
+	⚠**SINCE 2026-09-23 THE IMPORT READS ONLY THE FIRST** (kSideAfterWord - Word's story as it shows):
+	  it makes the document's story that, whatever the marks say (KCMStorySync). The second, and the
+	  fingerprint check on it, go with the rest of the three-way merge (S0c of the import rebuild). */
 enum Side
 {
 	kSideAfterWord = 0,			// as Word shows it now: <w:ins> kept, <w:del> gone, the outer <w:rPr>
