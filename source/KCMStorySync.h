@@ -46,6 +46,12 @@ KCMStoryShape::Story ApplyToShape(const KCMStoryShape::Story& normalizedNow, con
 	ids, which is creation order. Two stories are compared after both have been through this. */
 void RenumberNotesByReading(KCMStoryShape::Story& s);
 
+/** The notes numbered in the order the STORY'S THREADS hold their references: the body first, then
+	every table's cells, table by table (in ordinal order, which is thread order - KCMStoryTextExport's
+	ReadTableShapes sorts them so) and row by row. ★**THIS IS KCMTextRead's NUMBERING** - what the
+	document calls note n - so the apply pairs a note of the finished shape with the document's by it. */
+void RenumberNotesByThread(KCMStoryShape::Story& s);
+
 }	// namespace KCMStorySync
 
 #endif // __KCMStorySync_h__

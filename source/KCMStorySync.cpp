@@ -958,6 +958,41 @@ void RenumberNotesByReading(KCMStoryShape::Story& s)
 	RemapAllRefs(s, newOf);
 }
 
+void RenumberNotesByThread(KCMStoryShape::Story& s)
+{
+	std::vector<int32> order;
+	std::vector<const Paras*> places;
+	places.push_back(&s.fBody);
+	for (size_t t = 0; t < s.fTables.size(); ++t)
+		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
+			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
+				places.push_back(&s.fTables[t].fRows[r].fCells[c].fParas);
+	for (size_t p = 0; p < places.size(); ++p)
+		for (size_t i = 0; i < places[p]->size(); ++i)
+			for (size_t r = 0; r < (*places[p])[i].fNoteRefs.size(); ++r)
+				order.push_back((*places[p])[i].fNoteRefs[r].fNote);
+
+	std::vector<int32> newOf(s.fNotes.size(), -1);
+	std::vector<Paras> notes;
+	for (size_t i = 0; i < order.size(); ++i)
+	{
+		const int32 o = order[i];
+		if (o < 0 || static_cast<size_t>(o) >= s.fNotes.size() || newOf[static_cast<size_t>(o)] >= 0)
+			continue;
+		newOf[static_cast<size_t>(o)] = static_cast<int32>(notes.size());
+		notes.push_back(s.fNotes[static_cast<size_t>(o)]);
+	}
+	for (size_t k = 0; k < s.fNotes.size(); ++k)		// a note nobody refers to keeps a place at the end
+	{
+		if (newOf[k] >= 0)
+			continue;
+		newOf[k] = static_cast<int32>(notes.size());
+		notes.push_back(s.fNotes[k]);
+	}
+	s.fNotes = notes;
+	RemapAllRefs(s, newOf);
+}
+
 }	// namespace KCMStorySync
 
 // End, KCMStorySync.cpp.
