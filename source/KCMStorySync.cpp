@@ -304,8 +304,9 @@ std::vector<KCMStoryShape::NoteRef> PlanRefs(Run& run, const Where& where, int32
 }
 
 /** ★WORD CANNOT HOLD A TATE-CHU-YOKO INSIDE A WARICHU (KCMParaText::KeepTcyInsideWarichu says why and
-	how it was measured). One the DOCUMENT has there, which W does not, is kept - carried to W's
-	offsets - and named; one whose words changed cannot be carried and is named as lost. */
+	how it was measured). One the DOCUMENT has there, whose words W still has unchanged but not the
+	tate-chu-yoko, is kept - carried to W's offsets - and named. One whose words W changed is W's to
+	decide, and nothing is said. */
 void KeepTcy(Run& run, const Where& where, int32 nIndex, const KCMStoryShape::Para& raw,
 			 const std::vector<Change>& ch, KCMStoryShape::Para& target)
 {
@@ -328,11 +329,11 @@ void KeepTcy(Run& run, const Where& where, int32 nIndex, const KCMStoryShape::Pa
 			there = (target.fTcy[k].fStart == s && target.fTcy[k].fLen == t.fLen) ? kTrue : kFalse;
 		if (there)
 			continue;
+		// ★THE WORDS UNDER IT CHANGED IN WORD: then it is Word's edit, not something Word could not
+		//   carry, and W decides (measured on the matrix 2026-09-23: A39 emptied a warichu, and a
+		//   "could not be kept" named a tate-chu-yoko whose words the reader had taken out).
 		if (s < 0 || e < 0 || e - s != t.fLen)
-		{
-			Hold(run, where, nIndex, "Tcy", "a tate-chu-yoko inside a warichu could not be kept: the words under it changed");
 			continue;
-		}
 		KCMAttrSpan kept = t;
 		kept.fStart = s;
 		target.fTcy.push_back(kept);
@@ -804,6 +805,13 @@ bool16 Normalize(const KCMStoryShape::Story& now, const KCMStoryShape::Story& wo
 	KCMStoryDocx::RejoinTables(outNow, now);
 	outWord = word;
 	KCMStoryDocx::RejoinTables(outWord, now);
+	// ★**WHETHER A ROW IS A HEADER ROW DOES NOT TRAVEL** (2026-09-23, the user's rule: header and footer
+	//   rows are rows like any other - only what happened to the cells is looked at). Word's flag is
+	//   made the document's here, once, so that nothing downstream ever sees it differ (measured on
+	//   the matrix: H39 took a header row's flag off in Word, and the plan's check failed on it).
+	for (size_t t = 0; t < outWord.fTables.size() && t < outNow.fTables.size(); ++t)
+		for (size_t r = 0; r < outWord.fTables[t].fRows.size() && r < outNow.fTables[t].fRows.size(); ++r)
+			outWord.fTables[t].fRows[r].fHeader = outNow.fTables[t].fRows[r].fHeader;
 	if (!SameLayout(outNow, now))
 	{
 		whyNot = "the document's story does not come back through Word's format paragraph for paragraph";
