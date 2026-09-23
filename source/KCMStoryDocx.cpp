@@ -2850,8 +2850,8 @@ void SplitParas(KCMStoryShape::Story& s, std::vector<KCMStoryShape::Para>& paras
 	- table by table: the k-th table of this run goes where the k-th table of the document's run
 	stands. Words the file added or took away stay as they are; only the breaks NEXT TO a table are
 	decided here, and they are decided by the document.
-	⚠When the two runs do not hold the same number of tables nothing is done: the import's own
-	 check (TablesAgree) refuses such a story by name. */
+	⚠When the two runs do not hold the same number of tables nothing is done: the import's
+	 comparison (KCMStorySync) leaves such a story as it stands, by name. */
 void RejoinParas(KCMStoryShape::Story& s, std::vector<KCMStoryShape::Para>& paras,
 				 const KCMStoryShape::Story& shape, const std::vector<KCMStoryShape::Para>& shapeParas,
 				 int32 inTable, int32 inRow, int32 inCell)

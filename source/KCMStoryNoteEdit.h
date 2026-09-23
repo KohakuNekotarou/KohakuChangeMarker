@@ -11,10 +11,10 @@
 //  kCreateFootnoteCmdBoss to build the note around it.
 //
 //  ⚠**THIS IS NOT THE POUR'S ORDINARY ROAD, AND MUST NOT BECOME IT.** Writing the body's words
-//  never moves one of these characters: KCMStoryTextImport refuses any change that would
+//  never moves one of these characters: KCMStorySyncApply refuses any change that would
 //  (RangeTouchesObject), because a note would then vanish with nothing said. What Word did to the
-//  notes THEMSELVES arrives as a plan (KCMStoryMerge::NoteAdd / NoteRemove) and is carried out
-//  here, deliberately, one note at a time.
+//  notes THEMSELVES arrives as steps of the plan (KCMStorySync's kAddNote / kDeleteNote) and is
+//  carried out here, deliberately, one note at a time.
 //
 //  The SDK's own recipe: codesnippets/SnpManipulateTextFootnotes.cpp:309-369 makes one, and
 //  :163-168 says in as many words that deleting the reference deletes the note.

@@ -12,42 +12,25 @@
 #include <string>
 #include <vector>
 
-#include "ICommand.h"
 #include "ICommandSequence.h"		// the whole import is one step
 #include "IDataBase.h"
 #include "IStoryList.h"
-#include "ITextModel.h"
-#include "ITextModelCmds.h"
-#include "ITextStoryThread.h"		// the thread a paragraph stands in - a write may not leave it
 #include "CmdUtils.h"
-#include "TextIterator.h"			// the characters a write is about to take out, read before it does
-#include "TextChar.h"				// kTextChar_Table / kTextChar_TableContinued - which side of a table
-#include "ErrorUtils.h"
 #include "FileUtils.h"
 #include "SysFileList.h"			// what the open dialog hands back - several files at once
-#include "WideString.h"
 
 #include "KCMStoryTextImport.h"
 #include "KCMComparisonRun.h"		// KCMToggleStartStop - the start, through the one resolver
-#include "KCMStoryAttrPour.h"		// the ruby and the kenten, after the words are in
-#include "KCMStoryRestore.h"		// KCMCreateWordsWriteCmd - one answer to "replace, insert or delete"
 #include "KCMCore.h"				// KCMSetCompareMode - the import shows its result in the Story mode
 #include "KCMPairChoice.h"			// KCMChosenTargetDB - the document the Task Start chose, which is where the words go
 // ⛔KCMOrigin.h went on 2026-09-21 - "until it goes" was written for the origin slot, and the slot
 //   went that day. Nothing in this file read anything the header declared.
 #include "KCMTaskStartSave.h"		// KCMTakeTaskStartCopy - the import's own Task Start, saved to a file
-#include "KCMRehydrate.h"			// KCMReadOriginUidLabel - the copy's stories carry the original UID
-#include "KCMParaText.h"			// ModelOffsetInParagraph / AppendUtf8
-#include "KCMStoryNoteEdit.h"		// making and unmaking a footnote - what Word's note changes need
-#include "KCMParaPairing.h"			// which paragraph goes with which when <p>s were added or removed
-#include "KCMParagraphStyle.h"		// the next style for a paragraph put in after another
-#include "KCMTextDiff.h"			// ToCodePoints / Diff
-#include "KCMTextRead.h"			// ReadStory - the document, read the way the export read it
 #include "KCMProgressBar.h"			// the import's one bar, and the slot its inner loops step (2026-09-17)
 #include "KCMDocxPackage.h"			// KCMReadDocxParts - a .docx on disk as its parts (2026-09-19)
 #include "KCMStorySync.h"			// Compare - what makes the document's story Word's (2026-09-23)
 #include "KCMStorySyncApply.h"		// KCMApplySyncPlan - and that, carried out
-#include "KCMStoryTextExport.h"		// KCMStoryFromDocument - the copy's story in the shape the merge takes
+#include "KCMStoryTextExport.h"		// KCMStoryFromDocument - the document's story, read the way the export reads it
 #include "KCMStoryDocx.h"			// Read - the parts as Word shows them
 #include "KCMZipStore.h"			// Entry - a part, named
 #include "KCMModelNotify.h"			// KCMNotify - a cancelled import tells the panel the mode came back
@@ -72,8 +55,8 @@ const char* const	kImportCancelledMessage = "import: cancelled - your document i
 
 /** What the last import could not put in, one entry each - the material of the "!" rows
 	(KCMStoryList::Build reads it through KCMImportRefusals; 2026-09-19). ⚠A static holding
-	PMStrings, so the model's shutdown empties it (KCMPeek.cpp, beside the story list). Dropped with
-	the origin (KCMReleaseOrigin) and at the start of the next import. */
+	PMStrings, so the model's shutdown empties it (KCMPeek.cpp, beside the story list). Dropped at the
+	start of the next import and by a cancelled one. */
 std::vector<KCMImportRefusal>	sRefusals;
 
 /** One more thing the pour could not put in. `kind` is the ID column's word. */
@@ -98,19 +81,6 @@ void NoteHeldBack(UID story, const char* kind, const PMString& whereAndWhy)
 {
 	NoteRefusal(story, kind, whereAndWhy);
 	sRefusals.back().fHeldBack = kTrue;
-}
-
-/** The same, for a reason the merge gives as std::strings. */
-void NoteRefusal(UID story, const char* kind, const std::string& where, const std::string& why)
-{
-	PMString text(where.c_str());
-	text.SetTranslatable(kFalse);
-	if (!why.empty())
-	{
-		text.Append(" - ");
-		text.Append(why.c_str());
-	}
-	NoteRefusal(story, kind, text);
 }
 
 /** A PMString as wide characters. (KCMStoryTextExport.cpp has these four lines inside its own
@@ -608,8 +578,8 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	firstRefusal.SetTranslatable(kFalse);
 	// ★**PAIRED IS PAIRED, WHATEVER HAPPENS NEXT** (2026-09-16). The count at the end used to be
 	//   "files minus stories WRITTEN", which said "had no story" about a file the reader had simply
-	//   not edited - and about every story TablesAgree left alone, naming that one twice, once under
-	//   each heading. Kept per file now, so that the ones with no story can be NAMED (a "!" row each).
+	//   not edited - and about every story left alone whole (then by TablesAgree, which went on
+	//   2026-09-23), naming that one twice, once under each heading. Kept per file now, so that the ones with no story can be NAMED (a "!" row each).
 	std::vector<bool16> matched(set.fUids.size(), kFalse);
 
 	// ★★★ONE ABORTABLE STEP (2026-09-19). The words go into the reader's own document now, so this

@@ -4,8 +4,10 @@
 //
 //  ★**THE WRITES BELOW WERE MOVED HERE WHOLE FROM KCMStoryTextImport.cpp** (2026-09-23, S0b of the
 //  import rebuild): ApplyParagraph, InsertParagraphs, DeleteParagraphs and the footnote pieces are
-//  the same code, comments and all - what changed is who tells them what to write. The judging that
-//  stood beside them there (TablesAgree, BuildPlaces, PlanParagraphSteps) is KCMStorySync's now.
+//  the same code, comments and all - what changed is who tells them what to write. What to write is
+//  KCMStorySync's to say now (the plan); the judging that stood beside them in the import went.
+//  ⚠Some comments below still name that judging (the pour's places, "the merge") - they describe how
+//  the same writes were reached before, and the writes themselves did not change.
 //
 //========================================================================================
 
@@ -594,7 +596,7 @@ int32 DeleteParagraphs(ITextModel* model, TextIndex from, TextIndex to, PMString
 
 /** The document's paragraphs of one place, as indices into the flat reading (KCMTextRead's attrs).
 	★A CELL IS NAMED BY ITS PLACE IN THE ROW (KCMStorySync::Where), the document's paragraphs by their
-	  grid column - ColumnsOfRow turns one into the other, as the pour's BuildPlaces did. */
+	  grid column - ColumnsOfRow turns one into the other. */
 std::vector<size_t> DocParasOf(const std::vector<KCMParaAttrs>& attrs, const KCMStorySync::Where& w)
 {
 	std::vector<size_t> out;

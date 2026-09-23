@@ -64,11 +64,11 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 						  PMString& outMessage);
 
 /** The story as the export reads it - body, tables, notes, the spans over them, the notes' reference
-	positions: the SHAPE the .docx is written from. ★Since stage 3 of the docx plan it is also the
-	"now" the import merges Word's changes onto (KCMStoryMerge): one reader, so that what the export
-	wrote and what the import compares with are the same reading of the document.
+	positions: the SHAPE the .docx is written from. ★It is also the "now" the import compares with
+	Word (KCMStorySync, since 2026-09-23): one reader, so that what the export wrote and what the
+	import compares with are the same reading of the document.
 	@param outNoteRefsPlaced kFalse when a footnote's reference could not be placed - the .docx export
-	  then refuses the story; the merge does not need the places and reads it all the same.
+	  then refuses the story, and the import leaves it as it stands (a "!" row).
 	@return kFalse when the story could not be read at all. Nothing in the document is changed. */
 bool16 KCMStoryFromDocument(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& outNoteRefsPlaced);
 

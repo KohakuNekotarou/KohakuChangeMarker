@@ -4,18 +4,21 @@
 //
 //  KohakuChangeMarker (KCM) - a folder of edited stories, read back and put into the document
 //
-//  WHAT THIS IS FOR. The reader exported the document's stories (KCMStoryTextExport), edited them
-//  outside InDesign - in an editor, in a browser, or by handing the file to somebody else - and
-//  now hands the files back. This file reads them and writes those words into the document.
+//  WHAT THIS IS FOR. The reader exported the document's stories (KCMStoryTextExport) as .docx files,
+//  edited them in Word - or handed them to somebody who did - and now hands the files back. This
+//  file reads them and makes each story what Word shows.
 //
 //  ★★★**AN IMPORT PUTS EVERYTHING INTO THE DOCUMENT, AND THE STORY MODE SHOWS WHAT IT DID** (the
-//  user's decision, 2026-09-19 - a trial; the design is
-//  docs/superpowers/specs/2026-09-19-kcm-import-direct-design.md). The import takes a Task Start of
-//  the document as it stands, pours the edited words into the document itself as ONE undo step, and
-//  starts the Story comparison against that Task Start: the Source is the moment before, the Target
-//  is the document with the edits in. "Restore Source Text" takes one change back, "Undo the
-//  Restore" puts it in again, Ctrl+Z takes the whole import back. What could NOT go in is listed
-//  first, with a red "!" (KCMImportRefusals below).
+//  user's decision, 2026-09-19; the design is docs/superpowers/specs/2026-09-19-kcm-import-direct-
+//  design.md). The import takes a Task Start of the document as it stands, puts the words into the
+//  document itself as ONE undo step, and starts the Story comparison against that Task Start: the
+//  Source is the moment before, the Target is the document with the edits in. Ctrl+Z takes the
+//  whole import back, and the older words are in the Source document (the "Restore" items went on
+//  2026-09-21). What could NOT go in is listed first, with a red "!" (KCMImportRefusals below).
+//  ★★★**WORD'S LAST STATE COUNTS** (since 2026-09-23; the design is docs/superpowers/specs/2026-09-23-
+//  kcm-import-sync-design.md): each story is compared with Word's (KCMStorySync) and made that
+//  (KCMStorySyncApply), revision marks or none. What was changed in InDesign after the export is
+//  written over. (Until then a three-way merge carried only the changes Word's marks recorded.)
 //
 //  ⛔**UNTIL 2026-09-19 THIS WAS THE OTHER WAY ROUND** - the words went into the task-start COPY and a
 //  fourth "Import" mode showed them, with "Change to Imported Text" putting one in at a time. That
@@ -55,15 +58,16 @@ struct KCMStoryTextSet
 														// that stands for a file with no story (2026-09-19)
 	std::vector<bool16>					fIsDocx;		// parallel: read from a .docx, whose paragraphs stand in
 														// the SPLIT shape around tables (KCMStoryDocx.h, SplitAtTables)
-														// and are put back into the document's shape at the pour
+														// and are put back into the document's shape by the comparison
 };
 
 /** One thing the last import could not put in - the material of a "!" row in Story Edits
 	(2026-09-19, the user's ask: "what could not be imported, a red ! in the Δ column, at the top").
 
-	★**EVERY REFUSAL THE POUR ALREADY COUNTS, AND NO NEW JUDGEMENT**: a conflict the three-way merge
-	  named, a story whose tables disagree, a cell or note not in the file, a paragraph the write
-	  refused, an attribute kept back, a file with no story. KCMStoryList::Build turns them into rows. */
+	★**EVERY REFUSAL THE POUR ALREADY COUNTS, AND NO NEW JUDGEMENT**: a place the comparison held
+	  (KCMStorySync's kHeld - a table whose shape Word changed, say), a story it left whole, a paragraph
+	  the write refused, an attribute kept back, a file with no story. KCMStoryList::Build turns them
+	  into rows. */
 struct KCMImportRefusal
 {
 	UID			fStory;			// the document's story (the uid the file is named after)
@@ -83,16 +87,18 @@ struct KCMImportRefusal
 };
 
 /** What the last import could not put in, in the order the pour met it. Empty when nothing was.
-	Lives as long as the origin the import took: dropped by KCMReleaseOrigin (a new Task Start, Stop,
-	Clear, a close), by the next import, and by the model's shutdown. */
+	Dropped by the next import, by a cancelled one, and by the model's shutdown (KCMPeek.cpp). (Until
+	2026-09-21 it also went with the origin - KCMReleaseOrigin - which went that day.) */
 const std::vector<KCMImportRefusal>& KCMImportRefusals();
 void KCMClearImportRefusals();
 
 /** Read each chosen file. It has to be a .docx to be one of ours.
 
     ★**THE TAG INSIDE THE FILE IS THE PAIRING** (2026-09-19), not the name: a .docx carries a
-      customXml part naming the document and the story it was written from, so a file renamed by
-      the reader still goes where it belongs and a file copied onto another story's name does not.
+      customXml part naming the story it was written from, so a file renamed by the reader still
+      goes where it belongs and a file copied onto another story's name does not. ★A .docx made in
+      Word from nothing carries no tag, and is paired by the number its name begins with
+      ("269.docx", "269 - chapter.docx"; 2026-09-23).
       ⚠Until 2026-09-21 there was a second spelling whose NAME was the pairing ("269.html"); it was
       retired with the rest of the HTML road.
     ★**CHOSEN AND THEN PASSED OVER IS SAID OUT LOUD.** A folder walk could pass over a stranger's
@@ -128,28 +134,24 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 /** "Import Story Text..." from end to end (2026-09-19): read the chosen files, take a Task Start,
     pour the words into the document, and start the Story comparison against that Task Start.
 
-    ★**THE TASK START IS THE IMPORT'S** (the user's rule: "an import always takes a Task"). One the
-      reader had taken before is replaced - How to Use says so; no dialog asks. It is parked only so
-      that a cancel or a failure can put it back exactly as it was.
+    ★**THE TASK START IS THE IMPORT'S** (the user's rule: "an import always takes a Task"). It is a
+      copy saved on disk (2026-09-21): the reader is asked where, and a cancel there ends the import
+      with nothing done. One the reader had taken before is replaced.
 
-    ⚠**ONLY CHANGES INSIDE A PARAGRAPH ARE APPLIED, so far.** A place whose paragraph COUNT differs
-      is refused with a reason rather than guessed at: adding and removing paragraphs needs the end
-      of a thread to be known exactly, and that is measured work not yet done. Everything else -
-      the words inside each paragraph - goes in minimally, so that the ruby and the kenten on the
-      parts nobody edited are still there afterwards.
-    ★★**AND THE RUBY AND THE KENTEN THEMSELVES GO IN TOO** (2026-09-16, the user's ask: "ruby only,
-      the base and the ruby together, kenten as well"). They are a SECOND PASS over each story,
-      after its words are in and the story has been read again - KCMStoryAttrPour, which states why
-      it has to be that way round and why it touches only a paragraph whose words already match.
-    ⚠**A CHANGE TOUCHING AN INVISIBLE CHARACTER IS REFUSED.** An anchored object's character, a
-      page number, an index marker: these can be moved or deleted from outside only by accident,
-      and the file format carries them precisely so that this check can be made.
+    ★**EACH STORY IS MADE WHAT WORD SHOWS** (2026-09-23): KCMStorySync compares it with Word's and
+      says what to write, KCMStorySyncApply writes it - paragraphs changed, added and removed,
+      footnotes made and taken away - minimally, so that the ruby and the kenten on the parts nobody
+      edited are still there afterwards. ★The ruby, the kenten and the rest go in as a SECOND PASS
+      over each story, after its words are in (KCMStoryAttrPour says why that way round).
+    ⚠**WHAT CANNOT BE MADE WORD'S IS HELD, BY NAME** - a table whose shape Word changed (for now), a
+      change touching an invisible character (an anchored object, a page number, an index marker:
+      moved or deleted from outside only by accident), a tate-chu-yoko inside a warichu Word cannot
+      carry. Each is a "!" row.
 
     ★★**ONE PROGRESS BAR FROM THE FIRST FILE TO THE LAST STORY** (2026-09-17, the user's choice): it
-      appears after the same three seconds as every other bar and carries Cancel. Taking the
-      document's state and building the copy are single calls into InDesign, so the bar stands still
-      through them and a Cancel pressed there is answered at the next safe point. A cancel anywhere
-      leaves the document unchanged and gives the reader's own Task Start back.
+      appears after the same three seconds as every other bar and carries Cancel. Saving the Task
+      Start copy is one call into InDesign, so the bar stands still through it and a Cancel pressed
+      there is answered at the next safe point. A cancel during the writes takes them all back.
 
     @param files the files the reader chose.
     @param outMessage what happened, for the panel's status line.

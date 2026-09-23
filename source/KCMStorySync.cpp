@@ -235,7 +235,7 @@ void DeleteNote(Run& run, int32 nowNote)
 /** The references of a paired paragraph: which of N's stay (returned, at W's offsets, numbered as N's
 	notes), which go (kDeleteNote) and which W adds (kAddNote). Paired by their offsets with a diff -
 	★rank alone pairs wrong when a reference is added at the offset one already stands at (measured
-	on Word's own file, 2026-09-22 - KCMStoryMerge's PlanNotesForPlace said so first). A reference the
+	on Word's own file, 2026-09-22 - the three-way merge this replaced said so first). A reference the
 	changed words took away goes, and W's one there comes as a new note with W's words. */
 std::vector<KCMStoryShape::NoteRef> PlanRefs(Run& run, const Where& where, int32 result,
 											 const KCMStoryShape::Para& n, const KCMStoryShape::Para& w,

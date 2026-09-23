@@ -239,7 +239,7 @@ void SplitAtTables(KCMStoryShape::Story& s, bool16 asRead = kTrue);
 	document's k-th table stands, the words after it join that paragraph when the document's do,
 	and an empty paragraph that stood there only because Word asked for one is dropped. Words the
 	file added or took away stay; only the breaks next to a table are decided, and by `shape`.
-	⚠A run whose table count differs from `shape`'s is left as it is (TablesAgree refuses it). */
+	⚠A run whose table count differs from `shape`'s is left as it is (KCMStorySync holds that story). */
 void RejoinTables(KCMStoryShape::Story& s, const KCMStoryShape::Story& shape);
 
 }	// namespace KCMStoryDocx
