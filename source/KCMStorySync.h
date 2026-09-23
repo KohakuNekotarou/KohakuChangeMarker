@@ -34,8 +34,15 @@ bool16 Normalize(const KCMStoryShape::Story& now, const KCMStoryShape::Story& wo
 
 /** What to do to N to make it W. Everything that cannot be done is a Held step (or fStoryHeld).
 	@param now  the document's story as KCMStoryFromDocument reads it (its own table shape).
-	@param word the story as Word left it - KCMStoryDocx::Read's fAfter (the split shape). */
-void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, Plan& out);
+	@param word the story as Word left it - KCMStoryDocx::Read's fAfter (the split shape).
+	@param reshapeTables kTrue: a table whose rows, columns or merges differ is made Word's, one
+		stage per round (S1/S2). kFalse: that table is HELD, words and all - ★what the import passes
+		since 2026-09-24 (design 11-1 item 5, the user's decision): the import writes under Track
+		Changes, and InDesign's change history does not record rows, columns or merges, so a change
+		of that kind could not be taken back one by one. ⚠NO DEFAULT, on purpose: every caller says
+		which it means. */
+void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, Plan& out,
+			 bool16 reshapeTables);
 
 /** The plan's kResizeRows steps carried out on `now` (the document's own shape), the way InDesign
 	does it (measured: docs/ai-notes/kcm-table-reshape-spike-2026-09-23.md): a row added at the end
