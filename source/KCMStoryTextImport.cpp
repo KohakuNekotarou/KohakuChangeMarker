@@ -657,55 +657,58 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 		}
 		KCMStorySync::Plan plan;
 		KCMStorySync::Compare(now, set.fStories[which], plan);
-		// ★★A FIRST ROUND THAT ONLY CHANGES ROWS (S1, design section 8-2): the rows go in, the story is
-		//   read again and checked against the same change made on paper, and the comparison runs once
-		//   more on what the document now holds - so every number in the plan that writes the words is
-		//   the document's own. What does not read back as planned is named, never guessed at.
-		if (!plan.fStoryHeld && plan.Count(KCMStorySync::Step::kResizeRows) > 0)
+		// ★★SHAPE ROUNDS FIRST (S1/S2, design sections 8-2 and 9-4): a table's merges taken apart, its rows
+		//   and columns made as many as Word's at the end, Word's merges made - one stage per round. After
+		//   each, the story is read again and checked against the same change made on paper, and the
+		//   comparison runs once more on what the document now holds - so every number in the plan that
+		//   writes the words is the document's own. What does not read back as planned is named, never
+		//   guessed at; and five rounds is more than any shape needs (three stages).
+		bool16 shapeFailed = kFalse;
+		for (int32 round = 0; !plan.fStoryHeld && plan.IsShapeRound(); ++round)
 		{
-			KCMSyncResult rows;
-			KCMApplyTableRows(storyRef, plan, rows);
-			tableEdits += rows.fTableEdits;
-			for (size_t k = 0; k < rows.fNotes.size(); ++k)
+			PMString why;
+			if (round >= 5)
+				why = "a table's shape is still not Word's after five rounds of changes";
+			else
 			{
-				NoteRefusal(original, rows.fNotes[k].fKind, rows.fNotes[k].fWhy);
-				if (firstRefusal.IsEmpty())
-					firstRefusal = rows.fNotes[k].fWhy;
-			}
-			const KCMStoryShape::Story paper = KCMStorySync::ReshapeOnPaper(now, plan);
-			KCMStoryShape::Story again;
-			bool16 placedAgain = kTrue;
-			std::string layoutWhy;
-			if (!KCMStoryFromDocument(storyRef, again, placedAgain) || !placedAgain
-				|| !KCMStorySync::SameTableLayout(paper, again, layoutWhy))
-			{
-				++storiesHeld;
-				PMString why("a table's rows were changed, but the story does not read back as planned");
+				KCMSyncResult shape;
+				KCMApplyTableShape(storyRef, plan, shape);
+				tableEdits += shape.fTableEdits;
+				for (size_t k = 0; k < shape.fNotes.size(); ++k)
+				{
+					NoteRefusal(original, shape.fNotes[k].fKind, shape.fNotes[k].fWhy);
+					if (firstRefusal.IsEmpty())
+						firstRefusal = shape.fNotes[k].fWhy;
+				}
+				const KCMStoryShape::Story paper = KCMStorySync::ReshapeOnPaper(now, plan);
+				KCMStoryShape::Story again;
+				bool16 placedAgain = kTrue;
+				std::string layoutWhy;
+				if (KCMStoryFromDocument(storyRef, again, placedAgain) && placedAgain
+					&& KCMStorySync::SameTableLayout(paper, again, layoutWhy))
+				{
+					now = again;
+					KCMStorySync::Compare(now, set.fStories[which], plan);
+					continue;
+				}
+				why = "a table's shape was changed, but the story does not read back as planned";
 				if (!layoutWhy.empty())
 				{
 					why.Append(" (");
 					why.Append(layoutWhy.c_str());
 					why.Append(")");
 				}
-				why.SetTranslatable(kFalse);
-				if (firstRefusal.IsEmpty())
-					firstRefusal = why;
-				NoteRefusal(original, "Story", why, kTrue);
-				continue;
 			}
-			now = again;
-			KCMStorySync::Compare(now, set.fStories[which], plan);
-			if (!plan.fStoryHeld && plan.Count(KCMStorySync::Step::kResizeRows) > 0)
-			{
-				++storiesHeld;
-				PMString why("a table still differs from Word's after its rows were changed");
-				why.SetTranslatable(kFalse);
-				if (firstRefusal.IsEmpty())
-					firstRefusal = why;
-				NoteRefusal(original, "Story", why, kTrue);
-				continue;
-			}
+			++storiesHeld;
+			why.SetTranslatable(kFalse);
+			if (firstRefusal.IsEmpty())
+				firstRefusal = why;
+			NoteRefusal(original, "Story", why, kTrue);
+			shapeFailed = kTrue;
+			break;
 		}
+		if (shapeFailed)
+			continue;
 		if (plan.fStoryHeld)
 		{
 			++storiesHeld;
@@ -779,7 +782,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	if (noteEdits > 0)
 		AppendCount(outMessage, ", ", noteEdits, " footnote(s) added or removed");
 	if (tableEdits > 0)
-		AppendCount(outMessage, ", ", tableEdits, " table(s) given Word's number of rows");
+		AppendCount(outMessage, ", ", tableEdits, " table shape change(s) (rows, columns, merges)");
 	if (storiesHeld > 0)
 		AppendCount(outMessage, ", ", storiesHeld, " story(ies) left alone (the rows marked !)");
 	if (heldBack > 0)

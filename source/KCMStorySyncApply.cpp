@@ -24,7 +24,7 @@
 #include <vector>
 
 #include "ICommand.h"
-#include "ITableCommands.h"			// InsertRows / DeleteRows - a table made as long as Word's (S1)
+#include "ITableCommands.h"			// rows, columns, merges - a table made Word's shape (S1/S2)
 #include "ITableModel.h"
 #include "ITextModel.h"
 #include "ITextModelCmds.h"
@@ -956,23 +956,23 @@ void KCMApplySyncPlan(const UIDRef& storyRef, const KCMStoryShape::Story& now,
 	}
 }
 
-void KCMApplyTableRows(const UIDRef& storyRef, const KCMStorySync::Plan& plan, KCMSyncResult& out)
+void KCMApplyTableShape(const UIDRef& storyRef, const KCMStorySync::Plan& plan, KCMSyncResult& out)
 {
-	// ★EVERY TABLE HELD BY ITS UIDRef FIRST: the ordinals are the reading's from before any row moved
+	// ★EVERY TABLE HELD BY ITS UIDRef FIRST: the ordinals are the reading's from before any shape moved
 	std::vector<UIDRef> tables;
 	if (!KCMTableRefsOfStory(storyRef, tables))
 	{
 		++out.fRefused;
-		Say(out, "Table", std::string("the story's tables could not be found, so no row was added or taken away"));
+		Say(out, "Table", std::string("the story's tables could not be found, so no table's shape was changed"));
 		return;
 	}
 	for (size_t i = 0; i < plan.fSteps.size(); ++i)
 	{
 		const KCMStorySync::Step& s = plan.fSteps[i];
-		if (s.fKind != KCMStorySync::Step::kResizeRows)
+		if (!s.IsShape())
 			continue;
 		const int32 t = s.fWhere.fTable;
-		if (t < 0 || static_cast<size_t>(t) >= tables.size() || s.fCount <= 0)
+		if (t < 0 || static_cast<size_t>(t) >= tables.size())
 		{
 			++out.fRefused;
 			Say(out, "Table", s.fWhere.Say() + ": the table could not be found");
@@ -988,23 +988,51 @@ void KCMApplyTableRows(const UIDRef& storyRef, const KCMStorySync::Plan& plan, K
 			Say(out, "Table", s.fWhere.Say() + ": the table cannot be edited");
 			continue;
 		}
-		const RowRange rows = table->GetTotalRows();
-		const int32 want = s.fCount;
 		ErrorCode err = kSuccess;
-		if (want > rows.count)
-			// ★AFTER THE LAST ROW - which puts them in the footer when the table has one (the user's rule,
-			//   design section 1-7; measured in the spike, M1a). Height 0: the last row's is taken over.
-			err = cmds->InsertRows(RowRange(rows.start + rows.count - 1, want - rows.count), Tables::eAfter, 0.0);
-		else if (want < rows.count)
-			// ★FROM THE BOTTOM: a footnote or an anchored object in these rows goes with them (the user's
-			//   rule, design section 1-6 - InDesign says nothing, spike M2b)
-			err = cmds->DeleteRows(RowRange(rows.start + want, rows.count - want));
-		else
-			continue;
+		const char* what = "";
+		if (s.fKind == KCMStorySync::Step::kResizeRows)
+		{
+			const RowRange rows = table->GetTotalRows();
+			what = "its rows could not be made as many as Word's";
+			if (s.fCount <= 0 || s.fCount == rows.count)
+				continue;
+			if (s.fCount > rows.count)
+				// ★AFTER THE LAST ROW - which puts them in the footer when the table has one (the user's rule,
+				//   design section 1-7; measured in the spike, M1a). Height 0: the last row's is taken over.
+				err = cmds->InsertRows(RowRange(rows.start + rows.count - 1, s.fCount - rows.count), Tables::eAfter, 0.0);
+			else
+				// ★FROM THE BOTTOM: a footnote or an anchored object in these rows goes with them (the user's
+				//   rule, design section 1-6 - InDesign says nothing, spike M2b)
+				err = cmds->DeleteRows(RowRange(rows.start + s.fCount, rows.count - s.fCount));
+		}
+		else if (s.fKind == KCMStorySync::Step::kResizeCols)
+		{
+			const ColRange cols = table->GetTotalCols();
+			what = "its columns could not be made as many as Word's";
+			if (s.fCount <= 0 || s.fCount == cols.count)
+				continue;
+			if (s.fCount > cols.count)
+				// ★AFTER THE LAST COLUMN (the rows' rule, design section 9-1). Width 0: the last column's.
+				err = cmds->InsertColumns(ColRange(cols.start + cols.count - 1, s.fCount - cols.count), Tables::eAfter, 0.0);
+			else
+				err = cmds->DeleteColumns(ColRange(cols.start + s.fCount, cols.count - s.fCount));
+		}
+		else if (s.fKind == KCMStorySync::Step::kUnmerge)
+		{
+			what = "a merged cell could not be taken apart";
+			err = cmds->UnmergeCell(GridAddress(s.fGridRow, s.fGridCol));
+		}
+		else if (s.fKind == KCMStorySync::Step::kMerge)
+		{
+			// ★GridArea's bottom and right are PAST the last row and column (TableTypes.h: Height() is
+			//   bottomRow - topRow), the way KCMReportTable merges its heading cells
+			what = "cells could not be merged as Word's are";
+			err = cmds->MergeCells(GridArea(s.fGridRow, s.fGridCol, s.fGridRow + s.fGridRowSpan, s.fGridCol + s.fGridColSpan));
+		}
 		if (err != kSuccess)
 		{
 			++out.fRefused;
-			Say(out, "Table", s.fWhere.Say() + ": its rows could not be made as many as Word's");
+			Say(out, "Table", s.fWhere.Say() + ": " + what);
 			continue;
 		}
 		++out.fTableEdits;
