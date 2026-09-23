@@ -340,10 +340,14 @@ void ColumnsOfRow(const std::vector<KCMParaAttrs>& attrs, int32 table, int32 row
 	  DIFFERENT CELL. Merging B and C of [A][B][C] leaves the document with two cells, and the
 	  file's B would be poured into the merged BC without anything looking wrong. Refusing per cell
 	  cannot catch that; only comparing the shapes first can.
-	@param whyNot filled with the first disagreement found, for the panel's status line. */
+	@param whyNot filled with the first disagreement found, for the panel's status line.
+	@param now the document's story read by the export's own reader (KCMStoryFromDocument), or nil.
+	  ★**WHEN THE FILE CARRIES NAMES (2026-09-23) each table is checked by name too** - its tables are
+	  in the same order as the ordinals here (both are ReadTableShapes') - so a table replaced in Word,
+	  or a column taken away and another added, is refused although every count agrees. */
 bool16 TablesAgree(const std::vector<KCMParaAttrs>& attrs, const KCMStoryShape::Story& file,
 				   PMString& whyNot, std::vector<int32>& outRefusedTables,
-				   std::vector<PMString>& outRefusedWhy)
+				   std::vector<PMString>& outRefusedWhy, const KCMStoryShape::Story* now)
 {
 	outRefusedTables.clear();
 	outRefusedWhy.clear();
@@ -419,6 +423,28 @@ bool16 TablesAgree(const std::vector<KCMParaAttrs>& attrs, const KCMStoryShape::
 				outRefusedWhy.push_back(why);
 				break;			// one reason per table is enough; on to the next table
 			}
+		}
+
+		// ★★**AND BY NAME** (2026-09-23): the counts above agree for a table replaced in Word and for a
+		//   column taken away and another added; the names do not (KCMStoryMerge::NamesAgree).
+		if (now == nil || !KCMStoryMerge::CarriesNames(file) || static_cast<size_t>(tbl) >= now->fTables.size())
+			continue;
+		if (!outRefusedTables.empty() && outRefusedTables.back() == tbl)
+			continue;						// already left alone for its shape
+		std::string nameWhy;
+		const bool16 shared = KCMStoryMerge::NameIsShared(file, static_cast<size_t>(tbl));
+		if (shared)
+			nameWhy = "its name stands on another table too";
+		if (shared || !KCMStoryMerge::NamesAgree(now->fTables[static_cast<size_t>(tbl)], fileTable, nameWhy))
+		{
+			PMString why("table ");
+			why.AppendNumber(tbl);
+			why.Append(": ");
+			why.Append(nameWhy.c_str());
+			why.Append(" - that table was left as it is");
+			why.SetTranslatable(kFalse);
+			outRefusedTables.push_back(tbl);
+			outRefusedWhy.push_back(why);
 		}
 	}
 
@@ -1807,7 +1833,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 		PMString tableWhyNot;
 		std::vector<int32> refusedTables;
 		std::vector<PMString> refusedTableWhy;
-		if (!TablesAgree(attrs, *file, tableWhyNot, refusedTables, refusedTableWhy))
+		if (!TablesAgree(attrs, *file, tableWhyNot, refusedTables, refusedTableWhy, haveNow ? &now : nil))
 		{
 			++skippedByTables;
 			if (firstRefusal.IsEmpty())
