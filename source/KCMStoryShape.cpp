@@ -465,26 +465,58 @@ bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNote
 std::string TableName(uint32 uid)
 {
 	char buf[32];
-	std::snprintf(buf, sizeof(buf), "kcm-tbl-%u", static_cast<unsigned int>(uid));
+	std::snprintf(buf, sizeof(buf), "kcm_t_%u", static_cast<unsigned int>(uid));
 	return std::string(buf);
 }
 
 std::string CellName(uint32 uid, int32 row, int32 col)
 {
 	char buf[64];
-	std::snprintf(buf, sizeof(buf), "kcm-cell-%u-%d-%d", static_cast<unsigned int>(uid),
+	std::snprintf(buf, sizeof(buf), "kcm_c_%u_%d_%d", static_cast<unsigned int>(uid),
 				  static_cast<int>(row), static_cast<int>(col));
 	return std::string(buf);
 }
 
-bool16 IsTableName(const std::string& tag)
+bool16 IsTableName(const std::string& name)
 {
-	return (tag.size() > 8 && tag.compare(0, 8, "kcm-tbl-") == 0) ? kTrue : kFalse;
+	return (name.size() > 6 && name.compare(0, 6, "kcm_t_") == 0) ? kTrue : kFalse;
 }
 
-bool16 IsCellName(const std::string& tag)
+bool16 IsCellName(const std::string& name)
 {
-	return (tag.size() > 9 && tag.compare(0, 9, "kcm-cell-") == 0) ? kTrue : kFalse;
+	return (name.size() > 6 && name.compare(0, 6, "kcm_c_") == 0) ? kTrue : kFalse;
+}
+
+bool16 TableUidOfCellName(const std::string& name, uint32& outUid)
+{
+	outUid = 0;
+	if (!IsCellName(name))
+		return kFalse;
+	// "kcm_c_" <uid> "_" <row> "_" <col>, each part digits only
+	int32 parts = 0;
+	uint32 uid = 0;
+	bool16 digits = kFalse;
+	for (size_t i = 6; i <= name.size(); ++i)
+	{
+		const char ch = (i < name.size()) ? name[i] : '_';
+		if (ch == '_')
+		{
+			if (!digits)
+				return kFalse;
+			++parts;
+			digits = kFalse;
+			continue;
+		}
+		if (ch < '0' || ch > '9')
+			return kFalse;
+		if (parts == 0)
+			uid = uid * 10 + static_cast<uint32>(ch - '0');
+		digits = kTrue;
+	}
+	if (parts != 3)
+		return kFalse;
+	outUid = uid;
+	return kTrue;
 }
 
 }	// namespace KCMStoryShape
