@@ -45,9 +45,8 @@
 #include "KCMTextRead.h"			// ReadStory - the document, read the way the export read it
 #include "KCMProgressBar.h"			// the import's one bar, and the slot its inner loops step (2026-09-17)
 #include "KCMDocxPackage.h"			// KCMReadDocxParts - a .docx on disk as its parts (2026-09-19)
-#include "KCMStoryMerge.h"
 #include "KCMStorySync.h"			// Compare - what makes the document's story Word's (2026-09-23)
-#include "KCMStorySyncApply.h"		// KCMApplySyncPlan - and that, carried out			// Merge - Word's changes onto the copy as it stands (stage 3, 2026-09-19)
+#include "KCMStorySyncApply.h"		// KCMApplySyncPlan - and that, carried out
 #include "KCMStoryTextExport.h"		// KCMStoryFromDocument - the copy's story in the shape the merge takes
 #include "KCMStoryDocx.h"			// Read / OriginMatchesTag - the parts as two stories, and whether the marks are whole
 #include "KCMZipStore.h"			// Entry - a part, named
