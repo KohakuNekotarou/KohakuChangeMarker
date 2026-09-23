@@ -250,11 +250,8 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 	int32 skippedName = 0;		// not one of ours: not a .docx at all
 	int32 refused = 0;			// ours, but the markup could not be read
 	int32 fromWord = 0;			// .docx files read
-	int32 trackedCount = 0;		// of those, the ones whose revision marks account for everything
 	PMString firstReason;
 	firstReason.SetTranslatable(kFalse);
-	PMString firstUntracked;	// the first .docx whose marks do not - named, not refused
-	firstUntracked.SetTranslatable(kFalse);
 
 	// ★The import's bar when there is one (a slice of it), a bar of its own otherwise.
 	PMString barTitle("Reading story files...");
@@ -301,13 +298,11 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 			continue;
 		}
 
-		// ---- a .docx (2026-09-19, stage 2 of the docx plan): the tag is the pairing ----------------
+		// ---- a .docx: the tag is the pairing, or the name when there is no tag -----------------------
 		//
-		// ★What goes into fStories is the story AS WORD SHOWS IT - the after side - so the pour and
-		//   the Import mode compare the whole text against the document. What
-		//   is new is beside it: when the file's revision marks account for every change since it
-		//   was written (OriginMatchesTag), the story AS WRITTEN is kept too, for stage 3 to show
-		//   only Word's changes. Nothing is refused on that account (the user's rule, 2026-09-19).
+		// ★What goes into fStories is the story AS WORD SHOWS IT - every revision mark accepted - and
+		//   that is all the import needs: since 2026-09-23 it makes the document's story Word's
+		//   (KCMStorySync), whatever the marks say or whether there are any.
 		std::vector<KCMZipStore::Entry> parts;
 		PMString packageWhy;
 		if (!KCMReadDocxParts(*file, parts, packageWhy))
@@ -329,16 +324,23 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 			NoteFirstReason(firstReason, leaf, why);
 			continue;
 		}
+		int32 uid = result.fTag.fPresent ? result.fTag.fUid : 0;
 		if (!result.fTag.fPresent)
 		{
-			// A .docx nobody exported (written from scratch in Word) is the design's section 7 and a
-			// later stage; until then it is named, not guessed at.
-			++refused;
-			NoteFirstReason(firstReason, leaf,
-							"the file carries no story tag (a Word document not written by Kohaku Change Marker is not imported yet)");
-			continue;
+			// ★★A .docx NOBODY EXPORTED - made in Word from nothing (2026-09-23, the user's request: "a Word
+			//   file a person made from nothing and named with the UID can be imported too"). The name is
+			//   the pairing then, the way the exporter spells it ("269.docx", "269 - chapter one.docx").
+			//   ⚠Without a number in the name there is nothing to say which story it is for, and it is named.
+			if (leading == 0)
+			{
+				++refused;
+				NoteFirstReason(firstReason, leaf,
+								"the file carries no story tag and its name does not begin with a story's number");
+				continue;
+			}
+			uid = static_cast<int32>(leading);
 		}
-		if (leading != 0 && leading != static_cast<uint32>(result.fTag.fUid))
+		else if (leading != 0 && leading != static_cast<uint32>(result.fTag.fUid))
 		{
 			// ★THE FILE COPIED TO ANOTHER STORY'S NAME (the design, 4-3): which of the two is meant is
 			//   not this plug-in's to decide.
@@ -354,24 +356,13 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 		}
 
 		++fromWord;
-		out.fUids.push_back(UID(static_cast<uint32>(result.fTag.fUid)));
+		out.fUids.push_back(UID(static_cast<uint32>(uid)));
 		out.fStories.push_back(result.fAfter);
-		std::string whole;
-		const bool16 tracked = KCMStoryDocx::OriginMatchesTag(result, whole);
-		out.fOrigins.push_back(tracked ? result.fOrigin : KCMStoryShape::Story());
-		out.fOriginKnown.push_back(tracked);
+		// (the origin is no longer asked for - S0c takes these two out of KCMStoryTextSet)
+		out.fOrigins.push_back(KCMStoryShape::Story());
+		out.fOriginKnown.push_back(kFalse);
 		out.fFileNames.push_back(PMStringOfLeaf(leaf));
 		out.fIsDocx.push_back(kTrue);
-		if (tracked)
-		{
-			++trackedCount;
-		}
-		else if (firstUntracked.IsEmpty())
-		{
-			firstUntracked.AppendNumber(result.fTag.fUid);
-			firstUntracked.Append(": ");
-			firstUntracked.Append(whole.c_str());
-		}
 	}
 
 	// ★A STORY CHOSEN TWICE - two .docx files whose tags name one story - is refused on both counts (the design,
@@ -417,13 +408,6 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 	if (fromWord > 0)
 	{
 		AppendCount(whyNot, ", ", fromWord, " from Word");
-		AppendCount(whyNot, ", ", trackedCount, " with complete revision marks");
-		if (!firstUntracked.IsEmpty())
-		{
-			whyNot.Append(" (");
-			whyNot.Append(firstUntracked);
-			whyNot.Append(")");
-		}
 	}
 	if (refused > 0)
 	{
