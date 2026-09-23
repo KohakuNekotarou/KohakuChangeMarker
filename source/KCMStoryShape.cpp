@@ -369,7 +369,7 @@ bool16 SameParas(const std::vector<Para>& a, const std::vector<Para>& b, const s
 
 }	// anonymous namespace
 
-bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNoteRefs)
+bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNoteRefs, bool16 withNames)
 {
 	outWhy.clear();
 
@@ -404,6 +404,12 @@ bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNote
 		const Table& y = b.fTables[t];
 		const std::string where = "table " + Num(t);
 
+		if (withNames && x.fName != y.fName)
+		{
+			outWhy = where + ": its name changed";
+			return kFalse;
+		}
+
 		if (x.fInTable != y.fInTable || x.fInRow != y.fInRow || x.fInCell != y.fInCell)
 		{
 			outWhy = where + ": it stands somewhere else";
@@ -437,6 +443,11 @@ bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNote
 				const Cell& p = x.fRows[r].fCells[c];
 				const Cell& q = y.fRows[r].fCells[c];
 				const std::string cell = where + " row " + Num(r) + " cell " + Num(c);
+				if (withNames && p.fNames != q.fNames)
+				{
+					outWhy = cell + ": its name changed";
+					return kFalse;
+				}
 				if (p.fColSpan != q.fColSpan || p.fRowSpan != q.fRowSpan)
 				{
 					outWhy = cell + ": its span changed";
@@ -449,6 +460,31 @@ bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNote
 	}
 
 	return kTrue;
+}
+
+std::string TableName(uint32 uid)
+{
+	char buf[32];
+	std::snprintf(buf, sizeof(buf), "kcm-tbl-%u", static_cast<unsigned int>(uid));
+	return std::string(buf);
+}
+
+std::string CellName(uint32 uid, int32 row, int32 col)
+{
+	char buf[64];
+	std::snprintf(buf, sizeof(buf), "kcm-cell-%u-%d-%d", static_cast<unsigned int>(uid),
+				  static_cast<int>(row), static_cast<int>(col));
+	return std::string(buf);
+}
+
+bool16 IsTableName(const std::string& tag)
+{
+	return (tag.size() > 8 && tag.compare(0, 8, "kcm-tbl-") == 0) ? kTrue : kFalse;
+}
+
+bool16 IsCellName(const std::string& tag)
+{
+	return (tag.size() > 9 && tag.compare(0, 9, "kcm-cell-") == 0) ? kTrue : kFalse;
 }
 
 }	// namespace KCMStoryShape

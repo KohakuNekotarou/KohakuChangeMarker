@@ -120,9 +120,14 @@ bool16 IsInvisible(int32 cp);
 	count and keeps this header free of a type that contains itself. */
 struct Cell
 {
-	int32				fColSpan;
-	int32				fRowSpan;
-	std::vector<Para>	fParas;
+	int32						fColSpan;
+	int32						fRowSpan;
+	std::vector<Para>			fParas;
+	// ★THE NAMES THE CELL CARRIES IN A .docx (2026-09-23): "kcm-cell-<table uid>-<row>-<col>", where
+	//   it stood when it was written. A LIST, because Word keeps both when two named cells are merged
+	//   (measured 2026-09-22) - one slot would lose what the merge says. Empty = a cell nobody named:
+	//   one Word made, or one from a file written before names.
+	std::vector<std::string>	fNames;
 
 	Cell() : fColSpan(1), fRowSpan(1) {}
 };
@@ -157,6 +162,10 @@ struct Table
 	int32				fInCell;	// and which cell of that row, in the order its cells run
 	bool16				fSplitsPara;
 	std::vector<Row>	fRows;
+	// ★THE TABLE'S NAME IN A .docx (2026-09-23): "kcm-tbl-<uid>" - the UID of the table in the document.
+	//   Empty = a table nobody named. ⚠NOT UNIQUE IN A FILE: a table copied in Word carries its name
+	//   along (measured 2026-09-22), so whoever reads it has to allow for two.
+	std::string			fName;
 
 	Table() : fOrdinal(0), fParaIndex(0), fOffset(0), fInTable(-1), fInRow(0), fInCell(0),
 			  fSplitsPara(kFalse) {}
@@ -196,8 +205,20 @@ void CollectKentenValues(const Story& s, std::vector<std::string>& inOutSeen);
 	  exists to keep, and this is that sentence as a function.
 	@param outWhy where the first difference is, in words a status line can show.
 	@param withNoteRefs kTrue compares Para::fNoteRefs as well. ★**KCMStoryDocx's own check passes
-	  kTrue**, because that format carries where a reference stands. */
-bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNoteRefs = kFalse);
+	  kTrue**, because that format carries where a reference stands.
+	@param withNames kTrue compares Table::fName and Cell::fNames as well. ★**KCMStoryDocx's own check
+	  passes kTrue** (a name the writer or the reader drops is caught before a file is written); nothing
+	  else does - a name is who a table is, not what is in it. */
+bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNoteRefs = kFalse,
+			bool16 withNames = kFalse);
+
+/** The names a .docx gives a table and a cell (2026-09-23). The cell's is where it stood when written. */
+std::string TableName(uint32 uid);
+std::string CellName(uint32 uid, int32 row, int32 col);
+/** kTrue for a tag that is a table's (a cell's) name. ⚠The retired tags of stage 3b (kcm-continues,
+	kcm-continued, kcm-legend) are neither. */
+bool16 IsTableName(const std::string& tag);
+bool16 IsCellName(const std::string& tag);
 
 }	// namespace KCMStoryShape
 
