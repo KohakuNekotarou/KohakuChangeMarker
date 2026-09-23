@@ -77,7 +77,14 @@ struct Step
 		kDeleteNote = 4,
 		/** Nothing is done here, and the reader is told: fWhat ("Story", "Table", "Para", "Tcy",
 			"Place") and fWhy. fPara is -1 when the whole place (or table) is meant. */
-		kHeld = 5
+		kHeld = 5,
+		/** Table fWhere.fTable (N's ordinal; fRow and fCell -1) is made fCount rows long, AT ITS END: rows
+			are added after the last one or taken away from the bottom, and the words go by position
+			(the user's rule, design section 1-6). ★**ONLY IN A FIRST ROUND**: a plan that holds one holds
+			nothing else, and the side that writes reads the story again and compares once more when it is
+			done (design section 8-2) - a row taken away renumbers the notes and moves the cells, and the
+			second comparison is what keeps every number the document's own. */
+		kResizeRows = 6
 	};
 
 	int32									fKind;

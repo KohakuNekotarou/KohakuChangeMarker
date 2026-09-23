@@ -37,6 +37,17 @@ bool16 Normalize(const KCMStoryShape::Story& now, const KCMStoryShape::Story& wo
 	@param word the story as Word left it - KCMStoryDocx::Read's fAfter (the split shape). */
 void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, Plan& out);
 
+/** The plan's kResizeRows steps carried out on `now` (the document's own shape), the way InDesign
+	does it (measured: docs/ai-notes/kcm-table-reshape-spike-2026-09-23.md): a row added at the end
+	runs like the last row, each of its cells one empty paragraph; a row taken away takes its words and
+	its footnotes with it, and the notes after close up. What the document should read back as once the
+	first round is done - the side that writes checks it with SameTableLayout. */
+KCMStoryShape::Story ReshapeOnPaper(const KCMStoryShape::Story& now, const Plan& plan);
+
+/** kTrue when the two stories' tables have the same rows and the same cells (count and span) - the
+	check after a first round. `why` names the first difference. */
+bool16 SameTableLayout(const KCMStoryShape::Story& a, const KCMStoryShape::Story& b, std::string& why);
+
 /** The plan carried out on the shape - what the document would hold. `normalizedNow` is Normalize's
 	outNow. For the harness: it is the only way to check a plan without InDesign. */
 KCMStoryShape::Story ApplyToShape(const KCMStoryShape::Story& normalizedNow, const Plan& plan);

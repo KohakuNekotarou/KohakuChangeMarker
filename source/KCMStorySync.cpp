@@ -116,6 +116,88 @@ bool16 TableShapeSame(const KCMStoryShape::Table& a, const KCMStoryShape::Table&
 	return kTrue;
 }
 
+/** kTrue when table t of N and W differ ONLY in how many rows they have, in a way stage S1 can make
+	Word's by adding rows at the end or taking them from the bottom (design section 8-1). kFalse with
+	`why` otherwise - empty when the difference is not in the row count at all (the caller's own
+	reason stands then). `ns` / `ws` are the two stories, for the tables standing inside this one. */
+bool16 RowsOnly(const KCMStoryShape::Table& n, const KCMStoryShape::Table& w, const KCMStoryShape::Story& ns,
+				const KCMStoryShape::Story& ws, size_t t, std::string& why)
+{
+	why.clear();
+	if (n.fInTable != w.fInTable || n.fInRow != w.fInRow || n.fInCell != w.fInCell)
+		return kFalse;
+	const size_t nr = n.fRows.size();
+	const size_t wr = w.fRows.size();
+	if (nr == wr || nr == 0)
+		return kFalse;
+	if (wr == 0)
+	{
+		why = "Word's table has no row left";
+		return kFalse;
+	}
+
+	// the rows both have run the same way, cell for cell
+	const size_t common = (nr < wr) ? nr : wr;
+	for (size_t r = 0; r < common; ++r)
+	{
+		if (n.fRows[r].fCells.size() != w.fRows[r].fCells.size())
+			return kFalse;
+		for (size_t c = 0; c < n.fRows[r].fCells.size(); ++c)
+			if (n.fRows[r].fCells[c].fColSpan != w.fRows[r].fCells[c].fColSpan
+				|| n.fRows[r].fCells[c].fRowSpan != w.fRows[r].fCells[c].fRowSpan)
+				return kFalse;
+	}
+
+	if (wr > nr)
+	{
+		// ★InDesign gives a row added after the last one the last row's cells (spike M7): Word's added
+		//   rows have to run that way, and nothing may reach down into the last row from above
+		const KCMStoryShape::Row& last = n.fRows[nr - 1];
+		for (size_t r = 0; r + 1 < nr; ++r)
+			for (size_t c = 0; c < n.fRows[r].fCells.size(); ++c)
+				if (static_cast<size_t>(r) + static_cast<size_t>(n.fRows[r].fCells[c].fRowSpan) > nr - 1)
+				{
+					why = "a merged cell reaches its last row, so rows cannot be added after it yet";
+					return kFalse;
+				}
+		for (size_t r = nr; r < wr; ++r)
+		{
+			bool16 same = (w.fRows[r].fCells.size() == last.fCells.size()) ? kTrue : kFalse;
+			for (size_t c = 0; same && c < last.fCells.size(); ++c)
+				if (w.fRows[r].fCells[c].fColSpan != last.fCells[c].fColSpan || w.fRows[r].fCells[c].fRowSpan != 1)
+					same = kFalse;
+			if (!same)
+			{
+				why = "a row Word added runs otherwise than the table's last row (merged or split cells)";
+				return kFalse;
+			}
+		}
+		for (size_t k = 0; k < ws.fTables.size(); ++k)
+			if (ws.fTables[k].fInTable == static_cast<int32>(t) && static_cast<size_t>(ws.fTables[k].fInRow) >= nr)
+			{
+				why = "a table stands in a row Word added";
+				return kFalse;
+			}
+		return kTrue;
+	}
+
+	// fewer rows: the bottom ones go - nothing may reach into them, and no table may stand in them
+	for (size_t r = 0; r < wr; ++r)
+		for (size_t c = 0; c < n.fRows[r].fCells.size(); ++c)
+			if (r + static_cast<size_t>(n.fRows[r].fCells[c].fRowSpan) > wr)
+			{
+				why = "a merged cell reaches into the rows that would be taken away";
+				return kFalse;
+			}
+	for (size_t k = 0; k < ns.fTables.size(); ++k)
+		if (ns.fTables[k].fInTable == static_cast<int32>(t) && static_cast<size_t>(ns.fTables[k].fInRow) >= wr)
+		{
+			why = "a table stands in a row that would be taken away";
+			return kFalse;
+		}
+	return kTrue;
+}
+
 /** The tables of `s` standing in one place, in document order. */
 void TablesIn(const KCMStoryShape::Story& s, int32 inTable, int32 inRow, int32 inCell, std::vector<size_t>& out)
 {
@@ -836,9 +918,12 @@ void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, 
 	run.fWordOfNote.assign(n.fNotes.size(), -1);
 	run.fTableHeld.assign(n.fTables.size(), kFalse);
 
-	// ---- the tables first: a table whose shape changed is left as it is (S1/S2 reshape it) --------
+	// ---- the tables first: a table whose shape changed is left as it is (S2 reshapes it) -----------
 	// ★In document order, so a nested table's parent is judged before it: one inside a held table is
 	//   held with it, and named once, with its parent.
+	// ★★ONE WHOSE ROWS ALONE CHANGED IS MADE AS LONG AS WORD'S (S1, design section 8): and then this
+	//   round is ONLY that - see the return below.
+	std::vector<Step> resize;
 	for (size_t t = 0; t < n.fTables.size(); ++t)
 	{
 		const int32 parent = n.fTables[t].fInTable;
@@ -851,9 +936,27 @@ void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, 
 		if (!TableShapeSame(n.fTables[t], w.fTables[t], tw))
 		{
 			run.fTableHeld[t] = kTrue;
+			std::string rw;
+			if (RowsOnly(n.fTables[t], w.fTables[t], n, w, t, rw))
+			{
+				Step s;
+				s.fKind = Step::kResizeRows;
+				s.fWhere = Where::Cell(static_cast<int32>(t), -1, -1);
+				s.fCount = static_cast<int32>(w.fTables[t].fRows.size());
+				resize.push_back(s);
+				continue;
+			}
 			Hold(run, Where::Cell(static_cast<int32>(t), -1, -1), -1, "Table",
-				 "table " + Num(static_cast<int32>(t)) + ": " + tw + " - that table was left as it is");
+				 "table " + Num(static_cast<int32>(t)) + ": " + (rw.empty() ? tw : rw) + " - that table was left as it is");
 		}
+	}
+	// ★★★A FIRST ROUND IS ROWS AND NOTHING ELSE. Taking a row away renumbers the notes after it and a row
+	//   added moves nothing but may end the table elsewhere; the words are compared once the rows are
+	//   right, against the story read again, so every number in that plan is the document's own.
+	if (!resize.empty())
+	{
+		out.fSteps = resize;
+		return;
 	}
 
 	// ---- the places: the body, every cell of a table not held, then the notes that pair ---------
@@ -926,6 +1029,93 @@ KCMStoryShape::Story ApplyToShape(const KCMStoryShape::Story& normalizedNow, con
 	out.fNotes = notes;
 	RemapAllRefs(out, newOf);
 	return out;
+}
+
+KCMStoryShape::Story ReshapeOnPaper(const KCMStoryShape::Story& now, const Plan& plan)
+{
+	KCMStoryShape::Story out = now;
+	std::vector<bool16> noteGone(out.fNotes.size(), kFalse);
+	bool16 anyGone = kFalse;
+	for (size_t i = 0; i < plan.fSteps.size(); ++i)
+	{
+		const Step& s = plan.fSteps[i];
+		if (s.fKind != Step::kResizeRows || s.fWhere.fTable < 0 || static_cast<size_t>(s.fWhere.fTable) >= out.fTables.size()
+			|| s.fCount <= 0)
+			continue;
+		KCMStoryShape::Table& t = out.fTables[static_cast<size_t>(s.fWhere.fTable)];
+		const size_t want = static_cast<size_t>(s.fCount);
+		if (want < t.fRows.size())
+		{
+			// the bottom rows go, and the notes referred to from them (InDesign takes them silently - spike M2b)
+			for (size_t r = want; r < t.fRows.size(); ++r)
+				for (size_t c = 0; c < t.fRows[r].fCells.size(); ++c)
+					for (size_t p = 0; p < t.fRows[r].fCells[c].fParas.size(); ++p)
+						for (size_t k = 0; k < t.fRows[r].fCells[c].fParas[p].fNoteRefs.size(); ++k)
+						{
+							const int32 note = t.fRows[r].fCells[c].fParas[p].fNoteRefs[k].fNote;
+							if (note >= 0 && static_cast<size_t>(note) < noteGone.size())
+							{
+								noteGone[static_cast<size_t>(note)] = kTrue;
+								anyGone = kTrue;
+							}
+						}
+			t.fRows.resize(want);
+		}
+		else if (!t.fRows.empty())
+		{
+			// a row added after the last one runs like it, and each of its cells holds one empty paragraph
+			const KCMStoryShape::Row last = t.fRows.back();
+			while (t.fRows.size() < want)
+			{
+				KCMStoryShape::Row row;
+				row.fHeader = kFalse;
+				for (size_t c = 0; c < last.fCells.size(); ++c)
+				{
+					KCMStoryShape::Cell cell;
+					cell.fColSpan = last.fCells[c].fColSpan;
+					cell.fRowSpan = 1;
+					cell.fParas.push_back(KCMStoryShape::Para());
+					row.fCells.push_back(cell);
+				}
+				t.fRows.push_back(row);
+			}
+		}
+	}
+	if (anyGone)
+	{
+		std::vector<int32> newOf(out.fNotes.size(), -1);
+		std::vector<Paras> notes;
+		for (size_t k = 0; k < out.fNotes.size(); ++k)
+		{
+			if (noteGone[k])
+				continue;
+			newOf[k] = static_cast<int32>(notes.size());
+			notes.push_back(out.fNotes[k]);
+		}
+		out.fNotes = notes;
+		RemapAllRefs(out, newOf);
+	}
+	return out;
+}
+
+bool16 SameTableLayout(const KCMStoryShape::Story& a, const KCMStoryShape::Story& b, std::string& why)
+{
+	why.clear();
+	if (a.fTables.size() != b.fTables.size())
+	{
+		why = Num(static_cast<int32>(a.fTables.size())) + " table(s) against " + Num(static_cast<int32>(b.fTables.size()));
+		return kFalse;
+	}
+	for (size_t t = 0; t < a.fTables.size(); ++t)
+	{
+		std::string tw;
+		if (!TableShapeSame(a.fTables[t], b.fTables[t], tw))
+		{
+			why = "table " + Num(static_cast<int32>(t)) + ": " + tw;
+			return kFalse;
+		}
+	}
+	return kTrue;
 }
 
 void RenumberNotesByReading(KCMStoryShape::Story& s)
