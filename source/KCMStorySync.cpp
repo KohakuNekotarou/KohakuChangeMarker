@@ -379,6 +379,16 @@ std::string TableWords(const KCMStoryShape::Table& t)
 	return out;
 }
 
+/** How many tables stand in table t's cells, however deep. */
+int32 TablesWithin(const KCMStoryShape::Story& s, size_t t)
+{
+	int32 n = 0;
+	for (size_t k = 0; k < s.fTables.size(); ++k)
+		if (s.fTables[k].fInTable == static_cast<int32>(t))
+			n += 1 + TablesWithin(s, k);
+	return n;
+}
+
 /** How many tables stand directly in the cells of table t. */
 int32 TablesInside(const KCMStoryShape::Story& s, size_t t)
 {
@@ -453,6 +463,25 @@ int32 PlanTables(const KCMStoryShape::Story& now, const KCMStoryShape::Story& wo
 		if (wOfN[i] < 0)
 			continue;
 		if (TablesInside(now, nb[i]) != TablesInside(word, wb[static_cast<size_t>(wOfN[i])]))
+		{
+			why = "a table inside a cell was added or taken away, which the import does not do yet";
+			return -1;
+		}
+	}
+
+	// ★AND THE WHOLE COUNT, before anything changes (re-check 2026-09-24): the tables that go take what is
+	//  nested in them, the new ones hold nothing - so what is left over is a table added or taken away
+	//  deeper inside a table that stays, which the next round would find only after this one had run
+	{
+		int32 left = static_cast<int32>(now.fTables.size());
+		int32 added = 0;
+		for (size_t i = 0; i < nb.size(); ++i)
+			if (wOfN[i] < 0)
+				left -= 1 + TablesWithin(now, nb[i]);
+		for (size_t j = 0; j < wb.size(); ++j)
+			if (nOfW[j] < 0)
+				++added;
+		if (left + added != static_cast<int32>(word.fTables.size()))
 		{
 			why = "a table inside a cell was added or taken away, which the import does not do yet";
 			return -1;

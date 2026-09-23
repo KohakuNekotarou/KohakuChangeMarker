@@ -1050,11 +1050,10 @@ void InsertTables(const UIDRef& storyRef, const KCMStorySync::Plan& plan, KCMSyn
 
 void KCMApplyTableShape(const UIDRef& storyRef, const KCMStorySync::Plan& plan, KCMSyncResult& out)
 {
-	// ★TABLES PUT IN FIRST, by the text positions of the reading from before: every other step names its
-	//  table by UIDRef, which a table put in does not move
-	InsertTables(storyRef, plan, out);
-
-	// ★EVERY TABLE HELD BY ITS UIDRef FIRST: the ordinals are the reading's from before any shape moved
+	// ★EVERY TABLE HELD BY ITS UIDRef FIRST: the steps name a table by its ordinal in the reading from
+	//  before any change, and a table put in (below) or taken away would move every ordinal after it
+	//  (re-check 2026-09-24: these two were the other way round, harmless only because a round of tables
+	//  put in holds no other step)
 	std::vector<UIDRef> tables;
 	if (!KCMTableRefsOfStory(storyRef, tables))
 	{
@@ -1062,6 +1061,9 @@ void KCMApplyTableShape(const UIDRef& storyRef, const KCMStorySync::Plan& plan, 
 		Say(out, "Table", std::string("the story's tables could not be found, so no table's shape was changed"));
 		return;
 	}
+
+	// ★TABLES PUT IN NEXT, by the text positions of the same reading, from the back of the story
+	InsertTables(storyRef, plan, out);
 	for (size_t i = 0; i < plan.fSteps.size(); ++i)
 	{
 		const KCMStorySync::Step& s = plan.fSteps[i];
