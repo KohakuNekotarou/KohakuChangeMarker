@@ -392,15 +392,10 @@ void ComparePara(Run& run, const Where& where, int32 nIndex, int32 result,
 				return;
 			}
 		}
-		for (size_t t = 0; t < tablesHere.size(); ++t)
-		{
-			const int32 off = tablesHere[t].second;
-			if (ch[c].aStart < off && off < ch[c].aStart + ch[c].aCount)
-			{
-				Hold(run, where, nIndex, "Para", "a change crosses the place a table stands");
-				return;
-			}
-		}
+		// (⛔A change CROSSING a table's place was held here for a day - 2026-09-23. It need not be: the
+		//   apply cuts such a change at the table and puts each side's words on its side, by where W's
+		//   table stands (ApplyParagraph / KCMParaText::CutChangeAtObjects, fTables below). Measured on
+		//   the live matrix: A15, A16, H46-48 went in before the rebuild and were held by this guard.)
 	}
 
 	std::vector<int32> ends;
