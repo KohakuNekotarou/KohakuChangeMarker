@@ -35,7 +35,14 @@ class ITextModel;
 	  number footnotes. The interface behind that ID is private; the ID itself is public
 	  (TextID.h:711), so nothing here dereferences what it must not - the route
 	  SnpManipulateTextFootnotes takes, and the only one a plug-in on Adobe Exchange may take.
-	⚠Measured 2026-09-22: a table's cell takes one, and so does a footnote itself.
+	★★**A TABLE CELL ASKS THE STORY** (2026-09-23): a cell's thread belongs to the TABLE's dictionary,
+	  which carries no footnote numbering (only kTextStoryBoss and kEndnoteStoryBoss do), while the
+	  story numbers its cells' footnotes. Asking the dictionary alone - SnpManipulateTextFootnotes'
+	  way, written before footnotes in tables - refused every cell (measured: a note Word added in a
+	  cell, at its end and in its middle, came back "this place does not take a footnote"; with the
+	  story asked, both went in at the right place).
+	⚠**THE NOTE THAT STOOD HERE WAS WRONG**: "measured 2026-09-22: a table's cell takes one" - the
+	 code never let one through, and the commit that wrote both (f34db14) records no such measurement.
 */
 bool16 KCMCanInsertNoteAt(ITextModel* model, TextIndex at);
 

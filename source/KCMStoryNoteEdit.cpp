@@ -12,6 +12,7 @@
 #include "IRangeData.h"
 #include "ITextModel.h"
 #include "ITextModelCmds.h"
+#include "ITableModel.h"		// a cell's thread belongs to the table's dictionary
 #include "ITextStoryThread.h"
 #include "ITextStoryThreadDict.h"
 #include "IUIDData.h"
@@ -36,7 +37,17 @@ bool16 KCMCanInsertNoteAt(ITextModel* model, TextIndex at)
 		return kFalse;
 	// ★THE ID, NOT THE INTERFACE - see the header.
 	InterfacePtr<IPMUnknown> numbering(dict, IID_IFOOTNOTENUMBERING);
-	return (numbering != nil) ? kTrue : kFalse;
+	if (numbering != nil)
+		return kTrue;
+	// ★★A TABLE CELL'S THREAD BELONGS TO THE TABLE'S DICTIONARY, which numbers nothing - the story
+	//   numbers its cells' footnotes (2026-09-23). Only kTextStoryBoss and kEndnoteStoryBoss carry
+	//   IID_IFOOTNOTENUMBERING (the IID dictionary), so the dictionary alone said no to every cell.
+	//   SnpManipulateTextFootnotes asks the dictionary only because it predates footnotes in tables.
+	InterfacePtr<ITableModel> table(dict, UseDefaultIID());
+	if (table == nil)
+		return kFalse;
+	InterfacePtr<IPMUnknown> storyNumbering(model, IID_IFOOTNOTENUMBERING);
+	return (storyNumbering != nil) ? kTrue : kFalse;
 }
 
 ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outWordsFrom, TextIndex& outWordsTo,
