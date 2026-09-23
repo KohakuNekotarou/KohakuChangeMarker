@@ -935,8 +935,12 @@ void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, 
 		std::string tw;
 		if (!TableShapeSame(n.fTables[t], w.fTables[t], tw))
 		{
-			run.fTableHeld[t] = kTrue;
 			std::string rw;
+			// ⚠**A TABLE MADE AS LONG AS WORD'S IS NOT HELD** (re-check 2026-09-23): marking it held made
+			//  a table nested in it skip this round, and its own resize then came back in the second -
+			//  where the import reads "still differs" and leaves the story half done. The tables nested
+			//  in a resized one are judged here too; RowsOnly holds the parent when one stands in rows
+			//  that would go.
 			if (RowsOnly(n.fTables[t], w.fTables[t], n, w, t, rw))
 			{
 				Step s;
@@ -946,6 +950,7 @@ void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, 
 				resize.push_back(s);
 				continue;
 			}
+			run.fTableHeld[t] = kTrue;
 			Hold(run, Where::Cell(static_cast<int32>(t), -1, -1), -1, "Table",
 				 "table " + Num(static_cast<int32>(t)) + ": " + (rw.empty() ? tw : rw) + " - that table was left as it is");
 		}
