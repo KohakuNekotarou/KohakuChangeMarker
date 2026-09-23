@@ -6,13 +6,12 @@
 //
 //  WHAT THIS IS FOR. The story round trip, in the one spelling it has since 2026-09-21 (there was
 //  an HTML one until then, retired on the user's word - "Word format only"):
-//  the stories go out as .docx, are edited there with Word's own revision tracking switched on,
-//  and come back through the Import mode - which then shows ONLY what was changed in Word, because
-//  Word's revision marks say what that was, and the import merges those changes onto the document
-//  as it stands now. (When the marks are not the whole truth, the whole text is compared instead:
-//  Fingerprint, below, is how the two are told apart.) The design is
-//  docs/superpowers/specs/2026-09-19-kcm-story-docx-roundtrip-design.md and it, not this header,
-//  is where the decisions and their reasons live.
+//  the stories go out as .docx, are edited in Word, and come back through the import - which makes
+//  each story what Word shows, revision marks or none (KCMStorySync; the design is
+//  docs/superpowers/specs/2026-09-23-kcm-import-sync-design.md). (Until 2026-09-23 the import merged
+//  only the changes Word's marks recorded, and a fingerprint in the tag said whether the marks were
+//  the whole truth; both went with S0c. The format itself is still the one
+//  docs/superpowers/specs/2026-09-19-kcm-story-docx-roundtrip-design.md describes.)
 //
 //  *** THE STORY IS KCMStoryShape's STORY. *** That struct knows nothing of any file format - it is
 //  the body, the tables, the notes and the spans over them - so every rule upstream and downstream
@@ -25,10 +24,9 @@
 //  is the measurement every spelling below rests on.
 //
 //  *** BOTH HALVES ARE HERE. *** Write (stage 1, docs/superpowers/plans/2026-09-19-kcm-story-docx-
-//  stage1-write.md) and Read (stage 2, ...-stage2-read.md). Read walks one tree twice - once for the
-//  story as Word shows it, once for the story as it was written, which Word's revision marks let
-//  it rebuild - and OriginMatchesTag says whether the second one is the fingerprint the tag holds.
-//  The export checks itself the way the HTML one does (Write, Read, Same), so a .docx from a
+//  stage1-write.md) and Read (stage 2, ...-stage2-read.md). Read takes the story as Word shows it:
+//  every insertion kept, every deletion gone.
+//  The export checks itself the way the HTML one did (Write, Read, Same), so a .docx from a
 //  build of this file is one that has been read back before it was written.
 //
 //  HOW EACH THING IS SPELT (all of it measured in Word 2007; newer Words are still to be measured):
@@ -102,29 +100,11 @@ bool16 WriteParagraphContent(const KCMStoryShape::Para& p, std::string& out, std
 bool16 WriteBlocks(const KCMStoryShape::Story& s, const std::vector<KCMStoryShape::Para>& paras,
 				   int32 inTable, int32 inRow, int32 inCell, std::string& out, std::string& whyNot);
 
-/** A fingerprint of a story: "<bytes>-<crc32>" of what Write makes of it.
-
-	★★★**WHAT IT IS FOR: TO KNOW WHETHER WORD'S REVISION MARKS ARE THE WHOLE TRUTH.** The import
-	  rebuilds the story as it stood when it was written - the deletions put back, the insertions
-	  left out - and takes ITS fingerprint:
-	    the same as the file's tag  ->  the marks account for every change made in Word, so ONLY
-	                                    those changes are shown, however much the document has
-	                                    been edited in InDesign since (the design, section 1-1);
-	    different                   ->  tracking was off for some of the editing, or the changes
-	                                    were accepted, or the file was used again for something
-	                                    else. The import then compares the WHOLE text against the
-	                                    document, the way the HTML import does, and says so - the
-	                                    user's rule (2026-09-19): never refused, and what goes in
-	                                    is theirs to choose, one change at a time, as always.
-	★**IT WORKS BECAUSE Write IS DETERMINISTIC**: the same Story is the same bytes, so a story read
-	  back and written again has the fingerprint it had. ⚠Whatever breaks that - a date, an id that
-	  counts up, an order taken from a hash table - breaks this, silently, into "always different".
-	★IT IS OF THE STORY ALONE: the uid and the document's name are beside it, not in it.
-	⚠NOT A SECRET AND NOT A SIGNATURE. It tells two honest files apart; it is not there to stop
-	  anybody who sets out to fool it.
-
-	@return kFalse with a reason when the story cannot be written in this format at all. */
-bool16 Fingerprint(const KCMStoryShape::Story& s, std::string& outFingerprint, std::string& whyNot);
+/* (⛔Fingerprint stood here until 2026-09-23 - "<bytes>-<crc32>" of what Write made of a story, written
+	into the tag so the import could tell whether Word's revision marks were the whole truth. The import
+	stopped asking that question when it began making the story what Word shows (S0b), and S0c took the
+	function out. ★Write is still deterministic - the same Story is the same bytes - because the export's
+	check and the tests rely on it.) */
 
 /** Every part of the package, in the order they are zipped.
 
@@ -132,8 +112,8 @@ bool16 Fingerprint(const KCMStoryShape::Story& s, std::string& outFingerprint, s
 	  word/styles.xml, word/settings.xml, word/footnotes.xml (ONLY when the story has notes - and
 	  then nothing else speaks of footnotes either), customXml/item1.xml and its two companions.
 
-	★★★**customXml/item1.xml IS A TAG, NOT A COPY**: the story's uid, the document's name, and a
-	  FINGERPRINT of the story as written (Fingerprint, below) - and not one word of it. For half
+	★★★**customXml/item1.xml IS A TAG, NOT A COPY**: the story's uid and the tag's format - and not
+	  one word of the story. (A fingerprint of the story went in it too until 2026-09-23.) For half
 	  a day (2026-09-19) it held the whole story a second time, hidden, as the "origin" the import
 	  would compare against; the user went back on that the same day, because a file is handed on
 	  and used again for other things, and text nobody can see would go with it. ★Measured: Word
@@ -151,8 +131,8 @@ bool16 Fingerprint(const KCMStoryShape::Story& s, std::string& outFingerprint, s
 	(⛔**THE DOCUMENT'S NAME WENT ON 2026-09-22**, the user's call: "a document's name can change, so
 	 ignore it - and take it out of the tag". It was written into the story tag for an "is this the
 	 right document?" test that was never made, and a name that can be changed by a Save As is the
-	 wrong thing to have tested with. What pairs a file with a story is the UID, and what says the
-	 file still matches what was exported is the fingerprint; neither moves when a file is renamed.) */
+	 wrong thing to have tested with. What pairs a file with a story is the UID, which does not move
+	 when a file is renamed.) */
 bool16 WriteParts(const KCMStoryShape::Story& s, int32 uid,
 				  std::vector<KCMZipStore::Entry>& outParts, std::string& whyNot);
 
@@ -164,16 +144,16 @@ bool16 Write(const KCMStoryShape::Story& s, int32 uid,
 //  THE READING HALF (stage 2, docs/superpowers/plans/2026-09-19-kcm-story-docx-stage2-read.md)
 //========================================================================================
 
-/** What customXml/item1.xml says: which story, from which document, and the fingerprint of the
-	story as written. fPresent is kFalse for a custom XML part that is somebody else's - Word keeps
-	other people's parts too, and one of those is not an error. */
+/** What customXml/item1.xml says: which story. fPresent is kFalse for a custom XML part that is
+	somebody else's - Word keeps other people's parts too, and one of those is not an error. */
 struct Tag
 {
 	bool16		fPresent;
 	int32		fUid;
 	int32		fFormat;
-	// (⛔fDocument stood here until 2026-09-22 and was never read by anything - see WriteParts.)
-	std::string	fFingerprint;	// as written: "<bytes>-<crc32>"
+	// (⛔fDocument stood here until 2026-09-22 and was never read by anything - see WriteParts.
+	//  ⛔fFingerprint until 2026-09-23 - see the note where Fingerprint stood. A file that still
+	//  carries either attribute is read; the attribute is not looked at.)
 
 	Tag() : fPresent(kFalse), fUid(0), fFormat(0) {}
 };
@@ -187,19 +167,11 @@ struct Tag
 	  a uid that is not a number. */
 bool16 ReadTag(const std::string& customXmlPart, Tag& out, std::string& whyNot);
 
-/** Which of the two stories a revision-marked file holds.
-
-	★★★**ONE FILE, TWO STORIES.** With Word's revision tracking on, what an editor changed is in the
-	  file as <w:ins> and <w:del>, and the file can be read either way: as the editor left it, or as
-	  it stood when it was written.
-	⚠**SINCE 2026-09-23 THE IMPORT READS ONLY THE FIRST** (kSideAfterWord - Word's story as it shows):
-	  it makes the document's story that, whatever the marks say (KCMStorySync). The second, and the
-	  fingerprint check on it, go with the rest of the three-way merge (S0c of the import rebuild). */
-enum Side
-{
-	kSideAfterWord = 0,			// as Word shows it now: <w:ins> kept, <w:del> gone, the outer <w:rPr>
-	kSideOriginAsWritten = 1	// as it stood when written: <w:del> put back, <w:ins> left out, the <w:rPrChange>'s <w:rPr>
-};
+/* (⛔enum Side stood here until 2026-09-23. A revision-marked file can be read two ways - as Word shows
+	it, or as it stood when written, the deletions put back - and until S0b the import read both, to
+	merge only what the marks recorded. It reads the first alone now: <w:ins> kept, <w:del> gone, a
+	changed run in its outer <w:rPr>. ★A side effect worth knowing: something this reader refuses
+	that stands only inside a DELETION no longer stops the file, because what was deleted is not read.) */
 
 /** One revision mark met on the way: who, and when. Word puts both on every one (measured
 	2026-09-19 - <w:ins>, <w:del>, <w:rPrChange>, a paragraph mark's and a row's alike). */
@@ -209,36 +181,32 @@ struct Mark
 	std::string	fDate;
 };
 
-/** document.xml (+ footnotes.xml, + styles.xml; either may be empty) -> one side's Story.
+/** document.xml (+ footnotes.xml, + styles.xml; either may be empty) -> the Story as Word shows it.
 
 	★**IT REFUSES, BY NAME, WHATEVER IT DOES NOT UNDERSTAND** - a drawing, a field that is not a
 	  ruby, an automatic number, an element it has never heard of - and never skips it: skipping
 	  would drop somebody's words without a word (the rule every reader of this round trip keeps). What it
 	  ignores is only what carries no text: bookmarks, proofing marks, Word's own formatting-change
 	  records on tables, and every kind of formatting this format does not carry.
-	@param outMarks  every revision mark met, whichever side is being read; nil when not wanted. */
+	@param outMarks  every revision mark met - inside a deletion too, though its words are not read;
+	                 nil when not wanted. */
 bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml, const std::string& stylesXml,
-				Side side, KCMStoryShape::Story& out, std::vector<Mark>* outMarks, std::string& whyNot);
+				KCMStoryShape::Story& out, std::vector<Mark>* outMarks, std::string& whyNot);
 
 /** What one package holds, once read. */
 struct ReadResult
 {
-	KCMStoryShape::Story	fAfter;
-	KCMStoryShape::Story	fOrigin;
+	KCMStoryShape::Story	fAfter;		// the story as Word shows it
 	Tag					fTag;		// fPresent kFalse for a file that carries none (not written by us)
 	std::vector<Mark>	fMarks;		// empty = no revision mark anywhere in the file
+	// (⛔fOrigin - the story as it stood when written - stood here until 2026-09-23; see enum Side's note.)
 };
 
 /** The parts of one package - whichever the caller could fetch; word/document.xml is the one that
-	has to be there - -> both sides, the tag, the marks. */
+	has to be there - -> the story as Word shows it, the tag, the marks. */
 bool16 Read(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, std::string& whyNot);
 
-/** kTrue when Fingerprint(fOrigin) is the tag's fingerprint: Word's revision marks account for every
-	change made since the file was written, so ONLY those changes need be shown (the design, section
-	6). kFalse, with the reason, when there is no tag, when the origin cannot be written at all, or
-	when the two differ - tracking was off for some of the editing, the changes were accepted, or the
-	file holds something else by now. ⚠NOT A REFUSAL: the import then compares the whole text. */
-bool16 OriginMatchesTag(const ReadResult& r, std::string& outWhy);
+/* (⛔OriginMatchesTag stood here until 2026-09-23 - see the note where Fingerprint stood.) */
 
 /** What this spelling cannot tell apart, made the same - so that a story can be compared with
 	itself read back (Same), the way the export checks itself.
@@ -257,7 +225,7 @@ void SettleForThisFormat(KCMStoryShape::Story& s);
 	before it are a paragraph, the words after it another; an empty paragraph stands exactly where
 	Word asks for one (after a table that ends its run, between two tables) and nowhere else.
 	Word cannot say whether "A[T]B" was one InDesign paragraph or three, so the file does not try:
-	SplitAtTables makes the two the same, the fingerprint is taken of the result, and a story read
+	SplitAtTables makes the two the same, the file is written from the result, and a story read
 	back from the file is in this shape already.
 	★ONLY the shape: the readings are not touched (SettleForThisFormat does both).
 	@param asRead kTrue (the default): the pieces as the reader reads them back - a ruby cut by the

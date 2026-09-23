@@ -48,16 +48,9 @@ class SysFileList;			// what the open dialog hands back - the reader picks sever
 struct KCMStoryTextSet
 {
 	std::vector<UID>					fUids;
-	std::vector<KCMStoryShape::Story>	fStories;		// what the file says NOW (a .docx: the after-Word side)
-
-	// ★★A .docx WHOSE REVISION MARKS ACCOUNT FOR EVERYTHING ALSO SAYS WHAT THE STORY WAS WHEN IT WAS
-	//   WRITTEN (2026-09-19, stage 2 of the docx plan: KCMStoryDocx::Read rebuilds it from the marks,
-	//   and OriginMatchesTag says whether they are the whole truth). Held here for stage 3, which
-	//   will show ONLY Word's changes by merging origin, after and the document; the pour reads
-	//   fStories alone until then. ⚠kFalse and empty when the marks do NOT account for everything -
-	//   tracking was off for part of the editing, or a change was accepted before the file was saved.
-	std::vector<KCMStoryShape::Story>	fOrigins;		// parallel; empty unless fOriginKnown
-	std::vector<bool16>					fOriginKnown;
+	std::vector<KCMStoryShape::Story>	fStories;		// the story as Word shows it
+	// (⛔fOrigins / fOriginKnown - the story as it stood when written, rebuilt from Word's revision
+	//  marks - stood here until 2026-09-23. The import makes the story what Word shows, marks or none.)
 	std::vector<PMString>				fFileNames;		// parallel: the file's own name, for a "!" row
 														// that stands for a file with no story (2026-09-19)
 	std::vector<bool16>					fIsDocx;		// parallel: read from a .docx, whose paragraphs stand in

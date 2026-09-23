@@ -162,11 +162,9 @@ void AppendPlaceholder(int32 cp, const Look& look, std::string& out)
 	AppendHex(cp, kFalse, out);
 	out += "\"/><w:lock w:val=\"sdtContentLocked\"/></w:sdtPr><w:sdtContent><w:r>";
 	AppendRunProps(look, out);
-	// ★★★**THE HEX IS WRITTEN HERE, AND THE WORD IS PUT IN AFTERWARDS** - see
-	//   PutWordsIntoPlaceholders. Writing the word here instead makes it part of what the
-	//   fingerprint is taken over, and every .docx written before the word was added stops
-	//   matching its own tag (measured 2026-09-23: four tests failed the moment three characters
-	//   were given words at this spot).
+	// ★**THE HEX IS WRITTEN HERE, AND THE WORD IS PUT IN AFTERWARDS** - see
+	//   PutWordsIntoPlaceholders. (The reason was the fingerprint, taken over these bytes until
+	//   2026-09-23; the order is kept because nothing is gained by changing it.)
 	out += "<w:t>\xE2\x9F\xA6";
 	AppendHex(cp, kTrue, out);
 	out += "\xE2\x9F\xA7</w:t></w:r></w:sdtContent></w:sdt>";
@@ -176,11 +174,11 @@ void AppendPlaceholder(int32 cp, const Look& look, std::string& out)
 	Replace ⟦XXXX⟧ with ⟦WORD⟧ inside every placeholder whose character has a word, in an element
 	that has already been written.
 
-	★★★**AFTER THE FINGERPRINT, ALWAYS.** The tag's fingerprint is taken over the bytes
-	  WriteStoryElements produces, so whatever those bytes hold is part of a story's IDENTITY. What
-	  a placeholder SHOWS is not identity - it is for the person editing in Word - and the two have
-	  to be kept apart, or adding a word today makes every file written yesterday unreadable as its
-	  own origin. Doing it here costs one pass over the text and keeps the identity on the hex.
+	★**A SEPARATE PASS, AFTER THE ELEMENTS ARE WRITTEN.** Until 2026-09-23 the tag carried a
+	  fingerprint taken over the bytes WriteStoryElements produces, and what a placeholder SHOWS had to
+	  stay out of those bytes or adding a word would have changed every story's fingerprint. The
+	  fingerprint is gone; the pass stays, because what it shows is still for the person editing in
+	  Word and not part of the story.
 	⚠**EACH REPLACEMENT IS BOUNDED BY ITS OWN <w:sdt>**, so ⟦ ⟧ that a person typed into the story
 	 is never touched - the search starts after that control's alias and stops at its end.
 	⚠**THE READER NEVER LOOKS AT THIS.** It matches on <w:tag>, so a file written before a word
@@ -529,8 +527,8 @@ namespace
 	The one shape this file writes and reads is the SPLIT one (SplitAtTables): every table alone in
 	an empty paragraph of its own, the words before it a paragraph, the words after it a paragraph;
 	and Word's two rules kept - a table cannot end its container, and two tables cannot touch - by
-	an empty paragraph exactly where they ask for one. The fingerprint is taken of that shape, so it
-	is the same whether InDesign's own shape was one paragraph or three. */
+	an empty paragraph exactly where they ask for one. So the file is the same whether InDesign's own
+	shape was one paragraph or three. */
 
 // A table inside a table inside a table... The data cannot really do this (a nested table comes
 // later in Story::fTables than the one it stands in), so this only stops a malformed Story from
@@ -1208,31 +1206,7 @@ bool16 WriteStoryElements(const KCMStoryShape::Story& s, std::string& outDocumen
 	return kTrue;
 }
 
-/** "<bytes>-<crc32, 8 hex digits>" of the two elements, one after the other. */
-void FingerprintOf(const std::string& documentElement, const std::string& footnotesElement,
-				   std::string& out)
-{
-	const std::string both = documentElement + footnotesElement;
-	char buf[40] = { 0 };
-	std::snprintf(buf, sizeof(buf), "%u-%08x", static_cast<unsigned int>(both.size()),
-				  KCMZipStore::Crc32(both.data(), both.size()));
-	out = buf;
-}
-
 }	// anonymous namespace
-
-bool16 Fingerprint(const KCMStoryShape::Story& s, std::string& outFingerprint, std::string& whyNot)
-{
-	outFingerprint.clear();
-
-	std::string documentElement;
-	std::string footnotesElement;
-	if (!WriteStoryElements(s, documentElement, footnotesElement, whyNot))
-		return kFalse;
-
-	FingerprintOf(documentElement, footnotesElement, outFingerprint);
-	return kTrue;
-}
 
 bool16 WriteParts(const KCMStoryShape::Story& s, int32 uid,
 				  std::vector<KCMZipStore::Entry>& outParts, std::string& whyNot)
@@ -1248,14 +1222,8 @@ bool16 WriteParts(const KCMStoryShape::Story& s, int32 uid,
 	if (!WriteStoryElements(s, documentElement, footnotesElement, whyNot))
 		return kFalse;
 
-	// ★★★**THE FINGERPRINT IS TAKEN HERE, BEFORE THE WORDS GO IN** (2026-09-23). What a placeholder
-	//   SHOWS is for the person editing in Word; what the fingerprint is taken over is the story's
-	//   identity. Keeping the two apart is what lets a word be added to a later build without every
-	//   .docx written by an earlier one ceasing to match its own tag - which is exactly what
-	//   happened when the words were written at the source (four tests, on files kept from earlier
-	//   runs, failed at once).
-	std::string fingerprint;
-	FingerprintOf(documentElement, footnotesElement, fingerprint);
+	// (What a placeholder SHOWS is put in last, for the person editing in Word. Until 2026-09-23 a
+	//  fingerprint of the story was taken just before this, over the elements without those words.)
 	PutWordsIntoPlaceholders(documentElement);
 	PutWordsIntoPlaceholders(footnotesElement);
 
@@ -1315,24 +1283,19 @@ bool16 WriteParts(const KCMStoryShape::Story& s, int32 uid,
 	if (hasNotes)
 		AddPart("word/footnotes.xml", std::string(kXmlDeclaration) + footnotesElement, outParts);
 
-	// ---- the tag: which story this is, and a fingerprint of it as written ------------------------
+	// ---- the tag: which story this is -------------------------------------------------------------
 	//
 	// ★★★**NOT A WORD OF THE STORY IS IN HERE** (the user's decision, 2026-09-19, going back on the
 	//   "origin" this part held for half a day - the whole story a second time, hidden). A file is
 	//   handed on, and used again for something else; text nobody can see would travel with it,
 	//   and would still name the old story after the visible one had been replaced.
-	//   WHAT WORD CHANGED IS TOLD BY WORD'S OWN REVISION MARKS. The fingerprint is what says
-	//   whether those marks are the whole truth: the import rebuilds the story as it stood (the
-	//   deletions put back, the insertions left out), takes ITS fingerprint, and compares. The same
-	//   -> only Word's changes are shown. Different -> tracking was off for some of the editing,
-	//   or the changes were accepted, or the file holds something else by now: the import then
-	//   compares the whole text, the way the HTML import does, and says that it did.
+	//   (⛔A fingerprint of the story was written here too until 2026-09-23, to tell whether Word's
+	//    revision marks were the whole truth. The import makes the story what Word shows now, marks
+	//    or none, so nothing asks that any more.)
 	// ⚠**NO LINE BREAK AFTER THE DECLARATION.** Word does not copy this part through a save, it
 	//  parses it and writes it out again, and what it writes has none (measured 2026-09-19: the
 	//  part came back two bytes shorter, the CRLF and nothing else). Written the way Word writes
 	//  it, the part is the same bytes before and after - which is what lets a test say so.
-	// (the fingerprint was taken at the top of this function, before the placeholders were given
-	//  their words - see PutWordsIntoPlaceholders for why it has to be that way round)
 
 	std::string tag = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><kcm:story xmlns:kcm=\"";
 	tag += kStoryTagNamespace;
@@ -1340,12 +1303,9 @@ bool16 WriteParts(const KCMStoryShape::Story& s, int32 uid,
 	AppendNumber(uid, tag);
 	// (⛔`document="<name>"` stood here until 2026-09-22 - the user's call: a document's name can
 	//  change, so it is not something to write down or to check against. The UID pairs the file with
-	//  a story and the fingerprint says whether the file still matches what was exported; a rename
-	//  moves neither. ⚠A .docx written before today still carries the attribute, and the reader
-	//  simply does not look at it.)
-	tag += "\" format=\"1\" fingerprint=\"";
-	tag += fingerprint;
-	tag += "\"/>";
+	//  a story, and a rename does not move it. ⚠A .docx written before then still carries the
+	//  attribute - and one written before 2026-09-23 a `fingerprint` - and the reader looks at neither.)
+	tag += "\" format=\"1\"/>";
 	AddPart("customXml/item1.xml", tag, outParts);
 
 	// The item's id is fixed: it names the KIND of part, and a fresh one per file would be the one
@@ -1446,25 +1406,16 @@ bool16 ReadTag(const std::string& customXmlPart, Tag& out, std::string& whyNot)
 		return kFalse;
 	}
 
-	// (⛔The "document" attribute was read here into out.fDocument until 2026-09-22. Nothing ever
-	//  read the field, and the name it held can change under a Save As - so it is neither written
-	//  nor read now. An older file's attribute is ignored rather than refused.)
-	const std::string* fingerprint = tree.Attr(root, "fingerprint");
-	if (fingerprint == nil || fingerprint->empty())
-	{
-		whyNot = "the story tag carries no fingerprint";
-		return kFalse;
-	}
-	out.fFingerprint = *fingerprint;
+	// (⛔The "document" attribute was read here into out.fDocument until 2026-09-22, and the
+	//  "fingerprint" attribute into out.fFingerprint - and REQUIRED - until 2026-09-23. Neither is
+	//  read now: an older file's attributes are ignored rather than refused, and a file without them
+	//  is not refused either.)
 	return kTrue;
 }
 
 //----------------------------------------------------------------------------------------
-//  The story itself, on either side of the revision marks.
-//
-//  ★THE SAME WALK TWICE. One tree, one set of rules, and a Side that says which of <w:ins> and
-//    <w:del> is taken and which <w:rPr> a changed run wears. Everything that can refuse refuses
-//    the same way on both sides, so a file either reads on both or on neither.
+//  The story itself, as Word shows it: <w:ins> taken, <w:del> left out, a changed run in its outer
+//  <w:rPr>. (Until 2026-09-23 the same walk ran a second time for the story as it stood when written.)
 //----------------------------------------------------------------------------------------
 
 namespace
@@ -1533,7 +1484,6 @@ typedef std::vector< std::pair<std::string, std::string> > StyleNames;	// styleI
 struct Reader
 {
 	const KCMXmlTree*		fTree;
-	Side					fSide;
 	std::vector<Mark>*		fMarks;
 	StyleNames				fStyleNames;
 	KCMStoryShape::Story*	fStory;
@@ -1541,7 +1491,7 @@ struct Reader
 
 	std::vector<std::string>*	fCellNames;	// the names of the cell being read; nil outside a cell
 
-	Reader() : fTree(nil), fSide(kSideAfterWord), fMarks(nil), fStory(nil), fCellNames(nil) {}
+	Reader() : fTree(nil), fMarks(nil), fStory(nil), fCellNames(nil) {}
 };
 
 /** A cell's name - a bookmark of ours (KCMStoryShape::CellName) - found while that cell is read. Kept
@@ -1659,7 +1609,8 @@ void CollectStyleNames(const KCMXmlTree& styles, StyleNames& out)
 	}
 }
 
-/** The one <w:rPr> a run wears on the side being read, and what it says. */
+/** The <w:rPr> a run wears as Word shows it - the outer one - and what it says. (A <w:rPrChange> in
+	it holds the properties as they WERE; that side stopped being read on 2026-09-23.) */
 bool16 LookOf(Reader& rd, int32 rPr, RLook& out)
 {
 	out = RLook();
@@ -1667,21 +1618,10 @@ bool16 LookOf(Reader& rd, int32 rPr, RLook& out)
 		return kTrue;
 	const KCMXmlTree& t = *rd.fTree;
 
-	int32 use = rPr;
+	const int32 use = rPr;
 	const int32 change = t.Child(rPr, kW, "rPrChange");
 	if (change >= 0)
-	{
 		NoteMark(rd, change);
-		if (rd.fSide == kSideOriginAsWritten)
-		{
-			// ★THE CHANGE RECORD HOLDS THE PROPERTIES AS THEY WERE (measured 2026-09-19): a kenten
-			//   style taken off in Word leaves <w:rPrChange><w:rPr><w:rStyle .../></w:rPr></w:rPrChange>,
-			//   and one put on leaves an empty <w:rPr/> in there.
-			use = t.Child(change, kW, "rPr");
-			if (use < 0)
-				return kTrue;
-		}
-	}
 
 	const int32 style = t.Child(use, kW, "rStyle");
 	if (style >= 0)
@@ -1925,13 +1865,12 @@ bool16 ReadingText(Reader& rd, int32 node, std::string& out)
 		}
 		else if (name == "ins" || name == "moveTo")
 		{
-			if (rd.fSide == kSideAfterWord && !ReadingText(rd, c, out))
+			if (!ReadingText(rd, c, out))
 				return kFalse;
 		}
 		else if (name == "del" || name == "moveFrom")
 		{
-			if (rd.fSide == kSideOriginAsWritten && !ReadingText(rd, c, out))
-				return kFalse;
+			continue;			// what Word deleted is not read
 		}
 		else if (name == "t" || name == "delText")
 		{
@@ -2156,14 +2095,12 @@ bool16 ReadContent(Reader& rd, int32 node, Building& b)
 		else if (name == "ins" || name == "moveTo")
 		{
 			NoteMark(rd, c);
-			if (rd.fSide == kSideAfterWord && !ReadContent(rd, c, b))
+			if (!ReadContent(rd, c, b))
 				return kFalse;
 		}
 		else if (name == "del" || name == "moveFrom")
 		{
-			NoteMark(rd, c);
-			if (rd.fSide == kSideOriginAsWritten && !ReadContent(rd, c, b))
-				return kFalse;
+			NoteMark(rd, c);	// counted, and not read: what Word deleted is not Word's story
 		}
 		else if (name == "sdt")
 		{
@@ -2497,16 +2434,11 @@ bool16 ReadRow(Reader& rd, int32 tr, int32 slot, GridOpen& open)
 		const int32 ins = t.Child(trPr, kW, "ins");
 		const int32 del = t.Child(trPr, kW, "del");
 		if (ins >= 0)
-		{
-			NoteMark(rd, ins);
-			if (rd.fSide == kSideOriginAsWritten)
-				return kTrue;			// a row Word added: not the origin's
-		}
+			NoteMark(rd, ins);			// a row Word added: Word's, and read
 		if (del >= 0)
 		{
 			NoteMark(rd, del);
-			if (rd.fSide == kSideAfterWord)
-				return kTrue;			// a row Word took out: not the after side's
+			return kTrue;				// a row Word took out: not Word's story
 		}
 	}
 
@@ -2655,8 +2587,7 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 				return kFalse;
 			KCMStoryShape::Para para;
 			Finish(b, para);
-			const bool16 marksJoin = ((rd.fSide == kSideOriginAsWritten && b.fMarkRevision > 0)
-									  || (rd.fSide == kSideAfterWord && b.fMarkRevision < 0)) ? kTrue : kFalse;
+			const bool16 marksJoin = (b.fMarkRevision < 0) ? kTrue : kFalse;	// Word deleted this paragraph mark
 			if (pendingJoin)
 			{
 				if (out.empty())
@@ -2837,7 +2768,7 @@ void SettleParas(std::vector<KCMStoryShape::Para>& paras)
 }	// anonymous namespace
 
 bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml, const std::string& stylesXml,
-				Side side, KCMStoryShape::Story& out, std::vector<Mark>* outMarks, std::string& whyNot)
+				KCMStoryShape::Story& out, std::vector<Mark>* outMarks, std::string& whyNot)
 {
 	out = KCMStoryShape::Story();
 	whyNot.clear();
@@ -2858,7 +2789,6 @@ bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml,
 
 	Reader rd;
 	rd.fTree = &document;
-	rd.fSide = side;
 	rd.fMarks = outMarks;
 	rd.fStory = &out;
 	if (!stylesXml.empty())
@@ -2935,30 +2865,8 @@ bool16 Read(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, std::
 
 	const std::string empty;
 	if (!ReadSide(*document, footnotes ? *footnotes : empty, styles ? *styles : empty,
-				  kSideAfterWord, out.fAfter, &out.fMarks, whyNot))
+				  out.fAfter, &out.fMarks, whyNot))
 		return kFalse;
-	if (!ReadSide(*document, footnotes ? *footnotes : empty, styles ? *styles : empty,
-				  kSideOriginAsWritten, out.fOrigin, nil, whyNot))
-		return kFalse;
-	return kTrue;
-}
-
-bool16 OriginMatchesTag(const ReadResult& r, std::string& outWhy)
-{
-	outWhy.clear();
-	if (!r.fTag.fPresent)
-	{
-		outWhy = "the file carries no story tag";
-		return kFalse;
-	}
-	std::string print;
-	if (!Fingerprint(r.fOrigin, print, outWhy))
-		return kFalse;
-	if (print != r.fTag.fFingerprint)
-	{
-		outWhy = "revision tracking does not account for every change - the whole text was compared";
-		return kFalse;
-	}
 	return kTrue;
 }
 

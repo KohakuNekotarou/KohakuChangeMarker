@@ -48,7 +48,7 @@
 #include "KCMStorySync.h"			// Compare - what makes the document's story Word's (2026-09-23)
 #include "KCMStorySyncApply.h"		// KCMApplySyncPlan - and that, carried out
 #include "KCMStoryTextExport.h"		// KCMStoryFromDocument - the copy's story in the shape the merge takes
-#include "KCMStoryDocx.h"			// Read / OriginMatchesTag - the parts as two stories, and whether the marks are whole
+#include "KCMStoryDocx.h"			// Read - the parts as Word shows them
 #include "KCMZipStore.h"			// Entry - a part, named
 #include "KCMModelNotify.h"			// KCMNotify - a cancelled import tells the panel the mode came back
 
@@ -357,9 +357,6 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 		++fromWord;
 		out.fUids.push_back(UID(static_cast<uint32>(uid)));
 		out.fStories.push_back(result.fAfter);
-		// (the origin is no longer asked for - S0c takes these two out of KCMStoryTextSet)
-		out.fOrigins.push_back(KCMStoryShape::Story());
-		out.fOriginKnown.push_back(kFalse);
 		out.fFileNames.push_back(PMStringOfLeaf(leaf));
 		out.fIsDocx.push_back(kTrue);
 	}
@@ -394,8 +391,6 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 			}
 			kept.fUids.push_back(out.fUids[i]);
 			kept.fStories.push_back(out.fStories[i]);
-			kept.fOrigins.push_back(out.fOrigins[i]);
-			kept.fOriginKnown.push_back(out.fOriginKnown[i]);
 			kept.fFileNames.push_back(out.fFileNames[i]);
 			kept.fIsDocx.push_back(out.fIsDocx[i]);
 		}

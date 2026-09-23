@@ -852,8 +852,8 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 
 		// ★★★**THE FILE CHECKS ITSELF BEFORE IT IS WRITTEN** (stage 2 of the docx plan, 2026-09-19,
 		//   keeping the rule the retired .html road brought in on 2026-09-16): the parts are read
-		//   straight back - BOTH sides of the revision marks, since a file nobody has edited has to
-		//   read the same either way - and compared with the story they came from, and the file is
+		//   straight back (as Word would show them - until 2026-09-23 the side as written was read and
+		//   compared too) and compared with the story they came from, and the file is
 		//   only written when they agree. A story this format cannot carry (a ruby a table cuts in
 		//   two; the reader's Slice says why) is refused HERE, not after somebody has spent an
 		//   afternoon editing it and the import turns them away with a count.
@@ -880,8 +880,7 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 				KCMStoryDocx::SettleForThisFormat(settled);
 				KCMStoryDocx::ReadResult back;
 				sound = KCMStoryDocx::Read(parts, back, why)
-						&& KCMStoryShape::Same(settled, back.fAfter, why, kTrue, kTrue)
-						&& KCMStoryShape::Same(settled, back.fOrigin, why, kTrue, kTrue);
+						&& KCMStoryShape::Same(settled, back.fAfter, why, kTrue, kTrue);
 			}
 			if (!sound)
 			{
