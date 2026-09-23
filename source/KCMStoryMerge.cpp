@@ -510,6 +510,20 @@ bool16 TableAgreesThreeWays(const KCMStoryShape::Story& o, const KCMStoryShape::
 			return kFalse;
 		}
 	}
+	// ★★**AND BY NAME, WHEN THE FILE HAS NAMES** (2026-09-23, stage 0 of the table work). The counts
+	//   above agree for two edits that put the words somewhere else: a table deleted in Word and
+	//   another of the same shape made, and a column taken away and another added. The names do not.
+	//   A file written before names has none, and is paired by position exactly as before.
+	if (CarriesNames(o) || CarriesNames(w))
+	{
+		if (NameIsShared(o, t) || NameIsShared(w, t))
+		{
+			why = "its name stands on another table too";
+			return kFalse;
+		}
+		if (!NamesAgree(a, b, why) || !NamesAgree(a, c, why))
+			return kFalse;
+	}
 	return kTrue;
 }
 
@@ -1087,6 +1101,66 @@ void Merge(const KCMStoryShape::Story& origin, const KCMStoryShape::Story& after
 				   now.fNotes[nn], noTables, "note " + Num(static_cast<int32>(nn) + 1), merged, out);
 		out.fMerged.fNotes[nn] = merged;
 	}
+}
+
+bool16 CarriesNames(const KCMStoryShape::Story& s)
+{
+	for (size_t t = 0; t < s.fTables.size(); ++t)
+	{
+		if (!s.fTables[t].fName.empty())
+			return kTrue;
+		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
+			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
+				if (!s.fTables[t].fRows[r].fCells[c].fNames.empty())
+					return kTrue;
+	}
+	return kFalse;
+}
+
+bool16 NameIsShared(const KCMStoryShape::Story& s, size_t t)
+{
+	if (t >= s.fTables.size() || s.fTables[t].fName.empty())
+		return kFalse;
+	for (size_t k = 0; k < s.fTables.size(); ++k)
+	{
+		if (k != t && s.fTables[k].fName == s.fTables[t].fName)
+			return kTrue;
+	}
+	return kFalse;
+}
+
+bool16 NamesAgree(const KCMStoryShape::Table& a, const KCMStoryShape::Table& b, std::string& why)
+{
+	if (a.fName != b.fName)
+	{
+		why = "it is not the same table (a table taken away and another made)";
+		return kFalse;
+	}
+	if (a.fRows.size() != b.fRows.size())
+	{
+		why = "the number of rows changed";
+		return kFalse;
+	}
+	for (size_t r = 0; r < a.fRows.size(); ++r)
+	{
+		if (a.fRows[r].fCells.size() != b.fRows[r].fCells.size())
+		{
+			why = "row " + Num(static_cast<int32>(r)) + ": the number of cells changed";
+			return kFalse;
+		}
+		for (size_t c = 0; c < a.fRows[r].fCells.size(); ++c)
+		{
+			const std::vector<std::string>& p = a.fRows[r].fCells[c].fNames;
+			const std::vector<std::string>& q = b.fRows[r].fCells[c].fNames;
+			if (p.size() != 1 || q.size() != 1 || p[0] != q[0])
+			{
+				why = "row " + Num(static_cast<int32>(r)) + " cell " + Num(static_cast<int32>(c))
+					  + ": not the same cell (a row or a column added, taken away or moved, or cells merged or split)";
+				return kFalse;
+			}
+		}
+	}
+	return kTrue;
 }
 
 }	// namespace KCMStoryMerge

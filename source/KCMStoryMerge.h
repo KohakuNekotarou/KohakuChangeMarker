@@ -176,6 +176,22 @@ void Merge(const KCMStoryShape::Story& origin, const KCMStoryShape::Story& after
 void MergePara(const KCMStoryShape::Para& origin, const KCMStoryShape::Para& after, const KCMStoryShape::Para& now,
 			   ParaResult& out, const std::vector<int32>* keep = nil);
 
+/** kTrue when any table or cell of `s` carries a name - a .docx written since 2026-09-23. A file with
+	none is paired by position, as every file was before names. */
+bool16 CarriesNames(const KCMStoryShape::Story& s);
+
+/** kTrue when table `t`'s name (not an empty one) stands on another table of `s` too. A table copied
+	in Word takes no bookmark along (measured 2026-09-23), so this is not how a copy looks; it is kept
+	as a guard for cells of one table brought into another, which nothing measured has produced yet. */
+bool16 NameIsShared(const KCMStoryShape::Story& s, size_t t);
+
+/** kTrue when `a` and `b` are the same table by their names: the same table name, the same number of
+	rows and of cells in each, and each cell holding exactly one name that is the other's.
+	★WHAT THIS CATCHES THAT COUNTING DOES NOT: a table deleted and another of the same shape made, and
+	  a column taken away and another added. The counts agree for both, and the words went into the
+	  wrong place without anything looking wrong before names. @param why filled when kFalse. */
+bool16 NamesAgree(const KCMStoryShape::Table& a, const KCMStoryShape::Table& b, std::string& why);
+
 }	// namespace KCMStoryMerge
 
 #endif // __KCMStoryMerge_h__
