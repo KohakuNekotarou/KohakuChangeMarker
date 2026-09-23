@@ -24,6 +24,8 @@
 #include <vector>
 
 #include "ICommand.h"
+#include "ITableCommands.h"			// InsertRows / DeleteRows - a table made as long as Word's (S1)
+#include "ITableModel.h"
 #include "ITextModel.h"
 #include "ITextModelCmds.h"
 #include "ITextStoryThread.h"		// the thread a paragraph stands in - a write may not leave it
@@ -41,6 +43,7 @@
 #include "KCMParagraphStyle.h"		// the next style for a paragraph put in after another
 #include "KCMTextDiff.h"			// ToCodePoints / Diff
 #include "KCMTextRead.h"			// ReadStory - the document, read the way the export read it
+#include "KCMStoryTextExport.h"		// KCMTableRefsOfStory - the tables by the reading's ordinals
 
 namespace
 {
@@ -950,6 +953,61 @@ void KCMApplySyncPlan(const UIDRef& storyRef, const KCMStoryShape::Story& now,
 			}
 			out.fAttrWrites += (n > 0) ? n : 0;
 		}
+	}
+}
+
+void KCMApplyTableRows(const UIDRef& storyRef, const KCMStorySync::Plan& plan, KCMSyncResult& out)
+{
+	// ★EVERY TABLE HELD BY ITS UIDRef FIRST: the ordinals are the reading's from before any row moved
+	std::vector<UIDRef> tables;
+	if (!KCMTableRefsOfStory(storyRef, tables))
+	{
+		++out.fRefused;
+		Say(out, "Table", std::string("the story's tables could not be found, so no row was added or taken away"));
+		return;
+	}
+	for (size_t i = 0; i < plan.fSteps.size(); ++i)
+	{
+		const KCMStorySync::Step& s = plan.fSteps[i];
+		if (s.fKind != KCMStorySync::Step::kResizeRows)
+			continue;
+		const int32 t = s.fWhere.fTable;
+		if (t < 0 || static_cast<size_t>(t) >= tables.size() || s.fCount <= 0)
+		{
+			++out.fRefused;
+			Say(out, "Table", s.fWhere.Say() + ": the table could not be found");
+			continue;
+		}
+		InterfacePtr<ITableModel> table(tables[static_cast<size_t>(t)], UseDefaultIID());
+		// ★THE OFFICIAL SHAPE: ITableCommands is queried from the table model (tablebasics/
+		//   TblBscSuiteTextCSB.cpp, codesnippets/SnpSortTable.cpp; KCMReportTable does the same)
+		InterfacePtr<ITableCommands> cmds(table, UseDefaultIID());
+		if (table == nil || cmds == nil)
+		{
+			++out.fRefused;
+			Say(out, "Table", s.fWhere.Say() + ": the table cannot be edited");
+			continue;
+		}
+		const RowRange rows = table->GetTotalRows();
+		const int32 want = s.fCount;
+		ErrorCode err = kSuccess;
+		if (want > rows.count)
+			// ★AFTER THE LAST ROW - which puts them in the footer when the table has one (the user's rule,
+			//   design section 1-7; measured in the spike, M1a). Height 0: the last row's is taken over.
+			err = cmds->InsertRows(RowRange(rows.start + rows.count - 1, want - rows.count), Tables::eAfter, 0.0);
+		else if (want < rows.count)
+			// ★FROM THE BOTTOM: a footnote or an anchored object in these rows goes with them (the user's
+			//   rule, design section 1-6 - InDesign says nothing, spike M2b)
+			err = cmds->DeleteRows(RowRange(rows.start + want, rows.count - want));
+		else
+			continue;
+		if (err != kSuccess)
+		{
+			++out.fRefused;
+			Say(out, "Table", s.fWhere.Say() + ": its rows could not be made as many as Word's");
+			continue;
+		}
+		++out.fTableEdits;
 	}
 }
 

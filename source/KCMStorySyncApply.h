@@ -40,9 +40,17 @@ struct KCMSyncResult
 	int32						fHeld;			// the plan's own Held steps
 	int32						fRefused;		// writes InDesign refused
 	std::vector<KCMSyncNote>	fNotes;
+	int32						fTableEdits;	// tables whose rows were added or taken away (S1, 2026-09-23)
 
-	KCMSyncResult() : fWrites(0), fAttrWrites(0), fNoteEdits(0), fHeld(0), fRefused(0) {}
+	KCMSyncResult() : fWrites(0), fAttrWrites(0), fNoteEdits(0), fHeld(0), fRefused(0), fTableEdits(0) {}
 };
+
+/** A FIRST ROUND carried out: every kResizeRows of `plan` (design section 8-2). Rows are added after a
+	table's last row or taken away from its bottom (ITableCommands::InsertRows / DeleteRows); the words
+	are not touched - the caller reads the story again and compares once more. ★Every table is held by
+	its UIDRef before any of them changes, since the ordinals are the reading's from before.
+	Called inside the import's one command sequence; it opens none. */
+void KCMApplyTableRows(const UIDRef& storyRef, const KCMStorySync::Plan& plan, KCMSyncResult& out);
 
 /** Carry `plan` out on the story. `now` is the story KCMStorySync::Compare was given (the document as
 	KCMStoryFromDocument read it). Called inside the import's one command sequence; it opens none. */

@@ -156,6 +156,18 @@ bool16 EarlierTable(const TableShape& a, const TableShape& b)
 	return a.fStart < b.fStart;
 }
 
+/** One table's model and where its cells begin - KCMTableRefsOfStory's sort key. */
+struct TableRefAt
+{
+	TextIndex	fStart;
+	UIDRef		fRef;
+};
+
+bool16 EarlierTableRef(const TableRefAt& a, const TableRefAt& b)
+{
+	return a.fStart < b.fStart;
+}
+
 /*	ReadTableShapes
 	Every table of a story, in the order they stand in it.
 
@@ -728,9 +740,44 @@ bool16 WriteStoryFile(const std::wstring& folder, int32 uid, const std::string& 
 
 bool16 KCMStoryFromDocument(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& outNoteRefsPlaced)
 {
-	// The one reader, made public for the import's merge (the header says why); BuildStory stays where
-	// the export's other helpers are.
+	// The one reader, made public for the import's comparison (the header says why); BuildStory stays
+	// where the export's other helpers are.
 	return BuildStory(storyRef, out, outNoteRefsPlaced);
+}
+
+bool16 KCMTableRefsOfStory(const UIDRef& storyRef, std::vector<UIDRef>& out)
+{
+	out.clear();
+	InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
+	if (model == nil)
+		return kFalse;
+	InterfacePtr<ITextStoryThreadDictHier> hier(model, UseDefaultIID());
+	if (hier == nil)
+		return kTrue;				// no hierarchy at all: a story with nothing but a body
+
+	IDataBase* const db = ::GetDataBase(hier);
+	if (db == nil)
+		return kFalse;
+
+	// ★THE SAME WALK AND THE SAME ORDER AS ReadTableShapes, so index k here IS table ordinal k there
+	std::vector<TableRefAt> found;
+	for (UID next = ::GetUIDRef(hier).GetUID(); next != kInvalidUID; next = hier->NextUID(next))
+	{
+		InterfacePtr<ITextStoryThreadDict> dict(db, next, UseDefaultIID());
+		if (dict == nil)
+			return kFalse;
+		InterfacePtr<ITableModel> table(dict, UseDefaultIID());
+		if (table == nil)
+			continue;
+		TableRefAt t;
+		t.fStart = dict->GetThreadBlockTextRange().Start(nil);
+		t.fRef = UIDRef(db, next);
+		found.push_back(t);
+	}
+	std::sort(found.begin(), found.end(), EarlierTableRef);
+	for (size_t k = 0; k < found.size(); ++k)
+		out.push_back(found[k].fRef);
+	return kTrue;
 }
 
 bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& onlyThese,

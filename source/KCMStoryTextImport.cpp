@@ -571,6 +571,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	int32 edits = 0;
 	int32 attrEdits = 0;			// ruby, kenten, tate-chu-yoko, warichu
 	int32 noteEdits = 0;			// footnotes made or taken away
+	int32 tableEdits = 0;			// tables whose rows were added or taken away (S1)
 	int32 storiesHeld = 0;			// stories left exactly as they were, each named
 	int32 heldBack = 0;				// things Word cannot carry, kept as the document has them
 	int32 unmatched = 0;
@@ -641,6 +642,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 		//   KCMStorySync says what makes the story as the document holds it into the story as Word left it,
 		//   and KCMStorySyncApply carries that out. What was changed in InDesign after the export is written
 		//   over. Design: docs/superpowers/specs/2026-09-23-kcm-import-sync-design.md.
+		const int32 tableEditsBefore = tableEdits;
 		KCMStoryShape::Story now;
 		bool16 placed = kTrue;
 		if (!KCMStoryFromDocument(storyRef, now, placed) || !placed)
@@ -655,6 +657,55 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 		}
 		KCMStorySync::Plan plan;
 		KCMStorySync::Compare(now, set.fStories[which], plan);
+		// ★★A FIRST ROUND THAT ONLY CHANGES ROWS (S1, design section 8-2): the rows go in, the story is
+		//   read again and checked against the same change made on paper, and the comparison runs once
+		//   more on what the document now holds - so every number in the plan that writes the words is
+		//   the document's own. What does not read back as planned is named, never guessed at.
+		if (!plan.fStoryHeld && plan.Count(KCMStorySync::Step::kResizeRows) > 0)
+		{
+			KCMSyncResult rows;
+			KCMApplyTableRows(storyRef, plan, rows);
+			tableEdits += rows.fTableEdits;
+			for (size_t k = 0; k < rows.fNotes.size(); ++k)
+			{
+				NoteRefusal(original, rows.fNotes[k].fKind, rows.fNotes[k].fWhy);
+				if (firstRefusal.IsEmpty())
+					firstRefusal = rows.fNotes[k].fWhy;
+			}
+			const KCMStoryShape::Story paper = KCMStorySync::ReshapeOnPaper(now, plan);
+			KCMStoryShape::Story again;
+			bool16 placedAgain = kTrue;
+			std::string layoutWhy;
+			if (!KCMStoryFromDocument(storyRef, again, placedAgain) || !placedAgain
+				|| !KCMStorySync::SameTableLayout(paper, again, layoutWhy))
+			{
+				++storiesHeld;
+				PMString why("a table's rows were changed, but the story does not read back as planned");
+				if (!layoutWhy.empty())
+				{
+					why.Append(" (");
+					why.Append(layoutWhy.c_str());
+					why.Append(")");
+				}
+				why.SetTranslatable(kFalse);
+				if (firstRefusal.IsEmpty())
+					firstRefusal = why;
+				NoteRefusal(original, "Story", why, kTrue);
+				continue;
+			}
+			now = again;
+			KCMStorySync::Compare(now, set.fStories[which], plan);
+			if (!plan.fStoryHeld && plan.Count(KCMStorySync::Step::kResizeRows) > 0)
+			{
+				++storiesHeld;
+				PMString why("a table still differs from Word's after its rows were changed");
+				why.SetTranslatable(kFalse);
+				if (firstRefusal.IsEmpty())
+					firstRefusal = why;
+				NoteRefusal(original, "Story", why, kTrue);
+				continue;
+			}
+		}
 		if (plan.fStoryHeld)
 		{
 			++storiesHeld;
@@ -685,7 +736,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 		edits += result.fWrites;
 		attrEdits += result.fAttrWrites;
 		noteEdits += result.fNoteEdits;
-		const bool16 touched = (result.fWrites + result.fAttrWrites + result.fNoteEdits > 0) ? kTrue : kFalse;
+		const bool16 touched = (result.fWrites + result.fAttrWrites + result.fNoteEdits > 0 || tableEdits > tableEditsBefore) ? kTrue : kFalse;
 
 		if (touched)
 			++storiesTouched;
@@ -727,6 +778,8 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 		AppendCount(outMessage, ", ", attrEdits, " ruby/kenten write(s)");
 	if (noteEdits > 0)
 		AppendCount(outMessage, ", ", noteEdits, " footnote(s) added or removed");
+	if (tableEdits > 0)
+		AppendCount(outMessage, ", ", tableEdits, " table(s) given Word's number of rows");
 	if (storiesHeld > 0)
 		AppendCount(outMessage, ", ", storiesHeld, " story(ies) left alone (the rows marked !)");
 	if (heldBack > 0)
@@ -743,7 +796,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	// ★★★**A RUBY-ONLY IMPORT IS AN IMPORT** (2026-09-16). This answered on the word writes alone
 	//   until the attributes were poured, so a file whose only edit was a reading came back as
 	//   "nothing could be applied" - the very case the user asked for.
-	return (edits > 0 || attrEdits > 0 || noteEdits > 0) ? kTrue : kFalse;
+	return (edits > 0 || attrEdits > 0 || noteEdits > 0 || tableEdits > 0) ? kTrue : kFalse;
 }
 
 const std::vector<KCMImportRefusal>& KCMImportRefusals()

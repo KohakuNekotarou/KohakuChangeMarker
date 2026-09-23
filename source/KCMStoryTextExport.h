@@ -72,6 +72,12 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 	@return kFalse when the story could not be read at all. Nothing in the document is changed. */
 bool16 KCMStoryFromDocument(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& outNoteRefsPlaced);
 
+/** The story's tables, index k being table ordinal k of KCMStoryFromDocument's reading (the same walk
+	and the same order) - each the UIDRef of the boss that holds its ITableModel. For the import's row
+	changes (S1, 2026-09-23), which have to hold every table BEFORE any of them changes.
+	@return kFalse when the story could not be walked. */
+bool16 KCMTableRefsOfStory(const UIDRef& storyRef, std::vector<UIDRef>& out);
+
 #endif // __KCMStoryTextExport_h__
 
 // End, KCMStoryTextExport.h.
