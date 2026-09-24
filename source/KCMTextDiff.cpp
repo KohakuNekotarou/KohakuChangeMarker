@@ -561,6 +561,47 @@ bool16 KCMTextDiff::Diff(const std::vector<int32>& a, const std::vector<int32>& 
 	return kTrue;
 }
 
+/* DiffInPieces
+*/
+bool16 KCMTextDiff::DiffInPieces(const std::vector<int32>& a, const std::vector<int32>& aCuts,
+								 const std::vector<int32>& b, const std::vector<int32>& bCuts,
+								 std::vector<Change>& changes, int32 maxEdits)
+{
+	changes.clear();
+	if (aCuts.size() != bCuts.size())
+		return kFalse;
+	int32 aFrom = 0;
+	int32 bFrom = 0;
+	for (size_t k = 0; k <= aCuts.size(); ++k)
+	{
+		const int32 aTo = (k < aCuts.size()) ? aCuts[k] : static_cast<int32>(a.size());
+		const int32 bTo = (k < bCuts.size()) ? bCuts[k] : static_cast<int32>(b.size());
+		if (aTo < aFrom || bTo < bFrom || aTo > static_cast<int32>(a.size()) || bTo > static_cast<int32>(b.size()))
+		{
+			changes.clear();
+			return kFalse;
+		}
+		const std::vector<int32> pa(a.begin() + aFrom, a.begin() + aTo);
+		const std::vector<int32> pb(b.begin() + bFrom, b.begin() + bTo);
+		std::vector<Change> piece;
+		if (!Diff(pa, pb, piece, maxEdits))
+		{
+			changes.clear();
+			return kFalse;
+		}
+		for (size_t c = 0; c < piece.size(); ++c)
+		{
+			Change x = piece[c];
+			x.aStart += aFrom;
+			x.bStart += bFrom;
+			changes.push_back(x);
+		}
+		aFrom = aTo;
+		bFrom = bTo;
+	}
+	return kTrue;
+}
+
 /* MergeNearbyChanges
    See the header for where the rule comes from and why it is not applied to paragraphs.
 

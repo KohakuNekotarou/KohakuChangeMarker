@@ -782,7 +782,19 @@ void ComparePara(Run& run, const Where& where, int32 nIndex, int32 result,
 				 const KCMStoryShape::Para& n, const KCMStoryShape::Para& raw, const KCMStoryShape::Para& w,
 				 const std::vector< std::pair<int32, int32> >& tablesHere)
 {
-	if (ParaSame(n, w))
+	// ★★THE TABLES' PLACES ARE PART OF THE PARAGRAPH (2026-09-24, S3b X06 - design 12-3-2): words moved from one
+	//   side of a table to the other leave the text the same and the table somewhere else - "ab[T]cd" and
+	//   "abcd[T]" both read "abcd", and this used to answer "the same" and plan nothing (the matrix's X06 went
+	//   in as nothing, with no "!"). The cuts are the tables' offsets in each; the diff is taken piece by piece
+	//   between them (DiffInPieces), so a move comes back as words put in on one side and taken out on the other.
+	std::vector<int32> nCuts;
+	std::vector<int32> wCuts;
+	for (size_t t = 0; t < tablesHere.size(); ++t)
+	{
+		nCuts.push_back(tablesHere[t].second);
+		wCuts.push_back(run.fW->fTables[static_cast<size_t>(tablesHere[t].first)].fOffset);
+	}
+	if (ParaSame(n, w) && nCuts == wCuts)
 	{
 		// the same references, one for one: their notes pair
 		for (size_t k = 0; k < n.fNoteRefs.size() && k < w.fNoteRefs.size(); ++k)
@@ -799,7 +811,8 @@ void ComparePara(Run& run, const Where& where, int32 nIndex, int32 result,
 	KCMTextDiff::ToCodePoints(n.fText, &a, nil);
 	KCMTextDiff::ToCodePoints(w.fText, &b, nil);
 	std::vector<Change> ch;
-	if (!KCMTextDiff::Diff(a, b, ch))
+	const bool16 diffed = nCuts.empty() ? KCMTextDiff::Diff(a, b, ch) : KCMTextDiff::DiffInPieces(a, nCuts, b, wCuts, ch);
+	if (!diffed)
 	{
 		Hold(run, where, nIndex, "Para", "the paragraph differs too much to place the changes");
 		return;

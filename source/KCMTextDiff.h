@@ -102,6 +102,18 @@ namespace KCMTextDiff
 	bool16 Diff(const std::vector<int32>& a, const std::vector<int32>& b,
 				std::vector<Change>& changes, int32 maxEdits = 0);
 
+	/** The changes between a and b, found piece by piece where fixed marks cut them (2026-09-24, S3b):
+		a's piece k is [aCuts[k-1], aCuts[k]) and it is diffed only against b's piece k. The changes come
+		back in whole-sequence counts, ascending. Words moved from one side of a mark to the other come
+		back as an insertion on one side and a deletion on the other - which is what a table standing in
+		a paragraph needs, since its anchor cannot move ("ab[T]cd" and "abcd[T]" are the same text).
+		aCuts and bCuts must be the same size, ascending; no marks is a plain Diff.
+		@return kFalse when the cut counts differ, a cut is out of order or out of range, or a piece's
+		Diff hits maxEdits - and then changes is empty. */
+	bool16 DiffInPieces(const std::vector<int32>& a, const std::vector<int32>& aCuts,
+						const std::vector<int32>& b, const std::vector<int32>& bCuts,
+						std::vector<Change>& changes, int32 maxEdits = 0);
+
 	/** Merges neighbouring changes that are separated by only a short unchanged run.
 
 		Myers returns the shortest edit script, which is not the same thing as the edit a person
