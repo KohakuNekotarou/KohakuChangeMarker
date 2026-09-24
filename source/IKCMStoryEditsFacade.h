@@ -634,6 +634,21 @@ public:
 		⚠Appended at the END of the class ([[facade-vtable-slot-append-only]]). Nothing outside KCM
 		 includes this facade (measured by grep, 2026-09-20), so only KCM's two halves are rebuilt. */
 	virtual bool16	GetChangeMarkSpan(int32 nth, int32 which, int32 i, TextIndex& outFrom, TextIndex& outTo) = 0;
+
+	/** (2026-09-24, stage 2 A - "Reject This Import Change") How many of the import's tracked changes (signed
+		"KohakuChangeMarker") touch change `which` of row `nth` in the Target - the test the change row's menu
+		item is greyed by, asked of the RANGE rather than remembered (design 13-1 item 3): a plain comparison, a
+		ruby-only row and a document opened again all answer from what the story holds now. 0 for none, an
+		unpaired story, or nothing armed.
+		⚠Appended at the END of the class ([[facade-vtable-slot-append-only]]). */
+	virtual int32	HasImportChange(int32 nth, int32 which) = 0;
+
+	/** Rejects them as ONE undo step ("Reject This Import Change" - a plain command sequence: an abortable one
+		took the import's own undo step below it away, measured) and compares the row again (RefreshRow) - the
+		list does not follow a reject by itself (measured 2026-09-24). @return how many were rejected (0 when
+		there were none, and then nothing lands on the undo stack); -1 when nothing could be done, and then
+		outMessage says why. */
+	virtual int32	RejectImportChange(int32 nth, int32 which, PMString& outMessage) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

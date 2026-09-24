@@ -1312,6 +1312,17 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMResourceRowXmlMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// ----- The Story Edits CHANGE rows (child rows): "Reject This Import Change" (2026-09-24, stage 2 A) -----
+		// ★A SUBTREE OF ITS OWN, not the story row's (KCMStoryRowEH::RButtonDn): it acts on the change under the
+		//   cursor only - the import's tracked changes touching that change's range - so a reader pointing at one
+		//   difference is never handed an action over the whole story (the rule of 2026-08-21).
+		// ★Greyed where the range holds none of the import's changes (kCustomEnabling -> KCMChangeRowCanReject),
+		//   and a menu with only greyed items does not appear: a plain comparison's change rows raise nothing.
+		kKCMChangeRowRejectActionID,
+		kKCMChangeRowMenuName,
+		kKCMChangeRowRejectMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// ----- The Story Edits CHANGE rows (child rows): ⛔THE SUBTREE IS GONE (2026-09-21) -----
 		// A subtree of its own (kKCMChangeRowMenuName) stood here from 2026-09-12, carrying only items
 		// about the CHANGE the cursor was over: "Copy Source Text" until 2026-09-15, then "Restore
@@ -1692,6 +1703,17 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it outside the Story mode (KCMStoryRowCanRefresh)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Reject This Import Change" on a Story Edits CHANGE row's right-click menu (2026-09-24, stage 2 A).
+		// ⚠Not on the flyout: it acts on the change the menu was popped over (KCMStoryRowEH stashes it).
+		kKCMActionComponentBoss,
+		kKCMChangeRowRejectActionID,
+		kKCMChangeRowRejectMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the range holds an import change (KCMChangeRowCanReject)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

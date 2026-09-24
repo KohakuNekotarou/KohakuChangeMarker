@@ -465,6 +465,7 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupTaskStartActionID, kKCMUIPrefix + 59)	// �
 DECLARE_PMID(kActionIDSpace, kKCMPopupExportStoryTextActionID, kKCMUIPrefix + 70)	// ★"Export Story Text..." on the panel flyout (a plain command, 2026-09-15), directly under Task Start: every story of the active document is written as one **Word document (.docx)** in a dated folder under one the reader picks, for editing in Word and importing again. **It only reads** - nothing is written into the document, and the walk is wrapped in IDataBase::SaveRestoreModifiedState so it is not even dirtied. ★Live whenever there is an active document (facade GetActiveDocDB). ⚠It borrowed CanTakeTaskStart for this until 2026-09-21, when the two stopped being the same question - Task Start copies the chosen Target when there is one. ⚠**IT WROTE .html UNTIL 2026-09-21** and a second item (+79) wrote the .docx; the HTML road was retired on the user's word ("Word format only") and this item took the one spelling left. Facade ExportStoryText; the work is KCMStoryTextExport.cpp and the format is KCMStoryDocx.cpp on KCMStoryShape.cpp (pure functions, tested outside InDesign in work/kcm-storydocx-test)
 // ⛔**+80 IS RETIRED** (2026-09-21): it was "Open Task Start as IDML", and it went with the origin itself. By then it could not be pressed at all - its one condition was HasOrigin, which nothing had made true since Task Start began saving a copy to a file. **The number is never reused** (the rule ActionID +38 set: a reader's .indk stores a shortcut as a plain number).
 DECLARE_PMID(kActionIDSpace, kKCMPopupImportStoryTextActionID, kKCMUIPrefix + 71)	// ★"Import Story Text..." on the panel flyout (a plain command, 2026-09-15), under Export: the reader picks the edited story FILES (a "<decimal>.html", or a .docx written by Export Story Text as Word...), a Task Start copy of the document is saved to a file THEY pick, the edited words go into the DOCUMENT, and the Story comparison starts against that copy. ★★★**THE DOCUMENT IS CHANGED BY THIS, AND EVERYTHING GOES IN AT ONCE** (2026-09-19, the reader's decision: overset then shows itself on the real page). ⚠★★**NOTHING SENDS ONE CHANGE BACK ANY MORE** (2026-09-21): the restore went, so what the reader does not want is either undone whole with Ctrl+Z or taken from the Source document, which Start has open in a window. ⚠**The old note here - "the document is not changed by this" - was the 2026-09-15 design and is measured false.** ★A cancelled save dialog ends the import, in silence. ★Live with an active document and no comparison running (⚠unlike Task Start, it does NOT stop one and take over). Facade ImportStoryText; the work is KCMStoryTextImport.cpp, and the copy is KCMTakeTaskStartCopy (KCMTaskStartSave.cpp) - the same one the flyout's Task Start takes
+DECLARE_PMID(kActionIDSpace, kKCMChangeRowRejectActionID, kKCMUIPrefix + 82)	// ★"Reject This Import Change" on a Story Edits CHANGE row (2026-09-24, stage 2 A). ⚠+72..+81 are all retired (the notes below) - +82 was the lowest action slot never used, counted.
 // ⛔**+72 IS RETIRED** (2026-09-20, with the fourth mode): "Change to Imported Text", the name the
 //   Import mode gave "Restore Source Text". The mode is gone; one item, one name. Never reused.
 // ⛔**+73..+76 ARE RETIRED** (2026-09-20, the user's decision to drop Restore All): "Restore All in This Story" / "Change All in This Story" / "Restore All Stories" / "Change All Stories to Imported Text". **The numbers are never reused** - the rule ActionID +38 (Translucent Toolbox) set.
@@ -795,12 +796,18 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 // HandlePopupMenu.
 // ★Its root name never reaches the screen either, so a plain literal will do.
 #define kKCMStoryRowMenuName		"KCMRtMenuStoryRow"
+// ★A CHANGE row's own menu, back on 2026-09-24 (stage 2 A) for "Reject This Import Change" - the name it had
+//   from 2026-09-12 to 2026-09-21 (KCMStoryRowEH::RButtonDn says why a child row has a menu of its own).
+#define kKCMChangeRowMenuName		"KCMRtMenuChangeRow"
+#define kKCMChangeRowRejectMenuKey	kKCMStringPrefix "kKCMChangeRowRejectMenuKey"	// "Reject This Import Change" on a change row
 // ⛔kKCMChangeRowRestoreMenuKey ("Restore Source Text") and kKCMChangeRowUndoRestoreMenuKey ("Undo
 //   the Restore") went on 2026-09-21 with the restore itself, and are gone from the enUS table.
 // ⛔The two Import-mode names went with the fourth mode on 2026-09-20 ("Change to Imported Text",
 //   "Change Back to the Original"), and the four bulk items' keys went the same day with them.
 // (The flyout pair's question carries the counts, so it is built in code and marked untranslatable,
 //  the way the status line and the book comparison's own question are - not a string key here.)
+// ★(2026-09-24: kKCMChangeRowMenuName IS BACK - above - for "Reject This Import Change". What follows is the
+//   record of the three days it was gone.)
 // ⛔**kKCMChangeRowMenuName IS GONE TOO** (2026-09-21, the evening): it named the CHANGE row's own
 //   subtree, which existed from 2026-09-12 so that a child row would never be offered the STORY
 //   row's items. Its last item was the Resources mode's "Edit..."; when that went there was nothing
@@ -1223,6 +1230,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 //   CHANGE row's own subtree) went on 2026-09-21 with the items. ★A position is a sort key, not a
 //   reservation - unlike an ActionID, a later item may take the number.
 // ⛔The STORY row's "Restore All in This Story" position (3.0) went with the item on 2026-09-21.
+#define kKCMChangeRowRejectMenuItemPosition	1.0	// the change row's menu: "Reject This Import Change" (its own subtree - 2026-09-24)
 #define kKCMStoryRowRefreshMenuItemPosition	1.0	// Story Edits row context menu: "Refresh Story Comparison" (a different subtree, so it may share 1.0 with the chapter row)
 #define kKCMResourceRowXmlMenuItemPosition	2.0	// ★the SAME subtree: "Show as XML" sits under the refresh item. The two are never live at once (opposite modes), so the order only decides what a future third item would sit between
 // ⛔The CHANGE row's two restore positions (2.0 "Restore Source Text", 2.7 "Undo the Restore") went

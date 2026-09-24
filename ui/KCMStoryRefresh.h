@@ -87,6 +87,25 @@ bool16 KCMStoryRowCanRefresh();
 */
 bool16 KCMStoryRefreshMenuRow();
 
+// ---- "Reject This Import Change" on a CHANGE row (2026-09-24, stage 2 A) ------------------------------
+// ★The change row's menu is back (it went on 2026-09-21 with its last item), carrying ONE item about the
+//  change under the cursor - the rule of 2026-08-21 (a reader pointing at one difference is not handed an
+//  action over the whole story) holds.
+
+/** The row AND the change the menu was popped over (KCMStoryRowEH::RButtonDn on a child row). */
+void KCMStorySetMenuChange(int32 rowIndex, int32 changeIndex);
+
+/** kTrue when the menu was popped over a change row, with its row and change. */
+bool16 KCMStoryGetMenuChange(int32& outRow, int32& outChange);
+
+/** Whether "Reject This Import Change" may be offered: a comparison armed, a mode with story rows, and at
+	least one of the import's tracked changes touching the change's range (asked of the story, design 13-1
+	item 3). */
+bool16 KCMChangeRowCanReject();
+
+/** Rejects them (one undo step) and says how many on the panel's message line. */
+bool16 KCMChangeRowReject();
+
 #endif // __KCMStoryRefresh_h__
 
 // End, KCMStoryRefresh.h.

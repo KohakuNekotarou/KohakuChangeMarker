@@ -54,6 +54,9 @@
 #include "ITextModel.h"			// the story the two above are asked about
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - "Export Story Text..." on the flyout
 #include "KCMStoryTextImport.h"	// KCMImportStoryText - "Import Story Text..." on the flyout
+#include "KCMRejectImport.h"		// "Reject This Import Change" on a change row (2026-09-24, stage 2 A)
+#include "CmdUtils.h"				// ...wrapped in one command sequence
+#include "ICommandSequence.h"		// ICommandSequence - a plain sequence (RejectImportChange says why not an abortable one)
 #include "KCMBookPair.h"			// which two books, and their display paths
 #include "KCMBookCompare.h"		// the book comparison itself
 #include "KCMPageNumberMarker.h"	// the folio exclusion toggle
@@ -693,6 +696,113 @@ public:
 		outTo   = found->fMarkSpans[static_cast<size_t>(i)].fTo;
 		return kTrue;
 	}
+
+	// ---- "Reject This Import Change" (2026-09-24, stage 2 A - design section 13) ----------------------
+
+	virtual int32	HasImportChange(int32 nth, int32 which)
+	{
+		UIDRef story;
+		TextIndex from = 0;
+		TextIndex to = 0;
+		if (!this->ChangeRangeInTarget(nth, which, story, from, to))
+			return 0;
+		return KCMCountImportChanges(story, from, to);
+	}
+
+	virtual int32	RejectImportChange(int32 nth, int32 which, PMString& outMessage)
+	{
+		outMessage.Clear();
+		outMessage.SetTranslatable(kFalse);
+		UIDRef story;
+		TextIndex from = 0;
+		TextIndex to = 0;
+		if (!this->ChangeRangeInTarget(nth, which, story, from, to))
+		{
+			outMessage = "this change is not in a document that is open and compared";
+			return -1;
+		}
+
+		// ★ONE UNDO STEP for the whole row: a replace row is two changes (its insertion and its deletion's mark),
+		//   and one Ctrl+Z has to bring both back.
+		// ⚠★★A PLAIN SEQUENCE, NOT AN ABORTABLE ONE (measured 2026-09-24 on the application): wrapped in
+		//   BeginAbortableCmdSeq, the reject was one step - but undoing it left the undo stack EMPTY: the import's
+		//   own step below it ("Import Story Text") was gone. Unwrapped, the step below survived (two steps);
+		//   BeginCommandSequence keeps both - one step, and the import still undoable under it. ⇒ Asked first
+		//   whether there is anything to reject, so an empty sequence never lands on the stack.
+		// ★★THE ROW IS COMPARED AGAIN FIRST, AND HAS TO BE THE SAME CHANGE (the same day's live re-check): the list
+		//   does not follow an edit - after Ctrl+Z of a reject it still showed the rows as they were after it, two
+		//   characters off - so a stale row could name the range of a DIFFERENT change of the import (measured:
+		//   the second "・" row then stood exactly on the first "・"). Refreshed here, and the change at this
+		//   index must still have the same kind and the same place on BOTH sides - the source side is what tells
+		//   the two "・" apart. Otherwise nothing is rejected and the reader is asked to right-click again.
+		Change before;
+		if (!this->GetChange(nth, which, before))
+		{
+			outMessage = "this change is not in the list any more";
+			return -1;
+		}
+		this->RefreshRow(nth);
+		Change now;
+		if (!this->GetChange(nth, which, now) || now.fKind != before.fKind || now.fWhat != before.fWhat
+			|| now.fTargetStart != before.fTargetStart || now.fTargetEnd != before.fTargetEnd
+			|| now.fSourceStart != before.fSourceStart || now.fSourceEnd != before.fSourceEnd)
+		{
+			outMessage = "the list was out of date - it has been compared again; right-click the change once more";
+			return -1;
+		}
+		if (KCMCountImportChanges(story, from, to) <= 0)
+		{
+			outMessage = "no import change on this row";
+			return 0;
+		}
+		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
+		if (sequence != nil)
+		{
+			PMString name("Reject This Import Change");
+			name.SetTranslatable(kFalse);
+			sequence->SetName(name);
+		}
+		const int32 done = KCMRejectImportChanges(story, from, to);
+		if (sequence != nil)
+			CmdUtils::EndCommandSequence(sequence);
+		if (done < 0)
+		{
+			outMessage = "the story keeps no change history";
+			return -1;
+		}
+		// ★THE ROW IS COMPARED AGAIN: a reject does not move the list by itself (measured 2026-09-24 - rows and
+		//   status line stayed as they were until a refresh), and a row still showing a change that is gone
+		//   would be offered again.
+		if (done > 0)
+			this->RefreshRow(nth);
+		return done;
+	}
+
+private:
+	/** The story and the range of change `which` of row `nth`, in the Target that is open and armed. */
+	bool16 ChangeRangeInTarget(int32 nth, int32 which, UIDRef& outStory, TextIndex& outFrom, TextIndex& outTo)
+	{
+		IDataBase* const targetDB = KCMArmedTargetDB();
+		if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
+			return kFalse;
+		Row row;
+		if (!this->GetRow(nth, row) || (row.fKinds & kKCMStoryKindUnpaired) != 0 || row.fStoryUID == kInvalidUID)
+			return kFalse;
+		Change change;
+		if (!this->GetChange(nth, which, change))
+			return kFalse;
+		// ★ONLY A ROW ABOUT WORDS OR A TABLE (the same day's final review): a "!" row (kWhatRefused) has no place
+		//   at all - its range reads 0..0, and it would have offered to reject whatever of the import's stood at
+		//   the story's first character. A ruby/kenten row (kWhatAttr) is stage 2 B's: those are not tracked.
+		if (change.fWhat != Change::kWhatText && change.fWhat != Change::kWhatTable)
+			return kFalse;
+		outStory = UIDRef(targetDB, row.fStoryUID);
+		outFrom = change.fTargetStart;
+		outTo = change.fTargetEnd;
+		return kTrue;
+	}
+
+public:
 
 	// ⛔**RETIRED SINCE 2026-09-20**, and since 2026-09-21 no restore of any size is left to come back
 	//   to. The slot stays for the vtable reason given above.

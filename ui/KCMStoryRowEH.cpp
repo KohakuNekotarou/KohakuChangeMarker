@@ -305,14 +305,12 @@ bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 // later, from the menu, knowing only its ActionID - so KCMStorySetMenuRow is how it learns which
 // story the menu was about. Both the action and its enabling test read it back.
 //
-// ***** A CHANGE ROW RAISES NO MENU AT ALL. ***** It had a subtree of its own from 2026-09-12
-// (kKCMChangeRowMenuName), carrying only items about the CHANGE under the cursor, and the last of
-// those items - the Resources mode's "Edit..." - went on 2026-09-21, as "Copy Source Text" and the
-// restore had gone before it. **The subtree went with it**: a menu that can only come up empty is
-// one InDesign never shows, and the code that pops it is code nothing can reach.
-// ⇒ A right click on a child row does what it did before 2026-09-12: nothing. ★The decision of
-// 2026-08-21 that made that right the first time holds again - the only menu here acts on a STORY,
-// and a reader pointing at ONE difference must not be handed an action over the whole of it.
+// ***** A CHANGE ROW POPS ITS OWN MENU (kKCMChangeRowMenuName). ***** It had one from 2026-09-12,
+// carrying only items about the CHANGE under the cursor; the last of them ("Edit...") went on
+// 2026-09-21 and the subtree with it, and from then until 2026-09-24 a child row raised nothing.
+// ★It is back for "Reject This Import Change" (stage 2 A), which acts on that one change's range only -
+// so the decision of 2026-08-21 still holds: a reader pointing at ONE difference is never handed an
+// action over the whole story, and the story row's menu is never popped on a child row.
 //
 // Deliberately NOT calling the stock handler and NOT changing the selection: a right click that is
 // only asking for a menu should not move the user's place in the list - the same rule the chapter
@@ -332,13 +330,16 @@ bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 	if (rowIndex < 0 || e == nil)
 		return TreeNodeEventHandler::RButtonDn(e);
 
-	// A CHANGE row has no menu of its own any more (see above), and must never be offered the STORY
-	// row's: it would come up looking right and act on the whole story the change hangs under.
-	// ⇒ Handed to the stock handler, the same as a click that landed on no row at all.
-	if (changeIndex >= 0)
-		return TreeNodeEventHandler::RButtonDn(e);
-
-	KCMStorySetMenuRow(rowIndex);	// for the action and its enabling test to read (see above)
+	// ★★A CHANGE ROW HAS ITS OWN MENU AGAIN (2026-09-24, stage 2 A): "Reject This Import Change", about the
+	//   change under the cursor only - so the rule of 2026-08-21 (never the STORY row's menu on a child row,
+	//   never an action over the whole story) still holds. Its item is greyed where the change's range holds
+	//   none of the import's tracked changes, and a menu with only greyed items does not appear - so a plain
+	//   comparison's change rows still raise nothing.
+	const bool16 isChangeRow = (changeIndex >= 0);
+	if (isChangeRow)
+		KCMStorySetMenuChange(rowIndex, changeIndex);
+	else
+		KCMStorySetMenuRow(rowIndex);	// for the action and its enabling test to read (see above)
 
 	ISession* session = GetExecutionContextSession();
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
@@ -351,7 +352,8 @@ bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 	if (menuMgr == nil)
 		return kTrue;
 
-	menuMgr->HandlePopupMenu(kKCMStoryRowMenuName, e->GlobalWhere(), e->GlobalWhere(), kTrue, this);
+	menuMgr->HandlePopupMenu(isChangeRow ? kKCMChangeRowMenuName : kKCMStoryRowMenuName,
+							 e->GlobalWhere(), e->GlobalWhere(), kTrue, this);
 	return kTrue;
 }
 

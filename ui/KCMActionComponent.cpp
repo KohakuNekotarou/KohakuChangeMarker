@@ -1089,6 +1089,13 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMStoryRefreshMenuRow();
 			break;
 
+		// "Reject This Import Change" on a CHANGE row's menu (2026-09-24, stage 2 A): the import's tracked changes
+		// touching that change's range are rejected as one undo step, and the row is compared again.
+		// ★Which change it was is noted by KCMStorySetMenuChange at the right click.
+		case kKCMChangeRowRejectActionID:
+			KCMChangeRowReject();
+			break;
+
 		// "Show as XML" on a DEFINITION row's context menu (2026-09-09). Shows the element the row
 		// names, from both documents, in a modal alert. ★Which row it was is noted the same way as
 		// for the item above, by KCMStorySetMenuRow at the right click.
@@ -1593,6 +1600,14 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//     "the only item on its row menu"; that is what changed, and the behaviour it described
 			//     did not.
 			listToUpdate->SetNthActionState(i, KCMStoryRowCanRefresh() ? kEnabledAction
+			                                                            : kDisabled_Unselected);
+		}
+		else if (action == kKCMChangeRowRejectActionID)
+		{
+			// ★The same test as the execution (KCMChangeRowCanReject) - asked of the change's range, so a plain
+			//   comparison, a ruby-only row and a document opened again all answer from what the story holds now
+			//   (design 13-1 item 3, 2026-09-24).
+			listToUpdate->SetNthActionState(i, KCMChangeRowCanReject() ? kEnabledAction
 			                                                            : kDisabled_Unselected);
 		}
 		else if (action == kKCMResourceRowXmlActionID)
