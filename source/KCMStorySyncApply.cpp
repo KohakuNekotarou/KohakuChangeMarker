@@ -1036,12 +1036,33 @@ void InsertTables(const UIDRef& storyRef, const KCMStorySync::Plan& plan, KCMSyn
 	for (size_t i = 0; i < at.size(); ++i)
 	{
 		const KCMStorySync::Step& s = *at[i].second;
+		// ★A PARAGRAPH OF ITS OWN (2026-09-24, S3b design 12-3-5 - the user's rule): a return first, at the paragraph's
+		//   end (before its own return), so the table goes into the new empty paragraph between the two returns.
+		//   At the head of the body the return goes at the body's start and the table in front of it. (Until that
+		//   day the table went at the end of the paragraph itself - "A[T]", one paragraph.) Back to front as before,
+		//   so two tables after one paragraph still come out in Word's order.
+		const TextIndex where = at[i].first.first;
+		const bool16 atHead = (s.fPara < 0 || static_cast<size_t>(s.fPara) >= body.size()) ? kTrue : kFalse;	// the test that chose `pos`
+		{
+			PMString asString;								// the way InsertParagraphs builds its words
+			asString.SetUTF8String(std::string("\r"));
+			const WideString aReturn(asString);
+			InterfacePtr<ICommand> newPara(KCMCreateWordsWriteCmd(model, where, 0, aReturn));
+			if (newPara == nil || CmdUtils::ProcessCommand(newPara) != kSuccess)
+			{
+				ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+				++out.fRefused;
+				Say(out, "Table", std::string("a table Word added could not be given a paragraph of its own"));
+				continue;
+			}
+		}
+		const TextIndex tableAt = atHead ? where : where + 1;
 		InterfacePtr<ITableModelList> list(model, UseDefaultIID());
 		const int32 before = (list != nil) ? list->GetModelCount() : -1;
 		// ★THE WAY KCMReportTable PUTS ITS TABLE IN (codesnippets/SnpCreateTable.cpp): no header or footer
 		//   rows, row height 0 = grows with its content, no selection left behind
-		tableUtils->InsertTable(model, at[i].first.first, 0, s.fCount, s.fAt, 0, 0, PMReal(0.0),
-								ColumnWidthAt(model, at[i].first.first, s.fAt), kTextContentType, ITableUtils::eNoSelection);
+		tableUtils->InsertTable(model, tableAt, 0, s.fCount, s.fAt, 0, 0, PMReal(0.0),
+								ColumnWidthAt(model, tableAt, s.fAt), kTextContentType, ITableUtils::eNoSelection);
 		const int32 after = (list != nil) ? list->GetModelCount() : -1;
 		if (before < 0 || after != before + 1)
 		{

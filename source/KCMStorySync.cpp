@@ -1672,6 +1672,7 @@ KCMStoryShape::Story ReshapeOnPaper(const KCMStoryShape::Story& now, const Plan&
 			}
 			out.fTables = kept;
 		}
+		std::vector<int32> madeAt;		// where each table added so far made its paragraph, in the document's count
 		for (size_t i = 0; i < plan.fSteps.size(); ++i)
 		{
 			const Step& s = plan.fSteps[i];
@@ -1680,13 +1681,26 @@ KCMStoryShape::Story ReshapeOnPaper(const KCMStoryShape::Story& now, const Plan&
 			any = kTrue;
 			KCMStoryShape::Table t;
 			t.fInTable = -1;
-			if (s.fPara >= 0 && static_cast<size_t>(s.fPara) < out.fBody.size())
 			{
-				// at the END of that paragraph, before its return (spike M6: the anchor stands in the paragraph)
-				std::vector<int32> cps;
-				KCMTextDiff::ToCodePoints(out.fBody[static_cast<size_t>(s.fPara)].fText, &cps, nil);
-				t.fParaIndex = s.fPara;
-				t.fOffset = static_cast<int32>(cps.size());
+				// ★A PARAGRAPH OF ITS OWN (2026-09-24, S3b design 12-1 item 2 - the user's rule): a new empty paragraph
+				//   after the one it follows (or opening the body), the table at its offset 0 - what Word shows. Until
+				//   that day it went at the END of that paragraph, making "A[T]" one paragraph.
+				//   ⚠s.fPara counts the document's paragraphs BEFORE any table went in, so every paragraph an earlier
+				//    step made at or before this place moves it on - which also keeps two tables added after the same
+				//    paragraph in Word's order (the plan lists them so).
+				const int32 orig = (s.fPara >= 0 && static_cast<size_t>(s.fPara) < now.fBody.size()) ? s.fPara + 1 : 0;
+				int32 shift = 0;
+				for (size_t m = 0; m < madeAt.size(); ++m)
+					if (madeAt[m] <= orig)
+						++shift;
+				madeAt.push_back(orig);
+				const int32 newPara = orig + shift;
+				out.fBody.insert(out.fBody.begin() + newPara, KCMStoryShape::Para());
+				for (size_t k = 0; k < out.fTables.size(); ++k)
+					if (out.fTables[k].fInTable < 0 && out.fTables[k].fParaIndex >= newPara)
+						++out.fTables[k].fParaIndex;
+				t.fParaIndex = newPara;
+				t.fOffset = 0;
 			}
 			for (int32 r = 0; r < s.fCount; ++r)
 			{
