@@ -2913,11 +2913,25 @@ void RejoinParas(KCMStoryShape::Story& s, std::vector<KCMStoryShape::Para>& para
 				if (at == lastMade - 1)
 					betweenTables = kTrue;
 			}
-			const int32 tp = shape.fTables[theirs[k]].fParaIndex;
-			const bool16 docHasEmptyBefore = (tp > 0 && static_cast<size_t>(tp) <= shapeParas.size()
-											 && shape.fTables[theirs[k]].fOffset == 0
-											 && SaysNothing(shapeParas[static_cast<size_t>(tp - 1)])) ? kTrue : kFalse;
-			if (!holdsTable && !betweenTables && !docHasEmptyBefore)
+			// ★★BY COUNT, NOT BY EMPTINESS (the same day's final review - Critical): an empty paragraph there is ALSO
+			//   what Word leaves when the words before the table are deleted and their paragraph stays ("p" /
+			//   "ab[T]cd" -> "p" / "" / [T] / "cd"). That one is the document's own paragraph, emptied, and dropping
+			//   it joined "p" to the table's paragraph. So: dropped only when Word has MORE paragraphs since the
+			//   previous table (or the run's start) than the document writes there - an Enter added one.
+			//   The document writes the paragraphs between its previous table's paragraph and this one's, plus the
+			//   words in front of this table as a piece of their own (joinBefore, worked out the way it is below).
+			const KCMStoryShape::Table& th = shape.fTables[theirs[k]];
+			const int32 tp = th.fParaIndex;
+			bool16 headPiece = (th.fOffset > 0) ? kTrue : kFalse;
+			if (tp >= 0 && static_cast<size_t>(tp) < shapeParas.size())
+				for (size_t r = 0; r < shapeParas[static_cast<size_t>(tp)].fNoteRefs.size(); ++r)
+					if (shapeParas[static_cast<size_t>(tp)].fNoteRefs[r].fAt <= th.fOffset)
+						headPiece = kTrue;
+			const int32 prevTp = (k > 0) ? shape.fTables[theirs[k - 1]].fParaIndex : -1;
+			const int32 prevMade = (k > 0) ? s.fTables[mine[k - 1]].fParaIndex : -1;
+			const int32 docCount = tp - prevTp - 1 + (headPiece ? 1 : 0);
+			const int32 wordCount = lastMade - prevMade;
+			if (!holdsTable && !betweenTables && prevTp < tp && wordCount > docCount)
 				made.pop_back();
 		}
 
