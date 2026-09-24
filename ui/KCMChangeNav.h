@@ -125,8 +125,15 @@ void KCMNoteStoryStop(int32 rowIndex, int32 changeIndex);
 //   goes THERE instead, exactly as the retired Find Overset cycle did: spread first, then the
 //   point (commit 3e98956's KCMGoto - the two lines are brought back rather than rewritten).
 //   nil for every ordinary jump, which then behaves as it always has.
+// ★**focusIsCaret / sourceFocusIsCaret** (2026-09-24): kTrue when that side's range is EMPTY - a
+//   deletion seen from the Target, an insertion seen from the Source - so the index names a GAP
+//   rather than a character. The one place it matters is a gap in front of a TABLE: the table's own
+//   characters are composed as the table frame's line, so asking for "the character" there centres
+//   the window on the table's corner, while the gap is the end of the line before it
+//   (IKCMStoryEditsFacade::GetCaretPointAt / GetCaretFrameAt). A row pointing AT a table keeps
+//   passing kFalse and lands on the table as before.
 bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 	TextIndex focusIndex = kInvalidTextIndex, TextIndex sourceFocusIndex = kInvalidTextIndex,
-	const PBPMPoint* oversetPb = nil);
+	const PBPMPoint* oversetPb = nil, bool16 focusIsCaret = kFalse, bool16 sourceFocusIsCaret = kFalse);
 
 #endif // __KCMChangeNav_h__

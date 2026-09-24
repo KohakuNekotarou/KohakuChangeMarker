@@ -854,12 +854,18 @@ static void KCMSyncCompanionViews(IDataBase* navDB, UID pageUID)
 //   itself is still correct -- showing the story beats moving nothing at all.
 //----------------------------------------------------------------------------------------
 static bool16 KCMScrollDocToStoryStart(IDataBase* db, UID storyUID, UID fallbackFrameUID,
-	UID& outFrame, PMReal applyZoom = PMReal(-1.0), TextIndex focusIndex = kInvalidTextIndex)
+	UID& outFrame, PMReal applyZoom = PMReal(-1.0), TextIndex focusIndex = kInvalidTextIndex,
+	bool16 caret = kFalse)
 {
 	if (focusIndex != kInvalidTextIndex)
 	{
+		// A gap and a character are two questions since 2026-09-24: in front of a table they have
+		// different answers (KCMChangeNav.h on focusIsCaret).
 		PBPMPoint focusPb;
-		if (Utils<IKCMStoryEditsFacade>()->GetStoryPointAt(db, storyUID, focusIndex, focusPb))
+		const bool16 havePoint = caret
+			? Utils<IKCMStoryEditsFacade>()->GetCaretPointAt(db, storyUID, focusIndex, focusPb)
+			: Utils<IKCMStoryEditsFacade>()->GetStoryPointAt(db, storyUID, focusIndex, focusPb);
+		if (havePoint)
 		{
 			// THE FRAME USED TO BRING THE SPREAD UP IS THE ONE THE CALLER PASSED, and it has to be
 			// the frame that contains the change. PASTEBOARD COORDINATES ARE PER SPREAD, so
@@ -1053,7 +1059,8 @@ void KCMGotoPrevChange() { KCMGoto(-1); }
 // KCMGotoStoryFrame (declared in KCMChangeNav.h)
 //========================================================================================
 bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
-	TextIndex focusIndex, TextIndex sourceFocusIndex, const PBPMPoint* oversetPb)
+	TextIndex focusIndex, TextIndex sourceFocusIndex, const PBPMPoint* oversetPb,
+	bool16 focusIsCaret, bool16 sourceFocusIsCaret)
 {
 	// The facade is asked more than once here, so it is queried into an InterfacePtr first
 	// (Utils.h says to do that rather than pay for a query per call). It is at the very top of the
@@ -1092,7 +1099,8 @@ bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 			return kFalse;
 		landedFrame = frameUID;		// the frame that shows the "+", for the Pages panel below
 	}
-	else if (!KCMScrollDocToStoryStart(db, storyUID, frameUID, landedFrame, PMReal(-1.0), focusIndex))
+	else if (!KCMScrollDocToStoryStart(db, storyUID, frameUID, landedFrame, PMReal(-1.0), focusIndex,
+									   focusIsCaret))
 		return kFalse;
 
 	// The Pages panel goes to the page of THE FRAME ACTUALLY LANDED ON (a frame on no page does
@@ -1142,8 +1150,11 @@ bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 			//   comparison all arrive here).
 		if (sourceFocusIndex != kInvalidTextIndex)
 		{
-			const UID srcFocusFrame =
-				Utils<IKCMStoryEditsFacade>()->GetStoryFrameAt(sourceDB, storyUID, sourceFocusIndex);
+			// A gap (an insertion, seen from here) is asked as a gap - the same distinction the point
+			// below makes, so that the two readings are of one place (KCMChangeNav.h on focusIsCaret).
+			const UID srcFocusFrame = sourceFocusIsCaret
+				? Utils<IKCMStoryEditsFacade>()->GetCaretFrameAt(sourceDB, storyUID, sourceFocusIndex)
+				: Utils<IKCMStoryEditsFacade>()->GetStoryFrameAt(sourceDB, storyUID, sourceFocusIndex);
 			if (srcFocusFrame != kInvalidUID)
 				srcFrame = srcFocusFrame;
 		}
@@ -1178,7 +1189,7 @@ bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 					// arrives for it too, so nothing branches here.
 				UID srcLanded = kInvalidUID;
 				KCMScrollDocToStoryStart(sourceDB, storyUID, srcFrame, srcLanded, KCMReadDocZoom(db),
-										   sourceFocusIndex);
+										   sourceFocusIndex, sourceFocusIsCaret);
 				if (srcLanded != kInvalidUID)
 					srcFrame = srcLanded;
 			}

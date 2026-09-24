@@ -678,6 +678,22 @@ public:
 		Planned before the sequence begins, so a refusal (nothing kept, the words edited since) lands nothing on the
 		undo stack. @return the writes that went in; -1 when nothing was written, and outMessage says why. */
 	virtual int32	RedoFromWord(int32 nth, int32 which, PMString& outMessage) = 0;
+
+	/** (2026-09-24) GetStoryPointAt for a CARET rather than a character - the place a zero-width change
+		stands at: a deletion seen from the Target, an insertion seen from the Source. The one difference is
+		a caret in front of a TABLE: the character there is the table's own, whose wax is the table frame's
+		line - a run with no glyphs whose origin is the table's top-left corner (measured on the user's
+		「あ[表]い」→「あえ[表]い」: the Source window centred on the table instead of on the end of the line
+		before it). That corner is the right answer for a row that points AT the table, and GetStoryPointAt
+		keeps giving it; this answers the far edge of the last character before the table - where the
+		words went in. Same dirty-guard warning as GetStoryPointAt.
+		⚠Appended at the END ([[facade-vtable-slot-append-only]]). */
+	virtual bool16	GetCaretPointAt(IDataBase* db, UID storyUID, TextIndex at, PBPMPoint& outPb) = 0;
+
+	/** GetStoryFrameAt for a caret - the frame of the character GetCaretPointAt answers for, so the two
+		readings of one jump are of one place (a table that starts a new column puts its own characters in
+		the next parcel). Same warnings as GetStoryFrameAt. */
+	virtual UID		GetCaretFrameAt(IDataBase* db, UID storyUID, TextIndex at) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

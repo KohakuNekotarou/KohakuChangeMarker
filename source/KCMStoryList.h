@@ -582,10 +582,16 @@ bool16 KCMStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoint&
 		worked out against the OLDER document, which nothing has measured against that document as
 		it stands now.
 	@param outPb [out] the point. Untouched when this answers kFalse.
+	@param caret kTrue when `index` names a GAP rather than a character - a zero-width change: a
+		deletion seen from the Target, an insertion seen from the Source (2026-09-24). The one place the
+		two differ is a gap in front of a TABLE: the character there is the table's own, and its wax
+		is the table frame's line, whose origin is the table's top-left corner - right for a row that
+		points AT the table, wrong for the words that went in before it. A caret there is answered as
+		the FAR EDGE of the last character before the table (KCMCaretOnTableChars).
 	@return kFalse when the story is not there, or that position is OVERSET or in no frame --
 		callers fall back to KCMStoryStartPoint.
 */
-bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& outPb);
+bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& outPb, bool16 caret = kFalse);
 
 /** Which frame holds ONE character of a story -- the frame a jump to a CHANGE has to bring into
 	view, as against KCMStoryFirstFrameUID above, which answers where the story STARTS.
@@ -610,10 +616,35 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
 	@param db which document to ask -- either version; the caller picks.
 	@param storyUID the story.
 	@param index the character. Outside the story as it stands now answers kInvalidUID.
+	@param caret kTrue for a GAP rather than a character - KCMStoryPointAt says what it changes. Here it
+		makes a caret in front of a table the frame of the character BEFORE the table, the one the
+		point is answered for: the two readings of one jump have to be of one place, and a table that
+		starts a new column puts its own characters in the next parcel.
 	@return kInvalidUID when there is no such story, no such character, or the character is OVERSET
 		or in no frame -- callers keep whatever fallback frame they already had.
 */
-UID KCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index);
+UID KCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index, bool16 caret = kFalse);
+
+/** A caret standing on a table's own characters - kTextChar_Table for the anchor plus one
+	kTextChar_TableContinued per row after the first (KCMParaText.h) - and where it really stands.
+
+	★★MEASURED 2026-09-24 (the user's 「あ[表]い」→「あえ[表]い」, matrix case A12): the Source side of
+	that insertion is the anchor's index, and the composition answers for it with THE TABLE FRAME'S OWN
+	WAX LINE - a run with no glyphs whose origin is the table's top-left corner. So the jump centred the
+	Source window on the table (page x 41.5pt, where the line before it ends at 396.9pt), and the caret
+	mark [anchor, anchor+1) met a run that maps it to no glyph and drew nothing; the marker's own step
+	back (a caret whose character draws nothing) could not help, because the character before is in
+	another run. The place the reader means is AFTER the last character before the table: where the
+	words went in. Three readers apply the same rule: KCMStoryPointAt / KCMStoryFrameAt (the jump) and
+	the two caret builders (KCMStoryMarkBuild, KCMStoryMarker::AddFlashRange).
+
+	@param at the caret's index.
+	@param outAfter [out] one past the last character before the table's characters - so that
+		KCMMarkRange::CaretAfter(outAfter) and "the far edge of character outAfter-1" name the place.
+		Untouched when this answers kFalse.
+	@return kFalse when `at` is not on a table's own character, or nothing stands before them (a table
+		at the very start of the story). */
+bool16 KCMCaretOnTableChars(IDataBase* db, UID storyUID, TextIndex at, TextIndex& outAfter);
 
 namespace KCMStoryList
 {

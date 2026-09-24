@@ -35,7 +35,8 @@
 #include "PMMatrix.h"
 #include "PMRect.h"				// GetParcelBounds - the leading corner comes off this
 #include "RangeData.h"			// Text::StoryRange - what GetAnchorTextRange answers with
-#include "TextChar.h"			// kTextChar_Space - the boundary the readability test draws its line at
+#include "TextChar.h"			// kTextChar_Space - the boundary the readability test draws its line at; kTextChar_Table / kTextChar_TableContinued - a table's own characters
+#include "TextIterator.h"		// the character under a caret - is it a table's own (2026-09-24)
 #include "TransformUtils.h"		// ::InnerToPasteboardMatrix
 #include "UnicodeClass.h"		// IsWhiteSpace
 #include "WideString.h"
@@ -535,6 +536,46 @@ static TextIndex KCMPrimaryIndexOf(ITextModel* textModel, TextIndex index)
 	return -1;
 }
 
+/* IsTableCharAt
+   Is the character at `at` one of a table's own - the anchor (kTextChar_Table) or one of the
+   per-row continuations (kTextChar_TableContinued)? kFalse outside the story.
+*/
+static bool16 IsTableCharAt(ITextModel* model, TextIndex at)
+{
+	if (model == nil || at < 0 || at >= model->TotalLength())
+		return kFalse;
+	TextIterator iter(model, at);
+	const uint32 v = (*iter).GetValue();
+	return (v == kTextChar_Table || v == kTextChar_TableContinued) ? kTrue : kFalse;
+}
+
+/* CaretOnTableChars / KCMCaretOnTableChars (declared in KCMStoryList.h - the header says what was
+   measured and who asks)
+   The model-taking form is the one the two readings below use, since they hold the model already.
+*/
+static bool16 CaretOnTableChars(ITextModel* model, TextIndex at, TextIndex& outAfter)
+{
+	if (!IsTableCharAt(model, at))
+		return kFalse;
+	// Back over the whole run of the table's characters: a caret on the second row's continuation
+	// stands in front of the same table as one on the anchor.
+	TextIndex first = at;
+	while (first > 0 && IsTableCharAt(model, first - 1))
+		--first;
+	if (first <= 0)
+		return kFalse;			// a table at the very start of the story: nothing stands before it
+	outAfter = first;
+	return kTrue;
+}
+
+bool16 KCMCaretOnTableChars(IDataBase* db, UID storyUID, TextIndex at, TextIndex& outAfter)
+{
+	if (db == nil || storyUID == kInvalidUID)
+		return kFalse;
+	InterfacePtr<ITextModel> model(UIDRef(db, storyUID), UseDefaultIID());
+	return CaretOnTableChars(model, at, outAfter);
+}
+
 /* KCMStoryFrameAt (declared in KCMStoryList.h)
 
 	**WHY THIS IS NOT KCMStoryFirstFrameUID.** That one answers where a story STARTS, which is the
@@ -549,7 +590,7 @@ static TextIndex KCMPrimaryIndexOf(ITextModel* textModel, TextIndex index)
 	parent (IHierarchy). @warning this is a real difference from KCMStoryFirstFrameUID, which
 	returns GetNthFrameUID(0) -- a column UID.
 */
-UID KCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index)
+UID KCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index, bool16 caret)
 {
 	if (db == nil || storyUID == kInvalidUID || index < 0)
 		return kInvalidUID;
@@ -568,6 +609,17 @@ UID KCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index)
 	// ★A cell's or a footnote's index is asked as the index of its ANCHOR in the body, so that the
 	//   two readings of the composition (this and KCMStoryPointAt) are of one place, and that place
 	//   is one the body's wax can answer for (KCMPrimaryIndexOf, 2026-09-12).
+	// ★A CARET IN FRONT OF A TABLE IS THE CHARACTER BEFORE THE TABLE (2026-09-24, the header on
+	//   `caret`) - the one KCMStoryPointAt answers for, so that the spread this names and the point
+	//   that one names are of one place. Only for a caret: a row pointing AT the table hands in the
+	//   same index for a CHARACTER and keeps the table's own parcel.
+	if (caret)
+	{
+		TextIndex after = 0;
+		if (CaretOnTableChars(textModel, index, after))
+			index = after - 1;
+	}
+
 	index = KCMPrimaryIndexOf(textModel, index);
 	if (index < 0)
 		return kInvalidUID;
@@ -620,7 +672,7 @@ UID KCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index)
 	return columnHierarchy->GetParentUID();		// kInvalidUID is already the "no answer" value
 }
 
-bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& outPb)
+bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& outPb, bool16 caret)
 {
 	if (db == nil || storyUID == kInvalidUID || index < 0)
 		return kFalse;
@@ -629,6 +681,21 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
 	if (textModel == nil || index > textModel->TotalLength())
 		return kFalse;		// see the @param note above: neither caller can clamp this for us.
 							// `>`, not `>=` -- the reason is written out in KCMStoryFrameAt.
+
+	// ★A CARET IN FRONT OF A TABLE IS ANSWERED AS THE FAR EDGE OF THE CHARACTER BEFORE THE TABLE
+	//   (2026-09-24 - the header on KCMCaretOnTableChars says what was measured). Only for a caret:
+	//   the same index handed in for a CHARACTER - a row pointing at the table itself - keeps the
+	//   table's corner, which the candidates below answer with.
+	bool16 farEdge = kFalse;
+	if (caret)
+	{
+		TextIndex after = 0;
+		if (CaretOnTableChars(textModel, index, after))
+		{
+			index = after - 1;
+			farEdge = kTrue;
+		}
+	}
 
 	InterfacePtr<IWaxStrand> waxStrand((IWaxStrand*)textModel->QueryStrand(kFrameListBoss, IID_IWAXSTRAND));
 	if (waxStrand == nil)
@@ -646,10 +713,11 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
 	//   character really stands - inside the table, which is where the reader wants the window.
 	//   Only when the wax has no line for it is the index crossed to its ANCHOR in the body
 	//   (KCMPrimaryIndexOf - the frame KCMStoryFrameAt named holds that anchor, so the point still
-	//   lands in the same frame). ⚠Trying the anchor FIRST would be a quiet regression: the table
-	//   anchor character has no wax of its own (the composer stops at kTextChar_Table - memory
-	//   text-composition-damage-and-recompose), so GetFirstWaxLine could answer nil there and the
-	//   caller would fall back to the STORY'S START, far from the table.
+	//   lands in the same frame). ⚠Trying the anchor FIRST would be a quiet regression: the anchor's
+	//   own wax is THE TABLE FRAME'S LINE - a run with no glyphs whose origin is the table's top-left
+	//   corner (measured 2026-09-24; until then this sentence said the anchor has no wax at all, citing
+	//   a memory that never said so) - so the window would land on the table's corner instead of
+	//   inside the cell.
 	// ⚠Neither reading COMPOSES anything beyond the RecomposeIfDamaged above: the wax iterator
 	//   reads what is there, which is the difference from the QueryFrameContaining that crashed.
 	TextIndex candidates[2] = { index, KCMPrimaryIndexOf(textModel, index) };
@@ -676,11 +744,25 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
 		return kFalse;
 
 	PMReal x(0.0);
-	if (glyphOffset > 0)
+	if (glyphOffset > 0 || farEdge)
 	{
 		InterfacePtr<IWaxGlyphs> waxGlyphs(waxRun, UseDefaultIID());
 		if (waxGlyphs != nil)
-			x = waxGlyphs->GetEscapementAt(glyphOffset - 1);
+		{
+			// The escapement THROUGH glyph g (IWaxGlyphs.h) is g's far edge: through the glyph BEFORE
+			// the character for the ordinary reading (the character's start), through the character's
+			// own glyph for a caret standing after it. ⚠A character that draws no glyph - a return
+			// before a table - can come back with an offset past the run's glyphs, or -1 (IWaxLine.h's
+			// own warning on QueryRunByTextOffset): the far edge of the run's LAST glyph is then the
+			// end of the line, which is where such a caret stands (and a run with no glyphs at all is
+			// an empty line, whose start is the place).
+			const int32 count = waxGlyphs->GetGlyphCount();
+			int32 through = glyphOffset - 1;
+			if (farEdge)
+				through = (glyphOffset < 0 || glyphOffset >= count) ? count - 1 : glyphOffset;
+			if (through >= 0 && through < count)
+				x = waxGlyphs->GetEscapementAt(through);
+		}
 	}
 
 	// **THE RUN'S OWN MATRIX DOES THE WORK**, and it is why this follows vertical text and rotated

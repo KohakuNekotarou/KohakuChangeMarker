@@ -32,6 +32,7 @@
 #include "KCMBoundaryID.h"			// kKCMModeStory
 #include "KCMCore.h"					// KCMArmedTargetDB / KCMArmedSourceDB (@warning declared here, not in KCMPeek.h)
 #include "KCMDrawEventHandler.h"		// sPrintMarks / sSrcMarksOn - the two toggles that decide printing
+#include "KCMStoryList.h"			// KCMCaretOnTableChars - a caret in front of a table stands after the character before it (2026-09-24)
 #include "KCMStoryMarkBuild.h"
 #include "KCMStoryMarker.h"			// the adornment that draws them
 #include "KCMThreadSafety.h"			// KCMIsSameDoc - the background draws a CLONE of the document
@@ -262,6 +263,19 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 						ranges.push_back(KCMMarkRange::CaretAfter(from));
 						continue;
 					}
+				}
+				// ★★AND IN FRONT OF A TABLE IT STANDS AFTER THE LAST CHARACTER BEFORE THE TABLE
+				//   (2026-09-24, the user's 「あ[表]い」→「あえ[表]い」: no bar on the Source). A table's
+				//   own characters are composed as the table frame's line, whose run has no glyphs, so
+				//   a caret standing on them reaches a run that draws nothing for it - and the marker's
+				//   own step back (a caret whose character draws nothing) cannot help, because the
+				//   character before is in another run. KCMCaretOnTableChars says what was measured;
+				//   the jump's flash applies the same rule (KCMStoryMarker::AddFlashRange).
+				TextIndex afterTable = 0;
+				if (KCMCaretOnTableChars(db, row.fStoryUID, from, afterTable))
+				{
+					ranges.push_back(KCMMarkRange::CaretAfter(afterTable));
+					continue;
 				}
 				ranges.push_back(KCMMarkRange::Caret(from));
 				continue;

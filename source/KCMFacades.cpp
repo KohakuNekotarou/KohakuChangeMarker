@@ -1027,6 +1027,14 @@ public:
 					{ return KCMStoryPointAt(db, storyUID, index, outPb); }
 	virtual UID		GetStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index)
 					{ return KCMStoryFrameAt(db, storyUID, index); }
+	// (2026-09-24) The caret readings: the same two functions told that `at` is a GAP, not a character
+	// (in front of a table: the far edge of the character before it). ⚠Declared at the END of
+	// IKCMStoryEditsFacade ([[facade-vtable-slot-append-only]]) and written here beside the two they
+	// vary - the vtable's order is the interface's, not this class's.
+	virtual bool16	GetCaretPointAt(IDataBase* db, UID storyUID, TextIndex at, PBPMPoint& outPb)
+					{ return KCMStoryPointAt(db, storyUID, at, outPb, kTrue); }
+	virtual UID		GetCaretFrameAt(IDataBase* db, UID storyUID, TextIndex at)
+					{ return KCMStoryFrameAt(db, storyUID, at, kTrue); }
 
 	virtual bool16	ExportStoryText(const IDFile& parent, const UIDList& onlyThese,
 									PMString& outMessage)

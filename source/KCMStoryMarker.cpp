@@ -47,6 +47,7 @@
 									// mode's frames.
 #include "KCMExternalSource.h"	// KCMIsDbAlive - a document in the list, or the lent Source (ForgetClosedDocs)
 #include "KCMID.h"				// moved here from the UI plug-in with the adornment
+#include "KCMStoryList.h"		// KCMCaretOnTableChars - a caret in front of a table stands after the character before it (2026-09-24)
 #include "KCMStoryMarkBuild.h"	// KCMStoryMarkPrintAllowedFor - may THIS document go on paper
 #include "KCMStoryMarker.h"
 #include "KCMStoryMarkerExpiry.h"
@@ -810,6 +811,15 @@ void KCMStoryMarker::AddFlashRange(KCMStoryMarkDocs& docs, IDataBase* db, UID st
 			docs[db][storyUID].push_back(KCMMarkRange::CaretAfter(from));
 			return;
 		}
+	}
+	// ★AND IN FRONT OF A TABLE, AFTER THE LAST CHARACTER BEFORE THE TABLE - the same rule, and the
+	//   same reason, as the standing marks (KCMStoryMarkBuild; KCMCaretOnTableChars says what was
+	//   measured, 2026-09-24).
+	TextIndex afterTable = 0;
+	if (KCMCaretOnTableChars(db, storyUID, from, afterTable))
+	{
+		docs[db][storyUID].push_back(KCMMarkRange::CaretAfter(afterTable));
+		return;
 	}
 	docs[db][storyUID].push_back(KCMMarkRange::Caret(from));
 }

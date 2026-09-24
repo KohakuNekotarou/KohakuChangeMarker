@@ -591,7 +591,16 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//     (KCMChangeNav.cpp) - where it used to be handed the story's first frame and nothing else.
 	// ⚠The fallback is the story's first frame (what a story row uses), for a story whose frame list
 	//   cannot answer - an unplaced story has none at all.
-	UID frameUID = Utils<IKCMStoryEditsFacade>()->GetStoryFrameAt(db, row.fStoryUID, from);
+	// ★A ZERO-WIDTH CHANGE IS A GAP, NOT A CHARACTER (2026-09-24): a deletion seen from here, an
+	//   insertion seen from the Source. In front of a table the two have different answers - the
+	//   character there is the table's own, composed as the table frame's line, so asking for it
+	//   centred the window on the table's corner and the mark drew nothing (the user's 「あ[表]い」→
+	//   「あえ[表]い」) - so each side says which it is asking (KCMChangeNav.h on focusIsCaret).
+	const bool16 targetCaret = (to <= from);
+	const bool16 sourceCaret = (change.fSourceEnd <= change.fSourceStart);
+	UID frameUID = targetCaret
+		? Utils<IKCMStoryEditsFacade>()->GetCaretFrameAt(db, row.fStoryUID, from)
+		: Utils<IKCMStoryEditsFacade>()->GetStoryFrameAt(db, row.fStoryUID, from);
 
 	// ***** AN OVERSET CHANGE GOES TO THE "+" INSTEAD (2026-09-15, the user's request). *****
 	//
@@ -685,7 +694,8 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	}
 
 	const bool16 moved = KCMGotoStoryFrame(db, frameUID, pageUID, row.fStoryUID, from, sourceFocus,
-										   haveCorner ? &tableCorner : (wentToOverset ? &oversetPb : nil));
+										   haveCorner ? &tableCorner : (wentToOverset ? &oversetPb : nil),
+										   targetCaret, sourceCaret);
 
 	// ***** AND LIGHT THE CHARACTERS UP FOR A MOMENT. *****
 	//
