@@ -38,6 +38,11 @@ namespace
 */
 int32 gMenuRow = -1;
 
+/* Which CHANGE of that row, when the menu was popped over a change row (2026-09-24, stage 2 A); -1 when it
+   was popped over a story row. ★Written by both kinds of click (KCMStorySetMenuRow clears it), so a story
+   row's menu can never find a change left over from an earlier right click. */
+int32 gMenuChange = -1;
+
 }	// anonymous namespace
 
 //----------------------------------------------------------------------------------------
@@ -53,6 +58,68 @@ int32 gMenuRow = -1;
 void KCMStorySetMenuRow(int32 rowIndex)
 {
 	gMenuRow = rowIndex;
+	gMenuChange = -1;		// a story row's menu: no change (2026-09-24)
+}
+
+//----------------------------------------------------------------------------------------
+// KCMStorySetMenuChange / KCMStoryGetMenuChange / KCMChangeRowCanReject / KCMChangeRowReject
+//   "Reject This Import Change" on a CHANGE row (2026-09-24, stage 2 A - design section 13 of
+//   docs/superpowers/specs/2026-09-23-kcm-import-sync-design.md).
+//----------------------------------------------------------------------------------------
+
+void KCMStorySetMenuChange(int32 rowIndex, int32 changeIndex)
+{
+	gMenuRow = rowIndex;
+	gMenuChange = changeIndex;
+}
+
+bool16 KCMStoryGetMenuChange(int32& outRow, int32& outChange)
+{
+	outRow = gMenuRow;
+	outChange = gMenuChange;
+	return (gMenuRow >= 0 && gMenuChange >= 0) ? kTrue : kFalse;
+}
+
+bool16 KCMChangeRowCanReject()
+{
+	if (gMenuRow < 0 || gMenuChange < 0)
+		return kFalse;
+	// Asked in this order for the reason KCMStoryRowCanRefresh gives: the mode is a setting that outlives Stop.
+	if (!Utils<IKCMCompareFacade>()->IsArmed())
+		return kFalse;
+	if (!KCMModeUsesStoryRows(Utils<IKCMCompareFacade>()->GetCompareMode()))
+		return kFalse;
+	// ★ASKED OF THE RANGE, NOT REMEMBERED (design 13-1 item 3): a plain comparison, a ruby-only row and a
+	//   document opened again all answer from what the story holds now. 0 greys the item - and a menu whose
+	//   only item is greyed does not appear at all.
+	return (Utils<IKCMStoryEditsFacade>()->HasImportChange(gMenuRow, gMenuChange) > 0) ? kTrue : kFalse;
+}
+
+bool16 KCMChangeRowReject()
+{
+	// The same test the menu was greyed by, asked again at the moment of acting (KCMStoryRefreshMenuRow's reason).
+	if (!KCMChangeRowCanReject())
+	{
+		KCMSetStatus("reject: no import change on this row.");
+		return kFalse;
+	}
+	PMString why;
+	const int32 done = Utils<IKCMStoryEditsFacade>()->RejectImportChange(gMenuRow, gMenuChange, why);
+	PMString msg;
+	msg.SetTranslatable(kFalse);
+	if (done < 0)
+	{
+		msg.Append("reject: could not - ");
+		msg.Append(why);
+	}
+	else
+	{
+		msg.Append("rejected ");
+		msg.AppendNumber(done);
+		msg.Append(" import change(s) - Ctrl+Z brings them back");
+	}
+	KCMSetStatus(msg);
+	return (done > 0) ? kTrue : kFalse;
 }
 
 int32 KCMStoryMenuRow()
