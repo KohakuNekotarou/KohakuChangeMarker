@@ -25,6 +25,7 @@
 #include "KCMStoryKinds.h"		// KCMStoryAttrKind
 #include "KCMStoryRestore.h"	// the writers, shared with the import's pour and the PDF report
 #include "KCMTextRead.h"		// ReadStory - the same reader the comparison runs
+#include "KCMTextWords.h"		// WordsAt / Refuse - shared with the redo
 #include "KCMRestoreAttr.h"
 
 namespace
@@ -67,19 +68,8 @@ void CollectPieces(const std::vector<KCMParaAttrs>& attrs, const std::vector<int
 	}
 }
 
-/** The characters of [at, at+len) - kFalse when the range is not inside the story. */
-bool16 WordsAt(ITextModel* model, TextIndex at, int32 len, WideString& out)
-{
-	out.Clear();
-	if (model == nil || at < 0 || len < 0 || at + len > model->TotalLength())
-		return kFalse;
-	if (len > 0)
-	{
-		TextIterator iter(model, at);
-		iter.AppendToStringAndIncrement(&out, len);
-	}
-	return kTrue;
-}
+using KCMTextWords::WordsAt;
+using KCMTextWords::Refuse;
 
 /** A span's value as a PMString. ⚠THE VALUE IS UTF-8 AND PMString IS NOT: Append(c_str()) would put the bytes in
 	as the platform's encoding, and a custom kenten's own character came out as mojibake that way once
@@ -89,12 +79,6 @@ PMString Utf8(const std::string& text)
 	PMString s;
 	s.SetUTF8String(text);
 	return s;
-}
-
-void Refuse(PMString& why, const char* text)
-{
-	why = text;
-	why.SetTranslatable(kFalse);
 }
 
 }	// namespace

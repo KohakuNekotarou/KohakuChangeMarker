@@ -22,32 +22,15 @@
 #include "KCMStorySyncApply.h"	// KCMApplySyncPlan / KCMSyncColumnsOfRow
 #include "KCMStoryTextExport.h"	// KCMStoryFromDocument - the document, read the way the import reads it
 #include "KCMTextRead.h"		// ReadStory - the paragraphs and their places, for the change's paragraph
+#include "KCMTextWords.h"		// WordsAt / Refuse - shared with the restore
 #include "KCMWordKeep.h"
 #include "KCMRedoFromWord.h"
 
 namespace
 {
 
-/** The characters of [at, at+len) - kFalse when the range is not inside the story. (KCMRestoreAttr.cpp keeps the
-	same helper; a third user moves the two into a shared header.) */
-bool16 WordsAt(ITextModel* model, TextIndex at, int32 len, WideString& out)
-{
-	out.Clear();
-	if (model == nil || at < 0 || len < 0 || at + len > model->TotalLength())
-		return kFalse;
-	if (len > 0)
-	{
-		TextIterator iter(model, at);
-		iter.AppendToStringAndIncrement(&out, len);
-	}
-	return kTrue;
-}
-
-void Refuse(PMString& why, const char* text)
-{
-	why = text;
-	why.SetTranslatable(kFalse);
-}
+using KCMTextWords::WordsAt;
+using KCMTextWords::Refuse;
 
 /** The paragraph of KCMTextRead's reading that holds `at` - or STARTS at `at`, for a caret on a boundary - as
 	(Where, para) in that place's own numbering, which is what a plan's step names. kFalse outside the story. */
@@ -126,8 +109,8 @@ bool16 KCMPlanRedoFromWord(const UIDRef& targetStory, const UIDRef& sourceStory,
 		Refuse(outWhy, "the story is not open on both sides");
 		return kFalse;
 	}
-	WideString tWords, sWords;
-	if (!WordsAt(target, record.fNowStart, record.fNowEnd - record.fNowStart, tWords)
+	WideString sWords;
+	if (record.fNowStart < 0 || record.fNowEnd < record.fNowStart || record.fNowEnd > target->TotalLength()
 		|| !WordsAt(source, record.fLive.fSourceStart, record.fLive.fSourceEnd - record.fLive.fSourceStart, sWords))
 	{
 		Refuse(outWhy, "the change's place reaches past the end of the story - compare again");
