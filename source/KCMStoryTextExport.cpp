@@ -40,6 +40,7 @@
 #include "KCMStoryShape.h"
 #include "KCMStoryDocx.h"		// the .docx road (2026-09-19)
 #include "KCMTextRead.h"
+#include "KCMSkippedText.h"		// what the page does not set - deleted text and what stands in it (2026-09-24)
 #include "KCMParaText.h"
 #include "KCMTextDiff.h"		// ToCodePoints - the one walk over UTF-8 this half is allowed
 
@@ -178,8 +179,10 @@ bool16 EarlierTableRef(const TableRefAt& a, const TableRefAt& b)
 
 	⚠**A MERGED CELL IS VISITED ONCE, AT ITS ANCHOR.** The covered addresses have no thread of their
 	 own, and GetCellArea at the anchor is what says how far it reaches.
+	★A TABLE STANDING IN SKIPPED TEXT IS LEFT OUT (2026-09-24), exactly as KCMTextRead leaves it out,
+	 so that the two lists still number the same tables the same way (KCMSkippedText.h).
 */
-bool16 ReadTableShapes(ITextModel* model, std::vector<TableShape>& out)
+bool16 ReadTableShapes(ITextModel* model, const KCMSkippedText& skipped, std::vector<TableShape>& out)
 {
 	out.clear();
 
@@ -218,6 +221,8 @@ bool16 ReadTableShapes(ITextModel* model, std::vector<TableShape>& out)
 		//    paragraph - which is where the writer puts it anyway (a nested table is a table of
 		//    its own in this format, KCMStoryDocx says why).
 		shape.fAnchor = dict->GetAnchorTextRange().Start(nil);
+		if (skipped.Contains(shape.fAnchor))
+			continue;				// not a table of the page (KCMSkippedText.h)
 
 		const RowRange rows = table->GetTotalRows();
 		const ColRange cols = table->GetTotalCols();
@@ -304,8 +309,13 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 		return kFalse;
 
 	InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
+	// ★ONE ANSWER TO "WHAT DOES THE PAGE NOT SET" for the tables and the note references below - the
+	//   same one KCMTextRead::ReadStory gave for the paragraphs (KCMSkippedText.h).
+	KCMSkippedText skipped;
+	if (model != nil)
+		skipped.Build(model);
 	std::vector<TableShape> shapes;
-	if (model != nil && !ReadTableShapes(model, shapes))
+	if (model != nil && !ReadTableShapes(model, skipped, shapes))
 		return kFalse;
 
 	// ★**WHICH WAY THE STORY IS SET**, asked of the STORY rather than of a frame: it is a story
@@ -550,6 +560,11 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 			const bool16 isEndnote = (owned[k].fClassID == kEndnoteAnchorBoss) ? kTrue : kFalse;
 			if (!isFootnote && !isEndnote)
 				continue;
+			// ★A REFERENCE IN TEXT THE PAGE DOES NOT SET is not one to place (2026-09-24): a footnote
+			//   deleted under Track Changes has no paragraph to stand in, and refusing the story for it
+			//   was exactly what went wrong (KCMSkippedText.h).
+			if (skipped.Contains(owned[k].fAt))
+				continue;
 
 			const TextIndex refAt = owned[k].fAt;
 
@@ -759,7 +774,11 @@ bool16 KCMTableRefsOfStory(const UIDRef& storyRef, std::vector<UIDRef>& out)
 	if (db == nil)
 		return kFalse;
 
-	// ★THE SAME WALK AND THE SAME ORDER AS ReadTableShapes, so index k here IS table ordinal k there
+	// ★THE SAME WALK AND THE SAME ORDER AS ReadTableShapes, so index k here IS table ordinal k there -
+	//   ★and the same tables left out (2026-09-24): a table deleted under Track Changes is still a
+	//   dictionary, and counting it here would hand the import's next step the WRONG table.
+	KCMSkippedText skipped;
+	skipped.Build(model);
 	std::vector<TableRefAt> found;
 	for (UID next = ::GetUIDRef(hier).GetUID(); next != kInvalidUID; next = hier->NextUID(next))
 	{
@@ -768,6 +787,8 @@ bool16 KCMTableRefsOfStory(const UIDRef& storyRef, std::vector<UIDRef>& out)
 			return kFalse;
 		InterfacePtr<ITableModel> table(dict, UseDefaultIID());
 		if (table == nil)
+			continue;
+		if (skipped.Contains(dict->GetAnchorTextRange().Start(nil)))
 			continue;
 		TableRefAt t;
 		t.fStart = dict->GetThreadBlockTextRange().Start(nil);

@@ -46,6 +46,7 @@
 #include <sstream>		// the kenten kind table's "unknown" spelling
 
 // Project includes:
+#include "KCMSkippedText.h"
 #include "KCMTextRead.h"
 
 namespace
@@ -104,8 +105,10 @@ bool16 EarlierCell(const CellPlace& a, const CellPlace& b)
    @warning MERGED CELLS ARE VISITED ONCE. IsAnchor is what says so - a merged cell is addressed by
 	its anchor (ITableModel.h, at GridAddress), and the covered addresses have no thread of their
 	own. Walking them anyway would ask QueryThread for a cell that is not there.
+   ★A TABLE STANDING IN SKIPPED TEXT IS NOT INDEXED (2026-09-24) - a table deleted under Track
+	Changes, say. KCMSkippedText.h says why, and why every table walk drops the same ones.
 */
-bool16 BuildCellIndex(ITextModel* model, std::vector<CellPlace>& out)
+bool16 BuildCellIndex(ITextModel* model, const KCMSkippedText& skipped, std::vector<CellPlace>& out)
 {
 	out.clear();
 
@@ -131,6 +134,8 @@ bool16 BuildCellIndex(ITextModel* model, std::vector<CellPlace>& out)
 		if (table == nil)
 			continue;		// the story's own dictionary - a dictionary IS a table exactly when
 							// an ITableModel can be got from it (SnpIterTableUseDictHier)
+		if (skipped.Contains(dict->GetAnchorTextRange().Start(nil)))
+			continue;		// not a table of the page (KCMSkippedText.h)
 
 		TableAt at;
 		at.fDictUID = next;
@@ -594,7 +599,8 @@ void ScanBoolAttribute(ITextModel* model, ClassID attribute, std::vector<AttrRun
     marker IS there, and reporting nothing would be the one wrong answer (the same rule
     KentenKindName follows for a kind it does not know).
 */
-void ScanNotes(ITextModel* model, std::vector<AttrRun>& outFootnotes, std::vector<AttrRun>& outEndnotes)
+void ScanNotes(ITextModel* model, const KCMSkippedText& skipped, std::vector<AttrRun>& outFootnotes,
+			   std::vector<AttrRun>& outEndnotes)
 {
 	Utils<ITextUtils> textUtils;
 	if (textUtils == nil)
@@ -617,6 +623,8 @@ void ScanNotes(ITextModel* model, std::vector<AttrRun>& outFootnotes, std::vecto
 		const bool16 isEndnote  = (owned[i].fClassID == kEndnoteAnchorBoss) ? kTrue : kFalse;
 		if (!isFootnote && !isEndnote)
 			continue;			// an inline, an anchored object, a note - none of them is a numbered reference
+		if (skipped.Contains(owned[i].fAt))
+			continue;			// a marker in text the page does not set (KCMSkippedText.h)
 
 		// ★★★THE SPAN SITS ON THE CHARACTER BEFORE THE MARKER, NOT ON THE MARKER ITSELF, and it has
 		//   to: the marker is taken out of the text (ReadStory), so a span standing on it would
@@ -850,8 +858,13 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 	if (model == nil)
 		return kFalse;
 
+	// ★WHAT THE PAGE DOES NOT SET, asked once and handed to every walk below (KCMSkippedText.h).
+	KCMSkippedText skipped;
+	if (!skipped.Build(model))
+		return kFalse;
+
 	std::vector<CellPlace> cells;
-	if (!BuildCellIndex(model, cells))
+	if (!BuildCellIndex(model, skipped, cells))
 		return kFalse;
 
 	// ★THE RUBY IS READ IN THE SAME BREATH AS THE TEXT. A comparison is a photograph of one moment,
@@ -873,7 +886,7 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 	//   document would print after the next edit.
 	std::vector<AttrRun> footnotes;
 	std::vector<AttrRun> endnotes;
-	ScanNotes(model, footnotes, endnotes);
+	ScanNotes(model, skipped, footnotes, endnotes);
 
 	// ★AND WARICHU AND TATE-CHU-YOKO (2026-09-16), off the same moment for the same reason.
 	std::vector<AttrRun> warichu;
@@ -904,6 +917,15 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 			break;
 
 		const TextIndex threadEnd = position + span;
+
+		// ★A THREAD IN TEXT THE PAGE DOES NOT SET is stepped over whole (2026-09-24): deleted text and
+		//   everything standing in it - a footnote or a table deleted under Track Changes keeps a
+		//   thread of its own, which the test below would otherwise take for a live one.
+		if (skipped.Contains(position))
+		{
+			position = threadEnd;
+			continue;
+		}
 
 		// Which place is this? The body unless a cell begins exactly here. The cells are in
 		// TextIndex order and so are the threads, so one cursor walks both.
