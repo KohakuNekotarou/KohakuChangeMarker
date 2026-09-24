@@ -364,7 +364,14 @@ struct KCMRejectedRecord
 	uint32			fRedoneAt;		// the same right after a redo; 0 = never redone
 	int32			fCounterKind;	// kKCMStoryAttrNone for words, else the attribute's kind - which counter to ask
 	mutable KCMStoryChange fShown;	// what GetMergedChange hands out: fLive with the ranges of the moment
-	KCMRejectedRecord() : fNowStart(0), fNowEnd(0), fRejectedAt(0), fRedoneAt(0), fCounterKind(0) {}
+	/** ★WHICH WORDS THE RECORDS AFTER THIS ONE ARE PLACED FOR: kTrue = the Source's (the record Standing), kFalse =
+		the live ones (Undone or Redone). The document changes length at this place with every reject, redo, undo
+		and redo-of-undo, and only the first two are writes of KCM's own; the rest arrive with no signal. So the
+		later records are not slid at write time but RECONCILED whenever the list is read (KCMStoryList's
+		MergedOrder): where this flag disagrees with the state, they slide by the two lengths and the flag follows.
+		Measured 2026-09-24: slid at the redo alone, an undo of that redo left the next record two characters off. */
+	bool16			fPlacedForSource;
+	KCMRejectedRecord() : fNowStart(0), fNowEnd(0), fRejectedAt(0), fRedoneAt(0), fCounterKind(0), fPlacedForSource(kTrue) {}
 };
 
 enum KCMRejectedState { kKCMRejectedStanding = 0, kKCMRejectedUndone = 1, kKCMRejectedRedone = 2 };
@@ -714,8 +721,10 @@ namespace KCMStoryList
 	/** The record's state now, asked of the story's counter in `targetDB` (KCMStoryDiffRun::CountForKind). */
 	KCMRejectedState RejectedStateOf(int32 nth, const KCMRejectedRecord& record, IDataBase* targetDB);
 
-	/** After a redo: the record's place is its live range again, fRedoneAt = counter, and the records after it
-		slide back by what the redo put in. The record is found by its fLive (what, kind, live range). */
+	/** After a redo: fRedoneAt = counter, and the records after it slide back by what the redo put in. ⚠fNowStart /
+		fNowEnd are left as they are - they say where the Source's words stand whenever the record is Standing again
+		(an undo of the redo), and the state chooses between them and the live range. The record is found by its
+		fLive (what, kind, live range). */
 	void MarkRedone(int32 nth, const KCMRejectedRecord& record, uint32 counter);
 
 	/** Drop the records in the Undone or Redone state that have no live twin in fChanges - RunOne, right after

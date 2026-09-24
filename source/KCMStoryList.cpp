@@ -1025,20 +1025,38 @@ bool16 IsTwin(const KCMRejectedRecord& r, const KCMStoryChange& c)
 			&& r.fLive.fTargetStart == c.fTargetStart && r.fLive.fTargetEnd == c.fTargetEnd) ? kTrue : kFalse;
 }
 
+void ShiftRecordsFrom(KCMStoryRow& row, size_t from, int32 writeAt, int32 removed, int32 inserted);
+
 /** The live changes and the records as ONE list in text order (KCMMergeRejected), each record placed where it
-	stands NOW - the Source's words while it is Standing, its live range otherwise. */
-void MergedOrder(const KCMStoryRow& row, std::vector<KCMMergedRef>& out)
+	stands NOW - the Source's words while it is Standing, its live range otherwise.
+	★AND THE LATER RECORDS RECONCILED FIRST (KCMRejectedRecord::fPlacedForSource): a record whose state has
+	  changed since its followers were last placed - an undo, a redo, an undo of a redo, none of them a write of
+	  KCM's own - slides them by the two lengths that place holds, so that every record answers for where its
+	  words really stand. Done on every read because the state is read on every read. */
+void MergedOrder(KCMStoryRow& row, std::vector<KCMMergedRef>& out)
 {
+	IDataBase* const db = KCMArmedTargetDB();
+	for (size_t i = 0; i < row.fRejected.size(); ++i)
+	{
+		KCMRejectedRecord& r = row.fRejected[i];
+		const bool16 standing = (StateNow(row, r, db) == kKCMRejectedStanding) ? kTrue : kFalse;
+		if (standing == r.fPlacedForSource)
+			continue;
+		const int32 lenSource = r.fNowEnd - r.fNowStart;
+		const int32 lenLive = r.fLive.fTargetEnd - r.fLive.fTargetStart;
+		ShiftRecordsFrom(row, i + 1, r.fNowStart, standing ? lenLive : lenSource, standing ? lenSource : lenLive);
+		r.fPlacedForSource = standing;
+	}
+
 	std::vector<KCMRejectedSpan> live;
 	for (size_t i = 0; i < row.fChanges.size(); ++i)
 		live.push_back(KCMRejectedSpan(row.fChanges[i].fTargetStart, row.fChanges[i].fTargetEnd,
 									   static_cast<int32>(row.fChanges[i].fWhat), static_cast<int32>(row.fChanges[i].fKind), kFalse));
 	std::vector<KCMRejectedSpan> recs;
-	IDataBase* const db = KCMArmedTargetDB();
 	for (size_t i = 0; i < row.fRejected.size(); ++i)
 	{
 		const KCMRejectedRecord& r = row.fRejected[i];
-		const bool16 standing = (StateNow(row, r, db) == kKCMRejectedStanding) ? kTrue : kFalse;
+		const bool16 standing = r.fPlacedForSource;		// reconciled above: the state as it was read a moment ago
 		recs.push_back(KCMRejectedSpan(standing ? r.fNowStart : r.fLive.fTargetStart,
 									   standing ? r.fNowEnd : r.fLive.fTargetEnd,
 									   static_cast<int32>(r.fLive.fWhat), static_cast<int32>(r.fLive.fKind), standing));
@@ -1075,7 +1093,7 @@ int32 KCMStoryList::GetMergedChangeCount(int32 nth)
 {
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
 		return 0;
-	const KCMStoryRow& row = gRows[nth];
+	KCMStoryRow& row = gRows[nth];
 	std::vector<KCMMergedRef> order;
 	MergedOrder(row, order);
 	return static_cast<int32>(row.fRefusals.size() + order.size());
@@ -1088,7 +1106,7 @@ const KCMStoryChange* KCMStoryList::GetMergedChange(int32 nth, int32 which)
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || which < 0)
 		return nil;
 
-	const KCMStoryRow& row = gRows[nth];
+	KCMStoryRow& row = gRows[nth];
 
 	// ★THE REFUSALS COME FIRST (2026-09-19): what an import could not put in, before the changes it
 	//   did. They take the first fRefusals.size() indices, and the rest count from there.
@@ -1108,7 +1126,7 @@ const KCMStoryChange* KCMStoryList::GetMergedChange(int32 nth, int32 which)
 		return &row.fChanges[static_cast<size_t>(ref.fIndex)];
 	const KCMRejectedRecord& r = row.fRejected[static_cast<size_t>(ref.fIndex)];
 	r.fShown = r.fLive;
-	if (StateNow(row, r, KCMArmedTargetDB()) == kKCMRejectedStanding)
+	if (r.fPlacedForSource)		// reconciled by MergedOrder a moment ago: Standing
 	{
 		r.fShown.fTargetStart = r.fNowStart;
 		r.fShown.fTargetEnd = r.fNowEnd;
@@ -1122,7 +1140,7 @@ const KCMRejectedRecord* KCMStoryList::RejectedAt(int32 nth, int32 which)
 {
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || which < 0)
 		return nil;
-	const KCMStoryRow& row = gRows[nth];
+	KCMStoryRow& row = gRows[nth];
 	if (which < static_cast<int32>(row.fRefusals.size()))
 		return nil;
 	which -= static_cast<int32>(row.fRefusals.size());
@@ -1165,7 +1183,11 @@ void KCMStoryList::AddRejected(int32 nth, const KCMStoryChange& live, TextIndex 
 		r.fRejectedAt = counter;
 		r.fRedoneAt = 0;
 		r.fCounterKind = counterKind;
-		ShiftRecordsFrom(row, i + 1, live.fTargetStart, removed, inserted);
+		// The followers were placed for the live words (a Standing record is never rejected again); this write
+		// put the Source's back, and MergedOrder's reconcile would do the same slide on the next read.
+		if (!r.fPlacedForSource)
+			ShiftRecordsFrom(row, i + 1, live.fTargetStart, removed, inserted);
+		r.fPlacedForSource = kTrue;
 		return;
 	}
 
@@ -1181,6 +1203,7 @@ void KCMStoryList::AddRejected(int32 nth, const KCMStoryChange& live, TextIndex 
 	rec.fRejectedAt = counter;
 	rec.fRedoneAt = 0;
 	rec.fCounterKind = counterKind;
+	rec.fPlacedForSource = kTrue;		// the followers are slid for the Source's words right here
 	row.fRejected.insert(row.fRejected.begin() + static_cast<std::ptrdiff_t>(slot), rec);
 	ShiftRecordsFrom(row, slot + 1, live.fTargetStart, removed, inserted);
 }
@@ -1197,12 +1220,12 @@ void KCMStoryList::MarkRedone(int32 nth, const KCMRejectedRecord& record, uint32
 		KCMRejectedRecord& r = row.fRejected[i];
 		if (!IsTwin(r, record.fLive))
 			continue;
-		const int32 removed = r.fNowEnd - r.fNowStart;
-		const int32 inserted = r.fLive.fTargetEnd - r.fLive.fTargetStart;
 		r.fRedoneAt = counter;
-		r.fNowStart = r.fLive.fTargetStart;
-		r.fNowEnd = r.fLive.fTargetEnd;
-		ShiftRecordsFrom(row, i + 1, r.fLive.fTargetStart, removed, inserted);
+		// ★fNowStart / fNowEnd STAY: they are where the Source's words stand WHILE THE RECORD IS STANDING, and an
+		//   undo of this redo makes it standing again with nothing else to say where that is (measured 2026-09-24:
+		//   overwritten here, the second redo was refused as "edited since"). Which range is shown or acted on is
+		//   the state's to choose (GetMergedChange), not this write's. ★NOR ARE THE FOLLOWERS SLID HERE: the
+		//   reconcile in MergedOrder does it on the next read, by the state - the same road an undo takes.
 		return;
 	}
 }
@@ -1547,8 +1570,7 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 			// 2026-09-24 (stage 2 C) it says "rejected" for a change the reader took BACK and still standing so
 			// (the "=" row), and "live" for everything else - so a TSV of any date can be read beside another.
 			const KCMRejectedRecord* const rec = RejectedAt(nth, k);
-			const std::string state = (rec != nil && RejectedStateOf(nth, *rec, KCMArmedTargetDB()) == kKCMRejectedStanding)
-				? "rejected" : "live";
+			const std::string state = (rec != nil && rec->fPlacedForSource) ? "rejected" : "live";	// reconciled by RejectedAt
 
 			IKCMStoryEditsFacade::Change shown;
 			const bool16 haveShown = (facade != nil && facade->GetChange(nth, k, shown)) ? kTrue : kFalse;

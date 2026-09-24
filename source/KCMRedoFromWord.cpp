@@ -52,7 +52,8 @@ void Refuse(PMString& why, const char* text)
 /** The paragraph of KCMTextRead's reading that holds `at` - or STARTS at `at`, for a caret on a boundary - as
 	(Where, para) in that place's own numbering, which is what a plan's step names. kFalse outside the story. */
 bool16 WhereParaOf(const std::vector<KCMParaAttrs>& attrs, const std::vector<int32>& starts,
-				   const std::vector<std::string>& paras, TextIndex at, KCMStorySync::Where& outWhere, int32& outPara)
+				   const std::vector<std::string>& paras, TextIndex at, KCMStorySync::Where& outWhere, int32& outPara,
+				   int32& outIndex)
 {
 	int32 k = -1;
 	for (size_t i = 0; i < starts.size() && i < attrs.size() && i < paras.size(); ++i)
@@ -67,6 +68,7 @@ bool16 WhereParaOf(const std::vector<KCMParaAttrs>& attrs, const std::vector<int
 	}
 	if (k < 0)
 		return kFalse;
+	outIndex = k;
 	const KCMParaAttrs& a = attrs[static_cast<size_t>(k)];
 	if (a.IsCell())
 	{
@@ -116,8 +118,7 @@ bool16 KCMPlanRedoFromWord(const UIDRef& targetStory, const UIDRef& sourceStory,
 		return kFalse;
 	}
 
-	// 2. the words at the record's place are still the Source's (design 15-1-8): a record whose place has been
-	//    edited since would have the redo write over the wrong words
+	// 2. the record's place is still inside the story, and the Source's words it took back are read for step 3
 	InterfacePtr<ITextModel> target(targetStory, UseDefaultIID());
 	InterfacePtr<ITextModel> source(sourceStory, UseDefaultIID());
 	if (target == nil || source == nil)
@@ -130,11 +131,6 @@ bool16 KCMPlanRedoFromWord(const UIDRef& targetStory, const UIDRef& sourceStory,
 		|| !WordsAt(source, record.fLive.fSourceStart, record.fLive.fSourceEnd - record.fLive.fSourceStart, sWords))
 	{
 		Refuse(outWhy, "the change's place reaches past the end of the story - compare again");
-		return kFalse;
-	}
-	if (tWords != sWords)
-	{
-		Refuse(outWhy, "the words here were edited since - Ctrl+Z, or import again");
 		return kFalse;
 	}
 
@@ -158,10 +154,33 @@ bool16 KCMPlanRedoFromWord(const UIDRef& targetStory, const UIDRef& sourceStory,
 	}
 	KCMStorySync::Where where;
 	int32 para = 0;
-	if (!WhereParaOf(attrs, starts, paras, record.fNowStart, where, para))
+	int32 index = 0;
+	if (!WhereParaOf(attrs, starts, paras, record.fNowStart, where, para, index))
 	{
 		Refuse(outWhy, "the change's paragraph could not be found - compare again");
 		return kFalse;
+	}
+
+	// ★THE SOURCE'S WORDS HAVE TO BE IN THAT PARAGRAPH (design 15-1-7 and 15-1-8): a hand edit INSIDE it is written
+	//   over with Word's - "Word is the one that counts" - while an edit that moved the change's place into another
+	//   paragraph (words typed above it) is refused rather than have Word's paragraph land on the wrong one.
+	//   ⚠Measured 2026-09-24: asking for the words at the exact place refused every hand edit before the place,
+	//    which is not what 15-1-7 promises. The characters the reader leaves out of a paragraph's text (a break, a
+	//    table's own, a note's marker) are left out here too - a table row's words are its anchor alone, and that
+	//    row is judged by its paragraph.
+	{
+		std::string words;
+		for (int32 i = 0; i < static_cast<int32>(sWords.Length()); ++i)
+		{
+			const int32 cp = static_cast<int32>(sWords.GetChar(i).GetValue());
+			if (cp >= 0x20 && cp != 0xFEFF && cp != 0xFFFC)
+				KCMParaText::AppendUtf8(words, cp);
+		}
+		if (!words.empty() && paras[static_cast<size_t>(index)].find(words) == std::string::npos)
+		{
+			Refuse(outWhy, "the Source's words are not in this paragraph any more - Ctrl+Z, or import again");
+			return kFalse;
+		}
 	}
 
 	// 4. the import's comparison, narrowed to that paragraph. ⚠reshapeTables kFalse, as the import passes it
