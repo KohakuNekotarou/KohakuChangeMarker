@@ -1911,6 +1911,118 @@ void RenumberNotesByThread(KCMStoryShape::Story& s)
 	RemapAllRefs(s, newOf);
 }
 
+/* Narrow
+   ★THE NUMBERS ARE THE FULL PLAN'S AND THE NARROWED PLAN'S AT ONCE: a kSetPara / kDeleteParas names N's own
+   paragraph, which no other step moves (the writer works from the back); a kAddNote names a paragraph of the
+   FINISHED story, which every insert and delete before it moves - so it is found by the full plan's numbering and
+   given the narrowed plan's, where only the kept insert (if any) stands before the paragraph.
+*/
+void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& where, int32 para, Plan& out)
+{
+	out = Plan();
+
+	// N's paragraph `para` in the FULL plan's finished numbering, and the kept insert (if any) right before it
+	int32 insertedBefore = 0;
+	int32 deletedBefore = 0;
+	int32 keptInsert = -1;
+	for (size_t i = 0; i < plan.fSteps.size(); ++i)
+	{
+		const Step& s = plan.fSteps[i];
+		if (!(s.fWhere == where))
+			continue;
+		if (s.fKind == Step::kInsertParas && s.fPara <= para - 1)
+		{
+			insertedBefore += static_cast<int32>(s.fParas.size());
+			if (s.fPara == para - 1)
+				keptInsert = static_cast<int32>(i);
+		}
+		if (s.fKind == Step::kDeleteParas && s.fPara + s.fCount <= para)
+			deletedBefore += s.fCount;
+	}
+	const int32 fullFinished = para + insertedBefore - deletedBefore;	// where N's `para` stands once the whole plan is done
+	const int32 keptCount = (keptInsert >= 0)
+		? static_cast<int32>(plan.fSteps[static_cast<size_t>(keptInsert)].fParas.size()) : 0;
+	const int32 keptFinished = para;		// where it stands once only the kept steps are done: the kept insert is
+											// BEFORE it and moves nothing that N numbers, and nothing else is kept
+
+	for (size_t i = 0; i < plan.fSteps.size(); ++i)
+	{
+		const Step& s = plan.fSteps[i];
+		Step kept = s;
+		switch (s.fKind)
+		{
+			case Step::kSetPara:
+			case Step::kHeld:
+				if (!(s.fWhere == where) || s.fPara != para)
+					continue;
+				break;
+			case Step::kDeleteParas:
+				if (!(s.fWhere == where) || para < s.fPara || para >= s.fPara + s.fCount)
+					continue;
+				kept.fPara = para;
+				kept.fCount = 1;
+				break;
+			case Step::kInsertParas:
+				if (static_cast<int32>(i) != keptInsert)
+					continue;
+				break;
+			case Step::kAddNote:
+			{
+				if (!(s.fWhere == where))
+					continue;
+				// in the kept paragraphs: the inserted ones [fullFinished - keptCount, fullFinished), and N's own at fullFinished
+				const int32 low = fullFinished - keptCount;
+				if (s.fPara < low || s.fPara > fullFinished)
+					continue;
+				kept.fPara = keptFinished - keptCount + (s.fPara - low);	// the same paragraph, in the narrowed plan's numbering
+				break;
+			}
+			case Step::kDeleteNote:
+			{
+				bool16 here = kFalse;
+				const std::vector<KCMStoryShape::Para>* paras = nil;
+				if (where.fKind == Where::kBody)
+					paras = &now.fBody;
+				else if (where.fKind == Where::kCell && where.fTable >= 0
+						 && static_cast<size_t>(where.fTable) < now.fTables.size())
+				{
+					const KCMStoryShape::Table& t = now.fTables[static_cast<size_t>(where.fTable)];
+					if (where.fRow >= 0 && static_cast<size_t>(where.fRow) < t.fRows.size() && where.fCell >= 0
+						&& static_cast<size_t>(where.fCell) < t.fRows[static_cast<size_t>(where.fRow)].fCells.size())
+						paras = &t.fRows[static_cast<size_t>(where.fRow)].fCells[static_cast<size_t>(where.fCell)].fParas;
+				}
+				if (paras != nil && para >= 0 && static_cast<size_t>(para) < paras->size())
+				{
+					const std::vector<KCMStoryShape::NoteRef>& refs = (*paras)[static_cast<size_t>(para)].fNoteRefs;
+					for (size_t k = 0; k < refs.size() && !here; ++k)
+						here = (refs[k].fNote == s.fNote) ? kTrue : kFalse;
+				}
+				if (!here)
+					continue;
+				break;
+			}
+			case Step::kInsertTable:
+				if (where.fKind != Where::kBody || s.fPara != para)
+					continue;
+				break;
+			case Step::kDeleteTable:
+			{
+				if (where.fKind != Where::kBody)
+					continue;
+				const int32 t = s.fWhere.fTable;
+				if (t < 0 || static_cast<size_t>(t) >= now.fTables.size()
+					|| now.fTables[static_cast<size_t>(t)].fInTable != -1
+					|| now.fTables[static_cast<size_t>(t)].fParaIndex != para)
+					continue;
+				break;
+			}
+			default:
+				continue;		// the shape steps: the import's own rounds, never a redo's
+		}
+		out.fSteps.push_back(kept);
+	}
+}
+
 }	// namespace KCMStorySync
 
 // End, KCMStorySync.cpp.
