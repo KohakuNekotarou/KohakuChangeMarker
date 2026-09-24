@@ -791,6 +791,11 @@ private:
 		Change change;
 		if (!this->GetChange(nth, which, change))
 			return kFalse;
+		// ★ONLY A ROW ABOUT WORDS OR A TABLE (the same day's final review): a "!" row (kWhatRefused) has no place
+		//   at all - its range reads 0..0, and it would have offered to reject whatever of the import's stood at
+		//   the story's first character. A ruby/kenten row (kWhatAttr) is stage 2 B's: those are not tracked.
+		if (change.fWhat != Change::kWhatText && change.fWhat != Change::kWhatTable)
+			return kFalse;
 		outStory = UIDRef(targetDB, row.fStoryUID);
 		outFrom = change.fTargetStart;
 		outTo = change.fTargetEnd;
