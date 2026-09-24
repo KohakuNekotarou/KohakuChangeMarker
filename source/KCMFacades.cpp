@@ -56,7 +56,7 @@
 #include "KCMStoryTextImport.h"	// KCMImportStoryText - "Import Story Text..." on the flyout
 #include "KCMRejectImport.h"		// "Reject This Import Change" on a change row (2026-09-24, stage 2 A)
 #include "CmdUtils.h"				// ...wrapped in one command sequence
-#include "ICommandSequence.h"		// IAbortableCmdSeq (the way KCMStoryTextImport.cpp includes it)
+#include "ICommandSequence.h"		// ICommandSequence - a plain sequence (RejectImportChange says why not an abortable one)
 #include "KCMBookPair.h"			// which two books, and their display paths
 #include "KCMBookCompare.h"		// the book comparison itself
 #include "KCMPageNumberMarker.h"	// the folio exclusion toggle
@@ -723,9 +723,18 @@ public:
 		}
 
 		// ★ONE UNDO STEP for the whole row: a replace row is two changes (its insertion and its deletion's mark),
-		//   and one Ctrl+Z has to bring both back. Aborted - so nothing is left on the undo stack - when nothing
-		//   was rejected.
-		IAbortableCmdSeq* sequence = CmdUtils::BeginAbortableCmdSeq("KCMRejectImportChange");
+		//   and one Ctrl+Z has to bring both back.
+		// ⚠★★A PLAIN SEQUENCE, NOT AN ABORTABLE ONE (measured 2026-09-24 on the application): wrapped in
+		//   BeginAbortableCmdSeq, the reject was one step - but undoing it left the undo stack EMPTY: the import's
+		//   own step below it ("Import Story Text") was gone. Unwrapped, the step below survived (two steps);
+		//   BeginCommandSequence keeps both - one step, and the import still undoable under it. ⇒ Asked first
+		//   whether there is anything to reject, so an empty sequence never lands on the stack.
+		if (KCMCountImportChanges(story, from, to) <= 0)
+		{
+			outMessage = "no import change on this row";
+			return 0;
+		}
+		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
 		if (sequence != nil)
 		{
 			PMString name("Reject This Import Change");
@@ -734,12 +743,7 @@ public:
 		}
 		const int32 done = KCMRejectImportChanges(story, from, to);
 		if (sequence != nil)
-		{
-			if (done > 0)
-				CmdUtils::EndCommandSequence(sequence);
-			else
-				CmdUtils::AbortCommandSequence(sequence);
-		}
+			CmdUtils::EndCommandSequence(sequence);
 		if (done < 0)
 		{
 			outMessage = "the story keeps no change history";

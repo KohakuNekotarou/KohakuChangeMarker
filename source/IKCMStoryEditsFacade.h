@@ -643,9 +643,11 @@ public:
 		⚠Appended at the END of the class ([[facade-vtable-slot-append-only]]). */
 	virtual int32	HasImportChange(int32 nth, int32 which) = 0;
 
-	/** Rejects them as ONE undo step ("Reject This Import Change") and compares the row again (RefreshRow) -
-		the list does not follow a reject by itself (measured 2026-09-24). @return how many were rejected; -1
-		when nothing could be done, and then outMessage says why. */
+	/** Rejects them as ONE undo step ("Reject This Import Change" - a plain command sequence: an abortable one
+		took the import's own undo step below it away, measured) and compares the row again (RefreshRow) - the
+		list does not follow a reject by itself (measured 2026-09-24). @return how many were rejected (0 when
+		there were none, and then nothing lands on the undo stack); -1 when nothing could be done, and then
+		outMessage says why. */
 	virtual int32	RejectImportChange(int32 nth, int32 which, PMString& outMessage) = 0;
 };
 
