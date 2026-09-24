@@ -193,6 +193,11 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 			if (change.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused)
 				continue;
 
+			// ★A CHANGE THE READER TOOK BACK IS NOT MARKED (2026-09-24, stage 2 C): the marks say "the two versions
+			//   differ HERE", and at that place they no longer do - the row says "=" for the same reason.
+			if (change.fReplaced)
+				continue;
+
 			// ★★A TABLE ROW MARKS ITS CHANGED CELLS, ONE SPAN EACH (2026-09-19 night, the user: "the
 			//   changed cells should be marked" - even though the list shows one row). The spans are
 			//   Target coordinates, so only the Target's marks read them; the Source side lights the

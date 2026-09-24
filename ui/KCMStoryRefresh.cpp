@@ -179,6 +179,46 @@ bool16 KCMChangeRowRestoreAttr()
 	return (done >= 0) ? kTrue : kFalse;
 }
 
+//----------------------------------------------------------------------------------------
+// KCMChangeRowCanRedo / KCMChangeRowRedo
+//   "Redo from Word" on a TAKEN-BACK change row (2026-09-24, stage 2 C - design section 15).
+//----------------------------------------------------------------------------------------
+
+bool16 KCMChangeRowCanRedo()
+{
+	if (!ChangeRowMenuLive())
+		return kFalse;
+	return Utils<IKCMStoryEditsFacade>()->CanRedoFromWord(gMenuRow, gMenuChange);
+}
+
+bool16 KCMChangeRowRedo()
+{
+	// The same test the menu was greyed by, asked again at the moment of acting (KCMStoryRefreshMenuRow's reason).
+	if (!KCMChangeRowCanRedo())
+	{
+		KCMSetStatus("redo: not a change that was taken back.");
+		return kFalse;
+	}
+	PMString why;
+	const int32 done = Utils<IKCMStoryEditsFacade>()->RedoFromWord(gMenuRow, gMenuChange, why);
+	PMString msg;
+	msg.SetTranslatable(kFalse);
+	if (done < 0)
+	{
+		msg.Append("redo: could not - ");
+		msg.Append(why);
+	}
+	else
+	{
+		msg.Append("redone from Word (");
+		msg.AppendNumber(done);
+		msg.Append(done == 1 ? " write)" : " writes)");
+		msg.Append(" - Ctrl+Z takes it back; Reject This Import Change takes it back one by one");
+	}
+	KCMSetStatus(msg);
+	return (done >= 0) ? kTrue : kFalse;
+}
+
 int32 KCMStoryMenuRow()
 {
 	return gMenuRow;

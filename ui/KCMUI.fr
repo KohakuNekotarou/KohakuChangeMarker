@@ -1332,6 +1332,14 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMChangeRowRestoreAttrMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Redo from Word" on the SAME subtree (2026-09-24, stage 2 C): the THIRD kind of change row - one the reader
+		// took back with either item above, shown "=" - whose paragraph is made what Word shows again, from the
+		// content the import read. ★Live only on a "=" row, where the other two are greyed: still one item per row.
+		kKCMChangeRowRedoActionID,
+		kKCMChangeRowMenuName,
+		kKCMChangeRowRedoMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// ----- The Story Edits CHANGE rows (child rows): ⛔THE SUBTREE IS GONE (2026-09-21) -----
 		// A subtree of its own (kKCMChangeRowMenuName) stood here from 2026-09-12, carrying only items
 		// about the CHANGE the cursor was over: "Copy Source Text" until 2026-09-15, then "Restore
@@ -1737,8 +1745,19 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
+		// "Redo from Word" on a taken-back Story Edits CHANGE row's right-click menu (2026-09-24, stage 2 C).
+		// ⚠Not on the flyout: it acts on the change the menu was popped over (KCMStoryRowEH stashes it).
+		kKCMActionComponentBoss,
+		kKCMChangeRowRedoActionID,
+		kKCMChangeRowRedoMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the row is a taken-back change still standing so (KCMChangeRowCanRedo)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
 		// "Show as XML" on a definition row's context menu (2026-09-09).
-		// ⚠ Not on the flyout, for the same reason as the three items above: it acts on the ROW the
+		// ⚠ Not on the flyout, for the same reason as the four items above: it acts on the ROW the
 		// menu was popped over, which a flyout has no way of naming (KCMStoryRowEH stashes it).
 		kKCMActionComponentBoss,
 		kKCMResourceRowXmlActionID,

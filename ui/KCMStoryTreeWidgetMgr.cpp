@@ -932,10 +932,10 @@ private:
 			//   literal - MSVC would convert a narrow "≠" to the system code page and the cell
 			//   would show whatever that came to (memory cpp-japanese-needs-bom, and the same
 			//   reason KCMLoc.h keeps its Japanese in u"..." and calls SetXString).
-			// (⛔**A FOURTH SIGN, "=", STOOD FOR A CHANGE THE READER HAD TAKEN IN** (2026-09-15): the
-			//  row stayed in the list after the source's words were written into the document, so it
-			//  needed a mark of its own, and "=" was read straight off the sign it replaced - the two
-			//  sides were not equal, and now they were. It went with the restore on 2026-09-21.)
+			// ★★THE FOURTH SIGN, "=", IS BACK (2026-09-24, stage 2 C): a change the reader TOOK BACK - "Reject This
+			//   Import Change" or "Restore from Source" - stays on the list, and "=" is read straight off the sign
+			//   it replaces: the two sides were not equal here, and now they are (the Source's state). Its menu
+			//   offers "Redo from Word". (It stood for a change taken IN from 2026-09-15 to 2026-09-21.)
 			switch (change.fKind)
 			{
 				case 1:  kind = PMString("+"); break;	// insert
@@ -947,6 +947,8 @@ private:
 					break;
 				}
 			}
+			if (change.fReplaced)
+				kind = PMString("=");					// ASCII: no SetXString needed
 			kind.SetTranslatable(kFalse);
 
 			// ★Already the right side for its kind, already cut to length, and already SPLIT where
