@@ -1795,6 +1795,48 @@ bool16 SameTableLayout(const KCMStoryShape::Story& a, const KCMStoryShape::Story
 	return kTrue;
 }
 
+bool16 SameTablePlaces(const KCMStoryShape::Story& a, const KCMStoryShape::Story& b, std::string& why)
+{
+	why.clear();
+	if (a.fBody.size() != b.fBody.size())
+	{
+		why = "the body has " + Num(static_cast<int32>(b.fBody.size())) + " paragraph(s), not "
+			  + Num(static_cast<int32>(a.fBody.size()));
+		return kFalse;
+	}
+	if (a.fTables.size() != b.fTables.size())
+	{
+		why = Num(static_cast<int32>(b.fTables.size())) + " table(s), not " + Num(static_cast<int32>(a.fTables.size()));
+		return kFalse;
+	}
+	for (size_t t = 0; t < a.fTables.size(); ++t)
+	{
+		const KCMStoryShape::Table& x = a.fTables[t];
+		const KCMStoryShape::Table& y = b.fTables[t];
+		if (x.fInTable != y.fInTable || x.fInRow != y.fInRow || x.fInCell != y.fInCell
+			|| x.fParaIndex != y.fParaIndex || x.fOffset != y.fOffset)
+		{
+			why = "table " + Num(static_cast<int32>(t)) + " stands in paragraph " + Num(y.fParaIndex) + " at "
+				  + Num(y.fOffset) + ", not in paragraph " + Num(x.fParaIndex) + " at " + Num(x.fOffset);
+			return kFalse;
+		}
+		for (size_t r = 0; r < x.fRows.size() && r < y.fRows.size(); ++r)
+		{
+			for (size_t c = 0; c < x.fRows[r].fCells.size() && c < y.fRows[r].fCells.size(); ++c)
+			{
+				if (x.fRows[r].fCells[c].fParas.size() != y.fRows[r].fCells[c].fParas.size())
+				{
+					why = "a cell of table " + Num(static_cast<int32>(t)) + " holds "
+						  + Num(static_cast<int32>(y.fRows[r].fCells[c].fParas.size())) + " paragraph(s), not "
+						  + Num(static_cast<int32>(x.fRows[r].fCells[c].fParas.size()));
+					return kFalse;
+				}
+			}
+		}
+	}
+	return kTrue;
+}
+
 void RenumberNotesByReading(KCMStoryShape::Story& s)
 {
 	std::vector<int32> order;

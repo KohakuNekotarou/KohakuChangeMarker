@@ -55,6 +55,14 @@ KCMStoryShape::Story ReshapeOnPaper(const KCMStoryShape::Story& now, const Plan&
 	check after a first round. `why` names the first difference. */
 bool16 SameTableLayout(const KCMStoryShape::Story& a, const KCMStoryShape::Story& b, std::string& why);
 
+/** kTrue when every table of the two stories stands in the same place - the same paragraph of the same
+	body or cell, at the same offset - and the body and every cell hold as many paragraphs (2026-09-24,
+	S3b design 12-3-4). What the import checks after writing: the plan on paper (ApplyToShape) against
+	the document read again, because only the live write can leave a table behind (the matrix's X03
+	did, in the middle of a word, and said nothing). Words are not its business. `why` names the first
+	difference. */
+bool16 SameTablePlaces(const KCMStoryShape::Story& a, const KCMStoryShape::Story& b, std::string& why);
+
 /** The plan carried out on the shape - what the document would hold. `normalizedNow` is Normalize's
 	outNow. For the harness: it is the only way to check a plan without InDesign. */
 KCMStoryShape::Story ApplyToShape(const KCMStoryShape::Story& normalizedNow, const Plan& plan);
