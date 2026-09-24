@@ -730,23 +730,14 @@ public:
 		//   own step below it ("Import Story Text") was gone. Unwrapped, the step below survived (two steps);
 		//   BeginCommandSequence keeps both - one step, and the import still undoable under it. ⇒ Asked first
 		//   whether there is anything to reject, so an empty sequence never lands on the stack.
-		// ★★THE ROW IS COMPARED AGAIN FIRST, AND HAS TO BE THE SAME CHANGE (the same day's live re-check): the list
-		//   does not follow an edit - after Ctrl+Z of a reject it still showed the rows as they were after it, two
-		//   characters off - so a stale row could name the range of a DIFFERENT change of the import (measured:
-		//   the second "・" row then stood exactly on the first "・"). Refreshed here, and the change at this
-		//   index must still have the same kind and the same place on BOTH sides - the source side is what tells
-		//   the two "・" apart. Otherwise nothing is rejected and the reader is asked to right-click again.
+		// ★★THE ROW IS COMPARED AGAIN FIRST, AND HAS TO BE THE SAME CHANGE - SameChangeAfterRefresh says why.
 		Change before;
 		if (!this->GetChange(nth, which, before))
 		{
 			outMessage = "this change is not in the list any more";
 			return -1;
 		}
-		this->RefreshRow(nth);
-		Change now;
-		if (!this->GetChange(nth, which, now) || now.fKind != before.fKind || now.fWhat != before.fWhat
-			|| now.fTargetStart != before.fTargetStart || now.fTargetEnd != before.fTargetEnd
-			|| now.fSourceStart != before.fSourceStart || now.fSourceEnd != before.fSourceEnd)
+		if (!this->SameChangeAfterRefresh(nth, which, before))
 		{
 			outMessage = "the list was out of date - it has been compared again; right-click the change once more";
 			return -1;
@@ -786,12 +777,12 @@ private:
 		  uids (KCMStoryStamp.h) - the door RunOne walks through. */
 	bool16 AttrChangeInBoth(int32 nth, int32 which, UIDRef& outTarget, UIDRef& outSource, Change& outChange)
 	{
-		IDataBase* const targetDB = KCMArmedTargetDB();
-		IDataBase* const sourceDB = KCMArmedSourceDB();
-		if (targetDB == nil || sourceDB == nil || !KCMIsDocDBOpen(targetDB) || !KCMIsDocDBOpen(sourceDB))
-			return kFalse;
+		IDataBase* targetDB = nil;
 		Row row;
-		if (!this->GetRow(nth, row) || (row.fKinds & kKCMStoryKindUnpaired) != 0 || row.fStoryUID == kInvalidUID)
+		if (!this->PairedTargetRow(nth, targetDB, row))
+			return kFalse;
+		IDataBase* const sourceDB = KCMArmedSourceDB();
+		if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
 			return kFalse;
 		if (!this->GetChange(nth, which, outChange) || outChange.fWhat != Change::kWhatAttr)
 			return kFalse;
@@ -803,14 +794,41 @@ private:
 		return kTrue;
 	}
 
+	/** Row `nth` as a PAIRED story of the Target that is open and armed - the first test both change row items
+		make (the reject and the restore; 2026-09-24). An unpaired row (added or removed) has no counterpart, and
+		a story uid of kInvalidUID stands for a file (an import's "!" row about a file with no story). */
+	bool16 PairedTargetRow(int32 nth, IDataBase*& outTargetDB, Row& outRow)
+	{
+		outTargetDB = KCMArmedTargetDB();
+		if (outTargetDB == nil || !KCMIsDocDBOpen(outTargetDB))
+			return kFalse;
+		return (this->GetRow(nth, outRow) && (outRow.fKinds & kKCMStoryKindUnpaired) == 0
+				&& outRow.fStoryUID != kInvalidUID) ? kTrue : kFalse;
+	}
+
+	/** Compares row `nth` again and says whether change `which` is still `before`: the same kind, the same
+		attribute, and the same place on BOTH sides. Both change row items ask this before they act (2026-09-24).
+		★★THE LIST DOES NOT FOLLOW AN EDIT (the reject's live re-check): after Ctrl+Z of a reject it still showed
+		  the rows as they were after it, two characters off - so a stale row could name the range of a DIFFERENT
+		  change (measured: the second "・" row then stood exactly on the first "・"). Refreshed here, and the
+		  change at this index must still be the same on both sides - the source side is what tells the two "・"
+		  apart. Otherwise nothing is done and the reader is asked to right-click again. */
+	bool16 SameChangeAfterRefresh(int32 nth, int32 which, const Change& before)
+	{
+		this->RefreshRow(nth);
+		Change now;
+		return (this->GetChange(nth, which, now) && now.fKind == before.fKind && now.fWhat == before.fWhat
+				&& now.fAttrKind == before.fAttrKind
+				&& now.fTargetStart == before.fTargetStart && now.fTargetEnd == before.fTargetEnd
+				&& now.fSourceStart == before.fSourceStart && now.fSourceEnd == before.fSourceEnd) ? kTrue : kFalse;
+	}
+
 	/** The story and the range of change `which` of row `nth`, in the Target that is open and armed. */
 	bool16 ChangeRangeInTarget(int32 nth, int32 which, UIDRef& outStory, TextIndex& outFrom, TextIndex& outTo)
 	{
-		IDataBase* const targetDB = KCMArmedTargetDB();
-		if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
-			return kFalse;
+		IDataBase* targetDB = nil;
 		Row row;
-		if (!this->GetRow(nth, row) || (row.fKinds & kKCMStoryKindUnpaired) != 0 || row.fStoryUID == kInvalidUID)
+		if (!this->PairedTargetRow(nth, targetDB, row))
 			return kFalse;
 		Change change;
 		if (!this->GetChange(nth, which, change))
@@ -848,14 +866,8 @@ public:
 			outMessage = "this change is not an attribute change of two documents that are open and compared";
 			return -1;
 		}
-		// ★★COMPARED AGAIN FIRST, AND IT HAS TO BE THE SAME CHANGE (RejectImportChange says why: the list does not
-		//   follow an edit, and a stale row can name another change's place). Kind, attribute and BOTH sides' places.
-		this->RefreshRow(nth);
-		Change now;
-		if (!this->GetChange(nth, which, now) || now.fKind != before.fKind || now.fWhat != before.fWhat
-			|| now.fAttrKind != before.fAttrKind
-			|| now.fTargetStart != before.fTargetStart || now.fTargetEnd != before.fTargetEnd
-			|| now.fSourceStart != before.fSourceStart || now.fSourceEnd != before.fSourceEnd)
+		// ★★COMPARED AGAIN FIRST, AND IT HAS TO BE THE SAME CHANGE - SameChangeAfterRefresh says why.
+		if (!this->SameChangeAfterRefresh(nth, which, before))
 		{
 			outMessage = "the list was out of date - it has been compared again; right-click the change once more";
 			return -1;
@@ -863,8 +875,8 @@ public:
 		// ★PLANNED BEFORE THE SEQUENCE BEGINS: a refusal (the words differ, a kenten this build cannot write) writes
 		//   nothing, and an empty sequence never lands on the undo stack - the reject's count-first, in this shape.
 		KCMAttrRestoreJob job;
-		if (!KCMPlanRestoreAttrFromSource(target, source, now.fAttrKind,
-										  now.fTargetStart, now.fTargetEnd, now.fSourceStart, now.fSourceEnd,
+		if (!KCMPlanRestoreAttrFromSource(target, source, before.fAttrKind,
+										  before.fTargetStart, before.fTargetEnd, before.fSourceStart, before.fSourceEnd,
 										  job, outMessage))
 			return -1;
 		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();

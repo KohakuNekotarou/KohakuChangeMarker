@@ -118,14 +118,6 @@ bool16 KCMPlanRestoreAttrFromSource(const UIDRef& targetStory, const UIDRef& sou
 		return kFalse;
 	}
 
-	// ★AN EMPTY SIDE IS THE DIFF SAYING THE WORDS DIFFER AS WELL (CompareParagraphAttr's textDiffered hands the
-	//   other side the paragraph's start and no characters) - then no position over there names these characters.
-	if (tTo <= tFrom || sTo <= sFrom)
-	{
-		Refuse(outWhy, "the words of this paragraph differ as well - fix the words first (after an import: Reject This Import Change), then restore this");
-		return kFalse;
-	}
-
 	InterfacePtr<ITextModel> target(targetStory, UseDefaultIID());
 	InterfacePtr<ITextModel> source(sourceStory, UseDefaultIID());
 	if (target == nil || source == nil)
@@ -154,9 +146,12 @@ bool16 KCMPlanRestoreAttrFromSource(const UIDRef& targetStory, const UIDRef& sou
 	std::vector<KCMAttrPiece> tPieces, sPieces;
 	CollectPieces(tAttrs, tStarts, kind, tPieces);
 	CollectPieces(sAttrs, sStarts, kind, sPieces);
+	// ★THE PLAN'S ONE REFUSAL IS AN EMPTY SIDE, and an empty side is the diff saying THE WORDS DIFFER AS WELL
+	//   (CompareParagraphAttr's textDiffered hands the other side the paragraph's start and no characters) - then no
+	//   position over there names these characters. One test, one message, one place.
 	if (!KCMPlanAttrRestore(tPieces, sPieces, tFrom, tTo, sFrom, sTo, outJob.fPlan))
 	{
-		Refuse(outWhy, "the words of this paragraph differ as well - fix the words first, then restore this");
+		Refuse(outWhy, "the words of this paragraph differ as well - fix the words first (after an import: Reject This Import Change), then restore this");
 		return kFalse;
 	}
 
