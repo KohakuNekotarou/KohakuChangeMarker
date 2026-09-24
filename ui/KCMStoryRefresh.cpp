@@ -80,14 +80,24 @@ bool16 KCMStoryGetMenuChange(int32& outRow, int32& outChange)
 	return (gMenuRow >= 0 && gMenuChange >= 0) ? kTrue : kFalse;
 }
 
-bool16 KCMChangeRowCanReject()
+namespace
+{
+/** What both change row items ask first: a CHANGE row was right-clicked, a comparison is armed, and the mode has
+	story rows. (Asked in this order for the reason KCMStoryRowCanRefresh gives: the mode is a setting that
+	outlives Stop.) What each item then asks of ITS row is its own. */
+bool16 ChangeRowMenuLive()
 {
 	if (gMenuRow < 0 || gMenuChange < 0)
 		return kFalse;
-	// Asked in this order for the reason KCMStoryRowCanRefresh gives: the mode is a setting that outlives Stop.
 	if (!Utils<IKCMCompareFacade>()->IsArmed())
 		return kFalse;
-	if (!KCMModeUsesStoryRows(Utils<IKCMCompareFacade>()->GetCompareMode()))
+	return KCMModeUsesStoryRows(Utils<IKCMCompareFacade>()->GetCompareMode());
+}
+}	// anonymous namespace
+
+bool16 KCMChangeRowCanReject()
+{
+	if (!ChangeRowMenuLive())
 		return kFalse;
 	// ★ASKED OF THE RANGE, NOT REMEMBERED (design 13-1 item 3): a plain comparison, a ruby-only row and a
 	//   document opened again all answer from what the story holds now. 0 greys the item - and a menu whose
@@ -120,6 +130,53 @@ bool16 KCMChangeRowReject()
 	}
 	KCMSetStatus(msg);
 	return (done > 0) ? kTrue : kFalse;
+}
+
+//----------------------------------------------------------------------------------------
+// KCMChangeRowCanRestoreAttr / KCMChangeRowRestoreAttr
+//   "Restore from Source" on an ATTRIBUTE change row (2026-09-24, stage 2 B - design section 14).
+//----------------------------------------------------------------------------------------
+
+bool16 KCMChangeRowCanRestoreAttr()
+{
+	if (!ChangeRowMenuLive())
+		return kFalse;
+	// ★ASKED OF THE ROW'S KIND AND THE TWO DOCUMENTS, not of their contents (design 14-2): whether the characters
+	//   under the mark are the Source's is the action's to find out, and it says why when they are not.
+	return Utils<IKCMStoryEditsFacade>()->CanRestoreAttr(gMenuRow, gMenuChange);
+}
+
+bool16 KCMChangeRowRestoreAttr()
+{
+	// The same test the menu was greyed by, asked again at the moment of acting - the Source document may have
+	// been closed while the menu was up (KCMStoryRefreshMenuRow's reason).
+	if (!KCMChangeRowCanRestoreAttr())
+	{
+		KCMSetStatus("restore: not an attribute change of two open documents.");
+		return kFalse;
+	}
+	PMString why;
+	const int32 done = Utils<IKCMStoryEditsFacade>()->RestoreAttr(gMenuRow, gMenuChange, why);
+	PMString msg;
+	msg.SetTranslatable(kFalse);
+	if (done < 0)
+	{
+		msg.Append("restore: could not - ");
+		msg.Append(why);
+	}
+	else if (done == 0)
+	{
+		msg.Append("restored from the Source - the mark is off there too; Ctrl+Z brings it back");
+	}
+	else
+	{
+		msg.Append("restored from the Source (");
+		msg.AppendNumber(done);
+		msg.Append(done == 1 ? " mark put on)" : " marks put on)");
+		msg.Append(" - Ctrl+Z brings the change back");
+	}
+	KCMSetStatus(msg);
+	return (done >= 0) ? kTrue : kFalse;
 }
 
 int32 KCMStoryMenuRow()

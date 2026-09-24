@@ -55,6 +55,7 @@
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - "Export Story Text..." on the flyout
 #include "KCMStoryTextImport.h"	// KCMImportStoryText - "Import Story Text..." on the flyout
 #include "KCMRejectImport.h"		// "Reject This Import Change" on a change row (2026-09-24, stage 2 A)
+#include "KCMRestoreAttr.h"		// "Restore from Source" on an attribute change row (2026-09-24, stage 2 B)
 #include "CmdUtils.h"				// ...wrapped in one command sequence
 #include "ICommandSequence.h"		// ICommandSequence - a plain sequence (RejectImportChange says why not an abortable one)
 #include "KCMBookPair.h"			// which two books, and their display paths
@@ -729,23 +730,14 @@ public:
 		//   own step below it ("Import Story Text") was gone. Unwrapped, the step below survived (two steps);
 		//   BeginCommandSequence keeps both - one step, and the import still undoable under it. ⇒ Asked first
 		//   whether there is anything to reject, so an empty sequence never lands on the stack.
-		// ★★THE ROW IS COMPARED AGAIN FIRST, AND HAS TO BE THE SAME CHANGE (the same day's live re-check): the list
-		//   does not follow an edit - after Ctrl+Z of a reject it still showed the rows as they were after it, two
-		//   characters off - so a stale row could name the range of a DIFFERENT change of the import (measured:
-		//   the second "・" row then stood exactly on the first "・"). Refreshed here, and the change at this
-		//   index must still have the same kind and the same place on BOTH sides - the source side is what tells
-		//   the two "・" apart. Otherwise nothing is rejected and the reader is asked to right-click again.
+		// ★★THE ROW IS COMPARED AGAIN FIRST, AND HAS TO BE THE SAME CHANGE - SameChangeAfterRefresh says why.
 		Change before;
 		if (!this->GetChange(nth, which, before))
 		{
 			outMessage = "this change is not in the list any more";
 			return -1;
 		}
-		this->RefreshRow(nth);
-		Change now;
-		if (!this->GetChange(nth, which, now) || now.fKind != before.fKind || now.fWhat != before.fWhat
-			|| now.fTargetStart != before.fTargetStart || now.fTargetEnd != before.fTargetEnd
-			|| now.fSourceStart != before.fSourceStart || now.fSourceEnd != before.fSourceEnd)
+		if (!this->SameChangeAfterRefresh(nth, which, before))
 		{
 			outMessage = "the list was out of date - it has been compared again; right-click the change once more";
 			return -1;
@@ -779,14 +771,64 @@ public:
 	}
 
 private:
+	/** The Target and Source stories and the change, when change `which` of row `nth` is an attribute change of a
+		kind that is written back, on a paired story, with both documents open (2026-09-24, stage 2 B).
+		★THE SAME UID ON BOTH SIDES: a Task Start copy is a saved file and a pair saved under a new name keeps its
+		  uids (KCMStoryStamp.h) - the door RunOne walks through. */
+	bool16 AttrChangeInBoth(int32 nth, int32 which, UIDRef& outTarget, UIDRef& outSource, Change& outChange)
+	{
+		IDataBase* targetDB = nil;
+		Row row;
+		if (!this->PairedTargetRow(nth, targetDB, row))
+			return kFalse;
+		IDataBase* const sourceDB = KCMArmedSourceDB();
+		if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
+			return kFalse;
+		if (!this->GetChange(nth, which, outChange) || outChange.fWhat != Change::kWhatAttr)
+			return kFalse;
+		const int32 k = outChange.fAttrKind;
+		if (k != kKCMStoryAttrRuby && k != kKCMStoryAttrKenten && k != kKCMStoryAttrWarichu && k != kKCMStoryAttrTcy)
+			return kFalse;
+		outTarget = UIDRef(targetDB, row.fStoryUID);
+		outSource = UIDRef(sourceDB, row.fStoryUID);
+		return kTrue;
+	}
+
+	/** Row `nth` as a PAIRED story of the Target that is open and armed - the first test both change row items
+		make (the reject and the restore; 2026-09-24). An unpaired row (added or removed) has no counterpart, and
+		a story uid of kInvalidUID stands for a file (an import's "!" row about a file with no story). */
+	bool16 PairedTargetRow(int32 nth, IDataBase*& outTargetDB, Row& outRow)
+	{
+		outTargetDB = KCMArmedTargetDB();
+		if (outTargetDB == nil || !KCMIsDocDBOpen(outTargetDB))
+			return kFalse;
+		return (this->GetRow(nth, outRow) && (outRow.fKinds & kKCMStoryKindUnpaired) == 0
+				&& outRow.fStoryUID != kInvalidUID) ? kTrue : kFalse;
+	}
+
+	/** Compares row `nth` again and says whether change `which` is still `before`: the same kind, the same
+		attribute, and the same place on BOTH sides. Both change row items ask this before they act (2026-09-24).
+		★★THE LIST DOES NOT FOLLOW AN EDIT (the reject's live re-check): after Ctrl+Z of a reject it still showed
+		  the rows as they were after it, two characters off - so a stale row could name the range of a DIFFERENT
+		  change (measured: the second "・" row then stood exactly on the first "・"). Refreshed here, and the
+		  change at this index must still be the same on both sides - the source side is what tells the two "・"
+		  apart. Otherwise nothing is done and the reader is asked to right-click again. */
+	bool16 SameChangeAfterRefresh(int32 nth, int32 which, const Change& before)
+	{
+		this->RefreshRow(nth);
+		Change now;
+		return (this->GetChange(nth, which, now) && now.fKind == before.fKind && now.fWhat == before.fWhat
+				&& now.fAttrKind == before.fAttrKind
+				&& now.fTargetStart == before.fTargetStart && now.fTargetEnd == before.fTargetEnd
+				&& now.fSourceStart == before.fSourceStart && now.fSourceEnd == before.fSourceEnd) ? kTrue : kFalse;
+	}
+
 	/** The story and the range of change `which` of row `nth`, in the Target that is open and armed. */
 	bool16 ChangeRangeInTarget(int32 nth, int32 which, UIDRef& outStory, TextIndex& outFrom, TextIndex& outTo)
 	{
-		IDataBase* const targetDB = KCMArmedTargetDB();
-		if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
-			return kFalse;
+		IDataBase* targetDB = nil;
 		Row row;
-		if (!this->GetRow(nth, row) || (row.fKinds & kKCMStoryKindUnpaired) != 0 || row.fStoryUID == kInvalidUID)
+		if (!this->PairedTargetRow(nth, targetDB, row))
 			return kFalse;
 		Change change;
 		if (!this->GetChange(nth, which, change))
@@ -803,6 +845,55 @@ private:
 	}
 
 public:
+
+	// ---- "Restore from Source" (2026-09-24, stage 2 B - design section 14) ----------------------------
+
+	virtual bool16	CanRestoreAttr(int32 nth, int32 which)
+	{
+		UIDRef target, source;
+		Change change;
+		return this->AttrChangeInBoth(nth, which, target, source, change);
+	}
+
+	virtual int32	RestoreAttr(int32 nth, int32 which, PMString& outMessage)
+	{
+		outMessage.Clear();
+		outMessage.SetTranslatable(kFalse);
+		UIDRef target, source;
+		Change before;
+		if (!this->AttrChangeInBoth(nth, which, target, source, before))
+		{
+			outMessage = "this change is not an attribute change of two documents that are open and compared";
+			return -1;
+		}
+		// ★★COMPARED AGAIN FIRST, AND IT HAS TO BE THE SAME CHANGE - SameChangeAfterRefresh says why.
+		if (!this->SameChangeAfterRefresh(nth, which, before))
+		{
+			outMessage = "the list was out of date - it has been compared again; right-click the change once more";
+			return -1;
+		}
+		// ★PLANNED BEFORE THE SEQUENCE BEGINS: a refusal (the words differ, a kenten this build cannot write) writes
+		//   nothing, and an empty sequence never lands on the undo stack - the reject's count-first, in this shape.
+		KCMAttrRestoreJob job;
+		if (!KCMPlanRestoreAttrFromSource(target, source, before.fAttrKind,
+										  before.fTargetStart, before.fTargetEnd, before.fSourceStart, before.fSourceEnd,
+										  job, outMessage))
+			return -1;
+		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
+		if (sequence != nil)
+		{
+			PMString name("Restore from Source");
+			name.SetTranslatable(kFalse);
+			sequence->SetName(name);
+		}
+		const int32 done = KCMApplyRestoreAttr(target, job, outMessage);
+		if (sequence != nil)
+			CmdUtils::EndCommandSequence(sequence);
+		// ★THE ROW IS COMPARED AGAIN either way: a half write (done < 0) changed the document too, and a row still
+		//   showing a mark that is gone would be offered again.
+		this->RefreshRow(nth);
+		return done;
+	}
 
 	// ⛔**RETIRED SINCE 2026-09-20**, and since 2026-09-21 no restore of any size is left to come back
 	//   to. The slot stays for the vtable reason given above.

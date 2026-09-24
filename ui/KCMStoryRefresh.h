@@ -88,7 +88,7 @@ bool16 KCMStoryRowCanRefresh();
 bool16 KCMStoryRefreshMenuRow();
 
 // ---- "Reject This Import Change" on a CHANGE row (2026-09-24, stage 2 A) ------------------------------
-// ★The change row's menu is back (it went on 2026-09-21 with its last item), carrying ONE item about the
+// ★The change row's menu is back (it went on 2026-09-21 with its last item), carrying items about the
 //  change under the cursor - the rule of 2026-08-21 (a reader pointing at one difference is not handed an
 //  action over the whole story) holds.
 
@@ -105,6 +105,18 @@ bool16 KCMChangeRowCanReject();
 
 /** Rejects them (one undo step) and says how many on the panel's message line. */
 bool16 KCMChangeRowReject();
+
+// ---- "Restore from Source" on an ATTRIBUTE change row (2026-09-24, stage 2 B) ---------------------------------
+// ★The second item on the change row's menu. A's item and this one are never live on the same row (A: words and
+//  tables; B: ruby, kenten, warichu, tate-chu-yoko), so the rule of 2026-08-21 - one difference, one action about
+//  that difference alone - holds for both.
+
+/** Whether "Restore from Source" may be offered: a comparison armed, a mode with story rows, and the change an
+	attribute change of a kind that is written back with both documents open (facade CanRestoreAttr). */
+bool16 KCMChangeRowCanRestoreAttr();
+
+/** Restores it from the Source document (one undo step) and says what on the panel's message line. */
+bool16 KCMChangeRowRestoreAttr();
 
 #endif // __KCMStoryRefresh_h__
 

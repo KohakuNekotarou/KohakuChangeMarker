@@ -1096,6 +1096,12 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMChangeRowReject();
 			break;
 
+		// "Restore from Source" on an ATTRIBUTE change row's menu (2026-09-24, stage 2 B): the mark over those
+		// characters is made what the Source document has, as one undo step, and the row is compared again.
+		case kKCMChangeRowRestoreAttrActionID:
+			KCMChangeRowRestoreAttr();
+			break;
+
 		// "Show as XML" on a DEFINITION row's context menu (2026-09-09). Shows the element the row
 		// names, from both documents, in a modal alert. ★Which row it was is noted the same way as
 		// for the item above, by KCMStorySetMenuRow at the right click.
@@ -1609,6 +1615,13 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//   (design 13-1 item 3, 2026-09-24).
 			listToUpdate->SetNthActionState(i, KCMChangeRowCanReject() ? kEnabledAction
 			                                                            : kDisabled_Unselected);
+		}
+		else if (action == kKCMChangeRowRestoreAttrActionID)
+		{
+			// ★The same test as the execution (KCMChangeRowCanRestoreAttr) - the row's kind and the two documents,
+			//   so a text row, a note row and a closed Source all grey it (design 14-2, 2026-09-24).
+			listToUpdate->SetNthActionState(i, KCMChangeRowCanRestoreAttr() ? kEnabledAction
+			                                                                 : kDisabled_Unselected);
 		}
 		else if (action == kKCMResourceRowXmlActionID)
 		{
