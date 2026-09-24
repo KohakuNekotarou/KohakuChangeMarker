@@ -128,6 +128,18 @@ bool16 KCMChangeRowCanRedo();
 /** Redoes it from Word's content (one undo step) and says what on the panel's message line. */
 bool16 KCMChangeRowRedo();
 
+// ---- "Match the Source" on a TABLE row (2026-09-25 - design section 16) ------------------------------------------
+// ★The fourth item on the change row's menu, live only on a Table ≠ row - where the other three are greyed - so a row
+//  still shows one item. A Table + / − is the change history's (the reject brings it back).
+
+/** Whether "Match the Source" may be offered: a comparison armed, a mode with story rows, and the change a table
+	that stands on both sides and differs, both documents open (facade CanMatchTable). */
+bool16 KCMChangeRowCanMatchTable();
+
+/** Makes the table the Source's (one undo step, rolled back unless it then reads as the Source's) and says what on
+	the panel's message line. */
+bool16 KCMChangeRowMatchTable();
+
 #endif // __KCMStoryRefresh_h__
 
 // End, KCMStoryRefresh.h.

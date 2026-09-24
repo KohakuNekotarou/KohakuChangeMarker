@@ -694,6 +694,21 @@ public:
 		readings of one jump are of one place (a table that starts a new column puts its own characters in
 		the next parcel). Same warnings as GetStoryFrameAt. */
 	virtual UID		GetCaretFrameAt(IDataBase* db, UID storyUID, TextIndex at) = 0;
+
+	/** (2026-09-25 - "Match the Source", design section 16) Whether change `which` of row `nth` is one this acts on: a
+		TABLE row whose table stands on both sides (Table ≠ - kWhatTable, fKind 0), on a paired story, with the Target
+		armed and open and the Source document open. The test the change row's item is greyed by. ⚠It reads NO
+		document; what needs the documents is MatchTable's, which refuses with a reason.
+		⚠Appended at the END of the class ([[facade-vtable-slot-append-only]]). */
+	virtual bool16	CanMatchTable(int32 nth, int32 which) = 0;
+
+	/** Makes that table the Source's - rows, columns, merged cells, header and footer rows, and every cell's content,
+		read from the Source document itself (KCMTableMatch.h says how, and why the table keeps its id) - as ONE undo
+		step ("Match the Source", a plain sequence), then reads the two tables back and ROLLS THE SEQUENCE BACK when
+		they differ (the user's rule: all the way, or not at all), and compares the row again either way. The row is
+		compared again FIRST and has to be the same change. @return how many shape moves were made (0 = only the
+		cells were copied); -1 when nothing was left done, and outMessage says why. */
+	virtual int32	MatchTable(int32 nth, int32 which, PMString& outMessage) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

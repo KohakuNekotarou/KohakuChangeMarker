@@ -45,6 +45,16 @@ bool16 KCMPlanRedoFromWord(const UIDRef& targetStory, const UIDRef& sourceStory,
 int32 KCMApplyRedoFromWord(const UIDRef& targetStory, const KCMStoryShape::Story& now, const KCMStorySync::Plan& plan,
 						   PMString& outWhy);
 
+/** "Redo from Word" of a TABLE record (2026-09-25 - "Match the Source", design section 16-1 item 7: "redo the same
+	way the other redos work"): the table `tableUID` (its dictionary uid in the Target) is made Word's shape again and
+	its cells Word's words, by the import's own road - Compare with the tables reshaped, the shape rounds of THIS
+	table carried out and the story read back (five at most, as the import), then the words plan narrowed to the
+	table's cells and carried out under the import's signature. Plans and writes in one call, INSIDE the caller's
+	command sequence (a shape round has to be read back before the next is planned, so the two cannot be separated
+	as the paragraph redo's are); the caller rolls the sequence back on -1. @return the moves and writes that went
+	in; -1 when nothing could be done, and outWhy says why. */
+int32 KCMRedoTableFromWord(const UIDRef& targetStory, UID tableUID, PMString& outWhy);
+
 #endif // __KCMRedoFromWord_h__
 
 // End, KCMRedoFromWord.h.

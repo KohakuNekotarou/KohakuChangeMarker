@@ -1515,11 +1515,15 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		{
 			table.fTargetStart = tShapes[tI].fAnchorStart;
 			table.fTargetEnd = tShapes[tI].fAnchorEnd;
+			table.fTargetTableUID = tShapes[tI].fDictUID;
 		}
 		if (haveS)
 		{
 			table.fSourceStart = sShapes[sI].fAnchorStart;
 			table.fSourceEnd = sShapes[sI].fAnchorEnd;
+			// ★THE SOURCE'S OWN ID (2026-09-25, "Match the Source"): the dictionary uid in the Source document - a
+			//   shape from the cache carries kInvalidUID, and the match item is greyed by that.
+			table.fSourceTableUID = (sourceModel != nil) ? sShapes[sI].fDictUID : kInvalidUID;
 		}
 
 		// The cell-level changes of THIS table come out; what they say about paired cells stays.
@@ -1554,6 +1558,26 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 			{
 				kept.push_back(ch);
 				continue;
+			}
+
+			// ★★★**A CHANGE IN A CELL THAT IS THE SAME CELL ON BOTH SIDES STAYS A ROW OF ITS OWN** (2026-09-25, the
+			//   user's rule: "the cells whose structure did not change - take those back with the change history;
+			//   the cells whose structure changed - with the new mechanism"). The same address and the same merge
+			//   on both sides (KCMTableCellSame): its words are a Cell Text row, rejected one by one; only a change
+			//   in a cell the shape brought, took or re-merged is folded into the Table row - which is exactly
+			//   what "Match the Source" rewrites (KCMTableMatch.h). ⚠Both tables have to exist for a cell to be the
+			//   same on both sides; a Table + or − folds everything, as before.
+			if (haveT && haveS)
+			{
+				const int32 cellPara = tHolds ? tPara : sPara;
+				const std::vector<KCMParaAttrs>& cellAttrs = tHolds ? targetAttrs : sourceAttrs;
+				const int32 row = cellAttrs[static_cast<size_t>(cellPara)].fCellRow;
+				const int32 col = cellAttrs[static_cast<size_t>(cellPara)].fCellCol;
+				if (KCMTableCellSame(tShapes[tI], sShapes[sI], row, col))
+				{
+					kept.push_back(ch);
+					continue;
+				}
 			}
 
 			if (tHolds)

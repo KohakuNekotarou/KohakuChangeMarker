@@ -1108,6 +1108,13 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMChangeRowRedo();
 			break;
 
+		// "Match the Source" on a TABLE row's menu (2026-09-25, design section 16): the table is reshaped and its cells
+		// copied from the Source document's table, as one undo step that is rolled back unless the table then reads as
+		// the Source's, and the row is compared again.
+		case kKCMChangeRowMatchTableActionID:
+			KCMChangeRowMatchTable();
+			break;
+
 		// "Show as XML" on a DEFINITION row's context menu (2026-09-09). Shows the element the row
 		// names, from both documents, in a modal alert. ★Which row it was is noted the same way as
 		// for the item above, by KCMStorySetMenuRow at the right click.
@@ -1635,6 +1642,13 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//   so, read off the story's counter (design 15-1-3, 2026-09-24).
 			listToUpdate->SetNthActionState(i, KCMChangeRowCanRedo() ? kEnabledAction
 			                                                          : kDisabled_Unselected);
+		}
+		else if (action == kKCMChangeRowMatchTableActionID)
+		{
+			// ★The same test as the execution (KCMChangeRowCanMatchTable) - a Table ≠ row on a paired story with both
+			//   documents open (design 16-2, 2026-09-25).
+			listToUpdate->SetNthActionState(i, KCMChangeRowCanMatchTable() ? kEnabledAction
+			                                                                : kDisabled_Unselected);
 		}
 		else if (action == kKCMResourceRowXmlActionID)
 		{

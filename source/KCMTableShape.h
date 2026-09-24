@@ -84,9 +84,12 @@ struct KCMTableShape
 	TextIndex	fAnchorEnd;		///< one past the last continuation character (one per further row)
 	int32		fHeaderStart;	///< the header rows, [fHeaderStart, fHeaderStart + fHeaderCount) - for the .docx export
 	int32		fHeaderCount;
+	int32		fFooterStart;	///< the footer rows, likewise - for "Match the Source" (2026-09-25)
+	int32		fFooterCount;
 	std::vector<KCMTableCellPlace>	fCells;		///< every anchor cell, in (row, col) order
 
-	KCMTableShape() : fRows(0), fCols(0), fAnchorStart(0), fAnchorEnd(0), fHeaderStart(0), fHeaderCount(0)
+	KCMTableShape() : fRows(0), fCols(0), fAnchorStart(0), fAnchorEnd(0), fHeaderStart(0), fHeaderCount(0),
+					  fFooterStart(0), fFooterCount(0)
 	{
 		// ⚠**fDictUID TOO** (2026-09-20). A default-made shape is handed to a write that may not fill
 		//   it in - a removal leaves no table - and its id is then read to decide what to record. An
@@ -163,6 +166,20 @@ inline const KCMTableCellPlace* KCMTableCellAt(const KCMTableShape& s, int32 row
 		if (s.fCells[i].fRow == row && s.fCells[i].fCol == col)
 			return &s.fCells[i];
 	return nil;
+}
+
+/** Whether the cell at (row, col) is THE SAME CELL on both sides: an anchor cell in `a` and in `b`, reaching as far
+	(the same merge, or none). ★What "Match the Source" leaves alone and what the Table row does NOT fold (2026-09-25,
+	the user's rule): the words of such a cell are the change history's business; a cell that is only on one side,
+	or merged differently, is the table's shape and is made the Source's whole. */
+inline bool16 KCMTableCellSame(const KCMTableShape& a, const KCMTableShape& b, int32 row, int32 col)
+{
+	if (KCMTableCellAt(a, row, col) == nil || KCMTableCellAt(b, row, col) == nil)
+		return kFalse;
+	int32 ar = 1, ac = 1, br = 1, bc = 1;
+	KCMTableCellSpan(a, row, col, ar, ac);
+	KCMTableCellSpan(b, row, col, br, bc);
+	return (ar == br && ac == bc) ? kTrue : kFalse;
 }
 
 #ifndef KCM_TABLESHAPE_STANDALONE

@@ -92,10 +92,13 @@ bool16 KCMReadTableShapes(ITextModel* model, const KCMSkippedText& skipped, std:
 		const RowRange rows = table->GetTotalRows();
 		const ColRange cols = table->GetTotalCols();
 		const RowRange header = table->GetHeaderRows();
+		const RowRange footer = table->GetFooterRows();
 		shape.fRows = rows.count;
 		shape.fCols = cols.count;
 		shape.fHeaderStart = header.start;
 		shape.fHeaderCount = header.count;
+		shape.fFooterStart = footer.start;
+		shape.fFooterCount = footer.count;
 
 		for (int32 r = rows.start; r < rows.start + rows.count; ++r)
 		{

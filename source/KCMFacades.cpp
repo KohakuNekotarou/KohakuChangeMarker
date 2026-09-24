@@ -61,6 +61,7 @@
 #include "IDataBase.h"			// SaveRestoreModifiedState - reading the two stories must not dirty them
 #include "WideString.h"
 #include "KCMRedoFromWord.h"		// "Redo from Word" on a change the reader took back (2026-09-24, stage 2 C)
+#include "KCMTableMatch.h"		// "Match the Source" on a Table row (2026-09-25, design section 16)
 #include "CmdUtils.h"				// ...wrapped in one command sequence
 #include "ICommandSequence.h"		// ICommandSequence - a plain sequence (RejectImportChange says why not an abortable one)
 #include "KCMBookPair.h"			// which two books, and their display paths
@@ -893,6 +894,28 @@ private:
 		return kTrue;
 	}
 
+	/** The Target and Source stories and the change, when change `which` of row `nth` is a TABLE row whose table stands
+		on both sides (Table ≠: kWhatTable, fKind 0 = replace), on a paired story, with both documents open (2026-09-25,
+		"Match the Source"). ⚠Table + and Table − (fKind 1 / 2) are the change history's: the import put them in or
+		took them out as tracked characters, and "Reject This Import Change" brings them back. */
+	bool16 TableChangeInBoth(int32 nth, int32 which, UIDRef& outTarget, UIDRef& outSource, Change& outChange)
+	{
+		IDataBase* targetDB = nil;
+		Row row;
+		if (!this->PairedTargetRow(nth, targetDB, row))
+			return kFalse;
+		IDataBase* const sourceDB = KCMArmedSourceDB();
+		if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
+			return kFalse;
+		if (!this->GetChange(nth, which, outChange) || outChange.fWhat != Change::kWhatTable || outChange.fKind != 0)
+			return kFalse;
+		if (outChange.fReplaced)
+			return kFalse;
+		outTarget = UIDRef(targetDB, row.fStoryUID);
+		outSource = UIDRef(sourceDB, row.fStoryUID);
+		return kTrue;
+	}
+
 	/** Row `nth` as a PAIRED story of the Target that is open and armed - the first test both change row items
 		make (the reject and the restore; 2026-09-24). An unpaired row (added or removed) has no counterpart, and
 		a story uid of kInvalidUID stands for a file (an import's "!" row about a file with no story). */
@@ -1024,6 +1047,87 @@ public:
 		return done;
 	}
 
+	// ---- "Match the Source" (2026-09-25 - design section 16) ---------------------------------------------
+
+	virtual bool16	CanMatchTable(int32 nth, int32 which)
+	{
+		UIDRef target, source;
+		Change change;
+		return this->TableChangeInBoth(nth, which, target, source, change);
+	}
+
+	virtual int32	MatchTable(int32 nth, int32 which, PMString& outMessage)
+	{
+		outMessage.Clear();
+		outMessage.SetTranslatable(kFalse);
+		UIDRef target, source;
+		Change before;
+		if (!this->TableChangeInBoth(nth, which, target, source, before))
+		{
+			outMessage = "this row is not a table that differs between two documents that are open and compared";
+			return -1;
+		}
+		// ★★COMPARED AGAIN FIRST, AND IT HAS TO BE THE SAME CHANGE - SameChangeAfterRefresh says why.
+		if (!this->SameChangeAfterRefresh(nth, which, before))
+		{
+			outMessage = "the list was out of date - it has been compared again; right-click the table row once more";
+			return -1;
+		}
+		// ★THE TWO TABLES BY THEIR OWN IDS, as the comparison paired them (KCMStoryChange::fTargetTableUID).
+		const KCMStoryChange* const modelChange = KCMStoryList::GetMergedChange(nth, which);
+		if (modelChange == nil)
+		{
+			outMessage = "this change is not in the list any more";
+			return -1;
+		}
+		const KCMStoryChange live = *modelChange;
+		if (live.fTargetTableUID == kInvalidUID || live.fSourceTableUID == kInvalidUID)
+		{
+			outMessage = "the two tables could not be named on both sides (is the Source document open?)";
+			return -1;
+		}
+		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
+		if (sequence != nil)
+		{
+			PMString name("Match the Source");
+			name.SetTranslatable(kFalse);
+			sequence->SetName(name);
+		}
+		std::vector<KCMTableMatchKept> kept;
+		int32 done = KCMMatchTableToSource(target, source, live.fTargetTableUID, live.fSourceTableUID, kept, outMessage);
+		// ★★★**ALL THE WAY, OR NOT AT ALL** (the user's rule): the table has to read as the match promised - the
+		//   Source's shape, the Source's content in every cell the shape changed, and untouched words in every cell
+		//   left alone - or the whole sequence is rolled back. ⚠A half-done match (done < 0) is rolled back the same way.
+		std::string why;
+		const bool16 same = (done >= 0)
+			? KCMTableReadsAsSource(target, source, live.fTargetTableUID, live.fSourceTableUID, kept, why)
+			: kFalse;
+		this->EndSequenceOrRollBack(sequence, same);
+		if (done >= 0 && !same)
+		{
+			PMString msg("the table did not come all the way to the Source's (");
+			PMString reason;
+			reason.SetUTF8String(why);
+			msg.Append(reason);
+			msg.Append("), so the match was cancelled - the document is as it was");
+			msg.SetTranslatable(kFalse);
+			outMessage = msg;
+			done = -1;
+		}
+		// ★★THE TABLE STAYS ON THE ROW AS A RECORD (2026-09-25, the user: "make it redoable, the same way as the other
+		//   redos"): the "=" row over the table's anchor characters - as many as the Source's now - with the text
+		//   counter the match left the story at. Its right-click offers "Redo from Word" (a table record is redone
+		//   at the table's size - RedoFromWord), and an undo of the match shows the live Table row again through it.
+		if (done >= 0)
+			KCMStoryList::AddRejected(nth, live, live.fTargetStart,
+									  live.fTargetStart + (live.fSourceEnd - live.fSourceStart),
+									  KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone);
+		// ★THE ROW IS COMPARED AGAIN either way: matched, the live Table row goes (the same table on both sides, by
+		//   id) and the record stands "="; rolled back, the list is compared against what stands there.
+		this->RefreshRow(nth);
+		return done;
+	}
+
 	// ---- "Redo from Word" (2026-09-24, stage 2 C - design section 15) ------------------------------------
 
 	virtual bool16	CanRedoFromWord(int32 nth, int32 which)
@@ -1062,6 +1166,33 @@ public:
 		const KCMRejectedRecord record = *rec;			// a copy: the list is rebuilt below
 		const UIDRef target(targetDB, row.fStoryUID);
 		const UIDRef source(sourceDB, row.fStoryUID);
+
+		// ★★A TABLE RECORD - the "=" a "Match the Source" left (2026-09-25, design 16-1 item 7) - is redone by the
+		//   same mechanism at the table's size: Word's shape and cells back, under the import's signature. It plans
+		//   and writes in one call (a shape round is read back before the next is planned), so it runs inside the
+		//   sequence and the sequence is rolled back when it could not be done whole.
+		if (record.fLive.fWhat == KCMStoryChange::kTable)
+		{
+			if (record.fLive.fTargetTableUID == kInvalidUID)
+			{
+				outMessage = "the table is not named on the record - compare again";
+				return -1;
+			}
+			ICommandSequence* tableSequence = CmdUtils::BeginCommandSequence();
+			if (tableSequence != nil)
+			{
+				PMString name("Redo from Word");
+				name.SetTranslatable(kFalse);
+				tableSequence->SetName(name);
+			}
+			const int32 redone = KCMRedoTableFromWord(target, record.fLive.fTargetTableUID, outMessage);
+			this->EndSequenceOrRollBack(tableSequence, (redone > 0) ? kTrue : kFalse);
+			if (redone > 0)
+				KCMStoryList::MarkRedone(nth, record, KCMStoryDiffRun::CountForKind(target, record.fCounterKind));
+			this->RefreshRow(nth);
+			return redone;
+		}
+
 		// ★PLANNED FIRST (design 15-1-8): nothing kept, the words edited since, nothing to redo - each a refusal
 		//   that writes nothing and lands nothing on the undo stack.
 		KCMStoryShape::Story now;

@@ -212,4 +212,164 @@ int32 KCMApplyRedoFromWord(const UIDRef& targetStory, const KCMStoryShape::Story
 	return wentIn;
 }
 
+//----------------------------------------------------------------------------------------
+// KCMRedoTableFromWord (2026-09-25 - "Match the Source", design section 16-1 item 7)
+//----------------------------------------------------------------------------------------
+
+namespace
+{
+
+/** The index of table `tableUID` among the story's tables in the import's reading (KCMTableRefsOfStory - the ordinal
+	a plan's Where::fTable names), or -1 when the story no longer holds it. */
+int32 OrdinalOfTable(const UIDRef& targetStory, UID tableUID)
+{
+	std::vector<UIDRef> tables;
+	if (!KCMTableRefsOfStory(targetStory, tables))
+		return -1;
+	for (size_t k = 0; k < tables.size(); ++k)
+		if (tables[k].GetUID() == tableUID)
+			return static_cast<int32>(k);
+	return -1;
+}
+
+/** The steps of `plan` about table `ordinal` - its shape moves when `shape`, otherwise its cells' words, marks and
+	notes (a note step stands where its reference is: the cell). ★Every step of every cell of the table is kept, so
+	the numbering inside a cell is the whole plan's; only other places are left out, and a place is a thread of its
+	own. */
+void StepsOfTable(const KCMStorySync::Plan& plan, int32 ordinal, bool16 shape, KCMStorySync::Plan& out)
+{
+	out = KCMStorySync::Plan();
+	for (size_t i = 0; i < plan.fSteps.size(); ++i)
+	{
+		const KCMStorySync::Step& s = plan.fSteps[i];
+		if (s.fWhere.fKind != KCMStorySync::Where::kCell || s.fWhere.fTable != ordinal)
+			continue;
+		if ((s.IsShape() ? kTrue : kFalse) != shape)
+			continue;
+		out.fSteps.push_back(s);
+	}
+}
+
+}	// namespace
+
+int32 KCMRedoTableFromWord(const UIDRef& targetStory, UID tableUID, PMString& outWhy)
+{
+	outWhy.Clear();
+	outWhy.SetTranslatable(kFalse);
+
+	// 1. Word's content, kept by the import (design 15-1-5)
+	KCMStoryShape::Story word;
+	if (!KCMWordKeepGet(targetStory.GetDataBase(), targetStory.GetUID(), word))
+	{
+		Refuse(outWhy, "the Word content is not in memory any more - the document was closed or InDesign restarted; import again");
+		return -1;
+	}
+
+	KCMImportAuthor author;						// signed KohakuChangeMarker, and the name put back when this returns
+	KCMStoryTrackingOn tracking(targetStory);	// recorded, so that it can be rejected again
+	int32 total = 0;
+
+	// 2. the shape rounds of THIS table, as the import runs them (KCMStoryTextImport): planned with the tables
+	//    reshaped, carried out, the story read back, planned again - five at most.
+	for (int32 round = 0; ; ++round)
+	{
+		if (round >= 5)
+		{
+			Refuse(outWhy, "the table's shape is still not Word's after five rounds of changes");
+			return -1;
+		}
+		KCMStoryShape::Story now;
+		bool16 placed = kTrue;
+		if (!KCMStoryFromDocument(targetStory, now, placed) || !placed)
+		{
+			Refuse(outWhy, "the story could not be read the way the import reads it");
+			return -1;
+		}
+		const int32 ordinal = OrdinalOfTable(targetStory, tableUID);
+		if (ordinal < 0)
+		{
+			Refuse(outWhy, "the table is not in the story any more - compare again");
+			return -1;
+		}
+		KCMStorySync::Plan whole;
+		KCMStorySync::Compare(now, word, whole, kTrue);
+		if (whole.fStoryHeld)
+		{
+			outWhy.SetUTF8String(whole.fWhy);
+			outWhy.SetTranslatable(kFalse);
+			return -1;
+		}
+		if (!whole.IsShapeRound())
+			break;
+		KCMStorySync::Plan mine;
+		StepsOfTable(whole, ordinal, kTrue, mine);
+		if (mine.fSteps.empty())
+			break;			// the round is about OTHER tables (ones the reader matched too): this table's shape is Word's
+		KCMSyncResult shape;
+		KCMApplyTableShape(targetStory, mine, shape);
+		if (shape.fRefused > 0)
+		{
+			outWhy = shape.fNotes.empty() ? PMString("a change of the table's shape was refused") : shape.fNotes[0].fWhy;
+			outWhy.SetTranslatable(kFalse);
+			return -1;
+		}
+		total += shape.fTableEdits;
+	}
+
+	// 3. the words, marks and notes of its cells, once the shape is Word's. ⚠reshapeTables kFalse: another table the
+	//    reader matched is HELD here rather than reshaped (this redo is about one table), and this table - Word's
+	//    shape by now - is paired cell for cell.
+	KCMStoryShape::Story now;
+	bool16 placed = kTrue;
+	if (!KCMStoryFromDocument(targetStory, now, placed) || !placed)
+	{
+		Refuse(outWhy, "the story could not be read back the way the import reads it");
+		return -1;
+	}
+	const int32 ordinal = OrdinalOfTable(targetStory, tableUID);
+	if (ordinal < 0)
+	{
+		Refuse(outWhy, "the table is not in the story any more - compare again");
+		return -1;
+	}
+	KCMStorySync::Plan whole;
+	KCMStorySync::Compare(now, word, whole, kFalse);
+	if (whole.fStoryHeld)
+	{
+		outWhy.SetUTF8String(whole.fWhy);
+		outWhy.SetTranslatable(kFalse);
+		return -1;
+	}
+	KCMStorySync::Plan mine;
+	StepsOfTable(whole, ordinal, kFalse, mine);
+	for (size_t i = 0; i < mine.fSteps.size(); ++i)
+	{
+		const KCMStorySync::Step& s = mine.fSteps[i];
+		if (s.fKind == KCMStorySync::Step::kHeld && s.fWhere.fRow < 0)
+		{
+			// the whole table is held: its shape could not be made Word's after all
+			outWhy.SetUTF8String(s.fWhy);
+			outWhy.SetTranslatable(kFalse);
+			return -1;
+		}
+	}
+	if (mine.fSteps.empty())
+	{
+		if (total > 0)
+			return total;	// the shape was the whole difference
+		Refuse(outWhy, "nothing to redo here - the table already reads as Word's");
+		return -1;
+	}
+	KCMSyncResult result;
+	KCMApplySyncPlan(targetStory, now, mine, result);
+	total += result.fWrites + result.fAttrWrites + result.fNoteEdits + result.fTableEdits;
+	if (total == 0)
+	{
+		outWhy = result.fNotes.empty() ? PMString("nothing was written") : result.fNotes[0].fWhy;
+		outWhy.SetTranslatable(kFalse);
+		return -1;
+	}
+	return total;
+}
+
 // End, KCMRedoFromWord.cpp.

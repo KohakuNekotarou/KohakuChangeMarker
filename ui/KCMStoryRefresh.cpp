@@ -222,6 +222,46 @@ bool16 KCMChangeRowRedo()
 	return (done >= 0) ? kTrue : kFalse;
 }
 
+//----------------------------------------------------------------------------------------
+// KCMChangeRowCanMatchTable / KCMChangeRowMatchTable
+//   "Match the Source" on a TABLE row (2026-09-25 - design section 16).
+//----------------------------------------------------------------------------------------
+
+bool16 KCMChangeRowCanMatchTable()
+{
+	if (!ChangeRowMenuLive())
+		return kFalse;
+	return Utils<IKCMStoryEditsFacade>()->CanMatchTable(gMenuRow, gMenuChange);
+}
+
+bool16 KCMChangeRowMatchTable()
+{
+	// The same test the menu was greyed by, asked again at the moment of acting (KCMStoryRefreshMenuRow's reason).
+	if (!KCMChangeRowCanMatchTable())
+	{
+		KCMSetStatus("match: not a table that differs between two open documents.");
+		return kFalse;
+	}
+	PMString why;
+	const int32 done = Utils<IKCMStoryEditsFacade>()->MatchTable(gMenuRow, gMenuChange, why);
+	PMString msg;
+	msg.SetTranslatable(kFalse);
+	if (done < 0)
+	{
+		msg.Append("match: could not - ");
+		msg.Append(why);
+	}
+	else
+	{
+		msg.Append("matched the Source's table (");
+		msg.AppendNumber(done);
+		msg.Append(done == 1 ? " move: " : " moves: ");
+		msg.Append("rows, columns, merges and the cells they changed; the other cells were left alone) - Ctrl+Z brings the difference back");
+	}
+	KCMSetStatus(msg);
+	return (done >= 0) ? kTrue : kFalse;
+}
+
 int32 KCMStoryMenuRow()
 {
 	return gMenuRow;

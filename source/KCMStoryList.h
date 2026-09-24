@@ -304,11 +304,18 @@ struct KCMStoryChange
 	//  own XML kept so that "Undo the Restore" could put it back; and the id and shape the restore
 	//  left standing, which is how "is this table still as I left it" was answered.)
 
+	/** ★**THE TWO TABLES THIS ROW IS ABOUT, BY THEIR OWN IDS** (2026-09-25, "Match the Source" - design 16-2): the
+		Target's table and the Source's, each the dictionary uid in its own database, as KCMStoryDiffRun paired them.
+		kInvalidUID on a side that has no table (Table + / Table −) and for a Source read from the cache (no document
+		to name one in). ⚠Appended at the END, for the reason stated above fReplacedCount's neighbours. */
+	UID			fTargetTableUID;
+	UID			fSourceTableUID;
+
 	KCMStoryChange()
 		: fKind(kReplace), fWhat(kText), fTargetStart(0), fTargetEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
 		  fSourceStart(0), fSourceEnd(0),
 		  fAttrKind(kKCMStoryAttrNone), fOverset(kFalse),
-		  fWholeParagraph(kFalse), fPlace(0), fBreakAt(0) {}
+		  fWholeParagraph(kFalse), fPlace(0), fBreakAt(0), fTargetTableUID(kInvalidUID), fSourceTableUID(kInvalidUID) {}
 };
 
 /** KCMStoryChange::fBreakAt - which end of a whole paragraph's range holds the paragraph break that the

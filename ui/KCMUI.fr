@@ -1340,6 +1340,15 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMChangeRowRedoMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Match the Source" on the SAME subtree (2026-09-25, design section 16): the FOURTH kind of change row - a
+		// TABLE whose rows, columns, merged cells or cells differ from the Source's (Table ≠) - which is reshaped and
+		// refilled from the Source document's table, keeping its id. ★Live only on that row, where the three above
+		// are greyed (a Table + / − is the change history's, reached by the reject): still one item per row.
+		kKCMChangeRowMatchTableActionID,
+		kKCMChangeRowMenuName,
+		kKCMChangeRowMatchTableMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// ----- The Story Edits CHANGE rows (child rows): ⛔THE SUBTREE IS GONE (2026-09-21) -----
 		// A subtree of its own (kKCMChangeRowMenuName) stood here from 2026-09-12, carrying only items
 		// about the CHANGE the cursor was over: "Copy Source Text" until 2026-09-15, then "Restore
@@ -1753,6 +1762,17 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the row is a taken-back change still standing so (KCMChangeRowCanRedo)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Match the Source" on a Story Edits TABLE row's right-click menu (2026-09-25, design section 16).
+		// ⚠Not on the flyout: it acts on the change the menu was popped over (KCMStoryRowEH stashes it).
+		kKCMActionComponentBoss,
+		kKCMChangeRowMatchTableActionID,
+		kKCMChangeRowMatchTableMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the row is a table that differs from the Source's, both open (KCMChangeRowCanMatchTable)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
