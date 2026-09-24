@@ -122,6 +122,57 @@ bool16 KCMChangeRowReject()
 	return (done > 0) ? kTrue : kFalse;
 }
 
+//----------------------------------------------------------------------------------------
+// KCMChangeRowCanRestoreAttr / KCMChangeRowRestoreAttr
+//   "Restore from Source" on an ATTRIBUTE change row (2026-09-24, stage 2 B - design section 14).
+//----------------------------------------------------------------------------------------
+
+bool16 KCMChangeRowCanRestoreAttr()
+{
+	if (gMenuRow < 0 || gMenuChange < 0)
+		return kFalse;
+	if (!Utils<IKCMCompareFacade>()->IsArmed())
+		return kFalse;
+	if (!KCMModeUsesStoryRows(Utils<IKCMCompareFacade>()->GetCompareMode()))
+		return kFalse;
+	// ★ASKED OF THE ROW'S KIND AND THE TWO DOCUMENTS, not of their contents (design 14-2): whether the characters
+	//   under the mark are the Source's is the action's to find out, and it says why when they are not.
+	return Utils<IKCMStoryEditsFacade>()->CanRestoreAttr(gMenuRow, gMenuChange);
+}
+
+bool16 KCMChangeRowRestoreAttr()
+{
+	// The same test the menu was greyed by, asked again at the moment of acting - the Source document may have
+	// been closed while the menu was up (KCMStoryRefreshMenuRow's reason).
+	if (!KCMChangeRowCanRestoreAttr())
+	{
+		KCMSetStatus("restore: not an attribute change of two open documents.");
+		return kFalse;
+	}
+	PMString why;
+	const int32 done = Utils<IKCMStoryEditsFacade>()->RestoreAttr(gMenuRow, gMenuChange, why);
+	PMString msg;
+	msg.SetTranslatable(kFalse);
+	if (done < 0)
+	{
+		msg.Append("restore: could not - ");
+		msg.Append(why);
+	}
+	else if (done == 0)
+	{
+		msg.Append("restored from the Source - the mark is off there too; Ctrl+Z brings it back");
+	}
+	else
+	{
+		msg.Append("restored from the Source (");
+		msg.AppendNumber(done);
+		msg.Append(done == 1 ? " mark put on)" : " marks put on)");
+		msg.Append(" - Ctrl+Z brings the change back");
+	}
+	KCMSetStatus(msg);
+	return (done >= 0) ? kTrue : kFalse;
+}
+
 int32 KCMStoryMenuRow()
 {
 	return gMenuRow;

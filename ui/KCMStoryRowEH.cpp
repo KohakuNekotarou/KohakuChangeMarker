@@ -330,7 +330,8 @@ bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 	if (rowIndex < 0 || e == nil)
 		return TreeNodeEventHandler::RButtonDn(e);
 
-	// ★★A CHANGE ROW HAS ITS OWN MENU AGAIN (2026-09-24, stage 2 A): "Reject This Import Change", about the
+	// ★★A CHANGE ROW HAS ITS OWN MENU AGAIN (2026-09-24, stage 2 A and B): "Reject This Import Change" on a words or
+	//   table row, "Restore from Source" on an attribute row - never both live on one row - each about the
 	//   change under the cursor only - so the rule of 2026-08-21 (never the STORY row's menu on a child row,
 	//   never an action over the whole story) still holds. Its item is greyed where the change's range holds
 	//   none of the import's tracked changes, and a menu with only greyed items does not appear - so a plain

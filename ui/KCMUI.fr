@@ -1323,6 +1323,15 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMChangeRowRejectMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Restore from Source" on the SAME subtree (2026-09-24, stage 2 B): the OTHER kind of change row - a ruby,
+		// kenten, warichu or tate-chu-yoko change - whose mark is made what the Source document has there, read
+		// from the Source story itself. ★The two items are never live on one row (A: words and tables; B: these
+		// four), so a change row shows one item or none - and a footnote / endnote row still raises nothing.
+		kKCMChangeRowRestoreAttrActionID,
+		kKCMChangeRowMenuName,
+		kKCMChangeRowRestoreAttrMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// ----- The Story Edits CHANGE rows (child rows): ⛔THE SUBTREE IS GONE (2026-09-21) -----
 		// A subtree of its own (kKCMChangeRowMenuName) stood here from 2026-09-12, carrying only items
 		// about the CHANGE the cursor was over: "Copy Source Text" until 2026-09-15, then "Restore
@@ -1717,8 +1726,19 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
+		// "Restore from Source" on a Story Edits CHANGE row's right-click menu (2026-09-24, stage 2 B).
+		// ⚠Not on the flyout: it acts on the change the menu was popped over (KCMStoryRowEH stashes it).
+		kKCMActionComponentBoss,
+		kKCMChangeRowRestoreAttrActionID,
+		kKCMChangeRowRestoreAttrMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the row is a restorable attribute change (KCMChangeRowCanRestoreAttr)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
 		// "Show as XML" on a definition row's context menu (2026-09-09).
-		// ⚠ Not on the flyout, for the same reason as the two items above: it acts on the ROW the
+		// ⚠ Not on the flyout, for the same reason as the three items above: it acts on the ROW the
 		// menu was popped over, which a flyout has no way of naming (KCMStoryRowEH stashes it).
 		kKCMActionComponentBoss,
 		kKCMResourceRowXmlActionID,
