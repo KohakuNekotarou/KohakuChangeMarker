@@ -55,7 +55,11 @@
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - "Export Story Text..." on the flyout
 #include "KCMStoryTextImport.h"	// KCMImportStoryText - "Import Story Text..." on the flyout
 #include "KCMRejectImport.h"		// "Reject This Import Change" on a change row (2026-09-24, stage 2 A)
-#include "KCMRestoreAttr.h"		// "Restore from Source" on an attribute change row (2026-09-24, stage 2 B)
+#include "KCMRestoreAttr.h"		// "Restore from Source" on an attribute change row (2026-09-24, stage 2 B); KCMAttrMarksSame
+#include "KCMTextWords.h"		// WordsAt - the take-back's "all the way back, or not at all" reads the words (2026-09-24 night)
+#include "ErrorUtils.h"			// the error state a plain sequence is rolled back by (EndSequenceOrRollBack)
+#include "IDataBase.h"			// SaveRestoreModifiedState - reading the two stories must not dirty them
+#include "WideString.h"
 #include "KCMRedoFromWord.h"		// "Redo from Word" on a change the reader took back (2026-09-24, stage 2 C)
 #include "CmdUtils.h"				// ...wrapped in one command sequence
 #include "ICommandSequence.h"		// ICommandSequence - a plain sequence (RejectImportChange says why not an abortable one)
@@ -771,12 +775,26 @@ public:
 			name.SetTranslatable(kFalse);
 			sequence->SetName(name);
 		}
-		const int32 done = KCMRejectImportChanges(story, from, to);
-		if (sequence != nil)
-			CmdUtils::EndCommandSequence(sequence);
+		int32 done = KCMRejectImportChanges(story, from, to);
+		// ★★★**ALL THE WAY BACK, OR NOT AT ALL** (2026-09-24 night, the user's rule: "if it is not exactly the
+		//   same, cancel the take-back"). The Source's words have to stand where the change stood, or the
+		//   whole sequence is rolled back before it ends - a rejected tracked change InDesign did not bring all
+		//   the way back is then not left half done in the document.
+		const bool16 same = (done > 0)
+			? this->PlaceReadsAsSource(story, live.fTargetStart, live.fTargetStart + (live.fSourceEnd - live.fSourceStart),
+									   live, kKCMStoryAttrNone)
+			: kTrue;
+		this->EndSequenceOrRollBack(sequence, same);
 		if (done < 0)
 		{
 			outMessage = "the story keeps no change history";
+			return -1;
+		}
+		if (!same)
+		{
+			outMessage = "the Source's words did not come all the way back (InDesign left something behind), "
+						 "so the reject was cancelled - the document is as it was";
+			this->RefreshRow(nth);
 			return -1;
 		}
 		// ★★THE CHANGE STAYS ON THE ROW AS A RECORD (2026-09-24, stage 2 C - design 15-1-1): the "=" row, where the
@@ -790,11 +808,66 @@ public:
 		//   status line stayed as they were until a refresh), and a row still showing a change that is gone
 		//   would be offered again. The record above outlives this refresh (PruneRejected keeps a Standing one).
 		if (done > 0)
+		{
 			this->RefreshRow(nth);
+			// ★AND THE "=" IS CHECKED ONCE MORE, AFTER THE REFRESH (the record stands only while its place reads
+			//   as the Source's - KCMRejectedRecord). The rollback above makes this a belt-and-braces line: it
+			//   can only speak when the refresh itself moved something.
+			if (!KCMStoryList::RejectedStanding(nth, live, story.GetDataBase()))
+				outMessage = "the place does not read as the Source's after the reject - the row shows what differs";
+		}
 		return done;
 	}
 
 private:
+	/** Whether [tFrom, tTo) of the Target story reads as the Source's [fSourceStart, fSourceEnd) of `live` - the
+		same characters, and for an attribute (attrKind not kKCMStoryAttrNone) the same marks of that kind
+		(KCMAttrMarksSame). ★Asked INSIDE the reject's and the restore's sequence, before it ends, so that a
+		take-back that did not bring the Source's back can be rolled back whole (EndSequenceOrRollBack).
+		⚠A Source that is not open cannot be read; the answer is then kTrue - nothing can be said against it. */
+	bool16 PlaceReadsAsSource(const UIDRef& target, TextIndex tFrom, TextIndex tTo, const KCMStoryChange& live,
+							  int32 attrKind)
+	{
+		IDataBase* const sourceDB = KCMArmedSourceDB();
+		if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
+			return kTrue;
+		const UIDRef source(sourceDB, target.GetUID());
+		const int32 len = tTo - tFrom;
+		if (len != live.fSourceEnd - live.fSourceStart || len < 0)
+			return kFalse;
+		{
+			IDataBase::SaveRestoreModifiedState targetGuard(target.GetDataBase());
+			IDataBase::SaveRestoreModifiedState sourceGuard(sourceDB);
+			InterfacePtr<ITextModel> tModel(target, UseDefaultIID());
+			InterfacePtr<ITextModel> sModel(source, UseDefaultIID());
+			WideString tWords, sWords;
+			if (!KCMTextWords::WordsAt(tModel, tFrom, len, tWords)
+				|| !KCMTextWords::WordsAt(sModel, live.fSourceStart, len, sWords) || tWords != sWords)
+				return kFalse;
+		}
+		if (attrKind == kKCMStoryAttrNone)
+			return kTrue;
+		return KCMAttrMarksSame(target, source, attrKind, tFrom, tTo, live.fSourceStart, live.fSourceEnd);
+	}
+
+	/** Ends a plain command sequence - committed when `keep`, ROLLED BACK when not.
+		★THE OFFICIAL ROLLBACK OF A PLAIN SEQUENCE (CmdUtils.h, SequenceContext: the changes "are committed if the
+		  global error code is kSuccess when this helper class goes out of scope, otherwise the database is rolled
+		  back to its state before the sequence started"): the error state is raised, the sequence ended, the
+		  error state cleared. ⚠Not an abortable sequence: one of those, ended, took the import's own undo step
+		  below it away (measured 2026-09-24, RejectImportChange says so). ⚠KBS measured (2026-07-31) that this
+		  route does not roll back across SEVERAL documents; here it is one story of one document, which is what
+		  the header promises. */
+	void EndSequenceOrRollBack(ICommandSequence* sequence, bool16 keep)
+	{
+		if (sequence == nil)
+			return;
+		if (!keep)
+			ErrorUtils::PMSetGlobalErrorCode(kFailure);
+		CmdUtils::EndCommandSequence(sequence);
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	}
+
 	/** The Target and Source stories and the change, when change `which` of row `nth` is an attribute change of a
 		kind that is written back, on a paired story, with both documents open (2026-09-24, stage 2 B).
 		★THE SAME UID ON BOTH SIDES: a Task Start copy is a saved file and a pair saved under a new name keeps its
@@ -922,18 +995,32 @@ public:
 			name.SetTranslatable(kFalse);
 			sequence->SetName(name);
 		}
-		const int32 done = KCMApplyRestoreAttr(target, job, outMessage);
-		if (sequence != nil)
-			CmdUtils::EndCommandSequence(sequence);
+		int32 done = KCMApplyRestoreAttr(target, job, outMessage);
+		// ★★★**ALL THE WAY BACK, OR NOT AT ALL** (2026-09-24 night, the user's rule) - the marks of this kind over
+		//   the change's characters have to read as the Source's, or the sequence is rolled back whole. ★Over the
+		//   ROW'S range: the plan's window may be wider (KCMAttrRestorePlan grows it), and what the row promised is
+		//   what is checked. ⚠A half write (done < 0) is rolled back the same way: it changed the document too.
+		const bool16 same = (done >= 0)
+			? this->PlaceReadsAsSource(target, live.fTargetStart, live.fTargetEnd, live, live.fAttrKind)
+			: kFalse;
+		this->EndSequenceOrRollBack(sequence, same);
+		if (done >= 0 && !same)
+		{
+			outMessage = "the Source's marks did not come all the way back, so the restore was cancelled - the document is as it was";
+			done = -1;
+		}
 		// ★★THE CHANGE STAYS ON THE ROW AS A RECORD (2026-09-24, stage 2 C): the "=" row over the same characters (a
 		//   mark changes no length), with the ATTRIBUTE counter the restore left the story at (the text counter cannot
 		//   see a mark - KCMStoryDiffRun::CountForKind says why).
 		if (done >= 0)
 			KCMStoryList::AddRejected(nth, live, live.fTargetStart, live.fTargetEnd,
 									  KCMStoryDiffRun::CountForKind(target, live.fAttrKind), live.fAttrKind);
-		// ★THE ROW IS COMPARED AGAIN either way: a half write (done < 0) changed the document too, and a row still
-		//   showing a mark that is gone would be offered again.
+		// ★THE ROW IS COMPARED AGAIN either way: a rolled-back write leaves the document as it was, but the list is
+		//   compared against what stands there, whatever that is.
 		this->RefreshRow(nth);
+		// ★AND THE "=" IS CHECKED ONCE MORE, AFTER THE REFRESH (KCMRejectedRecord) - belt and braces, as the reject's.
+		if (done >= 0 && !KCMStoryList::RejectedStanding(nth, live, target.GetDataBase()))
+			outMessage = "the marks do not read as the Source's after the restore - the row shows what differs";
 		return done;
 	}
 

@@ -17,6 +17,7 @@
 #include "ITextStoryThreadDict.h"
 #include "IUIDData.h"
 #include "CmdUtils.h"
+#include "ErrorUtils.h"			// the error a failed command leaves standing, cleared before the marker is taken back
 #include "TextChar.h"			// kTextChar_FootnoteMarker
 #include "TextID.h"				// kCreateFootnoteCmdBoss, IID_IFOOTNOTENUMBERING
 #include "UIDList.h"
@@ -24,6 +25,31 @@
 #include "WideString.h"
 
 #include "KCMStoryNoteEdit.h"
+
+namespace
+{
+
+/** The marker put in at `at` taken back out - every way out of KCMInsertNoteAt after the marker is in.
+
+	★★**THE ERROR STATE IS CLEARED FIRST** (2026-09-24, the user's ask of 09-24 morning to bring this to
+	  the official way of taking a failed step back). A command that failed leaves the global error code
+	  standing, and CmdUtils.h:74 says what processing another command then does: protective shutdown.
+	  Clearing it before the DeleteCmd is how every other failed write in KCM (KCMStorySyncApply) and in
+	  KBS is followed.
+	⚠**NOT AN INNER COMMAND SEQUENCE.** The obvious official form - the marker and the note inside an
+	 IAbortableCmdSeq of their own, aborted on failure - was measured by KBS to break the OUTER one
+	 (KBSReplaceEngine.cpp:504-516, 2026-07-31): an inner sequence closed inside an outer abortable
+	 sequence settles what it holds, and the outer abort then has nothing left to undo for it. This runs
+	 inside the import's one abortable sequence, whose Cancel has to take every note back too. */
+void TakeMarkerBack(ITextModelCmds* cmds, TextIndex at)
+{
+	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	InterfacePtr<ICommand> back(cmds->DeleteCmd(at, 1));
+	if (back != nil)
+		CmdUtils::ProcessCommand(back);
+}
+
+}	// anonymous namespace
 
 bool16 KCMCanInsertNoteAt(ITextModel* model, TextIndex at)
 {
@@ -80,11 +106,11 @@ ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outWordsFr
 
 	// ---- 2. the note, built around it ----------------------------------------------------------
 	//
-	// ⚠★★★**FROM HERE ON, EVERY WAY OUT TAKES THE MARKER BACK WITH IT.** The marker is already in
-	//   the text, and a marker with no note behind it is not something a document should be left
-	//   holding - the import goes straight on to the next note, so nothing else would ever clear
+	// ⚠★★★**FROM HERE ON, EVERY WAY OUT TAKES THE MARKER BACK WITH IT** (TakeMarkerBack). The marker is
+	//   already in the text, and a marker with no note behind it is not something a document should be
+	//   left holding - the import goes straight on to the next note, so nothing else would ever clear
 	//   it up. Deleting that one character is also what removes a note that WAS made (the same move
-	//   KCMDeleteNoteAt makes), so one undo serves every failure below.
+	//   KCMDeleteNoteAt makes), so one move serves every failure below.
 	bool16 made = kFalse;
 	InterfacePtr<ICommand> create(CmdUtils::CreateCommand(kCreateFootnoteCmdBoss));
 	if (create != nil)
@@ -99,9 +125,7 @@ ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outWordsFr
 	}
 	if (!made)
 	{
-		InterfacePtr<ICommand> back(cmds->DeleteCmd(at, 1));
-		if (back != nil)
-			CmdUtils::ProcessCommand(back);
+		TakeMarkerBack(cmds, at);
 		whyNot = "the footnote could not be created";
 		whyNot.SetTranslatable(kFalse);
 		return kFailure;
@@ -128,9 +152,7 @@ ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outWordsFr
 		// ⚠**THE NOTE GOES BACK TOO.** It was made, but nothing here can say where its words are,
 		//   so leaving it would put an empty footnote in the document that nobody asked for and the
 		//   caller has already been told could not be made.
-		InterfacePtr<ICommand> back(cmds->DeleteCmd(at, 1));
-		if (back != nil)
-			CmdUtils::ProcessCommand(back);
+		TakeMarkerBack(cmds, at);
 		whyNot = "the new footnote's own text could not be found";
 		whyNot.SetTranslatable(kFalse);
 		return kFailure;

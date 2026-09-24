@@ -39,8 +39,8 @@ class UIDList;
 /** Write the stories of `db` into a new folder under `parent`.
 
     The folder is named "<document name> YYYY-MM-DD HHMMSS" and each story becomes one file called
-    "<its UID in decimal>.docx", checked against its own reader - both sides of Word's revision
-    marks - before it is written. A story Word's format cannot hold is refused, by story and by
+    "<its UID in decimal>.docx", checked against its own reader (written, read straight back, and
+    compared) before it is written. A story Word's format cannot hold is refused, by story and by
     reason, rather than written and found out later.
 
     ★**THE UID IS DECIMAL BECAUSE "Show Story IDs" PRINTS IT THAT WAY.** The reader matches a file

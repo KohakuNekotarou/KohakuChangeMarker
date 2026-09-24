@@ -70,18 +70,59 @@ void CollectPieces(const std::vector<KCMParaAttrs>& attrs, const std::vector<int
 
 using KCMTextWords::WordsAt;
 using KCMTextWords::Refuse;
+using KCMTextWords::PMStringOfUtf8;
 
-/** A span's value as a PMString. ⚠THE VALUE IS UTF-8 AND PMString IS NOT: Append(c_str()) would put the bytes in
-	as the platform's encoding, and a custom kenten's own character came out as mojibake that way once
-	(KCMStoryAttrPour measured it). SetUTF8String also marks the string non-translatable. */
-PMString Utf8(const std::string& text)
+/** The pieces of `all` that reach into [from, to), clipped to it and moved by `shift` - what a window holds. */
+void PiecesInWindow(const std::vector<KCMAttrPiece>& all, int32 from, int32 to, int32 shift,
+					std::vector<KCMAttrPiece>& out)
 {
-	PMString s;
-	s.SetUTF8String(text);
-	return s;
+	out.clear();
+	for (size_t i = 0; i < all.size(); ++i)
+	{
+		const KCMAttrPiece& p = all[i];
+		const int32 s = (p.fStart > from) ? p.fStart : from;
+		const int32 e = (p.fEnd < to) ? p.fEnd : to;
+		if (e > s)
+			out.push_back(KCMAttrPiece(s + shift, e + shift, p.fValue, p.fGroup));
+	}
 }
 
 }	// namespace
+
+//----------------------------------------------------------------------------------------
+// KCMAttrMarksSame
+//----------------------------------------------------------------------------------------
+
+bool16 KCMAttrMarksSame(const UIDRef& targetStory, const UIDRef& sourceStory, int32 kind,
+						TextIndex tFrom, TextIndex tTo, TextIndex sFrom, TextIndex sTo)
+{
+	if (tTo - tFrom != sTo - sFrom || tTo < tFrom)
+		return kFalse;
+	std::vector<std::string> tParas, sParas;
+	std::vector<KCMParaAttrs> tAttrs, sAttrs;
+	std::vector<int32> tStarts, sStarts;
+	{
+		IDataBase::SaveRestoreModifiedState targetGuard(targetStory.GetDataBase());
+		IDataBase::SaveRestoreModifiedState sourceGuard(sourceStory.GetDataBase());
+		if (!KCMTextRead::ReadStory(targetStory, tParas, tAttrs, tStarts)
+			|| !KCMTextRead::ReadStory(sourceStory, sParas, sAttrs, sStarts))
+			return kFalse;
+	}
+	std::vector<KCMAttrPiece> tAll, sAll, tIn, sIn;
+	CollectPieces(tAttrs, tStarts, kind, tAll);
+	CollectPieces(sAttrs, sStarts, kind, sAll);
+	PiecesInWindow(tAll, tFrom, tTo, 0, tIn);
+	PiecesInWindow(sAll, sFrom, sTo, tFrom - sFrom, sIn);		// at Target positions, like the Target's own
+	if (tIn.size() != sIn.size())
+		return kFalse;
+	for (size_t i = 0; i < tIn.size(); ++i)
+	{
+		if (tIn[i].fStart != sIn[i].fStart || tIn[i].fEnd != sIn[i].fEnd || tIn[i].fValue != sIn[i].fValue
+			|| tIn[i].fGroup != sIn[i].fGroup)
+			return kFalse;
+	}
+	return kTrue;
+}
 
 //----------------------------------------------------------------------------------------
 // KCMPlanRestoreAttrFromSource
@@ -163,7 +204,7 @@ bool16 KCMPlanRestoreAttrFromSource(const UIDRef& targetStory, const UIDRef& sou
 		{
 			int16 k = 0;
 			int16 c = 0;
-			const PMString v = Utf8(plan.fWrites[i].fValue);
+			const PMString v = PMStringOfUtf8(plan.fWrites[i].fValue);
 			if (!KCMKentenKindOf(v, k) && !KCMKentenCustomCharOf(v, c))
 			{
 				outWhy = "a kenten mark of the Source cannot be written back (\"";
@@ -236,13 +277,13 @@ int32 KCMApplyRestoreAttr(const UIDRef& targetStory, const KCMAttrRestoreJob& jo
 		switch (job.fKind)
 		{
 			case kKCMStoryAttrRuby:
-				err = KCMApplyRuby(model, w.fStart, l, Utf8(w.fValue), w.fGroup);
+				err = KCMApplyRuby(model, w.fStart, l, PMStringOfUtf8(w.fValue), w.fGroup);
 				break;
 			case kKCMStoryAttrKenten:
 			{
 				int16 k = IKentenStyle::Kenten_None;
 				int16 c = 0;
-				const PMString v = Utf8(w.fValue);
+				const PMString v = PMStringOfUtf8(w.fValue);
 				if (!KCMKentenKindOf(v, k) && KCMKentenCustomCharOf(v, c))
 					k = IKentenStyle::Kenten_Custom;		// the plan already found one of the two answers
 				err = KCMApplyKentenKind(model, w.fStart, l, k, c);

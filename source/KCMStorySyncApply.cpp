@@ -48,6 +48,7 @@
 #include "KCMParagraphStyle.h"		// the next style for a paragraph put in after another
 #include "KCMTextDiff.h"			// ToCodePoints / Diff
 #include "KCMTextRead.h"			// ReadStory - the document, read the way the export read it
+#include "KCMTextWords.h"			// WideOfUtf8 - the file's UTF-8 as the words a text command takes
 #include "KCMStoryTextExport.h"		// KCMTableRefsOfStory - the tables by the reading's ordinals
 
 namespace
@@ -377,10 +378,7 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 			for (int32 k = piece.fBStart; k < piece.fBStart + piece.fBCount
 								   && k < static_cast<int32>(b.size()); ++k)
 				KCMParaText::AppendUtf8(text, b[k]);
-
-			PMString asString;
-			asString.SetUTF8String(text);		// marks it not translatable, which is what we want
-			words = WideString(asString);
+			words = KCMTextWords::WideOfUtf8(text);
 		}
 
 		// ★★A DELETION IS A DeleteCmd (2026-09-17, the user's call: "match the official way") - the one
@@ -490,9 +488,7 @@ bool16 PourNoteWords(ITextModel* model, TextIndex from, TextIndex to,
 			text += '\r';
 		text += paras[p].fText;
 	}
-	PMString asString;
-	asString.SetUTF8String(text);
-	const WideString words(asString);
+	const WideString words = KCMTextWords::WideOfUtf8(text);
 
 	InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(model, from, (to > from) ? (to - from) : 0, words));
 	// ★**nil MEANS "NOTHING TO WRITE", NOT "COULD NOT WRITE"** (KCMStoryRestore.h says so): no
@@ -540,9 +536,7 @@ int32 InsertParagraphs(ITextModel* model, TextIndex at, bool16 afterReturn,
 		if (!afterReturn)
 			text += '\r';
 	}
-	PMString asString;
-	asString.SetUTF8String(text);
-	const WideString words(asString);
+	const WideString words = KCMTextWords::WideOfUtf8(text);
 
 	InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(model, at, 0, words));
 	if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
@@ -640,35 +634,6 @@ std::vector<size_t> DocParasOf(const std::vector<KCMParaAttrs>& attrs, const KCM
 	return out;
 }
 
-/** Every place of a story's shape: the body, every cell, every note - in that order. */
-std::vector<KCMStorySync::Where> PlacesOf(const KCMStoryShape::Story& s)
-{
-	std::vector<KCMStorySync::Where> out;
-	out.push_back(KCMStorySync::Where::Body());
-	for (size_t t = 0; t < s.fTables.size(); ++t)
-		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
-			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
-				out.push_back(KCMStorySync::Where::Cell(static_cast<int32>(t), static_cast<int32>(r), static_cast<int32>(c)));
-	for (size_t n = 0; n < s.fNotes.size(); ++n)
-		out.push_back(KCMStorySync::Where::Note(static_cast<int32>(n)));
-	return out;
-}
-
-const std::vector<KCMStoryShape::Para>* ParasOfShape(const KCMStoryShape::Story& s, const KCMStorySync::Where& w)
-{
-	if (w.fKind == KCMStorySync::Where::kBody)
-		return &s.fBody;
-	if (w.fKind == KCMStorySync::Where::kNote)
-		return (w.fNote >= 0 && static_cast<size_t>(w.fNote) < s.fNotes.size()) ? &s.fNotes[static_cast<size_t>(w.fNote)] : nil;
-	if (w.fTable < 0 || static_cast<size_t>(w.fTable) >= s.fTables.size())
-		return nil;
-	const KCMStoryShape::Table& t = s.fTables[static_cast<size_t>(w.fTable)];
-	if (w.fRow < 0 || static_cast<size_t>(w.fRow) >= t.fRows.size()
-		|| w.fCell < 0 || static_cast<size_t>(w.fCell) >= t.fRows[static_cast<size_t>(w.fRow)].fCells.size())
-		return nil;
-	return &t.fRows[static_cast<size_t>(w.fRow)].fCells[static_cast<size_t>(w.fCell)].fParas;
-}
-
 void Say(KCMSyncResult& out, const char* kind, const std::string& why, bool16 heldBack = kFalse, bool16 whole = kFalse)
 {
 	KCMSyncNote n;
@@ -713,7 +678,6 @@ void KCMApplySyncPlan(const UIDRef& storyRef, const KCMStoryShape::Story& now,
 		const KCMStorySync::Step& s = plan.fSteps[i];
 		if (s.fKind != KCMStorySync::Step::kHeld)
 			continue;
-		++out.fHeld;
 		// ★A TATE-CHU-YOKO KEPT UNDER A WARICHU IS HELD BACK ON PURPOSE (Word cannot carry it), not refused
 		const bool16 kept = (s.fWhat == "Tcy") ? kTrue : kFalse;
 		const char* kind = kept ? "Word" : ((s.fWhat == "Table") ? "Table" : "Para");
@@ -940,10 +904,11 @@ void KCMApplySyncPlan(const UIDRef& storyRef, const KCMStoryShape::Story& now,
 		Say(out, "Attr", std::string("the story could not be read again, so its ruby and kenten were left alone"));
 		return;
 	}
-	const std::vector<KCMStorySync::Where> places = PlacesOf(finished);
+	std::vector<KCMStorySync::Where> places;
+	KCMStorySync::AllPlaces(finished, places);
 	for (size_t p = 0; p < places.size(); ++p)
 	{
-		const std::vector<KCMStoryShape::Para>* want = ParasOfShape(finished, places[p]);
+		const std::vector<KCMStoryShape::Para>* want = KCMStorySync::ParasAt(finished, places[p]);
 		const std::vector<size_t> doc = DocParasOf(attrs, places[p]);
 		if (want == nil || doc.size() != want->size())
 			continue;		// a place a refusal above has already named
@@ -1049,9 +1014,7 @@ void InsertTables(const UIDRef& storyRef, const KCMStorySync::Plan& plan, KCMSyn
 		const TextIndex where = at[i].first.first;
 		const bool16 atHead = (s.fPara < 0 || static_cast<size_t>(s.fPara) >= body.size()) ? kTrue : kFalse;	// the test that chose `pos`
 		{
-			PMString asString;								// the way InsertParagraphs builds its words
-			asString.SetUTF8String(std::string("\r"));
-			const WideString aReturn(asString);
+			const WideString aReturn = KCMTextWords::WideOfUtf8(std::string("\r"));	// the way InsertParagraphs builds its words
 			InterfacePtr<ICommand> newPara(KCMCreateWordsWriteCmd(model, where, 0, aReturn));
 			if (newPara == nil || CmdUtils::ProcessCommand(newPara) != kSuccess)
 			{

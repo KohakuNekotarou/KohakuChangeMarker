@@ -3,16 +3,19 @@
 //  KCMStoryTextExport.cpp -- see the header.
 //
 //  The shape of the work: ask KCMTextRead for a story's paragraphs (it already reports, for each
-//  one, whether it is body text, a cell of some table, or a footnote's own words), ask ITableModel
-//  for the things a paragraph cannot know - how many rows the table has, which cells are merged,
-//  which rows are header rows - hand both to KCMStoryDocx::WriteParts, and put the bytes in a file.
+//  one, whether it is body text, a cell of some table, or a footnote's own words), ask
+//  KCMReadTableShapes for the things a paragraph cannot know - how many rows the table has, which
+//  cells are merged, which rows are header rows - hand both to KCMStoryDocx::WriteParts, and put
+//  the bytes in a file. (Until 2026-09-24 this file walked the tables a second time, into a struct
+//  of its own that said the same things; the Table row's reading says them once now.)
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
-#include <windows.h>				// CreateDirectoryW - Windows only, like the rest of KCM's file work
-#include <ctime>
+#include <cstdio>					// swprintf_s - the file's name
+#include <ctime>					// the folder's time stamp
+#include <cwchar>
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -22,15 +25,11 @@
 #include "IPMStream.h"
 #include "IStoryList.h"
 #include "IStoryOptions.h"			// IsVertical - the story's own setting, not a frame's
-#include "ITableModel.h"
 #include "ITextModel.h"
 #include "ITextStoryThread.h"		// a footnote reference IS its note's thread - which note a reference belongs to
-#include "ITextStoryThreadDict.h"
-#include "ITextStoryThreadDictHier.h"
 #include "ITextUtils.h"				// CollectOwnedItems + OwnedItemDataList - the walk KCMTextRead::ScanNotes uses
-#include "FileUtils.h"
+#include "FileUtils.h"				// the folder made and the file written the SDK's way (DoesFileExist / CreateFolderIfNeeded)
 #include "StreamUtil.h"
-#include "TableTypes.h"
 #include "TextID.h"					// kFootnoteReferenceBoss
 #include "UIDList.h"
 #include "UIDRef.h"
@@ -39,6 +38,7 @@
 #include "KCMStoryTextExport.h"
 #include "KCMStoryShape.h"
 #include "KCMStoryDocx.h"		// the .docx road (2026-09-19)
+#include "KCMTableShape.h"		// KCMReadTableShapes - the story's tables, the one reading (2026-09-24)
 #include "KCMTextRead.h"
 #include "KCMSkippedText.h"		// what the page does not set - deleted text and what stands in it (2026-09-24)
 #include "KCMParaText.h"
@@ -94,7 +94,13 @@ std::wstring DocumentStem(IDataBase* db)
 	return stem;
 }
 
-/** "<parent>\<stem> YYYY-MM-DD HHMMSS", created. kFalse when it could not be made. */
+/** "<parent>\<stem> YYYY-MM-DD HHMMSS", created. kFalse when it could not be made.
+
+	★THE SDK'S OWN FILE UTILITIES (2026-09-24 - until then CreateDirectoryW, the one Win32 call in
+	  this half). ⚠A FOLDER ALREADY STANDING THERE IS NOT SUCCESS: the stamp runs to the second, so
+	  one of this name was made by something else, and writing into it would be the silent overwrite
+	  the stamp exists to prevent. CreateFolderIfNeeded answers kTrue for one that exists, which is
+	  why DoesFileExist is asked first. */
 bool16 MakeDatedFolder(const std::wstring& parent, const std::wstring& stem, std::wstring& outFolder)
 {
 	wchar_t stamp[40] = { 0 };
@@ -111,160 +117,20 @@ bool16 MakeDatedFolder(const std::wstring& parent, const std::wstring& stem, std
 	folder += stem;
 	folder += stamp;
 
-	// ⚠ERROR_ALREADY_EXISTS is not success: the stamp runs to the second, so a folder of this name
-	//   already standing there was made by something else, and writing into it would be the silent
-	//   overwrite the stamp exists to prevent.
-	if (::CreateDirectoryW(folder.c_str(), nil) == 0)
+	PMString path;
+	path.SetTranslatable(kFalse);
+	path.AppendW(reinterpret_cast<const UTF16TextChar*>(folder.c_str()));
+	const IDFile file = FileUtils::PMStringToSysFile(path);
+	if (FileUtils::DoesFileExist(file) || !FileUtils::CreateFolderIfNeeded(file))
 		return kFalse;
 
 	outFolder = folder;
 	return kTrue;
 }
 
-/*	TableShape
-	What a table is, as against what its text says - none of which a paragraph's attributes carry.
-*/
-struct CellShape
-{
-	int32	fRow;
-	int32	fCol;
-	int32	fRowSpan;
-	int32	fColSpan;
-
-	CellShape() : fRow(0), fCol(0), fRowSpan(1), fColSpan(1) {}
-};
-
-struct TableShape
-{
-	// ⚠**TWO PLACES, AND THEY ARE NOWHERE NEAR EACH OTHER.** fStart is where the table's CELLS
-	//  begin and fAnchor is where the table STANDS in the text. ITableTextContent.h:41-44 is the
-	//  reason they have to be kept apart: a table's threads are "ALWAYS at greater TextIndex than
-	//  the Text Story Thread that the Table Model is anchored in", so fStart is past the whole
-	//  body for EVERY table of a story - it orders the tables and says nothing about where any of
-	//  them stands.
-	TextIndex				fStart;			// where the cells' text begins - the ordinals' order
-	TextIndex				fAnchor;		// where the table stands in the text
-	int32					fRowCount;
-	int32					fHeaderStart;
-	int32					fHeaderCount;
-	std::vector<CellShape>	fCells;			// the anchors only, in row then column order
-
-	TableShape() : fStart(0), fAnchor(0), fRowCount(0), fHeaderStart(0), fHeaderCount(0) {}
-};
-
-bool16 EarlierTable(const TableShape& a, const TableShape& b)
-{
-	return a.fStart < b.fStart;
-}
-
-/** One table's model and where its cells begin - KCMTableRefsOfStory's sort key. */
-struct TableRefAt
-{
-	TextIndex	fStart;
-	UIDRef		fRef;
-};
-
-bool16 EarlierTableRef(const TableRefAt& a, const TableRefAt& b)
-{
-	return a.fStart < b.fStart;
-}
-
-/*	ReadTableShapes
-	Every table of a story, in the order they stand in it.
-
-	★**THE WALK IS KCMTextRead's**, which is Adobe's own (SnpIterTableUseDictHier): a dictionary IS
-	a table exactly when an ITableModel can be got from it. Keeping the same shape matters because
-	the ORDER this produces has to be the order KCMTextRead numbered the cells in - fTableOrdinal
-	is an index into this list.
-
-	⚠**A MERGED CELL IS VISITED ONCE, AT ITS ANCHOR.** The covered addresses have no thread of their
-	 own, and GetCellArea at the anchor is what says how far it reaches.
-	★A TABLE STANDING IN SKIPPED TEXT IS LEFT OUT (2026-09-24), exactly as KCMTextRead leaves it out,
-	 so that the two lists still number the same tables the same way (KCMSkippedText.h).
-*/
-bool16 ReadTableShapes(ITextModel* model, const KCMSkippedText& skipped, std::vector<TableShape>& out)
-{
-	out.clear();
-
-	InterfacePtr<ITextStoryThreadDictHier> hier(model, UseDefaultIID());
-	if (hier == nil)
-		return kTrue;				// no hierarchy at all: a story with nothing but a body
-
-	IDataBase* const db = ::GetDataBase(hier);
-	if (db == nil)
-		return kFalse;
-
-	for (UID next = ::GetUIDRef(hier).GetUID(); next != kInvalidUID; next = hier->NextUID(next))
-	{
-		InterfacePtr<ITextStoryThreadDict> dict(db, next, UseDefaultIID());
-		if (dict == nil)
-			return kFalse;
-
-		InterfacePtr<ITableModel> table(dict, UseDefaultIID());
-		if (table == nil)
-			continue;				// the story's own dictionary
-
-		TableShape shape;
-		shape.fStart = dict->GetThreadBlockTextRange().Start(nil);
-
-		// ★★★**WHERE THE TABLE STANDS IS A QUESTION OF ITS OWN, AND THE DICTIONARY ANSWERS IT.**
-		//   GetThreadBlockTextRange is "the StoryRange of text spanned by the threads of the
-		//   dictionary" - the CELLS - and those are always past the whole body, so it answers
-		//   "after the last paragraph" for every table there has ever been. GetAnchorTextRange is
-		//   the anchor itself, and its contract covers the odd case too: a dictionary that is not
-		//   anchored "should return the TextIndex of the last carriage return in the primary story
-		//   thread" (ITextStoryThreadDict.h), which is the same end-of-body answer the old code
-		//   gave by accident - so no guard is needed here, only the right question.
-		//   ⚠**MEASURED 2026-09-16**: a story with three tables wrote all three at the end of the
-		//    file, whatever paragraph each one really stood after.
-		//   ★A NESTED table's anchor is inside a CELL, so it still lands after the last body
-		//    paragraph - which is where the writer puts it anyway (a nested table is a table of
-		//    its own in this format, KCMStoryDocx says why).
-		shape.fAnchor = dict->GetAnchorTextRange().Start(nil);
-		if (skipped.Contains(shape.fAnchor))
-			continue;				// not a table of the page (KCMSkippedText.h)
-
-		const RowRange rows = table->GetTotalRows();
-		const ColRange cols = table->GetTotalCols();
-		const RowRange header = table->GetHeaderRows();
-		shape.fRowCount = rows.count;
-		shape.fHeaderStart = header.start;
-		shape.fHeaderCount = header.count;
-
-		for (int32 r = rows.start; r < rows.start + rows.count; ++r)
-		{
-			for (int32 c = cols.start; c < cols.start + cols.count; ++c)
-			{
-				const GridAddress addr(r, c);
-				if (!table->IsValid(addr) || !table->IsAnchor(addr))
-					continue;
-
-				CellShape cell;
-				cell.fRow = r;
-				cell.fCol = c;
-
-				const GridArea area = table->GetCellArea(addr);
-				const RowRange areaRows = area.GetRows();
-				const ColRange areaCols = area.GetCols();
-				cell.fRowSpan = (areaRows.count > 0) ? areaRows.count : 1;
-				cell.fColSpan = (areaCols.count > 0) ? areaCols.count : 1;
-
-				shape.fCells.push_back(cell);
-			}
-		}
-		out.push_back(shape);
-	}
-
-	std::sort(out.begin(), out.end(), EarlierTable);
-	return kTrue;
-}
-
-/** One paragraph of KCMTextRead's, in the shape the writer wants.
-
-	⚠**A NOTE'S REFERENCE DOES NOT TRAVEL** (2026-09-16, the user's decision). The file carries
-	 a note's WORDS - a paragraph of its own, after the body - and not the place in the body
-	 where its marker stood: what the reader edits is the words. KCMStoryShape::Para says what
-	 that removed. attrs.fFootnote is therefore read by nobody here. */
+/** One paragraph of KCMTextRead's, in the shape the writer wants - its words and the four kinds of
+	mark over them. Where its footnote references and endnote markers stand is put in afterwards, by
+	BuildStory, from the document's owned items (attrs.fFootnote is read by nobody here). */
 void FillPara(const std::string& text, const KCMParaAttrs& attrs, KCMStoryShape::Para& out)
 {
 	out.fText = text;
@@ -314,8 +180,10 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 	KCMSkippedText skipped;
 	if (model != nil)
 		skipped.Build(model);
-	std::vector<TableShape> shapes;
-	if (model != nil && !ReadTableShapes(model, skipped, shapes))
+	// ★THE TABLE ROW'S OWN READING (KCMTableShape.h): the same walk as KCMTextRead's, the same tables left
+	//   out, so index k here is the table ordinal the paragraphs name.
+	std::vector<KCMTableShape> shapes;
+	if (model != nil && !KCMReadTableShapes(model, skipped, shapes))
 		return kFalse;
 
 	// ★**WHICH WAY THE STORY IS SET**, asked of the STORY rather than of a frame: it is a story
@@ -329,16 +197,12 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 	for (size_t t = 0; t < shapes.size(); ++t)
 	{
 		KCMStoryShape::Table table;
-		table.fOrdinal = static_cast<int32>(t);
 		table.fParaIndex = 0;
 		table.fOffset = 0;
 		// ⚠**THE EXPORTER NEVER SPLITS A PARAGRAPH.** KCMTextRead reports a paragraph holding a
 		//   table as ONE paragraph (the table's own character is simply not counted), so the table
-		//   is written after it whole. fSplitsPara is the reader's side of a shape this half does
-		//   not produce.
-		table.fSplitsPara = kFalse;
-
-		for (int32 r = 0; r < shapes[t].fRowCount; ++r)
+		//   is written after it whole, at the offset found below.
+		for (int32 r = 0; r < shapes[t].fRows; ++r)
 		{
 			KCMStoryShape::Row row;
 			row.fHeader = (r >= shapes[t].fHeaderStart
@@ -348,8 +212,7 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 				if (shapes[t].fCells[c].fRow != r)
 					continue;
 				KCMStoryShape::Cell cell;
-				cell.fColSpan = shapes[t].fCells[c].fColSpan;
-				cell.fRowSpan = shapes[t].fCells[c].fRowSpan;
+				KCMTableCellSpan(shapes[t], r, shapes[t].fCells[c].fCol, cell.fRowSpan, cell.fColSpan);
 				row.fCells.push_back(cell);
 			}
 			table.fRows.push_back(row);
@@ -446,10 +309,13 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 
 	for (size_t t = 0; t < out.fTables.size() && t < shapes.size(); ++t)
 	{
+		// ★★★**THE ANCHOR, NOT THE CELLS** (KCMTableShape.h says why the two are nowhere near each other):
+		//   a table's cells stand past the whole body, its anchor where the table stands.
+		const TextIndex anchor = shapes[t].fAnchorStart;
 		int32 host = -1;
 		for (size_t i = 0; i < paras.size(); ++i)
 		{
-			if (static_cast<TextIndex>(starts[i]) <= shapes[t].fAnchor)
+			if (static_cast<TextIndex>(starts[i]) <= anchor)
 				host = static_cast<int32>(i);
 		}
 
@@ -461,7 +327,7 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 		//   ⚠MEASURED 2026-09-16 on allin.indd: without this, two tables of one story came out one
 		//    paragraph early each, with the empty paragraphs they live in left standing behind them.
 		if (host >= 0 && host + 1 < static_cast<int32>(paras.size())
-			&& shapes[t].fAnchor >= paraEnds[static_cast<size_t>(host)])
+			&& anchor >= paraEnds[static_cast<size_t>(host)])
 		{
 			++host;
 		}
@@ -498,7 +364,7 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 		//    steps over it and moves the paragraph's start instead (KCMTextRead, "if
 		//    (!paraHasCharacters) paraStart = i + 1"), so that case is told by the anchor standing
 		//    BEFORE the reported start, and its place is 0.
-		if (shapes[t].fAnchor < static_cast<TextIndex>(starts[static_cast<size_t>(host)]))
+		if (anchor < static_cast<TextIndex>(starts[static_cast<size_t>(host)]))
 		{
 			out.fTables[t].fOffset = 0;
 		}
@@ -699,13 +565,12 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 	return kTrue;
 }
 
-/** One file's bytes, with a BOM when the caller asks for one (⚠a .docx never does - see below;
-	not put one in the strings it builds).
+/** One file's bytes, exactly as given.
 
-	★The stylesheet gets one too. A custom kenten mark is a character out of the document, so the
-	 sheet is not ASCII either, and a browser that guessed at its encoding would draw the wrong
-	 mark - or a pair of mojibake - with nothing at all to say why. */
-bool16 WriteFileBytes(const std::wstring& path, const std::string& bytes, bool16 withBom)
+	⚠**NO BOM, EVER.** A .docx is a zip, and three bytes in front of a zip's first signature are three
+	 bytes in front of everything its directory points at. (The retired .html spelling asked for one,
+	 and this took a `withBom` until 2026-09-24 - always kFalse since the spelling went.) */
+bool16 WriteFileBytes(const std::wstring& path, const std::string& bytes)
 {
 	PMString pathString;
 	pathString.SetTranslatable(kFalse);
@@ -716,14 +581,6 @@ bool16 WriteFileBytes(const std::wstring& path, const std::string& bytes, bool16
 	InterfacePtr<IPMStream> stream(StreamUtil::CreateFileStreamWriteLazy(file, kOpenOut | kOpenTrunc));
 	if (stream == nil)
 		return kFalse;
-
-	// ⚠NEVER ON A .docx: that file is a zip, and three bytes in front of a zip's first signature
-	//  are three bytes in front of everything its directory points at.
-	if (withBom)
-	{
-		const char bom[3] = { '\xEF', '\xBB', '\xBF' };
-		stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(bom)), 3);
-	}
 	if (!bytes.empty())
 	{
 		stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(bytes.c_str())),
@@ -734,16 +591,12 @@ bool16 WriteFileBytes(const std::wstring& path, const std::string& bytes, bool16
 	return kTrue;
 }
 
-/** The bytes of one story, into "<folder>\<uid>.docx".
-
-	⚠**NO BOM, EVER.** A .docx is a zip, and three bytes in front of a zip's first signature are
-	 three bytes in front of everything its directory points at. (The retired .html spelling asked
-	 for one, which is why WriteFileBytes still takes the question.) */
+/** The bytes of one story, into "<folder>\<uid>.docx". */
 bool16 WriteStoryFile(const std::wstring& folder, int32 uid, const std::string& bytes)
 {
 	wchar_t leaf[64] = { 0 };
 	::swprintf_s(leaf, 64, L"\\%d.docx", static_cast<int>(uid));
-	return WriteFileBytes(folder + leaf, bytes, kFalse);
+	return WriteFileBytes(folder + leaf, bytes);
 }
 
 // (⛔DocumentNameUtf8 stood here until 2026-09-22. It read the document's name for the .docx's story
@@ -766,38 +619,15 @@ bool16 KCMTableRefsOfStory(const UIDRef& storyRef, std::vector<UIDRef>& out)
 	InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
 	if (model == nil)
 		return kFalse;
-	InterfacePtr<ITextStoryThreadDictHier> hier(model, UseDefaultIID());
-	if (hier == nil)
-		return kTrue;				// no hierarchy at all: a story with nothing but a body
-
-	IDataBase* const db = ::GetDataBase(hier);
-	if (db == nil)
+	// ★THE SAME READING AS BuildStory's, so index k here IS table ordinal k there - the same order and
+	//   the same tables left out (a table deleted under Track Changes is still a dictionary, and counting
+	//   it here would hand the import's next step the WRONG table). Each shape names its table boss.
+	std::vector<KCMTableShape> shapes;
+	if (!KCMReadTableShapes(model, shapes))
 		return kFalse;
-
-	// ★THE SAME WALK AND THE SAME ORDER AS ReadTableShapes, so index k here IS table ordinal k there -
-	//   ★and the same tables left out (2026-09-24): a table deleted under Track Changes is still a
-	//   dictionary, and counting it here would hand the import's next step the WRONG table.
-	KCMSkippedText skipped;
-	skipped.Build(model);
-	std::vector<TableRefAt> found;
-	for (UID next = ::GetUIDRef(hier).GetUID(); next != kInvalidUID; next = hier->NextUID(next))
-	{
-		InterfacePtr<ITextStoryThreadDict> dict(db, next, UseDefaultIID());
-		if (dict == nil)
-			return kFalse;
-		InterfacePtr<ITableModel> table(dict, UseDefaultIID());
-		if (table == nil)
-			continue;
-		if (skipped.Contains(dict->GetAnchorTextRange().Start(nil)))
-			continue;
-		TableRefAt t;
-		t.fStart = dict->GetThreadBlockTextRange().Start(nil);
-		t.fRef = UIDRef(db, next);
-		found.push_back(t);
-	}
-	std::sort(found.begin(), found.end(), EarlierTableRef);
-	for (size_t k = 0; k < found.size(); ++k)
-		out.push_back(found[k].fRef);
+	IDataBase* const db = storyRef.GetDataBase();
+	for (size_t k = 0; k < shapes.size(); ++k)
+		out.push_back(UIDRef(db, shapes[k].fDictUID));
 	return kTrue;
 }
 

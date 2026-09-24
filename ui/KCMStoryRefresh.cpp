@@ -62,7 +62,7 @@ void KCMStorySetMenuRow(int32 rowIndex)
 }
 
 //----------------------------------------------------------------------------------------
-// KCMStorySetMenuChange / KCMStoryGetMenuChange / KCMChangeRowCanReject / KCMChangeRowReject
+// KCMStorySetMenuChange / KCMChangeRowCanReject / KCMChangeRowReject
 //   "Reject This Import Change" on a CHANGE row (2026-09-24, stage 2 A - design section 13 of
 //   docs/superpowers/specs/2026-09-23-kcm-import-sync-design.md).
 //----------------------------------------------------------------------------------------
@@ -71,13 +71,6 @@ void KCMStorySetMenuChange(int32 rowIndex, int32 changeIndex)
 {
 	gMenuRow = rowIndex;
 	gMenuChange = changeIndex;
-}
-
-bool16 KCMStoryGetMenuChange(int32& outRow, int32& outChange)
-{
-	outRow = gMenuRow;
-	outChange = gMenuChange;
-	return (gMenuRow >= 0 && gMenuChange >= 0) ? kTrue : kFalse;
 }
 
 namespace
@@ -127,6 +120,11 @@ bool16 KCMChangeRowReject()
 		msg.Append("rejected ");
 		msg.AppendNumber(done);
 		msg.Append(" import change(s) - Ctrl+Z brings them back");
+		if (!why.IsEmpty())		// the "=" did not come: the model says what it found (2026-09-24 night)
+		{
+			msg.Append(" - ");
+			msg.Append(why);
+		}
 	}
 	KCMSetStatus(msg);
 	return (done > 0) ? kTrue : kFalse;
@@ -174,6 +172,11 @@ bool16 KCMChangeRowRestoreAttr()
 		msg.AppendNumber(done);
 		msg.Append(done == 1 ? " mark put on)" : " marks put on)");
 		msg.Append(" - Ctrl+Z brings the change back");
+	}
+	if (done >= 0 && !why.IsEmpty())		// the "=" did not come: the model says what it found (2026-09-24 night)
+	{
+		msg.Append(" - ");
+		msg.Append(why);
 	}
 	KCMSetStatus(msg);
 	return (done >= 0) ? kTrue : kFalse;

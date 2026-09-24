@@ -148,22 +148,20 @@ struct Row
 	  ⚠**fParaIndex IS RELATIVE TO WHATEVER HOLDS IT**: the body's paragraphs when fInTable is
 	   -1, and that cell's paragraphs otherwise.
 
-	@warning fSplitsPara is the case a table can stand in the MIDDLE of a paragraph - measured, and
-	  the rest of the diff assumes it away (KCMTextRead::TakeAttrFor says where). */
+	★**A TABLE'S ORDINAL IS ITS INDEX IN Story::fTables** and nothing else: a field that repeated it
+	  (fOrdinal) was written by every reader and read by nobody, and went on 2026-09-24 together with
+	  fSplitsPara, which said whether a table stood in the middle of a paragraph - fOffset says where. */
 struct Table
 {
-	int32				fOrdinal;
 	int32				fParaIndex;
 	int32				fOffset;
 	int32				fInTable;	// -1 = the body, else the ordinal of the table this one is inside
 	int32				fInRow;		// which row of that table
 	int32				fInCell;	// and which cell of that row, in the order its cells run
-	bool16				fSplitsPara;
 	std::vector<Row>	fRows;
 	// (⛔fName - the table's name - stood here from 2026-09-22 to 2026-09-23; see Cell.)
 
-	Table() : fOrdinal(0), fParaIndex(0), fOffset(0), fInTable(-1), fInRow(0), fInCell(0),
-			  fSplitsPara(kFalse) {}
+	Table() : fParaIndex(0), fOffset(0), fInTable(-1), fInRow(0), fInCell(0) {}
 };
 
 /** A whole story: its body, the tables standing in it, and its footnotes' own paragraphs.
@@ -182,6 +180,19 @@ struct Story
 
 	Story() : fVertical(kFalse) {}
 };
+
+/** Every run of paragraphs the story holds, in document order: the body, then each cell of each
+	table (table order, then row, then cell), then - when `withNotes` - each footnote's own paragraphs.
+
+	★**ONE WALK, STATED ONCE** (2026-09-24). The same three nested loops stood in eight places across the
+	  writer, the reader, the comparison and the writing half; a place any of them forgot (a note's
+	  paragraphs, say) was a place its rule silently did not reach. Whoever needs the runs asks here. */
+void ParaRuns(Story& s, bool16 withNotes, std::vector< std::vector<Para>* >& out);
+void ParaRuns(const Story& s, bool16 withNotes, std::vector< const std::vector<Para>* >& out);
+
+/** The tables standing in one run of paragraphs - the body (inTable -1) or one cell - as indices into
+	Story::fTables, in document order. */
+void TablesIn(const Story& s, int32 inTable, int32 inRow, int32 inCell, std::vector<size_t>& out);
 
 /** Add to `inOutSeen` every kenten value this story uses - body, cells and notes alike - skipping
 	any already there.

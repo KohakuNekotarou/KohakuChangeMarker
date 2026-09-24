@@ -26,7 +26,7 @@
 //
 //  *** THE PLANNING IS A PURE FUNCTION AND LIVES ELSEWHERE. *** KCMParaText::PlanSpanChanges works
 //  out what to take off and what to put on, and it is measured outside InDesign
-//  (work/kcm-storyhtml-test). What is left here is the part that needs the SDK: turning an offset
+//  (work/kcm-storydocx-test). What is left here is the part that needs the SDK: turning an offset
 //  in the text into a position in the document, and calling the writers.
 //
 //========================================================================================

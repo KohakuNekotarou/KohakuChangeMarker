@@ -349,12 +349,19 @@ enum KCMStoryPlace
 	Source" put the Source's words or mark back, and the row stays on the list with "=" in its sign column, so
 	that "Redo from Word" has a place to act from.
 
-	★THE STATE IS THE COUNTERS' ALONE (design 15-1-3, and the retired restore's lesson - docs/ai-notes/
+	★THE COUNTERS DECIDE UNDONE AND REDONE (design 15-1-3, and the retired restore's lesson - docs/ai-notes/
 	  kcm-restore-retired-2026-09-21.md section 3-2): the story's counter (KCMStoryDiffRun::CountForKind, by
 	  fCounterKind) is read at the moment of asking, and an undo winds it back on its own, so no flag can
 	  disagree with the document. Standing = "=" (taken back, the Source's state); Undone = the reject was
 	  undone (shown as the live change it was); Redone = put back from Word (likewise). RunOne drops an
-	  Undone or Redone record that has no live twin (PruneRejected), and Build starts with none. */
+	  Undone or Redone record that has no live twin (PruneRejected), and Build starts with none.
+	★★★**AND "=" IS A COMPARISON, NOT A FLAG** (2026-09-24 night, the user: "it was taken back, so it MUST be
+	  the same - if a rejected tracked change did not come all the way back that is InDesign's fault, and it
+	  has to show"). A record the counters call Standing is shown "=" only when the Target's characters at
+	  [fNowStart, fNowEnd) ARE the Source's at the change's Source range - and, for an attribute record, the
+	  marks of its kind over them too (KCMRecordReadsAsSource). Otherwise it is STALE: not shown, dropped at
+	  the next read, and the live difference left to the comparison. The check is cached against the counter
+	  it was made at (fCheckedAt): a story that has not changed is not read again. */
 struct KCMRejectedRecord
 {
 	KCMStoryChange	fLive;			// the change as the diff made it - its ranges are its LIVE ones, slid along by later writes
@@ -364,6 +371,9 @@ struct KCMRejectedRecord
 	uint32			fRedoneAt;		// the same right after a redo; 0 = never redone
 	int32			fCounterKind;	// kKCMStoryAttrNone for words, else the attribute's kind - which counter to ask
 	mutable KCMStoryChange fShown;	// what GetMergedChange hands out: fLive with the ranges of the moment
+	mutable bool16	fChecked;		// the "=" comparison below has been made at least once
+	mutable uint32	fCheckedAt;		// ... at this counter value
+	mutable bool16	fCheckedSame;	// ... and found the place to read as the Source's
 	/** ★WHICH WORDS THE RECORDS AFTER THIS ONE ARE PLACED FOR: kTrue = the Source's (the record Standing), kFalse =
 		the live ones (Undone or Redone). The document changes length at this place with every reject, redo, undo
 		and redo-of-undo, and only the first two are writes of KCM's own; the rest arrive with no signal. So the
@@ -371,13 +381,19 @@ struct KCMRejectedRecord
 		MergedOrder): where this flag disagrees with the state, they slide by the two lengths and the flag follows.
 		Measured 2026-09-24: slid at the redo alone, an undo of that redo left the next record two characters off. */
 	bool16			fPlacedForSource;
-	KCMRejectedRecord() : fNowStart(0), fNowEnd(0), fRejectedAt(0), fRedoneAt(0), fCounterKind(0), fPlacedForSource(kTrue) {}
+	KCMRejectedRecord() : fNowStart(0), fNowEnd(0), fRejectedAt(0), fRedoneAt(0), fCounterKind(0),
+						  fChecked(kFalse), fCheckedAt(0), fCheckedSame(kFalse), fPlacedForSource(kTrue) {}
 };
 
-enum KCMRejectedState { kKCMRejectedStanding = 0, kKCMRejectedUndone = 1, kKCMRejectedRedone = 2 };
+/** Standing = shown "=", Undone / Redone = shown as the live change it was, Stale = the counters say Standing
+	but the place does not read as the Source's (KCMRejectedRecord says why that is not shown "="). A Stale
+	record is not shown at all and is KEPT: the reading is made again when the counter moves, so an undo of
+	the write that made it stale shows the "=" again (MergedOrder). */
+enum KCMRejectedState { kKCMRejectedStanding = 0, kKCMRejectedUndone = 1, kKCMRejectedRedone = 2, kKCMRejectedStale = 3 };
 
-/** The record's state for a counter read now. ★">=" and never "==" (section 3-2): a later write in the same
-	story moves the counter on, and the record is still standing. */
+/** The record's state for a counter read now - the COUNTERS' half of the answer; whether a Standing record
+	is Stale is asked of the documents (KCMStoryList::RejectedStateOf). ★">=" and never "==" (section 3-2): a
+	later write in the same story moves the counter on, and the record is still standing. */
 inline KCMRejectedState KCMRejectedStateOf(const KCMRejectedRecord& r, uint32 counterNow)
 {
 	if (r.fRedoneAt != 0 && counterNow >= r.fRedoneAt)
@@ -749,8 +765,18 @@ namespace KCMStoryList
 	/** The record behind merged index `which`, or nil for a live change, a refusal, or an index out of range. */
 	const KCMRejectedRecord* RejectedAt(int32 nth, int32 which);
 
-	/** The record's state now, asked of the story's counter in `targetDB` (KCMStoryDiffRun::CountForKind). */
+	/** The record's state now: the story's counter in `targetDB` (KCMStoryDiffRun::CountForKind) says Standing,
+		Undone or Redone, and a Standing record is then READ - its place in the Target against the Source's
+		(KCMRecordReadsAsSource) - and answers Stale when the two differ. ⚠With the Source document not open the
+		reading cannot be made, and the counters' answer stands. */
 	KCMRejectedState RejectedStateOf(int32 nth, const KCMRejectedRecord& record, IDataBase* targetDB);
+
+	/** Whether the record whose fLive is the twin of `live` (the same what, kind and live range) is on row `nth` and
+		Standing - the "=" the reader will see. kFalse when there is no such record any more (it read as not the
+		Source's and was dropped) or it is not Standing. ★Asked by the reject and the restore right after they
+		refreshed the row, so that a take-back that did NOT leave the Source's words behind is said out loud
+		(2026-09-24 night: "if it did not come all the way back, that is InDesign's fault, and it has to show"). */
+	bool16 RejectedStanding(int32 nth, const KCMStoryChange& live, IDataBase* targetDB);
 
 	/** After a redo: fRedoneAt = counter, and the records after it slide back by what the redo put in. ⚠fNowStart /
 		fNowEnd are left as they are - they say where the Source's words stand whenever the record is Standing again

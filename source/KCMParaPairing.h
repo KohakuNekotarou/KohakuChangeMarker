@@ -7,7 +7,7 @@
 //  Which paragraph of the document goes with which paragraph of an edited story file, when the file
 //  has more or fewer of them (2026-09-17, the user's rule: "a <p> added or removed in a text editor is
 //  a paragraph added or removed"). PURE: the import pours by it (KCMStoryTextImport), and the harness
-//  in work\kcm-storyhtml-test measures it outside InDesign.
+//  in work\kcm-storydocx-test measures it outside InDesign.
 //
 //========================================================================================
 

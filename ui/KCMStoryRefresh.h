@@ -92,11 +92,9 @@ bool16 KCMStoryRefreshMenuRow();
 //  change under the cursor - the rule of 2026-08-21 (a reader pointing at one difference is not handed an
 //  action over the whole story) holds.
 
-/** The row AND the change the menu was popped over (KCMStoryRowEH::RButtonDn on a child row). */
+/** The row AND the change the menu was popped over (KCMStoryRowEH::RButtonDn on a child row). The three
+	items below read them back for themselves; nothing else asks. */
 void KCMStorySetMenuChange(int32 rowIndex, int32 changeIndex);
-
-/** kTrue when the menu was popped over a change row, with its row and change. */
-bool16 KCMStoryGetMenuChange(int32& outRow, int32& outChange);
 
 /** Whether "Reject This Import Change" may be offered: a comparison armed, a mode with story rows, and at
 	least one of the import's tracked changes touching the change's range (asked of the story, design 13-1

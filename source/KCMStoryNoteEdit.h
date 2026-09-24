@@ -58,6 +58,11 @@ bool16 KCMCanInsertNoteAt(ITextModel* model, TextIndex at);
 	  note was born with would print both. So [outWordsFrom, outWordsTo) is the note's text apart
 	  from its number: take it out, put the file's in.
 
+	★**A FAILURE AFTER THE MARKER IS IN TAKES THE MARKER BACK** - with the global error state cleared
+	  first (2026-09-24), so that the DeleteCmd is not processed with a failed command's error standing
+	  (CmdUtils.h:74). ⚠Not by an inner command sequence: the .cpp says what KBS measured about those
+	  inside the import's outer abortable sequence.
+
 	@param outWordsFrom just past the note's own number - the first character the caller may replace.
 	@param outWordsTo   just past the note's last character, before its closing return.
 	@param whyNot filled when the answer is kFailure, in words a status line can show.

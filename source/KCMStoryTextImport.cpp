@@ -115,27 +115,6 @@ PMString PMStringOfLeaf(const std::wstring& leaf)
 	return s;
 }
 
-/** The whole file, as bytes. kFalse when it could not be opened.
-
-	⚠stdio rather than IPMStream, which is the road KCM already took for its settings file and
-	 states the reason for there (KCMPageCheck.cpp): IPMStream::Close and Flush both return void. */
-bool16 ReadWholeFile(const IDFile& file, std::string& out)
-{
-	out.clear();
-
-	FILE* fp = FileUtils::OpenFile(file, "rb");
-	if (fp == nil)
-		return kFalse;
-
-	char buf[4096];
-	size_t n = 0;
-	while ((n = std::fread(buf, 1, sizeof(buf), fp)) > 0)
-		out.append(buf, n);
-
-	std::fclose(fp);
-	return kTrue;
-}
-
 /*	⛔**"269.html" -> 269 STOOD HERE UNTIL 2026-09-21.** For the .html spelling THE NAME WAS THE
 	PAIRING, so it had to be exact - every character before the dot a decimal digit, and a padded
 	"0269.html" refused outright, because two files must never be able to claim one story. The HTML
@@ -331,7 +310,6 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 		out.fUids.push_back(UID(static_cast<uint32>(uid)));
 		out.fStories.push_back(result.fAfter);
 		out.fFileNames.push_back(PMStringOfLeaf(leaf));
-		out.fIsDocx.push_back(kTrue);
 	}
 
 	// ★A STORY CHOSEN TWICE - two .docx files whose tags name one story - is refused on both counts (the design,
@@ -365,7 +343,6 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 			kept.fUids.push_back(out.fUids[i]);
 			kept.fStories.push_back(out.fStories[i]);
 			kept.fFileNames.push_back(out.fFileNames[i]);
-			kept.fIsDocx.push_back(out.fIsDocx[i]);
 		}
 		out = kept;
 	}

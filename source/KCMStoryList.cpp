@@ -54,7 +54,9 @@
 #include "KCMStoryRowFilter.h"	// KCMStoryRowHasContentChange - which rows belong in the list
 #include "KCMStoryTextImport.h"	// KCMImportRefusals - what the last import could not put in, put back as rows on every Build
 #include "KCMRejectedOrder.h"	// the taken-back records' slot, shift and merged order (stage 2 C, 2026-09-24)
+#include "KCMRestoreAttr.h"		// KCMAttrMarksSame - a taken-back attribute row's "=" is a comparison of the marks
 #include "KCMStoryDiffRun.h"	// CountForKind - the counter a record's state is read from
+#include "KCMTextWords.h"		// WordsAt - a taken-back row's "=" is a comparison of the characters
 
 namespace
 {
@@ -1091,13 +1093,57 @@ void KCMStoryList::AddRefusalChange(int32 nth, const PMString& kind, const PMStr
 namespace
 {
 
+/** Whether a Standing record's place in the Target reads as the Source's: the characters at [fNowStart, fNowEnd)
+	against the Source's at the change's Source range, and for an attribute record the marks of its kind over them
+	(KCMAttrMarksSame). ★THE "=" IS THIS COMPARISON (KCMRejectedRecord says why); a Source that is not open cannot
+	be read, and then the counters' answer is left to stand (kTrue). */
+bool16 RecordReadsAsSource(const KCMStoryRow& row, const KCMRejectedRecord& r, IDataBase* targetDB)
+{
+	IDataBase* const sourceDB = KCMArmedSourceDB();
+	if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
+		return kTrue;
+	const UIDRef target(targetDB, row.fStoryUID);
+	const UIDRef source(sourceDB, row.fStoryUID);
+	const int32 len = r.fNowEnd - r.fNowStart;
+	const int32 sLen = r.fLive.fSourceEnd - r.fLive.fSourceStart;
+	if (len != sLen)
+		return kFalse;
+	{
+		// reading must not dirty either document (KCMTextRead.h)
+		IDataBase::SaveRestoreModifiedState targetGuard(targetDB);
+		IDataBase::SaveRestoreModifiedState sourceGuard(sourceDB);
+		InterfacePtr<ITextModel> tModel(target, UseDefaultIID());
+		InterfacePtr<ITextModel> sModel(source, UseDefaultIID());
+		WideString tWords, sWords;
+		if (!KCMTextWords::WordsAt(tModel, r.fNowStart, len, tWords)
+			|| !KCMTextWords::WordsAt(sModel, r.fLive.fSourceStart, sLen, sWords) || tWords != sWords)
+			return kFalse;
+	}
+	if (r.fCounterKind == kKCMStoryAttrNone)
+		return kTrue;
+	return KCMAttrMarksSame(target, source, r.fCounterKind, r.fNowStart, r.fNowEnd,
+							r.fLive.fSourceStart, r.fLive.fSourceEnd);
+}
+
 /** A record's state now - the story's counter of its kind, read at this moment (KCMRejectedRecord says why
-	nothing else may answer). With nothing to ask (no armed Target, a row that stands for a file) it is as recorded. */
+	nothing else may answer Undone / Redone), and a Standing record then read against the Source (Stale when it
+	differs; the reading is cached against the counter it was made at, so an unchanged story is not read again).
+	With nothing to ask (no armed Target, a row that stands for a file) it is as recorded. */
 KCMRejectedState StateNow(const KCMStoryRow& row, const KCMRejectedRecord& r, IDataBase* targetDB)
 {
 	if (targetDB == nil || row.fStoryUID == kInvalidUID)
 		return kKCMRejectedStanding;
-	return KCMRejectedStateOf(r, KCMStoryDiffRun::CountForKind(UIDRef(targetDB, row.fStoryUID), r.fCounterKind));
+	const uint32 counterNow = KCMStoryDiffRun::CountForKind(UIDRef(targetDB, row.fStoryUID), r.fCounterKind);
+	const KCMRejectedState byCounter = KCMRejectedStateOf(r, counterNow);
+	if (byCounter != kKCMRejectedStanding)
+		return byCounter;
+	if (!r.fChecked || r.fCheckedAt != counterNow)
+	{
+		r.fCheckedSame = RecordReadsAsSource(row, r, targetDB);
+		r.fCheckedAt = counterNow;
+		r.fChecked = kTrue;
+	}
+	return r.fCheckedSame ? kKCMRejectedStanding : kKCMRejectedStale;
 }
 
 /** kTrue when `c` is the twin of the record's live change: the same what, kind and live range. */
@@ -1118,10 +1164,20 @@ void ShiftRecordsFrom(KCMStoryRow& row, size_t from, int32 writeAt, int32 remove
 void MergedOrder(KCMStoryRow& row, std::vector<KCMMergedRef>& out)
 {
 	IDataBase* const db = KCMArmedTargetDB();
+	// ★A STALE RECORD IS KEPT BUT SITS THIS READ OUT (2026-09-24 night): its place no longer reads as the Source's,
+	//   so there is no "=" to show and no length to reconcile its followers by - the live comparison says what
+	//   stands there. ⚠NOT ERASED: the "=" is a comparison, and the reading is made again whenever the story's
+	//   counter moves - so an undo of the hand edit that made it stale reads as the Source's again and the "="
+	//   comes back (first written as an erase; measured the same night to lose the "=" for good on Ctrl+Z).
+	std::vector<KCMRejectedState> states;
+	for (size_t i = 0; i < row.fRejected.size(); ++i)
+		states.push_back(StateNow(row, row.fRejected[i], db));
 	for (size_t i = 0; i < row.fRejected.size(); ++i)
 	{
 		KCMRejectedRecord& r = row.fRejected[i];
-		const bool16 standing = (StateNow(row, r, db) == kKCMRejectedStanding) ? kTrue : kFalse;
+		if (states[i] == kKCMRejectedStale)
+			continue;
+		const bool16 standing = (states[i] == kKCMRejectedStanding) ? kTrue : kFalse;
 		if (standing == r.fPlacedForSource)
 			continue;
 		const int32 lenSource = r.fNowEnd - r.fNowStart;
@@ -1135,15 +1191,22 @@ void MergedOrder(KCMStoryRow& row, std::vector<KCMMergedRef>& out)
 		live.push_back(KCMRejectedSpan(row.fChanges[i].fTargetStart, row.fChanges[i].fTargetEnd,
 									   static_cast<int32>(row.fChanges[i].fWhat), static_cast<int32>(row.fChanges[i].fKind), kFalse));
 	std::vector<KCMRejectedSpan> recs;
+	std::vector<int32> recIndex;		// recs[k] is row.fRejected[recIndex[k]] - the stale ones are left out
 	for (size_t i = 0; i < row.fRejected.size(); ++i)
 	{
+		if (states[i] == kKCMRejectedStale)
+			continue;
 		const KCMRejectedRecord& r = row.fRejected[i];
 		const bool16 standing = r.fPlacedForSource;		// reconciled above: the state as it was read a moment ago
 		recs.push_back(KCMRejectedSpan(standing ? r.fNowStart : r.fLive.fTargetStart,
 									   standing ? r.fNowEnd : r.fLive.fTargetEnd,
 									   static_cast<int32>(r.fLive.fWhat), static_cast<int32>(r.fLive.fKind), standing));
+		recIndex.push_back(static_cast<int32>(i));
 	}
 	KCMMergeRejected(live, recs, out);
+	for (size_t k = 0; k < out.size(); ++k)
+		if (out[k].fIsRecord)
+			out[k].fIndex = recIndex[static_cast<size_t>(out[k].fIndex)];
 }
 
 /** Slide the records from index `from` on - their place now AND their live range, since the live diff's
@@ -1290,6 +1353,21 @@ void KCMStoryList::AddRejected(int32 nth, const KCMStoryChange& live, TextIndex 
 	ShiftRecordsFrom(row, slot + 1, live.fTargetStart, removed, inserted);
 }
 
+/* RejectedStanding
+*/
+bool16 KCMStoryList::RejectedStanding(int32 nth, const KCMStoryChange& live, IDataBase* targetDB)
+{
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
+		return kFalse;
+	KCMStoryRow& row = gRows[nth];
+	for (size_t i = 0; i < row.fRejected.size(); ++i)
+	{
+		if (IsTwin(row.fRejected[i], live))
+			return (StateNow(row, row.fRejected[i], targetDB) == kKCMRejectedStanding) ? kTrue : kFalse;
+	}
+	return kFalse;
+}
+
 /* MarkRedone
 */
 void KCMStoryList::MarkRedone(int32 nth, const KCMRejectedRecord& record, uint32 counter)
@@ -1323,7 +1401,10 @@ void KCMStoryList::PruneRejected(int32 nth, IDataBase* targetDB)
 	while (i < row.fRejected.size())
 	{
 		const KCMRejectedRecord& r = row.fRejected[i];
-		bool16 keep = (StateNow(row, r, targetDB) == kKCMRejectedStanding) ? kTrue : kFalse;
+		const KCMRejectedState state = StateNow(row, r, targetDB);
+		// Standing stays, and so does Stale: it is Standing by the counter and only reads differently at this
+		// moment - an undo of what was written there brings its "=" back (MergedOrder says why).
+		bool16 keep = (state == kKCMRejectedStanding || state == kKCMRejectedStale) ? kTrue : kFalse;
 		for (size_t k = 0; k < row.fChanges.size() && !keep; ++k)
 			keep = IsTwin(r, row.fChanges[k]);
 		if (keep)

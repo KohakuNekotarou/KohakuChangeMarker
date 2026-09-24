@@ -119,17 +119,16 @@ void CollectKenten(const std::vector<Para>& paras, std::vector<std::string>& see
 }	// anonymous namespace
 
 /*	kKentenDefaultValue
-	What an <em> with no class of ours means.
+	The mark meant when a file says "emphasis" without saying WHICH mark.
 
-	★★**BECAUSE SOMEBODY WILL WRITE ONE.** The whole point of this format being HTML is that a
-	person - or Claude, asked in a chat to "put kenten on this word" - can write the obvious thing
-	and have it work. The obvious thing is <em>, and refusing it would teach nobody anything: the
-	file would come back with the words marked up and the mark thrown away. So a bare <em> is a
-	kenten with InDesign's own default mark, and the stylesheet this file writes says as much in
-	plain CSS, where anybody opening the document can see it.
-	⚠A class of OURS that cannot be read is still refused - "kenten-Custom-zzz" is a mistake, not a
-	 request - and that is the difference: no class at all is a plain HTML author, a broken one of
-	 ours is a broken one of ours.
+	★★**BECAUSE SOMEBODY WILL WRITE ONE.** A person editing in Word presses the emphasis-mark button
+	(KCMStoryDocx's reader meets it as <w:em w:val="comma">), and refusing it would teach nobody
+	anything: the file would come back with the words marked and the mark thrown away. So a mark with
+	no kind of ours is a kenten with InDesign's own default mark. (Until 2026-09-21 the same rule served
+	the HTML spelling's bare <em>; the spelling went, the rule stayed.)
+	⚠A class of OURS that cannot be read is still refused - "圏点-カスタム-zz" is a mistake, not a
+	 request - and that is the difference: no class at all is a plain author, a broken one of ours
+	 is a broken one of ours.
 */
 const char* const kKentenDefaultValue = "BlackSesameDot";
 
@@ -255,19 +254,47 @@ bool16 IsInvisible(int32 cp)
 	return kFalse;
 }
 
-void CollectKentenValues(const Story& s, std::vector<std::string>& inOutSeen)
+void ParaRuns(Story& s, bool16 withNotes, std::vector< std::vector<Para>* >& out)
 {
-	CollectKenten(s.fBody, inOutSeen);
+	out.clear();
+	out.push_back(&s.fBody);
+	for (size_t t = 0; t < s.fTables.size(); ++t)
+		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
+			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
+				out.push_back(&s.fTables[t].fRows[r].fCells[c].fParas);
+	if (withNotes)
+		for (size_t n = 0; n < s.fNotes.size(); ++n)
+			out.push_back(&s.fNotes[n]);
+}
+
+void ParaRuns(const Story& s, bool16 withNotes, std::vector< const std::vector<Para>* >& out)
+{
+	// The one walk, through the non-const one: a const story is not written to by taking a pointer.
+	std::vector< std::vector<Para>* > runs;
+	ParaRuns(const_cast<Story&>(s), withNotes, runs);
+	out.assign(runs.begin(), runs.end());
+}
+
+void TablesIn(const Story& s, int32 inTable, int32 inRow, int32 inCell, std::vector<size_t>& out)
+{
+	out.clear();
 	for (size_t t = 0; t < s.fTables.size(); ++t)
 	{
-		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
-		{
-			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
-				CollectKenten(s.fTables[t].fRows[r].fCells[c].fParas, inOutSeen);
-		}
+		const Table& x = s.fTables[t];
+		if (x.fInTable != inTable)
+			continue;
+		if (inTable >= 0 && (x.fInRow != inRow || x.fInCell != inCell))
+			continue;
+		out.push_back(t);
 	}
-	for (size_t n = 0; n < s.fNotes.size(); ++n)
-		CollectKenten(s.fNotes[n], inOutSeen);
+}
+
+void CollectKentenValues(const Story& s, std::vector<std::string>& inOutSeen)
+{
+	std::vector< const std::vector<Para>* > runs;
+	ParaRuns(s, kTrue, runs);
+	for (size_t i = 0; i < runs.size(); ++i)
+		CollectKenten(*runs[i], inOutSeen);
 }
 
 namespace

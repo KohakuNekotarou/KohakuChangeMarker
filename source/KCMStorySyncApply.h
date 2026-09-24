@@ -37,19 +37,21 @@ struct KCMSyncResult
 	int32						fWrites;		// word writes that went in (paragraphs set, added, removed)
 	int32						fAttrWrites;	// ruby / kenten / tate-chu-yoko / warichu writes
 	int32						fNoteEdits;		// footnotes made or taken away
-	int32						fHeld;			// the plan's own Held steps
 	int32						fRefused;		// writes InDesign refused
 	std::vector<KCMSyncNote>	fNotes;
-	int32						fTableEdits;	// shape steps carried out on tables (S1/S2, 2026-09-23)
+	int32						fTableEdits;	// shape steps carried out on tables (S1/S2/S3a, 2026-09-23)
+	// (⛔fHeld - the plan's own Held steps, counted - stood here until 2026-09-24 and was read by nobody:
+	//  each Held step is a note in fNotes, and the notes are what the caller reads.)
 
-	KCMSyncResult() : fWrites(0), fAttrWrites(0), fNoteEdits(0), fHeld(0), fRefused(0), fTableEdits(0) {}
+	KCMSyncResult() : fWrites(0), fAttrWrites(0), fNoteEdits(0), fRefused(0), fTableEdits(0) {}
 };
 
-/** A SHAPE ROUND carried out (design sections 8-2 and 9-1): every kUnmerge, kResizeRows, kResizeCols and
-	kMerge of `plan`, in the plan's order, through ITableCommands - UnmergeCell, InsertRows / DeleteRows
-	and InsertColumns / DeleteColumns at the end, MergeCells. The words are not touched: the caller reads
-	the story again and compares once more. ★Every table is held by its UIDRef before any of them
-	changes, since the ordinals are the reading's from before.
+/** A SHAPE ROUND carried out (design sections 8-2, 9-1 and 10-2): every shape step of `plan`, through
+	ITableCommands and ITableUtils - stage 0's tables taken away (QueryDeleteTableCmd) and put in
+	(InsertTable, in a paragraph of their own), then UnmergeCell, InsertRows / DeleteRows and
+	InsertColumns / DeleteColumns at the end, MergeCells - in the plan's order. The words are not
+	touched: the caller reads the story again and compares once more. ★Every table is held by its
+	UIDRef before any of them changes, since the ordinals are the reading's from before.
 	Called inside the import's one command sequence; it opens none. */
 void KCMApplyTableShape(const UIDRef& storyRef, const KCMStorySync::Plan& plan, KCMSyncResult& out);
 

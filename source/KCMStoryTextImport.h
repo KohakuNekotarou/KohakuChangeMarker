@@ -56,18 +56,18 @@ struct KCMStoryTextSet
 	//  marks - stood here until 2026-09-23. The import makes the story what Word shows, marks or none.)
 	std::vector<PMString>				fFileNames;		// parallel: the file's own name, for a "!" row
 														// that stands for a file with no story (2026-09-19)
-	std::vector<bool16>					fIsDocx;		// parallel: read from a .docx, whose paragraphs stand in
-														// the SPLIT shape around tables (KCMStoryDocx.h, SplitAtTables)
-														// and are put back into the document's shape by the comparison
+	// (⛔fIsDocx - "read from a .docx" - stood here until 2026-09-24: kTrue for every entry since the
+	//  HTML spelling went, and read by nobody. Every story here stands in the SPLIT shape around its
+	//  tables (KCMStoryDocx.h, SplitAtTables); the comparison puts it back into the document's.)
 };
 
 /** One thing the last import could not put in - the material of a "!" row in Story Edits
 	(2026-09-19, the user's ask: "what could not be imported, a red ! in the Δ column, at the top").
 
 	★**EVERY REFUSAL THE POUR ALREADY COUNTS, AND NO NEW JUDGEMENT**: a place the comparison held
-	  (KCMStorySync's kHeld - a table whose shape Word changed, say), a story it left whole, a paragraph
-	  the write refused, an attribute kept back, a file with no story. KCMStoryList::Build turns them
-	  into rows. */
+	  (KCMStorySync's kHeld - a table reshaped in Word into a shape InDesign cannot hold, say), a story
+	  it left whole, a paragraph the write refused, an attribute kept back, a file with no story.
+	  KCMStoryList::Build turns them into rows. */
 struct KCMImportRefusal
 {
 	UID			fStory;			// the document's story (the uid the file is named after)
@@ -143,10 +143,12 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
       footnotes made and taken away - minimally, so that the ruby and the kenten on the parts nobody
       edited are still there afterwards. ★The ruby, the kenten and the rest go in as a SECOND PASS
       over each story, after its words are in (KCMStoryAttrPour says why that way round).
-    ⚠**WHAT CANNOT BE MADE WORD'S IS HELD, BY NAME** - a table whose shape Word changed (for now), a
-      change touching an invisible character (an anchored object, a page number, an index marker:
-      moved or deleted from outside only by accident), a tate-chu-yoko inside a warichu Word cannot
-      carry. Each is a "!" row.
+    ⚠**WHAT CANNOT BE MADE WORD'S IS HELD, BY NAME** - a table Word reshaped into a shape InDesign
+      cannot hold (rows of unequal length, a nested table where a row or a merge would go), a change
+      touching an invisible character (an anchored object, a page number, an index marker: moved or
+      deleted from outside only by accident), a tate-chu-yoko inside a warichu Word cannot carry. Each
+      is a "!" row. ★A table whose rows, columns or merges changed is made Word's (S1/S2; since the
+      evening of 2026-09-24 again - KCMStoryTextImport.cpp says what the user accepted with it).
 
     ★★**ONE PROGRESS BAR FROM THE FIRST FILE TO THE LAST STORY** (2026-09-17, the user's choice): it
       appears after the same three seconds as every other bar and carries Cancel. Saving the Task

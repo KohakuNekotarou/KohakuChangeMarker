@@ -74,31 +74,30 @@ namespace KCMStoryDocx
 	  - a kenten value KCMStoryShape::KentenClassOf cannot name. */
 bool16 WriteParagraphContent(const KCMStoryShape::Para& p, std::string& out, std::string& whyNot);
 
-/** A run of paragraphs with the tables standing among them: the body, or one cell.
+/** A run of paragraphs with the tables standing among them: the body, or one cell - written IN THE
+	SPLIT SHAPE (SplitAtTables, on a copy): every table alone in an empty paragraph of its own, the
+	words before it a paragraph, the words after it another.
 
-	★**A TABLE STANDS BETWEEN PARAGRAPHS, AND MARKS SAY WHOSE IT IS** (stage 3b, 2026-09-19; the
-	  design, 4-5): "AB" with a table after the A is <w:p>A + a mark at its end</w:p>, the <w:tbl>,
-	  then <w:p>a mark at its start + B</w:p>. The end mark says "this paragraph goes on past the
-	  table", the start mark "this is the paragraph from before the table"; one mark cancels one of
-	  Word's breaks. A table with no mark in front of it opens a paragraph of its own, so a table at
-	  the head of its paragraph is written with no piece in front of it at all. The marks are locked
-	  controls with a tag; a person may type KCM:continued instead, at either edge.
-	⚠**UNLIKE THE HTML FORMAT, THE PIECE AFTER A TABLE IS ALWAYS WRITTEN, EMPTY OR NOT** (the mark
-	  alone, then). Two of Word's own rules ask for it: a cell has to END with a paragraph (so a nested
-	  table cannot be a cell's last thing), and two tables that touch are joined into one. An empty
-	  piece joins back on as nothing, so it costs the round trip nothing.
-	★**THE BODY OPENS WITH A LEGEND** (WriteParts): a control tagged kcm-legend holding the rules and
-	  one of each mark to copy; the reader skips it whole.
+	★**A TABLE STANDS BETWEEN PARAGRAPHS, AND NOTHING SAYS WHOSE IT IS** (2026-09-19 evening, the
+	  user's rule: "the document decides"). "AB" with a table after the A is <w:p>A</w:p>, the
+	  <w:tbl>, then <w:p>B</w:p> - the same bytes whether InDesign held one paragraph or three. Which
+	  it was is settled when the file comes back, from the document (RejoinTables). Two spellings
+	  that carried it in the file - a paragraph style, then a pair of locked marks with a legend -
+	  were retired the same day (the note above AppendParagraph in the .cpp says why).
+	★**AN EMPTY PARAGRAPH IS WRITTEN EXACTLY WHERE WORD ASKS FOR ONE**: after a table that ends its
+	  run (a cell has to END with a paragraph, so a nested table cannot be a cell's last thing) and
+	  between two tables (two that touch are joined into one). It joins back on as nothing.
 	★A MERGED CELL: Story's rows hold the ANCHORS only, and Word wants a cell in every row a
 	  vertical merge covers, so the covered ones are made up here (<w:vMerge/>, an empty paragraph).
 
-	@param paras    the body's paragraphs, or one cell's.
 	@param inTable  -1 for the body, else the index in s.fTables of the table that cell is in -
 	                with inRow and inCell, this is how KCMStoryShape::Table says where it stands.
+	                (A `paras` argument naming the same run stood in front of these until 2026-09-24
+	                and was ignored: the copy's run is what is written.)
 	@param out      appended to - and left exactly as it was when this answers kFalse.
 	@return kFalse with a reason: WriteParagraphContent's refusals, from however deep. */
-bool16 WriteBlocks(const KCMStoryShape::Story& s, const std::vector<KCMStoryShape::Para>& paras,
-				   int32 inTable, int32 inRow, int32 inCell, std::string& out, std::string& whyNot);
+bool16 WriteBlocks(const KCMStoryShape::Story& s, int32 inTable, int32 inRow, int32 inCell,
+				   std::string& out, std::string& whyNot);
 
 /* (⛔Fingerprint stood here until 2026-09-23 - "<bytes>-<crc32>" of what Write made of a story, written
 	into the tag so the import could tell whether Word's revision marks were the whole truth. The import
@@ -173,13 +172,11 @@ bool16 ReadTag(const std::string& customXmlPart, Tag& out, std::string& whyNot);
 	changed run in its outer <w:rPr>. ★A side effect worth knowing: something this reader refuses
 	that stands only inside a DELETION no longer stops the file, because what was deleted is not read.) */
 
-/** One revision mark met on the way: who, and when. Word puts both on every one (measured
-	2026-09-19 - <w:ins>, <w:del>, <w:rPrChange>, a paragraph mark's and a row's alike). */
-struct Mark
-{
-	std::string	fAuthor;
-	std::string	fDate;
-};
+/* (⛔struct Mark - who made a revision mark, and when - stood here until 2026-09-24, with ReadSide's
+	outMarks and ReadResult::fMarks. The reader collected every <w:ins>, <w:del> and <w:rPrChange> it
+	met; nothing in the product read the list once the import stopped asking whether the marks were
+	the whole truth (S0c, 2026-09-23). A mark still DECIDES what is read - an insertion is Word's, a
+	deletion is not - it is only not counted any more.) */
 
 /** document.xml (+ footnotes.xml, + styles.xml; either may be empty) -> the Story as Word shows it.
 
@@ -187,23 +184,21 @@ struct Mark
 	  ruby, an automatic number, an element it has never heard of - and never skips it: skipping
 	  would drop somebody's words without a word (the rule every reader of this round trip keeps). What it
 	  ignores is only what carries no text: bookmarks, proofing marks, Word's own formatting-change
-	  records on tables, and every kind of formatting this format does not carry.
-	@param outMarks  every revision mark met - inside a deletion too, though its words are not read;
-	                 nil when not wanted. */
+	  records on tables, and every kind of formatting this format does not carry. */
 bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml, const std::string& stylesXml,
-				KCMStoryShape::Story& out, std::vector<Mark>* outMarks, std::string& whyNot);
+				KCMStoryShape::Story& out, std::string& whyNot);
 
 /** What one package holds, once read. */
 struct ReadResult
 {
 	KCMStoryShape::Story	fAfter;		// the story as Word shows it
 	Tag					fTag;		// fPresent kFalse for a file that carries none (not written by us)
-	std::vector<Mark>	fMarks;		// empty = no revision mark anywhere in the file
-	// (⛔fOrigin - the story as it stood when written - stood here until 2026-09-23; see enum Side's note.)
+	// (⛔fOrigin - the story as it stood when written - stood here until 2026-09-23; see enum Side's note.
+	//  ⛔fMarks - every revision mark met - until 2026-09-24; see the note where struct Mark stood.)
 };
 
 /** The parts of one package - whichever the caller could fetch; word/document.xml is the one that
-	has to be there - -> the story as Word shows it, the tag, the marks. */
+	has to be there - -> the story as Word shows it, and the tag. */
 bool16 Read(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, std::string& whyNot);
 
 /* (⛔OriginMatchesTag stood here until 2026-09-23 - see the note where Fingerprint stood.) */

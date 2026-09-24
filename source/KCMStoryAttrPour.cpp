@@ -16,6 +16,7 @@
 #include "KCMStoryAttrPour.h"
 #include "KCMParaText.h"		// PlanSpanChanges / ModelOffsetInParagraph - the pure half
 #include "KCMStoryRestore.h"	// the writers, shared with the restore and the PDF report
+#include "KCMTextWords.h"		// PMStringOfUtf8 - a span's value as InDesign takes it
 
 namespace
 {
@@ -61,12 +62,7 @@ bool16 StandsOnTheSameCharacters(const KCMAttrSpanList& applies, const KCMAttrSp
 	return kFalse;
 }
 
-PMString Utf8(const std::string& text)
-{
-	PMString s;
-	s.SetUTF8String(text);		// marks it not translatable, which is what we want
-	return s;
-}
+using KCMTextWords::PMStringOfUtf8;
 
 }	// anonymous namespace
 
@@ -125,7 +121,7 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 	std::vector<int16> kentenChars(applyKenten.size(), 0);		// the glyph, for a custom mark only
 	for (size_t i = 0; i < applyKenten.size(); ++i)
 	{
-		const PMString value = Utf8(applyKenten[i].fValue);
+		const PMString value = PMStringOfUtf8(applyKenten[i].fValue);
 		int16 kind = IKentenStyle::Kenten_None;
 		if (KCMKentenKindOf(value, kind))
 		{
@@ -284,7 +280,7 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 		// ★fGroup COMES FROM THE FILE. The comparison does not judge by it (2026-09-12, the user's
 		//   decision), but a reading being written has to say which it is - and the file's answer
 		//   is the reader's own.
-		if (KCMApplyRuby(model, at, len, Utf8(applyRuby[i].fValue), applyRuby[i].fGroup) != kSuccess)
+		if (KCMApplyRuby(model, at, len, PMStringOfUtf8(applyRuby[i].fValue), applyRuby[i].fGroup) != kSuccess)
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 			whyNot = "a ruby could not be written (a locked story or layer?)";

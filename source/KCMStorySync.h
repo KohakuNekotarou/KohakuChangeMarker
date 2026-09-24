@@ -68,10 +68,19 @@ bool16 SameTablePlaces(const KCMStoryShape::Story& a, const KCMStoryShape::Story
 	outNow. For the harness: it is the only way to check a plan without InDesign. */
 KCMStoryShape::Story ApplyToShape(const KCMStoryShape::Story& normalizedNow, const Plan& plan);
 
-/** The notes numbered in the order their references are READ (the body, a table's cells where the
-	table stands, row by row). InDesign numbers notes that way; Word's file numbers them by its own
-	ids, which is creation order. Two stories are compared after both have been through this. */
-void RenumberNotesByReading(KCMStoryShape::Story& s);
+/** The paragraphs standing at `w` in `s` - the body's, one cell's or one note's - or nil when `w` names a
+	place the story does not have. ★Shared with the writing half (KCMStorySyncApply), which asks the same
+	question of the finished shape. */
+const std::vector<KCMStoryShape::Para>* ParasAt(const KCMStoryShape::Story& s, const Where& w);
+std::vector<KCMStoryShape::Para>* ParasAt(KCMStoryShape::Story& s, const Where& w);
+
+/** Every place of `s` a plan may name, in document order: the body, every cell (table, row, cell),
+	every note. */
+void AllPlaces(const KCMStoryShape::Story& s, std::vector<Where>& out);
+
+/* (⛔RenumberNotesByReading - the notes in the order their references are READ, a table's cells where
+	the table stands - stood here until 2026-09-24 with nothing calling it: the apply pairs notes by the
+	THREAD order below, which is the document's own numbering.) */
 
 /** The notes numbered in the order the STORY'S THREADS hold their references: the body first, then
 	every table's cells, table by table (in ordinal order, which is thread order - KCMStoryTextExport's

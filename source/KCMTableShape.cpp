@@ -45,6 +45,18 @@ bool16 KCMReadTableShapes(ITextModel* model, std::vector<KCMTableShape>& out)
 	out.clear();
 	if (model == nil)
 		return kFalse;
+	// ★THE SAME TABLES LEFT OUT AS KCMTextRead LEAVES OUT (2026-09-24), or the index here and the
+	//   cells' table ordinal there would name different tables (KCMSkippedText.h).
+	KCMSkippedText skipped;
+	skipped.Build(model);
+	return KCMReadTableShapes(model, skipped, out);
+}
+
+bool16 KCMReadTableShapes(ITextModel* model, const KCMSkippedText& skipped, std::vector<KCMTableShape>& out)
+{
+	out.clear();
+	if (model == nil)
+		return kFalse;
 
 	InterfacePtr<ITextStoryThreadDictHier> hier(model, UseDefaultIID());
 	if (hier == nil)
@@ -53,11 +65,6 @@ bool16 KCMReadTableShapes(ITextModel* model, std::vector<KCMTableShape>& out)
 	IDataBase* const db = ::GetDataBase(hier);
 	if (db == nil)
 		return kFalse;
-
-	// ★THE SAME TABLES LEFT OUT AS KCMTextRead LEAVES OUT (2026-09-24), or fOrdinal here and the
-	//   cells' table ordinal there would name different tables (KCMSkippedText.h).
-	KCMSkippedText skipped;
-	skipped.Build(model);
 
 	std::vector<std::pair<TextIndex, KCMTableShape> > found;
 
@@ -84,8 +91,11 @@ bool16 KCMReadTableShapes(ITextModel* model, std::vector<KCMTableShape>& out)
 
 		const RowRange rows = table->GetTotalRows();
 		const ColRange cols = table->GetTotalCols();
+		const RowRange header = table->GetHeaderRows();
 		shape.fRows = rows.count;
 		shape.fCols = cols.count;
+		shape.fHeaderStart = header.start;
+		shape.fHeaderCount = header.count;
 
 		for (int32 r = rows.start; r < rows.start + rows.count; ++r)
 		{
@@ -127,10 +137,7 @@ bool16 KCMReadTableShapes(ITextModel* model, std::vector<KCMTableShape>& out)
 
 	std::sort(found.begin(), found.end(), EarlierBlock);
 	for (size_t i = 0; i < found.size(); ++i)
-	{
-		found[i].second.fOrdinal = static_cast<int32>(i);
 		out.push_back(found[i].second);
-	}
 	return kTrue;
 }
 

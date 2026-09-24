@@ -305,15 +305,10 @@ int32 PlanShape(const KCMStoryShape::Story& ns, const KCMStoryShape::Story& ws, 
 	if (!steps.empty())
 		return 1;
 
-	// ---- 2. rows and columns, at the end ------------------------------------------------------------
+	// ---- 2. rows and columns, at the end (a table standing in one that goes was refused above, before
+	//         anything of stage 1 could run) ----------------------------------------------------------
 	if (nRows != wRows || nCols != wCols)
 	{
-		for (size_t i = 0; i < nc.size(); ++i)
-			if ((nc[i].fRow >= wRows || nc[i].fCol >= wCols) && TableStandsIn(ns, t, nc[i].fRow, nc[i].fIndex))
-			{
-				why = "a table stands in a row or column that would be taken away";
-				return -1;
-			}
 		if (nRows != wRows)
 		{
 			Step s = ShapeStep(Step::kResizeRows, t, nil);
@@ -548,41 +543,7 @@ int32 PlanTables(const KCMStoryShape::Story& now, const KCMStoryShape::Story& wo
 	return steps.empty() ? 0 : 1;
 }
 
-/** The tables of `s` standing in one place, in document order. */
-void TablesIn(const KCMStoryShape::Story& s, int32 inTable, int32 inRow, int32 inCell, std::vector<size_t>& out)
-{
-	out.clear();
-	for (size_t t = 0; t < s.fTables.size(); ++t)
-	{
-		const KCMStoryShape::Table& x = s.fTables[t];
-		if (x.fInTable != inTable)
-			continue;
-		if (inTable >= 0 && (x.fInRow != inRow || x.fInCell != inCell))
-			continue;
-		out.push_back(t);
-	}
-}
-
-const Paras* ParasAt(const KCMStoryShape::Story& s, const Where& w)
-{
-	if (w.fKind == Where::kBody)
-		return &s.fBody;
-	if (w.fKind == Where::kNote)
-		return (w.fNote >= 0 && static_cast<size_t>(w.fNote) < s.fNotes.size()) ? &s.fNotes[static_cast<size_t>(w.fNote)] : nil;
-	if (w.fTable < 0 || static_cast<size_t>(w.fTable) >= s.fTables.size())
-		return nil;
-	const KCMStoryShape::Table& t = s.fTables[static_cast<size_t>(w.fTable)];
-	if (w.fRow < 0 || static_cast<size_t>(w.fRow) >= t.fRows.size())
-		return nil;
-	if (w.fCell < 0 || static_cast<size_t>(w.fCell) >= t.fRows[static_cast<size_t>(w.fRow)].fCells.size())
-		return nil;
-	return &t.fRows[static_cast<size_t>(w.fRow)].fCells[static_cast<size_t>(w.fCell)].fParas;
-}
-
-Paras* ParasAt(KCMStoryShape::Story& s, const Where& w)
-{
-	return const_cast<Paras*>(ParasAt(static_cast<const KCMStoryShape::Story&>(s), w));
-}
+using KCMStoryShape::TablesIn;		// the tables standing in one run - the body's, or one cell's
 
 /** A position of N's paragraph carried through the character changes to W's, or -1 when a change
 	takes away the character it stands before. A position AT the start of a change stays before it. */
@@ -1144,51 +1105,6 @@ void ApplyPlace(KCMStoryShape::Story& out, const Where& where, const Plan& plan)
 	}
 }
 
-void AllPlaces(const KCMStoryShape::Story& s, std::vector<Where>& out)
-{
-	out.clear();
-	out.push_back(Where::Body());
-	for (size_t t = 0; t < s.fTables.size(); ++t)
-		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
-			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
-				out.push_back(Where::Cell(static_cast<int32>(t), static_cast<int32>(r), static_cast<int32>(c)));
-	for (size_t n = 0; n < s.fNotes.size(); ++n)
-		out.push_back(Where::Note(static_cast<int32>(n)));
-}
-
-/** Reading order: a place's paragraphs, and inside each its references and the tables standing in
-	it, by position (a reference before a table at the same offset). */
-void ReadPlace(const KCMStoryShape::Story& s, const Paras& ps, int32 inT, int32 inR, int32 inC, std::vector<int32>& order)
-{
-	std::vector<size_t> tables;
-	TablesIn(s, inT, inR, inC, tables);
-	for (size_t p = 0; p < ps.size(); ++p)
-	{
-		std::vector< std::pair< std::pair<int32, int32>, int32 > > events;	// ((position, 0 ref / 1 table), what)
-		for (size_t r = 0; r < ps[p].fNoteRefs.size(); ++r)
-			events.push_back(std::make_pair(std::make_pair(ps[p].fNoteRefs[r].fAt, 0), ps[p].fNoteRefs[r].fNote));
-		for (size_t k = 0; k < tables.size(); ++k)
-			if (s.fTables[tables[k]].fParaIndex == static_cast<int32>(p))
-				events.push_back(std::make_pair(std::make_pair(s.fTables[tables[k]].fOffset, 1), static_cast<int32>(tables[k])));
-		std::stable_sort(events.begin(), events.end(),
-						 [](const std::pair< std::pair<int32, int32>, int32 >& x, const std::pair< std::pair<int32, int32>, int32 >& y)
-						 { return x.first < y.first; });
-		for (size_t e = 0; e < events.size(); ++e)
-		{
-			if (events[e].first.second == 0)
-			{
-				order.push_back(events[e].second);
-				continue;
-			}
-			const int32 t = events[e].second;
-			const KCMStoryShape::Table& tb = s.fTables[static_cast<size_t>(t)];
-			for (size_t r = 0; r < tb.fRows.size(); ++r)
-				for (size_t c = 0; c < tb.fRows[r].fCells.size(); ++c)
-					ReadPlace(s, tb.fRows[r].fCells[c].fParas, t, static_cast<int32>(r), static_cast<int32>(c), order);
-		}
-	}
-}
-
 void RemapRefs(Paras& ps, const std::vector<int32>& newOf)
 {
 	for (size_t p = 0; p < ps.size(); ++p)
@@ -1209,14 +1125,63 @@ void RemapRefs(Paras& ps, const std::vector<int32>& newOf)
 
 void RemapAllRefs(KCMStoryShape::Story& s, const std::vector<int32>& newOf)
 {
-	RemapRefs(s.fBody, newOf);
-	for (size_t t = 0; t < s.fTables.size(); ++t)
-		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
-			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
-				RemapRefs(s.fTables[t].fRows[r].fCells[c].fParas, newOf);
+	std::vector<Paras*> runs;		// the body and every cell: a note holds no reference
+	KCMStoryShape::ParaRuns(s, kFalse, runs);
+	for (size_t i = 0; i < runs.size(); ++i)
+		RemapRefs(*runs[i], newOf);
+}
+
+/** The notes marked gone taken out of `s`, the rest closed up, and every reference renumbered - the one
+	ending three walks share (ApplyToShape, ReshapeOnPaper, the renumbering below). */
+void DropNotes(KCMStoryShape::Story& s, const std::vector<bool16>& noteGone)
+{
+	std::vector<int32> newOf(s.fNotes.size(), -1);
+	std::vector<Paras> notes;
+	for (size_t k = 0; k < s.fNotes.size() && k < noteGone.size(); ++k)
+	{
+		if (noteGone[k])
+			continue;
+		newOf[k] = static_cast<int32>(notes.size());
+		notes.push_back(s.fNotes[k]);
+	}
+	s.fNotes = notes;
+	RemapAllRefs(s, newOf);
 }
 
 }	// anonymous namespace
+
+const std::vector<KCMStoryShape::Para>* ParasAt(const KCMStoryShape::Story& s, const Where& w)
+{
+	if (w.fKind == Where::kBody)
+		return &s.fBody;
+	if (w.fKind == Where::kNote)
+		return (w.fNote >= 0 && static_cast<size_t>(w.fNote) < s.fNotes.size()) ? &s.fNotes[static_cast<size_t>(w.fNote)] : nil;
+	if (w.fTable < 0 || static_cast<size_t>(w.fTable) >= s.fTables.size())
+		return nil;
+	const KCMStoryShape::Table& t = s.fTables[static_cast<size_t>(w.fTable)];
+	if (w.fRow < 0 || static_cast<size_t>(w.fRow) >= t.fRows.size())
+		return nil;
+	if (w.fCell < 0 || static_cast<size_t>(w.fCell) >= t.fRows[static_cast<size_t>(w.fRow)].fCells.size())
+		return nil;
+	return &t.fRows[static_cast<size_t>(w.fRow)].fCells[static_cast<size_t>(w.fCell)].fParas;
+}
+
+std::vector<KCMStoryShape::Para>* ParasAt(KCMStoryShape::Story& s, const Where& w)
+{
+	return const_cast<Paras*>(ParasAt(static_cast<const KCMStoryShape::Story&>(s), w));
+}
+
+void AllPlaces(const KCMStoryShape::Story& s, std::vector<Where>& out)
+{
+	out.clear();
+	out.push_back(Where::Body());
+	for (size_t t = 0; t < s.fTables.size(); ++t)
+		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
+			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
+				out.push_back(Where::Cell(static_cast<int32>(t), static_cast<int32>(r), static_cast<int32>(c)));
+	for (size_t n = 0; n < s.fNotes.size(); ++n)
+		out.push_back(Where::Note(static_cast<int32>(n)));
+}
 
 bool16 Normalize(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word,
 				 KCMStoryShape::Story& outNow, KCMStoryShape::Story& outWord, std::string& whyNot)
@@ -1410,17 +1375,7 @@ KCMStoryShape::Story ApplyToShape(const KCMStoryShape::Story& normalizedNow, con
 	}
 
 	// the notes taken away: their references and their words go, and the rest close up
-	std::vector<int32> newOf(out.fNotes.size(), -1);
-	std::vector<Paras> notes;
-	for (size_t k = 0; k < out.fNotes.size(); ++k)
-	{
-		if (noteGone[k])
-			continue;
-		newOf[k] = static_cast<int32>(notes.size());
-		notes.push_back(out.fNotes[k]);
-	}
-	out.fNotes = notes;
-	RemapAllRefs(out, newOf);
+	DropNotes(out, noteGone);
 	return out;
 }
 
@@ -1666,11 +1621,8 @@ KCMStoryShape::Story ReshapeOnPaper(const KCMStoryShape::Story& now, const Plan&
 				kept.push_back(out.fTables[k]);
 			}
 			for (size_t k = 0; k < kept.size(); ++k)
-			{
-				kept[k].fOrdinal = static_cast<int32>(k);
 				if (kept[k].fInTable >= 0)
 					kept[k].fInTable = newIndex[static_cast<size_t>(kept[k].fInTable)];
-			}
 			out.fTables = kept;
 		}
 		std::vector<int32> madeAt;		// where each table added so far made its paragraph, in the document's count
@@ -1727,11 +1679,8 @@ KCMStoryShape::Story ReshapeOnPaper(const KCMStoryShape::Story& now, const Plan&
 			}
 			out.fTables.insert(out.fTables.begin() + static_cast<std::ptrdiff_t>(at), t);
 			for (size_t k = 0; k < out.fTables.size(); ++k)
-			{
-				out.fTables[k].fOrdinal = static_cast<int32>(k);
 				if (k != at && out.fTables[k].fInTable >= static_cast<int32>(at))
 					++out.fTables[k].fInTable;
-			}
 		}
 	}
 
@@ -1774,17 +1723,7 @@ KCMStoryShape::Story ReshapeOnPaper(const KCMStoryShape::Story& now, const Plan&
 	if (!any)
 		return out;
 
-	std::vector<int32> newOf(out.fNotes.size(), -1);
-	std::vector<Paras> notes;
-	for (size_t k = 0; k < out.fNotes.size(); ++k)
-	{
-		if (noteGone[k])
-			continue;
-		newOf[k] = static_cast<int32>(notes.size());
-		notes.push_back(out.fNotes[k]);
-	}
-	out.fNotes = notes;
-	RemapAllRefs(out, newOf);
+	DropNotes(out, noteGone);
 	// ★paragraphs moved between cells (a merge) can change which note the story's threads meet first
 	RenumberNotesByThread(out);
 	return out;
@@ -1852,40 +1791,11 @@ bool16 SameTablePlaces(const KCMStoryShape::Story& a, const KCMStoryShape::Story
 	return kTrue;
 }
 
-void RenumberNotesByReading(KCMStoryShape::Story& s)
-{
-	std::vector<int32> order;
-	ReadPlace(s, s.fBody, -1, 0, 0, order);
-	std::vector<int32> newOf(s.fNotes.size(), -1);
-	std::vector<Paras> notes;
-	for (size_t i = 0; i < order.size(); ++i)
-	{
-		const int32 o = order[i];
-		if (o < 0 || static_cast<size_t>(o) >= s.fNotes.size() || newOf[static_cast<size_t>(o)] >= 0)
-			continue;
-		newOf[static_cast<size_t>(o)] = static_cast<int32>(notes.size());
-		notes.push_back(s.fNotes[static_cast<size_t>(o)]);
-	}
-	for (size_t k = 0; k < s.fNotes.size(); ++k)		// a note nobody refers to keeps a place at the end
-	{
-		if (newOf[k] >= 0)
-			continue;
-		newOf[k] = static_cast<int32>(notes.size());
-		notes.push_back(s.fNotes[k]);
-	}
-	s.fNotes = notes;
-	RemapAllRefs(s, newOf);
-}
-
 void RenumberNotesByThread(KCMStoryShape::Story& s)
 {
 	std::vector<int32> order;
-	std::vector<const Paras*> places;
-	places.push_back(&s.fBody);
-	for (size_t t = 0; t < s.fTables.size(); ++t)
-		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
-			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
-				places.push_back(&s.fTables[t].fRows[r].fCells[c].fParas);
+	std::vector<const Paras*> places;		// the body and every cell, in thread order
+	KCMStoryShape::ParaRuns(s, kFalse, places);
 	for (size_t p = 0; p < places.size(); ++p)
 		for (size_t i = 0; i < places[p]->size(); ++i)
 			for (size_t r = 0; r < (*places[p])[i].fNoteRefs.size(); ++r)

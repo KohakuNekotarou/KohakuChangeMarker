@@ -5,7 +5,7 @@
 //========================================================================================
 
 // ⚠FIRST AND UNGUARDED: the plug-in builds with /Yu, which discards everything up to and including
-//  this line. The harness answers it with a stub of its own (work/kcm-storyhtml-test).
+//  this line. The harness answers it with a stub of its own (work/kcm-storydocx-test).
 #include "VCPlugInHeaders.h"
 
 #include "KCMZipStore.h"

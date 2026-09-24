@@ -27,7 +27,6 @@ class KCMImportAuthor
 public:
 	KCMImportAuthor();
 	~KCMImportAuthor();
-	bool16 Switched() const { return fSwitched; }
 private:
 	KCMImportAuthor(const KCMImportAuthor&);
 	KCMImportAuthor& operator=(const KCMImportAuthor&);

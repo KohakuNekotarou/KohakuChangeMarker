@@ -5,7 +5,7 @@
 //========================================================================================
 
 // ⚠FIRST AND UNGUARDED: the plug-in builds with /Yu, which discards everything up to and including
-//  this line. The harness answers it with a stub of its own (work/kcm-storyhtml-test).
+//  this line. The harness answers it with a stub of its own (work/kcm-storydocx-test).
 #include "VCPlugInHeaders.h"
 
 #include "KCMStoryDocx.h"
@@ -816,12 +816,12 @@ bool16 AppendBlocks(const KCMStoryShape::Story& s, const std::vector<KCMStorySha
 
 }	// anonymous namespace
 
-bool16 WriteBlocks(const KCMStoryShape::Story& s, const std::vector<KCMStoryShape::Para>& paras,
-				   int32 inTable, int32 inRow, int32 inCell, std::string& out, std::string& whyNot)
+bool16 WriteBlocks(const KCMStoryShape::Story& s, int32 inTable, int32 inRow, int32 inCell,
+				   std::string& out, std::string& whyNot)
 {
 	// ★ON A COPY IN THE SPLIT SHAPE (SplitAtTables): the one shape this file writes, whatever shape the
-	//   story came in - see the note above AppendParagraph. `paras` names WHICH run of paragraphs
-	//   (the body, or a cell), and the same run of the copy is what is written.
+	//   story came in - see the note above AppendParagraph. inTable / inRow / inCell name WHICH run of
+	//   paragraphs (the body, or a cell), and that run of the copy is what is written.
 	KCMStoryShape::Story split = s;
 	SplitAtTables(split, kFalse /*as written: a ruby cut by a table is written on both sides*/);
 	const std::vector<KCMStoryShape::Para>* run = &split.fBody;
@@ -836,7 +836,6 @@ bool16 WriteBlocks(const KCMStoryShape::Story& s, const std::vector<KCMStoryShap
 		}
 		run = &split.fTables[static_cast<size_t>(inTable)].fRows[static_cast<size_t>(inRow)].fCells[static_cast<size_t>(inCell)].fParas;
 	}
-	(void)paras;		// the caller's run, named; the copy's is what is written
 
 	// Into a string of its own: a refusal from deep inside a cell leaves `out` as it was found.
 	std::string made;
@@ -920,7 +919,9 @@ bool16 WriteStyles(const KCMStoryShape::Story& s, std::string& out, std::string&
 		   "<w:qFormat/></w:style>"
 		   "<w:style w:type=\"character\" w:default=\"1\" w:styleId=\"DefaultParagraphFont\">"
 		   "<w:name w:val=\"Default Paragraph Font\"/><w:uiPriority w:val=\"1\"/><w:semiHidden/></w:style>";
-	// (no paragraph style of ours: the slot is left for InDesign's paragraph style names - kMarkContinues says why)
+	// (no paragraph style of ours: the slot is left for the day it carries InDesign's paragraph style
+	//  names - the design, 11-4. A style that marked a paragraph as continuing past a table stood here
+	//  for a day, 2026-09-19, and went with the marks; the note above AppendParagraph says why.)
 
 	for (size_t i = 0; i < kBuiltInKentenCount; ++i)
 	{
@@ -1102,7 +1103,7 @@ bool16 WriteStoryElements(const KCMStoryShape::Story& s, std::string& outDocumen
 	outDocument += "><w:body>";
 	// (No legend since 2026-09-19 evening - the user's call: a plain file. The marks it explained
 	//  are gone too; see the note above AppendParagraph.)
-	if (!WriteBlocks(s, s.fBody, -1, 0, 0, outDocument, whyNot))
+	if (!WriteBlocks(s, -1, 0, 0, outDocument, whyNot))
 		return kFalse;
 	outDocument += "<w:sectPr><w:pgSz w:w=\"11906\" w:h=\"16838\"/>";
 	if (s.fVertical)
@@ -1392,12 +1393,11 @@ typedef std::vector< std::pair<std::string, std::string> > StyleNames;	// styleI
 struct Reader
 {
 	const KCMXmlTree*		fTree;
-	std::vector<Mark>*		fMarks;
 	StyleNames				fStyleNames;
 	KCMStoryShape::Story*	fStory;
 	std::string				fWhy;
 
-	Reader() : fTree(nil), fMarks(nil), fStory(nil) {}
+	Reader() : fTree(nil), fStory(nil) {}
 };
 
 bool16 Refuse(Reader& rd, const std::string& why)
@@ -1426,6 +1426,46 @@ bool16 IsBlank(const std::string& s)
 	return kTrue;
 }
 
+/** What one child of a walked element is, before its name is asked: nothing (blank text between tags,
+	which every one of Word's parts is full of), a Word element, or an <mc:AlternateContent> whose
+	<mc:Fallback> the walker reads as if it stood here (the re-check, R5: a newer Word wraps what it
+	draws in one, and the fallback holds the older spelling).
+
+	★**ONE PROLOGUE FOR THE SIX WALKERS** (2026-09-24). Runs, paragraph content, blocks, rows and cells
+	  all began with the same twelve lines - text that is not blank refused, a namespace that is not
+	  Word's refused, the AlternateContent taken through its fallback - and a rule changed in one of
+	  them would have been a rule the others silently kept. What differs between them is only what
+	  they do with a Word element, which stays in each.
+	@param outside the refusal's word for text standing where none may: "a run", "a paragraph".
+	@param mcOk    whether this walker takes an AlternateContent at all (the table walkers do not).
+	@param outFallback the <mc:Fallback> to walk, when the answer is kChildFallback (-1 for none: an
+	       AlternateContent with no fallback carries nothing this reader can read, and is passed over). */
+enum ChildKind { kChildNothing, kChildWord, kChildFallback };
+
+bool16 KindOfChild(Reader& rd, int32 c, const char* outside, bool16 mcOk, ChildKind& outKind, int32& outFallback)
+{
+	const KCMXmlTree& t = *rd.fTree;
+	const KCMXmlNode& cn = t.At(c);
+	outKind = kChildNothing;
+	outFallback = -1;
+	if (cn.IsText())
+	{
+		if (!IsBlank(cn.fText))
+			return Refuse(rd, std::string("text stands outside ") + outside);
+		return kTrue;
+	}
+	if (cn.fNs == kMc && cn.fName == "AlternateContent" && mcOk)
+	{
+		outFallback = t.Child(c, kMc, "Fallback");
+		outKind = (outFallback >= 0) ? kChildFallback : kChildNothing;
+		return kTrue;
+	}
+	if (cn.fNs != kW)
+		return Refuse(rd, "an element this reader does not know: " + QName(t, c));
+	outKind = kChildWord;
+	return kTrue;
+}
+
 /** A w:vert / w:combine value: "1", "true" and "on" mean on; absent or anything else means off. */
 bool16 IsOn(const std::string* v)
 {
@@ -1444,18 +1484,6 @@ std::string FirstWord(const std::string& code)
 	while (j < code.size() && code[j] != ' ' && code[j] != '\t')
 		++j;
 	return code.substr(i, j - i);
-}
-
-void NoteMark(Reader& rd, int32 node)
-{
-	if (rd.fMarks == nil)
-		return;
-	Mark m;
-	const std::string* author = rd.fTree->Attr(node, "author");
-	const std::string* date = rd.fTree->Attr(node, "date");
-	if (author != nil)	m.fAuthor = *author;
-	if (date != nil)	m.fDate = *date;
-	rd.fMarks->push_back(m);
 }
 
 /** The w:name a styleId stands for, or the id itself when styles.xml did not say. ★THE NAME
@@ -1494,18 +1522,15 @@ void CollectStyleNames(const KCMXmlTree& styles, StyleNames& out)
 }
 
 /** The <w:rPr> a run wears as Word shows it - the outer one - and what it says. (A <w:rPrChange> in
-	it holds the properties as they WERE; that side stopped being read on 2026-09-23.) */
+	it holds the properties as they WERE; that side stopped being read on 2026-09-23, and the change
+	itself stopped being counted on 2026-09-24 - the header, where struct Mark stood.) */
 bool16 LookOf(Reader& rd, int32 rPr, RLook& out)
 {
 	out = RLook();
 	if (rPr < 0)
 		return kTrue;
 	const KCMXmlTree& t = *rd.fTree;
-
 	const int32 use = rPr;
-	const int32 change = t.Child(rPr, kW, "rPrChange");
-	if (change >= 0)
-		NoteMark(rd, change);
 
 	const int32 style = t.Child(use, kW, "rStyle");
 	if (style >= 0)
@@ -1815,24 +1840,20 @@ bool16 ReadRunChildren(Reader& rd, int32 node, const RLook& look, Building& b)
 	for (size_t k = 0; k < n.fChildren.size(); ++k)
 	{
 		const int32 c = n.fChildren[k];
-		const KCMXmlNode& cn = t.At(c);
-		if (cn.IsText())
+		ChildKind child = kChildNothing;
+		int32 fallback = -1;
+		if (!KindOfChild(rd, c, "a run", kTrue, child, fallback))
+			return kFalse;
+		if (child == kChildFallback)
 		{
-			if (!IsBlank(cn.fText))
-				return Refuse(rd, "text stands outside a run");
-			continue;
-		}
-		if (cn.fNs == kMc && cn.fName == "AlternateContent")
-		{
-			const int32 fallback = t.Child(c, kMc, "Fallback");
-			if (fallback >= 0 && !ReadRunChildren(rd, fallback, look, b))
+			if (!ReadRunChildren(rd, fallback, look, b))
 				return kFalse;
 			continue;
 		}
-		if (cn.fNs != kW)
-			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
+		if (child != kChildWord)
+			continue;
 
-		const std::string& name = cn.fName;
+		const std::string& name = t.At(c).fName;
 		if (name == "rPr")
 			continue;
 
@@ -1945,28 +1966,20 @@ bool16 ReadContent(Reader& rd, int32 node, Building& b)
 	for (size_t k = 0; k < n.fChildren.size(); ++k)
 	{
 		const int32 c = n.fChildren[k];
-		const KCMXmlNode& cn = t.At(c);
-		if (cn.IsText())
+		ChildKind child = kChildNothing;
+		int32 fallback = -1;
+		if (!KindOfChild(rd, c, "a run", kTrue, child, fallback))
+			return kFalse;
+		if (child == kChildFallback)
 		{
-			if (!IsBlank(cn.fText))
-				return Refuse(rd, "text stands outside a run");
+			if (!ReadContent(rd, fallback, b))
+				return kFalse;
 			continue;
 		}
-		if (cn.fNs == kMc)
-		{
-			if (cn.fName == "AlternateContent")
-			{
-				const int32 fallback = t.Child(c, kMc, "Fallback");
-				if (fallback >= 0 && !ReadContent(rd, fallback, b))
-					return kFalse;
-				continue;
-			}
-			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
-		}
-		if (cn.fNs != kW)
-			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
+		if (child != kChildWord)
+			continue;
 
-		const std::string& name = cn.fName;
+		const std::string& name = t.At(c).fName;
 		if (name == "pPr")
 		{
 			continue;					// read by ReadParagraph
@@ -1978,13 +1991,12 @@ bool16 ReadContent(Reader& rd, int32 node, Building& b)
 		}
 		else if (name == "ins" || name == "moveTo")
 		{
-			NoteMark(rd, c);
-			if (!ReadContent(rd, c, b))
+			if (!ReadContent(rd, c, b))	// what Word inserted is Word's story
 				return kFalse;
 		}
 		else if (name == "del" || name == "moveFrom")
 		{
-			NoteMark(rd, c);	// counted, and not read: what Word deleted is not Word's story
+			continue;					// what Word deleted is not
 		}
 		else if (name == "sdt")
 		{
@@ -2065,18 +2077,10 @@ bool16 ReadParagraph(Reader& rd, int32 p, Building& b)
 		const int32 rPr = t.Child(pPr, kW, "rPr");
 		if (rPr >= 0)
 		{
-			const int32 ins = t.Child(rPr, kW, "ins");
-			const int32 del = t.Child(rPr, kW, "del");
-			if (ins >= 0)
-			{
-				NoteMark(rd, ins);
+			if (t.Child(rPr, kW, "ins") >= 0)
 				b.fMarkRevision = 1;
-			}
-			if (del >= 0)
-			{
-				NoteMark(rd, del);
+			if (t.Child(rPr, kW, "del") >= 0)
 				b.fMarkRevision = -1;
-			}
 		}
 	}
 
@@ -2257,16 +2261,13 @@ bool16 ReadCells(Reader& rd, int32 container, int32 slot, int32 rowIndex, KCMSto
 	for (size_t k = 0; k < n.fChildren.size(); ++k)
 	{
 		const int32 c = n.fChildren[k];
-		const KCMXmlNode& cn = t.At(c);
-		if (cn.IsText())
-		{
-			if (!IsBlank(cn.fText))
-				return Refuse(rd, "text stands outside a paragraph");
+		ChildKind child = kChildNothing;
+		int32 fallback = -1;
+		if (!KindOfChild(rd, c, "a paragraph", kFalse, child, fallback))
+			return kFalse;
+		if (child != kChildWord)
 			continue;
-		}
-		if (cn.fNs != kW)
-			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
-		const std::string& name = cn.fName;
+		const std::string& name = t.At(c).fName;
 		if (name == "tc")
 		{
 			if (!ReadCell(rd, c, slot, rowIndex, row, col, open))
@@ -2306,15 +2307,9 @@ bool16 ReadRow(Reader& rd, int32 tr, int32 slot, GridOpen& open)
 			const std::string* v = t.Attr(header, "val");
 			row.fHeader = (v == nil || (*v != "0" && *v != "false" && *v != "off")) ? kTrue : kFalse;
 		}
-		const int32 ins = t.Child(trPr, kW, "ins");
-		const int32 del = t.Child(trPr, kW, "del");
-		if (ins >= 0)
-			NoteMark(rd, ins);			// a row Word added: Word's, and read
-		if (del >= 0)
-		{
-			NoteMark(rd, del);
-			return kTrue;				// a row Word took out: not Word's story
-		}
+		// a row Word added (<w:ins>) is Word's and is read like any other; one Word took out is not Word's story
+		if (t.Child(trPr, kW, "del") >= 0)
+			return kTrue;
 	}
 
 	const int32 rowIndex = static_cast<int32>(s.fTables[static_cast<size_t>(slot)].fRows.size());
@@ -2332,16 +2327,13 @@ bool16 ReadRows(Reader& rd, int32 container, int32 slot, GridOpen& open)
 	for (size_t k = 0; k < n.fChildren.size(); ++k)
 	{
 		const int32 c = n.fChildren[k];
-		const KCMXmlNode& cn = t.At(c);
-		if (cn.IsText())
-		{
-			if (!IsBlank(cn.fText))
-				return Refuse(rd, "text stands outside a paragraph");
+		ChildKind child = kChildNothing;
+		int32 fallback = -1;
+		if (!KindOfChild(rd, c, "a paragraph", kFalse, child, fallback))
+			return kFalse;
+		if (child != kChildWord)
 			continue;
-		}
-		if (cn.fNs != kW)
-			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
-		const std::string& name = cn.fName;
+		const std::string& name = t.At(c).fName;
 		if (name == "tr")
 		{
 			if (!ReadRow(rd, c, slot, open))
@@ -2377,8 +2369,6 @@ bool16 ReadTable(Reader& rd, int32 tbl, int32 inTable, int32 inRow, int32 inCell
 	s.fTables.push_back(KCMStoryShape::Table());
 	{
 		KCMStoryShape::Table& table = s.fTables[static_cast<size_t>(slot)];
-		table.fOrdinal = slot;
-		table.fSplitsPara = kTrue;
 		table.fParaIndex = paraIndex;
 		table.fOffset = offset;
 		table.fInTable = inTable;
@@ -2408,24 +2398,20 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 	for (size_t k = 0; k < n.fChildren.size(); ++k)
 	{
 		const int32 c = n.fChildren[k];
-		const KCMXmlNode& cn = t.At(c);
-		if (cn.IsText())
+		ChildKind child = kChildNothing;
+		int32 fallback = -1;
+		if (!KindOfChild(rd, c, "a paragraph", kTrue, child, fallback))
+			return kFalse;
+		if (child == kChildFallback)
 		{
-			if (!IsBlank(cn.fText))
-				return Refuse(rd, "text stands outside a paragraph");
-			continue;
-		}
-		if (cn.fNs == kMc && cn.fName == "AlternateContent")
-		{
-			const int32 fallback = t.Child(c, kMc, "Fallback");
-			if (fallback >= 0 && !ReadBlocks(rd, fallback, inTable, inRow, inCell, out))
+			if (!ReadBlocks(rd, fallback, inTable, inRow, inCell, out))
 				return kFalse;
 			continue;
 		}
-		if (cn.fNs != kW)
-			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
+		if (child != kChildWord)
+			continue;
 
-		const std::string& name = cn.fName;
+		const std::string& name = t.At(c).fName;
 		if (name == "p")
 		{
 			Building b;
@@ -2458,9 +2444,9 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 				//   in it; with words left, what Word makes of it is not measured, and it stays refused.
 				const int32 last = static_cast<int32>(out.size()) - 1;
 				bool16 holdsTable = kFalse;
-				for (size_t k = 0; k < rd.fStory->fTables.size() && !holdsTable; ++k)
+				for (size_t q = 0; q < rd.fStory->fTables.size() && !holdsTable; ++q)
 				{
-					const KCMStoryShape::Table& x = rd.fStory->fTables[k];
+					const KCMStoryShape::Table& x = rd.fStory->fTables[q];
 					if (x.fParaIndex == last && x.fInTable == inTable
 						&& (inTable < 0 || (x.fInRow == inRow && x.fInCell == inCell)))
 						holdsTable = kTrue;
@@ -2500,21 +2486,6 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 	return kTrue;
 }
 
-/** Every run of paragraphs a story has: the body, then each cell in table order. */
-void HoldersOf(KCMStoryShape::Story& s, std::vector< std::vector<KCMStoryShape::Para>* >& out)
-{
-	out.clear();
-	out.push_back(&s.fBody);
-	for (size_t t = 0; t < s.fTables.size(); ++t)
-	{
-		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
-		{
-			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
-				out.push_back(&s.fTables[t].fRows[r].fCells[c].fParas);
-		}
-	}
-}
-
 /*	ResolveNotes
 	The footnotes this side refers to, in ascending order of Word's ids, each read from
 	footnotes.xml; the references' fNote turned from an id into that rank.
@@ -2526,8 +2497,8 @@ void HoldersOf(KCMStoryShape::Story& s, std::vector< std::vector<KCMStoryShape::
 bool16 ResolveNotes(Reader& rd, const KCMXmlTree* notesTree)
 {
 	KCMStoryShape::Story& s = *rd.fStory;
-	std::vector< std::vector<KCMStoryShape::Para>* > holders;
-	HoldersOf(s, holders);
+	std::vector< std::vector<KCMStoryShape::Para>* > holders;	// the body and every cell - the notes are not read yet
+	KCMStoryShape::ParaRuns(s, kFalse, holders);
 
 	std::vector<int32> ids;			// ascending, each once
 	for (size_t h = 0; h < holders.size(); ++h)
@@ -2630,7 +2601,7 @@ void SettleParas(std::vector<KCMStoryShape::Para>& paras)
 }	// anonymous namespace
 
 bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml, const std::string& stylesXml,
-				KCMStoryShape::Story& out, std::vector<Mark>* outMarks, std::string& whyNot)
+				KCMStoryShape::Story& out, std::string& whyNot)
 {
 	out = KCMStoryShape::Story();
 	whyNot.clear();
@@ -2651,7 +2622,6 @@ bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml,
 
 	Reader rd;
 	rd.fTree = &document;
-	rd.fMarks = outMarks;
 	rd.fStory = &out;
 	if (!stylesXml.empty())
 	{
@@ -2726,29 +2696,13 @@ bool16 Read(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, std::
 	}
 
 	const std::string empty;
-	if (!ReadSide(*document, footnotes ? *footnotes : empty, styles ? *styles : empty,
-				  out.fAfter, &out.fMarks, whyNot))
-		return kFalse;
-	return kTrue;
+	return ReadSide(*document, footnotes ? *footnotes : empty, styles ? *styles : empty, out.fAfter, whyNot);
 }
 
 namespace
 {
 
-/** The tables standing in one run of paragraphs (the body, or one cell), in document order. */
-void TablesIn(const KCMStoryShape::Story& s, int32 inTable, int32 inRow, int32 inCell, std::vector<size_t>& out)
-{
-	out.clear();
-	for (size_t t = 0; t < s.fTables.size(); ++t)
-	{
-		const KCMStoryShape::Table& table = s.fTables[t];
-		if (table.fInTable != inTable)
-			continue;
-		if (inTable >= 0 && (table.fInRow != inRow || table.fInCell != inCell))
-			continue;
-		out.push_back(t);
-	}
-}
+using KCMStoryShape::TablesIn;		// the tables standing in one run - the body's, or one cell's
 
 /** Whether a paragraph says nothing: no words, no reference. */
 bool16 SaysNothing(const KCMStoryShape::Para& p)
@@ -3060,28 +3014,16 @@ void SettleForThisFormat(KCMStoryShape::Story& s)
 	//   paragraph (SplitAtTables says why), and the readings and the empty cells below are settled
 	//   on the split paragraphs.
 	SplitAtTables(s);
-	SettleParas(s.fBody);
-	for (size_t t = 0; t < s.fTables.size(); ++t)
+	std::vector< std::vector<KCMStoryShape::Para>* > runs;
+	KCMStoryShape::ParaRuns(s, kTrue, runs);
+	for (size_t i = 0; i < runs.size(); ++i)
 	{
-		for (size_t r = 0; r < s.fTables[t].fRows.size(); ++r)
-		{
-			for (size_t c = 0; c < s.fTables[t].fRows[r].fCells.size(); ++c)
-			{
-				// ★A CELL OF WORD'S HOLDS A PARAGRAPH, ALWAYS: the writer puts <w:p/> into one that
-				//   has none, and that is one empty paragraph on the way back.
-				std::vector<KCMStoryShape::Para>& paras = s.fTables[t].fRows[r].fCells[c].fParas;
-				if (paras.empty())
-					paras.push_back(KCMStoryShape::Para());
-				SettleParas(paras);
-			}
-		}
-	}
-	for (size_t n = 0; n < s.fNotes.size(); ++n)
-	{
-		// The same for a note: its mark has to stand in a paragraph, so the writer makes one (R2).
-		if (s.fNotes[n].empty())
-			s.fNotes[n].push_back(KCMStoryShape::Para());
-		SettleParas(s.fNotes[n]);
+		// ★A CELL OF WORD'S HOLDS A PARAGRAPH, ALWAYS, AND SO DOES A NOTE: the writer puts <w:p/> into a
+		//   cell that has none, and a note's mark has to stand in a paragraph (R2) - each is one empty
+		//   paragraph on the way back. (The body, runs[0], is never empty: the export gives it one.)
+		if (i > 0 && runs[i]->empty())
+			runs[i]->push_back(KCMStoryShape::Para());
+		SettleParas(*runs[i]);
 	}
 }
 
