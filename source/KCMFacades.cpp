@@ -729,6 +729,27 @@ public:
 		//   own step below it ("Import Story Text") was gone. Unwrapped, the step below survived (two steps);
 		//   BeginCommandSequence keeps both - one step, and the import still undoable under it. ⇒ Asked first
 		//   whether there is anything to reject, so an empty sequence never lands on the stack.
+		// ★★THE ROW IS COMPARED AGAIN FIRST, AND HAS TO BE THE SAME CHANGE (the same day's live re-check): the list
+		//   does not follow an edit - after Ctrl+Z of a reject it still showed the rows as they were after it, two
+		//   characters off - so a stale row could name the range of a DIFFERENT change of the import (measured:
+		//   the second "・" row then stood exactly on the first "・"). Refreshed here, and the change at this
+		//   index must still have the same kind and the same place on BOTH sides - the source side is what tells
+		//   the two "・" apart. Otherwise nothing is rejected and the reader is asked to right-click again.
+		Change before;
+		if (!this->GetChange(nth, which, before))
+		{
+			outMessage = "this change is not in the list any more";
+			return -1;
+		}
+		this->RefreshRow(nth);
+		Change now;
+		if (!this->GetChange(nth, which, now) || now.fKind != before.fKind || now.fWhat != before.fWhat
+			|| now.fTargetStart != before.fTargetStart || now.fTargetEnd != before.fTargetEnd
+			|| now.fSourceStart != before.fSourceStart || now.fSourceEnd != before.fSourceEnd)
+		{
+			outMessage = "the list was out of date - it has been compared again; right-click the change once more";
+			return -1;
+		}
 		if (KCMCountImportChanges(story, from, to) <= 0)
 		{
 			outMessage = "no import change on this row";
