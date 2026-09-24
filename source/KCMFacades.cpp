@@ -55,6 +55,7 @@
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - "Export Story Text..." on the flyout
 #include "KCMStoryTextImport.h"	// KCMImportStoryText - "Import Story Text..." on the flyout
 #include "KCMRejectImport.h"		// "Reject This Import Change" on a change row (2026-09-24, stage 2 A)
+#include "KCMRestoreAttr.h"		// "Restore from Source" on an attribute change row (2026-09-24, stage 2 B)
 #include "CmdUtils.h"				// ...wrapped in one command sequence
 #include "ICommandSequence.h"		// ICommandSequence - a plain sequence (RejectImportChange says why not an abortable one)
 #include "KCMBookPair.h"			// which two books, and their display paths
@@ -779,6 +780,29 @@ public:
 	}
 
 private:
+	/** The Target and Source stories and the change, when change `which` of row `nth` is an attribute change of a
+		kind that is written back, on a paired story, with both documents open (2026-09-24, stage 2 B).
+		★THE SAME UID ON BOTH SIDES: a Task Start copy is a saved file and a pair saved under a new name keeps its
+		  uids (KCMStoryStamp.h) - the door RunOne walks through. */
+	bool16 AttrChangeInBoth(int32 nth, int32 which, UIDRef& outTarget, UIDRef& outSource, Change& outChange)
+	{
+		IDataBase* const targetDB = KCMArmedTargetDB();
+		IDataBase* const sourceDB = KCMArmedSourceDB();
+		if (targetDB == nil || sourceDB == nil || !KCMIsDocDBOpen(targetDB) || !KCMIsDocDBOpen(sourceDB))
+			return kFalse;
+		Row row;
+		if (!this->GetRow(nth, row) || (row.fKinds & kKCMStoryKindUnpaired) != 0 || row.fStoryUID == kInvalidUID)
+			return kFalse;
+		if (!this->GetChange(nth, which, outChange) || outChange.fWhat != Change::kWhatAttr)
+			return kFalse;
+		const int32 k = outChange.fAttrKind;
+		if (k != kKCMStoryAttrRuby && k != kKCMStoryAttrKenten && k != kKCMStoryAttrWarichu && k != kKCMStoryAttrTcy)
+			return kFalse;
+		outTarget = UIDRef(targetDB, row.fStoryUID);
+		outSource = UIDRef(sourceDB, row.fStoryUID);
+		return kTrue;
+	}
+
 	/** The story and the range of change `which` of row `nth`, in the Target that is open and armed. */
 	bool16 ChangeRangeInTarget(int32 nth, int32 which, UIDRef& outStory, TextIndex& outFrom, TextIndex& outTo)
 	{
@@ -803,6 +827,61 @@ private:
 	}
 
 public:
+
+	// ---- "Restore from Source" (2026-09-24, stage 2 B - design section 14) ----------------------------
+
+	virtual bool16	CanRestoreAttr(int32 nth, int32 which)
+	{
+		UIDRef target, source;
+		Change change;
+		return this->AttrChangeInBoth(nth, which, target, source, change);
+	}
+
+	virtual int32	RestoreAttr(int32 nth, int32 which, PMString& outMessage)
+	{
+		outMessage.Clear();
+		outMessage.SetTranslatable(kFalse);
+		UIDRef target, source;
+		Change before;
+		if (!this->AttrChangeInBoth(nth, which, target, source, before))
+		{
+			outMessage = "this change is not an attribute change of two documents that are open and compared";
+			return -1;
+		}
+		// ★★COMPARED AGAIN FIRST, AND IT HAS TO BE THE SAME CHANGE (RejectImportChange says why: the list does not
+		//   follow an edit, and a stale row can name another change's place). Kind, attribute and BOTH sides' places.
+		this->RefreshRow(nth);
+		Change now;
+		if (!this->GetChange(nth, which, now) || now.fKind != before.fKind || now.fWhat != before.fWhat
+			|| now.fAttrKind != before.fAttrKind
+			|| now.fTargetStart != before.fTargetStart || now.fTargetEnd != before.fTargetEnd
+			|| now.fSourceStart != before.fSourceStart || now.fSourceEnd != before.fSourceEnd)
+		{
+			outMessage = "the list was out of date - it has been compared again; right-click the change once more";
+			return -1;
+		}
+		// ★PLANNED BEFORE THE SEQUENCE BEGINS: a refusal (the words differ, a kenten this build cannot write) writes
+		//   nothing, and an empty sequence never lands on the undo stack - the reject's count-first, in this shape.
+		KCMAttrRestoreJob job;
+		if (!KCMPlanRestoreAttrFromSource(target, source, now.fAttrKind,
+										  now.fTargetStart, now.fTargetEnd, now.fSourceStart, now.fSourceEnd,
+										  job, outMessage))
+			return -1;
+		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
+		if (sequence != nil)
+		{
+			PMString name("Restore from Source");
+			name.SetTranslatable(kFalse);
+			sequence->SetName(name);
+		}
+		const int32 done = KCMApplyRestoreAttr(target, job, outMessage);
+		if (sequence != nil)
+			CmdUtils::EndCommandSequence(sequence);
+		// ★THE ROW IS COMPARED AGAIN either way: a half write (done < 0) changed the document too, and a row still
+		//   showing a mark that is gone would be offered again.
+		this->RefreshRow(nth);
+		return done;
+	}
 
 	// ⛔**RETIRED SINCE 2026-09-20**, and since 2026-09-21 no restore of any size is left to come back
 	//   to. The slot stays for the vtable reason given above.

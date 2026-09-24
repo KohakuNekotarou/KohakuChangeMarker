@@ -649,6 +649,23 @@ public:
 		there were none, and then nothing lands on the undo stack); -1 when nothing could be done, and then
 		outMessage says why. */
 	virtual int32	RejectImportChange(int32 nth, int32 which, PMString& outMessage) = 0;
+
+	/** (2026-09-24, stage 2 B - "Restore from Source") Whether change `which` of row `nth` is one this acts on: an
+		attribute change (kWhatAttr) of a kind that is written back - ruby, kenten, warichu, tate-chu-yoko - on a
+		paired story, with the Target armed and open and the Source document open. The test the change row's
+		item is greyed by. ⚠It reads NO document (a menu asks this on every right click); what needs the
+		documents - the same characters on both sides - is RestoreAttr's, which refuses with a reason.
+		⚠Appended at the END of the class ([[facade-vtable-slot-append-only]]). */
+	virtual bool16	CanRestoreAttr(int32 nth, int32 which) = 0;
+
+	/** Makes that kind, over the change's characters, what the SOURCE document has there - read from the Source
+		story itself (KCMTextRead::ReadStory; the user: "the Source document is there, take it from there"), never
+		from what the row remembers - as ONE undo step ("Restore from Source", a plain sequence: RejectImportChange
+		says why), then compares the row again. The row is compared again FIRST and has to be the same change
+		(the same lesson). Planned before the sequence begins, so a refusal puts nothing on the undo stack.
+		@return how many of the Source's marks went on (0 = the Target's were taken off and the Source has none
+		there); -1 when nothing was done, and outMessage says why. */
+	virtual int32	RestoreAttr(int32 nth, int32 which, PMString& outMessage) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__
