@@ -2980,10 +2980,22 @@ void RejoinParas(KCMStoryShape::Story& s, std::vector<KCMStoryShape::Para>& para
 				//   show it. The document joins the table to its words, so the words are what joins.
 				//   ⚠Not past the next table's own paragraph (the empty one Word asks for between two tables), and
 				//    not when the empty paragraph holds a note's reference.
+				//   ★★BY COUNT, NOT BY EMPTINESS (the same day's final review): an empty paragraph there is ALSO what Word
+				//   leaves when the words after the table are deleted and their paragraph stays ("ab[T]cd" / "e" ->
+				//   "ab" / [T] / "" / "e") - skipping that one joined "e" into the table's paragraph. So it is skipped
+				//   only when Word holds MORE paragraphs after the table (up to the next table, or the run's end) than
+				//   the document writes there: the words after this table as a piece, plus the paragraphs between.
 				size_t j = i + 1;
 				const bool16 afterIsTable = (k + 1 < mine.size()
 											 && s.fTables[mine[k + 1]].fParaIndex == static_cast<int32>(i + 2)) ? kTrue : kFalse;
-				if (SaysNothing(paras[j]) && paras[j].fNoteRefs.empty() && j + 1 < paras.size() && !afterIsTable)
+				const int32 nextTp = (k + 1 < theirs.size()) ? shape.fTables[theirs[k + 1]].fParaIndex
+															  : static_cast<int32>(shapeParas.size());
+				const int32 nextI = (k + 1 < mine.size()) ? s.fTables[mine[k + 1]].fParaIndex
+														   : static_cast<int32>(paras.size());
+				const int32 docAfter = 1 + (nextTp - p - 1);			// the piece after this table, and the paragraphs between
+				const int32 wordAfter = nextI - static_cast<int32>(i) - 1;
+				if (SaysNothing(paras[j]) && paras[j].fNoteRefs.empty() && j + 1 < paras.size() && !afterIsTable
+					&& nextTp > p && wordAfter > docAfter)
 					++j;
 				JoinOnto(made.back(), paras[j]);
 				i = j;
