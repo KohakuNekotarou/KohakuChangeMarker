@@ -1330,13 +1330,14 @@ void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, 
 			byStage[stage].insert(byStage[stage].end(), steps.begin(), steps.end());
 			continue;
 		}
-		// ★★WITHOUT reshapeTables A SHAPE THAT COULD BE MADE IS HELD TOO (2026-09-24, the user's decision -
-		//   design 11-1 item 5): the import writes under Track Changes, which records neither rows,
-		//   columns nor merges, so what it cannot record it does not do. The whole table is held, its
-		//   words included - pairing the words of two tables that do not have the same cells is exactly
-		//   what the shape rounds were there to avoid. The rounds stay, working, for reshapeTables.
+		// ★★WITHOUT reshapeTables A SHAPE THAT COULD BE MADE IS HELD TOO: the caller reshapes nothing (the
+		//   redo of one paragraph, KCMRedoFromWord), and pairing the words of two tables that do not have
+		//   the same cells is exactly what the shape rounds are there to avoid - so the whole table is
+		//   held, its words included. (The import passed kFalse for one day, 2026-09-24 - design 11-1
+		//   item 5, "the change history cannot record that" - and passes kTrue again since that evening,
+		//   the user's decision: KCMStoryTextImport says what was accepted with it.)
 		const std::string reason = (stage > 0)
-			? std::string("its rows, columns or merged cells were changed in Word - InDesign's change history cannot record that")
+			? std::string("its rows, columns or merged cells differ from Word's - this comparison does not reshape a table (an import does)")
 			: (tableWhy.empty() ? tw : tableWhy);
 		run.fTableHeld[t] = kTrue;
 		Hold(run, Where::Cell(static_cast<int32>(t), -1, -1), -1, "Table",

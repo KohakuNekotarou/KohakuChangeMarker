@@ -558,12 +558,16 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 	return anyIn || !KCMImportRefusals().empty();
 }
 
-// ★★THE IMPORT DOES NOT RESHAPE TABLES (2026-09-24, the user's decision - design 11-1 item 5): it writes
-//   under Track Changes, which records neither rows, columns nor merges, so a table whose shape changed
-//   in Word is held ("!") rather than changed in a way nobody could take back one by one. ⚠The shape
-//   rounds below STILL RUN - a table added or taken away (stage 0) is one, and that IS recorded - and
-//   stages 1-3 (unmerge, rows and columns, merge) simply never come up while this is kFalse.
-static const bool16 kReshapeTablesOnImport = kFalse;
+// ★★THE IMPORT RESHAPES TABLES AGAIN (2026-09-24 evening, the user's decision, which replaces the morning's
+//   design 11-1 item 5): a table whose rows, columns or merged cells changed in Word is made Word's, one
+//   stage per round (S1/S2), the words then written into the cells it has. ★What the user accepted with it:
+//   InDesign's change history records neither rows, columns nor merges (measured, track.jsx), so THOSE are
+//   not taken back one by one - a reject of the import's changes leaves the new shape (a row put in stays,
+//   empty; a row taken away does not come back), and the "Table" row's menu offers no reject, its range
+//   holding no tracked change. Ctrl+Z takes the whole import back, shape included. The words in the cells
+//   ARE recorded and can be rejected, as before. (kFalse held such a table whole, "!", from the morning of
+//   2026-09-24 until the evening; the redo of one paragraph, KCMRedoFromWord, still passes kFalse.)
+static const bool16 kReshapeTablesOnImport = kTrue;
 bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& outMessage,
 						bool16& outCancelled)
 {
@@ -582,7 +586,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	int32 edits = 0;
 	int32 attrEdits = 0;			// ruby, kenten, tate-chu-yoko, warichu
 	int32 noteEdits = 0;			// footnotes made or taken away
-	int32 tableEdits = 0;			// the shape rounds' changes - since 2026-09-24 tables added or taken away only
+	int32 tableEdits = 0;			// the shape rounds' changes: tables added or taken away, rows, columns, merges
 	int32 storiesHeld = 0;			// stories left exactly as they were, each named
 	int32 heldBack = 0;				// things Word cannot carry, kept as the document has them
 	int32 unmatched = 0;
@@ -847,7 +851,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	if (noteEdits > 0)
 		AppendCount(outMessage, ", ", noteEdits, " footnote(s) added or removed");
 	if (tableEdits > 0)
-		AppendCount(outMessage, ", ", tableEdits, " table(s) added or taken away");
+		AppendCount(outMessage, ", ", tableEdits, " table shape change(s) (tables added or taken away, rows, columns, merges - not in the change history)");
 	if (storiesHeld > 0)
 		AppendCount(outMessage, ", ", storiesHeld, " story(ies) left alone (the rows marked !)");
 	if (heldBack > 0)

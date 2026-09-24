@@ -166,8 +166,9 @@ bool16 KCMPlanRedoFromWord(const UIDRef& targetStory, const UIDRef& sourceStory,
 		}
 	}
 
-	// 4. the import's comparison, narrowed to that paragraph. ⚠reshapeTables kFalse, as the import passes it
-	//    (design 11-1 item 5): a table whose shape Word changed is held, here as there.
+	// 4. the import's comparison, narrowed to that paragraph. ⚠reshapeTables kFalse: a redo writes ONE paragraph
+	//    and reshapes no table - a table whose shape differs from Word's is held here (the import, which passes
+	//    kTrue again since the evening of 2026-09-24, would have made it Word's; import again for that).
 	KCMStorySync::Plan whole;
 	KCMStorySync::Compare(outNow, word, whole, kFalse);
 	if (whole.fStoryHeld)

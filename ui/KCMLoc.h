@@ -90,7 +90,8 @@ namespace KCMJa
 	const char16_t kImported[] = u"Importしました";
 	const char16_t kImportTracked[] =
 		u"変更履歴を付けて Import しました。Import で入った変更は、作者「KohakuChangeMarker」として記録されています。"
-		u"変更履歴パネルで1件ずつ却下できます。";
+		u"変更履歴パネルで1件ずつ却下できます。"
+		u"Word で変えた表の行・列・結合も Word の形にしましたが、変更履歴には残りません。却下しても形は戻りません(Ctrl+Z なら Import 全体が戻ります)。";
 
 	// ----- How to Use... (the operating reference; it used to be the panel's description) -----
 	const char16_t kHint[] =
@@ -182,9 +183,9 @@ namespace KCMJa
 		u"・「Import Story Text...」は、今の文書の状態を Task Start として保存し(保存ダイアログが出ます。"
 		u"キャンセルするとそこで終わりで、何も取り込みません)、編集を「すべて」文書に入れてから、その写しとの Story 比較を始めます。"
 		u"Source が Import 前、Target が編集の入った文書です。先に選んでいた Task Start は Import のものに置き換わります\n"
-		u"・入らなかったもの(書き出し後に InDesign 側で編集した箇所と重なる Word の変更、構成の変わった表、ファイルに無いセルや脚注、対応するストーリーの無いファイル)は"
+		u"・入らなかったもの(書き出し後に InDesign 側で編集した箇所と重なる Word の変更、作れない形に変えられた表(行の長さが揃わない・入れ子の表が邪魔をする)、ファイルに無いセルや脚注、対応するストーリーの無いファイル)は"
 		u"一覧の「先頭」に、Change 列に赤い「!」と、場所と理由を添えて並びます\n"
-		u"・Ctrl+Z で Import 全体が1回で戻ります。1件ずつも戻せます: Import は変更履歴を付けて、作者「KohakuChangeMarker」として書くので、変更履歴パネルで1件ずつ却下できます(消した脚注や表も一緒に戻ります)。Story モードで変更の行を右クリックし「Reject This Import Change」を選ぶと、その行の Import の変更だけを取り消せます。Word で行・列・結合を変えた表は変更履歴に残せないので Import せず、! で示します。ルビ・圏点・縦中横・割注は変更履歴に載りません。その行を右クリックして「Restore from Source」を選ぶと、Source 文書からその属性を読んで同じ文字の上に戻します(Ctrl+Z で戻ります)。Import の後でなくても、Story の比較ならいつでも使えます。下の文字も違うときは先に文字を直してください。取り消した変更(「Reject This Import Change」「Restore from Source」)は Δ 列が「=」の行として残り、その行の右クリック「Redo from Word」で、取り込みで読んだ Word の内容からその段落を書き直せます(文書を閉じるか InDesign を終了するまで)。Ctrl+Z 1回で戻ります。"
+		u"・Ctrl+Z で Import 全体が1回で戻ります。1件ずつも戻せます: Import は変更履歴を付けて、作者「KohakuChangeMarker」として書くので、変更履歴パネルで1件ずつ却下できます(消した脚注や表も一緒に戻ります)。Story モードで変更の行を右クリックし「Reject This Import Change」を選ぶと、その行の Import の変更だけを取り消せます。Word で行・列・結合を変えた表は Word の形にします(行・列は末尾に足す・消す、結合と解除は Word どおり)。これは変更履歴に残らないので、却下しても形は戻りません(足した行は空で残り、消した行は戻りません。Ctrl+Z なら Import 全体が形ごと戻ります)。セルの中の文字は記録されるので却下できます。ルビ・圏点・縦中横・割注は変更履歴に載りません。その行を右クリックして「Restore from Source」を選ぶと、Source 文書からその属性を読んで同じ文字の上に戻します(Ctrl+Z で戻ります)。Import の後でなくても、Story の比較ならいつでも使えます。下の文字も違うときは先に文字を直してください。取り消した変更(「Reject This Import Change」「Restore from Source」)は Δ 列が「=」の行として残り、その行の右クリック「Redo from Word」で、取り込みで読んだ Word の内容からその段落を書き直せます(文書を閉じるか InDesign を終了するまで)。Ctrl+Z 1回で戻ります。"
 		u"入れたくなかった箇所は、Start が開いている Source の文書から取ってください\n"
 		u"・あふれはすぐ見えます。入れた編集がフレームに収まらなければ、他の Story 比較と同じく行に OV が出ます\n"
 		u"・段落の中の表: Word には無いので、ファイルでは「表の前の文字」「表」「表の後の文字」が別々のブロックになります。表の前後で段落がどこで切れるかは"
