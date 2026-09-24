@@ -2890,6 +2890,37 @@ void RejoinParas(KCMStoryShape::Story& s, std::vector<KCMStoryShape::Para>& para
 			continue;
 		}
 
+		// ★★WORD'S EMPTY PARAGRAPH BEFORE A TABLE CARRIES NOTHING EITHER (2026-09-24, S3b - design 12-3-1). Enter at
+		//   the end of the words before a table leaves "" standing between them and the table; the one AFTER a
+		//   table was always dropped below (theirsHasEmptyAfter) and this one was not, so the table went onto the
+		//   empty paragraph and the live write left it in the middle of the next words (the matrix's X03). It is
+		//   dropped when the document holds no empty paragraph right before its own table - the mirror of the
+		//   check after.
+		//   ⚠Not when it holds a note's reference: Slice writes a reference at a cut in front of the table, alone.
+		//   ⚠★Not when it is the PREVIOUS table's own paragraph (no words, a table in it) - dropping it would drop
+		//    that table - nor the empty one Word asks for between two tables. The tables before k are already
+		//    in `made`'s count.
+		if (!made.empty() && SaysNothing(made.back()) && made.back().fNoteRefs.empty())
+		{
+			const int32 lastMade = static_cast<int32>(made.size()) - 1;
+			bool16 holdsTable = kFalse;
+			bool16 betweenTables = kFalse;
+			for (size_t kk = 0; kk < k; ++kk)
+			{
+				const int32 at = s.fTables[mine[kk]].fParaIndex;
+				if (at == lastMade)
+					holdsTable = kTrue;
+				if (at == lastMade - 1)
+					betweenTables = kTrue;
+			}
+			const int32 tp = shape.fTables[theirs[k]].fParaIndex;
+			const bool16 docHasEmptyBefore = (tp > 0 && static_cast<size_t>(tp) <= shapeParas.size()
+											 && shape.fTables[theirs[k]].fOffset == 0
+											 && SaysNothing(shapeParas[static_cast<size_t>(tp - 1)])) ? kTrue : kFalse;
+			if (!holdsTable && !betweenTables && !docHasEmptyBefore)
+				made.pop_back();
+		}
+
 		// what the document says about ITS k-th table of this run
 		const KCMStoryShape::Table& theirTable = shape.fTables[theirs[k]];
 		const int32 p = theirTable.fParaIndex;
