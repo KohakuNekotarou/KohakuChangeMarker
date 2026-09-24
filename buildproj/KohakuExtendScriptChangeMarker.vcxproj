@@ -248,6 +248,8 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTaskStartSave.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpike.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableShape.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMSkippedText.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMImportTracking.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableSnippet.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMScratchDoc.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMReport.cpp" />

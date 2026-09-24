@@ -27,6 +27,7 @@
 #include "RangeData.h"					// Text::StoryRange
 #include "TableTypes.h"					// GridAddress / GridArea / RowRange / ColRange
 
+#include "KCMSkippedText.h"				// the tables the page does not set (2026-09-24)
 #include "KCMTableShape.h"
 
 namespace
@@ -53,6 +54,11 @@ bool16 KCMReadTableShapes(ITextModel* model, std::vector<KCMTableShape>& out)
 	if (db == nil)
 		return kFalse;
 
+	// ★THE SAME TABLES LEFT OUT AS KCMTextRead LEAVES OUT (2026-09-24), or fOrdinal here and the
+	//   cells' table ordinal there would name different tables (KCMSkippedText.h).
+	KCMSkippedText skipped;
+	skipped.Build(model);
+
 	std::vector<std::pair<TextIndex, KCMTableShape> > found;
 
 	for (UID next = ::GetUIDRef(hier).GetUID(); next != kInvalidUID; next = hier->NextUID(next))
@@ -73,6 +79,8 @@ bool16 KCMReadTableShapes(ITextModel* model, std::vector<KCMTableShape>& out)
 		const Text::StoryRange anchor = dict->GetAnchorTextRange(&anchored);
 		shape.fAnchorStart = anchor.Start(nil);
 		shape.fAnchorEnd = anchor.End();
+		if (skipped.Contains(shape.fAnchorStart))
+			continue;				// not a table of the page
 
 		const RowRange rows = table->GetTotalRows();
 		const ColRange cols = table->GetTotalCols();

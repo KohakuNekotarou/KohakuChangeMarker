@@ -1247,7 +1247,8 @@ bool16 Normalize(const KCMStoryShape::Story& now, const KCMStoryShape::Story& wo
 	return kTrue;
 }
 
-void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, Plan& out)
+void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, Plan& out,
+			 bool16 reshapeTables)
 {
 	out = Plan();
 	KCMStoryShape::Story n;
@@ -1311,14 +1312,22 @@ void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, 
 		std::vector<Step> steps;
 		std::string tableWhy;
 		const int32 stage = PlanShape(n, w, t, steps, tableWhy);
-		if (stage > 0)
+		if (stage > 0 && reshapeTables)
 		{
 			byStage[stage].insert(byStage[stage].end(), steps.begin(), steps.end());
 			continue;
 		}
+		// ★★WITHOUT reshapeTables A SHAPE THAT COULD BE MADE IS HELD TOO (2026-09-24, the user's decision -
+		//   design 11-1 item 5): the import writes under Track Changes, which records neither rows,
+		//   columns nor merges, so what it cannot record it does not do. The whole table is held, its
+		//   words included - pairing the words of two tables that do not have the same cells is exactly
+		//   what the shape rounds were there to avoid. The rounds stay, working, for reshapeTables.
+		const std::string reason = (stage > 0)
+			? std::string("its rows, columns or merged cells were changed in Word - InDesign's change history cannot record that")
+			: (tableWhy.empty() ? tw : tableWhy);
 		run.fTableHeld[t] = kTrue;
 		Hold(run, Where::Cell(static_cast<int32>(t), -1, -1), -1, "Table",
-			 "table " + Num(static_cast<int32>(t)) + ": " + (tableWhy.empty() ? tw : tableWhy) + " - that table was left as it is");
+			 "table " + Num(static_cast<int32>(t)) + ": " + reason + " - that table was left as it is");
 	}
 	for (int32 stage = 1; stage <= 3; ++stage)
 	{

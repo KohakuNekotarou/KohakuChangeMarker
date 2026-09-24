@@ -2451,7 +2451,25 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 			if (inTable == kInNote)
 				return Refuse(rd, "a table stands inside a footnote");
 			if (pendingJoin)
-				return Refuse(rd, "a paragraph mark next to a table was inserted or deleted");
+			{
+				// ★A PARAGRAPH EMPTIED AND ITS MARK DELETED, RIGHT BEFORE A TABLE, GOES (S3b, 2026-09-24):
+				//   measured in Word 2007 with the revisions accepted (the matrix's X07) - the table then
+				//   follows the paragraph before it. ⚠Only when nothing is left in it and no table stands
+				//   in it; with words left, what Word makes of it is not measured, and it stays refused.
+				const int32 last = static_cast<int32>(out.size()) - 1;
+				bool16 holdsTable = kFalse;
+				for (size_t k = 0; k < rd.fStory->fTables.size() && !holdsTable; ++k)
+				{
+					const KCMStoryShape::Table& x = rd.fStory->fTables[k];
+					if (x.fParaIndex == last && x.fInTable == inTable
+						&& (inTable < 0 || (x.fInRow == inRow && x.fInCell == inCell)))
+						holdsTable = kTrue;
+				}
+				if (out.empty() || !out.back().fText.empty() || !out.back().fNoteRefs.empty() || holdsTable)
+					return Refuse(rd, "a paragraph mark next to a table was inserted or deleted");
+				out.pop_back();
+				pendingJoin = kFalse;
+			}
 			// ★A PARAGRAPH OF ITS OWN, ALWAYS - the split shape. Whose paragraph it is in the document
 			//   is settled at the import (RejoinTables), from the document.
 			out.push_back(KCMStoryShape::Para());

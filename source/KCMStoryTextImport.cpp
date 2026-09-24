@@ -32,6 +32,7 @@
 #include "KCMStorySyncApply.h"		// KCMApplySyncPlan - and that, carried out
 #include "KCMStoryTextExport.h"		// KCMStoryFromDocument - the document's story, read the way the export reads it
 #include "KCMStoryDocx.h"			// Read - the parts as Word shows them
+#include "KCMImportTracking.h"		// the import writes under Track Changes, as KohakuChangeMarker (2026-09-24)
 #include "KCMZipStore.h"			// Entry - a part, named
 #include "KCMModelNotify.h"			// KCMNotify - a cancelled import tells the panel the mode came back
 
@@ -491,7 +492,14 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 	outer.Slice(kImportUnitsCopy, kImportUnitsCompare);
 	PMString poured;
 	bool16 cancelledPour = kFalse;
-	const bool16 anyIn = KCMPourStoryText(db, set, poured, cancelledPour);
+	bool16 anyIn = kFalse;
+	{
+		// ★★THE CHANGES ARE SIGNED "KohakuChangeMarker" (2026-09-24, the user's decision - design 11-1
+		//   item 2): the application's user name is that for exactly as long as the pour runs, and the
+		//   end of this block puts the reader's own back, whatever the pour did.
+		KCMImportAuthor author;
+		anyIn = KCMPourStoryText(db, set, poured, cancelledPour);
+	}
 	if (cancelledPour)
 	{
 		// ⚠The copy stays, for the reason given at the cancel above: it is a Task Start the reader
@@ -553,6 +561,12 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 	return anyIn || !KCMImportRefusals().empty();
 }
 
+// ★★THE IMPORT DOES NOT RESHAPE TABLES (2026-09-24, the user's decision - design 11-1 item 5): it writes
+//   under Track Changes, which records neither rows, columns nor merges, so a table whose shape changed
+//   in Word is held ("!") rather than changed in a way nobody could take back one by one. ⚠The shape
+//   rounds below STILL RUN - a table added or taken away (stage 0) is one, and that IS recorded - and
+//   stages 1-3 (unmerge, rows and columns, merge) simply never come up while this is kFalse.
+static const bool16 kReshapeTablesOnImport = kFalse;
 bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& outMessage,
 						bool16& outCancelled)
 {
@@ -571,7 +585,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	int32 edits = 0;
 	int32 attrEdits = 0;			// ruby, kenten, tate-chu-yoko, warichu
 	int32 noteEdits = 0;			// footnotes made or taken away
-	int32 tableEdits = 0;			// tables whose rows were added or taken away (S1)
+	int32 tableEdits = 0;			// the shape rounds' changes - since 2026-09-24 tables added or taken away only
 	int32 storiesHeld = 0;			// stories left exactly as they were, each named
 	int32 heldBack = 0;				// things Word cannot carry, kept as the document has them
 	int32 unmatched = 0;
@@ -637,6 +651,14 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 
 		matched[which] = kTrue;
 
+		// ★★WHAT GOES INTO THIS STORY IS RECORDED IN THE CHANGE HISTORY (2026-09-24, the user's decision -
+		//   design 11-1): each change can then be rejected one by one in the Track Changes panel, and a
+		//   rejected deletion brings back what it took, footnotes and tables included (measured the same
+		//   day). Tracking is on for this story from here to the end of this loop's body - every
+		//   `continue` included - and back to the reader's own setting after; being inside the sequence,
+		//   Ctrl+Z takes the switch back along with the words.
+		KCMStoryTrackingOn tracking(storyRef);
+
 		// ★★★**THE DOCUMENT AGAINST WORD, AND THE DOCUMENT MADE WORD'S** (2026-09-23, the user's rule: "Word
 		//   is the one that counts" - and "the processing that is simplest and least likely to be wrong").
 		//   KCMStorySync says what makes the story as the document holds it into the story as Word left it,
@@ -656,7 +678,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 			continue;
 		}
 		KCMStorySync::Plan plan;
-		KCMStorySync::Compare(now, set.fStories[which], plan);
+		KCMStorySync::Compare(now, set.fStories[which], plan, kReshapeTablesOnImport);
 		// ★★SHAPE ROUNDS FIRST (S1/S2, design sections 8-2 and 9-4): a table's merges taken apart, its rows
 		//   and columns made as many as Word's at the end, Word's merges made - one stage per round. After
 		//   each, the story is read again and checked against the same change made on paper, and the
@@ -688,7 +710,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 					&& KCMStorySync::SameTableLayout(paper, again, layoutWhy))
 				{
 					now = again;
-					KCMStorySync::Compare(now, set.fStories[which], plan);
+					KCMStorySync::Compare(now, set.fStories[which], plan, kReshapeTablesOnImport);
 					continue;
 				}
 				why = "a table's shape was changed, but the story does not read back as planned";
@@ -782,7 +804,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	if (noteEdits > 0)
 		AppendCount(outMessage, ", ", noteEdits, " footnote(s) added or removed");
 	if (tableEdits > 0)
-		AppendCount(outMessage, ", ", tableEdits, " table shape change(s) (rows, columns, merges)");
+		AppendCount(outMessage, ", ", tableEdits, " table(s) added or taken away");
 	if (storiesHeld > 0)
 		AppendCount(outMessage, ", ", storiesHeld, " story(ies) left alone (the rows marked !)");
 	if (heldBack > 0)
