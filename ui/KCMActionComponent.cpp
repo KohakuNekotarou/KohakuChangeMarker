@@ -975,10 +975,12 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// .docx) are read, a Task Start is taken, the edits go INTO THE DOCUMENT as one undo step,
 		// and the Story comparison starts against that Task Start (2026-09-19, the user's call - a
 		// trial; the design is docs/superpowers/specs/2026-09-19-kcm-import-direct-design.md).
-		// ★What could not go in is listed first, with a red "!". ⚠**Ctrl+Z takes the whole import
-		//   back, and since 2026-09-21 nothing takes ONE change back** - the restore went that day,
-		//   so a change the reader does not want is copied from the Source document, which Start
-		//   has open in a window.
+		// ★What could not go in is listed first, with a red "!". Ctrl+Z takes the whole import back.
+		//   ★★**AND SINCE 2026-09-24 ONE CHANGE CAN BE TAKEN BACK AGAIN** - not by KCM's own restore,
+		//   which went on 2026-09-21, but by InDesign's change history: the import writes under Track
+		//   Changes as "KohakuChangeMarker" (KCMImportTracking.h), and a rejected change brings back
+		//   what it took, footnotes and tables included (measured that day). Ruby, kenten,
+		//   tate-chu-yoko and warichu are not recorded by it; the Source document still has them.
 		// ★★**FILES, AND AS MANY AS THEY LIKE** (the user's decision, 2026-09-15). A folder was
 		//   what this asked for until now, which meant handing over everything that happened to be
 		//   in one.
@@ -1026,9 +1028,27 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 					&& chosen.GetFileCount() > 0)
 				{
 					PMString importMsg;
-					Utils<IKCMStoryEditsFacade>()->ImportStoryText(chosen, importMsg);
-					if (importMsg.CharCount() > 0)
+					const bool16 imported = Utils<IKCMStoryEditsFacade>()->ImportStoryText(chosen, importMsg);
+					// ★★WHEN SOMETHING WENT IN (or has a "!" row), THE PANEL SAYS ONLY THAT, AND A DIALOG SAYS
+					//   THE REST (2026-09-24, the user's rule: the panel "Imported", the dialog that the change
+					//   history was applied). The dialog carries the model's whole sentence under that line,
+					//   so nothing the status line used to say is lost. ⚠A cancel, a failure, or an import
+					//   that changed nothing still answers in the status line alone, as before - there is no
+					//   change history to announce. (app.kcmImportStoryText returns the whole sentence and
+					//   shows no dialog: the matrix reads it.)
+					if (imported)
+					{
+						KCMSetStatus(KCMLoc::Text(kKCMImportedStatusKey, KCMJa::kImported));
+						PMString body = KCMLoc::Text(kKCMImportTrackedKey, KCMJa::kImportTracked);
+						body.Append("\n\n");
+						body.Append(importMsg);
+						body.SetTranslatable(kFalse);
+						CAlert::InformationAlert(body);
+					}
+					else if (importMsg.CharCount() > 0)
+					{
 						KCMSetStatus(importMsg);
+					}
 					// (⛔**THE CALL TO KCMBringArmedTargetToFront WENT ON 2026-09-22.** The import starts a
 					//   comparison of its own and its Target - the document the edited words went into - is
 					//   what there is to look at; that has not changed. What changed is WHO says so. The

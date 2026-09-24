@@ -86,6 +86,12 @@ namespace KCMLoc
 // KCMUI_enUS.fr -- an English UI reads those.
 namespace KCMJa
 {
+	// ----- After "Import Story Text..." (2026-09-24, the user's wording) -----
+	const char16_t kImported[] = u"Importしました";
+	const char16_t kImportTracked[] =
+		u"変更履歴を付けて Import しました。Import で入った変更は、作者「KohakuChangeMarker」として記録されています。"
+		u"変更履歴パネルで1件ずつ却下できます。";
+
 	// ----- How to Use... (the operating reference; it used to be the panel's description) -----
 	const char16_t kHint[] =
 		u"Kohaku Change Marker ツール(ツールボックス、またはパネルのツールボタン)を選び、レイアウト上で:\n"
@@ -178,7 +184,7 @@ namespace KCMJa
 		u"Source が Import 前、Target が編集の入った文書です。先に選んでいた Task Start は Import のものに置き換わります\n"
 		u"・入らなかったもの(書き出し後に InDesign 側で編集した箇所と重なる Word の変更、構成の変わった表、ファイルに無いセルや脚注、対応するストーリーの無いファイル)は"
 		u"一覧の「先頭」に、Change 列に赤い「!」と、場所と理由を添えて並びます\n"
-		u"・Ctrl+Z で Import 全体が1回で戻ります。1件だけ戻す機能はありません(2026-09-21 に廃止)。"
+		u"・Ctrl+Z で Import 全体が1回で戻ります。1件ずつも戻せます: Import は変更履歴を付けて、作者「KohakuChangeMarker」として書くので、変更履歴パネルで1件ずつ却下できます(消した脚注や表も一緒に戻ります)。Word で行・列・結合を変えた表は変更履歴に残せないので Import せず、! で示します。ルビ・圏点・縦中横・割注は変更履歴に載らないので、Source 文書から戻してください。"
 		u"入れたくなかった箇所は、Start が開いている Source の文書から取ってください\n"
 		u"・あふれはすぐ見えます。入れた編集がフレームに収まらなければ、他の Story 比較と同じく行に OV が出ます\n"
 		u"・段落の中の表: Word には無いので、ファイルでは「表の前の文字」「表」「表の後の文字」が別々のブロックになります。表の前後で段落がどこで切れるかは"

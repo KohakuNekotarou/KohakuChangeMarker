@@ -766,6 +766,11 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 // ⛔kKCMParagraphOrderConfirmKey went on 2026-09-21 with the restore. It was asked before a new
 //   paragraph was taken in ahead of the new paragraph standing before it (2026-09-17), because the
 //   order of the two decided which style the later one got - a question only a restore could raise.
+// ★After "Import Story Text..." (2026-09-24, the user's rule): the panel's status line says only that it
+//   happened, and the details go to a dialog that says the change history was applied. Japanese for both
+//   is in ui/KCMLoc.h (KCMJa::kImported / kImportTracked).
+#define kKCMImportedStatusKey		kKCMStringPrefix "kKCMImportedStatusKey"
+#define kKCMImportTrackedKey		kKCMStringPrefix "kKCMImportTrackedKey"
 #define kKCMImportTaskStartAdviceKey	kKCMStringPrefix "kKCMImportTaskStartAdviceKey"	// ⚠UNUSED SINCE 2026-09-19: it was asked before every "Import Story Text..." from the flyout (take a Task Start just before it, 2026-09-17). The import takes a Task Start of its own now, so nothing is asked; the string stays in the table until the trial is decided
 #define kKCMBookNoPairKey			kKCMStringPrefix "kKCMBookNoPairKey"			// the warning when two books could not be resolved (normally unreachable, since the menu item is greyed)
 #define kKCMBookRowStartMenuKey	kKCMStringPrefix "kKCMBookRowStartMenuKey"	// the "Start Change Marker" item on a chapter row context menu
