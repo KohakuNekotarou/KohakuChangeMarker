@@ -56,6 +56,7 @@
 #include "KCMStoryTextImport.h"	// KCMImportStoryText - "Import Story Text..." on the flyout
 #include "KCMRejectImport.h"		// "Reject This Import Change" on a change row (2026-09-24, stage 2 A)
 #include "KCMRestoreAttr.h"		// "Restore from Source" on an attribute change row (2026-09-24, stage 2 B)
+#include "KCMRedoFromWord.h"		// "Redo from Word" on a change the reader took back (2026-09-24, stage 2 C)
 #include "CmdUtils.h"				// ...wrapped in one command sequence
 #include "ICommandSequence.h"		// ICommandSequence - a plain sequence (RejectImportChange says why not an abortable one)
 #include "KCMBookPair.h"			// which two books, and their display paths
@@ -545,7 +546,14 @@ public:
 		out.fPlace				= change.fPlace;				// the body, a cell or a note - the ID column's word
 		out.fWholeCell			= kFalse;						// retired the night it was made (2026-09-19): a table's cells fold into a Table row now; the field keeps the layout
 		out.fMarkSpanCount		= static_cast<int32>(change.fMarkSpans.size());	// the cells a Table change marks (GetChangeMarkSpan)
-		out.fReplaced		= kFalse;						// ⛔nothing is taken in since 2026-09-21; the field keeps the layout
+		// ★★fReplaced IS BACK IN USE, WITH THE OPPOSITE MEANING (2026-09-24, stage 2 C): kTrue for a change the reader
+		//   TOOK BACK and still standing so - the "=" row, the Source's state - which is what its menu, its sign and
+		//   the marks ask. (From 2026-09-15 to 2026-09-21 it said "taken IN".) The layout is unchanged.
+		{
+			const KCMRejectedRecord* const rec = KCMStoryList::RejectedAt(nth, which);
+			out.fReplaced = (rec != nil && KCMStoryList::RejectedStateOf(nth, *rec, KCMArmedTargetDB()) == kKCMRejectedStanding)
+				? kTrue : kFalse;
+		}
 		out.fWriteBlock		= 0;							// ⛔the same, for the reason above: nothing writes
 		out.fAfterNewParagraph	= kFalse;					// ⛔the same
 
@@ -742,6 +750,15 @@ public:
 			outMessage = "the list was out of date - it has been compared again; right-click the change once more";
 			return -1;
 		}
+		// ★THE CHANGE AS IT STANDS, FOR THE RECORD (stage 2 C): the model's own, break and all - the row it will
+		//   become once the reject has put the Source's words back.
+		const KCMStoryChange* const modelChange = KCMStoryList::GetMergedChange(nth, which);
+		if (modelChange == nil)
+		{
+			outMessage = "this change is not in the list any more";
+			return -1;
+		}
+		const KCMStoryChange live = *modelChange;
 		if (KCMCountImportChanges(story, from, to) <= 0)
 		{
 			outMessage = "no import change on this row";
@@ -762,9 +779,16 @@ public:
 			outMessage = "the story keeps no change history";
 			return -1;
 		}
+		// ★★THE CHANGE STAYS ON THE ROW AS A RECORD (2026-09-24, stage 2 C - design 15-1-1): the "=" row, where the
+		//   Source's words now stand (the live start, the Source's length), with the counter the reject left the
+		//   story at - what tells "still taken back" from "undone" from now on.
+		if (done > 0)
+			KCMStoryList::AddRejected(nth, live, live.fTargetStart,
+									  live.fTargetStart + (live.fSourceEnd - live.fSourceStart),
+									  KCMStoryDiffRun::CountForKind(story, kKCMStoryAttrNone), kKCMStoryAttrNone);
 		// ★THE ROW IS COMPARED AGAIN: a reject does not move the list by itself (measured 2026-09-24 - rows and
 		//   status line stayed as they were until a refresh), and a row still showing a change that is gone
-		//   would be offered again.
+		//   would be offered again. The record above outlives this refresh (PruneRejected keeps a Standing one).
 		if (done > 0)
 			this->RefreshRow(nth);
 		return done;
@@ -786,6 +810,8 @@ private:
 			return kFalse;
 		if (!this->GetChange(nth, which, outChange) || outChange.fWhat != Change::kWhatAttr)
 			return kFalse;
+		if (outChange.fReplaced)
+			return kFalse;		// already taken back (the "=" row): its item is "Redo from Word" (stage 2 C)
 		const int32 k = outChange.fAttrKind;
 		if (k != kKCMStoryAttrRuby && k != kKCMStoryAttrKenten && k != kKCMStoryAttrWarichu && k != kKCMStoryAttrTcy)
 			return kFalse;
@@ -838,6 +864,8 @@ private:
 		//   the story's first character. A ruby/kenten row (kWhatAttr) is stage 2 B's: those are not tracked.
 		if (change.fWhat != Change::kWhatText && change.fWhat != Change::kWhatTable)
 			return kFalse;
+		if (change.fReplaced)
+			return kFalse;		// already taken back (the "=" row): its item is "Redo from Word" (stage 2 C)
 		outStory = UIDRef(targetDB, row.fStoryUID);
 		outFrom = change.fTargetStart;
 		outTo = change.fTargetEnd;
@@ -872,6 +900,14 @@ public:
 			outMessage = "the list was out of date - it has been compared again; right-click the change once more";
 			return -1;
 		}
+		// ★THE CHANGE AS IT STANDS, FOR THE RECORD (stage 2 C) - the model's own; the refresh above found it the same.
+		const KCMStoryChange* const modelChange = KCMStoryList::GetMergedChange(nth, which);
+		if (modelChange == nil)
+		{
+			outMessage = "this change is not in the list any more";
+			return -1;
+		}
+		const KCMStoryChange live = *modelChange;
 		// ★PLANNED BEFORE THE SEQUENCE BEGINS: a refusal (the words differ, a kenten this build cannot write) writes
 		//   nothing, and an empty sequence never lands on the undo stack - the reject's count-first, in this shape.
 		KCMAttrRestoreJob job;
@@ -889,8 +925,76 @@ public:
 		const int32 done = KCMApplyRestoreAttr(target, job, outMessage);
 		if (sequence != nil)
 			CmdUtils::EndCommandSequence(sequence);
+		// ★★THE CHANGE STAYS ON THE ROW AS A RECORD (2026-09-24, stage 2 C): the "=" row over the same characters (a
+		//   mark changes no length), with the ATTRIBUTE counter the restore left the story at (the text counter cannot
+		//   see a mark - KCMStoryDiffRun::CountForKind says why).
+		if (done >= 0)
+			KCMStoryList::AddRejected(nth, live, live.fTargetStart, live.fTargetEnd,
+									  KCMStoryDiffRun::CountForKind(target, live.fAttrKind), live.fAttrKind);
 		// ★THE ROW IS COMPARED AGAIN either way: a half write (done < 0) changed the document too, and a row still
 		//   showing a mark that is gone would be offered again.
+		this->RefreshRow(nth);
+		return done;
+	}
+
+	// ---- "Redo from Word" (2026-09-24, stage 2 C - design section 15) ------------------------------------
+
+	virtual bool16	CanRedoFromWord(int32 nth, int32 which)
+	{
+		IDataBase* targetDB = nil;
+		Row row;
+		if (!this->PairedTargetRow(nth, targetDB, row))
+			return kFalse;
+		const KCMRejectedRecord* const rec = KCMStoryList::RejectedAt(nth, which);
+		return (rec != nil && KCMStoryList::RejectedStateOf(nth, *rec, targetDB) == kKCMRejectedStanding) ? kTrue : kFalse;
+	}
+
+	virtual int32	RedoFromWord(int32 nth, int32 which, PMString& outMessage)
+	{
+		outMessage.Clear();
+		outMessage.SetTranslatable(kFalse);
+		IDataBase* targetDB = nil;
+		Row row;
+		if (!this->PairedTargetRow(nth, targetDB, row))
+		{
+			outMessage = "this change is not in a document that is open and compared";
+			return -1;
+		}
+		IDataBase* const sourceDB = KCMArmedSourceDB();
+		if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
+		{
+			outMessage = "the Source document is not open";
+			return -1;
+		}
+		const KCMRejectedRecord* const rec = KCMStoryList::RejectedAt(nth, which);
+		if (rec == nil || KCMStoryList::RejectedStateOf(nth, *rec, targetDB) != kKCMRejectedStanding)
+		{
+			outMessage = "this change is not taken back - nothing to redo";
+			return -1;
+		}
+		const KCMRejectedRecord record = *rec;			// a copy: the list is rebuilt below
+		const UIDRef target(targetDB, row.fStoryUID);
+		const UIDRef source(sourceDB, row.fStoryUID);
+		// ★PLANNED FIRST (design 15-1-8): nothing kept, the words edited since, nothing to redo - each a refusal
+		//   that writes nothing and lands nothing on the undo stack.
+		KCMStoryShape::Story now;
+		KCMStorySync::Plan plan;
+		if (!KCMPlanRedoFromWord(target, source, record, now, plan, outMessage))
+			return -1;
+		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
+		if (sequence != nil)
+		{
+			PMString name("Redo from Word");
+			name.SetTranslatable(kFalse);
+			sequence->SetName(name);
+		}
+		const int32 done = KCMApplyRedoFromWord(target, now, plan, outMessage);
+		if (sequence != nil)
+			CmdUtils::EndCommandSequence(sequence);
+		// ★THE RECORD STAYS, MARKED REDONE (design 15-1-3): its counter says "live" from here - and says "=" again
+		//   the moment the reader undoes the redo, which is what keeps the place for a second redo.
+		if (done > 0)
+			KCMStoryList::MarkRedone(nth, record, KCMStoryDiffRun::CountForKind(target, record.fCounterKind));
 		this->RefreshRow(nth);
 		return done;
 	}

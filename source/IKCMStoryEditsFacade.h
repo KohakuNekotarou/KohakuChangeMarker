@@ -666,6 +666,18 @@ public:
 		@return how many of the Source's marks went on (0 = the Target's were taken off and the Source has none
 		there); -1 when nothing was done, and outMessage says why. */
 	virtual int32	RestoreAttr(int32 nth, int32 which, PMString& outMessage) = 0;
+
+	/** (2026-09-24, stage 2 C - "Redo from Word") Whether change `which` of row `nth` is a change the reader took
+		back and still standing so (Change::fReplaced), on a paired story of the armed Target. The item is greyed by
+		this; whether Word's content is still in memory is NOT asked here (design 15-1-5): the action says why.
+		⚠Appended at the END ([[facade-vtable-slot-append-only]]). */
+	virtual bool16	CanRedoFromWord(int32 nth, int32 which) = 0;
+
+	/** Makes that change's paragraph what Word shows again - the import's own Compare -> Apply narrowed to it, under
+		the import's signature and change tracking - as ONE undo step ("Redo from Word"), then compares the row again.
+		Planned before the sequence begins, so a refusal (nothing kept, the words edited since) lands nothing on the
+		undo stack. @return the writes that went in; -1 when nothing was written, and outMessage says why. */
+	virtual int32	RedoFromWord(int32 nth, int32 which, PMString& outMessage) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__
