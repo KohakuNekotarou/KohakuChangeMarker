@@ -127,40 +127,12 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 {
 	outRefused = kFalse;
 
-	if (docText == fileText)
-		return 0;
-
+	// ⚠(2026-09-24, S3b X06) "the same words" is no longer "nothing to do": words moved across a table read the
+	//  same and put the table elsewhere. The early return is below, once the document's tables are known.
 	std::vector<int32> a;
 	std::vector<int32> b;
 	KCMTextDiff::ToCodePoints(docText, &a, nil);
 	KCMTextDiff::ToCodePoints(fileText, &b, nil);
-
-	std::vector<KCMTextDiff::Change> changes;
-	if (!KCMTextDiff::Diff(a, b, changes))
-	{
-		whyNot = "the paragraph differs too much to place the changes";
-		whyNot.SetTranslatable(kFalse);
-		outRefused = kTrue;
-		return 0;
-	}
-
-	// ⚠**NOTHING IS WRITTEN UNTIL EVERY CHANGE HAS BEEN JUDGED**, so a paragraph turned away
-	//   here is turned away whole. ★What that cannot rule out is a write that FAILS half way
-	//   through the loop below; the reader is TOLD about that one (outRefused) rather than it
-	//   being counted as a success, which is what used to happen.
-	for (size_t c = 0; c < changes.size(); ++c)
-	{
-		const KCMTextDiff::Change& ch = changes[c];
-		if (RangeTouchesObject(a, ch.aStart, ch.aStart + ch.aCount)
-			|| RangeTouchesObject(b, ch.bStart, ch.bStart + ch.bCount))
-		{
-			whyNot = "a change would add, move or delete a character InDesign hangs an object on "
-					 "(an anchored object, a note reference, a page number, an index marker)";
-			whyNot.SetTranslatable(kFalse);
-			outRefused = kTrue;
-			return 0;
-		}
-	}
 
 	InterfacePtr<ITextModelCmds> cmds(model, UseDefaultIID());
 	if (cmds == nil)
@@ -254,6 +226,41 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 	std::vector<int32> docTableOffsets;
 	for (size_t j = 0; j < tables.size(); ++j)
 		docTableOffsets.push_back(tables[j].fTextOffset);
+
+	if (docText == fileText && docTableOffsets == fileTableOffsets)
+		return 0;
+
+	// ★PIECE BY PIECE WHERE THE TABLES STAND (2026-09-24, S3b X06) - the diff the comparison made (ComparePara):
+	//   words moved across a table are words put in on one side and taken out on the other, and the anchor stays.
+	std::vector<KCMTextDiff::Change> changes;
+	const bool16 diffed = (!docTableOffsets.empty() && docTableOffsets.size() == fileTableOffsets.size())
+						  ? KCMTextDiff::DiffInPieces(a, docTableOffsets, b, fileTableOffsets, changes)
+						  : KCMTextDiff::Diff(a, b, changes);
+	if (!diffed)
+	{
+		whyNot = "the paragraph differs too much to place the changes";
+		whyNot.SetTranslatable(kFalse);
+		outRefused = kTrue;
+		return 0;
+	}
+
+	// ⚠**NOTHING IS WRITTEN UNTIL EVERY CHANGE HAS BEEN JUDGED**, so a paragraph turned away
+	//   here is turned away whole. ★What that cannot rule out is a write that FAILS half way
+	//   through the loop below; the reader is TOLD about that one (outRefused) rather than it
+	//   being counted as a success, which is what used to happen.
+	for (size_t c = 0; c < changes.size(); ++c)
+	{
+		const KCMTextDiff::Change& ch = changes[c];
+		if (RangeTouchesObject(a, ch.aStart, ch.aStart + ch.aCount)
+			|| RangeTouchesObject(b, ch.bStart, ch.bStart + ch.bCount))
+		{
+			whyNot = "a change would add, move or delete a character InDesign hangs an object on "
+					 "(an anchored object, a note reference, a page number, an index marker)";
+			whyNot.SetTranslatable(kFalse);
+			outRefused = kTrue;
+			return 0;
+		}
+	}
 
 	for (size_t c = 0; c < changes.size(); ++c)
 	{
@@ -1029,12 +1036,33 @@ void InsertTables(const UIDRef& storyRef, const KCMStorySync::Plan& plan, KCMSyn
 	for (size_t i = 0; i < at.size(); ++i)
 	{
 		const KCMStorySync::Step& s = *at[i].second;
+		// ★A PARAGRAPH OF ITS OWN (2026-09-24, S3b design 12-3-5 - the user's rule): a return first, at the paragraph's
+		//   end (before its own return), so the table goes into the new empty paragraph between the two returns.
+		//   At the head of the body the return goes at the body's start and the table in front of it. (Until that
+		//   day the table went at the end of the paragraph itself - "A[T]", one paragraph.) Back to front as before,
+		//   so two tables after one paragraph still come out in Word's order.
+		const TextIndex where = at[i].first.first;
+		const bool16 atHead = (s.fPara < 0 || static_cast<size_t>(s.fPara) >= body.size()) ? kTrue : kFalse;	// the test that chose `pos`
+		{
+			PMString asString;								// the way InsertParagraphs builds its words
+			asString.SetUTF8String(std::string("\r"));
+			const WideString aReturn(asString);
+			InterfacePtr<ICommand> newPara(KCMCreateWordsWriteCmd(model, where, 0, aReturn));
+			if (newPara == nil || CmdUtils::ProcessCommand(newPara) != kSuccess)
+			{
+				ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+				++out.fRefused;
+				Say(out, "Table", std::string("a table Word added could not be given a paragraph of its own"));
+				continue;
+			}
+		}
+		const TextIndex tableAt = atHead ? where : where + 1;
 		InterfacePtr<ITableModelList> list(model, UseDefaultIID());
 		const int32 before = (list != nil) ? list->GetModelCount() : -1;
 		// ★THE WAY KCMReportTable PUTS ITS TABLE IN (codesnippets/SnpCreateTable.cpp): no header or footer
 		//   rows, row height 0 = grows with its content, no selection left behind
-		tableUtils->InsertTable(model, at[i].first.first, 0, s.fCount, s.fAt, 0, 0, PMReal(0.0),
-								ColumnWidthAt(model, at[i].first.first, s.fAt), kTextContentType, ITableUtils::eNoSelection);
+		tableUtils->InsertTable(model, tableAt, 0, s.fCount, s.fAt, 0, 0, PMReal(0.0),
+								ColumnWidthAt(model, tableAt, s.fAt), kTextContentType, ITableUtils::eNoSelection);
 		const int32 after = (list != nil) ? list->GetModelCount() : -1;
 		if (before < 0 || after != before + 1)
 		{

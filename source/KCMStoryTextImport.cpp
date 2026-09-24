@@ -33,6 +33,7 @@
 #include "KCMStoryTextExport.h"		// KCMStoryFromDocument - the document's story, read the way the export reads it
 #include "KCMStoryDocx.h"			// Read - the parts as Word shows them
 #include "KCMImportTracking.h"		// the import writes under Track Changes, as KohakuChangeMarker (2026-09-24)
+#include "K2SmartPtr.h"				// K2::scoped_ptr - the author switch is let go of at a chosen moment (reset)
 #include "KCMZipStore.h"			// Entry - a part, named
 #include "KCMModelNotify.h"			// KCMNotify - a cancelled import tells the panel the mode came back
 
@@ -493,13 +494,8 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 	PMString poured;
 	bool16 cancelledPour = kFalse;
 	bool16 anyIn = kFalse;
-	{
-		// ★★THE CHANGES ARE SIGNED "KohakuChangeMarker" (2026-09-24, the user's decision - design 11-1
-		//   item 2): the application's user name is that for exactly as long as the pour runs, and the
-		//   end of this block puts the reader's own back, whatever the pour did.
-		KCMImportAuthor author;
-		anyIn = KCMPourStoryText(db, set, poured, cancelledPour);
-	}
+	// (the changes are signed "KohakuChangeMarker" INSIDE the pour's own undo step - KCMPourStoryText says why)
+	anyIn = KCMPourStoryText(db, set, poured, cancelledPour);
 	if (cancelledPour)
 	{
 		// ⚠The copy stays, for the reason given at the cancel above: it is a Task Start the reader
@@ -603,6 +599,15 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	IAbortableCmdSeq* sequence = CmdUtils::BeginAbortableCmdSeq("KCMPourStoryText");
 	if (sequence != nil)
 		sequence->SetName(PMString("Import Story Text"));
+
+	// ★★THE CHANGES ARE SIGNED "KohakuChangeMarker" (2026-09-24, the user's decision - design 11-1 item 2), AND THE
+	//   NAME IS SWITCHED INSIDE THIS STEP (fixed the same day, found on re-check): switched around the whole pour
+	//   from KCMImportStoryText, the two name commands were undo steps of their own - "Set User Name" stood on top
+	//   of the undo stack after an import, so one Ctrl+Z put the name back to KohakuChangeMarker and left the import
+	//   in. Inside the sequence the switch, the words and the switch back are ONE step: undo and redo take all of
+	//   it, and a cancel's abort takes back both switches. ⚠Put back BEFORE the sequence ends or aborts (below),
+	//   so that the switch back is inside it too.
+	K2::scoped_ptr<KCMImportAuthor> author(new KCMImportAuthor());
 
 	// ★The import's bar when there is one (a slice of it), a bar of its own otherwise - the same
 	//   shape as the reading loop. Stepped per story; asked for a cancel BETWEEN two stories only,
@@ -758,6 +763,34 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 			if (firstRefusal.IsEmpty())
 				firstRefusal = note.fWhy;
 		}
+		// ★★READ AGAIN AND CHECK WHERE THE TABLES STAND (2026-09-24, S3b design 12-3-4): the plan carried out on
+		//   paper against the document as it now is. Only the live write can leave a table behind - the
+		//   matrix's X03 put one in the middle of a word and said nothing - so this is the one check that sees
+		//   it. What it finds cannot be taken back here (the words are in); it is NAMED, never passed over.
+		//   ⚠Not when a write was already refused in this story: the document then differs from the plan by
+		//    that refusal, which has its own "!" row - a second row would only say the same thing again.
+		if (result.fRefused == 0 && result.fWrites + result.fNoteEdits > 0)
+		{
+			KCMStoryShape::Story n2;
+			KCMStoryShape::Story w2;
+			std::string normWhy;
+			KCMStoryShape::Story after;
+			bool16 placedAfter = kTrue;
+			std::string placeWhy;
+			if (KCMStorySync::Normalize(now, set.fStories[which], n2, w2, normWhy)
+				&& KCMStoryFromDocument(storyRef, after, placedAfter) && placedAfter
+				&& !KCMStorySync::SameTablePlaces(KCMStorySync::ApplyToShape(n2, plan), after, placeWhy))
+			{
+				PMString why("a table does not stand where the import put it (");
+				why.Append(placeWhy.c_str());
+				why.Append(") - check this story");
+				why.SetTranslatable(kFalse);
+				if (firstRefusal.IsEmpty())
+					firstRefusal = why;
+				NoteRefusal(original, "Table", why, kTrue);
+			}
+		}
+
 		edits += result.fWrites;
 		attrEdits += result.fAttrWrites;
 		noteEdits += result.fNoteEdits;
@@ -771,6 +804,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	//   too, because the document those refusals were about is the document as it was.
 	if (outCancelled)
 	{
+		author.reset();		// the name back, inside the sequence - the abort then takes back both switches
 		if (sequence != nil)
 			CmdUtils::AbortCommandSequence(sequence);
 		KCMClearImportRefusals();
@@ -792,6 +826,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 					(k < set.fFileNames.size()) ? set.fFileNames[k] : PMString());
 	}
 
+	author.reset();			// the name back, inside the sequence (see where it was switched)
 	if (sequence != nil)
 		CmdUtils::EndCommandSequence(sequence);
 

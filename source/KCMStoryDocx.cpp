@@ -2890,6 +2890,51 @@ void RejoinParas(KCMStoryShape::Story& s, std::vector<KCMStoryShape::Para>& para
 			continue;
 		}
 
+		// ★★WORD'S EMPTY PARAGRAPH BEFORE A TABLE CARRIES NOTHING EITHER (2026-09-24, S3b - design 12-3-1). Enter at
+		//   the end of the words before a table leaves "" standing between them and the table; the one AFTER a
+		//   table was always dropped below (theirsHasEmptyAfter) and this one was not, so the table went onto the
+		//   empty paragraph and the live write left it in the middle of the next words (the matrix's X03). It is
+		//   dropped when the document holds no empty paragraph right before its own table - the mirror of the
+		//   check after.
+		//   ⚠Not when it holds a note's reference: Slice writes a reference at a cut in front of the table, alone.
+		//   ⚠★Not when it is the PREVIOUS table's own paragraph (no words, a table in it) - dropping it would drop
+		//    that table - nor the empty one Word asks for between two tables. The tables before k are already
+		//    in `made`'s count.
+		if (!made.empty() && SaysNothing(made.back()) && made.back().fNoteRefs.empty())
+		{
+			const int32 lastMade = static_cast<int32>(made.size()) - 1;
+			bool16 holdsTable = kFalse;
+			bool16 betweenTables = kFalse;
+			for (size_t kk = 0; kk < k; ++kk)
+			{
+				const int32 at = s.fTables[mine[kk]].fParaIndex;
+				if (at == lastMade)
+					holdsTable = kTrue;
+				if (at == lastMade - 1)
+					betweenTables = kTrue;
+			}
+			// ★★BY COUNT, NOT BY EMPTINESS (the same day's final review - Critical): an empty paragraph there is ALSO
+			//   what Word leaves when the words before the table are deleted and their paragraph stays ("p" /
+			//   "ab[T]cd" -> "p" / "" / [T] / "cd"). That one is the document's own paragraph, emptied, and dropping
+			//   it joined "p" to the table's paragraph. So: dropped only when Word has MORE paragraphs since the
+			//   previous table (or the run's start) than the document writes there - an Enter added one.
+			//   The document writes the paragraphs between its previous table's paragraph and this one's, plus the
+			//   words in front of this table as a piece of their own (joinBefore, worked out the way it is below).
+			const KCMStoryShape::Table& th = shape.fTables[theirs[k]];
+			const int32 tp = th.fParaIndex;
+			bool16 headPiece = (th.fOffset > 0) ? kTrue : kFalse;
+			if (tp >= 0 && static_cast<size_t>(tp) < shapeParas.size())
+				for (size_t r = 0; r < shapeParas[static_cast<size_t>(tp)].fNoteRefs.size(); ++r)
+					if (shapeParas[static_cast<size_t>(tp)].fNoteRefs[r].fAt <= th.fOffset)
+						headPiece = kTrue;
+			const int32 prevTp = (k > 0) ? shape.fTables[theirs[k - 1]].fParaIndex : -1;
+			const int32 prevMade = (k > 0) ? s.fTables[mine[k - 1]].fParaIndex : -1;
+			const int32 docCount = tp - prevTp - 1 + (headPiece ? 1 : 0);
+			const int32 wordCount = lastMade - prevMade;
+			if (!holdsTable && !betweenTables && prevTp < tp && wordCount > docCount)
+				made.pop_back();
+		}
+
 		// what the document says about ITS k-th table of this run
 		const KCMStoryShape::Table& theirTable = shape.fTables[theirs[k]];
 		const int32 p = theirTable.fParaIndex;
@@ -2928,8 +2973,32 @@ void RejoinParas(KCMStoryShape::Story& s, std::vector<KCMStoryShape::Para>& para
 			const KCMStoryShape::Para& next = paras[i + 1];
 			if (joinAfter)
 			{
-				JoinOnto(made.back(), next);
-				++i;
+				// ★WORD'S EMPTY PARAGRAPH AT THE HEAD OF THE WORDS AFTER THE TABLE IS SKIPPED (2026-09-24, S3b - found
+				//   on re-check, the matrix's X04): Enter at the start of those words leaves "" between the table and
+				//   them. Joining THAT left the words a paragraph of their own - the document's "A[T]B" was split in
+				//   two, with three changes in its history, and the export (the same A / T / B either way) could not
+				//   show it. The document joins the table to its words, so the words are what joins.
+				//   ⚠Not past the next table's own paragraph (the empty one Word asks for between two tables), and
+				//    not when the empty paragraph holds a note's reference.
+				//   ★★BY COUNT, NOT BY EMPTINESS (the same day's final review): an empty paragraph there is ALSO what Word
+				//   leaves when the words after the table are deleted and their paragraph stays ("ab[T]cd" / "e" ->
+				//   "ab" / [T] / "" / "e") - skipping that one joined "e" into the table's paragraph. So it is skipped
+				//   only when Word holds MORE paragraphs after the table (up to the next table, or the run's end) than
+				//   the document writes there: the words after this table as a piece, plus the paragraphs between.
+				size_t j = i + 1;
+				const bool16 afterIsTable = (k + 1 < mine.size()
+											 && s.fTables[mine[k + 1]].fParaIndex == static_cast<int32>(i + 2)) ? kTrue : kFalse;
+				const int32 nextTp = (k + 1 < theirs.size()) ? shape.fTables[theirs[k + 1]].fParaIndex
+															  : static_cast<int32>(shapeParas.size());
+				const int32 nextI = (k + 1 < mine.size()) ? s.fTables[mine[k + 1]].fParaIndex
+														   : static_cast<int32>(paras.size());
+				const int32 docAfter = 1 + (nextTp - p - 1);			// the piece after this table, and the paragraphs between
+				const int32 wordAfter = nextI - static_cast<int32>(i) - 1;
+				if (SaysNothing(paras[j]) && paras[j].fNoteRefs.empty() && j + 1 < paras.size() && !afterIsTable
+					&& nextTp > p && wordAfter > docAfter)
+					++j;
+				JoinOnto(made.back(), paras[j]);
+				i = j;
 			}
 			else if (SaysNothing(next))
 			{

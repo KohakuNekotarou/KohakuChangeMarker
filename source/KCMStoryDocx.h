@@ -237,7 +237,9 @@ void SplitAtTables(KCMStoryShape::Story& s, bool16 asRead = kTrue);
 /** The split shape put back into the shape `shape` holds - the document as it stands, read by
 	KCMStoryFromDocument - table by table: the k-th table of the body (or of a cell) goes where the
 	document's k-th table stands, the words after it join that paragraph when the document's do,
-	and an empty paragraph that stood there only because Word asked for one is dropped. Words the
+	and an empty paragraph that stood there only because Word asked for one is dropped - and so is one
+	Word put right BEFORE a table (Enter at the end of the words before it) when the document has none
+	there (2026-09-24, S3b: it used to stay, and the live write left the table inside the next words). Words the
 	file added or took away stay; only the breaks next to a table are decided, and by `shape`.
 	⚠A run whose table count differs from `shape`'s is left as it is (KCMStorySync holds that story). */
 void RejoinTables(KCMStoryShape::Story& s, const KCMStoryShape::Story& shape);
