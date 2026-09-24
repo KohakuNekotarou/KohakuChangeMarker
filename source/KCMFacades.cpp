@@ -54,6 +54,9 @@
 #include "ITextModel.h"			// the story the two above are asked about
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - "Export Story Text..." on the flyout
 #include "KCMStoryTextImport.h"	// KCMImportStoryText - "Import Story Text..." on the flyout
+#include "KCMRejectImport.h"		// "Reject This Import Change" on a change row (2026-09-24, stage 2 A)
+#include "CmdUtils.h"				// ...wrapped in one command sequence
+#include "ICommandSequence.h"		// IAbortableCmdSeq (the way KCMStoryTextImport.cpp includes it)
 #include "KCMBookPair.h"			// which two books, and their display paths
 #include "KCMBookCompare.h"		// the book comparison itself
 #include "KCMPageNumberMarker.h"	// the folio exclusion toggle
@@ -693,6 +696,83 @@ public:
 		outTo   = found->fMarkSpans[static_cast<size_t>(i)].fTo;
 		return kTrue;
 	}
+
+	// ---- "Reject This Import Change" (2026-09-24, stage 2 A - design section 13) ----------------------
+
+	virtual int32	HasImportChange(int32 nth, int32 which)
+	{
+		UIDRef story;
+		TextIndex from = 0;
+		TextIndex to = 0;
+		if (!this->ChangeRangeInTarget(nth, which, story, from, to))
+			return 0;
+		return KCMCountImportChanges(story, from, to);
+	}
+
+	virtual int32	RejectImportChange(int32 nth, int32 which, PMString& outMessage)
+	{
+		outMessage.Clear();
+		outMessage.SetTranslatable(kFalse);
+		UIDRef story;
+		TextIndex from = 0;
+		TextIndex to = 0;
+		if (!this->ChangeRangeInTarget(nth, which, story, from, to))
+		{
+			outMessage = "this change is not in a document that is open and compared";
+			return -1;
+		}
+
+		// ★ONE UNDO STEP for the whole row: a replace row is two changes (its insertion and its deletion's mark),
+		//   and one Ctrl+Z has to bring both back. Aborted - so nothing is left on the undo stack - when nothing
+		//   was rejected.
+		IAbortableCmdSeq* sequence = CmdUtils::BeginAbortableCmdSeq("KCMRejectImportChange");
+		if (sequence != nil)
+		{
+			PMString name("Reject This Import Change");
+			name.SetTranslatable(kFalse);
+			sequence->SetName(name);
+		}
+		const int32 done = KCMRejectImportChanges(story, from, to);
+		if (sequence != nil)
+		{
+			if (done > 0)
+				CmdUtils::EndCommandSequence(sequence);
+			else
+				CmdUtils::AbortCommandSequence(sequence);
+		}
+		if (done < 0)
+		{
+			outMessage = "the story keeps no change history";
+			return -1;
+		}
+		// ★THE ROW IS COMPARED AGAIN: a reject does not move the list by itself (measured 2026-09-24 - rows and
+		//   status line stayed as they were until a refresh), and a row still showing a change that is gone
+		//   would be offered again.
+		if (done > 0)
+			this->RefreshRow(nth);
+		return done;
+	}
+
+private:
+	/** The story and the range of change `which` of row `nth`, in the Target that is open and armed. */
+	bool16 ChangeRangeInTarget(int32 nth, int32 which, UIDRef& outStory, TextIndex& outFrom, TextIndex& outTo)
+	{
+		IDataBase* const targetDB = KCMArmedTargetDB();
+		if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
+			return kFalse;
+		Row row;
+		if (!this->GetRow(nth, row) || (row.fKinds & kKCMStoryKindUnpaired) != 0 || row.fStoryUID == kInvalidUID)
+			return kFalse;
+		Change change;
+		if (!this->GetChange(nth, which, change))
+			return kFalse;
+		outStory = UIDRef(targetDB, row.fStoryUID);
+		outFrom = change.fTargetStart;
+		outTo = change.fTargetEnd;
+		return kTrue;
+	}
+
+public:
 
 	// ⛔**RETIRED SINCE 2026-09-20**, and since 2026-09-21 no restore of any size is left to come back
 	//   to. The slot stays for the vtable reason given above.
