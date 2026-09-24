@@ -300,8 +300,12 @@ int32 KCMMatchTableToSource(const UIDRef& targetStory, const UIDRef& sourceStory
 				Refuse(outWhy, "the copy command for the cells could not be made");
 				return -1;
 			}
+			// ★(2026-09-25 spike) eAll, not eCells: a row's height and a column's width are ROW and COLUMN attributes
+			//   (kRowAttrHeightBoss / kColAttrWidthBoss - ITableGeometry.h), which eCells does not carry. Measured with
+			//   eCells: a row or column put back took its NEIGHBOUR's height or width (live-rows P / Q), everything
+			//   else - fills, strokes, insets, cell styles - came back.
 			data->Set(::GetUIDRef(from), GridArea(c.fRow, c.fCol, c.fRow + rowSpan, c.fCol + colSpan),
-					  ::GetUIDRef(table), GridAddress(c.fRow, c.fCol), ITableModel::eCells);
+					  ::GetUIDRef(table), GridAddress(c.fRow, c.fCol), ITableModel::eAll);
 			if (!Made(CmdUtils::ProcessCommand(copy),
 					  CellName(c.fRow, c.fCol) + " could not be copied from the Source's table", outWhy))
 				return -1;
