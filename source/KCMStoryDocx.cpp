@@ -2959,8 +2959,20 @@ void RejoinParas(KCMStoryShape::Story& s, std::vector<KCMStoryShape::Para>& para
 			const KCMStoryShape::Para& next = paras[i + 1];
 			if (joinAfter)
 			{
-				JoinOnto(made.back(), next);
-				++i;
+				// ★WORD'S EMPTY PARAGRAPH AT THE HEAD OF THE WORDS AFTER THE TABLE IS SKIPPED (2026-09-24, S3b - found
+				//   on re-check, the matrix's X04): Enter at the start of those words leaves "" between the table and
+				//   them. Joining THAT left the words a paragraph of their own - the document's "A[T]B" was split in
+				//   two, with three changes in its history, and the export (the same A / T / B either way) could not
+				//   show it. The document joins the table to its words, so the words are what joins.
+				//   ⚠Not past the next table's own paragraph (the empty one Word asks for between two tables), and
+				//    not when the empty paragraph holds a note's reference.
+				size_t j = i + 1;
+				const bool16 afterIsTable = (k + 1 < mine.size()
+											 && s.fTables[mine[k + 1]].fParaIndex == static_cast<int32>(i + 2)) ? kTrue : kFalse;
+				if (SaysNothing(paras[j]) && paras[j].fNoteRefs.empty() && j + 1 < paras.size() && !afterIsTable)
+					++j;
+				JoinOnto(made.back(), paras[j]);
+				i = j;
 			}
 			else if (SaysNothing(next))
 			{
