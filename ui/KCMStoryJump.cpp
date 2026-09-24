@@ -856,7 +856,17 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 
 	// ★A WARICHU / TATE-CHU-YOKO carries its other side's LINES too (2026-09-16), cut by the model;
 	//   the box draws them in layers. fCount is 0 for every other kind, and then nothing changes.
-	KCMSetStatusSegments(label, otherPre, otherMid, otherPost,
+	// ★A CHANGE THE READER TOOK BACK SAYS SO FIRST (2026-09-24, stage 2 C): the "=" row's message area opens with
+	//   what stands there now and what the row's menu offers, then shows the Source side as any row does.
+	PMString shownLabel(label);
+	if (change.fReplaced)
+	{
+		PMString taken("Taken back - the Source's words stand here now; Redo from Word puts Word's back. ");
+		taken.SetTranslatable(kFalse);
+		taken.Append(label);
+		shownLabel = taken;
+	}
+	KCMSetStatusSegments(shownLabel, otherPre, otherMid, otherPost,
 						   otherRuby, change.fAttrKind, change.fOtherLayers);
 
 	return moved;

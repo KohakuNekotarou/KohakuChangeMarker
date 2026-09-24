@@ -344,6 +344,47 @@ enum KCMStoryPlace
 };
 
 /** One row of the Story Edits section. */
+/** A change the reader TOOK BACK (2026-09-24, stage 2 C - design section 15 of
+	docs/superpowers/specs/2026-09-23-kcm-import-sync-design.md): "Reject This Import Change" or "Restore from
+	Source" put the Source's words or mark back, and the row stays on the list with "=" in its sign column, so
+	that "Redo from Word" has a place to act from.
+
+	★THE STATE IS THE COUNTERS' ALONE (design 15-1-3, and the retired restore's lesson - docs/ai-notes/
+	  kcm-restore-retired-2026-09-21.md section 3-2): the story's counter (KCMStoryDiffRun::CountForKind, by
+	  fCounterKind) is read at the moment of asking, and an undo winds it back on its own, so no flag can
+	  disagree with the document. Standing = "=" (taken back, the Source's state); Undone = the reject was
+	  undone (shown as the live change it was); Redone = put back from Word (likewise). RunOne drops an
+	  Undone or Redone record that has no live twin (PruneRejected), and Build starts with none. */
+struct KCMRejectedRecord
+{
+	KCMStoryChange	fLive;			// the change as the diff made it - its ranges are its LIVE ones, slid along by later writes
+	TextIndex		fNowStart;		// where the Source's words stand in the Target while the record is Standing
+	TextIndex		fNowEnd;
+	uint32			fRejectedAt;	// CountForKind right after the reject / restore
+	uint32			fRedoneAt;		// the same right after a redo; 0 = never redone
+	int32			fCounterKind;	// kKCMStoryAttrNone for words, else the attribute's kind - which counter to ask
+	mutable KCMStoryChange fShown;	// what GetMergedChange hands out: fLive with the ranges of the moment
+	/** ★WHICH WORDS THE RECORDS AFTER THIS ONE ARE PLACED FOR: kTrue = the Source's (the record Standing), kFalse =
+		the live ones (Undone or Redone). The document changes length at this place with every reject, redo, undo
+		and redo-of-undo, and only the first two are writes of KCM's own; the rest arrive with no signal. So the
+		later records are not slid at write time but RECONCILED whenever the list is read (KCMStoryList's
+		MergedOrder): where this flag disagrees with the state, they slide by the two lengths and the flag follows.
+		Measured 2026-09-24: slid at the redo alone, an undo of that redo left the next record two characters off. */
+	bool16			fPlacedForSource;
+	KCMRejectedRecord() : fNowStart(0), fNowEnd(0), fRejectedAt(0), fRedoneAt(0), fCounterKind(0), fPlacedForSource(kTrue) {}
+};
+
+enum KCMRejectedState { kKCMRejectedStanding = 0, kKCMRejectedUndone = 1, kKCMRejectedRedone = 2 };
+
+/** The record's state for a counter read now. ★">=" and never "==" (section 3-2): a later write in the same
+	story moves the counter on, and the record is still standing. */
+inline KCMRejectedState KCMRejectedStateOf(const KCMRejectedRecord& r, uint32 counterNow)
+{
+	if (r.fRedoneAt != 0 && counterNow >= r.fRedoneAt)
+		return kKCMRejectedRedone;
+	return (counterNow >= r.fRejectedAt) ? kKCMRejectedStanding : kKCMRejectedUndone;
+}
+
 struct KCMStoryRow
 {
 	/** The story, IN THE DOCUMENT THAT HOLDS IT -- the target for every row except a Removed one,
@@ -454,6 +495,12 @@ struct KCMStoryRow
 		refresh cannot find them again. Build refills them from the import's own list
 		(KCMImportRefusals), which lives as long as the origin does. */
 	std::vector<KCMStoryChange> fRefusals;
+
+	/** ★The changes the reader TOOK BACK (2026-09-24, stage 2 C) - see KCMRejectedRecord. **NOT IN fChanges, for
+		the reason fRefusals is not**: RunOne empties that on every refresh, and a record has to outlive the refresh
+		that finds nothing where it stands. Kept in TEXT order (KCMRejectedOrder.h's slot rule) and merged with the
+		live changes by GetMergedChange. SetRowChanges leaves it alone; PruneRejected is what thins it. */
+	std::vector<KCMRejectedRecord> fRejected;
 
 	KCMStoryRow()
 		: fStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fFrameUID(kInvalidUID),
@@ -657,6 +704,32 @@ namespace KCMStoryList
 		By index rather than by uid, because a row standing for a file has no uid. Out of range does
 		nothing. ⚠Before the sort, like AddRefusalRow: the index is only good until then. */
 	void AddRefusalChange(int32 nth, const PMString& kind, const PMString& whereAndWhy);
+
+	// ---- the changes the reader took back (2026-09-24, stage 2 C - design section 15) --------------------
+
+	/** Remember a change the reader took back: `live` as the diff made it, [nowStart, nowEnd) where the Source's
+		words now stand, `counter` the story's counter right after the write (CountForKind by `counterKind`).
+		Inserted at its slot (KCMRejectedSlotFor by the live start), and the records after it slid by what the
+		write removed and put in. A record whose fLive is the TWIN of `live` (the same what, kind and live range -
+		a change rejected, redone and rejected again) is updated in place instead. */
+	void AddRejected(int32 nth, const KCMStoryChange& live, TextIndex nowStart, TextIndex nowEnd,
+					 uint32 counter, int32 counterKind);
+
+	/** The record behind merged index `which`, or nil for a live change, a refusal, or an index out of range. */
+	const KCMRejectedRecord* RejectedAt(int32 nth, int32 which);
+
+	/** The record's state now, asked of the story's counter in `targetDB` (KCMStoryDiffRun::CountForKind). */
+	KCMRejectedState RejectedStateOf(int32 nth, const KCMRejectedRecord& record, IDataBase* targetDB);
+
+	/** After a redo: fRedoneAt = counter, and the records after it slide back by what the redo put in. ⚠fNowStart /
+		fNowEnd are left as they are - they say where the Source's words stand whenever the record is Standing again
+		(an undo of the redo), and the state chooses between them and the live range. The record is found by its
+		fLive (what, kind, live range). */
+	void MarkRedone(int32 nth, const KCMRejectedRecord& record, uint32 counter);
+
+	/** Drop the records in the Undone or Redone state that have no live twin in fChanges - RunOne, right after
+		SetRowChanges (design 15-1-3): the diff has found the change again, or the reader edited it away. */
+	void PruneRejected(int32 nth, IDataBase* targetDB);
 
 	// ---- what the panel sees: the two lists as one ------------------------------------------
 	//

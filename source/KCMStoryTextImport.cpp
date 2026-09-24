@@ -33,6 +33,7 @@
 #include "KCMStoryTextExport.h"		// KCMStoryFromDocument - the document's story, read the way the export reads it
 #include "KCMStoryDocx.h"			// Read - the parts as Word shows them
 #include "KCMImportTracking.h"		// the import writes under Track Changes, as KohakuChangeMarker (2026-09-24)
+#include "KCMWordKeep.h"			// the Word content kept per story for "Redo from Word" (2026-09-24, stage 2 C)
 #include "K2SmartPtr.h"				// K2::scoped_ptr - the author switch is let go of at a chosen moment (reset)
 #include "KCMZipStore.h"			// Entry - a part, named
 #include "KCMModelNotify.h"			// KCMNotify - a cancelled import tells the panel the mode came back
@@ -829,6 +830,13 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	author.reset();			// the name back, inside the sequence (see where it was switched)
 	if (sequence != nil)
 		CmdUtils::EndCommandSequence(sequence);
+
+	// ★WORD'S CONTENT IS KEPT PER STORY for "Redo from Word" (2026-09-24, stage 2 C - design 15-1-6): every story
+	//   this pour paired, whether or not anything went in - a story held whole has nothing to redo, and the redo's
+	//   own plan says so. Replaces what the last import kept for the same story.
+	for (size_t k = 0; k < matched.size(); ++k)
+		if (matched[k] && k < set.fStories.size())
+			KCMWordKeepPut(db, set.fUids[k], set.fStories[k]);
 
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);

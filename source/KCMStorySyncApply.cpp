@@ -691,6 +691,11 @@ void Say(KCMSyncResult& out, const char* kind, const PMString& why)
 
 }	// anonymous namespace
 
+void KCMSyncColumnsOfRow(const std::vector<KCMParaAttrs>& attrs, int32 table, int32 row, std::vector<int32>& outCols)
+{
+	ColumnsOfRow(attrs, table, row, outCols);
+}
+
 void KCMApplySyncPlan(const UIDRef& storyRef, const KCMStoryShape::Story& now,
 					  const KCMStorySync::Plan& plan, KCMSyncResult& out)
 {

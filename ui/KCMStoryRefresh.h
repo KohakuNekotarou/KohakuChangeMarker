@@ -118,6 +118,18 @@ bool16 KCMChangeRowCanRestoreAttr();
 /** Restores it from the Source document (one undo step) and says what on the panel's message line. */
 bool16 KCMChangeRowRestoreAttr();
 
+// ---- "Redo from Word" on a TAKEN-BACK change row (2026-09-24, stage 2 C) ---------------------------------------
+// ★The third item on the change row's menu, live only on a "=" row - where the other two are greyed - so a row
+//  still shows one item.
+
+/** Whether "Redo from Word" may be offered: a comparison armed, a mode with story rows, and the change one the
+	reader took back and still standing so (facade CanRedoFromWord). Whether Word's content is still in memory
+	is the action's to say (design 15-1-5). */
+bool16 KCMChangeRowCanRedo();
+
+/** Redoes it from Word's content (one undo step) and says what on the panel's message line. */
+bool16 KCMChangeRowRedo();
+
 #endif // __KCMStoryRefresh_h__
 
 // End, KCMStoryRefresh.h.

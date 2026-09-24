@@ -58,6 +58,12 @@ void KCMApplyTableShape(const UIDRef& storyRef, const KCMStorySync::Plan& plan, 
 void KCMApplySyncPlan(const UIDRef& storyRef, const KCMStoryShape::Story& now,
 					  const KCMStorySync::Plan& plan, KCMSyncResult& out);
 
+/** The grid columns that occur in row `row` of table `table` of the document's reading, ascending - the order
+	the row's cells run in, which is how a plan's Where names a cell (KCMStorySync::Where::fCell). ★Shared with
+	"Redo from Word" (2026-09-24, stage 2 C), which goes the other way: from the document's (row, column) to the
+	cell's place in the row. */
+void KCMSyncColumnsOfRow(const std::vector<KCMParaAttrs>& attrs, int32 table, int32 row, std::vector<int32>& outCols);
+
 #endif // __KCMStorySyncApply_h__
 
 // End, KCMStorySyncApply.h.

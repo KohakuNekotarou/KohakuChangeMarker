@@ -1102,6 +1102,12 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMChangeRowRestoreAttr();
 			break;
 
+		// "Redo from Word" on a TAKEN-BACK change row's menu (2026-09-24, stage 2 C): the change's paragraph is made
+		// what Word shows again, as one undo step, and the row is compared again.
+		case kKCMChangeRowRedoActionID:
+			KCMChangeRowRedo();
+			break;
+
 		// "Show as XML" on a DEFINITION row's context menu (2026-09-09). Shows the element the row
 		// names, from both documents, in a modal alert. ★Which row it was is noted the same way as
 		// for the item above, by KCMStorySetMenuRow at the right click.
@@ -1622,6 +1628,13 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//   so a text row, a note row and a closed Source all grey it (design 14-2, 2026-09-24).
 			listToUpdate->SetNthActionState(i, KCMChangeRowCanRestoreAttr() ? kEnabledAction
 			                                                                 : kDisabled_Unselected);
+		}
+		else if (action == kKCMChangeRowRedoActionID)
+		{
+			// ★The same test as the execution (KCMChangeRowCanRedo) - a change the reader took back and still standing
+			//   so, read off the story's counter (design 15-1-3, 2026-09-24).
+			listToUpdate->SetNthActionState(i, KCMChangeRowCanRedo() ? kEnabledAction
+			                                                          : kDisabled_Unselected);
 		}
 		else if (action == kKCMResourceRowXmlActionID)
 		{

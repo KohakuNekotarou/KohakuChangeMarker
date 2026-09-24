@@ -72,6 +72,7 @@
 #include "KCMStoryList.h"          // KCMStoryList::ShutdownCleanup (letting go of the rows' PMStrings)
 #include "KCMStoryTextImport.h"    // KCMClearImportRefusals - what the last import could not put in (PMStrings again)
 #include "KCMSourceCache.h"        // KCMSourceCacheClear - the Source text kept from the origin
+#include "KCMWordKeep.h"           // KCMWordKeepSweepClosed / KCMWordKeepClear - the Word content kept for "Redo from Word"
 #include "KCMResourceStore.h"      // the Resources list, emptied on the same routes
 #include "KCMStoryMarker.h"        // KCMStoryMarker::Shutdown (the Story mode's marks are never drawn again)
 #include "KCMBookCompare.h"        // KCMClearBookResultText (the book comparison's result text)
@@ -758,6 +759,8 @@ void KCMPeekStartup::Shutdown()
 	//   of std::strings and WideStrings, so leaving it to static destruction is the very thing the
 	//   paragraph above records. It only empties a container.
 	KCMSourceCacheClear();
+	// The Word content kept per story for "Redo from Word" (2026-09-24, stage 2 C) - a map of stories, the same rule.
+	KCMWordKeepClear();
 	// And the stories this comparison had read, with what a restore learned about their tables -
 	//   two maps of strings, the same rule again.
 	// The Story mode's marks. **Until they moved into the model plug-in this clean-up had no
@@ -1127,6 +1130,7 @@ void KCMHandleDocsClosed()
 	KCMPageMapSweepClosedDocs();
 	KCMPageCheckSweepClosedDocs();	// and the ticks, the same way
 	KCMPawStampSweepClosedDocs();	// and the cat-paw stamps, likewise
+	KCMWordKeepSweepClosed();		// and the Word content kept for "Redo from Word" (2026-09-24, stage 2 C)
 
 	// All of the screen-side clean-up travels on **this one notification**.
 	//

@@ -78,6 +78,16 @@ void RenumberNotesByReading(KCMStoryShape::Story& s);
 	document calls note n - so the apply pairs a note of the finished shape with the document's by it. */
 void RenumberNotesByThread(KCMStoryShape::Story& s);
 
+/** The steps of `plan` that make ONE paragraph of `now` Word's - (where, para) in N's numbering - for the redo of one
+	change the reader took back (2026-09-24, stage 2 C - design 15-1-7). Kept: kSetPara / kHeld of that paragraph;
+	kDeleteParas covering it, narrowed to that one paragraph; kInsertParas standing right before it (fPara == para - 1,
+	or -1 when para == 0) - ★WHOLE: every paragraph Word put in at that place goes back together, and the other records
+	there become twins of the redo; kAddNote whose reference lands in the kept paragraphs, its fPara renumbered for the
+	narrowed plan; kDeleteNote whose reference `now` holds in that paragraph; kInsertTable at that body paragraph and
+	kDeleteTable of a table `now` holds at it (a table record). Shape steps are never kept - they are the import's own
+	rounds, and the import holds them anyway (design 11-1 item 5). */
+void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& where, int32 para, Plan& out);
+
 }	// namespace KCMStorySync
 
 #endif // __KCMStorySync_h__
