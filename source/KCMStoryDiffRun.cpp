@@ -2171,6 +2171,10 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 		changes.clear();
 	MarkOverset(targetDB, storyUID, changes);
 	KCMStoryList::SetRowChanges(rowIndex, changes, compared);
+	// ★THE RECORDS OF WHAT THE READER TOOK BACK OUTLIVE THIS REFRESH (2026-09-24, stage 2 C - design 15-1-3): a
+	//   Standing one stays where the diff now finds nothing; one the reader undid or redid has its twin among the
+	//   changes just attached and is dropped, so that the change is not shown twice.
+	KCMStoryList::PruneRejected(rowIndex, targetDB);
 	KCMStoryList::SetRowTargetTextCount(rowIndex, KCMStoryDiffRun::TextCountOf(UIDRef(targetDB, storyUID)));
 
 	return compared ? static_cast<int32>(changes.size()) : -1;
