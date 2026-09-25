@@ -1009,6 +1009,22 @@ void KCMStoryList::SetRowTargetTextCount(int32 nth, uint32 count)
 	gRows[nth].fTargetTextCount = count;
 }
 
+void KCMStoryList::SetRowComparedAt(int32 nth, uint32 allCount)
+{
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
+		return;
+	gRows[nth].fAllCount = allCount;
+	// ★the states this row was compared at (KCMStoryRow::fComparedAt) - kept short: an Undo that goes further back
+	//   than the oldest kept is still told by the counter going DOWN (NeedsCompareAgain)
+	std::vector<uint32>& seen = gRows[nth].fComparedAt;
+	if (std::find(seen.begin(), seen.end(), allCount) == seen.end())
+	{
+		if (seen.size() >= 256)
+			seen.erase(seen.begin());
+		seen.push_back(allCount);
+	}
+}
+
 // (⛔AddReplacedChange and ClearReplacedChanges stood here and went on 2026-09-21 with the restore.
 //  They kept, in fReplacedStart order, the changes the reader had taken in - the records that let a
 //  row stay in the list after a write, so that an undo had something to come back to.)
@@ -1517,6 +1533,70 @@ void KCMStoryList::AddRejectedGroup(int32 nth, const std::vector<KCMStoryChange>
 			if (twinOf[j] >= static_cast<int32>(slot))
 				++twinOf[j];
 	}
+}
+
+/* GetRowComparedHistory / SetRowComparedHistory
+*/
+void KCMStoryList::GetRowComparedHistory(int32 nth, uint32& outAllCount, std::vector<uint32>& outSeen)
+{
+	outAllCount = 0;
+	outSeen.clear();
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
+		return;
+	outAllCount = gRows[nth].fAllCount;
+	outSeen = gRows[nth].fComparedAt;
+}
+
+void KCMStoryList::SetRowComparedHistory(int32 nth, uint32 allCount, const std::vector<uint32>& seen)
+{
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
+		return;
+	gRows[nth].fAllCount = allCount;
+	gRows[nth].fComparedAt = seen;
+}
+
+/* RowOfTargetStory
+*/
+int32 KCMStoryList::RowOfTargetStory(UID storyUID)
+{
+	for (size_t i = 0; i < gRows.size(); ++i)
+		if (gRows[i].fStoryUID == storyUID && (gRows[i].fKinds & kKCMStoryKindRemoved) == 0)
+			return static_cast<int32>(i);
+	return -1;
+}
+
+/* NeedsCompareAgain
+*/
+bool16 KCMStoryList::NeedsCompareAgain(int32 nth, IDataBase* targetDB)
+{
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || targetDB == nil)
+		return kFalse;
+	KCMStoryRow& row = gRows[nth];
+	if (row.fStoryUID == kInvalidUID)
+		return kFalse;
+	if (row.fComparedAt.empty())
+		return kFalse;			// never compared (the Pixel mode, or not read yet): nothing to follow
+	// the AGGREGATE counter - any attribute kind asks it (KCMStoryDiffRun::CountForKind)
+	const uint32 now = KCMStoryDiffRun::CountForKind(UIDRef(targetDB, row.fStoryUID), kKCMStoryAttrRuby);
+	// ★Where the row was last compared: nothing to do - a KCM write compares its row itself, and its own
+	//   notification arrives here afterwards (re-check 2026-09-25: the record test below, asked here too, compared the
+	//   row a second time after every redo, whose record is only re-placed when the list is next read).
+	if (now == row.fAllCount)
+		return kFalse;
+	if (now < row.fAllCount
+		|| std::find(row.fComparedAt.begin(), row.fComparedAt.end(), now) != row.fComparedAt.end())
+		return kTrue;
+	// The counter moved somewhere it has not been compared at: plain typing - or a Redo, should it ever not come back
+	// to the very value it had. A taken-back record whose state no longer matches its placing says which.
+	for (size_t i = 0; i < row.fRejected.size(); ++i)
+	{
+		const KCMRejectedState state = StateNow(row, row.fRejected[i], targetDB);
+		if (state == kKCMRejectedStale)
+			continue;
+		if (((state == kKCMRejectedStanding) ? kTrue : kFalse) != row.fRejected[i].fPlacedForSource)
+			return kTrue;
+	}
+	return kFalse;
 }
 
 /* RejectedStanding

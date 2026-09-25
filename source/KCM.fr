@@ -473,6 +473,18 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//  It listened under the SDK's own IID_ITEXTMODEL, because the change was InDesign's and not a
 	//  KCM command's, and LAZILY, because lazy is the only notification broadcast on undo and redo
 	//  (ISubject.h:78-82). It went with the restore on 2026-09-21.)
+	// ***** AND IS BACK UNDER NEW NUMBERS (2026-09-25): THE STORY EDITS LIST FOLLOWS AN UNDO / REDO. *****
+	// The same shape - run-time attachment only (KCMStoryFollowEnsureObservers), IID_ITEXTMODEL, lazy - but it
+	// compares the row AGAIN when the story came back to a state it was compared at (KCMStoryFollowObserver.h).
+	AddIn
+	{
+		kTextStoryBoss,
+		kInvalidClass,
+		{
+			// Implementation: KCMStoryFollowObserver.cpp
+			IID_IKCMSTORYFOLLOWOBSERVER, kKCMStoryFollowObserverImpl,
+		}
+	},
 
 	// Tasks 12-15 add their four interfaces to THIS block - they do not open a second AddIn.
 	AddIn

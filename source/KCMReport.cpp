@@ -414,7 +414,8 @@ private:
 
 /** Runs the text diff over the Story Edits rows for the report when the comparison's mode did
     not (Pixel and Resources leave the rows without children), and puts every row back as it was
-    on the way out - what a row held, whether it was compared, its text counter. The panel is
+    on the way out - what a row held, whether it was compared, its counters (the text one, and the
+    comparison history the list follows an Undo by - 2026-09-25). The panel is
     never told, because from its point of view nothing changed.
     ⚠Outside the Story mode the rows have already been through DropRowsWithNoContentChange, so a
       story whose only edit is a ruby or a kenten has no row to diff; that is the Pixel mode's
@@ -437,6 +438,10 @@ public:
 			fKeep[i].fChanges = row->fChanges;
 			fKeep[i].fTextCompared = row->fTextCompared;
 			fKeep[i].fTargetTextCount = row->fTargetTextCount;
+			// ★AND WHEN IT WAS COMPARED (2026-09-25): the diff records the state it compared at, which the list uses to
+			//   follow an Undo / Redo (KCMStoryFollowObserver) - put back with the rest, or the rows would claim a
+			//   comparison the panel never made
+			KCMStoryList::GetRowComparedHistory(i, fKeep[i].fAllCount, fKeep[i].fComparedAt);
 		}
 		fLent = kTrue;
 		KCMStoryDiffRun::Run(targetDB, sourceDB, &fCancelled);
@@ -450,6 +455,7 @@ public:
 		{
 			KCMStoryList::SetRowChanges(i, fKeep[i].fChanges, fKeep[i].fTextCompared);
 			KCMStoryList::SetRowTargetTextCount(i, fKeep[i].fTargetTextCount);
+			KCMStoryList::SetRowComparedHistory(i, fKeep[i].fAllCount, fKeep[i].fComparedAt);
 		}
 	}
 	bool16 WasCancelled() const { return fCancelled; }
@@ -459,7 +465,9 @@ private:
 		std::vector<KCMStoryChange>	fChanges;
 		bool16						fTextCompared;
 		uint32						fTargetTextCount;
-		Keep() : fTextCompared(kFalse), fTargetTextCount(0) {}
+		uint32						fAllCount;
+		std::vector<uint32>			fComparedAt;
+		Keep() : fTextCompared(kFalse), fTargetTextCount(0), fAllCount(0) {}
 	};
 	std::vector<Keep>	fKeep;
 	bool16				fLent;

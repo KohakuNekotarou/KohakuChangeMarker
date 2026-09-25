@@ -248,7 +248,7 @@ DECLARE_PMID(kClassIDSpace, kKCMResourceSaxHandlerBoss, kKCMPrefix + 36)	// ISAX
 //   are free" until 2026-09-07, which would have handed out a colliding number).
 // +14 is spoken for: IID_IKCMRESOURCESFACADE takes it in KCMBoundaryID.h when the Resources
 //   mode's facade lands (Task 4 of docs/superpowers/plans/2026-09-09-kcm-resources-engine.md).
-// +16..+25 are free. COUNT before taking one: the facade IIDs live in KCMBoundaryID.h, not here,
+// +18..+25 are free (+16 retired, +17 IID_IKCMSTORYFOLLOWOBSERVER - 2026-09-25). COUNT before taking one: the facade IIDs live in KCMBoundaryID.h, not here,
 //   so the largest number in THIS file is not the largest number in use.
 //
 // The three below are MODEL-ONLY, which is why they are here and not in KCMBoundaryID.h: the UI
@@ -260,6 +260,7 @@ DECLARE_PMID(kInterfaceIDSpace, IID_IKCMMARKSOBSERVER, kKCMPrefix + 13)	// the o
 // ⛔**+16 IS RETIRED** (2026-09-21): IID_IKCMSTORYUNDOOBSERVER, the observer AddIn'd on kTextStoryBoss
 //   so that the panel followed an undo of a restore. Never reused. The old note said:
 // DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYUNDOOBSERVER, kKCMPrefix + 16)	// ★the observer AddIn'd on kTextStoryBoss (KCMStoryUndoObserver.cpp, 2026-09-15): it hears the story's own text change - including on UNDO and REDO, which is the whole reason it exists - and tells the panel to redraw. An IID of its own because kTextStoryBoss already carries other people's IID_IOBSERVER. ⚠The PROTOCOL it listens under is the SDK's IID_ITEXTMODEL, not one of ours: the notification is InDesign's, not a KCM command's. (+14 is a gap, not a slot: nothing was ever declared there.)
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYFOLLOWOBSERVER, kKCMPrefix + 17)	// ★(2026-09-25) the lazy observer AddIn'd on kTextStoryBoss again (KCMStoryFollowObserver.cpp) - a NEW number, +16 stays retired: the Story Edits list follows an Undo / Redo of a compared story (the user: "after Ctrl+Z the list is out of date"). Unlike +16 it compares the row AGAIN, and only when the story came back to a state it was compared at, or a taken-back record changed state - never on plain typing. The protocol is the SDK's IID_ITEXTMODEL. Free after this: +18..+25.
 DECLARE_PMID(kInterfaceIDSpace, IID_IKCMRESOURCESINK, kKCMPrefix + 15)	// how the SAX handler is given somewhere to put what it reads, and how the caller asks afterwards whether anything went wrong (KCMResourceParse.cpp). It sits on kKCMResourceSaxHandlerBoss beside IID_ISAXCONTENTHANDLER, both served by one implementation. ⚠It exists because the SAX route hands a handler NOTHING to write into: ParseStream takes only a stream and a handler, and the `importer` argument that ISAXContentHandler::Register would receive is nil here (it is the XML importer, and this is not an import).
 
 
@@ -299,7 +300,8 @@ DECLARE_PMID(kImplementationIDSpace, kKCMResourcesFacadeImpl, kKCMPrefix + 59)	/
 DECLARE_PMID(kImplementationIDSpace, kKCMResourceSinkImpl, kKCMPrefix + 58)	// IKCMResourceSink on the SAME boss (same file): where the handler puts what it reads. ⚠It has to be a SECOND implementation rather than the same one under two IIDs, because a boss builds ONE OBJECT PER IID -- registering kKCMResourceSaxHandlerImpl twice would produce two unrelated instances and the handler would fill in a list nobody could read.
 // ⛔**+60 IS RETIRED** (2026-09-21): kKCMStoryUndoObserverImpl, with the observer itself. The old note said:
 // DECLARE_PMID(kImplementationIDSpace, kKCMStoryUndoObserverImpl, kKCMPrefix + 60)	// ★the lazy observer AddIn on kTextStoryBoss (KCMStoryUndoObserver.cpp, 2026-09-15): one KCMNotify when a compared story's text changes, so that the panel follows an undo. The marks live in the counters already, so it writes nothing.
-										// Next new implementation: +61. ⚠**Read this line rather than the last DECLARE** - the retirement notes are BELOW them, so deciding from the last line alone picks a slot already spoken for. ⚠And this line itself rots: it said +59 while +59 was already kKCMResourcesFacadeImpl (found 2026-09-15). **Check the number against the declarations before trusting it.**
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryFollowObserverImpl, kKCMPrefix + 61)	// ★(2026-09-25) the lazy observer on kTextStoryBoss (KCMStoryFollowObserver.cpp): the Story Edits list follows an Undo / Redo - the row compared again (RunOne) when the story is back at a state it was compared at or a taken-back record changed state, then the panel told. +60 stays retired.
+										// Next new implementation: +62. ⚠**Read this line rather than the last DECLARE** - the retirement notes are BELOW them, so deciding from the last line alone picks a slot already spoken for. ⚠And this line itself rots: it said +59 while +59 was already kKCMResourcesFacadeImpl (found 2026-09-15). **Check the number against the declarations before trusting it.**
 
 // MessageIDs: how the model tells the UI what changed. All seven moved to KCMBoundaryID.h - sender
 //   and receiver must see the same value, or the build succeeds and nothing happens at run time.

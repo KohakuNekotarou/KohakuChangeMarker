@@ -463,6 +463,15 @@ struct KCMStoryRow
 		 change's positions name the text as it was then. It went on 2026-09-21.) */
 	uint32		fTargetTextCount;
 
+	/** ★The story's AGGREGATE change counter (ITextModel::GetChangeCount) when fChanges were built, and every value it
+		has had at a comparison of this row (2026-09-25). The counter goes back on an Undo and forward again on a Redo,
+		to exactly the values it had; plain typing makes new ones. So "the story is back at a value it was compared at,
+		or below the last one" is an Undo or a Redo, and that is when the row is compared again on its own
+		(KCMStoryList::NeedsCompareAgain, KCMStoryFollowObserver). ⚠The aggregate and not fTargetTextCount's text
+		counter: a ruby or a kenten does not move the text counter (KCMStoryDiffRun::CountForKind says so, measured). */
+	uint32				fAllCount;
+	std::vector<uint32>	fComparedAt;
+
 	/** Whether the two versions' TEXT was actually put side by side for this row.
 
 		**IT IS WHAT MAKES AN EMPTY fChanges READABLE**, and that is the whole reason it exists.
@@ -543,7 +552,7 @@ struct KCMStoryRow
 	KCMStoryRow()
 		: fStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fFrameUID(kInvalidUID),
 		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32), fTextCompared(kFalse),
-		  fAttrKind(kKCMStoryAttrNone), fAttrKindCount(0), fHasTextChange(kFalse), fTargetTextCount(0) {}
+		  fAttrKind(kKCMStoryAttrNone), fAttrKindCount(0), fHasTextChange(kFalse), fTargetTextCount(0), fAllCount(0) {}
 };
 
 /** The first frame a story is placed in -- where a jump to that story should go.
@@ -751,6 +760,10 @@ namespace KCMStoryList
 		read by the caller at the moment it attached the row's changes. Out-of-range nth is ignored. */
 	void SetRowTargetTextCount(int32 nth, uint32 count);
 
+	/** Record the story's aggregate change counter for row nth at the moment its changes were attached
+		(KCMStoryRow::fAllCount / fComparedAt - 2026-09-25). Out-of-range nth is ignored. */
+	void SetRowComparedAt(int32 nth, uint32 allCount);
+
 	// (⛔**SEVEN DECLARATIONS WENT ON 2026-09-21** with the restore they served: AddReplacedChange,
 	//  ReplacedSlotFor, AddReplacedChangeAt, ReplacedSlotOfMerged, RemoveReplacedChangeAt,
 	//  ClearReplacedChanges and ShiftReplacedChanges. They kept the row's record of what the reader
@@ -824,6 +837,23 @@ namespace KCMStoryList
 	/** Drop the records in the Undone or Redone state that have no live twin in fChanges - RunOne, right after
 		SetRowChanges (design 15-1-3): the diff has found the change again, or the reader edited it away. */
 	void PruneRejected(int32 nth, IDataBase* targetDB);
+
+	/** The row of the Target's story `storyUID` (a row standing for a story only the Source has is not one), or -1. */
+	int32 RowOfTargetStory(UID storyUID);
+
+	/** ★Whether row `nth` has to be compared again because an Undo or a Redo moved its story (2026-09-25 - the list
+		followed nothing on Ctrl+Z: its "=" and its positions stayed as they were, and the panel's right-click then met
+		"the list was out of date"). kTrue when the story's AGGREGATE change counter (KCMStoryRow::fAllCount - the
+		aggregate, because the text counter does not see a mark) is not the one the row was compared at AND it went back
+		below it or came back to a value the row WAS compared at (fComparedAt) - or when a taken-back record's state no
+		longer matches where its followers are placed (a reject or a redo undone or done again). ⚠Plain typing moves the
+		counter to new values and is answered kFalse: the row is not compared on every keystroke. */
+	bool16 NeedsCompareAgain(int32 nth, IDataBase* targetDB);
+
+	/** Row nth's comparison history (fAllCount and fComparedAt), read and put back whole - for a caller that runs the
+		diff over the rows on loan and restores them afterwards (the PDF report's StoryDetailLoan, 2026-09-25). */
+	void GetRowComparedHistory(int32 nth, uint32& outAllCount, std::vector<uint32>& outSeen);
+	void SetRowComparedHistory(int32 nth, uint32 allCount, const std::vector<uint32>& seen);
 
 	// ---- what the panel sees: the two lists as one ------------------------------------------
 	//

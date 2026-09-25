@@ -2162,6 +2162,8 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 			MarkOverset(targetDB, row->fStoryUID, changes);
 			KCMStoryList::SetRowChanges(i, changes, kTrue);
 			KCMStoryList::SetRowTargetTextCount(i, KCMStoryDiffRun::TextCountOf(UIDRef(targetDB, row->fStoryUID)));
+			// the state it was compared at, for the list to follow an Undo / Redo (KCMStoryFollowObserver - 2026-09-25)
+			KCMStoryList::SetRowComparedAt(i, KCMStoryDiffRun::CountForKind(UIDRef(targetDB, row->fStoryUID), kKCMStoryAttrRuby));
 			total += static_cast<int32>(changes.size());
 		}
 		// (else: the row keeps its place and loses its detail)
@@ -2284,6 +2286,8 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	//   changes just attached and is dropped, so that the change is not shown twice.
 	KCMStoryList::PruneRejected(rowIndex, targetDB);
 	KCMStoryList::SetRowTargetTextCount(rowIndex, KCMStoryDiffRun::TextCountOf(UIDRef(targetDB, storyUID)));
+	// the state it was compared at, for the list to follow an Undo / Redo (KCMStoryFollowObserver - 2026-09-25)
+	KCMStoryList::SetRowComparedAt(rowIndex, KCMStoryDiffRun::CountForKind(UIDRef(targetDB, storyUID), kKCMStoryAttrRuby));
 
 	return compared ? static_cast<int32>(changes.size()) : -1;
 }
