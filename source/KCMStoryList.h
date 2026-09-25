@@ -402,9 +402,10 @@ struct KCMRejectedRecord
 	WideString		fLiveWords;
 	bool16			fHasLiveWords;
 	mutable bool16	fCheckedLive;		// ... and whether fLiveWords stood at the live range, at fCheckedAt
+	mutable bool16	fCheckedLiveSourceToo;	// ... and the Source reads them at its range too - then they tell nothing
 	KCMRejectedRecord() : fNowStart(0), fNowEnd(0), fRejectedAt(0), fRedoneAt(0), fCounterKind(0),
 						  fChecked(kFalse), fCheckedAt(0), fCheckedSame(kFalse), fPlacedForSource(kTrue),
-						  fHasLiveWords(kFalse), fCheckedLive(kFalse) {}
+						  fHasLiveWords(kFalse), fCheckedLive(kFalse), fCheckedLiveSourceToo(kFalse) {}
 };
 
 /** Standing = shown "=", Undone / Redone = shown as the live change it was, Stale = the counters say Standing

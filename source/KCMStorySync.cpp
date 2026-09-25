@@ -1866,8 +1866,11 @@ void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& wher
 		keptInsert = -1;
 	const int32 keptCount = (keptInsert >= 0)
 		? static_cast<int32>(plan.fSteps[static_cast<size_t>(keptInsert)].fParas.size()) : 0;
-	const int32 keptFinished = para;		// where it stands once only the kept steps are done: the kept insert is
-											// BEFORE it and moves nothing that N numbers, and nothing else is kept
+	// where N's `para` stands once only the kept steps are done: after the kept insert's paragraphs, which go in right
+	// before it. ★(re-check 2026-09-25) It said `para` - true of N's numbering, which a kSetPara / kDeleteParas speaks,
+	// but a kAddNote speaks the FINISHED story's: a note Word put in a paragraph it added was sent keptCount paragraphs
+	// back, into one of the document's own.
+	const int32 keptFinished = para + keptCount;
 
 	for (size_t i = 0; i < plan.fSteps.size(); ++i)
 	{
@@ -1947,6 +1950,47 @@ void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& wher
 				continue;		// the shape steps: the import's own rounds, never a redo's
 		}
 		out.fSteps.push_back(kept);
+	}
+}
+
+/* WordTableOfInsert
+*/
+int32 WordTableOfInsert(const KCMStoryShape::Story& word, const Step& s)
+{
+	if (s.fKind != Step::kInsertTable)
+		return -1;
+	int32 body = 0;
+	for (size_t t = 0; t < word.fTables.size(); ++t)
+	{
+		if (word.fTables[t].fInTable >= 0)
+			continue;
+		if (body == s.fNote)
+			return static_cast<int32>(t);
+		++body;
+	}
+	return -1;
+}
+
+/* WithoutTables
+*/
+void WithoutTables(const KCMStoryShape::Story& word, const std::vector<int32>& hide, KCMStoryShape::Story& out)
+{
+	out = word;
+	out.fTables.clear();
+	for (size_t t = 0; t < word.fTables.size(); ++t)
+	{
+		if (std::find(hide.begin(), hide.end(), static_cast<int32>(t)) != hide.end())
+			continue;
+		KCMStoryShape::Table table = word.fTables[t];
+		if (table.fInTable >= 0)
+		{
+			int32 gone = 0;
+			for (size_t h = 0; h < hide.size(); ++h)
+				if (hide[h] < table.fInTable)
+					++gone;
+			table.fInTable -= gone;
+		}
+		out.fTables.push_back(table);
 	}
 }
 

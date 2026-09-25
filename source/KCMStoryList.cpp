@@ -1142,16 +1142,34 @@ bool16 RecordReadsAsSource(const KCMStoryRow& row, const KCMRejectedRecord& r, I
 }
 
 /** Whether the words the reject took out stand at the record's live range again (KCMRejectedRecord::fLiveWords) - kFalse
-	when none were captured, or the live range is a caret (a deletion: there are no words to find). */
-bool16 LiveWordsHere(const KCMStoryRow& row, const KCMRejectedRecord& r, IDataBase* targetDB)
+	when none were captured, or the live range is a caret (a deletion: there are no words to find). outSourceToo:
+	the Source reads those same words at its own range, so their standing here tells nothing (see below). */
+bool16 LiveWordsHere(const KCMStoryRow& row, const KCMRejectedRecord& r, IDataBase* targetDB, bool16& outSourceToo)
 {
+	outSourceToo = kFalse;
 	const int32 len = r.fLive.fTargetEnd - r.fLive.fTargetStart;
 	if (!r.fHasLiveWords || len <= 0 || len != static_cast<int32>(r.fLiveWords.Length()))
 		return kFalse;
 	IDataBase::SaveRestoreModifiedState guard(targetDB);
 	InterfacePtr<ITextModel> model(UIDRef(targetDB, row.fStoryUID), UseDefaultIID());
 	WideString words;
-	return (KCMTextWords::WordsAt(model, r.fLive.fTargetStart, len, words) && words == r.fLiveWords) ? kTrue : kFalse;
+	if (!KCMTextWords::WordsAt(model, r.fLive.fTargetStart, len, words) || words != r.fLiveWords)
+		return kFalse;
+	// ★★NOT EVIDENCE WHEN THE SOURCE READS THE SAME THERE (re-check 2026-09-25): a paragraph Word added that repeats the
+	//   one after it (a paragraph copied in Word) leaves, once taken back, THAT paragraph at the live range - the very
+	//   words the reject took out - and a reject standing was read as undone the moment it was made, its "=" lost.
+	//   Redone and redo-undone read alike the same way. The Source's own words at its caret say so: equal, and the
+	//   words prove nothing either way - StateNow keeps the counters' answer, whichever it is.
+	IDataBase* const sourceDB = KCMArmedSourceDB();
+	if (sourceDB != nil && KCMIsDocDBOpen(sourceDB))
+	{
+		IDataBase::SaveRestoreModifiedState sourceGuard(sourceDB);
+		InterfacePtr<ITextModel> sModel(UIDRef(sourceDB, row.fStoryUID), UseDefaultIID());
+		WideString sWords;
+		if (KCMTextWords::WordsAt(sModel, r.fLive.fSourceStart, len, sWords) && sWords == r.fLiveWords)
+			outSourceToo = kTrue;
+	}
+	return kTrue;
 }
 
 /** A record's state now - the story's counter of its kind, read at this moment, CHECKED AGAINST THE DOCUMENT
@@ -1174,7 +1192,7 @@ KCMRejectedState StateNow(const KCMStoryRow& row, const KCMRejectedRecord& r, ID
 	if (!r.fChecked || r.fCheckedAt != counterNow)
 	{
 		r.fCheckedSame = RecordReadsAsSource(row, r, targetDB);
-		r.fCheckedLive = LiveWordsHere(row, r, targetDB);
+		r.fCheckedLive = LiveWordsHere(row, r, targetDB, r.fCheckedLiveSourceToo);
 		r.fCheckedAt = counterNow;
 		r.fChecked = kTrue;
 	}
@@ -1189,8 +1207,9 @@ KCMRejectedState StateNow(const KCMStoryRow& row, const KCMRejectedRecord& r, ID
 		return kKCMRejectedStanding;		// the redo was undone: taken back, "=", as the document shows
 	}
 	// Standing by the counters: the reject may have been undone and ANOTHER write moved the counter back past it -
-	// Word's words standing at the live range say so.
-	if (r.fCheckedLive)
+	// Word's words standing at the live range say so (unless the Source reads them there too - LiveWordsHere).
+	// ⚠The Redone branch above needs no such test: words that tell nothing leave it at the counters' answer already.
+	if (r.fCheckedLive && !r.fCheckedLiveSourceToo)
 		return kKCMRejectedUndone;
 	return r.fCheckedSame ? kKCMRejectedStanding : kKCMRejectedStale;
 }

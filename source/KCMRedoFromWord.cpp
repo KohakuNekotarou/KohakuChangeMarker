@@ -185,6 +185,24 @@ bool16 KCMPlanRedoFromWord(const UIDRef& targetStory, const UIDRef& sourceStory,
 	KCMStorySync::Narrow(outNow, whole, where, para, scope, outPlan);
 	if (outPlan.fSteps.empty())
 	{
+		// ★A CELL OF A TABLE THE COMPARISON HOLDS WHOLE (re-check 2026-09-25): the redo compares without reshaping, so a
+		//   table whose rows, columns or merges are not Word's - one given a row by hand since the import, say - is held with
+		//   every cell in it, and nothing comes out for the cell. "Already reads as Word's" was then said of a cell that
+		//   plainly did not. The table's own reason is given instead.
+		if (where.fKind == KCMStorySync::Where::kCell)
+		{
+			for (size_t i = 0; i < whole.fSteps.size(); ++i)
+			{
+				const KCMStorySync::Step& s = whole.fSteps[i];
+				if (s.fKind == KCMStorySync::Step::kHeld && s.fWhere.fKind == KCMStorySync::Where::kCell
+					&& s.fWhere.fTable == where.fTable && s.fWhere.fRow < 0)
+				{
+					outWhy.SetUTF8String(s.fWhy + " - redo the table's row first, or import again");
+					outWhy.SetTranslatable(kFalse);
+					return kFalse;
+				}
+			}
+		}
 		Refuse(outWhy, "nothing to redo here - the paragraph already reads as Word's");
 		return kFalse;
 	}
@@ -279,22 +297,28 @@ void StepsOfTable(const KCMStorySync::Plan& plan, int32 ordinal, bool16 shape, K
 }	// namespace
 
 /** KCMRedoTableFromWord's body. `nothingIsDone`: a table that already reads as Word's answers 0 rather than a refusal
-	- for a table the redo has just PUT IN (KCMRedoTableAddedOrTaken), where Word's cells may all be empty. */
-static int32 RedoOneTable(const UIDRef& targetStory, UID tableUID, bool16 nothingIsDone, PMString& outWhy);
+	- for a table the redo has just PUT IN (KCMRedoTableAddedOrTaken), where Word's cells may all be empty.
+	`wordIn`: Word's story to compare against, when the caller has made it (the tables still taken back left out -
+	KCMStorySync::WithoutTables); nil = the one the import kept. */
+static int32 RedoOneTable(const UIDRef& targetStory, UID tableUID, bool16 nothingIsDone,
+						  const KCMStoryShape::Story* wordIn, PMString& outWhy);
 
 int32 KCMRedoTableFromWord(const UIDRef& targetStory, UID tableUID, PMString& outWhy)
 {
-	return RedoOneTable(targetStory, tableUID, kFalse, outWhy);
+	return RedoOneTable(targetStory, tableUID, kFalse, nil, outWhy);
 }
 
-static int32 RedoOneTable(const UIDRef& targetStory, UID tableUID, bool16 nothingIsDone, PMString& outWhy)
+static int32 RedoOneTable(const UIDRef& targetStory, UID tableUID, bool16 nothingIsDone,
+						  const KCMStoryShape::Story* wordIn, PMString& outWhy)
 {
 	outWhy.Clear();
 	outWhy.SetTranslatable(kFalse);
 
-	// 1. Word's content, kept by the import (design 15-1-5)
+	// 1. Word's content, kept by the import (design 15-1-5) - or the caller's view of it
 	KCMStoryShape::Story word;
-	if (!KCMWordKeepGet(targetStory.GetDataBase(), targetStory.GetUID(), word))
+	if (wordIn != nil)
+		word = *wordIn;
+	else if (!KCMWordKeepGet(targetStory.GetDataBase(), targetStory.GetUID(), word))
 	{
 		Refuse(outWhy, "the Word content is not in memory any more - the document was closed or InDesign restarted; import again");
 		return -1;
@@ -345,7 +369,10 @@ static int32 RedoOneTable(const UIDRef& targetStory, UID tableUID, bool16 nothin
 		//   (Where::Cell(t, -1, -1)) - it would have passed StepsOfTable and TAKEN THIS TABLE AWAY.
 		if (whole.Count(KCMStorySync::Step::kInsertTable) + whole.Count(KCMStorySync::Step::kDeleteTable) > 0)
 		{
-			Refuse(outWhy, "a table was added to or taken from this story since the import - import again");
+			// (re-check 2026-09-25: it said "since the import" alone - the usual cause is a Table + / Table − row taken
+			//  back, which its own redo puts right)
+			Refuse(outWhy, "a table Word added or took away stands taken back in this story (or one was added or taken"
+						   " away since the import) - redo that table's row first, or import again");
 			return -1;
 		}
 		if (!whole.IsShapeRound())
@@ -552,6 +579,37 @@ int32 KCMRedoTableAddedOrTaken(const UIDRef& targetStory, const KCMRejectedRecor
 		return -1;
 	}
 
+	// ★★THE OTHER TABLES STILL TAKEN BACK (re-check 2026-09-25). Two tables Word added, both taken back: the redo of
+	//   either put its table in and then compared the story with Word's - which still found the OTHER missing, answered
+	//   with that table alone (stage 0) and so refused, every time, for both: neither could be redone. The table put in
+	//   is now compared against Word's story WITHOUT the other tables Word added (KCMStorySync::WithoutTables) - decided
+	//   HERE, from the step chosen above, because once it is in, its cells are empty and a pairing by words could take
+	//   it for the other one. ⚠A table Word took away that stands taken back is the other way round - a table the document has
+	//   and Word does not - and cannot be left out of the document's side: its own redo (which compares nothing) comes
+	//   first.
+	std::vector<int32> hide;
+	if (added)
+	{
+		for (size_t i = 0; i < whole.fSteps.size(); ++i)
+		{
+			const KCMStorySync::Step& s = whole.fSteps[i];
+			if (s.fKind == KCMStorySync::Step::kDeleteTable)
+			{
+				Refuse(outWhy, "a table Word took away stands taken back in this story too - redo that table's row first");
+				return -1;
+			}
+			if (s.fKind != KCMStorySync::Step::kInsertTable || static_cast<int32>(i) == chosen)
+				continue;
+			const int32 t = KCMStorySync::WordTableOfInsert(word, s);
+			if (t < 0)
+			{
+				Refuse(outWhy, "which of Word's tables goes here could not be told - import again");
+				return -1;
+			}
+			hide.push_back(t);
+		}
+	}
+
 	// 4. WRITTEN AS THE IMPORT WRITES IT (KCMApplyTableShape - the table in a paragraph of its own, or the table and
 	//    all it holds taken away), under the import's signature, so it can be rejected again
 	KCMStorySync::Plan one;
@@ -589,7 +647,9 @@ int32 KCMRedoTableAddedOrTaken(const UIDRef& targetStory, const KCMRejectedRecor
 		Refuse(outWhy, "the table put back in could not be found again");
 		return -1;
 	}
-	const int32 filled = RedoOneTable(targetStory, fresh, kTrue, outWhy);
+	KCMStoryShape::Story wordView;
+	KCMStorySync::WithoutTables(word, hide, wordView);
+	const int32 filled = RedoOneTable(targetStory, fresh, kTrue, &wordView, outWhy);
 	if (filled < 0)
 		return -1;
 	return shape.fTableEdits + filled;

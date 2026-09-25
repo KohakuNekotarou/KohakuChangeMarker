@@ -120,6 +120,18 @@ enum NarrowScope { kNarrowOwn, kNarrowInserted, kNarrowRemoved };
 void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& where, int32 para, NarrowScope scope,
 			Plan& out);
 
+/** Which of Word's tables (its index in `word`'s Story::fTables) a kInsertTable step puts in: the step's fNote counts
+	Word's BODY tables alone (the stage 0 of Compare). -1 when it names none. (2026-09-25) */
+int32 WordTableOfInsert(const KCMStoryShape::Story& word, const Step& s);
+
+/** `word` with the tables `hide` (indices into its Story::fTables) left out - what the redo of ONE table Word added is
+	compared against while OTHER tables Word added stand taken back (re-check 2026-09-25: compared against all of Word,
+	the story answered with the missing tables alone - stage 0 - and neither table could ever be redone;
+	KCMRedoTableAddedOrTaken). ⚠Only for tables that hold no table of their own - a table Word added never does (the
+	stage 0 holds the story otherwise) - so the only numbers that move are the parents the nested tables elsewhere
+	name. The paragraph each stood in stays: a difference of the place around it, which no step of a table is. */
+void WithoutTables(const KCMStoryShape::Story& word, const std::vector<int32>& hide, KCMStoryShape::Story& out);
+
 }	// namespace KCMStorySync
 
 #endif // __KCMStorySync_h__
