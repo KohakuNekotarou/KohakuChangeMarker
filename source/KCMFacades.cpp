@@ -1093,14 +1093,15 @@ public:
 			name.SetTranslatable(kFalse);
 			sequence->SetName(name);
 		}
-		std::vector<KCMTableMatchKept> kept;
-		int32 done = KCMMatchTableToSource(target, source, live.fTargetTableUID, live.fSourceTableUID, kept, outMessage);
-		// ★★★**ALL THE WAY, OR NOT AT ALL** (the user's rule): the table has to read as the match promised - the
-		//   Source's shape, the Source's content in every cell the shape changed, and untouched words in every cell
-		//   left alone - or the whole sequence is rolled back. ⚠A half-done match (done < 0) is rolled back the same way.
+		KCMTableMatchBefore tableBefore;
+		int32 done = KCMMatchTableToSource(target, source, live.fTargetTableUID, live.fSourceTableUID, tableBefore, outMessage);
+		// ★★★**ALL THE WAY, OR NOT AT ALL** (the user's rule, and 2026-09-25: "put it back from the Source, check it with
+		//   INX afterwards, and if anything is wrong nothing comes back"): the table has to read as the match promised -
+		//   by the text, by the table model's geometry, and by INX (KCMTableReadsAsSource says which part against what) -
+		//   or the whole sequence is rolled back. ⚠A half-done match (done < 0) is rolled back the same way.
 		std::string why;
 		const bool16 same = (done >= 0)
-			? KCMTableReadsAsSource(target, source, live.fTargetTableUID, live.fSourceTableUID, kept, why)
+			? KCMTableReadsAsSource(target, source, live.fTargetTableUID, live.fSourceTableUID, tableBefore, why)
 			: kFalse;
 		this->EndSequenceOrRollBack(sequence, same);
 		if (done >= 0 && !same)

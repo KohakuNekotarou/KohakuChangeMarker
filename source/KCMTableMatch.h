@@ -44,6 +44,7 @@
 #include <vector>
 
 #include "BaseType.h"		// bool16 / int32
+#include "PMReal.h"
 #include "PMString.h"
 #include "UIDRef.h"
 #include "WideString.h"
@@ -60,26 +61,51 @@ struct KCMTableMatchKept
 	KCMTableMatchKept() : fRow(0), fCol(0), fThreadless(kFalse) {}
 };
 
+/** ★WHAT THE TARGET'S TABLE WAS BEFORE THE MATCH MOVED ANYTHING (2026-09-25) - what the reading back compares the
+	parts the match did not touch against: the cells left alone (and their words), every row's height and column's
+	width READ FROM THE TABLE MODEL (ITableGeometry), and the table as INX wrote it (IDML's own XML - everything
+	else a table carries). ★Two readers for one question on purpose: the user pointed at Adobe's own fix list -
+	"the first column's width is no longer lost in InCopy, snippet, ICML and IDML export" (fixed in 21.6) - so an
+	export is not a proof on its own, and the geometry is asked of the model as well. */
+struct KCMTableMatchBefore
+{
+	std::vector<KCMTableMatchKept>	fKept;
+	std::vector<PMReal>				fRowHeights;	// by row, from the top
+	std::vector<PMReal>				fColWidths;		// by column, from the left
+	std::string						fTableXml;		// the <Table> element, KCMCutTableXmlById
+};
+
 /** Gives the Target's table `targetTable` (a dictionary uid in `targetStory`'s database) the shape of the Source's
 	`sourceTable` (likewise, in `sourceStory`'s): the Target's merged cells the Source does not have taken apart,
 	rows and columns made as many as the Source's (put in after the last, taken away from the bottom - the import's
 	rule), header and footer rows made the Source's, the Source's merged cells merged - and then every cell that is
-	NOT the same cell on both sides (`outKept` names the ones that are, with their words as they stood) given the
-	Source's content and cell attributes (kTableCopyPasteCmdBoss, cell by cell).
+	NOT the same cell on both sides (`outBefore.fKept` names the ones that are, with their words as they stood) given
+	the Source's content and every attribute (kTableCopyPasteCmdBoss, ITableModel::eAll, cell by cell).
+	★`outBefore` is filled BEFORE anything moves; when the table cannot be written as INX then, nothing is done and
+	  -1 comes back: a match that could not be checked afterwards is not made (the user's rule - "if anything is
+	  wrong, nothing comes back").
 	★Called INSIDE the caller's command sequence; it opens none. A step that fails stops the work with its reason in
 	  `outWhy` and the error state cleared - the caller rolls the sequence back (KCMTableReadsAsSource then says no).
 	@return how many moves were made (shape moves and cells copied); -1 when a move could not be made, and then
 		outWhy says which. */
 int32 KCMMatchTableToSource(const UIDRef& targetStory, const UIDRef& sourceStory, UID targetTable, UID sourceTable,
-							std::vector<KCMTableMatchKept>& outKept, PMString& outWhy);
+							KCMTableMatchBefore& outBefore, PMString& outWhy);
 
-/** Whether the Target's table now reads as the match promised: the Source's rows, columns, merged cells
-	(KCMTableShapesDiffer), header and footer row counts; in every cell NOT in `kept` the Source's characters
-	(KCMTextWords::WordsAt), ruby / kenten / warichu / tate-chu-yoko (KCMAttrMarksSame) and number of tables standing
-	inside; and in every cell in `kept` the words it held before. ★Read from the two documents, never from what a
-	row remembers. Neither document is dirtied by the reading. kFalse with the first difference in `outWhy` (UTF-8). */
+/** Whether the Target's table now reads as the match promised - three readers, each a question the others cannot
+	answer:
+	 1. the text model: the Source's rows, columns, merged cells (KCMTableShapesDiffer), header and footer row counts,
+	    the kind of every cell (text or graphic); in every cell NOT left alone the Source's characters
+	    (KCMTextWords::WordsAt), ruby / kenten / warichu / tate-chu-yoko (KCMAttrMarksSame) and number of tables
+	    standing inside; in every cell left alone the words it held before;
+	 2. the table model's geometry (ITableGeometry): the Source's height for every row and width for every column the
+	    match pasted into, and the height or width from before for the rest;
+	 3. INX (KCMTableXmlMatches): everything else - styles, fills, strokes, insets, notes, anchored items, index
+	    entries, links, variables, conditions, XML tags - the touched parts against the Source, the rest against
+	    `before.fTableXml`.
+	★Read from the two documents, never from what a row remembers. Neither document is dirtied by the reading.
+	kFalse with the first difference in `outWhy` (UTF-8). */
 bool16 KCMTableReadsAsSource(const UIDRef& targetStory, const UIDRef& sourceStory, UID targetTable, UID sourceTable,
-							 const std::vector<KCMTableMatchKept>& kept, std::string& outWhy);
+							 const KCMTableMatchBefore& before, std::string& outWhy);
 
 #endif // __KCMTableMatch_h__
 

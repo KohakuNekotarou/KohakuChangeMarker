@@ -253,6 +253,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRejectImport.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRestoreAttr.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableMatch.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableXmlCheck.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMWordKeep.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRedoFromWord.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableSnippet.cpp" />

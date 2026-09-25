@@ -25,6 +25,16 @@
 #include "TablesID.h"					// kTableCopyPasteCmdBoss
 #include "TableTypes.h"
 
+#include "ITableGeometry.h"			// row heights and column widths, read from the table model itself (2026-09-25)
+#include "ITableAttrAccessor.h"		// GetCellStyle - a cell's style and its priority, on both sides
+#include "IGridAreaData.h"			// kSetCellStyleAndPriorityCmdBoss's area
+#include "IIntData.h"					// ... its priority
+#include "IUIDData.h"					// ... its cell style
+#include "CelStyID.h"					// kSetCellStyleAndPriorityCmdBoss
+#include "UIDList.h"
+#include "KCMMemXferBytes.h"			// the INX written into memory
+#include "KCMTableSnippet.h"			// KCMExportStoryInx / KCMCutTableXmlById - the table as INX wrote it
+#include "KCMTableXmlCheck.h"			// KCMTableXmlMatches - the table's INX against the Source's and against before
 #include "KCMRestoreAttr.h"			// KCMAttrMarksSame - the four marks read on both sides
 #include "KCMStoryKinds.h"			// the four attribute kinds
 #include "KCMTableShape.h"			// KCMReadTableShapes / KCMTableShapesDiffer / KCMTableCellAt / KCMTableCellSame
@@ -134,9 +144,9 @@ bool16 Made(ErrorCode err, const std::string& what, PMString& why)
 /* KCMMatchTableToSource
 */
 int32 KCMMatchTableToSource(const UIDRef& targetStory, const UIDRef& sourceStory, UID targetTable, UID sourceTable,
-							std::vector<KCMTableMatchKept>& outKept, PMString& outWhy)
+							KCMTableMatchBefore& outBefore, PMString& outWhy)
 {
-	outKept.clear();
+	outBefore = KCMTableMatchBefore();
 	outWhy.Clear();
 	outWhy.SetTranslatable(kFalse);
 
@@ -188,7 +198,7 @@ int32 KCMMatchTableToSource(const UIDRef& targetStory, const UIDRef& sourceStory
 				Refuse(outWhy, CellName(c.fRow, c.fCol) + " of the Target's table could not be read");
 				return -1;
 			}
-			outKept.push_back(k);
+			outBefore.fKept.push_back(k);
 		}
 		// ★A GRAPHIC CELL THAT IS THE SAME ON BOTH SIDES is left alone too (2026-09-25): the same address, the same
 		//   span, a graphic cell in both. It has no words; the reading back asks its kind.
@@ -206,7 +216,36 @@ int32 KCMMatchTableToSource(const UIDRef& targetStory, const UIDRef& sourceStory
 			k.fRow = c.fRow;
 			k.fCol = c.fCol;
 			k.fThreadless = kTrue;
-			outKept.push_back(k);
+			outBefore.fKept.push_back(k);
+		}
+	}
+
+	// ---- 0b. the rest of what the reading back compares the untouched parts against, BEFORE anything moves -------
+	//
+	// ★Every row's height and column's width from the table model (ITableGeometry), and the table as INX writes it.
+	// ★★A MATCH THAT COULD NOT BE CHECKED IS NOT MADE: without the INX from before, the cells and rows left alone
+	//   cannot be shown to be untouched afterwards - so nothing moves, and the reader is told why.
+	{
+		InterfacePtr<ITableGeometry> geometry(table, UseDefaultIID());
+		if (geometry == nil)
+		{
+			Refuse(outWhy, "the Target's table's geometry could not be read");
+			return -1;
+		}
+		const RowRange rows = table->GetTotalRows();
+		const ColRange cols = table->GetTotalCols();
+		for (int32 r = rows.start; r < rows.start + rows.count; ++r)
+			outBefore.fRowHeights.push_back(geometry->GetRowHeights(r));
+		for (int32 c = cols.start; c < cols.start + cols.count; ++c)
+			outBefore.fColWidths.push_back(geometry->GetColWidths(c));
+		KCMMemXferBytes inx;
+		if (!KCMExportStoryInx(targetStory.GetDataBase(), targetStory.GetUID(), inx)
+			|| !KCMCutTableXmlById(inx.GetData(), inx.GetSize(), targetStory.GetUID(), targetTable, outBefore.fTableXml)
+			|| outBefore.fTableXml.empty())
+		{
+			Refuse(outWhy, "the Target's table could not be written as INX before the match, so the match could not be "
+						   "checked afterwards - nothing was changed");
+			return -1;
 		}
 	}
 	int32 moves = 0;
@@ -390,7 +429,7 @@ int32 KCMMatchTableToSource(const UIDRef& targetStory, const UIDRef& sourceStory
 		for (size_t i = 0; i < sourceCells.size(); ++i)
 		{
 			const KCMTableCellPlace& c = sourceCells[i];
-			if (KeptAt(outKept, c.fRow, c.fCol) != nil)
+			if (KeptAt(outBefore.fKept, c.fRow, c.fCol) != nil)
 				continue;					// the same cell on both sides: its words are the change history's
 			int32 rowSpan = 1, colSpan = 1;
 			KCMTableCellSpan(s, c.fRow, c.fCol, rowSpan, colSpan);
@@ -436,6 +475,41 @@ int32 KCMMatchTableToSource(const UIDRef& targetStory, const UIDRef& sourceStory
 					  CellName(c.fRow, c.fCol) + " could not be copied from the Source's table", outWhy))
 				return -1;
 			++moves;
+
+			// ★★THE CELL STYLE'S PRIORITY, AS THE SOURCE'S (2026-09-25, the INX read-back's first finding - live-rows
+			//   H P Q S: AppliedCellStylePriority 6 against the Source's 3). The paste applies the cell's style anew,
+			//   and a style applied anew is given a priority "greater than any priority of all cells that are adjacent"
+			//   (ITableAttrModifier::ApplyCellStyle) - the number that decides whose stroke is drawn on an edge two
+			//   cells share. So the Source's priority is put back, with the style the cell now has.
+			InterfacePtr<ITableAttrAccessor> sAccess(from, UseDefaultIID());
+			InterfacePtr<ITableAttrAccessor> tAccess(table, UseDefaultIID());
+			if (sAccess == nil || tAccess == nil)
+			{
+				Refuse(outWhy, CellName(c.fRow, c.fCol) + ": the cell styles could not be read");
+				return -1;
+			}
+			int32 sPriority = 0, tPriority = 0;
+			sAccess->GetCellStyle(GridAddress(c.fRow, c.fCol), &sPriority);
+			const UID tStyle = tAccess->GetCellStyle(GridAddress(c.fRow, c.fCol), &tPriority);
+			if (tPriority != sPriority)
+			{
+				InterfacePtr<ICommand> setPriority(CmdUtils::CreateCommand(kSetCellStyleAndPriorityCmdBoss));
+				InterfacePtr<IIntData> priorityData(setPriority, UseDefaultIID());
+				InterfacePtr<IGridAreaData> areaData(setPriority, UseDefaultIID());
+				InterfacePtr<IUIDData> styleData(setPriority, UseDefaultIID());
+				if (setPriority == nil || priorityData == nil || areaData == nil || styleData == nil)
+				{
+					Refuse(outWhy, "the command that sets a cell style's priority could not be made");
+					return -1;
+				}
+				priorityData->Set(sPriority);
+				areaData->Set(area);
+				styleData->Set(targetStory.GetDataBase(), tStyle);
+				setPriority->SetItemList(UIDList(::GetUIDRef(table)));
+				if (!Made(CmdUtils::ProcessCommand(setPriority),
+						  CellName(c.fRow, c.fCol) + ": the cell style's priority could not be made the Source's", outWhy))
+					return -1;
+			}
 		}
 	}
 	return moves;
@@ -444,7 +518,7 @@ int32 KCMMatchTableToSource(const UIDRef& targetStory, const UIDRef& sourceStory
 /* KCMTableReadsAsSource
 */
 bool16 KCMTableReadsAsSource(const UIDRef& targetStory, const UIDRef& sourceStory, UID targetTable, UID sourceTable,
-							 const std::vector<KCMTableMatchKept>& kept, std::string& outWhy)
+							 const KCMTableMatchBefore& before, std::string& outWhy)
 {
 	outWhy.clear();
 	// Reading must not dirty either document (the reading of a table's cells composes; KCMStoryDiffRun does the same).
@@ -524,7 +598,7 @@ bool16 KCMTableReadsAsSource(const UIDRef& targetStory, const UIDRef& sourceStor
 		}
 
 		// A cell left alone: the words it had, and nothing else asked of it.
-		const KCMTableMatchKept* const keep = KeptAt(kept, sc.fRow, sc.fCol);
+		const KCMTableMatchKept* const keep = KeptAt(before.fKept, sc.fRow, sc.fCol);
 		if (keep != nil)
 		{
 			if (tWords != keep->fWords)
@@ -564,6 +638,93 @@ bool16 KCMTableReadsAsSource(const UIDRef& targetStory, const UIDRef& sourceStor
 		if (TablesWithin(tAll, tc->fStart, tc->fEnd) != TablesWithin(sAll, sc.fStart, sc.fEnd))
 		{
 			outWhy = CellName(sc.fRow, sc.fCol) + ": the tables inside it differ in number from the Source's";
+			return kFalse;
+		}
+	}
+
+	// ---- 2. the geometry, from the table model itself (2026-09-25) --------------------------------------------
+	//
+	// ★The rows and columns a cell was pasted into carry the Source's height and width (eAll writes the row's and
+	//  the column's attributes with the cell's); the others keep what they had before the match. Asked of the model,
+	//  not of an export: Adobe's own fix list for 21.6 names an export that lost the first column's width.
+	std::vector<bool16> rowFromSource(static_cast<size_t>(s.fRows), kFalse);
+	std::vector<bool16> colFromSource(static_cast<size_t>(s.fCols), kFalse);
+	for (size_t i = 0; i < sourceCells.size(); ++i)
+	{
+		const KCMTableCellPlace& sc = sourceCells[i];
+		if (KeptAt(before.fKept, sc.fRow, sc.fCol) != nil)
+			continue;
+		int32 rowSpan = 1, colSpan = 1;
+		KCMTableCellSpan(s, sc.fRow, sc.fCol, rowSpan, colSpan);
+		for (int32 r = sc.fRow; r < sc.fRow + rowSpan && r < s.fRows; ++r)
+			rowFromSource[static_cast<size_t>(r)] = kTrue;
+		for (int32 c = sc.fCol; c < sc.fCol + colSpan && c < s.fCols; ++c)
+			colFromSource[static_cast<size_t>(c)] = kTrue;
+	}
+	{
+		InterfacePtr<ITableGeometry> tGeometry(tTable, UseDefaultIID());
+		InterfacePtr<ITableGeometry> sGeometry(sTable, UseDefaultIID());
+		if (tGeometry == nil || sGeometry == nil)
+		{
+			outWhy = "a table's geometry could not be read";
+			return kFalse;
+		}
+		const PMReal kSlack(0.01);		// a hundredth of a point: what a stored length can differ by and be the same
+		for (int32 r = 0; r < s.fRows; ++r)
+		{
+			const bool16 fromSource = (rowFromSource[static_cast<size_t>(r)] || static_cast<size_t>(r) >= before.fRowHeights.size())
+				? kTrue : kFalse;
+			const PMReal want = fromSource ? sGeometry->GetRowHeights(r) : before.fRowHeights[static_cast<size_t>(r)];
+			const PMReal have = tGeometry->GetRowHeights(r);
+			if (::ToDouble(have - want) > ::ToDouble(kSlack) || ::ToDouble(want - have) > ::ToDouble(kSlack))
+			{
+				std::ostringstream o;
+				o << "row " << r << " is " << ::ToDouble(have) << "pt high and should be " << ::ToDouble(want)
+				  << (fromSource ? "pt (the Source's)" : "pt (as it was)");
+				outWhy = o.str();
+				return kFalse;
+			}
+		}
+		for (int32 c = 0; c < s.fCols; ++c)
+		{
+			const bool16 fromSource = (colFromSource[static_cast<size_t>(c)] || static_cast<size_t>(c) >= before.fColWidths.size())
+				? kTrue : kFalse;
+			const PMReal want = fromSource ? sGeometry->GetColWidths(c) : before.fColWidths[static_cast<size_t>(c)];
+			const PMReal have = tGeometry->GetColWidths(c);
+			if (::ToDouble(have - want) > ::ToDouble(kSlack) || ::ToDouble(want - have) > ::ToDouble(kSlack))
+			{
+				std::ostringstream o;
+				o << "column " << c << " is " << ::ToDouble(have) << "pt wide and should be " << ::ToDouble(want)
+				  << (fromSource ? "pt (the Source's)" : "pt (as it was)");
+				outWhy = o.str();
+				return kFalse;
+			}
+		}
+	}
+
+	// ---- 3. everything else, as INX writes it (2026-09-25 - KCMTableXmlCheck.h) ---------------------------------
+	{
+		KCMMemXferBytes tInx, sInx;
+		std::string after, source;
+		if (!KCMExportStoryInx(targetStory.GetDataBase(), targetStory.GetUID(), tInx)
+			|| !KCMCutTableXmlById(tInx.GetData(), tInx.GetSize(), targetStory.GetUID(), targetTable, after) || after.empty())
+		{
+			outWhy = "the Target's table could not be written as INX after the match";
+			return kFalse;
+		}
+		if (!KCMExportStoryInx(sourceStory.GetDataBase(), sourceStory.GetUID(), sInx)
+			|| !KCMCutTableXmlById(sInx.GetData(), sInx.GetSize(), sourceStory.GetUID(), sourceTable, source) || source.empty())
+		{
+			outWhy = "the Source's table could not be written as INX";
+			return kFalse;
+		}
+		std::vector<std::string> keptNames;		// IDML names a cell "column:row"
+		for (size_t i = 0; i < before.fKept.size(); ++i)
+			keptNames.push_back(Num(before.fKept[i].fCol) + ":" + Num(before.fKept[i].fRow));
+		std::string why;
+		if (!KCMTableXmlMatches(after, source, before.fTableXml, keptNames, why))
+		{
+			outWhy = "as INX writes it, " + why;
 			return kFalse;
 		}
 	}
