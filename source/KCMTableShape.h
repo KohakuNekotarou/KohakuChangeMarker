@@ -86,7 +86,12 @@ struct KCMTableShape
 	int32		fHeaderCount;
 	int32		fFooterStart;	///< the footer rows, likewise - for "Match the Source" (2026-09-25)
 	int32		fFooterCount;
-	std::vector<KCMTableCellPlace>	fCells;		///< every anchor cell, in (row, col) order
+	std::vector<KCMTableCellPlace>	fCells;		///< every anchor cell WITH A TEXT THREAD, in (row, col) order
+	/** ★The anchor cells with NO text thread of their own - a GRAPHIC cell (2026-09-25). fStart / fEnd are 0: there is no
+		text. Kept apart so that fCells means what every reader of it assumes (a range of characters); only "Match the
+		Source" reads this (KCMTableMatch.cpp) - a graphic cell of the Source was neither pasted nor checked until then
+		(live-rows X: it came back as an empty text cell, and the match said it had matched). */
+	std::vector<KCMTableCellPlace>	fThreadless;
 
 	KCMTableShape() : fRows(0), fCols(0), fAnchorStart(0), fAnchorEnd(0), fHeaderStart(0), fHeaderCount(0),
 					  fFooterStart(0), fFooterCount(0)

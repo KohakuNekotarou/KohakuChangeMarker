@@ -55,8 +55,9 @@ struct KCMTableMatchKept
 	int32		fRow;
 	int32		fCol;
 	WideString	fWords;
+	bool16		fThreadless;	// a graphic cell (KCMTableShape::fThreadless) on both sides - no words to keep (2026-09-25)
 
-	KCMTableMatchKept() : fRow(0), fCol(0) {}
+	KCMTableMatchKept() : fRow(0), fCol(0), fThreadless(kFalse) {}
 };
 
 /** Gives the Target's table `targetTable` (a dictionary uid in `targetStory`'s database) the shape of the Source's

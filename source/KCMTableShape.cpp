@@ -124,11 +124,15 @@ bool16 KCMReadTableShapes(ITextModel* model, const KCMSkippedText& skipped, std:
 				}
 
 				InterfacePtr<ITextStoryThread> thread(dict->QueryThread(table->GetGridID(addr)));
-				if (thread == nil)
-					continue;
 				KCMTableCellPlace place;
 				place.fRow = r;
 				place.fCol = c;
+				if (thread == nil)
+				{
+					// a cell with no text of its own - a graphic cell (2026-09-25; KCMTableShape::fThreadless)
+					shape.fThreadless.push_back(place);
+					continue;
+				}
 				place.fStart = thread->GetTextStart();
 				place.fEnd = thread->GetTextEnd();
 				shape.fCells.push_back(place);

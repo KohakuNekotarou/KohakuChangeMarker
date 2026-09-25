@@ -1228,6 +1228,12 @@ bool16 Normalize(const KCMStoryShape::Story& now, const KCMStoryShape::Story& wo
 void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, Plan& out,
 			 bool16 reshapeTables)
 {
+	Compare(now, word, out, std::vector<bool16>(now.fTables.size(), reshapeTables));
+}
+
+void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, Plan& out,
+			 const std::vector<bool16>& mayReshape)
+{
 	out = Plan();
 	KCMStoryShape::Story n;
 	KCMStoryShape::Story w;
@@ -1290,13 +1296,15 @@ void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, 
 		std::vector<Step> steps;
 		std::string tableWhy;
 		const int32 stage = PlanShape(n, w, t, steps, tableWhy);
-		if (stage > 0 && reshapeTables)
+		// ★TABLE BY TABLE (2026-09-25): a table past the end of the vector may not be reshaped
+		const bool16 reshapeThis = (t < mayReshape.size()) ? mayReshape[t] : kFalse;
+		if (stage > 0 && reshapeThis)
 		{
 			byStage[stage].insert(byStage[stage].end(), steps.begin(), steps.end());
 			continue;
 		}
-		// ★★WITHOUT reshapeTables A SHAPE THAT COULD BE MADE IS HELD TOO: the caller reshapes nothing (the
-		//   redo of one paragraph, KCMRedoFromWord), and pairing the words of two tables that do not have
+		// ★★A TABLE THAT MAY NOT BE RESHAPED IS HELD EVEN WHEN ITS SHAPE COULD BE MADE: the caller reshapes nothing
+		//   there (the redo of one paragraph, and the redo of ANOTHER table - KCMRedoFromWord), and pairing the words of two tables that do not have
 		//   the same cells is exactly what the shape rounds are there to avoid - so the whole table is
 		//   held, its words included. (The import passed kFalse for one day, 2026-09-24 - design 11-1
 		//   item 5, "the change history cannot record that" - and passes kTrue again since that evening,

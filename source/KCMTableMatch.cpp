@@ -68,6 +68,29 @@ bool16 HasMerge(const KCMTableShape& s, int32 row, int32 col, int32 rowSpan, int
 	return kFalse;
 }
 
+/** The graphic cell (no text thread - KCMTableShape::fThreadless) anchored at (row, col), or nil. */
+const KCMTableCellPlace* ThreadlessAt(const KCMTableShape& s, int32 row, int32 col)
+{
+	for (size_t i = 0; i < s.fThreadless.size(); ++i)
+		if (s.fThreadless[i].fRow == row && s.fThreadless[i].fCol == col)
+			return &s.fThreadless[i];
+	return nil;
+}
+
+/** ★EVERY anchor cell of the shape - those with a text thread, then those without (graphic cells). What the paste and
+	the reading back walk: until 2026-09-25 they walked fCells alone, and a graphic cell of the Source was neither
+	pasted nor checked (live-rows X). `outThreadless` says which entries are graphic cells. */
+void AllCells(const KCMTableShape& s, std::vector<KCMTableCellPlace>& out, std::vector<bool16>& outThreadless)
+{
+	out = s.fCells;
+	outThreadless.assign(s.fCells.size(), kFalse);
+	for (size_t i = 0; i < s.fThreadless.size(); ++i)
+	{
+		out.push_back(s.fThreadless[i]);
+		outThreadless.push_back(kTrue);
+	}
+}
+
 const KCMTableMatchKept* KeptAt(const std::vector<KCMTableMatchKept>& kept, int32 row, int32 col)
 {
 	for (size_t i = 0; i < kept.size(); ++i)
@@ -167,6 +190,24 @@ int32 KCMMatchTableToSource(const UIDRef& targetStory, const UIDRef& sourceStory
 			}
 			outKept.push_back(k);
 		}
+		// ★A GRAPHIC CELL THAT IS THE SAME ON BOTH SIDES is left alone too (2026-09-25): the same address, the same
+		//   span, a graphic cell in both. It has no words; the reading back asks its kind.
+		for (size_t i = 0; i < t.fThreadless.size(); ++i)
+		{
+			const KCMTableCellPlace& c = t.fThreadless[i];
+			if (ThreadlessAt(s, c.fRow, c.fCol) == nil)
+				continue;
+			int32 tr = 1, tc = 1, sr = 1, sc = 1;
+			KCMTableCellSpan(t, c.fRow, c.fCol, tr, tc);
+			KCMTableCellSpan(s, c.fRow, c.fCol, sr, sc);
+			if (tr != sr || tc != sc)
+				continue;
+			KCMTableMatchKept k;
+			k.fRow = c.fRow;
+			k.fCol = c.fCol;
+			k.fThreadless = kTrue;
+			outKept.push_back(k);
+		}
 	}
 	int32 moves = 0;
 
@@ -257,18 +298,75 @@ int32 KCMMatchTableToSource(const UIDRef& targetStory, const UIDRef& sourceStory
 		}
 	}
 
+	// ---- 3b. the merges the rows and columns just put in brought with them, taken apart --------------------------
+	//
+	// ★★A ROW PUT IN TAKES THE STRUCTURE OF THE ROW IT FOLLOWS, MERGES INCLUDED (the import's spike M7, 2026-09-23 -
+	//   which is why the import takes apart the merges on the last row BEFORE it adds rows, design 9-1 (b)). Found on
+	//   2026-09-25 the hard way: a Target whose last row was merged (the Source's too) got a merged row put in after
+	//   it, one cell of the Source's plain row was pasted onto that merged cell, and InDesign CRASHED inside
+	//   TABLE MODEL.RPLN (live-rows T; docs/ai-notes/kcm-match-the-source-2026-09-25.md section 3d). So the shape
+	//   is read AGAIN here, and every merge it has that the Source has not - brought in, or stretched by the rows and
+	//   columns put in - is taken apart; step 4 then merges what the Source merges.
+	KCMTableShape now;
+	{
+		std::vector<KCMTableShape> nowAll;
+		if (!ShapeOf(targetStory, targetTable, now, nowAll))
+		{
+			Refuse(outWhy, "the Target's table could not be read after its rows and columns were changed");
+			return -1;
+		}
+		for (size_t i = 0; i < now.fMerges.size(); ++i)
+		{
+			const KCMTableCellShape& m = now.fMerges[i];
+			if (HasMerge(s, m.fRow, m.fCol, m.fRowSpan, m.fColSpan))
+				continue;
+			if (!Made(cmds->UnmergeCell(GridAddress(m.fRow, m.fCol)),
+					  "a merged cell the new rows or columns brought could not be taken apart", outWhy))
+				return -1;
+			++moves;
+		}
+		if (!ShapeOf(targetStory, targetTable, now, nowAll))
+		{
+			Refuse(outWhy, "the Target's table could not be read after its merged cells were taken apart");
+			return -1;
+		}
+	}
+
 	// ---- 4. the Source's merged cells the Target does not have yet --------------------------------------------
 	// ★GridArea's bottom and right are PAST the last row and column (TableTypes.h: Height() is bottomRow - topRow),
 	//   the way KCMApplyTableShape and KCMReportTable merge.
+	// ★Asked of the table AS IT STANDS NOW (3b), not of the shape read before anything moved.
 	for (size_t i = 0; i < s.fMerges.size(); ++i)
 	{
 		const KCMTableCellShape& m = s.fMerges[i];
-		if (HasMerge(t, m.fRow, m.fCol, m.fRowSpan, m.fColSpan))
+		if (HasMerge(now, m.fRow, m.fCol, m.fRowSpan, m.fColSpan))
 			continue;
 		if (!Made(cmds->MergeCells(GridArea(m.fRow, m.fCol, m.fRow + m.fRowSpan, m.fCol + m.fColSpan)),
 				  "cells of the Target's table could not be merged as the Source's are", outWhy))
 			return -1;
 		++moves;
+	}
+
+	// ---- 4b. ★★★NOTHING IS PASTED UNTIL THE SHAPE IS THE SOURCE'S (2026-09-25, after the crash above) ------------
+	//
+	// The paste writes the Source's cell over the Target's cell at the same address, and the table model does not
+	// defend itself when the two are not the same cell: it CRASHED. So the Target's shape is read once more and must
+	// be the Source's - rows, columns, every merged cell, header and footer rows - or nothing is pasted and the match
+	// is refused (the caller rolls the whole sequence back). Whatever shape a future case produces, a mismatch now
+	// ends in a refusal, never in a paste onto the wrong cells.
+	{
+		KCMTableShape made;
+		std::vector<KCMTableShape> madeAll;
+		if (!ShapeOf(targetStory, targetTable, made, madeAll))
+		{
+			Refuse(outWhy, "the Target's table could not be read before its cells were copied");
+			return -1;
+		}
+		if (KCMTableShapesDiffer(made, s) || made.fHeaderCount != s.fHeaderCount || made.fFooterCount != s.fFooterCount)
+		{
+			Refuse(outWhy, "the table's shape could not be made the Source's, so no cell was copied into it");
+			return -1;
+		}
 	}
 
 	// ---- 5. the content and cell attributes of every cell the shape changed, from the Source -------------------
@@ -286,13 +384,41 @@ int32 KCMMatchTableToSource(const UIDRef& targetStory, const UIDRef& sourceStory
 			Refuse(outWhy, "the Source's table could not be opened");
 			return -1;
 		}
-		for (size_t i = 0; i < s.fCells.size(); ++i)
+		std::vector<KCMTableCellPlace> sourceCells;
+		std::vector<bool16> sourceThreadless;
+		AllCells(s, sourceCells, sourceThreadless);		// graphic cells too (2026-09-25)
+		for (size_t i = 0; i < sourceCells.size(); ++i)
 		{
-			const KCMTableCellPlace& c = s.fCells[i];
+			const KCMTableCellPlace& c = sourceCells[i];
 			if (KeptAt(outKept, c.fRow, c.fCol) != nil)
 				continue;					// the same cell on both sides: its words are the change history's
 			int32 rowSpan = 1, colSpan = 1;
 			KCMTableCellSpan(s, c.fRow, c.fCol, rowSpan, colSpan);
+			// ★★THE CELL'S KIND FIRST (2026-09-25, live-rows X): a GRAPHIC cell of the Source pasted onto the text cell a
+			//   row put in brings nothing - the paste does not change what kind of cell it writes into, and the cell
+			//   stayed an empty text cell. So the Target's cell is made the Source's kind (ITableCommands::ConvertCellsType,
+			//   asked first with the model's CanConvertCellsType) before anything is pasted into it.
+			const GridArea area(c.fRow, c.fCol, c.fRow + rowSpan, c.fCol + colSpan);
+			const CellType want = from->GetCellType(GridAddress(c.fRow, c.fCol));
+			if (table->GetCellType(GridAddress(c.fRow, c.fCol)) != want)
+			{
+				if (!table->CanConvertCellsType(area, want))
+				{
+					Refuse(outWhy, CellName(c.fRow, c.fCol) + " cannot be made the Source's kind of cell (text or graphic)");
+					return -1;
+				}
+				if (!Made(cmds->ConvertCellsType(area, want, kFalse),
+						  CellName(c.fRow, c.fCol) + " could not be made the Source's kind of cell (text or graphic)", outWhy))
+					return -1;
+				++moves;
+			}
+			// ★AND THE TABLE MODEL'S OWN QUESTION, cell by cell (ITableModel.h: "Determine if a memento of mementoSpan
+			//   can be pasted [at] atAnchor") - the second guard after 4b, asked of the very cells about to be written.
+			if (!table->CanPaste(GridAddress(c.fRow, c.fCol), GridSpan(rowSpan, colSpan), from, GridAddress(c.fRow, c.fCol)))
+			{
+				Refuse(outWhy, CellName(c.fRow, c.fCol) + " of the Source cannot be pasted onto the Target's table");
+				return -1;
+			}
 			InterfacePtr<ICommand> copy(CmdUtils::CreateCommand(kTableCopyPasteCmdBoss));
 			InterfacePtr<ITableCopyPasteCmdData> data(copy, UseDefaultIID());
 			if (copy == nil || data == nil)
@@ -357,16 +483,38 @@ bool16 KCMTableReadsAsSource(const UIDRef& targetStory, const UIDRef& sourceStor
 	}
 	static const int32 kKinds[] = { kKCMStoryAttrRuby, kKCMStoryAttrKenten, kKCMStoryAttrWarichu, kKCMStoryAttrTcy };
 	static const char* const kKindNames[] = { "ruby", "kenten", "warichu", "tate-chu-yoko" };
-
-	for (size_t i = 0; i < s.fCells.size(); ++i)
+	// the two tables themselves, for what the text cannot say: the kind of every cell
+	InterfacePtr<ITableModel> tTable(UIDRef(targetStory.GetDataBase(), targetTable), UseDefaultIID());
+	InterfacePtr<ITableModel> sTable(UIDRef(sourceStory.GetDataBase(), sourceTable), UseDefaultIID());
+	if (tTable == nil || sTable == nil)
 	{
-		const KCMTableCellPlace& sc = s.fCells[i];
-		const KCMTableCellPlace* const tc = KCMTableCellAt(t, sc.fRow, sc.fCol);
+		outWhy = "a table could not be opened";
+		return kFalse;
+	}
+
+	std::vector<KCMTableCellPlace> sourceCells;
+	std::vector<bool16> sourceThreadless;
+	AllCells(s, sourceCells, sourceThreadless);		// graphic cells too (2026-09-25)
+	for (size_t i = 0; i < sourceCells.size(); ++i)
+	{
+		const KCMTableCellPlace& sc = sourceCells[i];
+		const KCMTableCellPlace* const tc = sourceThreadless[i] ? ThreadlessAt(t, sc.fRow, sc.fCol)
+															   : KCMTableCellAt(t, sc.fRow, sc.fCol);
 		if (tc == nil)
 		{
-			outWhy = CellName(sc.fRow, sc.fCol) + " is not in the Target's table";
+			outWhy = CellName(sc.fRow, sc.fCol) + (sourceThreadless[i] ? " is not a graphic cell in the Target's table"
+																		  : " is not in the Target's table");
 			return kFalse;
 		}
+		// ★(2026-09-25, live-rows X) a graphic cell that came back as an empty text cell read as "the same" - its words
+		//   are empty on both sides. The kind is asked of the tables themselves.
+		if (tTable->GetCellType(GridAddress(sc.fRow, sc.fCol)) != sTable->GetCellType(GridAddress(sc.fRow, sc.fCol)))
+		{
+			outWhy = CellName(sc.fRow, sc.fCol) + " is not the Source's kind of cell (text or graphic)";
+			return kFalse;
+		}
+		if (sourceThreadless[i])
+			continue;		// a graphic cell has no words: its kind is asked above, its content by the whole-table check
 		const int32 tLen = tc->fEnd - tc->fStart;
 		WideString tWords;
 		if (!KCMTextWords::WordsAt(tModel, tc->fStart, tLen, tWords))

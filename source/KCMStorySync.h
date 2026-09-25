@@ -45,6 +45,15 @@ bool16 Normalize(const KCMStoryShape::Story& now, const KCMStoryShape::Story& wo
 void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, Plan& out,
 			 bool16 reshapeTables);
 
+/** The same, said TABLE BY TABLE (2026-09-25): mayReshape[t] says whether N's table t (Story::fTables - the order
+	KCMTableRefsOfStory reads them, which a plan's Where::fTable names) may be made Word's; a table past the end of the
+	vector may not, and is held as reshapeTables kFalse holds it. ★For the "Redo from Word" of ONE table (after a
+	"Match the Source"): a shape round returns the lowest stage among the tables allowed, and with every table allowed
+	that could be ANOTHER table's stage - the redo then found none of its own steps and stopped short (re-check of
+	2026-09-25; work/kcm-storydocx-test TestReshapeOneTable). The bool form above is this with every table the same. */
+void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, Plan& out,
+			 const std::vector<bool16>& mayReshape);
+
 /** The plan's kResizeRows steps carried out on `now` (the document's own shape), the way InDesign
 	does it (measured: docs/ai-notes/kcm-table-reshape-spike-2026-09-23.md): a row added at the end
 	runs like the last row, each of its cells one empty paragraph; a row taken away takes its words and

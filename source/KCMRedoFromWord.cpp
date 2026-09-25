@@ -291,12 +291,26 @@ int32 KCMRedoTableFromWord(const UIDRef& targetStory, UID tableUID, PMString& ou
 			Refuse(outWhy, "the table is not in the story any more - compare again");
 			return -1;
 		}
+		// ★★THIS TABLE ALONE MAY BE RESHAPED (re-check of 2026-09-25): with every table allowed, a round is the lowest
+		//   stage among ALL the tables, and another table the reader matched too could hold this table's stage back -
+		//   its steps then never came, the loop left early and the redo refused with the table half Word's.
+		std::vector<bool16> onlyThis(now.fTables.size(), kFalse);
+		if (static_cast<size_t>(ordinal) < onlyThis.size())
+			onlyThis[static_cast<size_t>(ordinal)] = kTrue;
 		KCMStorySync::Plan whole;
-		KCMStorySync::Compare(now, word, whole, kTrue);
+		KCMStorySync::Compare(now, word, whole, onlyThis);
 		if (whole.fStoryHeld)
 		{
 			outWhy.SetUTF8String(whole.fWhy);
 			outWhy.SetTranslatable(kFalse);
+			return -1;
+		}
+		// ★★A TABLE ADDED OR TAKEN AWAY SINCE THE IMPORT (stage 0) IS NOT THIS REDO'S (re-check of 2026-09-25): the
+		//   story no longer has the import's tables, and a kDeleteTable names its table the way a cell step does
+		//   (Where::Cell(t, -1, -1)) - it would have passed StepsOfTable and TAKEN THIS TABLE AWAY.
+		if (whole.Count(KCMStorySync::Step::kInsertTable) + whole.Count(KCMStorySync::Step::kDeleteTable) > 0)
+		{
+			Refuse(outWhy, "a table was added to or taken from this story since the import - import again");
 			return -1;
 		}
 		if (!whole.IsShapeRound())
@@ -304,7 +318,7 @@ int32 KCMRedoTableFromWord(const UIDRef& targetStory, UID tableUID, PMString& ou
 		KCMStorySync::Plan mine;
 		StepsOfTable(whole, ordinal, kTrue, mine);
 		if (mine.fSteps.empty())
-			break;			// the round is about OTHER tables (ones the reader matched too): this table's shape is Word's
+			break;			// this table's shape is Word's
 		KCMSyncResult shape;
 		KCMApplyTableShape(targetStory, mine, shape);
 		if (shape.fRefused > 0)
