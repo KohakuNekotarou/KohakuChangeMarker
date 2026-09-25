@@ -19,6 +19,7 @@
 
 // General includes:
 #include "CmdUtils.h"
+#include "ErrorUtils.h"				// a failed switch's error cleared - the import's next command follows at once
 #include "InCopySharedID.h"			// kSetUserNameCmdBoss, kSetRedlineTrackingCmdBoss
 #include "PersistUtils.h"			// ::GetUIDRef
 #include "UIDList.h"
@@ -44,7 +45,13 @@ ErrorCode SetUserName(const PMString& name)
 		return kFailure;
 	data->Set(name);
 	cmd->SetItemList(UIDList(::GetUIDRef(ws)));
-	return CmdUtils::ProcessCommand(cmd);
+	// ★A FAILURE'S ERROR IS CLEARED HERE (2026-09-25, the Word round trip re-check, item 2): both switches sit between
+	//   the import's own commands, and the next one must not run with it standing (CmdUtils.h:74). The caller learns
+	//   of the failure from the return value.
+	const ErrorCode err = CmdUtils::ProcessCommand(cmd);
+	if (err != kSuccess)
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	return err;
 }
 
 /* A story's change tracking on or off - Adobe's own form, InCopyDocUtils.cpp:2356
@@ -57,7 +64,10 @@ ErrorCode SetTracking(const UIDRef& story, bool16 on)
 		return kFailure;
 	data->Set(on);
 	cmd->SetItemList(UIDList(story));
-	return CmdUtils::ProcessCommand(cmd);
+	const ErrorCode err = CmdUtils::ProcessCommand(cmd);
+	if (err != kSuccess)
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);		// the same reason as SetUserName's
+	return err;
 }
 
 }	// anonymous namespace
@@ -86,8 +96,10 @@ KCMStoryTrackingOn::KCMStoryTrackingOn(const UIDRef& story) : fStory(story), fWa
 	// ⚠A story that cannot say is treated as ALREADY tracking: then nothing is switched, and so
 	//  nothing has to be put back.
 	fWas = (settings != nil) ? settings->GetIsTracking() : kTrue;
-	if (!fWas)
-		SetTracking(fStory, kTrue);
+	// ★A SWITCH THAT DID NOT HAPPEN IS NOT PUT BACK (2026-09-25): the story is then written untracked, and nothing was
+	//   changed that the destructor would have to undo.
+	if (!fWas && SetTracking(fStory, kTrue) != kSuccess)
+		fWas = kTrue;
 }
 
 KCMStoryTrackingOn::~KCMStoryTrackingOn()

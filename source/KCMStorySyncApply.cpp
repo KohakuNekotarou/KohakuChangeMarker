@@ -102,6 +102,84 @@ void ColumnsOfRow(const std::vector<KCMParaAttrs>& attrs, int32 table, int32 row
 	std::sort(outCols.begin(), outCols.end());
 }
 
+/*	InsertionPlace
+	Where the words of an insertion at text offset `at` go, as a model offset from the paragraph's start (2026-09-25,
+	the Word round trip re-check, item 1): among the objects standing EXACTLY there, on the side of each that the
+	version being written puts them - the tables by CutChangeAtObjects' count (`objectsBefore`, -1 = not known: after
+	every table, as before), the note markers by how many of the FILE's stand at the insertion's own start
+	(`notesBefore`). The choosing is KCMParaText::InsertBeforeObject's (pure, tested outside InDesign).
+
+	★★**WHY IT EXISTS**: this used to place an insertion before a TABLE only, and after everything else standing there
+	  (ModelOffsetInParagraph answers "after all of it"). A NOTE'S MARKER stands there too - fUncountedAt holds both -
+	  and Word puts words typed where a reference stands IN FRONT of it (measured 2026-09-23), which the comparison plans
+	  (MapPastChangeAt). So "である¹" with "とされ" typed before the ¹ in Word came out "である¹とされ": the note's number moved
+	  into the new words, silently, in the import and in "Redo from Word" alike.
+	@return kFalse when no one place keeps both counts, or the model does not hold what the reading says stands there
+	  (the caller refuses the paragraph rather than guess). */
+bool16 InsertionPlace(ITextModel* model, TextIndex paraStart, const KCMParaAttrs& attrs,
+					  const std::vector<KCMParaText::KCMTableInPara>& tables, int32 at, int32 objectsBefore,
+					  int32 notesBefore, int32& outFrom)
+{
+	// past everything standing at `at` - and how many positions that is (the ones a paragraph BEGINS with are its
+	// leading ones, before its reported start: KCMTextRead moves the start past them)
+	const int32 after = KCMParaText::ModelOffsetInParagraph(attrs, at);
+	int32 standing = 0;
+	if (at == 0)
+		standing = attrs.fLeadingUncounted;
+	else
+	{
+		for (size_t k = 0; k < attrs.fUncountedAt.size(); ++k)
+			if (attrs.fUncountedAt[k] == at)
+				++standing;
+	}
+
+	// the objects standing there, in the model's order: a table is its anchor and one continuation per row after the
+	// first; a note's marker is one position
+	std::vector<int32> kinds;
+	std::vector<int32> startsAt;
+	for (int32 m = after - standing; m < after; ++m)
+	{
+		const int32 cp = CharAt(model, paraStart + m);
+		if (cp == kTextChar_Table)
+		{
+			kinds.push_back(KCMParaText::kObjectTable);
+			startsAt.push_back(m);
+		}
+		else if (cp == kTextChar_TableContinued)
+		{
+			if (kinds.empty() || kinds.back() != KCMParaText::kObjectTable)
+				return kFalse;
+		}
+		else if (cp == kTextChar_FootnoteMarker || cp == kTextChar_EndnoteMarker)
+		{
+			kinds.push_back(KCMParaText::kObjectNote);
+			startsAt.push_back(m);
+		}
+		else
+		{
+			return kFalse;
+		}
+	}
+
+	// how many of the tables STANDING HERE go before the words: CutChangeAtObjects counts the paragraph's tables before
+	// this piece, and the ones standing before `at` are among them
+	int32 tablesHere = -1;
+	if (objectsBefore >= 0)
+	{
+		int32 earlier = 0;
+		for (size_t j = 0; j < tables.size(); ++j)
+			if (tables[j].fTextOffset < at)
+				++earlier;
+		tablesHere = (objectsBefore >= earlier) ? objectsBefore - earlier : -1;
+	}
+
+	const int32 index = KCMParaText::InsertBeforeObject(kinds, tablesHere, notesBefore);
+	if (index < 0)
+		return kFalse;
+	outFrom = (static_cast<size_t>(index) < startsAt.size()) ? startsAt[static_cast<size_t>(index)] : after;
+	return kTrue;
+}
+
 /*	ApplyParagraph
 	The edits between one paragraph of the document and the same paragraph of the file.
 
@@ -119,11 +197,14 @@ void ColumnsOfRow(const std::vector<KCMParaAttrs>& attrs, int32 table, int32 row
 	       success as soon as one write had gone in); answering with -1 alone hid the change.
 	@param fileTableOffsets the text offsets of the tables standing in the FILE's version of this
 	       paragraph, ascending - what decides which side of a table an insertion goes (2026-09-17).
+	@param fileNoteOffsets the text offsets of the note markers standing in the FILE's version - the
+	       references it keeps and its endnote marks, ascending - what decides which side of a marker an
+	       insertion goes (2026-09-25, the Word round trip re-check, item 1; InsertionPlace).
 	@return how many writes went in - 0 when none did, refused or not.
 */
 int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs& attrs,
 					 const std::string& docText, const std::string& fileText,
-					 const std::vector<int32>& fileTableOffsets,
+					 const std::vector<int32>& fileTableOffsets, const std::vector<int32>& fileNoteOffsets,
 					 PMString& whyNot, bool16& outRefused)
 {
 	outRefused = kFalse;
@@ -155,8 +236,10 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 	//   past the last character": ModelOffsetInParagraph(last) + 1.
 	// ★★**A CHANGE ACROSS A TABLE IS DONE IN PIECES**, one for each side, so the table stays - and since
 	//   the same day's G1/G2 the FILE's table position says which of the new words go on which side
-	//   (KCMParaText::CutChangeAtObjects). A replacement across a NOTE REFERENCE is still refused: the
-	//   file does not carry where a reference stands, so nothing can say which side its words belong on.
+	//   (KCMParaText::CutChangeAtObjects). An INSERTION at a note's marker goes on the side the file puts
+	//   it (2026-09-25, InsertionPlace). A replacement whose range holds a note's marker is still refused:
+	//   the plan takes such a note away before the words are written (KCMStorySync's PlanRefs), so meeting
+	//   one here means the document is not what was read.
 	// ★★★**AND EVERY PIECE IS CHECKED AGAINST THE DOCUMENT BEFORE ANYTHING GOES IN** (the same day,
 	//   after the crash): the range has to stay inside this paragraph's own story thread, and what it
 	//   takes out has to BE the characters the reading gave. A position that has gone stale fails the
@@ -279,15 +362,24 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 
 			if (part.fACount <= 0)
 			{
-				// An insertion: in front of the first table the file puts after these words, or after
-				// everything standing there when none does.
-				const int32 ob = part.fObjectsBefore;
+				// An insertion: among the objects standing at its place, on the side of each the file puts the words
+				// - tables and note markers alike (2026-09-25, InsertionPlace says why; until then tables only).
+				int32 notesBefore = 0;
+				for (size_t k = 0; k < fileNoteOffsets.size(); ++k)
+					if (fileNoteOffsets[k] == part.fBStart)
+						++notesBefore;
+				int32 from = 0;
+				if (!InsertionPlace(model, paraStart, attrs, tables, part.fAStart, part.fObjectsBefore, notesBefore, from))
+				{
+					whyNot = "words put in where a table and a note reference stand together cannot be placed as the file "
+							 "has them (nothing of this paragraph was written)";
+					whyNot.SetTranslatable(kFalse);
+					outRefused = kTrue;
+					return 0;
+				}
 				Piece p;
 				p.fChange = c;
-				p.fFrom = (ob >= 0 && static_cast<size_t>(ob) < tables.size()
-						   && tables[static_cast<size_t>(ob)].fTextOffset == part.fAStart)
-						  ? tables[static_cast<size_t>(ob)].fModelOffset
-						  : KCMParaText::ModelOffsetInParagraph(attrs, part.fAStart);
+				p.fFrom = from;
 				p.fCount = 0;
 				p.fAStart = part.fAStart;
 				p.fACount = 0;
@@ -738,6 +830,7 @@ void KCMApplySyncPlan(const UIDRef& storyRef, const KCMStoryShape::Story& now,
 	}
 	std::vector<Job> jobs;
 	std::vector< std::vector<int32> > tableOffsets(plan.fSteps.size());
+	std::vector< std::vector<int32> > noteOffsets(plan.fSteps.size());		// the file's references kept, and its endnote marks
 	for (size_t i = 0; i < plan.fSteps.size(); ++i)
 	{
 		const KCMStorySync::Step& s = plan.fSteps[i];
@@ -772,6 +865,15 @@ void KCMApplySyncPlan(const UIDRef& storyRef, const KCMStoryShape::Story& now,
 			for (size_t t = 0; t < s.fTables.size(); ++t)
 				tableOffsets[i].push_back(s.fTables[t].second);
 			std::sort(tableOffsets[i].begin(), tableOffsets[i].end());
+			// ★THE NOTE MARKERS THE FILE KEEPS, where it puts them (2026-09-25, the Word round trip re-check, item 1):
+			//   the references standing (a note added is a step of its own, and one taken away has gone already) and
+			//   the endnote marks - what decides which side of a marker words typed at it go (InsertionPlace)
+			const KCMStoryShape::Para& target = s.fParas[0];
+			for (size_t r = 0; r < target.fNoteRefs.size(); ++r)
+				noteOffsets[i].push_back(target.fNoteRefs[r].fAt);
+			for (size_t e = 0; e < target.fEndnoteAt.size(); ++e)
+				noteOffsets[i].push_back(target.fEndnoteAt[e]);
+			std::sort(noteOffsets[i].begin(), noteOffsets[i].end());
 		}
 		else if (s.fKind == KCMStorySync::Step::kInsertParas)
 		{
@@ -831,7 +933,8 @@ void KCMApplySyncPlan(const UIDRef& storyRef, const KCMStoryShape::Story& now,
 			n = DeleteParagraphs(model, job.fAt, job.fTo, whyNot, refused);
 		else
 			n = ApplyParagraph(model, static_cast<TextIndex>(starts[job.fPara]), attrs[job.fPara],
-							   paras[job.fPara], job.fFile->fText, tableOffsets[job.fStep], whyNot, refused);
+							   paras[job.fPara], job.fFile->fText, tableOffsets[job.fStep], noteOffsets[job.fStep],
+							   whyNot, refused);
 		// ⚠BOTH ANSWERS ARE READ: a write that failed half way leaves what went in ahead of it
 		if (refused)
 		{
@@ -1034,6 +1137,17 @@ void InsertTables(const UIDRef& storyRef, const KCMStorySync::Plan& plan, KCMSyn
 		const int32 after = (list != nil) ? list->GetModelCount() : -1;
 		if (before < 0 || after != before + 1)
 		{
+			// ★THE ERROR CLEARED AND THE RETURN TAKEN BACK (2026-09-25 - docs/ai-notes/kcm-proposals-review-2026-09-25.md
+			//   §11-2, done with the re-check's item 2). The branch above, for the return, cleared the error; this one did
+			//   not, so the next story's first command ran with it standing (CmdUtils.h:74). And the return put in for
+			//   the table stayed: an empty paragraph in the reader's document that nobody asked for.
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+			if (CharAt(model, where) == kTextChar_CR)
+			{
+				InterfacePtr<ICommand> back(KCMCreateWordsWriteCmd(model, where, 1, WideString()));
+				if (back == nil || CmdUtils::ProcessCommand(back) != kSuccess)
+					ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+			}
 			++out.fRefused;
 			Say(out, "Table", std::string("a table Word added could not be put in"));
 			continue;
@@ -1128,11 +1242,27 @@ void KCMApplyTableShape(const UIDRef& storyRef, const KCMStorySync::Plan& plan, 
 		{
 			// ★GridArea's bottom and right are PAST the last row and column (TableTypes.h: Height() is
 			//   bottomRow - topRow), the way KCMReportTable merges its heading cells
+			const GridArea area(s.fGridRow, s.fGridCol, s.fGridRow + s.fGridRowSpan, s.fGridCol + s.fGridColSpan);
 			what = "cells could not be merged as Word's are";
-			err = cmds->MergeCells(GridArea(s.fGridRow, s.fGridCol, s.fGridRow + s.fGridRowSpan, s.fGridCol + s.fGridColSpan));
+			// ★ASKED FIRST (2026-09-25, the Word round trip re-check, item 2): ITableModel says whether an area can be
+			//   merged at all (its MergeCells' precondition, ITableModel.h), and Word merges what InDesign does not - a
+			//   header or footer row with a body row, say, since header rows are rows like any other here (design 1-7).
+			//   Refused by name, with no command sent.
+			if (!table->CanMergeCells(area))
+			{
+				what = "InDesign cannot merge these cells as Word's are (across a header or footer row?)";
+				err = kFailure;
+			}
+			else
+				err = cmds->MergeCells(area);
 		}
 		if (err != kSuccess)
 		{
+			// ★★THE ERROR A FAILED TABLE COMMAND LEAVES STANDING IS CLEARED HERE (2026-09-25, the Word round trip re-check,
+			//   item 2 - KCMTableMatch's Made() does exactly this for the same ITableCommands calls). Left standing, the
+			//   next command processed with it is a protective shutdown (CmdUtils.h:74) - and one always comes: the
+			//   story's tracking switched back (KCMStoryTrackingOn), the author's name put back (KCMImportAuthor).
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 			++out.fRefused;
 			Say(out, "Table", s.fWhere.Say() + ": " + what);
 			continue;

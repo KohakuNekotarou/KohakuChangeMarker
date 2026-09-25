@@ -834,8 +834,9 @@ static bool16 KCMWriteSetsMap(const std::map<std::string, KCMDocSets>& in, IDFil
 	if (fp == nil)
 		return kFalse;
 	// Both the byte count and fclose are checked, so that a partial write -- a full disk -- is
-	//   never reported as "saved". (The TSV export checks GetStreamState after its Flush for the
-	//   same reason.)
+	//   never reported as "saved". (The story export - KCMStoryTextExport's WriteFileBytes - reads
+	//   GetStreamState after its Flush for the same reason. The TSV export this named before went with
+	//   the six menu items, e658743.)
 	const size_t wrote = fwrite(json.data(), 1, json.size(), fp);
 	const int closed = fclose(fp);
 	return (wrote == json.size() && closed == 0) ? kTrue : kFalse;

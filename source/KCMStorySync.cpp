@@ -565,7 +565,12 @@ int32 MapThrough(const std::vector<Change>& ch, int32 pos)
 	reference standing at `pos` may have gone. ★**A REFERENCE AT THE START OF A CHANGE CAN LAND ON
 	EITHER SIDE OF IT** (measured by the harness 2026-09-23: "X" typed where a reference stood came
 	out before the reference in Word, after it in MapThrough), and the text alone cannot say which.
-	-1 when no change starts at `pos`. */
+	★★**AN INSERTION ONLY** (2026-09-25, the Word round trip re-check, item 1). The writer puts an insertion on either
+	  side of the markers standing at its place, as the plan says (KCMParaText::InsertBeforeObject); a REPLACEMENT it
+	  writes after them, always - its words take the place of characters that stand after the markers. So a
+	  reference Word put after a replacement's words is not "kept" any more: it goes and comes again at Word's place,
+	  the way any reference the words moved does. (Until this day it was kept, and landed in front of the new words.)
+	-1 when no insertion starts at `pos`. */
 int32 MapPastChangeAt(const std::vector<Change>& ch, int32 pos)
 {
 	int32 delta = 0;
@@ -574,7 +579,7 @@ int32 MapPastChangeAt(const std::vector<Change>& ch, int32 pos)
 		if (pos < ch[i].aStart)
 			return -1;
 		if (pos == ch[i].aStart)
-			return pos + delta + ch[i].bCount;
+			return (ch[i].aCount == 0) ? pos + delta + ch[i].bCount : -1;
 		delta += ch[i].bCount - ch[i].aCount;
 	}
 	return -1;
@@ -804,9 +809,19 @@ void ComparePara(Run& run, const Where& where, int32 nIndex, int32 result,
 		//   the live matrix: A15, A16, H46-48 went in before the rebuild and were held by this guard.)
 	}
 
+	// ★AN ENDNOTE'S MARK AT THE START OF AN INSERTION MAY STAND ON EITHER SIDE OF IT - the footnotes' rule, PlanRefs
+	//   (2026-09-25, the Word round trip re-check, item 1: words typed right in front of the mark in Word were read as
+	//   the mark moving, and the paragraph was held - its words never went in).
 	std::vector<int32> ends;
 	for (size_t e = 0; e < n.fEndnoteAt.size(); ++e)
-		ends.push_back(MapThrough(ch, n.fEndnoteAt[e]));
+	{
+		int32 m = MapThrough(ch, n.fEndnoteAt[e]);
+		const int32 past = MapPastChangeAt(ch, n.fEndnoteAt[e]);
+		if (past >= 0 && std::find(w.fEndnoteAt.begin(), w.fEndnoteAt.end(), m) == w.fEndnoteAt.end()
+			&& std::find(w.fEndnoteAt.begin(), w.fEndnoteAt.end(), past) != w.fEndnoteAt.end())
+			m = past;
+		ends.push_back(m);
+	}
 	if (ends != w.fEndnoteAt)
 	{
 		Hold(run, where, nIndex, "Para", "an endnote's mark would move, go or come - endnotes are not carried");

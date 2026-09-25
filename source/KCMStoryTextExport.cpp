@@ -43,6 +43,7 @@
 #include "KCMSkippedText.h"		// what the page does not set - deleted text and what stands in it (2026-09-24)
 #include "KCMParaText.h"
 #include "KCMTextDiff.h"		// ToCodePoints - the one walk over UTF-8 this half is allowed
+#include "KCMTextWords.h"		// PMStringOfUtf8 - a UTF-8 reason onto the status line without mojibake
 
 namespace
 {
@@ -586,9 +587,14 @@ bool16 WriteFileBytes(const std::wstring& path, const std::string& bytes)
 		stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(bytes.c_str())),
 						 static_cast<int32>(bytes.size()));
 	}
+	// ★★THE STATE, READ AFTER Flush (2026-09-25, the Word round trip re-check, item 8). A LAZY stream opens the file at
+	//   its first write, so it cannot answer nil for a folder it may not write into - the state is the only thing that
+	//   can say so, and XferByte may only buffer, so a full disk surfaces at Flush. This counted every file as
+	//   written until today. KBS (KBSReportSave) and KESCL read it the same way.
 	stream->Flush();
+	const bool16 failed = (stream->GetStreamState() == kStreamStateFailure) ? kTrue : kFalse;
 	stream->Close();
-	return kTrue;
+	return failed ? kFalse : kTrue;
 }
 
 /** The bytes of one story, into "<folder>\<uid>.docx". */
@@ -778,7 +784,9 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 				{
 					firstRefusal.AppendNumber(static_cast<int32>(storyRef.GetUID().Get()));
 					firstRefusal.Append(": ");
-					firstRefusal.Append(why.c_str());
+					// ⚠UTF-8 (a kenten's name can be Japanese): through SetUTF8String, not Append(c_str()), which read
+					//  the bytes in the machine's codepage (2026-09-25, the Word round trip re-check, item 7)
+					firstRefusal.Append(KCMTextWords::PMStringOfUtf8(why));
 				}
 				continue;
 			}
@@ -788,7 +796,14 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 			if (WriteStoryFile(folder, storyRef.GetUID().Get(), docx))
 				++written;
 			else
+			{
 				++refused;
+				if (firstRefusal.IsEmpty())
+				{
+					firstRefusal.AppendNumber(static_cast<int32>(storyRef.GetUID().Get()));
+					firstRefusal.Append(": the file could not be written (is the folder writable, is the disk full?)");
+				}
+			}
 		}
 	}
 

@@ -183,8 +183,11 @@ bool16 ReadTag(const std::string& customXmlPart, Tag& out, std::string& whyNot);
 	★**IT REFUSES, BY NAME, WHATEVER IT DOES NOT UNDERSTAND** - a drawing, a field that is not a
 	  ruby, an automatic number, an element it has never heard of - and never skips it: skipping
 	  would drop somebody's words without a word (the rule every reader of this round trip keeps). What it
-	  ignores is only what carries no text: bookmarks, proofing marks, Word's own formatting-change
-	  records on tables, and every kind of formatting this format does not carry. */
+	  ignores is only what carries no text: bookmarks, proofing marks, Word's comments (their ranges and the
+	  run their balloon hangs on - the user's call, 2026-09-25), Word's own formatting-change records on
+	  tables, and every kind of formatting this format does not carry.
+	★Revision marks are read ACCEPTED, the way Word itself accepts them (2026-09-25, measured in Word 2007):
+	  a paragraph moved away takes its mark with it, and a table whose every row was deleted is not there. */
 bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml, const std::string& stylesXml,
 				KCMStoryShape::Story& out, std::string& whyNot);
 

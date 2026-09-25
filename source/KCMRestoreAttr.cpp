@@ -45,9 +45,11 @@ const KCMAttrSpanList* SpansOfKind(const KCMParaAttrs& attrs, int32 kind)
 }
 
 /** Every mark of `kind` in one story, as DOCUMENT positions.
-	★THE CROSSING IS ModelOffsetInParagraph's, BOTH ENDS ASKED SEPARATELY (AddAttrChange and KCMStoryAttrPour's
-	  ModelRangeOf do the same): a span reaching across a table's own character covers one fewer character of text
-	  than of model, so `start + len` would be a length in the wrong count. */
+	★THE CROSSING IS KCMParaText::ModelRangeInParagraph's - KCMStoryAttrPour's ModelRangeOf asks the same: a span
+	  reaching across a table's own character covers one fewer character of text than of model, so `start + len`
+	  would be a length in the wrong count. ★★And its END is just past the span's last character (2026-09-25, the
+	  Word round trip re-check, item 3): asked of ModelOffsetInParagraph it took in a table's anchor or a note's
+	  marker standing right after the span, and "Restore from Source" wrote the mark onto it. */
 void CollectPieces(const std::vector<KCMParaAttrs>& attrs, const std::vector<int32>& starts, int32 kind,
 				   std::vector<KCMAttrPiece>& out)
 {
@@ -60,10 +62,11 @@ void CollectPieces(const std::vector<KCMParaAttrs>& attrs, const std::vector<int
 		for (size_t i = 0; i < spans->size(); ++i)
 		{
 			const KCMAttrSpan& s = (*spans)[i];
-			const int32 from = starts[p] + KCMParaText::ModelOffsetInParagraph(attrs[p], s.fStart);
-			const int32 to   = starts[p] + KCMParaText::ModelOffsetInParagraph(attrs[p], s.fStart + s.fLen);
-			if (to > from)
-				out.push_back(KCMAttrPiece(from, to, s.fValue, s.fGroup));
+			int32 from = 0;
+			int32 len = 0;
+			KCMParaText::ModelRangeInParagraph(attrs[p], s.fStart, s.fLen, from, len);
+			if (len > 0)
+				out.push_back(KCMAttrPiece(starts[p] + from, starts[p] + from + len, s.fValue, s.fGroup));
 		}
 	}
 }

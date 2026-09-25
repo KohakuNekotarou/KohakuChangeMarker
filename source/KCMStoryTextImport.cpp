@@ -37,6 +37,7 @@
 #include "K2SmartPtr.h"				// K2::scoped_ptr - the author switch is let go of at a chosen moment (reset)
 #include "KCMZipStore.h"			// Entry - a part, named
 #include "KCMModelNotify.h"			// KCMNotify - a cancelled import tells the panel the mode came back
+#include "KCMTextWords.h"			// PMStringOfUtf8 - a UTF-8 reason onto the status line without mojibake
 
 namespace
 {
@@ -162,14 +163,18 @@ bool16 IsDocxLeaf(const std::wstring& leaf, uint32& outLeadingNumber)
 	return kTrue;
 }
 
-/** "<leaf>: <why>" into `firstReason` when it is still empty. */
+/** "<leaf>: <why>" into `firstReason` when it is still empty.
+	⚠`why` IS UTF-8 (the reader's words - "a kenten style this reader cannot read: ..." names a style whose name
+	 begins with the Japanese for kenten), so it goes in through SetUTF8String: Append(c_str()) read the bytes in the machine's codepage and
+	 put mojibake on the status line (2026-09-25, the Word round trip re-check, item 7 - KCMStoryAttrPour had measured
+	 the same on 2026-09-22). */
 void NoteFirstReason(PMString& firstReason, const std::wstring& leaf, const std::string& why)
 {
 	if (!firstReason.IsEmpty())
 		return;
 	firstReason.AppendW(reinterpret_cast<const UTF16TextChar*>(leaf.c_str()));
 	firstReason.Append(": ");
-	firstReason.Append(why.c_str());
+	firstReason.Append(KCMTextWords::PMStringOfUtf8(why));
 }
 
 void AppendCount(PMString& out, const char* before, int32 n, const char* after)
@@ -605,7 +610,17 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	// ★The import's bar when there is one (a slice of it), a bar of its own otherwise - the same
 	//   shape as the reading loop. Stepped per story; asked for a cancel BETWEEN two stories only,
 	//   because WasCancelled pumps events and a story half written is not a place to stop.
+	// ★★THE STORIES ARE TAKEN DOWN FIRST, AND EACH IS ASKED FOR AGAIN BEFORE IT IS USED (2026-09-25, the Word round trip
+	//   re-check, item 4). A shape round takes tables, rows and columns away "with whatever they hold" (design 10-1) - an
+	//   anchored TEXT FRAME in a cell among it, whose story then leaves the story list mid-loop. Walked by index, as this
+	//   was, every story after it moved up one: the next was passed over (its file reported as "no story with this ID")
+	//   and the last index asked for was past the list's end, which IStoryList makes no promise about.
 	const int32 count = stories->GetUserAccessibleStoryCount();
+	std::vector<UIDRef> storyRefs;
+	storyRefs.reserve(static_cast<size_t>(count > 0 ? count : 0));
+	for (int32 s = 0; s < count; ++s)
+		storyRefs.push_back(stories->GetNthUserAccessibleStoryUID(s));
+
 	PMString barTitle("Putting the edited text into the document...");
 	barTitle.SetTranslatable(kFalse);
 	KCMProgressStepper progress(barTitle, count);
@@ -627,11 +642,16 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 			progress.Step(s, step);
 		}
 
-		const UIDRef storyRef = stories->GetNthUserAccessibleStoryUID(s);
+		const UIDRef storyRef = storyRefs[static_cast<size_t>(s)];
 
 		// ★THE STORY'S OWN UID IS THE PAIRING (2026-09-19): the file is named after it, and the words
 		//   go into this very document. (The copy's uids were new ones and went through a label.)
 		const UID original = storyRef.GetUID();
+
+		// ⚠GONE SINCE THE LIST WAS TAKEN (see above): a story an earlier story's shape round took away with its table.
+		//   Its file, if there was one, stays unmatched and is named below - which is now the truth.
+		if (stories->GetUserAccessibleStoryIndex(original) < 0)
+			continue;
 
 		size_t which = 0;
 		bool16 found = kFalse;
@@ -715,7 +735,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 				if (!layoutWhy.empty())
 				{
 					why.Append(" (");
-					why.Append(layoutWhy.c_str());
+					why.Append(KCMTextWords::PMStringOfUtf8(layoutWhy));
 					why.Append(")");
 				}
 			}
@@ -775,7 +795,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 				&& !KCMStorySync::SameTablePlaces(KCMStorySync::ApplyToShape(n2, plan), after, placeWhy))
 			{
 				PMString why("a table does not stand where the import put it (");
-				why.Append(placeWhy.c_str());
+				why.Append(KCMTextWords::PMStringOfUtf8(placeWhy));
 				why.Append(") - check this story");
 				why.SetTranslatable(kFalse);
 				if (firstRefusal.IsEmpty())

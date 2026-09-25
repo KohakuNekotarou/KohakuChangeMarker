@@ -488,6 +488,75 @@ inline int32 ObjectsToStepBack(const std::vector<int32>& objects, int32 textOffs
 	return atOrBefore - wanted;
 }
 
+/** A text range of one paragraph, [textStart, textStart + textLen), as a range of the document's count - for a
+	WRITE over those characters (a ruby, a kenten, a tate-chu-yoko, a warichu).
+
+	★★**THE END IS "JUST PAST THE LAST CHARACTER" - ModelOffsetInParagraph(last) + 1** (2026-09-25, the Word round trip
+	  re-check, item 3). ModelOffsetInParagraph answers for a START, so asked for the end it took in whatever stood right
+	  after the range: a table's anchor and its rows, or a NOTE'S MARKER - a kenten put on the two characters in front
+	  of a footnote reference fell on the reference as well, and KCMTextRead, which does not count the marker, could
+	  never see it had. ApplyParagraph has crossed a write's end this way since 2026-09-17; the attribute writers asked
+	  the other question until this day. ⚠A range reaching ACROSS such a position still covers it - it stands between
+	  two of the range's own characters, and nothing can be written around it.
+	@param textLen 0 or less: nothing, at textStart's place (outLen 0). */
+inline void ModelRangeInParagraph(const KCMParaAttrs& attrs, int32 textStart, int32 textLen, int32& outFrom, int32& outLen)
+{
+	outFrom = ModelOffsetInParagraph(attrs, textStart);
+	outLen = (textLen > 0) ? ModelOffsetInParagraph(attrs, textStart + textLen - 1) + 1 - outFrom : 0;
+}
+
+/** The two kinds of object that stand BETWEEN a paragraph's characters without being counted in its text (KCMParaAttrs::
+	fUncountedAt): a table (its anchor, and one continuation per row after the first) and a note's marker (a footnote's
+	reference, an endnote's). For InsertBeforeObject. */
+const int32 kObjectTable = 0;
+const int32 kObjectNote = 1;
+
+/** Where words put in at one text offset go among the objects standing EXACTLY there (2026-09-25, the Word round trip
+	re-check, item 1).
+
+	★★**THE TEXT CANNOT SAY WHICH SIDE OF A NOTE'S REFERENCE NEW WORDS ARE ON, AND THE VERSION BEING WRITTEN CAN** - the
+	  same thing CutChangeAtObjects says of a table. Word puts words typed where a reference stands IN FRONT of it
+	  (measured 2026-09-23), and the comparison plans it so (KCMStorySync's MapPastChangeAt); the writer put every
+	  insertion after everything standing there (ModelOffsetInParagraph), so "である¹" + "とされ" typed before the ¹ came
+	  out "である¹とされ" - the note's number moved into the new words, and nothing said so.
+	@param kinds the objects standing there, in the MODEL'S order (kObjectTable / kObjectNote).
+	@param tablesBefore how many of the TABLES there stand before the words in the version being written; -1 = not known
+		(CutChangeAtObjects could not pair them): after every one, which is what was done before this existed.
+	@param notesBefore how many of the NOTE MARKERS there stand before the words.
+	@return the index into `kinds` the words go in front of - kinds.size() is after all of them - or -1 when no one
+		place gives both counts (a marker that must precede stands behind a table that must follow, or the other way:
+		the caller refuses rather than guess). */
+inline int32 InsertBeforeObject(const std::vector<int32>& kinds, int32 tablesBefore, int32 notesBefore)
+{
+	int32 tables = 0;
+	int32 notes = 0;
+	for (size_t k = 0; k < kinds.size(); ++k)
+	{
+		if (kinds[k] == kObjectTable)
+			++tables;
+		else
+			++notes;
+	}
+	const int32 wantTables = (tablesBefore < 0 || tablesBefore > tables) ? tables : tablesBefore;
+	const int32 wantNotes = (notesBefore < 0) ? 0 : ((notesBefore > notes) ? notes : notesBefore);
+
+	// Each step adds one to one of the two counts, so the place where both are met - if there is one - is the only one.
+	int32 seenTables = 0;
+	int32 seenNotes = 0;
+	for (size_t k = 0; k <= kinds.size(); ++k)
+	{
+		if (seenTables == wantTables && seenNotes == wantNotes)
+			return static_cast<int32>(k);
+		if (k == kinds.size() || seenTables > wantTables || seenNotes > wantNotes)
+			break;
+		if (kinds[k] == kObjectTable)
+			++seenTables;
+		else
+			++seenNotes;
+	}
+	return -1;
+}
+
 /** How many CODE POINTS a UTF-8 string holds -- continuation bytes (10xxxxxx) are not counted.
 
 	This is the unit the whole comparison works in, so a four-byte character counts once here
