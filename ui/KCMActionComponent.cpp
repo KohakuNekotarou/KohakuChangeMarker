@@ -1000,25 +1000,18 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				if (dialog == nil)
 					break;
 
-				PMString family("Story text (*.html)");
-				family.SetTranslatable(kFalse);
-				PMString extension("html");
-				extension.SetTranslatable(kFalse);
-				dialog->AddExtension(&family, &extension);
-				// ★**AND THE OTHER SPELLING** (2026-09-19): a .docx written by Export Story Text as
-				//   Word..., edited in Word with its revision tracking on. The model half tells the
-				//   two apart by the extension; both may be chosen at once.
+				// ★★WORD'S FILES ONLY (2026-09-25, the user: "make the file type Word - it is 'all' now - and the HTML
+				//   one is not needed", then "Word only is fine"). The HTML road went on 2026-09-21 (Word format
+				//   only); its "Story text (*.html)" filter outlived it here until today, and "All Files" - which
+				//   the dialog showed first - went with it. SetDefaultFilter is Windows-only (IOpenFileDialog.h),
+				//   which is all KCM ships for.
 				PMString wordFamily("Word document (*.docx)");
 				wordFamily.SetTranslatable(kFalse);
 				PMString wordExtension("docx");
 				wordExtension.SetTranslatable(kFalse);
 				dialog->AddExtension(&wordFamily, &wordExtension);
-				// ★**AND "All Files" UNDERNEATH THEM**, so that a reader whose folder shows nothing
-				//   can see what is actually in there rather than an empty dialog.
-				// ⚠**IT DOES NOT WIDEN WHAT GOES IN.** The model takes "<decimal>.html" and a .docx
-				//  by its tag, and nothing else, so a file shown by this last filter and then chosen
-				//  is counted as "not named after a story" - seen, said, and not imported.
-				dialog->AppendAllFilesToFilterList();
+				dialog->SetDefaultFilter(wordFamily);
+				dialog->SetDefaultExtension(wordExtension);
 
 				PMString title("Import Story Text - the edited story files");
 				title.SetTranslatable(kFalse);
@@ -1028,27 +1021,14 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 					&& chosen.GetFileCount() > 0)
 				{
 					PMString importMsg;
-					const bool16 imported = Utils<IKCMStoryEditsFacade>()->ImportStoryText(chosen, importMsg);
-					// ★★WHEN SOMETHING WENT IN (or has a "!" row), THE PANEL SAYS ONLY THAT, AND A DIALOG SAYS
-					//   THE REST (2026-09-24, the user's rule: the panel "Imported", the dialog that the change
-					//   history was applied). The dialog carries the model's whole sentence under that line,
-					//   so nothing the status line used to say is lost. ⚠A cancel, a failure, or an import
-					//   that changed nothing still answers in the status line alone, as before - there is no
-					//   change history to announce. (app.kcmImportStoryText returns the whole sentence and
-					//   shows no dialog: the matrix reads it.)
-					if (imported)
-					{
-						KCMSetStatus(KCMLoc::Text(kKCMImportedStatusKey, KCMJa::kImported));
-						PMString body = KCMLoc::Text(kKCMImportTrackedKey, KCMJa::kImportTracked);
-						body.Append("\n\n");
-						body.Append(importMsg);
-						body.SetTranslatable(kFalse);
-						CAlert::InformationAlert(body);
-					}
-					else if (importMsg.CharCount() > 0)
-					{
+					Utils<IKCMStoryEditsFacade>()->ImportStoryText(chosen, importMsg);
+					// ★★THE RESULT GOES TO THE PANEL'S STATUS LINE ONLY (2026-09-25, the user: "the dialog saying the
+					//   changes are tracked comes up after an import - stop it, and only show the result on the
+					//   panel"). The model's whole sentence - what went in, what did not and why, and that Ctrl+Z
+					//   takes it all back - is what the line shows, the same sentence app.kcmImportStoryText returns.
+					//   (From 2026-09-24 until then the line said "Imported" and a dialog carried the rest.)
+					if (importMsg.CharCount() > 0)
 						KCMSetStatus(importMsg);
-					}
 					// (⛔**THE CALL TO KCMBringArmedTargetToFront WENT ON 2026-09-22.** The import starts a
 					//   comparison of its own and its Target - the document the edited words went into - is
 					//   what there is to look at; that has not changed. What changed is WHO says so. The

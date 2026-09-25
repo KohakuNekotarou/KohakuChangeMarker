@@ -86,12 +86,8 @@ namespace KCMLoc
 // KCMUI_enUS.fr -- an English UI reads those.
 namespace KCMJa
 {
-	// ----- After "Import Story Text..." (2026-09-24, the user's wording) -----
-	const char16_t kImported[] = u"Importしました";
-	const char16_t kImportTracked[] =
-		u"変更履歴を付けて Import しました。Import で入った変更は、作者「KohakuChangeMarker」として記録されています。"
-		u"変更履歴パネルで1件ずつ却下できます。"
-		u"Word で変えた表の行・列・結合も Word の形にしましたが、変更履歴には残りません。却下しても形は戻りません(Ctrl+Z なら Import 全体が戻ります)。";
+	// (⛔kImported / kImportTracked - the status line's "Importしました" and the dialog after an import - went on
+	//  2026-09-25: the user asked for the dialog to stop and the result to be shown on the panel only.)
 
 	// ----- How to Use... (the operating reference; it used to be the panel's description) -----
 	const char16_t kHint[] =
@@ -213,7 +209,7 @@ namespace KCMJa
 		u"・ダブルクリックすると、そのストーリーの全文を選択します(文字ツールに切り替わり、キーボードは文書に戻ります)\n"
 		u"・文書に書き込むメニューは変更行の4項目だけです＝「Reject This Import Change」(その行の Import の変更を取り消す)・"
 		u"「Restore from Source」(ルビ・圏点・縦中横・割注を Source から戻す)・「Redo from Word」(取り消した変更を Word の内容で書き直す)・"
-		u"「Match the Source」(Table の行で: 行・列・結合・ヘッダー／フッター行を Source の表と同じにし、構成が変わったセルの中身を Source から写します。表はそのままの表で、両側にあるセルには触りません(その文字の変更は Cell Text の行として別に出て、変更履歴で戻せます)。読み戻して約束どおりでなければ何も変えずに理由を出します)。どれも Ctrl+Z 1回で戻ります。"
+		u"「Match the Source」(Table の行で: 行・列・結合・ヘッダー／フッター行を Source の表と同じにし、構成が変わったセルの中身と設定(行の高さ・列の幅も)を Source から写します。表はそのままの表で、両側にあるセルには触りません(その文字の変更は Cell Text の行として別に出て、変更履歴で戻せます)。写した後に、文字・表そのものから読んだ高さと幅・INX に書き出したそれ以外のすべて、の3通りで読み直し、約束どおりでなければ何も変えずに理由を出します)。どれも Ctrl+Z 1回で戻ります。"
 		u"旧版の文字が要るときは、Source の文書から直接コピーしてください(「Restore Source Text」「Undo the Restore」「Restore All in This Story」は 2026-09-21 に廃止)。"
 		u"Source は Task Start の写しでも比較相手の文書でも Start が窓を開くので、常に目の前にあります\n\n"
 		u"比較枠の印刷をONにすると、プリントだけでなく、ファイル＞書き出しのPDFにも枠が出ます。\n"
