@@ -97,15 +97,28 @@ void AllPlaces(const KCMStoryShape::Story& s, std::vector<Where>& out);
 	document calls note n - so the apply pairs a note of the finished shape with the document's by it. */
 void RenumberNotesByThread(KCMStoryShape::Story& s);
 
+/** WHICH OF A PARAGRAPH'S STEPS THE REDO OF ONE ROW CARRIES OUT (2026-09-25). A row is one kind of change, and its
+	redo is that change alone: until then every step touching the paragraph came along, so the redo of a paragraph
+	added in Word also redid the NEXT paragraph's edit - which had a taken-back row of its own (measured, WN).
+	kNarrowOwn - a change INSIDE the paragraph: its kSetPara / kHeld, and the notes whose references stand in it.
+	kNarrowInserted - a whole paragraph added (the record's KCMStoryChange fWholeParagraph, kInsert): the kInsertParas
+	  standing right before `para`, kept whole, and the notes added in those paragraphs.
+	kNarrowRemoved - a whole paragraph taken away (fWholeParagraph, kDelete): the kDeleteParas covering `para`, narrowed
+	  to that one paragraph, and the notes that go with it. */
+enum NarrowScope { kNarrowOwn, kNarrowInserted, kNarrowRemoved };
+
 /** The steps of `plan` that make ONE paragraph of `now` Word's - (where, para) in N's numbering - for the redo of one
-	change the reader took back (2026-09-24, stage 2 C - design 15-1-7). Kept: kSetPara / kHeld of that paragraph;
-	kDeleteParas covering it, narrowed to that one paragraph; kInsertParas standing right before it (fPara == para - 1,
-	or -1 when para == 0) - ★WHOLE: every paragraph Word put in at that place goes back together, and the other records
-	there become twins of the redo; kAddNote whose reference lands in the kept paragraphs, its fPara renumbered for the
-	narrowed plan; kDeleteNote whose reference `now` holds in that paragraph; kInsertTable at that body paragraph and
-	kDeleteTable of a table `now` holds at it (a table record). Shape steps are never kept - they are the import's own
-	rounds, and the import holds them anyway (design 11-1 item 5). */
-void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& where, int32 para, Plan& out);
+	change the reader took back (2026-09-24, stage 2 C - design 15-1-7), of the kind `scope` says (2026-09-25). Kept:
+	kSetPara / kHeld of that paragraph (own); kDeleteParas covering it, narrowed to that one paragraph (removed);
+	kInsertParas standing right before it (fPara == para - 1, or -1 when para == 0 - inserted) - ★WHOLE: every paragraph
+	Word put in at that place goes back together, and the other records there become twins of the redo; kAddNote whose
+	reference lands in the kept paragraphs, its fPara renumbered for the narrowed plan; kDeleteNote whose reference
+	`now` holds in that paragraph; kInsertTable at that body paragraph and kDeleteTable of a table `now` holds at it (a
+	table record - ⚠no longer reached: a table added or taken away is redone by KCMRedoTableAddedOrTaken, and the
+	paragraph redo refuses while one stands taken back). Shape steps are never kept - they are the import's own rounds,
+	and the import holds them anyway (design 11-1 item 5). */
+void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& where, int32 para, NarrowScope scope,
+			Plan& out);
 
 }	// namespace KCMStorySync
 

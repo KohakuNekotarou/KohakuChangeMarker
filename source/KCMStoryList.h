@@ -31,6 +31,7 @@
 #include "PMString.h"
 #include "PMPoint.h"	// PBPMPoint - where a story begins, for the jump
 #include "UIDRef.h"
+#include "WideString.h"	// KCMRejectedRecord::fLiveWords - the words a reject took out (2026-09-25)
 // (⛔WideString.h was included for KCMStoryChange::fBeforeRaw - the characters themselves rather
 //  than a quote of them - which went with the restore on 2026-09-21.)
 
@@ -362,6 +363,9 @@ enum KCMStoryPlace
 	  disagree with the document. Standing = "=" (taken back, the Source's state); Undone = the reject was
 	  undone (shown as the live change it was); Redone = put back from Word (likewise). RunOne drops an
 	  Undone or Redone record that has no live twin (PruneRejected), and Build starts with none.
+	  ⚠★★BUT NOT ALONE (2026-09-25): an undo followed by ANOTHER write in the story moves the counter past the undone
+	   step as well, so the counters took an undone redo for a redo (and an undone reject for a reject) - the
+	   document now checks them (fLiveWords below; KCMStoryList.cpp StateNow).
 	★★★**AND "=" IS A COMPARISON, NOT A FLAG** (2026-09-24 night, the user: "it was taken back, so it MUST be
 	  the same - if a rejected tracked change did not come all the way back that is InDesign's fault, and it
 	  has to show"). A record the counters call Standing is shown "=" only when the Target's characters at
@@ -388,8 +392,19 @@ struct KCMRejectedRecord
 		MergedOrder): where this flag disagrees with the state, they slide by the two lengths and the flag follows.
 		Measured 2026-09-24: slid at the redo alone, an undo of that redo left the next record two characters off. */
 	bool16			fPlacedForSource;
+	/** ★★THE WORDS THE REJECT TOOK OUT - the change's live words as they stood before it (2026-09-25; fHasLiveWords
+		kFalse when not captured: a restore's or a match's record). The counters cannot tell "redone" from "redone,
+		undone, and then ANOTHER write in the story" - both move the counter past fRedoneAt - so a record was taken for
+		redone and pruned while its "=" stood in the document (measured: two paragraphs taken back, the first redone,
+		Ctrl+Z, the second redone - the first's "=" vanished). With these words the document settles it: they stand at
+		the live range = the record is live; they do not and the Source's do = it is taken back. ⚠A deletion's live
+		range is a caret (no words), and there the Source's words alone decide, as before. */
+	WideString		fLiveWords;
+	bool16			fHasLiveWords;
+	mutable bool16	fCheckedLive;		// ... and whether fLiveWords stood at the live range, at fCheckedAt
 	KCMRejectedRecord() : fNowStart(0), fNowEnd(0), fRejectedAt(0), fRedoneAt(0), fCounterKind(0),
-						  fChecked(kFalse), fCheckedAt(0), fCheckedSame(kFalse), fPlacedForSource(kTrue) {}
+						  fChecked(kFalse), fCheckedAt(0), fCheckedSame(kFalse), fPlacedForSource(kTrue),
+						  fHasLiveWords(kFalse), fCheckedLive(kFalse) {}
 };
 
 /** Standing = shown "=", Undone / Redone = shown as the live change it was, Stale = the counters say Standing
@@ -769,8 +784,23 @@ namespace KCMStoryList
 	void AddRejected(int32 nth, const KCMStoryChange& live, TextIndex nowStart, TextIndex nowEnd,
 					 uint32 counter, int32 counterKind);
 
+	/** The same for EVERY ROW ONE WRITE TOOK BACK (2026-09-25 - a reject of one InDesign change that several rows stood
+		for; two paragraphs the import took away one after the other are one deletion). `lives` are those rows as the
+		diff made them, `nowStarts` where each one's Source words now stand. ★The other records slide ONCE, by the whole
+		write, and the group's rows never slide one another: each is placed at its own share, its live range where its
+		change would stand with the rest of the group taken back - so a redo of one row, an undo of the whole, and a
+		reject again all find each row where it is (measured: slid row by row, the second paragraph's record lost its
+		live twin after an undo and a second record was made beside it). A record that is already one of the rows
+		(its twin) is updated in place. */
+	void AddRejectedGroup(int32 nth, const std::vector<KCMStoryChange>& lives, const std::vector<TextIndex>& nowStarts,
+						  const std::vector<WideString>& liveWords, uint32 counter, int32 counterKind);
+
 	/** The record behind merged index `which`, or nil for a live change, a refusal, or an index out of range. */
 	const KCMRejectedRecord* RejectedAt(int32 nth, int32 which);
+
+	/** Row `nth`'s live changes as the diff made them (model ranges, break and all) - empty when out of range
+		(2026-09-25: a reject asks which of them the InDesign changes it takes back stand for). */
+	void LiveChanges(int32 nth, std::vector<KCMStoryChange>& out);
 
 	/** The record's state now: the story's counter in `targetDB` (KCMStoryDiffRun::CountForKind) says Standing,
 		Undone or Redone, and a Standing record is then READ - its place in the Target against the Source's

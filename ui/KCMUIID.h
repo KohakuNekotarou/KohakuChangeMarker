@@ -802,7 +802,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMChangeRowMenuName		"KCMRtMenuChangeRow"
 #define kKCMChangeRowRejectMenuKey	kKCMStringPrefix "kKCMChangeRowRejectMenuKey"	// "Reject This Import Change" on a change row
 #define kKCMChangeRowRestoreAttrMenuKey	kKCMStringPrefix "kKCMChangeRowRestoreAttrMenuKey"	// "Restore from Source" on an attribute change row (2026-09-24, stage 2 B)
-#define kKCMChangeRowRedoMenuKey	kKCMStringPrefix "kKCMChangeRowRedoMenuKey"	// "Redo from Word" on a taken-back change row (2026-09-24, stage 2 C)
+#define kKCMChangeRowRedoMenuKey	kKCMStringPrefix "kKCMChangeRowRedoMenuKey"	// "Redo from Word" on a taken-back change row (2026-09-24, stage 2 C). ★SHOWN AS "Redo" since 2026-09-25 (the user's request); the code and its comments still call the feature "Redo from Word", and its undo step keeps that name (Edit > Undo "Redo from Word" says what it takes back)
 #define kKCMChangeRowMatchTableMenuKey	kKCMStringPrefix "kKCMChangeRowMatchTableMenuKey"	// "Match the Source" on a Table row that differs from the Source's (2026-09-25)
 // ⛔kKCMChangeRowRestoreMenuKey ("Restore Source Text") and kKCMChangeRowUndoRestoreMenuKey ("Undo
 //   the Restore") went on 2026-09-21 with the restore itself, and are gone from the enUS table.

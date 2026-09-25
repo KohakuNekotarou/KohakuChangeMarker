@@ -36,8 +36,9 @@ IRedlineDataStrand* QueryRedline(const UIDRef& story)
 	return static_cast<IRedlineDataStrand*>(model->QueryStrand(kRedlineStrandBoss, IRedlineDataStrand::kDefaultIID));
 }
 
-/** Whether the iterator stands on one of the import's changes touching [from, to]. */
-bool16 IsImportChangeHere(RedlineIterator* it, TextIndex from, TextIndex to)
+/** Whether the iterator stands on one of the import's changes touching [from, to] - and, when it does, where that
+	change stands (`outAt`, when given). */
+bool16 IsImportChangeHere(RedlineIterator* it, TextIndex from, TextIndex to, KCMImportChangeAt* outAt = nil)
 {
 	TextIndex at = 0;
 	int32 len = 0;
@@ -53,7 +54,15 @@ bool16 IsImportChangeHere(RedlineIterator* it, TextIndex from, TextIndex to)
 	ours.SetTranslatable(kFalse);
 	if (who != ours)
 		return kFalse;
-	return KCMRedlineTouches(static_cast<int32>(at), len, isDelete, static_cast<int32>(from), static_cast<int32>(to));
+	if (!KCMRedlineTouches(static_cast<int32>(at), len, isDelete, static_cast<int32>(from), static_cast<int32>(to)))
+		return kFalse;
+	if (outAt != nil)
+	{
+		outAt->fAt = static_cast<int32>(at);
+		outAt->fLen = len;
+		outAt->fDelete = isDelete;
+	}
+	return kTrue;
 }
 
 /** An iterator left on one of the import's changes touching the range that stands AT `position`, or nil.
@@ -90,6 +99,25 @@ int32 KCMCountImportChanges(const UIDRef& story, TextIndex from, TextIndex to)
 	}
 	delete it;
 	return count;
+}
+
+int32 KCMImportChangesAt(const UIDRef& story, TextIndex from, TextIndex to, std::vector<KCMImportChangeAt>& out)
+{
+	out.clear();
+	InterfacePtr<IRedlineDataStrand> redline(QueryRedline(story));
+	if (redline == nil || !redline->StoryHasChanges())
+		return 0;
+	RedlineIterator* it = redline->NewRedlineIterator(0);
+	if (it == nil)
+		return 0;
+	for (bool16 more = kTrue; more; more = it->Increment(kFalse))
+	{
+		KCMImportChangeAt here;
+		if (IsImportChangeHere(it, from, to, &here))
+			out.push_back(here);
+	}
+	delete it;
+	return static_cast<int32>(out.size());
 }
 
 int32 KCMRejectImportChanges(const UIDRef& story, TextIndex from, TextIndex to)

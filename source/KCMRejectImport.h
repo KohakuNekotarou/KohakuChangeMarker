@@ -18,11 +18,28 @@
 #ifndef __KCMRejectImport_h__
 #define __KCMRejectImport_h__
 
+#include <vector>
+
 class UIDRef;
+
+/** Where one of the import's tracked changes stands: an insertion covers [fAt, fAt + fLen); a deletion is ONE mark
+	at fAt, the character after the words it took (KCMRedlineRange.h). */
+struct KCMImportChangeAt
+{
+	int32	fAt;
+	int32	fLen;
+	bool16	fDelete;
+	KCMImportChangeAt() : fAt(0), fLen(0), fDelete(kFalse) {}
+};
 
 /** How many of the import's tracked changes touch [from, to] of `story`. 0 when the story has none, or
 	no change tracking strand at all. */
 int32 KCMCountImportChanges(const UIDRef& story, TextIndex from, TextIndex to);
+
+/** The same changes, each with where it stands (2026-09-25): what a reject of [from, to] will take back, so that
+	every Story Edits row those changes stand for can be told - ★ONE CHANGE OF INDESIGN'S CAN BE SEVERAL ROWS (two
+	paragraphs the import took away one after the other are one deletion; measured the same day). @return how many. */
+int32 KCMImportChangesAt(const UIDRef& story, TextIndex from, TextIndex to, std::vector<KCMImportChangeAt>& out);
 
 /** Rejects each of them, one at a time, FROM THE BACK OF THE STORY TO THE FRONT: a reject moves what stands
 	after it, so the positions are found in one walk and the last is rejected first - every earlier one then

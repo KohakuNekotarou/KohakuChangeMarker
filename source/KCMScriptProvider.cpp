@@ -143,7 +143,7 @@
 #include "KCMStoryList.h"	// KCMStoryList::RowsAsTsv - app.kcmStoryRows, the reading port
 #include "KCMRingAdornment.h"	// KCMGetNumItemsWithXP - document.kcmTransparencyItemCount
 #include "SysFileList.h"			// app.kcmImportStoryText hands its one file over as a list
-#include "KCMCore.h"				// KCMActiveDocDB - app.kcmExportStoryText exports the active document
+#include "KCMTaskStartSave.h"		// KCMTaskDocumentDB - the document app.kcmExportStoryText exports (2026-09-25)
 #include "KCMComparisonRun.h"		// KCMStopComparison - app.kcmStopComparison
 // (⛔KCMStoryRestore.h and KCMStoryDiffRun.h were included here for app.kcmTakeInChange and
 //  app.kcmUndoRestore, and went with those two methods on 2026-09-21.)
@@ -326,10 +326,12 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 				else
 				{
 					// An EMPTY list is the whole document - the rule KCMStoryTextExport.h states.
-					IDataBase* const db = KCMActiveDocDB();
+					// ★★THE TASK DOCUMENT, as the flyout's item exports (2026-09-25, the user's decision - KCMTaskDocumentDB):
+					//   the chosen Target, else the active document - the one app.kcmImportStoryText writes into.
+					IDataBase* const db = KCMTaskDocumentDB();
 					if (db == nil)
 					{
-						message = "there is no active document";
+						message = "there is no document to export (no Target and no active document)";
 						message.SetTranslatable(kFalse);
 					}
 					else

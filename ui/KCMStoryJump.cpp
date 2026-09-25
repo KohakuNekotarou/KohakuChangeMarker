@@ -871,7 +871,7 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	PMString shownLabel(label);
 	if (change.fReplaced)
 	{
-		PMString taken("Taken back - the Source's words stand here now; Redo from Word puts Word's back. ");
+		PMString taken("Taken back - the Source's words stand here now; Redo puts Word's back. ");
 		taken.SetTranslatable(kFalse);
 		taken.Append(label);
 		shownLabel = taken;

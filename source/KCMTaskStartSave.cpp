@@ -46,14 +46,12 @@
 
 namespace {
 
-/*	The document a Task Start copies: the chosen Target when there is one, else the active
-	document (the user's rule, 2026-09-21). ★ONE PLACE - the grey state and the command both
-	reach it through KCMCanTakeTaskStartCopy, which is this question asked once.
+/*	The document a Task Start copies - KCMTaskDocumentDB, below. (A name of its own here because the steps
+	of KCMTakeTaskStartCopy read as "the document to copy".)
 */
 IDataBase* DocumentToCopy()
 {
-	IDataBase* const chosen = KCMChosenTargetDB();
-	return (chosen != nil) ? chosen : KCMActiveDocDB();
+	return KCMTaskDocumentDB();
 }
 
 /*	"20260921-143052" - what makes the suggested name unique.
@@ -180,6 +178,12 @@ void KCMSuggestedTaskStartName(IDataBase* docDB, PMString& out)
 	out.Append(stamp);
 	out.Append(".indd");
 	out.SetTranslatable(kFalse);
+}
+
+IDataBase* KCMTaskDocumentDB()
+{
+	IDataBase* const chosen = KCMChosenTargetDB();
+	return (chosen != nil) ? chosen : KCMActiveDocDB();
 }
 
 bool16 KCMCanTakeTaskStartCopy()

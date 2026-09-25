@@ -511,9 +511,20 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 	//   which of the two states they are looking at.
 	if (!(KCMIsArmed() && KCMArmedTargetDB() != nil))
 	{
+		// ★★AND WHY IT DID NOT START (2026-09-25): the start said so on the status line, and this sentence - which the
+		//   flyout puts on the same line a moment later - wrote over it, so the reader saw "did not start" and never the
+		//   reason ("Target and Source are the same document", a file that would not open...). Carried into it now.
+		PMString startSaid;
+		KCMGetSessionStatus(startSaid);
+		outMessage.Append(". The edits are in the document but the comparison did not start");
+		if (startSaid.CharCount() > 0)
+		{
+			outMessage.Append(" (");
+			outMessage.Append(startSaid);
+			outMessage.Append(")");
+		}
+		outMessage.Append(" - Start Comparison shows them; Ctrl+Z takes the whole import back");
 		KCMNotify(kKCMMarksClearedMessage);
-		outMessage.Append(". The edits are in the document but the comparison did not start"
-						  " - Start Comparison shows them; Ctrl+Z takes the whole import back");
 		return anyIn;
 	}
 	// ⚠**THIS LINE OFFERED "Restore Source Text" UNTIL 2026-09-21**, months after that item and the

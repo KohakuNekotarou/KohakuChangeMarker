@@ -29,10 +29,43 @@ struct KCMRejectedSpan
 	int32	fStart, fEnd;
 	int32	fWhat, fKind;
 	bool16	fShownRejected;
-	KCMRejectedSpan() : fStart(0), fEnd(0), fWhat(0), fKind(0), fShownRejected(kFalse) {}
-	KCMRejectedSpan(int32 s, int32 e, int32 what = 0, int32 kind = 0, bool16 rejected = kTrue)
-		: fStart(s), fEnd(e), fWhat(what), fKind(kind), fShownRejected(rejected) {}
+	/** ★THE SOURCE'S RANGE TOO, when known (2026-09-25; -1 = not given): two paragraphs the import took away one after
+		the other are two rows at ONE caret of the Target - the same what, kind, start and end - and only the Source's
+		range tells them apart. A twin test on the Target alone took the second for the first (measured: after a
+		group reject only one "=" stood, and after its undo only one live row). */
+	int32	fSourceStart, fSourceEnd;
+	/** A RECORD's live range - where its change stands when it is live - when that is not fStart/fEnd (a record shown
+		"=" stands at the Source's words); -1 = the same as fStart/fEnd. What its live twin is looked for at. */
+	int32	fLiveStart, fLiveEnd;
+	KCMRejectedSpan() : fStart(0), fEnd(0), fWhat(0), fKind(0), fShownRejected(kFalse), fSourceStart(-1), fSourceEnd(-1),
+						fLiveStart(-1), fLiveEnd(-1) {}
+	KCMRejectedSpan(int32 s, int32 e, int32 what = 0, int32 kind = 0, bool16 rejected = kTrue,
+					int32 sourceStart = -1, int32 sourceEnd = -1, int32 liveStart = -1, int32 liveEnd = -1)
+		: fStart(s), fEnd(e), fWhat(what), fKind(kind), fShownRejected(rejected),
+		  fSourceStart(sourceStart), fSourceEnd(sourceEnd), fLiveStart(liveStart), fLiveEnd(liveEnd) {}
+	/** The span as its live change would stand. */
+	KCMRejectedSpan AsLive() const
+	{
+		KCMRejectedSpan s = *this;
+		if (fLiveStart >= 0)
+		{
+			s.fStart = fLiveStart;
+			s.fEnd = fLiveEnd;
+		}
+		return s;
+	}
 };
+
+/** Whether a record and a live change are the SAME change: what, kind and Target range - and the Source's range when
+	both carry one (KCMRejectedSpan says why it has to be asked). */
+inline bool16 KCMRejectedSameChange(const KCMRejectedSpan& a, const KCMRejectedSpan& b)
+{
+	if (a.fWhat != b.fWhat || a.fKind != b.fKind || a.fStart != b.fStart || a.fEnd != b.fEnd)
+		return kFalse;
+	if (a.fSourceStart < 0 || b.fSourceStart < 0)
+		return kTrue;
+	return (a.fSourceStart == b.fSourceStart && a.fSourceEnd == b.fSourceEnd) ? kTrue : kFalse;
+}
 
 /** Where a new record whose live words began at writeAt goes among the records (their starts in list order):
 	after every record standing AT OR BEFORE writeAt, before the rest. ★THE RULE IS WHAT TELLS TOP-DOWN FROM
@@ -75,7 +108,12 @@ struct KCMMergedRef
 /** The live changes and the records as ONE list in text order: by start, a record before a live change at the
 	same start. ★A live change that is the TWIN of a record shown LIVE (the same what, kind, start and end) is
 	HIDDEN - the record stands for it, so that a change put back (an Undo of a reject, or a redo) is not shown
-	twice, and the record keeps the place a later reject or redo acts from. */
+	twice, and the record keeps the place a later reject or redo acts from.
+	★★AND THE TWIN OF A RECORD SHOWN "=" TOO (2026-09-25): a "=" is read as the Source's words at its place, so a live
+	change that is its twin cannot stand in the document - it is the list's own copy from before an undo (the list
+	is not compared again on a Ctrl+Z). Shown, it pushed every row after it one index down against the panel's tree,
+	which is not rebuilt on an undo either: the reader's right-click on a "=" row landed on that stale row (measured -
+	an empty menu, where the redo was expected). */
 inline void KCMMergeRejected(const std::vector<KCMRejectedSpan>& live, const std::vector<KCMRejectedSpan>& records,
 							 std::vector<KCMMergedRef>& out)
 {
@@ -91,8 +129,7 @@ inline void KCMMergeRejected(const std::vector<KCMRejectedSpan>& live, const std
 		}
 		bool16 hidden = kFalse;
 		for (size_t k = 0; k < records.size() && !hidden; ++k)
-			hidden = (!records[k].fShownRejected && records[k].fWhat == live[i].fWhat && records[k].fKind == live[i].fKind
-					  && records[k].fStart == live[i].fStart && records[k].fEnd == live[i].fEnd) ? kTrue : kFalse;
+			hidden = KCMRejectedSameChange(records[k].AsLive(), live[i]);
 		if (!hidden)
 			out.push_back(KCMMergedRef(kFalse, static_cast<int32>(i)));
 		++i;

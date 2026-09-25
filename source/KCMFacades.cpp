@@ -55,6 +55,8 @@
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - "Export Story Text..." on the flyout
 #include "KCMStoryTextImport.h"	// KCMImportStoryText - "Import Story Text..." on the flyout
 #include "KCMRejectImport.h"		// "Reject This Import Change" on a change row (2026-09-24, stage 2 A)
+#include "KCMRedlineRange.h"		// KCMRedlineTouches - which rows the changes a reject takes back stand for (2026-09-25)
+#include <algorithm>
 #include "KCMRestoreAttr.h"		// "Restore from Source" on an attribute change row (2026-09-24, stage 2 B); KCMAttrMarksSame
 #include "KCMTextWords.h"		// WordsAt - the take-back's "all the way back, or not at all" reads the words (2026-09-24 night)
 #include "ErrorUtils.h"			// the error state a plain sequence is rolled back by (EndSequenceOrRollBack)
@@ -74,6 +76,19 @@
 #include "KCMStoryMarker.h"		// the adornment that draws it - the flash and the shutdown
 #include "IKCMResourcesFacade.h"	// the Resources mode's boundary
 #include "KCMResourceStore.h"		// ...and the model side it forwards to
+
+namespace
+{
+
+/** The same change of the diff's: what, kind, and both ranges (2026-09-25 - a reject's group has to say whether the
+	row pressed is among the rows it found). */
+bool16 SameStoryChange(const KCMStoryChange& a, const KCMStoryChange& b)
+{
+	return (a.fWhat == b.fWhat && a.fKind == b.fKind && a.fTargetStart == b.fTargetStart && a.fTargetEnd == b.fTargetEnd
+			&& a.fSourceStart == b.fSourceStart && a.fSourceEnd == b.fSourceEnd) ? kTrue : kFalse;
+}
+
+}	// anonymous namespace
 
 //========================================================================================
 // KCMCompareFacade -- IKCMCompareFacade
@@ -769,6 +784,74 @@ public:
 			outMessage = "no import change on this row";
 			return 0;
 		}
+
+		// ★★★EVERY ROW THE SAME INDESIGN CHANGES STAND FOR (2026-09-25, the user's decision: "take all of it back, and
+		//   make every one of them '='"). One change in InDesign's history can be several rows here: two paragraphs the
+		//   import took away one after the other are ONE deletion (measured: rejecting the first row brought both back
+		//   and left one record; the second row could never be rejected at all - its check read the first paragraph's
+		//   words at the shared caret and rolled back). The reject takes the whole change back, as InDesign does, and
+		//   every row it stood for becomes a record of its own - each redone on its own afterwards. The rows are the
+		//   ones a change being rejected touches, by the same test the reject itself uses (KCMRedlineTouches).
+		std::vector<KCMStoryChange> group;
+		{
+			std::vector<KCMImportChangeAt> changesHere;
+			KCMImportChangesAt(story, from, to, changesHere);
+			std::vector<KCMStoryChange> lives;
+			KCMStoryList::LiveChanges(nth, lives);
+			bool16 pressedIn = kFalse;
+			for (size_t i = 0; i < lives.size(); ++i)
+			{
+				const KCMStoryChange& c = lives[i];
+				if (c.fWhat != KCMStoryChange::kText && c.fWhat != KCMStoryChange::kTable
+					&& !(c.fWhat == KCMStoryChange::kAttr && c.fAttrKind == kKCMStoryAttrFootnote))
+					continue;
+				TextIndex cFrom = c.fTargetStart;
+				TextIndex cTo = c.fTargetEnd;
+				KCMShownSpan(c.fBreakAt, cFrom, cTo);
+				bool16 touched = kFalse;
+				for (size_t k = 0; k < changesHere.size() && !touched; ++k)
+					touched = KCMRedlineTouches(changesHere[k].fAt, changesHere[k].fLen, changesHere[k].fDelete,
+												static_cast<int32>(cFrom), static_cast<int32>(cTo));
+				if (!touched)
+					continue;
+				group.push_back(c);
+				if (SameStoryChange(c, live))
+					pressedIn = kTrue;
+			}
+			if (!pressedIn)
+				group.push_back(live);		// the row pressed is one of them by construction; said, not assumed
+			std::sort(group.begin(), group.end(), [](const KCMStoryChange& a, const KCMStoryChange& b)
+					  { return (a.fSourceStart != b.fSourceStart) ? (a.fSourceStart < b.fSourceStart)
+																  : (a.fTargetStart < b.fTargetStart); });
+		}
+		// Where the Source's words come back: the group's first Target position, holding the Source's range from the
+		// group's first Source character to its last - each row's own share of it at its own offset.
+		TextIndex tLo = group[0].fTargetStart;
+		TextIndex sLo = group[0].fSourceStart;
+		TextIndex sHi = group[0].fSourceEnd;
+		for (size_t i = 1; i < group.size(); ++i)
+		{
+			tLo = std::min(tLo, group[i].fTargetStart);
+			sLo = std::min(sLo, group[i].fSourceStart);
+			sHi = std::max(sHi, group[i].fSourceEnd);
+		}
+		KCMStoryChange whole = live;
+		whole.fSourceStart = sLo;
+		whole.fSourceEnd = sHi;
+		// ★THE WORDS THE REJECT IS ABOUT TO TAKE OUT, each row's own, read before it runs (KCMRejectedRecord::fLiveWords -
+		//   what lets the document, not the counters alone, say later whether a row stands taken back or live again)
+		std::vector<WideString> liveWords;
+		{
+			IDataBase::SaveRestoreModifiedState guard(story.GetDataBase());
+			InterfacePtr<ITextModel> tModel(story, UseDefaultIID());
+			for (size_t i = 0; i < group.size(); ++i)
+			{
+				WideString words;
+				KCMTextWords::WordsAt(tModel, group[i].fTargetStart, group[i].fTargetEnd - group[i].fTargetStart, words);
+				liveWords.push_back(words);
+			}
+		}
+
 		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
 		if (sequence != nil)
 		{
@@ -780,10 +863,10 @@ public:
 		// ★★★**ALL THE WAY BACK, OR NOT AT ALL** (2026-09-24 night, the user's rule: "if it is not exactly the
 		//   same, cancel the take-back"). The Source's words have to stand where the change stood, or the
 		//   whole sequence is rolled back before it ends - a rejected tracked change InDesign did not bring all
-		//   the way back is then not left half done in the document.
+		//   the way back is then not left half done in the document. ★OVER THE WHOLE GROUP (2026-09-25): every row the
+		//   change stood for has its words checked, in one reading.
 		const bool16 same = (done > 0)
-			? this->PlaceReadsAsSource(story, live.fTargetStart, live.fTargetStart + (live.fSourceEnd - live.fSourceStart),
-									   live, kKCMStoryAttrNone)
+			? this->PlaceReadsAsSource(story, tLo, tLo + (sHi - sLo), whole, kKCMStoryAttrNone)
 			: kTrue;
 		this->EndSequenceOrRollBack(sequence, same);
 		if (done < 0)
@@ -801,10 +884,34 @@ public:
 		// ★★THE CHANGE STAYS ON THE ROW AS A RECORD (2026-09-24, stage 2 C - design 15-1-1): the "=" row, where the
 		//   Source's words now stand (the live start, the Source's length), with the counter the reject left the
 		//   story at - what tells "still taken back" from "undone" from now on.
+		//   ★EVERY ROW OF THE GROUP (2026-09-25), each at its own share of the Source's range, in Source order - so each
+		//    is placed after the one before it (KCMRejectedSlotFor) and slides only what stands after it.
+		// The pressed row as its record will hold it: its live range where its change would stand with the rest of the
+		// group taken back (AddRejectedGroup) - what the "=" check after the refresh has to look for.
+		KCMStoryChange pressedPlaced = live;
 		if (done > 0)
-			KCMStoryList::AddRejected(nth, live, live.fTargetStart,
-									  live.fTargetStart + (live.fSourceEnd - live.fSourceStart),
-									  KCMStoryDiffRun::CountForKind(story, kKCMStoryAttrNone), kKCMStoryAttrNone);
+		{
+			std::vector<TextIndex> nowStarts;
+			for (size_t i = 0; i < group.size(); ++i)
+			{
+				nowStarts.push_back(tLo + (group[i].fSourceStart - sLo));
+				if (SameStoryChange(group[i], live))
+				{
+					pressedPlaced.fTargetStart = nowStarts.back();
+					pressedPlaced.fTargetEnd = nowStarts.back() + (live.fTargetEnd - live.fTargetStart);
+				}
+			}
+			// ★AS ONE WRITE (KCMStoryList::AddRejectedGroup says why the rows must not slide one another)
+			KCMStoryList::AddRejectedGroup(nth, group, nowStarts, liveWords,
+										   KCMStoryDiffRun::CountForKind(story, kKCMStoryAttrNone), kKCMStoryAttrNone);
+			if (group.size() > 1)
+			{
+				outMessage = "it was one change in InDesign's history, standing for ";
+				outMessage.AppendNumber(static_cast<int32>(group.size()));
+				outMessage.Append(" rows here - all of them are taken back (each can be redone on its own)");
+				outMessage.SetTranslatable(kFalse);
+			}
+		}
 		// ★THE ROW IS COMPARED AGAIN: a reject does not move the list by itself (measured 2026-09-24 - rows and
 		//   status line stayed as they were until a refresh), and a row still showing a change that is gone
 		//   would be offered again. The record above outlives this refresh (PruneRejected keeps a Standing one).
@@ -814,7 +921,7 @@ public:
 			// ★AND THE "=" IS CHECKED ONCE MORE, AFTER THE REFRESH (the record stands only while its place reads
 			//   as the Source's - KCMRejectedRecord). The rollback above makes this a belt-and-braces line: it
 			//   can only speak when the refresh itself moved something.
-			if (!KCMStoryList::RejectedStanding(nth, live, story.GetDataBase()))
+			if (!KCMStoryList::RejectedStanding(nth, pressedPlaced, story.GetDataBase()))
 				outMessage = "the place does not read as the Source's after the reject - the row shows what differs";
 		}
 		return done;
@@ -958,7 +1065,12 @@ private:
 		// ★ONLY A ROW ABOUT WORDS OR A TABLE (the same day's final review): a "!" row (kWhatRefused) has no place
 		//   at all - its range reads 0..0, and it would have offered to reject whatever of the import's stood at
 		//   the story's first character. A ruby/kenten row (kWhatAttr) is stage 2 B's: those are not tracked.
-		if (change.fWhat != Change::kWhatText && change.fWhat != Change::kWhatTable)
+		//   ★★AND A FOOTNOTE ROW (2026-09-25): it travels as an attribute (KCMStoryKinds.h) but its marker is a CHARACTER,
+		//   and the import's footnote went in as a tracked insertion of it (measured: one INSERTED_TEXT in the cell).
+		//   Until then its row's menu was EMPTY - neither this item nor "Restore from Source" (which leaves notes to the
+		//   words) was offered, so a footnote Word added could not be taken back at all.
+		if (change.fWhat != Change::kWhatText && change.fWhat != Change::kWhatTable
+			&& !(change.fWhat == Change::kWhatAttr && change.fAttrKind == kKCMStoryAttrFootnote))
 			return kFalse;
 		if (change.fReplaced)
 			return kFalse;		// already taken back (the "=" row): its item is "Redo from Word" (stage 2 C)
@@ -1172,9 +1284,13 @@ public:
 		//   same mechanism at the table's size: Word's shape and cells back, under the import's signature. It plans
 		//   and writes in one call (a shape round is read back before the next is planned), so it runs inside the
 		//   sequence and the sequence is rolled back when it could not be done whole.
+		//   ★★ONLY A Table ≠ RECORD (2026-09-25): a Table + or Table − record came here too and could only fail - the one
+		//   the reject took away has no table left to name, the one it brought back a NEW id (measured). Those two are
+		//   the import's own first round done again for that table (KCMRedoTableAddedOrTaken).
 		if (record.fLive.fWhat == KCMStoryChange::kTable)
 		{
-			if (record.fLive.fTargetTableUID == kInvalidUID)
+			const bool16 matched = (record.fLive.fKind == KCMStoryChange::kReplace) ? kTrue : kFalse;
+			if (matched && record.fLive.fTargetTableUID == kInvalidUID)
 			{
 				outMessage = "the table is not named on the record - compare again";
 				return -1;
@@ -1186,7 +1302,8 @@ public:
 				name.SetTranslatable(kFalse);
 				tableSequence->SetName(name);
 			}
-			const int32 redone = KCMRedoTableFromWord(target, record.fLive.fTargetTableUID, outMessage);
+			const int32 redone = matched ? KCMRedoTableFromWord(target, record.fLive.fTargetTableUID, outMessage)
+										 : KCMRedoTableAddedOrTaken(target, record, outMessage);
 			this->EndSequenceOrRollBack(tableSequence, (redone > 0) ? kTrue : kFalse);
 			if (redone > 0)
 				KCMStoryList::MarkRedone(nth, record, KCMStoryDiffRun::CountForKind(target, record.fCounterKind));
@@ -1208,8 +1325,10 @@ public:
 			sequence->SetName(name);
 		}
 		const int32 done = KCMApplyRedoFromWord(target, now, plan, outMessage);
-		if (sequence != nil)
-			CmdUtils::EndCommandSequence(sequence);
+		// ★★ROLLED BACK WHEN IT IS NOT WHOLE (2026-09-25): ended plainly until then, so a redo that wrote nothing still
+		//   left a "Redo from Word" step on the undo stack (the author and tracking switches alone - measured on a table
+		//   added in Word), and one refused halfway stood half written. The take-backs' own rule, now the redo's too.
+		this->EndSequenceOrRollBack(sequence, (done > 0) ? kTrue : kFalse);
 		// ★THE RECORD STAYS, MARKED REDONE (design 15-1-3): its counter says "live" from here - and says "=" again
 		//   the moment the reader undoes the redo, which is what keeps the place for a second redo.
 		if (done > 0)
@@ -1258,13 +1377,25 @@ public:
 	virtual bool16	ExportStoryText(const IDFile& parent, const UIDList& onlyThese,
 									PMString& outMessage)
 	{
-		// ★THE ACTIVE DOCUMENT IS THE ONE EXPORTED, decided here rather than in the UI: which
-		//   document a menu item acts on is a model question, and the UI half already asks this
-		//   facade every other such question.
+		// ★THE DOCUMENT EXPORTED IS DECIDED HERE rather than in the UI: which document a menu item acts on is a
+		//   model question, and the UI half already asks this facade every other such question.
+		// ★★AND IT IS THE TASK DOCUMENT - the chosen Target, else the active one (2026-09-25, the user's decision): the
+		//   one the import writes into (KCMTaskDocumentDB says what went wrong while the two were asked apart).
 		// ⚠WHICH STORIES is the other half of that, and it is NOT a model question: a selection is
 		//  the UI's own state. It arrives already resolved, and empty means all.
-		return KCMExportStoryText(KCMActiveDocDB(), parent, onlyThese, outMessage);
+		// ⚠★A SELECTION MADE IN ANOTHER DOCUMENT IS REFUSED, NOT MATCHED: the export takes the listed stories by their
+		//  uid alone, and another document's uids name whatever this document holds under the same numbers.
+		IDataBase* const db = KCMTaskDocumentDB();
+		if (!onlyThese.IsEmpty() && onlyThese.GetDataBase() != db)
+		{
+			outMessage = "the selection is in another document than the one exported";
+			outMessage.SetTranslatable(kFalse);
+			return kFalse;
+		}
+		return KCMExportStoryText(db, parent, onlyThese, outMessage);
 	}
+
+	virtual IDataBase*	GetTaskDocumentDB()	{ return KCMTaskDocumentDB(); }
 
 	virtual bool16	InImportMode()		// ⛔retired with the fourth mode (2026-09-20) - the slot stays
 	{

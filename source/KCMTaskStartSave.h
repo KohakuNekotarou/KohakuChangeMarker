@@ -29,6 +29,15 @@
 
 class IDataBase;
 
+/** ★★★THE DOCUMENT THE WORD ROUND TRIP WORKS ON (2026-09-25, the user's decision): the chosen Target when there is
+    one, otherwise the active document. A Task Start copies it, an IMPORT writes into it (KCMImportStoryText asks the
+    Task Start's choice, which is this), and an EXPORT reads it (IKCMStoryEditsFacade::ExportStoryText).
+    ⚠★★WHY IT HAD TO BE ONE QUESTION: until that day the export read the ACTIVE document while the import wrote into
+     the CHOSEN TARGET, and the .docx names its story by uid alone - measured the same day, a Target left open from
+     an earlier comparison took the import of another document's file, and its story of the same uid (254 in both)
+     was written over with the other document's words. nil when there is neither. */
+IDataBase* KCMTaskDocumentDB();
+
 /** Whether Task Start may be pressed: **a document to copy, and nothing else**.
     ★THE ONE PLACE - the menu's grey state and the command both ask this.
     The document is the chosen Target when there is one, otherwise the active document, so the

@@ -898,8 +898,8 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		//   ⚠**Showing the two books before anything is pressed** has not changed as an aim -- what
 		//     changed is where they are shown (from two lines of the dialog to the body of the alert)
 		//     and that they are **full paths** rather than names, because so many books share a name.
-		// Flyout "Export Story Text...": the stories of the active document, one HTML file each,
-		// plus the one stylesheet they share, in a dated folder under the one the reader picks.
+		// Flyout "Export Story Text...": the stories of the Target (the chosen one, else the active document -
+		// 2026-09-25), one .docx each, in a dated folder under the one the reader picks.
 		// ★**This half only reads** - the model wraps the walk in SaveRestoreModifiedState, so the
 		// document is not even dirtied.
 		// ★★**A SELECTION NARROWS IT** (the user's decision, 2026-09-15): the frames or the text
@@ -915,12 +915,18 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				//   keyboard focus and is a window in its own right; reading the selection first
 				//   cannot be wrong, while reading it after would depend on what a dialog does to
 				//   a selection - which is not a thing this code should have to know.
-				IDataBase* const db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
+				// ★★THE DOCUMENT EXPORTED IS THE TASK DOCUMENT (2026-09-25, the user's decision) - the chosen Target, else
+				//   the active one: the document the import will write the edited file back into. A selection counts
+				//   only when that document is the one in front; one made in another document is not this document's
+				//   stories (the export takes stories by their uid alone), so the whole Target is exported instead and
+				//   the status line says so.
+				IDataBase* const db = Utils<IKCMStoryEditsFacade>()->GetTaskDocumentDB();
 				if (db == nil)
 					break;			// the menu item is greyed without one; this is the belt
+				const bool16 inFront = (Utils<IKCMCompareFacade>()->GetActiveDocDB() == db) ? kTrue : kFalse;
 
 				UIDList stories(db);
-				const bool16 hasSelection = KCMCollectSelectedStories(db, stories);
+				const bool16 hasSelection = inFront ? KCMCollectSelectedStories(db, stories) : kFalse;
 
 				if (hasSelection && stories.IsEmpty())
 				{
@@ -960,6 +966,10 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 							exportMsg.Append(" [selection -> ");
 							exportMsg.AppendNumber(stories.Length());
 							exportMsg.Append(" story(ies)]");
+						}
+						else if (!inFront)
+						{
+							exportMsg.Append(" [the Target, not the document in front -> the whole Target]");
 						}
 						else
 						{
@@ -1468,24 +1478,24 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		}
 		else if (action == kKCMPopupImportStoryTextActionID)
 		{
-			// ★AN ACTIVE DOCUMENT, AND NO COMPARISON RUNNING. ⚠Unlike Task Start - which was
-			//   deliberately made pressable at any time, stopping a comparison and taking over -
-			//   an import WAITS: it replaces the origin, and doing that underneath a running
-			//   comparison would change what the panel is showing while it is showing it.
+			// ★A DOCUMENT TO WRITE INTO - the Task Start's (the chosen Target, else the active one) - AND NOTHING ELSE.
+			// ★★LIVE WHILE A COMPARISON RUNS (2026-09-25, the user's decision). It waited for Stop until then, on the
+			//   grounds that it "replaced the origin" underneath a running comparison - the origin went on 2026-09-21,
+			//   and the import's own Task Start stops the comparison before anything is written (KCMTakeTaskStartCopy,
+			//   step 5), exactly as the flyout's Task Start does. The one visible effect was that after an import - which
+			//   ends by starting a comparison - the item stayed grey until the reader pressed Stop.
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-			const bool16 live = (compare != nil && compare->CanTakeTaskStartCopy()
-								 && !compare->IsArmed()) ? kTrue : kFalse;
+			const bool16 live = (compare != nil && compare->CanTakeTaskStartCopy()) ? kTrue : kFalse;
 			listToUpdate->SetNthActionState(i, live ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupExportStoryTextActionID)
 		{
-			// ★AN ACTIVE DOCUMENT IS THE WHOLE CONDITION. This item reads and never compares, so it
-			//   needs no Target, no Source and no comparison.
-			//   ⚠**It used to borrow CanTakeTaskStart for this question, and that stopped being the
-			//    same question on 2026-09-21**: Task Start now copies the chosen Target when there
-			//    is one, so it can be live with no active document at all. Asked directly instead.
+			// ★THE TASK DOCUMENT IS THE WHOLE CONDITION (2026-09-25): the one the export reads - the chosen Target, else
+			//   the active one - asked of the same facade call the command itself asks, so the grey and the command
+			//   cannot disagree. This item reads and never compares, so it needs no Source and no comparison.
+			//   (It asked for the active document alone until that day, while the import wrote into the Target.)
 			listToUpdate->SetNthActionState(i,
-				(Utils<IKCMCompareFacade>()->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
+				(Utils<IKCMStoryEditsFacade>()->GetTaskDocumentDB() != nil) ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupExportReportActionID)
 		{

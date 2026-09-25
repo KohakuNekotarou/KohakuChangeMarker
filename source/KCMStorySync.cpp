@@ -1836,7 +1836,8 @@ void RenumberNotesByThread(KCMStoryShape::Story& s)
    FINISHED story, which every insert and delete before it moves - so it is found by the full plan's numbering and
    given the narrowed plan's, where only the kept insert (if any) stands before the paragraph.
 */
-void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& where, int32 para, Plan& out)
+void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& where, int32 para, NarrowScope scope,
+			Plan& out)
 {
 	out = Plan();
 
@@ -1859,6 +1860,10 @@ void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& wher
 			deletedBefore += s.fCount;
 	}
 	const int32 fullFinished = para + insertedBefore - deletedBefore;	// where N's `para` stands once the whole plan is done
+	// ★THE INSERT IS KEPT ONLY FOR AN INSERTED ROW (2026-09-25): for the others it is not part of the narrowed plan, so it
+	//   moves nothing there and its paragraphs hold no note of theirs
+	if (scope != kNarrowInserted)
+		keptInsert = -1;
 	const int32 keptCount = (keptInsert >= 0)
 		? static_cast<int32>(plan.fSteps[static_cast<size_t>(keptInsert)].fParas.size()) : 0;
 	const int32 keptFinished = para;		// where it stands once only the kept steps are done: the kept insert is
@@ -1872,11 +1877,11 @@ void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& wher
 		{
 			case Step::kSetPara:
 			case Step::kHeld:
-				if (!(s.fWhere == where) || s.fPara != para)
+				if (scope != kNarrowOwn || !(s.fWhere == where) || s.fPara != para)
 					continue;
 				break;
 			case Step::kDeleteParas:
-				if (!(s.fWhere == where) || para < s.fPara || para >= s.fPara + s.fCount)
+				if (scope != kNarrowRemoved || !(s.fWhere == where) || para < s.fPara || para >= s.fPara + s.fCount)
 					continue;
 				kept.fPara = para;
 				kept.fCount = 1;
@@ -1887,17 +1892,20 @@ void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& wher
 				break;
 			case Step::kAddNote:
 			{
-				if (!(s.fWhere == where))
+				if (scope == kNarrowRemoved || !(s.fWhere == where))
 					continue;
-				// in the kept paragraphs: the inserted ones [fullFinished - keptCount, fullFinished), and N's own at fullFinished
+				// in the kept paragraphs: the inserted ones [fullFinished - keptCount, fullFinished) for an inserted row,
+				// N's own at fullFinished for its own
 				const int32 low = fullFinished - keptCount;
-				if (s.fPara < low || s.fPara > fullFinished)
+				if (scope == kNarrowInserted ? (s.fPara < low || s.fPara >= fullFinished) : (s.fPara != fullFinished))
 					continue;
 				kept.fPara = keptFinished - keptCount + (s.fPara - low);	// the same paragraph, in the narrowed plan's numbering
 				break;
 			}
 			case Step::kDeleteNote:
 			{
+				if (scope == kNarrowInserted)
+					continue;		// a paragraph put back holds no note of the document's
 				bool16 here = kFalse;
 				const std::vector<KCMStoryShape::Para>* paras = nil;
 				if (where.fKind == Where::kBody)

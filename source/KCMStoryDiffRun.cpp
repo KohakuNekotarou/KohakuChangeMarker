@@ -1366,6 +1366,21 @@ std::string FirstTableWords(int32 ordinal, const std::vector<std::string>& paras
 	return std::string();
 }
 
+/* AllTableWords
+   Every paragraph of table `ordinal`, in reading order, joined by a return - what two tables have to agree on, word for
+   word, before a table that lost its id is taken for its partner (FoldTableChanges' second pairing, 2026-09-25). */
+std::string AllTableWords(int32 ordinal, const std::vector<std::string>& paras, const std::vector<KCMParaAttrs>& attrs)
+{
+	std::string all;
+	for (size_t p = 0; p < paras.size() && p < attrs.size(); ++p)
+		if (attrs[p].IsCell() && attrs[p].fTableOrdinal == ordinal)
+		{
+			all += paras[p];
+			all += '\r';
+		}
+	return all;
+}
+
 /* FoldTableChanges
    ★★★A TABLE WHOSE SHAPE DIFFERS FROM TASK START'S BECOMES ONE CHANGE (2026-09-19 night, the user:
    "fold every change of that table - rows, columns, merged cells, and the words inside - into one row,
@@ -1476,6 +1491,40 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		if (partner >= 0)
 			sTaken[static_cast<size_t>(partner)] = kTrue;
 		pairs.push_back(std::make_pair(static_cast<int32>(i), partner));
+	}
+	// ★★A TABLE THAT CAME BACK UNDER A NEW ID IS STILL ITS PARTNER (2026-09-25). "Reject This Import Change" on a table
+	//   the import took away brings the table back - under a NEW id (measured: 328 in the Target, 286 in Task Start, the
+	//   same B1|B2 inside), so the id pairing above found no partner for either, and the list showed a Table + and a
+	//   Table − for one unchanged table. What is left unpaired on BOTH sides is paired again, in order, when the two are
+	//   the same table by everything but the id: the same shape, the same words in every cell, and the same words in
+	//   the paragraph each stands in. ⚠Only after the id pairing, and only among the left-over tables - a table that
+	//   paired by its id is never taken from its partner.
+	if (byId)
+	{
+		size_t nextS = 0;
+		for (size_t p = 0; p < pairs.size(); ++p)
+		{
+			if (pairs[p].second >= 0)
+				continue;
+			const int32 i = pairs[p].first;
+			const int32 tPara = ParagraphIndexAt(targetStarts, tShapes[static_cast<size_t>(i)].fAnchorStart);
+			const std::string tWords = AllTableWords(i, targetParas, targetAttrs);
+			for (size_t j = nextS; j < sShapes.size(); ++j)
+			{
+				if (sTaken[j] || KCMTableShapesDiffer(tShapes[static_cast<size_t>(i)], sShapes[j]))
+					continue;
+				if (AllTableWords(static_cast<int32>(j), sourceParas, sourceAttrs) != tWords)
+					continue;
+				const int32 sPara = ParagraphIndexAt(sourceStarts, sShapes[j].fAnchorStart);
+				if (tPara < 0 || sPara < 0 || static_cast<size_t>(tPara) >= targetParas.size()
+					|| static_cast<size_t>(sPara) >= sourceParas.size() || targetParas[static_cast<size_t>(tPara)] != sourceParas[static_cast<size_t>(sPara)])
+					continue;
+				pairs[p].second = static_cast<int32>(j);
+				sTaken[j] = kTrue;
+				nextS = j + 1;
+				break;
+			}
+		}
 	}
 	for (size_t j = 0; j < sShapes.size(); ++j)
 		if (!sTaken[j])
@@ -1675,6 +1724,41 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 			other += otherFirst;
 		}
 		SetDocumentText(table.fOtherText, other);
+
+		// ★★A TABLE ADDED OR TAKEN AWAY TOGETHER WITH THE PARAGRAPH IT STANDS IN IS ONE ROW (2026-09-25). The import puts
+		//   a table Word added into a paragraph of its own - a return first, then the table (KCMStorySyncApply's
+		//   InsertTables) - and InDesign's change history holds the two as ONE change. The paragraph came out as a row of
+		//   its own until now: an "insert" with no words beside the Table + row, over the same characters. Rejecting
+		//   either took both back and left the other with nothing to stand for (measured on the running application: the
+		//   Table row vanished from the list, and the empty row's redo wrote nothing and still left an undo step). The
+		//   empty paragraph's row is folded into the table's, which takes its range - the return included, cut off again
+		//   for what the reader is shown (fBreakAt, KCMShownSpan) - so the one change is one row, taken back and redone
+		//   whole. ★ONLY A PARAGRAPH HOLDING NOTHING BUT THE TABLE: the row's shown range has to be exactly the table's
+		//   anchor, on the side that has the table - a paragraph with words of its own stays a row of its own.
+		if (haveT != haveS)
+		{
+			const TextIndex anchorFrom = haveT ? table.fTargetStart : table.fSourceStart;
+			const TextIndex anchorTo = haveT ? table.fTargetEnd : table.fSourceEnd;
+			for (size_t c = 0; c < kept.size(); ++c)
+			{
+				const KCMStoryChange& ch = kept[c];
+				if (ch.fWhat != KCMStoryChange::kText || !ch.fWholeParagraph || ch.fKind != table.fKind)
+					continue;
+				TextIndex from = haveT ? ch.fTargetStart : ch.fSourceStart;
+				TextIndex to = haveT ? ch.fTargetEnd : ch.fSourceEnd;
+				KCMShownSpan(ch.fBreakAt, from, to);
+				if (from != anchorFrom || to != anchorTo)
+					continue;
+				table.fTargetStart = ch.fTargetStart;
+				table.fTargetEnd = ch.fTargetEnd;
+				table.fSourceStart = ch.fSourceStart;
+				table.fSourceEnd = ch.fSourceEnd;
+				table.fBreakAt = ch.fBreakAt;
+				table.fWholeParagraph = kTrue;
+				kept.erase(kept.begin() + static_cast<std::ptrdiff_t>(c));
+				break;
+			}
+		}
 
 		kept.push_back(table);
 		out.swap(kept);

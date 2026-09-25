@@ -1125,32 +1125,70 @@ bool16 RecordReadsAsSource(const KCMStoryRow& row, const KCMRejectedRecord& r, I
 							r.fLive.fSourceStart, r.fLive.fSourceEnd);
 }
 
-/** A record's state now - the story's counter of its kind, read at this moment (KCMRejectedRecord says why
-	nothing else may answer Undone / Redone), and a Standing record then read against the Source (Stale when it
-	differs; the reading is cached against the counter it was made at, so an unchanged story is not read again).
-	With nothing to ask (no armed Target, a row that stands for a file) it is as recorded. */
+/** Whether the words the reject took out stand at the record's live range again (KCMRejectedRecord::fLiveWords) - kFalse
+	when none were captured, or the live range is a caret (a deletion: there are no words to find). */
+bool16 LiveWordsHere(const KCMStoryRow& row, const KCMRejectedRecord& r, IDataBase* targetDB)
+{
+	const int32 len = r.fLive.fTargetEnd - r.fLive.fTargetStart;
+	if (!r.fHasLiveWords || len <= 0 || len != static_cast<int32>(r.fLiveWords.Length()))
+		return kFalse;
+	IDataBase::SaveRestoreModifiedState guard(targetDB);
+	InterfacePtr<ITextModel> model(UIDRef(targetDB, row.fStoryUID), UseDefaultIID());
+	WideString words;
+	return (KCMTextWords::WordsAt(model, r.fLive.fTargetStart, len, words) && words == r.fLiveWords) ? kTrue : kFalse;
+}
+
+/** A record's state now - the story's counter of its kind, read at this moment, CHECKED AGAINST THE DOCUMENT
+	(2026-09-25): the Source's words (or marks) at the record's place, and the words the reject took out at its live
+	range. Standing by the counter with those words back is an undone reject; Redone by the counter with the Source's
+	back and those words gone is an undone redo (both after ANOTHER write moved the counter - KCMRejectedRecord::
+	fLiveWords); Standing whose place does not read as the Source's is Stale. The readings are cached against the
+	counter they were made at, so an unchanged story is not read again. With nothing to ask (no armed Target, a row
+	that stands for a file) it is as recorded. */
 KCMRejectedState StateNow(const KCMStoryRow& row, const KCMRejectedRecord& r, IDataBase* targetDB)
 {
 	if (targetDB == nil || row.fStoryUID == kInvalidUID)
 		return kKCMRejectedStanding;
 	const uint32 counterNow = KCMStoryDiffRun::CountForKind(UIDRef(targetDB, row.fStoryUID), r.fCounterKind);
 	const KCMRejectedState byCounter = KCMRejectedStateOf(r, counterNow);
-	if (byCounter != kKCMRejectedStanding)
+	if (byCounter == kKCMRejectedUndone)
 		return byCounter;
+	// ★★THE DOCUMENT CHECKS THE COUNTERS (2026-09-25 - KCMRejectedRecord::fLiveWords says what they could not tell apart).
+	//   One reading per counter value, kept with the "=" reading (a record that moved is read again: ShiftRecordsFrom).
 	if (!r.fChecked || r.fCheckedAt != counterNow)
 	{
 		r.fCheckedSame = RecordReadsAsSource(row, r, targetDB);
+		r.fCheckedLive = LiveWordsHere(row, r, targetDB);
 		r.fCheckedAt = counterNow;
 		r.fChecked = kTrue;
 	}
+	if (byCounter == kKCMRejectedRedone)
+	{
+		// The counter is past the redo - but a redo undone and then ANOTHER write moves it there too. The document says
+		// which: Word's words back at the place (or, for a mark, the Source's marks gone) is a redo that stands. A
+		// record with nothing to find either way (a match's table) keeps the counters' answer.
+		const bool16 canTell = (r.fHasLiveWords || r.fCounterKind != kKCMStoryAttrNone) ? kTrue : kFalse;
+		if (!canTell || r.fCheckedLive || !r.fCheckedSame)
+			return byCounter;
+		return kKCMRejectedStanding;		// the redo was undone: taken back, "=", as the document shows
+	}
+	// Standing by the counters: the reject may have been undone and ANOTHER write moved the counter back past it -
+	// Word's words standing at the live range say so.
+	if (r.fCheckedLive)
+		return kKCMRejectedUndone;
 	return r.fCheckedSame ? kKCMRejectedStanding : kKCMRejectedStale;
 }
 
-/** kTrue when `c` is the twin of the record's live change: the same what, kind and live range. */
+/** kTrue when `c` is the twin of the record's live change: the same what, kind and live range - AND THE SAME SOURCE
+	RANGE (2026-09-25): two paragraphs the import took away one after the other stand at one Target caret, and a group
+	reject records both; without the Source's range the second AddRejected took the first record for its twin and
+	overwrote it (measured: one "=" for two paragraphs). The Source document does not change, so its range is the
+	same in every state the record passes through. */
 bool16 IsTwin(const KCMRejectedRecord& r, const KCMStoryChange& c)
 {
 	return (r.fLive.fWhat == c.fWhat && r.fLive.fKind == c.fKind
-			&& r.fLive.fTargetStart == c.fTargetStart && r.fLive.fTargetEnd == c.fTargetEnd) ? kTrue : kFalse;
+			&& r.fLive.fTargetStart == c.fTargetStart && r.fLive.fTargetEnd == c.fTargetEnd
+			&& r.fLive.fSourceStart == c.fSourceStart && r.fLive.fSourceEnd == c.fSourceEnd) ? kTrue : kFalse;
 }
 
 void ShiftRecordsFrom(KCMStoryRow& row, size_t from, int32 writeAt, int32 removed, int32 inserted);
@@ -1169,12 +1207,15 @@ void MergedOrder(KCMStoryRow& row, std::vector<KCMMergedRef>& out)
 	//   stands there. ⚠NOT ERASED: the "=" is a comparison, and the reading is made again whenever the story's
 	//   counter moves - so an undo of the hand edit that made it stale reads as the Source's again and the "="
 	//   comes back (first written as an erase; measured the same night to lose the "=" for good on Ctrl+Z).
-	std::vector<KCMRejectedState> states;
-	for (size_t i = 0; i < row.fRejected.size(); ++i)
-		states.push_back(StateNow(row, row.fRejected[i], db));
+	// ★★IN TEXT ORDER, EACH STATE READ ONLY AFTER THE RECORDS BEFORE IT HAVE SLID IT (2026-09-25). The states were all
+	//   read first and the slides made after, so a record standing after one that had just changed state was read at
+	//   its OLD place - measured: two paragraphs taken back together, the first redone, and the second's words were
+	//   looked for ten characters too far on, read as not the Source's, and its "=" left the list (Stale).
+	std::vector<KCMRejectedState> states(row.fRejected.size(), kKCMRejectedStanding);
 	for (size_t i = 0; i < row.fRejected.size(); ++i)
 	{
 		KCMRejectedRecord& r = row.fRejected[i];
+		states[i] = StateNow(row, r, db);
 		if (states[i] == kKCMRejectedStale)
 			continue;
 		const bool16 standing = (states[i] == kKCMRejectedStanding) ? kTrue : kFalse;
@@ -1186,10 +1227,13 @@ void MergedOrder(KCMStoryRow& row, std::vector<KCMMergedRef>& out)
 		r.fPlacedForSource = standing;
 	}
 
+	// ★WITH THE SOURCE'S RANGES (2026-09-25 - KCMRejectedSpan says why): a record shown live hides its own twin, not
+	//  another paragraph's row that happens to stand at the same Target caret.
 	std::vector<KCMRejectedSpan> live;
 	for (size_t i = 0; i < row.fChanges.size(); ++i)
 		live.push_back(KCMRejectedSpan(row.fChanges[i].fTargetStart, row.fChanges[i].fTargetEnd,
-									   static_cast<int32>(row.fChanges[i].fWhat), static_cast<int32>(row.fChanges[i].fKind), kFalse));
+									   static_cast<int32>(row.fChanges[i].fWhat), static_cast<int32>(row.fChanges[i].fKind), kFalse,
+									   row.fChanges[i].fSourceStart, row.fChanges[i].fSourceEnd));
 	std::vector<KCMRejectedSpan> recs;
 	std::vector<int32> recIndex;		// recs[k] is row.fRejected[recIndex[k]] - the stale ones are left out
 	for (size_t i = 0; i < row.fRejected.size(); ++i)
@@ -1200,7 +1244,9 @@ void MergedOrder(KCMStoryRow& row, std::vector<KCMMergedRef>& out)
 		const bool16 standing = r.fPlacedForSource;		// reconciled above: the state as it was read a moment ago
 		recs.push_back(KCMRejectedSpan(standing ? r.fNowStart : r.fLive.fTargetStart,
 									   standing ? r.fNowEnd : r.fLive.fTargetEnd,
-									   static_cast<int32>(r.fLive.fWhat), static_cast<int32>(r.fLive.fKind), standing));
+									   static_cast<int32>(r.fLive.fWhat), static_cast<int32>(r.fLive.fKind), standing,
+									   r.fLive.fSourceStart, r.fLive.fSourceEnd,
+									   r.fLive.fTargetStart, r.fLive.fTargetEnd));	// its live twin is looked for here, "=" or not
 		recIndex.push_back(static_cast<int32>(i));
 	}
 	KCMMergeRejected(live, recs, out);
@@ -1223,6 +1269,11 @@ void ShiftRecordsFrom(KCMStoryRow& row, size_t from, int32 writeAt, int32 remove
 	KCMShiftRejectedFrom(live, from, writeAt, removed, inserted);
 	for (size_t i = from; i < row.fRejected.size(); ++i)
 	{
+		// ★A RECORD THAT MOVED HAS ITS "=" READ AGAIN (2026-09-25): the reading is cached against the story's counter,
+		//   and a reading made at the old place - by the prune that runs before any reconcile - would otherwise stand
+		//   for the new one at the same counter.
+		if (row.fRejected[i].fNowStart != now[i].fStart || row.fRejected[i].fNowEnd != now[i].fEnd)
+			row.fRejected[i].fChecked = kFalse;
 		row.fRejected[i].fNowStart = now[i].fStart;
 		row.fRejected[i].fNowEnd = now[i].fEnd;
 		row.fRejected[i].fLive.fTargetStart = live[i].fStart;
@@ -1296,6 +1347,16 @@ const KCMRejectedRecord* KCMStoryList::RejectedAt(int32 nth, int32 which)
 	return &row.fRejected[static_cast<size_t>(order[static_cast<size_t>(which)].fIndex)];
 }
 
+/* LiveChanges
+*/
+void KCMStoryList::LiveChanges(int32 nth, std::vector<KCMStoryChange>& out)
+{
+	out.clear();
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
+		return;
+	out = gRows[nth].fChanges;
+}
+
 /* RejectedStateOf
 */
 KCMRejectedState KCMStoryList::RejectedStateOf(int32 nth, const KCMRejectedRecord& record, IDataBase* targetDB)
@@ -1351,6 +1412,111 @@ void KCMStoryList::AddRejected(int32 nth, const KCMStoryChange& live, TextIndex 
 	rec.fPlacedForSource = kTrue;		// the followers are slid for the Source's words right here
 	row.fRejected.insert(row.fRejected.begin() + static_cast<std::ptrdiff_t>(slot), rec);
 	ShiftRecordsFrom(row, slot + 1, live.fTargetStart, removed, inserted);
+}
+
+/* AddRejectedGroup
+*/
+void KCMStoryList::AddRejectedGroup(int32 nth, const std::vector<KCMStoryChange>& lives,
+									const std::vector<TextIndex>& nowStarts, const std::vector<WideString>& liveWords,
+									uint32 counter, int32 counterKind)
+{
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || lives.empty() || lives.size() != nowStarts.size()
+		|| lives.size() != liveWords.size())
+		return;
+	KCMStoryRow& row = gRows[nth];
+
+	// The write, as one: [tLo, tLo + live span) of the Target became the Source's [sLo, sHi).
+	TextIndex tLo = lives[0].fTargetStart, tHi = lives[0].fTargetEnd;
+	TextIndex sLo = lives[0].fSourceStart, sHi = lives[0].fSourceEnd;
+	for (size_t k = 1; k < lives.size(); ++k)
+	{
+		tLo = std::min(tLo, lives[k].fTargetStart);
+		tHi = std::max(tHi, lives[k].fTargetEnd);
+		sLo = std::min(sLo, lives[k].fSourceStart);
+		sHi = std::max(sHi, lives[k].fSourceEnd);
+	}
+
+	// 1. the records that ARE the group's rows already (rejected, undone, rejected again) - found by their live twin
+	std::vector<int32> twinOf(lives.size(), -1);
+	std::vector<bool16> isMember(row.fRejected.size(), kFalse);
+	for (size_t k = 0; k < lives.size(); ++k)
+		for (size_t i = 0; i < row.fRejected.size() && twinOf[k] < 0; ++i)
+			if (!isMember[i] && IsTwin(row.fRejected[i], lives[k]))
+			{
+				twinOf[k] = static_cast<int32>(i);
+				isMember[i] = kTrue;
+			}
+
+	// 2. every OTHER record slides once, by the whole write - never by one row of it after another, and never a row of
+	//    the group by another row of it (measured: rejected, undone, rejected again, the second paragraph's record was
+	//    slid by the first's share and no longer knew its own live change - a second record was made beside it)
+	{
+		std::vector<KCMRejectedSpan> now, live;
+		for (size_t i = 0; i < row.fRejected.size(); ++i)
+		{
+			now.push_back(KCMRejectedSpan(row.fRejected[i].fNowStart, row.fRejected[i].fNowEnd));
+			live.push_back(KCMRejectedSpan(row.fRejected[i].fLive.fTargetStart, row.fRejected[i].fLive.fTargetEnd));
+		}
+		KCMShiftRejectedFrom(now, 0, tLo, tHi - tLo, sHi - sLo);
+		KCMShiftRejectedFrom(live, 0, tLo, tHi - tLo, sHi - sLo);
+		for (size_t i = 0; i < row.fRejected.size(); ++i)
+		{
+			if (isMember[i])
+				continue;
+			KCMRejectedRecord& r = row.fRejected[i];
+			if (r.fNowStart != now[i].fStart || r.fNowEnd != now[i].fEnd)
+				r.fChecked = kFalse;
+			r.fNowStart = now[i].fStart;
+			r.fNowEnd = now[i].fEnd;
+			r.fLive.fTargetStart = live[i].fStart;
+			r.fLive.fTargetEnd = live[i].fEnd;
+		}
+	}
+
+	// 3. each row of the group at its own share of the Source's range, its live range where its change would stand
+	//    with the rest of the group taken back (where its Source words are now) - the place a redo of that row alone
+	//    puts it back, and what the reconcile slides when a neighbour in the group changes state
+	for (size_t k = 0; k < lives.size(); ++k)
+	{
+		KCMStoryChange placed = lives[k];
+		const TextIndex liveLen = placed.fTargetEnd - placed.fTargetStart;
+		placed.fTargetStart = nowStarts[k];
+		placed.fTargetEnd = nowStarts[k] + liveLen;
+		const TextIndex nowEnd = nowStarts[k] + (lives[k].fSourceEnd - lives[k].fSourceStart);
+		if (twinOf[k] >= 0)
+		{
+			KCMRejectedRecord& r = row.fRejected[static_cast<size_t>(twinOf[k])];
+			r.fLive = placed;
+			r.fNowStart = nowStarts[k];
+			r.fNowEnd = nowEnd;
+			r.fRejectedAt = counter;
+			r.fRedoneAt = 0;
+			r.fCounterKind = counterKind;
+			r.fPlacedForSource = kTrue;
+			r.fChecked = kFalse;
+			r.fLiveWords = liveWords[k];
+			r.fHasLiveWords = kTrue;
+			continue;
+		}
+		KCMRejectedRecord rec;
+		rec.fLive = placed;
+		rec.fNowStart = nowStarts[k];
+		rec.fNowEnd = nowEnd;
+		rec.fRejectedAt = counter;
+		rec.fRedoneAt = 0;
+		rec.fCounterKind = counterKind;
+		rec.fPlacedForSource = kTrue;
+		rec.fLiveWords = liveWords[k];
+		rec.fHasLiveWords = kTrue;
+		std::vector<int32> starts;
+		for (size_t i = 0; i < row.fRejected.size(); ++i)
+			starts.push_back(row.fRejected[i].fNowStart);
+		const size_t slot = KCMRejectedSlotFor(starts, nowStarts[k]);
+		row.fRejected.insert(row.fRejected.begin() + static_cast<std::ptrdiff_t>(slot), rec);
+		for (size_t j = 0; j < twinOf.size(); ++j)		// a twin index at or after the slot moved down by one
+			if (twinOf[j] >= static_cast<int32>(slot))
+				++twinOf[j];
+	}
 }
 
 /* RejectedStanding

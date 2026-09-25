@@ -55,6 +55,15 @@ int32 KCMApplyRedoFromWord(const UIDRef& targetStory, const KCMStoryShape::Story
 	in; -1 when nothing could be done, and outWhy says why. */
 int32 KCMRedoTableFromWord(const UIDRef& targetStory, UID tableUID, PMString& outWhy);
 
+/** The redo of a TABLE ADDED OR TAKEN AWAY WHOLE (Table + / Table −, 2026-09-25): until then the table redo above took
+	every table record and could only ever refuse these two (a table the reject took away has no id left to find, and
+	one it brought back has a new one), while the paragraph redo left the table steps to a writer that skips them.
+	Word's table goes back in after the paragraph the record names - the way the import puts it in, a paragraph of its
+	own, then its shape and its cells' words made Word's by the table redo - or the table standing where the record's
+	anchor came back is taken away again. Plans and writes in one call, INSIDE the caller's command sequence, which it
+	rolls back on -1. @return the moves and writes that went in; -1 with outWhy when nothing could be done. */
+int32 KCMRedoTableAddedOrTaken(const UIDRef& targetStory, const KCMRejectedRecord& record, PMString& outWhy);
+
 #endif // __KCMRedoFromWord_h__
 
 // End, KCMRedoFromWord.h.

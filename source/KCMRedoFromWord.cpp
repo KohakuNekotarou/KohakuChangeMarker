@@ -17,13 +17,15 @@
 
 // Project includes:
 #include "KCMImportTracking.h"	// KCMImportAuthor / KCMStoryTrackingOn - the import's signature
-#include "KCMParaText.h"		// ModelOffsetInParagraph / CountCodePoints - where a paragraph ends in the document's count
+#include "KCMParaText.h"		// AppendUtf8 - the Source's words in the reading's own UTF-8
 #include "KCMStorySync.h"		// Compare / Narrow
 #include "KCMStorySyncApply.h"	// KCMApplySyncPlan / KCMSyncColumnsOfRow
 #include "KCMStoryTextExport.h"	// KCMStoryFromDocument - the document, read the way the import reads it
 #include "KCMTextRead.h"		// ReadStory - the paragraphs and their places, for the change's paragraph
 #include "KCMTextWords.h"		// WordsAt / Refuse - shared with the restore
 #include "KCMWordKeep.h"
+#include "KCMRedoPlace.h"		// KCMRedoPlace::Of - which paragraph the change is (2026-09-25)
+#include "KCMTableShape.h"		// KCMReadTableShapes - where each table's anchor stands, for a Table − redo (2026-09-25)
 #include "KCMRedoFromWord.h"
 
 namespace
@@ -32,26 +34,15 @@ namespace
 using KCMTextWords::WordsAt;
 using KCMTextWords::Refuse;
 
-/** The paragraph of KCMTextRead's reading that holds `at` - or STARTS at `at`, for a caret on a boundary - as
-	(Where, para) in that place's own numbering, which is what a plan's step names. kFalse outside the story. */
-bool16 WhereParaOf(const std::vector<KCMParaAttrs>& attrs, const std::vector<int32>& starts,
-				   const std::vector<std::string>& paras, TextIndex at, KCMStorySync::Where& outWhere, int32& outPara,
-				   int32& outIndex)
+/** The place reading paragraph `k` stands in, as a plan's step names it: the body, a note, or a cell by its index
+	among its row's columns. kFalse for a paragraph out of range, or a cell whose column is not among its row's.
+	★THE PARAGRAPH'S NUMBER IN THAT PLACE IS KCMRedoPlace's TO SAY (2026-09-25): this answered both until then, from
+	 the paragraph holding the record's start - which for a whole paragraph cut with the break before it is the
+	 paragraph BEFORE the change (KCMRedoPlace.h says what that broke). */
+bool16 WhereOf(const std::vector<KCMParaAttrs>& attrs, int32 k, KCMStorySync::Where& outWhere)
 {
-	int32 k = -1;
-	for (size_t i = 0; i < starts.size() && i < attrs.size() && i < paras.size(); ++i)
-	{
-		// past the paragraph's words and its return
-		const int32 end = starts[i] + KCMParaText::ModelOffsetInParagraph(attrs[i], KCMParaText::CountCodePoints(paras[i])) + 1;
-		if (at >= starts[i] && at < end)
-		{
-			k = static_cast<int32>(i);
-			break;
-		}
-	}
-	if (k < 0)
+	if (k < 0 || static_cast<size_t>(k) >= attrs.size())
 		return kFalse;
-	outIndex = k;
 	const KCMParaAttrs& a = attrs[static_cast<size_t>(k)];
 	if (a.IsCell())
 	{
@@ -69,14 +60,6 @@ bool16 WhereParaOf(const std::vector<KCMParaAttrs>& attrs, const std::vector<int
 		outWhere = KCMStorySync::Where::Note(a.fFootnoteOrdinal);
 	else
 		outWhere = KCMStorySync::Where::Body();
-	outPara = 0;
-	for (int32 i = 0; i < k; ++i)
-	{
-		const KCMParaAttrs& b = attrs[static_cast<size_t>(i)];
-		if (b.fTableOrdinal == a.fTableOrdinal && b.fCellRow == a.fCellRow && b.fCellCol == a.fCellCol
-			&& b.fFootnoteOrdinal == a.fFootnoteOrdinal)
-			++outPara;
-	}
 	return kTrue;
 }
 
@@ -135,14 +118,18 @@ bool16 KCMPlanRedoFromWord(const UIDRef& targetStory, const UIDRef& sourceStory,
 			return kFalse;
 		}
 	}
+	// ★★THE CHANGE'S PARAGRAPH, NOT THE ONE HOLDING THE RECORD'S START (2026-09-25, the user's report - KCMRedoPlace.h):
+	//   a whole paragraph cut with the break before it ("\rNEW") starts ON the previous paragraph's return, so its
+	//   own paragraph is the next one in the same place.
+	const bool16 afterBreak = (record.fLive.fWholeParagraph && record.fLive.fBreakAt == kKCMBreakLeads) ? kTrue : kFalse;
+	KCMRedoPlace::Para place;
 	KCMStorySync::Where where;
-	int32 para = 0;
-	int32 index = 0;
-	if (!WhereParaOf(attrs, starts, paras, record.fNowStart, where, para, index))
+	if (!KCMRedoPlace::Of(paras, starts, attrs, record.fNowStart, afterBreak, place) || !WhereOf(attrs, place.fHold, where))
 	{
 		Refuse(outWhy, "the change's paragraph could not be found - compare again");
 		return kFalse;
 	}
+	const int32 para = place.fNumber;
 
 	// ★THE SOURCE'S WORDS HAVE TO BE IN THAT PARAGRAPH (design 15-1-7 and 15-1-8): a hand edit INSIDE it is written
 	//   over with Word's - "Word is the one that counts" - while an edit that moved the change's place into another
@@ -151,6 +138,8 @@ bool16 KCMPlanRedoFromWord(const UIDRef& targetStory, const UIDRef& sourceStory,
 	//    which is not what 15-1-7 promises. The characters the reader leaves out of a paragraph's text (a break, a
 	//    table's own, a note's marker) are left out here too - a table row's words are its anchor alone, and that
 	//    row is judged by its paragraph.
+	//   ★IN THE CHANGE'S OWN PARAGRAPH (2026-09-25): a paragraph removed in Word and taken back stands AFTER the one
+	//    holding the record's start. An insertion has no Source words to look for.
 	{
 		std::string words;
 		for (int32 i = 0; i < static_cast<int32>(sWords.Length()); ++i)
@@ -159,7 +148,8 @@ bool16 KCMPlanRedoFromWord(const UIDRef& targetStory, const UIDRef& sourceStory,
 			if (cp >= 0x20 && cp != 0xFEFF && cp != 0xFFFC)
 				KCMParaText::AppendUtf8(words, cp);
 		}
-		if (!words.empty() && paras[static_cast<size_t>(index)].find(words) == std::string::npos)
+		if (!words.empty()
+			&& (place.fOwn < 0 || paras[static_cast<size_t>(place.fOwn)].find(words) == std::string::npos))
 		{
 			Refuse(outWhy, "the Source's words are not in this paragraph any more - Ctrl+Z, or import again");
 			return kFalse;
@@ -177,11 +167,40 @@ bool16 KCMPlanRedoFromWord(const UIDRef& targetStory, const UIDRef& sourceStory,
 		outWhy.SetTranslatable(kFalse);
 		return kFalse;
 	}
-	KCMStorySync::Narrow(outNow, whole, where, para, outPlan);
+	// ★A TABLE WORD ADDED OR TOOK AWAY STANDS TAKEN BACK IN THIS STORY (2026-09-25): the comparison then answers with
+	//   those tables alone (stage 0 - the words are only compared once the tables agree), and narrowing that to a
+	//   paragraph found nothing - "nothing to redo here" was said of a paragraph that plainly differed. Named instead.
+	//   (A record of the table itself goes to KCMRedoTableAddedOrTaken, which the facade asks first.)
+	if (whole.Count(KCMStorySync::Step::kInsertTable) + whole.Count(KCMStorySync::Step::kDeleteTable) > 0)
+	{
+		Refuse(outWhy, "a table Word added or took away stands taken back in this story - redo that table's row first");
+		return kFalse;
+	}
+	// ★THE ROW'S OWN KIND OF CHANGE, AND NOTHING NEXT TO IT (2026-09-25 - KCMStorySync::NarrowScope): a paragraph added
+	//   in Word is redone as that addition, one taken away as that removal, anything else as the paragraph's own edit.
+	const KCMStorySync::NarrowScope scope = !record.fLive.fWholeParagraph ? KCMStorySync::kNarrowOwn
+		: (record.fLive.fKind == KCMStoryChange::kInsert) ? KCMStorySync::kNarrowInserted
+		: (record.fLive.fKind == KCMStoryChange::kDelete) ? KCMStorySync::kNarrowRemoved
+		: KCMStorySync::kNarrowOwn;
+	KCMStorySync::Narrow(outNow, whole, where, para, scope, outPlan);
 	if (outPlan.fSteps.empty())
 	{
 		Refuse(outWhy, "nothing to redo here - the paragraph already reads as Word's");
 		return kFalse;
+	}
+	// ★ALL OF IT OR NONE OF IT (2026-09-25 - the user's rule for every take-back, now for the redo too): a paragraph
+	//   the comparison HOLDS (a table whose shape differs from Word's, a place that cannot be paired) cannot be made
+	//   Word's, and writing the rest of it would leave the paragraph half redone. ⚠A tate-chu-yoko kept under a
+	//   warichu is held ON PURPOSE (Word cannot carry it) and does not count.
+	for (size_t i = 0; i < outPlan.fSteps.size(); ++i)
+	{
+		const KCMStorySync::Step& s = outPlan.fSteps[i];
+		if (s.fKind == KCMStorySync::Step::kHeld && s.fWhat != "Tcy")
+		{
+			outWhy.SetUTF8String("this paragraph cannot be made Word's: " + s.fWhy);
+			outWhy.SetTranslatable(kFalse);
+			return kFalse;
+		}
 	}
 	return kTrue;
 }
@@ -200,12 +219,19 @@ int32 KCMApplyRedoFromWord(const UIDRef& targetStory, const KCMStoryShape::Story
 	KCMSyncResult result;
 	KCMApplySyncPlan(targetStory, now, plan, result);
 	const int32 wentIn = result.fWrites + result.fAttrWrites + result.fNoteEdits + result.fTableEdits;
-	if (wentIn == 0)
+	// ★★A WRITE REFUSED HALFWAY IS A FAILED REDO (2026-09-25): until then only "nothing went in" was one, so a
+	//   paragraph half written stood as redone. -1 now, and the caller rolls the whole sequence back
+	//   (KCMFacades RedoFromWord - the same rule as every take-back: all of it, or none of it). What was only HELD
+	//   BACK on purpose (a note with fHeldBack) is not a failure.
+	if (wentIn == 0 || result.fRefused > 0)
 	{
-		if (!result.fNotes.empty())
-			outWhy = result.fNotes[0].fWhy;
-		else
-			outWhy = "nothing was written";
+		outWhy = "nothing was written";
+		for (size_t i = 0; i < result.fNotes.size(); ++i)
+			if (!result.fNotes[i].fHeldBack)
+			{
+				outWhy = result.fNotes[i].fWhy;
+				break;
+			}
 		outWhy.SetTranslatable(kFalse);
 		return -1;
 	}
@@ -252,7 +278,16 @@ void StepsOfTable(const KCMStorySync::Plan& plan, int32 ordinal, bool16 shape, K
 
 }	// namespace
 
+/** KCMRedoTableFromWord's body. `nothingIsDone`: a table that already reads as Word's answers 0 rather than a refusal
+	- for a table the redo has just PUT IN (KCMRedoTableAddedOrTaken), where Word's cells may all be empty. */
+static int32 RedoOneTable(const UIDRef& targetStory, UID tableUID, bool16 nothingIsDone, PMString& outWhy);
+
 int32 KCMRedoTableFromWord(const UIDRef& targetStory, UID tableUID, PMString& outWhy)
+{
+	return RedoOneTable(targetStory, tableUID, kFalse, outWhy);
+}
+
+static int32 RedoOneTable(const UIDRef& targetStory, UID tableUID, bool16 nothingIsDone, PMString& outWhy)
 {
 	outWhy.Clear();
 	outWhy.SetTranslatable(kFalse);
@@ -369,21 +404,195 @@ int32 KCMRedoTableFromWord(const UIDRef& targetStory, UID tableUID, PMString& ou
 	}
 	if (mine.fSteps.empty())
 	{
-		if (total > 0)
-			return total;	// the shape was the whole difference
+		if (total > 0 || nothingIsDone)
+			return total;	// the shape was the whole difference (or the table was just put in, and Word's cells are empty)
 		Refuse(outWhy, "nothing to redo here - the table already reads as Word's");
 		return -1;
 	}
 	KCMSyncResult result;
 	KCMApplySyncPlan(targetStory, now, mine, result);
 	total += result.fWrites + result.fAttrWrites + result.fNoteEdits + result.fTableEdits;
-	if (total == 0)
+	// ★A CELL REFUSED HALFWAY FAILS THE REDO TOO (2026-09-25 - the paragraph redo's rule): the caller rolls it all back.
+	if (total == 0 || result.fRefused > 0)
 	{
-		outWhy = result.fNotes.empty() ? PMString("nothing was written") : result.fNotes[0].fWhy;
+		outWhy = "nothing was written";
+		for (size_t i = 0; i < result.fNotes.size(); ++i)
+			if (!result.fNotes[i].fHeldBack)
+			{
+				outWhy = result.fNotes[i].fWhy;
+				break;
+			}
 		outWhy.SetTranslatable(kFalse);
 		return -1;
 	}
 	return total;
+}
+
+//----------------------------------------------------------------------------------------
+// KCMRedoTableAddedOrTaken (2026-09-25)
+//----------------------------------------------------------------------------------------
+
+int32 KCMRedoTableAddedOrTaken(const UIDRef& targetStory, const KCMRejectedRecord& record, PMString& outWhy)
+{
+	outWhy.Clear();
+	outWhy.SetTranslatable(kFalse);
+
+	// 1. Word's content, kept by the import (design 15-1-5)
+	KCMStoryShape::Story word;
+	if (!KCMWordKeepGet(targetStory.GetDataBase(), targetStory.GetUID(), word))
+	{
+		Refuse(outWhy, "the Word content is not in memory any more - the document was closed or InDesign restarted; import again");
+		return -1;
+	}
+
+	// 2. the document now against Word: stage 0 of the comparison names the tables Word added and took away, and ONLY
+	//    those (Compare answers with them alone while the story's tables do not pair) - what the import's first round is
+	KCMStoryShape::Story now;
+	bool16 placed = kTrue;
+	if (!KCMStoryFromDocument(targetStory, now, placed) || !placed)
+	{
+		Refuse(outWhy, "the story could not be read the way the import reads it");
+		return -1;
+	}
+	KCMStorySync::Plan whole;
+	KCMStorySync::Compare(now, word, whole, kFalse);
+	if (whole.fStoryHeld)
+	{
+		outWhy.SetUTF8String(whole.fWhy);
+		outWhy.SetTranslatable(kFalse);
+		return -1;
+	}
+	// Table + (the import added it; the reject took it away): Word's table goes back in. Table − (the import took it
+	// away; the reject brought it back): it goes again.
+	const bool16 added = (record.fLive.fKind == KCMStoryChange::kInsert) ? kTrue : kFalse;
+	std::vector<int32> candidates;
+	for (size_t i = 0; i < whole.fSteps.size(); ++i)
+		if (whole.fSteps[i].fKind == (added ? KCMStorySync::Step::kInsertTable : KCMStorySync::Step::kDeleteTable))
+			candidates.push_back(static_cast<int32>(i));
+	if (candidates.empty())
+	{
+		Refuse(outWhy, "nothing to redo here - the story's tables already read as Word's");
+		return -1;
+	}
+
+	// 3. WHICH of them is this record's
+	int32 chosen = -1;
+	if (added)
+	{
+		// ★By where it stood: the table goes in after the paragraph the record's place names (KCMRedoPlace - a table
+		//   in a paragraph of its own is cut with the break before it, as a paragraph is). One table to put back is
+		//   that table whatever the place says.
+		if (candidates.size() == 1)
+			chosen = candidates[0];
+		else
+		{
+			std::vector<std::string> paras;
+			std::vector<KCMParaAttrs> attrs;
+			std::vector<int32> starts;
+			{
+				IDataBase::SaveRestoreModifiedState guard(targetStory.GetDataBase());
+				if (!KCMTextRead::ReadStory(targetStory, paras, attrs, starts))
+				{
+					Refuse(outWhy, "the story could not be read");
+					return -1;
+				}
+			}
+			const bool16 afterBreak = (record.fLive.fWholeParagraph && record.fLive.fBreakAt == kKCMBreakLeads) ? kTrue : kFalse;
+			KCMRedoPlace::Para place;
+			if (KCMRedoPlace::Of(paras, starts, attrs, record.fNowStart, afterBreak, place))
+			{
+				const int32 after = afterBreak ? place.fNumber - 1 : place.fNumber;
+				for (size_t c = 0; c < candidates.size() && chosen < 0; ++c)
+					if (whole.fSteps[static_cast<size_t>(candidates[c])].fPara == after)
+						chosen = candidates[c];
+			}
+		}
+	}
+	else
+	{
+		// ★By the table standing where the record's Source words - its anchor - came back, and asked twice: the reading's
+		//   ordinal (what the step names) has to be the same table as the story's own list (what the write deletes), or
+		//   nothing is deleted. A reject brings a table back under a NEW id (measured 2026-09-25), so no id kept from
+		//   before can be what finds it.
+		InterfacePtr<ITextModel> model(targetStory, UseDefaultIID());
+		std::vector<KCMTableShape> shapes;
+		std::vector<UIDRef> refs;
+		{
+			IDataBase::SaveRestoreModifiedState guard(targetStory.GetDataBase());
+			if (model == nil || !KCMReadTableShapes(model, shapes) || !KCMTableRefsOfStory(targetStory, refs))
+			{
+				Refuse(outWhy, "the story's tables could not be read");
+				return -1;
+			}
+		}
+		const TextIndex lo = record.fNowStart;
+		const TextIndex hi = (record.fNowEnd > lo) ? record.fNowEnd : lo + 1;
+		int32 ordinal = -1;
+		for (size_t k = 0; k < shapes.size() && ordinal < 0; ++k)
+			if (shapes[k].fAnchorStart >= lo && shapes[k].fAnchorStart < hi)
+				ordinal = static_cast<int32>(k);
+		if (ordinal < 0 || static_cast<size_t>(ordinal) >= refs.size()
+			|| refs[static_cast<size_t>(ordinal)].GetUID() != shapes[static_cast<size_t>(ordinal)].fDictUID)
+		{
+			Refuse(outWhy, "the table could not be found where it was taken back - compare again");
+			return -1;
+		}
+		for (size_t c = 0; c < candidates.size() && chosen < 0; ++c)
+			if (whole.fSteps[static_cast<size_t>(candidates[c])].fWhere.fTable == ordinal)
+				chosen = candidates[c];
+		if (chosen < 0)
+		{
+			Refuse(outWhy, "nothing to redo here - Word's version keeps this table");
+			return -1;
+		}
+	}
+	if (chosen < 0)
+	{
+		Refuse(outWhy, "which of Word's tables goes here could not be told - import again");
+		return -1;
+	}
+
+	// 4. WRITTEN AS THE IMPORT WRITES IT (KCMApplyTableShape - the table in a paragraph of its own, or the table and
+	//    all it holds taken away), under the import's signature, so it can be rejected again
+	KCMStorySync::Plan one;
+	one.fSteps.push_back(whole.fSteps[static_cast<size_t>(chosen)]);
+	KCMImportAuthor author;
+	KCMStoryTrackingOn tracking(targetStory);
+	std::vector<UIDRef> before;
+	KCMTableRefsOfStory(targetStory, before);
+	KCMSyncResult shape;
+	KCMApplyTableShape(targetStory, one, shape);
+	if (shape.fRefused > 0 || shape.fTableEdits == 0)
+	{
+		outWhy = shape.fNotes.empty() ? PMString(added ? "Word's table could not be put back in" : "the table could not be taken away again")
+									  : shape.fNotes[0].fWhy;
+		outWhy.SetTranslatable(kFalse);
+		return -1;
+	}
+	if (!added)
+		return shape.fTableEdits;
+
+	// 5. the table put in is made Word's - its merges and its cells' words - by the table redo (this table alone)
+	std::vector<UIDRef> after;
+	KCMTableRefsOfStory(targetStory, after);
+	UID fresh = kInvalidUID;
+	for (size_t a = 0; a < after.size() && fresh == kInvalidUID; ++a)
+	{
+		bool16 old = kFalse;
+		for (size_t b = 0; b < before.size() && !old; ++b)
+			old = (before[b].GetUID() == after[a].GetUID()) ? kTrue : kFalse;
+		if (!old)
+			fresh = after[a].GetUID();
+	}
+	if (fresh == kInvalidUID)
+	{
+		Refuse(outWhy, "the table put back in could not be found again");
+		return -1;
+	}
+	const int32 filled = RedoOneTable(targetStory, fresh, kTrue, outWhy);
+	if (filled < 0)
+		return -1;
+	return shape.fTableEdits + filled;
 }
 
 // End, KCMRedoFromWord.cpp.

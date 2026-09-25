@@ -709,6 +709,14 @@ public:
 		compared again FIRST and has to be the same change. @return how many shape moves were made (0 = only the
 		cells were copied); -1 when nothing was left done, and outMessage says why. */
 	virtual int32	MatchTable(int32 nth, int32 which, PMString& outMessage) = 0;
+
+	/** (2026-09-25, the user's decision) The document the Word round trip works on - the chosen Target, else the active
+		document (KCMTaskDocumentDB): what "Export Story Text..." reads and what "Import Story Text..." writes into. The
+		export item is greyed by it and asks it for the document to export, so that the export and the import cannot
+		name two different documents again (they did: the import went into a Target left open from an earlier
+		comparison while the export read the document in front). nil when there is neither.
+		⚠Appended at the END of the class ([[facade-vtable-slot-append-only]]). */
+	virtual IDataBase*	GetTaskDocumentDB() = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__
