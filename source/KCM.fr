@@ -735,6 +735,20 @@ resource VersionedScriptElementInfo(10)
 			{ /* void */ }
 		}
 
+		// A SPIKE (2026-09-28, remove before shipping): app.kcmProbeRedlineAuthor() - KCMRedlineSpike.h.
+		// ⚠It WRITES: the first deletion record of the active document's first story with tracked
+		//   changes, inside one undo step.
+		Method
+		{
+			kKCMProbeRedlineAuthorMethodScriptElement,
+			e_KCMProbeRedlineAuthor,
+			"kcm probe redline author",			// name -> app.kcmProbeRedlineAuthor()
+			"Measure whether a tracked change's author can be rewritten without InDesign's user name.",
+			StringType,							// the reading
+			"The records before and after"
+			{ /* void */ }
+		}
+
 		// ★★THE STORY TEXT ROUND TRIP WITHOUT A DIALOG (2026-09-17). The menu items' own model calls,
 		// with the file dialog and the confirmation left out, so that a test can run dozens of cases:
 		// an import of "tags kept, contents emptied" crashed InDesign that morning, and the user asked
@@ -813,6 +827,7 @@ resource VersionedScriptElementInfo(10)
 				// method is simply not there, exactly as described above for the properties: no build
 				// error, no warning, ERR:55 at the first touch.
 				Method{ kKCMProbePdfRouteMethodScriptElement },
+				Method{ kKCMProbeRedlineAuthorMethodScriptElement },
 				// ...and the round trip's four (2026-09-17) - the other half of each Method block above.
 				Method{ kKCMImportStoryTextMethodScriptElement },
 				Method{ kKCMExportStoryTextMethodScriptElement },

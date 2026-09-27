@@ -363,6 +363,8 @@ DECLARE_PMID(kScriptInfoIDSpace, kKCMTransparencyItemCountPropertyScriptElement,
 //   the report down one of those routes and nothing needs to measure it again, retire this element
 //   and its ScriptID rather than reusing either.
 DECLARE_PMID(kScriptInfoIDSpace, kKCMProbePdfRouteMethodScriptElement, kKCMPrefix + 25)	// app.kcmProbePdfRoute() -> one line per step of the experiment
+// A SPIKE (2026-09-28, remove before shipping): +31 was the next free slot in this ID space.
+DECLARE_PMID(kScriptInfoIDSpace, kKCMProbeRedlineAuthorMethodScriptElement, kKCMPrefix + 31)	// app.kcmProbeRedlineAuthor() -> the records before and after
 // ★The story text round trip without a dialog (2026-09-17) - KCMScriptingDefs.h says why. +27..+30 were
 //  the next free slots in this ID space (+13..+26 in use).
 DECLARE_PMID(kScriptInfoIDSpace, kKCMImportStoryTextMethodScriptElement, kKCMPrefix + 27)	// app.kcmImportStoryText(file) -> the import's sentence

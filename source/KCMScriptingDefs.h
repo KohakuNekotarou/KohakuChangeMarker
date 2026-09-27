@@ -242,6 +242,10 @@ enum KCMScriptMethods
 	// ⚠**Registered with Adobe? NOT YET** - it goes in with the next submission if it is still
 	//   here. If the report ends up not needing it, retire the row rather than reusing the code.
 	e_KCMProbePdfRoute = 'eKGv',	// v = vector: is there a route that keeps the pages vector without a file?
+	// A SPIKE (2026-09-28, remove before shipping): app.kcmProbeRedlineAuthor() - can a tracked
+	// change's author be rewritten without InDesign's user name (KCMRedlineSpike.h)? 'eKGl' measured
+	// free: 0 hits in source/, in the registry (retired rows read too) and in the SDK's ScriptingDefs.h.
+	e_KCMProbeRedlineAuthor = 'eKGl',	// l = log (the change log)
 
 	// ★★THE STORY TEXT ROUND TRIP, DRIVEN WITHOUT A DIALOG (2026-09-17, the user's go-ahead: "script
 	//   extensions if they are needed"). An import of "tags kept, contents emptied" crashed InDesign,
