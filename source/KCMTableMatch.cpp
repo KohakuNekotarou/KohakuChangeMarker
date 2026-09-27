@@ -481,6 +481,11 @@ int32 KCMMatchTableToSource(const UIDRef& targetStory, const UIDRef& sourceStory
 			//   and a style applied anew is given a priority "greater than any priority of all cells that are adjacent"
 			//   (ITableAttrModifier::ApplyCellStyle) - the number that decides whose stroke is drawn on an edge two
 			//   cells share. So the Source's priority is put back, with the style the cell now has.
+			//   ★WHY THIS COMMAND AND NOT THE FACADE (re-audit M20, 2026-09-27): ICellStylesFacade::ApplyCellStyle
+			//     (ICellStylesFacade.h:276-280) takes no priority, and a priority is the whole of what is wanted here;
+			//     ITableAttrModifier::ApplyCellStyle does take one but is the model's own setter, not a command.
+			//     kSetCellStyleAndPriorityCmdBoss is the command that carries both (no caller in the SDK - its data
+			//     IIDs are the dictionary's: IID_IINTDATA / IID_IGRIDAREADATA / IID_IUIDDATA).
 			InterfacePtr<ITableAttrAccessor> sAccess(from, UseDefaultIID());
 			InterfacePtr<ITableAttrAccessor> tAccess(table, UseDefaultIID());
 			if (sAccess == nil || tAccess == nil)

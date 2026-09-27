@@ -860,8 +860,8 @@ bool16 KCMExportStoryInx(IDataBase* db, UID storyUID, KCMMemXferBytes& out, bool
 		return kFalse;
 	ISession* const session = GetExecutionContextSession();
 	InterfacePtr<IDocumentList> docList(session != nil ? session->QueryDocumentList() : nil);
-	// ★★★THE DATABASE HAS TO BE ONE THE SESSION KNOWS ABOUT - the guard KCMResourceSnapshot.cpp:62-93
-	//   states at length: handed a cloned database, ExportINX does not fail and does not return nil,
+	// ★★★THE DATABASE HAS TO BE ONE THE SESSION KNOWS ABOUT - the guard KCMTakeResourceSnapshot
+	//   (KCMResourceSnapshot.cpp) states at length: handed a cloned database, ExportINX does not fail and does not return nil,
 	//   THE PROCESS IS GONE. There is nothing to nil-check afterwards; the only defence is to refuse
 	//   before starting. A KIDMCP comparison lends exactly such a database as its Source.
 	if (docList == nil || docList->FindDocByDataBase(db) == nil)
