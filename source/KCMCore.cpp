@@ -867,8 +867,8 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		// ★**The two documents this run is about, not the armed pair** -- they are not armed yet at
 		//   this point in the run, which is exactly what the store's own note describes.
 		PMString whyNot;
-		// Task Start (the older side is the origin's own XML) or not: the store decides, in the one
-		// place that choice is written (KCMResourceStore::RebuildForPair, 2026-09-13).
+		// The one rebuild every caller makes (KCMResourceStore::RebuildForPair). Until 2026-09-21 it
+		// also chose a Task Start origin's held XML as the older side; a Task Start is a file now.
 		KCMResourceStore::RebuildForPair(targetDB, sourceDB, whyNot);
 	}
 

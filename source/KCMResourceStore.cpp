@@ -29,8 +29,7 @@
 
 // Project includes:
 #include "KCMCore.h"				// KCMArmedTargetDB / KCMArmedSourceDB
-#include "KCMResourceBytes.h"		// the origin's bytes, the older side of RebuildWithSourceBytes (Task Start, 2026-09-12)
-#include "KCMResourceParse.h"		// KCMParseResources - reading a list straight from those bytes
+#include "KCMResourceParse.h"		// KCMResourceList
 #include "KCMResourceDiff.h"
 #include "KCMResourceAttrDiff.h"	// which ATTRIBUTES of one definition differ
 #include "KCMBoundaryID.h"			// kKCMStoryEditsRebuiltMessage - the one the panel's list listens for
@@ -90,10 +89,10 @@ PMString Phase(const char* text)
 /** The second half of a rebuild, once the OLDER side's list is in hand: read the newer document,
     pair the two, keep the answer, tell the panel.
 
-    ★ONE PLACE, TWO CALLERS (2026-09-12). Rebuild reads the older side by exporting a document;
-    RebuildWithSourceBytes (Task Start) parses the origin's own bytes. Everything from the newer
-    document on is the same, and the notification at the end is the part that must not be
-    written twice - see the note at it. */
+    Split out of Rebuild on 2026-09-12, when a second caller (RebuildWithSourceBytes, the Task Start
+    origin's bytes) read the older side another way. That caller went on 2026-09-27 with the
+    origin, so Rebuild is the only one again; the split is kept because the notification at the
+    end is the part that must not be written twice - see the note at it. */
 static bool16 FinishRebuild(IDataBase* targetDB, const KCMResourceList& sourceItems,
 							KCMDeferredProgressBar& progress, PMString& whyNot)
 {
@@ -221,45 +220,9 @@ bool16 KCMResourceStore::Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 	return FinishRebuild(targetDB, sourceItems, progress, whyNot);
 }
 
-bool16 KCMResourceStore::RebuildWithSourceBytes(IDataBase* targetDB, const KCMResourceBytes& sourceXml, PMString& whyNot)
-{
-	whyNot.Clear();
-	whyNot.SetTranslatable(kFalse);
-	KCMResourceStore::Clear();			// dropped first, as Rebuild does, and for the same reason
-
-	if (targetDB == nil || sourceXml.Size() == 0)
-	{
-		whyNot = (targetDB == nil) ? "no comparison is armed" : "the origin holds no bytes";
-		gWhyNot = whyNot;
-		return kFalse;
-	}
-
-	// The same bar as Rebuild: the older side is a parse rather than an export, but the reader
-	// sees the same three phases.
-	PMString barTitle("Kohaku Change Marker");
-	barTitle.SetTranslatable(kFalse);
-	KCMDeferredProgressBar progress(barTitle, 3);
-
-	KCMResourceList sourceItems;
-	progress.Step(0, Phase("Reading the task-start definitions..."));
-	PMString parseWhy;
-	if (!KCMParseResources(sourceXml, sourceItems, parseWhy))
-	{
-		whyNot = "source: ";
-		whyNot.Append(parseWhy);
-		gWhyNot = whyNot;
-		return kFalse;
-	}
-
-	if (progress.WasCancelled())
-	{
-		whyNot = "cancelled";
-		gWhyNot = whyNot;
-		return kFalse;
-	}
-
-	return FinishRebuild(targetDB, sourceItems, progress, whyNot);
-}
+// (RebuildWithSourceBytes stood here until 2026-09-27: the older side parsed from the Task Start
+//  origin's held bytes. The origin went on 2026-09-21 - a Task Start is a file now - and the
+//  function had no caller left from that day; re-audit M15 took it out.)
 
 bool16 KCMResourceStore::RebuildForPair(IDataBase* targetDB, IDataBase* sourceDB, PMString& whyNot)
 {
