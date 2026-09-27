@@ -411,16 +411,9 @@ void KCMPageMapCollectRegistered(IDataBase* db, std::set<UID>& out)
 	sRegistered.CollectInto(db, out);	// out is not cleared (the container's contract)
 }
 
-//========================================================================================
-// KCMPageMapReplaceRegistered (declared in KCMPageMap.h)
-//   Replace db's registrations wholesale with pages (the setter "Load Check & Register" uses).
-//   It only rewrites sRegistered: no re-comparison and no thumbnail refresh, because the caller
-//   sets both documents first and then re-compares once. An empty pages drops the entry.
-//========================================================================================
-void KCMPageMapReplaceRegistered(IDataBase* db, const std::vector<UID>& pages)
-{
-	sRegistered.Replace(db, pages);		// empty drops the entry itself (the container's contract)
-}
+// (KCMPageMapReplaceRegistered - the setter "Load Check & Register" used - went on 2026-09-27; its
+//  one caller went with Load on 2026-09-07 - re-audit, the uncalled functions of the origin and the
+//  JSON store; work/kcm-dead-scan.py lists the rest.)
 
 //========================================================================================
 // The pairing rule switch (declared in KCMPageMap.h). Default = by UID (2026-09-13, the user's

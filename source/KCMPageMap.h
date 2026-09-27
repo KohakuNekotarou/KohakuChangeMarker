@@ -102,11 +102,8 @@ bool16 KCMPageMapHasAnyRegistered(IDataBase* db);
 // no registrations.
 void KCMPageMapCollectRegistered(IDataBase* db, std::set<UID>& out);
 
-// Replace db's registrations wholesale with pages (the setter "Load Check & Register" uses).
-// It only rewrites sRegistered: no re-comparison and no thumbnail refresh happen here, because
-// the caller sets both documents first and then re-compares once. An empty pages drops the
-// document's registrations. The body is in KCMPageMap.cpp.
-void KCMPageMapReplaceRegistered(IDataBase* db, const std::vector<UID>& pages);
+// (KCMPageMapReplaceRegistered went on 2026-09-27 - its caller, "Load Check & Register", went on
+//  2026-09-07.)
 
 // The pairing rule switch behind the flyout's "Pair Pages by UID" check toggle. kTrue (the
 // default) = by identity (KCMPagePairRule.h); kFalse = by position, the rule that stood until
