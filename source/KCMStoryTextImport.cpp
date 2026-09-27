@@ -87,9 +87,9 @@ void NoteHeldBack(UID story, const char* kind, const PMString& whereAndWhy)
 	sRefusals.back().fHeldBack = kTrue;
 }
 
-/** A PMString as wide characters. (KCMStoryTextExport.cpp has these four lines inside its own
-	WidePath, which takes an IDFile instead - the two files share nothing else, and a header holding
-	one helper would be a worse thing to maintain.) */
+/** A PMString as wide characters. (KCMReport.cpp has the same four lines inside its WidePath;
+	KCMStoryTextExport.cpp had them too until 2026-09-27, when its paths became IDFiles joined with
+	FileUtils::AppendPath. What this one is used for is M18's to judge.) */
 std::wstring WideOf(const PMString& s)
 {
 	int32 n = 0;

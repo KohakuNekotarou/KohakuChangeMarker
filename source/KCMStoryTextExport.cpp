@@ -48,19 +48,10 @@
 namespace
 {
 
-/** The path of an IDFile as Windows spells it. (KCMReport.cpp has the same three lines; this one
-	is here rather than shared because the two files share nothing else, and a header holding one
-	helper would be a worse thing to maintain than four lines.) */
-std::wstring WidePath(const IDFile& file)
-{
-	PMString s;
-	FileUtils::IDFileToPMString(file, s);
-	int32 n = 0;
-	const UTF16TextChar* b = s.GrabUTF16Buffer(&n);
-	return (b != nil && n > 0)
-		   ? std::wstring(reinterpret_cast<const wchar_t*>(b), static_cast<size_t>(n))
-		   : std::wstring();
-}
+/* (WidePath stood here until 2026-09-27: every path this file makes went IDFile -> std::wstring ->
+   joined with L"\\" -> PMString -> IDFile again. It stays an IDFile now and is joined with
+   FileUtils::AppendPath, the SDK's own way to put a name onto a path (FileUtils.h:123-124; the
+   product's DynamicDocumentsUIUtils.cpp and the diagnostic logger do the same) - re-audit M17.) */
 
 /** The document's name, with any extension taken off - the stem of the folder's name. */
 std::wstring DocumentStem(IDataBase* db)
@@ -102,7 +93,7 @@ std::wstring DocumentStem(IDataBase* db)
 	  one of this name was made by something else, and writing into it would be the silent overwrite
 	  the stamp exists to prevent. CreateFolderIfNeeded answers kTrue for one that exists, which is
 	  why DoesFileExist is asked first. */
-bool16 MakeDatedFolder(const std::wstring& parent, const std::wstring& stem, std::wstring& outFolder)
+bool16 MakeDatedFolder(const IDFile& parent, const std::wstring& stem, IDFile& outFolder)
 {
 	wchar_t stamp[40] = { 0 };
 	{
@@ -112,17 +103,14 @@ bool16 MakeDatedFolder(const std::wstring& parent, const std::wstring& stem, std
 		::wcsftime(stamp, 40, L" %Y-%m-%d %H%M%S", &local);
 	}
 
-	std::wstring folder = parent;
-	if (!folder.empty() && folder[folder.size() - 1] != L'\\' && folder[folder.size() - 1] != L'/')
-		folder += L"\\";
-	folder += stem;
-	folder += stamp;
+	PMString leaf;
+	leaf.SetTranslatable(kFalse);
+	leaf.AppendW(reinterpret_cast<const UTF16TextChar*>(stem.c_str()));
+	leaf.AppendW(reinterpret_cast<const UTF16TextChar*>(stamp));
 
-	PMString path;
-	path.SetTranslatable(kFalse);
-	path.AppendW(reinterpret_cast<const UTF16TextChar*>(folder.c_str()));
-	const IDFile file = FileUtils::PMStringToSysFile(path);
-	if (FileUtils::DoesFileExist(file) || !FileUtils::CreateFolderIfNeeded(file))
+	IDFile folder = parent;
+	FileUtils::AppendPath(&folder, leaf);		// the separator is the SDK's business, not this file's
+	if (FileUtils::DoesFileExist(folder) || !FileUtils::CreateFolderIfNeeded(folder))
 		return kFalse;
 
 	outFolder = folder;
@@ -571,14 +559,8 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 	⚠**NO BOM, EVER.** A .docx is a zip, and three bytes in front of a zip's first signature are three
 	 bytes in front of everything its directory points at. (The retired .html spelling asked for one,
 	 and this took a `withBom` until 2026-09-24 - always kFalse since the spelling went.) */
-bool16 WriteFileBytes(const std::wstring& path, const std::string& bytes)
+bool16 WriteFileBytes(const IDFile& file, const std::string& bytes)
 {
-	PMString pathString;
-	pathString.SetTranslatable(kFalse);
-	pathString.AppendW(reinterpret_cast<const UTF16TextChar*>(path.c_str()));
-
-	const IDFile file = FileUtils::PMStringToSysFile(pathString);
-
 	InterfacePtr<IPMStream> stream(StreamUtil::CreateFileStreamWriteLazy(file, kOpenOut | kOpenTrunc));
 	if (stream == nil)
 		return kFalse;
@@ -598,11 +580,15 @@ bool16 WriteFileBytes(const std::wstring& path, const std::string& bytes)
 }
 
 /** The bytes of one story, into "<folder>\<uid>.docx". */
-bool16 WriteStoryFile(const std::wstring& folder, int32 uid, const std::string& bytes)
+bool16 WriteStoryFile(const IDFile& folder, int32 uid, const std::string& bytes)
 {
-	wchar_t leaf[64] = { 0 };
-	::swprintf_s(leaf, 64, L"\\%d.docx", static_cast<int>(uid));
-	return WriteFileBytes(folder + leaf, bytes);
+	PMString leaf;
+	leaf.SetTranslatable(kFalse);
+	leaf.AppendNumber(uid);
+	leaf.Append(".docx");
+	IDFile file = folder;
+	FileUtils::AppendPath(&file, leaf);
+	return WriteFileBytes(file, bytes);
 }
 
 // (⛔DocumentNameUtf8 stood here until 2026-09-22. It read the document's name for the .docx's story
@@ -650,8 +636,9 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 		return kFalse;
 	}
 
-	const std::wstring parentPath = WidePath(parent);
-	if (parentPath.empty())
+	PMString parentPath;
+	FileUtils::IDFileToPMString(parent, parentPath);
+	if (parentPath.IsEmpty())
 	{
 		outMessage = "the chosen folder could not be read";
 		outMessage.SetTranslatable(kFalse);
@@ -718,8 +705,8 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 		return kFalse;
 	}
 
-	std::wstring folder;
-	if (!MakeDatedFolder(parentPath, DocumentStem(db), folder))
+	IDFile folder;
+	if (!MakeDatedFolder(parent, DocumentStem(db), folder))
 	{
 		outMessage = "the export folder could not be created";
 		outMessage.SetTranslatable(kFalse);
@@ -808,8 +795,8 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 	}
 
 	PMString path;
+	FileUtils::IDFileToPMString(folder, path);
 	path.SetTranslatable(kFalse);
-	path.AppendW(reinterpret_cast<const UTF16TextChar*>(folder.c_str()));
 
 	outMessage = "exported ";
 	outMessage.SetTranslatable(kFalse);
