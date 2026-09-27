@@ -35,7 +35,16 @@ namespace
 /* The application's user name, through its command (a workspace setting is model state too).
    ⚠NO CALLER IN THE SDK USES kSetUserNameCmdBoss - the dictionary gives only its data
     (IID_ISTRINGDATA). The item list is the workspace the name lives on; whether it is needed at all
-    is measured on the application (plan 2026-09-24-kcm-import-track-changes-p1, Task 3), not known. */
+    is measured on the application (plan 2026-09-24-kcm-import-track-changes-p1, Task 3), not known.
+   ★THERE IS A HIGHER DOOR, AND IT IS NOT TAKEN ON PURPOSE (re-audit M18, 2026-09-27):
+    Utils<IUserInfoUtils>()->SetInCopyUsername / GetInCopyUsername (IUserInfoUtils.h:44-55), the
+    successor the deprecated IInCopyBridgeUtils names. Two reasons it is not used here:
+      1. SetInCopyUsername RETURNS VOID. KCMImportAuthor puts the old name back only when the switch
+         happened (fSwitched), and this command's ErrorCode is the only thing that says so.
+      2. It has no caller in the SDK either, and whether it fires this same command (an undo step, the
+         kSetUserNameCmdResponderService responders) is unmeasured.
+    GetInCopyUsername is avoided for a third reason: its default kFullUI raises a name dialog when the
+    name is empty or "Unknown User Name" (IUserInfoUtils.h:52) - IUserInfo is read directly instead. */
 ErrorCode SetUserName(const PMString& name)
 {
 	InterfacePtr<IWorkspace> ws(GetExecutionContextSession()->QueryWorkspace());
