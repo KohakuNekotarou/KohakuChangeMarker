@@ -23,7 +23,7 @@
 #include "FileUtils.h"			// DoesFileExist / IsEqual -- what a file choice is asked
 #include "IGlobalRecompose.h"		// ForceRecompositionToComplete -- a document just opened is not composed
 #include "ErrorUtils.h"			// GlobalErrorStatePreserver -- an open that may fail must not poison the next command
-#include "PersistUtils.h"			// ::GetUIDRef
+#include "PersistUtils.h"			// ::GetUIDRef / ::GetDataBase
 #include "PMString.h"
 #include "SDKFileHelper.h"		// GetPath -- a file choice shows its path on the panel
 #include "SDKLayoutHelper.h"		// OpenDocument / OpenLayoutWindow -- the SDK's own recipe
@@ -208,26 +208,26 @@ bool16 KCMResolveComparisonPair(KCMPairEnd& outTarget, KCMPairEnd& outSource)
 
 /*	The open document whose file is this one, or nil when no open document has it.
 
-	★**IDENTITY IS ASKED OF GetSysFile THROUGH FileUtils::IsEqual, NEVER OF THE PATH STRING** -
-	  the same door KCMIsSameDoc uses (KCMThreadSafety.cpp). One file can be spelled two ways.
+	★**ASKED OF THE DOCUMENT LIST ITSELF** - IDocumentList::FindDoc(const IDFile&), "search to see
+	  if one (whatFile) is already open" (IDocumentList.h:64-69). It takes the IDFile, never the
+	  path string (one file can be spelled two ways), and it is how this plug-in's book comparison
+	  asks the same question (KCMBookCompare.cpp, ui/KCMBookOpen.cpp - and KBS's KBSBookScope.cpp).
+	  Until 2026-09-27 this walked GetNthDoc and compared each GetSysFile with FileUtils::IsEqual by
+	  hand: the same question answered a second way inside one plug-in (re-audit M16).
+	⚠**THE ANSWER IS STILL CHECKED** against the file asked for, with the same FileUtils::IsEqual:
+	  FindDoc's comparison rule is not published, and a lookup's answer trusted unchecked is how KBS
+	  once took the wrong chapter (api-official-examples.md, the FindDoc row). The book comparison
+	  checks the same way, by path (KCMBookCompare.cpp, DocumentLivesInFile).
 */
 static IDataBase* KCMOpenDocOnFile(const IDFile& file)
 {
 	ISession* const session = GetExecutionContextSession();
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
-	if (docList == nil)
-		return nil;
-	const int32 n = docList->GetDocCount();
-	for (int32 i = 0; i < n; ++i)
-	{
-		IDocument* const d = docList->GetNthDoc(i);
-		IDataBase* const db = (d != nil) ? ::GetUIDRef(d).GetDataBase() : nil;
-		const IDFile* const f = (db != nil) ? db->GetSysFile() : nil;
-		if (f != nil && FileUtils::IsEqual(*f, file))
-			return db;
-	}
-	return nil;
+	IDocument* const doc = (docList != nil) ? docList->FindDoc(file) : nil;
+	IDataBase* const db = (doc != nil) ? ::GetDataBase(doc) : nil;
+	const IDFile* const f = (db != nil) ? db->GetSysFile() : nil;
+	return (f != nil && FileUtils::IsEqual(*f, file)) ? db : nil;
 }
 
 bool16 KCMRealisePairEnd(const KCMPairEnd& end, IDataBase*& outDB, PMString& why)

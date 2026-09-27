@@ -77,8 +77,9 @@ bool16 KCMResolveComparisonPair(KCMPairEnd& outTarget, KCMPairEnd& outSource);
     otherwise the file opened in a window. A database end is handed straight back.
 
     ★**ONLY Start CALLS THIS** - see the two stages at the top of this file.
-    ⚠**Identity is asked of IDataBase::GetSysFile, never of the path string**: one file can be
-     spelled two ways, and a closed document's address gets re-used ([[uidref-reuse-after-close]]).
+    ⚠**Identity is asked of the file (IDocumentList::FindDoc takes the IDFile), never of the path
+     string or a remembered pointer**: one file can be spelled two ways, and a closed document's
+     address gets re-used ([[uidref-reuse-after-close]]).
     @param why the reason, for the status line, when this answers kFalse.
     @return kFalse when the end is empty, the file is gone, or it could not be opened. */
 bool16 KCMRealisePairEnd(const KCMPairEnd& end, IDataBase*& outDB, PMString& why);
