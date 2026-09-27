@@ -43,8 +43,10 @@
 #include "IStoryList.h"					// the document's stories - where the labels START (the user's instruction: from the story to its holder)
 #include "ITextModel.h"					// QueryFrameList
 #include "IFrameList.h"					// the story's columns
-#include "IHierarchy.h"					// two steps up from a column: the multi-column frame, then the item that holds the story
-#include "ITOPSplineData.h"				// text on a path: from the text-on-path spline item to the main spline the reader sees
+#include "ITextFrameColumn.h"			// one column, asked which item holds it
+#include "ITextUtils.h"					// QuerySplineFromTextFrame - a column's item, the official way
+#include "ITOPFrameData.h"				// text on a path: the column names the main spline the reader sees
+#include "IHierarchy.h"					// the page route: a page's spread
 #include "IGeometry.h"					// the item's own box, the label's place
 #include "SpreadID.h"					// kPageBoss - telling a PAGE from any other page item (the page route)
 #include "IGraphicsPort.h"				// selectfont / show / the stroke settings of the outline
@@ -107,12 +109,14 @@ static bool16 KCMMarksDeclareTransparency();
 //  front of it). Two stories on one item are two such labels on the one line.
 //  **Found from the story, not from the item's kind** (the user's instruction: "trace from the
 //  story and put the story's ID on its parent"): the document's stories -> each story's frame
-//  columns -> two steps up the hierarchy -> the item. A text frame is
-//  kSplineItemBoss -> kMultiColumnItemBoss -> kFrameItemBoss and text on a path is
-//  kTOPSplineItemBoss -> kMulticolumnItemBoss -> kTOPFrameItemBoss (ITOPSplineData.h:52, "the
-//  grand children of the main spline item"), so **the same two steps reach both**, and an anchored
-//  frame stops at its own spline rather than climbing on to the frame that holds it. Text on a
-//  path needs one more link, from kTOPSplineItemBoss to the main spline (KCMRebuildStoryHolders).
+//  columns -> the item that holds each column, asked the way the SDK asks it
+//  (SDKLayoutHelper::GetGraphicFrameRef): a text-on-path column names its main spline
+//  (ITOPFrameData), any other column is handed to ITextUtils::QuerySplineFromTextFrame. An
+//  anchored frame is answered with its own spline, not the frame that holds it. (The hierarchy
+//  underneath: kSplineItemBoss -> kMultiColumnItemBoss -> kFrameItemBoss for a frame,
+//  kTOPSplineItemBoss -> kMulticolumnItemBoss -> kTOPFrameItemBoss for text on a path -
+//  ITOPSplineData.h:51-52 - and the kTOPSplineItemBoss is NOT the item that is drawn; the main
+//  spline is. Details at KCMRebuildStoryHolders.)
 //
 //  The table (item UID -> story UIDs) is one per database, rebuilt on every draw of a spread and
 //  read on every draw of an item, so the labels follow a frame that was threaded or added a
@@ -182,8 +186,11 @@ static void KCMRebuildStoryHolders(IDataBase* db)
 		return;
 
 	KCMStoryHolderTable table;
+	// Always present in a running application; as with IXPUtils in KCMDrawRingForPrint, do nothing
+	// if it cannot be had. One instance for every column below.
+	Utils<ITextUtils> textUtils;
 	InterfacePtr<IStoryList> stories(db, db->GetRootUID(), UseDefaultIID());
-	if (stories != nil)
+	if (stories != nil && textUtils)
 	{
 		// User-accessible stories only, the same choice KCMStoryStamp makes: an internal story
 		// (a placeholder's, an index's) has no frame the reader can point at.
@@ -200,26 +207,33 @@ static void KCMRebuildStoryHolders(IDataBase* db)
 			const int32 frameCount = frames->GetFrameCount();
 			for (int32 f = 0; f < frameCount; ++f)
 			{
-				// column -> multi-column frame -> the item (two steps, both kinds of text; the
-				// header of this section). kInvalidUID from GetParentUID is "no answer".
-				InterfacePtr<IHierarchy> column(db, frames->GetNthFrameUID(f), UseDefaultIID());
+				// column -> the item the reader sees, **in the SDK's own two steps**
+				// (SDKLayoutHelper::GetGraphicFrameRef, sdksamples/common/SDKLayoutHelper.cpp:628-654;
+				// the same pair in basicpersistinterface/BPIHelper.cpp:155-166):
+				//   - a text-on-path column (kTOPFrameItemBoss) names its main spline itself
+				//     (ITOPFrameData.h:39-44). That spline is the item that IS drawn: two steps up
+				//     the hierarchy land on kTOPSplineItemBoss instead, whose adornments are never
+				//     drawn (measured 2026-09-13: the oval got no label).
+				//   - any other column is asked of ITextUtils::QuerySplineFromTextFrame, "the spline
+				//     associated with the parent MultiColumnTextFrame" (ITextUtils.h:860-864) - an
+				//     anchored frame's own spline, not the frame that holds it.
+				// Until 2026-09-27 this walked IHierarchy two steps up by hand, which reached the same
+				// items but wrote the hierarchy's shape into this file (re-audit M4, round 3).
+				InterfacePtr<ITextFrameColumn> column(frames->QueryNthFrame(f));
 				if (column == nil)
 					continue;
-				InterfacePtr<IHierarchy> multiColumn(column->QueryParent());
-				if (multiColumn == nil)
-					continue;
-				UID holder = multiColumn->GetParentUID();
+				UID holder = kInvalidUID;
+				InterfacePtr<ITOPFrameData> textOnPath(column, UseDefaultIID());
+				if (textOnPath != nil)
+					holder = textOnPath->GetMainSplineItemUID();
+				else
+				{
+					InterfacePtr<IHierarchy> spline(textUtils->QuerySplineFromTextFrame(column));
+					if (spline != nil)
+						holder = ::GetUID(spline);
+				}
 				if (holder == kInvalidUID)
 					continue;
-				// Text on a path: the two steps land on kTOPSplineItemBoss, which is not the item
-				// the reader sees and whose adornments are never drawn (measured 2026-09-13: the
-				// oval got no label). The item that IS drawn is its main spline, reached by the
-				// link ITOPSplineData keeps rather than by the hierarchy (ITOPSplineData.h:45-48).
-				// A frame's own text never comes this way (only kTOPSplineItemBoss carries the
-				// interface), so an ordinary frame keeps the holder the two steps found.
-				InterfacePtr<ITOPSplineData> textOnPath(db, holder, UseDefaultIID());
-				if (textOnPath != nil && textOnPath->GetMainSplineItemUID() != kInvalidUID)
-					holder = textOnPath->GetMainSplineItemUID();
 				std::vector<UID>& held = table[holder];
 				// A story threaded through several columns of one frame is still one story.
 				if (std::find(held.begin(), held.end(), storyRef.GetUID()) == held.end())
