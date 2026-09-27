@@ -19,7 +19,8 @@
 
 #include "VCPlugInHeaders.h"
 
-#include <windows.h>				// GetTempPathW / DeleteFileW / ShellExecuteW - Windows only, like the rest of KCM's file work
+#include <windows.h>				// ShellExecuteW - the one Win32 call left here (GetTempPathW and DeleteFileW went with the
+								// temporary files on 2026-09-14, CreateDirectoryW with the re-audit on 2026-09-27)
 #include <shellapi.h>
 #include <string>
 #include <vector>
@@ -223,24 +224,36 @@ std::wstring WidePath(const IDFile& file)
 	@param outFolder OUT the folder that was created.
 	@param outStem  OUT the base name the three files are built from.
 	@return kFalse with `why` filled in when the folder could not be made. */
-bool16 MakeReportFolder(const IDFile& chosen, std::wstring& outFolder, std::wstring& outStem, PMString& why)
+bool16 MakeReportFolder(const IDFile& chosen, IDFile& outFolder, PMString& outStem, PMString& why)
 {
-	const std::wstring full = WidePath(chosen);
-	if (full.empty())
+	// ★THE SDK'S OWN FILE UTILITIES (re-audit M21, 2026-09-27 - until then the chosen path went to a
+	//   std::wstring, was cut at its last slash, joined again with L"\\" and made with ::CreateDirectoryW).
+	//   The same move the Word export made on 2026-09-24 / 09-27 (KCMStoryTextExport.cpp, MakeDatedFolder).
+	IDFile parent;
+	if (!FileUtils::GetParentDirectory(chosen, parent))
 	{
 		why = Ascii("the chosen path could not be read");
 		return kFalse;
 	}
-	const size_t slash = full.find_last_of(L"\\/");
-	const std::wstring parent = (slash == std::wstring::npos) ? std::wstring() : full.substr(0, slash);
-	std::wstring name = (slash == std::wstring::npos) ? full : full.substr(slash + 1);
+	PMString name;
+	FileUtils::GetFileName(chosen, name);
 	{
-		const size_t dot = name.find_last_of(L'.');
-		if (dot != std::wstring::npos && dot > 0)
-			name = name.substr(0, dot);			// drop the ".pdf" the dialog put there
+		// Drop the ".pdf" the dialog put there - at the LAST dot, and not a leading one, as before.
+		// (FileUtils::GetBaseFileName would say it in one call, but whether it cuts at the last dot or
+		//  the first is not in the SDK to read - the re-audit's open question, M16.)
+		const int32 n = name.NumUTF16TextChars();
+		const UTF16TextChar* const b = name.GrabUTF16Buffer(nil);
+		int32 cut = n;
+		for (int32 i = n - 1; i > 0; --i)
+			if (b[i] == '.') { cut = i; break; }
+		PMString stem;
+		for (int32 i = 0; i < cut; ++i)
+			stem.AppendW(UTF32TextChar(b[i]));
+		name = stem;
 	}
-	if (name.empty())
-		name = L"report";
+	if (name.IsEmpty())
+		name = Ascii("report");
+	name.SetTranslatable(kFalse);
 	outStem = name;
 
 	wchar_t stamp[40] = { 0 };
@@ -250,17 +263,18 @@ bool16 MakeReportFolder(const IDFile& chosen, std::wstring& outFolder, std::wstr
 		::localtime_s(&local, &now);
 		::wcsftime(stamp, 40, L" %Y-%m-%d %H%M%S", &local);
 	}
-	std::wstring folder = parent;
-	if (!folder.empty())
-		folder += L"\\";
-	folder += name;
-	folder += stamp;
+	PMString leaf(name);
+	leaf.SetTranslatable(kFalse);
+	leaf.AppendW(reinterpret_cast<const UTF16TextChar*>(stamp));
 
-	if (::CreateDirectoryW(folder.c_str(), nil) == 0)
+	IDFile folder = parent;
+	FileUtils::AppendPath(&folder, leaf);
+	// ⚠A FOLDER ALREADY STANDING THERE IS NOT SUCCESS: the stamp is to the second, so a folder of this
+	//   name existing means something else made it, and writing into it would be the silent overwrite
+	//   this whole scheme exists to prevent. CreateFolderIfNeeded answers kTrue for one that exists,
+	//   which is why DoesFileExist is asked first (the same pair as the Word export).
+	if (FileUtils::DoesFileExist(folder) || !FileUtils::CreateFolderIfNeeded(folder))
 	{
-		// ⚠ERROR_ALREADY_EXISTS is not treated as success: the stamp is to the second, so a
-		//   folder of this name existing means something else made it, and writing into it would
-		//   be the silent overwrite this whole scheme exists to prevent.
 		why = Ascii("the report folder could not be created");
 		return kFalse;
 	}
@@ -269,17 +283,15 @@ bool16 MakeReportFolder(const IDFile& chosen, std::wstring& outFolder, std::wstr
 }
 
 /** One of the three files inside the report folder: "<folder>\<stem><suffix>.pdf". */
-IDFile InReportFolder(const std::wstring& folder, const std::wstring& stem, const wchar_t* suffix)
+IDFile InReportFolder(const IDFile& folder, const PMString& stem, const char* suffix)
 {
-	std::wstring path = folder;
-	path += L"\\";
-	path += stem;
-	path += suffix;
-	path += L".pdf";
-	PMString s;
-	s.SetTranslatable(kFalse);
-	s.AppendW(reinterpret_cast<const UTF16TextChar*>(path.c_str()));
-	return FileUtils::PMStringToSysFile(s);
+	PMString leaf(stem);
+	leaf.SetTranslatable(kFalse);
+	leaf.Append(suffix);
+	leaf.Append(".pdf");
+	IDFile file = folder;
+	FileUtils::AppendPath(&file, leaf);
+	return file;
 }
 
 /** A paragraph end for the text frames (the model's paragraph separator is CR). */
@@ -1027,8 +1039,8 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	// ★Since 2026-09-14 the answer is a FOLDER built from what they typed, holding three files:
 	//   the report, the old side and the new side. MakeReportFolder says why.
 	IDFile reportFile;
-	std::wstring reportFolder;
-	std::wstring reportStem;
+	IDFile reportFolder;
+	PMString reportStem;
 	{
 		PMString why;
 		IDFile chosen;
@@ -1043,7 +1055,7 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 			outMessage.Append(why);
 			return kFalse;
 		}
-		reportFile = InReportFolder(reportFolder, reportStem, L"");
+		reportFile = InReportFolder(reportFolder, reportStem, "");
 	}
 
 	// ---- the two tables' rows, read while the borrowed results stand --------------------------
@@ -1139,8 +1151,8 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	// ---- the two sides, into the report's own folder ------------------------------------------
 	// ⚠**NOT TEMPORARY FILES.** They stay, beside the report, because the reader asked for them
 	//   there (MakeReportFolder carries the reasoning). Nothing below deletes them.
-	const IDFile beforePDF = InReportFolder(reportFolder, reportStem, L"-before");
-	const IDFile afterPDF  = InReportFolder(reportFolder, reportStem, L"-after");
+	const IDFile beforePDF = InReportFolder(reportFolder, reportStem, "-before");
+	const IDFile afterPDF  = InReportFolder(reportFolder, reportStem, "-after");
 	PMString why;
 	bool16 ok = kTrue;
 	bar.Step(units++, Ascii("Exporting the Before pages"));
@@ -1275,8 +1287,8 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	outMessage.Append(" pages, with the Before and After PDFs -> ");
 	{
 		PMString path;
+		FileUtils::IDFileToPMString(reportFolder, path);
 		path.SetTranslatable(kFalse);
-		path.AppendW(reinterpret_cast<const UTF16TextChar*>(reportFolder.c_str()));
 		outMessage.Append(path);
 	}
 	return kTrue;
