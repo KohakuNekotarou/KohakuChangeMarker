@@ -587,10 +587,15 @@ bool16 KCMCaretOnTableChars(IDataBase* db, UID storyUID, TextIndex at, TextIndex
 	view, and pasteboard coordinates are spread-relative, so choosing the wrong spread does not put
 	the reader slightly off: it puts them on another page entirely.
 
-	**IT RETURNS THE PAGE ITEM, NOT THE TEXT COLUMN.** QueryFrameContaining hands back the column
-	that holds the text; the frame the reader sees, and the thing with the geometry, is the column's
-	parent (IHierarchy). @warning this is a real difference from KCMStoryFirstFrameUID, which
-	returns GetNthFrameUID(0) -- a column UID.
+	**IT RETURNS THE COLUMN'S PARENT, NOT THE TEXT COLUMN.** The parcel names the column that holds
+	the text; this steps one level up (IHierarchy) to the MULTI-COLUMN frame (kMultiColumnItemBoss).
+	⚠**That is not yet the item the reader sees** (corrected in re-audit M8 round 3, 2026-09-27 - this
+	said "the frame the reader sees" until then): the visible spline is one level further, and the
+	SDK's own way to reach it is ITextUtils::QuerySplineFromTextFrame (the recipe KCMRingAdornment now
+	uses - SDKLayoutHelper::GetGraphicFrameRef). Every caller only asks which SPREAD the UID stands on
+	(the jump brings that spread into view), and all three levels stand on the same one, so the answer
+	they get is right. @warning this is still a real difference from KCMStoryFirstFrameUID, which
+	returns GetNthFrameUID(0) -- a column UID - and the jump compares the two kinds as they are.
 */
 UID KCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index, bool16 caret)
 {
