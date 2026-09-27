@@ -257,7 +257,8 @@ void KCMLoadPanelStateIfPresent()
 	fclose(fp);
 	if (readFailed)
 		return;		// ★Do not apply a partially read text (the same discipline as KCMReadWholeFile in
-					//   KCMPageCheck.cpp): every toggle keeps its default.
+					//   KCMPageCheck.cpp had, until that file's JSON store went - 2026-09-07 / 09-27):
+					//   every toggle keeps its default.
 	if (text.empty())
 		return;
 

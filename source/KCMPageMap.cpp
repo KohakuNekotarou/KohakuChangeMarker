@@ -441,17 +441,20 @@ void KCMSetPairPagesByUid(bool16 on)
 }
 
 //========================================================================================
-// The identity a Source page answers to. Its own UID for an ordinary document; for a
-// rehydrated task-start copy, whose pages are new, the origin's UID that its KcmOriginUid label
-// names (KCMXmlInject.h), or kInvalidUID for the page that came back without one.
+// The identity a Source page answers to. Its own UID for an ordinary document; for a page that
+// carries a KcmOriginUid label, the UID the label names (KCMXmlInject.h).
+// ⛔**NO PAGE CARRIES ONE ANY MORE, SINCE 2026-09-21** (re-audit M5 round 3, 2026-09-27): the labels
+//   were written into a REHYDRATED task-start copy, whose pages had new ids, and the writer went with
+//   the rehydration. A Task Start is a copy saved to a FILE now, which carries the original's own
+//   numbers (KCMPagePairRule.h, the paragraph on the one exception), and the "Open Task Start Copy"
+//   item this comment used to name is gone too. So the probe below always finds nothing and every
+//   page keys by its own UID. It is kept, as the rule header keeps its `sourceKeys` door: a
+//   document a development build labelled would still pair as it did, and it costs two label reads.
 //
 // WHETHER THE SOURCE IS SUCH A COPY IS ASKED OF THE PAGES, NOT OF WHO OPENED THEM: the first two
 //   ordinary pages are probed for the label (two rather than one, so that a first page the
 //   write-back could not name does not hide a copy), and only when one of them carries it are the
-//   labels read for every page. The comparison run's copy, the peek's copy and a copy the user opened through
-//   "Open Task Start Copy" are then all the same case, with no list of copy databases to keep in
-//   step - and an ordinary document costs two label reads per pairing, which is nothing next to
-//   the two page walks this function does anyway.
+//   labels read for every page.
 // ⚠A page's label is a script label (IScript::GetTag), read here on the main thread only:
 //   KCMBuildPairing already refuses to run off it (RebuildOverflowCache).
 //========================================================================================

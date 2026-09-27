@@ -62,9 +62,11 @@ void KCMMarkRehydratedClean(IDataBase* db);
 
 /** The KcmOriginUid label of `uid` in `db` (a story or a spread that carries one), as the ORIGINAL
     uid. kFalse when there is no such label or it does not parse.
-    ⚠**The label itself is alive and well**: KCMXmlInject.h still writes one into every story and
-     spread of an injected copy, and the Story import pairs its rows by it. Only the rehydration
-     that used to consume them here has gone. */
+    ⛔**NOTHING WRITES THE LABEL ANY MORE** (corrected in re-audit M5 round 3, 2026-09-27 - this said
+     "alive and well" until then): its writer, KCMInjectForRehydration, has had no caller since the
+     rehydration went on 2026-09-21 (KCMXmlInject.h says so at its head), and the one reader left is
+     the page pairing's probe (KCMPageMap.cpp, KCMSourcePageKeys), which therefore finds nothing on
+     any document made since. */
 bool16 KCMReadOriginUidLabel(IDataBase* db, UID uid, UID& outOriginal);
 
 #endif // __KCMRehydrate_h__
