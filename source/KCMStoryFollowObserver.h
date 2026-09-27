@@ -33,7 +33,15 @@ class IDataBase;
 /** Attach the observer to every Target story the Story Edits list has a row for, where it is not attached yet.
 	Called when the list has been built. ⚠NO DETACH, as the 2026-09-15 observer had none: it is a run-time
 	attachment (never written into the document), it does nothing for a story no row names, and a document's
-	stories go with the document. */
+	stories go with the document.
+	⚠★**THE CASE THOSE REASONS DO NOT COVER** (re-audit M19, 2026-09-27 - unmeasured): a story DELETED and then
+	  brought back by an undo inside the same document. The programming guide says an observer on a subject that
+	  undo can delete and restore has to be detached and re-attached through an inval handler
+	  (work/guide-md/vol1-04-notification.md, "Observing a subject that can be deleted"), and offers the other
+	  shape - observe the DOCUMENT instead of each object, since a subject's notification is often repeated on the
+	  document (same file, "Document notification"). Whether IID_ITEXTMODEL is among the repeated ones is not
+	  known. Until one is measured, a story that comes back this way may stop following undo until the list is
+	  built again (which calls this again). */
 void KCMStoryFollowEnsureObservers(IDataBase* targetDB);
 
 #endif // __KCMStoryFollowObserver_h__
