@@ -55,7 +55,6 @@
 #include "KCMComparisonRun.h"      // KCMStartComparisonFor / KCMStopComparison / KCMRefreshComparison
 #include "KCMPairChoice.h"         // KCMForgetChosenDocsThatClosed -- the chosen Target/Source lose whichever document closed
 #include "KCMExternalSource.h"     // KCMIsDbAlive (the lent Source counts as alive)
-#include "KCMResourceBytes.h"
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 // The UI's KCMViewLookup.h is deliberately absent. Resolving which view the mouse is over belongs
 //   to the caller (the UI); this .cpp only peeks at the spread of the point it is given.
@@ -858,28 +857,13 @@ void KCMDoDisarmMousePeek(IDataBase* db)
 		KCMInvalidateDB(db);
 }
 
-// KCMDetachArmedSource (declared in KCMCore.h) -- Task Start: the copy leaves the armed state
-// before it is closed. The Target, the marks (sEntries on sDB) and the stores stay.
-void KCMDetachArmedSource()
-{
-	sPeekSourceDB = nil;
-	KCMDrawEventHandler::sSrcDB = nil;
-	KCMDrawEventHandler::sSrcPageToTarget.clear();
-	KCMDrawEventHandler::DropAllOrig();		// the older-version images were of the copy
-
-	// The overflow ("/") cache stays. It was built by the comparison while the copy was the
-	// Source, and it holds the pages ADDED since the task start - the Target-side set. Left as
-	// it was, the cache read as built for (sDB, copy) while the current pair is (sDB, nil), so the
-	// next draw's EnsureOverflowCache rebuilt it against no Source at all and came back empty:
-	// measured 2026-09-13, "added=1" on the status line and no "/" on the page. The cache is
-	// re-stamped as built for (sDB, nil) instead; the Source-side set names pages of a document
-	// about to close and is dropped under the lock the drawing thread reads it with.
-	KCMDrawEventHandler::sOverflowCacheSrcDB = nil;
-	{
-		KCMMarkStateLock lock(KCMMarkStateMutex());
-		KCMDrawEventHandler::sOverflowS.clear();
-	}
-}
+// (KCMDetachArmedSource stood here until 2026-09-27: it took a REHYDRATED Task Start copy out of
+//  the armed state before the copy was closed, keeping the Target, its marks and its stores. The
+//  rehydration went on 2026-09-21 - a Task Start is a file that opens as an ordinary Source - and
+//  the function had no caller from that day; re-audit M6 round 3 took it out. Its one measurement
+//  worth keeping: the overflow ("/") cache had to be re-stamped as built for (sDB, nil) rather than
+//  left for (sDB, copy), or the next draw rebuilt it against no Source and came back empty
+//  ("added=1" and no "/", 2026-09-13).)
 
 // The state accessors the panel reads: an armed peek is what "a comparison is running" means.
 bool16     KCMIsArmed()        { return sPeekArmed; }

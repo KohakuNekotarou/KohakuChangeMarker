@@ -52,7 +52,6 @@
 #include "KCMTableShape.h"	// KCMReadTableShapes / KCMTableShapesDiffer - the Table row (2026-09-19 night)
 #include "KCMTableSnippet.h"	// KCMReadTableIdsInStory / KCMExportStoryInx - the Source's tables, by their own ids
 #include "KCMMemXferBytes.h"	// ...and the buffer that export writes into
-#include "KCMResourceBytes.h"
 // (⛔KCMStoryRestore.h and KCMStorySnapshot.h were included here for the restore, and went with it
 //  on 2026-09-21 - KCMStorySnapshot as a whole file, having had no other reader.)
 #include "KCMTextRead.h"		// the reader: paragraphs, their positions and their attributes, straight from the text model

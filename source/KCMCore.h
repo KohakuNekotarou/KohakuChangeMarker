@@ -225,11 +225,8 @@ bool16		KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB);
 IDataBase*	KCMArmedTargetDB();
 IDataBase*	KCMArmedSourceDB();
 
-// Task Start (2026-09-12): the armed comparison keeps its Target and its results and LOSES its
-// Source - the rehydrated copy is about to be closed. Clears the armed Source, the drawing side's
-// sSrcDB and its Source-page map, and the older-version image cache, so that the close sweep
-// finds no pointer of ours at the copy. The body is in KCMPeek.cpp with the other armed state.
-void		KCMDetachArmedSource();
+// (KCMDetachArmedSource - a rehydrated Task Start copy leaving the armed state - went on
+//  2026-09-27, dead since the rehydration went on 2026-09-21. KCMPeek.cpp keeps its one lesson.)
 
 // kTrue when a comparison is running AND db is one of the two documents in it.
 //
