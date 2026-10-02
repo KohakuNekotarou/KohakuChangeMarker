@@ -844,9 +844,12 @@ static uint32 KCMReapplyTimerProc(void* /*refPtr*/)
 	// turned out to be two (measured). The return value IS the reschedule, so returning a delay is
 	// how it carries on.
 	// @warning ICallbackTimer's documented contract is one-shot ("register a one time only
-	//   callback"), so this chain rides on an observation about the implementation. Even where it
-	//   does not hold, the next notification re-arms KCMScheduleReapply unconditionally, so it can
-	//   never end up never running again.
+	//   callback"), so this chain rides on an INFERENCE, not on a measurement: what was measured is the
+	//   old way failing (two rounds), and whether this way runs all eight is listed as unmeasured
+	//   (docs/ai-notes/kescm-selfreview-2026-07-29.md; until 2026-10-02 this said "an observation about
+	//   the implementation"). KT's app.ktProbe "callbacktimer" measures it. Even where it does not hold,
+	//   the next notification re-arms KCMScheduleReapply unconditionally, so it can never end up never
+	//   running again.
 	if (sReapplyLeft > 0)
 		return kKCMPanelAlphaReapplyDelayMillis;
 
