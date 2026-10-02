@@ -9,13 +9,16 @@
 
 #include "VCPlugInHeaders.h"
 
+// Interface includes:
+#include "IPMStream.h"		// XferByte / Seek / Flush / GetStreamState / Close - the file's bytes
+
 // General includes:
 #include "PMString.h"
-#include "FileUtils.h"		// GetAppRoamingDataFolder / AppendPath / OpenFile / DoesFileExist / SysFileToPMString
+#include "FileUtils.h"		// GetAppRoamingDataFolder / AppendPath / DoesFileExist / SysFileToPMString
 #include "IDFile.h"
+#include "StreamUtil.h"		// CreateFileStreamRead / CreateFileStreamWrite
 
 #include <string>
-#include <cstdio>			// FILE / fread / fwrite / fclose
 
 // Project includes (the state accessors of each toggle):
 #include "KCMPanelState.h"
@@ -55,16 +58,50 @@ static bool16 KCMPanelStateFile(IDFile& outFile)
 //     file like this one does not use it are in KBS's `ui/KBSPanelState.cpp`, under "WHY NOT THE
 //     SDK'S JSON CLASS" (in short: property_tree writes every value back as a quoted string, so a
 //     bare true comes out as "true").
-//   ★**The reason for stdio (FileUtils::OpenFile) rather than IPMStream** is in the same KBS
-//     file, under "WHY stdio AND NOT IPMStream": IPMStream's Close()/Flush() return void, so a
-//     full disk cannot be detected.
-//   ⚠Both of these pointed at the save/load block of `source/KCMPageCheck.cpp` until 2026-10-02.
-//     That block went on 2026-09-27 (57b1278) and took the reasoning with it.
+//   ⚠This pointed at the save/load block of `source/KCMPageCheck.cpp` until 2026-10-02. That
+//     block went on 2026-09-27 (57b1278) and took the reasoning with it.
+//
+//   ★**The file's bytes go through the SDK's file stream** (2026-10-02, the user's call: "for the
+//     panel settings and the like, use the official one") -- StreamUtil::CreateFileStreamRead /
+//     CreateFileStreamWrite -> IPMStream, as SnpShareAppResources.cpp:182,187 opens its own
+//     preferences file. It was stdio (FileUtils::OpenFile, fread / fwrite / fclose) until then,
+//     kept because IPMStream's Close()/Flush() return void, so a full disk would go unnoticed.
+//     ★That check is now made by **reading the file back**: the save is reported only when the
+//     file reads back exactly as written (KCMSavePanelState). The same change, and the same
+//     read-back, as KBS's ui/KBSPanelState.cpp on the same day.
 //----------------------------------------------------------------------------------------
 
 static const char* KCMBoolLiteral(bool16 b)
 {
 	return b ? "true" : "false";
+}
+
+// The whole file, or false when it could not be read in full. ★A read that stopped part way through
+//   is not used -- every toggle then keeps its default rather than "the settings that happened to be
+//   in the part that arrived". Read the way the SDK's samples read a whole file: the size first (Seek
+//   to the end answers where it got to), then exactly that many bytes from the start
+//   (textimportfilter/TxtImpFilter.cpp:602-611, pdfvt/PDFVTUtils.cpp:141-147) -- the read never asks
+//   past the end, so a short count, or the stream in kStreamStateFailure, can only be a read that
+//   broke off. (fread and ferror until 2026-10-02.)
+static bool KCMReadWholeFile(const IDFile& file, std::string& out)
+{
+	out.clear();
+	InterfacePtr<IPMStream> stream(StreamUtil::CreateFileStreamRead(file));
+	if (stream == nil)
+		return false;
+	const int64 size = stream->Seek(0, kSeekFromEnd);
+	stream->Seek(0, kSeekFromStart);
+	bool ok = (size >= 0 && size <= static_cast<int64>(0x7FFFFFFF));	// XferByte counts in int32
+	if (ok && size > 0)
+	{
+		out.resize(static_cast<size_t>(size));
+		const int32 n = stream->XferByte(reinterpret_cast<uchar*>(&out[0]), static_cast<int32>(size));
+		ok = (n == static_cast<int32>(size)) && (stream->GetStreamState() != kStreamStateFailure);
+	}
+	stream->Close();
+	if (!ok)
+		out.clear();
+	return ok;
 }
 
 // Report a failed save on the panel's status line. ★The wording is this short on purpose: the
@@ -200,17 +237,30 @@ void KCMSavePanelState()
 	json += "\"\n";
 	json += "}\n";
 
-	FILE* fp = FileUtils::OpenFile(file, "wb");
-	if (fp == nil)
+	// ★A partial write (a full disk, say) must not be reported as "saved" with a path. The byte count
+	//   and the stream's state are checked, and then the file is READ BACK and must come out exactly as
+	//   written: IPMStream's Flush and Close return nothing, so a write that fails on its way to the
+	//   disk shows only as a file shorter than the text (stdio's fclose reported it until 2026-10-02).
 	{
-		KCMSaySaveFailed("Save failed (open)");
-		return;
+		InterfacePtr<IPMStream> stream(StreamUtil::CreateFileStreamWrite(file, kOpenOut | kOpenTrunc));
+		if (stream == nil)
+		{
+			KCMSaySaveFailed("Save failed (open)");
+			return;
+		}
+		const int32 size = static_cast<int32>(json.size());
+		const int32 wrote = stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(json.data())), size);
+		stream->Flush();
+		const bool failed = (wrote != size) || (stream->GetStreamState() == kStreamStateFailure);
+		stream->Close();
+		if (failed)
+		{
+			KCMSaySaveFailed("Save failed (write)");
+			return;
+		}
 	}
-	// ★Check the byte count AND the result of fclose: a partial write (a full disk, say) must not be
-	//   reported as "saved" with a path.
-	const size_t wrote = fwrite(json.data(), 1, json.size(), fp);
-	const int closed = fclose(fp);
-	if (wrote != json.size() || closed != 0)
+	std::string readBack;
+	if (!KCMReadWholeFile(file, readBack) || readBack != json)
 	{
 		KCMSaySaveFailed("Save failed (write)");
 		return;
@@ -249,20 +299,9 @@ void KCMLoadPanelStateIfPresent()
 	if (!FileUtils::DoesFileExist(file))
 		return;		// no saved data = first run. The defaults stand
 
-	FILE* fp = FileUtils::OpenFile(file, "rb");
-	if (fp == nil)
-		return;
 	std::string text;
-	char buf[1024];
-	size_t n;
-	while ((n = fread(buf, 1, sizeof(buf), fp)) > 0)
-		text.append(buf, n);
-	const bool readFailed = (ferror(fp) != 0);
-	fclose(fp);
-	if (readFailed)
-		return;		// ★Do not apply a partially read text (the same discipline as KCMReadWholeFile in
-					//   KCMPageCheck.cpp had, until that file's JSON store went - 2026-09-07 / 09-27):
-					//   every toggle keeps its default.
+	if (!KCMReadWholeFile(file, text))
+		return;		// ★Do not apply a partially read text: every toggle keeps its default (KCMReadWholeFile).
 	if (text.empty())
 		return;
 
