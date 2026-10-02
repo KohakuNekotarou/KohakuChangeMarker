@@ -18,12 +18,14 @@
 //  the indent arithmetic KBS's widget manager exists for: each level's layout lives in its own
 //  resource. See ApplyIndentToWidget below for why that was the right way round.
 //
-//  ★ApplyNodeIDToWidget is deliberately NOT overridden. KBS has to override it - and to call the
-//  base FIRST - because it rewrites its rows' frames itself and has to land on top of the
-//  framework's indent; getting that order wrong cost it two separate bugs. Here the framework
-//  places the row content and nothing argues with it, so overriding ApplyDataToWidget alone means
-//  the question of "before or after the base" never arises. paneltreeview and loggerpreferences
-//  are this same shape.
+//  ★ApplyNodeIDToWidget is deliberately NOT overridden. On the V2 path (the two-argument
+//  constructor) the base runs the highlight, the expander, the indent and only THEN
+//  ApplyDataToWidget (CTreeViewWidgetMgr.cpp:207-219), so overriding ApplyDataToWidget alone means
+//  the question of "before or after the base" never arises. KBS overrode ApplyNodeIDToWidget and
+//  had to call the base FIRST - getting that order wrong cost it two separate bugs - until it moved
+//  to ApplyDataToWidget as well (2026-10-02, its API re-audit). loggerpreferences and the shipping
+//  MSO panel are this same shape; paneltreeview is not (the deprecated one-argument constructor,
+//  where the base call is the highlight alone).
 //
 //========================================================================================
 

@@ -15,8 +15,9 @@
 //       from anywhere the way the one panel can
 //
 //  ★ApplyNodeIDToWidget is deliberately NOT overridden - the framework places the row content and
-//  nothing here argues with it. (KBS has to override it, and to call the base FIRST, because it
-//  rewrites its rows' frames itself; getting that order wrong cost it two separate bugs.)
+//  nothing here argues with it. (KBS overrode it and had to call the base FIRST, because it rewrites
+//  its rows' frames itself - getting that order wrong cost it two separate bugs - until it moved to
+//  ApplyDataToWidget as well, 2026-10-02: the base calls that last, after its own indent.)
 //
 //========================================================================================
 
