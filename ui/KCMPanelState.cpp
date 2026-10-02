@@ -51,11 +51,15 @@ static bool16 KCMPanelStateFile(IDFile& outFile)
 // A minimal JSON (written by hand, read permissively)
 //   What is saved is a flat set of booleans, so it is handled here rather than through boost
 //   (IJsonUtils).
-//   ★The example of the official class (`JSON` in `public/interfaces/utils/IJsonUtils.h`), and
-//     the full account of why this does not use it, are in the save/load block of
-//     `source/KCMPageCheck.cpp`.
-//   ★**The reason for stdio (FileUtils::OpenFile) rather than IPMStream is in the same place**:
-//     IPMStream's Close()/Flush() return void, so a full disk cannot be detected.
+//   ★The official class (`JSON` in `public/interfaces/utils/IJsonUtils.h`) and why a settings
+//     file like this one does not use it are in KBS's `ui/KBSPanelState.cpp`, under "WHY NOT THE
+//     SDK'S JSON CLASS" (in short: property_tree writes every value back as a quoted string, so a
+//     bare true comes out as "true").
+//   ★**The reason for stdio (FileUtils::OpenFile) rather than IPMStream** is in the same KBS
+//     file, under "WHY stdio AND NOT IPMStream": IPMStream's Close()/Flush() return void, so a
+//     full disk cannot be detected.
+//   ⚠Both of these pointed at the save/load block of `source/KCMPageCheck.cpp` until 2026-10-02.
+//     That block went on 2026-09-27 (57b1278) and took the reasoning with it.
 //----------------------------------------------------------------------------------------
 
 static const char* KCMBoolLiteral(bool16 b)
