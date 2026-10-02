@@ -134,7 +134,8 @@
 // KCMUIShared.h is deliberately NOT included: it was added once, but this provider called none
 // of the widget-touching functions in it -- a dead dependency. What it reads is
 // KCMGetSessionStatus (declared in KCMModelNotify.h), which is not a reverse dependency.
-#include "KCMPdfSpike.h"		// KCMProbePdfRoute - the measuring door for the report's temp-file question
+// (⛔KCMPdfSpike.h - app.kcmProbePdfRoute's experiment - went on 2026-10-02 with the spike, before
+//  shipping, as it was always meant to. The code is in git at 5720208.)
 #include "KCMResourceSnapshot.h"	// KCMDescribeResourceSnapshot - the Resources mode's export
 #include "KCMResourceDiff.h"	// KCMDescribeResourceDiff - the same mode's comparison of the two
 								// armed documents, which is the reading the engine is checked by
@@ -169,8 +170,9 @@ public:
 	    whichever object we were asked about. */
 	virtual ErrorCode AccessProperty(ScriptID propID, IScriptRequestData* data, IScript* script);
 
-	/** Serve the methods on app: kcmProbePdfRoute() and the story text round trip's four
-	    (2026-09-17). ⛔The three origin writers went on 2026-09-21 with the origin itself.
+	/** Serve the methods on app: the story text round trip's four (2026-09-17). ⛔The three origin
+	    writers went on 2026-09-21 with the origin itself, and kcmProbePdfRoute() on 2026-10-02 with
+	    the PDF spike.
 	    Anything else goes to the base
 	    class, which is what keeps the rest of the scripting working on whichever object we were
 	    asked about. */
@@ -269,20 +271,8 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 
 ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData* data, IScript* script)
 {
-	// ★A MEASURING DOOR (2026-09-14), and the only method here that takes no argument: it reads
-	// the active document's first page and answers with the whole experiment, a line per step.
-	// ⚠**kSuccess with the reading in the return data, even when every step failed** - the same
-	//   shape as the status number below, and for the same reason: "the route does not work" is
-	//   an answer to the question asked, not an error in the scripting sense.
-	if (methodID.Get() == e_KCMProbePdfRoute)
-	{
-		PMString reading;
-		KCMProbePdfRoute(reading);
-		ScriptData returnData;
-		returnData.SetWideString(WideString(reading));
-		data->AppendReturnData(script, methodID, returnData);
-		return kSuccess;
-	}
+	// (⛔app.kcmProbePdfRoute() - the PDF spike's measuring door, 2026-09-14 - was served here and went
+	//  on 2026-10-02 with the spike.)
 
 	// ★★THE STORY TEXT ROUND TRIP WITHOUT A DIALOG (2026-09-17) - the menu items' own model calls, so
 	//   a test can run every case the user asked for (KCMScriptingDefs.h says why). Each answers with

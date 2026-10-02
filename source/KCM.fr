@@ -713,27 +713,12 @@ resource VersionedScriptElementInfo(10)
 		// Start that is a file on disk now, not bytes this plug-in holds. Their ScriptIDs are graves
 		// (KCMScriptingDefs.h) and their ScriptElements are too (KCMID.h).
 
-		// ★A MEASURING DOOR, not a feature (2026-09-14): app.kcmProbePdfRoute() runs the
-		// experiment in KCMPdfSpike.cpp and hands the whole reading back as one string, a line
-		// per step. The question it exists to answer is whether the Before/After report can stop
-		// writing temporary PDFs to disk AND stay vector ("raster is hard to read when you zoom
-		// in", the user, the same day).
-		//
-		// No arguments: it measures the ACTIVE document's first page, so there is nothing for a
-		// caller to choose. The shape with the empty braces is snippetrunner's "get snip log"
-		// (SnipRun.fr:1465-1474), which likewise takes nothing and answers with a string.
-		// ⚠It READS. The active document is not changed; what it imports goes into a windowless
-		//   document of its own that is closed again before the answer comes back.
-		Method
-		{
-			kKCMProbePdfRouteMethodScriptElement,
-			e_KCMProbePdfRoute,
-			"kcm probe pdf route",				// name -> app.kcmProbePdfRoute()
-			"Measure whether a page can become a PDF in memory, or travel as a snippet, without a temporary file.",
-			StringType,							// the reading
-			"One line per step of the experiment"
-			{ /* void */ }
-		}
+		// ⛔**"kcm probe pdf route" WENT ON 2026-10-02** with the PDF spike it ran (KCMPdfSpike.cpp),
+		// before shipping, as it was always meant to. Its ScriptID ('eKGv') and its ScriptElement
+		// (+25) are graves (KCMScriptingDefs.h, KCMID.h). ⚠Both halves of the pair went: this Method
+		// block and its Method{} line on app below.
+		// ★A method with NO arguments is written with empty braces - { /* void */ } - the shape of
+		// snippetrunner's "get snip log" (SnipRun.fr:1465-1474), should one be needed again.
 
 		// ★★THE STORY TEXT ROUND TRIP WITHOUT A DIALOG (2026-09-17). The menu items' own model calls,
 		// with the file dialog and the confirmation left out, so that a test can run dozens of cases:
@@ -812,8 +797,8 @@ resource VersionedScriptElementInfo(10)
 				// thing you call rather than a thing you read. Leave one of these lines out and the
 				// method is simply not there, exactly as described above for the properties: no build
 				// error, no warning, ERR:55 at the first touch.
-				Method{ kKCMProbePdfRouteMethodScriptElement },
-				// ...and the round trip's four (2026-09-17) - the other half of each Method block above.
+				// The round trip's four (2026-09-17) - the other half of each Method block above.
+				// (⛔"kcm probe pdf route"'s line stood first here until 2026-10-02.)
 				Method{ kKCMImportStoryTextMethodScriptElement },
 				Method{ kKCMExportStoryTextMethodScriptElement },
 				Method{ kKCMStopComparisonMethodScriptElement },

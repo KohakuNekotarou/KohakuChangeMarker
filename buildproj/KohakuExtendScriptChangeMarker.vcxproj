@@ -102,7 +102,7 @@
       <Command>merge_res.cmd "$(IntDir)"  KCM &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
     </PreLinkEvent>
     <Link>
-      <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);$(AFLLib);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
       <ProgramDatabaseFile>..\debug\sdk\KohakuChangeMarker.pdb</ProgramDatabaseFile>
       <ImportLibrary>$(LIB_DIR)\KohakuChangeMarker/KohakuChangeMarker.lib</ImportLibrary>
@@ -135,7 +135,7 @@
       <Command>merge_res.cmd "$(IntDir)"  KCM &amp; echo Deleting old resources... &amp; del /f /s "$(TargetDir)($(TargetName) Resources)\"*.idrc &gt; $(IntDir)prevDeletedResources.txt &amp;  xcopy /Q /E "$(IntDir)"*.idrc "$(TargetDir)($(TargetName) Resources)\" /Y</Command>
     </PreLinkEvent>
     <Link>
-      <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);$(AFLLib);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
       <ProgramDatabaseFile>..\debugx64\sdk\KohakuChangeMarker.pdb</ProgramDatabaseFile>
       <ImportLibrary>$(LIB_DIR)\KohakuChangeMarker/KohakuChangeMarker.lib</ImportLibrary>
@@ -170,7 +170,7 @@
     </PreLinkEvent>
     <Link>
       <AdditionalOptions>/IGNORE:4089 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);$(AFLLib);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
       <ProgramDatabaseFile>..\release\sdk\KohakuChangeMarker.pdb</ProgramDatabaseFile>
       <ImportLibrary>$(LIB_DIR)\KohakuChangeMarker/KohakuChangeMarker.lib</ImportLibrary>
@@ -205,7 +205,7 @@
     </PreLinkEvent>
     <Link>
       <AdditionalOptions>/IGNORE:4089 %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);$(AFLLib);%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(MODEL_PLUGIN_LINKLIST);$(BoostThreadLib);%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>$(OutDir)$(TargetName)$(TargetExt)</OutputFile>
       <ProgramDatabaseFile>..\releasex64\sdk\KohakuChangeMarker.pdb</ProgramDatabaseFile>
       <ImportLibrary>$(LIB_DIR)\KohakuChangeMarker/KohakuChangeMarker.lib</ImportLibrary>
@@ -246,7 +246,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMap.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPairChoice.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTaskStartSave.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpike.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableShape.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMSkippedText.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMImportTracking.cpp" />
@@ -350,7 +349,6 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPairChoice.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTaskStartSave.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPagePairRule.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpike.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReport.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReportTable.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReportPaws.h" />
@@ -401,26 +399,29 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMScriptingDefs.h" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The factory list is #included INSIDE #ifdef __ODFRC__, which the C++ compiler that builds
+         TriggerResourceDeps.obj never enters, so a change to it alone would not re-run ODFRC
+         (boss built, new IID nil). Named here as an input of its own. 2026-09-28. -->
     <CustomBuild Include="..\..\..\source\sdksamples\KCM\source\KCM.fr">
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
         odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KCM\source" @"KohakuChangeMarkerodfrc.rsp"
       </Command>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)TriggerResourceDeps.obj;..\..\..\source\sdksamples\KCM\source\KCMFactoryList.h;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
         odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -d DEBUG  -i "..\..\..\source\sdksamples\KCM\source" @"KohakuChangeMarkerodfrc.rsp"
       </Command>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)TriggerResourceDeps.obj;..\..\..\source\sdksamples\KCM\source\KCMFactoryList.h;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
         odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KCM\source" @"KohakuChangeMarkerodfrc.rsp"
       </Command>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)TriggerResourceDeps.obj;..\..\..\source\sdksamples\KCM\source\KCMFactoryList.h;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
       <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
         odfrc $(ODFRC_ADDITIONAL_FLAGS) "%(FullPath)" -o "$(IntDir)%(Filename).fres" -i "..\..\..\source\sdksamples\KCM\source" @"KohakuChangeMarkerodfrc.rsp"
       </Command>
-      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)TriggerResourceDeps.obj;%(AdditionalInputs)</AdditionalInputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)TriggerResourceDeps.obj;..\..\..\source\sdksamples\KCM\source\KCMFactoryList.h;%(AdditionalInputs)</AdditionalInputs>
       <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)%(Filename).fres;%(Outputs)</Outputs>
     </CustomBuild>
   </ItemGroup>

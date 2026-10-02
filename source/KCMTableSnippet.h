@@ -165,7 +165,8 @@ void KCMBuildTableSnippet(const std::string& tableXml, const std::string& styleG
 
 #ifndef KCM_TABLESNIPPET_STANDALONE
 /** The live story as INX text (IINXManager::ExportINX with the story as the root - the call
-    KCMPdfSpike's S17.8 measured), into `out`. kFalse when the export failed.
+    the PDF spike's S17.8 measured - KCMPdfSpike.cpp, in git at 5720208), into `out`. kFalse when the
+    export failed.
 
     @param includeStyleRoots ★also hand the export the document's CELL and TABLE style roots as roots
         of their own, so that one small export carries the <Story> AND the two style groups a table's

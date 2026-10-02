@@ -355,14 +355,13 @@ DECLARE_PMID(kScriptInfoIDSpace, kKCMTransparencyItemCountPropertyScriptElement,
 //   not serialised into IDML, so there was nothing to take back out when this one went.
 // ⛔**kKCMPrefix + 24 IS A GRAVE** (2026-09-21): it was kKCMSaveOriginXmlMethodScriptElement - app.kcmSaveOriginXml(file), which wrote the held Task Start origin's XML where the caller said and answered with a status number (0 written / 1 no origin held / 2 could not create / 3 could not write / 4 bad argument). It went with the origin itself.
 // ⛔**kKCMPrefix + 36 IS A GRAVE** (2026-09-21): it was kKCMSaveDocXmlMethodScriptElement - app.kcmSaveDocXml(file), the ACTIVE document's own designmap written out (0 written / 1 nothing could be photographed / 2 could not create / 3 could not write / 4 bad argument), so that a rehydrated copy could be checked against it as XML element by element instead of by the four numbers of its shape (2026-09-20, the user's ask: "can the internal IDML of THAT document be made too? then they can be compared"). Its implementation KCMSaveActiveDocXml went with KCMOriginIdml.cpp, and ScriptID 'eKGg' is retired with it. ★The other graves in THIS space are +28 and +32 (kcmTakeInAllStories and kcmTakeInStory, gone with Restore All); +36 joins them and none of the three is reused. ⚠+32/+36 also appear in this file under kClassIDSpace - a DIFFERENT ID space, so there is no clash
-// ⛔**kKCMPrefix + 26 IS A GRAVE** (2026-09-21): it was kKCMSaveOriginIdmlMethodScriptElement - app.kcmSaveOriginIdml(file), which wrote the held origin as a REAL IDML package and answered with THE SAME STATUS NUMBERS as +24 (2026-09-15). ★**What it measured outlives it**: three entries, because a package whose designmap was never cut is one InDesign opens AND one this plug-in can read back, while a cut one carries <idPkg:* src> references and handing those to ImportINX crashes inside JBX.APLN. ⚠+25 is TAKEN - kKCMProbePdfRouteMethodScriptElement, the spike's measuring door, declared further down this file. ★When that spike goes, +25 becomes a grave too and is NOT reused (the same rule the old method IDs +1..+12 are under)
-// ★A MEASURING DOOR (2026-09-14), taken from +25 for the same reason +24 was: never from the graves
-//   at +1..+12. app.kcmProbePdfRoute() runs KCMPdfSpike.cpp and returns the reading as a string.
-//   ⚠It is here to answer whether the Before/After report can stop writing temporary PDFs to disk
-//   while staying VECTOR (the user: "raster is hard to read when you zoom in"). If the answer sends
-//   the report down one of those routes and nothing needs to measure it again, retire this element
-//   and its ScriptID rather than reusing either.
-DECLARE_PMID(kScriptInfoIDSpace, kKCMProbePdfRouteMethodScriptElement, kKCMPrefix + 25)	// app.kcmProbePdfRoute() -> one line per step of the experiment
+// ⛔**kKCMPrefix + 26 IS A GRAVE** (2026-09-21): it was kKCMSaveOriginIdmlMethodScriptElement - app.kcmSaveOriginIdml(file), which wrote the held origin as a REAL IDML package and answered with THE SAME STATUS NUMBERS as +24 (2026-09-15). ★**What it measured outlives it**: three entries, because a package whose designmap was never cut is one InDesign opens AND one this plug-in can read back, while a cut one carries <idPkg:* src> references and handing those to ImportINX crashes inside JBX.APLN. ⚠+25 was the spike's measuring door and is a grave since 2026-10-02 (next line).
+// ⛔**kKCMPrefix + 25 IS A GRAVE** (2026-10-02, the user: "take it out before shipping"): it was
+//   kKCMProbePdfRouteMethodScriptElement - app.kcmProbePdfRoute(), which ran the PDF spike
+//   (KCMPdfSpike.cpp, 2026-09-14) on the active document's first page and answered with the reading,
+//   a line per step: could the Before/After report stop writing temporary PDFs to disk and stay
+//   VECTOR. The spike went with it (its code is in git at 5720208); ScriptID 'eKGv' is retired too.
+//   NOT reused - the rule the method IDs +1..+12 are under.
 // ★The story text round trip without a dialog (2026-09-17) - KCMScriptingDefs.h says why. +27..+30 were
 //  the next free slots in this ID space (+13..+26 in use).
 DECLARE_PMID(kScriptInfoIDSpace, kKCMImportStoryTextMethodScriptElement, kKCMPrefix + 27)	// app.kcmImportStoryText(file) -> the import's sentence
