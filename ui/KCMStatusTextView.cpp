@@ -276,7 +276,10 @@ bool16 KCMLayoutRuns(IGraphicsContext* gc, const InterfaceFontInfo& font,
 			}
 
 			// (3) The space a wrap broke at does not start the next line.
-			if (justWrapped && rest.GetChar(0).IsSpace())
+			// ★EXCEPT THE BAR'S ROOM (2026-10-02, brought over from KBS's fix of 2026-09-29): the bar stands
+			//   in one space (KCMCaretPlaceholder), and a bar that fell at the head of a wrapped line was
+			//   thrown away as "the space the wrap broke at" - the place it marks vanished.
+			if (justWrapped && !isCaret && rest.GetChar(0).IsSpace())
 			{
 				rest.Remove(0, 1);
 				continue;
