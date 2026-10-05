@@ -101,6 +101,7 @@ struct KCMNavStop
 	int32		storyRow;			// the row number in KCMStoryList (the vocabulary the facade is given)
 	int32		storyChange;		// which change of that row; -1 = the row itself, which has no children
 	UID			storyUID;			// which story it is, for finding it again (see sNavStoryUID below)
+	PMString	storyAuthor;		// ...and whose, in the Track mode (one story is one row per author there, 2026-10-05)
 
 	KCMNavStop() : pageUID(kInvalidUID),
 					 isStory(kFalse), storyRow(-1), storyChange(-1), storyUID(kInvalidUID) {}
@@ -121,6 +122,7 @@ static bool16 sNavIsStory     = kFalse;
 static UID    sNavStoryUID    = kInvalidUID;
 static int32  sNavStoryRow    = -1;
 static int32  sNavStoryChange = -1;
+static PMString sNavStoryAuthor;		// the Track mode's author of that row; empty in every other mode (2026-10-05)
 
 // "Standing at the entrance" means THE WALK HAS NOT YET GONE to the stop the anchor above points
 // at. It happens only when a parent row with children was selected: such a row is not a stop
@@ -208,6 +210,7 @@ static void KCMBuildStops(std::vector<KCMNavStop>& out)
 			s.storyRow    = storyStops[i].fRow;
 			s.storyChange = storyStops[i].fChange;
 			s.storyUID    = storyStops[i].fStoryUID;
+			s.storyAuthor = storyStops[i].fAuthorName;
 			out.push_back(s);
 		}
 	}
@@ -283,7 +286,7 @@ static int32 KCMFindCurrentStop(const std::vector<KCMNavStop>& stops)
 			// Story Comparison" rebuilds one row's children and leaves the order alone
 			// (IKCMStoryEditsFacade::RefreshRow says so).
 			if (stops[i].storyUID == sNavStoryUID && stops[i].storyRow == sNavStoryRow &&
-				stops[i].storyChange == sNavStoryChange)
+				stops[i].storyChange == sNavStoryChange && stops[i].storyAuthor == sNavStoryAuthor)
 				return (int32)i;
 			continue;
 		}
@@ -1242,6 +1245,12 @@ void KCMNoteStoryStop(int32 rowIndex, int32 changeIndex)
 
 	sNavIsStory    = kTrue;
 	sNavStoryUID   = row.fStoryUID;
+	{
+		IKCMStoryEditsFacade::TrackAuthor au;
+		const int32 a = edits->GetTrackAuthorOfRow(rowIndex);
+		sNavStoryAuthor = (a >= 0 && edits->GetTrackAuthor(a, au)) ? au.fName : PMString();
+		sNavStoryAuthor.SetTranslatable(kFalse);
+	}
 	sNavStoryRow   = rowIndex;		// identified together with the UID (KCMFindCurrentStop explains
 									// why all three are checked)
 	sNavPageUID    = kInvalidUID;	// the page-side anchor is not carried over
@@ -1283,6 +1292,7 @@ void KCMResetNav()
 	//   A ROW WHOSE UID HAPPENS TO MATCH -- the same shape of defect the note above describes for
 	//   page UIDs.
 	sNavIsStory = kFalse; sNavStoryUID = kInvalidUID; sNavStoryRow = -1; sNavStoryChange = -1;
+	sNavStoryAuthor.Clear();
 	sNavStoryAtEntry = kFalse;
 }
 

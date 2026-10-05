@@ -62,6 +62,10 @@ void SelectInTree(const KCMStoryNavStop& stop)
 	// itself (ITreeViewMgr.h:114), but the expansion is asked for outright here - the same order
 	// KESCL uses for the same list-walking job (KESCLReportPanelObserver.cpp), and it keeps what
 	// is being relied on visible in this file rather than in a contract two headers away.
+	// ★The Track mode's story rows hang under an author, which has to be open first (2026-10-05).
+	const int32 author = KCMStoryNodeAuthorOfRow(stop.fRow);
+	if (author >= 0)
+		treeMgr->ExpandNode(KCMStoryNodeID::CreateAuthor(author), kFalse /*expandAllDescendants*/);
 	if (stop.fChange >= 0)
 		treeMgr->ExpandNode(KCMStoryNodeID::CreateStory(stop.fRow), kFalse /*expandAllDescendants*/);
 
@@ -112,6 +116,14 @@ void KCMBuildStoryNavStops(std::vector<KCMStoryNavStop>& out)
 		KCMStoryNavStop stop;
 		stop.fRow = r;
 		stop.fStoryUID = row.fStoryUID;
+		{
+			// The Track mode's row is (story, author) - the author goes into what the stop is remembered by (2026-10-05).
+			IKCMStoryEditsFacade::TrackAuthor au;
+			const int32 a = edits->GetTrackAuthorOfRow(r);
+			if (a >= 0 && edits->GetTrackAuthor(a, au))
+				stop.fAuthorName = au.fName;
+			stop.fAuthorName.SetTranslatable(kFalse);
+		}
 
 		// ***** THE RULE: THE LEAVES, AND ONLY THE LEAVES. *****
 		// "where there are children, leave the parent out; where a parent stands alone, include it". A row with children is

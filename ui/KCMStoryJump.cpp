@@ -57,6 +57,7 @@
 #include "IKCMStoryEditsFacade.h"	// the row a click landed on (Facade since 2026-08-13, Task 14)
 #include "IKCMMarkData.h"	// IsPageOnHiddenSpread - a row on a hidden page is labelled, not jumped to (2026-08-18)
 #include "KCMStoryTree.h"			// KCMListShowsResources - which kind of row the click landed on
+#include "KCMTrackLabels.h"		// the Track mode's heading: who, when, what (2026-10-05)
 #include "KCMResourceValue.h"		// KCMShowSelectedResource - what a Resources row does instead of jumping
 
 namespace
@@ -560,6 +561,16 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	// is done before the refusals below, and KCMChangeNav.h for what it means on a parent row.
 	KCMNoteStoryStop(rowIndex, changeIndex);
 
+	// ★★THE TRACK MODE ASKS THE DOCUMENT FIRST (2026-10-05, design 5-1): a change accepted, rejected or undone since
+	//   the read is no longer recorded, and a jump to where it stood would point at words that are not the change.
+	IKCMStoryEditsFacade::TrackChange track;
+	const bool16 isTrack = Utils<IKCMStoryEditsFacade>()->GetTrackChange(rowIndex, changeIndex, track);
+	if (isTrack && !Utils<IKCMStoryEditsFacade>()->TrackChangeStillRecorded(rowIndex, changeIndex))
+	{
+		KCMSetStatus("This change is no longer recorded - accepted, rejected or undone. Refresh to read again.");
+		return kFalse;
+	}
+
 	IDataBase* db = Utils<IKCMCompareFacade>()->GetArmedTargetDB();
 	if (db == nil || !Utils<IKCMCompareFacade>()->IsDocDBOpen(db))
 		return kFalse;
@@ -736,8 +747,17 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   there; that file's Refresh hangs off a model NOTIFICATION, which can arrive while the
 	//   application is tearing down. Every other facade call in this file (IKCMCompareFacade,
 	//   IKCMStoryEditsFacade) is written the same way for the same reason.
-	Utils<IKCMStoryMarkFacade>()->ShowJumpFlash(db, row.fStoryUID, from, to,
-												  change.fSourceStart, change.fSourceEnd);
+	if (isTrack)
+	{
+		// ★In the author's colour (2026-10-05); in the Source window only where the change's place in the copy is
+		//   known exactly - otherwise its Source range is the story's start, and a flash there would point at nothing.
+		Utils<IKCMStoryMarkFacade>()->ShowJumpFlashColoured(db, row.fStoryUID, from, to,
+			track.fSourceExact ? change.fSourceStart : -1, track.fSourceExact ? change.fSourceEnd : -1,
+			track.fHasColour, track.fR, track.fG, track.fB);
+	}
+	else
+		Utils<IKCMStoryMarkFacade>()->ShowJumpFlash(db, row.fStoryUID, from, to,
+													  change.fSourceStart, change.fSourceEnd);
 
 	// ***** AND THE OTHER SIDE OF THE EDIT GOES TO THE PANEL'S MESSAGE AREA. *****
 	//
@@ -825,6 +845,29 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   press, and "the page did not move to my words" deserves an answer in that moment.
 	if (wentToOverset)
 		label.Append(" (overset)");
+
+	// ★THE TRACK MODE'S HEADING (2026-10-05, design 4-3): who, when, and what - then the words it took away.
+	if (isTrack)
+	{
+		// ★" · " as UTF-16 (the "≠" road of this list): a narrow literal with a non-ASCII byte goes through the
+		//   code page and draws as something else (memory cpp-japanese-needs-bom).
+		const char16_t kDot[] = u" · ";
+		PMString dot;
+		dot.SetXString(reinterpret_cast<const UTF16TextChar*>(kDot), 3);
+		dot.SetTranslatable(kFalse);
+		IKCMStoryEditsFacade::TrackAuthor au;
+		label = Utils<IKCMStoryEditsFacade>()->GetTrackAuthor(track.fAuthor, au) ? KCMTrackAuthorName(au.fName) : PMString();
+		label.Append(dot);
+		label.Append(KCMTrackTimeLabel(track.fTime));
+		label.Append(dot);
+		label.Append(KCMTrackKindWord(track.fKind));
+		label.Append(":");
+		if (track.fHidden)
+			label.Append(" (hidden condition)");
+		if (wentToOverset)
+			label.Append(" (overset)");
+		label.SetTranslatable(kFalse);
+	}
 
 	// ★★THE OTHER SIDE'S READING GOES WITH IT (2026-08-22). The list shows the NEWER version, so a
 	//   reading that was REMOVED can be seen nowhere else - and the row's own upper line is left
