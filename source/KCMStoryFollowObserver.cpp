@@ -23,6 +23,9 @@
 #include "KCMModelNotify.h"		// KCMNotify - the panel is told, never called
 #include "KCMStoryDiffRun.h"	// RunOne - the row compared again
 #include "KCMStoryList.h"		// RowOfTargetStory / NeedsCompareAgain
+#include "KCMTrackList.h"		// NeedsReadAgain / GetStoryUIDs - the Track mode follows the same rule (2026-10-05)
+#include "KCMTrackRead.h"		// Build - ...and reads the whole list again
+#include <vector>
 #include "KCMThreadSafety.h"	// KCMIsMainThread
 #include "KCMStoryFollowObserver.h"
 
@@ -75,6 +78,18 @@ void KCMStoryFollowObserver::LazyUpdate(ISubject* theSubject, const PMIID& proto
 	const UIDRef story = ::GetUIDRef(theSubject);
 	if (story.GetDataBase() != targetDB)
 		return;
+	// ★★THE TRACK MODE FOLLOWS THE SAME RULE (2026-10-05, design 7-2): an Undo or a Redo of a listed story reads
+	//   the whole list again - rows are (story, author) pairs, and one story's records can make or lose rows for
+	//   several authors. Plain typing is left alone, as in the Story mode.
+	if (KCMGetCompareMode() == kKCMModeTrack)
+	{
+		if (!KCMTrackList::NeedsReadAgain(story.GetUID(), targetDB))
+			return;
+		KCMTrackRead::Build(targetDB, sourceDB, nil);
+		KCMStoryFollowEnsureObservers(targetDB);
+		KCMNotify(kKCMStoryEditsRebuiltMessage);
+		return;
+	}
 	const int32 nth = KCMStoryList::RowOfTargetStory(story.GetUID());
 	if (nth < 0 || !KCMStoryList::NeedsCompareAgain(nth, targetDB))
 		return;
@@ -96,25 +111,42 @@ void KCMStoryFollowObserver::LazyUpdate(ISubject* theSubject, const PMIID& proto
 //========================================================================================
 // Attaching.
 //========================================================================================
+namespace
+{
+/* The observer on one story, once (the Story list's stories and, 2026-10-05, the Track list's). */
+void KCMStoryFollowAttach(const UIDRef& storyRef)
+{
+	InterfacePtr<ISubject> subject(storyRef, UseDefaultIID());
+	// Asked for by OUR IID: kTextStoryBoss carries other people's IID_IOBSERVER, and the unit of collision
+	// between vendors is the ImplementationID (KCM.fr).
+	InterfacePtr<IObserver> observer(storyRef, IID_IKCMSTORYFOLLOWOBSERVER);
+	if (subject == nil || observer == nil)
+		return;
+	if (!subject->IsAttached(ISubject::kLazyAttachment, observer, IID_ITEXTMODEL, IID_IKCMSTORYFOLLOWOBSERVER))
+		subject->AttachObserver(ISubject::kLazyAttachment, observer, IID_ITEXTMODEL, IID_IKCMSTORYFOLLOWOBSERVER);
+}
+}	// namespace
+
 void KCMStoryFollowEnsureObservers(IDataBase* targetDB)
 {
 	if (targetDB == nil)
 		return;
+	// ★The Track mode's stories (2026-10-05): the same observer, on every story the Track list names.
+	if (KCMGetCompareMode() == kKCMModeTrack)
+	{
+		std::vector<UID> stories;
+		KCMTrackList::GetStoryUIDs(stories);
+		for (size_t i = 0; i < stories.size(); ++i)
+			KCMStoryFollowAttach(UIDRef(targetDB, stories[i]));
+		return;
+	}
 	const int32 rows = KCMStoryList::GetRowCount();
 	for (int32 i = 0; i < rows; ++i)
 	{
 		const KCMStoryRow* const row = KCMStoryList::GetRow(i);
 		if (row == nil || row->fStoryUID == kInvalidUID || (row->fKinds & kKCMStoryKindRemoved) != 0)
 			continue;		// a story only the Source has is not in this document
-		const UIDRef storyRef(targetDB, row->fStoryUID);
-		InterfacePtr<ISubject> subject(storyRef, UseDefaultIID());
-		// Asked for by OUR IID: kTextStoryBoss carries other people's IID_IOBSERVER, and the unit of collision
-		// between vendors is the ImplementationID (KCM.fr).
-		InterfacePtr<IObserver> observer(storyRef, IID_IKCMSTORYFOLLOWOBSERVER);
-		if (subject == nil || observer == nil)
-			continue;
-		if (!subject->IsAttached(ISubject::kLazyAttachment, observer, IID_ITEXTMODEL, IID_IKCMSTORYFOLLOWOBSERVER))
-			subject->AttachObserver(ISubject::kLazyAttachment, observer, IID_ITEXTMODEL, IID_IKCMSTORYFOLLOWOBSERVER);
+		KCMStoryFollowAttach(UIDRef(targetDB, row->fStoryUID));
 	}
 }
 
