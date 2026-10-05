@@ -129,6 +129,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMModeStoryKey,				"Story Changes",
                 kKCMModeResourcesKey,			"Resources Changes",
                 kKCMModeTrackKey,				"Track Changes",
+                kKCMTrackSectionLabelKey,		"Tracked Changes",
                 kKCMPrevChangeKey,			"< Prev",
                 kKCMNextChangeKey,			"Next >",
 

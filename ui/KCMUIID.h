@@ -216,6 +216,7 @@ DECLARE_PMID(kClassIDSpace, kKCMPawTrackerBoss, kKCMUIPrefix + 34)
 //   selected raises no kTrueStateMessage at all -- measured 2026-09-04, which is exactly why
 //   pressing the button a second time did nothing.
 DECLARE_PMID(kClassIDSpace, kKCMToolButtonBoss, kKCMUIPrefix + 35)
+DECLARE_PMID(kClassIDSpace, kKCMTrackChipCellBoss, kKCMUIPrefix + 38)	// kGenericPanelWidgetBoss + IID_ICONTROLVIEW (kKCMTrackChipViewImpl) + IID_IKCMSTORYCELLDATA: the colour square of a Track AUTHOR row (2026-10-05)
 // InterfaceIDs:
 // ⚠★What is here are **the IIDs that appear only on UI-side bosses**. The ones that cross the
 //   boundary (the five facades plus the notification protocol) are in **KCMBoundaryID.h**,
@@ -299,6 +300,7 @@ DECLARE_PMID(kImplementationIDSpace, kKCMPawTrackerImpl, kKCMUIPrefix + 46)	// I
 DECLARE_PMID(kImplementationIDSpace, kKCMPawTrackerEHImpl, kKCMUIPrefix + 47)	// IEventHandler (CTrackerEventHandler subclass, the companion of the tracker above -- a bare subclass, as kKCMTrackerEHImpl is. KCMPawTracker.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKCMToolButtonEHImpl, kKCMUIPrefix + 49)	// IEventHandler (CEventHandler subclass; the panel tool button's press-and-hold. KCMToolButtonEH.cpp). ⚠It REPLACES the stock kAssociatedActionEventHandlerImpl, so it owns the whole press -- see kKCMToolButtonBoss
 DECLARE_PMID(kImplementationIDSpace, kKCMPawCursorProviderImpl, kKCMUIPrefix + 48)	// ICursorProvider (CToolCursorProvider subclass; the pink paw shown while the stamp tool is active. KCMPawCursorProvider.cpp). ★Simpler than the KCM tool's, which has two states (black while armed, outlined while stopped): a paw can be placed at any time, so it has nothing to say about the comparison's state
+DECLARE_PMID(kImplementationIDSpace, kKCMTrackChipViewImpl, kKCMUIPrefix + 52)	// IControlView (DVControlView subclass, PERSIST): the author row's colour square (KCMTrackChipView.cpp, 2026-10-05)
 // ActionIDs:
 DECLARE_PMID(kActionIDSpace, kKCMAboutActionID, kKCMUIPrefix + 0)
 DECLARE_PMID(kActionIDSpace, kKCMPanelWidgetActionID, kKCMUIPrefix + 1)	// show / hide the panel (Window menu)
@@ -633,6 +635,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 //   ⚠**+72 was the highest unused slot when this was added**, counted rather than guessed: in use
 //     were 0, 1, 26, 34-53 and 57-71.
 DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Row, far right: which comparisons found a difference ("Pixel Story Resources"; a mode that could not be judged carries a '?'). ★Empty for ChapterAdded / ChapterDeleted / NotCompared and for an unchanged chapter -- nothing was looked at, and an empty cell is the honest answer
+DECLARE_PMID(kWidgetIDSpace, kKCMTrackAuthorRowWidgetID, kKCMUIPrefix + 77)	// ★the template of a Track AUTHOR row (2026-10-05): its own WidgetID, so a story row is never handed its widget
 //====================================================================================
 // ★★MIND THE CEILING -- this prefix owns "+0 .. +127" (★128 slots **per ID space**)
 //
@@ -903,6 +906,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMModeStoryKey		kKCMStringPrefix "kKCMModeStoryKey"	// the child item name inside "Compare mode" (= "Story Changes")
 #define kKCMModeResourcesKey	kKCMStringPrefix "kKCMModeResourcesKey"	// the child item name inside "Compare mode" (= "Resources Changes")
 #define kKCMModeTrackKey	kKCMStringPrefix "kKCMModeTrackKey"	// the child item name inside "Compare mode" (= "Track Changes")
+#define kKCMTrackSectionLabelKey	kKCMStringPrefix "kKCMTrackSectionLabelKey"	// the section heading in the Track mode, "Tracked Changes" (the count is appended by C++) - 2026-10-05
 #define kKCMPrevChangeKey		kKCMStringPrefix "kKCMPrevChangeKey"	// the caption of the "< Prev" button on the panel (English everywhere)
 #define kKCMNextChangeKey		kKCMStringPrefix "kKCMNextChangeKey"	// the caption of the "Next >" button on the panel (English everywhere)
 #define kKCMHintKey			kKCMStringPrefix "kKCMHintKey"
@@ -1029,7 +1033,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 // could not put in. The story row and the change row respectively, with the Δ cell replaced by the
 // hand-drawn red "!" (kKCMStoryBangCellBoss). Own WidgetIDs, own resources, one line tall.
 #define kKCMStoryBangRowRsrcID			1018
-#define kKCMStoryBangChangeRowRsrcID	1019	// ⚠Next free: 1020
+#define kKCMStoryBangChangeRowRsrcID	1019
+#define kKCMTrackAuthorRowRsrcID		1020	// a Track mode AUTHOR row (2026-10-05). ⚠Next free: 1021
 
 // The row height of the chapter list. ★As with kKCMStoryRowHeight below, **both the .fr and the
 // C++ read this one constant** (the row resource's Frame, the tree's scroll increment,

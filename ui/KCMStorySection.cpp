@@ -383,7 +383,11 @@ void KCMUpdateStorySectionLabel()
 	//   question the list asks anywhere (KCMStoryTree.h) rather than testing the mode itself.
 	const bool16 showsResources = KCMListShowsResources();
 
-	PMString text(showsResources ? kKCMResourcesSectionLabelKey : kKCMStorySectionLabelKey);
+	// ★"Tracked Changes (N)" in the Track mode (2026-10-05), N = every change in the list - not the rows: one story
+	//   shows up once per author there, so a row count would say nothing a reader could use.
+	Utils<IKCMCompareFacade> compareHere;
+	const bool16 trackMode = (!showsResources && compareHere && compareHere->GetCompareMode() == kKCMModeTrack) ? kTrue : kFalse;
+	PMString text(showsResources ? kKCMResourcesSectionLabelKey : (trackMode ? kKCMTrackSectionLabelKey : kKCMStorySectionLabelKey));
 	text.Translate();
 
 	// ★The count is shown only while comparing. Stopped, the list itself is empty, so "(0)" would
@@ -410,7 +414,8 @@ void KCMUpdateStorySectionLabel()
 	if (compare && compare->IsArmed() && canCount)
 	{
 		text.Append(" (");
-		text.AppendNumber(showsResources ? resources->GetChangeCount() : edits->GetRowCount());
+		text.AppendNumber(showsResources ? resources->GetChangeCount()
+						  : (trackMode ? edits->GetTrackChangeTotal() : edits->GetRowCount()));
 		text.Append(")");
 	}
 

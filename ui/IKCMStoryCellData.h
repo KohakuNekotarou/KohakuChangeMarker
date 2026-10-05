@@ -38,6 +38,7 @@
 
 // General includes:
 #include "PMString.h"
+#include "IInterfaceColors.h"	// RealAGMColor - the Track look (2026-10-05)
 
 // Project includes:
 #include "KCMUIID.h"		// IID_IKCMSTORYCELLDATA
@@ -99,6 +100,13 @@ public:
 	virtual void GetSegments(PMString& outPre, PMString& outMid, PMString& outPost,
 							 PMString& outRuby, int32& outLineCount, int32& outAttrKind,
 							 KCMStoryLayers& outLayers, bool16& outBarWhenEmpty) const = 0;
+
+	/** ★THE TRACK MODE'S LOOK (2026-10-05): the change drawn in its AUTHOR's colour, the words it took away struck
+		through before it. on = kFalse for every other row - and it is written on EVERY apply, after SetSegments,
+		for the recycling reason SetSegments states. The author row's colour square reads `colour` too
+		(KCMTrackChipView). ⚠Appended at the END. */
+	virtual void SetTrackLook(bool16 on, const RealAGMColor& colour, const PMString& oldText) = 0;
+	virtual void GetTrackLook(bool16& outOn, RealAGMColor& outColour, PMString& outOldText) const = 0;
 };
 
 #endif // __IKCMStoryCellData_h__

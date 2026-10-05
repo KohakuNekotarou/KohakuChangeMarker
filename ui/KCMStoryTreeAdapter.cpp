@@ -59,6 +59,7 @@
 #include "IKCMStoryEditsFacade.h"	// GetRowCount / GetChangeCount (Facade since 2026-08-13, Task 14)
 #include "IKCMResourcesFacade.h"	// GetChangeCount - the rows while the Resources mode is on
 #include "KCMStoryTree.h"			// KCMListShowsResources - the one place the list asks the mode
+#include "KCMBoundaryID.h"			// kKCMModeTrack - the root holds authors in that mode (2026-10-05)
 
 /** Hierarchy adapter for the Story Edits list: hidden root -> one node per changed story ->
 	one node per difference inside it (none at all in the pixel mode).
@@ -82,6 +83,13 @@ public:
 
 		if (nodeID->IsChangeRow())
 			return KCMStoryNodeID::CreateStory(nodeID->GetRow());
+
+		if (nodeID->IsAuthorRow())
+			return KCMStoryNodeID::CreateRoot();
+
+		// ★A story row hangs under its author in the Track mode (2026-10-05), under the root otherwise.
+		if (nodeID->GetAuthor() >= 0)
+			return KCMStoryNodeID::CreateAuthor(nodeID->GetAuthor());
 
 		return KCMStoryNodeID::CreateRoot();
 	}
@@ -136,6 +144,15 @@ public:
 				return Utils<IKCMCompareFacade>()->IsArmed() ? 1 : 0;
 			}
 
+			// ★THE TRACK MODE'S ROOT HOLDS THE AUTHORS (2026-10-05); the placeholder rule is the same as below.
+			if (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeTrack)
+			{
+				const int32 authors = Utils<IKCMStoryEditsFacade>()->GetTrackAuthorCount();
+				if (authors > 0)
+					return authors;
+				return Utils<IKCMCompareFacade>()->IsArmed() ? 1 : 0;
+			}
+
 			const int32 rows = Utils<IKCMStoryEditsFacade>()->GetRowCount();
 			if (rows > 0)
 				return rows;
@@ -152,6 +169,12 @@ public:
 		//   ⚠The placeholder row asks this too (row 0 with no model behind it); the Facade
 		//   bounds-checks and answers 0, so the placeholder is a leaf like any story with no
 		//   located differences.
+		// ★A Track author's children are their story rows (2026-10-05).
+		if (nodeID->IsAuthorRow())
+		{
+			IKCMStoryEditsFacade::TrackAuthor au;
+			return Utils<IKCMStoryEditsFacade>()->GetTrackAuthor(nodeID->GetAuthor(), au) ? au.fRowCount : 0;
+		}
 		return Utils<IKCMStoryEditsFacade>()->GetChangeCount(nodeID->GetRow());
 	}
 
@@ -165,7 +188,19 @@ public:
 		{
 			if (nth >= this->GetNumChildren(node))
 				return kInvalidNodeID;
-			return KCMStoryNodeID::CreateStory(nth);
+			IKCMStoryEditsFacade::TrackAuthor au;
+			if (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeTrack
+				&& Utils<IKCMStoryEditsFacade>()->GetTrackAuthor(nth, au))
+				return KCMStoryNodeID::CreateAuthor(nth);
+			return KCMStoryNodeID::CreateStory(nth);	// (the Track mode's empty placeholder lands here too)
+		}
+
+		if (nodeID->IsAuthorRow())
+		{
+			IKCMStoryEditsFacade::TrackAuthor au;
+			if (!Utils<IKCMStoryEditsFacade>()->GetTrackAuthor(nodeID->GetAuthor(), au) || nth >= au.fRowCount)
+				return kInvalidNodeID;
+			return KCMStoryNodeID::CreateStory(au.fFirstRow + nth);
 		}
 
 		// ★Bounds-checked against GetNumChildren rather than against the facade directly, so that
@@ -187,7 +222,18 @@ public:
 		//   whole reason the node is a pair of indices rather than anything richer. The parent is
 		//   not consulted: a change row's place under its story is its change index, and a story
 		//   row's place under the root is its row index, and neither can be anything else.
-		return childID->IsChangeRow() ? childID->GetChange() : childID->GetRow();
+		if (childID->IsChangeRow())
+			return childID->GetChange();
+		if (childID->IsAuthorRow())
+			return childID->GetAuthor();
+		// ★A story row under an author is counted from that author's first row (2026-10-05, the Track mode).
+		if (childID->GetAuthor() >= 0)
+		{
+			IKCMStoryEditsFacade::TrackAuthor au;
+			if (Utils<IKCMStoryEditsFacade>()->GetTrackAuthor(childID->GetAuthor(), au))
+				return childID->GetRow() - au.fFirstRow;
+		}
+		return childID->GetRow();
 	}
 
 	virtual NodeID_rv GetGenericNodeID() const
@@ -200,6 +246,14 @@ public:
 		return kTrue;
 	}
 };
+
+/* The author of a Track row, or -1 outside the Track mode - what the node factories stamp on every node
+   (KCMStoryNodeID.h says why there). */
+int32 KCMStoryNodeAuthorOfRow(int32 row)
+{
+	Utils<IKCMStoryEditsFacade> edits;
+	return (edits && row >= 0) ? edits->GetTrackAuthorOfRow(row) : -1;
+}
 
 CREATE_PMINTERFACE(KCMStoryTreeAdapter, kKCMStoryTreeAdapterImpl)
 

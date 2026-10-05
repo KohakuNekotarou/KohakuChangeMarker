@@ -108,7 +108,8 @@ class KCMStoryCellData : public CPMUnknown<IKCMStoryCellData>
 {
 public:
 	KCMStoryCellData(IPMUnknown* boss)
-		: CPMUnknown<IKCMStoryCellData>(boss), fLineCount(1), fAttrKind(0), fBarWhenEmpty(kFalse) {}
+		: CPMUnknown<IKCMStoryCellData>(boss), fLineCount(1), fAttrKind(0), fBarWhenEmpty(kFalse),
+		  fTrackOn(kFalse), fTrackColour(0.0, 0.0, 0.0) {}
 	virtual ~KCMStoryCellData() {}
 
 	virtual void SetSegments(const PMString& pre, const PMString& mid, const PMString& post,
@@ -143,6 +144,21 @@ public:
 		outBarWhenEmpty = fBarWhenEmpty;
 	}
 
+	virtual void SetTrackLook(bool16 on, const RealAGMColor& colour, const PMString& oldText)
+	{
+		fTrackOn = on;
+		fTrackColour = colour;
+		fTrackOld = oldText;
+		fTrackOld.SetTranslatable(kFalse);	// document text, not a key (SetSegments' note)
+	}
+
+	virtual void GetTrackLook(bool16& outOn, RealAGMColor& outColour, PMString& outOldText) const
+	{
+		outOn = fTrackOn;
+		outColour = fTrackColour;
+		outOldText = fTrackOld;
+	}
+
 private:
 	PMString fPre;
 	PMString fMid;
@@ -155,6 +171,9 @@ private:
 	int32    fAttrKind;
 	KCMStoryLayers fLayers;		// a warichu / tate-chu-yoko change, line by line (fCount 0 otherwise)
 	bool16   fBarWhenEmpty;		// a whole paragraph with no words: draw the bar rather than nothing
+	bool16   fTrackOn;			// the Track mode's look (2026-10-05) - kFalse on every other row
+	RealAGMColor fTrackColour;	// ...the author's colour
+	PMString fTrackOld;			// ...the words the change took away, struck through
 };
 
 CREATE_PMINTERFACE(KCMStoryCellData, kKCMStoryCellDataImpl)
@@ -194,6 +213,10 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	KCMStoryLayers layers;
 	bool16 barWhenEmpty = kFalse;
 	data->GetSegments(pre, mid, post, ruby, lineCount, attrKind, layers, barWhenEmpty);
+	bool16 trackOn = kFalse;
+	RealAGMColor trackColour(0.0, 0.0, 0.0);
+	PMString trackOld;
+	data->GetTrackLook(trackOn, trackColour, trackOld);
 	const bool16 twoLines = (lineCount >= 2) ? kTrue : kFalse;
 	const bool16 layered = (KCMAttrKindIsLayered(attrKind) && layers.fCount >= 2) ? kTrue : kFalse;
 
@@ -277,6 +300,60 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	}
 	const RealAGMColor kChangeColor = fg;
 	const RealAGMColor kContextColor = KCMBlendColor(bg, fg, PMReal(kKCMContextTextWeight));
+
+	// ★★THE TRACK MODE'S ROW (2026-10-05, design 4-2): context faded, the words taken away struck through, the
+	//   words put in, both in the AUTHOR's colour. The new words are drawn twice, half a pixel apart - a bold the
+	//   palette font cannot give (no public way to a bold InterfaceFontInfo was found, 2026-10-05).
+	if (trackOn)
+	{
+		const PMReal oldW = trackOld.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, trackOld, fontInfo, kKCMDontConvertAmpersand).X();
+		const PMReal newW = mid.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, mid, fontInfo, kKCMDontConvertAmpersand).X() + PMReal(0.5);
+		const PMReal gap = (oldW > PMReal(0.0) && newW > PMReal(0.0)) ? PMReal(2.0) : PMReal(0.0);
+		const PMReal coreW = oldW + gap + newW;
+		const PMReal avail = rightEdge - leftEdge;
+		PMString preShown = pre, postShown = post;
+		const PMReal preW  = pre.IsEmpty()  ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, pre,  fontInfo, kKCMDontConvertAmpersand).X();
+		const PMReal postW = post.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, post, fontInfo, kKCMDontConvertAmpersand).X();
+		if (preW + coreW + postW > avail)
+		{
+			const PMReal rem = (avail > coreW) ? (avail - coreW) : PMReal(0.0);
+			preShown = pre.IsEmpty() ? pre : StringUtils::PMEllipsizeString(&gc, rem / PMReal(2.0), pre, fontInfo, kEllipsizeBeginning, nil, kKCMDontConvertAmpersand);
+			postShown = post.IsEmpty() ? post : StringUtils::PMEllipsizeString(&gc, rem / PMReal(2.0), post, fontInfo, kEllipsizeEnd, nil, kKCMDontConvertAmpersand);
+		}
+		PMReal tx = leftEdge;
+		auto run = [&](const PMString& s, const RealAGMColor& c)
+		{
+			if (s.IsEmpty())
+				return;
+			StringUtils::PMDrawStringRGB(&gc, PMPoint(tx, y), s, fontInfo, c, kKCMDontConvertAmpersand, kKCMNoUnderline);
+			tx += StringUtils::PMMeasureString(&gc, s, fontInfo, kKCMDontConvertAmpersand).X();
+		};
+		run(preShown, kContextColor);
+		if (!trackOld.IsEmpty())
+		{
+			const PMReal x0 = tx;
+			run(trackOld, trackColour);
+			// the strike: one line through the middle of the x-height
+			gPort->setrgbcolor(trackColour.red, trackColour.green, trackColour.blue);
+			gPort->rectfill(x0, y - lineHeight * PMReal(0.30), tx - x0, PMReal(1.0));
+			tx += gap;
+		}
+		if (!mid.IsEmpty())
+		{
+			StringUtils::PMDrawStringRGB(&gc, PMPoint(tx + PMReal(0.5), y), mid, fontInfo, trackColour, kKCMDontConvertAmpersand, kKCMNoUnderline);
+			run(mid, trackColour);
+			tx += PMReal(0.5);
+		}
+		else if (trackOld.IsEmpty())
+		{
+			// nothing on either side to show (an empty insertion): the deletion's bar, as the Story row draws it
+			const PMReal barW = StringUtils::PMMeasureString(&gc, KCMCaretPlaceholder(), fontInfo, kKCMDontConvertAmpersand).X();
+			KCMDrawCaret(gPort, trackColour, tx, barW, frame.Top() + PMReal(1.0), frame.Height() - PMReal(2.0));
+			tx += barW;
+		}
+		run(postShown, kContextColor);
+		return;
+	}
 
 	// (kKCMDontConvertAmpersand / kKCMNoUnderline are in KCMPanelTextDraw.h, with the reason both
 	//  widgets share. They were declared here and in KCMStatusTextView.cpp, under two different

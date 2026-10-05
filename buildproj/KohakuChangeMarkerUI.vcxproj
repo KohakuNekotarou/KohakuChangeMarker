@@ -246,6 +246,8 @@
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryTreeEH.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryCellView.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryBangView.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMTrackLabels.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMTrackChipView.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStatusTextView.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryPressMarks.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryRowEH.cpp"/>
@@ -309,6 +311,7 @@
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMUIFactoryList.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMUIShared.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryTree.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMTrackLabels.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryNodeID.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\IKCMStoryCellData.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\IKCMStatusTextData.h"/>
