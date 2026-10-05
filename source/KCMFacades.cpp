@@ -51,6 +51,7 @@
 #include "KCMStoryList.h"			// the Story Edits rows, and where a story begins in a document
 #include "KCMTrackList.h"			// the Track Changes mode's rows (2026-10-05) - read in that mode instead
 #include "KCMTrackRead.h"			// ...read again by a refresh, and asked whether a change is still recorded
+#include "KCMTrackOriginal.h"		// "Compare with Tracked Changes..." - the copy with every change rejected
 #include "KCMStoryDiffRun.h"		// RunOne - re-comparing one row's story ("Refresh Story Comparison")
 #include "KCMOversetPoint.h"		// KCMFindOversetOutport - where the "+" of an overflow is
 #include "ITextModel.h"			// the story the two above are asked about
@@ -294,6 +295,10 @@ public:
 	// Task Start, the file way (2026-09-21). Transfers; the rules are model-side.
 	virtual bool16		CanTakeTaskStartCopy()					{ return KCMCanTakeTaskStartCopy(); }
 	virtual bool16		TakeTaskStartCopy(PMString& outWhyNot)	{ return KCMTakeTaskStartCopy(outWhyNot); }
+
+	// ★"Compare with Tracked Changes..." (2026-10-05) - the whole road is the model's (KCMTrackOriginal.h).
+	virtual bool16	CanTakeTrackOriginalCopy()					{ return KCMCanTakeTrackOriginalCopy(); }
+	virtual bool16	TakeTrackOriginalCopy(PMString& outMessage)	{ return KCMTakeTrackOriginalCopy(nil, outMessage); }
 };
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)

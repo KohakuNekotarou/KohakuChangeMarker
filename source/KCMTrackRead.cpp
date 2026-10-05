@@ -37,6 +37,7 @@
 #include "KCMStoryList.h"			// KCMStoryList::ReadRowForStory, KCMStoryFrameAt
 #include "KCMStoryKinds.h"
 #include "KCMTrackList.h"
+#include "KCMTrackOriginal.h"		// KCMIsTrackOriginalOf - is the Source the rejected copy
 #include "KCMTrackPlan.h"
 #include "KCMTrackRead.h"
 
@@ -223,10 +224,9 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, IDataBase* sourceDB, bool16* outC
 		return 0;
 	}
 
-	// Is the Source the copy "Compare with Tracked Changes..." made from targetDB? Not knowable until that copy
-	// exists (KCMTrackOriginal.cpp, Task 6 of the plan): until then no Source is one, and every Source range is
-	// (0,0) - the story's start.
-	const bool16 sourceIsCopy = kFalse;
+	// Is the Source the copy "Compare with Tracked Changes..." made from targetDB (asked of the files)? Only then are
+	// the Source ranges computed; any other Source leaves them at (0,0) - the story's start.
+	const bool16 sourceIsCopy = (sourceDB != nil && KCMIsTrackOriginalOf(sourceDB, targetDB)) ? kTrue : kFalse;
 	IDataBase::SaveRestoreModifiedState dirtyGuard(targetDB);	// KCMStoryFrameAt composes (the overset test)
 	Utils<ITrackChangeUtils> utils;
 	InterfacePtr<IStoryList> stories(targetDB, targetDB->GetRootUID(), UseDefaultIID());

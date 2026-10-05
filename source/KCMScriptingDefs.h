@@ -251,6 +251,10 @@ enum KCMScriptMethods
 	e_KCMExportStoryText = 'eKGe',	// e = export. app.kcmExportStoryText(folder) -> "exported N ... to <folder>"
 									// ⚠**IT WRITES .docx SINCE 2026-09-21** (it wrote .html until then).
 	e_KCMStopComparison = 'eKGq',	// q = quit.  app.kcmStopComparison()       -> the status line after it
+	// ★(2026-10-05) "Compare with Tracked Changes..." without the save dialog - the menu item's own model call,
+	//   so the Track mode can be tested from KIDMCP. ⚠'eKGl' was MEASURED free (0 hits in source/sdksamples,
+	//   2026-10-05). ⚠Not registered with Adobe.
+	e_KCMCompareTracked = 'eKGl',	// l = log (the change log). app.kcmCompareTracked(file) -> the status line's sentence
 
 	// ★★ONE CHANGE TAKEN IN FROM A SCRIPT (2026-09-17 afternoon). The user asked for the order checks -
 	//   "1 became 1..5, and the user takes in 3, then 5, then 4, then 2: does the order hold?" The change

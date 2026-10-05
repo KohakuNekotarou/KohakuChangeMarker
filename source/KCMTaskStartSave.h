@@ -25,6 +25,7 @@
 #define __KCMTaskStartSave_h__
 
 #include "BaseType.h"
+#include "IDFile.h"			// KCMAskWhereToSaveCopy (2026-10-05)
 #include "PMString.h"
 
 class IDataBase;
@@ -66,6 +67,13 @@ bool16 KCMTakeTaskStartCopy(PMString& outWhyNot);
 /** "<document>_TaskStart_20260921-143052.indd" - the name the save dialog opens with.
     The document's own name without its extension, or "Untitled" when it has none to give. */
 void KCMSuggestedTaskStartName(IDataBase* docDB, PMString& out);
+
+/** The same name with another infix: "<document><infix><stamp>.indd" (2026-10-05 - "_TaskStart_", "_TrackOriginal_"). */
+void KCMSuggestedCopyName(IDataBase* docDB, const char* infix, PMString& out);
+
+/** The save dialog Task Start opens - on the document's own folder, with suggestedName and title - for any copy of a
+    document (2026-10-05: "Compare with Tracked Changes..." too). kFalse when the reader cancelled. */
+bool16 KCMAskWhereToSaveCopy(IDataBase* docDB, const PMString& suggestedName, const PMString& title, IDFile& outFile);
 
 #endif // __KCMTaskStartSave_h__
 

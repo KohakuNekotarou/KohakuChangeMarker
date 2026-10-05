@@ -19,6 +19,9 @@
 //                               it is read.
 //     KCMRealisePairEnd         turns a file end into a database, by finding the document already
 //                               open on it or opening it. ★**ONLY Start CALLS THIS.**
+//                               (★And "Compare with Tracked Changes..." since 2026-10-05 - KCMTrackOriginal.cpp: it
+//                               opens its copy itself, because every change has to be rejected in it before the
+//                               comparison reads it. A PRESS, like Start - never a grey-state question.)
 //
 //  ★**ALL THE SLOTS IN ONE FILE** (moved out of KCMComparisonRun on 2026-09-21): they answer one
 //  question - "which two has the reader chosen" - and split across two files there would be two
@@ -76,7 +79,8 @@ bool16 KCMResolveComparisonPair(KCMPairEnd& outTarget, KCMPairEnd& outSource);
 /** Turn a file end into a database: the document already open on that file when there is one,
     otherwise the file opened in a window. A database end is handed straight back.
 
-    ★**ONLY Start CALLS THIS** - see the two stages at the top of this file.
+    ★**ONLY Start CALLS THIS** - see the two stages at the top of this file. (And "Compare with Tracked
+     Changes...", 2026-10-05: also a press, opening the copy it is about to reject every change in.)
     ⚠**Identity is asked of the file (IDocumentList::FindDoc takes the IDFile), never of the path
      string or a remembered pointer**: one file can be spelled two ways, and a closed document's
      address gets re-used ([[uidref-reuse-after-close]]).

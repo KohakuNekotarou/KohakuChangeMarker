@@ -848,6 +848,13 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMImportStoryTextMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Compare with Tracked Changes..." (2026-10-05): the import's road for the Track mode - a copy with every
+		// tracked change rejected becomes the Source, and the Track Changes comparison starts. Directly under Import.
+		kKCMCompareTrackedActionID,
+		kKCMPopupMenuPath,
+		kKCMCompareTrackedMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Clear Target and Source" on the panel flyout (popup) menu. Plain command: stops a running
 		// comparison and drops both chosen documents, so the next Start falls back to the automatic
 		// rule (active = Target, the earliest-opened other document = Source). Directly below the two
@@ -1451,6 +1458,16 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKCMActionComponentBoss,
 		kKCMPopupImportStoryTextActionID,
 		kKCMImportStoryTextMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Compare with Tracked Changes..." (2026-10-05). Greyed with no document to copy (UpdateActionStates).
+		kKCMActionComponentBoss,
+		kKCMCompareTrackedActionID,
+		kKCMCompareTrackedMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,

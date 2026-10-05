@@ -143,6 +143,7 @@
 #include "KCMStoryStamp.h"	// KCMStoryEdits::ReadStamp - the SAME reading the panel uses
 #include "KCMStoryList.h"	// KCMStoryList::RowsAsTsv - app.kcmStoryRows, the reading port
 #include "KCMTrackList.h"	// KCMTrackList::RowsAsTsv - the same port in the Track Changes mode (2026-10-05)
+#include "KCMTrackOriginal.h"	// KCMTakeTrackOriginalCopy - app.kcmCompareTracked (2026-10-05)
 #include "KCMCore.h"		// KCMGetCompareMode - which of the two lists the port reads
 #include "KCMRingAdornment.h"	// KCMGetNumItemsWithXP - document.kcmTransparencyItemCount
 #include "SysFileList.h"			// app.kcmImportStoryText hands its one file over as a list
@@ -284,7 +285,7 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 	{
 		const int32 id = methodID.Get();
 		if (id == e_KCMImportStoryText
-			|| id == e_KCMExportStoryText || id == e_KCMStopComparison)
+			|| id == e_KCMExportStoryText || id == e_KCMStopComparison || id == e_KCMCompareTracked)
 		{
 			PMString message;
 			message.SetTranslatable(kFalse);
@@ -308,6 +309,11 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 				{
 					message = "the file argument could not be read";
 					message.SetTranslatable(kFalse);
+				}
+				else if (id == e_KCMCompareTracked)
+				{
+					// "Compare with Tracked Changes..." with the file given instead of asked (2026-10-05, KCMTrackOriginal.h).
+					KCMTakeTrackOriginalCopy(&file, message);
 				}
 				else if (id == e_KCMImportStoryText)
 				{

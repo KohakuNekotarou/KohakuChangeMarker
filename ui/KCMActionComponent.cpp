@@ -1054,6 +1054,19 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			}
 			break;
 
+		// ★"Compare with Tracked Changes..." (2026-10-05): the model does the whole road - the save dialog, the copy,
+		//   the rejections, the pair, the mode and the start (KCMTrackOriginal.h); this says what came of it.
+		//   An empty message = the reader cancelled the dialog, and a cancel says nothing (RUN-67).
+		case kKCMCompareTrackedActionID:
+			{
+				PMString msg;
+				Utils<IKCMCompareFacade>()->TakeTrackOriginalCopy(msg);
+				KCMRefreshPanel();
+				if (msg.CharCount() > 0)
+					KCMSetStatus(msg);
+			}
+			break;
+
 		case kKCMPopupCompareBooksActionID:
 			// The menu greys it in the Track Changes mode; this is the same answer for a caller that invokes it anyway.
 			if (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeTrack)
@@ -1500,6 +1513,13 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//   ends by starting a comparison - the item stayed grey until the reader pressed Stop.
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 live = (compare != nil && compare->CanTakeTaskStartCopy()) ? kTrue : kFalse;
+			listToUpdate->SetNthActionState(i, live ? kEnabledAction : kDisabled_Unselected);
+		}
+		else if (action == kKCMCompareTrackedActionID)
+		{
+			// A document to copy - the chosen Target, else the active one - and nothing else, as Import (2026-10-05).
+			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+			const bool16 live = (compare != nil && compare->CanTakeTrackOriginalCopy()) ? kTrue : kFalse;
 			listToUpdate->SetNthActionState(i, live ? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMPopupExportStoryTextActionID)

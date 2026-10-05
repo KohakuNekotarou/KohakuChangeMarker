@@ -764,6 +764,20 @@ resource VersionedScriptElementInfo(10)
 			{ /* void */ }
 		}
 
+		// (2026-10-05) "Compare with Tracked Changes..." without the save dialog - the Track mode's test door.
+		Method
+		{
+			kKCMCompareTrackedMethodScriptElement,
+			e_KCMCompareTracked,
+			"kcm compare tracked",				// name -> app.kcmCompareTracked(file)
+			"Save the active (or chosen Target) document's original version - every tracked change rejected - to the file, choose it as the Source, and start the Track Changes comparison, as Compare with Tracked Changes does, without the dialog.",
+			StringType,
+			"The sentence the status line shows"
+			{
+				keyAEFile, "file path", "Where the original version is saved (.indd)", FileType, kRequired
+			}
+		}
+
 		// (⛔**TWO METHODS STOOD HERE AND WENT ON 2026-09-21** with the restore they drove:
 		//  "kcm take in change" (app.kcmTakeInChange, e_KCMTakeInChange) and "kcm undo restore"
 		//  (app.kcmUndoRestore, e_KCMUndoRestoreChange). Each named a change by WORDS it holds, so that
@@ -802,6 +816,7 @@ resource VersionedScriptElementInfo(10)
 				Method{ kKCMImportStoryTextMethodScriptElement },
 				Method{ kKCMExportStoryTextMethodScriptElement },
 				Method{ kKCMStopComparisonMethodScriptElement },
+				Method{ kKCMCompareTrackedMethodScriptElement },	// (2026-10-05) the Track mode's test door
 				// ...and the export's .docx road (2026-09-19).
 				// (⛔The two halves of "kcm take in change" and "kcm undo restore" went on 2026-09-21.)
 			}

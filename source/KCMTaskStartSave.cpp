@@ -100,7 +100,13 @@ void BareName(IDataBase* db, PMString& out)
 		out.AppendW(UTF32TextChar(b[i]));
 }
 
+}	// namespace
+
+//----------------------------------------------------------------------------------------
+
 /*	The save dialog, opened ON THE DOCUMENT'S OWN FOLDER. kFalse when the reader cancelled.
+	★Shared by Task Start and "Compare with Tracked Changes..." (2026-10-05): each passes its own suggested
+	  name and title.
 
 	⚠★★★**NOT SDKFileSaveChooser, and the reason is one argument** (measured 2026-09-21). That
 	  helper fixes DoDialog's fourth argument, useSystemDefaultDir, at kTrue
@@ -112,7 +118,7 @@ void BareName(IDataBase* db, PMString& out)
 	⚠**The header's own instructions name a method that does not exist** (ISaveFileDialog.h:44
 	  says "Call SetFileTypeInfo()"; the interface has AddFileTypeInfo).
 */
-bool16 AskWhereToSave(IDataBase* docDB, IDFile& outFile)
+bool16 KCMAskWhereToSaveCopy(IDataBase* docDB, const PMString& suggestedName, const PMString& title, IDFile& outFile)
 {
 	InterfacePtr<ISaveFileDialog> dlg(
 		(ISaveFileDialog*)::CreateObject(kSaveFileDialogBoss, IID_ISAVEFILEDIALOG));
@@ -126,8 +132,7 @@ bool16 AskWhereToSave(IDataBase* docDB, IDFile& outFile)
 	dlg->SetAdditionalFOSFlags(FOS_OVERWRITEPROMPT | FOS_NOREADONLYRETURN);
 #endif
 
-	PMString suggested;
-	KCMSuggestedTaskStartName(docDB, suggested);
+	const PMString& suggested = suggestedName;
 
 	// ★**A FULL PATH INTO IDFile::SetString** is the Windows form SDKFileHelper uses for exactly
 	//   this (SDKFileHelper.cpp). KCM ships Windows-only, so there is no second branch here.
@@ -150,19 +155,17 @@ bool16 AskWhereToSave(IDataBase* docDB, IDFile& outFile)
 		defaultFile.SetString(suggested);
 	}
 
-	PMString title("Task Start - save a copy of this document");
-	title.SetTranslatable(kFalse);
+	PMString shownTitle(title);
+	shownTitle.SetTranslatable(kFalse);
 	int32 selectedIndex = 0;
 	return dlg->DoDialog(&defaultFile, &outFile, &selectedIndex,
 						 kFalse /*useSystemDefaultDir - see the note above*/,
-						 kTrue /*showTypeMenu*/, &title);
+						 kTrue /*showTypeMenu*/, &shownTitle);
 }
-
-}	// namespace
 
 //----------------------------------------------------------------------------------------
 
-void KCMSuggestedTaskStartName(IDataBase* docDB, PMString& out)
+void KCMSuggestedCopyName(IDataBase* docDB, const char* infix, PMString& out)
 {
 	PMString stem;
 	BareName(docDB, stem);
@@ -174,10 +177,15 @@ void KCMSuggestedTaskStartName(IDataBase* docDB, PMString& out)
 	NowStamp(stamp);
 
 	out = stem;
-	out.Append("_TaskStart_");
+	out.Append(infix);			// "_TaskStart_" / "_TrackOriginal_"
 	out.Append(stamp);
 	out.Append(".indd");
 	out.SetTranslatable(kFalse);
+}
+
+void KCMSuggestedTaskStartName(IDataBase* docDB, PMString& out)
+{
+	KCMSuggestedCopyName(docDB, "_TaskStart_", out);
 }
 
 IDataBase* KCMTaskDocumentDB()
@@ -220,7 +228,9 @@ bool16 KCMTakeTaskStartCopy(PMString& outWhyNot)
 	// 3. WHERE. ★★A cancel ends the whole thing here, having changed nothing - no stop, no choice,
 	//    and outWhyNot stays EMPTY so that the caller says nothing either (the user's rule).
 	IDFile dest;
-	if (!AskWhereToSave(docDB, dest))
+	PMString suggested;
+	KCMSuggestedTaskStartName(docDB, suggested);
+	if (!KCMAskWhereToSaveCopy(docDB, suggested, PMString("Task Start - save a copy of this document"), dest))
 		return kFalse;
 
 	// 4. WRITE IT. ★SaveACopy adds no undo step (measured 2026-08-30), so the reader's undo stack
