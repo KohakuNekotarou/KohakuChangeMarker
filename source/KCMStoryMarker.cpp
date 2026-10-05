@@ -413,6 +413,14 @@ void KCMStoryMarkerInstall()
 		KCMStoryMarkerRepaint(*db);
 }
 
+/** One rectangle to fill, and what to fill it with (2026-10-05: the Track mode colours each author). */
+struct KCMMarkBox
+{
+	PMRect	fBox;
+	bool16	fHasColour;		// kFalse = the panel's Mark colour
+	uint8	fR, fG, fB;
+};
+
 }	// anonymous namespace
 
 //----------------------------------------------------------------------------------------
@@ -504,14 +512,14 @@ private:
 		data, which all four of these methods are warned about in IGlobalTextAdornment.h. */
 	static bool16 GetMarkBoxes(const IWaxRun* waxRun, const IWaxRenderData* renderData,
 							   const IWaxGlyphs* waxGlyphs, bool16 forPrint,
-							   std::vector<PMRect>& outBoxes);
+							   std::vector<KCMMarkBox>& outBoxes);
 };
 
 CREATE_PMINTERFACE(KCMStoryMarkerAdornment, kKCMStoryMarkerAdornmentImpl)
 
 bool16 KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWaxRenderData* renderData,
 											   const IWaxGlyphs* waxGlyphs, bool16 forPrint,
-											   std::vector<PMRect>& outBoxes)
+											   std::vector<KCMMarkBox>& outBoxes)
 {
 	outBoxes.clear();
 
@@ -608,7 +616,11 @@ bool16 KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWaxRe
 		box.Right(x + width);
 		box.Top(y - size * PMReal(kAscentFraction));
 		box.Bottom(y + size * PMReal(kDescentFraction));
-		outBoxes.push_back(box);
+		KCMMarkBox mb;
+		mb.fBox = box;
+		mb.fHasColour = r->fHasColour;
+		mb.fR = r->fR; mb.fG = r->fG; mb.fB = r->fB;
+		outBoxes.push_back(mb);
 	}
 
 	return outBoxes.empty() ? kFalse : kTrue;
@@ -656,16 +668,16 @@ void KCMStoryMarkerAdornment::GetInkBounds(PMRect* inkBounds, const IWaxRun* wax
 	// @warning kFalse: ink bounds are declared with no iShapeFlags to consult, so they are declared
 	//   for the wider case. Over-declaring costs nothing (it only widens the rectangle the text
 	//   engine will let us paint in); under-declaring would clip a mark that IS printable.
-	std::vector<PMRect> boxes;
+	std::vector<KCMMarkBox> boxes;
 	if (!GetMarkBoxes(waxRun, renderData, waxGlyphs, kFalse, boxes))
 		return;								// leave them empty, as the header instructs
 
 	// THE UNION OF THEM ALL, because ink bounds are declared once for the whole run. A press can
 	//   mark two separate edits inside one run, and a bound that covered only the first would clip
 	//   the second away.
-	PMRect all = boxes.front();
+	PMRect all = boxes.front().fBox;
 	for (size_t i = 1; i < boxes.size(); ++i)
-		all.Union(boxes[i]);
+		all.Union(boxes[i].fBox);
 
 	*inkBounds = all;
 }
@@ -683,7 +695,7 @@ void KCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const IW
 	//   screen every marked run draws; on paper only the documents whose toggle says so do.
 	const bool16 forPrint = ((iShapeFlags & (IShape::kPrinting | IShape::kPreviewMode)) != 0) ? kTrue : kFalse;
 
-	std::vector<PMRect> boxes;
+	std::vector<KCMMarkBox> boxes;
 	if (!GetMarkBoxes(waxRun, renderData, waxGlyphs, forPrint, boxes))
 		return;
 
@@ -743,25 +755,30 @@ void KCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const IW
 	const int32 mix = (pct < 0) ? 0 : ((pct > 100) ? 100 : pct);
 
 	// WHICH COLOUR -- the panel's "Mark colour: Red / Cyan", read through the same accessor the
-	//   Pixel mode's rings use, so the two modes can never disagree about it.
-	uint8 baseR = 0, baseG = 0, baseB = 0;
-	KCMDrawEventHandler::SelectedMarkColor(baseR, baseG, baseB);
+	//   Pixel mode's rings use, so the two modes can never disagree about it - UNLESS THE BOX HAS A
+	//   COLOUR OF ITS OWN (2026-10-05, the Track mode: the author's tracked-change colour). Every box of
+	//   the other modes has none, so what they draw does not change.
+	uint8 markR = 0, markG = 0, markB = 0;
+	KCMDrawEventHandler::SelectedMarkColor(markR, markG, markB);
 
-	const uint8 wr = (uint8)(255 - (255 - baseR) * mix / 100);
-	const uint8 wg = (uint8)(255 - (255 - baseG) * mix / 100);
-	const uint8 wb = (uint8)(255 - (255 - baseB) * mix / 100);
-
+	// ONE FILL PER BOX, AND THEY CANNOT OVERLAP -- the ranges were merged before they were ever
+	//   installed (KCMStoryMarkRanges.h; ranges of two colours are cut, never laid over each other).
+	//   @warning with Difference an overlap punched a hole (two inversions cancel); a flat wash would
+	//   merely paint twice, but the merge is still what keeps the drawing cheap.
 	// SCREEN IN RGB, PAPER IN CMYK -- the same helper the Pixel mode's frames call, for the same
 	//   reason: KCM compares in CMYK, so a mark specified in RGB does not match its own frames on
 	//   output. The helper lives in KCMDrawEventHandler.cpp and was made non-static for this.
-	KCMSetOutputColor(gPort, wr, wg, wb, forPrint);
-
-	// ONE FILL PER RANGE, AND THEY CANNOT OVERLAP -- the ranges were merged before they were ever
-	//   installed (KCMStoryMarkRanges.h). @warning with Difference an overlap punched a hole (two
-	//   inversions cancel); a flat wash would merely paint twice, but the merge is still what keeps
-	//   the drawing cheap.
-	for (std::vector<PMRect>::const_iterator b = boxes.begin(); b != boxes.end(); ++b)
-		gPort->rectfill(b->Left(), b->Top(), b->Width(), b->Height());
+	for (std::vector<KCMMarkBox>::const_iterator b = boxes.begin(); b != boxes.end(); ++b)
+	{
+		const uint8 baseR = b->fHasColour ? b->fR : markR;
+		const uint8 baseG = b->fHasColour ? b->fG : markG;
+		const uint8 baseB = b->fHasColour ? b->fB : markB;
+		const uint8 wr = (uint8)(255 - (255 - baseR) * mix / 100);
+		const uint8 wg = (uint8)(255 - (255 - baseG) * mix / 100);
+		const uint8 wb = (uint8)(255 - (255 - baseB) * mix / 100);
+		KCMSetOutputColor(gPort, wr, wg, wb, forPrint);
+		gPort->rectfill(b->fBox.Left(), b->fBox.Top(), b->fBox.Width(), b->fBox.Height());
+	}
 
 	gPort->newpath();
 }
@@ -771,7 +788,8 @@ void KCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const IW
 //----------------------------------------------------------------------------------------
 
 void KCMStoryMarker::AddFlashRange(KCMStoryMarkDocs& docs, IDataBase* db, UID storyUID,
-									TextIndex from, TextIndex to)
+									TextIndex from, TextIndex to,
+									bool16 hasColour, uint8 r, uint8 g, uint8 b)
 {
 	if (db == nil || storyUID == kInvalidUID)
 		return;			// a window that is not open, or a story there is none of - nothing to add
@@ -792,9 +810,11 @@ void KCMStoryMarker::AddFlashRange(KCMStoryMarkDocs& docs, IDataBase* db, UID st
 	//   the newer document, so the range handed over for the older one is empty and comes out as the
 	//   caret standing where they went in -- which is exactly where the reader is looking. Nothing
 	//   here has to know which of the two cases it is.
+	// ★IN A COLOUR OF ITS OWN WHEN ONE IS GIVEN (2026-10-05, the Track mode's author colour) - every push below.
 	if (to > from)
 	{
-		docs[db][storyUID].push_back(KCMMarkRange(from, to));
+		const KCMMarkRange range(from, to);
+		docs[db][storyUID].push_back(hasColour ? range.WithColour(r, g, b) : range);
 		return;
 	}
 
@@ -808,7 +828,8 @@ void KCMStoryMarker::AddFlashRange(KCMStoryMarkDocs& docs, IDataBase* db, UID st
 		InterfacePtr<ITextModel> model(UIDRef(db, storyUID), UseDefaultIID());
 		if (model != nil && from >= model->TotalLength() - 1)
 		{
-			docs[db][storyUID].push_back(KCMMarkRange::CaretAfter(from));
+			const KCMMarkRange range = KCMMarkRange::CaretAfter(from);
+			docs[db][storyUID].push_back(hasColour ? range.WithColour(r, g, b) : range);
 			return;
 		}
 	}
@@ -818,10 +839,12 @@ void KCMStoryMarker::AddFlashRange(KCMStoryMarkDocs& docs, IDataBase* db, UID st
 	TextIndex afterTable = 0;
 	if (KCMCaretOnTableChars(db, storyUID, from, afterTable))
 	{
-		docs[db][storyUID].push_back(KCMMarkRange::CaretAfter(afterTable));
+		const KCMMarkRange range = KCMMarkRange::CaretAfter(afterTable);
+		docs[db][storyUID].push_back(hasColour ? range.WithColour(r, g, b) : range);
 		return;
 	}
-	docs[db][storyUID].push_back(KCMMarkRange::Caret(from));
+	const KCMMarkRange caret = KCMMarkRange::Caret(from);
+	docs[db][storyUID].push_back(hasColour ? caret.WithColour(r, g, b) : caret);
 }
 
 void KCMStoryMarker::ShowFlash(const KCMStoryMarkDocs& docs)

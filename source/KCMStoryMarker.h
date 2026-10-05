@@ -103,9 +103,12 @@ namespace KCMStoryMarker
 		@param storyUID which story.
 		@param from first character to light up.
 		@param to one past the last. from == to is the caret case described above.
+		@param hasColour, r, g, b the Track mode's author colour (2026-10-05); kFalse = the Mark colour,
+			which is what every other caller wants.
 	*/
 	void AddFlashRange(KCMStoryMarkDocs& docs, IDataBase* db, UID storyUID,
-					   TextIndex from, TextIndex to);
+					   TextIndex from, TextIndex to,
+					   bool16 hasColour = kFalse, uint8 r = 0, uint8 g = 0, uint8 b = 0);
 
 	/** Show a jump's pointer, and start the countdown that takes it away.
 
