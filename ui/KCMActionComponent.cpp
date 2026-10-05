@@ -1738,6 +1738,9 @@ void KCMActionComponent::DoUsage()
 	//   Japanese side it sits inside kHint2 at the same seam (after Story IDs, before the books), so
 	//   the Japanese literal for this key is empty too and the order comes out the same.
 	usage.Append(KCMLoc::Text(kKCMHint4Key, u""));
+	// ★The Track Changes mode (2026-10-05) is a FIFTH English key, read after the fourth; on the Japanese side it sits
+	//   inside kHint2 right after the round trip, so its Japanese literal is empty too.
+	usage.Append(KCMLoc::Text(kKCMHint5Key, u""));
 	usage.Append(KCMLoc::Text(kKCMHint2Key, KCMJa::kHint2));
 	usage.SetTranslatable(kFalse);
 

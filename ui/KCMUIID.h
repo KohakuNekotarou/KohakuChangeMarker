@@ -933,6 +933,10 @@ DECLARE_PMID(kWidgetIDSpace, kKCMTrackAuthorRowWidgetID, kKCMUIPrefix + 77)	// �
 //   DoUsage reads hint / hint3 / hint4 / hint2; the Japanese side carries the section inside its
 //   kHint2 at the same seam (after Story IDs, before the books).
 #define kKCMHint4Key			kKCMStringPrefix "kKCMHint4Key"
+// ★**The fifth part (2026-10-05): the Track Changes mode** (Compare with Tracked Changes...). A key of its own for
+//   the same reason as the third and fourth (each older key is near odfrc's cap). DoUsage reads hint / hint3 / hint4 /
+//   hint5 / hint2; the Japanese side carries the section inside kHint2 at the same seam (after the round trip).
+#define kKCMHint5Key			kKCMStringPrefix "kKCMHint5Key"
 #define kKCMToolStringKey		kKCMStringPrefix "kKCMToolStringKey"	// the tool name in the toolbox (its tooltip). English in every locale
 #define kKCMPawToolStringKey	kKCMStringPrefix "kKCMPawToolStringKey"	// the cat-paw stamp tool's name in the flyout (its tooltip). ★English in every locale, as the line above: the jaJP string table was retired on 2026-08-05 and Japanese now comes from ui/KCMLoc.h at run time -- a tool name is not one of the strings that file carries
 
