@@ -177,6 +177,16 @@ bool16 KCMTakeTrackOriginalCopy(const IDFile* dest, PMString& outMessage)
 			return kFalse;
 	}
 
+	// ★NOT THE DOCUMENT'S OWN FILE (re-check 2026-10-05): the copy would be written over the original it is the copy of -
+	//   the one file this road promises never to write (design 2-2). The dialog's overwrite prompt does not stop it, and the
+	//   script door has no dialog at all.
+	const IDFile* const ownFile = docDB->GetSysFile();
+	if (ownFile != nil && FileUtils::IsEqual(*ownFile, file))
+	{
+		outMessage = "The copy cannot be saved over the document itself - choose another name.";
+		return kFalse;
+	}
+
 	// 3. THE COPY. SaveACopy adds no undo step (measured 2026-08-30): the Target's undo stack is untouched.
 	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 	handler->SaveACopy(docRef, &file);

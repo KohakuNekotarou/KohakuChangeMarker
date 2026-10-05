@@ -1346,7 +1346,11 @@ void KCMRecomputeListLeftColumnWidth()
 			PMString uid;
 			uid.SetTranslatable(kFalse);
 			uid.AppendNumber(static_cast<int32>(row.fStoryUID.Get()));
-			const PMReal w = StringUtils::PMMeasureString(uid, font, kFalse).X();
+			// ★A story row under a Track author has its UID cell kKCMAttrNameIndent further in (ApplyDataToWidget), so it
+			//   is measured with that indent - the Resources child's rule below (re-check 2026-10-05: it was measured
+			//   without, and a long UID lost its last digit to the narrower cell).
+			const PMReal indent = (stories->GetTrackAuthorOfRow(i) >= 0) ? PMReal(kKCMAttrNameIndent) : PMReal(0.0);
+			const PMReal w = StringUtils::PMMeasureString(uid, font, kFalse).X() + indent;
 			if (w > widestUid)
 				widestUid = w;
 

@@ -32,6 +32,7 @@
 #include <string>
 
 // Project includes:
+#include "KCMCore.h"				// KCMIsDocDBOpen - neither document is trusted to be open
 #include "KCMDiag.h"				// KCM_DIAG_LOG - test builds only (nothing in a shipping .pln)
 #include "KCMProgressBar.h"			// KCMProgressStepper - the bar after kKCMProgressBarDelayMs, as the Story diff has
 #include "KCMStoryList.h"			// KCMStoryList::ReadRowForStory, KCMStoryFrameAt
@@ -218,7 +219,12 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, IDataBase* sourceDB, bool16* outC
 		*outCancelled = kFalse;
 	std::vector<KCMTrackAuthor> authors;
 	std::vector<KCMTrackRow> rows;
-	if (targetDB == nil)
+	// ★BOTH DOCUMENTS ASKED FOR AGAIN, NOT TRUSTED (re-check 2026-10-05): a caller hands over the armed pointers, and the
+	//   copy or the Target may have been closed since - a closed database is never dereferenced (KCMIsDocDBOpen compares
+	//   pointers only). A Source that is gone is read as "not the copy"; a Target that is gone leaves an empty list.
+	if (sourceDB != nil && !KCMIsDocDBOpen(sourceDB))
+		sourceDB = nil;
+	if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
 	{
 		KCMTrackList::Set(authors, rows, 0, 0);
 		return 0;
