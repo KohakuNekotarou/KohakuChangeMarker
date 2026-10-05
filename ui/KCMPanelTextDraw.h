@@ -27,7 +27,9 @@
 #define __KCMPanelTextDraw_h__
 
 // Interface includes:
+#include "IControlView.h"		// IsHilited - KCMViewOrParentIsHilited
 #include "IGraphicsPort.h"		// setrgbcolor / rectfill - the caret is filled, not written
+#include "IWidgetParent.h"		// QueryParentFor - a cell -> the row that carries the hilite
 #include "IInterfaceColors.h"	// RealAGMColor
 
 // General includes:
@@ -163,6 +165,28 @@ inline void KCMDrawCaret(IGraphicsPort* gPort, const RealAGMColor& colour,
 	gPort->setrgbcolor(colour.red, colour.green, colour.blue);
 	gPort->rectfill(left, ::Round(top), kKCMCaretWidth, height);
 }
+/** True if this view, or a widget above it, is drawn hilited - i.e. this cell belongs to the row the user has
+	selected. The tree applies the hilite to the ROW widget (CTreeViewWidgetMgr::ApplyNodeIDToWidget does it, "for
+	hilite selection"), and a cell is one of that row's children, so a cell that only asked itself would never see the
+	selection. ★Shared by the change row's text cell and the Track author row's colour square (moved here from
+	KCMStoryCellView.cpp on 2026-10-05). */
+const int32 kKCMHiliteParentSteps = 3;	// cell -> row is one step; the rest only keep it working behind a wrapper (KBS's same constant)
+
+inline bool16 KCMViewOrParentIsHilited(IControlView* view, int32 stepsLeft)
+{
+	if (view == nil)
+		return kFalse;
+	if (view->IsHilited())
+		return kTrue;
+	if (stepsLeft <= 0)
+		return kFalse;
+	InterfacePtr<IWidgetParent> parent(view, UseDefaultIID());
+	if (parent == nil)
+		return kFalse;
+	InterfacePtr<IControlView> parentView((IControlView*)parent->QueryParentFor(IID_ICONTROLVIEW));
+	return KCMViewOrParentIsHilited(parentView, stepsLeft - 1);
+}
+
 #endif // __KCMPanelTextDraw_h__
 
 // End, KCMPanelTextDraw.h.

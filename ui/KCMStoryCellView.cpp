@@ -63,38 +63,14 @@
 namespace
 {
 
-// How far up the widget chain to look for the hilite. One step is all this list needs (cell ->
-// row); the extra steps only keep it working if the row ever gains another wrapper. Same constant,
-// and the same reason, as KBS's kKBSHiliteParentSteps.
-const int32 kKCMHiliteParentSteps = 3;
-
 // ★kKCMContextTextWeight (how far the context fades) and KCMBlendColor (how) MOVED OUT on
 // 2026-08-20, to KCMPanelTextDraw.h. The panel's message area draws the other side of the same
 // edit the same way, and two copies of "0.65" would drift apart the first time one was tuned
 // ([[one-question-one-place]]). ⚠What did NOT move is the colour lookup below: this cell asks
 // whether its ROW is hilited and switches both colours; the message area is never hilited.
 
-/* KCMViewOrParentIsHilited
-   True if this view, or a widget above it, is drawn hilited - i.e. this cell belongs to the row the
-   user has selected. The tree applies the hilite to the ROW widget (the base
-   CTreeViewWidgetMgr::ApplyNodeIDToWidget does it, "for hilite selection"), and this cell is one of
-   that row's children, so a cell that only asked itself would never see the selection.
-*/
-bool16 KCMViewOrParentIsHilited(IControlView* view, int32 stepsLeft)
-{
-	if (view == nil)
-		return kFalse;
-	if (view->IsHilited())
-		return kTrue;
-	if (stepsLeft <= 0)
-		return kFalse;
-
-	InterfacePtr<IWidgetParent> parent(view, UseDefaultIID());
-	if (parent == nil)
-		return kFalse;
-	InterfacePtr<IControlView> parentView((IControlView*)parent->QueryParentFor(IID_ICONTROLVIEW));
-	return KCMViewOrParentIsHilited(parentView, stepsLeft - 1);
-}
+// (KCMViewOrParentIsHilited - is this cell's ROW the selected one - and kKCMHiliteParentSteps moved to
+//  KCMPanelTextDraw.h on 2026-10-05, with their note: the Track author row's colour square asks the same question.)
 
 }	// anonymous namespace
 
@@ -301,9 +277,11 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	const RealAGMColor kChangeColor = fg;
 	const RealAGMColor kContextColor = KCMBlendColor(bg, fg, PMReal(kKCMContextTextWeight));
 
-	// ★★THE TRACK MODE'S ROW (2026-10-05, design 4-2): context faded, the words taken away struck through, the
-	//   words put in, both in the AUTHOR's colour. The new words are drawn twice, half a pixel apart - a bold the
-	//   palette font cannot give (no public way to a bold InterfaceFontInfo was found, 2026-10-05).
+	// ★★THE TRACK MODE'S ROW (2026-10-05, design 4-2): context faded, the words taken away struck through, then the
+	//   words put in - IN THE ORDINARY CHANGE COLOUR (the user, seeing it live: "the changed part is in the author's
+	//   colour - make it the normal colour"; the author's colour is the author row's square and the marks on the page).
+	//   The new words are drawn twice, half a pixel apart - a bold the palette font cannot give (no public way to a bold
+	//   InterfaceFontInfo was found, 2026-10-05).
 	if (trackOn)
 	{
 		const PMReal oldW = trackOld.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, trackOld, fontInfo, kKCMDontConvertAmpersand).X();
@@ -332,23 +310,23 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		if (!trackOld.IsEmpty())
 		{
 			const PMReal x0 = tx;
-			run(trackOld, trackColour);
+			run(trackOld, kChangeColor);
 			// the strike: one line through the middle of the x-height
-			gPort->setrgbcolor(trackColour.red, trackColour.green, trackColour.blue);
+			gPort->setrgbcolor(kChangeColor.red, kChangeColor.green, kChangeColor.blue);
 			gPort->rectfill(x0, y - lineHeight * PMReal(0.30), tx - x0, PMReal(1.0));
 			tx += gap;
 		}
 		if (!mid.IsEmpty())
 		{
-			StringUtils::PMDrawStringRGB(&gc, PMPoint(tx + PMReal(0.5), y), mid, fontInfo, trackColour, kKCMDontConvertAmpersand, kKCMNoUnderline);
-			run(mid, trackColour);
+			StringUtils::PMDrawStringRGB(&gc, PMPoint(tx + PMReal(0.5), y), mid, fontInfo, kChangeColor, kKCMDontConvertAmpersand, kKCMNoUnderline);
+			run(mid, kChangeColor);
 			tx += PMReal(0.5);
 		}
 		else if (trackOld.IsEmpty())
 		{
 			// nothing on either side to show (an empty insertion): the deletion's bar, as the Story row draws it
 			const PMReal barW = StringUtils::PMMeasureString(&gc, KCMCaretPlaceholder(), fontInfo, kKCMDontConvertAmpersand).X();
-			KCMDrawCaret(gPort, trackColour, tx, barW, frame.Top() + PMReal(1.0), frame.Height() - PMReal(2.0));
+			KCMDrawCaret(gPort, kChangeColor, tx, barW, frame.Top() + PMReal(1.0), frame.Height() - PMReal(2.0));
 			tx += barW;
 		}
 		run(postShown, kContextColor);

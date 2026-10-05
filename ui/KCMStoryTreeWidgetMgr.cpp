@@ -916,21 +916,25 @@ private:
 	{
 		IKCMStoryEditsFacade::TrackAuthor au;
 		const bool16 have = Utils<IKCMStoryEditsFacade>()->GetTrackAuthor(author, au);
+		// ★THE NAME GOES IN THE ID CELL, AFTER THE SQUARE; the Story cell stays empty (the user, 2026-10-05).
+		PMString name = have ? KCMTrackAuthorName(au.fName) : PMString();
+		name.SetTranslatable(kFalse);
 		InterfacePtr<IKCMStoryCellData> chip(widgetList->FindWidget(kKCMStoryRowUIDWidgetID), UseDefaultIID());
 		if (chip != nil)
 		{
+			chip->SetSegments(PMString(), name, PMString(), PMString(), 1, 0, KCMStoryLayers(), kFalse);
 			chip->SetTrackLook(have, KCMTrackColour(au.fHasColour, au.fR, au.fG, au.fB), PMString());
 			InterfacePtr<IControlView> chipView(chip, UseDefaultIID());
 			if (chipView != nil)
 				chipView->Invalidate();
 		}
-		PMString name = have ? KCMTrackAuthorName(au.fName) : PMString();
 		PMString count;
 		if (have)
 			count.AppendNumber(au.fChangeCount);
-		name.SetTranslatable(kFalse);
 		count.SetTranslatable(kFalse);
-		this->SetNodeName(widgetList, name, kKCMStoryRowTextWidgetID);
+		PMString empty;
+		empty.SetTranslatable(kFalse);
+		this->SetNodeName(widgetList, empty, kKCMStoryRowTextWidgetID);
 		this->SetNodeName(widgetList, count, kKCMStoryRowKindWidgetID);
 		return kTrue;
 	}
@@ -1367,6 +1371,20 @@ void KCMRecomputeListLeftColumnWidth()
 				if (lw > widestUid)
 					widestUid = lw;
 			}
+		}
+
+		// ★A Track author row puts its square and its name in this column (2026-10-05) - measured the way the cell draws
+		//   them (KCMTrackLabels.h), at the row's height.
+		const int32 authors = stories->GetTrackAuthorCount();
+		for (int32 a = 0; a < authors; ++a)
+		{
+			IKCMStoryEditsFacade::TrackAuthor au;
+			if (!stories->GetTrackAuthor(a, au))
+				continue;
+			const PMReal w = PMReal(kKCMTrackChipLeft) + KCMTrackChipSide(PMReal(kKCMStoryRowHeight - 2)) + PMReal(kKCMTrackChipGap)
+						   + StringUtils::PMMeasureString(KCMTrackAuthorName(au.fName), font, kFalse).X();
+			if (w > widestUid)
+				widestUid = w;
 		}
 
 		if (widestUid > PMReal(0.0))

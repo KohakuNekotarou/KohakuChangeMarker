@@ -144,7 +144,9 @@ PMString ToPM(const WideString& w)
 WideString DeletedText(ITextModel* model, Utils<ITrackChangeUtils>& utils, RedlineIterator* it, TextIndex at)
 {
 	WideString text;
-	if (utils)
+	// (KCM_DIAG fault switch "track-describe-only": the iterator's description alone - the bisection of 2026-10-05,
+	//  a Refresh in the Track mode dropping one undo step. Constant false in a shipping build - KCMDiag.h.)
+	if (utils && !KCM_DIAG_FAULT("track-describe-only"))
 		utils->GetDeletedText(model, at, text);
 	if (text.CharCount() == 0)
 	{
@@ -288,7 +290,8 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, IDataBase* sourceDB, bool16* outC
 			if (colourAsked.size() < authors.size())
 				colourAsked.resize(authors.size(), kFalse);
 			// The colour is the AUTHOR's (memory track-change-author-colour): asked of the first record of each author.
-			if (!colourAsked[static_cast<size_t>(author)] && utils)
+			// (KCM_DIAG fault switch "track-no-colour": the colour not asked - the same bisection.)
+			if (!colourAsked[static_cast<size_t>(author)] && utils && !KCM_DIAG_FAULT("track-no-colour"))
 			{
 				colourAsked[static_cast<size_t>(author)] = kTrue;
 				KCMTrackAuthor& au = authors[static_cast<size_t>(author)];
@@ -357,11 +360,21 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, IDataBase* sourceDB, bool16* outC
 				}
 				sc.fTargetStart = from;
 				sc.fTargetEnd = to;
-				// The words: 14 code points either side, the change cut at 300.
-				const TextIndex preFrom = (from > kContextCodePoints) ? (from - kContextCodePoints) : 0;
-				const TextIndex total = model->TotalLength() - 1;		// not the story's final return
+				// The words: 14 code points either side, the change cut at 300 - and ★INSIDE THE CHANGE'S OWN STORY THREAD
+				//   (the body, one table cell, the text it comes back to), its terminator left out. Live 2026-10-05: read
+				//   across threads, a cell's row showed the words outside the table and the cells' terminators, and a
+				//   hidden change's row ran on into the hidden text stored after the story's end.
+				TextIndex threadStart = 0;
+				int32 threadSpan = 0;
+				model->GetStoryThreadSpan(from, &threadStart, &threadSpan);
+				TextIndex total = (threadSpan > 0) ? (threadStart + threadSpan - 1) : (model->TotalLength() - 1);
+				if (threadSpan <= 0)
+					threadStart = 0;
+				if (total < to)
+					total = to;		// a deletion anchored on the terminator itself
+				const TextIndex preFrom = (from - threadStart > kContextCodePoints) ? (from - kContextCodePoints) : threadStart;
 				const TextIndex postTo = (to + kContextCodePoints < total) ? (to + kContextCodePoints) : total;
-				sc.fTextPre  = ToPM(Shown(ReadRaw(model, preFrom, from), kContextCodePoints, kFalse, preFrom > 0));
+				sc.fTextPre  = ToPM(Shown(ReadRaw(model, preFrom, from), kContextCodePoints, kFalse, preFrom > threadStart));
 				sc.fText     = p.fHidden ? ToPM(Shown(ReadRaw(model, p.fFrom, p.fTo), kChangeCodePoints, kFalse, kFalse))
 										 : ToPM(Shown(ReadRaw(model, from, to), kChangeCodePoints, kFalse, kFalse));
 				sc.fTextPost = ToPM(Shown(ReadRaw(model, to, postTo), kContextCodePoints, postTo < total, kFalse));
@@ -493,13 +506,17 @@ bool16 KCMTrackRead::StillRecorded(IDataBase* targetDB, UID storyUID, const KCMT
 	if (it == nil)
 		return kFalse;
 	const int32 wantKind = (change.fKind == kKCMTrackDelete) ? VOSRedlineChange::kDelete : VOSRedlineChange::kInsert;
+	// ★AND THE AUTHOR (live 2026-10-05): stamps are not unique per operation - two separate edits by two authors carried
+	//   one stamp in the probe material (docs/ai-notes/kcm-track-probe-2026-10-05.md).
+	const KCMTrackAuthor* const author = KCMTrackList::GetAuthor(change.fAuthor);
 	bool16 found = kFalse;
 	for (bool16 more = kTrue; more && !found; more = it->Increment(kFalse))
 	{
 		const VOSRedlineChange* record = it->GetCurrentChangeRecord();
 		if (record == nil)
 			continue;
-		found = (record->GetTimeStamp() == change.fTime && record->GetChangeType() == wantKind) ? kTrue : kFalse;
+		found = (record->GetTimeStamp() == change.fTime && record->GetChangeType() == wantKind
+				 && (author == nil || record->GetUserName() == author->fName)) ? kTrue : kFalse;
 		delete record;
 	}
 	delete it;

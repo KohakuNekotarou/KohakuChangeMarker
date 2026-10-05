@@ -28,6 +28,16 @@ RealAGMColor	KCMTrackColour(bool16 hasColour, uint8 r, uint8 g, uint8 b);
 /** An author's name for the list: "(no name)" when the record holds none. */
 PMString		KCMTrackAuthorName(const PMString& name);
 
+/** The author row's colour square in the ID column, then its name (2026-10-05): where the square starts, the gap after
+	it, and how big it is in a cell this tall. Shared by the cell that draws them (KCMTrackChipView) and the column's
+	self-fit (KCMStoryTreeWidgetMgr.cpp), so the two cannot disagree about how wide an author row's ID is. */
+const int32 kKCMTrackChipLeft = 2;
+const int32 kKCMTrackChipGap = 4;
+inline PMReal KCMTrackChipSide(const PMReal& cellHeight)
+{
+	return (cellHeight > PMReal(6.0)) ? cellHeight - PMReal(6.0) : cellHeight;
+}
+
 #endif // __KCMTrackLabels_h__
 
 // End, KCMTrackLabels.h.

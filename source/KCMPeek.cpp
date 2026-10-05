@@ -1056,6 +1056,8 @@ void KCMHandleDocsClosed()
 		//   being reused ([[uidref-reuse-after-close]]). comparisonDocClosed above already answered
 		//   that through FindDocByDataBase, so this rides on its answer.
 		KCMStoryList::Clear();
+		KCMTrackList::Clear();			// the Track mode's rows hold the same Target UIDs (live 2026-10-05: closing the copy
+										//  left all eleven standing after the comparison had stopped)
 		KCMResourceStore::Clear();		// same reason, same moment - see KCMDoClearMarks
 		// The traversal's anchor is forgotten too. Stop does that, and this "clean-up as Stop
 		//   would" was the one route that did not: a closed document's page UID left as the anchor

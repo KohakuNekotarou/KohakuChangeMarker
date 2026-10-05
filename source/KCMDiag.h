@@ -27,7 +27,9 @@
 //  test creates it and deletes it again - so a test build can reach a state the product only gets into after
 //  something ELSE has failed. Asked at each call, so the switch takes effect at once. In a build without
 //  KCM_DIAG it is the constant false. The switches in use (add one line here for each one added):
-//    (none yet)
+//    track-describe-only  KCMTrackRead.cpp reads a deletion's text from the iterator's description alone, not
+//                         ITrackChangeUtils::GetDeletedText (2026-10-05: bisecting an undo step a Track Refresh drops)
+//    track-no-colour      KCMTrackRead.cpp does not ask ITrackChangeUtils::GetTrackedChangeBGColor (the same bisection)
 //
 //========================================================================================
 
