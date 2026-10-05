@@ -89,7 +89,7 @@
     <ClCompile>
       <AdditionalOptions>/vmg @"KohakuChangeMarkercpp.rsp"</AdditionalOptions>
       <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarker.pch</PrecompiledHeaderOutputFile>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;DEBUG;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(KCMExtraDefines);_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;DEBUG;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
       <ObjectFileName>$(IntDir)</ObjectFileName>
@@ -121,7 +121,7 @@
     </Midl>
     <ClCompile>
       <AdditionalOptions>/vmg @"KohakuChangeMarkercpp.rsp"</AdditionalOptions>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;DEBUG;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(KCMExtraDefines);_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;DEBUG;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
       <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarker.pch</PrecompiledHeaderOutputFile>
@@ -154,7 +154,7 @@
     </Midl>
     <ClCompile>
       <AdditionalOptions>/vmg @"KohakuChangeMarkercpp.rsp"</AdditionalOptions>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;STRICT;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(KCMExtraDefines);_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;STRICT;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
@@ -189,7 +189,7 @@
     </Midl>
     <ClCompile>
       <AdditionalOptions>/vmg @"KohakuChangeMarkercpp.rsp"</AdditionalOptions>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;STRICT;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(KCMExtraDefines);_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;STRICT;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
@@ -393,6 +393,8 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarker.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkerExpiry.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkRanges.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTrackPlan.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMDiag.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkDocs.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkBuild.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMBookFacade.h" />

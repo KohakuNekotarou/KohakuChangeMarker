@@ -188,6 +188,12 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkRanges.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTrackPlan.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMDiag.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkDocs.h">
       <Filter>Header Files</Filter>
     </ClInclude>
