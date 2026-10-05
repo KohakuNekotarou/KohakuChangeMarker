@@ -139,6 +139,14 @@ public:
 	// can, being in the same plug-in), so the UI has nothing to say about it.
 	// **A method on a boundary that nobody calls is a promise nobody keeps** - the same rule
 	// IKCMStoryEditsFacade.h states about its own missing Build().
+
+	/** ShowJumpFlash in a colour of its own (2026-10-05, the Track mode: the author's tracked-change colour).
+		sourceFrom < 0 = no flash in the Source window (the change's place in the copy is not known exactly).
+		⚠Appended at the END ([[facade-vtable-slot-append-only]]). */
+	virtual void	ShowJumpFlashColoured(IDataBase* db, UID storyUID,
+										  TextIndex from, TextIndex to,
+										  TextIndex sourceFrom, TextIndex sourceTo,
+										  bool16 hasColour, uint8 r, uint8 g, uint8 b) = 0;
 };
 
 #endif // __IKCMStoryMarkFacade_h__

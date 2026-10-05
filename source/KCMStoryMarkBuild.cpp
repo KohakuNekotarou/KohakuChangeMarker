@@ -83,6 +83,16 @@ bool16 KCMStoryWholeTextEnd(IDataBase* db, UID storyUID, TextIndex& outEnd)
 	return (outEnd > 0) ? kTrue : kFalse;
 }
 
+/* A range in the Track mode's author colour, when the change has one (2026-10-05); otherwise as it was - every other
+   mode's GetTrackChange answers kFalse. */
+KCMMarkRange KCMTrackColoured(IKCMStoryEditsFacade* edits, int32 n, int32 i, const KCMMarkRange& range)
+{
+	IKCMStoryEditsFacade::TrackChange tc;
+	if (edits->GetTrackChange(n, i, tc) && tc.fHasColour)
+		return range.WithColour(tc.fR, tc.fG, tc.fB);
+	return range;
+}
+
 /* KCMStoryCollectRanges
    Every edit that is visible in ONE of the two documents, as ranges per story.
 
@@ -183,6 +193,14 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 			IKCMStoryEditsFacade::Change change;
 			if (!edits->GetChange(n, i, change))
 				continue;
+			// ★THE SOURCE SIDE OF A TRACK CHANGE IS MARKED ONLY WHERE ITS PLACE IN THE COPY IS KNOWN (2026-10-05):
+			//   otherwise its Source range is (0,0), the story's start, and a bar there would point at nothing.
+			if (useSourceDocument)
+			{
+				IKCMStoryEditsFacade::TrackChange exact;
+				if (edits->GetTrackChange(n, i, exact) && !exact.fSourceExact)
+					continue;
+			}
 
 			// (⛔**A CHANGE THE READER HAD TAKEN IN WAS NOT MARKED** - its row stayed in the list, but
 			//  the marks say "the two versions differ HERE" and at that place they no longer did.
@@ -260,7 +278,7 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 					TextIndex storyEnd = 0;
 					if (KCMStoryWholeTextEnd(db, row.fStoryUID, storyEnd) && from >= storyEnd)
 					{
-						ranges.push_back(KCMMarkRange::CaretAfter(from));
+						ranges.push_back(KCMTrackColoured(edits, n, i, KCMMarkRange::CaretAfter(from)));
 						continue;
 					}
 				}
@@ -274,14 +292,14 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 				TextIndex afterTable = 0;
 				if (KCMCaretOnTableChars(db, row.fStoryUID, from, afterTable))
 				{
-					ranges.push_back(KCMMarkRange::CaretAfter(afterTable));
+					ranges.push_back(KCMTrackColoured(edits, n, i, KCMMarkRange::CaretAfter(afterTable)));
 					continue;
 				}
-				ranges.push_back(KCMMarkRange::Caret(from));
+				ranges.push_back(KCMTrackColoured(edits, n, i, KCMMarkRange::Caret(from)));
 				continue;
 			}
 
-			ranges.push_back(KCMMarkRange(from, to));
+			ranges.push_back(KCMTrackColoured(edits, n, i, KCMMarkRange(from, to)));
 		}
 
 		if (!ranges.empty())

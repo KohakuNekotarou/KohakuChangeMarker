@@ -49,6 +49,8 @@
 #include "KCMPageMarksDoc.h"	// the marks the document itself carries (the two below)			// the Check toggle and the Save/Load of both flags
 #include "KCMPawStamp.h"			// the cat-paw stamps (place / lift / count / the one size)
 #include "KCMStoryList.h"			// the Story Edits rows, and where a story begins in a document
+#include "KCMTrackList.h"			// the Track Changes mode's rows (2026-10-05) - read in that mode instead
+#include "KCMTrackRead.h"			// ...read again by a refresh, and asked whether a change is still recorded
 #include "KCMStoryDiffRun.h"		// RunOne - re-comparing one row's story ("Refresh Story Comparison")
 #include "KCMOversetPoint.h"		// KCMFindOversetOutport - where the "+" of an overflow is
 #include "ITextModel.h"			// the story the two above are asked about
@@ -496,15 +498,90 @@ CREATE_PMINTERFACE(KCMPageFlagsFacade, kKCMPageFlagsFacadeImpl)
 // clears, KCMPeek.cpp clears and empties at shutdown), so a Rebuild() here would be a method
 // nobody calls.
 //========================================================================================
+namespace
+{
+
+/* The Track mode reads the Track list (2026-10-05): the ONE place the facade asks the mode, so that every
+   reader of a row or a change - the tree, the marks, the jump, Prev/Next - follows it without asking. */
+bool16 KCMFacadeTrackMode()
+{
+	return (KCMGetCompareMode() == kKCMModeTrack) ? kTrue : kFalse;
+}
+
+const KCMTrackChange* KCMTrackChangeAt(int32 nth, int32 which)
+{
+	const KCMTrackRow* row = KCMTrackList::GetRow(nth);
+	if (row == nil || which < 0 || which >= static_cast<int32>(row->fChanges.size()))
+		return nil;
+	return &row->fChanges[static_cast<size_t>(which)];
+}
+
+/* The fields every change hands out, Story and Track alike (moved out of GetChange, 2026-10-05). */
+void KCMFillChangeOut(const KCMStoryChange& change, IKCMStoryEditsFacade::Change& out)
+{
+	out.fKind		= static_cast<int32>(change.fKind);
+	out.fWhat		= static_cast<int32>(change.fWhat);
+	out.fTargetStart = change.fTargetStart;
+	out.fTargetEnd	= change.fTargetEnd;
+	out.fSourceStart = change.fSourceStart;
+	out.fSourceEnd	= change.fSourceEnd;
+	out.fTextPre	= change.fTextPre;
+	out.fText		= change.fText;
+	out.fTextPost	= change.fTextPost;
+	out.fOtherTextPre	= change.fOtherTextPre;
+	out.fOtherText		= change.fOtherText;
+	out.fOtherTextPost	= change.fOtherTextPost;
+	out.fRuby			= change.fRuby;			// only meaningful when fWhat is kAttr
+	out.fOtherRuby		= change.fOtherRuby;
+	out.fRubyGroup		= change.fRubyGroup;	// how it is SET - the readings alone cannot say
+	out.fOtherRubyGroup	= change.fOtherRubyGroup;
+	out.fAttrKind		= static_cast<int32>(change.fAttrKind);
+	out.fLayers			= change.fLayers;		// a warichu / tate-chu-yoko change, line by line
+	out.fOtherLayers	= change.fOtherLayers;
+	// (⛔THE TWO FACES OF A ROW WENT ON 2026-09-21 - a change the reader had taken in carried the words as they stood
+	//  now AND before, and the model chose which belonged in fText*. Nothing is taken in now: a row has one face.)
+	out.fOverset		= change.fOverset;		// decided by the diff (or the Track reader); see KCMStoryList.h
+	out.fWholeParagraph	= change.fWholeParagraph;	// a paragraph added or removed whole
+	out.fPlace			= change.fPlace;		// the body, a cell or a note - the ID column's word
+	out.fWholeCell		= kFalse;				// retired the night it was made (2026-09-19): a table's cells fold into a Table row now; the field keeps the layout
+	out.fMarkSpanCount	= static_cast<int32>(change.fMarkSpans.size());	// the cells a Table change marks (GetChangeMarkSpan)
+	out.fWriteBlock		= 0;					// ⛔nothing writes from a row any more (2026-09-21)
+	out.fAfterNewParagraph	= kFalse;			// ⛔the same
+}
+
+}	// anonymous namespace
+
 class KCMStoryEditsFacade : public CPMUnknown<IKCMStoryEditsFacade>
 {
 public:
 	KCMStoryEditsFacade(IPMUnknown* boss) : CPMUnknown<IKCMStoryEditsFacade>(boss) {}
 
-	virtual int32	GetRowCount()	{ return KCMStoryList::GetRowCount(); }
+	virtual int32	GetRowCount()
+	{
+		if (KCMFacadeTrackMode())
+			return KCMTrackList::GetRowCount();
+		return KCMStoryList::GetRowCount();
+	}
 
 	virtual bool16	GetRow(int32 nth, Row& out)
 	{
+		if (KCMFacadeTrackMode())
+		{
+			// A Track row is drawn as a Story row: one story's first words, frame and page (KCMStoryList::ReadRowForStory).
+			const KCMTrackRow* trackRow = KCMTrackList::GetRow(nth);
+			if (trackRow == nil)
+				return kFalse;
+			out.fStoryUID	= trackRow->fRow.fStoryUID;
+			out.fText		= trackRow->fRow.fText;
+			out.fKinds		= trackRow->fRow.fKinds;
+			out.fFrameUID	= trackRow->fRow.fFrameUID;
+			out.fPageUID	= trackRow->fRow.fPageUID;
+			out.fTextCompared = kTrue;
+			out.fAttrKind	= 0;
+			out.fAttrKindCount = 0;
+			out.fHasTextChange = kTrue;
+			return kTrue;
+		}
 		const KCMStoryRow* row = KCMStoryList::GetRow(nth);
 		if (row == nil)
 			return kFalse;	// out of range, or the placeholder row -- out is left as the caller had it
@@ -536,46 +613,32 @@ public:
 		// The refusals an import left, then the live diff's changes - one index space, defined in
 		// KCMStoryList and asked for the same way by every question below.
 		// (⛔A third list, the changes the reader had taken in, was in it until 2026-09-21.)
+		if (KCMFacadeTrackMode())
+		{
+			const KCMTrackRow* r = KCMTrackList::GetRow(nth);
+			return (r != nil) ? static_cast<int32>(r->fChanges.size()) : 0;
+		}
 		return KCMStoryList::GetMergedChangeCount(nth);
 	}
 
 	virtual bool16	GetChange(int32 nth, int32 which, Change& out)
 	{
+		if (KCMFacadeTrackMode())
+		{
+			// Nothing is taken back in the Track mode, and its ranges carry no paragraph break to cut (KCMTrackRead).
+			const KCMTrackChange* c = KCMTrackChangeAt(nth, which);
+			if (c == nil)
+				return kFalse;
+			KCMFillChangeOut(c->fChange, out);
+			out.fReplaced = kFalse;
+			return kTrue;
+		}
 		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which);
 		if (found == nil)
 			return kFalse;
 
 		const KCMStoryChange& change = *found;
-		out.fKind		= static_cast<int32>(change.fKind);
-		out.fWhat		= static_cast<int32>(change.fWhat);
-		out.fTargetStart = change.fTargetStart;
-		out.fTargetEnd	= change.fTargetEnd;
-		out.fSourceStart = change.fSourceStart;
-		out.fSourceEnd	= change.fSourceEnd;
-		out.fTextPre	= change.fTextPre;
-		out.fText		= change.fText;
-		out.fTextPost	= change.fTextPost;
-		out.fOtherTextPre	= change.fOtherTextPre;
-		out.fOtherText		= change.fOtherText;
-		out.fOtherTextPost	= change.fOtherTextPost;
-		out.fRuby			= change.fRuby;			// only meaningful when fWhat is kAttr
-		out.fOtherRuby		= change.fOtherRuby;
-		out.fRubyGroup		= change.fRubyGroup;	// how it is SET - the readings alone cannot say
-		out.fOtherRubyGroup	= change.fOtherRubyGroup;
-		out.fAttrKind		= static_cast<int32>(change.fAttrKind);
-		out.fLayers			= change.fLayers;		// a warichu / tate-chu-yoko change, line by line
-		out.fOtherLayers	= change.fOtherLayers;	// (traded below once a tate-chu-yoko or warichu is taken in)
-
-		// (⛔**THE TWO FACES OF A ROW WENT ON 2026-09-21.** A change the reader had taken in carried the
-		//  words as they stood now AND as they stood before, and the model - not the panel - chose
-		//  which of them belonged in fText*, by asking the document's own counter. It traded the two
-		//  sides' ruby and the two sides' layers over as well, so that a taken-in row described the
-		//  story rather than the comparison. Nothing is taken in now: a row has one face.)
-		out.fOverset		= change.fOverset;		// decided by the diff; see KCMStoryList.h
-		out.fWholeParagraph		= change.fWholeParagraph;		// a paragraph added or removed whole
-		out.fPlace				= change.fPlace;				// the body, a cell or a note - the ID column's word
-		out.fWholeCell			= kFalse;						// retired the night it was made (2026-09-19): a table's cells fold into a Table row now; the field keeps the layout
-		out.fMarkSpanCount		= static_cast<int32>(change.fMarkSpans.size());	// the cells a Table change marks (GetChangeMarkSpan)
+		KCMFillChangeOut(change, out);		// every field a change hands out (Story and Track alike)
 		// ★★fReplaced IS BACK IN USE, WITH THE OPPOSITE MEANING (2026-09-24, stage 2 C): kTrue for a change the reader
 		//   TOOK BACK and still standing so - the "=" row, the Source's state - which is what its menu, its sign and
 		//   the marks ask. (From 2026-09-15 to 2026-09-21 it said "taken IN".) The layout is unchanged.
@@ -584,8 +647,6 @@ public:
 			out.fReplaced = (rec != nil && KCMStoryList::RejectedStateOf(nth, *rec, KCMArmedTargetDB()) == kKCMRejectedStanding)
 				? kTrue : kFalse;
 		}
-		out.fWriteBlock		= 0;							// ⛔the same, for the reason above: nothing writes
-		out.fAfterNewParagraph	= kFalse;					// ⛔the same
 
 
 		// ★★**A WHOLE PARAGRAPH IS HANDED OUT AS ITS WORDS, WITHOUT THE BREAK** (2026-09-19, the user:
@@ -609,6 +670,8 @@ public:
 		// tall a row is, and a row it cannot identify gets the ordinary height - the same shape the
 		// list has had all along. (GetChange returns kFalse for this case because its caller is
 		// about to DRAW the change and must not draw a stale one.)
+		if (KCMFacadeTrackMode())
+			return static_cast<int32>(kKCMStoryAttrNone);	// a Track change is words, never an attribute
 		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which);
 		if (found == nil)
 			return static_cast<int32>(kKCMStoryAttrNone);
@@ -620,6 +683,8 @@ public:
 	{
 		// Same out-of-range rule as the kind above, and for the same caller: an unknown row gets
 		// the ordinary one-line height rather than an error.
+		if (KCMFacadeTrackMode())
+			return kFalse;
 		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which);
 		if (found == nil)
 			return kFalse;
@@ -638,6 +703,18 @@ public:
 		// The two documents the comparison is holding. ASKED FOR AGAIN RATHER THAN REMEMBERED:
 		// the panel can only reach this while a comparison is armed, but "armed" and "still open"
 		// are different questions and the second one is the one that matters here.
+		if (KCMFacadeTrackMode())
+		{
+			IDataBase* const trackTargetDB = KCMArmedTargetDB();
+			if (trackTargetDB == nil || !KCMIsDocDBOpen(trackTargetDB))
+				return -1;
+			// ★The whole list is read again, not one row: rows are (story, author) pairs, and one story's records
+			//   can make or lose rows for several authors at once. Reading every record is a walk of the stories
+			//   and no composition (KCMTrackRead.h).
+			const int32 trackCount = KCMTrackRead::Build(trackTargetDB, KCMArmedSourceDB(), nil);
+			KCMNotify(kKCMStoryEditsRebuiltMessage);
+			return trackCount;
+		}
 		IDataBase* const targetDB = KCMArmedTargetDB();
 		IDataBase* sourceDB = KCMArmedSourceDB();
 		if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
@@ -707,6 +784,8 @@ public:
 	virtual int32	GetChangeLineCount(int32 nth, int32 which)
 	{
 		// Same out-of-range rule as GetChangeAttrKind, for the same caller (the tree asking a height).
+		if (KCMFacadeTrackMode())
+			return 1;
 		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which);
 		if (found == nil)
 			return 1;
@@ -727,6 +806,8 @@ public:
 	virtual bool16	GetChangeMarkSpan(int32 nth, int32 which, int32 i, TextIndex& outFrom, TextIndex& outTo)
 	{
 		// The same index space as GetChange, so the panel names the same change here as there.
+		if (KCMFacadeTrackMode())
+			return kFalse;		// a Track change is never a table's
 		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which);
 		if (found == nil || found->fWhat != KCMStoryChange::kTable
 			|| i < 0 || static_cast<size_t>(i) >= found->fMarkSpans.size())
@@ -1407,6 +1488,62 @@ public:
 
 	virtual IDataBase*	GetTaskDocumentDB()	{ return KCMTaskDocumentDB(); }
 
+	// ---- ★THE TRACK CHANGES MODE (2026-10-05) - IKCMStoryEditsFacade.h says what each one answers ----
+	// ⚠The change-row menu's actions above (reject, restore, match, redo) are not offered in this mode (KCMStoryRefresh's
+	//   ChangeRowMenuLive asks KCMModeDiffsStoryText); called anyway, each stops before writing - a Track change is
+	//   never an attribute or a table, and the other two find the Story list empty.
+	virtual int32	GetTrackAuthorCount()	{ return KCMFacadeTrackMode() ? KCMTrackList::GetAuthorCount() : 0; }
+
+	virtual bool16	GetTrackAuthor(int32 a, TrackAuthor& out)
+	{
+		const KCMTrackAuthor* au = KCMFacadeTrackMode() ? KCMTrackList::GetAuthor(a) : nil;
+		if (au == nil)
+			return kFalse;
+		out.fName = au->fName;
+		out.fName.SetTranslatable(kFalse);
+		out.fFirstRow = au->fFirstRow;
+		out.fRowCount = au->fRowCount;
+		out.fChangeCount = au->fChangeCount;
+		out.fHasColour = au->fHasColour;
+		out.fR = au->fR; out.fG = au->fG; out.fB = au->fB;
+		return kTrue;
+	}
+
+	virtual int32	GetTrackAuthorOfRow(int32 nth)
+	{
+		const KCMTrackRow* r = KCMFacadeTrackMode() ? KCMTrackList::GetRow(nth) : nil;
+		return (r != nil) ? r->fAuthor : -1;
+	}
+
+	virtual bool16	GetTrackChange(int32 nth, int32 which, TrackChange& out)
+	{
+		const KCMTrackChange* c = KCMFacadeTrackMode() ? KCMTrackChangeAt(nth, which) : nil;
+		if (c == nil)
+			return kFalse;
+		out.fAuthor = c->fAuthor;
+		out.fKind = c->fKind;
+		out.fTime = c->fTime;
+		out.fHasColour = c->fHasColour;
+		out.fR = c->fR; out.fG = c->fG; out.fB = c->fB;
+		out.fHidden = c->fHidden;
+		out.fSourceExact = c->fSourceExact;
+		return kTrue;
+	}
+
+	virtual int32	GetTrackChangeTotal()	{ return KCMFacadeTrackMode() ? KCMTrackList::GetTotalChangeCount() : 0; }
+
+	virtual bool16	TrackChangeStillRecorded(int32 nth, int32 which)
+	{
+		if (!KCMFacadeTrackMode())
+			return kFalse;
+		const KCMTrackRow* r = KCMTrackList::GetRow(nth);
+		const KCMTrackChange* c = KCMTrackChangeAt(nth, which);
+		IDataBase* const targetDB = KCMArmedTargetDB();
+		if (r == nil || c == nil || targetDB == nil || !KCMIsDocDBOpen(targetDB))
+			return kFalse;
+		return KCMTrackRead::StillRecorded(targetDB, r->fRow.fStoryUID, *c);
+	}
+
 	virtual bool16	InImportMode()		// ⛔retired with the fourth mode (2026-09-20) - the slot stays
 	{
 		return kFalse;
@@ -1521,6 +1658,11 @@ public:
 								  TextIndex sourceFrom, TextIndex sourceTo);
 
 	virtual void	ClearJumpFlash()			{ KCMStoryMarker::ClearFlash(); }
+
+	virtual void	ShowJumpFlashColoured(IDataBase* db, UID storyUID,
+										  TextIndex from, TextIndex to,
+										  TextIndex sourceFrom, TextIndex sourceTo,
+										  bool16 hasColour, uint8 r, uint8 g, uint8 b);
 	// No ShutdownMarks: teardown is model-side only and KCMPeek.cpp calls the marker directly
 	// (IKCMStoryMarkFacade.h says why a boundary method with no caller is worse than none).
 };
@@ -1548,6 +1690,22 @@ void KCMStoryMarkFacade::ShowJumpFlash(IDataBase* db, UID storyUID,
 	if (flashSourceDB != nil && flashSourceDB != db && KCMIsDocDBOpen(flashSourceDB))
 		KCMStoryMarker::AddFlashRange(flash, flashSourceDB, storyUID, sourceFrom, sourceTo);
 
+	KCMStoryMarker::ShowFlash(flash);
+}
+
+/* ShowJumpFlash in the Track mode's author colour (2026-10-05). The Source window is lit only when the change's
+   place in the copy is known (sourceFrom >= 0) - otherwise its range is the story's start, and a flash there
+   would point at nothing. */
+void KCMStoryMarkFacade::ShowJumpFlashColoured(IDataBase* db, UID storyUID,
+												TextIndex from, TextIndex to,
+												TextIndex sourceFrom, TextIndex sourceTo,
+												bool16 hasColour, uint8 r, uint8 g, uint8 b)
+{
+	KCMStoryMarkDocs flash;
+	KCMStoryMarker::AddFlashRange(flash, db, storyUID, from, to, hasColour, r, g, b);
+	IDataBase* const flashSourceDB = KCMArmedSourceDB();
+	if (sourceFrom >= 0 && flashSourceDB != nil && flashSourceDB != db && KCMIsDocDBOpen(flashSourceDB))
+		KCMStoryMarker::AddFlashRange(flash, flashSourceDB, storyUID, sourceFrom, sourceTo, hasColour, r, g, b);
 	KCMStoryMarker::ShowFlash(flash);
 }
 

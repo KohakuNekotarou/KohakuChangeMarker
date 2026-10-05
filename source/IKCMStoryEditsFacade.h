@@ -717,6 +717,45 @@ public:
 		comparison while the export read the document in front). nil when there is neither.
 		⚠Appended at the END of the class ([[facade-vtable-slot-append-only]]). */
 	virtual IDataBase*	GetTaskDocumentDB() = 0;
+
+	// ---- ★THE TRACK CHANGES MODE (2026-10-05, design docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md) ----
+	// In the Track mode the methods above answer from the Track list (rows = one story under one author, in
+	// author order); these say who and in what colour. ⚠Appended at the END ([[facade-vtable-slot-append-only]]).
+
+	/** One author: the rows [fFirstRow, fFirstRow + fRowCount) are theirs. fName may be empty. */
+	struct TrackAuthor
+	{
+		PMString	fName;
+		int32		fFirstRow;
+		int32		fRowCount;
+		int32		fChangeCount;
+		bool16		fHasColour;		// kFalse = InDesign draws them on white; the Mark colour stands in
+		uint8		fR, fG, fB;
+		TrackAuthor() : fFirstRow(0), fRowCount(0), fChangeCount(0), fHasColour(kFalse), fR(0), fG(0), fB(0) {}
+	};
+
+	/** What a Track change is besides its ranges and words (GetChange carries those). */
+	struct TrackChange
+	{
+		int32		fAuthor;
+		int32		fKind;			// 0 replace, 1 insert, 2 delete, 3 move (KCMTrackChangeKind)
+		uint64		fTime;			// the record's (100 ns since 1601, UTC)
+		bool16		fHasColour;
+		uint8		fR, fG, fB;
+		bool16		fHidden;		// in hidden conditional text
+		bool16		fSourceExact;	// GetChange's Source range is the change's place in the copy
+		TrackChange() : fAuthor(-1), fKind(0), fTime(0), fHasColour(kFalse), fR(0), fG(0), fB(0), fHidden(kFalse), fSourceExact(kFalse) {}
+	};
+
+	virtual int32	GetTrackAuthorCount() = 0;
+	virtual bool16	GetTrackAuthor(int32 a, TrackAuthor& out) = 0;
+	/** The author of row nth, or -1 outside the Track mode (the tree's node factory asks it - KCMStoryNodeID). */
+	virtual int32	GetTrackAuthorOfRow(int32 nth) = 0;
+	virtual bool16	GetTrackChange(int32 nth, int32 which, TrackChange& out) = 0;
+	/** Every change in the list (the section heading's number). */
+	virtual int32	GetTrackChangeTotal() = 0;
+	/** Is that change still recorded (KCMTrackRead::StillRecorded)? Asked before a click jumps. */
+	virtual bool16	TrackChangeStillRecorded(int32 nth, int32 which) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__
