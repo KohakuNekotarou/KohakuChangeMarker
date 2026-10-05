@@ -69,6 +69,7 @@
 // and the peek's held-down state are all the UI's property. What used to be called directly from
 // here now happens in KCMModelChangeObserver, which receives the notifications this file sends.
 #include "KCMStoryList.h"          // KCMStoryList::ShutdownCleanup (letting go of the rows' PMStrings)
+#include "KCMTrackList.h"          // KCMTrackList::ShutdownCleanup - the Track mode's rows, the same rule (2026-10-05)
 #include "KCMStoryTextImport.h"    // KCMClearImportRefusals - what the last import could not put in (PMStrings again)
 #include "KCMSourceCache.h"        // KCMSourceCacheClear - the Source text kept from the origin
 #include "KCMWordKeep.h"           // KCMWordKeepSweepClosed / KCMWordKeepClear - the Word content kept for "Redo from Word"
@@ -752,6 +753,7 @@ void KCMPeekStartup::Shutdown()
 	//   it three times (see ShutdownCleanup in KBSResultTree.h). It touches no UI, only drops the
 	//   rows, so it is safe during shutdown.
 	KCMStoryList::ShutdownCleanup();
+	KCMTrackList::ShutdownCleanup();	// the Track Changes mode's rows hold PMStrings too (2026-10-05)
 	// What the last import could not put in (2026-09-19) - PMStrings again, the same rule.
 	KCMClearImportRefusals();
 	// The Source text kept from the origin (2026-09-16). **Its rule is the same one**: a std::map

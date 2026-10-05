@@ -95,6 +95,7 @@ void KCMPanelTitle::Update()
 	{
 		case kKCMModeStory:		title.Append("Story");		break;
 		case kKCMModeResources:	title.Append("Resources");	break;
+		case kKCMModeTrack:		title.Append("Track");		break;
 		default:				title.Append("Pixel");		break;
 	}
 	// ⚠A palette label is treated as **a candidate translation key** as well ＝ without clearing the

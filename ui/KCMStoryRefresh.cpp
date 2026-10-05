@@ -84,7 +84,8 @@ bool16 ChangeRowMenuLive()
 		return kFalse;
 	if (!Utils<IKCMCompareFacade>()->IsArmed())
 		return kFalse;
-	return KCMModeUsesStoryRows(Utils<IKCMCompareFacade>()->GetCompareMode());
+	// The change row's menu offers what only a DIFFED row can do - none of it in the Track mode (design D3, 2026-10-05).
+	return KCMModeDiffsStoryText(Utils<IKCMCompareFacade>()->GetCompareMode());
 }
 }	// anonymous namespace
 

@@ -178,6 +178,7 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 	{
 		case kKCMModeStory:		modeWord = "story";		break;
 		case kKCMModeResources:	modeWord = "resources";	break;
+		case kKCMModeTrack:		modeWord = "track";		break;
 		default:				modeWord = "pixel";		break;
 	}
 	PMString msg("Compare mode: ");
@@ -708,6 +709,9 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		case kKCMPopupModeResourcesActionID:
 			KCMApplyCompareMode(kKCMModeResources);
 			break;
+		case kKCMPopupModeTrackActionID:
+			KCMApplyCompareMode(kKCMModeTrack);	// the fourth mode (2026-10-05)
+			break;
 
 		// Flyout "Save Panel Settings": write the current settings toggles to a private JSON file and
 		// show where it went **in the panel’s status line** (the work is KCMSavePanelState in
@@ -1051,6 +1055,12 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 
 		case kKCMPopupCompareBooksActionID:
+			// The menu greys it in the Track Changes mode; this is the same answer for a caller that invokes it anyway.
+			if (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeTrack)
+			{
+				KCMSetStatus("Book comparison is not available in the Track Changes mode.");
+				break;
+			}
 			KCMRunBookComparison();
 			break;
 
@@ -1295,6 +1305,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		{
 			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeResources);
 		}
+		else if (action == kKCMPopupModeTrackActionID)
+		{
+			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeTrack);
+		}
 		else if (action == kKCMPopupHideUnchangedActionID)
 		{
 			// ★Greyed unless Started (armed), by the user’s instruction. This feature picks "the spreads
@@ -1509,7 +1523,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			// ★The model runs the start itself (KCMReport.cpp); this branch only decides the grey.
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 haveMarks = (Utils<IKCMMarkData>()->GetMarkedTargetDB() != nil);
-			listToUpdate->SetNthActionState(i, (haveMarks || compare->CanStartComparison())
+			// ★Greyed in the Track Changes mode (2026-10-05, design 2-3): the report's Story section borrows the
+			//   text diff and would take the Track rows apart (the facade refuses it too).
+			listToUpdate->SetNthActionState(i, ((haveMarks || compare->CanStartComparison())
+												&& compare->GetCompareMode() != kKCMModeTrack)
 												? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMClearChecksActionID)
@@ -1579,8 +1596,11 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			IBook* target = nil;
 			IBook* source = nil;
 			IDFile panelBookFile;
+			// ★And never in the Track Changes mode: it reads one document's own records (2026-10-05, design 2-3).
+			//   Asked first - it is one read, and it spares the panel walk.
 			const bool16 canCompareBooks =
-				KCMGetPanelBookFile(panelBookFile)
+				Utils<IKCMCompareFacade>()->GetCompareMode() != kKCMModeTrack
+				&& KCMGetPanelBookFile(panelBookFile)
 				&& Utils<IKCMBookFacade>()->ResolveBookPair(panelBookFile, target, source);
 			listToUpdate->SetNthActionState(i,
 				canCompareBooks ? kEnabledAction : kDisabled_Unselected);

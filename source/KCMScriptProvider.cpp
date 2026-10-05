@@ -142,6 +142,8 @@
 #include "KCMBookCompare.h"	// KCMGetBookResultText - the last book comparison, also in the module
 #include "KCMStoryStamp.h"	// KCMStoryEdits::ReadStamp - the SAME reading the panel uses
 #include "KCMStoryList.h"	// KCMStoryList::RowsAsTsv - app.kcmStoryRows, the reading port
+#include "KCMTrackList.h"	// KCMTrackList::RowsAsTsv - the same port in the Track Changes mode (2026-10-05)
+#include "KCMCore.h"		// KCMGetCompareMode - which of the two lists the port reads
 #include "KCMRingAdornment.h"	// KCMGetNumItemsWithXP - document.kcmTransparencyItemCount
 #include "SysFileList.h"			// app.kcmImportStoryText hands its one file over as a list
 #include "KCMTaskStartSave.h"		// KCMTaskDocumentDB - the document app.kcmExportStoryText exports (2026-09-25)
@@ -367,7 +369,12 @@ ErrorCode KCMScriptProvider::ReadAppString(int32 id, ScriptID propID, IScriptReq
 		// ★THE WHOLE LIST, and it answers with a header line even when there is nothing to report:
 		//   an empty list is a real answer, and it has to read differently from the property being
 		//   absent (which is ERR:55, not an empty string).
-		KCMStoryList::RowsAsTsv(value);
+	{
+		if (KCMGetCompareMode() == kKCMModeTrack)
+			KCMTrackList::RowsAsTsv(value);		// the Track mode's list (2026-10-05) - its own columns, its header says which
+		else
+			KCMStoryList::RowsAsTsv(value);
+	}
 	else
 		KCMGetBookResultText(value);		// the last book comparison, one line per chapter
 

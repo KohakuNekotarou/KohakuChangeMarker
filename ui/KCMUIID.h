@@ -485,6 +485,7 @@ DECLARE_PMID(kActionIDSpace, kKCMChangeRowRedoActionID, kKCMUIPrefix + 84)	// �
 // ⛔**+79 IS RETIRED** (2026-09-21): it was "Export Story Text as Word...", added 2026-09-19 beside "Export Story Text..." so that the same stories could be written in the OTHER spelling (.docx rather than .html). The HTML road went on the user's word ("Word format only"), so +70 - the item the public version already has, and the one a reader may have a shortcut on - is the one that stayed, and it writes the .docx. **Never reused.**
 
 DECLARE_PMID(kActionIDSpace, kKCMPopupModeResourcesActionID, kKCMUIPrefix + 57)	// ★"Compare mode > Resources Changes" on the flyout (2026-09-09). The third mode: export each document as XML and compare the DEFINITIONS - styles, swatches, layers - so that a change to something nobody has applied is reported. It moves no pixel and touches no word, which is why neither of the other two modes can see it. Exclusive with Pixel and Story, the selected one carrying the check (kCustomEnabling + kSelectedAction). KCMActionComponent.cpp
+DECLARE_PMID(kActionIDSpace, kKCMPopupModeTrackActionID, kKCMUIPrefix + 87)	// ★"Compare mode > Track Changes" on the flyout (2026-10-05): the Target's own tracked changes are the older version (design docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md). (+86 is "Compare with Tracked Changes...", Task 6 of the plan.)
 
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
 //  **deleted**. ⚠★★It was not inert: **+41 is taken** (kKCMPopupTranslucentBookDialogActionID
@@ -899,6 +900,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMModePixelKey		kKCMStringPrefix "kKCMModePixelKey"	// the child item name inside "Compare mode" (= "Pixel Changes")
 #define kKCMModeStoryKey		kKCMStringPrefix "kKCMModeStoryKey"	// the child item name inside "Compare mode" (= "Story Changes")
 #define kKCMModeResourcesKey	kKCMStringPrefix "kKCMModeResourcesKey"	// the child item name inside "Compare mode" (= "Resources Changes")
+#define kKCMModeTrackKey	kKCMStringPrefix "kKCMModeTrackKey"	// the child item name inside "Compare mode" (= "Track Changes")
 #define kKCMPrevChangeKey		kKCMStringPrefix "kKCMPrevChangeKey"	// the caption of the "< Prev" button on the panel (English everywhere)
 #define kKCMNextChangeKey		kKCMStringPrefix "kKCMNextChangeKey"	// the caption of the "Next >" button on the panel (English everywhere)
 #define kKCMHintKey			kKCMStringPrefix "kKCMHintKey"
@@ -1178,6 +1180,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMModePixelSubMenuItemPosition		1.0	// inside "Compare mode": Pixel Changes (checked when selected)
 #define kKCMModeStorySubMenuItemPosition		2.0	// inside "Compare mode": Story Changes (exclusive with Pixel)
 #define kKCMModeResourcesSubMenuItemPosition	3.0	// inside "Compare mode": Resources Changes (exclusive with the two above). ★Last of the three because it is the widest net: pixels answer "which page looks different", stories "which words changed", and this one "which definition changed" - which includes definitions nothing on any page uses
+#define kKCMModeTrackSubMenuItemPosition	4.0	// inside "Compare mode": Track Changes (exclusive with the three above). Last: it compares no second version at all - the Target's own records are the older one (2026-10-05)
 // -- the pair those verbs run on (2026-09-14: the user moved Task Start to the head of this group) --
 #define kKCMTaskStartMenuItemPosition	9.02	// "Task Start": a Source that is a moment rather than a document, which is why it heads the group that chooses the pair
 // ⛔kKCMOpenOriginIdmlMenuItemPosition (9.0205) went with it. A position is not an identity, so the number itself may be used again.

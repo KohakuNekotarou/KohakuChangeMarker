@@ -50,6 +50,8 @@
 #include "KCMPageCheck.h"          // ⚠**nothing here calls into it any more** (2026-09-04): Stop stopped clearing the ticks and the prune was removed. Left in place because dropping an include is a change a build has to prove, not a comment
 #include "KCMStoryStamp.h"         // the stories' change counters -- whether text was edited, which pixels cannot say
 #include "KCMStoryList.h"          // the list of changed stories (the model the Story Edits section reads)
+#include "KCMTrackList.h"          // the Track Changes mode's list (2026-10-05)
+#include "KCMTrackRead.h"          // ...and what fills it from the Target's tracked changes
 #include "KCMStoryFollowObserver.h"	// KCMStoryFollowEnsureObservers - the list follows an Undo / Redo (2026-09-25)
 #include "KCMResourceStore.h"      // the list of changed DEFINITIONS - emptied at the same moment
 #include "KCMStoryDiffRun.h"       // in the Story mode, what changed inside each row
@@ -542,6 +544,21 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	if (targetDB == nil || sourceDB == nil)
 		return kTrue;
 
+	// ★★THE TRACK CHANGES MODE BUILDS ITS ROWS FROM THE TARGET'S RECORDS (2026-10-05), not from the two
+	//   documents' counters: KCMStoryList stays empty, and KCMTrackList holds the rows the facade hands out in
+	//   this mode (KCMFacades.cpp). The Source is only read to check the original ranges against the copy.
+	if (KCMGetCompareMode() == kKCMModeTrack)
+	{
+		KCMStoryList::Clear();
+		bool16 trackCancelled = kFalse;
+		KCMTrackRead::Build(targetDB, sourceDB, &trackCancelled);
+		if (trackCancelled)
+			return kFalse;
+		KCMStoryFollowEnsureObservers(targetDB);
+		KCMNotify(kKCMStoryEditsRebuiltMessage);
+		return kTrue;
+	}
+
 	std::vector<KCMStoryStamp> targetStamps;
 	std::vector<KCMStoryStamp> sourceStamps;
 	KCMStoryEdits::CollectStamps(targetDB, targetStamps);
@@ -567,7 +584,7 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	// @warning it must run **after Build**. A change names its row by position in the sorted list,
 	//   so running it before the order is settled attaches it to the wrong row.
 	bool16 cancelled = kFalse;
-	if (KCMModeUsesStoryRows(KCMGetCompareMode()))
+	if (KCMModeDiffsStoryText(KCMGetCompareMode()))
 		KCMStoryDiffRun::Run(targetDB, sourceDB, &cancelled);
 	// A cancel leaves half a list: rows read so far carry their changes, the rest none. It is NOT
 	//   cleared here -- the caller answers a cancel by going back to Stop, and Stop's KCMDoClearMarks
@@ -977,7 +994,7 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		// ⚠**THE TEST IS `== kKCMModePixel`.** As `!storyMode` it claimed a page count for every
 		//   mode that was not Story, which the Resources mode is.
 		const KCMCompareMode reportMode = KCMGetCompareMode();
-		const bool16 storyMode = KCMModeUsesStoryRows(reportMode);
+		const bool16 storyMode = KCMModeDiffsStoryText(reportMode);	// the Track mode says its own line, below
 		if (reportMode == kKCMModePixel)
 		{
 			report.Append("pages compared="); report.AppendNumber((int32)n);
@@ -1028,6 +1045,22 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		// panel asks it: one comparison, one answer ([[one-question-one-place]]).
 		// ⚠"nothing differs" and "it could not be run" must not read alike, which is why the whole
 		//   line comes from GetSummary rather than being assembled from a count.
+		// The Track Changes mode's line (2026-10-05): what the list holds, and the two counts that say what it
+		//   does not - records the copy kept although every change was rejected, and records no row shows.
+		if (reportMode == kKCMModeTrack)
+		{
+			report.Append("tracked changes="); report.AppendNumber(KCMTrackList::GetTotalChangeCount());
+			report.Append(" authors="); report.AppendNumber(KCMTrackList::GetAuthorCount());
+			if (KCMTrackList::GetNotRejectedInCopy() > 0)
+			{
+				report.Append(" not rejected in the copy="); report.AppendNumber(KCMTrackList::GetNotRejectedInCopy());
+			}
+			if (KCMTrackList::GetOtherRecordCount() > 0)
+			{
+				report.Append(" other records (not shown)="); report.AppendNumber(KCMTrackList::GetOtherRecordCount());
+			}
+		}
+
 		if (reportMode == kKCMModeResources)
 		{
 			PMString summary;
@@ -1209,6 +1242,7 @@ void KCMDoClearMarks(IDataBase* db)
 	// KCMUpdateStorySectionLabel from the armed state, so the model need only say that the list
 	// changed.
 	KCMStoryList::Clear();
+	KCMTrackList::Clear();		// the Track mode's rows, and their counter history (2026-10-05)
 
 	// The Resources list goes for the same reason and at the same moment. Kept, it would describe
 	// definitions in two documents nobody is comparing any more - and unlike the Story rows it

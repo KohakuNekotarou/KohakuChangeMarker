@@ -948,6 +948,12 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMModeResourcesSubMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Compare mode > Track Changes" (2026-10-05): the Target's own tracked changes are the older version.
+		kKCMPopupModeTrackActionID,
+		kKCMCompareModeSubmenuPath,
+		kKCMModeTrackSubMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Always Show Marks on Source" on the panel flyout (popup) menu. Check-mark toggle:
 		// while ON, the same comparison rings are also drawn on the corresponding pages of the
 		// Source document — always visible on screen (independent of the middle button) and shown
@@ -1531,6 +1537,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKCMActionComponentBoss,
 		kKCMPopupModeResourcesActionID,
 		kKCMModeResourcesKey,				// "Resources Changes"
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// ⚠kCustomEnabling is what makes UpdateActionStates run at all -- without it the check mark can never appear, however correctly the state is set (ActionDefs.h:40)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMPopupModeTrackActionID,
+		kKCMModeTrackKey,					// "Track Changes" (2026-10-05)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// ⚠kCustomEnabling is what makes UpdateActionStates run at all -- without it the check mark can never appear, however correctly the state is set (ActionDefs.h:40)

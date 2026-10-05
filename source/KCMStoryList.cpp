@@ -910,6 +910,26 @@ static void AddRowsFromDocument(IDataBase* db, const std::vector<KCMStoryDiff>& 
 	}
 }
 
+/* ReadRowForStory
+*/
+bool16 KCMStoryList::ReadRowForStory(IDataBase* db, UID storyUID, KCMStoryRow& out)
+{
+	if (db == nil || storyUID == kInvalidUID)
+		return kFalse;
+	out.fStoryUID = storyUID;
+	if (!ReadRowFromDocument(db, out, storyUID))
+		return kFalse;
+	out.fPageIndex = kMaxInt32;
+	if (out.fPageUID != kInvalidUID)
+	{
+		InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
+		const int32 idx = (pageList != nil) ? pageList->GetPageIndex(out.fPageUID) : -1;
+		if (idx >= 0)
+			out.fPageIndex = idx;	// the same index AddRowsFromDocument stores, hidden spreads included
+	}
+	return kTrue;
+}
+
 /* Build
 */
 void KCMStoryList::Build(IDataBase* targetDB, IDataBase* sourceDB,

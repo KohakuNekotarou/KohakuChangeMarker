@@ -232,6 +232,7 @@ void KCMSavePanelState()
 	{
 		case kKCMModeStory:		json += "story";		break;
 		case kKCMModeResources:	json += "resources";	break;
+		case kKCMModeTrack:		json += "track";		break;
 		default:				json += "pixel";		break;
 	}
 	json += "\"\n";
@@ -382,6 +383,8 @@ void KCMLoadPanelStateIfPresent()
 		compare->SetCompareMode(kKCMModePixel);
 	else if (mode == "resources")
 		compare->SetCompareMode(kKCMModeResources);
+	else if (mode == "track")
+		compare->SetCompareMode(kKCMModeTrack);
 
 	// ★Bring the tab name into line with the restored state too. On the run called from startup
 	//   (KCMUIStartup::Startup) there is no panel yet, so it returns quietly inside and the name is

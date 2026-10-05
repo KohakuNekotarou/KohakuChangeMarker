@@ -239,7 +239,17 @@ public:
 	virtual void		SetPairPagesByUid(bool16 on)	{ KCMSetPairPagesByUid(on); }
 
 	virtual bool16		ExportBeforeAfterReport(PMString& outMessage)
-													{ return KCMExportBeforeAfterReport(outMessage); }
+	{
+		// ★NOT IN THE TRACK CHANGES MODE (2026-10-05, design 2-3): the report's Story section borrows the text diff
+		//   and rebuilds the rows underneath the list - the Track rows would be taken apart.
+		if (KCMGetCompareMode() == kKCMModeTrack)
+		{
+			outMessage = PMString("The Before/After PDF Report is not available in the Track Changes mode.");
+			outMessage.SetTranslatable(kFalse);
+			return kFalse;
+		}
+		return KCMExportBeforeAfterReport(outMessage);
+	}
 
 	virtual bool16		GetShowStoryIds()			{ return KCMGetShowStoryIds(); }
 	virtual void		SetShowStoryIds(bool16 on)	{ KCMSetShowStoryIds(on); }

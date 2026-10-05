@@ -931,6 +931,12 @@ namespace KCMStoryList
 	*/
 	void RefreshRowFromDocument(int32 nth, IDataBase* targetDB);
 
+	/** One row's own fields for `storyUID` in `db` - the first words, the first frame, the page and the page
+		index - read the way Build reads them (ReadRowFromDocument, then the page list). For a list that is not
+		this one: the Track mode's rows are drawn by the same machinery (KCMTrackRead, 2026-10-05).
+		@return kFalse when the story cannot be read. fKinds and the children are left as `out` had them. */
+	bool16 ReadRowForStory(IDataBase* db, UID storyUID, KCMStoryRow& out);
+
 	/** Empty the list during a controlled shutdown. See the file comment for why this exists. */
 	void ShutdownCleanup();
 
