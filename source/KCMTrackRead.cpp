@@ -144,9 +144,7 @@ PMString ToPM(const WideString& w)
 WideString DeletedText(ITextModel* model, Utils<ITrackChangeUtils>& utils, RedlineIterator* it, TextIndex at)
 {
 	WideString text;
-	// (KCM_DIAG fault switch "track-describe-only": the iterator's description alone - the bisection of 2026-10-05,
-	//  a Refresh in the Track mode dropping one undo step. Constant false in a shipping build - KCMDiag.h.)
-	if (utils && !KCM_DIAG_FAULT("track-describe-only"))
+	if (utils)
 		utils->GetDeletedText(model, at, text);
 	if (text.CharCount() == 0)
 	{
@@ -290,8 +288,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, IDataBase* sourceDB, bool16* outC
 			if (colourAsked.size() < authors.size())
 				colourAsked.resize(authors.size(), kFalse);
 			// The colour is the AUTHOR's (memory track-change-author-colour): asked of the first record of each author.
-			// (KCM_DIAG fault switch "track-no-colour": the colour not asked - the same bisection.)
-			if (!colourAsked[static_cast<size_t>(author)] && utils && !KCM_DIAG_FAULT("track-no-colour"))
+			if (!colourAsked[static_cast<size_t>(author)] && utils)
 			{
 				colourAsked[static_cast<size_t>(author)] = kTrue;
 				KCMTrackAuthor& au = authors[static_cast<size_t>(author)];

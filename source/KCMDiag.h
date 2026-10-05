@@ -27,9 +27,9 @@
 //  test creates it and deletes it again - so a test build can reach a state the product only gets into after
 //  something ELSE has failed. Asked at each call, so the switch takes effect at once. In a build without
 //  KCM_DIAG it is the constant false. The switches in use (add one line here for each one added):
-//    track-describe-only  KCMTrackRead.cpp reads a deletion's text from the iterator's description alone, not
-//                         ITrackChangeUtils::GetDeletedText (2026-10-05: bisecting an undo step a Track Refresh drops)
-//    track-no-colour      KCMTrackRead.cpp does not ask ITrackChangeUtils::GetTrackedChangeBGColor (the same bisection)
+//    (none in use. ⛔track-describe-only / track-no-colour stood here on 2026-10-05 for one afternoon, to bisect an undo
+//     step a Refresh seemed to drop; the cause was InDesign cutting SCRIPT-made steps at the next real command - the
+//     same in the Story mode and after a plain "Add Page" - so they went: memory command-history-and-undo-stack.)
 //
 //========================================================================================
 
