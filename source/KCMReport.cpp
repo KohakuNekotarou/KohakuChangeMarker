@@ -8,14 +8,16 @@
 //  InterfacePtr still stands on it is a protective shutdown, not an error.
 //
 //  THE THREE SECTIONS (2026-09-13, the user's ask): the Pixel pages (pictures only), then the
-//  Story table, then the Resources table. Whatever mode the comparison ran in, the two tables are
-//  filled: the Story rows and the Resources result are BUILT for the report when the mode did not
-//  produce them, and emptied again afterwards (StoryDetailLoan / ResourceLoan below). ★The Story
-//  rows are the Story mode's own build in every mode (2026-10-11, when the Pixel mode stopped
-//  keeping a story list of its own).
-//  The Pixel pages alone cannot be borrowed - rasterising rewrites the rings, the pairing and the
-//  overflow cache the screen is showing - so outside the Pixel mode the report says so on its
-//  first page and shows the added / removed pages only.
+//  Story table, then the Resources table.
+//  ★★★MADE ONLY WHILE NOTHING IS STARTED, AND ALL THREE IN EVERY MODE (2026-10-11, the user's
+//  decision). The report compares for itself: every page's pixels whatever the compare mode
+//  (KCMRunReportComparison), the Story rows the Story mode's way (StoryDetailLoan), the Resources
+//  result (ResourceLoan) - and takes all of it down once it is written (KCMClearReportComparison),
+//  so the reader is left with nothing started and no mark, where they pressed it.
+//  ⛔While a comparison runs the item is grey. Until that day it was live then too, and outside the
+//  Pixel mode the report showed the added / removed pages alone: the pixels cannot be borrowed from
+//  a comparison the screen is showing - rasterising rewrites the rings, the pairing and the
+//  overflow cache it draws from. With nothing started there is nothing on screen to rewrite.
 //
 //========================================================================================
 
@@ -64,8 +66,8 @@
 #include "KCMProgressBar.h"		// KCMDeferredProgressBar - the bar that appears only after three seconds
 #include "KCMReportTable.h"		// the page helpers and the table sections
 #include "KCMReportPaws.h"			// the cat's trail on the first page
-#include "KCMCore.h"				// KCMIsArmed / KCMArmedTargetDB / KCMArmedSourceDB / KCMCollectPageUIDs / KCMGetCompareMode / KCMBuildStoryRowsByDiff (the Story table, in the modes that keep no list)
-#include "KCMComparisonRun.h"		// KCMToggleStartStop / KCMCanStartComparison - the report runs the comparison it needs
+#include "KCMCore.h"				// KCMIsArmed / KCMArmedTargetDB / KCMCollectPageUIDs / KCMBuildStoryRowsByDiff (the Story table)
+#include "KCMComparisonRun.h"		// KCMOpenComparisonPair / KCMRunReportComparison / KCMClearReportComparison - the report's own comparison
 #include "KCMDrawEventHandler.h"	// sEntries / sOverflowT / sPrintMarks - what "changed" means, and the rings
 #include "KCMPageMap.h"			// KCMBuildPairing / KCMMapTargetToSource - the partner of a changed page
 #include "KCMRehydrate.h"			// KCMMarkRehydratedClean - the report document is closed without a save prompt
@@ -425,32 +427,34 @@ private:
 
 // ---- the Story detail, borrowed ------------------------------------------------------------------
 
-/** Builds the Story Edits rows for the report when the comparison's mode keeps no list (the Pixel
-    and the Resources modes, since 2026-10-11), and empties the list again on the way out. The rows
+/** Builds the Story Edits rows for the report, and empties the list again on the way out. The rows
     are built by KCMBuildStoryRowsByDiff - the Story mode's own build - so the report's Story table
     lists what the Story mode's panel would, in every mode.
-    ★★THE PANEL IS NEVER TOLD, AND NEEDS NOT BE: in these two modes it shows no story row at all
-      (the Pixel mode's list is one note, the Resources mode's is the definitions), so the rows
-      standing for the length of the report are seen by nobody but the report.
-    ⛔Until 2026-10-11 this ran the text diff over the rows those modes had kept, and put every row
-      back as it was on the way out (what it held, whether it was compared, its counters). Those
-      rows had been filtered by the counters before the diff, so a story whose only change was a
-      ruby or a kenten never reached the report. */
+    ★★IN EVERY MODE, BECAUSE NOTHING IS STARTED (2026-10-11): the report is made only then, and Stop
+      empties the list, so there is never a list standing to read or to keep (in the Story and the
+      Track modes too - this built only in the Pixel and the Resources modes until the report began
+      to wait for Stop).
+    ★★THE PANEL IS NEVER TOLD, AND NEEDS NOT BE: with nothing started it shows no story row, so the
+      rows standing for the length of the report are seen by nobody but the report.
+    ⛔Until 2026-10-11 this ran the text diff over the rows the Pixel and the Resources modes had
+      kept, and put every row back as it was on the way out (what it held, whether it was compared,
+      its counters). Those rows had been filtered by the counters before the diff, so a story whose
+      only change was a ruby or a kenten never reached the report. */
 class StoryDetailLoan
 {
 public:
-	StoryDetailLoan(IDataBase* targetDB, IDataBase* sourceDB, bool16 needed)
+	StoryDetailLoan(IDataBase* targetDB, IDataBase* sourceDB)
 		: fBuilt(kFalse), fCancelled(kFalse)
 	{
-		if (!needed || targetDB == nil || sourceDB == nil)
+		if (targetDB == nil || sourceDB == nil)
 			return;
 		fBuilt = kTrue;
 		fCancelled = KCMBuildStoryRowsByDiff(targetDB, sourceDB) ? kFalse : kTrue;
 	}
 	~StoryDetailLoan()
 	{
-		// ⚠EMPTIED, NOT PUT BACK: the list was empty when the loan began (these modes keep none), and
-		//   a cancelled build leaves half a list behind that nobody else would clear.
+		// ⚠EMPTIED, NOT PUT BACK: the list was empty when the loan began (nothing is started), and a
+		//   cancelled build leaves half a list behind that nobody else would clear.
 		if (fBuilt)
 			KCMStoryList::Clear();
 	}
@@ -492,6 +496,36 @@ private:
 	PMString	fWhyNot;
 	ResourceLoan(const ResourceLoan&);
 	ResourceLoan& operator=(const ResourceLoan&);
+};
+
+// ---- the report's own comparison ---------------------------------------------------------------------
+
+/** Runs the report's own comparison on construction - every page's pixels whatever the compare mode
+    (KCMRunReportComparison) - and takes it down on destruction (KCMClearReportComparison), whichever
+    way the report leaves: written, failed, or cancelled at any of its bars. So the reader is left with
+    nothing started and no mark, where they pressed the item (the user's decision, 2026-10-11).
+    ★Made before anything that reads the marks (CollectPairs, the Before export), and so destroyed
+      after all of it. */
+class ReportComparison
+{
+public:
+	ReportComparison(IDataBase* targetDB, IDataBase* sourceDB)
+		: fTarget(targetDB), fSource(sourceDB), fCompared(KCMRunReportComparison(targetDB, sourceDB))
+	{
+	}
+	~ReportComparison()
+	{
+		GlobalErrorStatePreserver errorState;		// a destructor must not change the error the caller is reporting
+		KCMClearReportComparison(fTarget, fSource);
+	}
+	/** kFalse when it was cancelled at its progress bar. */
+	bool16 Compared() const { return fCompared; }
+private:
+	IDataBase*	fTarget;
+	IDataBase*	fSource;
+	bool16		fCompared;		// after the two it reads: members are made in this order
+	ReportComparison(const ReportComparison&);
+	ReportComparison& operator=(const ReportComparison&);
 };
 
 // ---- the rows of the two tables ------------------------------------------------------------------
@@ -791,13 +825,8 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 		EndParagraph(text);
 		text.Append("Before (Source): "); text.Append(sourceName); EndParagraph(text);
 		text.Append("After (Target): ");  text.Append(targetName); EndParagraph(text);
-		if (KCMGetCompareMode() != kKCMModePixel)
-		{
-			// The pictures cannot be borrowed the way the two tables are (the file comment says why).
-			EndParagraph(text);
-			text.Append("Pixel: not compared in this mode (only added / removed pages are shown)");
-			EndParagraph(text);
-		}
+		// (A fourth line stood here until 2026-10-11 outside the Pixel mode - "Pixel: not compared in
+		//  this mode". The report compares the pixels itself in every mode now.)
 		// At twice the heading size (the user's ask, 2026-09-13: "only the first page's words, twice").
 		KCMReportTypeAt(helper, layer, PMRect(page.Left() + kKCMReportGutter, page.Top() + kKCMReportGutter, page.Right() - kKCMReportGutter, page.Top() + kKCMReportGutter + 6 * kKCMReportHeadingPt * 3.2), text, kKCMReportHeadingPt * 2);
 
@@ -951,65 +980,47 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
 
-	// ★★**Not comparing yet? Run the comparison first** (the user's instruction, 2026-09-14: "let it
-	//   be pressed whenever a Target and a Source are there, and run whatever comparison it needs" -
-	//   before that this said "Start a comparison first." and gave up).
-	//   KCMToggleStartStop IS the flyout's own Start while nothing is armed, so the pair this report
-	//   ends up describing is exactly the pair a Start would have chosen - chosen Target/Source
-	//   where the reader set them, the automatic rule where they did not.
-	// ⚠★★**The comparison it runs STAYS ARMED.** It is not borrowed and given back the way the Story
-	//   and the Resources results are further down: a pixel comparison rebuilds the rings, the page
-	//   pairing and the overflow caches, and there is no earlier state to put back (the same reason
-	//   the report cannot show pixel pages in the other two modes). So pressing this before a Start
-	//   leaves the marks on screen, which is also what a reader who asked for a Before/After report
-	//   would expect to see.
-	if (!KCMIsArmed() || KCMArmedTargetDB() == nil)
+	// ★★★**ONLY WHILE NOTHING IS STARTED** (2026-10-11, the user's decision: the item is grey while a
+	//   comparison runs). The report compares for itself - the pixels in every mode, which a comparison
+	//   on screen cannot lend (the file comment says why) - and takes it all down once it is written.
+	//   The flyout greys the item on the same question (KCMActionComponent.cpp); this is the guard for
+	//   the facade's other callers.
+	// ⛔Until that day a press with nothing started ran the flyout's own Start and LEFT IT ARMED (the
+	//   user's instruction of 2026-09-14, "let it be pressed whenever a Target and a Source are there,
+	//   and run whatever comparison it needs" - the first half still stands), and a press while
+	//   comparing used that comparison: outside the Pixel mode, without the pictures.
+	if (KCMIsArmed() && KCMArmedTargetDB() != nil)
 	{
-		// ⚠Asked through the resolver, not by counting documents: KCMComparisonRun.h promises this
-		//   goes through the same one as the toggle's start branch, so "the item was live" and "the
-		//   start found a pair" cannot disagree ([[one-question-one-place]]).
-		if (!KCMCanStartComparison())
-		{
-			outMessage = Ascii("Two open documents are needed for a report.");
-			return kFalse;
-		}
-		KCMToggleStartStop();		// nothing is armed, so this is the START branch
-	}
-	IDataBase* const targetDB = KCMArmedTargetDB();
-	if (!KCMIsArmed() || targetDB == nil)
-	{
-		// The start did not arm: it was cancelled at its progress bar, or it refused the pair.
-		// Its own words are already on the status line, so this says only what did not happen.
-		outMessage = Ascii("Report cancelled.");
+		outMessage = Ascii("Stop the comparison first - the report runs a comparison of its own.");
 		return kFalse;
 	}
 
-	// The Source for the report is the armed Source, and there is always one.
-	// ⛔Until 2026-09-21 there was a second case: an armed ORIGIN had no Source database at all, so
-	//   a copy was rehydrated here for the occasion and named "Task Start HH:MM:SS". A Task Start is
-	//   a file Start opens now, so the Before side is a document with a name of its own.
-	IDataBase* sourceDB = KCMArmedSourceDB();
-	PMString sourceName = NameOf(sourceDB);
-	if (sourceDB == nil)
+	// **WHICH TWO: the pair a Start would compare** - the chosen Target / Source where the reader set
+	//   them (a Task Start copy among them, opened in a window as Start opens it), the automatic rule
+	//   where they did not - and refused in Start's own words ([[one-question-one-place]]).
+	IDataBase* targetDB = nil;
+	IDataBase* sourceDB = nil;
 	{
-		outMessage = Ascii("the comparison has no Source to show on the Before side.");
-		return kFalse;
+		PMString why;
+		if (!KCMOpenComparisonPair(targetDB, sourceDB, why))
+		{
+			outMessage = why;
+			return kFalse;
+		}
 	}
+	const PMString sourceName = NameOf(sourceDB);
 
 	// ⚠A DATABASE THAT IS NOT A SESSION DOCUMENT IS NOT EXPORTED. A Source lent by Kohaku InDesign
 	//   MCP is a database CLONE, and ExportINX on a clone was measured to kill InDesign outright
 	//   (kcm-clone-export-and-compression-2026-09-09.md); the PDF export has not been tried on one
-	//   and is not going to be tried here. The rehydrated task-start copy IS a session document.
+	//   and is not going to be tried here. A Task Start copy IS a session document (opened above).
 	if (!IsSessionDocument(sourceDB))
 	{
 		outMessage = Ascii("the Source is a lent copy (not an open document), so it cannot be exported for the Before side.");
 		return kFalse;
 	}
 
-	std::vector<Pair> pairs;
-	CollectPairs(targetDB, sourceDB, pairs);
-
-	// Where it goes - asked FIRST, so a cancel costs nothing (no export, no diff, no rehydration wasted).
+	// Where it goes - asked FIRST, so a cancel costs nothing (no comparison, no export, no diff wasted).
 	// ★Since 2026-09-14 the answer is a FOLDER built from what they typed, holding three files:
 	//   the report, the old side and the new side. MakeReportFolder says why.
 	IDFile reportFile;
@@ -1032,20 +1043,28 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 		reportFile = InReportFolder(reportFolder, reportStem, "");
 	}
 
+	// ---- the pixels: the report's own comparison --------------------------------------------------
+	// After the dialog, so a cancel there costs nothing; taken down again when this function returns, by
+	//   whichever road (ReportComparison). Its bar's Cancel ends the report, as a cancelled Start ends a
+	//   Start.
+	ReportComparison comparison(targetDB, sourceDB);
+	if (!comparison.Compared())
+	{
+		outMessage = Ascii("Report cancelled.");
+		return kFalse;
+	}
+	std::vector<Pair> pairs;
+	CollectPairs(targetDB, sourceDB, pairs);
+
 	// ---- the two tables' rows, read while the borrowed results stand --------------------------
 	// (Both loans give back on leaving this block, before any document is exported or closed.)
 	std::vector<KCMReportRow> storyRows, resourceRows;
 	PMString storyHeading, resourceHeading;
 	{
-		// ⚠**"the modes that keep no story list", not "the Story mode"** (2026-09-15). The loan builds
-		//   the rows FOR THE REPORT and empties the list on the way out; in a mode that keeps a list,
-		//   that would throw the rows away underneath a reader who is working through them - and in
-		//   the Import mode (retired 2026-09-20) it would have thrown away the record of what they had
-		//   taken in. Spelled `!= kKCMModeStory` this was true of the Import mode, which is exactly the
-		//   mode that must not be borrowed from. (The question is the one KCMRebuildStoryEdits asks to
-		//   decide whether a mode keeps a list at all - so a mode that keeps none is always built for.)
-		StoryDetailLoan storyLoan(targetDB, sourceDB,
-								  KCMModeUsesStoryRows(KCMGetCompareMode()) ? kFalse : kTrue);
+		// (Built in every mode since 2026-10-11 - nothing is started, so no mode is keeping a list that
+		//  the loan could take apart. Until then only the modes that keep none were built for; the Story
+		//  mode's own list was read as it stood, and the Track mode had no report at all.)
+		StoryDetailLoan storyLoan(targetDB, sourceDB);
 		int32 stories = 0, edits = 0;
 		if (storyLoan.WasCancelled())
 		{
@@ -1133,12 +1152,12 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	bar.Step(units++, Ascii("Exporting the Before pages"));
 	// THE MARKS GO ON THE BEFORE SIDE (the user's ask, 2026-09-13): the older version carries the
 	// rings of the changed pages and the "/" of the removed ones, the newer version is shown clean.
-	// The drawing marks a Source page only when the document is the one it knows as sSrcDB and the
-	// page is in sSrcPageToTarget - which a task-start copy is not, having been detached and closed
-	// right after the comparison. So for the copy rehydrated here, the two (and the Source-side
-	// overflow set) are LENT for the length of the Before export and put back to the detached state
-	// afterwards. The overflow cache is stamped as built for this Source first, so no draw rebuilds
-	// it against the copy and then empties it against nil (which would cost the Target its "/").
+	// The drawing marks a Source page when the document is the one it knows as sSrcDB and the page is
+	// in sSrcPageToTarget - which the report's own comparison has just made so (ReportComparison).
+	// ⛔(Until 2026-10-11 the two, and the Source-side overflow set, were LENT here for the length of
+	//  the Before export whenever sSrcDB stood nil - the state a task-start copy was left in before
+	//  2026-09-21, when it was detached and closed right after the comparison. Nothing has left it nil
+	//  since, and with the report comparing for itself nothing can.)
 	const bool16 printMarksWas = KCMDrawEventHandler::sPrintMarks;
 	// The story ID labels follow the report on its After side while their toggle is on (the user's
 	// call, 2026-09-13; the Before side, marked by sRingFrameOff, gets none - a Task Start copy's
@@ -1149,20 +1168,6 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 		IDataBase::SaveRestoreModifiedState targetGuard(targetDB);
 		IDataBase::SaveRestoreModifiedState sourceGuard(sourceDB);
 
-		const bool16 lend = (KCMDrawEventHandler::sSrcDB == nil) ? kTrue : kFalse;
-		if (lend)
-		{
-			std::vector<UID> tp, sp, tov, sov;
-			KCMBuildPairing(targetDB, sourceDB, tp, sp, &tov, &sov);
-			KCMMarkStateLock lock(KCMMarkStateMutex());
-			KCMDrawEventHandler::sSrcDB = sourceDB;
-			KCMDrawEventHandler::sOverflowCacheSrcDB = sourceDB;
-			KCMDrawEventHandler::sSrcPageToTarget.clear();
-			for (size_t i = 0; i < sp.size() && i < tp.size(); ++i)
-				KCMDrawEventHandler::sSrcPageToTarget[sp[i]] = tp[i];
-			KCMDrawEventHandler::sOverflowS.clear();
-			KCMDrawEventHandler::sOverflowS.insert(sov.begin(), sov.end());
-		}
 		if (!beforePages.empty())
 		{
 			// The marks, without the frame along the page edge (the user's ask, 2026-09-13): only
@@ -1173,14 +1178,6 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 			ok = ExportPagesToPDF(sourceDB, beforePages, beforePDF, why);
 			KCMDrawEventHandler::sRingFrameOff = kFalse;
 			KCMDrawEventHandler::InvalidateRingCache();
-		}
-		if (lend)
-		{
-			KCMMarkStateLock lock(KCMMarkStateMutex());
-			KCMDrawEventHandler::sSrcDB = nil;
-			KCMDrawEventHandler::sOverflowCacheSrcDB = nil;
-			KCMDrawEventHandler::sSrcPageToTarget.clear();
-			KCMDrawEventHandler::sOverflowS.clear();
 		}
 		bar.Step(units++, Ascii("Exporting the After pages"));
 		if (ok && bar.WasCancelled())
@@ -1257,9 +1254,19 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 
 	// ★The FOLDER is named, not the report file: three files were written and the reader should
 	//   know where all three are.
+	// ⚠**Only the side PDFs that were written are named** (2026-10-11): with no page changed there are
+	//   none, and the line used to promise both anyway (measured: a Story-mode report, one file in the
+	//   folder).
 	outMessage = Ascii("Report: ");
 	outMessage.AppendNumber(pageCount);
-	outMessage.Append(" pages, with the Before and After PDFs -> ");
+	outMessage.Append(" pages");
+	if (!beforePages.empty() && !afterPages.empty())
+		outMessage.Append(", with the Before and After PDFs");
+	else if (!beforePages.empty())
+		outMessage.Append(", with the Before PDF");
+	else if (!afterPages.empty())
+		outMessage.Append(", with the After PDF");
+	outMessage.Append(" -> ");
 	{
 		PMString path;
 		FileUtils::IDFileToPMString(reportFolder, path);

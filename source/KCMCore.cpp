@@ -666,7 +666,8 @@ bool16 KCMBuildStoryRowsByDiff(IDataBase* targetDB, IDataBase* sourceDB)
 	return kTrue;
 }
 
-ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport, bool16 allowIncremental)
+ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport, bool16 allowIncremental,
+							  bool16 pixelsOnly)
 {
 	if (targetDB == nil || sourceDB == nil)
 		return kFailure;
@@ -826,7 +827,11 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	//   later inherits the rasterising - and with it a populated sEntries, which is what makes the
 	//   comparison ring appear. The Resources mode would have drawn pixel rings over a comparison it
 	//   never ran.
-	if (KCMGetCompareMode() != kKCMModePixel)
+	// ★**AND THE REPORT'S OWN RUN RASTERISES IN EVERY MODE** (pixelsOnly, 2026-10-11): the Before/After
+	//   report is made only while nothing is started, and puts every page's pixels in it whatever mode is
+	//   chosen. Nothing is on screen to draw rings over (the run neither redraws nor tells the screen,
+	//   below), and the report takes it all down again when it is written (KCMClearReportComparison).
+	if (KCMGetCompareMode() != kKCMModePixel && !pixelsOnly)
 		toRaster.clear();
 
 	// A heavy comparison gets a progress bar with a Cancel. The total is "the pages about to be
@@ -909,7 +914,9 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	//   until 2026-09-05; the report only reads the counts the list holds, so it reads them the same.
 	//   (In the Pixel and the Resources modes it only empties the list - those modes keep none since
 	//   2026-10-11.)
-	if (!cancelled && !KCMRebuildStoryEdits(targetDB, sourceDB))
+	// ★NOT FOR THE REPORT'S OWN RUN (pixelsOnly): the report builds its Story table itself, the Story
+	//   mode's way (KCMReport.cpp, StoryDetailLoan), and keeps no list once it is written.
+	if (!cancelled && !pixelsOnly && !KCMRebuildStoryEdits(targetDB, sourceDB))
 		cancelled = kTrue;
 
 	// **The Resources comparison runs HERE, and ONLY in its own mode** -- as the Story Edits list
@@ -922,7 +929,8 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	// ⚠A refusal (whyNot) is not an error here. The commonest one is a lent clone as the Source,
 	//   which cannot be exported at all - the store says so and holds no result, and the report
 	//   below reads that back rather than claiming a comparison happened.
-	if (!cancelled && KCMGetCompareMode() == kKCMModeResources)
+	// (Nor for the report's own run - its ResourceLoan builds and clears the result itself.)
+	if (!cancelled && !pixelsOnly && KCMGetCompareMode() == kKCMModeResources)
 	{
 		// ★**The two documents this run is about, not the armed pair** -- they are not armed yet at
 		//   this point in the run, which is exactly what the store's own note describes.
@@ -1014,7 +1022,10 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	//   the removal was actually for -- without it, ticking a document and then comparing it threw
 	//   the ticks away at the moment the comparison began).
 
-	KCMInvalidateDocs(targetDB, sourceDB);	// the Source too, so its always-on frames update at once
+	// ★The report's own run draws nothing on screen (pixelsOnly): its marks are for the report's Before export,
+	//   and leaving the views alone keeps them off the reader's windows while it runs.
+	if (!pixelsOnly)
+		KCMInvalidateDocs(targetDB, sourceDB);	// the Source too, so its always-on frames update at once
 
 	PMString report;
 	report.SetTranslatable(kFalse);
@@ -1134,7 +1145,12 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	//   cursor there. Changing this expression to `!doIncremental && !cancelled` would put the same
 	//   clean-up in two places, and one of them would eventually be fixed alone
 	//   ([[one-question-one-place]]).
-	KCMNotifyDocs(kKCMMarksRebuiltMessage, targetDB, sourceDB, !doIncremental);
+	// ★NOT FOR THE REPORT'S OWN RUN (pixelsOnly, 2026-10-11): told "rebuilt", the UI would put the
+	//   scrollbar strips into both windows and rebuild the thumbnails from marks nobody started - and
+	//   take them all off again a minute later. The report's clean-up (KCMClearReportComparison ->
+	//   KCMDoClearMarks) sends the Cleared this pairs with, so the screen ends where it began.
+	if (!pixelsOnly)
+		KCMNotifyDocs(kKCMMarksRebuiltMessage, targetDB, sourceDB, !doIncremental);
 	// (A notification telling the transparency manager to re-examine the item used to be emitted
 	//  here, and was removed.
 	//  @warning **that list is document data and PERSISTS in the .indd** (measured: compare, save,

@@ -27,8 +27,8 @@
   - 訂正:
 - **TCM-08** 比較中に押すと、先に今の比較を止めてから写しを作る。2回目を押すと新しい写しが Source になり、前の写しは開いたまま残る。
   - 訂正:
-- **TCM-09** 範囲は Target の1文書だけ。**ブック比較・Before/After PDF Report は Track モードでは灰色**（押しても断る）。
-  - 訂正:
+- **TCM-09** 範囲は Target の1文書だけ。**ブック比較は Track モードでは灰色**（押しても断る）。Before/After PDF Report は**比較していなければ作れる**（どのモードとも同じ＝第15章 REP-22。Story の表は本文の比較＝変更履歴の行ではない）。
+  - 訂正: ✅2026-10-11 作者決定で変更＝旧「Before/After PDF Report も Track モードでは灰色」（報告書が止めているときだけになり、壊す Track の一覧が無くなった）
 - **TCM-10** 試験用のスクリプトの口 `app.kcmCompareTracked(file)`＝保存ダイアログの代わりにファイルを渡す同じ道（ScriptID `eKGl`・Adobe 未登録）。
   - 訂正:
 

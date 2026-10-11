@@ -2088,7 +2088,12 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   arrived). The ring belongs to the pixel comparison; any other mode must stop here EXPLICITLY
 	//   rather than be caught by an empty sEntries, which is the very argument the paragraph above
 	//   makes. Written as "not Story", the Resources mode would have been handed Pixel's behaviour.
-	const bool16 drawRings = (KCMGetCompareMode() == kKCMModePixel);
+	// ★**AND WHILE THE BEFORE/AFTER REPORT EXPORTS, IN EVERY MODE** (sReportExport, 2026-10-11): the
+	//   report is made with nothing started and compares the pixels itself whatever the mode
+	//   (KCMRunReportComparison), so its Before side has to carry the rings in the Story, the
+	//   Resources and the Track modes too. The flag stands only for the length of its two page
+	//   exports (KCMReport.cpp).
+	const bool16 drawRings = (KCMGetCompareMode() == kKCMModePixel) || sReportExport;
 	const bool16 wantOrig  = !suppressForPrint && !printing && sShowOriginal && !sOrigImages.empty();
 	// The layout-view version of the "Check" tick. On screen it is shown **at all times**,
 	// completely independently of the frame toggles and the tool's left button. It reaches print and

@@ -243,14 +243,10 @@ public:
 
 	virtual bool16		ExportBeforeAfterReport(PMString& outMessage)
 	{
-		// ★NOT IN THE TRACK CHANGES MODE (2026-10-05, design 2-3): the report's Story section borrows the text diff
-		//   and rebuilds the rows underneath the list - the Track rows would be taken apart.
-		if (KCMGetCompareMode() == kKCMModeTrack)
-		{
-			outMessage = PMString("The Before/After PDF Report is not available in the Track Changes mode.");
-			outMessage.SetTranslatable(kFalse);
-			return kFalse;
-		}
+		// (The Track Changes mode was refused here from 2026-10-05 - design 2-3: the report's Story section rebuilt
+		//  the rows underneath the Track list. Since 2026-10-11 the report is made only while nothing is started, when
+		//  there is no Track list to take apart, so the mode is no longer asked: KCMExportBeforeAfterReport refuses a
+		//  running comparison in every mode.)
 		return KCMExportBeforeAfterReport(outMessage);
 	}
 

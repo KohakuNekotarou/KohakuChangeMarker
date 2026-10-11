@@ -399,6 +399,19 @@ void KCMBringArmedTargetToFront()
 }
 
 //----------------------------------------------------------------------------------------
+// KCMBringDocumentToFront (declared in KCMStoryJump.h)
+//----------------------------------------------------------------------------------------
+void KCMBringDocumentToFront(IDataBase* db)
+{
+	// ⚠**ASKED BEFORE IT IS USED.** The caller noted this pointer before a long run (the report), and a
+	//   document closed meanwhile leaves its address behind for another to reuse ([[uidref-reuse-after-close]]);
+	//   the facade answers by comparing it against the open documents, never by dereferencing it.
+	if (db == nil || !Utils<IKCMCompareFacade>()->IsDocDBOpen(db))
+		return;
+	ActivateDocument(db);
+}
+
+//----------------------------------------------------------------------------------------
 // KCMStoryJumpToRow (declared in KCMStoryJump.h)
 //----------------------------------------------------------------------------------------
 bool16 KCMStoryJumpToRow(int32 rowIndex)

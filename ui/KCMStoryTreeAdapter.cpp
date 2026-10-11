@@ -148,8 +148,12 @@ public:
 				// ⚠GUARDED THE SAME WAY THE BRANCH ABOVE IS. That one takes a Utils object and tests
 				//  it; this one used to dereference straight through, and the two are eleven lines
 				//  apart in the same function ([[utils-boss-facade-access]]).
+				// ★★ONLY WHILE A COMPARISON RUNS (2026-10-11): the Before/After report is made with
+				//   nothing started and builds the Resources result for itself, and the result tells the
+				//   panel when it is built - so a stopped panel would have shown the report's definitions
+				//   until it gave them back. Stopped, there is otherwise never a result (Stop clears it).
 				Utils<IKCMResourcesFacade> resources;
-				const int32 defs = resources ? resources->GetChangeCount() : 0;
+				const int32 defs = (resources && Utils<IKCMCompareFacade>()->IsArmed()) ? resources->GetChangeCount() : 0;
 				if (defs > 0)
 					return defs;
 
@@ -168,7 +172,12 @@ public:
 				return Utils<IKCMCompareFacade>()->IsArmed() ? 1 : 0;
 			}
 
-			const int32 rows = Utils<IKCMStoryEditsFacade>()->GetRowCount();
+			// ★★ONLY WHILE A COMPARISON RUNS (2026-10-11), for the reason the Resources branch above gives:
+			//   the Before/After report, made with nothing started, builds the Story mode's rows for itself
+			//   and they stand in the model for the length of the report - a rebuild meanwhile (the
+			//   Resources result tells the panel when it gives back) would have listed them under a
+			//   stopped panel. Stopped, the list is otherwise always empty (Stop empties it).
+			const int32 rows = Utils<IKCMCompareFacade>()->IsArmed() ? Utils<IKCMStoryEditsFacade>()->GetRowCount() : 0;
 			if (rows > 0)
 				return rows;
 

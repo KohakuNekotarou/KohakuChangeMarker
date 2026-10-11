@@ -188,7 +188,13 @@ bool16		KCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KCMPage
 // Pass kFalse (the default) where content may differ (Start) or the exclusions may (the Ignore
 // Page Number Marker toggle). Inconsistent state (a different document pair, or no previous
 // pairing) falls back to a full comparison by itself.
-ErrorCode	KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport, bool16 allowIncremental = kFalse);
+//
+// pixelsOnly=kTrue is the Before/After report's own run (2026-10-11, KCMRunReportComparison): the
+// pages are rasterised WHATEVER THE COMPARE MODE, the mode's own work (the Story list, the
+// Resources result) is left out - the report builds both tables for itself - and the screen is
+// neither redrawn nor told, since nothing is started and nothing is to be shown.
+ErrorCode	KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport, bool16 allowIncremental = kFalse,
+								bool16 pixelsOnly = kFalse);
 
 // Redraw every view of this document, if db is not nil (nil, or a document that cannot be
 // resolved, does nothing). Shared by Clear, the print-mark toggles and the peek disarm so that

@@ -40,6 +40,27 @@ void	KCMStartComparisonFor(IDocument* target, IDocument* source);
 // @return kTrue when the comparison ran and the pair is armed; kFalse on a cancel or a failure.
 bool16	KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB);
 
+// WHICH TWO, OPENED - the steps Start takes before it compares: the resolver (the chosen pair, the automatic rule for
+// an end nobody chose), a FILE end opened (a Task Start copy, in a window, as Start always has), and the refusal of
+// one document compared with itself. ★Two callers, so the two cannot drift ([[one-question-one-place]]): the start
+// branch of KCMToggleStartStop, and the Before/After report, which compares for itself (2026-10-11).
+// @param outWhy the status line's words when there is no pair - which end is missing, why a file would not open, or
+//   that the two are one document.
+// @return kTrue with both databases set; kFalse with both nil.
+bool16	KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMString& outWhy);
+
+// ★THE BEFORE/AFTER REPORT'S OWN COMPARISON (2026-10-11, the user's decision: the report is made while nothing is
+// started, and it holds every page's pictures whatever the compare mode). The pixels of every page go into the mark
+// state a Start fills - nothing is armed, no story list or Resources result is built (the report builds its two
+// tables itself), and the screen is neither redrawn nor told (KCMDoMarkChangesDoc's pixelsOnly).
+// @return kFalse when it was cancelled at its progress bar (the marks are discarded then, as for a cancelled Start).
+bool16	KCMRunReportComparison(IDataBase* targetDB, IDataBase* sourceDB);
+
+// ...and taken down again once the report is written - Stop's own clearing (KCMDoClearMarks), with nothing to
+// disarm - so the reader is left with nothing started and no mark, where they pressed the item. Either database may
+// have closed meanwhile; the transparency-list insurance asks first.
+void	KCMClearReportComparison(IDataBase* targetDB, IDataBase* sourceDB);
+
 // Compare THE SAME TWO DOCUMENTS AGAIN - the flyout's "Refresh Comparison", directly under Start.
 //
 // ★WHAT IT IS FOR: the reader edits one of the two documents and wants the marks to say what is

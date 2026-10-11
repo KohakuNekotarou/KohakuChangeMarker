@@ -17,6 +17,8 @@
 
 #include "BaseType.h"	// bool16, int32
 
+class IDataBase;
+
 /** Single click: bring the story's first frame to the centre of the target document's window.
 
 	★THE OLDER VERSION'S WINDOW COMES TOO, AIMED AT THE SAME STORY - not at the same page number.
@@ -180,6 +182,14 @@ bool16 KCMStorySelectWholeStory(int32 rowIndex);
 	UI caller that begins a comparison ends with this call instead.
 */
 void KCMBringArmedTargetToFront();
+
+/** Bring this document to the front, when it is still open (2026-10-11). The Before/After report
+	puts back the document that was in front when its item was pressed: it may open a Task Start copy
+	in a window to read it, as Start does, and with nothing started afterwards there is no armed
+	Target for the call above to bring forward instead. nil, or a document closed since, does nothing.
+	A UI-side job for the reason given above.
+*/
+void KCMBringDocumentToFront(IDataBase* db);
 
 #endif // __KCMStoryJump_h__
 

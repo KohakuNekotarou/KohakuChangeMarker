@@ -626,10 +626,12 @@ public:
 
 	// ---- the Before/After report ---------------------------------------------------------
 	//
-	// One PDF: a summary page, then every changed page of the running comparison with the
-	// older version on the left and the newer (rings printed) on the right (KCMReport.h). kTrue
-	// when written; outMessage names the file, or says why not. The flyout item calls it and
-	// shows the message.
+	// One PDF: a first page, then every changed page with the older version (rings printed) on
+	// the left and the newer on the right, then the Story and the Resources tables (KCMReport.h).
+	// ★Made only while NOTHING IS STARTED (2026-10-11): it compares the pair a Start would, for
+	// itself - the pixels in every compare mode - and leaves nothing started; while a comparison
+	// runs it refuses and says to Stop (the flyout greys its item then). kTrue when written;
+	// outMessage names the folder, or says why not. The flyout item calls it and shows the message.
 
 	virtual bool16		ExportBeforeAfterReport(PMString& outMessage) = 0;
 

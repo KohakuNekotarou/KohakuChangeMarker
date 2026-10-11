@@ -64,7 +64,7 @@
 // (⛔KCMResourceEdit.h stood here for the two "Edit..." items and went with them on 2026-09-21, as
 //  KCMStoryCopy.h had gone earlier that day with the CHANGE row's restore items. This file reads
 //  neither now: a definition row's menu is "Show as XML" alone, and a change row raises no menu.)
-#include "KCMStoryJump.h"			// KCMBringArmedTargetToFront - the Target is what the reader looks at once a comparison runs
+#include "KCMStoryJump.h"			// KCMBringArmedTargetToFront - the Target is what the reader looks at once a comparison runs; KCMBringDocumentToFront - the report puts back what was in front
 #include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / Set / Apply (the "Translucent Panel" flyout item)
 #include "KCMStoryPressMarks.h"	// KCMStoryMarksRefresh (rebuild the always-on marks of Story mode)
 // (★`IActiveContext.h` / `IDocument.h` / `PersistUtils.h` were removed: **none of them was ever
@@ -881,13 +881,16 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// way the words go to the status line.
 		case kKCMPopupExportReportActionID:
 			{
+				// ★The document in front when the item was pressed goes back in front afterwards (2026-10-11): the
+				//   report may open a Task Start copy in a window to read it, as Start does, and it leaves nothing
+				//   started - so there is no armed Target for KCMBringArmedTargetToFront to bring forward, which is
+				//   what this ended with while the report still started a comparison of its own.
+				IDataBase* const frontDB = Utils<IKCMCompareFacade>()->GetActiveDocDB();
 				PMString reportMsg;
 				Utils<IKCMCompareFacade>()->ExportBeforeAfterReport(reportMsg);
 				if (reportMsg.CharCount() > 0)
 					KCMSetStatus(reportMsg);
-				// ★This one may have STARTED a comparison to have something to report (it stays armed), so
-				//   it ends the same way. When one was already running nothing moves: the Target is in front.
-				KCMBringArmedTargetToFront();
+				KCMBringDocumentToFront(frontDB);
 			}
 			break;
 
@@ -1533,20 +1536,19 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		}
 		else if (action == kKCMPopupExportReportActionID)
 		{
-			// ★★**Live while comparing OR while a comparison could be started** (2026-09-14, the
-			//   user's instruction: "let it be pressed whenever a Target and a Source are there, and
-			//   run whatever comparison it needs"). It used to be the first half alone - a marked
-			//   Target document - so the item was greyed until the reader had pressed Start.
-			// ⚠The second half is asked through CanStartComparison, which KCMComparisonRun.h promises
-			//   goes through THE SAME RESOLVER as the toggle's start branch. Counting open documents
-			//   here instead would be a second copy of that decision, and it would drift.
-			// ★The model runs the start itself (KCMReport.cpp); this branch only decides the grey.
+			// ★★★**LIVE ONLY WHILE NOTHING IS STARTED, AND A PAIR IS THERE** (2026-10-11, the user's
+			//   decision: "grey the menu while it is started"). The report compares for itself, in every
+			//   mode (the Track mode too - with nothing started there is no Track list to take apart), and
+			//   leaves nothing started (KCMReport.cpp).
+			// ★The two questions are the model's own: "started" is asked the way KCMExportBeforeAfterReport
+			//   refuses it (IsArmed with an armed Target), and "a pair is there" through CanStartComparison,
+			//   which KCMComparisonRun.h promises goes through THE SAME RESOLVER as the report's
+			//   KCMOpenComparisonPair - so the grey and the press cannot disagree ([[one-question-one-place]]).
+			// ⛔Until that day it was live while comparing as well (a marked Target, 2026-09-14) and greyed
+			//   in the Track mode (2026-10-05, design 2-3).
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-			const bool16 haveMarks = (Utils<IKCMMarkData>()->GetMarkedTargetDB() != nil);
-			// ★Greyed in the Track Changes mode (2026-10-05, design 2-3): the report's Story section borrows the
-			//   text diff and would take the Track rows apart (the facade refuses it too).
-			listToUpdate->SetNthActionState(i, ((haveMarks || compare->CanStartComparison())
-												&& compare->GetCompareMode() != kKCMModeTrack)
+			const bool16 started = (compare != nil && compare->IsArmed() && compare->GetArmedTargetDB() != nil) ? kTrue : kFalse;
+			listToUpdate->SetNthActionState(i, (compare != nil && !started && compare->CanStartComparison())
 												? kEnabledAction : kDisabled_Unselected);
 		}
 		else if (action == kKCMClearChecksActionID)
