@@ -88,6 +88,12 @@ bool16 KCMResolveComparisonPair(KCMPairEnd& outTarget, KCMPairEnd& outSource);
     @return kFalse when the end is empty, the file is gone, or it could not be opened. */
 bool16 KCMRealisePairEnd(const KCMPairEnd& end, IDataBase*& outDB, PMString& why);
 
+/** The open document whose file is `file`, or nil when no open document has it (IDocumentList::FindDoc, its answer
+    checked against the file - KCMPairChoice.cpp says why).
+    ★THE ONE PLACE this plug-in asks "is this file open": KCMRealisePairEnd, and since 2026-10-05 the two copy roads,
+     which never write a copy over a file that is open (KCMAskWhereToSaveCopy, KCMTakeTrackOriginalCopy). */
+IDataBase* KCMOpenDocOnFile(const IDFile& file);
+
 //----------------------------------------------------------------------------------------
 // The chosen pair ("Set as Target" / "Set as Source" on the flyout, and a Task Start)
 //

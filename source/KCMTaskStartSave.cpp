@@ -104,6 +104,8 @@ void BareName(IDataBase* db, PMString& out)
 
 //----------------------------------------------------------------------------------------
 
+namespace {
+
 /*	The save dialog, opened ON THE DOCUMENT'S OWN FOLDER. kFalse when the reader cancelled.
 	★Shared by Task Start and "Compare with Tracked Changes..." (2026-10-05): each passes its own suggested
 	  name and title.
@@ -118,7 +120,7 @@ void BareName(IDataBase* db, PMString& out)
 	⚠**The header's own instructions name a method that does not exist** (ISaveFileDialog.h:44
 	  says "Call SetFileTypeInfo()"; the interface has AddFileTypeInfo).
 */
-bool16 KCMAskWhereToSaveCopy(IDataBase* docDB, const PMString& suggestedName, const PMString& title, IDFile& outFile)
+bool16 AskOnce(IDataBase* docDB, const PMString& suggestedName, const PMString& title, IDFile& outFile)
 {
 	InterfacePtr<ISaveFileDialog> dlg(
 		(ISaveFileDialog*)::CreateObject(kSaveFileDialogBoss, IID_ISAVEFILEDIALOG));
@@ -161,6 +163,33 @@ bool16 KCMAskWhereToSaveCopy(IDataBase* docDB, const PMString& suggestedName, co
 	return dlg->DoDialog(&defaultFile, &outFile, &selectedIndex,
 						 kFalse /*useSystemDefaultDir - see the note above*/,
 						 kTrue /*showTypeMenu*/, &shownTitle);
+}
+
+}	// namespace
+
+/*	★NEVER A FILE THAT IS OPEN (2026-10-05). The reader who names an open document's file - their own, or another one
+	  open beside it - says yes to the OS's "replace?" prompt, and then InDesign refuses the save: measured 2026-10-11 on
+	  the build without this, the status line read "Task Start not taken: The copy could not be saved (error 3596)" for
+	  the document's own file and "(error 3586)" for another open document's, and neither file was touched. ⚠So this
+	  protects no file (the 10-05 reasoning here said it did - an overwrite, then a pair of the document with itself -
+	  and the measurement says InDesign never lets the save through). What it gives the reader is the REASON, at the
+	  moment they can still act on it, instead of a number after the dialog has gone.
+	★ASKED AGAIN RATHER THAN REFUSED: the dialog cannot turn a name down before it closes (ISaveFileDialog offers
+	  DoDialog, AddFileTypeInfo and SetAdditionalFOSFlags, nothing else), and a refusal would send the reader back to
+	  the menu to start over. A fresh dialog each time, titled with the reason; a cancel still ends it with nothing
+	  written.
+*/
+bool16 KCMAskWhereToSaveCopy(IDataBase* docDB, const PMString& suggestedName, const PMString& title, IDFile& outFile)
+{
+	PMString shownTitle(title);
+	for (;;)
+	{
+		if (!AskOnce(docDB, suggestedName, shownTitle, outFile))
+			return kFalse;
+		if (KCMOpenDocOnFile(outFile) == nil)
+			return kTrue;
+		shownTitle = PMString("That file is open in InDesign - choose another name for the copy");
+	}
 }
 
 //----------------------------------------------------------------------------------------

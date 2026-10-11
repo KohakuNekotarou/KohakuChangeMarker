@@ -72,7 +72,9 @@ void KCMSuggestedTaskStartName(IDataBase* docDB, PMString& out);
 void KCMSuggestedCopyName(IDataBase* docDB, const char* infix, PMString& out);
 
 /** The save dialog Task Start opens - on the document's own folder, with suggestedName and title - for any copy of a
-    document (2026-10-05: "Compare with Tracked Changes..." too). kFalse when the reader cancelled. */
+    document (2026-10-05: "Compare with Tracked Changes..." too). kFalse when the reader cancelled.
+    ★Never answers with a file that is open (2026-10-05): on one it raises the dialog again, titled with the reason -
+     KCMTaskStartSave.cpp says why it asks again rather than refuses. */
 bool16 KCMAskWhereToSaveCopy(IDataBase* docDB, const PMString& suggestedName, const PMString& title, IDFile& outFile);
 
 #endif // __KCMTaskStartSave_h__

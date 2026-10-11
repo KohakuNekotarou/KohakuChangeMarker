@@ -177,13 +177,15 @@ bool16 KCMTakeTrackOriginalCopy(const IDFile* dest, PMString& outMessage)
 			return kFalse;
 	}
 
-	// ★NOT THE DOCUMENT'S OWN FILE (re-check 2026-10-05): the copy would be written over the original it is the copy of -
-	//   the one file this road promises never to write (design 2-2). The dialog's overwrite prompt does not stop it, and the
-	//   script door has no dialog at all.
-	const IDFile* const ownFile = docDB->GetSysFile();
-	if (ownFile != nil && FileUtils::IsEqual(*ownFile, file))
+	// ★NEVER OVER A FILE THAT IS OPEN (re-check 2026-10-05; widened the same day from "the document's own file"). The
+	//   10-05 reasoning was an overwrite followed by every change rejected in that open document; measured 2026-10-11,
+	//   InDesign refuses the save itself (the script door answered "The copy could not be saved (error 3586)" for another
+	//   open document's file, and the file was untouched) - so what this adds is the reason in words, not the safety.
+	//   The dialog asks again on such a file (KCMAskWhereToSaveCopy), so this stands for the script door, which has no
+	//   dialog.
+	if (KCMOpenDocOnFile(file) != nil)
 	{
-		outMessage = "The copy cannot be saved over the document itself - choose another name.";
+		outMessage = "The copy cannot be saved over a document that is open - choose another name.";
 		return kFalse;
 	}
 

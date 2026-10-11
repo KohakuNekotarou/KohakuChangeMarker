@@ -219,7 +219,7 @@ bool16 KCMResolveComparisonPair(KCMPairEnd& outTarget, KCMPairEnd& outSource)
 	  once took the wrong chapter (api-official-examples.md, the FindDoc row). The book comparison
 	  checks the same way, by path (KCMBookCompare.cpp, DocumentLivesInFile).
 */
-static IDataBase* KCMOpenDocOnFile(const IDFile& file)
+IDataBase* KCMOpenDocOnFile(const IDFile& file)
 {
 	ISession* const session = GetExecutionContextSession();
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
