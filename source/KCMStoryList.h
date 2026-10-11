@@ -448,11 +448,11 @@ struct KCMStoryRow
 
 	/** The differences found inside this story, in reading order.
 
-		**EMPTY IN THE PIXEL MODE**, and that is what makes the tree flat there: the hierarchy
-		adapter asks how many children a row has and gets 0, so no branch grows. Nothing has to
-		switch trees between the modes.
+		⛔It was **EMPTY IN THE PIXEL MODE** until 2026-10-11, which is what kept the tree flat there
+		(the hierarchy adapter asked how many children a row had and got 0). The Pixel mode keeps no
+		rows at all now, and its list is one note the adapter answers by mode.
 
-		**ALSO EMPTY when the story could not be compared** -- it had no partner in the older
+		**EMPTY when the story could not be compared** -- it had no partner in the older
 		document (an added story), or the edit distance ran past the limit, or the length check
 		failed. The row still appears; only the detail is missing. A story that changed must
 		never disappear because the detail could not be worked out. */
@@ -851,10 +851,9 @@ namespace KCMStoryList
 		counter to new values and is answered kFalse: the row is not compared on every keystroke. */
 	bool16 NeedsCompareAgain(int32 nth, IDataBase* targetDB);
 
-	/** Row nth's comparison history (fAllCount and fComparedAt), read and put back whole - for a caller that runs the
-		diff over the rows on loan and restores them afterwards (the PDF report's StoryDetailLoan, 2026-09-25). */
-	void GetRowComparedHistory(int32 nth, uint32& outAllCount, std::vector<uint32>& outSeen);
-	void SetRowComparedHistory(int32 nth, uint32 allCount, const std::vector<uint32>& seen);
+	// ⛔GetRowComparedHistory / SetRowComparedHistory went on 2026-10-11 with their one caller, the PDF report's
+	//   StoryDetailLoan, which put a row's comparison history back after diffing the rows on loan. The report now
+	//   builds rows of its own (in the modes that keep no list) and empties the list afterwards.
 
 	// ---- what the panel sees: the two lists as one ------------------------------------------
 	//

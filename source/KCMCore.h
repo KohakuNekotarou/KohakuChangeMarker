@@ -213,14 +213,22 @@ void		KCMDoDisarmMousePeek(IDataBase* db);
 // OFF.
 bool16		KCMIsArmed();
 // Rebuild the Story Edits list from what these two documents hold **now**, and reflect it in the
-// tree and the heading.
-// Two callers: the whole-document comparison (KCMDoMarkChangesDoc) and "Refresh Page Comparison".
-// The second one does not go through KCMDoMarkChangesDoc, so without sharing this the list would
-// be left stale after a refresh and only after a refresh. nil is ignored silently.
+// tree and the heading. ★The Pixel and the Resources modes keep NO list (2026-10-11): there it
+// only empties it.
+// One caller: the whole-document comparison (KCMDoMarkChangesDoc). ("Refresh Page Comparison" was
+// the second until the Pixel mode - the only mode it works in - stopped keeping a list.) nil is
+// ignored silently.
 // @return kFalse when the Story comparison inside it was CANCELLED at its progress bar (the list
 //   is then half built; the caller goes back to Stop, which clears it). kTrue otherwise, and
-//   always in the Pixel mode, which runs no story diff.
+//   always in the Pixel and the Resources modes, which read no story.
 bool16		KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB);
+// Build the Story mode's rows into the Story Edits list - counters, then the text diff, then the
+// rows where only formatting moved dropped - WITHOUT telling the panel or the Undo follower.
+// Two callers, so the two lists cannot differ: KCMRebuildStoryEdits in the Story mode, and the
+// Before/After report, which builds its Story table this way in the modes that keep no list.
+// @return kFalse when the diff was CANCELLED at its progress bar (the list is then half built and
+//   the caller empties it).
+bool16		KCMBuildStoryRowsByDiff(IDataBase* targetDB, IDataBase* sourceDB);
 
 IDataBase*	KCMArmedTargetDB();
 IDataBase*	KCMArmedSourceDB();

@@ -283,8 +283,9 @@ bool16 KCMStoryRowCanRefresh()
 		return kFalse;
 
 	// ★THE MODES THAT RUN A TEXT DIFF (user's call, 2026-08-21). The item refreshes one, and the
-	//   pixel mode never runs it - a row there has no children by design, so "refreshing" it would
-	//   report nothing found about a story whose words have not been looked at.
+	//   pixel mode never runs it - a row there had no children by design, so "refreshing" it would
+	//   have reported nothing found about a story whose words had not been looked at. (Since
+	//   2026-10-11 the pixel mode has no story rows at all - its list is one note.)
 	// ⚠★★**AND THE IMPORT MODE IS ONE OF THEM** (2026-09-15, measured on the application). This
 	//   read `!= kKCMModeStory`, which greyed the item there - and the Import mode is exactly where
 	//   it is needed most: a story edited after the import is REFUSED by the write (KCMStoryRestore

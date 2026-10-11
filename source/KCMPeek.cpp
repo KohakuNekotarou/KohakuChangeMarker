@@ -579,13 +579,10 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 	// (Prev/Next's position readout and the enabling of its buttons ride on the
 	//  kKCMMarksRebuiltMessage that KCMRefreshComparisonCore above sends.)
 
-	// The Story Edits list is rebuilt from here as well, and **it cannot be rebuilt for the
-	//   selected pages alone**: one story can flow across pages that were re-compared and pages
-	//   that were not, so there is no way to split it per page. Rebuilding the whole list is
-	//   KCMRebuildStoryEdits' job.
-	// @warning without this, the list kept showing its pre-edit state after a Refresh and only
-	//   after a Refresh.
-	KCMRebuildStoryEdits(targetDB, sourceDB);	// its "cancelled" answer is not read: this item is greyed in the Story mode, and only there does a story diff (and its bar) run
+	// ⛔The Story Edits list was rebuilt from here until 2026-10-11 (KCMRebuildStoryEdits - a list cannot be
+	//   rebuilt for the selected pages alone, since one story can flow across pages that were re-compared and
+	//   pages that were not). This item works in the Pixel mode only (KCMQueryPixelComparePair), and the Pixel
+	//   mode keeps no story list any more, so there is nothing here for it to rebuild.
 
 	if (outPages)   *outPages = processed;
 	if (outChanged) *outChanged = changed;

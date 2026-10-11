@@ -91,10 +91,11 @@ public:
 
 		/** Whether the two versions' TEXT was actually diffed for this row.
 
-			IT IS HOW AN EMPTY CHILD LIST IS READ. GetChangeCount answers 0 for three unrelated
-			reasons - the pixel mode diffs nothing, the story could not be compared, or it was
-			compared and the words agree - and only the last one is worth telling the reader
-			about. kTrue with no children is that case, and the row draws "None" for it.
+			IT IS HOW AN EMPTY CHILD LIST IS READ. GetChangeCount answers 0 for two unrelated
+			reasons - the story could not be compared, or it was compared and the words agree -
+			and only the second is worth telling the reader about. kTrue with no children is that
+			case, and the row draws "None" for it. (The pixel mode was a third reason until
+			2026-10-11, when it stopped keeping rows at all.)
 			@warning it does NOT mean the story is unchanged: the change counters moved, or there
 			would be no row (KCMStoryStamp.h). It means the WORDS come out the same. */
 		bool16		fTextCompared;
@@ -353,9 +354,9 @@ public:
 
 	/** How many differences row nth holds.
 
-		0 IS THE NORMAL ANSWER IN THE PIXEL MODE - nothing runs the text diff there, so no row has
-		children and the tree stays one level deep. It is also the answer for a story that could not
-		be compared (added, too different, or a failed length check); the row is still there. */
+		0 is the answer for a story that could not be compared (added, too different, or a failed
+		length check); the row is still there. (It was also the normal answer in the pixel mode,
+		which ran no text diff, until 2026-10-11 - that mode keeps no rows at all now.) */
 	virtual int32	GetChangeCount(int32 nth) = 0;
 
 	/** Fill out with difference which of row nth. kFalse when either index is out of range,

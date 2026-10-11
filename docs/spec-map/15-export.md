@@ -91,10 +91,10 @@
 - **REP-14** ★**Resources の表**＝Story の後に、見出し `Resources Changes: <要約>` と同じ2列の表。定義ごとに見出し行 `<Kind>  <Key（%エスケープ復号）>  [added / removed / changed]`、差のある属性ごとに1行（左＝`名前: 旧値`／右＝`名前: 新値`・片側に無ければ `-`・値はパネルと同じ短縮 `KCMShortResourceValue`）。属性差 0 の Changed は `(the difference is inside a child element)`。
   - 訂正:
 
-- **REP-15** ★**どのモードで比較していても表2つは出る**＝Story モード以外では `KCMStoryDiffRun::Run` を報告書のために回し、終わったら各行の子・fTextCompared・fTargetTextCount を元に戻す（`StoryDetailLoan`）。Resources の結果が無ければ `KCMResourceStore::RebuildForPair` で作り、終わったら `Clear`＋通知（`ResourceLoan`）。
+- **REP-15** ★**どのモードで比較していても表2つは出る**＝Story の一覧を持たないモード（Pixel・Resources）では、報告書のために **Story モードと同じ手順**（変更カウンター→本文の比較→体裁だけ動いた行を落とす＝`KCMBuildStoryRowsByDiff`）で行を作り、終わったら一覧を空に戻す（`StoryDetailLoan`）⇒ **Story の表はどのモードでも Story モードの一覧と同じ中身**。Resources の結果が無ければ `KCMResourceStore::RebuildForPair` で作り、終わったら `Clear`＋通知（`ResourceLoan`）。
   ⚠Pixel のページだけは借りられない（ラスタ化は画面のリング・対応表・あふれキャッシュを作り替える）＝Pixel モード以外では出さず、1P目に書く。
-  ⚠Pixel モードの Story 行は `DropRowsWithNoContentChange` を通った後なので、ルビだけ・圏点だけのストーリーは行が無い（Pixel モードの既知の限界）。
-  - 訂正:
+  ⚠Track モードでは Story の表が空になる見込み（Track の行は別の入れ物 `KCMTrackList` にあり、報告書はそれを読まない）＝コードから読んだだけで未測。
+  - 訂正: ✅2026-10-11 **作者決定で変更**＝Pixel モードが Story の一覧をやめた（LIST-02）のに合わせて、報告書は Pixel・Resources とも Story モードと同じ手順で表を作る形にそろえた。旧「各行の子を借りて元に戻す」は撤去、旧⚠「Pixel モードではルビだけ・圏点だけのストーリーの行が無い（既知の限界）」は解消。
 
 - **REP-16** 表の作り方＝`KCMReportTable.cpp`。節の先頭ページに見出し（18pt）と全幅のテキストフレーム → `ITableUtils::InsertTable`（2列・行の高さ 0＝自動）→ セルは `ITableModel::QueryCellContentBoss`→`ITextStoryThread::GetTextStart` の位置に `ITextModelCmds::InsertCmd`、属性は範囲ごとに（14pt・左揃え・tint・上付き・ルビ・圏点）→ `ITextUtils::IsOverset` の間、`kNewSpreadCmdBoss` でページを足し `kTextLinkCmdBoss` で連結（上限 200 ページ）。表の行数は節ごと 400 行で打ち切り（`... (the table stops here)`）。
   - 訂正:
@@ -121,4 +121,4 @@
 
 ## 3. やっていないこと
 
-ページの中の差分行（Story Edits をページ別に振る）／全ページ出力／プリセットの選択 UI／ページ内の変更領域の枠（右側のリングで代替）／Story／Resources モードで Pixel の絵を出すこと（REP-15）。
+ページの中の差分行（Story Edits をページ別に振る）／全ページ出力／プリセットの選択 UI／ページ内の変更領域の枠（右側のリングで代替）／Story／Resources モードで Pixel の絵を出すこと（REP-15。⬜2026-10-11 作者決定＝「どのモードでも画像・Story・Resources の3つを比べて1つの PDF にする」を次の作業として設計から始める）。

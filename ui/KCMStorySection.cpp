@@ -45,7 +45,7 @@
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
 #include "IKCMStoryEditsFacade.h"	// GetRowCount - the number in the heading (Facade since 2026-08-13, Task 14)
 #include "IKCMResourcesFacade.h"	// GetChangeCount - the same number while the Resources mode is on
-#include "KCMStoryTree.h"			// KCMListShowsResources - which of the two the heading names
+#include "KCMStoryTree.h"			// KCMListShowsResources - which of the two the heading names; KCMListShowsPixelNote - whether it counts
 #include "KCMResourceValue.h"		// KCMClearResourceValue - the upper pane's band follows the list
 #include "KCMStorySection.h"
 
@@ -408,8 +408,11 @@ void KCMUpdateStorySectionLabel()
 	// ⚠WHEN THE FACADE CANNOT ANSWER, NO NUMBER IS SHOWN - rather than a "(0)", which the paragraph
 	//  above says would be read as "nothing changed". An absent count and a count of zero are
 	//  different answers and must not print alike.
+	// ★★AND THE PIXEL MODE HAS NOTHING TO COUNT (2026-10-11): it reads no story, and its list is one
+	//   note saying so (KCMListShowsPixelNote). A "(0)" there would claim the stories were looked at
+	//   and found unchanged - the same misreading the paragraph above keeps off a stopped list.
 	const bool16 canCount = showsResources ? (resources ? kTrue : kFalse)
-										   : (edits     ? kTrue : kFalse);
+										   : ((edits && !KCMListShowsPixelNote()) ? kTrue : kFalse);
 
 	if (compare && compare->IsArmed() && canCount)
 	{
@@ -440,9 +443,27 @@ void KCMUpdateStorySectionLabel()
 	//     REPAINTS the window and hands back a clean face - so the very artefact this fixes is
 	//     invisible to it (measured 2026-09-10: three captures of the Stop were all clean while the
 	//     user was looking at the leftovers). Screen pixels, or a person, are the only witnesses.
+	//     ⚠(2026-10-11) Not every leftover hides from it: one lying ONE ROW BELOW the label's frame did show
+	//      in the panel capture - the paragraph after the redraw below.
 	InterfacePtr<IControlView> labelView(label, UseDefaultIID());
 	if (labelView != nil)
 		labelView->ForceRedraw();
+
+	// ★★AND THE PARENT TOO, FOR THE ROW BELOW THE HEADING'S FRAME (2026-10-11). The heading's glyphs reach one row
+	//   past its frame (Frame(24, 162, 174, 176) in KCMUI.fr - the tail of "y" and the brackets of "(2)" are drawn at
+	//   row 176), and the label's own redraw stops at its frame, so a heading that SHRINKS keeps the bottom row of the
+	//   brackets it lost: `Story Edits . .` (measured that day, panel capture, row 176, x 91-102, after Resources (0)
+	//   -> Pixel). A Stop never showed it - its status line redraws the whole panel - but a mode switch while
+	//   comparing did, once the Pixel mode's heading stopped carrying a count (KCMListShowsPixelNote).
+	//   ★The parent paints its own background under that row, which is what clears it.
+	if (labelView != nil)
+	{
+		InterfacePtr<const IWidgetParent> labelParent(labelView, UseDefaultIID());
+		InterfacePtr<IControlView> parentView(labelParent != nil
+			? (IControlView*)labelParent->QueryParentFor(IControlView::kDefaultIID) : nil);
+		if (parentView != nil)
+			parentView->ForceRedraw();
+	}
 
 	// ★★THE COLUMN HEADINGS BELONG TO THE SAME QUESTION. The list is shared, so the three words
 	//   above it name whichever rows are in it - "UID / Story / Change" for stories, and

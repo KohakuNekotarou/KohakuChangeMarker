@@ -27,7 +27,8 @@
 //
 //  ★ONLY THE CHANGE ROWS USE THIS. A story row keeps its stock cells: its text is the story's
 //  opening words, none of which is a change, so there is nothing there to tell apart (user's call,
-//  2026-08-20). The pixel mode's rows are the same rows and are equally untouched.
+//  2026-08-20). The pixel mode's one note row (2026-10-11 - it had story rows until then) is a
+//  story row too, and equally untouched.
 //
 //========================================================================================
 

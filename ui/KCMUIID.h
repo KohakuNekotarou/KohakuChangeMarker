@@ -944,6 +944,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMTrackAuthorRowWidgetID, kKCMUIPrefix + 77)	// â
 // carries changes that are not text, so a phrase like "No text edits" would not be true.
 #define kKCMStorySectionLabelKey	kKCMStringPrefix "kKCMStorySectionLabelKey"	// the section heading (the count is appended by C++)
 #define kKCMStoryNoEditsKey		kKCMStringPrefix "kKCMStoryNoEditsKey"		// the single line shown when there is no change
+#define kKCMStoryPixelNoteKey	kKCMStringPrefix "kKCMStoryPixelNoteKey"	// â˜…the single line the list shows while the PIXEL mode compares (2026-10-11): that mode reads no story, so the list says so instead of standing blank (KCMListShowsPixelNote)
 #define kKCMResourcesSectionLabelKey	kKCMStringPrefix "kKCMResourcesSectionLabelKey"	// the SAME section heading while the Resources mode is on (= "Resources"). The count is appended by C++, as above
 #define kKCMResourcesNoChangesKey		kKCMStringPrefix "kKCMResourcesNoChangesKey"	// the single line shown when the two documents define the same things
 #define kKCMResourcesColKindKey		kKCMStringPrefix "kKCMResourcesColKindKey"	// column heading over the left cell in the Resources mode (= "Kind"), where the story list says "UID"

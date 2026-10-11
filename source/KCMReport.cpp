@@ -9,8 +9,10 @@
 //
 //  THE THREE SECTIONS (2026-09-13, the user's ask): the Pixel pages (pictures only), then the
 //  Story table, then the Resources table. Whatever mode the comparison ran in, the two tables are
-//  filled: the Story detail and the Resources result are BORROWED for the report when the mode
-//  did not produce them, and put back exactly as they were (StoryDetailLoan / ResourceLoan below).
+//  filled: the Story rows and the Resources result are BUILT for the report when the mode did not
+//  produce them, and emptied again afterwards (StoryDetailLoan / ResourceLoan below). ★The Story
+//  rows are the Story mode's own build in every mode (2026-10-11, when the Pixel mode stopped
+//  keeping a story list of its own).
 //  The Pixel pages alone cannot be borrowed - rasterising rewrites the rings, the pairing and the
 //  overflow cache the screen is showing - so outside the Pixel mode the report says so on its
 //  first page and shows the added / removed pages only.
@@ -62,14 +64,13 @@
 #include "KCMProgressBar.h"		// KCMDeferredProgressBar - the bar that appears only after three seconds
 #include "KCMReportTable.h"		// the page helpers and the table sections
 #include "KCMReportPaws.h"			// the cat's trail on the first page
-#include "KCMCore.h"				// KCMIsArmed / KCMArmedTargetDB / KCMArmedSourceDB / KCMCollectPageUIDs / KCMGetCompareMode
+#include "KCMCore.h"				// KCMIsArmed / KCMArmedTargetDB / KCMArmedSourceDB / KCMCollectPageUIDs / KCMGetCompareMode / KCMBuildStoryRowsByDiff (the Story table, in the modes that keep no list)
 #include "KCMComparisonRun.h"		// KCMToggleStartStop / KCMCanStartComparison - the report runs the comparison it needs
 #include "KCMDrawEventHandler.h"	// sEntries / sOverflowT / sPrintMarks - what "changed" means, and the rings
 #include "KCMPageMap.h"			// KCMBuildPairing / KCMMapTargetToSource - the partner of a changed page
 #include "KCMRehydrate.h"			// KCMMarkRehydratedClean - the report document is closed without a save prompt
 #include "KCMStoryList.h"			// the Story Edits rows and their changes
 #include "KCMStoryKinds.h"
-#include "KCMStoryDiffRun.h"		// Run - the Story detail, borrowed when the mode did not produce it
 #include "KCMStoryRestore.h"		// KCMKentenKindOf - a kenten name to its kind
 #include "KCMResourceStore.h"		// the Resources result, borrowed when the mode did not produce it
 #include "KCMResourceDisplay.h"		// KCMResourceDisplayValue - what a value reads as, the same as the panel
@@ -424,66 +425,39 @@ private:
 
 // ---- the Story detail, borrowed ------------------------------------------------------------------
 
-/** Runs the text diff over the Story Edits rows for the report when the comparison's mode did
-    not (Pixel and Resources leave the rows without children), and puts every row back as it was
-    on the way out - what a row held, whether it was compared, its counters (the text one, and the
-    comparison history the list follows an Undo by - 2026-09-25). The panel is
-    never told, because from its point of view nothing changed.
-    ⚠Outside the Story mode the rows have already been through DropRowsWithNoContentChange, so a
-      story whose only edit is a ruby or a kenten has no row to diff; that is the Pixel mode's
-      known limit, not the report's. */
+/** Builds the Story Edits rows for the report when the comparison's mode keeps no list (the Pixel
+    and the Resources modes, since 2026-10-11), and empties the list again on the way out. The rows
+    are built by KCMBuildStoryRowsByDiff - the Story mode's own build - so the report's Story table
+    lists what the Story mode's panel would, in every mode.
+    ★★THE PANEL IS NEVER TOLD, AND NEEDS NOT BE: in these two modes it shows no story row at all
+      (the Pixel mode's list is one note, the Resources mode's is the definitions), so the rows
+      standing for the length of the report are seen by nobody but the report.
+    ⛔Until 2026-10-11 this ran the text diff over the rows those modes had kept, and put every row
+      back as it was on the way out (what it held, whether it was compared, its counters). Those
+      rows had been filtered by the counters before the diff, so a story whose only change was a
+      ruby or a kenten never reached the report. */
 class StoryDetailLoan
 {
 public:
 	StoryDetailLoan(IDataBase* targetDB, IDataBase* sourceDB, bool16 needed)
-		: fLent(kFalse), fCancelled(kFalse)
+		: fBuilt(kFalse), fCancelled(kFalse)
 	{
 		if (!needed || targetDB == nil || sourceDB == nil)
 			return;
-		const int32 n = KCMStoryList::GetRowCount();
-		fKeep.resize(static_cast<size_t>(n));
-		for (int32 i = 0; i < n; ++i)
-		{
-			const KCMStoryRow* row = KCMStoryList::GetRow(i);
-			if (row == nil)
-				continue;
-			fKeep[i].fChanges = row->fChanges;
-			fKeep[i].fTextCompared = row->fTextCompared;
-			fKeep[i].fTargetTextCount = row->fTargetTextCount;
-			// ★AND WHEN IT WAS COMPARED (2026-09-25): the diff records the state it compared at, which the list uses to
-			//   follow an Undo / Redo (KCMStoryFollowObserver) - put back with the rest, or the rows would claim a
-			//   comparison the panel never made
-			KCMStoryList::GetRowComparedHistory(i, fKeep[i].fAllCount, fKeep[i].fComparedAt);
-		}
-		fLent = kTrue;
-		KCMStoryDiffRun::Run(targetDB, sourceDB, &fCancelled);
+		fBuilt = kTrue;
+		fCancelled = KCMBuildStoryRowsByDiff(targetDB, sourceDB) ? kFalse : kTrue;
 	}
 	~StoryDetailLoan()
 	{
-		if (!fLent)
-			return;
-		const int32 n = KCMStoryList::GetRowCount();
-		for (int32 i = 0; i < n && i < static_cast<int32>(fKeep.size()); ++i)
-		{
-			KCMStoryList::SetRowChanges(i, fKeep[i].fChanges, fKeep[i].fTextCompared);
-			KCMStoryList::SetRowTargetTextCount(i, fKeep[i].fTargetTextCount);
-			KCMStoryList::SetRowComparedHistory(i, fKeep[i].fAllCount, fKeep[i].fComparedAt);
-		}
+		// ⚠EMPTIED, NOT PUT BACK: the list was empty when the loan began (these modes keep none), and
+		//   a cancelled build leaves half a list behind that nobody else would clear.
+		if (fBuilt)
+			KCMStoryList::Clear();
 	}
 	bool16 WasCancelled() const { return fCancelled; }
 private:
-	struct Keep
-	{
-		std::vector<KCMStoryChange>	fChanges;
-		bool16						fTextCompared;
-		uint32						fTargetTextCount;
-		uint32						fAllCount;
-		std::vector<uint32>			fComparedAt;
-		Keep() : fTextCompared(kFalse), fTargetTextCount(0), fAllCount(0) {}
-	};
-	std::vector<Keep>	fKeep;
-	bool16				fLent;
-	bool16				fCancelled;
+	bool16	fBuilt;
+	bool16	fCancelled;
 	StoryDetailLoan(const StoryDetailLoan&);
 	StoryDetailLoan& operator=(const StoryDetailLoan&);
 };
@@ -1063,12 +1037,13 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	std::vector<KCMReportRow> storyRows, resourceRows;
 	PMString storyHeading, resourceHeading;
 	{
-		// ⚠**"the modes that already have the detail", not "the Story mode"** (2026-09-15). The loan
-		//   runs the text diff FOR THE REPORT and puts every row back as it was on the way out; in a
-		//   mode that has already diffed, doing that would take the rows apart and rebuild them
-		//   underneath a reader who is working through them - and in the Import mode it would throw
-		//   away the record of what they had taken in. Spelled `!= kKCMModeStory` this was true of
-		//   the Import mode, which is exactly the mode that must not be borrowed from.
+		// ⚠**"the modes that keep no story list", not "the Story mode"** (2026-09-15). The loan builds
+		//   the rows FOR THE REPORT and empties the list on the way out; in a mode that keeps a list,
+		//   that would throw the rows away underneath a reader who is working through them - and in
+		//   the Import mode (retired 2026-09-20) it would have thrown away the record of what they had
+		//   taken in. Spelled `!= kKCMModeStory` this was true of the Import mode, which is exactly the
+		//   mode that must not be borrowed from. (The question is the one KCMRebuildStoryEdits asks to
+		//   decide whether a mode keeps a list at all - so a mode that keeps none is always built for.)
 		StoryDetailLoan storyLoan(targetDB, sourceDB,
 								  KCMModeUsesStoryRows(KCMGetCompareMode()) ? kFalse : kTrue);
 		int32 stories = 0, edits = 0;

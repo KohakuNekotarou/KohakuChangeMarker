@@ -1579,26 +1579,6 @@ void KCMStoryList::AddRejectedGroup(int32 nth, const std::vector<KCMStoryChange>
 	}
 }
 
-/* GetRowComparedHistory / SetRowComparedHistory
-*/
-void KCMStoryList::GetRowComparedHistory(int32 nth, uint32& outAllCount, std::vector<uint32>& outSeen)
-{
-	outAllCount = 0;
-	outSeen.clear();
-	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
-		return;
-	outAllCount = gRows[nth].fAllCount;
-	outSeen = gRows[nth].fComparedAt;
-}
-
-void KCMStoryList::SetRowComparedHistory(int32 nth, uint32 allCount, const std::vector<uint32>& seen)
-{
-	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
-		return;
-	gRows[nth].fAllCount = allCount;
-	gRows[nth].fComparedAt = seen;
-}
-
 /* RowOfTargetStory
 */
 int32 KCMStoryList::RowOfTargetStory(UID storyUID)

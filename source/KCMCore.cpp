@@ -526,23 +526,38 @@ bool16 KCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KCMPageH
 //========================================================================================
 
 /* KCMRebuildStoryEdits
-	Read both documents' story counters, work out which stories differ, and put the answer on screen.
+	Make the Story Edits list the comparison's mode calls for, and put the answer on screen: the
+	text diff's rows in the Story mode, the tracked changes in the Track mode, and NO list in the
+	Pixel and the Resources modes.
 
-	ONE PLACE, TWO CALLERS. The full comparison below calls it, and so does "Refresh Page
-	Comparison" (KCMPeek.cpp) - which does NOT go through KCMDoMarkChangesDoc but re-compares the
-	selected pages on its own. Written out twice, the two would drift; and while only the comparison
-	had it, a Refresh left the list showing the state before the edit. The nav position beside it is
-	shared for exactly this reason.
+	ONE CALLER SINCE 2026-10-11: the full comparison below. "Refresh Page Comparison" (KCMPeek.cpp)
+	called it as well while the Pixel mode kept a list of its own - that item exists in the Pixel
+	mode alone, so once the mode stopped reading stories there was nothing left for it to rebuild.
 
 	The list is rebuilt whole rather than patched, because stories do not divide up by page: one
 	story can run across the pages that were refreshed and the pages that were not.
-
-	Reading the counters composes nothing, so this costs a walk of the story list and no more.
 */
 bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 {
 	if (targetDB == nil || sourceDB == nil)
 		return kTrue;
+
+	// ★★★THE PIXEL AND THE RESOURCES MODES KEEP NO STORY LIST (2026-10-11, the user: "the Pixel comparison is to
+	//   compare pixels and nothing else"). Until then every mode read both documents' story counters here and
+	//   listed the stories they disagreed on - in the Pixel mode as the panel's one-level list, in the Resources
+	//   mode as a list nobody saw, kept for the Before/After report's Story table. The report builds that table
+	//   for itself now, the way the Story mode builds its list (KCMBuildStoryRowsByDiff, below), so neither
+	//   mode reads a story at all.
+	//   ⚠EMPTIED, NOT LEFT ALONE: a switch out of the Story mode while comparing comes through here
+	//    (KCMApplyCompareMode recompares), and the Story rows would otherwise stand under a Pixel heading.
+	//   ⚠Asked as "does this mode use story rows" - the question every reader of the list asks
+	//    (KCMBoundaryID.h) - so a mode added later keeps no list until it is taught to.
+	if (!KCMModeUsesStoryRows(KCMGetCompareMode()))
+	{
+		KCMStoryList::Clear();
+		KCMNotify(kKCMStoryEditsRebuiltMessage);
+		return kTrue;
+	}
 
 	// ★★THE TRACK CHANGES MODE BUILDS ITS ROWS FROM THE TARGET'S RECORDS (2026-10-05), not from the two
 	//   documents' counters: KCMStoryList stays empty, and KCMTrackList holds the rows the facade hands out in
@@ -558,6 +573,54 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 		KCMNotify(kKCMStoryEditsRebuiltMessage);
 		return kTrue;
 	}
+
+	// The Story mode: the rows the text diff finds (built by the one function the Before/After report
+	// builds its Story table with, so the two cannot list different stories).
+	// A cancel leaves half a list. It is NOT cleared here -- the caller answers a cancel by going back
+	//   to Stop, and Stop's KCMDoClearMarks runs KCMStoryList::Clear() (the same argument the raster
+	//   cancel in KCMDoMarkChangesDoc makes).
+	if (!KCMBuildStoryRowsByDiff(targetDB, sourceDB))
+		return kFalse;
+
+	// ★★AND FROM NOW ON THE LIST FOLLOWS AN UNDO AND A REDO (2026-09-25, the user: "after Ctrl+Z the list is out of
+	//   date"). An observer on every listed Target story compares its row again when the story comes back to a state
+	//   the row was compared at (KCMStoryFollowObserver.h). ⚠AFTER the drop: a dropped row has nothing to follow.
+	//   (⛔An observer stood here from 2026-09-15 to 2026-09-21 - KCMStoryUndoObserver, a redraw only - and went with
+	//    the restore, on the grounds that nothing a row drew depended on the live document any more. That stopped
+	//    being true on 2026-09-24: a taken-back record's "=" is read from the document every time it is drawn.)
+	KCMStoryFollowEnsureObservers(targetDB);
+
+	// Once the model is built, say so. It is safe to do with the panel closed or the section
+	// collapsed (both give up quietly inside), so the caller does not have to know whether anything
+	// is open.
+	// The COUNT goes in the heading, not on the status line: the status area's four lines are
+	// already full and one more would push `failed=N` out of the frame, and a heading can be read
+	// with the section collapsed.
+	// The model says only "the list was rebuilt"; where and how that shows is the UI's decision.
+	KCMNotify(kKCMStoryEditsRebuiltMessage);
+	return kTrue;
+}
+
+/* KCMBuildStoryRowsByDiff
+	The Story mode's list, built: both documents' story counters say which stories differ, the text
+	diff says what changed inside each of them, and the rows where only formatting moved are dropped.
+
+	TWO CALLERS, ONE ORDER (2026-10-11): KCMRebuildStoryEdits in the Story mode, and the Before/After
+	report in the modes that keep no list (KCMReport.cpp, StoryDetailLoan) - so the report's Story
+	table lists exactly what the Story mode's panel lists ([[one-question-one-place]]). ⚠Until then
+	the report ran the diff over the rows the Pixel or the Resources mode had ALREADY filtered by their
+	counters, and a story whose only change was a ruby never reached it.
+
+	Neither the panel nor the Undo follower is told here; what the rows are for is the caller's to say.
+	Reading the counters composes nothing; the diff reads the text, and its own progress bar can be
+	cancelled.
+	@return kFalse when the diff was CANCELLED at its progress bar - the list is then half built, and
+	  each caller empties it its own way.
+*/
+bool16 KCMBuildStoryRowsByDiff(IDataBase* targetDB, IDataBase* sourceDB)
+{
+	if (targetDB == nil || sourceDB == nil)
+		return kTrue;
 
 	std::vector<KCMStoryStamp> targetStamps;
 	std::vector<KCMStoryStamp> sourceStamps;
@@ -578,17 +641,14 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	// and the extraction of the leading text).
 	KCMStoryList::Build(targetDB, sourceDB, storyDiffs);
 
-	// **Only in the Story mode**, annotate each row with what changed inside it. The counters can
-	// only answer "this story changed"; which words changed needs the text itself compared. In the
-	// Pixel mode this is not called, so rows have no children and the list stays flat.
+	// Annotate each row with what changed inside it. The counters can only answer "this story
+	// changed"; which words changed needs the text itself compared.
 	// @warning it must run **after Build**. A change names its row by position in the sorted list,
 	//   so running it before the order is settled attaches it to the wrong row.
 	bool16 cancelled = kFalse;
-	if (KCMModeDiffsStoryText(KCMGetCompareMode()))
-		KCMStoryDiffRun::Run(targetDB, sourceDB, &cancelled);
-	// A cancel leaves half a list: rows read so far carry their changes, the rest none. It is NOT
-	//   cleared here -- the caller answers a cancel by going back to Stop, and Stop's KCMDoClearMarks
-	//   runs KCMStoryList::Clear() (the same argument the raster cancel in KCMDoMarkChangesDoc makes).
+	KCMStoryDiffRun::Run(targetDB, sourceDB, &cancelled);
+	// A cancel leaves half a list: rows read so far carry their changes, the rest none (the callers
+	//   empty it - the header above says how).
 	if (cancelled)
 		return kFalse;
 
@@ -602,26 +662,7 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	//   changed still looks like an attribute-only row and is dropped just before the diff would
 	//   have found that ruby.
 	// The test itself is in `KCMStoryRowFilter.h` (mode-blind, and tested outside InDesign).
-	// @warning in the Pixel mode no diff runs, so **a ruby-only change drops here** -- the Pixel
-	//   mode reports text changes and gives up the rest.
 	KCMStoryList::DropRowsWithNoContentChange();
-
-	// ★★AND FROM NOW ON THE LIST FOLLOWS AN UNDO AND A REDO (2026-09-25, the user: "after Ctrl+Z the list is out of
-	//   date"). An observer on every listed Target story compares its row again when the story comes back to a state
-	//   the row was compared at (KCMStoryFollowObserver.h). ⚠AFTER the drop: a dropped row has nothing to follow.
-	//   (⛔An observer stood here from 2026-09-15 to 2026-09-21 - KCMStoryUndoObserver, a redraw only - and went with
-	//    the restore, on the grounds that nothing a row drew depended on the live document any more. That stopped
-	//    being true on 2026-09-24: a taken-back record's "=" is read from the document every time it is drawn.)
-	KCMStoryFollowEnsureObservers(targetDB);
-
-	// Once the model is built, say so. It is safe to do with the panel closed or the section
-	// collapsed (both give up quietly inside), so the caller does not have to know whether anything
-	// is open.
-	// The COUNT goes in the heading, not on the status line: the status area's four lines are
-	// already full and one more would push `failed=N` out of the frame, and a heading can be read
-	// with the section collapsed.
-	// The model says only "the list was rebuilt"; where and how that shows is the UI's decision.
-	KCMNotify(kKCMStoryEditsRebuiltMessage);
 	return kTrue;
 }
 
@@ -866,12 +907,14 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	//   bar's Cancel has to end exactly as the raster loop's does -- one ending, the block below,
 	//   rather than a second copy of it ([[one-question-one-place]]). It stood after the report
 	//   until 2026-09-05; the report only reads the counts the list holds, so it reads them the same.
+	//   (In the Pixel and the Resources modes it only empties the list - those modes keep none since
+	//   2026-10-11.)
 	if (!cancelled && !KCMRebuildStoryEdits(targetDB, sourceDB))
 		cancelled = kTrue;
 
-	// **The Resources comparison runs HERE, and ONLY in its own mode** -- unlike the Story Edits
-	//   list above, which is built in every mode because the panel's section shows it in every
-	//   mode. This one costs two whole-document exports (200-2400ms), so it is not paid for by a
+	// **The Resources comparison runs HERE, and ONLY in its own mode** -- as the Story Edits list
+	//   above is built only in the modes that show it (until 2026-10-11 that list was built in every
+	//   mode). This one costs two whole-document exports (200-2400ms), so it is not paid for by a
 	//   reader who is comparing pixels.
 	// ⚠It CANNOT be cancelled: the exports are single calls into the SDK with no progress of their
 	//   own, so there is nothing to poll. That is why it is placed after the cancel-bearing work

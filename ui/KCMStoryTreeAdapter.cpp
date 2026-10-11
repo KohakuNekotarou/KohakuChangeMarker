@@ -12,6 +12,10 @@
 //  hierarchy, and the pixel mode simply never grows a branch: nothing fills a row's fChanges
 //  there, so GetChangeCount answers 0 and every story row is a leaf. The list looks and behaves
 //  exactly as it always has.
+//  ⛔★★SINCE 2026-10-11 THE PIXEL MODE HAS NO STORY ROWS AT ALL (the user: "the Pixel comparison
+//  compares pixels and nothing else"). Its list is one note while it compares, answered by mode
+//  before the story model is asked (KCMListShowsPixelNote, KCMStoryTree.h); the paragraph above is
+//  how the tree came to have two levels, not what the Pixel mode shows now.
 //
 //  ⚠THE ALTERNATIVE - two trees, switched by mode - WAS REJECTED (user's call). It would have
 //  meant two row templates, two widget managers and two click handlers, i.e. the same judgements
@@ -58,11 +62,11 @@
 #include "IKCMCompareFacade.h"	// IsArmed - is a comparison running at all (Facade since 2026-08-13, Task 11)
 #include "IKCMStoryEditsFacade.h"	// GetRowCount / GetChangeCount (Facade since 2026-08-13, Task 14)
 #include "IKCMResourcesFacade.h"	// GetChangeCount - the rows while the Resources mode is on
-#include "KCMStoryTree.h"			// KCMListShowsResources - the one place the list asks the mode
+#include "KCMStoryTree.h"			// KCMListShowsResources / KCMListShowsPixelNote - the one place the list asks the mode
 #include "KCMBoundaryID.h"			// kKCMModeTrack - the root holds authors in that mode (2026-10-05)
 
 /** Hierarchy adapter for the Story Edits list: hidden root -> one node per changed story ->
-	one node per difference inside it (none at all in the pixel mode).
+	one node per difference inside it. (The Pixel mode: one note row and nothing else, 2026-10-11.)
 */
 class KCMStoryTreeAdapter : public CPMUnknown<ITreeViewHierarchyAdapter>
 {
@@ -99,6 +103,17 @@ public:
 		TreeNodePtr<KCMStoryNodeID> nodeID(node);
 		if (nodeID == nil || nodeID->IsChangeRow())
 			return 0;					// a change is a leaf
+
+		// ★★THE PIXEL MODE'S LIST IS ONE NOTE AND NOTHING ELSE (2026-10-11, the user: "the Pixel comparison
+		//   compares pixels and nothing else"): one row under the root while a comparison runs - the widget
+		//   manager writes what it says - and no children anywhere. ⚠Asked before the story model is, for the
+		//   reason KCMListShowsPixelNote gives: a Before/After report's own rows stand in the model for the
+		//   length of the report, and they are not this mode's to show.
+		if (KCMListShowsPixelNote())
+		{
+			Utils<IKCMCompareFacade> compare;
+			return (nodeID->IsRoot() && compare && compare->IsArmed()) ? 1 : 0;
+		}
 
 		// ★★A DEFINITION'S CHILDREN ARE THE ATTRIBUTES THAT DIFFER (2026-09-09, the user's request:
 		//   "give the result rows children ... PointSize in the Kind part and the number in the
@@ -164,8 +179,9 @@ public:
 			return Utils<IKCMCompareFacade>()->IsArmed() ? 1 : 0;
 		}
 
-		// ★A story row's children are its differences - and there are none in the pixel mode,
-		//   which is what keeps that mode's list one level deep.
+		// ★A story row's children are its differences. (The Pixel mode never reaches here since
+		//   2026-10-11 - its one row is answered above; until then its rows were leaves because
+		//   nothing filled their differences.)
 		//   ⚠The placeholder row asks this too (row 0 with no model behind it); the Facade
 		//   bounds-checks and answers 0, so the placeholder is a leaf like any story with no
 		//   located differences.

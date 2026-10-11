@@ -510,6 +510,7 @@ public:
 
 		TreeNodePtr<KCMStoryNodeID> nodeID(node);
 		const bool16 showsResources = KCMListShowsResources();
+		const bool16 showsPixelNote = KCMListShowsPixelNote();	// the Pixel mode's one row (2026-10-11)
 		const bool16 isChangeNode = (nodeID != nil && nodeID->IsChangeRow()) ? kTrue : kFalse;
 
 		// ***** THE COLUMNS ARE LAID OUT HERE, ONCE, FOR EVERY ROW. *****
@@ -550,8 +551,8 @@ public:
 			//     value, not nothing).
 			InterfacePtr<IStaticTextAttributes> textAttrs(
 				widgetList->FindWidget(kKCMStoryRowTextWidgetID), UseDefaultIID());
-			if (textAttrs != nil)
-				textAttrs->SetEllipsizeStyle(showsResources ? kEllipsizeEnd : kEllipsizeMiddle);
+			if (textAttrs != nil)	// the Pixel mode's note is a sentence, read from the left like a definition (2026-10-11)
+				textAttrs->SetEllipsizeStyle((showsResources || showsPixelNote) ? kEllipsizeEnd : kEllipsizeMiddle);
 		}
 
 		// ★★THE RESOURCES MODE OWNS BOTH OF ITS LEVELS AND IS ASKED FIRST (2026-09-09). A definition
@@ -566,6 +567,49 @@ public:
 				return this->ApplyResourceAttrRow(nodeID->GetRow(), nodeID->GetChange(), widgetList);
 
 			return this->ApplyResourceRow((nodeID != nil) ? nodeID->GetRow() : -1, widgetList);
+		}
+
+		// ★★THE PIXEL MODE'S ONE ROW IS A NOTE (2026-10-11, the user: "the Pixel comparison compares pixels and
+		//   nothing else"). The Pixel mode reads no story now, so the row the adapter gives it while comparing says
+		//   so - left blank like the Story mode's empty row, it would read as "no story changed".
+		//   ⚠ASKED BEFORE THE STORY MODEL, like the Resources branch above, and for a reason of its own: for the
+		//    length of a Before/After report the list holds rows the report built for itself (KCMReport.cpp), and
+		//    the model would hand one of them to this row.
+		//   ⚠All three cells written, blanks included - the recycling rule every branch keeps.
+		//   ★AND THE NOTE RUNS FROM THE LIST'S LEFT EDGE: in the wide column alone a panel of the default width showed
+		//    "Pixel mo..." (measured that day, 224px). The ID and the change cells are blank on this row, so they are
+		//    shut to nothing rather than left under the text. ⚠Safe for a recycled widget: every apply lays all three
+		//    cells out again first (KCMApplyListColumnWidths, above), so a story or definition row comes back whole.
+		if (showsPixelNote)
+		{
+			IControlView* const uidCell  = widgetList->FindWidget(kKCMStoryRowUIDWidgetID);
+			IControlView* const textCell = widgetList->FindWidget(kKCMStoryRowTextWidgetID);
+			IControlView* const kindCell = widgetList->FindWidget(kKCMStoryRowKindWidgetID);
+			if (uidCell != nil && textCell != nil)
+			{
+				PMRect text = textCell->GetFrame();
+				text.Left(uidCell->GetFrame().Left());
+				textCell->SetFrame(text);
+			}
+			if (uidCell != nil)
+			{
+				PMRect shut = uidCell->GetFrame();
+				shut.Right(shut.Left());
+				uidCell->SetFrame(shut);
+			}
+			if (kindCell != nil)
+			{
+				PMRect shut = kindCell->GetFrame();
+				shut.Right(shut.Left());
+				kindCell->SetFrame(shut);
+			}
+
+			PMString blank;
+			blank.SetTranslatable(kFalse);
+			this->SetNodeName(widgetList, blank, kKCMStoryRowUIDWidgetID);
+			this->SetNodeName(widgetList, Translated(kKCMStoryPixelNoteKey), kKCMStoryRowTextWidgetID);
+			this->SetNodeName(widgetList, blank, kKCMStoryRowKindWidgetID);
+			return kTrue;
 		}
 
 		// ★A CHANGE ROW IS WRITTEN BY ITS OWN BRANCH AND RETURNS. Its three cells hold different
@@ -1218,6 +1262,17 @@ bool16 KCMListShowsResources()
 		return kFalse;
 
 	return (compare->GetCompareMode() == kKCMModeResources) ? kTrue : kFalse;
+}
+
+bool16 KCMListShowsPixelNote()
+{
+	// ⚠Guarded the same way as KCMListShowsResources above: with the model half absent there is no
+	//   comparison, so there is no note to show either.
+	Utils<IKCMCompareFacade> compare;
+	if (!compare)
+		return kFalse;
+
+	return (compare->GetCompareMode() == kKCMModePixel) ? kTrue : kFalse;
 }
 
 //----------------------------------------------------------------------------------------

@@ -21,6 +21,8 @@
 //  children - IKCMStoryEditsFacade::GetChangeCount answers 0 because nothing filled fChanges in -
 //  so the adapter grows no branches and the list looks exactly as it always has. One set of row
 //  drawing, one click handler, one rebuild.
+//  ⛔(Since 2026-10-11 the pixel mode has no story rows at all: its list is one note row - a story
+//   node, row 0 - that the adapter and the widget manager answer by mode, KCMListShowsPixelNote.)
 //
 //  ⚠A NODE HOLDS INDICES, NOT DATA. The row's text, its kinds, and a change's positions are looked
 //  up from the model through the boundary when they are needed. That is what lets a rebuild after a

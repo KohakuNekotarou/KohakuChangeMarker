@@ -220,7 +220,10 @@ enum KCMCompareMode
 	asked `== kKCMModeStory` by hand and five of them decided real behaviour; the first import
 	reported nothing at all because ONE of those five - the line that runs the text diff - had not
 	been taught the new mode. **A question spelled out at each call site is a question that will be
-	answered differently at one of them.** */
+	answered differently at one of them.**
+	★★AND IT DECIDES WHETHER A MODE KEEPS A STORY LIST AT ALL (2026-10-11): KCMRebuildStoryEdits empties the
+	list in every mode that answers no, so the Pixel and the Resources modes read no story, and the
+	Before/After report builds its Story table for itself there (KCMReport.cpp, StoryDetailLoan). */
 inline bool16 KCMModeUsesStoryRows(KCMCompareMode mode)
 {
 	return (mode == kKCMModeStory || mode == kKCMModeTrack) ? kTrue : kFalse;
