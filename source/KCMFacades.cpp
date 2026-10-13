@@ -38,6 +38,7 @@
 #include "KCMComparisonRun.h"		// ToggleStartStop / Stop / StartFor / CanStart / print marks
 #include "KCMPairChoice.h"		// the chosen pair: set it, read it, clear it
 #include "KCMTaskStartSave.h"	// Task Start: save a copy, choose the file as the Source
+#include "KCMTaskStartClone.h"	// Task Start kept in memory (2026-10-13)
 #include "KCMCore.h"				// MarkChanges / ClearMarks / DoSetPrintMarks / getters
 #include "KCMPeek.h"				// armed docs alive / peek / RefreshSelectedPages / base opacity
 #include "KCMColorSampler.h"		// the Alt+left CMYK sample and its drag-time pairing cache
@@ -295,6 +296,10 @@ public:
 	// ★"Compare with Tracked Changes..." (2026-10-05) - the whole road is the model's (KCMTrackOriginal.h).
 	virtual bool16	CanTakeTrackOriginalCopy()					{ return KCMCanTakeTrackOriginalCopy(); }
 	virtual bool16	TakeTrackOriginalCopy(PMString& outMessage)	{ return KCMTakeTrackOriginalCopy(nil, outMessage); }
+
+	// ★Task Start kept in memory (2026-10-13) - the whole road is the model's (KCMTaskStartClone.h).
+	virtual bool16		CanTakeTaskStartClone()					{ return KCMCanTakeTaskStartClone(); }
+	virtual bool16		TakeTaskStartClone(PMString& outWhyNot)	{ return KCMTakeTaskStartClone(outWhyNot); }
 };
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)
