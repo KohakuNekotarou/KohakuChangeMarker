@@ -336,7 +336,7 @@ void KCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theSub
 		//   closed" notification flush it once.
 		if (KCMBatchCloseInProgress())
 		{
-			KCMDeferCloseUi();
+			KCMDeferCloseUi(comparisonEnded);
 			return;
 		}
 

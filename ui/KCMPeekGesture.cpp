@@ -500,6 +500,7 @@ void KCMResetPeekGestureState()
 //========================================================================================
 
 static bool16 sDeferredCloseUiPending = kFalse;	// is the UI clean-up being held back (the completion notification flushes it once)
+static bool16 sDeferredCloseEndedComparison = kFalse;	// (2026-10-13) did one of the closes held back END the comparison - the flush clears and says so only then
 
 // Is a batch close running right now? It only reads the session flag the application keeps; kFalse
 // where that cannot be read.
@@ -522,6 +523,8 @@ static void KCMFlushDeferredCloseUi()
 	if (!sDeferredCloseUiPending)
 		return;
 	sDeferredCloseUiPending = kFalse;
+	const bool16 endedComparison = sDeferredCloseEndedComparison;
+	sDeferredCloseEndedComparison = kFalse;
 
 	// ★This function asks three times (the two guards below, and the InvalidateDB in the loop at the
 	//   end), so the interface is queried once and kept (Utils.h:74-80).
@@ -536,13 +539,25 @@ static void KCMFlushDeferredCloseUi()
 	//   Should the completion notification never arrive, the deferral stays up; if the reader then
 	//   presses Start and a later batch close finally flushes it, it would **remove the running
 	//   comparison's strip and overwrite its status line with "marks cleared"**.
-	//   ★While armed there is nothing left to clean up anyway: the deferral is only ever raised when
-	//     the comparison had ended (the model dropped its state ＝ disarmed), and the Start that
-	//     followed has re-injected the strip and refreshed the status line and the panel. The closed
-	//     document's window went with the document, so no strip is left behind either. ∴ lowering the
-	//     flag is the whole of it.
+	//   ★While armed there is nothing left to clean up anyway: a close that ended the comparison
+	//     dropped its state (＝ disarmed), and the Start that followed has re-injected the strip and
+	//     refreshed the status line and the panel. The closed document's window went with the
+	//     document, so no strip is left behind either. ∴ lowering the flag is the whole of it.
 	if (compare->IsArmed())
 		return;
+
+	// ★★(2026-10-13) WHAT THE IMMEDIATE ROAD DOES, AND NO MORE. The comment above once said "the
+	//   deferral is only ever raised when the comparison had ended"; it was raised by EVERY close -
+	//   Links UI raises its flag for a single close too - so closing any document, compared or not,
+	//   ended with "marks cleared" over whatever the status line said (found when the line that says
+	//   a Task Start kept in memory went with its document never survived a close). A close that ended
+	//   no comparison takes no strips off and says nothing on the immediate road
+	//   (KCMModelChangeObserver); held back, it now only brings the panel into line as well.
+	if (!endedComparison)
+	{
+		KCMRefreshPanel();
+		return;
+	}
 
 	// (Find Overset could keep the scrollbar map alive on its own. That feature went on
 	//  2026-09-08, so the map now belongs to the comparison alone.)
@@ -642,9 +657,11 @@ void KCMAttachDocsClosedObserver()
 // ★Its one caller is the UI's own close branch (KCMModelChangeObserver), which has already asked
 //   KCMBatchCloseInProgress above. The model never calls it: deciding **when** to touch the UI is
 //   the UI's business, and the model only reports that a document closed.
-void KCMDeferCloseUi()
+void KCMDeferCloseUi(bool16 comparisonEnded)
 {
 	sDeferredCloseUiPending = kTrue;
+	if (comparisonEnded)
+		sDeferredCloseEndedComparison = kTrue;	// sticky until the flush: one close of the batch ending it is enough
 }
 
 // KCMPeekGestureShutdown (declared in KCMPeekGesture.h) -- the teardown clean-up.
@@ -656,4 +673,5 @@ void KCMPeekGestureShutdown()
 	//   KCMFlushDeferredCloseUi return at **its first guard** (!sDeferredCloseUiPending).
 	//   ⚠Remove it as "pointless" and the only guard left is that function's IsAppQuitting().
 	sDeferredCloseUiPending = kFalse;
+	sDeferredCloseEndedComparison = kFalse;
 }

@@ -85,7 +85,9 @@ bool16			KCMBatchCloseInProgress();
 
 // Hold the UI half of the close cleanup until the batch close finishes. The close sweep calls
 // this when it has dropped its state but must not touch widgets yet.
-void			KCMDeferCloseUi();
+// @param comparisonEnded the close ended the comparison (the notification's navReset) - only then
+//   does the flush take the strips off and say "marks cleared", as the immediate road does (2026-10-13).
+void			KCMDeferCloseUi(bool16 comparisonEnded);
 
 // Shutdown: drop the pending flag so nothing is left booked. Called from
 // KCMUIStartup::Shutdown.
