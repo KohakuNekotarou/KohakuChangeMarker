@@ -153,6 +153,16 @@ static void KCMSayTranslucency(const char* what, bool16 on, bool16 applied, cons
 	KCMSetStatus(msg);
 }
 
+/* Whether the chosen Source is a Task Start kept in memory (2026-10-13) - asked BEFORE an item that replaces it, so
+   that the status line can say it went. The lent Source answers through GetExternalSourceLabel, and the Task Start
+   kept in memory is the one lent Source this plug-in makes itself (KCMExternalSource.h). */
+static bool16 KCMSourceIsKeptInMemory(IKCMCompareFacade* compare)
+{
+	IDataBase* const db = (compare != nil) ? compare->GetChosenSourceDB() : nil;
+	PMString label;
+	return (db != nil && compare->GetExternalSourceLabel(db, label)) ? kTrue : kFalse;
+}
+
 /* KCMApplyCompareMode - switches the compare mode and, while Started, recompares on the spot.
 
    ★**It is a function so that the entrances all take the same steps.** Choosing Pixel, Story or
@@ -282,12 +292,16 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 
 		case kKCMPopupSetSourceActionID:
-			if (Utils<IKCMCompareFacade>()->SetChosenSourceToActive())
+		{
+			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+			const bool16 letGo = KCMSourceIsKeptInMemory(compare);
+			if (compare->SetChosenSourceToActive())
 			{
 				KCMRefreshPanel();
-				KCMSetStatus("Source set.");
+				KCMSetStatus(letGo ? "Source set. The Task Start kept in memory was let go." : "Source set.");
 			}
 			break;
+		}
 
 		// Flyout "Print comparison marks": the print-marks toggle (it used to be a checkbox on the
 		// panel).
@@ -807,7 +821,32 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			Utils<IKCMPageFlagsFacade>()->ClearPawsInDoc(Utils<IKCMCompareFacade>()->GetActiveDocDB());
 			break;
 
-		// Flyout "Task Start" (2026-09-21, remade): a COPY OF THE DOCUMENT IS SAVED to a file the
+		// Flyout "Task Start" (2026-10-13): the document's state KEPT IN MEMORY and chosen as the Source - no dialog, no
+		// file, nothing started (KCMTaskStartClone.h). The panel refresh and the status line are done here, as for
+		// "Task Start (Save)..." below.
+		case kKCMPopupTaskStartCloneActionID:
+		{
+			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+			const bool16 wasArmed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+			PMString whyNot;
+			if (compare->TakeTaskStartClone(whyNot))
+			{
+				KCMRefreshPanel();
+				KCMSetStatus(wasArmed
+					? "Stopped, and Task Start taken (kept in memory) and chosen as the Source. Edit, then Start to compare against it."
+					: "Task Start taken (kept in memory) and chosen as the Source. Edit, then Start to compare against it.");
+			}
+			else
+			{
+				PMString msg("Task Start not taken: ");
+				msg.SetTranslatable(kFalse);
+				msg.Append(whyNot);
+				KCMSetStatus(msg);
+			}
+			break;
+		}
+
+		// Flyout "Task Start (Save)..." (2026-09-21, remade; named "Task Start" until 2026-10-13): a COPY OF THE DOCUMENT IS SAVED to a file the
 		// reader picks, and that file is chosen as the Source. No comparison runs - Start does
 		// that, and Start is also what opens the copy. The panel refresh and the status line are
 		// done here, as with the two "Set as" items ([[one-question-one-place]]: the facade
@@ -821,14 +860,18 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			//   and a reader who pressed this by accident needs the status line to say that one did.
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 wasArmed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+			const bool16 letGo = KCMSourceIsKeptInMemory(compare);
 			PMString whyNot;
 			if (compare->TakeTaskStartCopy(whyNot))
 			{
 				KCMRefreshPanel();
-				if (wasArmed)
-					KCMSetStatus("Stopped, and the Task Start copy saved and chosen as the Source. Edit, then Start to compare against it.");
-				else
-					KCMSetStatus("Task Start copy saved and chosen as the Source. Edit, then Start to compare against it.");
+				PMString said(wasArmed
+					? "Stopped, and the Task Start copy saved and chosen as the Source. Edit, then Start to compare against it."
+					: "Task Start copy saved and chosen as the Source. Edit, then Start to compare against it.");
+				if (letGo)
+					said.Append(" The Task Start kept in memory was let go.");
+				said.SetTranslatable(kFalse);
+				KCMSetStatus(said);
 			}
 			else if (whyNot.CharCount() > 0)
 			{
@@ -863,6 +906,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		{
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 wasArmed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+			const bool16 letGo = KCMSourceIsKeptInMemory(compare);
 			if (wasArmed)
 				compare->StopComparison();
 			compare->ClearChosenDocs();
@@ -871,7 +915,11 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			//   own and the line below replaces it, so without naming the stop there would be nothing on
 			//   screen to tell "I cleared two choices" from "I ended a comparison" -- the same reasoning
 			//   as the cancelled Refresh (KCMComparisonRun.cpp).
-			KCMSetStatus(wasArmed ? "Stopped, and Target and Source cleared." : "Target and Source cleared.");
+			PMString said(wasArmed ? "Stopped, and Target and Source cleared." : "Target and Source cleared.");
+			if (letGo)
+				said.Append(" The Task Start kept in memory was let go.");
+			said.SetTranslatable(kFalse);
+			KCMSetStatus(said);
 			break;
 		}
 
@@ -1242,6 +1290,22 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 					(armed || compare->CanStartComparison()) ? kEnabledAction : kDisabled_Unselected);
 				break;
 			}
+			case kKCMPopupTaskStartCloneActionID:
+			{
+				// The question "Task Start (Save)..." asks: a document to take (KCMCanTakeTaskStartClone).
+				listToUpdate->SetNthActionState(i,
+					Utils<IKCMCompareFacade>()->CanTakeTaskStartClone() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			case kKCMPopupTaskStartActionID:
+			{
+				// The one place (KCMCanTakeTaskStartCopy): a document to copy - the chosen Target, or
+				// the active document. Nothing else: a comparison running is stopped by the press
+				// itself, not refused here.
+				listToUpdate->SetNthActionState(i,
+					Utils<IKCMCompareFacade>()->CanTakeTaskStartCopy() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
 			// ★"Set as Target" / "Set as Source". The two share a branch because they are enabled by the
 			//   same two conditions, and writing the pair twice is how the two would come to differ.
 			//   ★**Live only while nothing is being compared** (user's instruction): the pair a running
@@ -1258,15 +1322,6 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			//     commoner one is choosing a Source alone and pressing Start without switching documents,
 			//     since the unchosen Target then resolves to that very document -- and the way out of
 			//     that one is to bring the other document to the front.
-			case kKCMPopupTaskStartActionID:
-			{
-				// The one place (KCMCanTakeTaskStartCopy): a document to copy - the chosen Target, or
-				// the active document. Nothing else: a comparison running is stopped by the press
-				// itself, not refused here.
-				listToUpdate->SetNthActionState(i,
-					Utils<IKCMCompareFacade>()->CanTakeTaskStartCopy() ? kEnabledAction : kDisabled_Unselected);
-				break;
-			}
 			case kKCMPopupSetTargetActionID:
 			case kKCMPopupSetSourceActionID:
 			{

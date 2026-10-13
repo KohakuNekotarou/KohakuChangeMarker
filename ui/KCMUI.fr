@@ -832,10 +832,14 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMSetSourceMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Task Start" on the panel flyout (popup) menu (2026-09-12). Plain command: the active
-		// document's INX is taken as the origin, and the pair becomes (that document, the origin).
-		// Start / Refresh then compare the document against a rehydration of it. One origin at a
-		// time (UpdateActionStates, kCustomEnabling).
+		// "Task Start" (2026-10-13): the document's state kept in memory and chosen as the Source - directly above
+		// "Task Start (Save)...", which saves a copy to a file instead (the user's order).
+		kKCMPopupTaskStartCloneActionID,
+		kKCMPopupMenuPath,
+		kKCMTaskStartCloneMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Task Start (Save)..." (named "Task Start" until 2026-10-13): a copy of the document saved to a file the reader picks becomes the Source.
 		kKCMPopupTaskStartActionID,
 		kKCMPopupMenuPath,
 		kKCMTaskStartMenuItemPosition,
@@ -1435,7 +1439,19 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// "Task Start" (2026-09-21): a COPY of the document is saved to a file the reader picks, and
+		// "Task Start" (2026-10-13): kept in memory. Greyed only when there is no document to take - the question
+		// "Task Start (Save)..." asks (facade CanTakeTaskStartClone, UpdateActionStates). Not greyed while a comparison
+		// runs: the press stops it first.
+		kKCMActionComponentBoss,
+		kKCMPopupTaskStartCloneActionID,
+		kKCMTaskStartCloneMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Task Start (Save)..." (2026-09-21; renamed 2026-10-13): a COPY of the document is saved to a file the reader picks, and
 		// that file becomes the Source. Greyed only when there is no document to copy - the chosen
 		// Target, or the one in front (facade CanTakeTaskStartCopy, the one place -
 		// UpdateActionStates). ⚠**Not greyed while a comparison runs**: pressing it stops that

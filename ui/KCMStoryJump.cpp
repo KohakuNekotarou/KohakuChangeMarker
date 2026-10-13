@@ -482,6 +482,18 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 		return kFalse;
 	}
 
+	// ★A SOURCE KEPT IN MEMORY HAS NO WINDOW (2026-10-13): a Removed row's story is in the Source alone, and a Task
+	//   Start kept in memory is a database clone no window shows - said, rather than "Could not scroll.".
+	if (removedRow)
+	{
+		PMString label;
+		if (Utils<IKCMCompareFacade>()->GetExternalSourceLabel(db, label))
+		{
+			KCMSetStatus("The Source is a Task Start kept in memory - it has no window to show this story in.");
+			return kFalse;
+		}
+	}
+
 	// ★A ROW STANDING FOR A FILE (2026-09-19): an import was handed a file named after a story the
 	//   document does not hold. There is no story, so there is nowhere to go; the row's text says
 	//   which file, and this says why the page did not move.
