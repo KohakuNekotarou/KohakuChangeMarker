@@ -80,6 +80,7 @@
 #include "KCMModelNotify.h"		// KCMNotify - the panel is told when the borrowed Resources result goes
 #include "KCMBoundaryID.h"			// kKCMStoryEditsRebuiltMessage
 #include "KCMExternalSource.h"		// KCMExternalSourceLabel - a lent Source's name
+#include "KCMTaskStartClone.h"		// KCMIsTaskStartClone - the report's refusal names it
 
 namespace
 {
@@ -1014,9 +1015,13 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	//   MCP is a database CLONE, and ExportINX on a clone was measured to kill InDesign outright
 	//   (kcm-clone-export-and-compression-2026-09-09.md); the PDF export has not been tried on one
 	//   and is not going to be tried here. A Task Start copy IS a session document (opened above).
+	// ★(2026-10-13) Measured: handed a clone, the PDF export does not fail - it writes the LIVE document's state, so the
+	//   Before side would silently be the After side (docs/ai-notes/kcm-task-start-clone-spike-2026-10-13.md, E6).
 	if (!IsSessionDocument(sourceDB))
 	{
-		outMessage = Ascii("the Source is a lent copy (not an open document), so it cannot be exported for the Before side.");
+		outMessage = KCMIsTaskStartClone(sourceDB)
+			? Ascii("The Source is a Task Start kept in memory, which cannot be printed for the Before side - take a Task Start (Save)... for a report.")
+			: Ascii("the Source is a lent copy (not an open document), so it cannot be exported for the Before side.");
 		return kFalse;
 	}
 

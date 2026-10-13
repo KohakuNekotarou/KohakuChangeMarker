@@ -1276,6 +1276,14 @@ public:
 			outMessage = "this row is not a table that differs between two documents that are open and compared";
 			return -1;
 		}
+		// ★A TASK START KEPT IN MEMORY CANNOT BE MATCHED FROM (2026-10-13): the match is checked afterwards against the
+		//   Source's table as INX writes it, and a clone cannot be exported (KCMResourceSnapshot.cpp) - the table would
+		//   be changed and then the whole match rolled back. Said before anything is touched.
+		if (KCMIsExternalSource(source.GetDataBase()))
+		{
+			outMessage = "the Source is a Task Start kept in memory, whose tables cannot be read back - take a Task Start (Save)... to match a table";
+			return -1;
+		}
 		// ★★COMPARED AGAIN FIRST, AND IT HAS TO BE THE SAME CHANGE - SameChangeAfterRefresh says why.
 		if (!this->SameChangeAfterRefresh(nth, which, before))
 		{

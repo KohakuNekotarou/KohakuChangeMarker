@@ -30,6 +30,7 @@
 // Project includes:
 #include "KCMCore.h"				// KCMArmedTargetDB / KCMArmedSourceDB
 #include "KCMResourceParse.h"		// KCMResourceList
+#include "KCMTaskStartClone.h"	// a Task Start kept in memory carries its definitions (2026-10-13)
 #include "KCMResourceDiff.h"
 #include "KCMResourceAttrDiff.h"	// which ATTRIBUTES of one definition differ
 #include "KCMBoundaryID.h"			// kKCMStoryEditsRebuiltMessage - the one the panel's list listens for
@@ -204,7 +205,12 @@ bool16 KCMResourceStore::Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 	KCMResourceList sourceItems;
 
 	progress.Step(0, Phase("Reading the older document's definitions..."));
-	if (!KCMReadResourceList(sourceDB, "source", sourceItems, whyNot))
+	// ★A TASK START KEPT IN MEMORY IS NOT EXPORTED (2026-10-13): ExportINX of a clone kills InDesign
+	//   (KCMResourceSnapshot.cpp), so its definitions were read from the live document when it was taken.
+	const bool16 sourceRead = KCMIsTaskStartClone(sourceDB)
+		? KCMTaskStartCloneResources(sourceItems, whyNot)
+		: KCMReadResourceList(sourceDB, "source", sourceItems, whyNot);
+	if (!sourceRead)
 	{
 		gWhyNot = whyNot;
 		return kFalse;

@@ -44,6 +44,7 @@
 #include "KCMLoc.h"		// the confirmation shown before the document is changed follows the UI language
 #include "KCMHideUnchanged.h"
 #include "KCMCore.h"		// KCMIsDocDBOpen / KCMArmedSourceDB
+#include "KCMExternalSource.h"	// KCMIsExternalSource - a Source that is not a document is not hidden
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it (Task 9)
 #include "KCMDrawEventHandler.h"	// sDB / sEntries / sOverflowT / sPrevPairTargetToSource -- what
 							//   "changed" is decided from. **All of it the "as compared" record,
@@ -166,7 +167,10 @@ void KCMHideUnchangedToggle()
 	//   cannot be reached. **The day a path disarms on its own, this premise is gone**
 	//   ([[one-question-one-place]]).
 	IDataBase* const srcDB = KCMArmedSourceDB();
-	const bool16 hasSource = (srcDB != nil && srcDB != db);
+	// ★A SOURCE THAT IS NOT A DOCUMENT IS NOT HIDDEN (2026-10-13): a Task Start kept in memory (or another plug-in's
+	//   lent database) is a database clone - no window shows it, and kHideSpreadCmdBoss on it would write into it.
+	const bool16 srcNotADocument = (srcDB != nil && KCMIsExternalSource(srcDB)) ? kTrue : kFalse;
+	const bool16 hasSource = (srcDB != nil && srcDB != db && !srcNotADocument) ? kTrue : kFalse;
 	KCMDrawEventHandler::EnsureOverflowCache();
 	const std::set<UID>& tOverflowSet = KCMDrawEventHandler::sOverflowT;
 
@@ -421,6 +425,8 @@ void KCMHideUnchangedToggle()
 		msg.Append(" Source not hidden (would hide all its spreads).");
 	if (srcFailed)
 		msg.Append(" Source not hidden (hide command failed).");
+	if (srcNotADocument)
+		msg.Append(" Source not hidden (it is a Task Start kept in memory).");
 	KCMNotifyStatus(msg);
 
 	// Redraw the scrollbar map for the new arrangement, in both windows (hidden spreads are left

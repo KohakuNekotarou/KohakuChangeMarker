@@ -74,6 +74,7 @@
 #include "KCMID.h"
 #include "KCMConstants.h"				// kKCMStoryId* - the labels' sizes and reach
 #include "KCMRingAdornment.h"
+#include "KCMExternalSource.h"			// KCMIsExternalSource - a clone is never written
 #include "KCMDrawEventHandler.h"		// DrawSpreadMarks (the drawing) / the mark-state statics / KCMQueryMarkFont
 #include "KCMThreadSafety.h"			// KCMMarkStateMutex/Lock, taken to read sEntries and the story holder tables
 
@@ -1134,6 +1135,10 @@ int32 KCMGetNumItemsWithXP(IDataBase* db)
 void KCMRevalidateItemXPList(IDataBase* db)
 {
 	if (db == nil || !KCMIsMainThread())
+		return;
+	// ★NOT ON A DATABASE THAT IS NOT A DOCUMENT (2026-10-13): a Task Start kept in memory is a clone, read and drawn
+	//   and never written - and it is never exported or printed, which is what the list is for.
+	if (KCMIsExternalSource(db))
 		return;
 	// Mid-export on this thread the declarations standing are the right ones (KCMBeginExportOn put
 	// them up for the flattener); asking again now would take them down under the export.
