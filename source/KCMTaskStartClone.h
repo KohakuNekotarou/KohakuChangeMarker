@@ -20,6 +20,9 @@
 //  ⚠★★★A CLONE IS NOT INDEPENDENT OF ITS SOURCE: deleting one after its document has gone killed InDesign
 //   (2026-08-31). It is deleted only while that document is still open; when it is not, it is let go WITHOUT
 //   deleting - a leak, not a crash.
+//  ⚠★★NOTHING MAY NAME IT WHEN IT IS DELETED: a comparison drawing from it is ended first - on every road but the
+//   model's shutdown, where nothing draws any more - and the Story mode's marks are swept of it (Forget, in the
+//   .cpp). KCMIsSameDoc follows any pointer that is not registered.
 //  ⚠IT IS READ AND DRAWN, NOTHING ELSE: no command is run on it, the INX of its document root is never written
 //   (that killed InDesign, 2026-09-09) and it is never handed to the PDF export (which writes the LIVE document's
 //   state when given one, 2026-10-13). Its definitions are read from the live document when it is taken.
@@ -60,10 +63,12 @@ bool16	KCMIsTaskStartClone(IDataBase* db);
 	  and Source" (that item stops the comparison itself first) - nothing may touch the screen during a shutdown. */
 void	KCMLetGoTaskStartClone(bool16 stopIfDrawing);
 
-/** kBeforeCloseDoc: `closing` is still alive. When it is the document the clone was taken from, the clone goes -
-	forgotten, then deleted. ⚠NOT STOPPED HERE: nothing is changed in a closing document, and the after-close sweep
-	takes the comparison down as it does for any closed document (every liveness test answers "gone" for the clone
-	the moment it is forgotten). Main thread only. */
+/** kBeforeCloseDoc: `closing` is still alive. When it is the document the clone was taken from, the clone goes - a
+	comparison drawing from it stopped, then forgotten, then deleted. ★STOPPED HERE, not left to the after-close
+	sweep (corrected 2026-10-13, before the first build): liveness tests do answer "gone" the moment it is forgotten,
+	but the drawing's identity tests (KCMIsSameDoc on sSrcDB and on the armed Source) ask no liveness first and would
+	follow the deleted pointer until the sweep - the lent Source's contract is "end the comparison, then delete"
+	(KCMExternalSource.h). Main thread only. */
 void	KCMTaskStartCloneDocClosing(IDataBase* closing);
 
 /** The after-close sweep's second line: when the document the clone was taken from is no longer in `docList` (a

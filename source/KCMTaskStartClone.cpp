@@ -27,6 +27,7 @@
 #include "KCMPairChoice.h"			// KCMChooseDBPair / KCMForgetChosenSourceIfDB
 #include "KCMExternalSource.h"		// the lent Source: register, forget, ask
 #include "KCMResourceSnapshot.h"	// KCMReadResourceList - the definitions, read from the LIVE document
+#include "KCMStoryMarker.h"			// ForgetClosedDocs - the Story mode's marks let go of it before the delete
 #include "KCMModelNotify.h"			// KCMSayStatus
 
 namespace {
@@ -63,7 +64,13 @@ void DocName(IDataBase* db, PMString& out)
 }
 
 /* Everything that names the clone forgets it - this holder, the Source choice and the lent registration - so that
-   every liveness test in the plug-in (KCMIsDbAlive) answers "gone" BEFORE the memory is freed. */
+   every liveness test in the plug-in (KCMIsDbAlive) answers "gone" BEFORE the memory is freed.
+   ★AND THE STORY MODE'S MARKS (2026-10-13). Their maps are keyed by IDataBase* and matched by KCMIsSameDoc, which
+   follows a pointer that is no longer registered - the crash of 2026-09-12 had that shape. A stop takes the standing
+   marks down at once (the Cleared notification is synchronous), but not a jump's flash, and a jump flashes the armed
+   Source too (KCMFacades.cpp) - so for about a second after a row click the clone is in that map. The sweep runs
+   after the registration has gone, so it sees the clone as gone; pointer comparisons only, and nothing after the
+   marker's own shutdown. */
 void Forget(IDataBase* clone)
 {
 	gClone = nil;
@@ -74,6 +81,10 @@ void Forget(IDataBase* clone)
 	KCMForgetChosenSourceIfDB(clone);
 	if (KCMIsExternalSource(clone))
 		KCMForgetExternalSource();
+	ISession* const session = GetExecutionContextSession();
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
+	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
+	KCMStoryMarker::ForgetClosedDocs(docList);		// nil does nothing
 }
 
 /* ⚠★★★Deletes the clone ONLY while the document it was taken from is open (2026-08-31: DataBase::~DataBase ->
@@ -190,6 +201,13 @@ void KCMTaskStartCloneDocClosing(IDataBase* closing)
 	if (closing == nil || gClone == nil || closing != gSource)
 		return;
 	IDataBase* const clone = gClone;
+	// ★A COMPARISON DRAWING FROM IT ENDS FIRST - the lent Source's contract (KCMExternalSource.h: the lender ends it
+	//   before the delete, as KCMReleaseExternalSource did for KIDMCP's copy, at that document's close as well). Left
+	//   to the after-close sweep, the drawing would go on naming a deleted database in between: the Source frames and
+	//   the print test ask KCMIsSameDoc(db, sSrcDB / the armed Source) with no liveness test first, and an asynchronous
+	//   export of another document draws at any moment.
+	if (KCMIsArmed() && KCMArmedSourceDB() == clone)
+		KCMStopComparison();
 	Forget(clone);
 	DeleteWhileSourceOpen(clone, closing, kTrue /*kBeforeCloseDoc: the document is still alive*/);
 	KCMSayStatus("The Task Start kept in memory went with its document.");

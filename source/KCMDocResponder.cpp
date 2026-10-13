@@ -237,8 +237,9 @@ void KCMAfterOpenDocResponder::Respond(ISignalMgr* signalMgr)
 	★Measured 2026-10-13: a revert raises it too (BeforeRevert -> BeforeClose -> AfterClose -> AfterRevert, the
 	  document coming back on another database), and a close cancelled at the save prompt does NOT (the prompt comes
 	  first) - so the clone never goes for a close that does not happen.
-	⚠It only lets the clone go. Everything else this plug-in does on a close stays on kAfterCloseDoc (the top of this
-	 file says why).
+	⚠It only lets the clone go - ending a comparison that draws from it first, the one thing that cannot wait for the
+	 sweep (KCMTaskStartClone.h). Everything else this plug-in does on a close stays on kAfterCloseDoc (the top of
+	 this file says why).
 */
 class KCMBeforeCloseDocResponder : public CResponder
 {
