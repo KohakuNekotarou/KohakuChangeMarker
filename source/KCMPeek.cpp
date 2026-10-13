@@ -50,6 +50,7 @@
 #include "KCMID.h"
 #include "KCMConstants.h"
 #include "KCMDrawEventHandler.h"   // the engine's shared statics
+#include "KCMTaskStartClone.h"			// the after-close sweep's second line for a Task Start kept in memory
 #include "KCMRingAdornment.h"      // KCMForgetStoryHolders - the story ID labels' tables go when documents close
 #include "KCMCore.h"               // the arm/disarm/state declarations
 #include "KCMComparisonRun.h"      // KCMStartComparisonFor / KCMStopComparison / KCMRefreshComparison
@@ -949,6 +950,10 @@ void KCMHandleDocsClosed()
 	//   other perfectly good).
 	//   Memory only, so it is safe while quitting; the pointers are compared, never dereferenced.
 	KCMForgetChosenDocsThatClosed(docList);
+
+	// ★A Task Start kept in memory whose document closed without kBeforeCloseDoc reaching us (2026-10-13): forgotten,
+	//   NEVER deleted - its document has gone (KCMTaskStartClone.h). The normal road is kBeforeCloseDoc.
+	KCMTaskStartCloneSweep(docList);
 
 	// A document has closed, so neither the page structure nor any database pointer can be relied
 	// on: the sync caches are dropped unconditionally. They belong to the UI (KCMViewSync), so what

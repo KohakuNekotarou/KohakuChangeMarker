@@ -56,6 +56,7 @@
 #include "KCMHideUnchanged.h"		// KCMResetHideUnchanged / the two hidden-side getters
 #include "KCMID.h"
 #include "KCMThreadSafety.h"		// KCMIsMainThread
+#include "KCMTaskStartClone.h"		// KCMTaskStartCloneDocClosing - a Task Start kept in memory goes with its document
 #include "KCMMarksObserver.h"		// KCMMarksEnsureObserver -- so later writes reach the store
 #include "KCMPageMarksDoc.h"		// KCMMarksSyncFromDocument -- the marks the document carries
 #include "KCMModelNotify.h"		// KCMSayStatus -- the model owns the words, the UI shows them
@@ -227,6 +228,37 @@ void KCMAfterOpenDocResponder::Respond(ISignalMgr* signalMgr)
 	msg.AppendNumber(paws);
 	msg.Append(paws == 1 ? " paw." : " paws.");
 	KCMNotifyStatus(msg);		// the PMString door; KCMSayStatus is the const char* one
+}
+
+/** KCMBeforeCloseDocResponder (2026-10-13)
+
+	A Task Start kept in memory goes with the document it was taken from, at kBeforeCloseDoc - the last moment that
+	document is certainly alive, which is what makes deleting the clone safe (KCMTaskStartClone.h).
+	★Measured 2026-10-13: a revert raises it too (BeforeRevert -> BeforeClose -> AfterClose -> AfterRevert, the
+	  document coming back on another database), and a close cancelled at the save prompt does NOT (the prompt comes
+	  first) - so the clone never goes for a close that does not happen.
+	⚠It only lets the clone go. Everything else this plug-in does on a close stays on kAfterCloseDoc (the top of this
+	 file says why).
+*/
+class KCMBeforeCloseDocResponder : public CResponder
+{
+public:
+	KCMBeforeCloseDocResponder(IPMUnknown* boss) : CResponder(boss) {}
+
+	virtual void Respond(ISignalMgr* signalMgr);
+};
+
+CREATE_PMINTERFACE(KCMBeforeCloseDocResponder, kKCMBeforeCloseResponderImpl)
+
+void KCMBeforeCloseDocResponder::Respond(ISignalMgr* signalMgr)
+{
+	// A background thread closes the export's own copies here too - nothing of ours, and nothing to judge there.
+	if (!KCMIsMainThread())
+		return;
+	InterfacePtr<IDocumentSignalData> signalData(signalMgr, UseDefaultIID());
+	if (signalData == nil)
+		return;
+	KCMTaskStartCloneDocClosing(signalData->GetDocument().GetDataBase());
 }
 
 // End, KCMDocResponder.cpp.

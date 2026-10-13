@@ -311,6 +311,20 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// ***** A TASK START KEPT IN MEMORY GOES WITH ITS DOCUMENT (2026-10-13). *****
+	// kBeforeCloseDoc, because it is the last moment the document is certainly alive - a clone deleted after its
+	// document has gone kills InDesign (KCMTaskStartClone.h). Same "one signal, one boss, no ServiceProvider of its
+	// own" shape as the three above.
+	Class
+	{
+		kKCMBeforeCloseResponderServiceBoss,
+		kInvalidClass,
+		{
+			IID_IK2SERVICEPROVIDER, kBeforeCloseDocSignalRespServiceImpl,
+			IID_IRESPONDER,         kKCMBeforeCloseResponderImpl,
+		}
+	},
+
 	// ***** THE COMMAND THAT WRITES THEM (2026-09-07). *****
 	// Every tick and every cat paw goes through this one boss, and nothing else may write the
 	// labels. It exists so the change is UNDOABLE: Do() writes, DoNotify() raises a ModelChange on

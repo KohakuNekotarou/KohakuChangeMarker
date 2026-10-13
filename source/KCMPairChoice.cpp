@@ -33,6 +33,7 @@
 #include "KCMPairChoice.h"
 #include "KCMCore.h"				// KCMActiveDoc / KCMActiveDocDB / KCMArmedSourceDB
 #include "KCMExternalSource.h"	// the lent Source: KCMIsExternalSource / KCMForgetExternalSource / KCMIsDbAlive
+#include "KCMTaskStartClone.h"	// a Task Start kept in memory goes when the Source choice leaves it (2026-10-13)
 
 //----------------------------------------------------------------------------------------
 // The slots
@@ -65,6 +66,20 @@ static IDFile sChosenTargetFile;
 static IDFile sChosenSourceFile;
 static bool16 sTargetIsFile = kFalse;
 static bool16 sSourceIsFile = kFalse;
+
+/*	★THE SOURCE CHOICE LEAVES A TASK START KEPT IN MEMORY (2026-10-13, the user: "throw the clone away properly -
+	when the Source changes"). Every setter of the Source slot is in this file, so the question is asked here, at
+	the head of each of them, and nowhere else ([[one-question-one-place]]). ⚠KCMChooseDBPair forgets no lent
+	registration of its own - "Compare with Tracked Changes..." goes through it - so without this the clone would
+	outlive its choice there.
+	⚠KCMForgetChosenSourceIfDB does not ask: KCMLetGoTaskStartClone itself calls it.
+	@param arriving what the slot is about to hold (nil for a file or for nothing).
+	@param stopIfDrawing kFalse only from KCMClearChosenDocs (the model's shutdown too). */
+static void KCMSourceChoiceLeaves(IDataBase* arriving, bool16 stopIfDrawing)
+{
+	if (sChosenSourceDB != nil && sChosenSourceDB != arriving && KCMIsTaskStartClone(sChosenSourceDB))
+		KCMLetGoTaskStartClone(stopIfDrawing);
+}
 
 /*	Does a chosen file still exist?
 	★**THIS RUNS EVERY TIME THE FLYOUT IS OPENED** (through KCMCanStartComparison), so it asks the
@@ -330,6 +345,7 @@ bool16 KCMSetChosenSourceToActive()
 	IDataBase* db = KCMActiveDocDB();
 	if (db == nil)
 		return kFalse;
+	KCMSourceChoiceLeaves(db, kTrue);
 	// A real document replaces the lent Source. Its registration goes with it -- unless a
 	// comparison is still drawing from it, in which case the lender's Release ends it later
 	// (KCMExternalSource.h: registered while chosen OR armed).
@@ -350,6 +366,7 @@ void KCMSetChosenTargetDB(IDataBase* db)
 
 void KCMChooseDBPair(IDataBase* targetDB, IDataBase* sourceDB)
 {
+	KCMSourceChoiceLeaves(sourceDB, kTrue);
 	sChosenTargetDB = targetDB;
 	sChosenSourceDB = sourceDB;
 	sTargetIsFile = kFalse;		// ★one end, one kind of choice
@@ -387,6 +404,7 @@ void KCMSetChosenTargetFile(const IDFile& file)
 
 void KCMSetChosenSourceFile(const IDFile& file)
 {
+	KCMSourceChoiceLeaves(nil, kTrue);
 	// A file replaces whatever stood on this end, of whichever kind - the same courtesies "Set as
 	// Source" pays when a document replaces them.
 	if (KCMIsExternalSource(sChosenSourceDB) && KCMArmedSourceDB() != sChosenSourceDB)
@@ -463,6 +481,8 @@ void KCMForgetChosenDocsThatClosed(IDocumentList* docList)
 // safe at any point in the shutdown sequence.
 void KCMClearChosenDocs()
 {
+	// ★kFalse: this is the model's shutdown as well as "Clear Target and Source" (which stops first itself).
+	KCMSourceChoiceLeaves(nil, kFalse);
 	sChosenTargetDB = nil;
 	sChosenSourceDB = nil;
 	KCMForgetExternalSource();	// the lent Source is a choice too, and this is the shutdown slot for choices

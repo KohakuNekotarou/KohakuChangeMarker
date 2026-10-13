@@ -12,14 +12,21 @@
 //  is in no list. The first draw would have run KCMHandleDocsClosed and cleared the marks -- the
 //  same shape the background thread's clone produced during asynchronous PDF export.
 //
+//  ★A SECOND LENDER (2026-10-13): this plug-in itself. "Task Start" keeps the document's state in memory as a database
+//    clone (KCMTaskStartClone.h) and registers it here, so everything that already understood a lent Source - the
+//    liveness tests, the panel's Source line, the same-document test, the refusals of the Resources export and the
+//    report - takes it unchanged. KCMTaskStartClone is then the lender, and lets it go through KCMForgetExternalSource.
+//
 //  ★THE INVARIANT: **a database is registered here while it is the CHOSEN Source or the ARMED
 //    Source -- or until the lender takes it back, whichever is later.** Registration happens
-//    inside KCMStartComparisonWithSourceDB and nowhere else, which also CHOOSES it (Set as Target
-//    + Set as Source + Start in one, the user's ask of 2026-09-02: a Stop keeps the pair on the
-//    panel, and the flyout's own Start compares against the copy again). It is forgotten in
-//    exactly three places: the lender's KCMReleaseExternalSource (the copy is going), "Set as
-//    Source" naming a real document in its place (KCMSetChosenSourceToActive, when nothing is
-//    drawing from it), and KCMClearChosenDocs -- which is BOTH the model's shutdown AND the
+//    inside KCMStartComparisonWithSourceDB (KIDMCP's road) and KCMTakeTaskStartClone (Task Start kept
+//    in memory), and nowhere else; both CHOOSE it as well. KIDMCP's road also starts the comparison
+//    (Set as Target + Set as Source + Start in one, the user's ask of 2026-09-02: a Stop keeps the
+//    pair on the panel, and the flyout's own Start compares against the copy again); the Task Start
+//    only chooses. It is forgotten by the lender (KCMReleaseExternalSource for KIDMCP's copy, the
+//    let-go in KCMTaskStartClone for the Task Start's), by a real document or a file taking its
+//    place on the Source end (KCMSetChosenSourceToActive / KCMSetChosenSourceFile, when nothing is
+//    drawing from it), and by KCMClearChosenDocs -- which is BOTH the model's shutdown AND the
 //    flyout's "Clear Target and Source" (that item stops the comparison first, so the copy is
 //    never forgotten while it is being drawn from). A Stop does NOT forget it,
 //    deliberately.
@@ -58,7 +65,7 @@ class PMString;
 
 /** Registers db as the lent Source, with the words the panel shows for it ("task-start copy
 	(taken 20:41:07 from the menu)"). Replaces any earlier registration. nil is ignored.
-	@warning call ONLY from KCMStartComparisonWithSourceDB -- see the invariant above. */
+	@warning call ONLY from KCMStartComparisonWithSourceDB and KCMTakeTaskStartClone -- see the invariant above. */
 void		KCMRegisterExternalSource(IDataBase* db, const PMString& label);
 
 /** Forgets the registration, whatever it was. Idempotent; assignment only, so it is safe at any
