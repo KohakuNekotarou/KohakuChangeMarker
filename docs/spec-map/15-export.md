@@ -127,6 +127,11 @@
   ⛔旧（2026-09-14〜10-11）＝比較中も生きていて、Start していなければ Start を走らせて**比較中のまま**にし、Pixel 以外のモードでは絵が出なかった。Track モードでは灰色だった。
   - 訂正: ✅2026-10-11 作者決定で新設
 
+- **REP-23** ★**Source がメモリに取った Task Start なら断る**（2026-10-13・作者「報告書はことわりましょう」）＝組が決まった直後・**保存ダイアログの前**に
+  `The Source is a Task Start kept in memory, which cannot be printed for the Before side - take a Task Start (Save)... for a report.`（第2章 RUN-79）。
+  ★理由＝複製を PDF 書き出しに渡しても失敗せず、**生きている文書の状態**を書く（2026-10-13 実測）＝Before が黙って After になる。Task Start (Save)... の写しは開いた文書なので、これまでどおり作れる。
+  - 訂正:
+
 ## 3. やっていないこと
 
 ページの中の差分行（Story Edits をページ別に振る）／全ページ出力／プリセットの選択 UI／ページ内の変更領域の枠（右側のリングで代替）／比較中の報告書（作者決定で灰色＝REP-22。手で Added/Removed に登録したページの組は Stop で消えるので、報告書には乗らない）。

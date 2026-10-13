@@ -18,7 +18,10 @@
 
 - **RUN-03** Kohaku InDesign MCP の **Compare with Kohaku Change Marker**（KCM 側のメニューではない）。
   開いていない複製を Source として貸してくる経路 ―― 第8節。
-  - 訂正:
+  - 訂正: ⚠2026-10-13 点検＝**この入口はもう呼ばれない**。KIDMCP は 2026-10-12 に KCM を呼ばなくなった
+    （橋渡しを作者決定で撤去・KIDMCP のソースに `IKCMCompareFacade` の参照は0件）。facade の口
+    （`StartComparisonWithSourceDB`）は残っているが呼び手0。貸し Source の道（第8節）を今使うのは
+    **KCM 自身の Task Start（メモリ・RUN-73）だけ**で、それは比較を始めない（Source に指名するだけ）
 
 - **RUN-04** フライアウトの **Refresh Comparison** ―― いま比べている同じ2つを、もう一度比べ直す ―― 第7節。
   - 訂正:
@@ -346,6 +349,9 @@
 
 ## 8. 開いていない文書を Source にする（貸し Source）
 
+★2026-10-13 から **KCM 自身の Task Start（メモリ）もこの道を使う**（RUN-73）＝KCM が2人目の貸し手になり、
+写しを登録して Source に指名する。KIDMCP の経路（RUN-51〜57）は 10-12 から呼ばれていない（RUN-03 の訂正）。
+
 - **RUN-51** Kohaku InDesign MCP が「タスク開始時の複製」を貸してくる。KCM はそれを**文書として開かないまま**
   Source にして比較できる。⇒ 比べる相手は「別の文書」でなくてよい（第1章 OV-01b）。
   - 訂正:
@@ -384,7 +390,10 @@
 
 - **RUN-58** 比較に関わる文書が**1つでも閉じたら、比較は丸ごと片づく**（Stop と同じ状態になる）。
   ★片方だけ生き残った状態 ―― 古いほうを閉じたのに、新しいほうにマークが残ったまま ―― は作らない。
-  - 訂正:
+  - 訂正: ✅2026-10-13 直した＝**比較が終わらなかった close（比較と関係のない文書・すでに止まっていた比較）では状態行に何も言わない**。
+    それまでは**閉じるたびに最後に `marks cleared`** と出ていた＝Links UI の「閉じている最中」の旗（`IID_IKFILESCLOSING`）は
+    **文書を1つ閉じるときも立ち**、UI はそれを「まとめて閉じた」と読んで後始末を保留し、その後始末が比較の有無を問わずそう言っていた
+    （実機＝比較していない文書を閉じても上書きされた）。保留しない道は元から「比較が終わったときだけ」だった＝それに揃えた（`ui/KCMPeekGesture.cpp`）
 
 - **RUN-59** 指名（RUN-15）は**1つずつ**判定され、**閉じた側だけ**が落ちる。
   ★対を「言っておく」ことの意味がそこにあるので、比較の後片づけとは扱いを変えてある。
@@ -420,9 +429,9 @@
 
 ---
 
-## 10. Task Start（2026-09-21 に作り直し）
+## 10. Task Start (Save)...（2026-09-21 に作り直し・2026-10-13 に改名）
 
-- **RUN-64** **Task Start は、文書の写しを `.indd` ファイルとして保存し、そのファイルを Source に指名する。**
+- **RUN-64** **Task Start (Save)...** は（2026-10-13 まで「Task Start」）、**文書の写しを `.indd` ファイルとして保存し、そのファイルを Source に指名する。**
   比較は始まらない ―― 「ソースが選ばれただけ」の状態になる。
   ⚠**旧 Task Start（文書の状態をメモリに持ち、比較のたびに写しを組み立て直す仕組み）は置き換えられた。**
   - 訂正:
@@ -468,9 +477,66 @@
 
 ---
 
+## 10b. Task Start（メモリに取る・2026-10-13）
+
+設計書＝`docs/superpowers/specs/2026-10-13-kcm-task-start-in-memory-design.md`（作者「タスクスタートをクローンにするのをつくりたい、
+新しいメニューを」「メニュー名には Clone はつけないで」「Clone をきっちり捨てる」「報告書はことわりましょう」）。
+
+- **RUN-73** **Task Start** は、文書の状態を**メモリ（データベースの複製）に取り、Source に指名する。**
+  ダイアログもファイルも無く、比較は始まらない。ステータス行
+  `Task Start taken (kept in memory) and chosen as the Source. Edit, then Start to compare against it.`
+  （比較中に押したら頭に `Stopped, and `）。フライアウトでは Task Start (Save)... の真上。
+  - 訂正:
+
+- **RUN-74** 取る文書・押せる条件・比較中の扱いは **Task Start (Save)... と同じ**（RUN-65・RUN-68）＝
+  Target の指名があればその文書、無ければアクティブ文書／文書が無いときだけ灰色／比較中なら先に止める。
+  - 訂正:
+
+- **RUN-75** 押したときに、**生きている文書の定義（スタイル・スウォッチ・レイヤーなど）も読んで一緒に持つ**＝
+  Resources モードの「前」。複製は書き出せない（文書の INX を書くと InDesign が落ちる）ため。50ページで約0.5秒。
+  読めなかったときも Task Start は取れ、Resources モードがその理由を言う。
+  - 訂正:
+
+- **RUN-76** パネルの `Source:` 行＝`Task Start (in memory) - <文書名> - <時刻>`（時刻は取った瞬間の HH:MM:SS）。
+  - 訂正:
+
+- **RUN-77** **手放す（捨てる）とき**＝Source の指名が変わったとき（Set as Source／Task Start (Save)...／
+  Import Story Text...／Compare with Tracked Changes...／Clear Target and Source／次の Task Start）と、
+  **取った文書を閉じた・復帰したとき**（閉じる直前＝kBeforeCloseDoc）。比較中なら先に止める（閉じるときも）。
+  ステータス行で言う＝Set as Source・Clear・Task Start (Save)... は末尾に `The Task Start kept in memory was let go.`、
+  閉じる・復帰は `The Task Start kept in memory went with its document.`。
+  ★保存の確認で「キャンセル」した閉じ方では手放さない（確認が kBeforeCloseDoc より先に出る＝2026-10-13 実測）。
+  - 訂正:
+
+- **RUN-78** **手放さないとき**＝保存（上書き・別名・コピー）・Stop・Set as Target・モードの切り替え。
+  ★保存しても、持っている状態は取った時点のまま・ファイルも壊れない（2026-10-13 実測）。
+  - 訂正:
+
+- **RUN-79** 機能ごとの扱い＝**Before/After PDF 報告書は断る**（保存ダイアログの前に
+  `The Source is a Task Start kept in memory, which cannot be printed for the Before side - take a Task Start (Save)... for a report.`）／
+  **Hide Unchanged Spreads は Target 側だけ隠す**（末尾に ` Source not hidden (it is a Task Start kept in memory).`）／
+  **Story Edits の Removed 行**をクリックすると `The Source is a Task Start kept in memory - it has no window to show this story in.`／
+  **Match the Source は断る**（照合に Source の表を INX で読み直すが、複製は書き出せない）。
+  - 訂正:
+
+- **RUN-80** 読み手に見える文言に "clone" を出さない（作者決定）＝メニュー・ステータス・How to Use は「kept in memory」「メモリに取る」。
+  - 訂正:
+
+- **RUN-81** ★★**写しを delete するのは、元の文書が開いている間だけ**（閉じた後に消すと InDesign が落ちる＝2026-08-31）。
+  開いていなければ消さずに忘れる（漏れはするが落ちない）。⚠**消す前に、写しを名指すものを全部片づける**＝
+  比較の描画（止める）・Story の印（行クリックの flash を含む）・指名・登録。描画の「同じ文書か」の判定（`KCMIsSameDoc`）は
+  登録を外したポインタを辿るため（実装中に見つけて直した・2026-10-13）。
+  - 訂正:
+
+---
+
 ## ⬜ この章で未確認
 
 この章を書くにあたって**確かめていない**もの。「書いていない＝そういう決まりが無い」ではない。
+
+- **RUN-81 の「消す前に外す」の、競り合いの側**＝別の文書を非同期 PDF 書き出し中（BG スレッドが描いている間）に、
+  メモリの Task Start を取った文書を閉じる・手放す経路は測っていない（2026-10-13・理屈で塞いだ＝止める・印から外す・その後に delete）。
+  行クリックの flash の1秒の中で**閉じる**経路も測っていない（「1秒の中で次の Task Start」は実機で通した）。
 
 - **Story モードの進捗バーの Cancel 経路**（3秒を超える Story 比較で実際に Cancel を押す）は測っていない。
   バーが出ること自体は 2026-09-05 に確認済み。
