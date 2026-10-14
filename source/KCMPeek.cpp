@@ -78,6 +78,7 @@
 #include "KCMStoryMarker.h"        // KCMStoryMarker::Shutdown (the Story mode's marks are never drawn again)
 #include "KCMBookCompare.h"        // KCMClearBookResultText (the book comparison's result text)
 #include "KCMHideUnchanged.h"      // KCMResetHideUnchanged and the getters for the hidden documents
+#include "KCMPdfDoc.h"             // the PDF documents' register - swept on a close, emptied at shutdown (2026-10-14)
 #include "KCMPeek.h"
 
 //========================================================================================
@@ -799,6 +800,8 @@ void KCMPeekStartup::Shutdown()
 	// ⚠**Here and not in the close sweep's comparisonDocClosed branch**: that branch is the
 	// comparison's own all-or-nothing clean-up, and a choice outlives a Stop by design.
 	KCMClearChosenDocs();
+	// The PDF documents' register (2026-10-14) - IDFiles and PMStrings, the same rule. Assignment only.
+	KCMPdfDocShutdown();
 
 	// (Dropping the sync caches, clearing the sync flags and the CMYK clean-up all live in the UI's
 	//  KCMUIStartup.cpp, that state belonging to UI files.)
@@ -954,6 +957,10 @@ void KCMHandleDocsClosed()
 	// ★A Task Start kept in memory whose document closed without kBeforeCloseDoc reaching us (2026-10-13): forgotten,
 	//   NEVER deleted - its document has gone (KCMTaskStartClone.h). The normal road is kBeforeCloseDoc.
 	KCMTaskStartCloneSweep(docList);
+
+	// ★The PDF documents KCM made (2026-10-14): whichever has closed is forgotten - the file choice stays, and the next
+	//   Start makes it again (KCMPdfDoc.h). Memory only, pointers compared.
+	KCMPdfDocSweep(docList);
 
 	// A document has closed, so neither the page structure nor any database pointer can be relied
 	// on: the sync caches are dropped unconditionally. They belong to the UI (KCMViewSync), so what

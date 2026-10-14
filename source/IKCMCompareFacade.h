@@ -53,6 +53,12 @@
 class IDataBase;
 class IDocument;
 
+// ★THE WORDS BOTH HALVES SAY ABOUT THE PDF COMPARISON (2026-10-14) - here because both read this header: the model for
+//  the press and a script's road, the UI before a dialog it would otherwise open for nothing. English, as every status line.
+#define kKCMPdfPixelOnly			"PDFs are compared in the Pixel mode only. Switch the Compare mode to Pixel."
+#define kKCMPdfTaskStartRefusal		"The Target is a PDF. A Task Start takes a document."
+#define kKCMPdfTargetRefusal		"The Target is a PDF. This works on a document."
+
 class IKCMCompareFacade : public IPMUnknown
 {
 public:

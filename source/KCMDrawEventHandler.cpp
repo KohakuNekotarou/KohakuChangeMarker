@@ -73,6 +73,7 @@
 #include "KCMPageNumberMarker.h"   // KCMGetIgnorePageNumberMarker / KCMAppendPageNumberMarkerRects (the folio exclusion)
 #include "KCMThreadSafety.h"       // KCMIsSameDoc (the background thread's cloned db) / KCMIsMainThread / the mark-state lock
 #include "KCMExternalSource.h"     // KCMIsDbAlive -- a lent Source is not in IDocumentList and is still there
+#include "KCMPdfDoc.h"             // KCMIsPdfDoc - a PDF document is drawn at full resolution (2026-10-14)
 // The press-time HUD moved to the UI's own drawing service (KCMUIDrawEvent.cpp): whether a button
 // is held is the tool's state, which is the UI's and not visible from the model. **This file
 // includes no UI header.**
@@ -364,6 +365,12 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 	// @warning the declaration order of the four below (snapshot, then its accessor, twice) is what
 	//   keeps each accessor being destroyed before the snapshot it came from -- see the note where
 	//   KCMDropSnapshotPair used to be.
+	// ★FULL RESOLUTION FOR A PDF DOCUMENT, ON BOTH SIDES (2026-10-14, the PDF comparison): a placed PDF drawn from its
+	//   proxy comes out a little different every time it is placed (measured: 700-1,000 pixels on an unchanged page),
+	//   while drawn at full resolution two placings of one PDF page agree to the pixel. Both sides alike - the two are
+	//   always drawn the same way. The document is KCM's own, and the dirtying the note on the 2nd argument below speaks
+	//   of is put back by the comparison's SaveRestoreModifiedState (KCMDoMarkChangesDoc, and the page refresh's).
+	const bool32 fullRes = (KCMIsPdfDoc(targetRef.GetDataBase()) || KCMIsPdfDoc(sourceRef.GetDataBase())) ? kTrue : kFalse;
 	K2::scoped_ptr<SnapshotUtilsEx> snapTH(new (std::nothrow) SnapshotUtilsEx(targetRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse));
 	if (snapTH.get() == nil)
 		return kFailure;
@@ -373,7 +380,8 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 	//   them anti-aliased, every edge in the document is a difference.
 	// 2nd argument fullResolutionGraphics = kFalse (the default) is **deliberate**: kTrue triggers
 	//   generation of placed images at full resolution, and that DIRTIES THE DOCUMENT. KCM's design
-	//   rests on never modifying the model, so the comparison uses the proxies.
+	//   rests on never modifying the model, so the comparison uses the proxies. ⚠Except for a PDF
+	//   document (fullRes above).
 	// 3rd argument greekBelowPtSize = 0.0 (greeking disabled) is **deliberate**. Left at the
 	//   default, small text is drawn as a grey band with no letterforms; target and source are
 	//   greeked alike, so **a change in small text produces no difference at all**
@@ -404,7 +412,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 	ErrorCode drewTH;
 	{
 		KCMRasterizingGuard rg;	// a re-entrant draw during this Draw must not paint marks into our own raster
-		drewTH = snapTH->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
+		drewTH = snapTH->Draw(IShape::kPreviewMode, fullRes, 0.0, kFalse,
 		                      SnapshotUtils::kXPHigh, nil, nil, kFalse);
 	}
 	K2::scoped_ptr<AGMImageAccessor> accTH((drewTH == kSuccess) ? snapTH->CreateAGMImageAccessor() : nil);
@@ -416,7 +424,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 	{
 		KCMRasterizingGuard rg;
 		// As above: greeking off, AA off, non-printing objects not drawn -- both sides identical.
-		drewSH = snapSH->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
+		drewSH = snapSH->Draw(IShape::kPreviewMode, fullRes, 0.0, kFalse,
 		                      SnapshotUtils::kXPHigh, nil, nil, kFalse);
 	}
 	K2::scoped_ptr<AGMImageAccessor> accSH((drewSH == kSuccess) ? snapSH->CreateAGMImageAccessor() : nil);
@@ -705,7 +713,8 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 	ErrorCode drew;
 	{
 		KCMRasterizingGuard rg;	// a re-entrant draw during this Draw must not paint marks into our own raster
-		drew = snap->Draw(IShape::kPreviewMode);
+		// a PDF document at full resolution, as the comparison draws it (MakeEntry says why)
+		drew = snap->Draw(IShape::kPreviewMode, KCMIsPdfDoc(sourceRef.GetDataBase()) ? kTrue : kFalse);
 	}
 	K2::scoped_ptr<AGMImageAccessor> acc((drew == kSuccess) ? snap->CreateAGMImageAccessor() : nil);
 

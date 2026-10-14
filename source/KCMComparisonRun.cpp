@@ -34,6 +34,8 @@
 #include "KCMRingAdornment.h"		// KCMRevalidateItemXPList -- the transparency-list insurance, at Start and at Stop
 #include "KCMThreadSafety.h"		// KCMIsSameDoc -- the one place this plug-in asks whether two dbs are one document
 #include "KCMExternalSource.h"	// the lent Source: registered and chosen by KCMStartComparisonWithSourceDB, forgotten by the lender's Release
+#include "KCMPdfDoc.h"			// the PDF comparison: which end is a PDF, how its pages were paired (2026-10-14)
+#include "IKCMCompareFacade.h"	// kKCMPdfPixelOnly - the words both halves say
 // ⛔KCMOrigin.h went on 2026-09-21. It was included for "the third kind of Source, chosen by
 //   KCMChooseOriginPair" - and that function had already gone with the origin, leaving an include
 //   this file reads nothing from and a comment naming something that no longer exists.
@@ -134,6 +136,20 @@ bool16 KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 	// arm and the strips out puts everything back the way it was before the press, rather than
 	// creating an armed state with no marks in it.
 	const bool16 compared = (KCMDoMarkChangesDoc(targetDB, sourceDB, report) == kSuccess) ? kTrue : kFalse;
+	// ★A PDF PAIR SAYS HOW ITS PAGES WERE PAIRED (2026-10-14, design 3.5) - by the InDesign page ids the PDFs carry, or
+	//   in order - at the head of the second line, so that "marks start" stays the first line as every Start says it.
+	if (compared)
+	{
+		PMString note;
+		KCMPdfPairingNote(targetDB, sourceDB, note);
+		if (!note.IsEmpty())
+		{
+			const CharCounter nl = report.IndexOfWChar(UTF32TextChar(0x0A));
+			note.Append(" ");
+			report.Insert(note, (nl >= 0) ? nl + 1 : 0);
+			report.SetTranslatable(kFalse);
+		}
+	}
 	if (compared)
 	{
 		KCMDoArmMousePeek(targetDB, sourceDB);
@@ -292,6 +308,22 @@ void KCMToggleStartStop()
 	// The flyout's Start is grey unless two documents are there (KCMCanStartComparison goes
 	// through the same resolver), so this normally cannot fail. It is the guard for the case
 	// where a document is closed while the menu stands open.
+
+	// ★PDFS ARE COMPARED IN THE PIXEL MODE ONLY (2026-10-14, design 3.2) - asked HERE and not in KCMOpenComparisonPair,
+	//   because the Before/After report goes through that one too and makes its pictures in every mode. Before anything
+	//   is opened or made: the resolver opens nothing.
+	if (KCMGetCompareMode() != kKCMModePixel)
+	{
+		KCMPairEnd pdfTarget, pdfSource;
+		KCMResolveComparisonPair(pdfTarget, pdfSource);
+		if (KCMPairEndIsPdf(pdfTarget) || KCMPairEndIsPdf(pdfSource))
+		{
+			KCMSayStatus(kKCMPdfPixelOnly);
+			KCMNotify(kKCMMarksRebuiltMessage);
+			return;
+		}
+	}
+
 	IDataBase* targetDB = nil;
 	IDataBase* sourceDB = nil;
 	PMString why;
@@ -324,6 +356,17 @@ bool16 KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMStr
 		// Name what is actually missing: if the target resolved, only the Source is absent.
 		outWhy = PMString(targetEnd.IsEmpty() ? "Target and source documents not found."
 		                                     : "Source document not found.");
+		outWhy.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	// ★ONE PDF AND ONE DOCUMENT IS NOT THIS COMPARISON (2026-10-14, design D1) - a document against its own PDF is a
+	//   different check. Asked BEFORE either end is realised, so a refusal makes no PDF document for nothing, and of the
+	//   end itself - a PDF file, or a PDF document chosen with "Set as" - so the Before/After report, which comes through
+	//   here too, refuses in the same words.
+	if (KCMPairEndIsPdf(targetEnd) != KCMPairEndIsPdf(sourceEnd))
+	{
+		outWhy = PMString("One end is a PDF and the other a document. Choose PDFs for both ends (a document against its PDF is a different check).");
 		outWhy.SetTranslatable(kFalse);
 		return kFalse;
 	}

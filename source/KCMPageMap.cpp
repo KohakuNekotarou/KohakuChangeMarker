@@ -57,6 +57,7 @@
 #include "KCMRehydrate.h"		// KCMReadOriginUidLabel - a task-start copy's page names the origin's page
 #include "KCMDocUidSet.h"		// the shared "document -> page UID set" container (the tick uses it too)
 #include "KCMID.h"				// kKCMPageFlagsChangedMessage (the notification's ID)
+#include "KCMPdfDoc.h"			// the PDF documents: their pages' keys, and whether they pair by them (2026-10-14)
 // This file deliberately does not include the UI's KCMThumbnailRefresh.h: rebuilding a thumbnail
 // is the job of whoever receives the notification, which is the UI.
 
@@ -486,6 +487,8 @@ static void KCMSourcePageKeys(IDataBase* sourceDB, const std::vector<UID>& sourc
 //   instead: pair what is left in order, the pages that fall off the longer document's end
 //   being the overflow. It is kept for two documents that share no history (made separately,
 //   or one of them through IDML, which renumbers), where identity has nothing to say.
+//   (Two PDF documents whose PDFs carry no page ids of one document each are paired this way too -
+//   KCMPdfDoc.h, design D2.)
 //========================================================================================
 void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages,
@@ -512,16 +515,26 @@ void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 		if (!KCMPageMapIsRegistered(sourceDB, sFlat[i]))
 			sFiltered.push_back(sFlat[i]);
 
-	if (sPairPagesByUid)
+	// ★TWO PDF DOCUMENTS PAIR BY THE INDESIGN PAGE IDS THEIR PDFS CARRY (2026-10-14, design 3.5): their own pages are new,
+	//   so both sides answer to keys (KCMPdfDoc.h). PDFs without the ids of one document each are paired in order (design
+	//   D2) - KCMPdfDocsPairByIds says which, and it answers yes for two ordinary documents.
+	if (sPairPagesByUid && KCMPdfDocsPairByIds(targetDB, sourceDB))
 	{
-		std::vector<UID> sKeys;
-		KCMSourcePageKeys(sourceDB, sFiltered, sKeys);
-		KCMPairPagesByIdentity<UID>(tFiltered, sFiltered, sKeys, kInvalidUID,
+		std::vector<UID> tKeys, sKeys;
+		if (KCMIsPdfDoc(targetDB))
+			KCMPdfDocPageKeys(targetDB, tFiltered, tKeys);
+		else
+			tKeys = tFiltered;
+		if (KCMIsPdfDoc(sourceDB))
+			KCMPdfDocPageKeys(sourceDB, sFiltered, sKeys);
+		else
+			KCMSourcePageKeys(sourceDB, sFiltered, sKeys);
+		KCMPairPagesByIdentity<UID>(tFiltered, tKeys, sFiltered, sKeys, kInvalidUID,
 			outTargetPages, outSourcePages, outOverflowTargetPages, outOverflowSourcePages);
 		return;
 	}
 
-	// by position (the toggle is off)
+	// by position (the toggle is off, or PDFs that carry no ids of one document)
 	const size_t n = (tFiltered.size() < sFiltered.size()) ? tFiltered.size() : sFiltered.size();
 	outTargetPages.assign(tFiltered.begin(), tFiltered.begin() + n);
 	outSourcePages.assign(sFiltered.begin(), sFiltered.begin() + n);
@@ -560,6 +573,11 @@ void KCMBuildMasterPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	outTargetPages.clear();
 	outSourcePages.clear();
 	if (targetDB == nil || sourceDB == nil)
+		return;
+	// ★A PDF DOCUMENT'S MASTERS ARE KCM'S, NOT THE PDF'S (2026-10-14): the document was made with an empty one, so there
+	//   is nothing of the reader's to compare - and each master takes its document's first page size, which two PDFs need
+	//   not share (a master of another size cannot be compared: failed=1 for nothing).
+	if (KCMIsPdfDoc(targetDB) || KCMIsPdfDoc(sourceDB))
 		return;
 
 	InterfacePtr<IMasterSpreadList> tList(targetDB, targetDB->GetRootUID(), UseDefaultIID());

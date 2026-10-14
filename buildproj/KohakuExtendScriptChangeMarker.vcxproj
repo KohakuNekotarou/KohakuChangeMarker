@@ -251,6 +251,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfObjects.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfPages.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPlacePdf.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfDoc.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableShape.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMSkippedText.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMImportTracking.cpp" />
@@ -361,6 +362,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfObjects.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfPages.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPlacePdf.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfDoc.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPagePairRule.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReport.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReportTable.h" />

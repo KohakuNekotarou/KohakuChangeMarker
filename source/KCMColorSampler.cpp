@@ -32,6 +32,7 @@
 //   KCMColorSampler.h).
 #include "KCMPageMap.h"            // KCMMapTargetToSource / KCMBuildPairing (the exclusion pairing)
 #include "KCMColorSampler.h"
+#include "KCMPdfDoc.h"             // KCMIsPdfDoc - a PDF document is drawn at full resolution (2026-10-14)
 
 #include <map>
 #include <new>						// std::nothrow (allocating the SnapshotUtilsEx)
@@ -156,7 +157,8 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 	ErrorCode drew;
 	{
 		KCMRasterizingGuard rg;	// RAII: no marks are drawn into this Draw by re-entry
-		drew = snap->Draw(IShape::kPreviewMode, kFalse /*fullRes*/, 0.0 /*greek off*/, kFalse /*AA off*/);
+		// fullRes for a PDF document only, as the comparison draws it (KCMDrawEventHandler.cpp, MakeEntry)
+		drew = snap->Draw(IShape::kPreviewMode, KCMIsPdfDoc(pageRef.GetDataBase()) ? kTrue : kFalse, 0.0 /*greek off*/, kFalse /*AA off*/);
 	}
 	K2::scoped_ptr<AGMImageAccessor> acc((drew == kSuccess) ? snap->CreateAGMImageAccessor() : nil);
 
