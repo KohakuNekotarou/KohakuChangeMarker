@@ -185,7 +185,10 @@ namespace
 		}
 	};
 
-	KCMPdf::InflateResult Stored(BitReader& in, Output& o)
+	// ⚠THE THREE BLOCK DECODERS ARE "...Block" ON PURPOSE: the SDK's WSysType.h declares `typedef int32 Fixed;` in every
+	//  file the precompiled header reaches, and a function named Fixed called as Fixed(in, o) is then ambiguous with a
+	//  cast to that type (C2872, the plug-in's build 2026-10-14 - the offline harness, with no PCH, never saw it).
+	KCMPdf::InflateResult StoredBlock(BitReader& in, Output& o)
 	{
 		in.AlignToByte();
 		if (in.size - in.pos < 4)
@@ -242,7 +245,7 @@ namespace
 		}
 	}
 
-	KCMPdf::InflateResult Fixed(BitReader& in, Output& o)
+	KCMPdf::InflateResult FixedBlock(BitReader& in, Output& o)
 	{
 		Huffman lencode;
 		Huffman distcode;
@@ -258,7 +261,7 @@ namespace
 		return Codes(in, o, lencode, distcode);
 	}
 
-	KCMPdf::InflateResult Dynamic(BitReader& in, Output& o)
+	KCMPdf::InflateResult DynamicBlock(BitReader& in, Output& o)
 	{
 		const int nlen = in.Bits(5);
 		const int ndist = in.Bits(5);
@@ -392,11 +395,11 @@ KCMPdf::InflateResult KCMPdf::Inflate(const uint8_t* data, size_t size, std::vec
 				return kInflateTruncated;
 			InflateResult r = kInflateBadData;
 			if (type == 0)
-				r = Stored(in, o);
+				r = StoredBlock(in, o);
 			else if (type == 1)
-				r = Fixed(in, o);
+				r = FixedBlock(in, o);
 			else if (type == 2)
-				r = Dynamic(in, o);
+				r = DynamicBlock(in, o);
 			if (r != kInflateOK)
 				return r;
 		} while (last == 0);

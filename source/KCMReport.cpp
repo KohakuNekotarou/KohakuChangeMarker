@@ -81,6 +81,7 @@
 #include "KCMBoundaryID.h"			// kKCMStoryEditsRebuiltMessage
 #include "KCMExternalSource.h"		// KCMExternalSourceLabel - a lent Source's name
 #include "KCMTaskStartClone.h"		// KCMIsTaskStartClone - the report's refusal names it
+#include "KCMPlacePdf.h"			// KCMSetPdfPlacePage / KCMPdfPlacePrefsRestorer - moved out on 2026-10-14 for the PDF documents
 
 namespace
 {
@@ -371,60 +372,8 @@ bool16 ExportPagesToPDF(IDataBase* db, const std::vector<UID>& pages, const IDFi
 	return kTrue;
 }
 
-/** Pick which page of a placed PDF the next PlaceFileInFrame takes (1-based), through the
-    preferences command. The caller restores the user's setting afterwards with the command
-    `restore` (made before the first change, so it holds the values as they were). */
-bool16 SetPlacePage(int32 page1, IPDFPlacePrefs* current, PMString& why)
-{
-	InterfacePtr<ICommand> cmd(CmdUtils::CreateCommand(kSetPDFPlacePrefsCmdBoss));
-	InterfacePtr<IPDFPlacePrefs> data(cmd, UseDefaultIID());
-	if (cmd == nil || data == nil)
-	{
-		why = Ascii("the PDF place preferences command could not be assembled");
-		return kFalse;
-	}
-	if (current != nil)
-		data->CopyData(current);
-	data->SetPage(page1);
-	data->SetAllPages(0xffffffff, kFalse);
-	data->SetCropTo(IPDFPlacePrefs::kCropToMedia);		// the whole sheet, so both sides share one origin
-	data->SetTransparentBackground(kFalse);
-	data->SetShowPreview(kFalse);
-	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-	if (CmdUtils::ProcessCommand(cmd) != kSuccess)
-	{
-		why = Ascii("the PDF place preferences could not be set");
-		return kFalse;
-	}
-	return kTrue;
-}
-
-/** Holds the PDF place preferences as they were, in a command made on construction, and
-    processes it on destruction - so the user's setting comes back whichever way BuildReport
-    leaves (a failed SetPlacePage used to leave the page number changed). */
-class PlacePrefsRestorer
-{
-public:
-	explicit PlacePrefsRestorer(IPDFPlacePrefs* current)
-		: fRestore(CmdUtils::CreateCommand(kSetPDFPlacePrefsCmdBoss))
-	{
-		InterfacePtr<IPDFPlacePrefs> keep(fRestore, UseDefaultIID());
-		if (keep != nil && current != nil)
-			keep->CopyData(current);
-	}
-	~PlacePrefsRestorer()
-	{
-		if (fRestore != nil)
-		{
-			GlobalErrorStatePreserver errorState;		// a destructor must not change the error the caller is reporting
-			CmdUtils::ProcessCommand(fRestore);
-		}
-	}
-private:
-	InterfacePtr<ICommand> fRestore;
-	PlacePrefsRestorer(const PlacePrefsRestorer&);
-	PlacePrefsRestorer& operator=(const PlacePrefsRestorer&);
-};
+// (SetPlacePage and PlacePrefsRestorer stood here until 2026-10-14. They are KCMPlacePdf.h's now - KCMSetPdfPlacePage and
+//  KCMPdfPlacePrefsRestorer - because the PDF comparison places PDF pages too and must give the settings back the same way.)
 
 // ---- the Story detail, borrowed ------------------------------------------------------------------
 
@@ -801,10 +750,8 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 
 	// The user's PDF place preferences, kept in a command that puts them back when this function
 	// returns - by ANY path, a failed SetPlacePage included (the restorer's destructor).
-	ISession* const session = GetExecutionContextSession();
-	InterfacePtr<IWorkspace> workspace(session != nil ? session->QueryWorkspace() : nil);
-	InterfacePtr<IPDFPlacePrefs> currentPlace(workspace, UseDefaultIID());
-	PlacePrefsRestorer restorePlace(currentPlace);
+	InterfacePtr<IPDFPlacePrefs> currentPlace(KCMQuerySessionPdfPlacePrefs());
+	KCMPdfPlacePrefsRestorer restorePlace(currentPlace);
 
 	// ---- the first page: three lines, and the cat's trail (the user's asks) ---------------------
 	{
@@ -883,13 +830,13 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 		KCMReportTypeAt(helper, layer, PMRect(rightBox.Left(), page.Top() + 12, rightBox.Right(), page.Top() + kKCMReportHeaderBand - 4), Ascii("After"),  kKCMReportHeadingPt);
 		if (pair.fSource != kInvalidUID && pair.fBefore > 0)
 		{
-			if (!SetPlacePage(pair.fBefore, currentPlace, why))
+			if (!KCMSetPdfPlacePage(pair.fBefore, IPDFPlacePrefs::kCropToMedia, currentPlace, why))	// the whole sheet, so both sides share one origin
 				return kFalse;
 			helper.PlaceFileInFrame(beforeFile, layer, leftBox, kSuppressUI);
 		}
 		if (pair.fTarget != kInvalidUID && pair.fAfter > 0)
 		{
-			if (!SetPlacePage(pair.fAfter, currentPlace, why))
+			if (!KCMSetPdfPlacePage(pair.fAfter, IPDFPlacePrefs::kCropToMedia, currentPlace, why))
 				return kFalse;
 			helper.PlaceFileInFrame(afterFile, layer, rightBox, kSuppressUI);
 		}
