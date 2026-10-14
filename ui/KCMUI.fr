@@ -832,6 +832,19 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMSetSourceMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Set PDF as Target..." / "Set PDF as Source..." (2026-10-14, the PDF comparison): a PDF picked in a file dialog
+		// becomes that end - a file choice, as a Task Start (Save)... makes one. Under the two "Set as" items they stand
+		// beside. Live while nothing is compared (UpdateActionStates, kCustomEnabling).
+		kKCMPopupSetPdfTargetActionID,
+		kKCMPopupMenuPath,
+		kKCMSetPdfTargetMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMPopupSetPdfSourceActionID,
+		kKCMPopupMenuPath,
+		kKCMSetPdfSourceMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Task Start" (2026-10-13): the document's state kept in memory and chosen as the Source - directly above
 		// "Task Start (Save)...", which saves a copy to a file instead (the user's order).
 		kKCMPopupTaskStartCloneActionID,
@@ -1436,6 +1449,25 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// the same enabling as its Target counterpart
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Set PDF as Target..." / "Set PDF as Source..." (2026-10-14): greyed while a comparison runs (UpdateActionStates).
+		kKCMActionComponentBoss,
+		kKCMPopupSetPdfTargetActionID,
+		kKCMSetPdfTargetMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMPopupSetPdfSourceActionID,
+		kKCMSetPdfSourceMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

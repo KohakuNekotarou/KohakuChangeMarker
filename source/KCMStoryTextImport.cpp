@@ -38,6 +38,8 @@
 #include "KCMZipStore.h"			// Entry - a part, named
 #include "KCMModelNotify.h"			// KCMNotify - a cancelled import tells the panel the mode came back
 #include "KCMTextWords.h"			// PMStringOfUtf8 - a UTF-8 reason onto the status line without mojibake
+#include "KCMPdfDoc.h"				// KCMIsPdfDoc - a PDF document is refused here (2026-10-14)
+#include "IKCMCompareFacade.h"		// the refusal's words, which the UI says too
 
 namespace
 {
@@ -378,6 +380,15 @@ bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
 {
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
+
+	// ★NOT INTO A PDF DOCUMENT (2026-10-14, design 3.7) - asked before a file is read. The menu asks the same before its
+	//   dialog (KCMActionComponent.cpp); this is the script's road (app.kcmImportStoryText) as well.
+	if (KCMIsPdfDoc(KCMTaskDocumentDB()))
+	{
+		outMessage = kKCMPdfTargetRefusal;
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
 
 	// ★★ONE BAR FOR ALL OF IT (2026-09-17, the user's choice). The reading, the comparison's raster
 	//   loop and its story loop each step a slice of this one instead of raising their own - two bars

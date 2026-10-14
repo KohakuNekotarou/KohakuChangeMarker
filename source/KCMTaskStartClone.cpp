@@ -29,6 +29,8 @@
 #include "KCMResourceSnapshot.h"	// KCMReadResourceList - the definitions, read from the LIVE document
 #include "KCMStoryMarker.h"			// ForgetClosedDocs - the Story mode's marks let go of it before the delete
 #include "KCMModelNotify.h"			// KCMSayStatus
+#include "KCMPdfDoc.h"				// KCMIsPdfDoc - a PDF document is refused here (2026-10-14)
+#include "IKCMCompareFacade.h"		// the refusal's words, which the UI says too
 
 namespace {
 
@@ -123,6 +125,13 @@ bool16 KCMTakeTaskStartClone(PMString& outWhyNot)
 	if (docDB == nil)
 	{
 		outWhyNot = "Task Start needs a document to take";
+		return kFalse;
+	}
+	// ★A PDF document is refused, as Task Start (Save)... refuses it (KCMTaskStartSave.cpp says why).
+	if (KCMIsPdfDoc(docDB))
+	{
+		outWhyNot = kKCMPdfTaskStartRefusal;
+		outWhyNot.SetTranslatable(kFalse);
 		return kFalse;
 	}
 

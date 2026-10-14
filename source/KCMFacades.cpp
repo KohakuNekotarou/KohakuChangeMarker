@@ -80,6 +80,7 @@
 #include "KCMStoryMarker.h"		// the adornment that draws it - the flash and the shutdown
 #include "IKCMResourcesFacade.h"	// the Resources mode's boundary
 #include "KCMResourceStore.h"		// ...and the model side it forwards to
+#include "KCMPdfDoc.h"				// the PDF comparison (2026-10-14)
 
 namespace
 {
@@ -300,6 +301,10 @@ public:
 	// ★Task Start kept in memory (2026-10-13) - the whole road is the model's (KCMTaskStartClone.h).
 	virtual bool16		CanTakeTaskStartClone()					{ return KCMCanTakeTaskStartClone(); }
 	virtual bool16		TakeTaskStartClone(PMString& outWhyNot)	{ return KCMTakeTaskStartClone(outWhyNot); }
+
+	// ★The PDF comparison (2026-10-14) - the whole road is the model's (KCMPdfDoc.h).
+	virtual bool16		ChoosePdfEnd(bool16 asTarget, const IDFile& pdf, PMString& outMessage)	{ return KCMChoosePdfEnd(asTarget, pdf, outMessage); }
+	virtual bool16		IsPdfDoc(IDataBase* db)		{ return KCMIsPdfDoc(db); }
 };
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)

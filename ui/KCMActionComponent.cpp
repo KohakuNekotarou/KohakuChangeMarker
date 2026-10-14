@@ -207,7 +207,17 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 	//   (the user saw it: "モードをかえたとき、うまくいってないきがする", 2026-09-12). That branch
 	//   refreshed instead, rehydrating a Source. **Both ends are ordinary documents now**, so the
 	//   marked pair answers for a Task Start exactly as it does for any other comparison.
-	if (markedDB != nil && markedSrcDB != nil)
+	if (markedDB != nil && markedSrcDB != nil && mode != kKCMModePixel
+		&& (compare->IsPdfDoc(markedDB) || compare->IsPdfDoc(markedSrcDB)))
+	{
+		// ★A PDF PAIR IS COMPARED IN THE PIXEL MODE ONLY (2026-10-14, design 3.2): switched away from it, the comparison
+		//   stops - in Start's own words - rather than running in a mode that cannot read the PDFs.
+		compare->StopComparison();
+		msg.Append(" (stopped - ");
+		msg.Append(kKCMPdfPixelOnly);
+		msg.Append(")");
+	}
+	else if (markedDB != nil && markedSrcDB != nil)
 	{
 		PMString report;
 		// ★allowIncremental is not passed ＝ every page is compared again. An incremental comparison is
@@ -300,6 +310,43 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				KCMRefreshPanel();
 				KCMSetStatus(letGo ? "Source set. The Task Start kept in memory was let go." : "Source set.");
 			}
+			break;
+		}
+
+		// ★"Set PDF as Target..." / "Set PDF as Source..." (2026-10-14, the PDF comparison): a PDF the reader picks becomes that
+		//   end - a FILE choice, as a Task Start (Save)... makes one; Start makes a document of each PDF (KCMPdfDoc.h). The
+		//   dialog is the import's (IOpenFileDialog - Adobe's own callers build it so: SelectFileObserver.cpp) for ONE file,
+		//   PDFs shown, no default extension pinned on. ⚠A cancel says nothing: nothing was changed.
+		case kKCMPopupSetPdfTargetActionID:
+		case kKCMPopupSetPdfSourceActionID:
+		{
+			const bool16 asTarget = (actionID == kKCMPopupSetPdfTargetActionID) ? kTrue : kFalse;
+			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+			InterfacePtr<IOpenFileDialog> dialog((IOpenFileDialog*)::CreateObject(kOpenFileDialogBoss, IID_IOPENFILEDIALOG));
+			if (compare == nil || dialog == nil)
+				break;
+			PMString family("PDF (*.pdf)");
+			family.SetTranslatable(kFalse);
+			PMString extension("pdf");
+			extension.SetTranslatable(kFalse);
+			dialog->AddExtension(&family, &extension);
+			dialog->SetDefaultFilter(family);
+			PMString title(asTarget ? "Set PDF as Target - the newer PDF" : "Set PDF as Source - the older PDF");
+			title.SetTranslatable(kFalse);
+			SysFileList chosen;
+			if (!dialog->DoDialog(nil, chosen, kFalse /*one file*/, &title) || chosen.GetFileCount() < 1 || chosen.GetNthFile(0) == nil)
+				break;
+			// What to SAY is read before the call, as for "Set as Source": afterwards the kept-in-memory Task Start is gone.
+			const bool16 letGo = !asTarget && KCMSourceIsKeptInMemory(compare);
+			PMString msg;
+			if (compare->ChoosePdfEnd(asTarget, *chosen.GetNthFile(0), msg))
+			{
+				KCMRefreshPanel();
+				if (letGo)
+					msg.Append(" The Task Start kept in memory was let go.");
+			}
+			msg.SetTranslatable(kFalse);
+			KCMSetStatus(msg);
 			break;
 		}
 
@@ -978,6 +1025,12 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				IDataBase* const db = Utils<IKCMStoryEditsFacade>()->GetTaskDocumentDB();
 				if (db == nil)
 					break;			// the menu item is greyed without one; this is the belt
+				// ★Not a PDF document (2026-10-14, design 3.7) - said before the folder dialog; the model asks the same for a script.
+				if (Utils<IKCMCompareFacade>()->IsPdfDoc(db))
+				{
+					KCMSetStatus(kKCMPdfTargetRefusal);
+					break;
+				}
 				const bool16 inFront = (Utils<IKCMCompareFacade>()->GetActiveDocDB() == db) ? kTrue : kFalse;
 
 				UIDList stories(db);
@@ -1060,6 +1113,13 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				// ⚠**SDKFileOpenChooser CANNOT DO THIS.** It holds one IDFile and has no way to
 				//  answer for several, so the dialog is built the way Adobe's own callers build it
 				//  (source/open/.../importdata/SelectFileObserver.cpp:147).
+				// ★Not into a PDF document (2026-10-14, design 3.7) - said before the dialog, so no file is picked for nothing.
+				//   The model asks the same (KCMImportStoryText) for a script.
+				if (Utils<IKCMCompareFacade>()->IsPdfDoc(Utils<IKCMStoryEditsFacade>()->GetTaskDocumentDB()))
+				{
+					KCMSetStatus(kKCMPdfTargetRefusal);
+					break;
+				}
 				InterfacePtr<IOpenFileDialog> dialog(
 					(IOpenFileDialog*)::CreateObject(kOpenFileDialogBoss, IID_IOPENFILEDIALOG));
 				if (dialog == nil)
@@ -1336,6 +1396,16 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 				//   true either, nothing having taken an origin since Task Start began saving to a file.
 				listToUpdate->SetNthActionState(i,
 					(!armed && compare->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			// ★"Set PDF as Target..." / "Set PDF as Source..." (2026-10-14): live while nothing is compared - the "Set as"
+			//   pair's rule - but WITHOUT needing an active document: what they set is a file the dialog picks.
+			case kKCMPopupSetPdfTargetActionID:
+			case kKCMPopupSetPdfSourceActionID:
+			{
+				InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+				const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+				listToUpdate->SetNthActionState(i, !armed ? kEnabledAction : kDisabled_Unselected);
 				break;
 			}
 			case kKCMPopupPrintMarksActionID:
@@ -1849,6 +1919,9 @@ void KCMActionComponent::DoUsage()
 	// ★The Track Changes mode (2026-10-05) is a FIFTH English key, read after the fourth; on the Japanese side it sits
 	//   inside kHint2 right after the round trip, so its Japanese literal is empty too.
 	usage.Append(KCMLoc::Text(kKCMHint5Key, u""));
+	// ★Comparing PDFs (2026-10-14) is a SIXTH English key, read after the fifth; on the Japanese side it sits inside kHint2
+	//   right after Track Changes, so its Japanese literal is empty too.
+	usage.Append(KCMLoc::Text(kKCMHint6Key, u""));
 	usage.Append(KCMLoc::Text(kKCMHint2Key, KCMJa::kHint2));
 	usage.SetTranslatable(kFalse);
 

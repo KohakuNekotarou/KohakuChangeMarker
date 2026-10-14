@@ -38,6 +38,7 @@
 // General includes:
 #include "PMString.h"
 #include "PMReal.h"		// GetBaseScreenOpacity
+#include "IDFile.h"		// ChoosePdfEnd
 // (UIDRef.h went on 2026-09-14 with the three virtuals that used it - RehydrateOriginRaw and its
 //  twin, removed with their menu items. Nothing in this header names the type any more; measured
 //  rather than assumed, by grepping this file for UIDRef and finding only the include itself.)
@@ -700,6 +701,16 @@ public:
 		⚠Appended at the END ([[facade-vtable-slot-append-only]]). */
 	virtual bool16		CanTakeTaskStartClone() = 0;
 	virtual bool16		TakeTaskStartClone(PMString& outWhyNot) = 0;
+
+	/** ★★THE PDF COMPARISON (2026-10-14, docs/superpowers/specs/2026-10-14-kcm-pdf-compare-design.md). ChoosePdfEnd: the
+		PDF the reader picked in "Set PDF as Target..." / "Set PDF as Source..." becomes that end of the pair - a FILE choice,
+		as a Task Start (Save)... makes one; Start makes a document of each PDF (KCMPdfDoc.h). kFalse, with the reason and
+		nothing changed, when the file is not a PDF; outMessage says what to do next either way.
+		IsPdfDoc: whether a database is a document KCM made from a PDF - the UI asks before a dialog only a document can use,
+		and when the compare mode changes under a running PDF comparison.
+		⚠Appended at the END ([[facade-vtable-slot-append-only]]). */
+	virtual bool16		ChoosePdfEnd(bool16 asTarget, const IDFile& pdf, PMString& outMessage) = 0;
+	virtual bool16		IsPdfDoc(IDataBase* db) = 0;
 };
 
 /** THE ABI STAMP OF THE CLASS ABOVE. ★BUMP IT (the date, YYYYMMDD) EVERY TIME A VIRTUAL IS ADDED,
@@ -708,6 +719,6 @@ public:
 	compares it with the value ITS build saw in this header before it calls anything here
 	(KIDMCPKcmBridge::AbiState). Two binaries built from different versions of this class then
 	refuse each other instead of running the wrong method (2026-09-13: the header's warning). */
-const int32 kKCMCompareFacadeAbi = 2026101301;	// 2026-10-13: CanTakeTaskStartClone / TakeTaskStartClone appended - Task Start kept in memory. Previously 2026100501 = 2026-10-05: CanTakeTrackOriginalCopy / TakeTrackOriginalCopy appended - Compare with Tracked Changes. ⚠KIDMCP must be rebuilt with it. Previously 2026092103 = 2026-09-21 (the third change of that day): CanTakeTaskStartCopy / TakeTaskStartCopy appended - Task Start saves a copy to a file instead of holding a snapshot. ⚠KIDMCP must be rebuilt with it. Previously 2026092102 = GetChosenSourceFileLabel / GetChosenTargetFileLabel appended - a chosen end may now be a FILE, which the panel names by its path. ⚠KIDMCP must be rebuilt with it. Previously 2026092101 = TakeStatusWarning appended (the model can now raise a red message: the round-trip check on the comparison's own copy). ⚠KIDMCP must be rebuilt with it. Previously 2026092001 = OpenOriginAsIdml appended (the menu item that shows the Task Start state as a document). ⚠KIDMCP must be rebuilt with it. Previously 2026091402 = the second change of 2026-09-14 (SaveOriginRawToDesktop removed: the script method app.kcmSaveOriginXml reaches KCMOriginSaveRaw from inside this plug-in, so the facade door had no caller left). 01 was the first change that day (ExportChangedPagesTSV, RehydrateOriginRaw, RehydrateOriginAsCompared, removed with the menu items that called them)
+const int32 kKCMCompareFacadeAbi = 2026101401;	// 2026-10-14: ChoosePdfEnd / IsPdfDoc appended - the PDF comparison (KIDMCP has not called this facade since 2026-10-12: only KCM's two halves are rebuilt). Previously 2026101301 = 2026-10-13: CanTakeTaskStartClone / TakeTaskStartClone appended - Task Start kept in memory. Previously 2026100501 = 2026-10-05: CanTakeTrackOriginalCopy / TakeTrackOriginalCopy appended - Compare with Tracked Changes. ⚠KIDMCP must be rebuilt with it. Previously 2026092103 = 2026-09-21 (the third change of that day): CanTakeTaskStartCopy / TakeTaskStartCopy appended - Task Start saves a copy to a file instead of holding a snapshot. ⚠KIDMCP must be rebuilt with it. Previously 2026092102 = GetChosenSourceFileLabel / GetChosenTargetFileLabel appended - a chosen end may now be a FILE, which the panel names by its path. ⚠KIDMCP must be rebuilt with it. Previously 2026092101 = TakeStatusWarning appended (the model can now raise a red message: the round-trip check on the comparison's own copy). ⚠KIDMCP must be rebuilt with it. Previously 2026092001 = OpenOriginAsIdml appended (the menu item that shows the Task Start state as a document). ⚠KIDMCP must be rebuilt with it. Previously 2026091402 = the second change of 2026-09-14 (SaveOriginRawToDesktop removed: the script method app.kcmSaveOriginXml reaches KCMOriginSaveRaw from inside this plug-in, so the facade door had no caller left). 01 was the first change that day (ExportChangedPagesTSV, RehydrateOriginRaw, RehydrateOriginAsCompared, removed with the menu items that called them)
 
 #endif // __IKCMCompareFacade_h__

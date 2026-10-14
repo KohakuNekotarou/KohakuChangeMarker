@@ -44,6 +44,8 @@
 #include "KCMParaText.h"
 #include "KCMTextDiff.h"		// ToCodePoints - the one walk over UTF-8 this half is allowed
 #include "KCMTextWords.h"		// PMStringOfUtf8 - a UTF-8 reason onto the status line without mojibake
+#include "KCMPdfDoc.h"			// KCMIsPdfDoc - a PDF document is refused here (2026-10-14)
+#include "IKCMCompareFacade.h"	// the refusal's words, which the UI says too
 
 namespace
 {
@@ -632,6 +634,13 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 	if (db == nil)
 	{
 		outMessage = "there is no document to export";
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+	// ★Not a PDF document (2026-10-14, design 3.7): its stories are KCM's - there are none of the reader's to write out.
+	if (KCMIsPdfDoc(db))
+	{
+		outMessage = kKCMPdfTargetRefusal;
 		outMessage.SetTranslatable(kFalse);
 		return kFalse;
 	}

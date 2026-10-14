@@ -82,6 +82,7 @@
 #include "KCMExternalSource.h"		// KCMExternalSourceLabel - a lent Source's name
 #include "KCMTaskStartClone.h"		// KCMIsTaskStartClone - the report's refusal names it
 #include "KCMPlacePdf.h"			// KCMSetPdfPlacePage / KCMPdfPlacePrefsRestorer - moved out on 2026-10-14 for the PDF documents
+#include "KCMPdfDoc.h"				// KCMIsPdfDoc - two PDFs have no tables (2026-10-14)
 
 namespace
 {
@@ -1012,6 +1013,18 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	// (Both loans give back on leaving this block, before any document is exported or closed.)
 	std::vector<KCMReportRow> storyRows, resourceRows;
 	PMString storyHeading, resourceHeading;
+	if (KCMIsPdfDoc(targetDB) || KCMIsPdfDoc(sourceDB))
+	{
+		// ★TWO PDFS HAVE NO STORIES AND NO DEFINITIONS OF THEIRS (2026-10-14, design 3.7): the documents are KCM's, each
+		//   page a placed PDF. The pictures are the report; each table says in one row why it is empty.
+		KCMReportRow r;
+		r.fLeft.fMid = Ascii("Not compared - the two ends are PDFs.");
+		storyRows.push_back(r);
+		resourceRows.push_back(r);
+		storyHeading = Ascii("Story Changes");
+		resourceHeading = Ascii("Resources Changes");
+	}
+	else
 	{
 		// (Built in every mode since 2026-10-11 - nothing is started, so no mode is keeping a list that
 		//  the loan could take apart. Until then only the modes that keep none were built for; the Story
