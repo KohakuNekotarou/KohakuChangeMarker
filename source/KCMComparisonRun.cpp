@@ -360,13 +360,13 @@ bool16 KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMStr
 		return kFalse;
 	}
 
-	// ★ONE PDF AND ONE DOCUMENT IS NOT THIS COMPARISON (2026-10-14, design D1) - a document against its own PDF is a
-	//   different check. Asked BEFORE either end is realised, so a refusal makes no PDF document for nothing, and of the
-	//   end itself - a PDF file, or a PDF document chosen with "Set as" - so the Before/After report, which comes through
-	//   here too, refuses in the same words.
-	if (KCMPairEndIsPdf(targetEnd) != KCMPairEndIsPdf(sourceEnd))
+	// ★A DOCUMENT AGAINST ITS PDF IS THE EXPORT CHECK, THE PDF ON THE SOURCE SIDE (2026-10-14, design
+	//   2026-10-14-kcm-pdf-export-check 3.2 - it replaced the PDF comparison's D1). The other way round is refused BEFORE
+	//   either end is realised, so it makes nothing - and the Before/After report, which comes through here too, refuses in
+	//   the same words.
+	if (KCMPairEndIsPdf(targetEnd) && !KCMPairEndIsPdf(sourceEnd))
 	{
-		outWhy = PMString("One end is a PDF and the other a document. Choose PDFs for both ends (a document against its PDF is a different check).");
+		outWhy = PMString("For a PDF export check, set the PDF as the Source and the document as the Target.");
 		outWhy.SetTranslatable(kFalse);
 		return kFalse;
 	}
@@ -381,8 +381,14 @@ bool16 KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMStr
 	// ⚠**AND BEFORE THE SAME-DOCUMENT TEST BELOW**, which needs two databases to compare.
 	IDataBase* targetDB = nil;
 	IDataBase* sourceDB = nil;
-	if (!KCMRealisePairEnd(targetEnd, targetDB, outWhy)
-		|| !KCMRealisePairEnd(sourceEnd, sourceDB, outWhy))
+	bool16 realised = KCMRealisePairEnd(targetEnd, targetDB, outWhy);
+	// ★THE EXPORT CHECK'S PDF MUST BE THIS DOCUMENT'S (2026-10-14, design 3.2) - asked once the Target is open (its ids are
+	//   read from it) and BEFORE the PDF document is made, so a refusal makes nothing.
+	if (realised && !KCMPairEndIsPdf(targetEnd) && KCMPairEndIsPdf(sourceEnd) && !KCMCheckExportPdf(targetDB, sourceEnd, outWhy))
+		return kFalse;
+	if (realised)
+		realised = KCMRealisePairEnd(sourceEnd, sourceDB, outWhy);
+	if (!realised)
 	{
 		// ⚠**A resolved end that will not realise AND gives no reason** cannot come out of the
 		//  resolver's own answers - a database end that resolved is non-nil, and a file end that

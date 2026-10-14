@@ -9,6 +9,7 @@
 #include <windows.h>				// GetFileAttributesExW - the PDF's write time and size (KCM ships for Windows only)
 
 // Interface includes:
+#include "IAdobeMediaMgmtMetaData.h"	// the Target document's xmpMM ids - the export check's gate
 #include "IApplyMasterCmdData.h"	// the new spreads' master (none) and page size rule
 #include "ICmdHistory.h"			// Discard - nothing of KCM's making left to undo
 #include "ICommand.h"
@@ -486,6 +487,31 @@ namespace
 		return kTrue;
 	}
 
+	/** The document's xmpMM:DocumentID and OriginalDocumentID as UTF-8 - IAdobeMediaMgmtMetaData on kDocBoss, the road
+		IDataBase.h names "FOR EXTERNAL USE" (its own GetDocumentID is internal). Empty when it cannot be read. */
+	void DocIds(IDataBase* db, std::string& outId, std::string& outOriginal)
+	{
+		outId.clear();
+		outOriginal.clear();
+		if (db == nil)
+			return;
+		InterfacePtr<IAdobeMediaMgmtMetaData> mm(db, db->GetRootUID(), UseDefaultIID());
+		if (mm == nil)
+			return;
+		outId = mm->GetDocumentID().GetUTF8String();
+		outOriginal = mm->GetOrigDocumentID().GetUTF8String();
+	}
+
+	/** Whether a PDF's ids are this document's: the same DocumentID (exported from it), or the same OriginalDocumentID (a copy
+		saved from the same original). Exact strings: InDesign writes the xmpMM values into the PDF character for character
+		(measured 2026-10-14 - work/kcm-pdf-live2/measure.md). */
+	bool16 IdsMatch(IDataBase* db, const std::string& pdfId, const std::string& pdfOriginal)
+	{
+		std::string id, original;
+		DocIds(db, id, original);
+		return ((!pdfId.empty() && pdfId == id) || (!pdfOriginal.empty() && pdfOriginal == original)) ? kTrue : kFalse;
+	}
+
 	void AppendMisfits(PMString& out, const PdfDoc* d)
 	{
 		if (d == nil || d->fMisfits.IsEmpty())
@@ -529,7 +555,56 @@ bool16 KCMPdfDocsPairByIds(IDataBase* targetDB, IDataBase* sourceDB)
 	const PdfDoc* s = Find(sourceDB);
 	if (t == nil && s == nil)
 		return kTrue;
-	return (t != nil && s != nil && t->fIds == kIdsOne && s->fIds == kIdsOne) ? kTrue : kFalse;
+	if (t != nil && s != nil)
+		return (t->fIds == kIdsOne && s->fIds == kIdsOne) ? kTrue : kFalse;
+	// ★THE EXPORT CHECK (2026-10-14): the PDF document's pages answer to the document's own when they carry its ids.
+	const PdfDoc* const d = (t != nil) ? t : s;
+	IDataBase* const other = (t != nil) ? sourceDB : targetDB;
+	return (d->fIds == kIdsOne && IdsMatch(other, d->fDocumentID, d->fOriginalDocumentID)) ? kTrue : kFalse;
+}
+
+bool16 KCMIsExportCheckPair(IDataBase* targetDB, IDataBase* sourceDB)
+{
+	return (targetDB != nil && sourceDB != nil && KCMIsPdfDoc(targetDB) != KCMIsPdfDoc(sourceDB)) ? kTrue : kFalse;
+}
+
+bool16 KCMCheckExportPdf(IDataBase* targetDB, const KCMPairEnd& pdfEnd, PMString& why)
+{
+	why.Clear();
+	IdsState ids = kIdsNone;
+	std::string pdfId, pdfOriginal;
+	if (pdfEnd.fIsFile)
+	{
+		KCMPdf::Info info;
+		std::string readWhy;
+		const std::wstring path = WideOf(pdfEnd.fFile);
+		if (!KCMPdf::ReadInfo(path.c_str(), info, readWhy))
+			return kTrue;		// making its document says why, in the reader's words
+		ids = info.HasPageIds() ? kIdsOne : (info.HasMixedPageIds() ? kIdsMixed : kIdsNone);
+		if (ids == kIdsOne)
+		{
+			pdfId = info.pages[0].documentID;
+			pdfOriginal = info.pages[0].originalDocumentID;
+		}
+	}
+	else
+	{
+		const PdfDoc* d = Find(pdfEnd.fDB);
+		if (d == nil)
+			return kTrue;
+		ids = d->fIds;
+		pdfId = d->fDocumentID;
+		pdfOriginal = d->fOriginalDocumentID;
+	}
+	if (ids == kIdsNone)
+		return kTrue;			// no ids: paired in order, and the status line says so
+	if (ids == kIdsOne && IdsMatch(targetDB, pdfId, pdfOriginal))
+		return kTrue;
+	why = (ids == kIdsMixed)
+		? "The PDF holds pages of other documents, or pages without ids. Check a PDF exported from this document alone."
+		: "This PDF was exported from another document. Choose the PDF exported from this document.";
+	why.SetTranslatable(kFalse);
+	return kFalse;
 }
 
 void KCMPdfDocPageKeys(IDataBase* db, const std::vector<UID>& pages, std::vector<UID>& outKeys)
@@ -589,11 +664,18 @@ bool16 KCMChoosePdfEnd(bool16 asTarget, const IDFile& pdf, PMString& outMessage)
 		: ((KCMChosenTargetFile(other) && KCMFileIsPdf(other)) || KCMIsPdfDoc(KCMChosenTargetDB()));
 	if (otherIsPdf)
 		outMessage = "Both ends are PDFs. Start compares them.";
+	else if (asTarget)
+	{
+		outMessage = "PDF chosen as the Target: ";
+		outMessage.Append(name);
+		outMessage.Append(". Choose a PDF as the Source too, then Start (to check a document against its PDF, set the PDF as the Source instead).");
+	}
 	else
 	{
-		outMessage = asTarget ? "PDF chosen as the Target: " : "PDF chosen as the Source: ";
+		// ★THE EXPORT CHECK'S WAY IN (2026-10-14): a PDF Source against a document Target.
+		outMessage = "PDF chosen as the Source: ";
 		outMessage.Append(name);
-		outMessage.Append(asTarget ? ". Choose a PDF as the Source too, then Start." : ". Choose a PDF as the Target too, then Start.");
+		outMessage.Append(". Start checks the Target document against it (the one in front when none is set) - or choose a PDF as the Target to compare two PDFs.");
 	}
 	outMessage.SetTranslatable(kFalse);
 	return kTrue;

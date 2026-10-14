@@ -52,9 +52,21 @@ bool16	KCMPairEndIsPdf(const KCMPairEnd& end);
 /** Whether `db` is a document KCM made from a PDF, still in the register. nil answers kFalse. */
 bool16	KCMIsPdfDoc(IDataBase* db);
 
-/** Whether the pages of these two may pair by identity: kTrue when neither is a PDF document, or both are and each PDF's
-	pages all carry the InDesign page uids of one document. kFalse = pair them in order (design D2). */
+/** Whether the pages of these two may pair by identity: kTrue when neither is a PDF document, when both are and each PDF's
+	pages all carry the InDesign page uids of one document, and - the export check (2026-10-14) - when one is a PDF document
+	whose pages carry the other document's ids (xmpMM:DocumentID or OriginalDocumentID). kFalse = pair them in order. */
 bool16	KCMPdfDocsPairByIds(IDataBase* targetDB, IDataBase* sourceDB);
+
+/** Whether the pair is a PDF export check (2026-10-14, design 2026-10-14-kcm-pdf-export-check): exactly one of the two is a
+	PDF document. The drawing (how a page is rasterised and counted), the pairing and the status line ask it; the Start
+	makes sure the PDF is the Source. */
+bool16	KCMIsExportCheckPair(IDataBase* targetDB, IDataBase* sourceDB);
+
+/** The export check's gate (design 3.2), asked by the Start after the Target document is open and before the PDF document
+	is made: whether `pdfEnd` - a PDF file or a PDF document - may be checked against `targetDB`. kTrue when its pages carry
+	this document's ids, or carry none (they pair in order); kFalse with `why` when they are another document's, or several
+	documents'. A PDF that cannot be read answers kTrue: making its document says why, in the reader's words. */
+bool16	KCMCheckExportPdf(IDataBase* targetDB, const KCMPairEnd& pdfEnd, PMString& why);
 
 /** The identity each page of a PDF document answers to: the InDesign page uid of the part of its PDF page shown on it (each
 	page of a spread exported whole has its own since 2026-10-14), kInvalidUID when none. `pages` are the document's page
