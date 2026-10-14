@@ -1015,10 +1015,11 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	PMString storyHeading, resourceHeading;
 	if (KCMIsPdfDoc(targetDB) || KCMIsPdfDoc(sourceDB))
 	{
-		// ★TWO PDFS HAVE NO STORIES AND NO DEFINITIONS OF THEIRS (2026-10-14, design 3.7): the documents are KCM's, each
+		// ★A PDF HAS NO STORIES AND NO DEFINITIONS OF ITS OWN (2026-10-14, design 3.7 / export check 3.7): its document is KCM's, each
 		//   page a placed PDF. The pictures are the report; each table says in one row why it is empty.
 		KCMReportRow r;
-		r.fLeft.fMid = Ascii("Not compared - the two ends are PDFs.");
+		r.fLeft.fMid = Ascii((KCMIsPdfDoc(targetDB) && KCMIsPdfDoc(sourceDB)) ? "Not compared - the two ends are PDFs."
+																			   : "Not compared - one end is a PDF.");
 		storyRows.push_back(r);
 		resourceRows.push_back(r);
 		storyHeading = Ascii("Story Changes");
