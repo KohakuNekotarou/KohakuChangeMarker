@@ -293,7 +293,8 @@ bool KCMPdf::ReadInfoFrom(Source& source, Info& out, std::string& why)
 			page.media = in.hasMedia ? in.media : Box(0, 0, 612, 792);	// /MediaBox is required; Letter for a page with none
 			page.crop = in.hasCrop ? Clip(in.crop, page.media) : page.media;
 			Box trim;
-			page.trim = ReadBox(doc, f.node.Get("TrimBox"), trim) ? Clip(trim, page.crop) : page.crop;
+			page.hasTrim = ReadBox(doc, f.node.Get("TrimBox"), trim);	// /TrimBox is not inherited (ISO 32000-1 table 30)
+			page.trim = page.hasTrim ? Clip(trim, page.crop) : page.crop;
 			page.rotate = in.rotate;
 			ReadPieceInfo(doc, f.node, page);
 			out.pages.push_back(page);

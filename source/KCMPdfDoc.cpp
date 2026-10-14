@@ -10,13 +10,16 @@
 
 // Interface includes:
 #include "IApplyMasterCmdData.h"	// the new spreads' master (none) and page size rule
+#include "ICmdHistory.h"			// Discard - nothing of KCM's making left to undo
 #include "ICommand.h"
+#include "ICommandProcessor.h"		// only to reach the boss ICmdHistory lives on
 #include "IDataBase.h"
 #include "IDocumentList.h"
 #include "IGeometry.h"
 #include "IIntData.h"				// IID_IBINDINGLOCATION
 #include "INewSpreadCmdData.h"
-#include "IPDFPlacePrefs.h"			// kCropToTrim
+#include "IPDFPlacePrefs.h"			// kCropToTrim / kCropToPage
+#include "ISession.h"				// GetExecutionContextSession
 #include "ISpread.h"				// kDefaultBinding
 #include "ISpreadList.h"			// kAtTheEnd
 #include "IStringData.h"			// kSetDocNameCmdBoss carries the name here
@@ -165,8 +168,9 @@ namespace
 			? kTrue : kFalse;
 	}
 
-	/** Every PDF page onto its own page, cropped to the trim box, the reader's place settings given back however this ends.
-		The cancel is asked between pages (a placing cannot be interrupted) and never after the last. */
+	/** Every PDF page onto its own page, cropped to the trim box (the crop box for a page that names none), the reader's place
+		settings given back however this ends. kFalse with `why` when a page does not place. The cancel is asked between pages
+		(a placing cannot be interrupted) and never after the last. */
 	bool16 PlacePages(SDKLayoutHelper& helper, IDataBase* db, const IDFile& pdf, const KCMPdf::Info& info,
 					  PMString& misfits, PMString& why)
 	{
@@ -197,7 +201,12 @@ namespace
 				return kFalse;
 			}
 			PMString placeWhy;
-			if (!KCMSetPdfPlacePage(i + 1, IPDFPlacePrefs::kCropToTrim, current, placeWhy))
+			// ★THE BOX THE PAGE NAMES (2026-10-14, the live test): InDesign refuses "crop to trim" on a page that names no
+			//   /TrimBox - "仕上がりサイズにトリミングできません。仕上がりサイズが定義されていないか、空です。" - where the spec falls back to
+			//   the crop box, and the crop box is what the reader took for such a page's size (KCMPdfPages.h). kCropToPage is
+			//   InDesign's "Crop": the crop box, the media box when the page names none (both measured on the crafted PDFs).
+			const int32 cropTo = info.pages[i].hasTrim ? IPDFPlacePrefs::kCropToTrim : IPDFPlacePrefs::kCropToPage;
+			if (!KCMSetPdfPlacePage(i + 1, cropTo, current, placeWhy))
 			{
 				why = "The PDF document could not be made: ";
 				why.Append(placeWhy);
@@ -206,7 +215,17 @@ namespace
 			}
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 			const UIDRef frame = helper.PlaceFileInFrame(pdf, layer, page, kSuppressUI);
-			ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// a page that did not place is named below, not carried as an error
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// InDesign's own words are its language; the refusal below is said in KCM's
+			// ★A PAGE INDESIGN DID NOT PLACE REFUSES THE PDF (2026-10-14, the live test): it would stay an empty page, and two
+			//   empty pages compare unchanged - the one answer a check of an export must never give wrongly. (The crafted PDFs
+			//   did exactly that before the crop above: "pages compared=2 changed=0" over two blank documents.)
+			if (frame == UIDRef::gNull)
+			{
+				why = "The PDF could not be placed: InDesign refused page ";
+				why.AppendNumber(i + 1);
+				why.Append(".");
+				return kFalse;
+			}
 			if (!FitsPage(frame, page))
 			{
 				if (!misfits.IsEmpty())
@@ -237,6 +256,26 @@ namespace
 			return kFalse;
 		}
 		return kTrue;
+	}
+
+	/** ★NOTHING OF KCM'S MAKING TO UNDO (2026-10-14, the live test): the pages were placed by commands, and InDesign keeps
+		them in the new document's undo history - measured after a Start: "配置" / "フレームを内容に合わせる", five steps on one
+		of the two documents (InDesign had dropped the other's at a script boundary, which it does at random: memory
+		command-history-and-undo-stack). A Ctrl+Z there would take KCM's pages away under a running comparison and leave the
+		document modified. ICmdHistory::Discard - "delete all history data for the given target", the public part of
+		ICmdHistory.h (only DiscardRedo is internal) - empties it; the document was made a moment ago, so no step of the
+		reader's is in it. The target is the document, never UIDRef::gNull (the header: gNull is the application). */
+	void DiscardHistory(const UIDRef& docRef)
+	{
+		ISession* const session = GetExecutionContextSession();
+		if (session == nil)
+			return;
+		InterfacePtr<ICommandProcessor> processor(session->QueryCommandProcessor());
+		if (processor == nil)
+			return;
+		InterfacePtr<ICmdHistory> history(processor, UseDefaultIID());
+		if (history != nil)
+			history->Discard(docRef);
 	}
 
 	bool16 MakePdfDoc(const IDFile& pdf, const KCMPdf::Info& info, const PMString& name, PdfDoc& out, PMString& why)
@@ -273,6 +312,7 @@ namespace
 			why = "The PDF document opened without a window.";
 			return kFalse;
 		}
+		DiscardHistory(docRef);				// and nothing to undo (the function says why)
 		KCMMarkRehydratedClean(db);			// nothing in it to save, so closing it asks nothing (design 3.3-6)
 		out.fDB = db;
 		out.fMisfits = misfits;

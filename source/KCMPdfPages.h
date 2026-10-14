@@ -42,11 +42,13 @@ namespace KCMPdf
 		Box media;
 		Box crop;						// the media box when the page names none; bounded by it
 		Box trim;						// the crop box when the page names none; bounded by it
+		bool hasTrim;					// the page names a /TrimBox of its own: InDesign's "crop to trim" refuses a page that
+										//  does not (measured 2026-10-14) where the spec falls back - KCMPdfDoc crops it to the crop box
 		int rotate;						// 0, 90, 180 or 270
 		std::vector<uint32_t> uids;		// /PieceInfo /InDesign /PageUIDList in key order; empty when there is none
 		std::string documentID;			// /PieceInfo /InDesign /DocumentID as UTF-8; empty when there is none
 
-		PageInfo() : rotate(0) {}
+		PageInfo() : hasTrim(false), rotate(0) {}
 		/** The trim box as the page is shown: a quarter turn swaps its sides. */
 		double ShownWidth() const { return (rotate == 90 || rotate == 270) ? trim.Height() : trim.Width(); }
 		double ShownHeight() const { return (rotate == 90 || rotate == 270) ? trim.Width() : trim.Height(); }

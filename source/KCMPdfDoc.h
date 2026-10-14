@@ -5,7 +5,8 @@
 //  KohakuChangeMarker (KCM) - the documents KCM makes from PDFs, for the PDF comparison (2026-10-14).
 //
 //  WHAT ONE IS: a new document with one page per page of the PDF, each the size of that PDF page's trim box (a quarter
-//  turn swaps the sides), the PDF page placed on it cropped to the trim box at the page's origin. Named
+//  turn swaps the sides), the PDF page placed on it cropped to the trim box at the page's origin (to the crop box when the
+//  page names no trim box - InDesign refuses "trim" then; a page InDesign does not place refuses the PDF). Named
 //  "<file>.pdf (KCM)", shown in a window, and left unmodified so that closing it asks nothing
 //  (docs/superpowers/specs/2026-10-14-kcm-pdf-compare-design.md 3.3-3.6).
 //

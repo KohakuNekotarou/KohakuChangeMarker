@@ -207,7 +207,7 @@ namespace KCMJa
 		u"・InDesign で書き出した PDF は、元の InDesign のページでページを組みます(ページを足した・消した・並べ替えた後でも同じページ同士)。"
 		u"それ以外の PDF は順番で組みます。どちらで組んだかはステータス欄の2行目の頭に出ます\n"
 		u"・比べるのは Pixel だけです(Story・Resources・Track Changes のモードでは Start を断ります)。片方だけが PDF のとき・暗号化した PDF・壊れた PDF も断ります\n"
-		u"・作った文書は保存しなくて構いません(閉じても保存を聞きません。チェックや猫の手を付けた後は聞かれます)。"
+		u"・作った文書は保存しなくて構いません(閉じても保存を聞きません。チェックや猫の手を付けた後・Hide Unchanged Spreads を使った後は聞かれます)。"
 		u"窓を閉じても PDF の選択は残り、次の Start でまた作ります。PDF を書き直すと、次の Start で作り直します\n"
 		u"・Ignore Page Number Marker は PDF の中には効きません\n"
 		u"\n"
