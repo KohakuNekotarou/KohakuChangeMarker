@@ -490,7 +490,7 @@ static void KCMSourcePageKeys(IDataBase* sourceDB, const std::vector<UID>& sourc
 //   (Two PDF documents whose PDFs carry no page ids of one document each are paired this way too -
 //   KCMPdfDoc.h, design D2.)
 //========================================================================================
-void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
+static void BuildPairingRaw(IDataBase* targetDB, IDataBase* sourceDB,
 	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages,
 	std::vector<UID>* outOverflowTargetPages, std::vector<UID>* outOverflowSourcePages)
 {
@@ -542,6 +542,28 @@ void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 		outOverflowTargetPages->assign(tFiltered.begin() + n, tFiltered.end());
 	if (outOverflowSourcePages && sFiltered.size() > n)
 		outOverflowSourcePages->assign(sFiltered.begin() + n, sFiltered.end());
+}
+
+void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
+	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages,
+	std::vector<UID>* outOverflowTargetPages, std::vector<UID>* outOverflowSourcePages)
+{
+	BuildPairingRaw(targetDB, sourceDB, outTargetPages, outSourcePages, outOverflowTargetPages, outOverflowSourcePages);
+	// ★THE EXPORT CHECK'S DOCUMENT PAGES THE PDF DOES NOT HOLD ARE NOT "ADDED" (2026-10-14, design
+	//   2026-10-14-kcm-pdf-export-check 3.4): a PDF of some pages leaves the rest out on purpose - no "/" on them, the
+	//   status line names them (KCMPagesNotInPdf). A PDF page the document no longer has stays a removed page: that is a
+	//   real difference.
+	if (outOverflowTargetPages != nil && KCMIsExportCheckPair(targetDB, sourceDB))
+		outOverflowTargetPages->clear();
+}
+
+void KCMPagesNotInPdf(IDataBase* targetDB, IDataBase* sourceDB, std::vector<UID>& outPages)
+{
+	outPages.clear();
+	if (!KCMIsExportCheckPair(targetDB, sourceDB))
+		return;
+	std::vector<UID> tp, sp, sov;
+	BuildPairingRaw(targetDB, sourceDB, tp, sp, &outPages, &sov);
 }
 
 //========================================================================================

@@ -126,6 +126,11 @@ void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages,
 	std::vector<UID>* outOverflowTargetPages = nil, std::vector<UID>* outOverflowSourcePages = nil);
 
+/** The export check's document pages the PDF does not hold (2026-10-14, design 2026-10-14-kcm-pdf-export-check 3.4): the
+	Target pages the pairing leaves without a partner. KCMBuildPairing leaves them out of the overflow (they get no "/" -
+	a PDF of some pages leaves the rest out on purpose); the status line names them. Empty unless the pair is an export check. */
+void KCMPagesNotInPdf(IDataBase* targetDB, IDataBase* sourceDB, std::vector<UID>& outPages);
+
 // Pairs master spreads **by name** and then pairs the pages of the spreads that matched, in
 // order. outTargetPages / outSourcePages come out the same length, the i-th of each being one
 // pair (both are cleared on entry).

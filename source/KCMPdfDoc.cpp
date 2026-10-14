@@ -19,6 +19,7 @@
 #include "IGeometry.h"
 #include "IIntData.h"				// IID_IBINDINGLOCATION
 #include "INewSpreadCmdData.h"
+#include "IPageList.h"				// GetPageString - the pages the PDF does not hold, by name
 #include "IPDFPlacePrefs.h"			// kCropToTrim / kCropToPage
 #include "ISession.h"				// GetExecutionContextSession
 #include "ISpread.h"				// kDefaultBinding
@@ -522,6 +523,37 @@ namespace
 		out.Append(d->fMisfits);
 		out.Append(".");
 	}
+
+	/** " Pages not in the PDF: 3, 4." - the export check's document pages without a PDF page (KCMPagesNotInPdf), by the
+		names the document shows; at most 20, then the count of the rest. */
+	void AppendNotInPdf(PMString& out, IDataBase* targetDB, IDataBase* sourceDB)
+	{
+		std::vector<UID> pages;
+		KCMPagesNotInPdf(targetDB, sourceDB, pages);
+		if (pages.empty())
+			return;
+		InterfacePtr<IPageList> pageList(targetDB, targetDB->GetRootUID(), UseDefaultIID());
+		out.Append(" Pages not in the PDF: ");
+		const size_t shown = (pages.size() < 20) ? pages.size() : 20;
+		for (size_t i = 0; i < shown; ++i)
+		{
+			if (i > 0)
+				out.Append(", ");
+			PMString n;
+			if (pageList != nil)
+				pageList->GetPageString(pages[i], &n, kFalse, kFalse, kDefaultPageType, kTrue, kTrue);
+			if (n.IsEmpty())
+				n.AppendNumber(static_cast<int32>(i) + 1);
+			out.Append(n);
+		}
+		if (pages.size() > shown)
+		{
+			out.Append(" and ");
+			out.AppendNumber(static_cast<int32>(pages.size() - shown));
+			out.Append(" more");
+		}
+		out.Append(".");
+	}
 }	// namespace
 
 bool16 KCMRealisePdfEnd(const IDFile& pdf, IDataBase*& outDB, PMString& why)
@@ -628,7 +660,19 @@ void KCMPdfPairingNote(IDataBase* targetDB, IDataBase* sourceDB, PMString& out)
 	const PdfDoc* s = Find(sourceDB);
 	if (t == nil && s == nil)
 		return;
-	if (!KCMGetPairPagesByUid())
+	if ((t == nil) != (s == nil))
+	{
+		// ★THE EXPORT CHECK (2026-10-14, design 2026-10-14-kcm-pdf-export-check 3.6): a document against its PDF.
+		out = "PDF export check: ";
+		if (!KCMGetPairPagesByUid())
+			out.Append("pages paired in order (Pair Pages by UID is off).");
+		else if (KCMPdfDocsPairByIds(targetDB, sourceDB))
+			out.Append("pages paired by their InDesign page ids.");
+		else
+			out.Append("the PDF carries no page ids - pages paired in order.");
+		AppendNotInPdf(out, targetDB, sourceDB);
+	}
+	else if (!KCMGetPairPagesByUid())
 		out = "PDF pages paired in order (Pair Pages by UID is off).";
 	else if (KCMPdfDocsPairByIds(targetDB, sourceDB))
 		out = "PDF pages paired by their InDesign page ids.";
