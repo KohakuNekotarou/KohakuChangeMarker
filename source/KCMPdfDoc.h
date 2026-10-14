@@ -56,8 +56,9 @@ bool16	KCMIsPdfDoc(IDataBase* db);
 	pages all carry the InDesign page uids of one document. kFalse = pair them in order (design D2). */
 bool16	KCMPdfDocsPairByIds(IDataBase* targetDB, IDataBase* sourceDB);
 
-/** The identity each page of a PDF document answers to: the first InDesign page uid its PDF page carries, kInvalidUID when
-	none. `pages` are the document's page uids; outKeys is parallel to them. */
+/** The identity each page of a PDF document answers to: the InDesign page uid of the part of its PDF page shown on it (each
+	page of a spread exported whole has its own since 2026-10-14), kInvalidUID when none. `pages` are the document's page
+	uids; outKeys is parallel to them. */
 void	KCMPdfDocPageKeys(IDataBase* db, const std::vector<UID>& pages, std::vector<UID>& outKeys);
 
 /** What the status line's second line starts with when a PDF pair was compared: how the pages were paired, and the pages

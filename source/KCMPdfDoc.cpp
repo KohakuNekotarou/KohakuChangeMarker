@@ -35,17 +35,19 @@
 #include "TransformUtils.h"			// ::InnerToParentMatrix
 #include "UIDList.h"
 
+#include <algorithm>
 #include <cmath>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 // Project includes:
 #include "KCMPdfDoc.h"
 #include "KCMPdfPages.h"			// the reader: the pages, their boxes, rotation and InDesign page uids
+#include "KCMPdfSpreads.h"		// which pages make a spread (2026-10-14)
 #include "KCMPlacePdf.h"			// one PDF page placed, the reader's place settings given back
 #include "KCMPairChoice.h"		// KCMPairEnd, the file choices
-#include "KCMReportTable.h"		// KCMReportPageAt - a spread's page rectangle (spread coordinates) and its layer
 #include "KCMRehydrate.h"			// KCMMarkRehydratedClean / KCMCloseRehydrated - a document KCM made, closed cleanly
 #include "KCMProgressBar.h"		// KCMProgressStepper - a bar that appears only after three seconds
 #include "KCMCore.h"				// KCMIsDocDBOpen / KCMCollectPageUIDs
@@ -69,6 +71,8 @@ namespace
 		IdsState			fIds;
 		PMString			fName;			// "<file>.pdf (KCM)"
 		PMString			fMisfits;		// "3, 7": pages that did not come out at their page size; empty when none
+		std::string			fDocumentID;	// the PDF's /DocumentID and /OriginalDocumentID (kIdsOne only) - the export check's
+		std::string			fOriginalDocumentID;	//  gate and pairing compare them with the Target document's xmpMM ids
 
 		PdfDoc() : fWriteTime(0), fSize(0), fDB(nil), fIds(kIdsNone) {}
 	};
@@ -107,23 +111,23 @@ namespace
 		return kTrue;
 	}
 
-	bool16 SameSize(const KCMPdf::PageInfo& a, const KCMPdf::PageInfo& b)
+	bool16 SameShape(const KCMPdf::LayoutSpread& a, const KCMPdf::LayoutSpread& b)
 	{
-		return (std::fabs(a.ShownWidth() - b.ShownWidth()) < 0.001 && std::fabs(a.ShownHeight() - b.ShownHeight()) < 0.001)
-			? kTrue : kFalse;
+		return (a.pages.size() == b.pages.size() && std::fabs(a.pages[0].width - b.pages[0].width) < 0.001
+				&& std::fabs(a.pages[0].height - b.pages[0].height) < 0.001) ? kTrue : kFalse;
 	}
 
-	/** Pages 2..n as spreads of one page at the end, a run of one size in one command - KCMReportTable.cpp's AppendPage
-		with the page's own size in place of its neighbour's (the SDK's own: SnpManipulateSpreadsAndPages.cpp).
+	/** Spreads 2..n of `layout` at the end, a run of one shape in one command - the shape the report's AppendPage uses with
+		a page count and size of the layout's own (the SDK's own: SnpManipulateSpreadsAndPages.cpp). The first spread is the
+		new document's. Island spreads: pages never shuffle into a neighbour, so the spreads stay as laid out.
 		⛔kSetPageSizeCmdBoss is not used: the SDK holds no caller of it and the form of its page range is unknown. */
-	bool16 AddPages(IDataBase* db, const KCMPdf::Info& info, PMString& why)
+	bool16 AddSpreads(IDataBase* db, const std::vector<KCMPdf::LayoutSpread>& layout, PMString& why)
 	{
-		const size_t n = info.pages.size();
 		size_t i = 1;
-		while (i < n)
+		while (i < layout.size())
 		{
 			size_t j = i + 1;
-			while (j < n && SameSize(info.pages[j], info.pages[i]))
+			while (j < layout.size() && SameShape(layout[j], layout[i]))
 				++j;
 			InterfacePtr<ICommand> cmd(CmdUtils::CreateCommand(kNewSpreadCmdBoss));
 			InterfacePtr<INewSpreadCmdData> data(cmd, UseDefaultIID());
@@ -135,14 +139,15 @@ namespace
 				return kFalse;
 			}
 			data->SetNewSpreadCmdData(UIDRef(db, db->GetRootUID()), static_cast<int32>(j - i), ISpreadList::kAtTheEnd,
-									  INewSpreadCmdData::kPagesMayShuffleThroughNewSpread, 1,
-									  PMPageSize(PMReal(info.pages[i].ShownWidth()), PMReal(info.pages[i].ShownHeight())));
+									  INewSpreadCmdData::kPreventPagesFromShufflingThroughNewSpread,
+									  static_cast<int32>(layout[i].pages.size()),
+									  PMPageSize(PMReal(layout[i].pages[0].width), PMReal(layout[i].pages[0].height)));
 			master->SetApplyMasterCmdData(kInvalidUIDRef, IApplyMasterCmdData::kKeepCurrentPageSize);
 			binding->Set(ISpread::kDefaultBinding);
 			if (CmdUtils::ProcessCommand(cmd) != kSuccess)
 			{
 				ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-				why = "The PDF document could not be given page ";
+				why = "The PDF document could not be given spread ";
 				why.AppendNumber(static_cast<int32>(i) + 1);
 				why.Append(".");
 				return kFalse;
@@ -150,6 +155,35 @@ namespace
 			i = j;
 		}
 		return kTrue;
+	}
+
+	/** The pages of the s-th spread, left to right, with their rectangles in the spread's coordinates, and its layer.
+		By geometry, never by the order a spread lists its pages: that follows the binding (KCMReportPageAt takes the first
+		page of a spread of one). */
+	bool16 SpreadPagesAt(SDKLayoutHelper& helper, IDataBase* db, int32 s, std::vector<std::pair<UID, PMRect> >& out,
+						 UIDRef& outLayer)
+	{
+		out.clear();
+		InterfacePtr<ISpreadList> spreads(db, db->GetRootUID(), UseDefaultIID());
+		if (spreads == nil || s < 0 || s >= spreads->GetSpreadCount())
+			return kFalse;
+		const UIDRef spreadRef(db, spreads->GetNthSpreadUID(s));
+		InterfacePtr<ISpread> spread(spreadRef, UseDefaultIID());
+		if (spread == nil)
+			return kFalse;
+		for (int32 k = 0; k < spread->GetNumPages(); ++k)
+		{
+			const UID pageUID = spread->GetNthPageUID(k);
+			InterfacePtr<IGeometry> geometry(db, pageUID, UseDefaultIID());
+			if (geometry == nil)
+				return kFalse;
+			// Spread coordinates (PageToSpread is margin-based, so it is not used) - KCMReportPageAt's way.
+			out.push_back(std::make_pair(pageUID, geometry->GetStrokeBoundingBox(::InnerToParentMatrix(geometry))));
+		}
+		std::sort(out.begin(), out.end(), [](const std::pair<UID, PMRect>& a, const std::pair<UID, PMRect>& b)
+			{ return a.second.Left() < b.second.Left(); });
+		outLayer = helper.GetActiveSpreadLayerRef(spreadRef);
+		return (!out.empty() && outLayer != UIDRef::gNull) ? kTrue : kFalse;
 	}
 
 	/** Whether a placed frame covers its page within half a point - the PDF page came out at the size the page was made
@@ -168,69 +202,97 @@ namespace
 			? kTrue : kFalse;
 	}
 
-	/** Every PDF page onto its own page, cropped to the trim box (the crop box for a page that names none), the reader's place
-		settings given back however this ends. kFalse with `why` when a page does not place. The cancel is asked between pages
-		(a placing cannot be interrupted) and never after the last. */
-	bool16 PlacePages(SDKLayoutHelper& helper, IDataBase* db, const IDFile& pdf, const KCMPdf::Info& info,
-					  PMString& misfits, PMString& why)
+	/** Every spread's PDF page(s) placed as `layout` says - once across a spread exported whole, otherwise one per page -
+		cropped to the trim box (the crop box for a page that names none), the reader's place settings given back however this
+		ends; and each page's identity (outKeys). kFalse with `why` when a page does not place. The cancel is asked between
+		placings and never after the last. */
+	bool16 PlaceLayout(SDKLayoutHelper& helper, IDataBase* db, const IDFile& pdf, const KCMPdf::Info& info,
+					   const std::vector<KCMPdf::LayoutSpread>& layout, std::map<UID, UID>& outKeys, PMString& misfits,
+					   PMString& why)
 	{
 		InterfacePtr<IPDFPlacePrefs> current(KCMQuerySessionPdfPlacePrefs());
 		KCMPdfPlacePrefsRestorer restore(current);
-		const int32 n = static_cast<int32>(info.pages.size());
+		int32 placings = 0;
+		for (size_t s = 0; s < layout.size(); ++s)
+			placings += layout[s].spansPdfPage ? 1 : static_cast<int32>(layout[s].pages.size());
 		PMString title("Making the PDF document...");
 		title.SetTranslatable(kFalse);
-		KCMProgressStepper progress(title, n);
-		for (int32 i = 0; i < n; ++i)
+		KCMProgressStepper progress(title, placings);
+		int32 done = 0;
+		for (size_t s = 0; s < layout.size(); ++s)
 		{
-			PMString step("Page ");
-			step.AppendNumber(i + 1);
-			step.Append(" / ");
-			step.AppendNumber(n);
-			step.SetTranslatable(kFalse);
-			progress.Step(i, step);
-			if (i > 0 && progress.WasCancelled())
-			{
-				why = "Cancelled.";
-				return kFalse;
-			}
-			PMRect page;
+			const KCMPdf::LayoutSpread& spread = layout[s];
+			std::vector<std::pair<UID, PMRect> > pages;
 			UIDRef layer;
-			if (!KCMReportPageAt(helper, db, i, page, layer))
+			if (!SpreadPagesAt(helper, db, static_cast<int32>(s), pages, layer) || pages.size() != spread.pages.size())
 			{
 				why = "The PDF document lost a page while it was being made.";
 				return kFalse;
 			}
-			PMString placeWhy;
-			// ★THE BOX THE PAGE NAMES (2026-10-14, the live test): InDesign refuses "crop to trim" on a page that names no
-			//   /TrimBox - "仕上がりサイズにトリミングできません。仕上がりサイズが定義されていないか、空です。" - where the spec falls back to
-			//   the crop box, and the crop box is what the reader took for such a page's size (KCMPdfPages.h). kCropToPage is
-			//   InDesign's "Crop": the crop box, the media box when the page names none (both measured on the crafted PDFs).
-			const int32 cropTo = info.pages[i].hasTrim ? IPDFPlacePrefs::kCropToTrim : IPDFPlacePrefs::kCropToPage;
-			if (!KCMSetPdfPlacePage(i + 1, cropTo, current, placeWhy))
+			for (size_t k = 0; k < pages.size(); ++k)
+				if (spread.pages[k].uid != 0)
+					outKeys[pages[k].first] = UID(spread.pages[k].uid);
+			const size_t n = spread.spansPdfPage ? 1 : pages.size();
+			for (size_t k = 0; k < n; ++k)
 			{
-				why = "The PDF document could not be made: ";
-				why.Append(placeWhy);
-				why.Append(".");
-				return kFalse;
-			}
-			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-			const UIDRef frame = helper.PlaceFileInFrame(pdf, layer, page, kSuppressUI);
-			ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// InDesign's own words are its language; the refusal below is said in KCM's
-			// ★A PAGE INDESIGN DID NOT PLACE REFUSES THE PDF (2026-10-14, the live test): it would stay an empty page, and two
-			//   empty pages compare unchanged - the one answer a check of an export must never give wrongly. (The crafted PDFs
-			//   did exactly that before the crop above: "pages compared=2 changed=0" over two blank documents.)
-			if (frame == UIDRef::gNull)
-			{
-				why = "The PDF could not be placed: InDesign refused page ";
-				why.AppendNumber(i + 1);
-				why.Append(".");
-				return kFalse;
-			}
-			if (!FitsPage(frame, page))
-			{
-				if (!misfits.IsEmpty())
-					misfits.Append(", ");
-				misfits.AppendNumber(i + 1);
+				PMString step("Page ");
+				step.AppendNumber(done + 1);
+				step.Append(" / ");
+				step.AppendNumber(placings);
+				step.SetTranslatable(kFalse);
+				progress.Step(done, step);
+				if (done > 0 && progress.WasCancelled())
+				{
+					why = "Cancelled.";
+					return kFalse;
+				}
+				const KCMPdf::LayoutPage& lp = spread.pages[k];
+				PMRect where = pages[k].second;
+				if (spread.spansPdfPage)
+				{
+					// across the spread: the union of its pages (spread coordinates)
+					PMReal left = where.Left(), top = where.Top(), right = where.Right(), bottom = where.Bottom();
+					for (size_t m = 1; m < pages.size(); ++m)
+					{
+						const PMRect& r = pages[m].second;
+						left = (r.Left() < left) ? r.Left() : left;
+						top = (r.Top() < top) ? r.Top() : top;
+						right = (r.Right() > right) ? r.Right() : right;
+						bottom = (r.Bottom() > bottom) ? r.Bottom() : bottom;
+					}
+					where = PMRect(left, top, right, bottom);
+				}
+				PMString placeWhy;
+				// ★THE BOX THE PAGE NAMES (2026-10-14, the live test of the PDF comparison): InDesign refuses "crop to trim"
+				//   on a page that names no /TrimBox - "仕上がりサイズにトリミングできません。仕上がりサイズが定義されていないか、空です。" -
+				//   where the spec falls back to the crop box; kCropToPage is InDesign's "Crop" (the crop box, else the media box).
+				const int32 cropTo = info.pages[lp.pdfPage].hasTrim ? IPDFPlacePrefs::kCropToTrim : IPDFPlacePrefs::kCropToPage;
+				if (!KCMSetPdfPlacePage(static_cast<int32>(lp.pdfPage) + 1, cropTo, current, placeWhy))
+				{
+					why = "The PDF document could not be made: ";
+					why.Append(placeWhy);
+					why.Append(".");
+					return kFalse;
+				}
+				ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+				const UIDRef frame = helper.PlaceFileInFrame(pdf, layer, where, kSuppressUI);
+				ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// InDesign's own words are its language; the refusal below is said in KCM's
+				// ★A PAGE INDESIGN DID NOT PLACE REFUSES THE PDF (2026-10-14, the live test): it would stay an empty page, and two
+				//   empty pages compare unchanged - the one answer a check of an export must never give wrongly.
+				if (frame == UIDRef::gNull)
+				{
+					why = "The PDF could not be placed: InDesign refused page ";
+					why.AppendNumber(static_cast<int32>(lp.pdfPage) + 1);
+					why.Append(".");
+					return kFalse;
+				}
+				if (!FitsPage(frame, where))
+				{
+					if (!misfits.IsEmpty())
+						misfits.Append(", ");
+					misfits.AppendNumber(static_cast<int32>(lp.pdfPage) + 1);
+				}
+				++done;
 			}
 		}
 		return kTrue;
@@ -280,9 +342,20 @@ namespace
 
 	bool16 MakePdfDoc(const IDFile& pdf, const KCMPdf::Info& info, const PMString& name, PdfDoc& out, PMString& why)
 	{
+		// ★THE SPREADS OF THE ORIGINAL (2026-10-14, the export check's design 3.3) - for the eye only: every page answers to
+		//   its own InDesign uid below, so a spread put together wrongly changes no comparison (KCMPdfSpreads.h).
+		const std::vector<KCMPdf::LayoutSpread> layout = KCMPdf::LayoutSpreads(info);
+		if (layout.empty() || layout[0].pages.empty())
+		{
+			why = "The PDF document could not be made.";
+			return kFalse;
+		}
+		const KCMPdf::LayoutSpread& first = layout[0];
+		const int32 firstPages = static_cast<int32>(first.pages.size());
 		SDKLayoutHelper helper;
-		const UIDRef docRef = helper.CreateDocument(kSuppressUI, PMReal(info.pages[0].ShownWidth()),
-												   PMReal(info.pages[0].ShownHeight()), 1, 1, 0);
+		// pageBinding 0 = left to right: a spread's pages are laid out left to right as the layout lists them
+		const UIDRef docRef = helper.CreateDocument(kSuppressUI, PMReal(first.pages[0].width), PMReal(first.pages[0].height),
+												   firstPages, firstPages, 0);
 		if (docRef == UIDRef::gNull)
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
@@ -291,9 +364,10 @@ namespace
 		}
 		IDataBase* const db = docRef.GetDataBase();
 		PMString misfits;
-		bool16 ok = AddPages(db, info, why);
+		std::map<UID, UID> keys;
+		bool16 ok = AddSpreads(db, layout, why);
 		if (ok)
-			ok = PlacePages(helper, db, pdf, info, misfits, why);
+			ok = PlaceLayout(helper, db, pdf, info, layout, keys, misfits, why);
 		if (ok)
 			ok = NameDoc(docRef, name, why);
 		if (!ok)
@@ -318,11 +392,10 @@ namespace
 		out.fMisfits = misfits;
 		if (info.HasPageIds())
 		{
-			std::vector<UID> pages;
-			KCMCollectPageUIDs(db, pages);
-			for (size_t i = 0; i < pages.size() && i < info.pages.size(); ++i)
-				out.fKeys[pages[i]] = UID(info.pages[i].uids[0]);	// a spread's PDF page answers to its first page
+			out.fKeys = keys;
 			out.fIds = kIdsOne;
+			out.fDocumentID = info.pages[0].documentID;
+			out.fOriginalDocumentID = info.pages[0].originalDocumentID;
 		}
 		else
 			out.fIds = info.HasMixedPageIds() ? kIdsMixed : kIdsNone;
