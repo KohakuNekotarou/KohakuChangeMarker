@@ -31,6 +31,12 @@
 //  guard is for a spread the table does not hold) is keyless, and is matched by order against
 //  the target pages that found no namesake. Nothing else is ever matched by order.
 //
+//  ★★THE TARGET ANSWERS TO KEYS OF ITS OWN TOO (2026-10-14, the PDF comparison): a document KCM made from a PDF has
+//  pages with new ids, each standing for the InDesign page its PDF page was exported from (KCMPdfDoc.h). Both ends are
+//  such documents, so the identity has to be read through keys on BOTH sides - the 9-argument form below. The rule is
+//  the same one: a target page whose key names a source key pairs with it; a target page whose key is `invalid`, or
+//  names nothing, waits with the others that found no namesake.
+//
 //  PURE. A template over the id type, so the offline test (work/kcm-pagepair-test) runs it on
 //  plain integers; the plug-in instantiates it on UID.
 //
@@ -43,27 +49,24 @@
 #include <map>
 #include <set>
 
-/** Pair targetPages with sourcePages by identity.
+/** Pair targetPages with sourcePages by identity, each side answering to keys of its own.
 
-    @param targetPages  the Target's pages, in document order (the registered ones already taken
-                        out by the caller).
-    @param sourcePages  the Source's pages, in document order (likewise).
-    @param sourceKeys   parallel to sourcePages: the identity each source page answers to. For an
-                        ordinary document that is the page's own id (pass sourcePages itself); for
-                        a rehydrated copy it is the origin id its label names, or `invalid` for a
-                        page whose label did not survive. A key that names more than one page
+    @param targetPages / sourcePages  each side's pages, in document order (the registered ones already taken out).
+    @param targetKeys   parallel to targetPages: the identity each target page answers to (its own id for an ordinary
+                        document; for a PDF document the InDesign page id its PDF page carries, or `invalid`).
+    @param sourceKeys   parallel to sourcePages, the same for the Source. A key that names more than one source page
                         counts for the first of them only; the others are treated as keyless.
     @param invalid      the id value that means "no identity" (kInvalidUID in the plug-in).
-    @param outTarget / outSource  one pair per index, both cleared on entry. The keyed pairs come
-                        first, in Target order; the keyless ones (a copy's unlabelled page against
-                        a leftover target page, both in document order) after them.
-    @param outOverflowTarget  (optional) the Target's pages that found no namesake and no keyless
-                        page to fall to = ADDED pages, in document order.
-    @param outOverflowSource  (optional) the keyed Source pages nobody named = REMOVED pages, in
-                        document order. A keyless page never lands here while a target page is
-                        left over; when none is, it does. */
+    @param outTarget / outSource  one pair per index, both cleared on entry. The keyed pairs come first, in Target
+                        order; the keyless ones (a keyless source page against a leftover target page, both in document
+                        order) after them.
+    @param outOverflowTarget  (optional) the Target's pages that found no namesake and no keyless page to fall to =
+                        ADDED pages, in document order.
+    @param outOverflowSource  (optional) the keyed Source pages nobody named = REMOVED pages, in document order. A
+                        keyless page never lands here while a target page is left over; when none is, it does. */
 template <class Id>
 void KCMPairPagesByIdentity(const std::vector<Id>& targetPages,
+							const std::vector<Id>& targetKeys,
 							const std::vector<Id>& sourcePages,
 							const std::vector<Id>& sourceKeys,
 							Id invalid,
@@ -91,7 +94,8 @@ void KCMPairPagesByIdentity(const std::vector<Id>& targetPages,
 	std::vector<Id> leftoverTarget;
 	for (size_t i = 0; i < targetPages.size(); ++i)
 	{
-		const typename std::map<Id, size_t>::const_iterator it = byKey.find(targetPages[i]);
+		const Id key = (i < targetKeys.size()) ? targetKeys[i] : invalid;
+		const typename std::map<Id, size_t>::const_iterator it = (key == invalid) ? byKey.end() : byKey.find(key);
 		if (it != byKey.end() && !used[it->second])
 		{
 			used[it->second] = true;
@@ -125,6 +129,20 @@ void KCMPairPagesByIdentity(const std::vector<Id>& targetPages,
 	if (outOverflowTarget)
 		for (size_t i = nextLeftover; i < leftoverTarget.size(); ++i)
 			outOverflowTarget->push_back(leftoverTarget[i]);
+}
+
+/** The form every document comparison uses: the Target answers to its own page ids (the 9-argument form with
+    targetKeys = targetPages). See the 9-argument form for the parameters. */
+template <class Id>
+void KCMPairPagesByIdentity(const std::vector<Id>& targetPages,
+							const std::vector<Id>& sourcePages,
+							const std::vector<Id>& sourceKeys,
+							Id invalid,
+							std::vector<Id>& outTarget, std::vector<Id>& outSource,
+							std::vector<Id>* outOverflowTarget, std::vector<Id>* outOverflowSource)
+{
+	KCMPairPagesByIdentity<Id>(targetPages, targetPages, sourcePages, sourceKeys, invalid,
+							   outTarget, outSource, outOverflowTarget, outOverflowSource);
 }
 
 #endif // __KCMPagePairRule_h__
