@@ -47,6 +47,11 @@ namespace KCMPdf
 		int rotate;						// 0, 90, 180 or 270
 		std::vector<uint32_t> uids;		// /PieceInfo /InDesign /PageUIDList in key order; empty when there is none
 		std::string documentID;			// /PieceInfo /InDesign /DocumentID as UTF-8; empty when there is none
+		std::string originalDocumentID;	// /PieceInfo /InDesign /OriginalDocumentID as UTF-8; empty when there is none
+		std::vector<double> widths;		// /PageWidthList in the uids' key order; empty unless every uid has one
+		std::vector<double> offsets;	// the x translation of /PageTransformationMatrixList ([a b c d e f] = e) in the uids'
+										//  key order - the spread's spine is 0, a left page negative; empty unless every
+										//  uid has one (2026-10-14, the export check's design 3.3: KCMPdfSpreads reads it)
 
 		PageInfo() : hasTrim(false), rotate(0) {}
 		/** The trim box as the page is shown: a quarter turn swaps its sides. */

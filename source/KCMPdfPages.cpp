@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <set>
 #include <utility>
 
@@ -97,7 +98,69 @@ namespace
 			in.rotate = NormalRotate(rv.intValue);
 	}
 
-	/** /PieceInfo /InDesign: the uids in key order (/0, /1, ...) and the document's id. Absent pieces leave both empty. */
+	/** The numbers of a /PieceInfo list keyed like /PageUIDList ("0", "1", ...): the value itself (element < 0, /PageWidthList)
+		or that element of an array value (/PageTransformationMatrixList, element 4 = the x translation). Keys that are not
+		whole numbers, and values that are not numbers, are skipped. */
+	void KeyedNumbers(KCMPdf::Document& doc, const KCMPdf::Object& dict, int element, std::map<long long, double>& out)
+	{
+		for (size_t i = 0; i < dict.keys.size() && i < dict.items.size(); ++i)
+		{
+			const char* const key = dict.keys[i].c_str();
+			char* end = nullptr;
+			const long long k = std::strtoll(key, &end, 10);
+			if (end == key || *end != 0)
+				continue;
+			KCMPdf::Object v;
+			if (!doc.Resolve(dict.items[i], v))
+				continue;
+			double d = 0;
+			if (element < 0)
+			{
+				if (!v.IsNumber())
+					continue;
+				d = v.Number();
+			}
+			else if (v.type != KCMPdf::kObjArray || !NumberAt(doc, v, static_cast<size_t>(element), d))
+				continue;
+			out[k] = d;
+		}
+	}
+
+	/** The list `name` of /InDesign as numbers in the order of `keys`, or nothing: `out` stays empty unless every key has one. */
+	void ListInKeyOrder(KCMPdf::Document& doc, const KCMPdf::Object& indesign, const char* name, int element,
+						const std::vector<long long>& keys, std::vector<double>& out)
+	{
+		out.clear();
+		KCMPdf::Object dict;
+		const KCMPdf::Object* d = indesign.Get(name);
+		if (d == nullptr || !doc.Resolve(*d, dict) || dict.type != KCMPdf::kObjDict)
+			return;
+		std::map<long long, double> byKey;
+		KeyedNumbers(doc, dict, element, byKey);
+		for (size_t i = 0; i < keys.size(); ++i)
+		{
+			const std::map<long long, double>::const_iterator it = byKey.find(keys[i]);
+			if (it == byKey.end())
+			{
+				out.clear();
+				return;
+			}
+			out.push_back(it->second);
+		}
+	}
+
+	/** A text string of /InDesign as UTF-8; empty when there is none. */
+	std::string TextOf(KCMPdf::Document& doc, const KCMPdf::Object& indesign, const char* name)
+	{
+		KCMPdf::Object v;
+		const KCMPdf::Object* p = indesign.Get(name);
+		if (p != nullptr && doc.Resolve(*p, v) && v.type == KCMPdf::kObjString)
+			return KCMPdf::TextStringToUtf8(v.text);
+		return std::string();
+	}
+
+	/** /PieceInfo /InDesign: the uids in key order (/0, /1, ...), the document's ids, and each uid's width and place in its
+		spread (2026-10-14). Absent pieces leave everything empty. */
 	void ReadPieceInfo(KCMPdf::Document& doc, const KCMPdf::Object& page, KCMPdf::PageInfo& out)
 	{
 		KCMPdf::Object piece;
@@ -108,6 +171,7 @@ namespace
 		const KCMPdf::Object* d = piece.Get("InDesign");
 		if (d == nullptr || !doc.Resolve(*d, indesign) || indesign.type != KCMPdf::kObjDict)
 			return;
+		std::vector<long long> keys;
 		KCMPdf::Object list;
 		const KCMPdf::Object* l = indesign.Get("PageUIDList");
 		if (l != nullptr && doc.Resolve(*l, list) && list.type == KCMPdf::kObjDict)
@@ -127,12 +191,15 @@ namespace
 			}
 			std::sort(keyed.begin(), keyed.end());
 			for (size_t i = 0; i < keyed.size(); ++i)
+			{
+				keys.push_back(keyed[i].first);
 				out.uids.push_back(keyed[i].second);
+			}
 		}
-		KCMPdf::Object idValue;
-		const KCMPdf::Object* id = indesign.Get("DocumentID");
-		if (id != nullptr && doc.Resolve(*id, idValue) && idValue.type == KCMPdf::kObjString)
-			out.documentID = KCMPdf::TextStringToUtf8(idValue.text);
+		out.documentID = TextOf(doc, indesign, "DocumentID");
+		out.originalDocumentID = TextOf(doc, indesign, "OriginalDocumentID");
+		ListInKeyOrder(doc, indesign, "PageWidthList", -1, keys, out.widths);
+		ListInKeyOrder(doc, indesign, "PageTransformationMatrixList", 4, keys, out.offsets);
 	}
 }	// namespace
 
