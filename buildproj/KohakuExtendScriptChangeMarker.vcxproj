@@ -256,6 +256,7 @@
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'"> $(id_sdk_dir)\external\bibxmp\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpreads.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPatchFilter.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableShape.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMSkippedText.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMImportTracking.cpp" />
@@ -368,6 +369,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPlacePdf.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfDoc.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpreads.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPatchFilter.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPagePairRule.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReport.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReportTable.h" />

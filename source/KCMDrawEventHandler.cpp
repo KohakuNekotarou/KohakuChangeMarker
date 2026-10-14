@@ -74,6 +74,7 @@
 #include "KCMThreadSafety.h"       // KCMIsSameDoc (the background thread's cloned db) / KCMIsMainThread / the mark-state lock
 #include "KCMExternalSource.h"     // KCMIsDbAlive -- a lent Source is not in IDocumentList and is still there
 #include "KCMPdfDoc.h"             // KCMIsPdfDoc - a PDF document is drawn at full resolution (2026-10-14)
+#include "KCMPatchFilter.h"        // the PDF export check keeps patches, not dots (2026-10-14)
 // The press-time HUD moved to the UI's own drawing service (KCMUIDrawEvent.cpp): whether a button
 // is held is the tool's state, which is the UI's and not visible from the model. **This file
 // includes no UI header.**
@@ -575,6 +576,15 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 					if (m) ++diffCount;
 				}
 				cntHi.reset();	// the pooling scratch is finished with -- hand the memory back now, not at the end of the scope
+				// ★THE EXPORT CHECK KEEPS PATCHES, NOT DOTS (2026-10-14, KCMConstants.h kKCMExportMinPatchCells): two painters
+				//   leave small groups of cells on a correct export; a real loss is a patch. The queue is nothrow like every
+				//   buffer here - without it the cells stay as counted (more marks, never fewer).
+				if (exportCheck && diffCount > 0)
+				{
+					K2::scoped_array<int32_t> queue(new (std::nothrow) int32_t[N]);	// int32_t: int32 is long on Windows
+					if (queue.get() != nil)
+						diffCount = KCMPatch::KeepPatches(M.get(), wl, hl, kKCMExportMinPatchCells, queue.get());
+				}
 
 				if (diffCount == 0)
 				{
