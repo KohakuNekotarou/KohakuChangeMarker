@@ -359,9 +359,10 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 	// kKCMResolution x kKCMHiResMul. Thin lines and sub-pixel shifts that averaging would erase
 	// are counted at full weight, so nothing is missed.
 	const PMReal hiRes = kKCMResolution * kKCMHiResMul;
-	// The comparison is always four-channel CMYK, rasterised opaque (small CMYK differences are
-	// rounded away by a conversion to RGB). The displayed ring is composited separately as ARGB,
-	// so the comparison raster does not need an alpha channel (addTransparencyAlpha = kFalse).
+	// The comparison is four-channel CMYK, rasterised opaque (small CMYK differences are
+	// rounded away by a conversion to RGB) - ⚠except the PDF export check, which is RGB (exportCheck below). The
+	// displayed ring is composited separately as ARGB, so the comparison raster does not need an alpha channel
+	// (addTransparencyAlpha = kFalse).
 	// @warning the declaration order of the four below (snapshot, then its accessor, twice) is what
 	//   keeps each accessor being destroyed before the snapshot it came from -- see the note where
 	//   KCMDropSnapshotPair used to be.
@@ -371,13 +372,21 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 	//   always drawn the same way. The document is KCM's own, and the dirtying the note on the 2nd argument below speaks
 	//   of is put back by the comparison's SaveRestoreModifiedState (KCMDoMarkChangesDoc, and the page refresh's).
 	const bool32 fullRes = (KCMIsPdfDoc(targetRef.GetDataBase()) || KCMIsPdfDoc(sourceRef.GetDataBase())) ? kTrue : kFalse;
-	K2::scoped_ptr<SnapshotUtilsEx> snapTH(new (std::nothrow) SnapshotUtilsEx(targetRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse));
+	// ★THE PDF EXPORT CHECK (2026-10-14, KCMConstants.h kKCMExportThr): a document against its PDF is drawn RGB and
+	//   anti-aliased on both sides (fullRes above is already kTrue: one of the two is a PDF document), and counted coarsely
+	//   below. ⚠The document's side at full resolution may dirty it - put back by the comparison's SaveRestoreModifiedState;
+	//   the live test measures that it is (plan Task 9).
+	const bool16 exportCheck = KCMIsExportCheckPair(targetRef.GetDataBase(), sourceRef.GetDataBase());
+	const SnapshotUtilsEx::SSColorSpaceFamily cs = exportCheck ? SnapshotUtilsEx::kCsRGB : SnapshotUtilsEx::kCsCMYK;
+	const bool16 antiAlias = exportCheck;
+	K2::scoped_ptr<SnapshotUtilsEx> snapTH(new (std::nothrow) SnapshotUtilsEx(targetRef, 1.0, 1.0, hiRes, hiRes, 0.0, cs, kFalse));
 	if (snapTH.get() == nil)
 		return kFailure;
-	// Rasterise with ANTI-ALIASING OFF (4th argument enableAntiAliasing = kFalse). It removes the
-	//   grey halo at edges, and with it the banding that a sub-pixel shift would otherwise register
-	//   as a difference. **Target and source must always use the same AA setting** -- with one of
-	//   them anti-aliased, every edge in the document is a difference.
+	// Rasterise with ANTI-ALIASING OFF (4th argument enableAntiAliasing = antiAlias, kFalse but for the PDF export
+	//   check). It removes the grey halo at edges, and with it the banding that a sub-pixel shift would otherwise
+	//   register as a difference. **Target and source must always use the same AA setting** -- with one of
+	//   them anti-aliased, every edge in the document is a difference (which is why the export check turns it on for
+	//   both: a placed PDF is drawn anti-aliased whatever is asked).
 	// 2nd argument fullResolutionGraphics = kFalse (the default) is **deliberate**: kTrue triggers
 	//   generation of placed images at full resolution, and that DIRTIES THE DOCUMENT. KCM's design
 	//   rests on never modifying the model, so the comparison uses the proxies. ⚠Except for a PDF
@@ -412,19 +421,19 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 	ErrorCode drewTH;
 	{
 		KCMRasterizingGuard rg;	// a re-entrant draw during this Draw must not paint marks into our own raster
-		drewTH = snapTH->Draw(IShape::kPreviewMode, fullRes, 0.0, kFalse,
+		drewTH = snapTH->Draw(IShape::kPreviewMode, fullRes, 0.0, antiAlias,
 		                      SnapshotUtils::kXPHigh, nil, nil, kFalse);
 	}
 	K2::scoped_ptr<AGMImageAccessor> accTH((drewTH == kSuccess) ? snapTH->CreateAGMImageAccessor() : nil);
 
-	K2::scoped_ptr<SnapshotUtilsEx> snapSH(new (std::nothrow) SnapshotUtilsEx(sourceRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse));
+	K2::scoped_ptr<SnapshotUtilsEx> snapSH(new (std::nothrow) SnapshotUtilsEx(sourceRef, 1.0, 1.0, hiRes, hiRes, 0.0, cs, kFalse));
 	if (snapSH.get() == nil)
 		return kFailure;	// snapTH and accTH free themselves on the way out
 	ErrorCode drewSH;
 	{
 		KCMRasterizingGuard rg;
-		// As above: greeking off, AA off, non-printing objects not drawn -- both sides identical.
-		drewSH = snapSH->Draw(IShape::kPreviewMode, fullRes, 0.0, kFalse,
+		// As above: greeking off, AA off (on for the export check), non-printing objects not drawn -- both sides identical.
+		drewSH = snapSH->Draw(IShape::kPreviewMode, fullRes, 0.0, antiAlias,
 		                      SnapshotUtils::kXPHigh, nil, nil, kFalse);
 	}
 	K2::scoped_ptr<AGMImageAccessor> accSH((drewSH == kSuccess) ? snapSH->CreateAGMImageAccessor() : nil);
@@ -454,7 +463,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 
 		if (ptH != nil && psH != nil &&
 			wth == wsh && hth == hsh && rbTH == rbSH && rbTH > 0 &&
-			bppH >= 4 && wl > 0 && hl > 0)
+			bppH >= (exportCheck ? 3 : 4) && wl > 0 && hl > 0)
 		{
 			// **Every allocation in this function is new (std::nothrow)**: MSVC's ordinary new
 			//   throws instead of returning nil, so without nothrow the nil tests below would do
@@ -501,11 +510,12 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 				// Each high-resolution pixel is tested (the largest raw per-channel difference) and,
 				// if it changed, the counter of its low-resolution cell is incremented. The cell
 				// mapping is by dimension ratio, so the two resolutions need not be integer multiples.
-				// CMYK: four channels from offset 0. A pixel changed when the largest channel
-				// difference exceeds the threshold (kKCMCmykThr).
-				const int  nch       = 4;
-				const int32 colorOffH = 0;
-				const int  thr        = kKCMCmykThr;
+				// A pixel changed when the largest channel difference exceeds the threshold.
+				// CMYK: four channels from offset 0. The export check's RGB: three, after the alpha when the raster has one
+				// (ARGB, the peek's MakeOrigImage reads it the same way).
+				const int  nch       = exportCheck ? 3 : 4;
+				const int32 colorOffH = (exportCheck && bppH >= 4) ? 1 : 0;
+				const int  thr        = exportCheck ? kKCMExportThr : kKCMCmykThr;
 
 				// Stage 1 of the exclusion sieve: the union bbox of the rectangles. After this, a
 				// row outside its vertical range costs zero tests, and an x outside its horizontal
@@ -560,7 +570,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 				size_t diffCount = 0;
 				for (size_t i = 0; i < N; ++i)
 				{
-					uint8 m = (cntHi[i] >= (uint16)kKCMPoolMinCount) ? 1 : 0;
+					uint8 m = (cntHi[i] >= (uint16)(exportCheck ? kKCMExportPoolMinCount : kKCMPoolMinCount)) ? 1 : 0;
 					M[i] = m;
 					if (m) ++diffCount;
 				}

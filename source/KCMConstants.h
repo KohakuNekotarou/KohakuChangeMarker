@@ -59,6 +59,15 @@ static const PMReal kKCMResolution = 36.0;
 // Comparison resolution = kKCMResolution * kKCMHiResMul = 144dpi.
 static const PMReal kKCMHiResMul    = 4.0;
 static const int32  kKCMPoolMinCount = 1;	// Pooling: a stored cell counts as changed when this many high-res pixels inside it changed. 1 = most sensitive (picks up edge noise); higher survives noise better, at a slightly higher risk of missing a change.
+// ★THE PDF EXPORT CHECK'S RASTER AND COUNTING (2026-10-14, design 2026-10-14-kcm-pdf-export-check 3.5): a document against
+//   its PDF is drawn RGB, anti-aliased, at full resolution on both sides - a placed PDF is always drawn anti-aliased and
+//   reaches CMYK values by another path, so the comparison's own settings would mark every edge and image - and only a
+//   large difference counts: a pixel whose largest RGB channel differs by more than kKCMExportThr, a cell when at least
+//   kKCMExportPoolMinCount of its 16 pixels (4x4 at 144dpi) do. Measured (docs/ai-notes/kcm-pdf-as-source-2026-10-14.md
+//   7-3): a correct export's noise 32 (text) / 2 (images) / 88 (transparency) cells, a PDF whose transparency went 4,755.
+//   Initial values: the live test (plan Task 9) confirms them on real documents.
+static const int   kKCMExportThr = 128;
+static const int32 kKCMExportPoolMinCount = 6;
 
 // How long a comparison runs before its progress bar (with Cancel) appears, in milliseconds.
 // Pixel and Story alike (2026-09-05, the user's call: three seconds). It used to be a PAGE
