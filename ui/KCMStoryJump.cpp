@@ -939,7 +939,26 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	PMString shownLabel(label);
 	if (change.fReplaced)
 	{
-		PMString taken("Taken back - the Source's words stand here now; Redo puts Word's back. ");
+		PMString taken;
+		taken.SetTranslatable(kFalse);
+		// ★APPLY'S "=" READS THE OTHER WAY ROUND (2026-10-24 evening, design 11-4): against an import's copy the files'
+		//   words went IN here, and the way back is the row's Restore from Copy or Ctrl+Z - the take-back's sentence
+		//   below ("Redo puts Word's back") said the opposite of what had happened.
+		PMString whyNot;
+		if (Utils<IKCMStoryEditsFacade>()->IsImportSource())
+		{
+			taken.Append("Applied - the imported words stand here now; ");
+			if (Utils<IKCMStoryEditsFacade>()->GetChangeCopyState(rowIndex, changeIndex, whyNot))
+				taken.Append("right-click: Restore from Copy, or Ctrl+Z. ");
+			else
+			{
+				taken.Append("Ctrl+Z takes it back (no copy was kept: ");
+				taken.Append(whyNot);
+				taken.Append("). ");
+			}
+		}
+		else
+			taken.Append("Taken back - the Source's words stand here now; Redo puts Word's back. ");
 		taken.SetTranslatable(kFalse);
 		taken.Append(label);
 		shownLabel = taken;

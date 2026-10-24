@@ -57,6 +57,7 @@
 #include "KCMID.h"
 #include "KCMThreadSafety.h"		// KCMIsMainThread
 #include "KCMTaskStartClone.h"		// KCMTaskStartCloneDocClosing - a Task Start kept in memory goes with its document
+#include "KCMCopyStore.h"			// DocumentClosing - the document's copy store goes with it (2026-10-24)
 #include "KCMMarksObserver.h"		// KCMMarksEnsureObserver -- so later writes reach the store
 #include "KCMPageMarksDoc.h"		// KCMMarksSyncFromDocument -- the marks the document carries
 #include "KCMModelNotify.h"		// KCMSayStatus -- the model owns the words, the UI shows them
@@ -240,6 +241,10 @@ void KCMAfterOpenDocResponder::Respond(ISignalMgr* signalMgr)
 	⚠It only lets the clone go - ending a comparison that draws from it first, the one thing that cannot wait for the
 	 sweep (KCMTaskStartClone.h). Everything else this plug-in does on a close stays on kAfterCloseDoc (the top of
 	 this file says why).
+	★AND THE DOCUMENT'S COPY STORE (2026-10-24, KCMCopyStore.h): the copies Apply This Change took of its words go with
+	 it - the comparison and its records go with the document, so nothing can name them again. Here rather than at
+	 kAfterCloseDoc because a store is found by the document's database, compared while that database is certainly the
+	 document's.
 */
 class KCMBeforeCloseDocResponder : public CResponder
 {
@@ -260,6 +265,7 @@ void KCMBeforeCloseDocResponder::Respond(ISignalMgr* signalMgr)
 	if (signalData == nil)
 		return;
 	KCMTaskStartCloneDocClosing(signalData->GetDocument().GetDataBase());
+	KCMCopyStore::DocumentClosing(signalData->GetDocument().GetDataBase());
 }
 
 // End, KCMDocResponder.cpp.

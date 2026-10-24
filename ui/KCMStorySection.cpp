@@ -20,6 +20,11 @@
 #include "IPanelMgr.h"				// QueryPanelManager / GetPaletteRefContainingPanel
 #include "IWidgetParent.h"			// QueryParentFor - the palette sizer lives ABOVE the panel
 #include "IMonitorInfo.h"			// GetBestScreenRect - is the grown panel still on the screen?
+#include "IEvent.h"					// GlobalWhere - where the heading's menu opens (2026-10-24 evening)
+#include "IActionManager.h"			// ...the route from the application to the menu manager
+#include "IMenuManager.h"			// HandlePopupMenu
+#include "DVHostedWidgetEH.h"		// the upper pane's event handler: the stock behaviour but for a right click on the heading
+#include "KCMDiag.h"				// KCM_DIAG_LOG - the heading's right click, traced (test builds only)
 
 // ----- Interfaces published under source/open -----
 //
@@ -387,7 +392,14 @@ void KCMUpdateStorySectionLabel()
 	//   shows up once per author there, so a row count would say nothing a reader could use.
 	Utils<IKCMCompareFacade> compareHere;
 	const bool16 trackMode = (!showsResources && compareHere && compareHere->GetCompareMode() == kKCMModeTrack) ? kTrue : kFalse;
-	PMString text(showsResources ? kKCMResourcesSectionLabelKey : (trackMode ? kKCMTrackSectionLabelKey : kKCMStorySectionLabelKey));
+	// ★"Proposed Edits (N)" while the Source is an import's copy (2026-10-24 evening - the author: "let us make it Proposed
+	//   Edits"): the rows are what the document WOULD become, and "Story Edits" read as edits already made. N = the changes
+	//   still to put in - not the rows (a story is one row and holds many), and not the "=" or "!" ones.
+	Utils<IKCMStoryEditsFacade> editsHere;
+	const bool16 proposedMode = (!showsResources && !trackMode && editsHere && editsHere->IsImportSource()) ? kTrue : kFalse;
+	PMString text(showsResources ? kKCMResourcesSectionLabelKey
+				  : trackMode ? kKCMTrackSectionLabelKey
+				  : proposedMode ? kKCMProposedSectionLabelKey : kKCMStorySectionLabelKey);
 	text.Translate();
 
 	// ★The count is shown only while comparing. Stopped, the list itself is empty, so "(0)" would
@@ -418,7 +430,8 @@ void KCMUpdateStorySectionLabel()
 	{
 		text.Append(" (");
 		text.AppendNumber(showsResources ? resources->GetChangeCount()
-						  : (trackMode ? edits->GetTrackChangeTotal() : edits->GetRowCount()));
+						  : trackMode ? edits->GetTrackChangeTotal()
+						  : proposedMode ? edits->GetProposedCount() : edits->GetRowCount());
 		text.Append(")");
 	}
 
@@ -533,5 +546,67 @@ void KCMUpdateStorySectionLabel()
 	//     now, so the clear asks whether the text standing there is its own (KCMResourceValue.cpp).
 	KCMClearResourceValue();
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// ★THE SECTION HEADING'S RIGHT CLICK (2026-10-24 evening - the author: "Apply All Changes on a story row is odd - it acts on
+// every story; put it on the Proposed Edits heading"). While the Source is an import's copy, a right click ON THE HEADING
+// pops kKCMProposedHeadingMenuName ("Apply All Changes", which acts on no row); every other event, and a right click anywhere
+// else in the pane, goes to the stock handling. The same pop as the rows' (KCMStoryRowEH::RButtonDn), grey items kept as on
+// the trial's change rows (the author's "grey is fine when it cannot be done").
+// ★THE UPPER PANE'S HANDLER, NOT THE HEADING'S (measured 2026-10-24 evening, KCM_DIAG traces): the heading is a static
+//   text, and its own handler never heard a press - on CEventHandler the right click opened no menu, and on
+//   DVControlEventHandler, every mouse event traced, not one arrived, from a press posted to the panel nor from the real
+//   pointer; the same press on a story row opened its menu. The pane that holds it does hear it (its MouseMove and
+//   RButtonDn traced) - the product's own shape for right clicks over labels, too (the Link Info section's, in its panel's
+//   handler: open/components/linksui/LinkInfoPanelEH.cpp, on kGenericPanelWidgetBoss).
+// ---------------------------------------------------------------------------------------------------------------------
+class KCMTopPaneEH : public DVHostedWidgetEH
+{
+	typedef DVHostedWidgetEH inherited;
+public:
+	KCMTopPaneEH(IPMUnknown* boss) : inherited(boss) {}
+	virtual ~KCMTopPaneEH() {}
+
+	virtual bool16 RButtonDn(IEvent* e)
+	{
+		if (e == nil || !this->PressIsOnHeading(e))
+			return inherited::RButtonDn(e);
+		Utils<IKCMStoryEditsFacade> edits;
+		if (!edits || !edits->IsImportSource())
+			return inherited::RButtonDn(e);
+		ISession* session = GetExecutionContextSession();
+		InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
+		InterfacePtr<IActionManager> actionMgr(app != nil ? app->QueryActionManager() : nil);
+		InterfacePtr<IMenuManager> menuMgr(actionMgr, UseDefaultIID());
+		if (menuMgr == nil)
+			return kTrue;
+		menuMgr->HandlePopupMenu(kKCMProposedHeadingMenuName, e->GlobalWhere(), e->GlobalWhere(),
+								 kFalse /*removeDisabledItems*/, this);
+		return kTrue;
+	}
+
+private:
+	/** Is the press on the section heading - a child of this pane, shown? The point in the window against the heading's box
+		there (KohakuGraph's KGUIValueEdit does the same), NOT the heading's own HitTest - the way the Layers panel asks its
+		proxy (LayerProxyDragDropSourceEH.cpp): the build that asked HitTest opened no menu for a press on the heading, and
+		the box compared by hand holds that same press (measured 2026-10-24 evening - the trace below). */
+	bool16 PressIsOnHeading(IEvent* e)
+	{
+		InterfacePtr<IPanelControlData> pane(this, UseDefaultIID());
+		IControlView* const heading = (pane != nil) ? pane->FindWidget(kKCMStorySectionLabelWidgetID) : nil;
+		if (heading == nil || !heading->IsVisible())
+			return kFalse;
+		const SysPoint where = ::ToSys(heading->GlobalToWindow(e->GlobalWhere()));
+		const SysRect box = heading->GetBBox();
+		const bool16 on = (SysPointH(where) >= SysRectLeft(box) && SysPointH(where) < SysRectRight(box)
+						   && SysPointV(where) >= SysRectTop(box) && SysPointV(where) < SysRectBottom(box)) ? kTrue : kFalse;
+		KCM_DIAG_LOG("TOPPANE press at %d,%d heading box %d,%d-%d,%d on=%d", static_cast<int>(SysPointH(where)),
+					 static_cast<int>(SysPointV(where)), static_cast<int>(SysRectLeft(box)), static_cast<int>(SysRectTop(box)),
+					 static_cast<int>(SysRectRight(box)), static_cast<int>(SysRectBottom(box)), on ? 1 : 0);
+		return on;
+	}
+};
+
+CREATE_PMINTERFACE(KCMTopPaneEH, kKCMTopPaneEHImpl)
 
 // End, KCMStorySection.cpp.

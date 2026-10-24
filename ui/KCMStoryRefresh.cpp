@@ -161,8 +161,8 @@ bool16 KCMStoryRowApply()
 
 bool16 KCMStoryRowCanApplyAll()
 {
-	if (gMenuRow < 0 || gMenuChange >= 0)
-		return kFalse;
+	// ★NO ROW ASKED (2026-10-24 evening): the item is on the section heading's menu now (KCMTopPaneEH) and acts
+	//   on every story the import filled, so whichever row the last menu was popped over has nothing to say about it.
 	return Utils<IKCMStoryEditsFacade>()->IsImportSource();
 }
 
@@ -176,6 +176,28 @@ bool16 KCMStoryRowApplyAll()
 	PMString why;
 	const int32 done = Utils<IKCMStoryEditsFacade>()->ApplyAll(why);
 	SayApplied("apply", done, why);
+	return (done > 0) ? kTrue : kFalse;
+}
+
+bool16 KCMChangeRowCanRestoreCopy()
+{
+	if (gMenuRow < 0 || gMenuChange < 0)
+		return kFalse;
+	if (!Utils<IKCMCompareFacade>()->IsArmed())
+		return kFalse;
+	return Utils<IKCMStoryEditsFacade>()->CanRestoreChangeFromCopy(gMenuRow, gMenuChange);
+}
+
+bool16 KCMChangeRowRestoreCopy()
+{
+	if (!KCMChangeRowCanRestoreCopy())
+	{
+		KCMSetStatus("restore from copy: not a change Apply This Change put in with a copy kept.");
+		return kFalse;
+	}
+	PMString why;
+	const int32 done = Utils<IKCMStoryEditsFacade>()->RestoreChangeFromCopy(gMenuRow, gMenuChange, why);
+	SayApplied("restore from copy", done, why);
 	return (done > 0) ? kTrue : kFalse;
 }
 

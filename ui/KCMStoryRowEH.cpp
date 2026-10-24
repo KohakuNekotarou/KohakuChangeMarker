@@ -58,6 +58,8 @@
 
 // General includes:
 #include "KCMStoryNodeID.h"		// our node class: (row, change). Was ListIndexNodeID until 2026-08-20
+#include "IKCMStoryEditsFacade.h"	// IsImportSource / GetChange - which menu a change row pops (2026-10-24 evening)
+#include "Utils.h"
 
 // Published under source/open, reached by a relative path rather than by adding an include
 // directory - the same reasoning, and the same route, as KCMStoryTreeWidgetMgr.cpp's
@@ -353,6 +355,21 @@ bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 	if (menuMgr == nil)
 		return kTrue;
 
+	// ★★AGAINST AN IMPORT'S COPY A CHANGE ROW POPS THE TRIAL'S OWN MENU, GREY ITEMS KEPT (2026-10-24 evening - the author:
+	//   "there are rows I cannot right-click"; a "=" row's items were all grey, and the fourth argument kTrue drops grey
+	//   items, so the menu did not open at all - KFC found the same argument behind its SET-11, and the author chose grey
+	//   there: "grey is fine when it cannot be done"). Apply This Change and Restore from Copy alone (kKCMChangeRowTrialMenuName),
+	//   so the grey line says which of the two this row cannot do. ⚠A "!" row stays without a menu: it holds nothing to put in.
+	Utils<IKCMStoryEditsFacade> edits;
+	if (isChangeRow && edits && edits->IsImportSource())
+	{
+		IKCMStoryEditsFacade::Change change;
+		if (!edits->GetChange(rowIndex, changeIndex, change) || change.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused)
+			return kTrue;
+		menuMgr->HandlePopupMenu(kKCMChangeRowTrialMenuName, e->GlobalWhere(), e->GlobalWhere(),
+								 kFalse /*removeDisabledItems*/, this);
+		return kTrue;
+	}
 	menuMgr->HandlePopupMenu(isChangeRow ? kKCMChangeRowMenuName : kKCMStoryRowMenuName,
 							 e->GlobalWhere(), e->GlobalWhere(), kTrue, this);
 	return kTrue;

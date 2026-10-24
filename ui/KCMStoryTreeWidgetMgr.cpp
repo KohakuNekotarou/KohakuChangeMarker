@@ -319,9 +319,12 @@ public:
 		const int32 lines = (isChange && !bang) ? LineCountOfNode(node) : 1;
 		// ★A TRACK AUTHOR ROW HAS A RESOURCE OF ITS OWN (2026-10-05): the story row with a colour square in the UID column.
 		const bool16 authorRow = (nodeID != nil && nodeID->IsAuthorRow()) ? kTrue : kFalse;
+		// ★A "=" ROW APPLY THIS CHANGE PUT IN has a resource of its own too (2026-10-24 evening): the change row with a red "=".
+		const bool16 applied = (isChange && !bang && this->IsAppliedNode(nodeID)) ? kTrue : kFalse;
 		const RsrcID rsrcID = authorRow   ? kKCMTrackAuthorRowRsrcID
 							  : bang        ? (bangChild ? kKCMStoryBangChangeRowRsrcID : kKCMStoryBangRowRsrcID)
 							  : !isChange   ? kKCMStoryRowRsrcID
+							  : applied     ? kKCMStoryAppliedRowRsrcID
 							  : (lines >= 3) ? kKCMStoryTallRowRsrcID
 							  : (lines == 2) ? kKCMStoryRubyRowRsrcID
 											 : kKCMStoryChangeRowRsrcID;
@@ -380,6 +383,11 @@ public:
 		if (nodeID == nil || !nodeID->IsChangeRow() || KCMListShowsResources())
 			return kKCMStoryRowWidgetID;
 
+		// ★The red-"=" row answers its own ID (2026-10-24 evening) - the "!" rows' reason: a plain change row handed its
+		//   widget would show a red "=", and the other way round.
+		if (this->IsAppliedNode(nodeID))
+			return kKCMStoryAppliedRowWidgetID;
+
 		const int32 lines = LineCountOfNode(node);
 		return (lines >= 3) ? kKCMStoryTallRowWidgetID
 			 : (lines == 2) ? kKCMStoryRubyRowWidgetID
@@ -412,6 +420,24 @@ public:
 		if (!Utils<IKCMStoryEditsFacade>()->GetRow(nodeID->GetRow(), row))
 			return kFalse;
 		return ((row.fKinds & kKCMStoryKindRefused) != 0) ? kTrue : kFalse;
+	}
+
+	/** Whether this node is a ONE-LINE "=" row Apply This Change put in (2026-10-24 evening, the import-as-Source trial -
+		the author: "when a change goes in and shows =, make the = red"): the Source is an import's copy and the change
+		is a "=" record. ★One question for the resource to build and the widget type to recycle by, as IsBangNode is.
+		⚠One line only: a ruby / mark row of two or three lines keeps its own resource, and its "=" the stock colour.
+		⚠Never in the Resources mode (LineCountOfNode's guard). */
+	bool16 IsAppliedNode(const KCMStoryNodeID* nodeID) const
+	{
+		if (nodeID == nil || !nodeID->IsChangeRow() || KCMListShowsResources())
+			return kFalse;
+		Utils<IKCMStoryEditsFacade> edits;
+		if (!edits || !edits->IsImportSource())
+			return kFalse;
+		IKCMStoryEditsFacade::Change change;
+		if (!edits->GetChange(nodeID->GetRow(), nodeID->GetChange(), change) || !change.fReplaced)
+			return kFalse;
+		return (this->LineCountOfChange(nodeID->GetRow(), nodeID->GetChange()) == 1) ? kTrue : kFalse;
 	}
 
 	// Answer both size questions rather than letting the base class build a widget and measure it.

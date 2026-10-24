@@ -329,12 +329,12 @@ bool16 KCMPlanRedoFromWord(const UIDRef& targetStory, const UIDRef& sourceStory,
 //----------------------------------------------------------------------------------------
 
 int32 KCMApplyRedoFromWord(const UIDRef& targetStory, const KCMStoryShape::Story& now, const KCMStorySync::Plan& plan,
-						   PMString& outWhy)
+						   PMString& outWhy, bool16 signedAndTracked)
 {
 	outWhy.Clear();
 	outWhy.SetTranslatable(kFalse);
-	KCMImportAuthor author;						// signed KohakuChangeMarker, and the name put back when this returns
-	KCMStoryTrackingOn tracking(targetStory);	// recorded, so that it can be rejected again
+	KCMImportAuthor author(signedAndTracked);						// signed KohakuChangeMarker, the name put back when this returns
+	KCMStoryTrackingOn tracking(targetStory, signedAndTracked);	// recorded, so that it can be rejected again
 	KCMSyncResult result;
 	KCMApplySyncPlan(targetStory, now, plan, result);
 	const int32 wentIn = result.fWrites + result.fAttrWrites + result.fNoteEdits + result.fTableEdits;
@@ -462,17 +462,18 @@ void StepsOfTable(const KCMStorySync::Plan& plan, int32 ordinal, bool16 shape, K
 /** KCMRedoTableFromWord's body. `nothingIsDone`: a table that already reads as Word's answers 0 rather than a refusal
 	- for a table the redo has just PUT IN (KCMRedoTableAddedOrTaken), where Word's cells may all be empty.
 	`wordIn`: Word's story to compare against, when the caller has made it (the tables still taken back left out -
-	KCMStorySync::WithoutTables); nil = the one the import kept. */
+	KCMStorySync::WithoutTables); nil = the one the import kept.
+	`signedAndTracked`: kFalse for the import-as-Source trial's Apply (KCMRedoFromWord.h). */
 static int32 RedoOneTable(const UIDRef& targetStory, UID tableUID, bool16 nothingIsDone,
-						  const KCMStoryShape::Story* wordIn, PMString& outWhy);
+						  const KCMStoryShape::Story* wordIn, PMString& outWhy, bool16 signedAndTracked);
 
-int32 KCMRedoTableFromWord(const UIDRef& targetStory, UID tableUID, PMString& outWhy)
+int32 KCMRedoTableFromWord(const UIDRef& targetStory, UID tableUID, PMString& outWhy, bool16 signedAndTracked)
 {
-	return RedoOneTable(targetStory, tableUID, kFalse, nil, outWhy);
+	return RedoOneTable(targetStory, tableUID, kFalse, nil, outWhy, signedAndTracked);
 }
 
 static int32 RedoOneTable(const UIDRef& targetStory, UID tableUID, bool16 nothingIsDone,
-						  const KCMStoryShape::Story* wordIn, PMString& outWhy)
+						  const KCMStoryShape::Story* wordIn, PMString& outWhy, bool16 signedAndTracked)
 {
 	outWhy.Clear();
 	outWhy.SetTranslatable(kFalse);
@@ -487,8 +488,8 @@ static int32 RedoOneTable(const UIDRef& targetStory, UID tableUID, bool16 nothin
 		return -1;
 	}
 
-	KCMImportAuthor author;						// signed KohakuChangeMarker, and the name put back when this returns
-	KCMStoryTrackingOn tracking(targetStory);	// recorded, so that it can be rejected again
+	KCMImportAuthor author(signedAndTracked);						// signed KohakuChangeMarker, the name put back when this returns
+	KCMStoryTrackingOn tracking(targetStory, signedAndTracked);	// recorded, so that it can be rejected again
 	int32 total = 0;
 
 	// 2. the shape rounds of THIS table, as the import runs them (KCMStoryTextImport): planned with the tables
@@ -812,7 +813,7 @@ int32 KCMRedoTableAddedOrTaken(const UIDRef& targetStory, const KCMRejectedRecor
 	}
 	KCMStoryShape::Story wordView;
 	KCMStorySync::WithoutTables(word, hide, wordView);
-	const int32 filled = RedoOneTable(targetStory, fresh, kTrue, &wordView, outWhy);
+	const int32 filled = RedoOneTable(targetStory, fresh, kTrue, &wordView, outWhy, kTrue);
 	if (filled < 0)
 		return -1;
 	return shape.fTableEdits + filled;

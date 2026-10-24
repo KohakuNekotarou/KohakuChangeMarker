@@ -68,6 +68,7 @@
 						// resource at the end of this file, which keeps the story counters out of IDML
 #include "TextScriptID.h"	// kStoryObjectScriptElement (TextScriptID.h:49) - the story object the
 							// four change-counter properties are added to
+#include "DragDropID.h"	// IID_IDATAEXCHANGECONTROLLER - the copy store's controller (KCMCopyStore.cpp, 2026-10-24)
 
 // Project includes:
 #include "KCMID.h"
@@ -322,6 +323,19 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_IK2SERVICEPROVIDER, kBeforeCloseDocSignalRespServiceImpl,
 			IID_IRESPONDER,         kKCMBeforeCloseResponderImpl,
+		}
+	},
+
+	// ***** KCM'S OWN COPY STORE (2026-10-24, the import-as-Source trial). *****
+	// A data exchange controller whose scrap database holds the words Apply This Change wrote over, for Restore from
+	// Copy (KCMCopyStore.h). The shape of KFC's kKFCCopyStoreBoss: made with CreateObject, never registered with the
+	// clipboard or a drag, so the user's clipboard is never touched.
+	Class
+	{
+		kKCMCopyStoreBoss,
+		kInvalidClass,
+		{
+			IID_IDATAEXCHANGECONTROLLER, kKCMCopyStoreImpl,
 		}
 	},
 
@@ -819,6 +833,21 @@ resource VersionedScriptElementInfo(10)
 			}
 		}
 
+		// (2026-10-24 evening, the trial's second try-out - design section 11-3) the "=" row's Restore from Copy, without
+		// the right click - so that it can be measured from KIDMCP. ⚠Not registered with Adobe.
+		Method
+		{
+			kKCMRestoreFromCopyMethodScriptElement,
+			e_KCMRestoreFromCopy,
+			"kcm restore from copy",			// name -> app.kcmRestoreFromCopy(what)
+			"Put the document's own words back over a change Apply This Change put in, from the copy it kept, as Restore from Copy does: \"<row> <change>\" (0-based, the Story Edits list's indices).",
+			StringType,
+			"The sentence the status line shows"
+			{
+				p_Name, "what", "Which change: \"<row> <change>\"", StringType, kRequired
+			}
+		}
+
 		// (⛔**TWO METHODS STOOD HERE AND WENT ON 2026-09-21** with the restore they drove:
 		//  "kcm take in change" (app.kcmTakeInChange, e_KCMTakeInChange) and "kcm undo restore"
 		//  (app.kcmUndoRestore, e_KCMUndoRestoreChange). Each named a change by WORDS it holds, so that
@@ -860,6 +889,7 @@ resource VersionedScriptElementInfo(10)
 				Method{ kKCMCompareTrackedMethodScriptElement },	// (2026-10-05) the Track mode's test door
 				Method{ kKCMImportToSourceMethodScriptElement },	// (2026-10-24) the import-as-Source trial's two doors
 				Method{ kKCMApplyChangeMethodScriptElement },
+				Method{ kKCMRestoreFromCopyMethodScriptElement },	// (2026-10-24 evening) the "=" row's Restore from Copy
 				// ...and the export's .docx road (2026-09-19).
 				// (⛔The two halves of "kcm take in change" and "kcm undo restore" went on 2026-09-21.)
 			}

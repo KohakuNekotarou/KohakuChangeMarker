@@ -90,6 +90,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMChangeRowRedoMenuKey,		"Redo",
                 kKCMChangeRowMatchTableMenuKey,	"Match the Source",
                 kKCMChangeRowApplyMenuKey,		"Apply This Change",				// (2026-10-24, the import-as-Source trial)
+                kKCMChangeRowRestoreFromCopyMenuKey,	"Restore from Copy",			// (2026-10-24 evening - KFC's name for the same thing)
                 kKCMStoryRowApplyMenuKey,		"Apply All Changes in This Story",
                 kKCMStoryRowApplyAllMenuKey,	"Apply All Changes",
                 kKCMResourceRowXmlMenuKey,		"Show as XML",
@@ -150,6 +151,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 // with it because a string key is not a display string: renaming it would touch the
                 // enum, the model and the UI to change four letters that never reach the screen.
                 kKCMStorySectionLabelKey,		"Story Edits",
+                kKCMProposedSectionLabelKey,	"Proposed Edits",					// (2026-10-24 evening) the heading while the Source is an import's copy - the author's words
                 kKCMStoryNoEditsKey,			"No edits",
                 kKCMStoryPixelNoteKey,			"Pixel mode: stories are not compared",
                 kKCMResourcesSectionLabelKey,	"Resources",

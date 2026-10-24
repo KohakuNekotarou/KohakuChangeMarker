@@ -18,6 +18,10 @@
 //  a dark UI flips it; a warning mark is the one thing that must NOT flip - red on light and red
 //  on dark are both red. It is a fixed colour, chosen to be readable on both (0.85, 0.10, 0.10).
 //
+//  ★AND THE "=" OF A ROW APPLY THIS CHANGE PUT IN (2026-10-24 evening, the import-as-Source trial - the author:
+//  "when a change goes in and shows =, make the = red"): the same cell with "=" for its mark (KCMStoryAppliedSignView
+//  below, kKCMStoryAppliedSignCellBoss), in the same red, for the same reasons.
+//
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
@@ -48,28 +52,16 @@ namespace
 /** The mark, as UTF-16 so that the same file could draw a non-ASCII one without a code page in the
 	way (the change row's "≠" is set the same way). */
 const char16_t kKCMBangMark[] = u"!";
+/** The applied row's mark (2026-10-24 evening). */
+const char16_t kKCMAppliedMark[] = u"=";
 
-/** The one colour this cell ever draws in. Fixed on purpose - see the file comment. */
+/** The one colour these cells ever draw in. Fixed on purpose - see the file comment. */
 const RealAGMColor kKCMBangRed(0.85, 0.10, 0.10);
 
-}	// namespace
-
-/** Implements IControlView: draws a red "!" centred in the cell. */
-class KCMStoryBangView : public DVControlView
+/** One mark, red, centred in `view`'s inner frame - the whole of what both cells draw. */
+void DrawRedMark(DVControlView* view, IViewPort* viewPort, SysRgn updateRgn, const char16_t* utf16Mark)
 {
-	typedef DVControlView inherited;
-public:
-	KCMStoryBangView(IPMUnknown* boss) : inherited(boss) {}
-	virtual ~KCMStoryBangView() {}
-
-	virtual void Draw(IViewPort* viewPort, SysRgn updateRgn);
-};
-
-CREATE_PERSIST_PMINTERFACE(KCMStoryBangView, kKCMStoryBangViewImpl)
-
-void KCMStoryBangView::Draw(IViewPort* viewPort, SysRgn updateRgn)
-{
-	AGMGraphicsContext gc(viewPort, this, updateRgn);
+	AGMGraphicsContext gc(viewPort, view, updateRgn);
 	InterfacePtr<IGraphicsPort> gPort(gc.GetViewPort(), UseDefaultIID());
 	if (gPort == nil)
 		return;
@@ -83,14 +75,14 @@ void KCMStoryBangView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	const InterfaceFontInfo& fontInfo = fonts->GetFont(kPaletteWindowSystemScriptFontId);
 
 	PMString mark;
-	mark.SetXString(reinterpret_cast<const UTF16TextChar*>(kKCMBangMark), 1);
+	mark.SetXString(reinterpret_cast<const UTF16TextChar*>(utf16Mark), 1);
 	mark.SetTranslatable(kFalse);
 
 	// ★CENTRED, like every other sign in the Δ column (KCMApplyListColumnWidths sets the stock
 	//   cells to kAlignCenter for the reason it states there: right-aligned, a sign touches the
 	//   column after it). Nothing is painted behind it - the row draws its own background and its
 	//   selection fill, and this cell adds the mark on top, exactly as the stock cell would.
-	const PMRect frame = this->GetInnerContentFrame();
+	const PMRect frame = view->GetInnerContentFrame();
 	const PMReal width = StringUtils::PMMeasureString(&gc, mark, fontInfo, kKCMDontConvertAmpersand).X();
 	const PMReal x = frame.Left() + (frame.Width() - width) / PMReal(2.0);
 	const PMReal y = Utils<IWidgetUtils>()->GetViewYPosition(&gc, fontInfo, frame.Height());
@@ -98,5 +90,33 @@ void KCMStoryBangView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	StringUtils::PMDrawStringRGB(&gc, PMPoint(x, y), mark, fontInfo, kKCMBangRed,
 								 kKCMDontConvertAmpersand, kKCMNoUnderline);
 }
+
+}	// namespace
+
+/** Implements IControlView: draws a red "!" centred in the cell. */
+class KCMStoryBangView : public DVControlView
+{
+	typedef DVControlView inherited;
+public:
+	KCMStoryBangView(IPMUnknown* boss) : inherited(boss) {}
+	virtual ~KCMStoryBangView() {}
+
+	virtual void Draw(IViewPort* viewPort, SysRgn updateRgn) { DrawRedMark(this, viewPort, updateRgn, kKCMBangMark); }
+};
+
+CREATE_PERSIST_PMINTERFACE(KCMStoryBangView, kKCMStoryBangViewImpl)
+
+/** Implements IControlView: draws a red "=" centred in the cell (2026-10-24 evening - a row Apply This Change put in). */
+class KCMStoryAppliedSignView : public DVControlView
+{
+	typedef DVControlView inherited;
+public:
+	KCMStoryAppliedSignView(IPMUnknown* boss) : inherited(boss) {}
+	virtual ~KCMStoryAppliedSignView() {}
+
+	virtual void Draw(IViewPort* viewPort, SysRgn updateRgn) { DrawRedMark(this, viewPort, updateRgn, kKCMAppliedMark); }
+};
+
+CREATE_PERSIST_PMINTERFACE(KCMStoryAppliedSignView, kKCMStoryAppliedSignViewImpl)
 
 // End, KCMStoryBangView.cpp.

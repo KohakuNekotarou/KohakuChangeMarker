@@ -502,6 +502,34 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// The Δ cell of a "=" row Apply This Change put in (2026-10-24 evening, the author: "when a change goes in and shows
+	// =, make the = red"): a red "=", built exactly as the "!" cell above and for the same reason - a stock static text
+	// draws in one colour, the theme's.
+	Class
+	{
+		kKCMStoryAppliedSignCellBoss,
+		kGenericPanelWidgetBoss,
+		{
+			IID_ICONTROLVIEW, kKCMStoryAppliedSignViewImpl,
+		}
+	},
+
+	// The splitter's UPPER pane, with an event handler of its own (2026-10-24 evening, the author: "Apply All Changes on a story
+	// row is odd - it acts on every story; put it on the Proposed Edits heading"): a right click on the section heading pops
+	// "Apply All Changes" against an import's copy. ★On the pane, not on the heading: the heading is a static text, and its own
+	// handler never heard a press (measured - KCMStorySection.cpp). The product's Link Info section takes the right clicks over
+	// its labels in its panel's handler (LinksUIClass.fr, kLinkInfoPanelWidgetBoss on kGenericPanelWidgetBoss).
+	// GenericPanelWidget's resource reads no event handler (Widgets.fh: the control view, the panel name, the children), so a
+	// handler that is not persistent is safe in place of the stock one (memory widget-boss-inherited-persistent-interface).
+	Class
+	{
+		kKCMTopPaneBoss,
+		kGenericPanelWidgetBoss,
+		{
+			IID_IEVENTHANDLER, kKCMTopPaneEHImpl,
+		}
+	},
+
 	// The colour square of a Track mode AUTHOR row (2026-10-05). Built like the "!" cell above; its colour comes
 	// through the same data interface the change row's text cell uses (SetTrackLook).
 	Class
@@ -1395,18 +1423,30 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// "Apply This Change" at the top of the SAME subtree: live only while the Source is an import's copy, where every
 		// item above is greyed (KCMStoryRefresh.cpp) - so a change row still shows one item or none.
 		kKCMChangeRowApplyActionID,
-		kKCMChangeRowMenuName,
+		kKCMChangeRowTrialMenuName,
 		kKCMChangeRowApplyMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// ...and on the STORY row's subtree, above "Refresh Story Comparison": the story's changes, and all of them.
+		// ...and right under it (2026-10-24 evening, design 11-3): "Restore from Copy", live on a "=" row that holds a copy.
+		// ★BOTH ON THE TRIAL'S OWN SUBTREE since the same evening (kKCMChangeRowTrialMenuName, KCMUIID.h says why): it is
+		//  popped with its grey items kept, and the four items of the change row's subtree are never live against an
+		//  import's copy - kept off it, a "=" row with no copy opens two lines rather than six grey ones.
+		kKCMChangeRowRestoreCopyActionID,
+		kKCMChangeRowTrialMenuName,
+		kKCMChangeRowRestoreCopyMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// ...and on the STORY row's subtree, above "Refresh Story Comparison": the story's changes.
 		kKCMStoryRowApplyActionID,
 		kKCMStoryRowMenuName,
 		kKCMStoryRowApplyMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Apply All Changes" - every story the import filled - on the SECTION HEADING's own menu (2026-10-24 evening, the
+		// author: on a story row it read as that story's; "put it on the Proposed Edits heading"). It stood under the item
+		// above until then.
 		kKCMStoryRowApplyAllActionID,
-		kKCMStoryRowMenuName,
+		kKCMProposedHeadingMenuName,
 		kKCMStoryRowApplyAllMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
@@ -1887,15 +1927,25 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// ★(2026-10-24, the import-as-Source trial) The three Apply items. ⚠Not on the flyout: each acts on the row the
-		// menu was popped over (KCMStoryRowEH stashes it), "Apply All Changes" included - it is offered where the reader
-		// is looking at the list.
+		// ★(2026-10-24, the import-as-Source trial) The three Apply items. ⚠Not on the flyout: the first two act on the row
+		// the menu was popped over (KCMStoryRowEH stashes it); "Apply All Changes" acts on no row and is popped by a right
+		// click on the section heading (KCMTopPaneEH) - it is offered where the reader is looking at the list.
 		kKCMActionComponentBoss,
 		kKCMChangeRowApplyActionID,
 		kKCMChangeRowApplyMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the row is a change of the imported text (KCMChangeRowCanApply)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// ★(2026-10-24 evening, design 11-3) "Restore from Copy" on a "=" change row - the menu's own row, like the three above.
+		kKCMActionComponentBoss,
+		kKCMChangeRowRestoreCopyActionID,
+		kKCMChangeRowRestoreFromCopyMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the row is a "=" of Apply's holding a copy (KCMChangeRowCanRestoreCopy)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
@@ -2343,8 +2393,13 @@ type KCMStoryChangeCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCM
 // GenericPanelWidget field list as the cell above - no text, no font, no alignment: the drawing
 // code decides all of it (KCMStoryBangView.cpp).
 type KCMStoryBangCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMStoryBangCellBoss) { };
+// The Δ cell of a "=" row Apply This Change put in: a red "=" drawn by hand (kKCMStoryAppliedSignCellBoss above, 2026-10-24).
+type KCMStoryAppliedSignCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMStoryAppliedSignCellBoss) { };
 // The colour square of a Track AUTHOR row (2026-10-05, kKCMTrackChipCellBoss above).
 type KCMTrackChipCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMTrackChipCellBoss) { };
+// The splitter's upper pane, whose handler takes the heading's right click (2026-10-24 evening, kKCMTopPaneBoss above). The
+// field list is GenericPanelWidget's, unchanged.
+type KCMTopPaneWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMTopPaneBoss) { };
 
 // The panel's message area: drawn by hand for the same reason (see kKCMStatusTextWidgetBoss).
 // ⚠The field list is GenericPanelWidget's, NOT StaticMultiLineTextWidget's - gone from the line
@@ -2825,6 +2880,71 @@ resource KCMStoryRowWidget(kKCMStoryChangeRowRsrcID + index_enUS)
 			"",								// Text Control Data
 			0,								// WidgetId for associated control for shortcut focus
 			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+	}
+};
+
+// ---------------------------------------------------------------------------------------
+// ★★A ONE-LINE "=" ROW APPLY THIS CHANGE PUT IN (2026-10-24 evening, the author: "when a change goes in and shows =,
+// make the = red"). The change row above, cell for cell and pixel for pixel, with the Δ cell a red "=" drawn by hand
+// (KCMStoryAppliedSignCellWidget) - the "!" rows' road, since a stock static text draws in one colour.
+// ⚠Its own WidgetID (kKCMStoryAppliedRowWidgetID): the tree recycles by GetWidgetTypeForNode's answer, and a plain
+// change row handed this widget would show a red "=" it has no business showing (the "!" rows' reason).
+// ---------------------------------------------------------------------------------------
+resource LocaleIndex (kKCMStoryAppliedRowRsrcID)
+{
+	kViewRsrcType,
+	{
+		kWildFS, k_Wild, kKCMStoryAppliedRowRsrcID + index_enUS
+	}
+};
+
+resource KCMStoryRowWidget(kKCMStoryAppliedRowRsrcID + index_enUS)
+{
+	__FILE__, __LINE__,
+	kKCMStoryAppliedRowWidgetID, kPMRsrcID_None,	// WidgetId (★NOT the change row's - see above)
+	kBindLeft | kBindRight,				// Frame binding: follow the list's width
+	Frame(0, 0, 224, kKCMStoryRowHeight),	// Frame (left, top, right, bottom)
+	kTrue, kTrue,						// Visible, Enabled
+	"",									// Panel name
+	{
+		KCMStoryRowCellWidget
+		(
+			kKCMStoryRowUIDWidgetID,		// WidgetId (the change row's left column)
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft,						// Frame binding
+			Frame(24, 1, 64, kKCMStoryRowHeight - 2),	// Frame - the change row's, to the pixel
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+
+		KCMStoryChangeCellWidget
+		(
+			kKCMStoryRowTextWidgetID,		// WidgetId (reused)
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft | kBindRight,			// Frame binding: this is the cell that grows
+			Frame(68, 1, 176, kKCMStoryRowHeight - 2),	// Frame - the change row's
+			kTrue, kTrue,					// Visible, Enabled
+			"",								// Panel name (none)
+			{
+			}
+		),
+
+		// ★THE ONE DIFFERENCE: the Δ cell, a red "=" drawn by hand.
+		KCMStoryAppliedSignCellWidget
+		(
+			kKCMStoryRowKindWidgetID,		// WidgetId (the same column as every other row's Δ)
+			kPMRsrcID_None,					// RsrcId
+			kBindRight,						// Frame binding: stay at the row's right edge
+			Frame(176, 1, 216, kKCMStoryRowHeight - 2),	// Frame - the change row's
+			kTrue, kTrue,					// Visible, Enabled
+			"",								// Panel name (none)
+			{
+			}
 		),
 	}
 };
@@ -3503,7 +3623,9 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		kDrawXORSplitter,
 	#endif
 		{
-			GenericPanelWidget
+			// ★A KCMTopPaneWidget since 2026-10-24 evening - a GenericPanelWidget whose handler takes the section heading's
+			//   right click (kKCMTopPaneBoss). The fields are GenericPanelWidget's.
+			KCMTopPaneWidget
 			(
 				kKCMTopPaneWidgetID, kPMRsrcID_None,
 				kBindAll,
@@ -3777,6 +3899,8 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		//   used, and one more would push `failed=N` out of the box. It also means the count stays
 		//   readable while the section is closed.
 		// ★The binding matches the expander's, kBindLeft | kBindTop (the reason is in its comment).
+		// ★Its right click ("Apply All Changes" against an import's copy, 2026-10-24 evening) is the upper pane's to take: a
+		//   static text is handed no mouse event (kKCMTopPaneBoss).
 		StaticTextWidget
 		(
 			kKCMStorySectionLabelWidgetID,

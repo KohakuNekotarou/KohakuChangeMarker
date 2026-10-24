@@ -36,11 +36,14 @@
 //  than a quote of them - which went with the restore on 2026-09-21.)
 
 #include <vector>
+#include <boost/shared_ptr.hpp>	// KCMRecordCopy::fParaOverrides - the shape ITextModelCmds::ApplyCmd takes (2026-10-24)
 
 #include "KCMStoryStamp.h"	// KCMStoryDiff / KCMStoryChangeKind
 #include "KCMStoryLayers.h"	// KCMStoryChange::fLayers - a warichu / tate-chu-yoko change, line by line
+#include "KCMCopyStore.h"	// KCMRecordCopy::fCopy - the words Restore from Copy pastes back (2026-10-24)
 
 class IDataBase;
+class AttributeBossList;
 
 /** A span of Target text, [fFrom, fTo) - one cell a table change marks (KCMStoryChange::fMarkSpans). */
 struct KCMTextSpan
@@ -351,6 +354,34 @@ enum KCMStoryPlace
 	kKCMPlaceNote = 2
 };
 
+/** Why a "=" record of Apply This Change holds no copy for Restore from Copy (2026-10-24, the import-as-Source trial -
+	design section 11-3). Numbers, so the facade's plain int32 and this agree by definition. */
+enum KCMCopyWhyNot
+{
+	kKCMCopyKept = 0,				// a copy is held
+	kKCMCopyNotTaken = 1,			// none was asked for: a record of the other roads (a reject, a restore, a match)
+	kKCMCopyHoldsObject = 2,		// the words hold an object's character - put back, it would be made anew (a new UID)
+	kKCMCopyTouchesLink = 3,		// the range touches a hyperlink's or cross-reference's source - a paste makes a second one
+	kKCMCopyParagraphRoad = 4,		// it went in with its paragraph (an object or a return in the change) - Ctrl+Z only
+	kKCMCopyGroup = 5,				// it went in with other paragraphs at one place - Ctrl+Z only
+	kKCMCopyFailed = 6,				// the copy could not be made (a test build's copy-fail switch too)
+	kKCMCopyMark = 7				// a mark's record (ruby, kenten, warichu, tate-chu-yoko) - this version keeps none
+};
+
+/** What Restore from Copy needs of one "=" record of Apply This Change (2026-10-24, design section 11-3). */
+struct KCMRecordCopy
+{
+	KCMCopyStore::CopyRef	fCopy;		// the document's words at the live range, copied just before Apply wrote over them
+	int32					fWhyNot;	// KCMCopyWhyNot - kKCMCopyKept when fCopy is held
+	/** ★THE PARAGRAPH BEFORE A WHOLE PARAGRAPH Apply put in with the break first ("\rNEW") or took out from the return
+		before it - the write changes which return ends that paragraph, so a copy alone cannot bring its formatting back
+		(KFC measured the same, its R13b). Its style and own overrides as they read before the write, put back after the
+		restore over the paragraph holding the record's start (KFC's C16 road). kInvalidUID = nothing to put back. */
+	UID										fParaStyle;
+	boost::shared_ptr<AttributeBossList>	fParaOverrides;		// nil = none
+	KCMRecordCopy() : fWhyNot(kKCMCopyNotTaken), fParaStyle(kInvalidUID) {}
+};
+
 /** One row of the Story Edits section. */
 /** A change the reader TOOK BACK (2026-09-24, stage 2 C - design section 15 of
 	docs/superpowers/specs/2026-09-23-kcm-import-sync-design.md): "Reject This Import Change" or "Restore from
@@ -403,6 +434,10 @@ struct KCMRejectedRecord
 	bool16			fHasLiveWords;
 	mutable bool16	fCheckedLive;		// ... and whether fLiveWords stood at the live range, at fCheckedAt
 	mutable bool16	fCheckedLiveSourceToo;	// ... and the Source reads them at its range too - then they tell nothing
+	/** ★THE COPY RESTORE FROM COPY PASTES BACK (2026-10-24, the import-as-Source trial: an Apply This Change's record -
+		KCMRecordCopy). A redo of the record (Restore from Copy) leaves it in place: an undo of the restore makes the
+		record Standing again, and the copy is still in the store (KCMCopyStore never drops one copy at a time). */
+	KCMRecordCopy	fCopy;
 	KCMRejectedRecord() : fNowStart(0), fNowEnd(0), fRejectedAt(0), fRedoneAt(0), fCounterKind(0),
 						  fChecked(kFalse), fCheckedAt(0), fCheckedSame(kFalse), fPlacedForSource(kTrue),
 						  fHasLiveWords(kFalse), fCheckedLive(kFalse), fCheckedLiveSourceToo(kFalse) {}
@@ -805,9 +840,12 @@ namespace KCMStoryList
 		change would stand with the rest of the group taken back - so a redo of one row, an undo of the whole, and a
 		reject again all find each row where it is (measured: slid row by row, the second paragraph's record lost its
 		live twin after an undo and a second record was made beside it). A record that is already one of the rows
-		(its twin) is updated in place. */
+		(its twin) is updated in place.
+		`copies` (2026-10-24, Apply This Change): one per row of `lives`, what Restore from Copy will paste back - nil
+		for the other roads, whose records then hold none (kKCMCopyNotTaken). */
 	void AddRejectedGroup(int32 nth, const std::vector<KCMStoryChange>& lives, const std::vector<TextIndex>& nowStarts,
-						  const std::vector<WideString>& liveWords, uint32 counter, int32 counterKind);
+						  const std::vector<WideString>& liveWords, uint32 counter, int32 counterKind,
+						  const std::vector<KCMRecordCopy>* copies = nil);
 
 	/** The record behind merged index `which`, or nil for a live change, a refusal, or an index out of range. */
 	const KCMRejectedRecord* RejectedAt(int32 nth, int32 which);
@@ -838,6 +876,15 @@ namespace KCMStoryList
 	/** Drop the records in the Undone or Redone state that have no live twin in fChanges - RunOne, right after
 		SetRowChanges (design 15-1-3): the diff has found the change again, or the reader edited it away. */
 	void PruneRejected(int32 nth, IDataBase* targetDB);
+
+	/** ★Let go of EVERY record of row `nth` (2026-10-24 night, the re-check): the import's pour - Apply All Changes, Apply
+		All Changes in This Story - wrote its story over, and a pour does not slide the records the way KCM's own writes do
+		(AddRejectedGroup), so their places are stale from then on. Measured: a deletion's "=" (a caret, which reads as the
+		Source's empty words anywhere) came back after Apply All, and its Restore from Copy pasted the words four characters
+		before their place. ⇒ After a pour no "=" is left (design 9-3 #6: Apply All stacks none - the rows go), and Ctrl+Z
+		of the pour brings the proposals back as live rows; a change put in one by one before the pour stays in by its own
+		undo step, without its "=" and its copy. */
+	void DropRecords(int32 nth);
 
 	/** The row of the Target's story `storyUID` (a row standing for a story only the Source has is not one), or -1. */
 	int32 RowOfTargetStory(UID storyUID);

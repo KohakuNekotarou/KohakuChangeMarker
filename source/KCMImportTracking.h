@@ -21,11 +21,13 @@ extern const char* const kKCMImportAuthorName;
 	back when it dies - on success, cancel and failure alike, which is why it is an object rather than
 	two calls. ★The change history records the name the application has AT THE MOMENT OF EACH EDIT
 	(measured 2026-09-24, work/kcm-table-spike/track.jsx), so this is what signs the import's changes,
-	and what lets a reader reject all of them at once by user. */
+	and what lets a reader reject all of them at once by user.
+	`on` kFalse = nothing is switched (2026-10-24, the import-as-Source trial's Apply - design section 11-2: the author
+	asked for its writes to go in without a change history). */
 class KCMImportAuthor
 {
 public:
-	KCMImportAuthor();
+	explicit KCMImportAuthor(bool16 on = kTrue);
 	~KCMImportAuthor();
 private:
 	KCMImportAuthor(const KCMImportAuthor&);
@@ -36,11 +38,12 @@ private:
 
 /** Change tracking ON for one story for as long as this lives, and back to what it was when it dies.
 	★A story the reader was already tracking is left alone both ways, so their own setting survives
-	 the import (design 11-1 item 3); the changes recorded meanwhile stay either way. */
+	 the import (design 11-1 item 3); the changes recorded meanwhile stay either way.
+	`on` kFalse = the story is left as it is - tracked only if the reader tracks it (the same trial, section 11-2). */
 class KCMStoryTrackingOn
 {
 public:
-	explicit KCMStoryTrackingOn(const UIDRef& story);
+	explicit KCMStoryTrackingOn(const UIDRef& story, bool16 on = kTrue);
 	~KCMStoryTrackingOn();
 private:
 	KCMStoryTrackingOn(const KCMStoryTrackingOn&);

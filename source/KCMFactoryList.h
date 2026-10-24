@@ -41,6 +41,7 @@ REGISTER_PMINTERFACE(KCMDocResponder, kKCMDocResponderImpl)	// Clears the tracki
 REGISTER_PMINTERFACE(KCMBeforeSaveDocResponder, kKCMBeforeSaveResponderImpl)	// Restores the spreads hidden by Hide Unchanged before the document is saved. ServiceProvider likewise Adobe-supplied.
 REGISTER_PMINTERFACE(KCMAfterOpenDocResponder, kKCMAfterOpenResponderImpl)	// Puts back the ticks and paws an opened document carries, and attaches the marks observer to it.
 REGISTER_PMINTERFACE(KCMBeforeCloseDocResponder, kKCMBeforeCloseResponderImpl)	// (2026-10-13) kBeforeCloseDoc: a Task Start kept in memory goes with its document (KCMDocResponder.cpp).
+REGISTER_PMINTERFACE(KCMCopyStoreController, kKCMCopyStoreImpl)	// (2026-10-24) KCM's own copy store's data exchange controller - the words Apply This Change wrote over, for Restore from Copy (KCMCopyStore.cpp).
 REGISTER_PMINTERFACE(KCMPageMarksCmd, kKCMSetPageMarksCmdImpl)	// The one command that writes a tick or a cat paw into the document (KCMPageMarksCmd.cpp). Nothing else may write those labels; it is what makes the change undoable.
 REGISTER_PMINTERFACE(KCMResourceSaxHandler, kKCMResourceSaxHandlerImpl)	// Reads the Resources mode's exported XML, keeping one item per definition (KCMResourceParse.cpp). It registers no element names, which is what leaves it the DEFAULT handler and lets the mode work off a blacklist.
 REGISTER_PMINTERFACE(KCMResourceSink, kKCMResourceSinkImpl)	// Where that handler writes, on the same boss (same file). Separate from the handler because a boss builds one object per IID.

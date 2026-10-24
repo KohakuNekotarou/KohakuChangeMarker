@@ -217,6 +217,8 @@ DECLARE_PMID(kClassIDSpace, kKCMPawTrackerBoss, kKCMUIPrefix + 34)
 //   pressing the button a second time did nothing.
 DECLARE_PMID(kClassIDSpace, kKCMToolButtonBoss, kKCMUIPrefix + 35)
 DECLARE_PMID(kClassIDSpace, kKCMTrackChipCellBoss, kKCMUIPrefix + 38)	// kGenericPanelWidgetBoss + IID_ICONTROLVIEW (kKCMTrackChipViewImpl) + IID_IKCMSTORYCELLDATA: the colour square of a Track AUTHOR row (2026-10-05)
+DECLARE_PMID(kClassIDSpace, kKCMStoryAppliedSignCellBoss, kKCMUIPrefix + 39)	// kGenericPanelWidgetBoss + IID_ICONTROLVIEW (kKCMStoryAppliedSignViewImpl): the Δ cell of a "=" row Apply This Change put in - a red "=" drawn by hand, as the "!" row's is (KCMStoryBangView.cpp, 2026-10-24 evening - the author: "when a change goes in and shows =, make the = red"). ⚠+39 counted (the class space; +39 elsewhere in this file is another space's)
+DECLARE_PMID(kClassIDSpace, kKCMTopPaneBoss, kKCMUIPrefix + 40)	// kGenericPanelWidgetBoss + IID_IEVENTHANDLER (kKCMTopPaneEHImpl): the splitter's UPPER pane (kKCMTopPaneWidgetID), whose handler pops "Apply All Changes" for a right click on the section heading ("Proposed Edits (N)") - 2026-10-24 evening, the author: "Apply All Changes on a story row is odd; put it on the Proposed Edits heading". On the pane because the heading, a static text, is handed no mouse event (KCMStorySection.cpp); the product's Link Info section has the same shape (kLinkInfoPanelWidgetBoss). ⚠+40 counted (the class space)
 // InterfaceIDs:
 // ⚠★What is here are **the IIDs that appear only on UI-side bosses**. The ones that cross the
 //   boundary (the five facades plus the notification protocol) are in **KCMBoundaryID.h**,
@@ -301,6 +303,8 @@ DECLARE_PMID(kImplementationIDSpace, kKCMPawTrackerEHImpl, kKCMUIPrefix + 47)	//
 DECLARE_PMID(kImplementationIDSpace, kKCMToolButtonEHImpl, kKCMUIPrefix + 49)	// IEventHandler (CEventHandler subclass; the panel tool button's press-and-hold. KCMToolButtonEH.cpp). ⚠It REPLACES the stock kAssociatedActionEventHandlerImpl, so it owns the whole press -- see kKCMToolButtonBoss
 DECLARE_PMID(kImplementationIDSpace, kKCMPawCursorProviderImpl, kKCMUIPrefix + 48)	// ICursorProvider (CToolCursorProvider subclass; the pink paw shown while the stamp tool is active. KCMPawCursorProvider.cpp). ★Simpler than the KCM tool's, which has two states (black while armed, outlined while stopped): a paw can be placed at any time, so it has nothing to say about the comparison's state
 DECLARE_PMID(kImplementationIDSpace, kKCMTrackChipViewImpl, kKCMUIPrefix + 52)	// IControlView (DVControlView subclass, PERSIST): the author row's colour square (KCMTrackChipView.cpp, 2026-10-05)
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryAppliedSignViewImpl, kKCMUIPrefix + 53)	// IControlView (DVControlView subclass, PERSIST): the red "=" of a row Apply This Change put in (KCMStoryBangView.cpp, 2026-10-24)
+DECLARE_PMID(kImplementationIDSpace, kKCMTopPaneEHImpl, kKCMUIPrefix + 54)	// IEventHandler (DVHostedWidgetEH subclass, as the product's LinkInfoPanelEH; not persistent - GenericPanelWidget's resource reads no event handler, Widgets.fh): the upper pane's - a right click on the section heading pops kKCMProposedHeadingMenuName while the Source is an import's copy (KCMStorySection.cpp, 2026-10-24 evening). ⚠+54 counted
 // ActionIDs:
 DECLARE_PMID(kActionIDSpace, kKCMAboutActionID, kKCMUIPrefix + 0)
 DECLARE_PMID(kActionIDSpace, kKCMPanelWidgetActionID, kKCMUIPrefix + 1)	// show / hide the panel (Window menu)
@@ -497,7 +501,8 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupSetPdfSourceActionID, kKCMUIPrefix + 90)	/
 //   used, counted on every branch that day (the highest was +90).
 DECLARE_PMID(kActionIDSpace, kKCMChangeRowApplyActionID, kKCMUIPrefix + 91)	// ★"Apply This Change" on a Story Edits CHANGE row: the change goes into the document by the import's own road (facade ApplyChange)
 DECLARE_PMID(kActionIDSpace, kKCMStoryRowApplyActionID, kKCMUIPrefix + 92)	// ★"Apply All Changes in This Story" on a Story Edits STORY row (facade ApplyStory)
-DECLARE_PMID(kActionIDSpace, kKCMStoryRowApplyAllActionID, kKCMUIPrefix + 93)	// ★"Apply All Changes" on a Story Edits STORY row: every story the import filled (facade ApplyAll)
+DECLARE_PMID(kActionIDSpace, kKCMStoryRowApplyAllActionID, kKCMUIPrefix + 93)	// ★"Apply All Changes": every story the import filled (facade ApplyAll). ⚠On the SECTION HEADING's menu since 2026-10-24 evening (kKCMProposedHeadingMenuName - the author: on a story row it read as that story's), no longer a story row's - the ID keeps its first name
+DECLARE_PMID(kActionIDSpace, kKCMChangeRowRestoreCopyActionID, kKCMUIPrefix + 94)	// ★"Restore from Copy" on a "=" CHANGE row (2026-10-24 evening, design 11-3): the document's own words pasted back from the copy Apply This Change kept (facade RestoreChangeFromCopy). ⚠+94 the next after +93, never a grave
 
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
 //  **deleted**. ⚠★★It was not inert: **+41 is taken** (kKCMPopupTranslucentBookDialogActionID
@@ -552,7 +557,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStorySectionToggleWidgetID, kKCMUIPrefix + 46)	
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryTreeWidgetID, kKCMUIPrefix + 47)		// the Story Edits list itself (filling the lower pane)
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowTextWidgetID, kKCMUIPrefix + 48)	// row, left: the beginning of the text
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowKindWidgetID, kKCMUIPrefix + 49)	// row, right: what kind of change it is (Text / Attr / Other / Added)
-DECLARE_PMID(kWidgetIDSpace, kKCMStorySectionLabelWidgetID, kKCMUIPrefix + 50)	// next to the triangle in the upper pane: "Story Edits (3)". The count is appended at run time
+DECLARE_PMID(kWidgetIDSpace, kKCMStorySectionLabelWidgetID, kKCMUIPrefix + 50)	// next to the triangle in the upper pane: "Story Edits (3)" ("Proposed Edits (3)" against an import's copy). The count is appended at run time. ★A right click on it pops "Apply All Changes" against an import's copy since 2026-10-24 evening - taken by the upper pane's handler (kKCMTopPaneBoss)
 // ★The three column headings above the list. They carried kInvalidWidgetID until 2026-09-09, on the rule that a widget nothing refers to needs no ID -- and then the Resources mode gave the same three columns different names ("Kind / Definition / Change" rather than "UID / Story / Change"), which made them referable after all. ⇒ An ID is not a property of a widget; it is a record of somebody needing to find it.
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryColUIDWidgetID, kKCMUIPrefix + 69)	// heading over the left cell
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryColTextWidgetID, kKCMUIPrefix + 70)	// heading over the middle cell (the one that grows)
@@ -645,6 +650,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 //     were 0, 1, 26, 34-53 and 57-71.
 DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Row, far right: which comparisons found a difference ("Pixel Story Resources"; a mode that could not be judged carries a '?'). ★Empty for ChapterAdded / ChapterDeleted / NotCompared and for an unchanged chapter -- nothing was looked at, and an empty cell is the honest answer
 DECLARE_PMID(kWidgetIDSpace, kKCMTrackAuthorRowWidgetID, kKCMUIPrefix + 77)	// ★the template of a Track AUTHOR row (2026-10-05): its own WidgetID, so a story row is never handed its widget
+DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// ★the template of a one-line "=" row Apply This Change put in (2026-10-24 evening): the change row with its Δ cell a red "=" drawn by hand - its own WidgetID, so a plain change row is never handed its widget (the "!" rows' reason). ⚠+78 counted in the widget space (the ACTION space's +78 is a grave - another space)
 //====================================================================================
 // ★★MIND THE CEILING -- this prefix owns "+0 .. +127" (★128 slots **per ID space**)
 //
@@ -818,11 +824,20 @@ DECLARE_PMID(kWidgetIDSpace, kKCMTrackAuthorRowWidgetID, kKCMUIPrefix + 77)	// �
 // ★A CHANGE row's own menu, back on 2026-09-24 (stage 2 A) for "Reject This Import Change" - the name it had
 //   from 2026-09-12 to 2026-09-21 (KCMStoryRowEH::RButtonDn says why a child row has a menu of its own).
 #define kKCMChangeRowMenuName		"KCMRtMenuChangeRow"
+// ★A CHANGE row's menu WHILE THE SOURCE IS AN IMPORT'S COPY (2026-10-24 evening): Apply This Change and Restore from Copy
+//   alone - the four items of the menu above are never live there - popped with its grey items KEPT (KFC's SET-11, the
+//   author's "grey is fine when it cannot be done"), so that a "=" row with no copy still opens a menu and shows why not.
+#define kKCMChangeRowTrialMenuName	"KCMRtMenuChangeRowTrial"
+// ★The SECTION HEADING's menu (2026-10-24 evening): "Apply All Changes" alone - it acts on every story the import filled,
+//   so it sits on the heading that counts them ("Proposed Edits (N)"), not on one story's row. Popped by the upper pane's
+//   handler for a press on the heading (KCMTopPaneEH, KCMStorySection.cpp) only while the Source is an import's copy.
+#define kKCMProposedHeadingMenuName	"KCMRtMenuProposedHeading"
 #define kKCMChangeRowRejectMenuKey	kKCMStringPrefix "kKCMChangeRowRejectMenuKey"	// "Reject This Import Change" on a change row
 #define kKCMChangeRowRestoreAttrMenuKey	kKCMStringPrefix "kKCMChangeRowRestoreAttrMenuKey"	// "Restore from Source" on an attribute change row (2026-09-24, stage 2 B)
 #define kKCMChangeRowRedoMenuKey	kKCMStringPrefix "kKCMChangeRowRedoMenuKey"	// "Redo from Word" on a taken-back change row (2026-09-24, stage 2 C). ★SHOWN AS "Redo" since 2026-09-25 (the user's request); the code and its comments still call the feature "Redo from Word", and its undo step keeps that name (Edit > Undo "Redo from Word" says what it takes back)
 #define kKCMChangeRowMatchTableMenuKey	kKCMStringPrefix "kKCMChangeRowMatchTableMenuKey"	// "Match the Source" on a Table row that differs from the Source's (2026-09-25)
 #define kKCMChangeRowApplyMenuKey	kKCMStringPrefix "kKCMChangeRowApplyMenuKey"	// "Apply This Change" (2026-10-24, the import-as-Source trial)
+#define kKCMChangeRowRestoreFromCopyMenuKey	kKCMStringPrefix "kKCMChangeRowRestoreFromCopyMenuKey"	// "Restore from Copy" (2026-10-24 evening - KFC's own name for the same thing, the author: "the way KFC does"). ⚠NOT "...RestoreCopyMenuKey": that one has the length and the character sum of kKCMChangeRowRestoreAttrMenuKey ("Copy" and "Attr" both sum 411 - measured with work/note-scripts/2026-10-24-kcm-per-change/key_collisions_kcm.py; memory indesign-string-key-hash-collision)
 #define kKCMStoryRowApplyMenuKey	kKCMStringPrefix "kKCMStoryRowApplyMenuKey"	// "Apply All Changes in This Story" (the same trial)
 #define kKCMStoryRowApplyAllMenuKey	kKCMStringPrefix "kKCMStoryRowApplyAllMenuKey"	// "Apply All Changes" (the same trial)
 // ⛔kKCMChangeRowRestoreMenuKey ("Restore Source Text") and kKCMChangeRowUndoRestoreMenuKey ("Undo
@@ -962,6 +977,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMTrackAuthorRowWidgetID, kKCMUIPrefix + 77)	// �
 // The strings of the Story Edits section. ⚠**Do not use the word "text" in them** -- the list
 // carries changes that are not text, so a phrase like "No text edits" would not be true.
 #define kKCMStorySectionLabelKey	kKCMStringPrefix "kKCMStorySectionLabelKey"	// the section heading (the count is appended by C++)
+#define kKCMProposedSectionLabelKey	kKCMStringPrefix "kKCMProposedSectionLabelKey"	// the section heading while the Source is an import's copy, "Proposed Edits" (the count of proposals still to put in is appended by C++) - 2026-10-24 evening, the author's choice of words
 #define kKCMStoryNoEditsKey		kKCMStringPrefix "kKCMStoryNoEditsKey"		// the single line shown when there is no change
 #define kKCMStoryPixelNoteKey	kKCMStringPrefix "kKCMStoryPixelNoteKey"	// ★the single line the list shows while the PIXEL mode compares (2026-10-11): that mode reads no story, so the list says so instead of standing blank (KCMListShowsPixelNote)
 #define kKCMResourcesSectionLabelKey	kKCMStringPrefix "kKCMResourcesSectionLabelKey"	// the SAME section heading while the Resources mode is on (= "Resources"). The count is appended by C++, as above
@@ -1058,7 +1074,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMTrackAuthorRowWidgetID, kKCMUIPrefix + 77)	// �
 // hand-drawn red "!" (kKCMStoryBangCellBoss). Own WidgetIDs, own resources, one line tall.
 #define kKCMStoryBangRowRsrcID			1018
 #define kKCMStoryBangChangeRowRsrcID	1019
-#define kKCMTrackAuthorRowRsrcID		1020	// a Track mode AUTHOR row (2026-10-05). ⚠Next free: 1021
+#define kKCMTrackAuthorRowRsrcID		1020	// a Track mode AUTHOR row (2026-10-05)
+#define kKCMStoryAppliedRowRsrcID		1021	// a one-line "=" row Apply This Change put in, its Δ a red "=" (2026-10-24 evening). ⚠Next free: 1022
 
 // The row height of the chapter list. ★As with kKCMStoryRowHeight below, **both the .fr and the
 // C++ read this one constant** (the row resource's Frame, the tree's scroll increment,
@@ -1279,8 +1296,9 @@ DECLARE_PMID(kWidgetIDSpace, kKCMTrackAuthorRowWidgetID, kKCMUIPrefix + 77)	// �
 #define kKCMChangeRowRedoMenuItemPosition	3.0	// the change row's subtree: "Redo from Word" under the two above (2026-09-24, stage 2 C). Live only on a "=" row, where the other two are greyed
 #define kKCMChangeRowMatchTableMenuItemPosition	4.0	// the change row's subtree: "Match the Source" under the three above (2026-09-25). Live only on a Table ≠ row, where the other three are greyed - still one item per row
 #define kKCMChangeRowApplyMenuItemPosition	0.5	// the change row's subtree: "Apply This Change" at the top (2026-10-24, the import-as-Source trial). Live only while the Source is an import's copy, where the four below are greyed
+#define kKCMChangeRowRestoreCopyMenuItemPosition	0.6	// ...and "Restore from Copy" right under it (2026-10-24 evening): live on a "=" row that holds a copy - the two are never live together
 #define kKCMStoryRowApplyMenuItemPosition	0.5	// the story row's subtree: "Apply All Changes in This Story" above the refresh (the same trial)
-#define kKCMStoryRowApplyAllMenuItemPosition	0.6	// ...and "Apply All Changes" under it
+#define kKCMStoryRowApplyAllMenuItemPosition	0.6	// "Apply All Changes" - alone on the section heading's menu since 2026-10-24 evening (kKCMProposedHeadingMenuName)
 // ⛔The CHANGE row's two restore positions (2.0 "Restore Source Text", 2.7 "Undo the Restore") went
 //   with the items on the morning of 2026-09-21, and "Edit..." (0.5) went that evening - **so the
 //   subtree they sorted within is gone as well** (kKCMChangeRowMenuName above).

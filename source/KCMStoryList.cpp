@@ -1478,10 +1478,10 @@ void KCMStoryList::AddRejected(int32 nth, const KCMStoryChange& live, TextIndex 
 */
 void KCMStoryList::AddRejectedGroup(int32 nth, const std::vector<KCMStoryChange>& lives,
 									const std::vector<TextIndex>& nowStarts, const std::vector<WideString>& liveWords,
-									uint32 counter, int32 counterKind)
+									uint32 counter, int32 counterKind, const std::vector<KCMRecordCopy>* copies)
 {
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || lives.empty() || lives.size() != nowStarts.size()
-		|| lives.size() != liveWords.size())
+		|| lives.size() != liveWords.size() || (copies != nil && copies->size() != lives.size()))
 		return;
 	KCMStoryRow& row = gRows[nth];
 
@@ -1556,6 +1556,7 @@ void KCMStoryList::AddRejectedGroup(int32 nth, const std::vector<KCMStoryChange>
 			r.fChecked = kFalse;
 			r.fLiveWords = liveWords[k];
 			r.fHasLiveWords = kTrue;
+			r.fCopy = (copies != nil) ? (*copies)[k] : KCMRecordCopy();	// a new write, a new copy (or none)
 			continue;
 		}
 		KCMRejectedRecord rec;
@@ -1568,6 +1569,8 @@ void KCMStoryList::AddRejectedGroup(int32 nth, const std::vector<KCMStoryChange>
 		rec.fPlacedForSource = kTrue;
 		rec.fLiveWords = liveWords[k];
 		rec.fHasLiveWords = kTrue;
+		if (copies != nil)
+			rec.fCopy = (*copies)[k];
 		std::vector<int32> starts;
 		for (size_t i = 0; i < row.fRejected.size(); ++i)
 			starts.push_back(row.fRejected[i].fNowStart);
@@ -1682,6 +1685,15 @@ void KCMStoryList::PruneRejected(int32 nth, IDataBase* targetDB)
 		else
 			row.fRejected.erase(row.fRejected.begin() + static_cast<std::ptrdiff_t>(i));
 	}
+}
+
+/* DropRecords
+*/
+void KCMStoryList::DropRecords(int32 nth)
+{
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
+		return;
+	gRows[nth].fRejected.clear();
 }
 
 // (⛔ReplacedSlotOfMerged and RemoveReplacedChangeAt went on 2026-09-21: the first answered which

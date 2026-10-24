@@ -153,10 +153,17 @@ bool16 KCMChangeRowApply();
 bool16 KCMStoryRowCanApply();
 /** Puts every change of that story in (one undo step). */
 bool16 KCMStoryRowApply();
-/** A story row while the Source is an import's copy. */
+/** While the Source is an import's copy - asked of no row: the item is on the section heading's menu since 2026-10-24
+	evening (popped by KCMTopPaneEH, KCMStorySection.cpp). The name is from when it stood on the story row's. */
 bool16 KCMStoryRowCanApplyAll();
 /** Puts every story's changes in (one undo step) - what the import did before the trial. */
 bool16 KCMStoryRowApplyAll();
+
+/** ★"Restore from Copy" (2026-10-24 evening, design section 11-3): a "=" change row Apply This Change put in that holds a
+	copy (facade CanRestoreChangeFromCopy). Never live together with Apply This Change on one row. */
+bool16 KCMChangeRowCanRestoreCopy();
+/** Pastes the document's own words back from that copy (one undo step) and says what on the panel's message line. */
+bool16 KCMChangeRowRestoreCopy();
 
 #endif // __KCMStoryRefresh_h__
 

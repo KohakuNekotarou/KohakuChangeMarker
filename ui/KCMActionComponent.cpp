@@ -1269,6 +1269,11 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		case kKCMStoryRowApplyAllActionID:
 			KCMStoryRowApplyAll();
 			break;
+		// ★"Restore from Copy" on a "=" change row (2026-10-24 evening, design 11-3): the document's own words back from the
+		//   copy Apply This Change kept, as one undo step by the model, which compares the row again.
+		case kKCMChangeRowRestoreCopyActionID:
+			KCMChangeRowRestoreCopy();
+			break;
 
 		// "Show as XML" on a DEFINITION row's context menu (2026-09-09). Shows the element the row
 		// names, from both documents, in a modal alert. ★Which row it was is noted the same way as
@@ -1892,6 +1897,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 				break;
 			case kKCMStoryRowApplyAllActionID:
 				listToUpdate->SetNthActionState(i, KCMStoryRowCanApplyAll() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			// ★"Restore from Copy" (2026-10-24 evening) - the same test as its execution: a "=" row of Apply's holding a copy.
+			case kKCMChangeRowRestoreCopyActionID:
+				listToUpdate->SetNthActionState(i, KCMChangeRowCanRestoreCopy() ? kEnabledAction : kDisabled_Unselected);
 				break;
 			case kKCMResourceRowXmlActionID:
 			{

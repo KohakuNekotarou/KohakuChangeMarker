@@ -83,6 +83,17 @@
 #include "IKCMResourcesFacade.h"	// the Resources mode's boundary
 #include "KCMResourceStore.h"		// ...and the model side it forwards to
 #include "KCMPdfDoc.h"				// the PDF comparison (2026-10-14)
+// ★Apply change by change, and Restore from Copy (2026-10-24 evening, the trial's second try-out - design section 11):
+#include "KCMCopyStore.h"			// the copies Apply takes and Restore from Copy pastes back
+#include "KCMStoryRestore.h"		// KCMCreateWordsWriteCmd - the import's one write command, for one change's words
+#include "KCMParaText.h"			// IsObjectCharacter - the changes a words write may not carry
+#include "TextChar.h"				// kTextChar_CR
+#include "IHyperlinkUtils.h"		// a hyperlink source a copy would carry twice - source/open/interfaces/layout
+#include "IAttributeStrand.h"		// a paragraph's style and own overrides, kept and put back
+#include "AttributeBossList.h"
+#include "IComposeScanner.h"		// FindSurroundingParagraph - the paragraph they are put back over
+#include "ITextModelCmds.h"			// ApplyStyleCmd / ApplyCmd
+#include "IStyleInfo.h"				// whether a kept paragraph style is still one of the document's
 
 namespace
 {
@@ -93,6 +104,146 @@ bool16 SameStoryChange(const KCMStoryChange& a, const KCMStoryChange& b)
 {
 	return (a.fWhat == b.fWhat && a.fKind == b.fKind && a.fTargetStart == b.fTargetStart && a.fTargetEnd == b.fTargetEnd
 			&& a.fSourceStart == b.fSourceStart && a.fSourceEnd == b.fSourceEnd) ? kTrue : kFalse;
+}
+
+// ---- ★APPLY CHANGE BY CHANGE, AND RESTORE FROM COPY (2026-10-24 evening - design section 11) ---------------------------
+
+/** kTrue when `words` hold a character InDesign hangs an object on (KCMParaText::IsObjectCharacter - a note's marker, a
+	table's anchor, a page number, an anchored object, an index marker, an XML tag's mark): words written as text would
+	break it (the 2026-09-21 rule), and a copy put back would make it anew with a new UID (the author, KFC's rule). */
+bool16 HoldsObject(const WideString& words)
+{
+	for (int32 k = 0; k < words.CharCount(); ++k)
+		if (KCMParaText::IsObjectCharacter(static_cast<int32>(words.GetChar(k).GetValue())))
+			return kTrue;
+	return kFalse;
+}
+
+/** kTrue when `words` hold a paragraph's return - a change that joins or splits paragraphs goes its paragraph's road. */
+bool16 HoldsReturn(const WideString& words)
+{
+	for (int32 k = 0; k < words.CharCount(); ++k)
+		if (words.GetChar(k).GetValue() == kTextChar_CR)
+			return kTrue;
+	return kFalse;
+}
+
+/** kTrue when [from, to) of `model` touches a hyperlink's or a cross-reference's source - inside it, around it, across
+	its edge (IHyperlinkUtils' two range questions, KFC's doors). A copy of such a range pasted back makes a second link
+	where there was one (KFC measured it, R7) - so none is kept. ⚠A question that cannot be asked answers kTrue: no copy
+	is the safe side. */
+bool16 TouchesLink(ITextModel* model, TextIndex from, TextIndex to)
+{
+	Utils<IHyperlinkUtils> utils;
+	if (!utils || model == nil)
+		return kTrue;
+	if (!utils->GetRangeContainedHyperlinks(model, from, to).empty())
+		return kTrue;
+	return (utils->IsRangeContainedByAHyperlink(model, from, to).GetLogicalID() != kInvalidSBOSID) ? kTrue : kFalse;
+}
+
+/** The reason a "=" record holds no copy, as the row's message and the Apply sentence say it. */
+const char* CopyWhyNotWords(int32 why)
+{
+	switch (why)
+	{
+		case kKCMCopyHoldsObject:	return "its words hold an object - put back from a copy, it would be made anew with a new UID";
+		case kKCMCopyTouchesLink:	return "it touches a hyperlink or a cross-reference - a copy put back would make a second one";
+		case kKCMCopyParagraphRoad:	return "it went in with the rest of its paragraph";
+		case kKCMCopyGroup:			return "it went in with other paragraphs put in at the same place";
+		case kKCMCopyFailed:		return "the copy could not be made";
+		case kKCMCopyMark:			return "it is a mark (ruby, kenten, warichu or tate-chu-yoko) - this version keeps no copy of one";
+		default:					return "it was not put in by Apply This Change";
+	}
+}
+
+/** The paragraph that holds `at`, with its return - the last paragraph's with the story's own (KFC's ParagraphOf:
+	IComposeScanner::FindSurroundingParagraph, the end of the story counted). False when it cannot be read. */
+bool16 ParagraphOf(ITextModel* model, TextIndex at, TextIndex& outStart, int32& outLength)
+{
+	InterfacePtr<IComposeScanner> scanner(model, UseDefaultIID());
+	outLength = 0;
+	outStart = (scanner != nil) ? scanner->FindSurroundingParagraph(at, &outLength, kFalse) : kInvalidTextIndex;
+	return (outStart >= 0 && outLength > 0) ? kTrue : kFalse;
+}
+
+/** The style and own overrides of the paragraph that holds `at`, as they read now - kept on `copy` for
+	PutParagraphBack (KFC's TakeRowCopy, its paragraph-formatting half). False when the strand cannot be read. */
+bool16 KeepParagraph(ITextModel* model, TextIndex at, KCMRecordCopy& copy)
+{
+	InterfacePtr<IAttributeStrand> paraStrand(static_cast<IAttributeStrand*>(
+		(model != nil) ? model->QueryStrand(kParaAttrStrandBoss, IID_IATTRIBUTESTRAND) : nil));
+	if (paraStrand == nil)
+		return kFalse;
+	int32 count = 0;
+	copy.fParaStyle = paraStrand->GetStyleUID(at, &count);
+	const DataWrapper<AttributeBossList> overrides = paraStrand->GetLocalOverrides(at, &count);
+	const AttributeBossList* const own = overrides.get();		// (DataWrapper has no ->: its get())
+	if (own != nil && own->CountBosses() > 0)
+		copy.fParaOverrides.reset(own->Duplicate());
+	return (copy.fParaStyle != kInvalidUID) ? kTrue : kFalse;
+}
+
+/** Whether a kept paragraph style is still one of the document's - a style deleted since would be handed to InDesign
+	by a UID nothing holds (KFC's ParagraphStyleStands). */
+bool16 ParagraphStyleStands(IDataBase* db, UID style)
+{
+	if (db == nil || style == kInvalidUID || !db->IsValidUID(style))
+		return kFalse;
+	InterfacePtr<IStyleInfo> info(db, style, UseDefaultIID());
+	return (info != nil && info->GetStyleType() == IStyleInfo::kParagraphStyle) ? kTrue : kFalse;
+}
+
+/** ★A CARET'S PLACE, READ BY WHAT STANDS ON EITHER SIDE OF IT (2026-10-24 night, the re-check): a "=" at a caret - a change
+	that took the document's words out - has nothing of its own to read, and an empty stretch reads as the Source's empty
+	words ANYWHERE. So once its place had been moved by a write the records do not slide with, the stale place still read
+	as "=" and Restore from Copy pasted the words there (measured after Apply All, before the pour was made to let the
+	records go: four characters early). Up to two characters each way are read instead, against the Source's on either
+	side of the Source's own caret. A Source that cannot be read answers kTrue, as RecordReadsAsSource does.
+	⚠THE COST: a change of the files' that is not in yet and stands within two characters of the caret makes it answer
+	kFalse at the right place too - Restore from Copy is refused there until that change is in (Ctrl+Z still takes the
+	Apply back). The safe side: a refusal leaves the document as it is, a wrong answer pastes words where they were not. */
+bool16 CaretReadsAsSource(IDataBase* targetDB, UID storyUID, TextIndex at, TextIndex sourceAt)
+{
+	IDataBase* const sourceDB = KCMArmedSourceDB();
+	if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
+		return kTrue;
+	IDataBase::SaveRestoreModifiedState targetGuard(targetDB);		// reading must not dirty either document
+	IDataBase::SaveRestoreModifiedState sourceGuard(sourceDB);
+	InterfacePtr<ITextModel> tModel(UIDRef(targetDB, storyUID), UseDefaultIID());
+	InterfacePtr<ITextModel> sModel(UIDRef(sourceDB, storyUID), UseDefaultIID());
+	if (tModel == nil || sModel == nil || at < 0 || sourceAt < 0)
+		return kFalse;
+	const int32 kSide = 2;
+	const int32 before = std::min(kSide, std::min(static_cast<int32>(at), static_cast<int32>(sourceAt)));
+	const int32 after = std::min(kSide, std::min(tModel->TotalLength() - at, sModel->TotalLength() - sourceAt));
+	if (after < 0)
+		return kFalse;
+	WideString tWords, sWords;
+	return (KCMTextWords::WordsAt(tModel, at - before, before + after, tWords)
+			&& KCMTextWords::WordsAt(sModel, sourceAt - before, before + after, sWords) && tWords == sWords) ? kTrue : kFalse;
+}
+
+/** The kept formatting put back over the paragraph that holds `at`: its style with what the write left on it cleared,
+	then its own overrides (KFC's PutParagraphBack - the copy-restore spec's C16). Inside the caller's sequence. */
+bool16 PutParagraphBack(ITextModel* model, TextIndex at, const KCMRecordCopy& copy)
+{
+	InterfacePtr<ITextModelCmds> cmds(model, UseDefaultIID());
+	TextIndex paraStart = kInvalidTextIndex;
+	int32 length = 0;
+	if (cmds == nil || at < 0 || !ParagraphOf(model, at, paraStart, length))
+		return kFalse;
+	InterfacePtr<ICommand> style(cmds->ApplyStyleCmd(paraStart, length, copy.fParaStyle, kParaAttrStrandBoss,
+		kTrue /*replaceOverrides*/, kFalse /*autoNextStyle*/, kFalse /*keepOldStyleAsOverrides*/));
+	if (style == nil || CmdUtils::ProcessCommand(style) != kSuccess)
+		return kFalse;
+	if (copy.fParaOverrides != nil && copy.fParaOverrides->CountBosses() > 0)
+	{
+		InterfacePtr<ICommand> overrides(cmds->ApplyCmd(paraStart, length, copy.fParaOverrides, kParaAttrStrandBoss));
+		if (overrides == nil || CmdUtils::ProcessCommand(overrides) != kSuccess)
+			return kFalse;
+	}
+	return kTrue;
 }
 
 }	// anonymous namespace
@@ -1586,11 +1737,14 @@ public:
 
 	// ---- ★THE IMPORT THE OTHER WAY ROUND (2026-10-24, the import-as-Source trial) - IKCMStoryEditsFacade.h says what
 	//      each one answers; the design is docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md ----------
-	// ★APPLY IS THE IMPORT'S OWN ROAD (design 6): the words by KCMPlanApplyFromWord + KCMApplyRedoFromWord (the import's
-	//   comparison narrowed to a paragraph, signed and tracked), a mark by Restore from Source (the Source IS the files),
-	//   a table by KCMRedoTableFromWord (Match the Source reads the Source's table back through INX, which a Task Start
-	//   in memory cannot give - MatchTable says so), a whole story or all of them by the import's pour. What went in is
-	//   a "=" record - the reject's record, since "=" means the same thing here: the Target reads as the Source.
+	// ★APPLY IS THE IMPORT'S OWN ROAD (design 6): the words of ONE change by the import's one write command
+	//   (ApplyWordsOne - since 2026-10-24 evening, design 11-1), or, when a change cannot be written on its own, by
+	//   KCMPlanApplyFromWord + KCMApplyRedoFromWord (the import's comparison narrowed to a paragraph); a mark by Restore
+	//   from Source (the Source IS the files), a table by KCMRedoTableFromWord (Match the Source reads the Source's table
+	//   back through INX, which a Task Start in memory cannot give - MatchTable says so), a whole story or all of them by
+	//   the import's pour. ★ALL OF THEM UNSIGNED AND UNTRACKED since the same evening (design 11-2 - they were signed and
+	//   tracked until then). What went in is a "=" record - the reject's record, since "=" means the same thing here: the
+	//   Target reads as the Source - holding the copy Restore from Copy pastes back (11-3) where one was kept.
 
 	virtual bool16	ImportStoryTextAsSource(const SysFileList& files, PMString& outMessage)
 	{
@@ -1654,7 +1808,9 @@ public:
 			}
 			return done;
 		}
-		return this->ApplyWords(nth, which, targetDB, row, outMessage);
+		// ★CHANGE BY CHANGE since 2026-10-24 evening (design section 11-1): the words of this change alone, or its
+		//   paragraph's road when it cannot be written on its own (ApplyWordsOne says when).
+		return this->ApplyWordsOne(nth, which, targetDB, row, outMessage);
 	}
 
 	virtual bool16	CanApplyStory(int32 nth)
@@ -1730,7 +1886,159 @@ public:
 		return this->PourIntoTarget(targetDB, set, std::vector<UID>(), "Apply All Changes", -1, outMessage);
 	}
 
+	// ---- ★RESTORE FROM COPY (2026-10-24 evening - design section 11-3; the author: "when a row is put back by a right
+	//   click, put it back from a Copy - the way KFC does; KFC greys Copy Undo when the copy would change a UID") -------
+
+	virtual bool16	CanRestoreChangeFromCopy(int32 nth, int32 which)
+	{
+		IDataBase* targetDB = nil;
+		Row row;
+		if (!this->HasRestorableCopy(nth, which, targetDB, row))
+			return kFalse;
+		// ★Greyed, too, where a caret's place no longer reads as the Source's by its surroundings (CaretReadsAsSource).
+		const KCMRejectedRecord* const rec = KCMStoryList::RejectedAt(nth, which);
+		return (rec != nil && (rec->fNowEnd != rec->fNowStart
+							   || CaretReadsAsSource(targetDB, row.fStoryUID, rec->fNowStart, rec->fLive.fSourceStart)))
+			   ? kTrue : kFalse;
+	}
+
+	virtual int32	RestoreChangeFromCopy(int32 nth, int32 which, PMString& outMessage)
+	{
+		outMessage.Clear();
+		outMessage.SetTranslatable(kFalse);
+		IDataBase* targetDB = nil;
+		Row row;
+		Change before;
+		if (!this->HasRestorableCopy(nth, which, targetDB, row) || !this->GetChange(nth, which, before))
+		{
+			outMessage = "this row is not a change Apply This Change put in with a copy kept";
+			return -1;
+		}
+		// ★★COMPARED AGAIN FIRST, AND IT HAS TO BE THE SAME ROW (SameChangeAfterRefresh says why - the list does not
+		//   follow every edit by itself).
+		if (!this->SameChangeAfterRefresh(nth, which, before))
+		{
+			outMessage = "the list was out of date - it has been compared again; right-click the row once more";
+			return -1;
+		}
+		const KCMRejectedRecord* const rec = KCMStoryList::RejectedAt(nth, which);
+		if (rec == nil || rec->fCopy.fWhyNot != kKCMCopyKept)
+		{
+			outMessage = "this row no longer holds its copy - compare again";
+			return -1;
+		}
+		const KCMRejectedRecord record = *rec;		// a copy: the list is rebuilt below
+		const UIDRef target(targetDB, row.fStoryUID);
+		// ★THE "=" HAS TO BE STANDING: Apply's words still where it put them. Words edited since are not overwritten - the
+		//   reader's edit is not this command's to take away (KFC's "edited since").
+		if (KCMStoryList::RejectedStateOf(nth, record, targetDB) != kKCMRejectedStanding)
+		{
+			outMessage = "the words Apply put in have been edited since - left as they are";
+			return -1;
+		}
+		// ★A CARET'S PLACE HAS TO READ AS THE SOURCE'S BY ITS SURROUNDINGS (CaretReadsAsSource says why): otherwise the words
+		//   would go back where an edit has moved them from.
+		if (record.fNowEnd == record.fNowStart
+			&& !CaretReadsAsSource(targetDB, row.fStoryUID, record.fNowStart, record.fLive.fSourceStart))
+		{
+			outMessage = "the place it went in has moved since (an edit before it) - left as it is; Ctrl+Z takes it back";
+			return -1;
+		}
+		if (record.fCopy.fParaStyle != kInvalidUID && !ParagraphStyleStands(targetDB, record.fCopy.fParaStyle))
+		{
+			outMessage = "the paragraph style of the paragraph before it has been deleted since - left as it is";
+			return -1;
+		}
+		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
+		if (sequence != nil)
+		{
+			PMString name("Restore from Copy");
+			name.SetTranslatable(kFalse);
+			sequence->SetName(name);
+		}
+		bool16 ok = KCMCopyStore::PasteOver(record.fCopy.fCopy, target, record.fNowStart, record.fNowEnd);
+		InterfacePtr<ITextModel> model(target, UseDefaultIID());
+		if (ok && record.fCopy.fParaStyle != kInvalidUID)
+			ok = PutParagraphBack(model, record.fNowStart, record.fCopy);
+		// ★ALL OF IT OR NONE OF IT: the place has to read as the words Apply wrote over, or the step is rolled back.
+		if (ok && record.fHasLiveWords)
+		{
+			IDataBase::SaveRestoreModifiedState guard(targetDB);
+			WideString now;
+			ok = (KCMTextWords::WordsAt(model, record.fNowStart, record.fLiveWords.CharCount(), now)
+				  && now == record.fLiveWords) ? kTrue : kFalse;
+		}
+		ok = (ok && ErrorUtils::PMGetGlobalErrorCode() == kSuccess) ? kTrue : kFalse;
+		this->EndSequenceOrRollBack(sequence, ok);
+		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
+		if (!ok)
+		{
+			this->RefreshRow(nth);
+			outMessage = "the copy could not be put back (a locked story or layer?) - nothing was changed";
+			return -1;
+		}
+		// ★THE RECORD STAYS, MARKED REDONE - Redo from Word's own way (design 15-1-3): it reads as the live change from
+		//   here, and as "=" again the moment the reader undoes this.
+		KCMStoryList::MarkRedone(nth, record, KCMStoryDiffRun::CountForKind(target, record.fCounterKind));
+		this->RefreshRow(nth);
+		outMessage = "restored from the copy - Ctrl+Z takes it back";
+		return 1;
+	}
+
+	virtual bool16	GetChangeCopyState(int32 nth, int32 which, PMString& outWhyNot)
+	{
+		outWhyNot.Clear();
+		outWhyNot.SetTranslatable(kFalse);
+		const KCMRejectedRecord* const rec = KCMStoryList::RejectedAt(nth, which);
+		if (rec == nil)
+			return kFalse;
+		if (rec->fCopy.fWhyNot == kKCMCopyKept && KCMCopyStore::Length(rec->fCopy.fCopy) >= 0)
+			return kTrue;
+		int32 why = (rec->fCopy.fWhyNot == kKCMCopyKept) ? kKCMCopyFailed : rec->fCopy.fWhyNot;
+		// The records the other roads make (a table's, a mark's) were never asked for one - said for what they are.
+		if (why == kKCMCopyNotTaken)
+			why = (rec->fLive.fWhat == KCMStoryChange::kTable) ? kKCMCopyHoldsObject
+				: (rec->fCounterKind != kKCMStoryAttrNone) ? kKCMCopyMark : kKCMCopyNotTaken;
+		outWhyNot = CopyWhyNotWords(why);
+		outWhyNot.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	virtual int32	GetProposedCount()
+	{
+		if (!this->IsImportSource())
+			return -1;
+		int32 proposed = 0;
+		const int32 rows = this->GetRowCount();
+		for (int32 r = 0; r < rows; ++r)
+		{
+			const int32 changes = this->GetChangeCount(r);
+			for (int32 c = 0; c < changes; ++c)
+			{
+				Change change;
+				if (this->GetChange(r, c, change) && !change.fReplaced && change.fWhat != Change::kWhatRefused)
+					++proposed;
+			}
+		}
+		return proposed;
+	}
+
 private:
+	/** A "=" row Apply This Change put in that holds its copy: the Source is an import's copy, the story is paired, the row is
+		a Standing record, and its copy was kept and is still in the store. (CanRestoreChangeFromCopy adds the caret's test;
+		RestoreChangeFromCopy asks it after comparing again, to say why.) */
+	bool16 HasRestorableCopy(int32 nth, int32 which, IDataBase*& outTargetDB, Row& outRow)
+	{
+		if (KCMFacadeTrackMode() || !this->IsImportSource() || !this->PairedTargetRow(nth, outTargetDB, outRow))
+			return kFalse;
+		Change change;
+		if (!this->GetChange(nth, which, change) || !change.fReplaced)
+			return kFalse;
+		const KCMRejectedRecord* const rec = KCMStoryList::RejectedAt(nth, which);
+		return (rec != nil && rec->fCopy.fWhyNot == kKCMCopyKept && KCMCopyStore::Length(rec->fCopy.fCopy) >= 0)
+			   ? kTrue : kFalse;
+	}
+
 	/** Change `which` of row `nth` as one Apply carries: the Source is an import's copy, the story is paired, and the
 		change is LIVE - not a "=" record (taken in already), not a "!" row - of a kind Apply puts in: words (a footnote's
 		marker with them), a ruby / kenten / warichu / tate-chu-yoko mark, or a table that stands on both sides. ⚠A table
@@ -1742,9 +2050,14 @@ private:
 		if (!this->PairedTargetRow(nth, outTargetDB, outRow))
 			return kFalse;
 		if (!this->GetChange(nth, which, outChange) || outChange.fReplaced)
-			return kFalse;
-		if (KCMStoryList::RejectedAt(nth, which) != nil)
-			return kFalse;		// a record (an Undone one is shown as the change it was - its live twin is the one to press)
+			return kFalse;		// a "=" record: put in already (Restore from Copy or Ctrl+Z is its way back)
+		// ★A RECORD THAT IS NOT "=" IS A CHANGE TO PUT IN AGAIN (corrected 2026-10-24 evening, the second try-out's tests):
+		//   one whose Apply was undone, or that Restore from Copy put back (marked redone), reads as the live change it
+		//   was - and the list shows the RECORD in its live twin's place (KCMMergeRejected hides the twin, "the record keeps
+		//   the place a later reject or redo acts from"). This refused any record until then, on the belief that the twin
+		//   stood beside it to be pressed - so a row put back from its copy could not be applied again (measured: "this row
+		//   is not a change of the imported text that can be put in"). The write's record then updates that one in place
+		//   (AddRejectedGroup's twin).
 		switch (outChange.fWhat)
 		{
 			case Change::kWhatText:
@@ -1762,11 +2075,152 @@ private:
 		}
 	}
 
+	/** The copy Apply This Change keeps of [from, to) of the document before it writes over it (design section 11-3) - or
+		why it keeps none: an object's character in the words (a copy put back would make it anew, with a new UID - the
+		author's rule, KFC's too), a hyperlink's or cross-reference's source touched (KFC's C4-2), the copy not made.
+		Outside the document's sequence: it writes the store only (KCMCopyStore::Take). */
+	KCMRecordCopy TakeApplyCopy(const UIDRef& target, TextIndex from, TextIndex to, const WideString& words)
+	{
+		KCMRecordCopy out;
+		if (HoldsObject(words))
+		{
+			out.fWhyNot = kKCMCopyHoldsObject;
+			return out;
+		}
+		{
+			IDataBase::SaveRestoreModifiedState guard(target.GetDataBase());
+			InterfacePtr<ITextModel> model(target, UseDefaultIID());
+			if (TouchesLink(model, from, to))
+			{
+				out.fWhyNot = kKCMCopyTouchesLink;
+				return out;
+			}
+		}
+		out.fWhyNot = KCMCopyStore::Take(target, from, to, out.fCopy) ? kKCMCopyKept : kKCMCopyFailed;
+		return out;
+	}
+
+	/** ★ONE CHANGE, ONE WRITE (2026-10-24 evening, design section 11-1 - the author: "not paragraph by paragraph -
+		somehow, row by row, change by change"). The Target's [fTargetStart, fTargetEnd) is made the Source's
+		[fSourceStart, fSourceEnd) by the import's one write command (KCMCreateWordsWriteCmd - a ReplaceCmd, an InsertCmd
+		at a caret, a DeleteCmd for nothing), unsigned and untracked (11-2), the document's words copied first for
+		Restore from Copy (11-3); the paragraph's other rows stay proposals. A change that cannot be written on its own
+		goes its paragraph's road (ApplyWords), which says why: a whole paragraph (one row is its paragraph already), an
+		object's character on either side (words written as text break objects - the 2026-09-21 rule), a return on
+		either side (paragraphs joined or split), a place that cannot be read as one stretch of one story thread. */
+	int32 ApplyWordsOne(int32 nth, int32 which, IDataBase* targetDB, const Row& row, PMString& outMessage)
+	{
+		Change before;
+		if (!this->GetChange(nth, which, before))
+		{
+			outMessage = "this change is not in the list any more";
+			return -1;
+		}
+		// ★★COMPARED AGAIN FIRST, AND IT HAS TO BE THE SAME CHANGE - SameChangeAfterRefresh says why.
+		if (!this->SameChangeAfterRefresh(nth, which, before))
+		{
+			outMessage = "the list was out of date - it has been compared again; right-click the change once more";
+			return -1;
+		}
+		const KCMStoryChange* const modelChange = KCMStoryList::GetMergedChange(nth, which);
+		if (modelChange == nil)
+		{
+			outMessage = "this change is not in the list any more";
+			return -1;
+		}
+		const KCMStoryChange live = *modelChange;
+		if (live.fWholeParagraph)
+			return this->ApplyWords(nth, which, targetDB, row, outMessage, nil);
+		const UIDRef target(targetDB, row.fStoryUID);
+		WideString liveWords;
+		WideString sourceWords;
+		bool16 readable = kFalse;
+		{
+			IDataBase::SaveRestoreModifiedState guard(targetDB);
+			InterfacePtr<ITextModel> tModel(target, UseDefaultIID());
+			readable = (KCMCopyStore::InOneThread(tModel, live.fTargetStart, live.fTargetEnd)
+						&& KCMTextWords::WordsAt(tModel, live.fTargetStart, live.fTargetEnd - live.fTargetStart, liveWords))
+					   ? kTrue : kFalse;
+		}
+		IDataBase* const sourceDB = KCMArmedSourceDB();
+		if (readable && sourceDB != nil && KCMIsDocDBOpen(sourceDB))
+		{
+			IDataBase::SaveRestoreModifiedState guard(sourceDB);
+			InterfacePtr<ITextModel> sModel(UIDRef(sourceDB, row.fStoryUID), UseDefaultIID());
+			readable = KCMTextWords::WordsAt(sModel, live.fSourceStart, live.fSourceEnd - live.fSourceStart, sourceWords);
+		}
+		else
+			readable = kFalse;
+		const char* road = nil;
+		if (!readable)
+			road = "its place could not be read as one stretch of text";
+		else if (HoldsObject(liveWords) || HoldsObject(sourceWords))
+			road = "it moves or deletes a character InDesign hangs an object on";
+		else if (HoldsReturn(liveWords) || HoldsReturn(sourceWords))
+			road = "it joins or splits paragraphs";
+		if (road != nil)
+			return this->ApplyWords(nth, which, targetDB, row, outMessage, road);
+
+		// THE COPY, before the sequence (it writes the store only).
+		std::vector<KCMRecordCopy> copies(1, this->TakeApplyCopy(target, live.fTargetStart, live.fTargetEnd, liveWords));
+
+		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
+		if (sequence != nil)
+		{
+			PMString name("Apply This Change");
+			name.SetTranslatable(kFalse);
+			sequence->SetName(name);
+		}
+		ErrorCode wrote = kFailure;
+		{
+			InterfacePtr<ITextModel> tModel(target, UseDefaultIID());
+			InterfacePtr<ICommand> write(KCMCreateWordsWriteCmd(tModel, live.fTargetStart,
+																live.fTargetEnd - live.fTargetStart, sourceWords));
+			wrote = (write != nil) ? CmdUtils::ProcessCommand(write) : kFailure;
+		}
+		// ★ALL OF IT OR NONE OF IT: the place has to read as the files' before the sequence ends, or it is rolled back.
+		const bool16 same = (wrote == kSuccess && ErrorUtils::PMGetGlobalErrorCode() == kSuccess
+							 && this->PlaceReadsAsSource(target, live.fTargetStart, live.fTargetStart + sourceWords.CharCount(),
+														 live, kKCMStoryAttrNone)) ? kTrue : kFalse;
+		this->EndSequenceOrRollBack(sequence, same);
+		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
+		if (!same)
+		{
+			this->RefreshRow(nth);
+			outMessage = (wrote == kSuccess)
+						 ? "the place did not read as the imported text after the write - nothing was put in"
+						 : "the write failed (a locked story or layer?) - nothing was put in";
+			return -1;
+		}
+		// THE "=" RECORD - this change alone, with its copy.
+		std::vector<KCMStoryChange> group(1, live);
+		std::vector<TextIndex> nowStarts(1, live.fTargetStart);
+		std::vector<WideString> wordsBefore(1, liveWords);
+		KCMStoryList::AddRejectedGroup(nth, group, nowStarts, wordsBefore,
+									   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone, &copies);
+		this->RefreshRow(nth);
+		outMessage = "applied (1 write)";
+		if (copies[0].fWhyNot == kKCMCopyKept)
+			outMessage.Append(" - right-click it: Restore from Copy, or Ctrl+Z");
+		else
+		{
+			outMessage.Append(" - Ctrl+Z takes it back (no copy was kept: ");
+			outMessage.Append(CopyWhyNotWords(copies[0].fWhyNot));
+			outMessage.Append(")");
+		}
+		outMessage.SetTranslatable(kFalse);
+		return 1;
+	}
+
 	/** The words of one change - and of every change standing in the same paragraph, which the import's road writes
 		together - put into the document as ONE undo step ("Apply This Change"), then "=" records for them and the row
 		compared again. The geometry of the records is the reject's (RejectImportChange): the group's first Target
-		position holds the Source's range from the group's first Source character to its last. */
-	int32 ApplyWords(int32 nth, int32 which, IDataBase* targetDB, const Row& row, PMString& outMessage)
+		position holds the Source's range from the group's first Source character to its last.
+		★SINCE 2026-10-24 EVENING ONLY FOR WHAT CANNOT BE WRITTEN ON ITS OWN (ApplyWordsOne): `road` is why (nil for a
+		whole paragraph), said in the message. A whole paragraph that goes in alone keeps a copy for Restore from Copy -
+		what it took out (empty when it put one in) - and, put in with the break first or taken out from the return
+		before it, the formatting of the paragraph before it (design 11-3); the rows of a paragraph's road keep none. */
+	int32 ApplyWords(int32 nth, int32 which, IDataBase* targetDB, const Row& row, PMString& outMessage, const char* road)
 	{
 		Change before;
 		if (!this->GetChange(nth, which, before))
@@ -1856,6 +2310,28 @@ private:
 				liveWords.push_back(words);
 			}
 		}
+		// ★THE COPIES RESTORE FROM COPY PASTES BACK (design 11-3), taken before the sequence (they write the store only):
+		//   a whole paragraph that goes in alone keeps what it takes out - nothing, when it puts one in - and, when it
+		//   goes in with the break first or comes out from the return before it, the formatting of the paragraph before
+		//   it, whose ending return the write changes. The rows of a paragraph's road keep none (several changes went in
+		//   as one write), nor do paragraphs put in at one place together.
+		std::vector<KCMRecordCopy> copies(group.size());
+		for (size_t i = 0; i < copies.size(); ++i)
+			copies[i].fWhyNot = (road != nil || !live.fWholeParagraph) ? kKCMCopyParagraphRoad : kKCMCopyGroup;
+		if (road == nil && live.fWholeParagraph && group.size() == 1)
+		{
+			copies[0] = this->TakeApplyCopy(target, group[0].fTargetStart, group[0].fTargetEnd, liveWords[0]);
+			if (copies[0].fWhyNot == kKCMCopyKept && group[0].fBreakAt == kKCMBreakLeads)
+			{
+				IDataBase::SaveRestoreModifiedState guard(targetDB);
+				InterfacePtr<ITextModel> tModel(target, UseDefaultIID());
+				if (!KeepParagraph(tModel, group[0].fTargetStart, copies[0]))
+				{
+					copies[0] = KCMRecordCopy();
+					copies[0].fWhyNot = kKCMCopyFailed;
+				}
+			}
+		}
 
 		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
 		if (sequence != nil)
@@ -1864,7 +2340,8 @@ private:
 			name.SetTranslatable(kFalse);
 			sequence->SetName(name);
 		}
-		const int32 done = KCMApplyRedoFromWord(target, now, plan, outMessage);
+		// ★UNSIGNED AND UNTRACKED (design 11-2, the author 2026-10-24: "if it is tracked, change it without tracking").
+		const int32 done = KCMApplyRedoFromWord(target, now, plan, outMessage, kFalse);
 		// ★ALL OF IT OR NONE OF IT (the take-backs' rule, the redo's too): a write refused halfway is rolled back whole.
 		this->EndSequenceOrRollBack(sequence, (done > 0) ? kTrue : kFalse);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
@@ -1885,7 +2362,8 @@ private:
 			for (size_t i = 0; i < group.size(); ++i)
 				nowStarts.push_back(tLo + (group[i].fSourceStart - sLo));
 			KCMStoryList::AddRejectedGroup(nth, group, nowStarts, liveWords,
-										   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone);
+										   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone,
+										   &copies);
 		}
 		this->RefreshRow(nth);
 
@@ -1894,13 +2372,21 @@ private:
 		outMessage.Append(done == 1 ? " write)" : " writes)");
 		if (group.size() > 1)
 		{
-			outMessage.Append(" - this paragraph's ");
+			outMessage.Append(live.fWholeParagraph ? " - the " : " - this paragraph's ");
 			outMessage.AppendNumber(static_cast<int32>(group.size()));
-			outMessage.Append(" changes went in together");
+			outMessage.Append(live.fWholeParagraph ? " paragraphs put in at this place went in together"
+												   : " changes went in together");
+		}
+		// ★WHY THE PARAGRAPH'S ROAD (design 11-1): said, so that a change going in with its neighbours is not a surprise.
+		if (road != nil)
+		{
+			outMessage.Append(group.size() > 1 ? ", because this one " : " - with its paragraph's road, because ");
+			outMessage.Append(road);
 		}
 		if (!same)
 			outMessage.Append(" - the place does not read exactly as the imported text; the row shows what still differs");
-		outMessage.Append(" - Ctrl+Z takes it back");
+		outMessage.Append((same && copies.size() == 1 && copies[0].fWhyNot == kKCMCopyKept)
+						  ? " - right-click it: Restore from Copy, or Ctrl+Z" : " - Ctrl+Z takes it back");
 		outMessage.SetTranslatable(kFalse);
 		return done;
 	}
@@ -1940,7 +2426,7 @@ private:
 			name.SetTranslatable(kFalse);
 			sequence->SetName(name);
 		}
-		const int32 done = KCMRedoTableFromWord(target, live.fTargetTableUID, outMessage);
+		const int32 done = KCMRedoTableFromWord(target, live.fTargetTableUID, outMessage, kFalse);	// untracked (design 11-2)
 		this->EndSequenceOrRollBack(sequence, (done > 0) ? kTrue : kFalse);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
 		if (done > 0)
@@ -1958,13 +2444,15 @@ private:
 		return done;
 	}
 
-	/** The import's pour into the TARGET - signed and tracked, the "!" rows left as the import noted them, nothing kept -
-		as ONE undo step named `stepName`, then the row (oneRow >= 0) or every row compared again. */
+	/** The import's pour into the TARGET - unsigned and untracked since 2026-10-24 (design 11-2: the author asked for the
+		trial's writes to go in without a change history; they were signed and tracked until then), the "!" rows left as
+		the import noted them, nothing kept - as ONE undo step named `stepName`, then the row (oneRow >= 0) or every row
+		compared again. */
 	int32 PourIntoTarget(IDataBase* targetDB, const KCMStoryTextSet& set, const std::vector<UID>& only,
 						 const char* stepName, int32 oneRow, PMString& outMessage)
 	{
 		KCMPourOptions options;
-		options.fSigned = kTrue;
+		options.fSigned = kFalse;
 		options.fNoteRefusals = kFalse;
 		options.fKeepFor = nil;
 		options.fOnly = only;
@@ -1973,6 +2461,16 @@ private:
 		PMString poured;
 		bool16 cancelled = kFalse;
 		const bool16 any = KCMPourStoryTextWith(targetDB, set, options, poured, cancelled);
+		// ★THE POURED ROWS' RECORDS GO (2026-10-24 night, the re-check - KCMStoryList::DropRecords says what they did): the
+		//   pour wrote their stories over without sliding them. Only when something went in - a cancelled pour put nothing in.
+		if (any && !cancelled)
+		{
+			if (oneRow >= 0)
+				KCMStoryList::DropRecords(oneRow);
+			else
+				for (int32 r = 0; r < KCMStoryList::GetRowCount(); ++r)
+					KCMStoryList::DropRecords(r);
+		}
 		// ★THE UNDO FOLLOWER ATTACHED AGAIN (measured 2026-10-24 on the application: after "Apply All Changes in This
 		//   Story" an Undo put the words back and the list did not follow - its observer had gone from the story, the
 		//   loss memory observer-lost-when-object-purged describes). Attaching is idempotent (IsAttached first).

@@ -74,6 +74,7 @@
 #include "KCMStoryTextImport.h"    // KCMClearImportRefusals - what the last import could not put in (PMStrings again)
 #include "KCMSourceCache.h"        // KCMSourceCacheClear - the Source text kept from the origin
 #include "KCMWordKeep.h"           // KCMWordKeepSweepClosed / KCMWordKeepClear - the Word content kept for "Redo from Word"
+#include "KCMCopyStore.h"          // KCMCopyStore::ShutdownCleanup - the copies Restore from Copy pastes back (2026-10-24)
 #include "KCMResourceStore.h"      // the Resources list, emptied on the same routes
 #include "KCMStoryMarker.h"        // KCMStoryMarker::Shutdown (the Story mode's marks are never drawn again)
 #include "KCMBookCompare.h"        // KCMClearBookResultText (the book comparison's result text)
@@ -761,6 +762,10 @@ void KCMPeekStartup::Shutdown()
 	KCMSourceCacheClear();
 	// The Word content kept per story for "Redo from Word" (2026-09-24, stage 2 C) - a map of stories, the same rule.
 	KCMWordKeepClear();
+	// The copy stores Apply This Change filled for Restore from Copy (2026-10-24, KCMCopyStore.h) - each holds a data
+	// exchange controller and its scrap database, let go (Cleanup, Release) while the session is whole. The records name
+	// copies by number only, so the order against KCMStoryList::ShutdownCleanup above does not matter.
+	KCMCopyStore::ShutdownCleanup();
 	// And the stories this comparison had read, with what a restore learned about their tables -
 	//   two maps of strings, the same rule again.
 	// The Story mode's marks. **Until they moved into the model plug-in this clean-up had no

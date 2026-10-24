@@ -41,16 +41,20 @@ bool16 KCMPlanRedoFromWord(const UIDRef& targetStory, const UIDRef& sourceStory,
 
 /** Carries the narrowed plan out as the import does - KCMImportAuthor and KCMStoryTrackingOn around
 	KCMApplySyncPlan - inside the CALLER's command sequence. @return the writes that went in (words + attributes +
-	notes + tables); -1 when nothing could be written (outWhy). */
+	notes + tables); -1 when nothing could be written (outWhy).
+	`signedAndTracked` kFalse (2026-10-24, the import-as-Source trial's Apply - design section 11-2): written with
+	neither switch, so nothing is recorded in the change history (a story the reader tracks still records it). */
 int32 KCMApplyRedoFromWord(const UIDRef& targetStory, const KCMStoryShape::Story& now, const KCMStorySync::Plan& plan,
-						   PMString& outWhy);
+						   PMString& outWhy, bool16 signedAndTracked = kTrue);
 
 /** ★"Apply This Change" (2026-10-24, the import-as-Source trial - docs/superpowers/specs/2026-10-24-kcm-import-as-source-
 	design.md): plans putting a LIVE change of the import's comparison into the document - the files' content kept by
 	the import (KCMWordKeep, under the document), the document read now, the change's paragraph found from where the
 	change stands in the document, and the import's comparison narrowed to it (a whole paragraph only the document has
 	is taken out, one only the files have is put in; anything else is the paragraph's own edit). The writing is
-	KCMApplyRedoFromWord's, under the import's signature. Refuses with a reason and writes nothing.
+	KCMApplyRedoFromWord's - unsigned and untracked for the trial since 2026-10-24 (design section 11-2), and since the
+	same day only for a change that cannot be written on its own (section 11-1: an object's character or a return in its
+	range, or a whole paragraph). Refuses with a reason and writes nothing.
 	outParaStart / outParaEnd: the paragraph the plan writes, in the document, its return included - where the
 	changes that go in together stand. */
 bool16 KCMPlanApplyFromWord(const UIDRef& targetStory, const KCMStoryChange& live,
@@ -70,8 +74,9 @@ bool16 KCMImportStoryNeedsTableRound(const UIDRef& targetStory);
 	table's cells and carried out under the import's signature. Plans and writes in one call, INSIDE the caller's
 	command sequence (a shape round has to be read back before the next is planned, so the two cannot be separated
 	as the paragraph redo's are); the caller rolls the sequence back on -1. @return the moves and writes that went
-	in; -1 when nothing could be done, and outWhy says why. */
-int32 KCMRedoTableFromWord(const UIDRef& targetStory, UID tableUID, PMString& outWhy);
+	in; -1 when nothing could be done, and outWhy says why.
+	`signedAndTracked` kFalse: the trial's Apply, written with neither switch (as KCMApplyRedoFromWord's). */
+int32 KCMRedoTableFromWord(const UIDRef& targetStory, UID tableUID, PMString& outWhy, bool16 signedAndTracked = kTrue);
 
 /** The redo of a TABLE ADDED OR TAKEN AWAY WHOLE (Table + / Table −, 2026-09-25): until then the table redo above took
 	every table record and could only ever refuse these two (a table the reject took away has no id left to find, and

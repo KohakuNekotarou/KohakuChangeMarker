@@ -327,6 +327,37 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 			data->AppendReturnData(script, methodID, returnData);
 			return kSuccess;
 		}
+		// ★(2026-10-24 evening) app.kcmRestoreFromCopy("<row> <change>") - the "=" row's Restore from Copy without the right
+		//   click: what the facade does for the panel's item (IKCMStoryEditsFacade::RestoreChangeFromCopy).
+		if (id == e_KCMRestoreFromCopy)
+		{
+			PMString message;
+			message.SetTranslatable(kFalse);
+			ScriptData arg;
+			PMString what;
+			int32 row = -1;
+			int32 change = -1;
+			if (data->ExtractRequestData(p_Name, arg) != kSuccess || arg.GetPMString(what) != kSuccess)
+				message = "the argument could not be read - \"<row> <change>\"";
+			else if (::sscanf_s(what.GetUTF8String().c_str(), "%d %d", &row, &change) != 2)
+				message = "the argument does not read as \"<row> <change>\"";
+			else
+			{
+				// ⚠Utils<> asked before it is used (memory utils-boss-facade-access: QueryUtilInterface has no nil guard).
+				Utils<IKCMStoryEditsFacade> edits;
+				if (!edits)
+					message = "the Story Edits facade is not there";
+				else
+					edits->RestoreChangeFromCopy(row, change, message);
+			}
+			message.SetTranslatable(kFalse);
+			if (message.CharCount() > 0)
+				KCMNotifyStatus(message, kFalse);
+			ScriptData returnData;
+			returnData.SetWideString(WideString(message));
+			data->AppendReturnData(script, methodID, returnData);
+			return kSuccess;
+		}
 		if (id == e_KCMImportStoryText || id == e_KCMImportToSource
 			|| id == e_KCMExportStoryText || id == e_KCMStopComparison || id == e_KCMCompareTracked)
 		{

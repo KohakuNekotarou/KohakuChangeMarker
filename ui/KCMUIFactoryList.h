@@ -85,10 +85,12 @@ REGISTER_PMINTERFACE(KCMStoryTreeEH, kKCMStoryTreeEHImpl)	// up/down move betwee
 //   ([[id-prefix-256-slot-budget]]).
 REGISTER_PMINTERFACE(KCMStoryCellData, kKCMStoryCellDataImpl)// the three pieces a change row's cell paints: context, changed characters, context (KCMStoryCellView.cpp)
 REGISTER_PMINTERFACE(KCMStoryCellView, kKCMStoryCellViewImpl)	// ★PERSIST form. The text cell of a change row: changed characters in the theme colour, the context faded (DVControlView subclass; KCMStoryCellView.cpp)
+REGISTER_PMINTERFACE(KCMStoryAppliedSignView, kKCMStoryAppliedSignViewImpl)	// ★PERSIST form. The Δ cell of a "=" row Apply This Change put in: a red "=" (KCMStoryBangView.cpp, 2026-10-24 evening). Not optional, for the reason the next line gives.
 REGISTER_PMINTERFACE(KCMStoryBangView, kKCMStoryBangViewImpl)	// ★PERSIST form. The Δ cell of a "!" row: a red "!" (DVControlView subclass; KCMStoryBangView.cpp, 2026-09-19). ⚠**A LINE HERE IS NOT OPTIONAL**: without it the boss's IControlView cannot be made and InDesign crashes inside DVPanelControlData::ReadWrite the moment the tree builds the row - measured 2026-09-19, the first live run of these rows
 REGISTER_PMINTERFACE(KCMTrackChipView, kKCMTrackChipViewImpl)	// ★PERSIST form. The colour square of a Track author row (KCMTrackChipView.cpp, 2026-10-05). ⚠A LINE HERE IS NOT OPTIONAL (KCMStoryBangView's note)
 REGISTER_PMINTERFACE(KCMStatusTextData, kKCMStatusTextDataImpl)	// the four pieces the panel's message area paints: heading, context, changed characters, context (KCMStatusTextView.cpp)
 REGISTER_PMINTERFACE(KCMStatusTextView, kKCMStatusTextViewImpl)	// ★PERSIST form. The message area: wraps by itself, changed characters in the theme colour, heading and context faded (DVControlView subclass; KCMStatusTextView.cpp)
+REGISTER_PMINTERFACE(KCMTopPaneEH, kKCMTopPaneEHImpl)	// the upper pane's: a right click on the section heading pops "Apply All Changes" against an import's copy (DVHostedWidgetEH subclass, not persistent; KCMStorySection.cpp, 2026-10-24 evening)
 
 // The book comparison dialog and its chapter list (kDialogBoss derived, so UI by construction)
 REGISTER_PMINTERFACE(KCMPawWordDialogController, kKCMPawWordDialogControllerImpl)	// the one-line box that asks for the word beside a cat paw (CDialogController subclass; KCMPawWordDialog.cpp)

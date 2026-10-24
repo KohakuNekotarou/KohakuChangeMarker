@@ -776,12 +776,15 @@ public:
 		kenten / warichu / tate-chu-yoko mark, or a table whose shape or cells differ. Reads no document. */
 	virtual bool16	CanApplyChange(int32 nth, int32 which) = 0;
 
-	/** Puts that change into the document as ONE undo step - the words by the import's own road narrowed to their
-		paragraph (every change of that paragraph goes in with it), a mark by "Restore from Source", a table by its redo
-		from the files' content (KCMRedoTableFromWord - "Match the Source" reads the Source's table back through INX,
-		which a copy kept in memory cannot give) - and compares the row again; what went in reads "=". A story whose
-		tables the files add or take away is refused: it goes in whole (ApplyStory). @return the writes; 0 when nothing was left to
-		do; -1 when nothing was written, and outMessage says why. */
+	/** Puts that change into the document as ONE undo step, unsigned and untracked (design section 11-2) - the words
+		of THAT change alone, its range made the files' by the import's one write command, the document's words copied
+		first for Restore from Copy (11-1, 11-3 - since 2026-10-24 evening; until then the whole paragraph went in); a
+		change with an object's character or a return in it, or a whole paragraph, by the import's own road narrowed to
+		its paragraph (every change of that paragraph goes in with it then, and the message says so); a mark by "Restore
+		from Source"; a table by its redo from the files' content (KCMRedoTableFromWord - "Match the Source" reads the
+		Source's table back through INX, which a copy kept in memory cannot give) - and compares the row again; what
+		went in reads "=". A story whose tables the files add or take away is refused: it goes in whole (ApplyStory).
+		@return the writes; 0 when nothing was left to do; -1 when nothing was written, and outMessage says why. */
 	virtual int32	ApplyChange(int32 nth, int32 which, PMString& outMessage) = 0;
 
 	/** Whether row `nth` is a paired story of an import's copy with anything to put in. */
@@ -794,6 +797,31 @@ public:
 	/** Every story the import filled, as ONE undo step - the result the import put in before the trial - then the list
 		compared again. @return the writes; -1 when nothing was written (outMessage). */
 	virtual int32	ApplyAll(PMString& outMessage) = 0;
+
+	// ---- ★CHANGE BY CHANGE, AND BACK FROM A COPY (2026-10-24 evening, the trial's second try-out - design section 11:
+	// the author, "change by change, not paragraph by paragraph", "put a row back from a Copy, the way KFC does").
+	// ⚠Appended at the END again ([[facade-vtable-slot-append-only]]) - KCM's two halves are built together.
+
+	/** Whether change `which` of row `nth` is a "=" record of Apply This Change that holds a copy still in the store
+		(KCMCopyStore): the Source is an import's copy and the story is paired. Reads no document - whether the words
+		still stand as Apply left them is asked on the press (RestoreChangeFromCopy). */
+	virtual bool16	CanRestoreChangeFromCopy(int32 nth, int32 which) = 0;
+
+	/** "Restore from Copy": the document's own words, copied with their formatting just before Apply wrote over them,
+		pasted back over what Apply wrote - and, for a whole paragraph put in or taken out next to a return, the
+		formatting of the paragraph before it put back - as ONE undo step; the record is marked redone (Ctrl+Z makes the
+		row "=" again, a redo a proposal). @return 1; -1 when nothing was written, and outMessage says why (the words
+		edited since, no copy held, a locked story). */
+	virtual int32	RestoreChangeFromCopy(int32 nth, int32 which, PMString& outMessage) = 0;
+
+	/** Whether the "=" row `which` of row `nth` holds a copy: kTrue (outWhyNot empty) when it does; kFalse with the
+		reason ("its words hold an object - put back from a copy, it would be made anew with a new UID", ...) when it
+		does not, or with outWhyNot empty when it is not a "=" row of Apply's. For the row's message line. */
+	virtual bool16	GetChangeCopyState(int32 nth, int32 which, PMString& outWhyNot) = 0;
+
+	/** How many changes are still proposals - live, not a "=" record, not a "!" row - over every row: the trial's
+		heading, "Proposed Edits (N)". -1 when the Source is not an import's copy. */
+	virtual int32	GetProposedCount() = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

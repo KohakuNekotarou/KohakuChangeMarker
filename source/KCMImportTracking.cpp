@@ -81,8 +81,10 @@ ErrorCode SetTracking(const UIDRef& story, bool16 on)
 
 }	// anonymous namespace
 
-KCMImportAuthor::KCMImportAuthor() : fSwitched(kFalse)
+KCMImportAuthor::KCMImportAuthor(bool16 on) : fSwitched(kFalse)
 {
+	if (!on)
+		return;		// nothing switched, so nothing is put back
 	InterfacePtr<IWorkspace> ws(GetExecutionContextSession()->QueryWorkspace());
 	InterfacePtr<IUserInfo> info(ws, UseDefaultIID());
 	if (info == nil)
@@ -99,8 +101,10 @@ KCMImportAuthor::~KCMImportAuthor()
 		SetUserName(fOld);
 }
 
-KCMStoryTrackingOn::KCMStoryTrackingOn(const UIDRef& story) : fStory(story), fWas(kTrue)
+KCMStoryTrackingOn::KCMStoryTrackingOn(const UIDRef& story, bool16 on) : fStory(story), fWas(kTrue)
 {
+	if (!on)
+		return;		// fWas kTrue: nothing switched, so nothing is put back
 	InterfacePtr<ITrackChangeStorySettings> settings(story, UseDefaultIID());
 	// ⚠A story that cannot say is treated as ALREADY tracking: then nothing is switched, and so
 	//  nothing has to be put back.
