@@ -492,6 +492,12 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupModeTrackActionID, kKCMUIPrefix + 87)	// �
 DECLARE_PMID(kActionIDSpace, kKCMPopupTaskStartCloneActionID, kKCMUIPrefix + 88)	// ★"Task Start" on the panel flyout (2026-10-13): the document's state is kept IN MEMORY (a database clone - KCMTaskStartClone.h) and chosen as the Source - no dialog, no file, nothing started. Live whenever there is a document to take (facade CanTakeTaskStartClone - the question "Task Start (Save)..." asks); pressing it while comparing stops that comparison first. ⚠Every word the reader sees says "kept in memory", never "clone" (the user's decision). The item that saves a copy (+59) became "Task Start (Save)..." the same day.
 DECLARE_PMID(kActionIDSpace, kKCMPopupSetPdfTargetActionID, kKCMUIPrefix + 89)	// ★"Set PDF as Target..." on the panel flyout (2026-10-14, the PDF comparison): a PDF the reader picks becomes the Target - a FILE choice; Start makes a document of it (KCMPdfDoc.h). Live while nothing is compared, with or without a document open. +89 and +90 were the lowest action slots never used, counted on every branch that day.
 DECLARE_PMID(kActionIDSpace, kKCMPopupSetPdfSourceActionID, kKCMUIPrefix + 90)	// ★"Set PDF as Source..." - the same for the Source (the older PDF)
+// ★(2026-10-24, the import-as-Source trial - docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md) The three Apply
+//   items: live only while the Source is an import's copy (facade IsImportSource). +91..+93 were the lowest action slots never
+//   used, counted on every branch that day (the highest was +90).
+DECLARE_PMID(kActionIDSpace, kKCMChangeRowApplyActionID, kKCMUIPrefix + 91)	// ★"Apply This Change" on a Story Edits CHANGE row: the change goes into the document by the import's own road (facade ApplyChange)
+DECLARE_PMID(kActionIDSpace, kKCMStoryRowApplyActionID, kKCMUIPrefix + 92)	// ★"Apply All Changes in This Story" on a Story Edits STORY row (facade ApplyStory)
+DECLARE_PMID(kActionIDSpace, kKCMStoryRowApplyAllActionID, kKCMUIPrefix + 93)	// ★"Apply All Changes" on a Story Edits STORY row: every story the import filled (facade ApplyAll)
 
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
 //  **deleted**. ⚠★★It was not inert: **+41 is taken** (kKCMPopupTranslucentBookDialogActionID
@@ -816,6 +822,9 @@ DECLARE_PMID(kWidgetIDSpace, kKCMTrackAuthorRowWidgetID, kKCMUIPrefix + 77)	// �
 #define kKCMChangeRowRestoreAttrMenuKey	kKCMStringPrefix "kKCMChangeRowRestoreAttrMenuKey"	// "Restore from Source" on an attribute change row (2026-09-24, stage 2 B)
 #define kKCMChangeRowRedoMenuKey	kKCMStringPrefix "kKCMChangeRowRedoMenuKey"	// "Redo from Word" on a taken-back change row (2026-09-24, stage 2 C). ★SHOWN AS "Redo" since 2026-09-25 (the user's request); the code and its comments still call the feature "Redo from Word", and its undo step keeps that name (Edit > Undo "Redo from Word" says what it takes back)
 #define kKCMChangeRowMatchTableMenuKey	kKCMStringPrefix "kKCMChangeRowMatchTableMenuKey"	// "Match the Source" on a Table row that differs from the Source's (2026-09-25)
+#define kKCMChangeRowApplyMenuKey	kKCMStringPrefix "kKCMChangeRowApplyMenuKey"	// "Apply This Change" (2026-10-24, the import-as-Source trial)
+#define kKCMStoryRowApplyMenuKey	kKCMStringPrefix "kKCMStoryRowApplyMenuKey"	// "Apply All Changes in This Story" (the same trial)
+#define kKCMStoryRowApplyAllMenuKey	kKCMStringPrefix "kKCMStoryRowApplyAllMenuKey"	// "Apply All Changes" (the same trial)
 // ⛔kKCMChangeRowRestoreMenuKey ("Restore Source Text") and kKCMChangeRowUndoRestoreMenuKey ("Undo
 //   the Restore") went on 2026-09-21 with the restore itself, and are gone from the enUS table.
 // ⛔The two Import-mode names went with the fourth mode on 2026-09-20 ("Change to Imported Text",
@@ -1269,6 +1278,9 @@ DECLARE_PMID(kWidgetIDSpace, kKCMTrackAuthorRowWidgetID, kKCMUIPrefix + 77)	// �
 #define kKCMChangeRowRestoreAttrMenuItemPosition	2.0	// the change row's subtree: "Restore from Source" under the reject (2026-09-24, stage 2 B). The two are never live on one row (A: words and tables; B: the four attributes), so the order only decides what a future third item sits between
 #define kKCMChangeRowRedoMenuItemPosition	3.0	// the change row's subtree: "Redo from Word" under the two above (2026-09-24, stage 2 C). Live only on a "=" row, where the other two are greyed
 #define kKCMChangeRowMatchTableMenuItemPosition	4.0	// the change row's subtree: "Match the Source" under the three above (2026-09-25). Live only on a Table ≠ row, where the other three are greyed - still one item per row
+#define kKCMChangeRowApplyMenuItemPosition	0.5	// the change row's subtree: "Apply This Change" at the top (2026-10-24, the import-as-Source trial). Live only while the Source is an import's copy, where the four below are greyed
+#define kKCMStoryRowApplyMenuItemPosition	0.5	// the story row's subtree: "Apply All Changes in This Story" above the refresh (the same trial)
+#define kKCMStoryRowApplyAllMenuItemPosition	0.6	// ...and "Apply All Changes" under it
 // ⛔The CHANGE row's two restore positions (2.0 "Restore Source Text", 2.7 "Undo the Restore") went
 //   with the items on the morning of 2026-09-21, and "Edit..." (0.5) went that evening - **so the
 //   subtree they sorted within is gone as well** (kKCMChangeRowMenuName above).

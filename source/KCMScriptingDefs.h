@@ -255,6 +255,12 @@ enum KCMScriptMethods
 	//   so the Track mode can be tested from KIDMCP. ⚠'eKGl' was MEASURED free (0 hits in source/sdksamples,
 	//   2026-10-05). ⚠Not registered with Adobe.
 	e_KCMCompareTracked = 'eKGl',	// l = log (the change log). app.kcmCompareTracked(file) -> the status line's sentence
+	// ★(2026-10-24, the import-as-Source trial) The new "Import Story Text..." and its Apply, without the dialog and the
+	//   right click - so the trial can be measured from KIDMCP. ⚠Every lowercase letter after 'eKG' is taken or avoided
+	//   (the note above and the tree), so these two are UPPERCASE - 'eKGI' / 'eKGA' MEASURED free: 0 hits in source/ and
+	//   docs/, with 'eKGn' found by the same search as the control (2026-10-24). ⚠Not registered with Adobe.
+	e_KCMImportToSource = 'eKGI',	// I = import into the Source. app.kcmImportToSource(file) -> the import's sentence
+	e_KCMApplyChange = 'eKGA',		// A = apply. app.kcmApplyChange("<row> <change>" | "<row>" | "all") -> the sentence
 
 	// ★★ONE CHANGE TAKEN IN FROM A SCRIPT (2026-09-17 afternoon). The user asked for the order checks -
 	//   "1 became 1..5, and the user takes in 3, then 5, then 4, then 2: does the order hold?" The change

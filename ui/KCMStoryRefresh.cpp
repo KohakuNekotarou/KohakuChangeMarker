@@ -84,10 +84,100 @@ bool16 ChangeRowMenuLive()
 		return kFalse;
 	if (!Utils<IKCMCompareFacade>()->IsArmed())
 		return kFalse;
+	// ★NONE OF THE FOUR AGAINST AN IMPORT'S COPY (2026-10-24, the import-as-Source trial): there the rows are what the
+	//   document WOULD become, and "Apply This Change" (below) is the one item - it uses the restore and the table's
+	//   redo itself where a row needs them. The reject has no import change to find, and the redo nothing taken back.
+	if (Utils<IKCMStoryEditsFacade>()->IsImportSource())
+		return kFalse;
 	// The change row's menu offers what only a DIFFED row can do - none of it in the Track mode (design D3, 2026-10-05).
 	return KCMModeDiffsStoryText(Utils<IKCMCompareFacade>()->GetCompareMode());
 }
+
+/** The status line's sentence for an Apply: the model's words, or the reason it gave. */
+void SayApplied(const char* what, int32 done, const PMString& why)
+{
+	PMString msg;
+	msg.SetTranslatable(kFalse);
+	if (done < 0)
+	{
+		msg.Append(what);
+		msg.Append(": could not - ");
+	}
+	msg.Append(why);
+	KCMSetStatus(msg);
+}
 }	// anonymous namespace
+
+//----------------------------------------------------------------------------------------
+// KCMChangeRowCanApply / KCMChangeRowApply / KCMStoryRowCanApply / KCMStoryRowApply / KCMStoryRowCanApplyAll /
+// KCMStoryRowApplyAll - the three Apply items (2026-10-24, the import-as-Source trial -
+// docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md). Each asks the model whether it may act and the
+// model does the work; the same test is asked again at the moment of acting (KCMStoryRefreshMenuRow's reason).
+//----------------------------------------------------------------------------------------
+
+bool16 KCMChangeRowCanApply()
+{
+	if (gMenuRow < 0 || gMenuChange < 0)
+		return kFalse;
+	if (!Utils<IKCMCompareFacade>()->IsArmed())
+		return kFalse;
+	return Utils<IKCMStoryEditsFacade>()->CanApplyChange(gMenuRow, gMenuChange);
+}
+
+bool16 KCMChangeRowApply()
+{
+	if (!KCMChangeRowCanApply())
+	{
+		KCMSetStatus("apply: not a change of the imported text.");
+		return kFalse;
+	}
+	PMString why;
+	const int32 done = Utils<IKCMStoryEditsFacade>()->ApplyChange(gMenuRow, gMenuChange, why);
+	SayApplied("apply", done, why);
+	return (done > 0) ? kTrue : kFalse;
+}
+
+bool16 KCMStoryRowCanApply()
+{
+	if (gMenuRow < 0 || gMenuChange >= 0)
+		return kFalse;
+	if (!Utils<IKCMCompareFacade>()->IsArmed())
+		return kFalse;
+	return Utils<IKCMStoryEditsFacade>()->CanApplyStory(gMenuRow);
+}
+
+bool16 KCMStoryRowApply()
+{
+	if (!KCMStoryRowCanApply())
+	{
+		KCMSetStatus("apply: not a story of the imported text with anything left to put in.");
+		return kFalse;
+	}
+	PMString why;
+	const int32 done = Utils<IKCMStoryEditsFacade>()->ApplyStory(gMenuRow, why);
+	SayApplied("apply", done, why);
+	return (done > 0) ? kTrue : kFalse;
+}
+
+bool16 KCMStoryRowCanApplyAll()
+{
+	if (gMenuRow < 0 || gMenuChange >= 0)
+		return kFalse;
+	return Utils<IKCMStoryEditsFacade>()->IsImportSource();
+}
+
+bool16 KCMStoryRowApplyAll()
+{
+	if (!KCMStoryRowCanApplyAll())
+	{
+		KCMSetStatus("apply: no imported text is being compared.");
+		return kFalse;
+	}
+	PMString why;
+	const int32 done = Utils<IKCMStoryEditsFacade>()->ApplyAll(why);
+	SayApplied("apply", done, why);
+	return (done > 0) ? kTrue : kFalse;
+}
 
 bool16 KCMChangeRowCanReject()
 {

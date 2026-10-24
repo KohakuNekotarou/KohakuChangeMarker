@@ -13,7 +13,10 @@
 #include <vector>
 
 #include "ICommandSequence.h"		// the whole import is one step
+#include "ICmdHistory.h"			// Discard - the import's copy keeps no undo history of its pour (2026-10-24)
+#include "ICommandProcessor.h"		// only to reach the boss ICmdHistory lives on
 #include "IDataBase.h"
+#include "ISession.h"
 #include "IStoryList.h"
 #include "CmdUtils.h"
 #include "FileUtils.h"
@@ -26,6 +29,8 @@
 // ⛔KCMOrigin.h went on 2026-09-21 - "until it goes" was written for the origin slot, and the slot
 //   went that day. Nothing in this file read anything the header declared.
 #include "KCMTaskStartSave.h"		// KCMTakeTaskStartCopy - the import's own Task Start, saved to a file
+#include "KCMTaskStartClone.h"		// KCMTakeImportClone - the import's copy in memory (2026-10-24, the import-as-Source trial)
+#include "KCMStoryList.h"			// the rows the Story mode built - what the import-as-Source proposes
 #include "KCMProgressBar.h"			// the import's one bar, and the slot its inner loops step (2026-09-17)
 #include "KCMDocxPackage.h"			// KCMReadDocxParts - a .docx on disk as its parts (2026-09-19)
 #include "KCMStorySync.h"			// Compare - what makes the document's story Word's (2026-09-23)
@@ -931,6 +936,197 @@ bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCM
 	//   until the attributes were poured, so a file whose only edit was a reading came back as
 	//   "nothing could be applied" - the very case the user asked for.
 	return (edits > 0 || attrEdits > 0 || noteEdits > 0 || tableEdits > 0) ? kTrue : kFalse;
+}
+
+//----------------------------------------------------------------------------------------
+// ★★IMPORT STORY TEXT INTO THE SOURCE (2026-10-24, the import-as-Source trial - docs/superpowers/specs/2026-10-24-kcm-
+//   import-as-source-design.md). The user: "right now the state before the change is the Source and the Target is what
+//   gets changed - I want that the other way round".
+//   The same reading and the same pour as KCMImportStoryText, aimed the other way: the words go into a Task Start in
+//   memory, and the Story mode then shows - against the document, which nothing here touches - what they would change.
+//----------------------------------------------------------------------------------------
+
+namespace
+{
+
+/** Nothing of the copy's own making left in any undo history (the pour wrote into it): KCMPdfDoc.cpp's DiscardHistory,
+	for the same reason - ICmdHistory::Discard, aimed at the copy's root, never at UIDRef::gNull (the application). */
+void DiscardHistoryOf(IDataBase* db)
+{
+	if (db == nil)
+		return;
+	ISession* const session = GetExecutionContextSession();
+	if (session == nil)
+		return;
+	InterfacePtr<ICommandProcessor> processor(session->QueryCommandProcessor());
+	if (processor == nil)
+		return;
+	InterfacePtr<ICmdHistory> history(processor, UseDefaultIID());
+	if (history != nil)
+		history->Discard(UIDRef(db, db->GetRootUID()));
+}
+
+/** "Imported: 269.docx", "Imported: 269.docx (+2 more)" - the Source line before its time. */
+void ImportLabel(const KCMStoryTextSet& set, PMString& out)
+{
+	out = "Imported: ";
+	if (!set.fFileNames.empty())
+		out.Append(set.fFileNames[0]);
+	if (set.fFileNames.size() > 1)
+	{
+		out.Append(" (+");
+		out.AppendNumber(static_cast<int32>(set.fFileNames.size()) - 1);
+		out.Append(" more)");
+	}
+	out.SetTranslatable(kFalse);
+}
+
+}	// anonymous namespace
+
+bool16 KCMImportStoryTextAsSource(const SysFileList& files, PMString& outMessage)
+{
+	outMessage.Clear();
+	outMessage.SetTranslatable(kFalse);
+
+	// ★NOT A PDF DOCUMENT - the import's own refusal, asked before a file is read.
+	if (KCMIsPdfDoc(KCMTaskDocumentDB()))
+	{
+		outMessage = kKCMPdfTargetRefusal;
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	// ★ONE BAR FOR ALL OF IT, the import's: the reading, the pour into the copy and the comparison step slices of it.
+	PMString barTitle("Importing story text...");
+	barTitle.SetTranslatable(kFalse);
+	KCMDeferredProgressBar progress(barTitle, kImportUnitsAll);
+	KCMOuterProgressScope outer(progress);
+
+	// 1. THE FILES FIRST. Nothing is touched if they cannot be read.
+	KCMStoryTextSet set;
+	PMString readMessage;
+	bool16 cancelledReading = kFalse;
+	outer.Slice(0, kImportUnitsState);
+	if (!KCMReadStoryTextFiles(files, set, readMessage, &cancelledReading))
+	{
+		outMessage = cancelledReading ? PMString(kImportCancelledMessage) : PMString("import: ");
+		outMessage.SetTranslatable(kFalse);
+		if (!cancelledReading)
+			outMessage.Append(readMessage);
+		return kFalse;
+	}
+
+	// 2. THE COPY: a Task Start in memory of the task document (the chosen Target, else the one in front - the one rule),
+	//    chosen as the Source. It stops a running comparison first and lets the previous copy go (KCMTaskStartClone.cpp).
+	KCMClearImportRefusals();
+	PMString stateStep("Keeping the document's state in memory");
+	stateStep.SetTranslatable(kFalse);
+	progress.Step(kImportUnitsState, stateStep);
+	PMString label;
+	ImportLabel(set, label);
+	PMString whyNot;
+	if (!KCMTakeImportClone(label, whyNot))
+	{
+		outMessage = "import: ";
+		outMessage.Append(whyNot);
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+	IDataBase* const targetDB = KCMChosenTargetDB();
+	IDataBase* const copyDB = KCMChosenSourceDB();
+	if (targetDB == nil || copyDB == nil || !KCMIsImportClone(copyDB))
+	{
+		// The take said it succeeded, so this cannot normally happen; a nil here would otherwise reach the pour.
+		KCMLetGoTaskStartClone(kTrue);
+		outMessage = "import: the copy of the document could not be chosen as the Source";
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+	KCMSetImportCloneStories(set.fUids);
+
+	// 3. ★★THE WORDS GO INTO THE COPY - unsigned and untracked (the copy keeps no change history), the "!" rows noted as
+	//    the import notes them, and Word's content kept under the DOCUMENT, which is what Apply writes into and asks.
+	PMString pourStep("Putting the edited text into the Source");
+	pourStep.SetTranslatable(kFalse);
+	progress.Step(kImportUnitsCopy, pourStep);
+	outer.Slice(kImportUnitsCopy, kImportUnitsCompare);
+	KCMPourOptions options;
+	options.fSigned = kFalse;
+	options.fNoteRefusals = kTrue;
+	options.fKeepFor = targetDB;
+	options.fStepName = "Import Story Text into the Source";
+	options.fStepName.SetTranslatable(kFalse);
+	options.fBarTitle = "Putting the edited text into the Source...";
+	options.fBarTitle.SetTranslatable(kFalse);
+	PMString poured;
+	bool16 cancelledPour = kFalse;
+	KCMPourStoryTextWith(copyDB, set, options, poured, cancelledPour);
+	DiscardHistoryOf(copyDB);
+	if (cancelledPour)
+	{
+		// ⚠THE COPY GOES: a copy the files only half went into is no Source to compare against.
+		KCMLetGoTaskStartClone(kTrue);
+		outMessage = kImportCancelledMessage;
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	// 4. THE STORY MODE: the Source is the copy with the files' words, the Target the document as it stands.
+	outer.Slice(kImportUnitsCompare, kImportUnitsAll);
+	KCMSetCompareMode(kKCMModeStory);
+	KCMToggleStartStop();
+
+	// 5. WHAT THE LIST NOW PROPOSES - its live changes (the "!" rows are counted apart).
+	int32 proposals = 0;
+	int32 storiesWith = 0;
+	for (int32 r = 0; r < KCMStoryList::GetRowCount(); ++r)
+	{
+		const KCMStoryRow* row = KCMStoryList::GetRow(r);
+		if (row == nil || row->fChanges.empty())
+			continue;
+		proposals += static_cast<int32>(row->fChanges.size());
+		++storiesWith;
+	}
+	int32 cannotGoIn = 0;
+	int32 heldBack = 0;
+	for (size_t i = 0; i < KCMImportRefusals().size(); ++i)
+	{
+		if (KCMImportRefusals()[i].fHeldBack)
+			++heldBack;
+		else
+			++cannotGoIn;
+	}
+
+	outMessage = "import: ";
+	outMessage.SetTranslatable(kFalse);
+	outMessage.Append(readMessage);
+	outMessage.Append("; ");
+	if (!(KCMIsArmed() && KCMArmedTargetDB() != nil))
+	{
+		PMString startSaid;
+		KCMGetSessionStatus(startSaid);
+		outMessage.Append("the edited text is in the Source, but the comparison did not start");
+		if (startSaid.CharCount() > 0)
+		{
+			outMessage.Append(" (");
+			outMessage.Append(startSaid);
+			outMessage.Append(")");
+		}
+		outMessage.Append(" - your document is unchanged");
+		KCMNotify(kKCMMarksClearedMessage);
+		return kTrue;
+	}
+	AppendCount(outMessage, "", proposals, " change(s) proposed");
+	AppendCount(outMessage, " in ", storiesWith, " story(ies)");
+	outMessage.Append(" - your document is unchanged; right-click a change: Apply This Change");
+	if (cannotGoIn > 0)
+		AppendCount(outMessage, " - ", cannotGoIn, " cannot go in (the rows marked !)");
+	if (heldBack > 0)
+		AppendCount(outMessage, ", ", heldBack, " thing(s) Word cannot carry kept as they are (the rows marked !)");
+
+	// ★THE TARGET IS WHAT THE READER IS LEFT LOOKING AT - the import's rule; the copy has no window to come to the front.
+	KCMNotify(kKCMTargetToFrontMessage);
+	return kTrue;
 }
 
 const std::vector<KCMImportRefusal>& KCMImportRefusals()

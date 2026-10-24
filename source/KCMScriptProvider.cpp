@@ -153,6 +153,10 @@
 //  app.kcmUndoRestore, and went with those two methods on 2026-09-21.)
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - app.kcmExportStoryText
 #include "KCMStoryTextImport.h"	// KCMImportStoryText - app.kcmImportStoryText
+#include "IKCMStoryEditsFacade.h"	// ApplyChange / ApplyStory / ApplyAll - app.kcmApplyChange (2026-10-24)
+#include "Utils.h"
+#include <cstdio>					// sscanf_s - app.kcmApplyChange's "<row> <change>"
+#include <string>
 // ⚠**KCMTextRead.h WENT WITH THE FEATURE THAT NEEDED IT** (2026-09-08). It was included here for
 //   app.kcmStoryReadCompare - the direct-read migration's parallel run - and its own comment said
 //   "temporary". The property was removed on 2026-09-03; the include outlived it by five days and
@@ -284,7 +288,46 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 	//    as the status number below: "0 changes taken in, 2 skipped" is an answer, not an error.
 	{
 		const int32 id = methodID.Get();
-		if (id == e_KCMImportStoryText
+		// ★(2026-10-24, the import-as-Source trial) app.kcmApplyChange(what) - Apply This Change / in This Story / All
+		//   without the right click: what the facade does for the panel's three items (IKCMStoryEditsFacade).
+		if (id == e_KCMApplyChange)
+		{
+			PMString message;
+			message.SetTranslatable(kFalse);
+			ScriptData arg;
+			PMString what;
+			if (data->ExtractRequestData(p_Name, arg) != kSuccess || arg.GetPMString(what) != kSuccess)
+				message = "the argument could not be read - \"<row> <change>\", \"<row>\" or \"all\"";
+			else
+			{
+				// ⚠Utils<> asked before it is used (memory utils-boss-facade-access: QueryUtilInterface has no nil guard).
+				Utils<IKCMStoryEditsFacade> edits;
+				if (!edits)
+					message = "the Story Edits facade is not there";
+				else if (what == PMString("all"))
+					edits->ApplyAll(message);
+				else
+				{
+					int32 row = -1;
+					int32 change = -1;
+					const std::string s = what.GetUTF8String();
+					if (::sscanf_s(s.c_str(), "%d %d", &row, &change) == 2)
+						edits->ApplyChange(row, change, message);
+					else if (::sscanf_s(s.c_str(), "%d", &row) == 1)
+						edits->ApplyStory(row, message);
+					else
+						message = "the argument reads as neither \"<row> <change>\", \"<row>\" nor \"all\"";
+				}
+			}
+			message.SetTranslatable(kFalse);
+			if (message.CharCount() > 0)
+				KCMNotifyStatus(message, kFalse);
+			ScriptData returnData;
+			returnData.SetWideString(WideString(message));
+			data->AppendReturnData(script, methodID, returnData);
+			return kSuccess;
+		}
+		if (id == e_KCMImportStoryText || id == e_KCMImportToSource
 			|| id == e_KCMExportStoryText || id == e_KCMStopComparison || id == e_KCMCompareTracked)
 		{
 			PMString message;
@@ -320,6 +363,13 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 					SysFileList files;
 					files.AddFile(&file);
 					KCMImportStoryText(files, message);
+				}
+				else if (id == e_KCMImportToSource)
+				{
+					// ★The new "Import Story Text..." (2026-10-24, the import-as-Source trial): into a copy, not the document.
+					SysFileList files;
+					files.AddFile(&file);
+					KCMImportStoryTextAsSource(files, message);
 				}
 				else
 				{

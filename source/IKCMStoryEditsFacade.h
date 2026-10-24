@@ -757,6 +757,41 @@ public:
 	virtual int32	GetTrackChangeTotal() = 0;
 	/** Is that change still recorded (KCMTrackRead::StillRecorded)? Asked before a click jumps. */
 	virtual bool16	TrackChangeStillRecorded(int32 nth, int32 which) = 0;
+
+	// ---- ★THE IMPORT THE OTHER WAY ROUND (2026-10-24, the import-as-Source trial - docs/superpowers/specs/
+	// 2026-10-24-kcm-import-as-source-design.md). The files' words go into a Task Start in memory, which is the Source;
+	// the rows say what the document would become, and Apply puts them in. ⚠Appended at the END
+	// ([[facade-vtable-slot-append-only]]) - KCM's two halves are built together.
+
+	/** "Import Story Text..." the other way round (KCMImportStoryTextAsSource): read the files, take the copy, pour the
+		words into IT, start the Story comparison. The document is not changed. */
+	virtual bool16	ImportStoryTextAsSource(const SysFileList& files, PMString& outMessage) = 0;
+
+	/** The armed comparison's Source is an import's copy (KCMIsImportClone) - the rows are proposals then: the UI shows
+		a row as "the words now, struck through, and the words to come", turns + and - round, and offers Apply. */
+	virtual bool16	IsImportSource() = 0;
+
+	/** Whether change `which` of row `nth` can be put into the document: the Source is an import's copy, the story is
+		paired, and the change is a live one (not a "=" record, not a "!" row) of a kind Apply carries - words, a ruby /
+		kenten / warichu / tate-chu-yoko mark, or a table whose shape or cells differ. Reads no document. */
+	virtual bool16	CanApplyChange(int32 nth, int32 which) = 0;
+
+	/** Puts that change into the document as ONE undo step - the words by the import's own road narrowed to their
+		paragraph (every change of that paragraph goes in with it), a mark by "Restore from Source", a table by "Match
+		the Source" - and compares the row again; what went in reads "=". @return the writes; 0 when nothing was left to
+		do; -1 when nothing was written, and outMessage says why. */
+	virtual int32	ApplyChange(int32 nth, int32 which, PMString& outMessage) = 0;
+
+	/** Whether row `nth` is a paired story of an import's copy with anything to put in. */
+	virtual bool16	CanApplyStory(int32 nth) = 0;
+
+	/** Every change of row `nth`'s story, as ONE undo step (the import's pour, for that story), then the row compared
+		again. @return the writes; -1 when nothing was written (outMessage). */
+	virtual int32	ApplyStory(int32 nth, PMString& outMessage) = 0;
+
+	/** Every story the import filled, as ONE undo step - the result the import put in before the trial - then the list
+		compared again. @return the writes; -1 when nothing was written (outMessage). */
+	virtual int32	ApplyAll(PMString& outMessage) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

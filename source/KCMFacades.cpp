@@ -67,6 +67,8 @@
 #include "IDataBase.h"			// SaveRestoreModifiedState - reading the two stories must not dirty them
 #include "WideString.h"
 #include "KCMRedoFromWord.h"		// "Redo from Word" on a change the reader took back (2026-09-24, stage 2 C)
+#include "KCMWordKeep.h"			// the files' content an import kept - what "Apply All Changes" pours (2026-10-24)
+#include "KCMStoryFollowObserver.h"	// KCMStoryFollowEnsureObservers - the Undo follower attached again after an Apply
 #include "KCMTableMatch.h"		// "Match the Source" on a Table row (2026-09-25, design section 16)
 #include "CmdUtils.h"				// ...wrapped in one command sequence
 #include "ICommandSequence.h"		// ICommandSequence - a plain sequence (RejectImportChange says why not an abortable one)
@@ -1195,6 +1197,13 @@ public:
 
 	virtual int32	RestoreAttr(int32 nth, int32 which, PMString& outMessage)
 	{
+		return this->RestoreAttrAs(nth, which, "Restore from Source", outMessage);
+	}
+
+	/** RestoreAttr under an undo step of `stepName`'s - "Apply This Change" makes a mark the files' by the same road
+		(2026-10-24, the import-as-Source trial: the Source IS the files then). */
+	int32	RestoreAttrAs(int32 nth, int32 which, const char* stepName, PMString& outMessage)
+	{
 		outMessage.Clear();
 		outMessage.SetTranslatable(kFalse);
 		UIDRef target, source;
@@ -1228,7 +1237,7 @@ public:
 		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
 		if (sequence != nil)
 		{
-			PMString name("Restore from Source");
+			PMString name(stepName);
 			name.SetTranslatable(kFalse);
 			sequence->SetName(name);
 		}
@@ -1574,6 +1583,423 @@ public:
 		//   the order of those five matters and is stated where they live, not here.
 		return KCMImportStoryText(files, outMessage);
 	}
+
+	// ---- ★THE IMPORT THE OTHER WAY ROUND (2026-10-24, the import-as-Source trial) - IKCMStoryEditsFacade.h says what
+	//      each one answers; the design is docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md ----------
+	// ★APPLY IS THE IMPORT'S OWN ROAD (design 6): the words by KCMPlanApplyFromWord + KCMApplyRedoFromWord (the import's
+	//   comparison narrowed to a paragraph, signed and tracked), a mark by Restore from Source (the Source IS the files),
+	//   a table by KCMRedoTableFromWord (Match the Source reads the Source's table back through INX, which a Task Start
+	//   in memory cannot give - MatchTable says so), a whole story or all of them by the import's pour. What went in is
+	//   a "=" record - the reject's record, since "=" means the same thing here: the Target reads as the Source.
+
+	virtual bool16	ImportStoryTextAsSource(const SysFileList& files, PMString& outMessage)
+	{
+		return KCMImportStoryTextAsSource(files, outMessage);
+	}
+
+	virtual bool16	IsImportSource()
+	{
+		return (KCMIsArmed() && KCMIsImportClone(KCMArmedSourceDB())) ? kTrue : kFalse;
+	}
+
+	virtual bool16	CanApplyChange(int32 nth, int32 which)
+	{
+		IDataBase* targetDB = nil;
+		Row row;
+		Change change;
+		return this->ApplicableChange(nth, which, targetDB, row, change);
+	}
+
+	virtual int32	ApplyChange(int32 nth, int32 which, PMString& outMessage)
+	{
+		outMessage.Clear();
+		outMessage.SetTranslatable(kFalse);
+		IDataBase* targetDB = nil;
+		Row row;
+		Change change;
+		if (!this->ApplicableChange(nth, which, targetDB, row, change))
+		{
+			outMessage = "this row is not a change of the imported text that can be put in";
+			return -1;
+		}
+		// ★A STORY WHOSE TABLES THE FILES ADD OR TAKE AWAY (measured 2026-10-24, matrix A55) is put in whole: the import
+		//   pairs its paragraphs and tables only once its tables agree, so no single row of it can go in first.
+		if (KCMImportStoryNeedsTableRound(UIDRef(targetDB, row.fStoryUID)))
+		{
+			outMessage = "the imported text adds or takes away a table in this story - put the story in with Apply All "
+						 "Changes in This Story (the tables go first)";
+			outMessage.SetTranslatable(kFalse);
+			return -1;
+		}
+		if (change.fWhat == Change::kWhatTable)
+			return this->ApplyTable(nth, which, targetDB, row, outMessage);
+		if (change.fWhat == Change::kWhatAttr && change.fAttrKind != kKCMStoryAttrFootnote)
+		{
+			const int32 done = this->RestoreAttrAs(nth, which, "Apply This Change", outMessage);
+			KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
+			// The restore says nothing when it succeeds (its menu item writes the sentence) - Apply says it here.
+			if (done >= 0 && outMessage.IsEmpty())
+			{
+				outMessage = "applied the mark";
+				if (done > 0)
+				{
+					outMessage.Append(" (");
+					outMessage.AppendNumber(done);
+					outMessage.Append(done == 1 ? " mark put on)" : " marks put on)");
+				}
+				else
+					outMessage.Append(" (taken off - the imported text has none there)");
+				outMessage.Append(" - Ctrl+Z takes it back");
+				outMessage.SetTranslatable(kFalse);
+			}
+			return done;
+		}
+		return this->ApplyWords(nth, which, targetDB, row, outMessage);
+	}
+
+	virtual bool16	CanApplyStory(int32 nth)
+	{
+		if (KCMFacadeTrackMode() || !this->IsImportSource())
+			return kFalse;
+		IDataBase* targetDB = nil;
+		Row row;
+		if (!this->PairedTargetRow(nth, targetDB, row))
+			return kFalse;
+		std::vector<KCMStoryChange> lives;
+		KCMStoryList::LiveChanges(nth, lives);
+		return lives.empty() ? kFalse : kTrue;
+	}
+
+	virtual int32	ApplyStory(int32 nth, PMString& outMessage)
+	{
+		outMessage.Clear();
+		outMessage.SetTranslatable(kFalse);
+		IDataBase* targetDB = nil;
+		Row row;
+		if (!this->CanApplyStory(nth) || !this->PairedTargetRow(nth, targetDB, row))
+		{
+			outMessage = "this row is not a story of the imported text with anything to put in";
+			return -1;
+		}
+		KCMStoryTextSet set;
+		KCMStoryShape::Story word;
+		if (!KCMWordKeepGet(targetDB, row.fStoryUID, word))
+		{
+			outMessage = "the imported text is not in memory any more - the document was closed or InDesign restarted; import again";
+			return -1;
+		}
+		set.fUids.push_back(row.fStoryUID);
+		set.fStories.push_back(word);
+		set.fFileNames.push_back(PMString());
+		return this->PourIntoTarget(targetDB, set, std::vector<UID>(1, row.fStoryUID), "Apply All Changes in This Story", nth,
+									outMessage);
+	}
+
+	virtual int32	ApplyAll(PMString& outMessage)
+	{
+		outMessage.Clear();
+		outMessage.SetTranslatable(kFalse);
+		IDataBase* const targetDB = KCMArmedTargetDB();
+		if (KCMFacadeTrackMode() || !this->IsImportSource() || targetDB == nil || !KCMIsDocDBOpen(targetDB))
+		{
+			outMessage = "no imported text is being compared";
+			return -1;
+		}
+		// Every row of the list with something left to put in - the stories the import filled (the list holds no other).
+		KCMStoryTextSet set;
+		for (int32 r = 0; r < KCMStoryList::GetRowCount(); ++r)
+		{
+			IDataBase* db = nil;
+			Row row;
+			if (!this->PairedTargetRow(r, db, row))
+				continue;
+			std::vector<KCMStoryChange> lives;
+			KCMStoryList::LiveChanges(r, lives);
+			KCMStoryShape::Story word;
+			if (lives.empty() || !KCMWordKeepGet(targetDB, row.fStoryUID, word))
+				continue;
+			set.fUids.push_back(row.fStoryUID);
+			set.fStories.push_back(word);
+			set.fFileNames.push_back(PMString());
+		}
+		if (set.fUids.empty())
+		{
+			outMessage = "nothing left to put in";
+			return 0;
+		}
+		return this->PourIntoTarget(targetDB, set, std::vector<UID>(), "Apply All Changes", -1, outMessage);
+	}
+
+private:
+	/** Change `which` of row `nth` as one Apply carries: the Source is an import's copy, the story is paired, and the
+		change is LIVE - not a "=" record (taken in already), not a "!" row - of a kind Apply puts in: words (a footnote's
+		marker with them), a ruby / kenten / warichu / tate-chu-yoko mark, or a table that stands on both sides. ⚠A table
+		only one side has (Table + / −) is the story's to apply whole - its paragraph's own road cannot place it. */
+	bool16 ApplicableChange(int32 nth, int32 which, IDataBase*& outTargetDB, Row& outRow, Change& outChange)
+	{
+		if (KCMFacadeTrackMode() || !this->IsImportSource())
+			return kFalse;
+		if (!this->PairedTargetRow(nth, outTargetDB, outRow))
+			return kFalse;
+		if (!this->GetChange(nth, which, outChange) || outChange.fReplaced)
+			return kFalse;
+		if (KCMStoryList::RejectedAt(nth, which) != nil)
+			return kFalse;		// a record (an Undone one is shown as the change it was - its live twin is the one to press)
+		switch (outChange.fWhat)
+		{
+			case Change::kWhatText:
+				return kTrue;
+			case Change::kWhatAttr:
+			{
+				const int32 k = outChange.fAttrKind;
+				return (k == kKCMStoryAttrRuby || k == kKCMStoryAttrKenten || k == kKCMStoryAttrWarichu
+						|| k == kKCMStoryAttrTcy || k == kKCMStoryAttrFootnote) ? kTrue : kFalse;
+			}
+			case Change::kWhatTable:
+				return (outChange.fKind == 0) ? kTrue : kFalse;
+			default:
+				return kFalse;
+		}
+	}
+
+	/** The words of one change - and of every change standing in the same paragraph, which the import's road writes
+		together - put into the document as ONE undo step ("Apply This Change"), then "=" records for them and the row
+		compared again. The geometry of the records is the reject's (RejectImportChange): the group's first Target
+		position holds the Source's range from the group's first Source character to its last. */
+	int32 ApplyWords(int32 nth, int32 which, IDataBase* targetDB, const Row& row, PMString& outMessage)
+	{
+		Change before;
+		if (!this->GetChange(nth, which, before))
+		{
+			outMessage = "this change is not in the list any more";
+			return -1;
+		}
+		// ★★COMPARED AGAIN FIRST, AND IT HAS TO BE THE SAME CHANGE - SameChangeAfterRefresh says why.
+		if (!this->SameChangeAfterRefresh(nth, which, before))
+		{
+			outMessage = "the list was out of date - it has been compared again; right-click the change once more";
+			return -1;
+		}
+		const KCMStoryChange* const modelChange = KCMStoryList::GetMergedChange(nth, which);
+		if (modelChange == nil)
+		{
+			outMessage = "this change is not in the list any more";
+			return -1;
+		}
+		const KCMStoryChange live = *modelChange;
+		const UIDRef target(targetDB, row.fStoryUID);
+
+		// ★PLANNED BEFORE THE SEQUENCE BEGINS: a refusal writes nothing and lands nothing on the undo stack.
+		KCMStoryShape::Story now;
+		KCMStorySync::Plan plan;
+		int32 paraStart = 0;
+		int32 paraEnd = 0;
+		if (!KCMPlanApplyFromWord(target, live, now, plan, paraStart, paraEnd, outMessage))
+			return -1;
+
+		// ★THE ROWS THAT GO IN TOGETHER: the import's road writes the whole paragraph - every change standing in it - a
+		//   paragraph taken out alone, and every paragraph the files put in at one place at once (KCMStorySync::Narrow).
+		std::vector<KCMStoryChange> group;
+		{
+			std::vector<KCMStoryChange> lives;
+			KCMStoryList::LiveChanges(nth, lives);
+			const bool16 removing = (live.fWholeParagraph && live.fKind == KCMStoryChange::kInsert) ? kTrue : kFalse;
+			const bool16 inserting = (live.fWholeParagraph && live.fKind == KCMStoryChange::kDelete) ? kTrue : kFalse;
+			bool16 pressedIn = kFalse;
+			for (size_t i = 0; i < lives.size(); ++i)
+			{
+				const KCMStoryChange& c = lives[i];
+				if (c.fWhat == KCMStoryChange::kTable || c.fWhat == KCMStoryChange::kRefused)
+					continue;
+				bool16 inIt = kFalse;
+				if (removing)
+					inIt = SameStoryChange(c, live);
+				else if (inserting)
+					inIt = (c.fWholeParagraph && c.fKind == KCMStoryChange::kDelete && c.fTargetStart == live.fTargetStart)
+						   ? kTrue : kFalse;
+				else
+				{
+					TextIndex f = c.fTargetStart;
+					TextIndex t = c.fTargetEnd;
+					KCMShownSpan(c.fBreakAt, f, t);
+					inIt = (!c.fWholeParagraph && f >= paraStart && t <= paraEnd) ? kTrue : kFalse;
+				}
+				if (!inIt)
+					continue;
+				group.push_back(c);
+				if (SameStoryChange(c, live))
+					pressedIn = kTrue;
+			}
+			if (!pressedIn)
+				group.push_back(live);
+			std::sort(group.begin(), group.end(), [](const KCMStoryChange& a, const KCMStoryChange& b)
+					  { return (a.fSourceStart != b.fSourceStart) ? (a.fSourceStart < b.fSourceStart)
+																  : (a.fTargetStart < b.fTargetStart); });
+		}
+		TextIndex tLo = group[0].fTargetStart;
+		TextIndex sLo = group[0].fSourceStart;
+		TextIndex sHi = group[0].fSourceEnd;
+		for (size_t i = 1; i < group.size(); ++i)
+		{
+			tLo = std::min(tLo, group[i].fTargetStart);
+			sLo = std::min(sLo, group[i].fSourceStart);
+			sHi = std::max(sHi, group[i].fSourceEnd);
+		}
+		std::vector<WideString> liveWords;
+		{
+			IDataBase::SaveRestoreModifiedState guard(targetDB);
+			InterfacePtr<ITextModel> tModel(target, UseDefaultIID());
+			for (size_t i = 0; i < group.size(); ++i)
+			{
+				WideString words;
+				KCMTextWords::WordsAt(tModel, group[i].fTargetStart, group[i].fTargetEnd - group[i].fTargetStart, words);
+				liveWords.push_back(words);
+			}
+		}
+
+		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
+		if (sequence != nil)
+		{
+			PMString name("Apply This Change");
+			name.SetTranslatable(kFalse);
+			sequence->SetName(name);
+		}
+		const int32 done = KCMApplyRedoFromWord(target, now, plan, outMessage);
+		// ★ALL OF IT OR NONE OF IT (the take-backs' rule, the redo's too): a write refused halfway is rolled back whole.
+		this->EndSequenceOrRollBack(sequence, (done > 0) ? kTrue : kFalse);
+		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
+		if (done <= 0)
+		{
+			this->RefreshRow(nth);
+			return -1;
+		}
+		// ★THE "=" RECORDS, WHEN THE PLACE READS AS THE SOURCE'S. A record whose place does not would be Stale and shown as
+		//   nothing (KCMRejectedRecord), so it is not made: the row then shows what still differs, which is the truth.
+		KCMStoryChange whole = live;
+		whole.fSourceStart = sLo;
+		whole.fSourceEnd = sHi;
+		const bool16 same = this->PlaceReadsAsSource(target, tLo, tLo + (sHi - sLo), whole, kKCMStoryAttrNone);
+		if (same)
+		{
+			std::vector<TextIndex> nowStarts;
+			for (size_t i = 0; i < group.size(); ++i)
+				nowStarts.push_back(tLo + (group[i].fSourceStart - sLo));
+			KCMStoryList::AddRejectedGroup(nth, group, nowStarts, liveWords,
+										   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone);
+		}
+		this->RefreshRow(nth);
+
+		outMessage = "applied (";
+		outMessage.AppendNumber(done);
+		outMessage.Append(done == 1 ? " write)" : " writes)");
+		if (group.size() > 1)
+		{
+			outMessage.Append(" - this paragraph's ");
+			outMessage.AppendNumber(static_cast<int32>(group.size()));
+			outMessage.Append(" changes went in together");
+		}
+		if (!same)
+			outMessage.Append(" - the place does not read exactly as the imported text; the row shows what still differs");
+		outMessage.Append(" - Ctrl+Z takes it back");
+		outMessage.SetTranslatable(kFalse);
+		return done;
+	}
+
+	/** A table that stands on both sides (Table ≠) made the files' - its shape and its cells' words - by
+		KCMRedoTableFromWord, as ONE undo step, then a "=" record over its anchor characters (MatchTable's geometry). */
+	int32 ApplyTable(int32 nth, int32 which, IDataBase* targetDB, const Row& row, PMString& outMessage)
+	{
+		Change before;
+		if (!this->GetChange(nth, which, before))
+		{
+			outMessage = "this change is not in the list any more";
+			return -1;
+		}
+		if (!this->SameChangeAfterRefresh(nth, which, before))
+		{
+			outMessage = "the list was out of date - it has been compared again; right-click the table row once more";
+			return -1;
+		}
+		const KCMStoryChange* const modelChange = KCMStoryList::GetMergedChange(nth, which);
+		if (modelChange == nil)
+		{
+			outMessage = "this change is not in the list any more";
+			return -1;
+		}
+		const KCMStoryChange live = *modelChange;
+		if (live.fTargetTableUID == kInvalidUID)
+		{
+			outMessage = "the table is not named on the row - compare again";
+			return -1;
+		}
+		const UIDRef target(targetDB, row.fStoryUID);
+		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
+		if (sequence != nil)
+		{
+			PMString name("Apply This Change");
+			name.SetTranslatable(kFalse);
+			sequence->SetName(name);
+		}
+		const int32 done = KCMRedoTableFromWord(target, live.fTargetTableUID, outMessage);
+		this->EndSequenceOrRollBack(sequence, (done > 0) ? kTrue : kFalse);
+		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
+		if (done > 0)
+			KCMStoryList::AddRejected(nth, live, live.fTargetStart,
+									  live.fTargetStart + (live.fSourceEnd - live.fSourceStart),
+									  KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone);
+		this->RefreshRow(nth);
+		if (done <= 0)
+			return -1;
+		outMessage = "applied the table (";
+		outMessage.AppendNumber(done);
+		outMessage.Append(done == 1 ? " move or write)" : " moves and writes)");
+		outMessage.Append(" - Ctrl+Z takes it back");
+		outMessage.SetTranslatable(kFalse);
+		return done;
+	}
+
+	/** The import's pour into the TARGET - signed and tracked, the "!" rows left as the import noted them, nothing kept -
+		as ONE undo step named `stepName`, then the row (oneRow >= 0) or every row compared again. */
+	int32 PourIntoTarget(IDataBase* targetDB, const KCMStoryTextSet& set, const std::vector<UID>& only,
+						 const char* stepName, int32 oneRow, PMString& outMessage)
+	{
+		KCMPourOptions options;
+		options.fSigned = kTrue;
+		options.fNoteRefusals = kFalse;
+		options.fKeepFor = nil;
+		options.fOnly = only;
+		options.fStepName = stepName;
+		options.fStepName.SetTranslatable(kFalse);
+		PMString poured;
+		bool16 cancelled = kFalse;
+		const bool16 any = KCMPourStoryTextWith(targetDB, set, options, poured, cancelled);
+		// ★THE UNDO FOLLOWER ATTACHED AGAIN (measured 2026-10-24 on the application: after "Apply All Changes in This
+		//   Story" an Undo put the words back and the list did not follow - its observer had gone from the story, the
+		//   loss memory observer-lost-when-object-purged describes). Attaching is idempotent (IsAttached first).
+		KCMStoryFollowEnsureObservers(targetDB);
+		if (oneRow >= 0)
+			this->RefreshRow(oneRow);
+		else
+		{
+			IDataBase* const sourceDB = KCMArmedSourceDB();
+			for (int32 r = 0; r < KCMStoryList::GetRowCount(); ++r)
+				KCMStoryDiffRun::RunOne(targetDB, sourceDB, r);
+			KCMNotify(kKCMStoryEditsRebuiltMessage);
+		}
+		if (cancelled)
+		{
+			outMessage = "cancelled - nothing was put in";
+			outMessage.SetTranslatable(kFalse);
+			return -1;
+		}
+		outMessage = "applied: ";
+		outMessage.Append(poured);
+		outMessage.Append(" - Ctrl+Z takes it back");
+		outMessage.SetTranslatable(kFalse);
+		return any ? 1 : 0;
+	}
+
+public:
 };
 
 CREATE_PMINTERFACE(KCMStoryEditsFacade, kKCMStoryEditsFacadeImpl)

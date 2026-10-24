@@ -1146,7 +1146,13 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 					&& chosen.GetFileCount() > 0)
 				{
 					PMString importMsg;
-					Utils<IKCMStoryEditsFacade>()->ImportStoryText(chosen, importMsg);
+					// ★★THE OTHER WAY ROUND (2026-10-24, the import-as-Source trial - the user: "right now the state before
+					//   the change is the Source and the Target is what gets changed - I want that the other way round"): the
+					//   files' words go into a Task Start in memory, which is the Source, and the rows say what the document
+					//   would become; "Apply This Change" puts them in. The document is not changed here. ⚠The import that
+					//   puts everything in (ImportStoryText) is still the script's road (app.kcmImportStoryText) and
+					//   "Apply All Changes" gives its result.
+					Utils<IKCMStoryEditsFacade>()->ImportStoryTextAsSource(chosen, importMsg);
 					// ★★THE RESULT GOES TO THE PANEL'S STATUS LINE ONLY (2026-09-25, the user: "the dialog saying the
 					//   changes are tracked comes up after an import - stop it, and only show the result on the
 					//   panel"). The model's whole sentence - what went in, what did not and why, and that Ctrl+Z
@@ -1237,6 +1243,19 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// the Source's, and the row is compared again.
 		case kKCMChangeRowMatchTableActionID:
 			KCMChangeRowMatchTable();
+			break;
+
+		// ★The three Apply items (2026-10-24, the import-as-Source trial): the change, the story, every story the import
+		//   filled - put into the document as one undo step each by the model (IKCMStoryEditsFacade), which compares the
+		//   rows again and says what went in.
+		case kKCMChangeRowApplyActionID:
+			KCMChangeRowApply();
+			break;
+		case kKCMStoryRowApplyActionID:
+			KCMStoryRowApply();
+			break;
+		case kKCMStoryRowApplyAllActionID:
+			KCMStoryRowApplyAll();
 			break;
 
 		// "Show as XML" on a DEFINITION row's context menu (2026-09-09). Shows the element the row
@@ -1852,6 +1871,16 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 				                                                                : kDisabled_Unselected);
 				break;
 			}
+			// ★The three Apply items (2026-10-24, the import-as-Source trial) - each the same test as its execution.
+			case kKCMChangeRowApplyActionID:
+				listToUpdate->SetNthActionState(i, KCMChangeRowCanApply() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			case kKCMStoryRowApplyActionID:
+				listToUpdate->SetNthActionState(i, KCMStoryRowCanApply() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			case kKCMStoryRowApplyAllActionID:
+				listToUpdate->SetNthActionState(i, KCMStoryRowCanApplyAll() ? kEnabledAction : kDisabled_Unselected);
+				break;
 			case kKCMResourceRowXmlActionID:
 			{
 				// ★The same test the action runs before it does anything (KCMResourceRowHasXml), so the

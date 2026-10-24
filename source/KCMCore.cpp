@@ -57,6 +57,7 @@
 #include "KCMStoryDiffRun.h"       // in the Story mode, what changed inside each row
 #include "KCMHideUnchanged.h"      // KCMResetHideUnchanged
 #include "KCMExternalSource.h"     // KCMIsDbAlive -- "still there" includes the lent Source
+#include "KCMTaskStartClone.h"     // KCMIsImportClone / KCMImportCloneHasStory -- an import's copy lists the stories it filled (2026-10-24)
 // **No UI header is included here.** Everything this file used to do to the screen is now a
 // KCMNotify*() call, so the comparison engine says only WHAT CHANGED and has zero dependency on
 // the UI.
@@ -634,6 +635,18 @@ bool16 KCMBuildStoryRowsByDiff(IDataBase* targetDB, IDataBase* sourceDB)
 	//   story that was deleted is counted as added, and the real additions are silently lost.
 	std::vector<KCMStoryDiff> storyDiffs;
 	KCMStoryEdits::Compare(sourceStamps, targetStamps, storyDiffs);
+
+	// ★★AGAINST AN IMPORT'S COPY, ONLY THE STORIES THE FILES FILLED (2026-10-24, the import-as-Source trial - design
+	//   section 2-7): the copy is the document as it stood at the import with the files' words poured in, so every
+	//   other story differs only by what the reader has done since - and those differences are not the files'.
+	if (KCMIsImportClone(sourceDB))
+	{
+		std::vector<KCMStoryDiff> filled;
+		for (size_t i = 0; i < storyDiffs.size(); ++i)
+			if (KCMImportCloneHasStory(storyDiffs[i].fStoryUID))
+				filled.push_back(storyDiffs[i]);
+		storyDiffs.swap(filled);
+	}
 
 	// **Both documents are passed.** Every row is a Target story except a REMOVED one, which does
 	// not exist in the Target, so its text, first frame and page are read from the Source. Which

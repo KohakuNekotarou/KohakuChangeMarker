@@ -1391,6 +1391,25 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMChangeRowMatchTableMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// ----- ★THE IMPORT THE OTHER WAY ROUND (2026-10-24, the import-as-Source trial) -----
+		// "Apply This Change" at the top of the SAME subtree: live only while the Source is an import's copy, where every
+		// item above is greyed (KCMStoryRefresh.cpp) - so a change row still shows one item or none.
+		kKCMChangeRowApplyActionID,
+		kKCMChangeRowMenuName,
+		kKCMChangeRowApplyMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// ...and on the STORY row's subtree, above "Refresh Story Comparison": the story's changes, and all of them.
+		kKCMStoryRowApplyActionID,
+		kKCMStoryRowMenuName,
+		kKCMStoryRowApplyMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMStoryRowApplyAllActionID,
+		kKCMStoryRowMenuName,
+		kKCMStoryRowApplyAllMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// ----- The Story Edits CHANGE rows (child rows): ⛔THE SUBTREE IS GONE (2026-09-21) -----
 		// A subtree of its own (kKCMChangeRowMenuName) stood here from 2026-09-12, carrying only items
 		// about the CHANGE the cursor was over: "Copy Source Text" until 2026-09-15, then "Restore
@@ -1865,6 +1884,36 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the row is a table that differs from the Source's, both open (KCMChangeRowCanMatchTable)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// ★(2026-10-24, the import-as-Source trial) The three Apply items. ⚠Not on the flyout: each acts on the row the
+		// menu was popped over (KCMStoryRowEH stashes it), "Apply All Changes" included - it is offered where the reader
+		// is looking at the list.
+		kKCMActionComponentBoss,
+		kKCMChangeRowApplyActionID,
+		kKCMChangeRowApplyMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the row is a change of the imported text (KCMChangeRowCanApply)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMStoryRowApplyActionID,
+		kKCMStoryRowApplyMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// greyed unless the row is a story of the imported text with changes left (KCMStoryRowCanApply)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMStoryRowApplyAllActionID,
+		kKCMStoryRowApplyAllMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// greyed unless the Source is an import's copy (KCMStoryRowCanApplyAll)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

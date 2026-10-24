@@ -991,6 +991,8 @@ private:
 		// The Track mode's who-and-what of this change (2026-10-05); kFalse in every other mode.
 		IKCMStoryEditsFacade::TrackChange track;
 		const bool16 isTrack = have && Utils<IKCMStoryEditsFacade>()->GetTrackChange(nodeID.GetRow(), nodeID.GetChange(), track);
+		// ★The rows are PROPOSALS against an import's copy (2026-10-24, the import-as-Source trial): what the document would become.
+		const bool16 isImport = (have && !isTrack && Utils<IKCMStoryEditsFacade>()->IsImportSource()) ? kTrue : kFalse;
 
 		// ★A "!" CHILD IS WRITTEN BY ITS OWN BRANCH AND RETURNS (2026-09-19). Its widget is the
 		//   bang change row's, whose text cell is a STOCK static text - so there is no
@@ -1052,6 +1054,17 @@ private:
 					kind.SetXString(reinterpret_cast<const UTF16TextChar*>(notEqual), 1);
 					break;
 				}
+			}
+			// ★★AGAINST AN IMPORT'S COPY THE SIGN SAYS WHAT THE DOCUMENT WILL BECOME (2026-10-24, the import-as-Source
+			//   trial - design section 4): the diff runs from the Source (the files) to the Target (the document), so what
+			//   only the document has ("+" there) is what the files take away, and the other way round. A replacement is
+			//   ≠ either way, and "=" (put in) stays "=".
+			if (isImport && !change.fReplaced)
+			{
+				if (change.fKind == 1)
+					kind = PMString("-");
+				else if (change.fKind == 2)
+					kind = PMString("+");
 			}
 			if (change.fReplaced)
 				kind = PMString("=");					// ASCII: no SetXString needed
@@ -1145,10 +1158,30 @@ private:
 			//   paragraph": the "Text -" row was the one that showed the narrower rule was not enough.
 			//   A recycled widget with no row behind it keeps kFalse and stays blank.
 			const bool16 barWhenEmpty = have ? kTrue : kFalse;
-			cellData->SetSegments(textPre, textMid, textPost, ruby, lineCount, attrKind, layers, barWhenEmpty);
+			// ★★"THIS IS WHAT IT WILL BECOME" (2026-10-24, the import-as-Source trial - the user: "the panel shows how it will be
+			//   changed"): a one-line words row against an import's copy is drawn in the Track mode's look - the document's
+			//   words now, struck through, then the words the files put there - from the two sides the row already carries
+			//   (fText = the document, fOtherText = the files). Rows of two lines or more (a ruby, a mark, a layer) keep their
+			//   own drawing, which shows the document's side; "=" rows (put in already) show the words as they now stand.
+			const bool16 proposalLook = (isImport && !change.fReplaced && lineCount == 1
+										 && change.fWhat == IKCMStoryEditsFacade::Change::kWhatText) ? kTrue : kFalse;
+			// ★A "=" ROW SHOWS THE WORDS THAT WENT IN (measured 2026-10-24: it showed the words they replaced, which the
+			//   document no longer holds) - the files' side, drawn plain.
+			const bool16 appliedLook = (isImport && change.fReplaced && lineCount == 1
+										&& change.fWhat == IKCMStoryEditsFacade::Change::kWhatText) ? kTrue : kFalse;
+			if (proposalLook || appliedLook)
+			{
+				PMString incoming = change.fOtherText;
+				incoming.SetTranslatable(kFalse);
+				cellData->SetSegments(textPre, incoming, textPost, ruby, lineCount, attrKind, layers, barWhenEmpty);
+			}
+			else
+				cellData->SetSegments(textPre, textMid, textPost, ruby, lineCount, attrKind, layers, barWhenEmpty);
 			// ★THE TRACK LOOK, OR NONE - written every time (the recycling rule), after the segments.
 			if (isTrack)
 				cellData->SetTrackLook(kTrue, KCMTrackColour(track.fHasColour, track.fR, track.fG, track.fB), change.fOtherText);
+			else if (proposalLook)
+				cellData->SetTrackLook(kTrue, RealAGMColor(0.0, 0.0, 0.0), textMid);
 			else
 				cellData->SetTrackLook(kFalse, RealAGMColor(0.0, 0.0, 0.0), PMString());
 			// ★Writing the strings does not ask for a redraw - SetNodeName does that for a stock

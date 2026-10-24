@@ -792,6 +792,33 @@ resource VersionedScriptElementInfo(10)
 			}
 		}
 
+		// (2026-10-24, the import-as-Source trial) "Import Story Text..." the other way round, and its Apply - test doors.
+		Method
+		{
+			kKCMImportToSourceMethodScriptElement,
+			e_KCMImportToSource,
+			"kcm import to source",				// name -> app.kcmImportToSource(file)
+			"Read an edited story file into a Task Start kept in memory of the active (or chosen Target) document, choose it as the Source and start the Story comparison - the document is not changed.",
+			StringType,
+			"The sentence the status line shows"
+			{
+				keyAEFile, "file path", "The edited story file (.docx)", FileType, kRequired
+			}
+		}
+
+		Method
+		{
+			kKCMApplyChangeMethodScriptElement,
+			e_KCMApplyChange,
+			"kcm apply change",					// name -> app.kcmApplyChange(what)
+			"Put a change of the imported text into the document, as Apply This Change does: \"<row> <change>\" (0-based, the Story Edits list's indices), \"<row>\" for every change of that story, or \"all\".",
+			StringType,
+			"The sentence the status line shows"
+			{
+				p_Name, "what", "Which change: \"<row> <change>\", \"<row>\" or \"all\"", StringType, kRequired
+			}
+		}
+
 		// (⛔**TWO METHODS STOOD HERE AND WENT ON 2026-09-21** with the restore they drove:
 		//  "kcm take in change" (app.kcmTakeInChange, e_KCMTakeInChange) and "kcm undo restore"
 		//  (app.kcmUndoRestore, e_KCMUndoRestoreChange). Each named a change by WORDS it holds, so that
@@ -831,6 +858,8 @@ resource VersionedScriptElementInfo(10)
 				Method{ kKCMExportStoryTextMethodScriptElement },
 				Method{ kKCMStopComparisonMethodScriptElement },
 				Method{ kKCMCompareTrackedMethodScriptElement },	// (2026-10-05) the Track mode's test door
+				Method{ kKCMImportToSourceMethodScriptElement },	// (2026-10-24) the import-as-Source trial's two doors
+				Method{ kKCMApplyChangeMethodScriptElement },
 				// ...and the export's .docx road (2026-09-19).
 				// (⛔The two halves of "kcm take in change" and "kcm undo restore" went on 2026-09-21.)
 			}

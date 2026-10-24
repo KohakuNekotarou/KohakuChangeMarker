@@ -36,6 +36,7 @@
 #include "KCMExternalSource.h"	// the lent Source: registered and chosen by KCMStartComparisonWithSourceDB, forgotten by the lender's Release
 #include "KCMPdfDoc.h"			// the PDF comparison: which end is a PDF, how its pages were paired (2026-10-14)
 #include "IKCMCompareFacade.h"	// kKCMPdfPixelOnly - the words both halves say
+#include "KCMTaskStartClone.h"	// KCMIsImportClone - an import's copy is compared in the Story mode only (2026-10-24)
 // ⛔KCMOrigin.h went on 2026-09-21. It was included for "the third kind of Source, chosen by
 //   KCMChooseOriginPair" - and that function had already gone with the origin, leaving an include
 //   this file reads nothing from and a comment naming something that no longer exists.
@@ -322,6 +323,17 @@ void KCMToggleStartStop()
 			KCMNotify(kKCMMarksRebuiltMessage);
 			return;
 		}
+	}
+
+	// ★AN IMPORT'S COPY IS COMPARED IN THE STORY MODE ONLY (2026-10-24, the import-as-Source trial - design 2-10): it is
+	//   the document with the files' words poured in, so a Pixel or a Resources comparison would report what the files
+	//   would move as though it had happened, and the Track mode reads the Target's own records. Asked of the chosen
+	//   Source (the clone is a lent database: nothing is opened to ask).
+	if (KCMGetCompareMode() != kKCMModeStory && KCMIsImportClone(KCMChosenSourceDB()))
+	{
+		KCMSayStatus(kKCMImportSourceModeRefusal);
+		KCMNotify(kKCMMarksRebuiltMessage);
+		return;
 	}
 
 	IDataBase* targetDB = nil;

@@ -186,6 +186,16 @@ bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCM
     @return kFalse when nothing could be read or nothing could be applied, or the reader cancelled. */
 bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage);
 
+/** ★"Import Story Text..." THE OTHER WAY ROUND (2026-10-24, the import-as-Source trial - docs/superpowers/specs/
+    2026-10-24-kcm-import-as-source-design.md; the user: "right now the state before the change is the Source and the
+    Target is what gets changed - I want that the other way round"). The same reading and the same pour, aimed at a Task Start in memory of the task document
+    (KCMTakeImportClone) instead of at the document, and the Story mode started: the Source is the document as the
+    files would make it, the Target the document as it stands - which nothing here changes. The rows are what would
+    change; Apply puts them in (IKCMStoryEditsFacade).
+    ⚠**KCMImportStoryText ABOVE IS UNCHANGED** - app.kcmImportStoryText and the import matrix go on using it.
+    @return kFalse when nothing could be read, the copy could not be taken, or the reader cancelled. */
+bool16 KCMImportStoryTextAsSource(const SysFileList& files, PMString& outMessage);
+
 #endif // __KCMStoryTextImport_h__
 
 // End, KCMStoryTextImport.h.

@@ -45,6 +45,24 @@ bool16 KCMPlanRedoFromWord(const UIDRef& targetStory, const UIDRef& sourceStory,
 int32 KCMApplyRedoFromWord(const UIDRef& targetStory, const KCMStoryShape::Story& now, const KCMStorySync::Plan& plan,
 						   PMString& outWhy);
 
+/** ★"Apply This Change" (2026-10-24, the import-as-Source trial - docs/superpowers/specs/2026-10-24-kcm-import-as-source-
+	design.md): plans putting a LIVE change of the import's comparison into the document - the files' content kept by
+	the import (KCMWordKeep, under the document), the document read now, the change's paragraph found from where the
+	change stands in the document, and the import's comparison narrowed to it (a whole paragraph only the document has
+	is taken out, one only the files have is put in; anything else is the paragraph's own edit). The writing is
+	KCMApplyRedoFromWord's, under the import's signature. Refuses with a reason and writes nothing.
+	outParaStart / outParaEnd: the paragraph the plan writes, in the document, its return included - where the
+	changes that go in together stand. */
+bool16 KCMPlanApplyFromWord(const UIDRef& targetStory, const KCMStoryChange& live,
+							KCMStoryShape::Story& outNow, KCMStorySync::Plan& outPlan,
+							int32& outParaStart, int32& outParaEnd, PMString& outWhy);
+
+/** ★Whether the import's comparison of this story begins with tables added or taken away (stage 0) - measured
+	2026-10-24 on matrix A55: then nothing of the story can be put in one change at a time (every paragraph and table is
+	paired only once the tables agree), and "Apply All Changes in This Story" is the way in. Reads the document and the
+	files' content kept for it; kFalse when either cannot be read (the Apply then says its own reason). */
+bool16 KCMImportStoryNeedsTableRound(const UIDRef& targetStory);
+
 /** "Redo from Word" of a TABLE record (2026-09-25 - "Match the Source", design section 16-1 item 7: "redo the same
 	way the other redos work"): the table `tableUID` (its dictionary uid in the Target) is made Word's shape again and
 	its cells Word's words, by the import's own road - Compare with the tables reshaped, the shape rounds of THIS

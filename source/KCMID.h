@@ -381,6 +381,8 @@ DECLARE_PMID(kScriptInfoIDSpace, kKCMStopComparisonMethodScriptElement, kKCMPref
 // ⛔**+33 IS RETIRED** (2026-09-21): app.kcmExportStoryDocx, added 2026-09-19 as the .docx road beside the .html one. The HTML road went on the user's word ("Word format only"), so app.kcmExportStoryText (+24) writes the .docx and there is nothing to choose. Never reused.
 // ⛔**+34 IS RETIRED** (2026-09-21): app.kcmUndoRestore, with "Undo the Restore" itself. Never reused.
 DECLARE_PMID(kScriptInfoIDSpace, kKCMCompareTrackedMethodScriptElement, kKCMPrefix + 37)	// app.kcmCompareTracked(file) -> the sentence (2026-10-05; +37 was the next free slot - +28/+31..+36 are graves)
+DECLARE_PMID(kScriptInfoIDSpace, kKCMImportToSourceMethodScriptElement, kKCMPrefix + 38)	// app.kcmImportToSource(file) -> the sentence (2026-10-24, the import-as-Source trial; +38/+39 the next free slots)
+DECLARE_PMID(kScriptInfoIDSpace, kKCMApplyChangeMethodScriptElement, kKCMPrefix + 39)	// app.kcmApplyChange(what) -> the sentence (the same trial)
 // ⛔**kKCMPrefix + 35 IS A GRAVE** (2026-09-21): it was app.kcmProbeTableCopy(...), the spike.	// ⚠A SPIKE (2026-09-19 night, KCMTableCopySpike.h): app.kcmProbeTableCopy(storyRow, tableOrdinal) -> one line per step. Retire it with the file, as +25 is to be; never reuse the number
 // (The tool's enumerator goes on the application's own kToolBoxEnumScriptElement, so this side
 //  needs no ID for it.)

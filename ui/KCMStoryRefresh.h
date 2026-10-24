@@ -140,6 +140,24 @@ bool16 KCMChangeRowCanMatchTable();
 	the panel's message line. */
 bool16 KCMChangeRowMatchTable();
 
+// ---- ★"Apply This Change" / "Apply All Changes in This Story" / "Apply All Changes" (2026-10-24, the import-as-Source
+// trial - docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md) --------------------------------------------
+// ★Live only while the Source is an import's copy - where the four items above are greyed (ChangeRowMenuLive), so a
+//  change row still shows one item. The work is the model's (IKCMStoryEditsFacade ApplyChange / ApplyStory / ApplyAll).
+
+/** A change row of the imported text that Apply can put in (facade CanApplyChange). */
+bool16 KCMChangeRowCanApply();
+/** Puts it into the document (one undo step) and says what on the panel's message line. */
+bool16 KCMChangeRowApply();
+/** A STORY row of the imported text with changes left (facade CanApplyStory). */
+bool16 KCMStoryRowCanApply();
+/** Puts every change of that story in (one undo step). */
+bool16 KCMStoryRowApply();
+/** A story row while the Source is an import's copy. */
+bool16 KCMStoryRowCanApplyAll();
+/** Puts every story's changes in (one undo step) - what the import did before the trial. */
+bool16 KCMStoryRowApplyAll();
+
 #endif // __KCMStoryRefresh_h__
 
 // End, KCMStoryRefresh.h.

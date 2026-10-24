@@ -59,6 +59,9 @@ class IDocument;
 #define kKCMPdfPixelOnly			"PDFs are compared in the Pixel mode only. Switch the Compare mode to Pixel."
 #define kKCMPdfTaskStartRefusal		"The Target is a PDF. A Task Start takes a document."
 #define kKCMPdfTargetRefusal		"The Target is a PDF. This works on a document."
+// ★(2026-10-24, the import-as-Source trial) The Source is an import's copy: the files' words poured into a Task Start in
+//  memory. It is compared in the Story mode alone (design section 2-10).
+#define kKCMImportSourceModeRefusal	"The Source is the imported text - it is compared in the Story mode. Switch the Compare mode to Story."
 
 class IKCMCompareFacade : public IPMUnknown
 {
