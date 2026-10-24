@@ -281,6 +281,50 @@ bool16 KCMCopyStore::PasteOver(const CopyRef& copy, const UIDRef& story, TextInd
 	return ok;
 }
 
+bool16 KCMCopyStore::CopyOver(const UIDRef& from, TextIndex fromStart, TextIndex fromEnd, const UIDRef& story,
+							  TextIndex start, TextIndex end)
+{
+	IDataBase* const fromDB = from.GetDataBase();
+	InterfacePtr<ITextModel> model(story, UseDefaultIID());
+	bool16 inThreads = kFalse;
+	if (fromDB != nil && ErrorUtils::PMGetGlobalErrorCode() == kSuccess)
+	{
+		IDataBase::SaveRestoreModifiedState fromGuard(fromDB);
+		InterfacePtr<ITextModel> fromModel(from, UseDefaultIID());
+		// The same check as the copy's and the paste's, on both sides: the commands check nothing.
+		inThreads = (InOneThread(fromModel, fromStart, fromEnd) && InOneThread(model, start, end)) ? kTrue : kFalse;
+	}
+	if (!inThreads)
+	{
+		KCM_DIAG_LOG("COPY over refused from=%u at=%d len=%d story=%u at=%d over=%d", from.GetUID().Get(), (int)fromStart,
+			(int)(fromEnd - fromStart), story.GetUID().Get(), (int)start, (int)(end - start));
+		return kFalse;
+	}
+	ErrorCode result = kSuccess;
+	if (fromEnd == fromStart)
+	{
+		// NOTHING ON THE OTHER SIDE: the range is taken away (PasteOver's empty copy).
+		if (end > start)
+		{
+			InterfacePtr<ITextModelCmds> cmds(model, UseDefaultIID());
+			InterfacePtr<ICommand> del(cmds != nil ? cmds->DeleteCmd(start, end - start) : nil);
+			result = (del != nil) ? CmdUtils::ProcessCommand(del) : kFailure;
+		}
+	}
+	else
+	{
+		// The other document only READ by the copy - its modified state kept as it was found.
+		IDataBase::SaveRestoreModifiedState fromGuard(fromDB);
+		InterfacePtr<ICommand> cmd(Utils<ITextUtils>()->QueryCopyStoryCommand(from, story, StoryRange(fromStart, fromEnd),
+			StoryRange(start, end)));
+		result = (cmd != nil) ? CmdUtils::ProcessCommand(cmd) : kFailure;
+	}
+	const bool16 ok = (result == kSuccess && ErrorUtils::PMGetGlobalErrorCode() == kSuccess) ? kTrue : kFalse;
+	KCM_DIAG_LOG("COPY over from=%u at=%d len=%d story=%u at=%d over=%d ok=%d", from.GetUID().Get(), (int)fromStart,
+		(int)(fromEnd - fromStart), story.GetUID().Get(), (int)start, (int)(end - start), ok ? 1 : 0);
+	return ok;
+}
+
 void KCMCopyStore::DocumentClosing(IDataBase* db)
 {
 	if (db == nil)

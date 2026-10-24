@@ -825,7 +825,7 @@ resource VersionedScriptElementInfo(10)
 			kKCMApplyChangeMethodScriptElement,
 			e_KCMApplyChange,
 			"kcm apply change",					// name -> app.kcmApplyChange(what)
-			"Put a change of the imported text into the document, as Apply This Change does: \"<row> <change>\" (0-based, the Story Edits list's indices), \"<row>\" for every change of that story, or \"all\".",
+			"Put a change of the imported text into the document, as Apply This Change does: \"<row> <change>\" (0-based, the Story Edits list's indices), \"<row>\" for every change of that story, \"all\", or several \"<row> <change>\" joined by \";\" as one undo step.",
 			StringType,
 			"The sentence the status line shows"
 			{
@@ -840,11 +840,41 @@ resource VersionedScriptElementInfo(10)
 			kKCMRestoreFromCopyMethodScriptElement,
 			e_KCMRestoreFromCopy,
 			"kcm restore from copy",			// name -> app.kcmRestoreFromCopy(what)
-			"Put the document's own words back over a change Apply This Change put in, from the copy it kept, as Restore from Copy does: \"<row> <change>\" (0-based, the Story Edits list's indices).",
+			"Put the document's own words back over a change Apply This Change (or Restore from Source) put in, from the copy it kept, as Restore from Copy does: \"<row> <change>\" (0-based, the Story Edits list's indices), or several joined by \";\" as one undo step.",
 			StringType,
 			"The sentence the status line shows"
 			{
 				p_Name, "what", "Which change: \"<row> <change>\"", StringType, kRequired
+			}
+		}
+
+		// (2026-10-24 night, the list like KFC's - docs/superpowers/specs/2026-10-24-kcm-list-like-kfc-design.md) how far a
+		// row's selection reaches its place in the Target, read without a click - so that the landing rules (locked, hidden)
+		// can be measured from KIDMCP. ⚠Not registered with Adobe.
+		Method
+		{
+			kKCMChangeReachMethodScriptElement,
+			e_KCMChangeReach,
+			"kcm change reach",					// name -> app.kcmChangeReach(what)
+			"How far a selection of a change row reaches its place in the Target: \"none\", or \"locked\", \"hidden\" and \"hidden-spread\" joined by commas - \"<row> <change>\" (0-based, the Story Edits list's indices).",
+			StringType,
+			"none, or the reach's bits"
+			{
+				p_Name, "what", "Which change: \"<row> <change>\"", StringType, kRequired
+			}
+		}
+
+		// (2026-10-24 night, design 1-8) Story mode's Restore from Source by copy, without the right click. ⚠Not registered.
+		Method
+		{
+			kKCMRestoreFromSourceMethodScriptElement,
+			e_KCMRestoreFromSource,
+			"kcm restore from source",			// name -> app.kcmRestoreFromSource(what)
+			"Put the Source document's words of a text change over the Target's, copied with their formatting, as Restore from Source does: \"<row> <change>\" (0-based, the Story Edits list's indices), \"<row>\" for every text change of that story, or several \"<row> <change>\" joined by \";\" as one undo step.",
+			StringType,
+			"The sentence the status line shows"
+			{
+				p_Name, "what", "Which change: \"<row> <change>\", \"<row>\" or \"<row> <change>;<row> <change>...\"", StringType, kRequired
 			}
 		}
 
@@ -890,6 +920,8 @@ resource VersionedScriptElementInfo(10)
 				Method{ kKCMImportToSourceMethodScriptElement },	// (2026-10-24) the import-as-Source trial's two doors
 				Method{ kKCMApplyChangeMethodScriptElement },
 				Method{ kKCMRestoreFromCopyMethodScriptElement },	// (2026-10-24 evening) the "=" row's Restore from Copy
+				Method{ kKCMChangeReachMethodScriptElement },		// (2026-10-24 night) the list like KFC's - a row's reach
+				Method{ kKCMRestoreFromSourceMethodScriptElement },	// (the same night) Story mode's Restore from Source by copy
 				// ...and the export's .docx road (2026-09-19).
 				// (⛔The two halves of "kcm take in change" and "kcm undo restore" went on 2026-09-21.)
 			}

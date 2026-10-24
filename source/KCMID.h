@@ -388,6 +388,8 @@ DECLARE_PMID(kScriptInfoIDSpace, kKCMStopComparisonMethodScriptElement, kKCMPref
 DECLARE_PMID(kScriptInfoIDSpace, kKCMCompareTrackedMethodScriptElement, kKCMPrefix + 37)	// app.kcmCompareTracked(file) -> the sentence (2026-10-05; +37 was the next free slot - +28/+31..+36 are graves)
 DECLARE_PMID(kScriptInfoIDSpace, kKCMImportToSourceMethodScriptElement, kKCMPrefix + 38)	// app.kcmImportToSource(file) -> the sentence (2026-10-24, the import-as-Source trial; +38/+39 the next free slots)
 DECLARE_PMID(kScriptInfoIDSpace, kKCMApplyChangeMethodScriptElement, kKCMPrefix + 39)	// app.kcmApplyChange(what) -> the sentence (the same trial)
+DECLARE_PMID(kScriptInfoIDSpace, kKCMChangeReachMethodScriptElement, kKCMPrefix + 41)	// app.kcmChangeReach(what) -> the place's locks / hidden (2026-10-24 night, the list like KFC's; +41 counted - the ScriptInfo space's highest was +40)
+DECLARE_PMID(kScriptInfoIDSpace, kKCMRestoreFromSourceMethodScriptElement, kKCMPrefix + 42)	// app.kcmRestoreFromSource(what) -> the sentence (the same night - Story mode's Restore from Source by copy)
 DECLARE_PMID(kScriptInfoIDSpace, kKCMRestoreFromCopyMethodScriptElement, kKCMPrefix + 40)	// app.kcmRestoreFromCopy(what) -> the sentence (2026-10-24 evening, the same trial's Restore from Copy; +40 the next free slot - counted)
 // ⛔**kKCMPrefix + 35 IS A GRAVE** (2026-09-21): it was app.kcmProbeTableCopy(...), the spike.	// ⚠A SPIKE (2026-09-19 night, KCMTableCopySpike.h): app.kcmProbeTableCopy(storyRow, tableOrdinal) -> one line per step. Retire it with the file, as +25 is to be; never reuse the number
 // (The tool's enumerator goes on the application's own kToolBoxEnumScriptElement, so this side

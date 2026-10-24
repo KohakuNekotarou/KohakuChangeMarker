@@ -64,6 +64,18 @@ namespace KCMCopyStore
 	    be decided by). */
 	bool16 PasteOver(const CopyRef& copy, const UIDRef& story, TextIndex start, TextIndex end);
 
+	/** ANOTHER DOCUMENT'S WORDS PUT OVER [start, end) of `story` (2026-10-24 night, Story mode's Restore from Source by
+	    copy - design 1-8): [fromStart, fromEnd) of `from` - the Source document's story, or a Task Start kept in memory -
+	    copied straight onto the range, formatting and all - one command, inside the caller's command sequence:
+	    ITextUtils' QueryCopyStoryCommand (PasteOver's own, with the Source story where the store's would be - the way
+	    KIDMCP copies from its clone into a document), or, for an empty `from` range, the range deleted. No store is
+	    made for `from`: a store bound to a Task Start in memory would never be let go by kBeforeCloseDoc (it is no
+	    document), and one database's address reused by another would share it. False = a range not in one thread on
+	    either side, an error already standing, or the command did not go through (the error state is left for the
+	    caller's sequence, as PasteOver's). The `from` document's modified state is kept as it was. */
+	bool16 CopyOver(const UIDRef& from, TextIndex fromStart, TextIndex fromEnd, const UIDRef& story, TextIndex start,
+					TextIndex end);
+
 	/** A DOCUMENT IS CLOSING (kBeforeCloseDoc, KCMDocResponder.cpp): its store is let go. The address is compared,
 	    never followed. */
 	void DocumentClosing(IDataBase* db);

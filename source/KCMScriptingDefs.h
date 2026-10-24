@@ -264,6 +264,10 @@ enum KCMScriptMethods
 	// (2026-10-24 evening) the "=" row's Restore from Copy - 'eKGR' MEASURED free the same way (0 hits in source/sdksamples
 	//   with the search case-sensitive; a case-blind one finds the lowercase 'eKGr', which is taken). ⚠Not registered with Adobe.
 	e_KCMRestoreFromCopy = 'eKGR',	// R = restore. app.kcmRestoreFromCopy("<row> <change>") -> the sentence
+	// (2026-10-24 night, the list like KFC's) test doors - 'eKGP' and 'eKGS' MEASURED free the same way (0 hits in the tree,
+	//   case-sensitive, with 'eKGR' found by the same search). ⚠Not registered with Adobe.
+	e_KCMChangeReach = 'eKGP',		// P = place. app.kcmChangeReach("<row> <change>") -> "none" | "locked,hidden,hidden-spread" (the bits set)
+	e_KCMRestoreFromSource = 'eKGS',	// S = Source. app.kcmRestoreFromSource("<row> <change>" | "<row>" | "<r> <c>;<r> <c>...") -> the sentence
 
 	// ★★ONE CHANGE TAKEN IN FROM A SCRIPT (2026-09-17 afternoon). The user asked for the order checks -
 	//   "1 became 1..5, and the user takes in 3, then 5, then 4, then 2: does the order hold?" The change

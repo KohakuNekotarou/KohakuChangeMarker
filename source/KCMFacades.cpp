@@ -94,6 +94,11 @@
 #include "IComposeScanner.h"		// FindSurroundingParagraph - the paragraph they are put back over
 #include "ITextModelCmds.h"			// ApplyStyleCmd / ApplyCmd
 #include "IStyleInfo.h"				// whether a kept paragraph style is still one of the document's
+// ★The list like KFC's (2026-10-24 night - docs/superpowers/specs/2026-10-24-kcm-list-like-kfc-design.md):
+#include "KCMPlaceReach.h"			// GetChangePlaceReach - locks and hidden, KFC's landing rules
+#include "KCMDiag.h"				// KCM_DIAG_FAULT("batch-fail") - a batch's roll-back, measured (test builds only)
+#include <set>						// the rows a batch touched
+#include <utility>					// std::pair - a batch's (row, change)
 
 namespace
 {
@@ -126,6 +131,25 @@ bool16 HoldsReturn(const WideString& words)
 		if (words.GetChar(k).GetValue() == kTextChar_CR)
 			return kTrue;
 	return kFalse;
+}
+
+/** Whether the character at `at` of `model` is a paragraph's return (2026-10-24 night - a whole paragraph written with its
+	own return, KCMRecordCopy::fShift). Reads only; the caller holds the document's SaveRestoreModifiedState. */
+bool16 ReturnAt(ITextModel* model, TextIndex at)
+{
+	WideString one;
+	return (model != nil && at >= 0 && KCMTextWords::WordsAt(model, at, 1, one) && one.CharCount() == 1
+			&& one.GetChar(0).GetValue() == kTextChar_CR) ? kTrue : kFalse;
+}
+
+/** The same, for `storyUID` of `db` - read under the document's SaveRestoreModifiedState. */
+bool16 ReturnAt(IDataBase* db, UID storyUID, TextIndex at)
+{
+	if (db == nil)
+		return kFalse;
+	IDataBase::SaveRestoreModifiedState guard(db);
+	InterfacePtr<ITextModel> model(UIDRef(db, storyUID), UseDefaultIID());
+	return ReturnAt(model, at);
 }
 
 /** kTrue when [from, to) of `model` touches a hyperlink's or a cross-reference's source - inside it, around it, across
@@ -718,7 +742,8 @@ void KCMFillChangeOut(const KCMStoryChange& change, IKCMStoryEditsFacade::Change
 class KCMStoryEditsFacade : public CPMUnknown<IKCMStoryEditsFacade>
 {
 public:
-	KCMStoryEditsFacade(IPMUnknown* boss) : CPMUnknown<IKCMStoryEditsFacade>(boss) {}
+	KCMStoryEditsFacade(IPMUnknown* boss) : CPMUnknown<IKCMStoryEditsFacade>(boss),
+		fBatch(kFalse), fBatchFailed(kFalse), fStale(kFalse), fStepWasModified(kFalse) {}
 
 	virtual int32	GetRowCount()
 	{
@@ -895,7 +920,8 @@ public:
 		// NOTHING IS SAID WHEN NOTHING CHANGED. The notification makes the panel rebuild the
 		// whole tree, which costs the reader their selection - so a refresh that could not be
 		// done leaves the list alone rather than shaking it for no result.
-		if (count >= 0)
+		// ★NOR INSIDE A BATCH (2026-10-24 night): RunBatch says it once, at its end.
+		if (count >= 0 && !fBatch)
 		{
 			// (⛔A refresh also cleared what this row was keeping as already taken in - "a refresh is
 			//  a fresh start", the user's call of 2026-09-15 - until the restore went on 2026-09-21.)
@@ -1220,7 +1246,11 @@ private:
 		  error state cleared. ⚠Not an abortable sequence: one of those, ended, took the import's own undo step
 		  below it away (measured 2026-09-24, RejectImportChange says so). ⚠KBS measured (2026-07-31) that this
 		  route does not roll back across SEVERAL documents; here it is one story of one document, which is what
-		  the header promises. */
+		  the header promises.
+		  ⚠★★MEASURED NOT TO TAKE THE WRITE BACK FROM A SCRIPT (2026-10-24 night, probe-step.ps1 P1): the write and its
+		  step stayed. The steps of Apply / Restore from Copy / Restore from Source are abortable since then (BeginStep -
+		  EndOrAbort); the ones still ended here - the reject, Match the Source, Redo from Word - were not changed with
+		  them (the reject's note says why it stays plain) and are not measured from the panel's menu either. */
 	void EndSequenceOrRollBack(ICommandSequence* sequence, bool16 keep)
 	{
 		if (sequence == nil)
@@ -1228,6 +1258,67 @@ private:
 		if (!keep)
 			ErrorUtils::PMSetGlobalErrorCode(kFailure);
 		CmdUtils::EndCommandSequence(sequence);
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
+	}
+
+	/** ★ONE WRITE'S UNDO STEP - OR A PART OF A BATCH'S (2026-10-24 night - design 1-4/1-5/1-8, KFC's "rows selected
+		together go in as one step"): an ABORTABLE sequence named `name` (EndOrAbort says why abortable), or nil inside a
+		batch (RunBatch), whose ONE sequence holds every write - a sequence nested in another breaks the outer one's
+		roll-back (KBS measured 2026-07-31). Whether the Target was modified before is noted for the abort. */
+	IAbortableCmdSeq* BeginStep(const char* name)
+	{
+		if (fBatch)
+			return nil;
+		IDataBase* const db = KCMArmedTargetDB();
+		fStepWasModified = (db != nil && KCMIsDocDBOpen(db) && db->IsModified()) ? kTrue : kFalse;
+		IAbortableCmdSeq* sequence = CmdUtils::BeginAbortableCmdSeq("KCMStoryEditsStep");
+		if (sequence != nil)
+		{
+			PMString stepName(name);
+			stepName.SetTranslatable(kFalse);
+			sequence->SetName(stepName);
+		}
+		return sequence;
+	}
+
+	/** Ends BeginStep's sequence - committed when `keep`, aborted when not (EndOrAbort). Inside a batch there is none to
+		end: a write that did not go in marks the batch failed, and RunBatch aborts ALL of it. */
+	void EndStep(IAbortableCmdSeq* sequence, bool16 keep)
+	{
+		// (Fault switch step-fail, a test build's only - KCMDiag.h: a write that went in is taken as not gone in, so that the
+		//  abort is measured - the single step's here, a batch's in RunBatch.)
+		if (keep && KCM_DIAG_FAULT("step-fail"))
+			keep = kFalse;
+		if (fBatch)
+		{
+			if (!keep)
+				fBatchFailed = kTrue;
+			return;
+		}
+		this->EndOrAbort(sequence, keep, fStepWasModified);
+	}
+
+	/** ★ALL OF IT OR NONE OF IT, MEASURED (2026-10-24 night - work/note-scripts/2026-10-24-kcm-list/probe-step.ps1): the
+		step committed when `keep`, otherwise ABORTED - its writes taken back by the abort itself, wherever it runs. ⚠A plain
+		sequence ended with the error raised (EndSequenceOrRollBack) was measured to KEEP its write and its step when the
+		call came from a script (P1: KIDMCP's SCRIPT_REQUEST runs each request in a step of its own; the guide checks the
+		error "when control returns to the application", and EndSequenceOrRollBack clears it before that). The abort
+		was measured to leave nothing (P2, and tests-batch T-B3), and a committed abortable step to leave the step below it
+		as it was (T-B2). The error state is cleared either way (KFC's EndWriteStep), and a document clean before the step
+		is clean again after an abort, which does not put the flag back (memory command-sequence-rollback-on-error). */
+	void EndOrAbort(IAbortableCmdSeq* sequence, bool16 keep, bool16 wasModified)
+	{
+		if (sequence == nil)
+			return;
+		if (keep)
+			CmdUtils::EndCommandSequence(sequence);
+		else
+		{
+			CmdUtils::AbortCommandSequence(sequence);
+			IDataBase* const db = KCMArmedTargetDB();
+			if (!wasModified && db != nil && KCMIsDocDBOpen(db))
+				db->SetModified(kFalse);
+		}
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 	}
 
@@ -1301,10 +1392,15 @@ private:
 	{
 		this->RefreshRow(nth);
 		Change now;
-		return (this->GetChange(nth, which, now) && now.fKind == before.fKind && now.fWhat == before.fWhat
-				&& now.fAttrKind == before.fAttrKind
-				&& now.fTargetStart == before.fTargetStart && now.fTargetEnd == before.fTargetEnd
-				&& now.fSourceStart == before.fSourceStart && now.fSourceEnd == before.fSourceEnd) ? kTrue : kFalse;
+		const bool16 same = (this->GetChange(nth, which, now) && now.fKind == before.fKind && now.fWhat == before.fWhat
+							 && now.fAttrKind == before.fAttrKind
+							 && now.fTargetStart == before.fTargetStart && now.fTargetEnd == before.fTargetEnd
+							 && now.fSourceStart == before.fSourceStart && now.fSourceEnd == before.fSourceEnd)
+							? kTrue : kFalse;
+		// ★A BATCH ASKS (2026-10-24 night): the row's other indices it was given came from the list before this refresh.
+		if (!same)
+			fStale = kTrue;
+		return same;
 	}
 
 	/** The story and the range of change `which` of row `nth`, in the Target that is open and armed. */
@@ -1385,13 +1481,7 @@ public:
 										  before.fTargetStart, before.fTargetEnd, before.fSourceStart, before.fSourceEnd,
 										  job, outMessage))
 			return -1;
-		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
-		if (sequence != nil)
-		{
-			PMString name(stepName);
-			name.SetTranslatable(kFalse);
-			sequence->SetName(name);
-		}
+		IAbortableCmdSeq* sequence = this->BeginStep(stepName);	// (a part of the batch's step inside one)
 		int32 done = KCMApplyRestoreAttr(target, job, outMessage);
 		// ★★★**ALL THE WAY BACK, OR NOT AT ALL** (2026-09-24 night, the user's rule) - the marks of this kind over
 		//   the change's characters have to read as the Source's, or the sequence is rolled back whole. ★Over the
@@ -1400,7 +1490,7 @@ public:
 		const bool16 same = (done >= 0)
 			? this->PlaceReadsAsSource(target, live.fTargetStart, live.fTargetEnd, live, live.fAttrKind)
 			: kFalse;
-		this->EndSequenceOrRollBack(sequence, same);
+		this->EndStep(sequence, same);
 		if (done >= 0 && !same)
 		{
 			outMessage = "the Source's marks did not come all the way back, so the restore was cancelled - the document is as it was";
@@ -1949,14 +2039,16 @@ public:
 			outMessage = "the paragraph style of the paragraph before it has been deleted since - left as it is";
 			return -1;
 		}
-		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
-		if (sequence != nil)
+		// ★A WHOLE PARAGRAPH RESTORED FROM THE SOURCE WITH ITS OWN RETURN (KCMRecordCopy::fShift, 2026-10-24 night) is put
+		//   back one character on as well - past the return that stands at the record's end, which has to be there still.
+		const int32 shift = record.fCopy.fShift;
+		if (shift != 0 && !ReturnAt(targetDB, row.fStoryUID, record.fNowEnd))
 		{
-			PMString name("Restore from Copy");
-			name.SetTranslatable(kFalse);
-			sequence->SetName(name);
+			outMessage = "the paragraph break it was put in beside has gone since - left as it is";
+			return -1;
 		}
-		bool16 ok = KCMCopyStore::PasteOver(record.fCopy.fCopy, target, record.fNowStart, record.fNowEnd);
+		IAbortableCmdSeq* sequence = this->BeginStep("Restore from Copy");	// (a part of the batch's step inside one)
+		bool16 ok = KCMCopyStore::PasteOver(record.fCopy.fCopy, target, record.fNowStart + shift, record.fNowEnd + shift);
 		InterfacePtr<ITextModel> model(target, UseDefaultIID());
 		if (ok && record.fCopy.fParaStyle != kInvalidUID)
 			ok = PutParagraphBack(model, record.fNowStart, record.fCopy);
@@ -1969,7 +2061,7 @@ public:
 				  && now == record.fLiveWords) ? kTrue : kFalse;
 		}
 		ok = (ok && ErrorUtils::PMGetGlobalErrorCode() == kSuccess) ? kTrue : kFalse;
-		this->EndSequenceOrRollBack(sequence, ok);
+		this->EndStep(sequence, ok);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
 		if (!ok)
 		{
@@ -2023,13 +2115,377 @@ public:
 		return proposed;
 	}
 
+	// ---- ★THE LIST LIKE KFC'S (2026-10-24 night) - IKCMStoryEditsFacade.h says what each answers -------------------------
+
+	virtual int32	GetChangePlaceReach(int32 nth, int32 which)
+	{
+		IDataBase* targetDB = nil;
+		Row row;
+		Change change;
+		if (!this->PairedTargetRow(nth, targetDB, row) || !this->GetChange(nth, which, change))
+			return 0;
+		return KCMPlaceReach(UIDRef(targetDB, row.fStoryUID), change.fTargetStart, change.fTargetEnd);
+	}
+
+	// ---- ★RESTORE FROM SOURCE BY COPY, IN THE STORY MODE (design 1-8 - the author: "in Story mode, a function that puts
+	//   the Source's text back using a copy of the Source - in the right-click menu", "on the Story row too") -----------
+
+	virtual bool16	CanRestoreTextFromSource(int32 nth, int32 which)
+	{
+		IDataBase* targetDB = nil;
+		Row row;
+		Change change;
+		return this->SourceTextChange(nth, which, targetDB, row, change);
+	}
+
+	virtual int32	RestoreTextFromSource(int32 nth, int32 which, PMString& outMessage)
+	{
+		outMessage.Clear();
+		outMessage.SetTranslatable(kFalse);
+		IDataBase* targetDB = nil;
+		Row row;
+		Change before;
+		if (!this->SourceTextChange(nth, which, targetDB, row, before))
+		{
+			outMessage = "this row is not a text change of two documents that are open and compared";
+			return -1;
+		}
+		// ★★COMPARED AGAIN FIRST, AND IT HAS TO BE THE SAME CHANGE - SameChangeAfterRefresh says why.
+		if (!this->SameChangeAfterRefresh(nth, which, before))
+		{
+			outMessage = "the list was out of date - it has been compared again; right-click the change once more";
+			return -1;
+		}
+		const KCMStoryChange* const modelChange = KCMStoryList::GetMergedChange(nth, which);
+		if (modelChange == nil)
+		{
+			outMessage = "this change is not in the list any more";
+			return -1;
+		}
+		const KCMStoryChange live = *modelChange;		// the model's own ranges - a whole paragraph's break and all
+		IDataBase* const sourceDB = KCMArmedSourceDB();
+		const UIDRef target(targetDB, row.fStoryUID);
+		const UIDRef source(sourceDB, row.fStoryUID);	// the same UID on both sides (AttrChangeInBoth says why)
+		const TextIndex tFrom = live.fTargetStart;
+		const TextIndex tTo = live.fTargetEnd;
+		const TextIndex sFrom = live.fSourceStart;
+		const TextIndex sTo = live.fSourceEnd;
+
+		// ★BOTH SIDES READ, AND NO SAID BEFORE ANYTHING IS WRITTEN - the copy's rules (KFC's, and Apply's TakeApplyCopy).
+		WideString targetWords;
+		WideString sourceWords;
+		int32 shift = 0;
+		const char* whyNot = nil;
+		{
+			IDataBase::SaveRestoreModifiedState targetGuard(targetDB);
+			IDataBase::SaveRestoreModifiedState sourceGuard(sourceDB);
+			InterfacePtr<ITextModel> tModel(target, UseDefaultIID());
+			InterfacePtr<ITextModel> sModel(source, UseDefaultIID());
+			if (!KCMCopyStore::InOneThread(tModel, tFrom, tTo) || !KCMCopyStore::InOneThread(sModel, sFrom, sTo)
+				|| !KCMTextWords::WordsAt(tModel, tFrom, tTo - tFrom, targetWords)
+				|| !KCMTextWords::WordsAt(sModel, sFrom, sTo - sFrom, sourceWords))
+				whyNot = "its place could not be read as one stretch of one story thread";
+			else if (HoldsObject(targetWords) || HoldsObject(sourceWords))
+				whyNot = "its words hold an object (a table, a note, an anchored frame...) - copied, it would be made anew with a new UID";
+			else if (TouchesLink(tModel, tFrom, tTo) || TouchesLink(sModel, sFrom, sTo))
+				whyNot = "it touches a hyperlink or a cross-reference - a copy would make a second one";
+			else if (HoldsReturn(targetWords) || HoldsReturn(sourceWords))
+			{
+				// ★A RETURN GOES ONLY AS A WHOLE PARAGRAPH'S OWN. A copied return brings the formatting of the paragraph it
+				//   ends, so a range that joins or splits paragraphs would hand one paragraph's formatting to another.
+				//   ★"\rNEW" (the break before it - KCMStoryChange::fBreakAt, the diff's usual form) GOES ONE CHARACTER ON,
+				//   AS "NEW\r": the same characters, but the paragraph comes (or goes) with its own return and the one before
+				//   keeps its own - "\rNEW" copied in would end the paragraph before with the Source's break and leave NEW
+				//   on that paragraph's return. Possible while the paragraph's own return follows it, on the side that holds
+				//   it - not for the last paragraph of a story or a cell, whose return is the thread's own.
+				const bool16 deleting = (sourceWords.CharCount() == 0) ? kTrue : kFalse;
+				const bool16 inserting = (targetWords.CharCount() == 0) ? kTrue : kFalse;
+				if (!live.fWholeParagraph || (!deleting && !inserting))
+					whyNot = "it joins or splits paragraphs - a copy cannot keep each paragraph's own formatting";
+				else if (live.fBreakAt == kKCMBreakLeads)
+				{
+					const bool16 shifts = deleting
+						? (ReturnAt(tModel, tFrom) && ReturnAt(tModel, tTo) && KCMCopyStore::InOneThread(tModel, tFrom + 1, tTo + 1))
+						: (ReturnAt(sModel, sFrom) && ReturnAt(sModel, sTo) && KCMCopyStore::InOneThread(sModel, sFrom + 1, sTo + 1)
+						   && ReturnAt(tModel, tFrom) && KCMCopyStore::InOneThread(tModel, tFrom + 1, tFrom + 1));
+					if (shifts)
+						shift = 1;
+					else
+						whyNot = "it is the last paragraph of its story (or cell) - a copy cannot bring its own paragraph formatting";
+				}
+				// (kKCMBreakTrails - "NEW\r", the first paragraph of its place - goes as it is: the return is its own.)
+			}
+		}
+		if (whyNot != nil)
+		{
+			outMessage = whyNot;
+			outMessage.Append(" - left as it is");
+			outMessage.SetTranslatable(kFalse);
+			return -1;
+		}
+
+		// THE TARGET'S OWN WORDS COPIED FIRST, for Restore from Copy (before the sequence - it writes the store only) - over
+		// the range the write will cover, which the record then puts back over as well (KCMRecordCopy::fShift).
+		std::vector<KCMRecordCopy> copies(1, this->TakeApplyCopy(target, tFrom + shift, tTo + shift, targetWords));
+		copies[0].fShift = shift;
+
+		IAbortableCmdSeq* sequence = this->BeginStep("Restore from Source");	// (a part of the batch's step inside one)
+		// An empty Source range is a deletion: its place on the Source side does not matter (CopyOver deletes).
+		const TextIndex fromStart = (sTo > sFrom) ? sFrom + shift : sFrom;
+		const TextIndex fromEnd = (sTo > sFrom) ? sTo + shift : sFrom;
+		const bool16 wrote = KCMCopyStore::CopyOver(source, fromStart, fromEnd, target, tFrom + shift, tTo + shift);
+		// ★ALL OF IT OR NONE OF IT: the place has to read as the Source's before the step ends, or it is rolled back.
+		const bool16 same = (wrote && ErrorUtils::PMGetGlobalErrorCode() == kSuccess
+							 && this->PlaceReadsAsSource(target, tFrom, tFrom + (sTo - sFrom), live, kKCMStoryAttrNone))
+							? kTrue : kFalse;
+		this->EndStep(sequence, same);
+		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
+		if (!same)
+		{
+			this->RefreshRow(nth);
+			outMessage = wrote ? "the place did not read as the Source after the copy - nothing was changed"
+							   : "the copy could not be written (a locked story or layer?) - nothing was changed";
+			outMessage.SetTranslatable(kFalse);
+			return -1;
+		}
+		// THE "=" RECORD - this change alone, with the Target's copy: Restore from Copy puts the Target's own words back.
+		std::vector<KCMStoryChange> group(1, live);
+		std::vector<TextIndex> nowStarts(1, tFrom);
+		std::vector<WideString> wordsBefore(1, targetWords);
+		KCMStoryList::AddRejectedGroup(nth, group, nowStarts, wordsBefore,
+									   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone, &copies);
+		this->RefreshRow(nth);
+		outMessage = "restored from the Source";
+		if (copies[0].fWhyNot == kKCMCopyKept)
+			outMessage.Append(" - right-click it: Restore from Copy, or Ctrl+Z");
+		else
+		{
+			outMessage.Append(" - Ctrl+Z takes it back (no copy was kept: ");
+			outMessage.Append(CopyWhyNotWords(copies[0].fWhyNot));
+			outMessage.Append(")");
+		}
+		outMessage.SetTranslatable(kFalse);
+		return 1;
+	}
+
+	virtual bool16	CanRestoreStoryFromSource(int32 nth)
+	{
+		const int32 changes = this->GetChangeCount(nth);
+		for (int32 c = 0; c < changes; ++c)
+			if (this->CanRestoreTextFromSource(nth, c))
+				return kTrue;
+		return kFalse;
+	}
+
+	virtual int32	RestoreStoryFromSource(int32 nth, PMString& outMessage)
+	{
+		std::vector<int32> rows;
+		std::vector<int32> changes;
+		const int32 count = this->GetChangeCount(nth);
+		for (int32 c = 0; c < count; ++c)
+		{
+			if (!this->CanRestoreTextFromSource(nth, c))
+				continue;
+			rows.push_back(nth);
+			changes.push_back(c);
+		}
+		if (changes.empty())
+		{
+			outMessage = "this story has no text change to restore from the Source";
+			outMessage.SetTranslatable(kFalse);
+			return -1;
+		}
+		return this->RunBatch(&rows[0], &changes[0], static_cast<int32>(changes.size()), "Restore All Changes in This Story",
+							  &KCMStoryEditsFacade::RestoreTextFromSource, kTrue, outMessage);
+	}
+
+	// ---- ★SEVERAL ROWS AT ONCE, ONE UNDO STEP (design 1-4 / 1-5 - KFC's "rows selected together go in as one step") ----
+
+	virtual int32	ApplyChanges(const int32* rows, const int32* changes, int32 count, PMString& outMessage)
+	{
+		return this->RunBatch(rows, changes, count, "Apply These Changes", &KCMStoryEditsFacade::ApplyChange, kFalse,
+							  outMessage);
+	}
+
+	virtual int32	RestoreChangesFromCopy(const int32* rows, const int32* changes, int32 count, PMString& outMessage)
+	{
+		return this->RunBatch(rows, changes, count, "Restore These from Copy", &KCMStoryEditsFacade::RestoreChangeFromCopy,
+							  kFalse, outMessage);
+	}
+
+	virtual int32	RestoreTextsFromSource(const int32* rows, const int32* changes, int32 count, PMString& outMessage)
+	{
+		return this->RunBatch(rows, changes, count, "Restore These from Source", &KCMStoryEditsFacade::RestoreTextFromSource,
+							  kFalse, outMessage);
+	}
+
 private:
-	/** A "=" row Apply This Change put in that holds its copy: the Source is an import's copy, the story is paired, the row is
-		a Standing record, and its copy was kept and is still in the store. (CanRestoreChangeFromCopy adds the caret's test;
-		RestoreChangeFromCopy asks it after comparing again, to say why.) */
+	/** Change `which` of row `nth` as Restore from Source (text) takes it: the Story mode - not the Track mode, not an
+		import's copy as the Source, not a PDF at either end - both documents open, the story paired, a TEXT change that is
+		not a "=" record (a record shown live - undone, or put back from its copy - is restored again, its record updated in
+		place: AddRejectedGroup's twin). Reads no document: whether the words can be copied is said on the press. */
+	bool16 SourceTextChange(int32 nth, int32 which, IDataBase*& outTargetDB, Row& outRow, Change& outChange)
+	{
+		if (KCMFacadeTrackMode() || this->IsImportSource() || !this->PairedTargetRow(nth, outTargetDB, outRow))
+			return kFalse;
+		IDataBase* const sourceDB = KCMArmedSourceDB();
+		if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB) || KCMIsPdfDoc(sourceDB) || KCMIsPdfDoc(outTargetDB))
+			return kFalse;
+		return (this->GetChange(nth, which, outChange) && !outChange.fReplaced && outChange.fWhat == Change::kWhatText)
+			   ? kTrue : kFalse;
+	}
+
+	/** One change's command, as RunBatch drives it - ApplyChange, RestoreChangeFromCopy, RestoreTextFromSource. */
+	typedef int32 (KCMStoryEditsFacade::*OneChange)(int32 nth, int32 which, PMString& outMessage);
+
+	/** ★SEVERAL CHANGES AS ONE UNDO STEP (2026-10-24 night - design 1-4/1-5/1-8, KFC's ReplaceRows): `one` over every
+		(rows[i], changes[i]) inside ONE command sequence named `name` - BeginStep opens none of its own meanwhile, so
+		nothing nests. By row, and bottom-up within a row: the list is in the story's order, so a higher index stands
+		lower, and writing it first leaves the places above where they were. A change `one` refuses before it writes is
+		left and said; once a row has been compared again because it was out of date, the rest of its indices (taken from
+		the list before) are not trusted and are left too. The FIRST WRITE THAT DOES NOT GO IN (EndStep in the batch) stops
+		it, and the whole step is rolled back. The panel is told once, at the end. One pair alone is `one` itself, with its
+		own step, unless `oneAsBatch`. @return the changes done; -1 when nothing was written (outMessage). */
+	int32 RunBatch(const int32* rows, const int32* changes, int32 count, const char* name, OneChange one, bool16 oneAsBatch,
+				   PMString& outMessage)
+	{
+		outMessage.Clear();
+		outMessage.SetTranslatable(kFalse);
+		if (rows == nil || changes == nil || count <= 0)
+		{
+			outMessage = "no change was named";
+			return -1;
+		}
+		if (count == 1 && !oneAsBatch)
+			return (this->*one)(rows[0], changes[0], outMessage);
+		if (fBatch)
+		{
+			outMessage = "another batch is still running";
+			return -1;
+		}
+		std::vector<std::pair<int32, int32> > pairs;
+		for (int32 i = 0; i < count; ++i)
+			pairs.push_back(std::make_pair(rows[i], changes[i]));
+		std::sort(pairs.begin(), pairs.end(), [](const std::pair<int32, int32>& a, const std::pair<int32, int32>& b)
+				  { return (a.first != b.first) ? (a.first < b.first) : (a.second > b.second); });
+		pairs.erase(std::unique(pairs.begin(), pairs.end()), pairs.end());
+
+		// ★AN ABORTABLE SEQUENCE, ABORTED ON THE FIRST WRITE THAT DOES NOT GO IN - EndOrAbort says why (measured: a plain one
+		//   ended with the error raised kept both writes and the step, tests-batch T-B3's first run). ICommandSequence.h:
+		//   "regular command sequences cannot do this kind of error handling". The modified flag is read now for the abort.
+		IDataBase* const batchDB = KCMArmedTargetDB();
+		const bool16 wasModified = (batchDB != nil && KCMIsDocDBOpen(batchDB) && batchDB->IsModified()) ? kTrue : kFalse;
+		IAbortableCmdSeq* sequence = CmdUtils::BeginAbortableCmdSeq("KCMStoryEditsBatch");
+		if (sequence == nil)
+		{
+			outMessage = "InDesign would not start an undoable step - nothing was changed";
+			return -1;
+		}
+		{
+			PMString stepName(name);
+			stepName.SetTranslatable(kFalse);
+			sequence->SetName(stepName);
+		}
+		fBatch = kTrue;
+		fBatchFailed = kFalse;
+		int32 done = 0;
+		int32 left = 0;
+		int32 staleRow = -1;
+		PMString firstWhy;
+		PMString failure;
+		std::set<int32> touched;
+		for (size_t i = 0; i < pairs.size(); ++i)
+		{
+			const int32 r = pairs[i].first;
+			touched.insert(r);
+			if (r == staleRow)
+			{
+				++left;
+				continue;
+			}
+			fStale = kFalse;
+			PMString why;
+			const int32 result = (this->*one)(r, pairs[i].second, why);
+			// (Fault switch batch-fail, a test build's only - KCMDiag.h: a write after the first taken as not gone in.)
+			if (!fBatchFailed && result >= 0 && done > 0 && KCM_DIAG_FAULT("batch-fail"))
+			{
+				fBatchFailed = kTrue;
+				why = "the batch-fail switch is on";
+			}
+			if (fBatchFailed)
+			{
+				failure = why;
+				break;
+			}
+			if (result < 0)
+			{
+				++left;
+				if (firstWhy.IsEmpty())
+					firstWhy = why;
+				if (fStale)
+					staleRow = r;
+				continue;
+			}
+			++done;
+		}
+		const bool16 failed = fBatchFailed;
+		// ★ALL OF IT OR NONE OF IT: one write that did not go in takes every write of the step with it (EndOrAbort).
+		this->EndOrAbort(sequence, failed ? kFalse : kTrue, wasModified);
+		IDataBase* const targetDB = KCMArmedTargetDB();
+		if (targetDB != nil && KCMIsDocDBOpen(targetDB))
+			KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
+		// Rolled back: the rows touched are compared again, against what stands (still quiet - fBatch is up).
+		if (failed)
+			for (std::set<int32>::const_iterator it = touched.begin(); it != touched.end(); ++it)
+				this->RefreshRow(*it);
+		fBatch = kFalse;
+		fBatchFailed = kFalse;
+		fStale = kFalse;
+		KCMNotify(kKCMStoryEditsRebuiltMessage);
+
+		if (failed)
+		{
+			outMessage = "a change could not be written";
+			if (!failure.IsEmpty())
+			{
+				outMessage.Append(" (");
+				outMessage.Append(failure);
+				outMessage.Append(")");
+			}
+			outMessage.Append(" - the whole step was rolled back; nothing was changed");
+			outMessage.SetTranslatable(kFalse);
+			return -1;
+		}
+		if (done == 0)
+		{
+			outMessage = "nothing was changed - ";
+			outMessage.Append(firstWhy.IsEmpty() ? PMString("no change could be done") : firstWhy);
+			outMessage.SetTranslatable(kFalse);
+			return -1;
+		}
+		outMessage = name;
+		outMessage.Append(": ");
+		outMessage.AppendNumber(done);
+		outMessage.Append(done == 1 ? " change" : " changes");
+		outMessage.Append(" in one step - Ctrl+Z takes it back");
+		if (left > 0)
+		{
+			outMessage.Append(" - ");
+			outMessage.AppendNumber(left);
+			outMessage.Append(left == 1 ? " left as it is: " : " left as they are; the first: ");
+			outMessage.Append(firstWhy);
+		}
+		outMessage.SetTranslatable(kFalse);
+		return done;
+	}
+
+	/** A "=" row that holds its copy - Apply This Change's (an import's copy as the Source) or, since 2026-10-24 night,
+		Restore from Source's (the Story mode, design 1-8): the story is paired, the row is a Standing record, and its copy was
+		kept and is still in the store. The records of the other roads (a reject, a mark's restore, a match) hold none.
+		(CanRestoreChangeFromCopy adds the caret's test; RestoreChangeFromCopy asks it after comparing again, to say why.) */
 	bool16 HasRestorableCopy(int32 nth, int32 which, IDataBase*& outTargetDB, Row& outRow)
 	{
-		if (KCMFacadeTrackMode() || !this->IsImportSource() || !this->PairedTargetRow(nth, outTargetDB, outRow))
+		if (KCMFacadeTrackMode() || !this->PairedTargetRow(nth, outTargetDB, outRow))
 			return kFalse;
 		Change change;
 		if (!this->GetChange(nth, which, change) || !change.fReplaced)
@@ -2164,13 +2620,7 @@ private:
 		// THE COPY, before the sequence (it writes the store only).
 		std::vector<KCMRecordCopy> copies(1, this->TakeApplyCopy(target, live.fTargetStart, live.fTargetEnd, liveWords));
 
-		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
-		if (sequence != nil)
-		{
-			PMString name("Apply This Change");
-			name.SetTranslatable(kFalse);
-			sequence->SetName(name);
-		}
+		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
 		ErrorCode wrote = kFailure;
 		{
 			InterfacePtr<ITextModel> tModel(target, UseDefaultIID());
@@ -2182,7 +2632,7 @@ private:
 		const bool16 same = (wrote == kSuccess && ErrorUtils::PMGetGlobalErrorCode() == kSuccess
 							 && this->PlaceReadsAsSource(target, live.fTargetStart, live.fTargetStart + sourceWords.CharCount(),
 														 live, kKCMStoryAttrNone)) ? kTrue : kFalse;
-		this->EndSequenceOrRollBack(sequence, same);
+		this->EndStep(sequence, same);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
 		if (!same)
 		{
@@ -2333,17 +2783,11 @@ private:
 			}
 		}
 
-		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
-		if (sequence != nil)
-		{
-			PMString name("Apply This Change");
-			name.SetTranslatable(kFalse);
-			sequence->SetName(name);
-		}
+		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
 		// ★UNSIGNED AND UNTRACKED (design 11-2, the author 2026-10-24: "if it is tracked, change it without tracking").
 		const int32 done = KCMApplyRedoFromWord(target, now, plan, outMessage, kFalse);
 		// ★ALL OF IT OR NONE OF IT (the take-backs' rule, the redo's too): a write refused halfway is rolled back whole.
-		this->EndSequenceOrRollBack(sequence, (done > 0) ? kTrue : kFalse);
+		this->EndStep(sequence, (done > 0) ? kTrue : kFalse);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
 		if (done <= 0)
 		{
@@ -2419,15 +2863,9 @@ private:
 			return -1;
 		}
 		const UIDRef target(targetDB, row.fStoryUID);
-		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
-		if (sequence != nil)
-		{
-			PMString name("Apply This Change");
-			name.SetTranslatable(kFalse);
-			sequence->SetName(name);
-		}
+		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
 		const int32 done = KCMRedoTableFromWord(target, live.fTargetTableUID, outMessage, kFalse);	// untracked (design 11-2)
-		this->EndSequenceOrRollBack(sequence, (done > 0) ? kTrue : kFalse);
+		this->EndStep(sequence, (done > 0) ? kTrue : kFalse);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
 		if (done > 0)
 			KCMStoryList::AddRejected(nth, live, live.fTargetStart,
@@ -2496,6 +2934,13 @@ private:
 		outMessage.SetTranslatable(kFalse);
 		return any ? 1 : 0;
 	}
+
+	// ---- ★A BATCH'S STATE (2026-10-24 night - RunBatch). The facade is one object for the session; a batch lives inside
+	// one call on the main thread, so these are up only while it runs.
+	bool16	fBatch;			// the batch's one sequence is open: BeginStep opens none of its own, RefreshRow tells nobody
+	bool16	fBatchFailed;	// ... and a write inside it did not go in (EndStep) - the whole step is rolled back
+	bool16	fStale;			// SameChangeAfterRefresh found the list out of date since this was last cleared
+	bool16	fStepWasModified;	// BeginStep's reading of the Target's modified flag - what an abort puts back (EndOrAbort)
 
 public:
 };

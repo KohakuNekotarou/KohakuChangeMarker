@@ -157,6 +157,35 @@
 #include "Utils.h"
 #include <cstdio>					// sscanf_s - app.kcmApplyChange's "<row> <change>"
 #include <string>
+#include <vector>					// the batch doors' "<row> <change>;<row> <change>..." (2026-10-24 night)
+
+namespace
+{
+// "<row> <change>;<row> <change>;..." read into the pairs - the batch doors (2026-10-24 night, the list like KFC's: several
+// rows put in, or put back, as one undo step). kFalse when a part does not read as two numbers.
+bool16 ReadChangePairs(const PMString& what, std::vector<int32>& rows, std::vector<int32>& changes)
+{
+	rows.clear();
+	changes.clear();
+	const std::string s = what.GetUTF8String();
+	std::string::size_type at = 0;
+	for (;;)
+	{
+		const std::string::size_type semi = s.find(';', at);
+		const std::string part = s.substr(at, (semi == std::string::npos) ? std::string::npos : semi - at);
+		int32 row = -1;
+		int32 change = -1;
+		if (::sscanf_s(part.c_str(), "%d %d", &row, &change) != 2)
+			return kFalse;
+		rows.push_back(row);
+		changes.push_back(change);
+		if (semi == std::string::npos)
+			break;
+		at = semi + 1;
+	}
+	return rows.empty() ? kFalse : kTrue;
+}
+}	// anonymous namespace
 // ⚠**KCMTextRead.h WENT WITH THE FEATURE THAT NEEDED IT** (2026-09-08). It was included here for
 //   app.kcmStoryReadCompare - the direct-read migration's parallel run - and its own comment said
 //   "temporary". The property was removed on 2026-09-03; the include outlived it by five days and
@@ -311,7 +340,17 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 					int32 row = -1;
 					int32 change = -1;
 					const std::string s = what.GetUTF8String();
-					if (::sscanf_s(s.c_str(), "%d %d", &row, &change) == 2)
+					std::vector<int32> rows;
+					std::vector<int32> changes;
+					// ★(2026-10-24 night) "<row> <change>;<row> <change>..." - several, as ONE undo step (ApplyChanges).
+					if (s.find(';') != std::string::npos)
+					{
+						if (ReadChangePairs(what, rows, changes))
+							edits->ApplyChanges(&rows[0], &changes[0], static_cast<int32>(rows.size()), message);
+						else
+							message = "the argument does not read as \"<row> <change>;<row> <change>...\"";
+					}
+					else if (::sscanf_s(s.c_str(), "%d %d", &row, &change) == 2)
 						edits->ApplyChange(row, change, message);
 					else if (::sscanf_s(s.c_str(), "%d", &row) == 1)
 						edits->ApplyStory(row, message);
@@ -335,26 +374,110 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 			message.SetTranslatable(kFalse);
 			ScriptData arg;
 			PMString what;
-			int32 row = -1;
-			int32 change = -1;
+			std::vector<int32> rows;
+			std::vector<int32> changes;
+			// ★(2026-10-24 night) "<row> <change>;<row> <change>..." too - several, as ONE undo step (RestoreChangesFromCopy).
 			if (data->ExtractRequestData(p_Name, arg) != kSuccess || arg.GetPMString(what) != kSuccess)
 				message = "the argument could not be read - \"<row> <change>\"";
-			else if (::sscanf_s(what.GetUTF8String().c_str(), "%d %d", &row, &change) != 2)
-				message = "the argument does not read as \"<row> <change>\"";
+			else if (!ReadChangePairs(what, rows, changes))
+				message = "the argument does not read as \"<row> <change>\" (or several, joined by \";\")";
 			else
 			{
 				// ⚠Utils<> asked before it is used (memory utils-boss-facade-access: QueryUtilInterface has no nil guard).
 				Utils<IKCMStoryEditsFacade> edits;
 				if (!edits)
 					message = "the Story Edits facade is not there";
+				else if (rows.size() == 1)
+					edits->RestoreChangeFromCopy(rows[0], changes[0], message);
 				else
-					edits->RestoreChangeFromCopy(row, change, message);
+					edits->RestoreChangesFromCopy(&rows[0], &changes[0], static_cast<int32>(rows.size()), message);
 			}
 			message.SetTranslatable(kFalse);
 			if (message.CharCount() > 0)
 				KCMNotifyStatus(message, kFalse);
 			ScriptData returnData;
 			returnData.SetWideString(WideString(message));
+			data->AppendReturnData(script, methodID, returnData);
+			return kSuccess;
+		}
+		// ★(2026-10-24 night, design 1-8) app.kcmRestoreFromSource(what) - Story mode's Restore from Source by copy without the
+		//   right click: "<row> <change>" (RestoreTextFromSource), "<row>" (Restore All Changes in This Story), or
+		//   "<row> <change>;<row> <change>..." (several, as one undo step - RestoreTextsFromSource).
+		if (id == e_KCMRestoreFromSource)
+		{
+			PMString message;
+			message.SetTranslatable(kFalse);
+			ScriptData arg;
+			PMString what;
+			std::vector<int32> rows;
+			std::vector<int32> changes;
+			int32 row = -1;
+			if (data->ExtractRequestData(p_Name, arg) != kSuccess || arg.GetPMString(what) != kSuccess)
+				message = "the argument could not be read - \"<row> <change>\", \"<row>\" or several \"<row> <change>\" joined by \";\"";
+			else
+			{
+				// ⚠Utils<> asked before it is used (memory utils-boss-facade-access: QueryUtilInterface has no nil guard).
+				Utils<IKCMStoryEditsFacade> edits;
+				const std::string s = what.GetUTF8String();
+				if (!edits)
+					message = "the Story Edits facade is not there";
+				else if (ReadChangePairs(what, rows, changes))
+				{
+					if (rows.size() == 1)
+						edits->RestoreTextFromSource(rows[0], changes[0], message);
+					else
+						edits->RestoreTextsFromSource(&rows[0], &changes[0], static_cast<int32>(rows.size()), message);
+				}
+				else if (s.find(';') == std::string::npos && ::sscanf_s(s.c_str(), "%d", &row) == 1)
+					edits->RestoreStoryFromSource(row, message);
+				else
+					message = "the argument reads as neither \"<row> <change>\", \"<row>\" nor several \"<row> <change>\" joined by \";\"";
+			}
+			message.SetTranslatable(kFalse);
+			if (message.CharCount() > 0)
+				KCMNotifyStatus(message, kFalse);
+			ScriptData returnData;
+			returnData.SetWideString(WideString(message));
+			data->AppendReturnData(script, methodID, returnData);
+			return kSuccess;
+		}
+		// ★(2026-10-24 night, the list like KFC's) app.kcmChangeReach("<row> <change>") - how far a row's selection reaches
+		//   its change's place in the Target (IKCMStoryEditsFacade::GetChangePlaceReach): "none", or the bits set joined by
+		//   commas - "locked", "hidden", "hidden-spread". A reading: nothing goes on the status line.
+		if (id == e_KCMChangeReach)
+		{
+			PMString answer;
+			answer.SetTranslatable(kFalse);
+			ScriptData arg;
+			PMString what;
+			int32 row = -1;
+			int32 change = -1;
+			if (data->ExtractRequestData(p_Name, arg) != kSuccess || arg.GetPMString(what) != kSuccess)
+				answer = "the argument could not be read - \"<row> <change>\"";
+			else if (::sscanf_s(what.GetUTF8String().c_str(), "%d %d", &row, &change) != 2)
+				answer = "the argument does not read as \"<row> <change>\"";
+			else
+			{
+				// ⚠Utils<> asked before it is used (memory utils-boss-facade-access: QueryUtilInterface has no nil guard).
+				Utils<IKCMStoryEditsFacade> edits;
+				if (!edits)
+					answer = "the Story Edits facade is not there";
+				else
+				{
+					const int32 reach = edits->GetChangePlaceReach(row, change);
+					if ((reach & IKCMStoryEditsFacade::kReachLocked) != 0)
+						answer.Append("locked");
+					if ((reach & IKCMStoryEditsFacade::kReachHidden) != 0)
+						answer.Append(answer.CharCount() > 0 ? ",hidden" : "hidden");
+					if ((reach & IKCMStoryEditsFacade::kReachHiddenSpread) != 0)
+						answer.Append(answer.CharCount() > 0 ? ",hidden-spread" : "hidden-spread");
+					if (answer.CharCount() == 0)
+						answer = "none";
+				}
+			}
+			answer.SetTranslatable(kFalse);
+			ScriptData returnData;
+			returnData.SetWideString(WideString(answer));
 			data->AppendReturnData(script, methodID, returnData);
 			return kSuccess;
 		}

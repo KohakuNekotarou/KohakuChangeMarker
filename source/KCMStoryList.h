@@ -379,7 +379,12 @@ struct KCMRecordCopy
 		restore over the paragraph holding the record's start (KFC's C16 road). kInvalidUID = nothing to put back. */
 	UID										fParaStyle;
 	boost::shared_ptr<AttributeBossList>	fParaOverrides;		// nil = none
-	KCMRecordCopy() : fWhyNot(kKCMCopyNotTaken), fParaStyle(kInvalidUID) {}
+	/** ★A WHOLE PARAGRAPH WRITTEN WITH ITS OWN RETURN (2026-10-24 night, Restore from Source by copy - design 1-8): the
+		change's range is "\rNEW" (the break before it - KCMStoryChange::fBreakAt), but the write went one character on,
+		over "NEW\r", so that the paragraph came with its own return and the one before kept its own. 1 = the copy is of
+		that shifted range and is put back one character on as well; 0 = the record's own range (every other copy). */
+	int32									fShift;
+	KCMRecordCopy() : fWhyNot(kKCMCopyNotTaken), fParaStyle(kInvalidUID), fShift(0) {}
 };
 
 /** One row of the Story Edits section. */

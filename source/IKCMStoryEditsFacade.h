@@ -802,13 +802,15 @@ public:
 	// the author, "change by change, not paragraph by paragraph", "put a row back from a Copy, the way KFC does").
 	// ⚠Appended at the END again ([[facade-vtable-slot-append-only]]) - KCM's two halves are built together.
 
-	/** Whether change `which` of row `nth` is a "=" record of Apply This Change that holds a copy still in the store
-		(KCMCopyStore): the Source is an import's copy and the story is paired. Reads no document - whether the words
-		still stand as Apply left them is asked on the press (RestoreChangeFromCopy). */
+	/** Whether change `which` of row `nth` is a "=" record that holds a copy still in the store (KCMCopyStore) - Apply This
+		Change's (an import's copy as the Source) or, since 2026-10-24 night, Restore from Source's (the Story mode) - on a
+		paired story. Reads no document - whether the words still stand as the write left them is asked on the press
+		(RestoreChangeFromCopy). */
 	virtual bool16	CanRestoreChangeFromCopy(int32 nth, int32 which) = 0;
 
-	/** "Restore from Copy": the document's own words, copied with their formatting just before Apply wrote over them,
-		pasted back over what Apply wrote - and, for a whole paragraph put in or taken out next to a return, the
+	/** "Restore from Copy": the document's own words, copied with their formatting just before Apply (or, in the Story
+		mode, Restore from Source) wrote over them, pasted back over what it wrote - and, for a whole paragraph Apply put in
+		or took out next to a return, the
 		formatting of the paragraph before it put back - as ONE undo step; the record is marked redone (Ctrl+Z makes the
 		row "=" again, a redo a proposal). @return 1; -1 when nothing was written, and outMessage says why (the words
 		edited since, no copy held, a locked story). */
@@ -822,6 +824,62 @@ public:
 	/** How many changes are still proposals - live, not a "=" record, not a "!" row - over every row: the trial's
 		heading, "Proposed Edits (N)". -1 when the Source is not an import's copy. */
 	virtual int32	GetProposedCount() = 0;
+
+	// ---- ★THE LIST LIKE KFC'S (2026-10-24 night - docs/superpowers/specs/2026-10-24-kcm-list-like-kfc-design.md).
+	// ⚠Appended at the END again ([[facade-vtable-slot-append-only]]) - KCM's two halves are built together.
+
+	/** GetChangePlaceReach's bits. (An enum adds no slot to the vtable.) */
+	enum
+	{
+		kReachLocked		= 1,	// not to be selected - the jump's flash points instead
+		kReachHidden		= 2,	// selected all the same, nothing of it shows
+		kReachHiddenSpread	= 4		// neither shown nor selected
+	};
+
+	/** How far a selection can reach change `which` of row `nth` in the Target (design 1-2 - KFC's landing rules): 0, or the
+		kReach* bits above - locked (the story's insert lock, the frame's or its outermost parent's lock, the frame's
+		layer), hidden (the frame's layer or the frame itself), on a hidden spread. Reads only (KCMPlaceReach.h). 0 for a row
+		or change that is not there. */
+	virtual int32	GetChangePlaceReach(int32 nth, int32 which) = 0;
+
+	// ---- ★RESTORE FROM SOURCE BY COPY, IN THE STORY MODE (design 1-8 - the author: "in Story mode, a function that puts
+	// the Source's text back using a copy of the Source - in the right-click menu", "on the Story row too").
+
+	/** Whether change `which` of row `nth` is a TEXT change of the Story mode - two documents, open, compared; not an
+		import's copy as the Source, not the Track mode, not a PDF at either end; the story paired - that is not a "="
+		record: what Restore from Source offers itself for on a text row. Reads no document (whether the words can be
+		copied is said on the press). */
+	virtual bool16	CanRestoreTextFromSource(int32 nth, int32 which) = 0;
+
+	/** "Restore from Source" on a text row: the Source document's words of the change, copied with their formatting
+		(KCMCopyStore::CopyOver), put over the Target's - as ONE undo step, after the Target's own words were copied for the
+		row's Restore from Copy; the row becomes "=". A whole paragraph goes with its own return. @return 1; -1 when nothing
+		was written, and outMessage says why (an object's character or a hyperlink on either side, paragraphs joined or
+		split, the last paragraph of a story with the break before it, a place not in one story thread, a locked story). */
+	virtual int32	RestoreTextFromSource(int32 nth, int32 which, PMString& outMessage) = 0;
+
+	/** Whether row `nth` holds a change CanRestoreTextFromSource offers itself for. */
+	virtual bool16	CanRestoreStoryFromSource(int32 nth) = 0;
+
+	/** "Restore All Changes in This Story": every such change of row `nth` restored as RestoreTextFromSource does,
+		bottom-up, as ONE undo step; the ones that cannot be copied are left as they are and said. @return the changes
+		restored; -1 when nothing was written (outMessage). */
+	virtual int32	RestoreStoryFromSource(int32 nth, PMString& outMessage) = 0;
+
+	// ---- ★SEVERAL ROWS AT ONCE, ONE UNDO STEP (design 1-4 / 1-5 - KFC's "rows selected together go in as one step").
+	// rows[i] / changes[i] name one change each - plain arrays cross the DLL edge, a std::vector does not
+	// (IKCMStoryMarkFacade's rule). A change that cannot be done is left and said; a write that does not go in rolls the
+	// WHOLE step back. One pair alone is the single command, with its own step. @return the changes done; -1 when nothing
+	// was written (outMessage).
+
+	/** Apply This Change for every pair ("Apply These Changes"). */
+	virtual int32	ApplyChanges(const int32* rows, const int32* changes, int32 count, PMString& outMessage) = 0;
+
+	/** Restore from Copy for every pair ("Restore These from Copy"). */
+	virtual int32	RestoreChangesFromCopy(const int32* rows, const int32* changes, int32 count, PMString& outMessage) = 0;
+
+	/** Restore from Source (text) for every pair ("Restore These from Source"). */
+	virtual int32	RestoreTextsFromSource(const int32* rows, const int32* changes, int32 count, PMString& outMessage) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__
