@@ -25,6 +25,7 @@
 #include "KCMUIID.h"				// kKCMPanelWidgetID
 #include "KCMBoundaryID.h"		// kKCMDisplayName / KCMCompareMode
 #include "IKCMCompareFacade.h"	// GetCompareMode (asking the model across the boundary)
+#include "IKCMStoryEditsFacade.h"	// IsImportSource - "Word In" (the same question the list's heading asks)
 #include "KCMPanelTitle.h"
 
 namespace
@@ -93,7 +94,18 @@ void KCMPanelTitle::Update()
 	//   one place a reader looks to see which comparison is running.
 	switch (compare->GetCompareMode())
 	{
-		case kKCMModeStory:		title.Append("Story");		break;
+		case kKCMModeStory:
+		{
+			// ★"Word Import" WHILE A WORD IMPORT IS COMPARED (2026-10-24 night, the author: "during a Word import, make the
+			//   panel's title something like Word In, so that it shows" - then "isn't Word In odd English?": Word Import,
+			//   the plain name of what is going on). The Source is the copy with the .docx files' words (an import reads
+			//   .docx only). Asked as the list's heading asks it for "Proposed Edits" (KCMStorySection.cpp -
+			//   IKCMStoryEditsFacade::IsImportSource: armed, and the Source an import's copy), so the tab and the heading
+			//   cannot say two things; a Stop takes both back to "Story".
+			Utils<IKCMStoryEditsFacade> edits;
+			title.Append((edits && edits->IsImportSource()) ? "Word Import" : "Story");
+			break;
+		}
 		case kKCMModeResources:	title.Append("Resources");	break;
 		case kKCMModeTrack:		title.Append("Track");		break;
 		default:				title.Append("Pixel");		break;

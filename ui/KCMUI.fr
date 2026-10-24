@@ -520,7 +520,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	},
 
 	// The Δ cell of a "=" row Apply This Change put in (2026-10-24 evening, the author: "when a change goes in and shows
-	// =, make the = red"): a red "=", built exactly as the "!" cell above and for the same reason - a stock static text
+	// =, make the = red"): an amber "=", built exactly as the "!" cell above and for the same reason - a stock static text
 	// draws in one colour, the theme's.
 	Class
 	{
@@ -2436,7 +2436,7 @@ type KCMStoryChangeCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCM
 // GenericPanelWidget field list as the cell above - no text, no font, no alignment: the drawing
 // code decides all of it (KCMStoryBangView.cpp).
 type KCMStoryBangCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMStoryBangCellBoss) { };
-// The Δ cell of a "=" row Apply This Change put in: a red "=" drawn by hand (kKCMStoryAppliedSignCellBoss above, 2026-10-24).
+// The Δ cell of a "=" row Apply This Change put in: an amber "=" drawn by hand (kKCMStoryAppliedSignCellBoss above, 2026-10-24).
 type KCMStoryAppliedSignCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMStoryAppliedSignCellBoss) { };
 // The colour square of a Track AUTHOR row (2026-10-05, kKCMTrackChipCellBoss above).
 type KCMTrackChipCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMTrackChipCellBoss) { };
@@ -2929,10 +2929,10 @@ resource KCMStoryRowWidget(kKCMStoryChangeRowRsrcID + index_enUS)
 
 // ---------------------------------------------------------------------------------------
 // ★★A ONE-LINE "=" ROW APPLY THIS CHANGE PUT IN (2026-10-24 evening, the author: "when a change goes in and shows =,
-// make the = red"). The change row above, cell for cell and pixel for pixel, with the Δ cell a red "=" drawn by hand
+// make the = red"). The change row above, cell for cell and pixel for pixel, with the Δ cell an amber "=" drawn by hand
 // (KCMStoryAppliedSignCellWidget) - the "!" rows' road, since a stock static text draws in one colour.
 // ⚠Its own WidgetID (kKCMStoryAppliedRowWidgetID): the tree recycles by GetWidgetTypeForNode's answer, and a plain
-// change row handed this widget would show a red "=" it has no business showing (the "!" rows' reason).
+// change row handed this widget would show an amber "=" it has no business showing (the "!" rows' reason).
 // ---------------------------------------------------------------------------------------
 resource LocaleIndex (kKCMStoryAppliedRowRsrcID)
 {
@@ -2977,7 +2977,7 @@ resource KCMStoryRowWidget(kKCMStoryAppliedRowRsrcID + index_enUS)
 			}
 		),
 
-		// ★THE ONE DIFFERENCE: the Δ cell, a red "=" drawn by hand.
+		// ★THE ONE DIFFERENCE: the Δ cell, an amber "=" drawn by hand.
 		KCMStoryAppliedSignCellWidget
 		(
 			kKCMStoryRowKindWidgetID,		// WidgetId (the same column as every other row's Δ)

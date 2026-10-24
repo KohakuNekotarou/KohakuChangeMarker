@@ -20,7 +20,9 @@
 //
 //  ★AND THE "=" OF A ROW APPLY THIS CHANGE PUT IN (2026-10-24 evening, the import-as-Source trial - the author:
 //  "when a change goes in and shows =, make the = red"): the same cell with "=" for its mark (KCMStoryAppliedSignView
-//  below, kKCMStoryAppliedSignCellBoss), in the same red, for the same reasons.
+//  below, kKCMStoryAppliedSignCellBoss). ★★AMBER SINCE 2026-10-24 NIGHT (the author: "make the = of the Word import
+//  amber") - the plug-in's own colour (Kohaku); the "!" stays red: it is a warning, and an "=" is not one. Not one
+//  amber: KCMAppliedAmber says why the theme decides the shade.
 //
 //========================================================================================
 
@@ -50,11 +52,22 @@ const char16_t kKCMBangMark[] = u"!";
 /** The applied row's mark (2026-10-24 evening). */
 const char16_t kKCMAppliedMark[] = u"=";
 
-/** The one colour these cells ever draw in. Fixed on purpose - see the file comment. */
+/** The "!" cell's colour. Fixed on purpose - see the file comment. */
 const RealAGMColor kKCMBangRed(0.85, 0.10, 0.10);
 
-/** One mark, red, centred in `view`'s inner frame - the whole of what both cells draw. */
-void DrawRedMark(const DVControlView* view, dvaui::drawbot::Drawbot* drawbotP, const char16_t* utf16Mark)
+/** The "=" cell's colour - amber (2026-10-24 night), in the shade the theme can carry. ★ONE AMBER DOES NOT READ ON BOTH:
+	a true amber (1.0, 0.75, 0) against the Bright theme's grey 240 is about 1.5:1 (WCAG's contrast ratio - an "=" two
+	strokes thin all but vanishes), so the Bright theme gets a deep amber (about 3.5:1 there) and the darker themes the
+	true one - measured on their greys 83 and 50: 4.7:1 and 7.8:1 (work/note-scripts/2026-10-24-kcm-list/
+	verify-amber-title.ps1). Which theme is the theme's own threshold, dv_utils::IsUIInterfaceBright. */
+RealAGMColor KCMAppliedAmber()
+{
+	return dv_utils::IsUIInterfaceBright() ? RealAGMColor(0.70, 0.44, 0.00) : RealAGMColor(1.00, 0.75, 0.00);
+}
+
+/** One mark, in `colour`, centred in `view`'s inner frame - the whole of what both cells draw. */
+void DrawMark(const DVControlView* view, dvaui::drawbot::Drawbot* drawbotP, const char16_t* utf16Mark,
+			  const RealAGMColor& colour)
 {
 	if (drawbotP == nil)
 		return;
@@ -77,7 +90,7 @@ void DrawRedMark(const DVControlView* view, dvaui::drawbot::Drawbot* drawbotP, c
 	const PMRect frame = view->GetInnerContentFrame();
 	const PMReal width = KCMDrawnWidth(mark, fontInfo);
 	const PMReal x = frame.Left() + (frame.Width() - width) / PMReal(2.0);
-	KCMDrawInBox(drawbotP, PMRect(x, frame.Top(), frame.Right(), frame.Bottom()), mark, fontInfo, kKCMBangRed);
+	KCMDrawInBox(drawbotP, PMRect(x, frame.Top(), frame.Right(), frame.Bottom()), mark, fontInfo, colour);
 }
 
 }	// namespace
@@ -90,12 +103,13 @@ public:
 	KCMStoryBangView(IPMUnknown* boss) : inherited(boss) {}
 	virtual ~KCMStoryBangView() {}
 
-	virtual void DV_Draw(dvaui::drawbot::Drawbot* drawbotP) const { DrawRedMark(this, drawbotP, kKCMBangMark); }
+	virtual void DV_Draw(dvaui::drawbot::Drawbot* drawbotP) const { DrawMark(this, drawbotP, kKCMBangMark, kKCMBangRed); }
 };
 
 CREATE_PERSIST_PMINTERFACE(KCMStoryBangView, kKCMStoryBangViewImpl)
 
-/** Implements IControlView: draws a red "=" centred in the cell (2026-10-24 evening - a row Apply This Change put in). */
+/** Implements IControlView: draws an amber "=" centred in the cell (2026-10-24 evening - a row Apply This Change put in;
+	red until the same night). */
 class KCMStoryAppliedSignView : public DVControlView
 {
 	typedef DVControlView inherited;
@@ -103,7 +117,7 @@ public:
 	KCMStoryAppliedSignView(IPMUnknown* boss) : inherited(boss) {}
 	virtual ~KCMStoryAppliedSignView() {}
 
-	virtual void DV_Draw(dvaui::drawbot::Drawbot* drawbotP) const { DrawRedMark(this, drawbotP, kKCMAppliedMark); }
+	virtual void DV_Draw(dvaui::drawbot::Drawbot* drawbotP) const { DrawMark(this, drawbotP, kKCMAppliedMark, KCMAppliedAmber()); }
 };
 
 CREATE_PERSIST_PMINTERFACE(KCMStoryAppliedSignView, kKCMStoryAppliedSignViewImpl)
