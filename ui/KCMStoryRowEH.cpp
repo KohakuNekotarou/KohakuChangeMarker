@@ -77,6 +77,7 @@
 //  2026-09-21 with the last item that read it, the Resources mode's "Edit...". Nothing here has a
 //  second stash to write, because a change row no longer raises a menu to write one for.)
 #include "KCMStoryTree.h"			// KCMListShowsResources - which kind of row the double click landed on
+#include "KCMStoryTreeController.h"	// FollowModifiedClick / TakeKeyboard - rows selected together (2026-10-24 night)
 
 namespace
 {
@@ -203,6 +204,19 @@ bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 	// Let the stock handler finish the click first (selection, the end of a drag).
 	const bool16 result = TreeNodeEventHandler::LButtonUp(e);
 
+	// ★SHIFT / CTRL - ROWS SELECTED TOGETHER (2026-10-24 night - design 1-3, KFC's KFCResultNodeEH): the press has made
+	//   the selection (KCMStoryTreeController); the page follows it - the row ADDED landed on, as a click lands (the page
+	//   shows the row selected last), a row taken away leaving the page as it is. A story row so clicked is selected alone,
+	//   with no jump. The keyboard to the list after it, as after every click, so Shift+Down goes on from here.
+	if (!result && e != nil && (e->ShiftKeyDown() || e->CmdKeyDown()))
+	{
+		InterfacePtr<ITreeNodeIDData> clickedData(this, UseDefaultIID());
+		if (clickedData != nil)
+			KCMStoryFollowModifiedClick(clickedData->Get());
+		(void)KCMStoryTakeKeyboard();
+		return result;
+	}
+
 	int32 changeIndex = -1;
 	const int32 rowIndex = this->RowForClick(e, result, &changeIndex);
 	if (rowIndex < 0)
@@ -292,7 +306,11 @@ bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 	//   Implementations are created on first use and nothing else in this plug-in ever asks the tree
 	//   for its event handler, so without it the class is never constructed and the arrows keep the
 	//   stock behaviour ([[lazy-interface-instantiation]]; KBS measured exactly this).
-	if (treeEH != nil && keyBoard != nil)
+	// ★★THROUGH THE PANEL'S DOORS SINCE 2026-10-24 NIGHT (KCMStoryTakeKeyboard - KFC's TakeKeyboard; design 6-2, the
+	//   10-10 item): the click now SELECTS the change's words and makes the Target the active document, and a list holding
+	//   InDesign's keyboard inside a panel that is no longer the active one lost the next key to the document (KFC
+	//   measured it after a click on another window's title bar). IKeyBoard alone stays as the fallback.
+	if (!KCMStoryTakeKeyboard() && treeEH != nil && keyBoard != nil && keyBoard->GetKeyFocus() != treeEH)
 		keyBoard->AcquireKeyFocus(treeEH);
 
 	return result;

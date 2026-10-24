@@ -409,6 +409,9 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//   move the selection, and KCMStoryTreeEH makes the row they land on SHOW ITSELF, so the list
 	//   can be walked with the keyboard. ⚠It is only ever constructed because KCMStoryRowEH asks
 	//   the tree for it - naming it here is not enough (implementations are lazy).
+	// ★(2026-10-24 night - the list like KFC's) IID_ITREEVIEWCONTROLLER is this panel's own too: change rows selected
+	//   together (KCMStoryTreeController.cpp). PERSISTENT, as the stock one it replaces is - a non-persistent
+	//   implementation over an inherited persistent one fails as the resource is read.
 	Class
 	{
 		kKCMStoryTreeWidgetBoss,
@@ -417,6 +420,20 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			IID_ITREEVIEWHIERARCHYADAPTER, kKCMStoryTreeAdapterImpl,
 			IID_ITREEVIEWWIDGETMGR, kKCMStoryTreeWidgetMgrImpl,
 			IID_IEVENTHANDLER, kKCMStoryTreeEHImpl,
+			IID_ITREEVIEWCONTROLLER, kKCMStoryTreeControllerImpl,
+		}
+	},
+
+	// THE RETURN FILTER (2026-10-24 night - KFC's kKFCReturnFilterBoss): pushed on the application's IEventDispatcher - whose
+	// stack sees an event before anything below it - while the Story Edits list holds the keyboard, and takes a Return on
+	// the change rows selected there (KCMStoryTreeEH.cpp). A boss of its own, made once and released at shutdown, so its
+	// life is not a widget's.
+	Class
+	{
+		kKCMReturnFilterBoss,
+		kInvalidClass,
+		{
+			IID_IEVENTHANDLER, kKCMReturnFilterEHImpl,
 		}
 	},
 
@@ -1442,6 +1459,21 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMStoryRowApplyMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// ★THE STORY MODE'S RESTORE BY COPY (2026-10-24 night, design 1-8 - the author: "a function that puts the Source's text
+		//   back with a copy of the Source, in the right-click menu", "on the Story row too"). "Restore from Copy" is also on
+		//   the CHANGE row's subtree - the action of the trial's, the same row's "=" either way - under "Restore from Source"
+		//   (which a text row's menu now shows too, KCMChangeRowCanRestoreAttr); and the story row's item above the refresh.
+		//   Both subtrees are popped with their grey items dropped, so a row shows what it can do.
+		kKCMChangeRowRestoreCopyActionID,
+		kKCMChangeRowMenuName,
+		kKCMChangeRowRestoreCopyStoryMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMStoryRowRestoreAllActionID,
+		kKCMStoryRowMenuName,
+		kKCMStoryRowRestoreAllMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Apply All Changes" - every story the import filled - on the SECTION HEADING's own menu (2026-10-24 evening, the
 		// author: on a story row it read as that story's; "put it on the Proposed Edits heading"). It stood under the item
 		// above until then.
@@ -1964,6 +1996,17 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// greyed unless the Source is an import's copy (KCMStoryRowCanApplyAll)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// ★(2026-10-24 night, design 1-8) "Restore All Changes in This Story" on a STORY row of the Story mode - the menu's own
+		//   row, like "Apply All Changes in This Story", which is the import's.
+		kKCMActionComponentBoss,
+		kKCMStoryRowRestoreAllActionID,
+		kKCMStoryRowRestoreAllMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// greyed unless the row holds a text change of two open documents (KCMStoryRowCanRestoreAll)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
@@ -4049,9 +4092,10 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 						kKCMStoryRowHeight,			// fVThumbScrollIncrement
 						kKCMStoryRowHeight,			// fHScrollButtonIncrement (unused, no H bar)
 						kKCMStoryRowHeight,			// fHThumbScrollIncrement
-						1,								// Items selectable: 1 = single selection
-						kFalse,							// Allow children from multiple parents to be selected
-						kFalse,							// Allow discontiguous selection
+						2,								// Items selectable: 2 = multiple selection - change rows together (2026-10-24
+														// night; KCMStoryTreeController.cpp sets the same three again)
+						kTrue,							// Allow children from multiple parents: the change rows of two stories
+						kTrue,							// Allow discontiguous selection: Ctrl+click
 						{
 						},
 					),

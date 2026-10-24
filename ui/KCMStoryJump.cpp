@@ -26,7 +26,7 @@
 #include "ITextModel.h"
 #include "ITextSelectionSuite.h"	// SetTextSelection - the double click's whole point
 #include "ITextUtils.h"				// GetPageUIDRef - which page that frame is on
-#include "ITool.h"					// IsTextTool - is a text tool already active?
+#include "ITool.h"					// IsToolOfType(kTextSelectionTool) - is a text tool already active?
 #include "IToolBoxUtils.h"			// QueryActiveTool / QueryTool / SetActiveTool
 #include "DocumentPresFindCriteria.h"	// FindPresCriteria::accept_all - the SDK's own "any
 									//  presentation will do" predicate
@@ -314,8 +314,13 @@ bool16 SelectRangeIn(IDataBase* db, UID storyUID, TextIndex from, TextIndex to)
 	// ★The tool is the APPLICATION's, not a document's, so the second call of a two-document click
 	//   finds it already on and does nothing. Asking again costs one Query and keeps this function
 	//   true on its own.
+	// ★★IsToolOfType(kTextSelectionTool), NOT IsTextTool() (2026-10-24 night - the 10-03 item, KFC's PutTypeToolOn):
+	//   ITool.h:178-183 says IsTextTool "could be more accurately called DoesToolDeactivateTextEditor" - the Zoom,
+	//   Gradient and Hand tools answer kTrue to it too - and names this call for "traditional 'text' tools that select
+	//   text". KFC measured it: with IsTextTool, text came out selected under the Hand tool, in a window the user
+	//   cannot type into. (The sample asks IsTextTool; its header is what it does not read.)
 	InterfacePtr<ITool> activeTool(Utils<IToolBoxUtils>()->QueryActiveTool());
-	if (activeTool == nil || !activeTool->IsTextTool())
+	if (activeTool == nil || !activeTool->IsToolOfType(ITool::kTextSelectionTool))
 	{
 		InterfacePtr<ITool> iBeamTool(Utils<IToolBoxUtils>()->QueryTool(kIBeamToolBoss));
 		if (iBeamTool == nil)
@@ -772,6 +777,20 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   there; that file's Refresh hangs off a model NOTIFICATION, which can arrive while the
 	//   application is tearing down. Every other facade call in this file (IKCMCompareFacade,
 	//   IKCMStoryEditsFacade) is written the same way for the same reason.
+	//
+	// ★★★AND SINCE 2026-10-24 NIGHT THE TARGET'S WORDS ARE SELECTED WHERE THEY CAN BE (docs/superpowers/specs/
+	//   2026-10-24-kcm-list-like-kfc-design.md 1-1 / 1-2; the author: "in KFC, selecting a row selects the text too,
+	//   and that is pleasant to use - KCM too, the Story mode and Word / PDF", "the hidden and locked cases too - select
+	//   the way KFC does"). The 2026-08-20 call above is changed the way design section 4 says: its first two costs (the
+	//   reader's selection thrown away, the Type tool) are taken as KFC takes them - the selection IS the pointer. KFC's
+	//   rules, which are Find/Change's own (KFCJump.cpp, NotSelected): a LOCKED place is not selected and the flash
+	//   points at it instead; a HIDDEN one (its layer or itself) is selected with nothing of it showing, and said; one
+	//   on a HIDDEN SPREAD is neither shown nor selected, and said; an overset one is selected where its "+" is, and
+	//   said; an empty place (a deletion's) gets the caret. The Target is made the active document first - a selection
+	//   made in a document behind another is not the one the reader holds (ActivateDocument says how that was measured).
+	//   ★The Source window moves and flashes as before (design section 3, Q1); the Track mode is unchanged (Q2).
+	//   ★No flash on a selected place: an inversion over a selection cannot be read (KFC's JMP-29).
+	const char* landing = nil;		// what the message area says first - nil for a plain landing
 	if (isTrack)
 	{
 		// ★In the author's colour (2026-10-05); in the Source window only where the change's place in the copy is
@@ -781,8 +800,32 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 			track.fHasColour, track.fR, track.fG, track.fB);
 	}
 	else
-		Utils<IKCMStoryMarkFacade>()->ShowJumpFlash(db, row.fStoryUID, from, to,
+	{
+		const int32 reach = Utils<IKCMStoryEditsFacade>()->GetChangePlaceReach(rowIndex, changeIndex);
+		bool16 selected = kFalse;
+		if ((reach & IKCMStoryEditsFacade::kReachHiddenSpread) != 0)
+			landing = "That change is on a hidden spread - it cannot be shown or selected.";
+		else if ((reach & IKCMStoryEditsFacade::kReachLocked) != 0)
+			landing = "That change is locked - it cannot be selected.";
+		else
+		{
+			if (Utils<IKCMCompareFacade>()->GetActiveDocDB() != db)
+				ActivateDocument(db);
+			// A refusal is quiet, and the flash points instead: a story editor in front showing another story, a window
+			// that could not be had (SelectRangeIn says which).
+			selected = SelectRangeIn(db, row.fStoryUID, from, to);
+			if (selected && wentToOverset)
+				landing = "(Overset Text) The change is selected, past the end of its frames - nothing of it shows on the page.";
+			else if (selected && (reach & IKCMStoryEditsFacade::kReachHidden) != 0)
+				landing = "The change is selected, on a hidden layer - nothing of it shows.";
+		}
+		// The Target's flash only where nothing was selected and something can be shown; the Source's always (a nil
+		// document is skipped by the marker - KCMStoryMarker's AddFlashRange).
+		const bool16 targetFlash = (!selected && (reach & IKCMStoryEditsFacade::kReachHiddenSpread) == 0) ? kTrue : kFalse;
+		Utils<IKCMStoryMarkFacade>()->ShowJumpFlash(targetFlash ? db : nil, row.fStoryUID,
+													  targetFlash ? from : 0, targetFlash ? to : 0,
 													  change.fSourceStart, change.fSourceEnd);
+	}
 
 	// ***** AND THE OTHER SIDE OF THE EDIT GOES TO THE PANEL'S MESSAGE AREA. *****
 	//
@@ -945,10 +988,11 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 		//   words went IN here, and the way back is the row's Restore from Copy or Ctrl+Z - the take-back's sentence
 		//   below ("Redo puts Word's back") said the opposite of what had happened.
 		PMString whyNot;
+		const bool16 copyKept = Utils<IKCMStoryEditsFacade>()->GetChangeCopyState(rowIndex, changeIndex, whyNot);
 		if (Utils<IKCMStoryEditsFacade>()->IsImportSource())
 		{
 			taken.Append("Applied - the imported words stand here now; ");
-			if (Utils<IKCMStoryEditsFacade>()->GetChangeCopyState(rowIndex, changeIndex, whyNot))
+			if (copyKept)
 				taken.Append("right-click: Restore from Copy, or Ctrl+Z. ");
 			else
 			{
@@ -957,11 +1001,26 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 				taken.Append("). ");
 			}
 		}
+		// ★THE STORY MODE'S "=" (2026-10-24 night, design 1-8): Restore from Source put the Source's words here, and its
+		//   way back is the same as Apply's. (The old sentence - "Redo puts Word's back" - was the 2026-09 import's.)
+		else if (copyKept)
+			taken.Append("Restored - the Source's words stand here now; right-click: Restore from Copy, or Ctrl+Z. ");
 		else
-			taken.Append("Taken back - the Source's words stand here now; Redo puts Word's back. ");
+			taken.Append("Restored - the Source's words stand here now; Ctrl+Z takes it back. ");
 		taken.SetTranslatable(kFalse);
 		taken.Append(label);
 		shownLabel = taken;
+	}
+	// ★HOW THE LANDING LEFT THE TARGET COMES FIRST (2026-10-24 night - KFC's sentences, word for word but "change" for
+	//   "match"): the reader is looking here the instant after the press, and a press that selected nothing, or selected
+	//   what cannot be seen, deserves its answer then.
+	if (landing != nil)
+	{
+		PMString first(landing);
+		first.SetTranslatable(kFalse);
+		first.Append(" ");
+		first.Append(shownLabel);
+		shownLabel = first;
 	}
 	KCMSetStatusSegments(shownLabel, otherPre, otherMid, otherPost,
 						   otherRuby, change.fAttrKind, change.fOtherLayers);

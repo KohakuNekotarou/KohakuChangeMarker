@@ -1274,6 +1274,11 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		case kKCMChangeRowRestoreCopyActionID:
 			KCMChangeRowRestoreCopy();
 			break;
+		// ★"Restore All Changes in This Story" on a STORY row (2026-10-24 night, design 1-8): every text change of the story
+		//   made the Source's, by copy, as one undo step by the model.
+		case kKCMStoryRowRestoreAllActionID:
+			KCMStoryRowRestoreAll();
+			break;
 
 		// "Show as XML" on a DEFINITION row's context menu (2026-09-09). Shows the element the row
 		// names, from both documents, in a modal alert. ★Which row it was is noted the same way as
@@ -1901,6 +1906,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			// ★"Restore from Copy" (2026-10-24 evening) - the same test as its execution: a "=" row of Apply's holding a copy.
 			case kKCMChangeRowRestoreCopyActionID:
 				listToUpdate->SetNthActionState(i, KCMChangeRowCanRestoreCopy() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			// ★"Restore All Changes in This Story" (2026-10-24 night) - the same test as its execution.
+			case kKCMStoryRowRestoreAllActionID:
+				listToUpdate->SetNthActionState(i, KCMStoryRowCanRestoreAll() ? kEnabledAction : kDisabled_Unselected);
 				break;
 			case kKCMResourceRowXmlActionID:
 			{

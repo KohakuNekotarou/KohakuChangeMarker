@@ -692,6 +692,22 @@ bool16 KCMApplyPagesPanelTranslucency()
 	return KCMApplyFor(kKCMAlphaPages);
 }
 
+bool16 KCMPanelHasSystemKeyboard()
+{
+#ifdef WINDOWS
+	// KFC's measure (its trace beside the system's focus): while the list walked on the arrows the system's keyboard was
+	// the panel's window; after another window's title bar was clicked it was that window, with InDesign's keyboard still
+	// on the list - and the down arrow moved the page item selected in the layout.
+	const HWND focus = ::GetFocus();
+	const HWND palette = KCMQueryPaletteWindow(kKCMAlphaSelf);
+	if (focus == nullptr || palette == nullptr)
+		return kFalse;
+	return (::GetAncestor(focus, GA_ROOT) == ::GetAncestor(palette, GA_ROOT)) ? kTrue : kFalse;
+#else
+	return kTrue;
+#endif
+}
+
 bool16 KCMGetBookDialogTranslucent()
 {
 	return sTranslucentOn[kKCMAlphaBookDialog];

@@ -93,6 +93,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMChangeRowRestoreFromCopyMenuKey,	"Restore from Copy",			// (2026-10-24 evening - KFC's name for the same thing)
                 kKCMStoryRowApplyMenuKey,		"Apply All Changes in This Story",
                 kKCMStoryRowApplyAllMenuKey,	"Apply All Changes",
+                kKCMStoryRowRestoreAllMenuKey,	"Restore All Changes in This Story",	// (2026-10-24 night - the Story mode's, by copy)
                 kKCMResourceRowXmlMenuKey,		"Show as XML",
                 // (⛔Two "Edit..." strings stood here from 2026-09-13 and went on 2026-09-21 with
                 //  the items that carried them - one on a definition row's menu, one on an

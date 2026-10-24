@@ -36,14 +36,18 @@ class IDataBase;
 */
 bool16 KCMStoryJumpToRow(int32 rowIndex);
 
-/** Single click on a CHANGE row: go to that edit and light it up for a moment (2026-08-20).
+/** Single click on a CHANGE row: go to that edit and SELECT its words in the Target (since 2026-10-24 night).
 
-	★★★A MARK, NOT A SELECTION (user's call: "move to those characters and show a marker for a short
-	while; make the marker a global text adornment"). It selected the words until then,
-	which cost three things a pointer does not: whatever the reader had selected was thrown away, the
-	Type tool was forced on, and the words stayed selected long after they had been looked at.
-	⇒ The selection is still there for those who want it - it is what a DOUBLE click does now
-	(KCMStorySelectChange).
+	★★★A SELECTION AGAIN, THE WAY KFC MAKES ONE (docs/superpowers/specs/2026-10-24-kcm-list-like-kfc-design.md 1-1 /
+	1-2; the author: "in KFC, selecting a row selects the text too, and that is pleasant to use"). The Story mode and an
+	import's copy; the Track mode still marks. KFC's landing rules: locked - not selected, the flash points; hidden (its
+	layer or itself) - selected, said; on a hidden spread - neither, said; overset - selected at the "+", said; an
+	empty place - the caret. The Target is made the active document, and the Type tool goes on (IsToolOfType). The
+	Source window moves and flashes as before.
+	(⛔2026-08-20 to 2026-10-24: A MARK, NOT A SELECTION - the user's call then: "move to those characters and show a
+	marker for a short while". It cost the three things a selection costs - the reader's selection thrown away, the
+	Type tool forced on, the words left selected - which the KFC list showed to be the pointer worth having. The
+	paragraph below on the active tool was the mark's.)
 
 	★The mark is a global text adornment (KCMStoryMarker), so it is drawn ON the characters by the
 	text engine: it follows vertical text, rotated frames and threaded columns without this file
@@ -69,9 +73,8 @@ bool16 KCMStoryJumpToRow(int32 rowIndex);
 	the SPOT is not, and the spot - the gap the new words went into - is what the reader is looking
 	for. Change::fSourceStart carries it, with fSourceEnd equal to it (an empty range).
 
-	★THE ACTIVE TOOL IS LEFT ALONE, and so is the reader's own selection. Both used to change here,
-	because both are the price of making a text selection; a mark costs neither. (The tool DOES go on
-	for the double click below - there the reader has asked for the text itself.)
+	(⛔Until 2026-10-24 night: THE ACTIVE TOOL WAS LEFT ALONE, and so was the reader's own selection - a mark costs
+	neither. The Track mode, which still marks, keeps that.)
 
 	@param rowIndex which story row of KCMStoryList.
 	@param changeIndex which of that row's changes.

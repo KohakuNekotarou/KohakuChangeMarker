@@ -110,10 +110,13 @@ bool16 KCMChangeRowReject();
 //  that difference alone - holds for both.
 
 /** Whether "Restore from Source" may be offered: a comparison armed, a mode with story rows, and the change an
-	attribute change of a kind that is written back with both documents open (facade CanRestoreAttr). */
+	attribute change of a kind that is written back with both documents open (facade CanRestoreAttr) - or, since
+	2026-10-24 night (design 1-8), a TEXT change of the Story mode (facade CanRestoreTextFromSource), the right-clicked row
+	or any row selected with it. (The function's name is from the marks' day.) */
 bool16 KCMChangeRowCanRestoreAttr();
 
-/** Restores it from the Source document (one undo step) and says what on the panel's message line. */
+/** Restores it from the Source document (one undo step) and says what on the panel's message line - a text row's words
+	by copy, every text row selected with it in the same step. */
 bool16 KCMChangeRowRestoreAttr();
 
 // ---- "Redo from Word" on a TAKEN-BACK change row (2026-09-24, stage 2 C) ---------------------------------------
@@ -160,10 +163,19 @@ bool16 KCMStoryRowCanApplyAll();
 bool16 KCMStoryRowApplyAll();
 
 /** ★"Restore from Copy" (2026-10-24 evening, design section 11-3): a "=" change row Apply This Change put in that holds a
-	copy (facade CanRestoreChangeFromCopy). Never live together with Apply This Change on one row. */
+	copy (facade CanRestoreChangeFromCopy) - or, since 2026-10-24 night, one the Story mode's Restore from Source left.
+	Never live together with Apply This Change on one row.
+	★The rows it acts on (2026-10-24 night, design 1-5): every change row selected, when the row right-clicked is one of
+	several selected together - one undo step - else that row. So for Apply This Change and Restore from Source. */
 bool16 KCMChangeRowCanRestoreCopy();
 /** Pastes the document's own words back from that copy (one undo step) and says what on the panel's message line. */
 bool16 KCMChangeRowRestoreCopy();
+
+/** ★"Restore All Changes in This Story" (2026-10-24 night, design 1-8): a STORY row of the Story mode holding a text
+	change of two open documents (facade CanRestoreStoryFromSource). */
+bool16 KCMStoryRowCanRestoreAll();
+/** Every text change of that story made the Source's by copy (one undo step), and says what on the message line. */
+bool16 KCMStoryRowRestoreAll();
 
 #endif // __KCMStoryRefresh_h__
 

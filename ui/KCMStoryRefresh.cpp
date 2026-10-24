@@ -15,11 +15,14 @@
 #include "PMString.h"
 #include "Utils.h"
 
+#include <vector>
+
 // Project includes:
 #include "KCMUIID.h"
 #include "IKCMCompareFacade.h"		// IsArmed / GetCompareMode - both of the conditions on the item
 #include "IKCMStoryEditsFacade.h"		// the row itself, and RefreshRow - the work
 #include "KCMStoryRefresh.h"
+#include "KCMStoryTreeController.h"	// KCMStoryRowsOfRightClick - the rows selected together (2026-10-24 night)
 #include "KCMUIShared.h"				// KCMSetStatus - the panel's message line
 
 namespace
@@ -115,24 +118,53 @@ void SayApplied(const char* what, int32 done, const PMString& why)
 // model does the work; the same test is asked again at the moment of acting (KCMStoryRefreshMenuRow's reason).
 //----------------------------------------------------------------------------------------
 
+namespace
+{
+/** ★THE ROWS A CHANGE ROW'S ITEM ACTS ON (2026-10-24 night - design 1-5, KFC's RowsOfRightClick): every change row
+	selected, when the row right-clicked is one of several selected together; else that row. Of those, the ones `can`
+	says yes for - into two plain arrays, the way the facade's batches take them. */
+template <typename Can>
+void RowsOfMenuThatCan(Can can, std::vector<int32>& outRows, std::vector<int32>& outChanges)
+{
+	outRows.clear();
+	outChanges.clear();
+	std::vector<KCMStoryChangeRow> rows;
+	KCMStoryRowsOfRightClick(gMenuRow, gMenuChange, rows);
+	for (size_t k = 0; k < rows.size(); ++k)
+		if (can(rows[k].first, rows[k].second))
+		{
+			outRows.push_back(rows[k].first);
+			outChanges.push_back(rows[k].second);
+		}
+}
+}	// anonymous namespace
+
 bool16 KCMChangeRowCanApply()
 {
 	if (gMenuRow < 0 || gMenuChange < 0)
 		return kFalse;
 	if (!Utils<IKCMCompareFacade>()->IsArmed())
 		return kFalse;
-	return Utils<IKCMStoryEditsFacade>()->CanApplyChange(gMenuRow, gMenuChange);
+	// ★Live when any of the rows it acts on can go in (KFC's CanReplaceAny) - several selected, or the one right-clicked.
+	std::vector<int32> rows, changes;
+	RowsOfMenuThatCan([](int32 r, int32 c) { return Utils<IKCMStoryEditsFacade>()->CanApplyChange(r, c) != kFalse; },
+					  rows, changes);
+	return rows.empty() ? kFalse : kTrue;
 }
 
 bool16 KCMChangeRowApply()
 {
-	if (!KCMChangeRowCanApply())
+	std::vector<int32> rows, changes;
+	RowsOfMenuThatCan([](int32 r, int32 c) { return Utils<IKCMStoryEditsFacade>()->CanApplyChange(r, c) != kFalse; },
+					  rows, changes);
+	if (rows.empty() || !Utils<IKCMCompareFacade>()->IsArmed())
 	{
 		KCMSetStatus("apply: not a change of the imported text.");
 		return kFalse;
 	}
+	// ★ONE UNDO STEP FOR THE ROWS SELECTED TOGETHER (design 1-5) - one row alone is the single command (the facade says).
 	PMString why;
-	const int32 done = Utils<IKCMStoryEditsFacade>()->ApplyChange(gMenuRow, gMenuChange, why);
+	const int32 done = Utils<IKCMStoryEditsFacade>()->ApplyChanges(&rows[0], &changes[0], static_cast<int32>(rows.size()), why);
 	SayApplied("apply", done, why);
 	return (done > 0) ? kTrue : kFalse;
 }
@@ -185,19 +217,55 @@ bool16 KCMChangeRowCanRestoreCopy()
 		return kFalse;
 	if (!Utils<IKCMCompareFacade>()->IsArmed())
 		return kFalse;
-	return Utils<IKCMStoryEditsFacade>()->CanRestoreChangeFromCopy(gMenuRow, gMenuChange);
+	// ★Live when any of the rows it acts on holds its copy (several selected, or the one right-clicked) - Apply's "=" or,
+	//   since 2026-10-24 night, the Story mode's Restore from Source's.
+	std::vector<int32> rows, changes;
+	RowsOfMenuThatCan([](int32 r, int32 c) { return Utils<IKCMStoryEditsFacade>()->CanRestoreChangeFromCopy(r, c) != kFalse; },
+					  rows, changes);
+	return rows.empty() ? kFalse : kTrue;
 }
 
 bool16 KCMChangeRowRestoreCopy()
 {
-	if (!KCMChangeRowCanRestoreCopy())
+	std::vector<int32> rows, changes;
+	RowsOfMenuThatCan([](int32 r, int32 c) { return Utils<IKCMStoryEditsFacade>()->CanRestoreChangeFromCopy(r, c) != kFalse; },
+					  rows, changes);
+	if (rows.empty() || !Utils<IKCMCompareFacade>()->IsArmed())
 	{
-		KCMSetStatus("restore from copy: not a change Apply This Change put in with a copy kept.");
+		KCMSetStatus("restore from copy: not a change put in with a copy kept.");
 		return kFalse;
 	}
 	PMString why;
-	const int32 done = Utils<IKCMStoryEditsFacade>()->RestoreChangeFromCopy(gMenuRow, gMenuChange, why);
+	const int32 done = Utils<IKCMStoryEditsFacade>()->RestoreChangesFromCopy(&rows[0], &changes[0],
+																			   static_cast<int32>(rows.size()), why);
 	SayApplied("restore from copy", done, why);
+	return (done > 0) ? kTrue : kFalse;
+}
+
+//----------------------------------------------------------------------------------------
+// KCMStoryRowCanRestoreAll / KCMStoryRowRestoreAll - "Restore All Changes in This Story" on a STORY row of the Story mode
+// (2026-10-24 night, design 1-8 - the author: "on the Story row too").
+//----------------------------------------------------------------------------------------
+
+bool16 KCMStoryRowCanRestoreAll()
+{
+	if (gMenuRow < 0 || gMenuChange >= 0)
+		return kFalse;
+	if (!Utils<IKCMCompareFacade>()->IsArmed())
+		return kFalse;
+	return Utils<IKCMStoryEditsFacade>()->CanRestoreStoryFromSource(gMenuRow);
+}
+
+bool16 KCMStoryRowRestoreAll()
+{
+	if (!KCMStoryRowCanRestoreAll())
+	{
+		KCMSetStatus("restore: not a story with a text change of two open documents.");
+		return kFalse;
+	}
+	PMString why;
+	const int32 done = Utils<IKCMStoryEditsFacade>()->RestoreStoryFromSource(gMenuRow, why);
+	SayApplied("restore", done, why);
 	return (done > 0) ? kTrue : kFalse;
 }
 
@@ -254,7 +322,15 @@ bool16 KCMChangeRowCanRestoreAttr()
 		return kFalse;
 	// ★ASKED OF THE ROW'S KIND AND THE TWO DOCUMENTS, not of their contents (design 14-2): whether the characters
 	//   under the mark are the Source's is the action's to find out, and it says why when they are not.
-	return Utils<IKCMStoryEditsFacade>()->CanRestoreAttr(gMenuRow, gMenuChange);
+	// ★★AND A TEXT ROW'S TOO SINCE 2026-10-24 NIGHT (design 1-8 - the author: "in Story mode, put the Source's text back
+	//   with a copy of the Source"): live when the row right-clicked - or any of the rows selected with it - is a text
+	//   change the facade can copy over (CanRestoreTextFromSource, which reads no document either).
+	if (Utils<IKCMStoryEditsFacade>()->CanRestoreAttr(gMenuRow, gMenuChange))
+		return kTrue;
+	std::vector<int32> rows, changes;
+	RowsOfMenuThatCan([](int32 r, int32 c) { return Utils<IKCMStoryEditsFacade>()->CanRestoreTextFromSource(r, c) != kFalse; },
+					  rows, changes);
+	return rows.empty() ? kFalse : kTrue;
 }
 
 bool16 KCMChangeRowRestoreAttr()
@@ -263,8 +339,22 @@ bool16 KCMChangeRowRestoreAttr()
 	// been closed while the menu was up (KCMStoryRefreshMenuRow's reason).
 	if (!KCMChangeRowCanRestoreAttr())
 	{
-		KCMSetStatus("restore: not an attribute change of two open documents.");
+		KCMSetStatus("restore: not a change of two open documents that can be put back from the Source.");
 		return kFalse;
+	}
+	// ★A TEXT ROW (2026-10-24 night, design 1-8): the Source's words by copy - every text row selected with it, as ONE undo
+	//   step (RestoreTextsFromSource; one row alone is the single command). A mark row goes on below, as it always has.
+	if (!Utils<IKCMStoryEditsFacade>()->CanRestoreAttr(gMenuRow, gMenuChange))
+	{
+		std::vector<int32> rows, changes;
+		RowsOfMenuThatCan([](int32 r, int32 c) { return Utils<IKCMStoryEditsFacade>()->CanRestoreTextFromSource(r, c) != kFalse; },
+						  rows, changes);
+		PMString textWhy;
+		const int32 restored = rows.empty() ? -1
+			: Utils<IKCMStoryEditsFacade>()->RestoreTextsFromSource(&rows[0], &changes[0], static_cast<int32>(rows.size()),
+																	textWhy);
+		SayApplied("restore", restored, textWhy);
+		return (restored > 0) ? kTrue : kFalse;
 	}
 	PMString why;
 	const int32 done = Utils<IKCMStoryEditsFacade>()->RestoreAttr(gMenuRow, gMenuChange, why);

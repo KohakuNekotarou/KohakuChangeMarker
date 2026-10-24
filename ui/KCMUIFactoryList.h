@@ -77,6 +77,8 @@ REGISTER_PMINTERFACE(KCMStoryTreeAdapter, kKCMStoryTreeAdapterImpl)	// what the 
 REGISTER_PMINTERFACE(KCMStoryTreeWidgetMgr, kKCMStoryTreeWidgetMgrImpl)	// builds the rows and fills them (CTreeViewWidgetMgr subclass; KCMStoryTreeWidgetMgr.cpp)
 REGISTER_PMINTERFACE(KCMStoryRowEH, kKCMStoryRowEHImpl)	// row click = jump, double-click = select the whole story (KCMStoryRowEH.cpp)
 REGISTER_PMINTERFACE(KCMStoryTreeEH, kKCMStoryTreeEHImpl)	// up/down move between rows and show the one they land on (KCMStoryTreeEH.cpp)
+REGISTER_PMINTERFACE(KCMStoryTreeController, kKCMStoryTreeControllerImpl)	// ★PERSIST form. The list's selection: change rows selected together (CTreeViewController subclass; KCMStoryTreeController.cpp, 2026-10-24 night)
+REGISTER_PMINTERFACE(KCMReturnFilterEH, kKCMReturnFilterEHImpl)	// the Return filter on the application's dispatcher while the list holds the keyboard (CEventHandler subclass; KCMStoryTreeEH.cpp, 2026-10-24 night)
 // ★★★**THE STORY MARKER AND ITS EXPIRY TIMER ARE ON THE MODEL SIDE** (KCMFactoryList.h).
 //   Reason: **the UI’s File > Export > PDF runs on a background thread, and a kUIPlugIn is
 //   handed no drawing at all there** (measured, no warning), so while they lived here the
