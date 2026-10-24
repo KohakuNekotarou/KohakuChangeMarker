@@ -37,7 +37,10 @@
 #define __KCMTaskStartClone_h__
 
 #include "BaseType.h"
+#include "UIDRef.h"				// UID - the import's stories
 #include "KCMResourceParse.h"	// KCMResourceList - the definitions taken with the clone
+
+#include <vector>
 
 class IDataBase;
 class IDocumentList;
@@ -78,6 +81,25 @@ void	KCMTaskStartCloneSweep(IDocumentList* docList);
 /** The definitions read from the live document when the clone was taken - the Resources mode's older side, since a
 	clone cannot be exported (KCMResourceSnapshot.cpp). kFalse, with the reason ("source: ..."), when none were. */
 bool16	KCMTaskStartCloneResources(KCMResourceList& out, PMString& whyNot);
+
+// ---- ★THE IMPORT'S COPY (2026-10-24, the import-as-Source trial - docs/superpowers/specs/2026-10-24-kcm-import-as-
+// source-design.md). "Import Story Text..." takes a Task Start in memory, pours the files into IT (not into the
+// document), and the Story mode then shows what the document would become. The clone is the same one this file
+// holds - one owner, one life (let go as every Task Start in memory is) - with two facts more.
+
+/** KCMTakeTaskStartClone for an import: no definitions read (the import's Source is compared in the Story mode only),
+	and the Source line says `label` (followed by the time). Nothing starts and nothing is poured. */
+bool16	KCMTakeImportClone(const PMString& label, PMString& outWhyNot);
+
+/** The stories the import filled - the only ones the comparison lists. Nothing when no import's clone is held. */
+void	KCMSetImportCloneStories(const std::vector<UID>& stories);
+
+/** kTrue when db is the clone held now AND it was taken for an import. ★The one place that answers "is the Source the
+	imported text" - the Start's refusal, the list's filter, the facade's IsImportSource and Apply all ask it. */
+bool16	KCMIsImportClone(IDataBase* db);
+
+/** kTrue when the import's clone is held and the import filled `story`. */
+bool16	KCMImportCloneHasStory(UID story);
 
 #endif // __KCMTaskStartClone_h__
 

@@ -19,6 +19,9 @@
 #include <stdio.h>
 #include <time.h>
 
+#include <algorithm>
+#include <vector>
+
 // Project includes:
 #include "KCMTaskStartClone.h"
 #include "KCMTaskStartSave.h"		// KCMTaskDocumentDB / KCMCanTakeTaskStartCopy - which document: the one rule
@@ -39,6 +42,10 @@ IDataBase*		gSource = nil;		// the document it was taken from - compared, and as
 KCMResourceList	gDefs;				// that document's definitions at that moment (the Resources mode's older side)
 bool16			gHaveDefs = kFalse;
 PMString		gDefsWhyNot;		// why there are none, when there are none ("source: ...")
+// ★TAKEN FOR AN IMPORT (2026-10-24, the import-as-Source trial): the clone then holds what the files say, and the
+//   stories they filled are the only ones the comparison lists (KCMBuildStoryRowsByDiff).
+bool16			gForImport = kFalse;
+std::vector<UID>	gImportStories;
 
 /* "17:30:12" - the moment, for the panel's Source line. */
 void ClockNow(PMString& out)
@@ -80,6 +87,8 @@ void Forget(IDataBase* clone)
 	gDefs.clear();
 	gHaveDefs = kFalse;
 	gDefsWhyNot.Clear();
+	gForImport = kFalse;
+	gImportStories = std::vector<UID>();	// a fresh vector releases the storage (the shutdown rule)
 	KCMForgetChosenSourceIfDB(clone);
 	if (KCMIsExternalSource(clone))
 		KCMForgetExternalSource();
@@ -115,7 +124,47 @@ bool16 KCMCanTakeTaskStartClone()
 	return KCMCanTakeTaskStartCopy();
 }
 
+namespace {
+
+/* The Task Start in memory, taken. `forImport`: the import-as-Source trial's (2026-10-24) - no definitions are read
+   (nothing compares them: an import's Source is compared in the Story mode only) and `importLabel` is the Source
+   line; otherwise the Task Start the flyout takes. */
+bool16 TakeClone(bool16 forImport, const PMString& importLabel, PMString& outWhyNot);
+
+}	// namespace
+
 bool16 KCMTakeTaskStartClone(PMString& outWhyNot)
+{
+	return TakeClone(kFalse, PMString(), outWhyNot);
+}
+
+bool16 KCMTakeImportClone(const PMString& label, PMString& outWhyNot)
+{
+	return TakeClone(kTrue, label, outWhyNot);
+}
+
+void KCMSetImportCloneStories(const std::vector<UID>& stories)
+{
+	if (gClone == nil || !gForImport)
+		return;
+	gImportStories = stories;
+}
+
+bool16 KCMIsImportClone(IDataBase* db)
+{
+	return (db != nil && db == gClone && gForImport) ? kTrue : kFalse;
+}
+
+bool16 KCMImportCloneHasStory(UID story)
+{
+	if (gClone == nil || !gForImport)
+		return kFalse;
+	return (std::find(gImportStories.begin(), gImportStories.end(), story) != gImportStories.end()) ? kTrue : kFalse;
+}
+
+namespace {
+
+bool16 TakeClone(bool16 forImport, const PMString& importLabel, PMString& outWhyNot)
 {
 	outWhyNot.Clear();
 	outWhyNot.SetTranslatable(kFalse);
@@ -156,7 +205,9 @@ bool16 KCMTakeTaskStartClone(PMString& outWhyNot)
 	//    Task Start - the Resources mode says why it has nothing to compare against.
 	KCMResourceList defs;
 	PMString defsWhyNot;
-	const bool16 haveDefs = KCMReadResourceList(docDB, "source", defs, defsWhyNot);
+	const bool16 haveDefs = forImport ? kFalse : KCMReadResourceList(docDB, "source", defs, defsWhyNot);
+	if (forImport)
+		defsWhyNot = "source: the imported text is compared in the Story mode only";
 
 	// 4. STOP: the marks on screen were made from a pair that is about to change.
 	if (KCMIsArmed() && KCMArmedTargetDB() != nil)
@@ -173,19 +224,34 @@ bool16 KCMTakeTaskStartClone(PMString& outWhyNot)
 	gHaveDefs = haveDefs;
 	gDefsWhyNot = defsWhyNot;
 	gDefsWhyNot.SetTranslatable(kFalse);
+	gForImport = forImport;
+	gImportStories = std::vector<UID>();
 
-	PMString label("Task Start (in memory) - ");
-	PMString name, clock;
-	DocName(docDB, name);
+	PMString label;
+	PMString clock;
 	ClockNow(clock);
-	label.Append(name);
-	label.Append(" - ");
-	label.Append(clock);
+	if (forImport)
+	{
+		label = importLabel;
+		label.Append(" - ");
+		label.Append(clock);
+	}
+	else
+	{
+		label = "Task Start (in memory) - ";
+		PMString name;
+		DocName(docDB, name);
+		label.Append(name);
+		label.Append(" - ");
+		label.Append(clock);
+	}
 	label.SetTranslatable(kFalse);
 	KCMRegisterExternalSource(clone, label);
 	KCMChooseDBPair(docDB, clone);
 	return kTrue;
 }
+
+}	// namespace
 
 bool16 KCMIsTaskStartClone(IDataBase* db)
 {
