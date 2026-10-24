@@ -217,6 +217,18 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 		msg.Append(kKCMPdfPixelOnly);
 		msg.Append(")");
 	}
+	else if (markedDB != nil && markedSrcDB != nil && mode != kKCMModeStory
+			 && Utils<IKCMStoryEditsFacade>()->IsImportSource())
+	{
+		// ★AN IMPORT'S COPY IS COMPARED IN THE STORY MODE ONLY (2026-10-24, the import-as-Source trial - found on the
+		//   re-check the same day): Start refuses the other modes (KCMToggleStartStop), but a switch while Started
+		//   recompares right here without passing that test - and a Pixel or Resources comparison against the copy would
+		//   show what the files WOULD change as changes made. So it stops, in Start's own words, as a PDF pair does above.
+		compare->StopComparison();
+		msg.Append(" (stopped - ");
+		msg.Append(kKCMImportSourceModeRefusal);
+		msg.Append(")");
+	}
 	else if (markedDB != nil && markedSrcDB != nil)
 	{
 		PMString report;

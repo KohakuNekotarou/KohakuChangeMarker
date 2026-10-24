@@ -777,8 +777,10 @@ public:
 	virtual bool16	CanApplyChange(int32 nth, int32 which) = 0;
 
 	/** Puts that change into the document as ONE undo step - the words by the import's own road narrowed to their
-		paragraph (every change of that paragraph goes in with it), a mark by "Restore from Source", a table by "Match
-		the Source" - and compares the row again; what went in reads "=". @return the writes; 0 when nothing was left to
+		paragraph (every change of that paragraph goes in with it), a mark by "Restore from Source", a table by its redo
+		from the files' content (KCMRedoTableFromWord - "Match the Source" reads the Source's table back through INX,
+		which a copy kept in memory cannot give) - and compares the row again; what went in reads "=". A story whose
+		tables the files add or take away is refused: it goes in whole (ApplyStory). @return the writes; 0 when nothing was left to
 		do; -1 when nothing was written, and outMessage says why. */
 	virtual int32	ApplyChange(int32 nth, int32 which, PMString& outMessage) = 0;
 
