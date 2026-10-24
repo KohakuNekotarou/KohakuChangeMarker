@@ -131,6 +131,32 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& outMessage,
 						bool16& outCancelled);
 
+/** How a pour is made (2026-10-24, the import-as-Source trial - docs/superpowers/specs/2026-10-24-kcm-import-as-source-
+	design.md): the same walk, the same comparison and the same writes, aimed at a database and signed or not.
+	★KCMPourStoryText is this with the values every import had until then - signed, refusals noted, Word's content
+	  kept for the poured document, every story of the set, the step named "Import Story Text". */
+struct KCMPourOptions
+{
+	bool16				fSigned;		// each story written under KCMImportAuthor + KCMStoryTrackingOn (the change history)
+	bool16				fNoteRefusals;	// what could not go in becomes the "!" rows (KCMImportRefusals)
+	IDataBase*			fKeepFor;		// Word's content kept per story (KCMWordKeepPut) under this database; nil = none
+	std::vector<UID>	fOnly;			// empty = every story of the set; otherwise these alone
+	PMString			fStepName;		// the undo step's name
+	PMString			fBarTitle;		// the progress bar's title
+
+	KCMPourOptions() : fSigned(kTrue), fNoteRefusals(kTrue), fKeepFor(nil),
+					   fStepName("Import Story Text"), fBarTitle("Putting the edited text into the document...")
+	{
+		fStepName.SetTranslatable(kFalse);
+		fBarTitle.SetTranslatable(kFalse);
+	}
+};
+
+/** KCMPourStoryText, made the way `options` says. ⚠fKeepFor is NOT defaulted to `db`: the caller names it, so that
+	a pour into a copy keeps Word's content under the document the copy was taken from. */
+bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCMPourOptions& options,
+							PMString& outMessage, bool16& outCancelled);
+
 /** "Import Story Text..." from end to end (2026-09-19): read the chosen files, take a Task Start,
     pour the words into the document, and start the Story comparison against that Task Start.
 

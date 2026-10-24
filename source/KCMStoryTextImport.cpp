@@ -89,6 +89,21 @@ void NoteHeldBack(UID story, const char* kind, const PMString& whereAndWhy)
 	sRefusals.back().fHeldBack = kTrue;
 }
 
+/** The two above when `on` - a pour that notes nothing (an Apply, 2026-10-24: its "!" rows were noted when the import
+	read the files) still counts what it could not put in. */
+void NoteRefusalIf(bool16 on, UID story, const char* kind, const PMString& whereAndWhy, bool16 wholeStory = kFalse,
+				   const PMString& fileName = PMString())
+{
+	if (on)
+		NoteRefusal(story, kind, whereAndWhy, wholeStory, fileName);
+}
+
+void NoteHeldBackIf(bool16 on, UID story, const char* kind, const PMString& whereAndWhy)
+{
+	if (on)
+		NoteHeldBack(story, kind, whereAndWhy);
+}
+
 /** A PMString as wide characters. (KCMReport.cpp has the same four lines inside its WidePath;
 	KCMStoryTextExport.cpp had them too until 2026-09-27, when its paths became IDFiles joined with
 	FileUtils::AppendPath. What this one is used for is M18's to judge.) */
@@ -575,6 +590,14 @@ static const bool16 kReshapeTablesOnImport = kTrue;
 bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& outMessage,
 						bool16& outCancelled)
 {
+	KCMPourOptions options;
+	options.fKeepFor = db;
+	return KCMPourStoryTextWith(db, set, options, outMessage, outCancelled);
+}
+
+bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCMPourOptions& options,
+							PMString& outMessage, bool16& outCancelled)
+{
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
 	outCancelled = kFalse;
@@ -607,7 +630,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	//   document as it was. (Until 2026-09-19 a plain sequence poured into the windowless copy.)
 	IAbortableCmdSeq* sequence = CmdUtils::BeginAbortableCmdSeq("KCMPourStoryText");
 	if (sequence != nil)
-		sequence->SetName(PMString("Import Story Text"));
+		sequence->SetName(options.fStepName);
 
 	// ★★THE CHANGES ARE SIGNED "KohakuChangeMarker" (2026-09-24, the user's decision - design 11-1 item 2), AND THE
 	//   NAME IS SWITCHED INSIDE THIS STEP (fixed the same day, found on re-check): switched around the whole pour
@@ -616,7 +639,9 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	//   in. Inside the sequence the switch, the words and the switch back are ONE step: undo and redo take all of
 	//   it, and a cancel's abort takes back both switches. ⚠Put back BEFORE the sequence ends or aborts (below),
 	//   so that the switch back is inside it too.
-	K2::scoped_ptr<KCMImportAuthor> author(new KCMImportAuthor());
+	// ★UNSIGNED, NOTHING IS SWITCHED (2026-10-24): a pour into the import's copy writes no change history, so there
+	//   is no author to sign it - and the reader's own name is never touched for it.
+	K2::scoped_ptr<KCMImportAuthor> author(options.fSigned ? new KCMImportAuthor() : nil);
 
 	// ★The import's bar when there is one (a slice of it), a bar of its own otherwise - the same
 	//   shape as the reading loop. Stepped per story; asked for a cancel BETWEEN two stories only,
@@ -632,9 +657,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	for (int32 s = 0; s < count; ++s)
 		storyRefs.push_back(stories->GetNthUserAccessibleStoryUID(s));
 
-	PMString barTitle("Putting the edited text into the document...");
-	barTitle.SetTranslatable(kFalse);
-	KCMProgressStepper progress(barTitle, count);
+	KCMProgressStepper progress(options.fBarTitle, count);
 
 	for (int32 s = 0; s < count; ++s)
 	{
@@ -644,7 +667,12 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 			break;
 		}
 		{
-			PMString step("Putting the edited text into the document (");
+			// The bar's title with its "..." taken off: "Putting the edited text into the document (3 / 9)".
+			PMString step(options.fBarTitle);
+			const int32 ellipsis = step.IndexOfString(PMString("..."));
+			if (ellipsis > 0)
+				step.Truncate(step.CharCount() - ellipsis);
+			step.Append(" (");
 			step.AppendNumber(s + 1);
 			step.Append(" / ");
 			step.AppendNumber(count);
@@ -677,6 +705,9 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 		}
 		if (!found)
 			continue;					// a story nobody exported, or exported and then deleted
+		// ★ONLY THESE (2026-10-24): "Apply All Changes in This Story" pours one story of what the import read.
+		if (!options.fOnly.empty() && std::find(options.fOnly.begin(), options.fOnly.end(), original) == options.fOnly.end())
+			continue;
 
 		matched[which] = kTrue;
 
@@ -686,7 +717,9 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 		//   day). Tracking is on for this story from here to the end of this loop's body - every
 		//   `continue` included - and back to the reader's own setting after; being inside the sequence,
 		//   Ctrl+Z takes the switch back along with the words.
-		KCMStoryTrackingOn tracking(storyRef);
+		// ★UNSIGNED, UNTRACKED (2026-10-24): the import's copy keeps no change history - what it holds is what the file
+		//   says, and a tracked deletion would stay in its text model for the comparison to read.
+		K2::scoped_ptr<KCMStoryTrackingOn> tracking(options.fSigned ? new KCMStoryTrackingOn(storyRef) : nil);
 
 		// ★★★**THE DOCUMENT AGAINST WORD, AND THE DOCUMENT MADE WORD'S** (2026-09-23, the user's rule: "Word
 		//   is the one that counts" - and "the processing that is simplest and least likely to be wrong").
@@ -703,7 +736,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 			why.SetTranslatable(kFalse);
 			if (firstRefusal.IsEmpty())
 				firstRefusal = why;
-			NoteRefusal(original, "Story", why, kTrue);
+			NoteRefusalIf(options.fNoteRefusals, original, "Story", why, kTrue);
 			continue;
 		}
 		KCMStorySync::Plan plan;
@@ -727,7 +760,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 				tableEdits += shape.fTableEdits;
 				for (size_t k = 0; k < shape.fNotes.size(); ++k)
 				{
-					NoteRefusal(original, shape.fNotes[k].fKind, shape.fNotes[k].fWhy);
+					NoteRefusalIf(options.fNoteRefusals, original, shape.fNotes[k].fKind, shape.fNotes[k].fWhy);
 					if (firstRefusal.IsEmpty())
 						firstRefusal = shape.fNotes[k].fWhy;
 				}
@@ -754,7 +787,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 			why.SetTranslatable(kFalse);
 			if (firstRefusal.IsEmpty())
 				firstRefusal = why;
-			NoteRefusal(original, "Story", why, kTrue);
+			NoteRefusalIf(options.fNoteRefusals, original, "Story", why, kTrue);
 			shapeFailed = kTrue;
 			break;
 		}
@@ -768,7 +801,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 			why.SetTranslatable(kFalse);
 			if (firstRefusal.IsEmpty())
 				firstRefusal = why;
-			NoteRefusal(original, "Story", why, kTrue);
+			NoteRefusalIf(options.fNoteRefusals, original, "Story", why, kTrue);
 			continue;
 		}
 		KCMSyncResult result;
@@ -780,10 +813,10 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 			{
 				// ⚠A RESCUE MUST NOT TAKE firstRefusal: the status line's one reason is for what failed
 				++heldBack;
-				NoteHeldBack(original, note.fKind, note.fWhy);
+				NoteHeldBackIf(options.fNoteRefusals, original, note.fKind, note.fWhy);
 				continue;
 			}
-			NoteRefusal(original, note.fKind, note.fWhy, note.fWholeStory);
+			NoteRefusalIf(options.fNoteRefusals, original, note.fKind, note.fWhy, note.fWholeStory);
 			if (firstRefusal.IsEmpty())
 				firstRefusal = note.fWhy;
 		}
@@ -811,7 +844,7 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 				why.SetTranslatable(kFalse);
 				if (firstRefusal.IsEmpty())
 					firstRefusal = why;
-				NoteRefusal(original, "Table", why, kTrue);
+				NoteRefusalIf(options.fNoteRefusals, original, "Table", why, kTrue);
 			}
 		}
 
@@ -831,7 +864,9 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 		author.reset();		// the name back, inside the sequence - the abort then takes back both switches
 		if (sequence != nil)
 			CmdUtils::AbortCommandSequence(sequence);
-		KCMClearImportRefusals();
+		// ⚠Only a pour that notes the "!" rows drops them: an Apply's cancel leaves the import's own rows standing.
+		if (options.fNoteRefusals)
+			KCMClearImportRefusals();
 		outMessage = "cancelled";
 		outMessage.SetTranslatable(kFalse);
 		return kFalse;
@@ -845,9 +880,12 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	{
 		if (matched[k])
 			continue;
+		// A file outside `fOnly` was not asked about (2026-10-24).
+		if (!options.fOnly.empty() && std::find(options.fOnly.begin(), options.fOnly.end(), set.fUids[k]) == options.fOnly.end())
+			continue;
 		++unmatched;
-		NoteRefusal(set.fUids[k], "File", PMString("no story with this ID in the document"), kTrue,
-					(k < set.fFileNames.size()) ? set.fFileNames[k] : PMString());
+		NoteRefusalIf(options.fNoteRefusals, set.fUids[k], "File", PMString("no story with this ID in the document"), kTrue,
+					  (k < set.fFileNames.size()) ? set.fFileNames[k] : PMString());
 	}
 
 	author.reset();			// the name back, inside the sequence (see where it was switched)
@@ -857,9 +895,14 @@ bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& out
 	// ★WORD'S CONTENT IS KEPT PER STORY for "Redo from Word" (2026-09-24, stage 2 C - design 15-1-6): every story
 	//   this pour paired, whether or not anything went in - a story held whole has nothing to redo, and the redo's
 	//   own plan says so. Replaces what the last import kept for the same story.
-	for (size_t k = 0; k < matched.size(); ++k)
-		if (matched[k] && k < set.fStories.size())
-			KCMWordKeepPut(db, set.fUids[k], set.fStories[k]);
+	// ★UNDER THE DATABASE THE CALLER NAMES (2026-10-24): a pour into the import's copy keeps it for the DOCUMENT the copy
+	//   was taken from - that is the database Apply writes into and asks.
+	if (options.fKeepFor != nil)
+	{
+		for (size_t k = 0; k < matched.size(); ++k)
+			if (matched[k] && k < set.fStories.size())
+				KCMWordKeepPut(options.fKeepFor, set.fUids[k], set.fStories[k]);
+	}
 
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
