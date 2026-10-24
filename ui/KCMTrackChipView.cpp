@@ -20,7 +20,7 @@
 #include "AGMGraphicsContext.h"
 #include "AutoGSave.h"
 #include "DVControlView.h"
-#include "DrawStringUtils.h"		// StringUtils::PMDrawStringRGB / PMEllipsizeString
+#include "DrawStringUtils.h"		// StringUtils::PMDrawStringRGB (ellipsizing: KCMEllipsize, KCMPanelTextDraw.h)
 #include "ISession.h"				// GetExecutionContextSession
 #include "ShuksanID.h"			// kPaletteWindowSystemScriptFontId
 #include "Utils.h"
@@ -87,7 +87,7 @@ void KCMTrackChipView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	const PMReal room = frame.Right() - textX;
 	if (room <= PMReal(0.0))
 		return;
-	const PMString shown = StringUtils::PMEllipsizeString(&gc, room, name, fontInfo, kEllipsizeEnd, nil, kKCMDontConvertAmpersand);
+	const PMString shown = KCMEllipsize(&gc, room, name, fontInfo, kEllipsizeEnd);
 	const PMReal y = Utils<IWidgetUtils>()->GetViewYPosition(&gc, fontInfo, frame.Height());
 	StringUtils::PMDrawStringRGB(&gc, PMPoint(textX, y), shown, fontInfo, fg, kKCMDontConvertAmpersand, kKCMNoUnderline);
 }

@@ -46,7 +46,7 @@
 #include "AutoGSave.h"
 #include "CPMUnknown.h"
 #include "DVControlView.h"
-#include "DrawStringUtils.h"	// StringUtils::PMDrawStringRGB / PMMeasureString / PMEllipsizeString
+#include "DrawStringUtils.h"	// StringUtils::PMDrawStringRGB / PMMeasureString (ellipsizing: KCMEllipsize, KCMPanelTextDraw.h)
 #include "ISession.h"			// GetExecutionContextSession
 #include "IWidgetUtils.h"		// GetViewYPosition
 #include "ShuksanID.h"			// kPaletteWindowSystemScriptFontId
@@ -296,8 +296,8 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		if (preW + coreW + postW > avail)
 		{
 			const PMReal rem = (avail > coreW) ? (avail - coreW) : PMReal(0.0);
-			preShown = pre.IsEmpty() ? pre : StringUtils::PMEllipsizeString(&gc, rem / PMReal(2.0), pre, fontInfo, kEllipsizeBeginning, nil, kKCMDontConvertAmpersand);
-			postShown = post.IsEmpty() ? post : StringUtils::PMEllipsizeString(&gc, rem / PMReal(2.0), post, fontInfo, kEllipsizeEnd, nil, kKCMDontConvertAmpersand);
+			preShown = pre.IsEmpty() ? pre : KCMEllipsize(&gc, rem / PMReal(2.0), pre, fontInfo, kEllipsizeBeginning);
+			postShown = post.IsEmpty() ? post : KCMEllipsize(&gc, rem / PMReal(2.0), post, fontInfo, kEllipsizeEnd);
 		}
 		PMReal tx = leftEdge;
 		auto run = [&](const PMString& s, const RealAGMColor& c)
@@ -441,7 +441,7 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		// The change alone overflows the cell: ellipsize the change itself (tail) and drop the
 		// context. Nothing is lost that the reader could have used - the context is only there to
 		// place a change that is too short to place itself.
-		const PMString m = StringUtils::PMEllipsizeString(&gc, availWidth, mid, fontInfo, kEllipsizeEnd, nil, kKCMDontConvertAmpersand);
+		const PMString m = KCMEllipsize(&gc, availWidth, mid, fontInfo, kEllipsizeEnd);
 		drawChange(m);
 	}
 	else
@@ -452,13 +452,13 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		const PMReal rem = availWidth - midW;
 		PMString preCut = pre;
 		if (!pre.IsEmpty())
-			preCut = StringUtils::PMEllipsizeString(&gc, rem, pre, fontInfo, kEllipsizeBeginning, nil, kKCMDontConvertAmpersand);
+			preCut = KCMEllipsize(&gc, rem, pre, fontInfo, kEllipsizeBeginning);
 		const PMReal preCutW = preCut.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, preCut, fontInfo, kKCMDontConvertAmpersand).X();
 
 		const PMReal postBudget = rem - preCutW;
 		PMString postCut;
 		if (!post.IsEmpty() && postBudget > PMReal(0.0))
-			postCut = StringUtils::PMEllipsizeString(&gc, postBudget, post, fontInfo, kEllipsizeEnd, nil, kKCMDontConvertAmpersand);
+			postCut = KCMEllipsize(&gc, postBudget, post, fontInfo, kEllipsizeEnd);
 
 		drawRun(preCut, kContextColor);
 		drawChange(mid);
@@ -514,7 +514,7 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 			if (room <= PMReal(0.0))
 				return;
 			// Cut the TAIL: a reading is read from its head, and the head is what identifies it.
-			shown = StringUtils::PMEllipsizeString(&gc, room, ruby, fontInfo, kEllipsizeEnd, nil, kKCMDontConvertAmpersand);
+			shown = KCMEllipsize(&gc, room, ruby, fontInfo, kEllipsizeEnd);
 		}
 
 		// ★FULL STRENGTH, like the changed characters below it - the reading IS the change on

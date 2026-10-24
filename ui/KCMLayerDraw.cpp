@@ -14,7 +14,7 @@
 #include "IGraphicsPort.h"
 
 // General includes:
-#include "DrawStringUtils.h"	// StringUtils::PMDrawStringRGB / PMMeasureString / PMEllipsizeString
+#include "DrawStringUtils.h"	// StringUtils::PMDrawStringRGB / PMMeasureString (ellipsizing: KCMEllipsize, KCMPanelTextDraw.h)
 #include "WidgetDefs.h"			// kEllipsizeBeginning / kEllipsizeEnd
 
 #include <vector>
@@ -99,12 +99,12 @@ void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const Interface
 		{
 			const PMReal rem = avail - barW;
 			pre = (rem > PMReal(0.0) && !pre.IsEmpty())
-				? StringUtils::PMEllipsizeString(&gc, rem, pre, font, kEllipsizeBeginning, nil, kKCMDontConvertAmpersand)
+				? KCMEllipsize(&gc, rem, pre, font, kEllipsizeBeginning)
 				: PMString();
 			preW = Width(gc, font, pre);
 			const PMReal postBudget = rem - preW;
 			post = (postBudget > PMReal(0.0) && !post.IsEmpty())
-				? StringUtils::PMEllipsizeString(&gc, postBudget, post, font, kEllipsizeEnd, nil, kKCMDontConvertAmpersand)
+				? KCMEllipsize(&gc, postBudget, post, font, kEllipsizeEnd)
 				: PMString();
 			postW = Width(gc, font, post);
 		}
@@ -181,7 +181,7 @@ void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const Interface
 		if (beforeW > rem)
 		{
 			before = (rem > PMReal(0.0))
-				? StringUtils::PMEllipsizeString(&gc, rem, before, font, kEllipsizeBeginning, nil, kKCMDontConvertAmpersand)
+				? KCMEllipsize(&gc, rem, before, font, kEllipsizeBeginning)
 				: PMString();
 			beforeW = Width(gc, font, before);
 		}
@@ -190,7 +190,7 @@ void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const Interface
 		if (afterW > afterBudget)
 		{
 			after = (afterBudget > PMReal(0.0))
-				? StringUtils::PMEllipsizeString(&gc, afterBudget, after, font, kEllipsizeEnd, nil, kKCMDontConvertAmpersand)
+				? KCMEllipsize(&gc, afterBudget, after, font, kEllipsizeEnd)
 				: PMString();
 			afterW = Width(gc, font, after);
 		}
@@ -242,7 +242,7 @@ void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const Interface
 				if (room <= PMReal(0.0))
 					continue;
 				// Cut the TAIL: the words at the head are the ones nearest the bar below.
-				shown = StringUtils::PMEllipsizeString(&gc, room, seg.fText, font, kEllipsizeEnd, nil, kKCMDontConvertAmpersand);
+				shown = KCMEllipsize(&gc, room, seg.fText, font, kEllipsizeEnd);
 				shownW = Width(gc, font, shown);
 			}
 			drawText(shown, x, 1, middleColour);
@@ -290,7 +290,7 @@ void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const Interface
 			const PMReal room = right - px;
 			if (room <= PMReal(0.0))
 				break;
-			shown = StringUtils::PMEllipsizeString(&gc, room, piece, font, kEllipsizeEnd, nil, kKCMDontConvertAmpersand);
+			shown = KCMEllipsize(&gc, room, piece, font, kEllipsizeEnd);
 			pieceW = Width(gc, font, shown);
 		}
 		drawText(shown, px, 2, isChange ? canvas.fStrong : canvas.fFaded);

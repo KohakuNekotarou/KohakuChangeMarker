@@ -33,8 +33,10 @@
 #include "IInterfaceColors.h"	// RealAGMColor
 
 // General includes:
+#include "DrawStringUtils.h"	// StringUtils::PMEllipsizeString / PMMeasureString - KCMEllipsize
 #include "PMReal.h"
 #include "PMString.h"			// the caret's placeholder
+#include "WidgetDefs.h"			// EllipsizeStyle
 
 /** The two flags every draw and every measure passes, spelled out rather than left to a default.
 	★★**THE DEFAULTS IN DrawStringUtils.h DISAGREE**: the draw calls default to kFalse, the measure
@@ -45,6 +47,41 @@
 	  set the same flag (KCMUI.fr). */
 const bool16 kKCMDontConvertAmpersand = kFalse;
 const bool16 kKCMNoUnderline = kFalse;
+
+/** StringUtils::PMEllipsizeString, never handed a width at which it does not come back (2026-10-24). Every KCM
+	ellipsize goes through here.
+
+	★★★THE SDK CALL NEVER RETURNS for a width a little wider than "...". Its loop (DV_WidgetBin.dll 21.0, read from
+	  the disassembly): if the string does not fit, room = width - the width of "..."; cut characters and measure
+	  again WHILE what is left is wider than room. Cut down to nothing, what is left is the empty string - which
+	  measures 1, not 0, in the palette font. So for a room above 0 and below that 1, nothing can ever be wide
+	  enough to stop it. Measured the same day: "" = 1, "..." = 15, and a capped copy of the loop swept over two
+	  row strings in 0.25 px steps never ended at 15.25 - 15.75 and nowhere else. It froze InDesign in the
+	  import-as-Source trial: the Track look (KCMStoryCellView.cpp) handed it 15.5 for a row's context - reproduced
+	  by narrowing the panel to 377 px, a pixel at a time. Any width worked out by subtraction can land there.
+	⇒ Below "..." plus the empty string (plus half a pixel) nothing but the dots can fit anyway: the answer is the
+	  dots when they fit and nothing when they do not - what the SDK itself answers on either side of the band.
+	Measured the way the SDK measures inside (the context-free PMMeasureString, convertAmpersand on for the dots and
+	the empty string), so the band tested is the one its loop meets. @see memory pmellipsizestring-dead-band */
+inline PMString KCMEllipsize(IGraphicsContext* gc, const PMReal& width, const PMString& str,
+							 const InterfaceFontInfo& fontInfo, EllipsizeStyle where)
+{
+	if (str.IsEmpty() || StringUtils::PMMeasureString(str, fontInfo, kKCMDontConvertAmpersand).X() <= width)
+		return str;
+	PMString dots("...", PMString::kDontTranslateDuringCall);
+	dots.Translate();
+	const PMReal dotsW = StringUtils::PMMeasureString(dots, fontInfo, kTrue).X();
+	const PMReal emptyW = StringUtils::PMMeasureString(PMString(), fontInfo, kTrue).X();
+	if (width < dotsW + emptyW + PMReal(0.5))
+	{
+		PMString shown;
+		if (width >= dotsW)
+			shown = dots;
+		shown.SetTranslatable(kFalse);
+		return shown;
+	}
+	return StringUtils::PMEllipsizeString(gc, width, str, fontInfo, where, nil, kKCMDontConvertAmpersand);
+}
 
 /** How much of the theme's text colour the CONTEXT keeps. 0 = the background itself (invisible),
 	1 = the full text colour (no fade at all).

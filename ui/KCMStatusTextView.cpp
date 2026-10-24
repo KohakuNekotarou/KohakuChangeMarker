@@ -848,8 +848,7 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		PMString shown = ruby;
 		const PMReal room = frame.Right() - rubyX;
 		if (rubyW > room && room > PMReal(0.0))
-			shown = StringUtils::PMEllipsizeString(&gc, room, ruby, fontInfo, kEllipsizeEnd, nil,
-												   kKCMDontConvertAmpersand);
+			shown = KCMEllipsize(&gc, room, ruby, fontInfo, kEllipsizeEnd);
 
 		if (room > PMReal(0.0))
 		{
