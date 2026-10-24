@@ -36,28 +36,23 @@
 
 // Interface includes:
 #include "IControlView.h"		// IsHilited - is this cell's row the selected one?
-#include "IGraphicsPort.h"
 #include "IInterfaceColors.h"	// RealAGMColor, InterfaceColor indices
 #include "IInterfaceFonts.h"	// the palette window font
 #include "IWidgetParent.h"		// QueryParentFor - this cell -> the row widget that carries the hilite
 
 // General includes:
-#include "AGMGraphicsContext.h"
-#include "AutoGSave.h"
 #include "CPMUnknown.h"
-#include "DVControlView.h"
-#include "DrawStringUtils.h"	// StringUtils::PMDrawStringRGB / PMMeasureString (ellipsizing: KCMEllipsize, KCMPanelTextDraw.h)
+#include "DVAPublicIncludes.h"	// dvaui::drawbot - what DV_Draw is handed
+#include "DVPublicUtilities.h"	// dv_utils::DVFillRect - the Track look's strike
 #include "ISession.h"			// GetExecutionContextSession
-#include "IWidgetUtils.h"		// GetViewYPosition
 #include "ShuksanID.h"			// kPaletteWindowSystemScriptFontId
-#include "Utils.h"
 #include "WidgetDefs.h"			// EllipsizeStyle (kEllipsizeBeginning / kEllipsizeEnd)
 
 // Project includes:
 #include "IKCMStoryCellData.h"
 #include "KCMUIID.h"
-#include "KCMKentenMark.h"	// the emphasis marks, drawn as shapes rather than written as characters
-#include "KCMPanelTextDraw.h"	// kKCMContextTextWeight, KCMBlendColor - shared with the message area
+#include "KCMKentenMark.h"	// the emphasis marks, drawn as shapes rather than written as characters - and KCMMarkPassView, this cell's base
+#include "KCMPanelTextDraw.h"	// the drawbot draws and measure, kKCMContextTextWeight, KCMBlendColor - shared with the message area
 #include "KCMStoryKinds.h"	// kKCMStoryAttrKenten - which attribute the upper line belongs to
 #include "KCMLayerDraw.h"	// a warichu / tate-chu-yoko change, drawn in layers (shared with the message area)
 
@@ -159,26 +154,25 @@ CREATE_PMINTERFACE(KCMStoryCellData, kKCMStoryCellDataImpl)
 // KCMStoryCellView - the self-drawing cell
 //----------------------------------------------------------------------------------------
 
-/** Implements IControlView: draws one change with its context faded around it. */
-class KCMStoryCellView : public DVControlView
+/** Implements IControlView: draws one change with its context faded around it.
+	★IN DV_Draw, BY DROVER (2026-10-24 - KCMPanelTextDraw.h's kKCMTextSmoothing says why); a kenten's shapes are
+	painted by KCMMarkPassView's AGM pass, run before any text is drawn. */
+class KCMStoryCellView : public KCMMarkPassView
 {
-	typedef DVControlView inherited;
+	typedef KCMMarkPassView inherited;
 public:
 	KCMStoryCellView(IPMUnknown* boss) : inherited(boss) {}
 	virtual ~KCMStoryCellView() {}
 
-	virtual void Draw(IViewPort* viewPort, SysRgn updateRgn);
+	virtual void DV_Draw(dvaui::drawbot::Drawbot* drawbotP) const;
 };
 
 CREATE_PERSIST_PMINTERFACE(KCMStoryCellView, kKCMStoryCellViewImpl)
 
-void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
+void KCMStoryCellView::DV_Draw(dvaui::drawbot::Drawbot* drawbotP) const
 {
-	AGMGraphicsContext gc(viewPort, this, updateRgn);
-	InterfacePtr<IGraphicsPort> gPort(gc.GetViewPort(), UseDefaultIID());
-	if (gPort == nil)
+	if (drawbotP == nil)
 		return;
-	AutoGSave gSave(gPort);
 
 	InterfacePtr<IKCMStoryCellData> data(this, UseDefaultIID());
 	if (data == nil)
@@ -239,21 +233,17 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	//   The base text keeps the LOWER half and the reading stands in the upper one, over the
 	//   characters it belongs to - which is where a reader of Japanese expects to find it.
 	//
-	// ★HOW THE TWO BASELINES ARE WORKED OUT. GetViewYPosition answers "the baseline for a box this
-	//   tall", and the product's own drawing hands it a height that is NOT the widget's when it
-	//   wants a row inside a taller view (MSOStateDDLElementView.cpp:216,236 passes a constant row
-	//   height). So a half-height box is asked for once and used twice: as it stands for the upper
-	//   line, and pushed down by that same half for the lower one. Both lines are then centred in
-	//   their own half, which is what keeps the base text sitting where the eye expects it.
-	// ⚠frame.Top() is not added, here or below - the one-line case has always drawn at these
-	//   coordinates and draws correctly, so the inner content frame starts at 0.
+	// ★EACH LINE IS ITS HALF OF THE CELL, AND ITS TEXT IS CENTRED IN IT BY THE DRAW ITSELF (2026-10-24,
+	//   the DV_Draw port): KCMDrawInBox hands the draw the line's box - what KFC's hit row does, and
+	//   what put its text on the same baseline as the stock cells beside it. Until then a half-height
+	//   box was asked of IWidgetUtils::GetViewYPosition for its baseline, which needs an AGM graphics
+	//   context DV_Draw has not.
 	const PMReal lineHeight = twoLines ? (frame.Height() / PMReal(2.0)) : frame.Height();
-	const PMReal upperY = Utils<IWidgetUtils>()->GetViewYPosition(&gc, fontInfo, lineHeight);
-	const PMReal y = twoLines ? (upperY + lineHeight) : upperY;
+	const PMRect upperBox(frame.Left(), frame.Top(), frame.Right(), frame.Top() + lineHeight);
+	const PMRect lowerBox(frame.Left(), frame.Bottom() - lineHeight, frame.Right(), frame.Bottom());
 
 	const PMReal leftEdge = frame.Left();
 	const PMReal rightEdge = frame.Right();
-	PMReal x = leftEdge;
 
 	// Is this cell's row the selected one? A hand-drawn cell has to answer that itself: a stock
 	// static text is handed four colours in the .fr and lets the framework pick, but drawing by
@@ -285,49 +275,49 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	//   InterfaceFontInfo was found, 2026-10-05).
 	if (trackOn)
 	{
-		const PMReal oldW = trackOld.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, trackOld, fontInfo, kKCMDontConvertAmpersand).X();
-		const PMReal newW = mid.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, mid, fontInfo, kKCMDontConvertAmpersand).X() + PMReal(0.5);
+		const PMReal oldW = KCMDrawnWidth(trackOld, fontInfo);
+		const PMReal newW = mid.IsEmpty() ? PMReal(0.0) : KCMDrawnWidth(mid, fontInfo) + PMReal(0.5);
 		const PMReal gap = (oldW > PMReal(0.0) && newW > PMReal(0.0)) ? PMReal(2.0) : PMReal(0.0);
 		const PMReal coreW = oldW + gap + newW;
 		const PMReal avail = rightEdge - leftEdge;
 		PMString preShown = pre, postShown = post;
-		const PMReal preW  = pre.IsEmpty()  ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, pre,  fontInfo, kKCMDontConvertAmpersand).X();
-		const PMReal postW = post.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, post, fontInfo, kKCMDontConvertAmpersand).X();
+		const PMReal preW  = KCMDrawnWidth(pre, fontInfo);
+		const PMReal postW = KCMDrawnWidth(post, fontInfo);
 		if (preW + coreW + postW > avail)
 		{
 			const PMReal rem = (avail > coreW) ? (avail - coreW) : PMReal(0.0);
-			preShown = pre.IsEmpty() ? pre : KCMEllipsize(&gc, rem / PMReal(2.0), pre, fontInfo, kEllipsizeBeginning);
-			postShown = post.IsEmpty() ? post : KCMEllipsize(&gc, rem / PMReal(2.0), post, fontInfo, kEllipsizeEnd);
+			preShown = pre.IsEmpty() ? pre : KCMEllipsize(rem / PMReal(2.0), pre, fontInfo, kEllipsizeBeginning);
+			postShown = post.IsEmpty() ? post : KCMEllipsize(rem / PMReal(2.0), post, fontInfo, kEllipsizeEnd);
 		}
 		PMReal tx = leftEdge;
 		auto run = [&](const PMString& s, const RealAGMColor& c)
 		{
 			if (s.IsEmpty())
 				return;
-			StringUtils::PMDrawStringRGB(&gc, PMPoint(tx, y), s, fontInfo, c, kKCMDontConvertAmpersand, kKCMNoUnderline);
-			tx += StringUtils::PMMeasureString(&gc, s, fontInfo, kKCMDontConvertAmpersand).X();
+			KCMDrawInBox(drawbotP, PMRect(tx, lowerBox.Top(), rightEdge, lowerBox.Bottom()), s, fontInfo, c);
+			tx += KCMDrawnWidth(s, fontInfo);
 		};
 		run(preShown, kContextColor);
 		if (!trackOld.IsEmpty())
 		{
 			const PMReal x0 = tx;
 			run(trackOld, kChangeColor);
-			// the strike: one line through the middle of the x-height
-			gPort->setrgbcolor(kChangeColor.red, kChangeColor.green, kChangeColor.blue);
-			gPort->rectfill(x0, y - lineHeight * PMReal(0.30), tx - x0, PMReal(1.0));
+			// the strike: one line through the middle of the x-height, on a whole pixel (KCMDrawCaret's rule)
+			const PMReal strikeY = ::Round(KCMCentredBaseline(fontInfo, lowerBox.Top(), lineHeight) - lineHeight * PMReal(0.30));
+			dv_utils::DVFillRect(drawbotP, kChangeColor, PMRect(x0, strikeY, tx, strikeY + PMReal(1.0)));
 			tx += gap;
 		}
 		if (!mid.IsEmpty())
 		{
-			StringUtils::PMDrawStringRGB(&gc, PMPoint(tx + PMReal(0.5), y), mid, fontInfo, kChangeColor, kKCMDontConvertAmpersand, kKCMNoUnderline);
+			KCMDrawInBox(drawbotP, PMRect(tx + PMReal(0.5), lowerBox.Top(), rightEdge, lowerBox.Bottom()), mid, fontInfo, kChangeColor);
 			run(mid, kChangeColor);
 			tx += PMReal(0.5);
 		}
 		else if (trackOld.IsEmpty())
 		{
 			// nothing on either side to show (an empty insertion): the deletion's bar, as the Story row draws it
-			const PMReal barW = StringUtils::PMMeasureString(&gc, KCMCaretPlaceholder(), fontInfo, kKCMDontConvertAmpersand).X();
-			KCMDrawCaret(gPort, kChangeColor, tx, barW, frame.Top() + PMReal(1.0), frame.Height() - PMReal(2.0));
+			const PMReal barW = KCMDrawnWidth(KCMCaretPlaceholder(), fontInfo);
+			KCMDrawCaret(drawbotP, kChangeColor, tx, barW, frame.Top() + PMReal(1.0), frame.Height() - PMReal(2.0));
 			tx += barW;
 		}
 		run(postShown, kContextColor);
@@ -345,7 +335,6 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	{
 		const int32 lines = (layers.fCount < 3) ? layers.fCount : 3;		// KCMLayerCanvas holds three
 		const PMReal oneLine = frame.Height() / PMReal(lines);
-		const PMReal textY = Utils<IWidgetUtils>()->GetViewYPosition(&gc, fontInfo, oneLine);
 
 		KCMLayerCanvas canvas;
 		canvas.fLeft = leftEdge;
@@ -357,24 +346,15 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		{
 			const int32 fromTop = (level < lines) ? (lines - 1 - level) : 0;
 			canvas.fTop[level] = frame.Top() + oneLine * PMReal(fromTop);
-			canvas.fBaseline[level] = canvas.fTop[level] + textY;
+			canvas.fBaseline[level] = KCMCentredBaseline(fontInfo, canvas.fTop[level], oneLine);
 		}
-		KCMDrawLayers(gc, gPort, fontInfo, layers, canvas);
+		KCMDrawLayers(drawbotP, fontInfo, layers, canvas);
 		return;
 	}
 
-	const PMReal availWidth = rightEdge - x;
+	const PMReal availWidth = rightEdge - leftEdge;
 	if (availWidth <= PMReal(0.0))
 		return;
-
-	// Draw one run at the running x and advance past it (an empty run is a no-op).
-	auto drawRun = [&](const PMString& s, const RealAGMColor& c)
-	{
-		if (s.IsEmpty())
-			return;
-		StringUtils::PMDrawStringRGB(&gc, PMPoint(x, y), s, fontInfo, c, kKCMDontConvertAmpersand, kKCMNoUnderline);
-		x += StringUtils::PMMeasureString(&gc, s, fontInfo, kKCMDontConvertAmpersand).X();
-	};
 
 	// ★**A DELETION HAS NOTHING TO SHOW ON THIS SIDE**, so the place it left is drawn as a bar
 	//   instead of as a gap the reader cannot see (2026-09-08 - see kKCMCaretWidth for the whole
@@ -387,9 +367,7 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	const bool16 wantCaret =
 		(mid.IsEmpty() && (attrKind == static_cast<int32>(kKCMStoryAttrNone) || markLine)) ? kTrue : kFalse;
 	const PMString caretRoom = KCMCaretPlaceholder();
-	const PMReal caretRoomW = wantCaret
-		? StringUtils::PMMeasureString(&gc, caretRoom, fontInfo, kKCMDontConvertAmpersand).X()
-		: PMReal(0.0);
+	const PMReal caretRoomW = wantCaret ? KCMDrawnWidth(caretRoom, fontInfo) : PMReal(0.0);
 
 	// ★WHERE EACH BAR STANDS. A one-line row's bar spans the cell, which is what makes it read as
 	//   "between these two characters". On two lines each bar keeps to ITS OWN line, with a pixel
@@ -398,51 +376,31 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	const PMReal lowerBarTop    = twoLines ? (frame.Top() + lineHeight + PMReal(1.0)) : (frame.Top() + PMReal(1.0));
 	const PMReal lowerBarHeight = twoLines ? (lineHeight - PMReal(2.0)) : (frame.Height() - PMReal(2.0));
 
-	// ★WHERE THE CHANGED CHARACTERS ACTUALLY LANDED. The reading has to stand over THEM, and where
-	//   they land is not known until the line has been laid out: all three branches below place the
-	//   change at a different x, because how much leading context fitted decides it. So the change
-	//   is drawn through here, which records the span it occupied for the ruby pass at the end.
-	PMReal drawnMidX = leftEdge;
-	PMReal drawnMidW = PMReal(0.0);
-
-	auto drawChange = [&](const PMString& s)
-	{
-		drawnMidX = x;
-		if (wantCaret && s.IsEmpty())
-		{
-			KCMDrawCaret(gPort, kChangeColor, x, caretRoomW, lowerBarTop, lowerBarHeight);
-			x += caretRoomW;
-		}
-		else
-		{
-			drawRun(s, kChangeColor);
-		}
-		drawnMidW = x - drawnMidX;
-	};
-
-	const PMReal preW  = pre.IsEmpty()  ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, pre,  fontInfo, kKCMDontConvertAmpersand).X();
-	const PMReal midW  = wantCaret ? caretRoomW
-					   : (mid.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, mid, fontInfo, kKCMDontConvertAmpersand).X());
-	const PMReal postW = post.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, post, fontInfo, kKCMDontConvertAmpersand).X();
+	const PMReal preW  = KCMDrawnWidth(pre, fontInfo);
+	const PMReal midW  = wantCaret ? caretRoomW : KCMDrawnWidth(mid, fontInfo);
+	const PMReal postW = KCMDrawnWidth(post, fontInfo);
 
 	// ★THE CHANGE IS WHAT SURVIVES A NARROW PANEL. The stock cell this replaced ellipsized in the
 	//   MIDDLE, which is right for a story's opening words and wrong here - the middle is exactly
 	//   where the change is. So the context gives way instead, each side losing the end that faces
 	//   away from the change: the leading context loses its HEAD, the trailing context its TAIL.
 	//   Same three branches as KBS's hit rows.
+	// ★★THE BRANCHES ONLY DECIDE WHAT IS SHOWN - NOTHING IS DRAWN UNTIL ALL OF IT IS KNOWN (2026-10-24,
+	//   the DV_Draw port): a kenten's shapes are painted by an AGM pass that runs before any text
+	//   (KCMMarkPassView), and where they go is where the change lands, which is what these decide.
+	PMString preShown, midShown, postShown;
 	if (preW + midW + postW <= availWidth)
 	{
-		drawRun(pre, kContextColor);
-		drawChange(mid);
-		drawRun(post, kContextColor);
+		preShown = pre;
+		midShown = mid;
+		postShown = post;
 	}
 	else if (midW >= availWidth)
 	{
 		// The change alone overflows the cell: ellipsize the change itself (tail) and drop the
 		// context. Nothing is lost that the reader could have used - the context is only there to
 		// place a change that is too short to place itself.
-		const PMString m = KCMEllipsize(&gc, availWidth, mid, fontInfo, kEllipsizeEnd);
-		drawChange(m);
+		midShown = KCMEllipsize(availWidth, mid, fontInfo, kEllipsizeEnd);
 	}
 	else
 	{
@@ -450,20 +408,54 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		// context as fits around it. Leading context is served first, so the run-up to the change
 		// is preferred over what follows it.
 		const PMReal rem = availWidth - midW;
-		PMString preCut = pre;
-		if (!pre.IsEmpty())
-			preCut = KCMEllipsize(&gc, rem, pre, fontInfo, kEllipsizeBeginning);
-		const PMReal preCutW = preCut.IsEmpty() ? PMReal(0.0) : StringUtils::PMMeasureString(&gc, preCut, fontInfo, kKCMDontConvertAmpersand).X();
-
-		const PMReal postBudget = rem - preCutW;
-		PMString postCut;
+		preShown = pre.IsEmpty() ? pre : KCMEllipsize(rem, pre, fontInfo, kEllipsizeBeginning);
+		const PMReal postBudget = rem - KCMDrawnWidth(preShown, fontInfo);
 		if (!post.IsEmpty() && postBudget > PMReal(0.0))
-			postCut = KCMEllipsize(&gc, postBudget, post, fontInfo, kEllipsizeEnd);
-
-		drawRun(preCut, kContextColor);
-		drawChange(mid);
-		drawRun(postCut, kContextColor);
+			postShown = KCMEllipsize(postBudget, post, fontInfo, kEllipsizeEnd);
+		midShown = mid;
 	}
+
+	// ★WHERE THE CHANGED CHARACTERS LAND - the reading and the marks stand over THEM: just after the
+	//   leading context shown, as wide as the change shown, or the bar's room in its place.
+	const bool16 changeIsBar = (wantCaret && midShown.IsEmpty()) ? kTrue : kFalse;
+	const PMReal drawnMidX = leftEdge + KCMDrawnWidth(preShown, fontInfo);
+	const PMReal drawnMidW = changeIsBar ? caretRoomW : KCMDrawnWidth(midShown, fontInfo);
+
+	// ★★THE MARKS ARE DRAWN BY THE SAME CODE THE MESSAGE AREA USES (user's call, 2026-09-01:
+	//   "use the same code where it can be the same"). Everything about how a kenten looks - one
+	//   mark per character, how big, where the custom glyph goes - lives in KCMKentenMark, so the
+	//   two places that show one cannot drift apart.
+	// ⚠THE COUNT IS THE CHARACTERS THAT WERE DRAWN, not the span's length in the document: this
+	//   cell was handed text that had been cut to fit, and more marks than characters is the one
+	//   thing an eye catches immediately.
+	KCMKentenMark::Marks marks;
+	const bool16 kentenPlanned =
+		(twoLines && !ruby.IsEmpty() && isKenten)
+		? KCMKentenMark::PlanOverRun(fontInfo, ruby, drawnMidX, drawnMidW, mid.CharCount(), lineHeight,
+									 upperBox.Top() + lineHeight / PMReal(2.0), rightEdge, kChangeColor, marks)
+		: kFalse;
+
+	// The shapes first, by AGM - nothing at all on a row without them (KCMMarkPassView says why first).
+	this->PaintMarks(drawbotP, marks);
+
+	// ---- the lower line: the context, the change, the context -------------------------------
+	PMReal x = leftEdge;
+	auto drawRun = [&](const PMString& s, const RealAGMColor& c)
+	{
+		if (s.IsEmpty())
+			return;
+		KCMDrawInBox(drawbotP, PMRect(x, lowerBox.Top(), rightEdge, lowerBox.Bottom()), s, fontInfo, c);
+		x += KCMDrawnWidth(s, fontInfo);
+	};
+	drawRun(preShown, kContextColor);
+	if (changeIsBar)
+	{
+		KCMDrawCaret(drawbotP, kChangeColor, x, caretRoomW, lowerBarTop, lowerBarHeight);
+		x += caretRoomW;
+	}
+	else
+		drawRun(midShown, kChangeColor);
+	drawRun(postShown, kContextColor);
 
 	// ---- the upper line: the reading, over the characters it belongs to -------------------
 	//
@@ -475,32 +467,25 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	//   in the panel's message area, which shows the other side.
 	if (markLine && ruby.IsEmpty())
 	{
-		KCMDrawCaret(gPort, kChangeColor, drawnMidX, drawnMidW,
+		KCMDrawCaret(drawbotP, kChangeColor, drawnMidX, drawnMidW,
 					 frame.Top() + PMReal(1.0), lineHeight - PMReal(2.0));
 		return;
 	}
-	//
-	// ★★THE MARKS ARE DRAWN BY THE SAME CODE THE MESSAGE AREA USES (user's call, 2026-09-01:
-	//   "use the same code where it can be the same"). Everything about how a kenten looks - one
-	//   mark per character, how big, where the custom glyph goes - lives in KCMKentenMark, so the
-	//   two places that show one cannot drift apart.
-	// ⚠THE COUNT IS THE CHARACTERS THAT WERE DRAWN, not the span's length in the document: this
-	//   cell was handed text that had been cut to fit, and more marks than characters is the one
-	//   thing an eye catches immediately.
-	const bool16 kentenDrawn =
-		(twoLines && !ruby.IsEmpty() && isKenten)
-		? KCMKentenMark::DrawOverRun(gc, gPort, fontInfo, ruby, drawnMidX, drawnMidW,
-									 mid.CharCount(), lineHeight, lineHeight / PMReal(2.0), upperY,
-									 rightEdge, kChangeColor)
-		: kFalse;
 
-	if (twoLines && !ruby.IsEmpty() && !kentenDrawn)
+	// A kenten: its shapes went in above; a CUSTOM mark is written here, in the upper line's box.
+	if (kentenPlanned)
+	{
+		KCMKentenMark::WriteGlyphs(drawbotP, fontInfo, marks, upperBox.Top(), upperBox.Bottom());
+		return;
+	}
+
+	if (twoLines && !ruby.IsEmpty())
 	{
 		// ★A READING, OR A KIND THIS BUILD CANNOT DRAW (Custom, or a kind newer than this code):
 		//   both are written out as text. **A mark that cannot be drawn is still not nothing** -
 		//   its name says which one it is, which is the whole reason KentenKindName never answers
 		//   with an empty string.
-		const PMReal rubyW = StringUtils::PMMeasureString(&gc, ruby, fontInfo, kKCMDontConvertAmpersand).X();
+		const PMReal rubyW = KCMDrawnWidth(ruby, fontInfo);
 
 		// ★CENTRED ON THE BASE CHARACTERS, and worked out by the rule the message area uses too
 		//   (KCMPanelTextDraw.h) - that box draws the OLDER version's reading over the same kind
@@ -514,14 +499,13 @@ void KCMStoryCellView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 			if (room <= PMReal(0.0))
 				return;
 			// Cut the TAIL: a reading is read from its head, and the head is what identifies it.
-			shown = KCMEllipsize(&gc, room, ruby, fontInfo, kEllipsizeEnd);
+			shown = KCMEllipsize(room, ruby, fontInfo, kEllipsizeEnd);
 		}
 
 		// ★FULL STRENGTH, like the changed characters below it - the reading IS the change on
 		//   these rows. What stays faded is the context on the lower line, which is what "fade
 		//   everything but the ruby" asks for.
-		StringUtils::PMDrawStringRGB(&gc, PMPoint(rubyX, upperY), shown, fontInfo, kChangeColor,
-									 kKCMDontConvertAmpersand, kKCMNoUnderline);
+		KCMDrawInBox(drawbotP, PMRect(rubyX, upperBox.Top(), rightEdge, upperBox.Bottom()), shown, fontInfo, kChangeColor);
 	}
 }
 

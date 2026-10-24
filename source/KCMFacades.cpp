@@ -1610,7 +1610,12 @@ public:
 		if (!this->PairedTargetRow(nth, targetDB, row))
 			return kFalse;
 		const KCMRejectedRecord* const rec = KCMStoryList::RejectedAt(nth, which);
-		return (rec != nil && KCMStoryList::RejectedStateOf(nth, *rec, targetDB) == kKCMRejectedStanding) ? kTrue : kFalse;
+		// ★NOT A RECORD THAT HOLDS A COPY (2026-10-24, the list-like-KFC work - seen live on the Story mode's "=" of
+		//   Restore from Source): such an "=" is put back by its copy (Restore from Copy), and Redo from Word could
+		//   only refuse it ("nothing kept") - so the item is not offered on it.
+		if (rec == nil || rec->fCopy.fWhyNot == kKCMCopyKept)
+			return kFalse;
+		return (KCMStoryList::RejectedStateOf(nth, *rec, targetDB) == kKCMRejectedStanding) ? kTrue : kFalse;
 	}
 
 	virtual int32	RedoFromWord(int32 nth, int32 which, PMString& outMessage)

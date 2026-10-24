@@ -28,23 +28,18 @@
 
 // Interface includes:
 #include "IControlView.h"
-#include "IGraphicsPort.h"
 #include "IInterfaceColors.h"	// RealAGMColor
 #include "IInterfaceFonts.h"	// the palette window font, the one the neighbouring cells declare
-#include "IWidgetUtils.h"		// GetViewYPosition - the baseline for a box this tall
 
 // General includes:
-#include "AGMGraphicsContext.h"
-#include "AutoGSave.h"
+#include "DVAPublicIncludes.h"	// dvaui::drawbot - what DV_Draw is handed
 #include "DVControlView.h"
-#include "DrawStringUtils.h"	// StringUtils::PMDrawStringRGB / PMMeasureString
 #include "ISession.h"			// GetExecutionContextSession
 #include "ShuksanID.h"			// kPaletteWindowSystemScriptFontId
-#include "Utils.h"
 
 // Project includes:
 #include "KCMUIID.h"
-#include "KCMPanelTextDraw.h"	// kKCMDontConvertAmpersand / kKCMNoUnderline - the same two flags every hand-drawn text here passes
+#include "KCMPanelTextDraw.h"	// KCMDrawnWidth / KCMDrawInBox - drawn by drover as every hand-drawn text here is (2026-10-24)
 
 namespace
 {
@@ -59,13 +54,10 @@ const char16_t kKCMAppliedMark[] = u"=";
 const RealAGMColor kKCMBangRed(0.85, 0.10, 0.10);
 
 /** One mark, red, centred in `view`'s inner frame - the whole of what both cells draw. */
-void DrawRedMark(DVControlView* view, IViewPort* viewPort, SysRgn updateRgn, const char16_t* utf16Mark)
+void DrawRedMark(const DVControlView* view, dvaui::drawbot::Drawbot* drawbotP, const char16_t* utf16Mark)
 {
-	AGMGraphicsContext gc(viewPort, view, updateRgn);
-	InterfacePtr<IGraphicsPort> gPort(gc.GetViewPort(), UseDefaultIID());
-	if (gPort == nil)
+	if (drawbotP == nil)
 		return;
-	AutoGSave gSave(gPort);
 
 	// The same font every cell of these rows declares (KCMStoryCellView.cpp says why a hand-drawn
 	// cell has to name it in code: a generic panel widget carries no font field).
@@ -83,12 +75,9 @@ void DrawRedMark(DVControlView* view, IViewPort* viewPort, SysRgn updateRgn, con
 	//   column after it). Nothing is painted behind it - the row draws its own background and its
 	//   selection fill, and this cell adds the mark on top, exactly as the stock cell would.
 	const PMRect frame = view->GetInnerContentFrame();
-	const PMReal width = StringUtils::PMMeasureString(&gc, mark, fontInfo, kKCMDontConvertAmpersand).X();
+	const PMReal width = KCMDrawnWidth(mark, fontInfo);
 	const PMReal x = frame.Left() + (frame.Width() - width) / PMReal(2.0);
-	const PMReal y = Utils<IWidgetUtils>()->GetViewYPosition(&gc, fontInfo, frame.Height());
-
-	StringUtils::PMDrawStringRGB(&gc, PMPoint(x, y), mark, fontInfo, kKCMBangRed,
-								 kKCMDontConvertAmpersand, kKCMNoUnderline);
+	KCMDrawInBox(drawbotP, PMRect(x, frame.Top(), frame.Right(), frame.Bottom()), mark, fontInfo, kKCMBangRed);
 }
 
 }	// namespace
@@ -101,7 +90,7 @@ public:
 	KCMStoryBangView(IPMUnknown* boss) : inherited(boss) {}
 	virtual ~KCMStoryBangView() {}
 
-	virtual void Draw(IViewPort* viewPort, SysRgn updateRgn) { DrawRedMark(this, viewPort, updateRgn, kKCMBangMark); }
+	virtual void DV_Draw(dvaui::drawbot::Drawbot* drawbotP) const { DrawRedMark(this, drawbotP, kKCMBangMark); }
 };
 
 CREATE_PERSIST_PMINTERFACE(KCMStoryBangView, kKCMStoryBangViewImpl)
@@ -114,7 +103,7 @@ public:
 	KCMStoryAppliedSignView(IPMUnknown* boss) : inherited(boss) {}
 	virtual ~KCMStoryAppliedSignView() {}
 
-	virtual void Draw(IViewPort* viewPort, SysRgn updateRgn) { DrawRedMark(this, viewPort, updateRgn, kKCMAppliedMark); }
+	virtual void DV_Draw(dvaui::drawbot::Drawbot* drawbotP) const { DrawRedMark(this, drawbotP, kKCMAppliedMark); }
 };
 
 CREATE_PERSIST_PMINTERFACE(KCMStoryAppliedSignView, kKCMStoryAppliedSignViewImpl)

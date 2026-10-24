@@ -23,13 +23,11 @@
 #define __KCMLayerDraw_h__
 
 #include "PMReal.h"
-#include "AGMGraphicsContext.h"		// measured and drawn text needs it
+#include "DVAPublicIncludes.h"		// dvaui::drawbot - drawn by drover, in the widget's DV_Draw (KCMPanelTextDraw.h)
 #include "IInterfaceColors.h"		// RealAGMColor
 #include "IInterfaceFonts.h"		// InterfaceFontInfo
 
 #include "KCMStoryLayers.h"
-
-class IGraphicsPort;
 
 /** Where the lines go. Index 0 is the BOTTOM line, matching KCMStoryLayers. */
 struct KCMLayerCanvas
@@ -44,7 +42,7 @@ struct KCMLayerCanvas
 };
 
 /** Draw one side of a layered change. Does nothing when layers.fCount is below 2. */
-void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const InterfaceFontInfo& font,
+void KCMDrawLayers(dvaui::drawbot::Drawbot* drawbotP, const InterfaceFontInfo& font,
 				   const KCMStoryLayers& layers, const KCMLayerCanvas& canvas);
 
 #endif	// __KCMLayerDraw_h__

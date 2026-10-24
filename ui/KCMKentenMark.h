@@ -26,6 +26,12 @@
 //  ⚠**CUSTOM IS NOT DRAWN HERE.** A custom kenten is whatever glyph the user picked, so there is no
 //  shape this file could know; CanDraw answers kFalse for it and the caller writes its name instead.
 //
+//  ★★THE SHAPES ARE PAINTED BY AGM, THE TEXT AROUND THEM BY DROVER (2026-10-24, the DV_Draw port -
+//  KCMPanelTextDraw.h's kKCMTextSmoothing says why the text moved). The drawbot's public tools fill a
+//  rectangle and stroke a polyline and nothing more (DVPublicUtilities.h), so a circle, a filled
+//  triangle or a sesame dot still needs the port's curves. ⇒ A view plans its marks (PlanOverRun),
+//  has them painted by an AGM pass FIRST (KCMMarkPassView, below) and then draws its text.
+//
 //========================================================================================
 
 #ifndef __KCMKentenMark_h__
@@ -36,11 +42,14 @@
 
 #include "PMString.h"
 
-#include "AGMGraphicsContext.h"		// AGMGraphicsContext - measured and drawn text needs it
+#include "DVAPublicIncludes.h"		// dvaui::drawbot - a custom mark is WRITTEN, by drover
+#include "DVControlView.h"			// KCMMarkPassView's base
+#include "IInterfaceColors.h"		// RealAGMColor - a plan carries its colour
 #include "IInterfaceFonts.h"		// InterfaceFontInfo - the palette font a caller already holds
 
+#include <vector>
+
 class IGraphicsPort;
-class RealAGMColor;
 
 namespace KCMKentenMark
 {
@@ -77,6 +86,25 @@ namespace KCMKentenMark
 			  const PMReal& centreX, const PMReal& centreY, const PMReal& size,
 			  const RealAGMColor& colour);
 
+	/** The marks of one changed run, worked out once and drawn by two hands (2026-10-24): the shapes PAINTED by AGM
+		(PaintShapes, from KCMMarkPassView's pass), a custom mark WRITTEN by drover (WriteGlyphs). */
+	struct Marks
+	{
+		int32				fShape;		///< what every mark is painted as (KCMKentenMark.cpp's Shape); 0 - nothing to paint
+		PMString			fGlyph;		///< a custom mark's character - written, not painted; empty otherwise
+		PMReal				fGlyphW;	///< how wide that character comes out
+		std::vector<PMReal>	fCentreX;	///< one per mark that fits, left to right
+		PMReal				fCentreY;
+		PMReal				fSize;
+		PMReal				fRight;		///< the right edge the plan was held inside
+		RealAGMColor		fColour;
+
+		Marks() : fShape(0), fGlyphW(0.0), fCentreY(0.0), fSize(0.0), fRight(0.0), fColour(0.0, 0.0, 0.0) {}
+
+		/** kTrue when there is a shape to paint - the only case a view needs its AGM pass for. */
+		bool16 HasShapes() const { return (fShape != 0 && !fCentreX.empty()) ? kTrue : kFalse; }
+	};
+
 	/** The whole upper line for one changed run: ONE MARK PER CHARACTER, centred over each.
 
 		★★THE TWO PLACES THAT SHOW A KENTEN CALL THIS SAME FUNCTION - the change row's cell and the
@@ -100,20 +128,54 @@ namespace KCMKentenMark
 		 which is right in a cell whose whole height IS the two lines and wrong in the message area,
 		 where the upper line can be the fourth line down - the marks landed on the box's heading
 		 (seen 2026-09-01: "Source T●●").
-		@param baselineY where TEXT sits on that line. Used only for a custom mark, which is written
-		 rather than drawn - a shape has no baseline and is centred instead.
 		@param rightEdge marks that would cross it are dropped rather than clipped.
+		@param out [out] the plan - nothing is drawn here. A shape plan is painted by KCMMarkPassView's
+		 pass, a custom mark written by WriteGlyphs; a custom mark is centred top to bottom in its
+		 line's box there, as the text around it is (it was written on a baseline until 2026-10-24).
 		@return kFalse when this value is neither a known kind nor a custom glyph - **then the
 		 caller shows the name instead**, which is still true and still readable. kTrue otherwise,
 		 including when there was simply nothing to draw over (a removed kenten has no characters
 		 on the newer side, exactly as a removed ruby has no reading). */
-	bool16 DrawOverRun(AGMGraphicsContext& gc, IGraphicsPort* gPort,
-					   const InterfaceFontInfo& font, const PMString& kindValue,
+	bool16 PlanOverRun(const InterfaceFontInfo& font, const PMString& kindValue,
 					   const PMReal& runLeft, const PMReal& runWidth, int32 charCount,
 					   const PMReal& lineHeight, const PMReal& markCentreY,
-					   const PMReal& baselineY,
-					   const PMReal& rightEdge, const RealAGMColor& colour);
+					   const PMReal& rightEdge, const RealAGMColor& colour, Marks& out);
+
+	/** Paint a plan's shapes on an AGM port - KCMMarkPassView's pass is the one caller. */
+	void PaintShapes(IGraphicsPort* gPort, const Marks& marks);
+
+	/** Write a custom mark's character over each base character, by drover, centred top to bottom in the
+		upper line's box (lineTop..lineBottom). A plan without a glyph writes nothing. */
+	void WriteGlyphs(dvaui::drawbot::Drawbot* drawbotP, const InterfaceFontInfo& font, const Marks& marks,
+					 const PMReal& lineTop, const PMReal& lineBottom);
 }
+
+/** A cell that draws its text by drover and has its kenten SHAPES painted by AGM first (2026-10-24) - the change row's
+	text cell and the panel's message area, the two places a kenten is shown.
+
+	★HOW: DVControlView's own DV_Draw sets up an offscreen AGM port, calls Draw on it and blits it back over the view
+	(DVAbstractControlView.h). PaintMarks runs exactly that, with Draw answering by painting the plan - the product's
+	shape for "the base draws, then more is drawn on top" (open/components/layerpanel/DVLayerElementView.cpp calls
+	inherited::DV_Draw first). ⚠**A caller runs it BEFORE it draws any text**: the pass blits the offscreen picture back
+	over the whole view, so whatever was drawn before it could be painted over.
+	⚠Draw outside the pass is the base's - never a stale plan. */
+class KCMMarkPassView : public DVControlView
+{
+	typedef DVControlView inherited;
+public:
+	KCMMarkPassView(IPMUnknown* boss) : inherited(boss), fInMarkPass(kFalse) {}
+	virtual ~KCMMarkPassView() {}
+
+	virtual void Draw(IViewPort* viewPort, SysRgn updateRgn);
+
+protected:
+	/** Paint `marks`' shapes now (nothing when it has none). From DV_Draw, before any text. */
+	void PaintMarks(dvaui::drawbot::Drawbot* drawbotP, const KCMKentenMark::Marks& marks) const;
+
+private:
+	mutable KCMKentenMark::Marks	fMarks;			// the plan Draw paints - set by PaintMarks for its pass only
+	mutable bool16					fInMarkPass;
+};
 
 #endif	// __KCMKentenMark_h__
 

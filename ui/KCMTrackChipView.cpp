@@ -6,29 +6,26 @@
 //  ★WHY BY HAND: a stock static text draws one string in the theme's colour (KCMStoryBangView.cpp says the same).
 //   The author's NAME follows the square in the same cell (the user, 2026-10-05) - the ID column, not the Story one.
 //   The colour comes through IKCMStoryCellData::SetTrackLook, written on every apply (the recycling rule).
+//   ★Drawn by drover, in DV_Draw (2026-10-24 - KCMPanelTextDraw.h's kKCMTextSmoothing says why).
 //
 //========================================================================================
 
 #include "VCPlugInHeaders.h"
 
 #include "IControlView.h"
-#include "IGraphicsPort.h"
 #include "IInterfaceColors.h"		// RealAGMColor, the theme's text colours
 #include "IInterfaceFonts.h"		// the palette font the name is written in
-#include "IWidgetUtils.h"			// GetViewYPosition - the baseline
 
-#include "AGMGraphicsContext.h"
-#include "AutoGSave.h"
+#include "DVAPublicIncludes.h"		// dvaui::drawbot - what DV_Draw is handed
 #include "DVControlView.h"
-#include "DrawStringUtils.h"		// StringUtils::PMDrawStringRGB (ellipsizing: KCMEllipsize, KCMPanelTextDraw.h)
+#include "DVPublicUtilities.h"		// dv_utils::DVFillRect - the square
 #include "ISession.h"				// GetExecutionContextSession
 #include "ShuksanID.h"			// kPaletteWindowSystemScriptFontId
-#include "Utils.h"
 #include "WidgetDefs.h"			// kEllipsizeEnd
 
 #include "IKCMStoryCellData.h"
 #include "KCMUIID.h"
-#include "KCMPanelTextDraw.h"		// KCMViewOrParentIsHilited, kKCMDontConvertAmpersand / kKCMNoUnderline
+#include "KCMPanelTextDraw.h"		// KCMViewOrParentIsHilited, KCMDrawInBox, KCMEllipsize
 #include "KCMTrackLabels.h"		// KCMTrackChipSide / the chip's offsets - shared with the column's fit
 
 class KCMTrackChipView : public DVControlView
@@ -38,17 +35,15 @@ public:
 	KCMTrackChipView(IPMUnknown* boss) : inherited(boss) {}
 	virtual ~KCMTrackChipView() {}
 
-	virtual void Draw(IViewPort* viewPort, SysRgn updateRgn);
+	virtual void DV_Draw(dvaui::drawbot::Drawbot* drawbotP) const;
 };
 
 CREATE_PERSIST_PMINTERFACE(KCMTrackChipView, kKCMTrackChipViewImpl)
 
-void KCMTrackChipView::Draw(IViewPort* viewPort, SysRgn updateRgn)
+void KCMTrackChipView::DV_Draw(dvaui::drawbot::Drawbot* drawbotP) const
 {
-	AGMGraphicsContext gc(viewPort, this, updateRgn);
-	InterfacePtr<IGraphicsPort> gPort(gc.GetViewPort(), UseDefaultIID());
 	InterfacePtr<IKCMStoryCellData> data(this, UseDefaultIID());
-	if (gPort == nil || data == nil)
+	if (drawbotP == nil || data == nil)
 		return;
 	bool16 on = kFalse;
 	RealAGMColor colour(0.0, 0.0, 0.0);
@@ -57,12 +52,12 @@ void KCMTrackChipView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	if (!on)
 		return;		// a recycled widget waiting for its next apply draws nothing
 
-	AutoGSave gSave(gPort);
+	// The square, on whole pixels - the panel's bars' rule (KCMDrawCaret): a fill that straddles pixels is smoothed paler.
 	const PMRect frame = this->GetInnerContentFrame();
 	const PMReal side = KCMTrackChipSide(frame.Height());
-	const PMReal top = frame.Top() + (frame.Height() - side) / PMReal(2.0);
-	gPort->setrgbcolor(colour.red, colour.green, colour.blue);
-	gPort->rectfill(frame.Left() + PMReal(kKCMTrackChipLeft), top, side, side);
+	const PMReal left = ::Round(frame.Left() + PMReal(kKCMTrackChipLeft));
+	const PMReal top = ::Round(frame.Top() + (frame.Height() - side) / PMReal(2.0));
+	dv_utils::DVFillRect(drawbotP, colour, PMRect(left, top, left + side, top + side));
 
 	// ★AND THE AUTHOR'S NAME AFTER IT (2026-10-05, the user: "after the colour, can the user name go there?") - in the
 	//   ordinary text colour, the selected row's when this row is selected (the change row's text cell asks the same).
@@ -87,9 +82,8 @@ void KCMTrackChipView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	const PMReal room = frame.Right() - textX;
 	if (room <= PMReal(0.0))
 		return;
-	const PMString shown = KCMEllipsize(&gc, room, name, fontInfo, kEllipsizeEnd);
-	const PMReal y = Utils<IWidgetUtils>()->GetViewYPosition(&gc, fontInfo, frame.Height());
-	StringUtils::PMDrawStringRGB(&gc, PMPoint(textX, y), shown, fontInfo, fg, kKCMDontConvertAmpersand, kKCMNoUnderline);
+	const PMString shown = KCMEllipsize(room, name, fontInfo, kEllipsizeEnd);
+	KCMDrawInBox(drawbotP, PMRect(textX, frame.Top(), frame.Right(), frame.Bottom()), shown, fontInfo, fg);
 }
 
 // End, KCMTrackChipView.cpp.
