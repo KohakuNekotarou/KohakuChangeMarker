@@ -47,6 +47,25 @@ class IDataBase;
 class IDFile;
 class SysFileList;			// what the open dialog hands back - the reader picks several at once
 
+/** One text box of a page file ("Export Pages to Word...", 2026-10-25 - KCMPageDocx.h): which frame's part of which
+	story it came from, the fingerprint of that part when exported, and what Word holds now. The import puts it back into
+	its story at the range it came from (KCMPageImport.h) and the story then goes the way a story file goes. */
+struct KCMPageBoxEdit
+{
+	UID						fStory;
+	UID						fFrame;
+	int32					fStart;			// the part's range when exported (TextIndex)
+	int32					fEnd;
+	int32					fPrintBytes;	// KCMPageSplice::Fingerprint of the part when exported
+	uint32					fPrintCrc;
+	int32					fBoxN;			// the box's number on its page
+	KCMStoryShape::Story	fContent;		// what the box holds
+	PMString				fFileName;		// the page file's own name - for the "!" row
+	PMString				fWhyNot;		// non-empty: the file itself already says this box cannot go in
+
+	KCMPageBoxEdit() : fStory(kInvalidUID), fFrame(kInvalidUID), fStart(0), fEnd(0), fPrintBytes(0), fPrintCrc(0), fBoxN(0) {}
+};
+
 /** What one folder of edited stories holds: each story's own uid, and what was read for it.
 
     ⚠The two vectors are parallel and always the same length. A file that could not be read is in
@@ -62,6 +81,11 @@ struct KCMStoryTextSet
 	// (⛔fIsDocx - "read from a .docx" - stood here until 2026-09-24: kTrue for every entry since the
 	//  HTML spelling went, and read by nobody. Every story here stands in the SPLIT shape around its
 	//  tables (KCMStoryDocx.h, SplitAtTables); the comparison puts it back into the document's.)
+
+	/** ★THE PAGE FILES' BOXES (2026-10-25), as read - not yet stories. Once the import holds its copy of the document,
+		KCMSpliceBoxesIntoSet turns them into whole stories here (fUids / fStories / fFileNames) and empties this. ⚠At the
+		end on purpose, as KCMImportRefusal's newest field is. */
+	std::vector<KCMPageBoxEdit>			fBoxes;
 };
 
 /** One thing the last import could not put in - the material of a "!" row in Story Edits
@@ -110,6 +134,9 @@ void KCMClearImportRefusals();
       that can tell them why it did not go in.
     ⚠A file whose markup cannot be read is SKIPPED and named in whyNot, so that one bad file does
       not cost the other twenty. kFalse means nothing at all could be read.
+    ★**A PAGE FILE IS READ AS ITS BOXES** (2026-10-25, "Export Pages to Word..." - KCMPageDocx.h): asked FIRST, by its
+      page tag, and its boxes go into out.fBoxes - even one the file itself refuses (gone in Word, there twice), with
+      its reason, so it has a "!" row. Words typed outside every box are named in whyNot.
 
     @param files the files the reader chose, in the dialog's own order.
     @param out cleared first, then filled.

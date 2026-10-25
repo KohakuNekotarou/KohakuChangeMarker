@@ -26,10 +26,41 @@
 
 #include "BaseType.h"
 #include "PMString.h"
+#include "UIDRef.h"
+
+#include <string>
+#include <vector>
+
+#include "KCMParaText.h"		// KCMParaAttrs
+#include "KCMStoryShape.h"
 
 class IDataBase;
 class IDFile;
+class ITextModel;
 class UIDList;
+
+/** One story as the page format reads it - for the export, and for the import that puts the boxes back (KCMPageImport.h):
+	its BODY paragraphs as KCMTextRead::ReadStory gives them (neither a cell's nor a note's - index p is fShape.fBody[p]),
+	and its shape as the story export reads it (KCMStoryFromDocument). ★ONE READING FOR BOTH SIDES, so a part cut at the
+	export is cut the same way coming back. */
+struct KCMPageStoryFacts
+{
+	bool16						fReadable;	// kFalse: not read, or its footnote references could not be placed
+	std::vector<std::string>	fParas;
+	std::vector<KCMParaAttrs>	fAttrs;
+	std::vector<int32>			fStarts;
+	KCMStoryShape::Story		fShape;
+
+	KCMPageStoryFacts() : fReadable(kFalse) {}
+};
+
+/** `story` read the way the page format reads it. @return fReadable. */
+bool16 KCMReadPageStoryFacts(const UIDRef& story, KCMPageStoryFacts& out);
+
+/** Whether [start, start + span) of `model` holds what a box cannot carry in this version: a table's anchor, a footnote's
+	reference or an endnote's marker. ★Asked of the MODEL, not of the shape: at the edge of a part a text offset cannot
+	tell a table just inside from one just outside. */
+bool16 KCMPagePartHoldsTableOrNote(ITextModel* model, TextIndex start, int32 span);
 
 /** Write each of `pages` as one .docx into a new folder "<document> pages YYYY-MM-DD HHMMSS" under `parent`: the file
 	"<document> p<page name>.docx", the page's size, a text box per text frame (top to bottom, then left to right).

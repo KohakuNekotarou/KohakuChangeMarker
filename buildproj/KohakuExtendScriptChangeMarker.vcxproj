@@ -231,6 +231,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDocxPackage.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMXmlTree.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDocx.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageImport.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageExport.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageSplice.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageDocx.cpp" />
@@ -342,6 +343,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMDocxPackage.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMXmlTree.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDocx.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageImport.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageExport.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageSplice.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageDocx.h" />

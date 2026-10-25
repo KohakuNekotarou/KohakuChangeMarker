@@ -45,59 +45,33 @@
 #include "KCMPdfDoc.h"				// KCMIsPdfDoc - a PDF document has none of the reader's stories
 #include "IKCMCompareFacade.h"		// kKCMPdfTargetRefusal
 
-namespace
+bool16 KCMReadPageStoryFacts(const UIDRef& story, KCMPageStoryFacts& out)
 {
-
-/** One story, read once for every frame of it the pages meet: its body paragraphs as KCMTextRead reads them, and its
-	shape as the export reads it. */
-struct StoryFacts
-{
-	UID							fStory;
-	bool16						fReadable;
-	std::vector<std::string>	fParas;		// the body's only - neither a cell's nor a note's
-	std::vector<KCMParaAttrs>	fAttrs;
-	std::vector<int32>			fStarts;
-	KCMStoryShape::Story		fShape;
-};
-
-const StoryFacts& FactsOf(IDataBase* db, UID story, std::vector<StoryFacts>& cache)
-{
-	for (size_t i = 0; i < cache.size(); ++i)
-	{
-		if (cache[i].fStory == story)
-			return cache[i];
-	}
-	StoryFacts f;
-	f.fStory = story;
-	f.fReadable = kFalse;
-	const UIDRef ref(db, story);
+	out = KCMPageStoryFacts();
 	std::vector<std::string> paras;
 	std::vector<KCMParaAttrs> attrs;
 	std::vector<int32> starts;
 	bool16 placed = kTrue;
-	// ★A STORY WHOSE FOOTNOTE REFERENCES CANNOT BE PLACED IS LEFT OUT - the import's own rule (its pour holds such a story
+	// ★A STORY WHOSE FOOTNOTE REFERENCES CANNOT BE PLACED IS NOT READ - the import's own rule (its pour holds such a story
 	//   whole), so no box is written that could never go back in.
-	if (KCMTextRead::ReadStory(ref, paras, attrs, starts) && KCMStoryFromDocument(ref, f.fShape, placed) && placed)
+	if (!KCMTextRead::ReadStory(story, paras, attrs, starts) || !KCMStoryFromDocument(story, out.fShape, placed) || !placed)
+		return kFalse;
+	for (size_t i = 0; i < paras.size() && i < attrs.size() && i < starts.size(); ++i)
 	{
-		for (size_t i = 0; i < paras.size() && i < attrs.size() && i < starts.size(); ++i)
-		{
-			if (attrs[i].IsCell() || attrs[i].IsFootnote())
-				continue;
-			f.fParas.push_back(paras[i]);
-			f.fAttrs.push_back(attrs[i]);
-			f.fStarts.push_back(starts[i]);
-		}
-		f.fReadable = (f.fParas.size() == f.fShape.fBody.size()) ? kTrue : kFalse;
+		if (attrs[i].IsCell() || attrs[i].IsFootnote())
+			continue;
+		out.fParas.push_back(paras[i]);
+		out.fAttrs.push_back(attrs[i]);
+		out.fStarts.push_back(starts[i]);
 	}
-	cache.push_back(f);
-	return cache.back();
+	out.fReadable = (out.fParas.size() == out.fShape.fBody.size()) ? kTrue : kFalse;
+	return out.fReadable;
 }
 
-/** Whether the frame's part holds what a box cannot carry in this version: a table's anchor, a footnote's reference or
-	an endnote's marker. ★Asked of the MODEL, not of the shape: in the shape a table stands at a text offset, and at the
-	edge of a part the offset cannot tell a table just inside from one just outside. */
-bool16 PartHoldsTableOrNote(ITextModel* model, TextIndex start, int32 span)
+bool16 KCMPagePartHoldsTableOrNote(ITextModel* model, TextIndex start, int32 span)
 {
+	if (model == nil || span <= 0)
+		return kFalse;
 	TextIterator iter(model, start);
 	for (int32 i = 0; i < span; ++i, ++iter)
 	{
@@ -108,6 +82,30 @@ bool16 PartHoldsTableOrNote(ITextModel* model, TextIndex start, int32 span)
 			return kTrue;
 	}
 	return kFalse;
+}
+
+namespace
+{
+
+/** One story, read once for every frame of it the pages meet. */
+struct StoryFacts
+{
+	UID					fStory;
+	KCMPageStoryFacts	fFacts;
+};
+
+const KCMPageStoryFacts& FactsOf(IDataBase* db, UID story, std::vector<StoryFacts>& cache)
+{
+	for (size_t i = 0; i < cache.size(); ++i)
+	{
+		if (cache[i].fStory == story)
+			return cache[i].fFacts;
+	}
+	StoryFacts f;
+	f.fStory = story;
+	KCMReadPageStoryFacts(UIDRef(db, story), f.fFacts);
+	cache.push_back(f);
+	return cache.back().fFacts;
 }
 
 /** The text frames among `item` and, for a group, its items - each once, the graphic frame's UID. */
@@ -216,14 +214,14 @@ bool16 BoxOfFrame(IDataBase* db, UID frameUID, const PMMatrix& spreadToPage, con
 		++tally.fEmpty;			// a frame of a thread the text has not reached
 		return kFalse;
 	}
-	if (PartHoldsTableOrNote(model, start, span))
+	if (KCMPagePartHoldsTableOrNote(model, start, span))
 	{
 		++tally.fTableOrNote;
 		return kFalse;
 	}
 
 	const UID storyUID = ::GetUID(model);
-	const StoryFacts& facts = FactsOf(db, storyUID, cache);
+	const KCMPageStoryFacts& facts = FactsOf(db, storyUID, cache);
 	if (!facts.fReadable)
 	{
 		tally.Refuse("frame", frameUID, "its story cannot be read the way the export reads it");

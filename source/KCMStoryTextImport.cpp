@@ -37,6 +37,8 @@
 #include "KCMStorySyncApply.h"		// KCMApplySyncPlan - and that, carried out
 #include "KCMStoryTextExport.h"		// KCMStoryFromDocument - the document's story, read the way the export reads it
 #include "KCMStoryDocx.h"			// Read - the parts as Word shows them
+#include "KCMPageDocx.h"			// ReadParts - a page file's boxes (2026-10-25, Export Pages to Word)
+#include "KCMPageImport.h"			// KCMSpliceBoxesIntoSet - the boxes made stories, in the import's copy
 #include "KCMWordKeep.h"			// Word's content kept per story under the document - what Apply writes from
 #include "KCMZipStore.h"			// Entry - a part, named
 #include "KCMModelNotify.h"			// KCMNotify - a cancelled import tells the panel the mode came back
@@ -227,6 +229,10 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 	int32 skippedName = 0;		// not one of ours: not a .docx at all
 	int32 refused = 0;			// ours, but the markup could not be read
 	int32 fromWord = 0;			// .docx files read
+	int32 pageFiles = 0;		// page files read (2026-10-25) - their boxes are in out.fBoxes
+	int32 outsideBoxes = 0;		// page files with words typed outside every box
+	PMString outsideFile;		// the first of those, by name
+	outsideFile.SetTranslatable(kFalse);
 	PMString firstReason;
 	firstReason.SetTranslatable(kFalse);
 
@@ -293,6 +299,48 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 			}
 			continue;
 		}
+		// ★A PAGE FILE (2026-10-25, "Export Pages to Word..."): asked first, by its own tag - the story reader would
+		//   take its text boxes for drawings and refuse the file. Its boxes become stories once the import holds its
+		//   copy of the document (KCMSpliceBoxesIntoSet).
+		{
+			KCMPageDocx::ReadResult page;
+			std::string pageWhy;
+			if (!KCMPageDocx::ReadParts(parts, page, pageWhy))
+			{
+				++refused;
+				NoteFirstReason(firstReason, leaf, pageWhy);
+				continue;
+			}
+			if (page.fIsPage)
+			{
+				++pageFiles;
+				for (size_t b = 0; b < page.fBoxes.size(); ++b)
+				{
+					const KCMPageDocx::ReadBox& rb = page.fBoxes[b];
+					KCMPageBoxEdit edit;
+					edit.fStory = UID(static_cast<uint32>(rb.fBox.fStory));
+					edit.fFrame = UID(static_cast<uint32>(rb.fBox.fFrame));
+					edit.fStart = rb.fBox.fStart;
+					edit.fEnd = rb.fBox.fEnd;
+					edit.fPrintBytes = rb.fBox.fPrintBytes;
+					edit.fPrintCrc = rb.fBox.fPrintCrc;
+					edit.fBoxN = rb.fBox.fN;
+					edit.fContent = rb.fBox.fContent;
+					edit.fFileName = PMStringOfLeaf(leaf);
+					edit.fWhyNot = KCMTextWords::PMStringOfUtf8(rb.fWhyNot);
+					edit.fWhyNot.SetTranslatable(kFalse);
+					out.fBoxes.push_back(edit);
+				}
+				if (page.fTextOutsideBoxes)
+				{
+					++outsideBoxes;
+					if (outsideFile.IsEmpty())
+						outsideFile = PMStringOfLeaf(leaf);
+				}
+				continue;
+			}
+		}
+
 		KCMStoryDocx::ReadResult result;
 		std::string why;
 		if (!KCMStoryDocx::Read(parts, result, why))
@@ -352,6 +400,7 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 			}
 		}
 		KCMStoryTextSet kept;
+		kept.fBoxes = out.fBoxes;		// ⚠the page files' boxes are not stories yet, and go along whole (2026-10-25)
 		for (size_t i = 0; i < out.fUids.size(); ++i)
 		{
 			if (twice[i])
@@ -379,6 +428,19 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 	{
 		AppendCount(whyNot, ", ", fromWord, " from Word");
 	}
+	if (pageFiles > 0)
+	{
+		AppendCount(whyNot, ", ", pageFiles, " page file(s)");
+		AppendCount(whyNot, " (", static_cast<int32>(out.fBoxes.size()), " box(es))");
+	}
+	if (outsideBoxes > 0)
+	{
+		whyNot.Append(", words outside the boxes are not read (");
+		whyNot.Append(outsideFile);
+		if (outsideBoxes > 1)
+			AppendCount(whyNot, " and ", outsideBoxes - 1, " more");
+		whyNot.Append(")");
+	}
 	if (refused > 0)
 	{
 		AppendCount(whyNot, ", ", refused, " refused");
@@ -392,7 +454,7 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 	if (skippedName > 0)
 		AppendCount(whyNot, ", ", skippedName, " not named after a story");
 
-	return (read > 0) ? kTrue : kFalse;
+	return (read > 0 || !out.fBoxes.empty()) ? kTrue : kFalse;
 }
 
 // ★★THE POUR RESHAPES TABLES (2026-09-24 evening, the user's decision, which replaces the morning's design 11-1
@@ -752,16 +814,23 @@ void DiscardHistoryOf(IDataBase* db)
 		history->Discard(UIDRef(db, db->GetRootUID()));
 }
 
-/** "Imported: 269.docx", "Imported: 269.docx (+2 more)" - the Source line before its time. */
+/** "Imported: 269.docx", "Imported: 269.docx (+2 more)" - the Source line before its time. ★A page file counts once,
+	however many boxes it holds (2026-10-25). */
 void ImportLabel(const KCMStoryTextSet& set, PMString& out)
 {
+	std::vector<PMString> names(set.fFileNames.begin(), set.fFileNames.end());
+	for (size_t b = 0; b < set.fBoxes.size(); ++b)
+	{
+		if (std::find(names.begin(), names.end(), set.fBoxes[b].fFileName) == names.end())
+			names.push_back(set.fBoxes[b].fFileName);
+	}
 	out = "Imported: ";
-	if (!set.fFileNames.empty())
-		out.Append(set.fFileNames[0]);
-	if (set.fFileNames.size() > 1)
+	if (!names.empty())
+		out.Append(names[0]);
+	if (names.size() > 1)
 	{
 		out.Append(" (+");
-		out.AppendNumber(static_cast<int32>(set.fFileNames.size()) - 1);
+		out.AppendNumber(static_cast<int32>(names.size()) - 1);
 		out.Append(" more)");
 	}
 	out.SetTranslatable(kFalse);
@@ -828,6 +897,17 @@ bool16 KCMImportStoryTextAsSource(const SysFileList& files, PMString& outMessage
 		outMessage.SetTranslatable(kFalse);
 		return kFalse;
 	}
+	// 2b. ★THE PAGE FILES' BOXES BECOME STORIES (2026-10-25, "Export Pages to Word..." - KCMPageImport.h): each box put back
+	//     into its story as the copy holds it, at the range it came from and only while that range is what was exported
+	//     (its fingerprint); the whole story then goes on the way a story file's does. What cannot go in is a "!" row.
+	int32 boxesIn = 0;
+	int32 storiesFromBoxes = 0;
+	if (!set.fBoxes.empty())
+	{
+		std::vector<KCMImportRefusal> boxRefusals;
+		KCMSpliceBoxesIntoSet(copyDB, set, boxRefusals, boxesIn, storiesFromBoxes);
+		sRefusals.insert(sRefusals.end(), boxRefusals.begin(), boxRefusals.end());
+	}
 	KCMSetImportCloneStories(set.fUids);
 
 	// 3. ★★THE WORDS GO INTO THE COPY - unsigned and untracked (the copy keeps no change history), the "!" rows noted as
@@ -885,6 +965,11 @@ bool16 KCMImportStoryTextAsSource(const SysFileList& files, PMString& outMessage
 	outMessage = "import: ";
 	outMessage.SetTranslatable(kFalse);
 	outMessage.Append(readMessage);
+	if (boxesIn > 0)
+	{
+		AppendCount(outMessage, ", ", boxesIn, " box(es) put back into ");
+		AppendCount(outMessage, "", storiesFromBoxes, " story(ies)");
+	}
 	outMessage.Append("; ");
 	if (!(KCMIsArmed() && KCMArmedTargetDB() != nil))
 	{
