@@ -2296,6 +2296,12 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 		changes.clear();
 	MarkOverset(targetDB, storyUID, changes);
 	KCMStoryList::SetRowChanges(rowIndex, changes, compared);
+	// ★★THE "=" RECORDS FOLLOW EDITS MADE OUTSIDE KCM (2026-10-26, the import tidy S10): each is placed again from the
+	//   comparison just attached - by its Source range, which never moves - so that a word typed before a "=" does not
+	//   leave it reading stale, and Restore from Copy pastes at the words' new place (KCMStoryList::FollowRecords). Only
+	//   when the story was read: an empty list from a story that could not be read says nothing about where anything is.
+	if (compared)
+		KCMStoryList::FollowRecords(rowIndex, targetDB);
 	// ★THE "=" RECORDS OUTLIVE THIS REFRESH (2026-09-24, stage 2 C - design 15-1-3): a Standing one stays where the
 	//   diff now finds nothing; one undone or put back has its twin among the changes just attached and is dropped, so
 	//   that the change is not shown twice.

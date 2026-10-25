@@ -99,6 +99,46 @@ inline void KCMShiftEqualFrom(std::vector<KCMEqualSpan>& spans, size_t slot, int
 	}
 }
 
+/** ★WHERE A RECORD'S SOURCE PLACE STANDS IN THE TARGET NOW (2026-10-26, the import tidy S10 - the "=" records follow edits
+	made outside KCM): the Target positions Source position `sourceAt` maps to through a row's LIVE changes (`lives` - Target
+	fStart/fEnd, Source fSourceStart/fSourceEnd, as a fresh comparison found them). Between two changes the two stories read
+	the same, so a place moves by what the changes before it put in and took out: t = sourceAt - c.fSourceEnd + c.fEnd for
+	the last change c ending at or before `sourceAt` (sourceAt itself when there is none). ★An INSERTION standing at
+	`sourceAt` (an empty Source range there) leaves the place either before the words it put in or past them, and only the
+	document can say which - so the place past them is the second candidate. The caller reads each place against the
+	Source's and takes the first that agrees.
+	★WHY THE SOURCE: a record's Source range never moves (the import's copy has no window; a Source document is the older
+	 version), while its Target place moves with every hand edit before it - which KCM never hears of.
+	@return the candidates in the order to try them - EMPTY when it cannot be said: a live change without its Source range,
+	  or `sourceAt` strictly inside one's Source range (the record's place is part of a difference now). */
+inline std::vector<int32> KCMSourceToTargetCandidates(const std::vector<KCMEqualSpan>& lives, int32 sourceAt)
+{
+	std::vector<int32> out;
+	const KCMEqualSpan* last = nil;
+	int32 pastInsertions = -1;
+	for (size_t i = 0; i < lives.size(); ++i)
+	{
+		const KCMEqualSpan& c = lives[i];
+		if (c.fSourceStart < 0 || c.fSourceEnd < c.fSourceStart)
+			return std::vector<int32>();						// a change whose Source range is not known
+		if (c.fSourceStart < sourceAt && sourceAt < c.fSourceEnd)
+			return std::vector<int32>();						// the place is inside a difference
+		if (c.fSourceStart == sourceAt && c.fSourceEnd == sourceAt)
+		{
+			if (c.fEnd > pastInsertions)
+				pastInsertions = c.fEnd;						// an insertion AT the place: the far side of it
+			continue;
+		}
+		if (c.fSourceEnd <= sourceAt && (last == nil || c.fSourceEnd >= last->fSourceEnd))
+			last = &c;
+	}
+	const int32 t = (last != nil) ? (sourceAt - last->fSourceEnd + last->fEnd) : sourceAt;
+	out.push_back(t);
+	if (pastInsertions > t)
+		out.push_back(pastInsertions);
+	return out;
+}
+
 /** One entry of the merged list: a live change (fIsRecord kFalse, an index into the live list) or a record. */
 struct KCMMergedRef
 {

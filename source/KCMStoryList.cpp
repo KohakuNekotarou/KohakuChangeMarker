@@ -1143,15 +1143,18 @@ namespace
 /** Whether a Standing record's place in the Target reads as the Source's: the characters at [fNowStart, fNowEnd)
 	against the Source's at the change's Source range, and for an attribute record the marks of its kind over them
 	(KCMAttrMarksSame). ★THE "=" IS THIS COMPARISON (KCMEqualRecord says why); a Source that is not open cannot
-	be read, and then the counters' answer is left to stand (kTrue). */
-bool16 RecordReadsAsSource(const KCMStoryRow& row, const KCMEqualRecord& r, IDataBase* targetDB)
+	be read, and then the counters' answer is left to stand (kTrue).
+	★AT A PLACE THE CALLER NAMES (2026-10-26, the import tidy S10): [nowStart, nowEnd) is where the Source's words are looked
+	 for - the record's own place (RecordReadsAsSource), or a place FollowRecords is trying for it. */
+bool16 RecordReadsAsSourceAt(const KCMStoryRow& row, const KCMEqualRecord& r, IDataBase* targetDB,
+							 TextIndex nowStart, TextIndex nowEnd)
 {
 	IDataBase* const sourceDB = KCMArmedSourceDB();
 	if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
 		return kTrue;
 	const UIDRef target(targetDB, row.fStoryUID);
 	const UIDRef source(sourceDB, row.fSourceStoryUID);	// the row's Source story (2026-10-26 - another uid for a row paired by place)
-	const int32 len = r.fNowEnd - r.fNowStart;
+	const int32 len = nowEnd - nowStart;
 	const int32 sLen = r.fLive.fSourceEnd - r.fLive.fSourceStart;
 	if (len != sLen)
 		return kFalse;
@@ -1162,14 +1165,20 @@ bool16 RecordReadsAsSource(const KCMStoryRow& row, const KCMEqualRecord& r, IDat
 		InterfacePtr<ITextModel> tModel(target, UseDefaultIID());
 		InterfacePtr<ITextModel> sModel(source, UseDefaultIID());
 		WideString tWords, sWords;
-		if (!KCMTextWords::WordsAt(tModel, r.fNowStart, len, tWords)
+		if (!KCMTextWords::WordsAt(tModel, nowStart, len, tWords)
 			|| !KCMTextWords::WordsAt(sModel, r.fLive.fSourceStart, sLen, sWords) || tWords != sWords)
 			return kFalse;
 	}
 	if (r.fCounterKind == kKCMStoryAttrNone)
 		return kTrue;
-	return KCMAttrMarksSame(target, source, r.fCounterKind, r.fNowStart, r.fNowEnd,
+	return KCMAttrMarksSame(target, source, r.fCounterKind, nowStart, nowEnd,
 							r.fLive.fSourceStart, r.fLive.fSourceEnd);
+}
+
+/** The record's own place read as the Source's (RecordReadsAsSourceAt at [fNowStart, fNowEnd)). */
+bool16 RecordReadsAsSource(const KCMStoryRow& row, const KCMEqualRecord& r, IDataBase* targetDB)
+{
+	return RecordReadsAsSourceAt(row, r, targetDB, r.fNowStart, r.fNowEnd);
 }
 
 /** Whether the words KCM's write took out stand at the record's live range again (KCMEqualRecord::fLiveWords) - kFalse
@@ -1693,6 +1702,128 @@ void KCMStoryList::PruneEqual(int32 nth, IDataBase* targetDB)
 			++i;
 		else
 			row.fEqual.erase(row.fEqual.begin() + static_cast<std::ptrdiff_t>(i));
+	}
+}
+
+/* CaretReadsAsSource (moved here from KCMFacades.cpp on 2026-10-26 - FollowRecords asks it too)
+*/
+bool16 KCMStoryList::CaretReadsAsSource(IDataBase* targetDB, UID story, UID sourceStory, TextIndex at, TextIndex sourceAt)
+{
+	IDataBase* const sourceDB = KCMArmedSourceDB();
+	if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
+		return kTrue;
+	IDataBase::SaveRestoreModifiedState targetGuard(targetDB);		// reading must not dirty either document
+	IDataBase::SaveRestoreModifiedState sourceGuard(sourceDB);
+	InterfacePtr<ITextModel> tModel(UIDRef(targetDB, story), UseDefaultIID());
+	InterfacePtr<ITextModel> sModel(UIDRef(sourceDB, sourceStory), UseDefaultIID());	// the row's Source story (2026-10-26)
+	if (tModel == nil || sModel == nil || at < 0 || sourceAt < 0)
+		return kFalse;
+	const int32 kSide = 2;
+	const int32 before = std::min(kSide, std::min(static_cast<int32>(at), static_cast<int32>(sourceAt)));
+	const int32 after = std::min(kSide, std::min(tModel->TotalLength() - at, sModel->TotalLength() - sourceAt));
+	if (after < 0)
+		return kFalse;
+	WideString tWords, sWords;
+	return (KCMTextWords::WordsAt(tModel, at - before, before + after, tWords)
+			&& KCMTextWords::WordsAt(sModel, sourceAt - before, before + after, sWords) && tWords == sWords) ? kTrue : kFalse;
+}
+
+/* FollowRecords
+*/
+void KCMStoryList::FollowRecords(int32 nth, IDataBase* targetDB)
+{
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || targetDB == nil)
+		return;
+	KCMStoryRow& row = gRows[nth];
+	if (row.fEqual.empty() || row.fStoryUID == kInvalidUID)
+		return;
+
+	// The row's live changes as the comparison just found them - the map from the Source's positions to the Target's
+	// (KCMSourceToTargetCandidates). A Standing record is not among them: its place reads as the Source's.
+	std::vector<KCMEqualSpan> lives;
+	for (size_t k = 0; k < row.fChanges.size(); ++k)
+	{
+		const KCMStoryChange& c = row.fChanges[k];
+		lives.push_back(KCMEqualSpan(c.fTargetStart, c.fTargetEnd, static_cast<int32>(c.fWhat), static_cast<int32>(c.fKind),
+									 kFalse, c.fSourceStart, c.fSourceEnd));
+	}
+
+	for (size_t i = 0; i < row.fEqual.size(); ++i)
+	{
+		KCMEqualRecord& r = row.fEqual[i];
+		const TextIndex sourceLen = r.fLive.fSourceEnd - r.fLive.fSourceStart;
+		const TextIndex liveLen = r.fLive.fTargetEnd - r.fLive.fTargetStart;
+
+		// 1. ITS CHANGE IS LIVE AGAIN - the same what, kind and SOURCE range among the changes just found (the Source does
+		//    not move, the Target range is what an edit before it has moved): the write was undone or put back, and that
+		//    change says where it stands - the live range its own, the Source's words' place at its start.
+		//    ⚠AND THE SAME LENGTH, AND THE SAME WORDS WHERE THE RECORD KEPT THEM (fLiveWords): a deletion's "=" stands at a
+		//     Source CARET, and words a person types at that very caret are a change at the same Source range too - taken
+		//     for the record's own change come back, they would be hidden behind it on the list (KCMMergeEqual).
+		const KCMStoryChange* twin = nil;
+		for (size_t k = 0; k < row.fChanges.size() && twin == nil; ++k)
+		{
+			const KCMStoryChange& c = row.fChanges[k];
+			if (c.fWhat != r.fLive.fWhat || c.fKind != r.fLive.fKind
+				|| c.fSourceStart != r.fLive.fSourceStart || c.fSourceEnd != r.fLive.fSourceEnd
+				|| c.fTargetEnd - c.fTargetStart != liveLen)
+				continue;
+			if (r.fHasLiveWords && liveLen > 0)
+			{
+				IDataBase::SaveRestoreModifiedState guard(targetDB);
+				InterfacePtr<ITextModel> model(UIDRef(targetDB, row.fStoryUID), UseDefaultIID());
+				WideString words;
+				if (!KCMTextWords::WordsAt(model, c.fTargetStart, liveLen, words) || words != r.fLiveWords)
+					continue;
+			}
+			twin = &c;
+		}
+		if (twin != nil)
+		{
+			if (r.fLive.fTargetStart != twin->fTargetStart || r.fLive.fTargetEnd != twin->fTargetEnd
+				|| r.fNowStart != twin->fTargetStart)
+				r.fChecked = kFalse;
+			r.fLive.fTargetStart = twin->fTargetStart;
+			r.fLive.fTargetEnd = twin->fTargetEnd;
+			r.fNowStart = twin->fTargetStart;
+			r.fNowEnd = twin->fTargetStart + sourceLen;
+			continue;
+		}
+
+		// 2. OTHERWISE ITS "=" STANDS SOMEWHERE (or it is stale): the places its Source start maps to, then its present
+		//    place - the first that reads as the Source's is taken. A caret ("=" of a deletion: no words of its own) is read
+		//    by what stands on either side of it (CaretReadsAsSource). None reads = left where it was: it reads Stale, as
+		//    before this, and an undo of the hand edit may bring its "=" back.
+		std::vector<int32> places = KCMSourceToTargetCandidates(lives, static_cast<int32>(r.fLive.fSourceStart));
+		places.push_back(static_cast<int32>(r.fNowStart));
+		for (size_t p = 0; p < places.size(); ++p)
+		{
+			const TextIndex t = places[p];
+			if (t < 0)
+				continue;
+			const bool16 reads = (sourceLen == 0)
+				? CaretReadsAsSource(targetDB, row.fStoryUID, row.fSourceStoryUID, t, r.fLive.fSourceStart)
+				: RecordReadsAsSourceAt(row, r, targetDB, t, t + sourceLen);
+			if (!reads)
+				continue;
+			if (r.fNowStart != t)
+				r.fChecked = kFalse;
+			r.fNowStart = t;
+			r.fNowEnd = t + sourceLen;
+			r.fLive.fTargetStart = t;			// where its change would stand, undone (AddEqualGroup's convention)
+			r.fLive.fTargetEnd = t + liveLen;
+			break;
+		}
+	}
+
+	// ★THE PLACES ARE THIS COMPARISON'S: every record not Stale is placed for what its state says stands there, so the
+	//   reconcile in MergedOrder has nothing left to slide (it slides the followers of a record whose state changed since
+	//   they were last placed - and they were all placed just now, from the document).
+	for (size_t i = 0; i < row.fEqual.size(); ++i)
+	{
+		const KCMEqualState state = StateNow(row, row.fEqual[i], targetDB);
+		if (state != kKCMEqualStale)
+			row.fEqual[i].fPlacedForSource = (state == kKCMEqualStanding) ? kTrue : kFalse;
 	}
 }
 

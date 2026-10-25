@@ -903,6 +903,33 @@ namespace KCMStoryList
 		SetRowChanges (design 15-1-3): the diff has found the change again, or the reader edited it away. */
 	void PruneEqual(int32 nth, IDataBase* targetDB);
 
+	/** ★THE "=" RECORDS FOLLOW EDITS MADE OUTSIDE KCM (2026-10-26, the import tidy S10): every record of row `nth` placed
+		again from the comparison RunOne has just attached (SetRowChanges) - before PruneEqual, and only when the story was
+		compared. A record's SOURCE range never moves; its Target place moves with every hand edit before it, which KCM is
+		never told of (its own writes slide the records - AddEqual, AddEqualGroup). In order, for each record:
+		  (1) a live change with its what, kind and Source range - and its length, and its words where kept - is its own
+		      change live again (undone, or put back): the live range is that change's, the "=" place at its start;
+		  (2) otherwise the places its Source start maps to (KCMSourceToTargetCandidates), then its present place - the
+		      first that reads as the Source's (a caret: CaretReadsAsSource) is taken; none = left where it was, and it
+		      reads Stale as before.
+		Then every record not Stale is marked placed for its state (fPlacedForSource): the places are this comparison's,
+		so MergedOrder's reconcile has nothing left to slide. */
+	void FollowRecords(int32 nth, IDataBase* targetDB);
+
+	/** ★A CARET'S PLACE, READ BY WHAT STANDS ON EITHER SIDE OF IT (2026-10-24 night, the re-check; moved here from
+		KCMFacades.cpp on 2026-10-26 - FollowRecords asks it too): a "=" at a caret - a change that took the document's words
+		out - has nothing of its own to read, and an empty stretch reads as the Source's empty words ANYWHERE. So once its
+		place had been moved by a write the records do not slide with, the stale place still read as "=" and Restore from
+		Copy pasted the words there (measured after Apply All, before the pour was made to let the records go: four
+		characters early). Up to two characters each way are read instead, against the Source's on either side of the
+		Source's own caret. A Source that cannot be read answers kTrue, as RecordReadsAsSource does.
+		`sourceStory` is the row's Source story (KCMStoryRow::fSourceStoryUID) - another uid than `story` for a row paired by
+		the place of its first frame.
+		⚠THE COST: a change not in yet that stands within two characters of the caret makes it answer kFalse at the right
+		place too - Restore from Copy is refused there until that change is in (Ctrl+Z still takes the Apply back). The safe
+		side: a refusal leaves the document as it is, a wrong answer pastes words where they were not. */
+	bool16 CaretReadsAsSource(IDataBase* targetDB, UID story, UID sourceStory, TextIndex at, TextIndex sourceAt);
+
 	/** ★Let go of EVERY record of row `nth` (2026-10-24 night, the re-check): the import's pour - Apply All Changes, Apply
 		All Changes in This Story - wrote its story over, and a pour does not slide the records the way KCM's own writes do
 		(AddEqualGroup), so their places are stale from then on. Measured: a deletion's "=" (a caret, which reads as the

@@ -217,37 +217,8 @@ bool16 ParagraphStyleStands(IDataBase* db, UID style)
 	return (info != nil && info->GetStyleType() == IStyleInfo::kParagraphStyle) ? kTrue : kFalse;
 }
 
-/** ★A CARET'S PLACE, READ BY WHAT STANDS ON EITHER SIDE OF IT (2026-10-24 night, the re-check): a "=" at a caret - a change
-	that took the document's words out - has nothing of its own to read, and an empty stretch reads as the Source's empty
-	words ANYWHERE. So once its place had been moved by a write the records do not slide with, the stale place still read
-	as "=" and Restore from Copy pasted the words there (measured after Apply All, before the pour was made to let the
-	records go: four characters early). Up to two characters each way are read instead, against the Source's on either
-	side of the Source's own caret. A Source that cannot be read answers kTrue, as RecordReadsAsSource does.
-	★`sourceStoryUID` is the row's Source story (KCMStoryRow::fSourceStoryUID, 2026-10-26) - another uid than `storyUID`
-	 for a row paired by the place of its first frame.
-	⚠THE COST: a change of the files' that is not in yet and stands within two characters of the caret makes it answer
-	kFalse at the right place too - Restore from Copy is refused there until that change is in (Ctrl+Z still takes the
-	Apply back). The safe side: a refusal leaves the document as it is, a wrong answer pastes words where they were not. */
-bool16 CaretReadsAsSource(IDataBase* targetDB, UID storyUID, UID sourceStoryUID, TextIndex at, TextIndex sourceAt)
-{
-	IDataBase* const sourceDB = KCMArmedSourceDB();
-	if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
-		return kTrue;
-	IDataBase::SaveRestoreModifiedState targetGuard(targetDB);		// reading must not dirty either document
-	IDataBase::SaveRestoreModifiedState sourceGuard(sourceDB);
-	InterfacePtr<ITextModel> tModel(UIDRef(targetDB, storyUID), UseDefaultIID());
-	InterfacePtr<ITextModel> sModel(UIDRef(sourceDB, sourceStoryUID), UseDefaultIID());	// the row's Source story (2026-10-26)
-	if (tModel == nil || sModel == nil || at < 0 || sourceAt < 0)
-		return kFalse;
-	const int32 kSide = 2;
-	const int32 before = std::min(kSide, std::min(static_cast<int32>(at), static_cast<int32>(sourceAt)));
-	const int32 after = std::min(kSide, std::min(tModel->TotalLength() - at, sModel->TotalLength() - sourceAt));
-	if (after < 0)
-		return kFalse;
-	WideString tWords, sWords;
-	return (KCMTextWords::WordsAt(tModel, at - before, before + after, tWords)
-			&& KCMTextWords::WordsAt(sModel, sourceAt - before, before + after, sWords) && tWords == sWords) ? kTrue : kFalse;
-}
+// (CaretReadsAsSource - a caret's place read by what stands on either side of it - moved to KCMStoryList on 2026-10-26,
+//  the import tidy S10: the records' FollowRecords asks it too.)
 
 /** The kept formatting put back over the paragraph that holds `at`: its style with what the write left on it cleared,
 	then its own overrides (KFC's PutParagraphBack - the copy-restore spec's C16). Inside the caller's sequence. */
@@ -1185,6 +1156,21 @@ private:
 				&& outRow.fStoryUID != kInvalidUID) ? kTrue : kFalse;
 	}
 
+	/** Whether row `nth`'s story has moved since the row was last compared - the aggregate counter (any attribute kind asks
+		it - KCMStoryDiffRun::CountForKind) against the one the row was compared at (fAllCount): an edit KCM was not told of,
+		plain typing above all (2026-10-26, the import tidy S10 - RestoreChangeFromCopy asks it before it refuses). kFalse for
+		a row never compared, a Removed one, a row standing for a file, or no armed Target. */
+	bool16 ChangedSinceCompared(int32 nth)
+	{
+		IDataBase* const targetDB = KCMArmedTargetDB();
+		const KCMStoryRow* const row = KCMStoryList::GetRow(nth);
+		if (targetDB == nil || !KCMIsDocDBOpen(targetDB) || row == nil || row->fStoryUID == kInvalidUID
+			|| (row->fKinds & kKCMStoryKindRemoved) != 0 || row->fComparedAt.empty())
+			return kFalse;
+		return (KCMStoryDiffRun::CountForKind(UIDRef(targetDB, row->fStoryUID), kKCMStoryAttrRuby) != row->fAllCount)
+			   ? kTrue : kFalse;
+	}
+
 	/** Compares row `nth` again and says whether change `which` is still `before`: the same kind, the same
 		attribute, and the same place on BOTH sides. Every change row item asks this before it acts (2026-09-24).
 		★★THE LIST DOES NOT FOLLOW AN EDIT (the retired reject's live re-check): after Ctrl+Z of a reject it still showed
@@ -1702,7 +1688,7 @@ public:
 		// ★Greyed, too, where a caret's place no longer reads as the Source's by its surroundings (CaretReadsAsSource).
 		const KCMEqualRecord* const rec = KCMStoryList::EqualAt(nth, which);
 		return (rec != nil && (rec->fNowEnd != rec->fNowStart
-							   || CaretReadsAsSource(targetDB, row.fStoryUID, row.fSourceStoryUID, rec->fNowStart, rec->fLive.fSourceStart)))
+							   || KCMStoryList::CaretReadsAsSource(targetDB, row.fStoryUID, row.fSourceStoryUID, rec->fNowStart, rec->fLive.fSourceStart)))
 			   ? kTrue : kFalse;
 	}
 
@@ -1715,6 +1701,18 @@ public:
 		Change before;
 		if (!this->HasRestorableCopy(nth, which, targetDB, row) || !this->GetChange(nth, which, before))
 		{
+			// ★★THE LIST MAY BE OUT OF DATE FIRST (2026-10-26, the import tidy S10): a word typed before a "=" leaves its record
+			//   reading stale at the old place - the record sits the list out, and this index no longer names it. Compared
+			//   again, the record is placed anew (KCMStoryList::FollowRecords) and the reader is asked once more, as when the
+			//   change at an index is no longer the same (SameChangeAfterRefresh). ⚠The panel's list does not follow plain
+			//   typing (the Story mode's rule - KCMStoryFollowObserver); this is the command's own look.
+			if (this->ChangedSinceCompared(nth))
+			{
+				this->RefreshRow(nth);
+				fStale = kTrue;		// a batch leaves the rest of this row's indices (RunBatch)
+				outMessage = "the list was out of date - it has been compared again; right-click the row once more";
+				return -1;
+			}
 			outMessage = "this row is not a change Apply This Change put in with a copy kept";
 			return -1;
 		}
@@ -1743,7 +1741,7 @@ public:
 		// ★A CARET'S PLACE HAS TO READ AS THE SOURCE'S BY ITS SURROUNDINGS (CaretReadsAsSource says why): otherwise the words
 		//   would go back where an edit has moved them from.
 		if (record.fNowEnd == record.fNowStart
-			&& !CaretReadsAsSource(targetDB, row.fStoryUID, row.fSourceStoryUID, record.fNowStart, record.fLive.fSourceStart))
+			&& !KCMStoryList::CaretReadsAsSource(targetDB, row.fStoryUID, row.fSourceStoryUID, record.fNowStart, record.fLive.fSourceStart))
 		{
 			outMessage = "the place it went in has moved since (an edit before it) - left as it is; Ctrl+Z takes it back";
 			return -1;
