@@ -58,6 +58,7 @@
 #include "KCMHideUnchanged.h"      // KCMResetHideUnchanged
 #include "KCMExternalSource.h"     // KCMIsDbAlive -- "still there" includes the lent Source
 #include "KCMTaskStartClone.h"     // KCMIsImportClone / KCMImportCloneHasStory -- an import's copy lists the stories it filled (2026-10-24)
+#include "KCMStoryPlace.h"         // KCMStoryPairByPlace -- the stories the UIDs could not pair, paired by their first frame's place (2026-10-26)
 // **No UI header is included here.** Everything this file used to do to the screen is now a
 // KCMNotify*() call, so the comparison engine says only WHAT CHANGED and has zero dependency on
 // the UI.
@@ -604,7 +605,8 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 }
 
 /* KCMBuildStoryRowsByDiff
-	The Story mode's list, built: both documents' story counters say which stories differ, the text
+	The Story mode's list, built: both documents' story counters say which stories differ, the ones the
+	UIDs could not pair are paired by their first frame's place (2026-10-26, KCMStoryPairByPlace), the text
 	diff says what changed inside each of them, and the rows where only formatting moved are dropped.
 
 	TWO CALLERS, ONE ORDER (2026-10-11): KCMRebuildStoryEdits in the Story mode, and the Before/After
@@ -637,14 +639,23 @@ bool16 KCMBuildStoryRowsByDiff(IDataBase* targetDB, IDataBase* sourceDB)
 	std::vector<KCMStoryDiff> storyDiffs;
 	KCMStoryEdits::Compare(sourceStamps, targetStamps, storyDiffs);
 
+	// ★★THE STORIES THE UIDS COULD NOT PAIR, PAIRED BY THE PLACE OF THEIR FIRST FRAME (2026-10-26, the author: "a frame
+	//   copied from a past document gets a new UID - brought over and put in the same place"): an Added and a Removed
+	//   story whose first frames stand at exactly the same place and size on corresponding pages become ONE row, compared
+	//   like a UID pair (KCMStoryPlace.h). ⚠HERE AND NOWHERE ELSE - the panel and the report build their rows through
+	//   this function - and before the import's filter below, which asks the row's Source story.
+	KCMStoryPairByPlace(targetDB, sourceDB, storyDiffs);
+
 	// ★★AGAINST AN IMPORT'S COPY, ONLY THE STORIES THE FILES FILLED (2026-10-24, the import-as-Source road - design
 	//   section 2-7): the copy is the document as it stood at the import with the files' words poured in, so every
 	//   other story differs only by what the reader has done since - and those differences are not the files'.
+	//   ★Asked by the row's SOURCE story (2026-10-26): the filled ones are the copy's, and a row paired by place
+	//    compares a Target story of another uid against one of them (KCMStoryDiff::fSourceStoryUID).
 	if (KCMIsImportClone(sourceDB))
 	{
 		std::vector<KCMStoryDiff> filled;
 		for (size_t i = 0; i < storyDiffs.size(); ++i)
-			if (KCMImportCloneHasStory(storyDiffs[i].fStoryUID))
+			if (KCMImportCloneHasStory(storyDiffs[i].fSourceStoryUID))
 				filled.push_back(storyDiffs[i]);
 		storyDiffs.swap(filled);
 	}

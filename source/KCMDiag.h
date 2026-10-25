@@ -29,7 +29,14 @@
 //  KCM_DIAG it is the constant false. The switches in use (add one line here for each one added):
 //    copy-fail   KCMCopyStore::Take keeps no copy (2026-10-24): Apply This Change still goes in, and the "=" row's
 //                Restore from Copy is greyed and its message says no copy was kept.
-//    (none else in use. ⛔track-describe-only / track-no-colour stood here on 2026-10-05 for one afternoon, to bisect an undo
+//    step-fail   a write of the Story Edits facade that went in is taken as NOT gone in (EndStep, KCMFacades.cpp): the
+//                single step's abort is measured (2026-10-25, tests-m T-M3).
+//    batch-fail  the same for a write after the first one of a batch (RunBatch, KCMFacades.cpp): the batch's roll-back.
+//    place-pair-off  the Story rows are built WITHOUT pairing stories by their first frame's place (KCMStoryPairByPlace,
+//                2026-10-26): a test run with it on shows the Added and Removed rows the pairing exists to join, so a
+//                pass without it is known to have measured the pairing (tests-place.ps1 -Armed).
+//    (none else in use - counted 2026-10-26: step-fail and batch-fail had been in use without a line here.
+//     ⛔track-describe-only / track-no-colour stood here on 2026-10-05 for one afternoon, to bisect an undo
 //     step a Refresh seemed to drop; the cause was InDesign cutting SCRIPT-made steps at the next real command - the
 //     same in the Story mode and after a plain "Add Page" - so they went: memory command-history-and-undo-stack.)
 //

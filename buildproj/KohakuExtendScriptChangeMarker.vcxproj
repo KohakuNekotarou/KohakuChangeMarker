@@ -295,6 +295,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarker.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkerExpiry.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkBuild.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryPlace.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTrackResolve.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTrackOriginal.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTrackRead.cpp" />
@@ -430,6 +431,8 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMDiag.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkDocs.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkBuild.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryPlacePairRule.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryPlace.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTrackResolve.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTrackOriginal.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTrackRead.h" />
