@@ -532,13 +532,25 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 	//   SELECTION, which is a different operation (see its own note).
 	// ⚠WHAT WOULD CHANGE THE ANSWER: anything added to this path that touches the model rather than
 	//   the view. Then measure again rather than reasoning from here.
-	if (!KCMGotoStoryFrame(db, row.fFrameUID, row.fPageUID, row.fStoryUID))
+	// ★The Source window is lined up on the row's SOURCE story (2026-10-26 - Row::fSourceStoryUID; another uid for a row
+	//   paired by the place of its first frame, the same one for every other).
+	if (!KCMGotoStoryFrame(db, row.fFrameUID, row.fPageUID, row.fStoryUID, row.fSourceStoryUID))
 	{
 		KCMSetStatus("Could not scroll.");	// the same wording as a failed Prev/Next (it is the same event)
 		return kFalse;
 	}
 
-	KCMSetStatus(PageLabel(db, row.fPageUID));
+	// ★★A ROW PAIRED BY PLACE SAYS SO (2026-10-26, design 2-2 #13): the list shows the Target's story number, and nothing
+	//   else on the panel tells the reader that the Source side is ANOTHER story - the one whose frame stood where this
+	//   story's frame stands now.
+	PMString status = PageLabel(db, row.fPageUID);
+	if ((row.fKinds & kKCMStoryKindByPosition) != 0 && row.fSourceStoryUID != kInvalidUID)
+	{
+		status.Append(" - paired by place with the Source's story ");
+		status.AppendNumber(static_cast<int32>(row.fSourceStoryUID.Get()));
+	}
+	status.SetTranslatable(kFalse);
+	KCMSetStatus(status);
 	return kTrue;
 }
 
@@ -680,7 +692,8 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	const UIDRef pageRef = Utils<ITextUtils>()->GetPageUIDRef(UIDRef(db, frameUID));
 	const UID pageUID = (pageRef.GetDataBase() != nil) ? pageRef.GetUID() : row.fPageUID;
 
-	// Both windows move here - the target to this frame, the source to the same story.
+	// Both windows move here - the target to this frame, the source to the row's Source story (the same story for every
+	// row paired by UID; another for one paired by place - 2026-10-26).
 	//
 	// ★★★AND BOTH LAND ON THE EDIT ITSELF, NOT ON THE TOP OF THE STORY (user's request, 2026-08-22:
 	//   "the very start of the changed part should move to the centre of the layout view" - what was arriving
@@ -732,7 +745,7 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 		}
 	}
 
-	const bool16 moved = KCMGotoStoryFrame(db, frameUID, pageUID, row.fStoryUID, from, sourceFocus,
+	const bool16 moved = KCMGotoStoryFrame(db, frameUID, pageUID, row.fStoryUID, row.fSourceStoryUID, from, sourceFocus,
 										   haveCorner ? &tableCorner : (wentToOverset ? &oversetPb : nil),
 										   targetCaret, sourceCaret);
 
@@ -830,9 +843,10 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 			track.fHasColour, track.fR, track.fG, track.fB);
 	}
 	else
+		// ★The Source's range under the row's SOURCE story (2026-10-26 - another uid for a row paired by place).
 		Utils<IKCMStoryMarkFacade>()->ShowJumpFlash(targetFlash ? db : nil, row.fStoryUID,
 													  targetFlash ? from : 0, targetFlash ? to : 0,
-													  change.fSourceStart, change.fSourceEnd);
+													  row.fSourceStoryUID, change.fSourceStart, change.fSourceEnd);
 
 	// ***** AND THE OTHER SIDE OF THE EDIT GOES TO THE PANEL'S MESSAGE AREA. *****
 	//

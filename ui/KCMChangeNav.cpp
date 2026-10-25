@@ -1061,7 +1061,7 @@ void KCMGotoPrevChange() { KCMGoto(-1); }
 //========================================================================================
 // KCMGotoStoryFrame (declared in KCMChangeNav.h)
 //========================================================================================
-bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
+bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID, UID sourceStoryUID,
 	TextIndex focusIndex, TextIndex sourceFocusIndex, const PBPMPoint* oversetPb,
 	bool16 focusIsCaret, bool16 sourceFocusIsCaret)
 {
@@ -1125,8 +1125,11 @@ bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 	// CARRIES THE STORY UID OVER (measured; the section "WHY TWO VERSIONS CAN BE MATCHED AT ALL"
 	// in KCMStoryStamp.h). A story with no counterpart on the Source -- an Added row -- comes back
 	// as kInvalidUID, and then only the Target moves.
+	// ★★AND THE STORY IT IS LINED UP ON IS THE ROW'S SOURCE STORY (2026-10-26, stories paired by place - KCMChangeNav.h):
+	//   storyUID itself for every row paired by UID, the Source's own story for a row paired by the place of its first
+	//   frame. kInvalidUID (an Added row) leaves the Source window where it is.
 	IDataBase* sourceDB = marks->GetMarkedSourceDB();
-	if (sourceDB != nil && sourceDB != db && storyUID != kInvalidUID)
+	if (sourceDB != nil && sourceDB != db && sourceStoryUID != kInvalidUID)
 	{
 		// THE OLD SIDE NEEDS A DIRTY GUARD OF ITS OWN. Passing sourceFocusIndex can bring THE OLD
 		// DOCUMENT'S COMPOSITION up to date, in order to produce that character's position and the
@@ -1138,7 +1141,7 @@ bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 		// does nothing.
 		IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
 
-		UID srcFrame = Utils<IKCMStoryEditsFacade>()->GetFirstFrameUID(sourceDB, storyUID);
+		UID srcFrame = Utils<IKCMStoryEditsFacade>()->GetFirstFrameUID(sourceDB, sourceStoryUID);
 
 			// THE OLD SIDE ALSO ASKS FOR "THE FRAME CONTAINING THE CHANGE".
 			// GetFirstFrameUID above returns THE STORY'S FIRST FRAME, which is right when what the
@@ -1156,8 +1159,8 @@ bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 			// A gap (an insertion, seen from here) is asked as a gap - the same distinction the point
 			// below makes, so that the two readings are of one place (KCMChangeNav.h on focusIsCaret).
 			const UID srcFocusFrame = sourceFocusIsCaret
-				? Utils<IKCMStoryEditsFacade>()->GetCaretFrameAt(sourceDB, storyUID, sourceFocusIndex)
-				: Utils<IKCMStoryEditsFacade>()->GetStoryFrameAt(sourceDB, storyUID, sourceFocusIndex);
+				? Utils<IKCMStoryEditsFacade>()->GetCaretFrameAt(sourceDB, sourceStoryUID, sourceFocusIndex)
+				: Utils<IKCMStoryEditsFacade>()->GetStoryFrameAt(sourceDB, sourceStoryUID, sourceFocusIndex);
 			if (srcFocusFrame != kInvalidUID)
 				srcFrame = srcFocusFrame;
 		}
@@ -1191,7 +1194,7 @@ bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 					// fSourceStart (the start of an empty range, i.e. where the caret goes) now
 					// arrives for it too, so nothing branches here.
 				UID srcLanded = kInvalidUID;
-				KCMScrollDocToStoryStart(sourceDB, storyUID, srcFrame, srcLanded, KCMReadDocZoom(db),
+				KCMScrollDocToStoryStart(sourceDB, sourceStoryUID, srcFrame, srcLanded, KCMReadDocZoom(db),
 										   sourceFocusIndex, sourceFocusIsCaret);
 				if (srcLanded != kInvalidUID)
 					srcFrame = srcLanded;

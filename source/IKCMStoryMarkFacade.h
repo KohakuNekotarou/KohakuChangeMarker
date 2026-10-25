@@ -118,8 +118,13 @@ public:
 
 		@param db the document the ROW was read out of - the older one for a Removed story, the
 			newer one otherwise. Not necessarily the target: see the note above this class.
-		@param storyUID the story, which names the same story in BOTH documents (the whole Story
-			mode rests on that - the diff pairs stories by uid and the click selects by uid).
+		@param storyUID the story in `db`.
+		@param sourceStoryUID ★the story lit in the OLDER document (2026-10-26) - the row's Source story
+			(IKCMStoryEditsFacade::Row::fSourceStoryUID): the same uid as storyUID for every row paired by UID (the
+			Story mode rests on that - the diff pairs stories by uid and the click selects by uid), the Source's own
+			story for a row paired by the place of its first frame. kInvalidUID lights nothing over there (an Added row
+			has no Source story). ⚠Until 2026-10-26 the one storyUID was used on both sides; reshaped in place - both
+			halves are built together and no other plug-in reaches this facade ([[facade-vtable-slot-append-only]]).
 		@param from first character to light in `db`.
 		@param to one past the last. from == to is the caret case.
 		@param sourceFrom first character to light in the OLDER document, which is pointed at as
@@ -129,7 +134,7 @@ public:
 	*/
 	virtual void	ShowJumpFlash(IDataBase* db, UID storyUID,
 								  TextIndex from, TextIndex to,
-								  TextIndex sourceFrom, TextIndex sourceTo) = 0;
+								  UID sourceStoryUID, TextIndex sourceFrom, TextIndex sourceTo) = 0;
 
 	// (⛔ClearJumpFlash() - take a jump's pointer down now, leaving the standing marks alone - stood here until
 	//  2026-10-25. Its one caller was the double click's selection (KCMStorySelectChange), which went with the double
@@ -150,16 +155,6 @@ public:
 										  TextIndex from, TextIndex to,
 										  TextIndex sourceFrom, TextIndex sourceTo,
 										  bool16 hasColour, uint8 r, uint8 g, uint8 b) = 0;
-
-	/** ShowJumpFlash with the OLDER document's story named on its own (2026-10-26, stories paired by place): the story
-		in `db` is `storyUID`, the one lit in the older document is `sourceStoryUID` - the row's Source story
-		(IKCMStoryEditsFacade::Row::fSourceStoryUID), which is another uid for a row paired by the place of its first frame
-		and the same uid for every other row. kInvalidUID = nothing lit over there (an Added row has no Source story).
-		★The Story mode's jump calls this; ShowJumpFlash above stands for its one-uid callers.
-		⚠Appended at the END ([[facade-vtable-slot-append-only]]). */
-	virtual void	ShowJumpFlashPaired(IDataBase* db, UID storyUID,
-										TextIndex from, TextIndex to,
-										UID sourceStoryUID, TextIndex sourceFrom, TextIndex sourceTo) = 0;
 };
 
 #endif // __IKCMStoryMarkFacade_h__

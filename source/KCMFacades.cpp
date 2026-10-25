@@ -2909,15 +2909,12 @@ public:
 
 	virtual void	ShowJumpFlash(IDataBase* db, UID storyUID,
 								  TextIndex from, TextIndex to,
-								  TextIndex sourceFrom, TextIndex sourceTo);
+								  UID sourceStoryUID, TextIndex sourceFrom, TextIndex sourceTo);
 
 	virtual void	ShowJumpFlashColoured(IDataBase* db, UID storyUID,
 										  TextIndex from, TextIndex to,
 										  TextIndex sourceFrom, TextIndex sourceTo,
 										  bool16 hasColour, uint8 r, uint8 g, uint8 b);
-	virtual void	ShowJumpFlashPaired(IDataBase* db, UID storyUID,
-										TextIndex from, TextIndex to,
-										UID sourceStoryUID, TextIndex sourceFrom, TextIndex sourceTo);
 	// No ShutdownMarks: teardown is model-side only and KCMPeek.cpp calls the marker directly
 	// (IKCMStoryMarkFacade.h says why a boundary method with no caller is worse than none).
 };
@@ -2926,24 +2923,30 @@ CREATE_PMINTERFACE(KCMStoryMarkFacade, kKCMStoryMarkFacadeImpl)
 
 void KCMStoryMarkFacade::ShowJumpFlash(IDataBase* db, UID storyUID,
 										 TextIndex from, TextIndex to,
-										 TextIndex sourceFrom, TextIndex sourceTo)
+										 UID sourceStoryUID, TextIndex sourceFrom, TextIndex sourceTo)
 {
 	KCMStoryMarkDocs flash;
 	KCMStoryMarker::AddFlashRange(flash, db, storyUID, from, to);
 
-	// THE SAME STORY UID, IN THE OTHER DOCUMENT - which is what the whole Story mode is built on:
-	// the diff pairs stories by uid, the click selects by uid, and the standing
-	// marks light both by uid (KCMStoryMarkBuild).
-	// @warning the general rule that a uid names a DIFFERENT object in another document is true
-	// and does not apply here. Believing that it did is what once left the older window bare.
+	// THE ROW'S SOURCE STORY, IN THE OTHER DOCUMENT (2026-10-26 - it was storyUID itself until then): the same uid for
+	// every row paired by UID, which is what the whole Story mode is built on - the diff pairs stories by uid, the click
+	// selects by uid, and the standing marks light both by uid (KCMStoryMarkBuild) - and the Source's own story for a row
+	// paired by the place of its first frame (KCMStoryKinds.h, kKCMStoryKindByPosition). kInvalidUID lights nothing there.
+	// @warning the general rule that a uid names a DIFFERENT object in another document is true, and for a row paired by
+	// place it is exactly why the Source's story is handed in on its own. Believing it of every row is what once left the
+	// older window bare.
 	// @warning `db` is NOT always the target: a Removed story is read out of the older document,
 	// and then this test is what stops the same document being marked twice (which would invert
 	// twice and leave a hole - KCMStoryMarkRanges.h).
 	// The test lives here rather than at the caller because "is the older window open" is a fact
 	// about the comparison, and the comparison is this side's ([[one-question-one-place]]).
 	IDataBase* const flashSourceDB = KCMArmedSourceDB();
-	if (flashSourceDB != nil && flashSourceDB != db && KCMIsDocDBOpen(flashSourceDB))
-		KCMStoryMarker::AddFlashRange(flash, flashSourceDB, storyUID, sourceFrom, sourceTo);
+	if (sourceStoryUID != kInvalidUID && flashSourceDB != nil && flashSourceDB != db && KCMIsDocDBOpen(flashSourceDB))
+	{
+		KCM_DIAG_LOG("flash source story=%u [%d,%d)", static_cast<unsigned>(sourceStoryUID.Get()),
+					 static_cast<int>(sourceFrom), static_cast<int>(sourceTo));	// test builds: which story is lit over there
+		KCMStoryMarker::AddFlashRange(flash, flashSourceDB, sourceStoryUID, sourceFrom, sourceTo);
+	}
 
 	KCMStoryMarker::ShowFlash(flash);
 }
@@ -2961,25 +2964,6 @@ void KCMStoryMarkFacade::ShowJumpFlashColoured(IDataBase* db, UID storyUID,
 	IDataBase* const flashSourceDB = KCMArmedSourceDB();
 	if (sourceFrom >= 0 && flashSourceDB != nil && flashSourceDB != db && KCMIsDocDBOpen(flashSourceDB))
 		KCMStoryMarker::AddFlashRange(flash, flashSourceDB, storyUID, sourceFrom, sourceTo, hasColour, r, g, b);
-	KCMStoryMarker::ShowFlash(flash);
-}
-
-/* ShowJumpFlash with the older document's story named on its own (2026-10-26, stories paired by place -
-   IKCMStoryMarkFacade.h): ShowJumpFlash's body, with the Source's range lit under `sourceStoryUID` - the row's Source
-   story, another uid for a row paired by the place of its first frame. kInvalidUID lights nothing over there. */
-void KCMStoryMarkFacade::ShowJumpFlashPaired(IDataBase* db, UID storyUID,
-											 TextIndex from, TextIndex to,
-											 UID sourceStoryUID, TextIndex sourceFrom, TextIndex sourceTo)
-{
-	KCMStoryMarkDocs flash;
-	KCMStoryMarker::AddFlashRange(flash, db, storyUID, from, to);
-	IDataBase* const flashSourceDB = KCMArmedSourceDB();
-	if (sourceStoryUID != kInvalidUID && flashSourceDB != nil && flashSourceDB != db && KCMIsDocDBOpen(flashSourceDB))
-	{
-		KCM_DIAG_LOG("flash source story=%u [%d,%d)", static_cast<unsigned>(sourceStoryUID.Get()),
-					 static_cast<int>(sourceFrom), static_cast<int>(sourceTo));
-		KCMStoryMarker::AddFlashRange(flash, flashSourceDB, sourceStoryUID, sourceFrom, sourceTo);
-	}
 	KCMStoryMarker::ShowFlash(flash);
 }
 
