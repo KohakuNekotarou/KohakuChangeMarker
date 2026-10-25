@@ -88,12 +88,15 @@ int32 KCMTrackResolve::Run(IDataBase* targetDB, const std::vector<KCMTrackResolv
 	{
 		std::vector<KCMTrackResolveItem>& list = s->second;
 		// Back to front; then each record once - a move's two rows both carry both of its halves (KCMTrackRead), so two
-		// rows selected together can name one record twice.
+		// rows selected together can name one record twice. The author is part of the order (re-check 2026-10-25): unique
+		// below removes only NEIGHBOURS, and two authors' records at one place, of one kind and one stamp (stamps are not
+		// unique per edit - KCMTrackRead's StillRecorded) left a twin apart from its pair, to be counted "no longer recorded".
 		std::stable_sort(list.begin(), list.end(), [](const KCMTrackResolveItem& a, const KCMTrackResolveItem& b)
 		{
 			if (a.fRecord.fAt != b.fRecord.fAt) return a.fRecord.fAt > b.fRecord.fAt;
 			if (a.fRecord.fDelete != b.fRecord.fDelete) return a.fRecord.fDelete < b.fRecord.fDelete;
-			return a.fRecord.fTime < b.fRecord.fTime;
+			if (a.fRecord.fTime != b.fRecord.fTime) return a.fRecord.fTime < b.fRecord.fTime;
+			return a.fAuthor.Compare(kTrue, b.fAuthor) < 0;
 		});
 		list.erase(std::unique(list.begin(), list.end(), [](const KCMTrackResolveItem& a, const KCMTrackResolveItem& b)
 		{
