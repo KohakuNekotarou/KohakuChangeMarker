@@ -87,27 +87,16 @@ bool16 KCMStoryRowCanRefresh();
 */
 bool16 KCMStoryRefreshMenuRow();
 
-// ---- "Reject This Import Change" on a CHANGE row (2026-09-24, stage 2 A) ------------------------------
-// ★The change row's menu is back (it went on 2026-09-21 with its last item), carrying items about the
-//  change under the cursor - the rule of 2026-08-21 (a reader pointing at one difference is not handed an
-//  action over the whole story) holds.
+// ---- A CHANGE row's own menu (2026-09-24) ------------------------------------------------------------------------
+// ★It carries items about the change under the cursor - the rule of 2026-08-21 (a reader pointing at one difference is
+//  not handed an action over the whole story) holds. (Its first item, "Reject This Import Change", and "Redo from Word"
+//  went on 2026-10-25 with the import that wrote into the document.)
 
-/** The row AND the change the menu was popped over (KCMStoryRowEH::RButtonDn on a child row). The three
-	items below read them back for themselves; nothing else asks. */
+/** The row AND the change the menu was popped over (KCMStoryRowEH::RButtonDn on a child row). The items below read
+	them back for themselves; nothing else asks. */
 void KCMStorySetMenuChange(int32 rowIndex, int32 changeIndex);
 
-/** Whether "Reject This Import Change" may be offered: a comparison armed, a mode with story rows, and at
-	least one of the import's tracked changes touching the change's range (asked of the story, design 13-1
-	item 3). */
-bool16 KCMChangeRowCanReject();
-
-/** Rejects them (one undo step) and says how many on the panel's message line. */
-bool16 KCMChangeRowReject();
-
-// ---- "Restore from Source" on an ATTRIBUTE change row (2026-09-24, stage 2 B) ---------------------------------
-// ★The second item on the change row's menu. A's item and this one are never live on the same row (A: words and
-//  tables; B: ruby, kenten, warichu, tate-chu-yoko), so the rule of 2026-08-21 - one difference, one action about
-//  that difference alone - holds for both.
+// ---- "Restore from Source" on a change row (2026-09-24, stage 2 B; text rows since 2026-10-24 night) -------------
 
 /** Whether "Restore from Source" may be offered: a comparison armed, a mode with story rows, and the change an
 	attribute change of a kind that is written back with both documents open (facade CanRestoreAttr) - or, since
@@ -119,33 +108,21 @@ bool16 KCMChangeRowCanRestoreAttr();
 	by copy, every text row selected with it in the same step. */
 bool16 KCMChangeRowRestoreAttr();
 
-// ---- "Redo from Word" on a TAKEN-BACK change row (2026-09-24, stage 2 C) ---------------------------------------
-// ★The third item on the change row's menu, live only on a "=" row - where the other two are greyed - so a row
-//  still shows one item.
-
-/** Whether "Redo from Word" may be offered: a comparison armed, a mode with story rows, and the change one the
-	reader took back and still standing so (facade CanRedoFromWord). Whether Word's content is still in memory
-	is the action's to say (design 15-1-5). */
-bool16 KCMChangeRowCanRedo();
-
-/** Redoes it from Word's content (one undo step) and says what on the panel's message line. */
-bool16 KCMChangeRowRedo();
-
 // ---- "Match the Source" on a TABLE row (2026-09-25 - design section 16) ------------------------------------------
-// ★The fourth item on the change row's menu, live only on a Table ≠ row - where the other three are greyed - so a row
-//  still shows one item. A Table + / − is the change history's (the reject brings it back).
+// ★Live only on a Table ≠ row - where Restore from Source is greyed - so a row still shows one item. A Table + / − is
+//  not matched cell for cell (KCMTableMatch.h says why).
 
 /** Whether "Match the Source" may be offered: a comparison armed, a mode with story rows, and the change a table
 	that stands on both sides and differs, both documents open (facade CanMatchTable). */
 bool16 KCMChangeRowCanMatchTable();
 
-/** Makes the table the Source's (one undo step, rolled back unless it then reads as the Source's) and says what on
-	the panel's message line. */
+/** Makes the table the Source's (one abortable undo step, aborted unless it then reads as the Source's) and says what
+	on the panel's message line. */
 bool16 KCMChangeRowMatchTable();
 
-// ---- ★"Apply This Change" / "Apply All Changes in This Story" / "Apply All Changes" (2026-10-24, the import-as-Source
-// trial - docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md) --------------------------------------------
-// ★Live only while the Source is an import's copy - where the four items above are greyed (ChangeRowMenuLive), so a
+// ---- ★"Apply This Change" / "Apply All Changes in This Story" / "Apply All Changes" (2026-10-24 -
+// docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md) ---------------------------------------------------
+// ★Live only while the Source is an import's copy - where the items above are greyed (ChangeRowMenuLive), so a
 //  change row still shows one item. The work is the model's (IKCMStoryEditsFacade ApplyChange / ApplyStory / ApplyAll).
 
 /** A change row of the imported text that Apply can put in (facade CanApplyChange). */

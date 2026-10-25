@@ -1101,32 +1101,30 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			}
 			break;
 
-		// Flyout "Import Story Text...": the other half of the round trip. The chosen files (HTML or
-		// .docx) are read, a Task Start is taken, the edits go INTO THE DOCUMENT as one undo step,
-		// and the Story comparison starts against that Task Start (2026-09-19, the user's call - a
-		// trial; the design is docs/superpowers/specs/2026-09-19-kcm-import-direct-design.md).
-		// ★What could not go in is listed first, with a red "!". Ctrl+Z takes the whole import back.
-		//   ★★**AND SINCE 2026-09-24 ONE CHANGE CAN BE TAKEN BACK AGAIN** - not by KCM's own restore,
-		//   which went on 2026-09-21, but by InDesign's change history: the import writes under Track
-		//   Changes as "KohakuChangeMarker" (KCMImportTracking.h), and a rejected change brings back
-		//   what it took, footnotes and tables included (measured that day). Ruby, kenten,
-		//   tate-chu-yoko and warichu are not recorded by it; the Source document still has them.
+		// Flyout "Import Story Text...": the other half of the round trip. The chosen .docx files are read, a Task
+		// Start in memory of the task document is taken, the files' words go INTO THAT COPY, and the Story comparison
+		// starts against it: the rows say what the document would become, and Apply puts them in (2026-10-24, adopted
+		// 2026-10-25 - docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md). The document is not changed.
+		// ★What could not go in is listed first, with a red "!".
+		// ⛔From 2026-09-19 to 2026-10-25 the edits went INTO THE DOCUMENT as one undo step, tracked and signed
+		//   "KohakuChangeMarker", against a Task Start saved to a file - with "Reject This Import Change" and "Redo
+		//   from Word" on the rows. That road went with the tidy.
 		// ★★**FILES, AND AS MANY AS THEY LIKE** (the user's decision, 2026-09-15). A folder was
-		//   what this asked for until now, which meant handing over everything that happened to be
+		//   what this asked for until then, which meant handing over everything that happened to be
 		//   in one.
 		case kKCMPopupImportStoryTextActionID:
 			{
 				// ★NO DIALOG BEFORE THE FILES (2026-09-19, the user's call). Until then this asked the
 				//   reader to take a Task Start just before the import (kKCMImportTaskStartAdviceKey,
 				//   2026-09-17), because the import moved theirs aside and compared against it after.
-				//   The import takes a Task Start of ITS OWN now, replacing any the reader had - so there
+				//   The import takes a Task Start of ITS OWN, replacing any the reader had - so there
 				//   is nothing to advise, and How to Use says so instead.
 
 				// ⚠**SDKFileOpenChooser CANNOT DO THIS.** It holds one IDFile and has no way to
 				//  answer for several, so the dialog is built the way Adobe's own callers build it
 				//  (source/open/.../importdata/SelectFileObserver.cpp:147).
 				// ★Not into a PDF document (2026-10-14, design 3.7) - said before the dialog, so no file is picked for nothing.
-				//   The model asks the same (KCMImportStoryText) for a script.
+				//   The model asks the same (KCMImportStoryTextAsSource) for a script.
 				if (Utils<IKCMCompareFacade>()->IsPdfDoc(Utils<IKCMStoryEditsFacade>()->GetTaskDocumentDB()))
 				{
 					KCMSetStatus(kKCMPdfTargetRefusal);
@@ -1158,27 +1156,22 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 					&& chosen.GetFileCount() > 0)
 				{
 					PMString importMsg;
-					// ★★THE OTHER WAY ROUND (2026-10-24, the import-as-Source trial - the user: "right now the state before
-					//   the change is the Source and the Target is what gets changed - I want that the other way round"): the
-					//   files' words go into a Task Start in memory, which is the Source, and the rows say what the document
-					//   would become; "Apply This Change" puts them in. The document is not changed here. ⚠The import that
-					//   puts everything in (ImportStoryText) is still the script's road (app.kcmImportStoryText) and
-					//   "Apply All Changes" gives its result.
+					// ★★THE FILES' WORDS GO INTO A TASK START IN MEMORY (2026-10-24, adopted 2026-10-25 - the user: "right now
+					//   the state before the change is the Source and the Target is what gets changed - I want that the other
+					//   way round"): it is the Source, and the rows say what the document would become; "Apply This Change"
+					//   puts them in. The document is not changed here.
 					Utils<IKCMStoryEditsFacade>()->ImportStoryTextAsSource(chosen, importMsg);
 					// ★★THE RESULT GOES TO THE PANEL'S STATUS LINE ONLY (2026-09-25, the user: "the dialog saying the
 					//   changes are tracked comes up after an import - stop it, and only show the result on the
-					//   panel"). The model's whole sentence - what went in, what did not and why, and that Ctrl+Z
-					//   takes it all back - is what the line shows, the same sentence app.kcmImportStoryText returns.
-					//   (From 2026-09-24 until then the line said "Imported" and a dialog carried the rest.)
+					//   panel"). The model's whole sentence - what is proposed, what cannot go in and why - is what the
+					//   line shows, the same sentence app.kcmImportToSource returns.
 					if (importMsg.CharCount() > 0)
 						KCMSetStatus(importMsg);
 					// (⛔**THE CALL TO KCMBringArmedTargetToFront WENT ON 2026-09-22.** The import starts a
-					//   comparison of its own and its Target - the document the edited words went into - is
-					//   what there is to look at; that has not changed. What changed is WHO says so. The
-					//   model's own import now sends kKCMTargetToFrontMessage at the one point BOTH of its
-					//   roads meet, so app.kcmImportStoryText ends the same way this item does, instead of
-					//   on the copy it had just saved. Saying it here as well would be a second answer to
-					//   one question ([[one-question-one-place]]).)
+					//   comparison of its own and its Target - the document - is what there is to look at. What
+					//   changed is WHO says so: the model's own import sends kKCMTargetToFrontMessage at the one point
+					//   both of its roads (this item and app.kcmImportToSource) meet. Saying it here as well would be
+					//   a second answer to one question ([[one-question-one-place]]).)
 				}
 			}
 			break;
@@ -1231,33 +1224,24 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMStoryRefreshMenuRow();
 			break;
 
-		// "Reject This Import Change" on a CHANGE row's menu (2026-09-24, stage 2 A): the import's tracked changes
-		// touching that change's range are rejected as one undo step, and the row is compared again.
-		// ★Which change it was is noted by KCMStorySetMenuChange at the right click.
-		case kKCMChangeRowRejectActionID:
-			KCMChangeRowReject();
-			break;
+		// (⛔"Reject This Import Change" and "Redo from Word" - kKCMChangeRowRejectActionID / kKCMChangeRowRedoActionID -
+		//  stood here until 2026-10-25; they went with the import that wrote into the document.)
 
-		// "Restore from Source" on an ATTRIBUTE change row's menu (2026-09-24, stage 2 B): the mark over those
-		// characters is made what the Source document has, as one undo step, and the row is compared again.
+		// "Restore from Source" on a change row's menu (2026-09-24, stage 2 B; a text row's too since 2026-10-24 night): the
+		// mark or the words over those characters are made what the Source document has, as one undo step, and the row is
+		// compared again. ★Which change it was is noted by KCMStorySetMenuChange at the right click.
 		case kKCMChangeRowRestoreAttrActionID:
 			KCMChangeRowRestoreAttr();
 			break;
 
-		// "Redo from Word" on a TAKEN-BACK change row's menu (2026-09-24, stage 2 C): the change's paragraph is made
-		// what Word shows again, as one undo step, and the row is compared again.
-		case kKCMChangeRowRedoActionID:
-			KCMChangeRowRedo();
-			break;
-
 		// "Match the Source" on a TABLE row's menu (2026-09-25, design section 16): the table is reshaped and its cells
-		// copied from the Source document's table, as one undo step that is rolled back unless the table then reads as
-		// the Source's, and the row is compared again.
+		// copied from the Source document's table, as one abortable undo step - aborted unless the table then reads as
+		// the Source's - and the row is compared again.
 		case kKCMChangeRowMatchTableActionID:
 			KCMChangeRowMatchTable();
 			break;
 
-		// ★The three Apply items (2026-10-24, the import-as-Source trial): the change, the story, every story the import
+		// ★The three Apply items (2026-10-24): the change, the story, every story the import
 		//   filled - put into the document as one undo step each by the model (IKCMStoryEditsFacade), which compares the
 		//   rows again and says what went in.
 		case kKCMChangeRowApplyActionID:
@@ -1705,14 +1689,17 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			}
 			case kKCMPopupImportStoryTextActionID:
 			{
-				// ★A DOCUMENT TO WRITE INTO - the Task Start's (the chosen Target, else the active one) - AND NOTHING ELSE.
+				// ★A DOCUMENT TO TAKE THE COPY OF - the Task Start's (the chosen Target, else the active one) - AND NOTHING
+				//   ELSE: the question the press itself asks, since the import takes a Task Start in memory (KCMTakeImportClone -
+				//   asked here by its own name since 2026-10-25; it was CanTakeTaskStartCopy, the same answer, from the days the
+				//   import saved a copy to a file).
 				// ★★LIVE WHILE A COMPARISON RUNS (2026-09-25, the user's decision). It waited for Stop until then, on the
 				//   grounds that it "replaced the origin" underneath a running comparison - the origin went on 2026-09-21,
-				//   and the import's own Task Start stops the comparison before anything is written (KCMTakeTaskStartCopy,
-				//   step 5), exactly as the flyout's Task Start does. The one visible effect was that after an import - which
-				//   ends by starting a comparison - the item stayed grey until the reader pressed Stop.
+				//   and the import's own Task Start stops the comparison before anything is written, exactly as the flyout's
+				//   Task Start does. The one visible effect was that after an import - which ends by starting a comparison -
+				//   the item stayed grey until the reader pressed Stop.
 				InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-				const bool16 live = (compare != nil && compare->CanTakeTaskStartCopy()) ? kTrue : kFalse;
+				const bool16 live = (compare != nil && compare->CanTakeTaskStartClone()) ? kTrue : kFalse;
 				listToUpdate->SetNthActionState(i, live ? kEnabledAction : kDisabled_Unselected);
 				break;
 			}
@@ -1860,29 +1847,12 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 				                                                            : kDisabled_Unselected);
 				break;
 			}
-			case kKCMChangeRowRejectActionID:
-			{
-				// ★The same test as the execution (KCMChangeRowCanReject) - asked of the change's range, so a plain
-				//   comparison, a ruby-only row and a document opened again all answer from what the story holds now
-				//   (design 13-1 item 3, 2026-09-24).
-				listToUpdate->SetNthActionState(i, KCMChangeRowCanReject() ? kEnabledAction
-				                                                            : kDisabled_Unselected);
-				break;
-			}
 			case kKCMChangeRowRestoreAttrActionID:
 			{
 				// ★The same test as the execution (KCMChangeRowCanRestoreAttr) - the row's kind and the two documents,
 				//   so a text row, a note row and a closed Source all grey it (design 14-2, 2026-09-24).
 				listToUpdate->SetNthActionState(i, KCMChangeRowCanRestoreAttr() ? kEnabledAction
 				                                                                 : kDisabled_Unselected);
-				break;
-			}
-			case kKCMChangeRowRedoActionID:
-			{
-				// ★The same test as the execution (KCMChangeRowCanRedo) - a change the reader took back and still standing
-				//   so, read off the story's counter (design 15-1-3, 2026-09-24).
-				listToUpdate->SetNthActionState(i, KCMChangeRowCanRedo() ? kEnabledAction
-				                                                          : kDisabled_Unselected);
 				break;
 			}
 			case kKCMChangeRowMatchTableActionID:

@@ -19,12 +19,11 @@
 //  ★★**THE CHARACTERS UNDER THE MARK HAVE TO BE THE SOURCE'S** (design 14-1 item 4), or the mark is put over the
 //   wrong words in silence. Two tests, both before anything is written: an EMPTY side (the diff's way of saying the
 //   words of the paragraph differ as well - CompareParagraphAttr's textDiffered), and the characters of the window
-//   compared on both sides. A refusal writes nothing, and names the way out (fix the words first; after an import,
-//   "Reject This Import Change").
+//   compared on both sides. A refusal writes nothing, and names the way out (fix the words first; against an
+//   import's copy, Apply the words' row first).
 //
 //  ★**PLANNED FIRST, WRITTEN SECOND**, as two calls: the caller (the facade) begins its command sequence only once
-//   the plan has been made, so a refusal never lands an empty step on the undo stack - the same discipline as the
-//   reject's count-first (KCMRejectImport.h).
+//   the plan has been made, so a refusal never lands an empty step on the undo stack.
 //
 //========================================================================================
 

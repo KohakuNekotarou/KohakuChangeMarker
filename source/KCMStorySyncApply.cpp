@@ -113,7 +113,8 @@ void ColumnsOfRow(const std::vector<KCMParaAttrs>& attrs, int32 table, int32 row
 	  (ModelOffsetInParagraph answers "after all of it"). A NOTE'S MARKER stands there too - fUncountedAt holds both -
 	  and Word puts words typed where a reference stands IN FRONT of it (measured 2026-09-23), which the comparison plans
 	  (MapPastChangeAt). So "である¹" with "とされ" typed before the ¹ in Word came out "である¹とされ": the note's number moved
-	  into the new words, silently, in the import and in "Redo from Word" alike.
+	  into the new words, silently, in the import and in the retired "Redo from Word" alike (Apply's paragraph road
+	  since).
 	@return kFalse when no one place keeps both counts, or the model does not hold what the reading says stands there
 	  (the caller refuses the paragraph rather than guess). */
 bool16 InsertionPlace(ITextModel* model, TextIndex paraStart, const KCMParaAttrs& attrs,
@@ -1261,7 +1262,8 @@ void KCMApplyTableShape(const UIDRef& storyRef, const KCMStorySync::Plan& plan, 
 			// ★★THE ERROR A FAILED TABLE COMMAND LEAVES STANDING IS CLEARED HERE (2026-09-25, the Word round trip re-check,
 			//   item 2 - KCMTableMatch's Made() does exactly this for the same ITableCommands calls). Left standing, the
 			//   next command processed with it is a protective shutdown (CmdUtils.h:74) - and one always comes: the
-			//   story's tracking switched back (KCMStoryTrackingOn), the author's name put back (KCMImportAuthor).
+			//   next write of the same pour. (Until 2026-10-25 also the story's tracking switched back and the author's
+			//   name put back - the signing switches, retired with the import that wrote into the document.)
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 			++out.fRefused;
 			Say(out, "Table", s.fWhere.Say() + ": " + what);

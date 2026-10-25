@@ -261,8 +261,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPatchFilter.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableShape.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMSkippedText.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMImportTracking.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRejectImport.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRestoreAttr.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableMatch.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableXmlCheck.cpp" />

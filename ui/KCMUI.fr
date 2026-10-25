@@ -1399,38 +1399,25 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMResourceRowXmlMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// ----- The Story Edits CHANGE rows (child rows): "Reject This Import Change" (2026-09-24, stage 2 A) -----
-		// ★A SUBTREE OF ITS OWN, not the story row's (KCMStoryRowEH::RButtonDn): it acts on the change under the
-		//   cursor only - the import's tracked changes touching that change's range - so a reader pointing at one
-		//   difference is never handed an action over the whole story (the rule of 2026-08-21).
-		// ★Greyed where the range holds none of the import's changes (kCustomEnabling -> KCMChangeRowCanReject),
-		//   and a menu with only greyed items does not appear: a plain comparison's change rows raise nothing.
-		kKCMChangeRowRejectActionID,
-		kKCMChangeRowMenuName,
-		kKCMChangeRowRejectMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
+		// ----- The Story Edits CHANGE rows (child rows): their own subtree (2026-09-24) -----
+		// ★A SUBTREE OF ITS OWN, not the story row's (KCMStoryRowEH::RButtonDn): its items act on the change under the
+		//   cursor only, so a reader pointing at one difference is never handed an action over the whole story (the
+		//   rule of 2026-08-21). A menu with only greyed items does not appear.
+		// (⛔Its first item, "Reject This Import Change" - kKCMChangeRowRejectActionID - and its third, "Redo from Word"
+		//  - kKCMChangeRowRedoActionID - stood here until 2026-10-25; they went with the import that wrote into the
+		//  document. Their ActionIDs are graves, ui/KCMUIID.h.)
 
-		// "Restore from Source" on the SAME subtree (2026-09-24, stage 2 B): the OTHER kind of change row - a ruby,
-		// kenten, warichu or tate-chu-yoko change - whose mark is made what the Source document has there, read
-		// from the Source story itself. ★The two items are never live on one row (A: words and tables; B: these
-		// four), so a change row shows one item or none - and a footnote / endnote row still raises nothing.
+		// "Restore from Source" (2026-09-24, stage 2 B; a text row's too since 2026-10-24 night): a ruby, kenten,
+		// warichu or tate-chu-yoko change - or the words - made what the Source document has there, read from the
+		// Source story itself.
 		kKCMChangeRowRestoreAttrActionID,
 		kKCMChangeRowMenuName,
 		kKCMChangeRowRestoreAttrMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Redo from Word" on the SAME subtree (2026-09-24, stage 2 C): the THIRD kind of change row - one the reader
-		// took back with either item above, shown "=" - whose paragraph is made what Word shows again, from the
-		// content the import read. ★Live only on a "=" row, where the other two are greyed: still one item per row.
-		kKCMChangeRowRedoActionID,
-		kKCMChangeRowMenuName,
-		kKCMChangeRowRedoMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
-
-		// "Match the Source" on the SAME subtree (2026-09-25, design section 16): the FOURTH kind of change row - a
-		// TABLE whose rows, columns, merged cells or cells differ from the Source's (Table ≠) - which is reshaped and
-		// refilled from the Source document's table, keeping its id. ★Live only on that row, where the three above
-		// are greyed (a Table + / − is the change history's, reached by the reject): still one item per row.
+		// "Match the Source" on the SAME subtree (2026-09-25, design section 16): a TABLE whose rows, columns, merged
+		// cells or cells differ from the Source's (Table ≠) - which is reshaped and refilled from the Source document's
+		// table, keeping its id. ★Live only on that row, where Restore from Source is greyed: still one item per row.
 		kKCMChangeRowMatchTableActionID,
 		kKCMChangeRowMenuName,
 		kKCMChangeRowMatchTableMenuItemPosition,
@@ -1915,16 +1902,8 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// "Reject This Import Change" on a Story Edits CHANGE row's right-click menu (2026-09-24, stage 2 A).
-		// ⚠Not on the flyout: it acts on the change the menu was popped over (KCMStoryRowEH stashes it).
-		kKCMActionComponentBoss,
-		kKCMChangeRowRejectActionID,
-		kKCMChangeRowRejectMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the range holds an import change (KCMChangeRowCanReject)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
+		// (⛔The ActionDefs of "Reject This Import Change" and "Redo from Word" stood here until 2026-10-25 - their MenuDefs
+		//  went with them; the ActionIDs are graves, ui/KCMUIID.h.)
 
 		// "Restore from Source" on a Story Edits CHANGE row's right-click menu (2026-09-24, stage 2 B).
 		// ⚠Not on the flyout: it acts on the change the menu was popped over (KCMStoryRowEH stashes it).
@@ -1934,17 +1913,6 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the row is a restorable attribute change (KCMChangeRowCanRestoreAttr)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
-
-		// "Redo from Word" on a taken-back Story Edits CHANGE row's right-click menu (2026-09-24, stage 2 C).
-		// ⚠Not on the flyout: it acts on the change the menu was popped over (KCMStoryRowEH stashes it).
-		kKCMActionComponentBoss,
-		kKCMChangeRowRedoActionID,
-		kKCMChangeRowRedoMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the row is a taken-back change still standing so (KCMChangeRowCanRedo)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

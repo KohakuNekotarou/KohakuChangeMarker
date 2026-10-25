@@ -1968,47 +1968,6 @@ void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& wher
 	}
 }
 
-/* WordTableOfInsert
-*/
-int32 WordTableOfInsert(const KCMStoryShape::Story& word, const Step& s)
-{
-	if (s.fKind != Step::kInsertTable)
-		return -1;
-	int32 body = 0;
-	for (size_t t = 0; t < word.fTables.size(); ++t)
-	{
-		if (word.fTables[t].fInTable >= 0)
-			continue;
-		if (body == s.fNote)
-			return static_cast<int32>(t);
-		++body;
-	}
-	return -1;
-}
-
-/* WithoutTables
-*/
-void WithoutTables(const KCMStoryShape::Story& word, const std::vector<int32>& hide, KCMStoryShape::Story& out)
-{
-	out = word;
-	out.fTables.clear();
-	for (size_t t = 0; t < word.fTables.size(); ++t)
-	{
-		if (std::find(hide.begin(), hide.end(), static_cast<int32>(t)) != hide.end())
-			continue;
-		KCMStoryShape::Table table = word.fTables[t];
-		if (table.fInTable >= 0)
-		{
-			int32 gone = 0;
-			for (size_t h = 0; h < hide.size(); ++h)
-				if (hide[h] < table.fInTable)
-					++gone;
-			table.fInTable -= gone;
-		}
-		out.fTables.push_back(table);
-	}
-}
-
 }	// namespace KCMStorySync
 
 // End, KCMStorySync.cpp.

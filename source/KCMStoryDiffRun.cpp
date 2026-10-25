@@ -1491,8 +1491,9 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 			sTaken[static_cast<size_t>(partner)] = kTrue;
 		pairs.push_back(std::make_pair(static_cast<int32>(i), partner));
 	}
-	// ★★A TABLE THAT CAME BACK UNDER A NEW ID IS STILL ITS PARTNER (2026-09-25). "Reject This Import Change" on a table
-	//   the import took away brings the table back - under a NEW id (measured: 328 in the Target, 286 in Task Start, the
+	// ★★A TABLE THAT CAME BACK UNDER A NEW ID IS STILL ITS PARTNER (2026-09-25 - first met when the retired "Reject This
+	//   Import Change" brought back a table the import had taken away, and true of any table put back so: Ctrl+Z of a
+	//   table's deletion, a paste). It comes back under a NEW id (measured: 328 in the Target, 286 in Task Start, the
 	//   same B1|B2 inside), so the id pairing above found no partner for either, and the list showed a Table + and a
 	//   Table − for one unchanged table. What is left unpaired on BOTH sides is paired again, in order, when the two are
 	//   the same table by everything but the id: the same shape, the same words in every cell, and the same words in

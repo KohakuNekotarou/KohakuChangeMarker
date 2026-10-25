@@ -57,21 +57,19 @@
 #include "KCMOversetPoint.h"		// KCMFindOversetOutport - where the "+" of an overflow is
 #include "ITextModel.h"			// the story the two above are asked about
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - "Export Story Text..." on the flyout
-#include "KCMStoryTextImport.h"	// KCMImportStoryText - "Import Story Text..." on the flyout
-#include "KCMRejectImport.h"		// "Reject This Import Change" on a change row (2026-09-24, stage 2 A)
-#include "KCMRedlineRange.h"		// KCMRedlineTouches - which rows the changes a reject takes back stand for (2026-09-25)
+#include "KCMStoryTextImport.h"	// KCMImportStoryTextAsSource - "Import Story Text..."; KCMPourStoryTextWith - Apply All
 #include <algorithm>
 #include "KCMRestoreAttr.h"		// "Restore from Source" on an attribute change row (2026-09-24, stage 2 B); KCMAttrMarksSame
-#include "KCMTextWords.h"		// WordsAt - the take-back's "all the way back, or not at all" reads the words (2026-09-24 night)
-#include "ErrorUtils.h"			// the error state a plain sequence is rolled back by (EndSequenceOrRollBack)
+#include "KCMTextWords.h"		// WordsAt - a write's "all the way, or not at all" reads the words (2026-09-24 night)
+#include "ErrorUtils.h"			// the error state a step leaves cleared (EndOrAbort) and a write's is read by
 #include "IDataBase.h"			// SaveRestoreModifiedState - reading the two stories must not dirty them
 #include "WideString.h"
-#include "KCMRedoFromWord.h"		// "Redo from Word" on a change the reader took back (2026-09-24, stage 2 C)
+#include "KCMRedoFromWord.h"		// Apply's paragraph road and table road (2026-10-24)
 #include "KCMWordKeep.h"			// the files' content an import kept - what "Apply All Changes" pours (2026-10-24)
 #include "KCMStoryFollowObserver.h"	// KCMStoryFollowEnsureObservers - the Undo follower attached again after an Apply
 #include "KCMTableMatch.h"		// "Match the Source" on a Table row (2026-09-25, design section 16)
 #include "CmdUtils.h"				// ...wrapped in one command sequence
-#include "ICommandSequence.h"		// ICommandSequence - a plain sequence (RejectImportChange says why not an abortable one)
+#include "ICommandSequence.h"		// IAbortableCmdSeq - every write here is one abortable step (BeginStep / EndStep)
 #include "KCMBookPair.h"			// which two books, and their display paths
 #include "KCMBookCompare.h"		// the book comparison itself
 #include "KCMPageNumberMarker.h"	// the folio exclusion toggle
@@ -83,7 +81,7 @@
 #include "IKCMResourcesFacade.h"	// the Resources mode's boundary
 #include "KCMResourceStore.h"		// ...and the model side it forwards to
 #include "KCMPdfDoc.h"				// the PDF comparison (2026-10-14)
-// ★Apply change by change, and Restore from Copy (2026-10-24 evening, the trial's second try-out - design section 11):
+// ★Apply change by change, and Restore from Copy (2026-10-24 evening - design section 11 of the import-as-Source design):
 #include "KCMCopyStore.h"			// the copies Apply takes and Restore from Copy pastes back
 #include "KCMStoryRestore.h"		// KCMCreateWordsWriteCmd - the import's one write command, for one change's words
 #include "KCMParaText.h"			// IsObjectCharacter - the changes a words write may not carry
@@ -103,8 +101,8 @@
 namespace
 {
 
-/** The same change of the diff's: what, kind, and both ranges (2026-09-25 - a reject's group has to say whether the
-	row pressed is among the rows it found). */
+/** The same change of the diff's: what, kind, and both ranges (2026-09-25 - a group written together has to say
+	whether the row pressed is among the rows it found). */
 bool16 SameStoryChange(const KCMStoryChange& a, const KCMStoryChange& b)
 {
 	return (a.fWhat == b.fWhat && a.fKind == b.fKind && a.fTargetStart == b.fTargetStart && a.fTargetEnd == b.fTargetEnd
@@ -1007,212 +1005,11 @@ public:
 		return kTrue;
 	}
 
-	// ---- "Reject This Import Change" (2026-09-24, stage 2 A - design section 13) ----------------------
-
-	virtual int32	HasImportChange(int32 nth, int32 which)
-	{
-		UIDRef story;
-		TextIndex from = 0;
-		TextIndex to = 0;
-		if (!this->ChangeRangeInTarget(nth, which, story, from, to))
-			return 0;
-		return KCMCountImportChanges(story, from, to);
-	}
-
-	virtual int32	RejectImportChange(int32 nth, int32 which, PMString& outMessage)
-	{
-		outMessage.Clear();
-		outMessage.SetTranslatable(kFalse);
-		UIDRef story;
-		TextIndex from = 0;
-		TextIndex to = 0;
-		if (!this->ChangeRangeInTarget(nth, which, story, from, to))
-		{
-			outMessage = "this change is not in a document that is open and compared";
-			return -1;
-		}
-
-		// ★ONE UNDO STEP for the whole row: a replace row is two changes (its insertion and its deletion's mark),
-		//   and one Ctrl+Z has to bring both back.
-		// ⚠★★A PLAIN SEQUENCE, NOT AN ABORTABLE ONE (measured 2026-09-24 on the application): wrapped in
-		//   BeginAbortableCmdSeq, the reject was one step - but undoing it left the undo stack EMPTY: the import's
-		//   own step below it ("Import Story Text") was gone. Unwrapped, the step below survived (two steps);
-		//   BeginCommandSequence keeps both - one step, and the import still undoable under it. ⇒ Asked first
-		//   whether there is anything to reject, so an empty sequence never lands on the stack.
-		// ★★THE ROW IS COMPARED AGAIN FIRST, AND HAS TO BE THE SAME CHANGE - SameChangeAfterRefresh says why.
-		Change before;
-		if (!this->GetChange(nth, which, before))
-		{
-			outMessage = "this change is not in the list any more";
-			return -1;
-		}
-		if (!this->SameChangeAfterRefresh(nth, which, before))
-		{
-			outMessage = "the list was out of date - it has been compared again; right-click the change once more";
-			return -1;
-		}
-		// ★THE CHANGE AS IT STANDS, FOR THE RECORD (stage 2 C): the model's own, break and all - the row it will
-		//   become once the reject has put the Source's words back.
-		const KCMStoryChange* const modelChange = KCMStoryList::GetMergedChange(nth, which);
-		if (modelChange == nil)
-		{
-			outMessage = "this change is not in the list any more";
-			return -1;
-		}
-		const KCMStoryChange live = *modelChange;
-		if (KCMCountImportChanges(story, from, to) <= 0)
-		{
-			outMessage = "no import change on this row";
-			return 0;
-		}
-
-		// ★★★EVERY ROW THE SAME INDESIGN CHANGES STAND FOR (2026-09-25, the user's decision: "take all of it back, and
-		//   make every one of them '='"). One change in InDesign's history can be several rows here: two paragraphs the
-		//   import took away one after the other are ONE deletion (measured: rejecting the first row brought both back
-		//   and left one record; the second row could never be rejected at all - its check read the first paragraph's
-		//   words at the shared caret and rolled back). The reject takes the whole change back, as InDesign does, and
-		//   every row it stood for becomes a record of its own - each redone on its own afterwards. The rows are the
-		//   ones a change being rejected touches, by the same test the reject itself uses (KCMRedlineTouches).
-		std::vector<KCMStoryChange> group;
-		{
-			std::vector<KCMImportChangeAt> changesHere;
-			KCMImportChangesAt(story, from, to, changesHere);
-			std::vector<KCMStoryChange> lives;
-			KCMStoryList::LiveChanges(nth, lives);
-			bool16 pressedIn = kFalse;
-			for (size_t i = 0; i < lives.size(); ++i)
-			{
-				const KCMStoryChange& c = lives[i];
-				if (c.fWhat != KCMStoryChange::kText && c.fWhat != KCMStoryChange::kTable
-					&& !(c.fWhat == KCMStoryChange::kAttr && c.fAttrKind == kKCMStoryAttrFootnote))
-					continue;
-				TextIndex cFrom = c.fTargetStart;
-				TextIndex cTo = c.fTargetEnd;
-				KCMShownSpan(c.fBreakAt, cFrom, cTo);
-				bool16 touched = kFalse;
-				for (size_t k = 0; k < changesHere.size() && !touched; ++k)
-					touched = KCMRedlineTouches(changesHere[k].fAt, changesHere[k].fLen, changesHere[k].fDelete,
-												static_cast<int32>(cFrom), static_cast<int32>(cTo));
-				if (!touched)
-					continue;
-				group.push_back(c);
-				if (SameStoryChange(c, live))
-					pressedIn = kTrue;
-			}
-			if (!pressedIn)
-				group.push_back(live);		// the row pressed is one of them by construction; said, not assumed
-			std::sort(group.begin(), group.end(), [](const KCMStoryChange& a, const KCMStoryChange& b)
-					  { return (a.fSourceStart != b.fSourceStart) ? (a.fSourceStart < b.fSourceStart)
-																  : (a.fTargetStart < b.fTargetStart); });
-		}
-		// Where the Source's words come back: the group's first Target position, holding the Source's range from the
-		// group's first Source character to its last - each row's own share of it at its own offset.
-		TextIndex tLo = group[0].fTargetStart;
-		TextIndex sLo = group[0].fSourceStart;
-		TextIndex sHi = group[0].fSourceEnd;
-		for (size_t i = 1; i < group.size(); ++i)
-		{
-			tLo = std::min(tLo, group[i].fTargetStart);
-			sLo = std::min(sLo, group[i].fSourceStart);
-			sHi = std::max(sHi, group[i].fSourceEnd);
-		}
-		KCMStoryChange whole = live;
-		whole.fSourceStart = sLo;
-		whole.fSourceEnd = sHi;
-		// ★THE WORDS THE REJECT IS ABOUT TO TAKE OUT, each row's own, read before it runs (KCMRejectedRecord::fLiveWords -
-		//   what lets the document, not the counters alone, say later whether a row stands taken back or live again)
-		std::vector<WideString> liveWords;
-		{
-			IDataBase::SaveRestoreModifiedState guard(story.GetDataBase());
-			InterfacePtr<ITextModel> tModel(story, UseDefaultIID());
-			for (size_t i = 0; i < group.size(); ++i)
-			{
-				WideString words;
-				KCMTextWords::WordsAt(tModel, group[i].fTargetStart, group[i].fTargetEnd - group[i].fTargetStart, words);
-				liveWords.push_back(words);
-			}
-		}
-
-		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
-		if (sequence != nil)
-		{
-			PMString name("Reject This Import Change");
-			name.SetTranslatable(kFalse);
-			sequence->SetName(name);
-		}
-		int32 done = KCMRejectImportChanges(story, from, to);
-		// ★★★**ALL THE WAY BACK, OR NOT AT ALL** (2026-09-24 night, the user's rule: "if it is not exactly the
-		//   same, cancel the take-back"). The Source's words have to stand where the change stood, or the
-		//   whole sequence is rolled back before it ends - a rejected tracked change InDesign did not bring all
-		//   the way back is then not left half done in the document. ★OVER THE WHOLE GROUP (2026-09-25): every row the
-		//   change stood for has its words checked, in one reading.
-		const bool16 same = (done > 0)
-			? this->PlaceReadsAsSource(story, tLo, tLo + (sHi - sLo), whole, kKCMStoryAttrNone)
-			: kTrue;
-		this->EndSequenceOrRollBack(sequence, same);
-		if (done < 0)
-		{
-			outMessage = "the story keeps no change history";
-			return -1;
-		}
-		if (!same)
-		{
-			outMessage = "the Source's words did not come all the way back (InDesign left something behind), "
-						 "so the reject was cancelled - the document is as it was";
-			this->RefreshRow(nth);
-			return -1;
-		}
-		// ★★THE CHANGE STAYS ON THE ROW AS A RECORD (2026-09-24, stage 2 C - design 15-1-1): the "=" row, where the
-		//   Source's words now stand (the live start, the Source's length), with the counter the reject left the
-		//   story at - what tells "still taken back" from "undone" from now on.
-		//   ★EVERY ROW OF THE GROUP (2026-09-25), each at its own share of the Source's range, in Source order - so each
-		//    is placed after the one before it (KCMRejectedSlotFor) and slides only what stands after it.
-		// The pressed row as its record will hold it: its live range where its change would stand with the rest of the
-		// group taken back (AddRejectedGroup) - what the "=" check after the refresh has to look for.
-		KCMStoryChange pressedPlaced = live;
-		if (done > 0)
-		{
-			std::vector<TextIndex> nowStarts;
-			for (size_t i = 0; i < group.size(); ++i)
-			{
-				nowStarts.push_back(tLo + (group[i].fSourceStart - sLo));
-				if (SameStoryChange(group[i], live))
-				{
-					pressedPlaced.fTargetStart = nowStarts.back();
-					pressedPlaced.fTargetEnd = nowStarts.back() + (live.fTargetEnd - live.fTargetStart);
-				}
-			}
-			// ★AS ONE WRITE (KCMStoryList::AddRejectedGroup says why the rows must not slide one another)
-			KCMStoryList::AddRejectedGroup(nth, group, nowStarts, liveWords,
-										   KCMStoryDiffRun::CountForKind(story, kKCMStoryAttrNone), kKCMStoryAttrNone);
-			if (group.size() > 1)
-			{
-				outMessage = "it was one change in InDesign's history, standing for ";
-				outMessage.AppendNumber(static_cast<int32>(group.size()));
-				outMessage.Append(" rows here - all of them are taken back (each can be redone on its own)");
-				outMessage.SetTranslatable(kFalse);
-			}
-		}
-		// ★THE ROW IS COMPARED AGAIN: a reject does not move the list by itself (measured 2026-09-24 - rows and
-		//   status line stayed as they were until a refresh), and a row still showing a change that is gone
-		//   would be offered again. The record above outlives this refresh (PruneRejected keeps a Standing one).
-		if (done > 0)
-		{
-			this->RefreshRow(nth);
-			// ★AND THE "=" IS CHECKED ONCE MORE, AFTER THE REFRESH (the record stands only while its place reads
-			//   as the Source's - KCMRejectedRecord). The rollback above makes this a belt-and-braces line: it
-			//   can only speak when the refresh itself moved something.
-			if (!KCMStoryList::RejectedStanding(nth, pressedPlaced, story.GetDataBase()))
-				outMessage = "the place does not read as the Source's after the reject - the row shows what differs";
-		}
-		return done;
-	}
-
 private:
 	/** Whether [tFrom, tTo) of the Target story reads as the Source's [fSourceStart, fSourceEnd) of `live` - the
 		same characters, and for an attribute (attrKind not kKCMStoryAttrNone) the same marks of that kind
-		(KCMAttrMarksSame). ★Asked INSIDE the reject's and the restore's sequence, before it ends, so that a
-		take-back that did not bring the Source's back can be rolled back whole (EndSequenceOrRollBack).
+		(KCMAttrMarksSame). ★Asked INSIDE a write's step, before it ends, so that a write that did not bring the
+		Source's back can be aborted whole (EndStep).
 		⚠A Source that is not open cannot be read; the answer is then kTrue - nothing can be said against it. */
 	bool16 PlaceReadsAsSource(const UIDRef& target, TextIndex tFrom, TextIndex tTo, const KCMStoryChange& live,
 							  int32 attrKind)
@@ -1239,28 +1036,6 @@ private:
 		return KCMAttrMarksSame(target, source, attrKind, tFrom, tTo, live.fSourceStart, live.fSourceEnd);
 	}
 
-	/** Ends a plain command sequence - committed when `keep`, ROLLED BACK when not.
-		★THE OFFICIAL ROLLBACK OF A PLAIN SEQUENCE (CmdUtils.h, SequenceContext: the changes "are committed if the
-		  global error code is kSuccess when this helper class goes out of scope, otherwise the database is rolled
-		  back to its state before the sequence started"): the error state is raised, the sequence ended, the
-		  error state cleared. ⚠Not an abortable sequence: one of those, ended, took the import's own undo step
-		  below it away (measured 2026-09-24, RejectImportChange says so). ⚠KBS measured (2026-07-31) that this
-		  route does not roll back across SEVERAL documents; here it is one story of one document, which is what
-		  the header promises.
-		  ⚠★★MEASURED NOT TO TAKE THE WRITE BACK FROM A SCRIPT (2026-10-24 night, probe-step.ps1 P1): the write and its
-		  step stayed. The steps of Apply / Restore from Copy / Restore from Source are abortable since then (BeginStep -
-		  EndOrAbort); the ones still ended here - the reject, Match the Source, Redo from Word - were not changed with
-		  them (the reject's note says why it stays plain) and are not measured from the panel's menu either. */
-	void EndSequenceOrRollBack(ICommandSequence* sequence, bool16 keep)
-	{
-		if (sequence == nil)
-			return;
-		if (!keep)
-			ErrorUtils::PMSetGlobalErrorCode(kFailure);
-		CmdUtils::EndCommandSequence(sequence);
-		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-	}
-
 	/** ★ONE WRITE'S UNDO STEP - OR A PART OF A BATCH'S (2026-10-24 night - design 1-4/1-5/1-8, KFC's "rows selected
 		together go in as one step"): an ABORTABLE sequence named `name` (EndOrAbort says why abortable), or nil inside a
 		batch (RunBatch), whose ONE sequence holds every write - a sequence nested in another breaks the outer one's
@@ -1282,8 +1057,10 @@ private:
 	}
 
 	/** Ends BeginStep's sequence - committed when `keep`, aborted when not (EndOrAbort). Inside a batch there is none to
-		end: a write that did not go in marks the batch failed, and RunBatch aborts ALL of it. */
-	void EndStep(IAbortableCmdSeq* sequence, bool16 keep)
+		end: a write that did not go in marks the batch failed, and RunBatch aborts ALL of it. @return whether the step
+		was KEPT - `keep`, unless the test build's step-fail switch turned it round, so that a caller that reads it says
+		what really happened (Match the Source does, since 2026-10-25 - tests-m T-M3). */
+	bool16 EndStep(IAbortableCmdSeq* sequence, bool16 keep)
 	{
 		// (Fault switch step-fail, a test build's only - KCMDiag.h: a write that went in is taken as not gone in, so that the
 		//  abort is measured - the single step's here, a batch's in RunBatch.)
@@ -1293,19 +1070,22 @@ private:
 		{
 			if (!keep)
 				fBatchFailed = kTrue;
-			return;
+			return keep;
 		}
 		this->EndOrAbort(sequence, keep, fStepWasModified);
+		return keep;
 	}
 
 	/** ★ALL OF IT OR NONE OF IT, MEASURED (2026-10-24 night - work/note-scripts/2026-10-24-kcm-list/probe-step.ps1): the
 		step committed when `keep`, otherwise ABORTED - its writes taken back by the abort itself, wherever it runs. ⚠A plain
-		sequence ended with the error raised (EndSequenceOrRollBack) was measured to KEEP its write and its step when the
-		call came from a script (P1: KIDMCP's SCRIPT_REQUEST runs each request in a step of its own; the guide checks the
-		error "when control returns to the application", and EndSequenceOrRollBack clears it before that). The abort
-		was measured to leave nothing (P2, and tests-batch T-B3), and a committed abortable step to leave the step below it
-		as it was (T-B2). The error state is cleared either way (KFC's EndWriteStep), and a document clean before the step
-		is clean again after an abort, which does not put the flag back (memory command-sequence-rollback-on-error). */
+		sequence ended with the error raised (the EndSequenceOrRollBack that stood here until 2026-10-25) was measured to
+		KEEP its write and its step when the call came from a script (P1: KIDMCP's SCRIPT_REQUEST runs each request in a
+		step of its own; the guide checks the error "when control returns to the application", and that helper cleared it
+		before then). The abort was measured to leave nothing (P2, and tests-batch T-B3), and a committed abortable step to
+		leave the step below it as it was (T-B2). The error state is cleared either way (KFC's EndWriteStep), and a document
+		clean before the step is clean again after an abort, which does not put the flag back (memory
+		command-sequence-rollback-on-error). ★EVERY WRITE OF THIS FACADE ENDS HERE since 2026-10-25 (Match the Source was
+		the last plain one). */
 	void EndOrAbort(IAbortableCmdSeq* sequence, bool16 keep, bool16 wasModified)
 	{
 		if (sequence == nil)
@@ -1338,7 +1118,7 @@ private:
 		if (!this->GetChange(nth, which, outChange) || outChange.fWhat != Change::kWhatAttr)
 			return kFalse;
 		if (outChange.fReplaced)
-			return kFalse;		// already taken back (the "=" row): its item is "Redo from Word" (stage 2 C)
+			return kFalse;		// already the Source's (the "=" row): Ctrl+Z is its way back - a mark keeps no copy
 		const int32 k = outChange.fAttrKind;
 		if (k != kKCMStoryAttrRuby && k != kKCMStoryAttrKenten && k != kKCMStoryAttrWarichu && k != kKCMStoryAttrTcy)
 			return kFalse;
@@ -1349,8 +1129,9 @@ private:
 
 	/** The Target and Source stories and the change, when change `which` of row `nth` is a TABLE row whose table stands
 		on both sides (Table ≠: kWhatTable, fKind 0 = replace), on a paired story, with both documents open (2026-09-25,
-		"Match the Source"). ⚠Table + and Table − (fKind 1 / 2) are the change history's: the import put them in or
-		took them out as tracked characters, and "Reject This Import Change" brings them back. */
+		"Match the Source"). ⚠Not Table + / Table − (fKind 1 / 2): a table only one side has is not matched cell for cell -
+		the story's own Apply puts it in or takes it out against an import's copy, and between two documents it is the
+		reader's to copy. */
 	bool16 TableChangeInBoth(int32 nth, int32 which, UIDRef& outTarget, UIDRef& outSource, Change& outChange)
 	{
 		IDataBase* targetDB = nil;
@@ -1369,9 +1150,9 @@ private:
 		return kTrue;
 	}
 
-	/** Row `nth` as a PAIRED story of the Target that is open and armed - the first test both change row items
-		make (the reject and the restore; 2026-09-24). An unpaired row (added or removed) has no counterpart, and
-		a story uid of kInvalidUID stands for a file (an import's "!" row about a file with no story). */
+	/** Row `nth` as a PAIRED story of the Target that is open and armed - the first test every change row item makes
+		(2026-09-24). An unpaired row (added or removed) has no counterpart, and a story uid of kInvalidUID stands for a
+		file (an import's "!" row about a file with no story). */
 	bool16 PairedTargetRow(int32 nth, IDataBase*& outTargetDB, Row& outRow)
 	{
 		outTargetDB = KCMArmedTargetDB();
@@ -1382,8 +1163,8 @@ private:
 	}
 
 	/** Compares row `nth` again and says whether change `which` is still `before`: the same kind, the same
-		attribute, and the same place on BOTH sides. Both change row items ask this before they act (2026-09-24).
-		★★THE LIST DOES NOT FOLLOW AN EDIT (the reject's live re-check): after Ctrl+Z of a reject it still showed
+		attribute, and the same place on BOTH sides. Every change row item asks this before it acts (2026-09-24).
+		★★THE LIST DOES NOT FOLLOW AN EDIT (the retired reject's live re-check): after Ctrl+Z of a reject it still showed
 		  the rows as they were after it, two characters off - so a stale row could name the range of a DIFFERENT
 		  change (measured: the second "・" row then stood exactly on the first "・"). Refreshed here, and the
 		  change at this index must still be the same on both sides - the source side is what tells the two "・"
@@ -1401,34 +1182,6 @@ private:
 		if (!same)
 			fStale = kTrue;
 		return same;
-	}
-
-	/** The story and the range of change `which` of row `nth`, in the Target that is open and armed. */
-	bool16 ChangeRangeInTarget(int32 nth, int32 which, UIDRef& outStory, TextIndex& outFrom, TextIndex& outTo)
-	{
-		IDataBase* targetDB = nil;
-		Row row;
-		if (!this->PairedTargetRow(nth, targetDB, row))
-			return kFalse;
-		Change change;
-		if (!this->GetChange(nth, which, change))
-			return kFalse;
-		// ★ONLY A ROW ABOUT WORDS OR A TABLE (the same day's final review): a "!" row (kWhatRefused) has no place
-		//   at all - its range reads 0..0, and it would have offered to reject whatever of the import's stood at
-		//   the story's first character. A ruby/kenten row (kWhatAttr) is stage 2 B's: those are not tracked.
-		//   ★★AND A FOOTNOTE ROW (2026-09-25): it travels as an attribute (KCMStoryKinds.h) but its marker is a CHARACTER,
-		//   and the import's footnote went in as a tracked insertion of it (measured: one INSERTED_TEXT in the cell).
-		//   Until then its row's menu was EMPTY - neither this item nor "Restore from Source" (which leaves notes to the
-		//   words) was offered, so a footnote Word added could not be taken back at all.
-		if (change.fWhat != Change::kWhatText && change.fWhat != Change::kWhatTable
-			&& !(change.fWhat == Change::kWhatAttr && change.fAttrKind == kKCMStoryAttrFootnote))
-			return kFalse;
-		if (change.fReplaced)
-			return kFalse;		// already taken back (the "=" row): its item is "Redo from Word" (stage 2 C)
-		outStory = UIDRef(targetDB, row.fStoryUID);
-		outFrom = change.fTargetStart;
-		outTo = change.fTargetEnd;
-		return kTrue;
 	}
 
 public:
@@ -1475,7 +1228,7 @@ public:
 		}
 		const KCMStoryChange live = *modelChange;
 		// ★PLANNED BEFORE THE SEQUENCE BEGINS: a refusal (the words differ, a kenten this build cannot write) writes
-		//   nothing, and an empty sequence never lands on the undo stack - the reject's count-first, in this shape.
+		//   nothing, and an empty sequence never lands on the undo stack.
 		KCMAttrRestoreJob job;
 		if (!KCMPlanRestoreAttrFromSource(target, source, before.fAttrKind,
 										  before.fTargetStart, before.fTargetEnd, before.fSourceStart, before.fSourceEnd,
@@ -1505,7 +1258,7 @@ public:
 		// ★THE ROW IS COMPARED AGAIN either way: a rolled-back write leaves the document as it was, but the list is
 		//   compared against what stands there, whatever that is.
 		this->RefreshRow(nth);
-		// ★AND THE "=" IS CHECKED ONCE MORE, AFTER THE REFRESH (KCMRejectedRecord) - belt and braces, as the reject's.
+		// ★AND THE "=" IS CHECKED ONCE MORE, AFTER THE REFRESH (KCMRejectedRecord) - belt and braces.
 		if (done >= 0 && !KCMStoryList::RejectedStanding(nth, live, target.GetDataBase()))
 			outMessage = "the marks do not read as the Source's after the restore - the row shows what differs";
 		return done;
@@ -1558,24 +1311,21 @@ public:
 			outMessage = "the two tables could not be named on both sides (is the Source document open?)";
 			return -1;
 		}
-		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
-		if (sequence != nil)
-		{
-			PMString name("Match the Source");
-			name.SetTranslatable(kFalse);
-			sequence->SetName(name);
-		}
+		// ★ONE ABORTABLE STEP (2026-10-25, the tidy's S11 - it was a plain sequence until then): a plain sequence ended
+		//   with the error raised kept its write when the call came from a script (EndOrAbort says what was measured);
+		//   the abort takes the match back wherever it was called from.
+		IAbortableCmdSeq* sequence = this->BeginStep("Match the Source");
 		KCMTableMatchBefore tableBefore;
 		int32 done = KCMMatchTableToSource(target, source, live.fTargetTableUID, live.fSourceTableUID, tableBefore, outMessage);
 		// ★★★**ALL THE WAY, OR NOT AT ALL** (the user's rule, and 2026-09-25: "put it back from the Source, check it with
 		//   INX afterwards, and if anything is wrong nothing comes back"): the table has to read as the match promised -
 		//   by the text, by the table model's geometry, and by INX (KCMTableReadsAsSource says which part against what) -
-		//   or the whole sequence is rolled back. ⚠A half-done match (done < 0) is rolled back the same way.
+		//   or the whole step is aborted. ⚠A half-done match (done < 0) is aborted the same way.
 		std::string why;
 		const bool16 same = (done >= 0)
 			? KCMTableReadsAsSource(target, source, live.fTargetTableUID, live.fSourceTableUID, tableBefore, why)
 			: kFalse;
-		this->EndSequenceOrRollBack(sequence, same);
+		const bool16 kept = this->EndStep(sequence, same);
 		if (done >= 0 && !same)
 		{
 			PMString msg("the table did not come all the way to the Source's (");
@@ -1587,117 +1337,21 @@ public:
 			outMessage = msg;
 			done = -1;
 		}
-		// ★★THE TABLE STAYS ON THE ROW AS A RECORD (2026-09-25, the user: "make it redoable, the same way as the other
-		//   redos"): the "=" row over the table's anchor characters - as many as the Source's now - with the text
-		//   counter the match left the story at. Its right-click offers "Redo from Word" (a table record is redone
-		//   at the table's size - RedoFromWord), and an undo of the match shows the live Table row again through it.
+		else if (done >= 0 && !kept)
+		{
+			outMessage = "the match did not go in, so it was cancelled - the document is as it was";
+			outMessage.SetTranslatable(kFalse);
+			done = -1;
+		}
+		// ★★THE TABLE STAYS ON THE ROW AS A RECORD (2026-09-25): the "=" row over the table's anchor characters - as
+		//   many as the Source's now - with the text counter the match left the story at; an undo of the match shows the
+		//   live Table row again through it. (Its "Redo from Word" went on 2026-10-25; Ctrl+Z is the way back.)
 		if (done >= 0)
 			KCMStoryList::AddRejected(nth, live, live.fTargetStart,
 									  live.fTargetStart + (live.fSourceEnd - live.fSourceStart),
 									  KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone);
 		// ★THE ROW IS COMPARED AGAIN either way: matched, the live Table row goes (the same table on both sides, by
 		//   id) and the record stands "="; rolled back, the list is compared against what stands there.
-		this->RefreshRow(nth);
-		return done;
-	}
-
-	// ---- "Redo from Word" (2026-09-24, stage 2 C - design section 15) ------------------------------------
-
-	virtual bool16	CanRedoFromWord(int32 nth, int32 which)
-	{
-		IDataBase* targetDB = nil;
-		Row row;
-		if (!this->PairedTargetRow(nth, targetDB, row))
-			return kFalse;
-		const KCMRejectedRecord* const rec = KCMStoryList::RejectedAt(nth, which);
-		// ★NOT A RECORD THAT HOLDS A COPY (2026-10-24, the list-like-KFC work - seen live on the Story mode's "=" of
-		//   Restore from Source): such an "=" is put back by its copy (Restore from Copy), and Redo from Word could
-		//   only refuse it ("nothing kept") - so the item is not offered on it.
-		if (rec == nil || rec->fCopy.fWhyNot == kKCMCopyKept)
-			return kFalse;
-		return (KCMStoryList::RejectedStateOf(nth, *rec, targetDB) == kKCMRejectedStanding) ? kTrue : kFalse;
-	}
-
-	virtual int32	RedoFromWord(int32 nth, int32 which, PMString& outMessage)
-	{
-		outMessage.Clear();
-		outMessage.SetTranslatable(kFalse);
-		IDataBase* targetDB = nil;
-		Row row;
-		if (!this->PairedTargetRow(nth, targetDB, row))
-		{
-			outMessage = "this change is not in a document that is open and compared";
-			return -1;
-		}
-		IDataBase* const sourceDB = KCMArmedSourceDB();
-		if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
-		{
-			outMessage = "the Source document is not open";
-			return -1;
-		}
-		const KCMRejectedRecord* const rec = KCMStoryList::RejectedAt(nth, which);
-		if (rec == nil || KCMStoryList::RejectedStateOf(nth, *rec, targetDB) != kKCMRejectedStanding)
-		{
-			outMessage = "this change is not taken back - nothing to redo";
-			return -1;
-		}
-		const KCMRejectedRecord record = *rec;			// a copy: the list is rebuilt below
-		const UIDRef target(targetDB, row.fStoryUID);
-		const UIDRef source(sourceDB, row.fStoryUID);
-
-		// ★★A TABLE RECORD - the "=" a "Match the Source" left (2026-09-25, design 16-1 item 7) - is redone by the
-		//   same mechanism at the table's size: Word's shape and cells back, under the import's signature. It plans
-		//   and writes in one call (a shape round is read back before the next is planned), so it runs inside the
-		//   sequence and the sequence is rolled back when it could not be done whole.
-		//   ★★ONLY A Table ≠ RECORD (2026-09-25): a Table + or Table − record came here too and could only fail - the one
-		//   the reject took away has no table left to name, the one it brought back a NEW id (measured). Those two are
-		//   the import's own first round done again for that table (KCMRedoTableAddedOrTaken).
-		if (record.fLive.fWhat == KCMStoryChange::kTable)
-		{
-			const bool16 matched = (record.fLive.fKind == KCMStoryChange::kReplace) ? kTrue : kFalse;
-			if (matched && record.fLive.fTargetTableUID == kInvalidUID)
-			{
-				outMessage = "the table is not named on the record - compare again";
-				return -1;
-			}
-			ICommandSequence* tableSequence = CmdUtils::BeginCommandSequence();
-			if (tableSequence != nil)
-			{
-				PMString name("Redo from Word");
-				name.SetTranslatable(kFalse);
-				tableSequence->SetName(name);
-			}
-			const int32 redone = matched ? KCMRedoTableFromWord(target, record.fLive.fTargetTableUID, outMessage)
-										 : KCMRedoTableAddedOrTaken(target, record, outMessage);
-			this->EndSequenceOrRollBack(tableSequence, (redone > 0) ? kTrue : kFalse);
-			if (redone > 0)
-				KCMStoryList::MarkRedone(nth, record, KCMStoryDiffRun::CountForKind(target, record.fCounterKind));
-			this->RefreshRow(nth);
-			return redone;
-		}
-
-		// ★PLANNED FIRST (design 15-1-8): nothing kept, the words edited since, nothing to redo - each a refusal
-		//   that writes nothing and lands nothing on the undo stack.
-		KCMStoryShape::Story now;
-		KCMStorySync::Plan plan;
-		if (!KCMPlanRedoFromWord(target, source, record, now, plan, outMessage))
-			return -1;
-		ICommandSequence* sequence = CmdUtils::BeginCommandSequence();
-		if (sequence != nil)
-		{
-			PMString name("Redo from Word");
-			name.SetTranslatable(kFalse);
-			sequence->SetName(name);
-		}
-		const int32 done = KCMApplyRedoFromWord(target, now, plan, outMessage);
-		// ★★ROLLED BACK WHEN IT IS NOT WHOLE (2026-09-25): ended plainly until then, so a redo that wrote nothing still
-		//   left a "Redo from Word" step on the undo stack (the author and tracking switches alone - measured on a table
-		//   added in Word), and one refused halfway stood half written. The take-backs' own rule, now the redo's too.
-		this->EndSequenceOrRollBack(sequence, (done > 0) ? kTrue : kFalse);
-		// ★THE RECORD STAYS, MARKED REDONE (design 15-1-3): its counter says "live" from here - and says "=" again
-		//   the moment the reader undoes the redo, which is what keeps the place for a second redo.
-		if (done > 0)
-			KCMStoryList::MarkRedone(nth, record, KCMStoryDiffRun::CountForKind(target, record.fCounterKind));
 		this->RefreshRow(nth);
 		return done;
 	}
@@ -1763,9 +1417,9 @@ public:
 	virtual IDataBase*	GetTaskDocumentDB()	{ return KCMTaskDocumentDB(); }
 
 	// ---- ★THE TRACK CHANGES MODE (2026-10-05) - IKCMStoryEditsFacade.h says what each one answers ----
-	// ⚠The change-row menu's actions above (reject, restore, match, redo) are not offered in this mode (KCMStoryRefresh's
-	//   ChangeRowMenuLive asks KCMModeDiffsStoryText); called anyway, each stops before writing - a Track change is
-	//   never an attribute or a table, and the other two find the Story list empty.
+	// ⚠The change-row menu's actions (Restore from Source, Match the Source, Apply, Restore from Copy) are not offered in
+	//   this mode (KCMStoryRefresh's ChangeRowMenuLive asks KCMModeDiffsStoryText); called anyway, each stops before
+	//   writing - a Track change is never an attribute or a table, and the others find the Story list empty.
 	virtual int32	GetTrackAuthorCount()	{ return KCMFacadeTrackMode() ? KCMTrackList::GetAuthorCount() : 0; }
 
 	virtual bool16	GetTrackAuthor(int32 a, TrackAuthor& out)
@@ -1823,13 +1477,6 @@ public:
 		return kFalse;
 	}
 
-	virtual bool16	ImportStoryText(const SysFileList& files, PMString& outMessage)
-	{
-		// ★The whole sequence is the model's (read, take the origin, hold, set the mode, start) -
-		//   the order of those five matters and is stated where they live, not here.
-		return KCMImportStoryText(files, outMessage);
-	}
-
 	// ---- ★THE IMPORT THE OTHER WAY ROUND (2026-10-24, the import-as-Source trial) - IKCMStoryEditsFacade.h says what
 	//      each one answers; the design is docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md ----------
 	// ★APPLY IS THE IMPORT'S OWN ROAD (design 6): the words of ONE change by the import's one write command
@@ -1838,8 +1485,9 @@ public:
 	//   from Source (the Source IS the files), a table by KCMRedoTableFromWord (Match the Source reads the Source's table
 	//   back through INX, which a Task Start in memory cannot give - MatchTable says so), a whole story or all of them by
 	//   the import's pour. ★ALL OF THEM UNSIGNED AND UNTRACKED since the same evening (design 11-2 - they were signed and
-	//   tracked until then). What went in is a "=" record - the reject's record, since "=" means the same thing here: the
-	//   Target reads as the Source - holding the copy Restore from Copy pastes back (11-3) where one was kept.
+	//   tracked until then). What went in is a "=" record - the record Restore from Source and Match the Source leave
+	//   too, since "=" means the same thing for all three: the Target reads as the Source - holding the copy Restore
+	//   from Copy pastes back (11-3) where one was kept.
 
 	virtual bool16	ImportStoryTextAsSource(const SysFileList& files, PMString& outMessage)
 	{
@@ -2074,7 +1722,7 @@ public:
 			outMessage = "the copy could not be put back (a locked story or layer?) - nothing was changed";
 			return -1;
 		}
-		// ★THE RECORD STAYS, MARKED REDONE - Redo from Word's own way (design 15-1-3): it reads as the live change from
+		// ★THE RECORD STAYS, MARKED PUT BACK (the counters' way - KCMRejectedRecord): it reads as the live change from
 		//   here, and as "=" again the moment the reader undoes this.
 		KCMStoryList::MarkRedone(nth, record, KCMStoryDiffRun::CountForKind(target, record.fCounterKind));
 		this->RefreshRow(nth);
@@ -2486,7 +2134,7 @@ private:
 
 	/** A "=" row that holds its copy - Apply This Change's (an import's copy as the Source) or, since 2026-10-24 night,
 		Restore from Source's (the Story mode, design 1-8): the story is paired, the row is a Standing record, and its copy was
-		kept and is still in the store. The records of the other roads (a reject, a mark's restore, a match) hold none.
+		kept and is still in the store. The records of the other roads (a mark's restore, a match) hold none.
 		(CanRestoreChangeFromCopy adds the caret's test; RestoreChangeFromCopy asks it after comparing again, to say why.) */
 	bool16 HasRestorableCopy(int32 nth, int32 which, IDataBase*& outTargetDB, Row& outRow)
 	{
@@ -2669,8 +2317,8 @@ private:
 
 	/** The words of one change - and of every change standing in the same paragraph, which the import's road writes
 		together - put into the document as ONE undo step ("Apply This Change"), then "=" records for them and the row
-		compared again. The geometry of the records is the reject's (RejectImportChange): the group's first Target
-		position holds the Source's range from the group's first Source character to its last.
+		compared again. The geometry of the records (first worked out for the retired reject): the group's first Target
+		position holds the Source's range from the group's first Source character to its last, each row its own share.
 		★SINCE 2026-10-24 EVENING ONLY FOR WHAT CANNOT BE WRITTEN ON ITS OWN (ApplyWordsOne): `road` is why (nil for a
 		whole paragraph), said in the message. A whole paragraph that goes in alone keeps a copy for Restore from Copy -
 		what it took out (empty when it put one in) - and, put in with the break first or taken out from the return
@@ -2790,8 +2438,8 @@ private:
 
 		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
 		// ★UNSIGNED AND UNTRACKED (design 11-2, the author 2026-10-24: "if it is tracked, change it without tracking").
-		const int32 done = KCMApplyRedoFromWord(target, now, plan, outMessage, kFalse);
-		// ★ALL OF IT OR NONE OF IT (the take-backs' rule, the redo's too): a write refused halfway is rolled back whole.
+		const int32 done = KCMApplyRedoFromWord(target, now, plan, outMessage);
+		// ★ALL OF IT OR NONE OF IT (every write's rule here): a write refused halfway is aborted whole.
 		this->EndStep(sequence, (done > 0) ? kTrue : kFalse);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
 		if (done <= 0)
@@ -2869,7 +2517,7 @@ private:
 		}
 		const UIDRef target(targetDB, row.fStoryUID);
 		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
-		const int32 done = KCMRedoTableFromWord(target, live.fTargetTableUID, outMessage, kFalse);	// untracked (design 11-2)
+		const int32 done = KCMRedoTableFromWord(target, live.fTargetTableUID, outMessage);	// unsigned, untracked (design 11-2)
 		this->EndStep(sequence, (done > 0) ? kTrue : kFalse);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
 		if (done > 0)
@@ -2887,15 +2535,14 @@ private:
 		return done;
 	}
 
-	/** The import's pour into the TARGET - unsigned and untracked since 2026-10-24 (design 11-2: the author asked for the
-		trial's writes to go in without a change history; they were signed and tracked until then), the "!" rows left as
+	/** The import's pour into the TARGET - unsigned and untracked since 2026-10-24 (design 11-2: the author asked for
+		Apply's writes to go in without a change history; they were signed and tracked until then), the "!" rows left as
 		the import noted them, nothing kept - as ONE undo step named `stepName`, then the row (oneRow >= 0) or every row
 		compared again. */
 	int32 PourIntoTarget(IDataBase* targetDB, const KCMStoryTextSet& set, const std::vector<UID>& only,
 						 const char* stepName, int32 oneRow, PMString& outMessage)
 	{
 		KCMPourOptions options;
-		options.fSigned = kFalse;
 		options.fNoteRefusals = kFalse;
 		options.fKeepFor = nil;
 		options.fOnly = only;

@@ -1066,10 +1066,11 @@ private:
 			//   literal - MSVC would convert a narrow "≠" to the system code page and the cell
 			//   would show whatever that came to (memory cpp-japanese-needs-bom, and the same
 			//   reason KCMLoc.h keeps its Japanese in u"..." and calls SetXString).
-			// ★★THE FOURTH SIGN, "=", IS BACK (2026-09-24, stage 2 C): a change the reader TOOK BACK - "Reject This
-			//   Import Change" or "Restore from Source" - stays on the list, and "=" is read straight off the sign
-			//   it replaces: the two sides were not equal here, and now they are (the Source's state). Its menu
-			//   offers "Redo from Word". (It stood for a change taken IN from 2026-09-15 to 2026-09-21.)
+			// ★★THE FOURTH SIGN, "=", IS BACK (2026-09-24, stage 2 C): a change KCM made the Source's - "Restore from
+			//   Source", "Match the Source" or Apply This Change - stays on the list, and "=" is read straight off the
+			//   sign it replaces: the two sides were not equal here, and now they are (the Source's state). Where a copy
+			//   was kept its menu offers Restore from Copy. (It stood for a change taken IN from 2026-09-15 to
+			//   2026-09-21, and for the retired "Reject This Import Change" too until 2026-10-25.)
 			switch (change.fKind)
 			{
 				case 1:  kind = PMString("+"); break;	// insert

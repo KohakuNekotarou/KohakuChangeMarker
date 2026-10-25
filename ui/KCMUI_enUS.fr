@@ -85,9 +85,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMImportTaskStartAdviceKey,	"It is best to take a Task Start just before an import. Compared against it afterwards, the document shows exactly what the import changed - a Task Start taken earlier shows your other edits as well. OK imports now; Cancel stops here so that you can take a Task Start first.",
                 kKCMBookRowStartMenuKey,			"Start Change Marker",
                 kKCMStoryRowRefreshMenuKey,		"Refresh Story Comparison",
-                kKCMChangeRowRejectMenuKey,		"Reject This Import Change",
                 kKCMChangeRowRestoreAttrMenuKey,	"Restore from Source",
-                kKCMChangeRowRedoMenuKey,		"Redo",
                 kKCMChangeRowMatchTableMenuKey,	"Match the Source",
                 kKCMChangeRowApplyMenuKey,		"Apply This Change",				// (2026-10-24, the import-as-Source trial)
                 kKCMChangeRowRestoreFromCopyMenuKey,	"Restore from Copy",			// (2026-10-24 evening - KFC's name for the same thing)

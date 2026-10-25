@@ -19,8 +19,8 @@
 //
 //  ★★★**ONLY THE CELLS THE SHAPE CHANGED** (the user, 2026-09-25: "when it goes back, only the parts whose cell
 //   structure changed should have their content come back"). A cell that is THE SAME CELL on both sides - the
-//   same address, the same merge (KCMTableCellSame) - is not touched: whatever its words are, they are the change
-//   history's business (a Cell Text row of its own, "Reject This Import Change"). A cell the Source has and the
+//   same address, the same merge (KCMTableCellSame) - is not touched: whatever its words are, they are a Cell Text
+//   row's business, with that row's own items. A cell the Source has and the
 //   Target has not (a row or column put back), or one merged differently, is the shape's, and is made the
 //   Source's whole. The Table row folds exactly those cells (KCMStoryDiffRun::FoldTableChanges uses the same
 //   test), so what the row shows is what this rewrites.
@@ -28,12 +28,13 @@
 //  ★★★**READ BACK, OR ROLLED BACK** (the user's rule of 2026-09-24 night): after the writes, the table is read
 //   again - the Source's shape, the Source's content in every cell the shape changed (words, the four marks,
 //   the tables nested inside), and IN EVERY CELL LEFT ALONE THE WORDS IT HAD BEFORE - and when anything differs
-//   the caller ends its command sequence with the error state standing, which rolls the document back to before
-//   it (KCMFacades' EndSequenceOrRollBack). Nothing half-matched is left in the document.
+//   the caller ABORTS its step, which takes the document back to before it (KCMFacades' BeginStep / EndStep - an
+//   abortable step since 2026-10-25; a plain sequence with the error state standing until then, which a script's
+//   call did not roll back). Nothing half-matched is left in the document.
 //
-//  ⚠**Table + and Table − are not this file's**: a table the import put in or took out is in the change history
-//   (its anchor characters are a tracked insertion or deletion - measured 2026-09-24), and "Reject This Import
-//   Change" brings it back. This acts on Table ≠ - the one kind the change history cannot undo.
+//  ⚠**Table + and Table − are not this file's**: a table only one side has is not matched cell for cell - against
+//   an import's copy the story's own Apply puts it in or takes it out, and between two documents it is the
+//   reader's to copy. This acts on Table ≠.
 //
 //========================================================================================
 

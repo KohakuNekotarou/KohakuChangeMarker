@@ -521,28 +521,11 @@ public:
 	virtual bool16	ExportStoryText(const IDFile& parent, const UIDList& onlyThese,
 									PMString& outMessage) = 0;
 
-	/** "Import Story Text..." (2026-09-15; remade 2026-09-19 and 2026-09-21): read the chosen
-		files of edited stories, SAVE A TASK START COPY of the document to a file the reader picks,
-		pour the edited words into the DOCUMENT, and start the Story comparison against that copy.
-
-		★★★**THE DOCUMENT IS CHANGED BY THIS, AND EVERYTHING GOES IN AT ONCE** (2026-09-19, the
-		  reader's own proposal, adopted the same day). What decided it: overset shows itself on the
-		  real page the moment the words are in. The Story mode then lists what went in - against the
-		  copy taken a moment earlier. ⚠**NOTHING SENDS ONE CHANGE BACK SINCE 2026-09-21**: Ctrl+Z takes
-		  the whole import, and anything else is copied out of the Source document Start has open.
-		  ⚠**The line that stood here until 2026-09-21, "the document is not changed by this", was
-		    the 2026-09-15 design; it was measured false on the application.**
-		★**A TASK START OF ITS OWN** (2026-09-21): the save dialog comes up once the files have been
-		  chosen, and a reader who cancels it ends the import - there is nothing to compare against.
-		★**FILES, NOT A FOLDER** (2026-09-15, the user's decision): the reader picks the stories
-		  they mean, several at once, instead of handing over everything that happens to be in a
-		  folder.
-
-		@param files the files the reader chose, in the dialog's own order.
-		@param outMessage what happened, for the panel's status line.
-		@return kFalse when nothing readable was chosen, or no origin could be taken.
-		⚠Appended at the END of the class, like the one above and for the same reason. */
-	virtual bool16	ImportStoryText(const SysFileList& files, PMString& outMessage) = 0;
+	/*	⛔**ImportStoryText STOOD HERE UNTIL 2026-10-25** - "Import Story Text..." that poured the edited words into the
+		DOCUMENT, tracked and signed, against a Task Start saved to a file (2026-09-19). It went with the tidy
+		(docs/superpowers/specs/2026-10-24-kcm-import-tidy-design.md): ImportStoryTextAsSource, further down, is the one
+		import. ★Taken out of the MIDDLE of the vtable on purpose - nothing outside KCM includes this facade (grep,
+		2026-10-25) and KCM's two halves are built and shipped together ([[facade-vtable-slot-append-only]]). */
 
 	/** ⛔**RETIRED 2026-09-20 - ALWAYS kFalse, AND THE SLOT STAYS.** It said whether the fourth mode
 		was up, which the UI asked in order to grey the other three modes and Task Start while it was.
@@ -636,20 +619,9 @@ public:
 		 includes this facade (measured by grep, 2026-09-20), so only KCM's two halves are rebuilt. */
 	virtual bool16	GetChangeMarkSpan(int32 nth, int32 which, int32 i, TextIndex& outFrom, TextIndex& outTo) = 0;
 
-	/** (2026-09-24, stage 2 A - "Reject This Import Change") How many of the import's tracked changes (signed
-		"KohakuChangeMarker") touch change `which` of row `nth` in the Target - the test the change row's menu
-		item is greyed by, asked of the RANGE rather than remembered (design 13-1 item 3): a plain comparison, a
-		ruby-only row and a document opened again all answer from what the story holds now. 0 for none, an
-		unpaired story, or nothing armed.
-		⚠Appended at the END of the class ([[facade-vtable-slot-append-only]]). */
-	virtual int32	HasImportChange(int32 nth, int32 which) = 0;
-
-	/** Rejects them as ONE undo step ("Reject This Import Change" - a plain command sequence: an abortable one
-		took the import's own undo step below it away, measured) and compares the row again (RefreshRow) - the
-		list does not follow a reject by itself (measured 2026-09-24). @return how many were rejected (0 when
-		there were none, and then nothing lands on the undo stack); -1 when nothing could be done, and then
-		outMessage says why. */
-	virtual int32	RejectImportChange(int32 nth, int32 which, PMString& outMessage) = 0;
+	/*	⛔**HasImportChange / RejectImportChange STOOD HERE UNTIL 2026-10-25** - "Reject This Import Change": the import's
+		tracked changes (signed "KohakuChangeMarker") over a change row, rejected as one step. They went with the import
+		that wrote them (ImportStoryText, above) - out of the middle of the vtable for the reason given there. */
 
 	/** (2026-09-24, stage 2 B - "Restore from Source") Whether change `which` of row `nth` is one this acts on: an
 		attribute change (kWhatAttr) of a kind that is written back - ruby, kenten, warichu, tate-chu-yoko - on a
@@ -661,24 +633,15 @@ public:
 
 	/** Makes that kind, over the change's characters, what the SOURCE document has there - read from the Source
 		story itself (KCMTextRead::ReadStory; the user: "the Source document is there, take it from there"), never
-		from what the row remembers - as ONE undo step ("Restore from Source", a plain sequence: RejectImportChange
-		says why), then compares the row again. The row is compared again FIRST and has to be the same change
-		(the same lesson). Planned before the sequence begins, so a refusal puts nothing on the undo stack.
+		from what the row remembers - as ONE abortable undo step ("Restore from Source"), then compares the row again.
+		The row is compared again FIRST and has to be the same change (the same lesson). Planned before the step
+		begins, so a refusal puts nothing on the undo stack.
 		@return how many of the Source's marks went on (0 = the Target's were taken off and the Source has none
 		there); -1 when nothing was done, and outMessage says why. */
 	virtual int32	RestoreAttr(int32 nth, int32 which, PMString& outMessage) = 0;
 
-	/** (2026-09-24, stage 2 C - "Redo from Word") Whether change `which` of row `nth` is a change the reader took
-		back and still standing so (Change::fReplaced), on a paired story of the armed Target. The item is greyed by
-		this; whether Word's content is still in memory is NOT asked here (design 15-1-5): the action says why.
-		⚠Appended at the END ([[facade-vtable-slot-append-only]]). */
-	virtual bool16	CanRedoFromWord(int32 nth, int32 which) = 0;
-
-	/** Makes that change's paragraph what Word shows again - the import's own Compare -> Apply narrowed to it, under
-		the import's signature and change tracking - as ONE undo step ("Redo from Word"), then compares the row again.
-		Planned before the sequence begins, so a refusal (nothing kept, the words edited since) lands nothing on the
-		undo stack. @return the writes that went in; -1 when nothing was written, and outMessage says why. */
-	virtual int32	RedoFromWord(int32 nth, int32 which, PMString& outMessage) = 0;
+	/*	⛔**CanRedoFromWord / RedoFromWord STOOD HERE UNTIL 2026-10-25** - "Redo from Word": a taken-back change's
+		paragraph made Word's again from the content the import kept. They went with the reject they undid (above). */
 
 	/** (2026-09-24) GetStoryPointAt for a CARET rather than a character - the place a zero-width change
 		stands at: a deletion seen from the Target, an insertion seen from the Source. The one difference is
@@ -704,15 +667,17 @@ public:
 	virtual bool16	CanMatchTable(int32 nth, int32 which) = 0;
 
 	/** Makes that table the Source's - rows, columns, merged cells, header and footer rows, and every cell's content,
-		read from the Source document itself (KCMTableMatch.h says how, and why the table keeps its id) - as ONE undo
-		step ("Match the Source", a plain sequence), then reads the two tables back and ROLLS THE SEQUENCE BACK when
-		they differ (the user's rule: all the way, or not at all), and compares the row again either way. The row is
+		read from the Source document itself (KCMTableMatch.h says how, and why the table keeps its id) - as ONE
+		abortable undo step ("Match the Source"; a plain sequence until 2026-10-25), then reads the two tables back and
+		ABORTS THE STEP when they differ (the user's rule: all the way, or not at all - from a script too, which a plain
+		sequence did not keep), and compares the row again either way. The row is
 		compared again FIRST and has to be the same change. @return how many shape moves were made (0 = only the
 		cells were copied); -1 when nothing was left done, and outMessage says why. */
 	virtual int32	MatchTable(int32 nth, int32 which, PMString& outMessage) = 0;
 
 	/** (2026-09-25, the user's decision) The document the Word round trip works on - the chosen Target, else the active
-		document (KCMTaskDocumentDB): what "Export Story Text..." reads and what "Import Story Text..." writes into. The
+		document (KCMTaskDocumentDB): what "Export Story Text..." reads and what "Import Story Text..." takes its copy of
+		(and Apply then writes into). The
 		export item is greyed by it and asks it for the document to export, so that the export and the import cannot
 		name two different documents again (they did: the import went into a Target left open from an earlier
 		comparison while the export read the document in front). nil when there is neither.

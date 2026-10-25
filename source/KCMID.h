@@ -378,7 +378,8 @@ DECLARE_PMID(kScriptInfoIDSpace, kKCMTransparencyItemCountPropertyScriptElement,
 //   NOT reused - the rule the method IDs +1..+12 are under.
 // ★The story text round trip without a dialog (2026-09-17) - KCMScriptingDefs.h says why. +27..+30 were
 //  the next free slots in this ID space (+13..+26 in use).
-DECLARE_PMID(kScriptInfoIDSpace, kKCMImportStoryTextMethodScriptElement, kKCMPrefix + 27)	// app.kcmImportStoryText(file) -> the import's sentence
+// ⛔**+27 IS RETIRED** (2026-10-25): app.kcmImportStoryText, with the import that wrote into the document (the tidy).
+//   Never reused - app.kcmImportToSource (+38) is the import's door.
 // ⛔**+28 IS RETIRED** (2026-09-20): app.kcmTakeInAllStories, with "Restore All Stories" itself. Never reused.
 DECLARE_PMID(kScriptInfoIDSpace, kKCMExportStoryTextMethodScriptElement, kKCMPrefix + 29)	// app.kcmExportStoryText(folder) -> the export's sentence, with the dated folder in it
 DECLARE_PMID(kScriptInfoIDSpace, kKCMStopComparisonMethodScriptElement, kKCMPrefix + 30)	// app.kcmStopComparison() -> the status line afterwards

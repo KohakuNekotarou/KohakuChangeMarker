@@ -28,8 +28,8 @@
 #include "KCMPairChoice.h"			// KCMChosenTargetDB - the document the Task Start chose, which is where the words go
 // ⛔KCMOrigin.h went on 2026-09-21 - "until it goes" was written for the origin slot, and the slot
 //   went that day. Nothing in this file read anything the header declared.
-#include "KCMTaskStartSave.h"		// KCMTakeTaskStartCopy - the import's own Task Start, saved to a file
-#include "KCMTaskStartClone.h"		// KCMTakeImportClone - the import's copy in memory (2026-10-24, the import-as-Source trial)
+#include "KCMTaskStartSave.h"		// KCMTaskDocumentDB - the document the import takes its copy of, refused when a PDF one
+#include "KCMTaskStartClone.h"		// KCMTakeImportClone - the import's copy in memory (2026-10-24)
 #include "KCMStoryList.h"			// the rows the Story mode built - what the import-as-Source proposes
 #include "KCMProgressBar.h"			// the import's one bar, and the slot its inner loops step (2026-09-17)
 #include "KCMDocxPackage.h"			// KCMReadDocxParts - a .docx on disk as its parts (2026-09-19)
@@ -37,9 +37,7 @@
 #include "KCMStorySyncApply.h"		// KCMApplySyncPlan - and that, carried out
 #include "KCMStoryTextExport.h"		// KCMStoryFromDocument - the document's story, read the way the export reads it
 #include "KCMStoryDocx.h"			// Read - the parts as Word shows them
-#include "KCMImportTracking.h"		// the import writes under Track Changes, as KohakuChangeMarker (2026-09-24)
-#include "KCMWordKeep.h"			// the Word content kept per story for "Redo from Word" (2026-09-24, stage 2 C)
-#include "K2SmartPtr.h"				// K2::scoped_ptr - the author switch is let go of at a chosen moment (reset)
+#include "KCMWordKeep.h"			// Word's content kept per story under the document - what Apply writes from
 #include "KCMZipStore.h"			// Entry - a part, named
 #include "KCMModelNotify.h"			// KCMNotify - a cancelled import tells the panel the mode came back
 #include "KCMTextWords.h"			// PMStringOfUtf8 - a UTF-8 reason onto the status line without mojibake
@@ -53,9 +51,10 @@ namespace
 //  product - the user's rule - and kept, working, as work/kcm-import-matrix/KCMStoryTextImport-with-trace.cpp.txt.)
 
 /** The import's one progress bar, in thousandths of the whole job (2026-09-17). Each constant is where
-	a stage STARTS: reading the files runs up to the state, taking the state up to the pour, the pour
-	(into the document, since 2026-09-19; the names below are older) up to the comparison, and the
-	comparison to the end. ⚠A guess at where the time goes, not a measurement - see KCMImportStoryText. */
+	a stage STARTS: reading the files runs up to the state, taking the copy up to the pour, the pour
+	(into the copy) up to the comparison, and the comparison to the end. ⚠A guess at where the time
+	goes, not a measurement: taking the copy is one call into InDesign and is given a slice of its own
+	because on a large document it is the heavy part, and the bar can only stand still through it. */
 const int32		kImportUnitsState	= 100;
 const int32		kImportUnitsCopy	= 350;
 const int32		kImportUnitsCompare	= 650;
@@ -396,210 +395,14 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 	return (read > 0) ? kTrue : kFalse;
 }
 
-bool16 KCMImportStoryText(const SysFileList& files, PMString& outMessage)
-{
-	outMessage.Clear();
-	outMessage.SetTranslatable(kFalse);
-
-	// ★NOT INTO A PDF DOCUMENT (2026-10-14, design 3.7) - asked before a file is read. The menu asks the same before its
-	//   dialog (KCMActionComponent.cpp); this is the script's road (app.kcmImportStoryText) as well.
-	if (KCMIsPdfDoc(KCMTaskDocumentDB()))
-	{
-		outMessage = kKCMPdfTargetRefusal;
-		outMessage.SetTranslatable(kFalse);
-		return kFalse;
-	}
-
-	// ★★ONE BAR FOR ALL OF IT (2026-09-17, the user's choice). The reading, the comparison's raster
-	//   loop and its story loop each step a slice of this one instead of raising their own - two bars
-	//   alive at once is what KCMProgressBar.h forbids. The units are thousandths of the whole job.
-	//   ⚠The slices are a guess at where the time goes, not a measurement: the state and the copy are
-	//    single calls into InDesign and are given the middle, because on a large document they are
-	//    the heavy part and the bar can only stand still through them.
-	PMString barTitle("Importing story text...");
-	barTitle.SetTranslatable(kFalse);
-	KCMDeferredProgressBar progress(barTitle, kImportUnitsAll);
-	KCMOuterProgressScope outer(progress);
-
-	// 1. THE FILES FIRST. Nothing is touched if they cannot be read.
-	KCMStoryTextSet set;
-	PMString readMessage;
-	bool16 cancelledReading = kFalse;
-	outer.Slice(0, kImportUnitsState);
-	if (!KCMReadStoryTextFiles(files, set, readMessage, &cancelledReading))
-	{
-		outMessage = cancelledReading ? PMString(kImportCancelledMessage) : PMString("import: ");
-		outMessage.SetTranslatable(kFalse);
-		if (!cancelledReading)
-			outMessage.Append(readMessage);
-		return kFalse;
-	}
-
-	// (⛔**THE DOCUMENT WAS CHOSEN HERE UNTIL 2026-09-22**, and it was chosen as KCMActiveDocDB().
-	//   That made TWO answers to one question: the Task Start below picks the CHOSEN TARGET when
-	//   there is one and only falls back to the active document (KCMTaskStartSave.cpp,
-	//   DocumentToCopy - the user's rule "if there is a Target, start the task on that Target;
-	//   if not, register the active one as the Target and start"), while this line always took the
-	//   active one. Measured on the application: the panel named one document as the Target and the
-	//   words went into ANOTHER ([[one-question-one-place]]). The question is now asked ONCE, and
-	//   after the Task Start rather than before it - see below.)
-
-	// 2. ★★★THE IMPORT TAKES A TASK START (2026-09-19, the user's rule: "an import always takes a
-	//    Task"; on 2026-09-21 that Task Start became a COPY SAVED ON DISK).
-	//    ⚠★★**THE READER IS ASKED WHERE TO SAVE IT, AND A CANCEL ENDS THE IMPORT** (the user's
-	//     rule: "ユーザーが保存を拒否したら、そこで終わり"). Nothing has gone into the document at
-	//     this point, so there is nothing to undo - and the call changes nothing of its own when
-	//     the dialog is cancelled.
-	//    ⚠**THERE IS NO PARKING ANY MORE.** The old Task Start was a single in-memory slot that had
-	//     to be moved aside so a failure could put the reader's back; a file choice simply replaces
-	//     the one before it, and the copy stays on disk whatever happens next.
-	KCMClearImportRefusals();
-	PMString stateStep("Saving a copy of the document");
-	stateStep.SetTranslatable(kFalse);
-	progress.Step(kImportUnitsState, stateStep);	// ★before the call: the bar can only appear at a Step
-	PMString whyNot;
-	if (!KCMTakeTaskStartCopy(whyNot))
-	{
-		// ★★An EMPTY reason means the reader cancelled the save dialog: the import ends here and
-		//   says nothing at all, the same silence the flyout's own Task Start keeps.
-		outMessage.Clear();
-		outMessage.SetTranslatable(kFalse);
-		if (whyNot.CharCount() > 0)
-		{
-			outMessage = "import: the document's state could not be saved (";
-			outMessage.Append(whyNot);
-			outMessage.Append(")");
-		}
-		return kFalse;
-	}
-	// ★A CANCEL PRESSED WHILE THE COPY WAS BEING SAVED is answered here, the first safe point after
-	//   it. ⚠**The copy stays on disk and stays chosen as the Source**: the reader asked for it and
-	//   paid for it with a save dialog, so throwing it away would be worse than keeping it.
-	if (progress.WasCancelled())
-	{
-		outMessage = kImportCancelledMessage;
-		outMessage.SetTranslatable(kFalse);
-		return kFalse;
-	}
-
-	// ★**AND THE DOCUMENT IS THE ONE THE TASK START JUST CHOSE** (2026-09-22, the user's rule).
-	//   The Task Start has named the pair by now - the Target is the document it copied, the Source
-	//   is the copy (KCMTaskStartSave.cpp, step 6) - so asking it here makes the three things that
-	//   must agree agree by construction: what was copied, what the panel calls the Target, and
-	//   where the words go. ⚠**ASKED AFTER, NOT BEFORE**: before the Task Start this would be the
-	//   old pair's Target, which is exactly the state the bug was found in.
-	IDataBase* const db = KCMChosenTargetDB();
-	if (db == nil)
-	{
-		// The Task Start said it succeeded, so this cannot normally happen; it is written because a
-		// nil here would otherwise reach the pour as a dereference.
-		outMessage = "import: the Task Start left no Target to put the words into";
-		outMessage.SetTranslatable(kFalse);
-		return kFalse;
-	}
-
-	// 3. ★★★THE WORDS GO INTO THE DOCUMENT - all of them, as one undo step (KCMPourStoryText). What
-	//    could not go in is noted for the "!" rows. A cancel between two stories aborts the whole
-	//    pour, and the reader's own Task Start comes back as if nothing had happened.
-	PMString pourStep("Putting the edited text into the document");
-	pourStep.SetTranslatable(kFalse);
-	progress.Step(kImportUnitsCopy, pourStep);
-	outer.Slice(kImportUnitsCopy, kImportUnitsCompare);
-	PMString poured;
-	bool16 cancelledPour = kFalse;
-	bool16 anyIn = kFalse;
-	// (the changes are signed "KohakuChangeMarker" INSIDE the pour's own undo step - KCMPourStoryText says why)
-	anyIn = KCMPourStoryText(db, set, poured, cancelledPour);
-	if (cancelledPour)
-	{
-		// ⚠The copy stays, for the reason given at the cancel above: it is a Task Start the reader
-		//   saved, and the abandoned pour leaves the document as it was.
-		outMessage = kImportCancelledMessage;
-		outMessage.SetTranslatable(kFalse);
-		return kFalse;
-	}
-
-	// 4. THE STORY MODE, against the Task Start just taken: the Source is the moment before the
-	//    import, the Target is the document with the edits in. The comparison's story loop steps
-	//    the last slice of the bar.
-	outer.Slice(kImportUnitsCompare, kImportUnitsAll);
-	KCMSetCompareMode(kKCMModeStory);
-	KCMToggleStartStop();
-
-	outMessage = "import: ";
-	outMessage.SetTranslatable(kFalse);
-	outMessage.Append(readMessage);
-	outMessage.Append("; ");
-	outMessage.Append(poured);			// what went in, and what was left alone and why (KCMPourStoryText)
-	// ⚠**WHAT WAS HELD BACK IS NOT COUNTED HERE** (2026-09-22): it has a "!" row and a count of its
-	//  own in `poured`, and saying "1 could not go in" of a tate-chu-yoko the import deliberately
-	//  kept told the reader the opposite of what happened (seen in the live matrix the same day).
-	int32 couldNotGoIn = 0;
-	for (size_t i = 0; i < KCMImportRefusals().size(); ++i)
-	{
-		if (!KCMImportRefusals()[i].fHeldBack)
-			++couldNotGoIn;
-	}
-	if (couldNotGoIn > 0)
-		AppendCount(outMessage, " - ", couldNotGoIn, " could not go in (the rows marked !)");
-	// ★A START THAT DID NOT ARM (a Cancel pressed on the comparison's own loop, say) is not the
-	//   import's failure any more: the words are in, Ctrl+Z takes them out, and the reader is told
-	//   which of the two states they are looking at.
-	if (!(KCMIsArmed() && KCMArmedTargetDB() != nil))
-	{
-		// ★★AND WHY IT DID NOT START (2026-09-25): the start said so on the status line, and this sentence - which the
-		//   flyout puts on the same line a moment later - wrote over it, so the reader saw "did not start" and never the
-		//   reason ("Target and Source are the same document", a file that would not open...). Carried into it now.
-		PMString startSaid;
-		KCMGetSessionStatus(startSaid);
-		outMessage.Append(". The edits are in the document but the comparison did not start");
-		if (startSaid.CharCount() > 0)
-		{
-			outMessage.Append(" (");
-			outMessage.Append(startSaid);
-			outMessage.Append(")");
-		}
-		outMessage.Append(" - Start Comparison shows them; Ctrl+Z takes the whole import back");
-		KCMNotify(kKCMMarksClearedMessage);
-		return anyIn;
-	}
-	// ⚠**THIS LINE OFFERED "Restore Source Text" UNTIL 2026-09-21**, months after that item and the
-	//   whole restore behind it were taken out. A status line is read by the reader and by nobody
-	//   else, so nothing failed and nothing warned: it simply named a menu item that is not there.
-	//   ★What takes its place is what the user said when they removed it - "the Source document is
-	//   in front of you, so if you want it back, take it from there" - and Start has it open.
-	outMessage.Append(". Ctrl+Z takes the whole import back; the older words are in the Source document");
-
-	// ★**AND THE TARGET IS WHAT THE READER IS LEFT LOOKING AT** (2026-09-22, the user's rule from
-	//   2026-09-21 carried to the second road). Start opens the Source copy in a window of its own and
-	//   InDesign leaves what it has just opened in front, so without this an import ends on the OLDER
-	//   version of the reader's own work. Measured on the application through the script door:
-	//   activeDocument WAS the Task Start copy, and the next thing typed would have gone into it.
-	//   ⚠**SAID HERE, WHERE BOTH ROADS MEET**, rather than by the caller: the flyout item did it for
-	//     itself until today (KCMActionComponent) and the script door could not, because doing it
-	//     means touching the UI - the reason the message exists is beside it in KCMBoundaryID.h.
-	KCMNotify(kKCMTargetToFrontMessage);
-	return anyIn || !KCMImportRefusals().empty();
-}
-
-// ★★THE IMPORT RESHAPES TABLES AGAIN (2026-09-24 evening, the user's decision, which replaces the morning's
-//   design 11-1 item 5): a table whose rows, columns or merged cells changed in Word is made Word's, one
-//   stage per round (S1/S2), the words then written into the cells it has. ★What the user accepted with it:
-//   InDesign's change history records neither rows, columns nor merges (measured, track.jsx), so THOSE are
-//   not taken back one by one - a reject of the import's changes leaves the new shape (a row put in stays,
-//   empty; a row taken away does not come back), and the "Table" row's menu offers no reject, its range
-//   holding no tracked change. Ctrl+Z takes the whole import back, shape included. The words in the cells
-//   ARE recorded and can be rejected, as before. (kFalse held such a table whole, "!", from the morning of
-//   2026-09-24 until the evening; the redo of one paragraph, KCMRedoFromWord, still passes kFalse.)
+// ★★THE POUR RESHAPES TABLES (2026-09-24 evening, the user's decision, which replaces the morning's design 11-1
+//   item 5): a table whose rows, columns or merged cells changed in Word is made Word's, one stage per round
+//   (S1/S2), the words then written into the cells it has. ★What the user accepted with it: the shape is not a
+//   change of its own to take back one by one - Ctrl+Z of the step that put it in takes it back, shape and words
+//   together (since 2026-10-25 that step is an Apply - the "Table" row's, or a story's or all of them; the import
+//   itself reshapes only its copy). (kFalse held such a table whole, "!", from the morning of 2026-09-24 until the
+//   evening; Apply's paragraph road still passes kFalse - it writes one paragraph and reshapes no table.)
 static const bool16 kReshapeTablesOnImport = kTrue;
-bool16 KCMPourStoryText(IDataBase* db, const KCMStoryTextSet& set, PMString& outMessage,
-						bool16& outCancelled)
-{
-	KCMPourOptions options;
-	options.fKeepFor = db;
-	return KCMPourStoryTextWith(db, set, options, outMessage, outCancelled);
-}
-
 bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCMPourOptions& options,
 							PMString& outMessage, bool16& outCancelled)
 {
@@ -630,23 +433,15 @@ bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCM
 	//   2026-09-23), naming that one twice, once under each heading. Kept per file now, so that the ones with no story can be NAMED (a "!" row each).
 	std::vector<bool16> matched(set.fUids.size(), kFalse);
 
-	// ★★★ONE ABORTABLE STEP (2026-09-19). The words go into the reader's own document now, so this
-	//   IS the undo step Ctrl+Z takes back - and a Cancel between two stories aborts it, leaving the
-	//   document as it was. (Until 2026-09-19 a plain sequence poured into the windowless copy.)
-	IAbortableCmdSeq* sequence = CmdUtils::BeginAbortableCmdSeq("KCMPourStoryText");
+	// ★★★ONE ABORTABLE STEP (2026-09-19). Poured into the document (an Apply), this IS the undo step Ctrl+Z takes
+	//   back; poured into the import's copy, its history is discarded afterwards (KCMImportStoryTextAsSource). Either
+	//   way a Cancel between two stories aborts it and leaves the database as it was.
+	// ★UNSIGNED AND UNTRACKED (since 2026-10-24; the switches went on 2026-10-25): what a pour writes keeps no change
+	//   history, and the reader's own user name is never touched for it. (Until then the import signed its changes
+	//   "KohakuChangeMarker" under Track Changes, for "Reject This Import Change" to find - retired with that item.)
+	IAbortableCmdSeq* sequence = CmdUtils::BeginAbortableCmdSeq("KCMPourStoryTextWith");
 	if (sequence != nil)
 		sequence->SetName(options.fStepName);
-
-	// ★★THE CHANGES ARE SIGNED "KohakuChangeMarker" (2026-09-24, the user's decision - design 11-1 item 2), AND THE
-	//   NAME IS SWITCHED INSIDE THIS STEP (fixed the same day, found on re-check): switched around the whole pour
-	//   from KCMImportStoryText, the two name commands were undo steps of their own - "Set User Name" stood on top
-	//   of the undo stack after an import, so one Ctrl+Z put the name back to KohakuChangeMarker and left the import
-	//   in. Inside the sequence the switch, the words and the switch back are ONE step: undo and redo take all of
-	//   it, and a cancel's abort takes back both switches. ⚠Put back BEFORE the sequence ends or aborts (below),
-	//   so that the switch back is inside it too.
-	// ★UNSIGNED, NOTHING IS SWITCHED (2026-10-24): a pour into the import's copy writes no change history, so there
-	//   is no author to sign it - and the reader's own name is never touched for it.
-	K2::scoped_ptr<KCMImportAuthor> author(options.fSigned ? new KCMImportAuthor() : nil);
 
 	// ★The import's bar when there is one (a slice of it), a bar of its own otherwise - the same
 	//   shape as the reading loop. Stepped per story; asked for a cancel BETWEEN two stories only,
@@ -688,8 +483,8 @@ bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCM
 
 		const UIDRef storyRef = storyRefs[static_cast<size_t>(s)];
 
-		// ★THE STORY'S OWN UID IS THE PAIRING (2026-09-19): the file is named after it, and the words
-		//   go into this very document. (The copy's uids were new ones and went through a label.)
+		// ★THE STORY'S OWN UID IS THE PAIRING (2026-09-19): the file is named after it, and the import's copy
+		//   holds the document's own uids (a database clone), so the copy and the document pair alike.
 		const UID original = storyRef.GetUID();
 
 		// ⚠GONE SINCE THE LIST WAS TAKEN (see above): a story an earlier story's shape round took away with its table.
@@ -716,15 +511,9 @@ bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCM
 
 		matched[which] = kTrue;
 
-		// ★★WHAT GOES INTO THIS STORY IS RECORDED IN THE CHANGE HISTORY (2026-09-24, the user's decision -
-		//   design 11-1): each change can then be rejected one by one in the Track Changes panel, and a
-		//   rejected deletion brings back what it took, footnotes and tables included (measured the same
-		//   day). Tracking is on for this story from here to the end of this loop's body - every
-		//   `continue` included - and back to the reader's own setting after; being inside the sequence,
-		//   Ctrl+Z takes the switch back along with the words.
-		// ★UNSIGNED, UNTRACKED (2026-10-24): the import's copy keeps no change history - what it holds is what the file
-		//   says, and a tracked deletion would stay in its text model for the comparison to read.
-		K2::scoped_ptr<KCMStoryTrackingOn> tracking(options.fSigned ? new KCMStoryTrackingOn(storyRef) : nil);
+		// (NO CHANGE TRACKING IS SWITCHED ON HERE - since 2026-10-24: a tracked deletion would stay in the text model
+		//  for the comparison to read, and the copy has to hold what the file says. A story the reader tracks
+		//  themselves still records what an Apply writes into it.)
 
 		// ★★★**THE DOCUMENT AGAINST WORD, AND THE DOCUMENT MADE WORD'S** (2026-09-23, the user's rule: "Word
 		//   is the one that counts" - and "the processing that is simplest and least likely to be wrong").
@@ -866,7 +655,6 @@ bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCM
 	//   too, because the document those refusals were about is the document as it was.
 	if (outCancelled)
 	{
-		author.reset();		// the name back, inside the sequence - the abort then takes back both switches
 		if (sequence != nil)
 			CmdUtils::AbortCommandSequence(sequence);
 		// ⚠Only a pour that notes the "!" rows drops them: an Apply's cancel leaves the import's own rows standing.
@@ -893,13 +681,12 @@ bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCM
 					  (k < set.fFileNames.size()) ? set.fFileNames[k] : PMString());
 	}
 
-	author.reset();			// the name back, inside the sequence (see where it was switched)
 	if (sequence != nil)
 		CmdUtils::EndCommandSequence(sequence);
 
-	// ★WORD'S CONTENT IS KEPT PER STORY for "Redo from Word" (2026-09-24, stage 2 C - design 15-1-6): every story
-	//   this pour paired, whether or not anything went in - a story held whole has nothing to redo, and the redo's
-	//   own plan says so. Replaces what the last import kept for the same story.
+	// ★WORD'S CONTENT IS KEPT PER STORY for Apply (2026-09-24 for the retired "Redo from Word"; Apply's since
+	//   2026-10-24): every story this pour paired, whether or not anything went in - a story held whole has nothing to
+	//   apply, and Apply's own plan says so. Replaces what the last import kept for the same story.
 	// ★UNDER THE DATABASE THE CALLER NAMES (2026-10-24): a pour into the import's copy keeps it for the DOCUMENT the copy
 	//   was taken from - that is the database Apply writes into and asks.
 	if (options.fKeepFor != nil)
@@ -939,11 +726,10 @@ bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCM
 }
 
 //----------------------------------------------------------------------------------------
-// ★★IMPORT STORY TEXT INTO THE SOURCE (2026-10-24, the import-as-Source trial - docs/superpowers/specs/2026-10-24-kcm-
-//   import-as-source-design.md). The user: "right now the state before the change is the Source and the Target is what
-//   gets changed - I want that the other way round".
-//   The same reading and the same pour as KCMImportStoryText, aimed the other way: the words go into a Task Start in
-//   memory, and the Story mode then shows - against the document, which nothing here touches - what they would change.
+// ★★IMPORT STORY TEXT INTO THE SOURCE (2026-10-24, adopted 2026-10-25 - docs/superpowers/specs/2026-10-24-kcm-import-as-
+//   source-design.md). The user: "right now the state before the change is the Source and the Target is what gets
+//   changed - I want that the other way round". The words go into a Task Start in memory, and the Story mode then
+//   shows - against the document, which nothing here touches - what they would change.
 //----------------------------------------------------------------------------------------
 
 namespace
@@ -1051,7 +837,6 @@ bool16 KCMImportStoryTextAsSource(const SysFileList& files, PMString& outMessage
 	progress.Step(kImportUnitsCopy, pourStep);
 	outer.Slice(kImportUnitsCopy, kImportUnitsCompare);
 	KCMPourOptions options;
-	options.fSigned = kFalse;
 	options.fNoteRefusals = kTrue;
 	options.fKeepFor = targetDB;
 	options.fStepName = "Import Story Text into the Source";

@@ -179,7 +179,7 @@ bool16 KCMPlanRestoreAttrFromSource(const UIDRef& targetStory, const UIDRef& sou
 	//   position over there names these characters. One test, one message, one place.
 	if (!KCMPlanAttrRestore(tPieces, sPieces, tFrom, tTo, sFrom, sTo, outJob.fPlan))
 	{
-		Refuse(outWhy, "the words of this paragraph differ as well - fix the words first (after an import: Reject This Import Change), then restore this");
+		Refuse(outWhy, "the words of this paragraph differ as well - make the words the same first (their row: Restore from Source, or Apply This Change against imported text), then this");
 		return kFalse;
 	}
 
@@ -195,7 +195,7 @@ bool16 KCMPlanRestoreAttrFromSource(const UIDRef& targetStory, const UIDRef& sou
 	}
 	if (tWords != sWords)
 	{
-		Refuse(outWhy, "the characters under this mark are not the Source's - fix the words first (after an import: Reject This Import Change), then restore this");
+		Refuse(outWhy, "the characters under this mark are not the Source's - make the words the same first (their row: Restore from Source, or Apply This Change against imported text), then this");
 		return kFalse;
 	}
 

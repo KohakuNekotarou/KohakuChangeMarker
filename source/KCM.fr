@@ -755,19 +755,10 @@ resource VersionedScriptElementInfo(10)
 		// has the codes and why they were free.
 		// ⚠Each answers with the sentence the status line would show (StringType) - the outcome is
 		//   words, and "0 changes taken in, 2 skipped (...)" is exactly what a test has to read.
-		Method
-		{
-			kKCMImportStoryTextMethodScriptElement,
-			e_KCMImportStoryText,
-			"kcm import story text",			// name -> app.kcmImportStoryText(file)
-			"Import one edited story file into the active document, as Import Story Text does, without the dialog.",
-			StringType,
-			"The sentence the status line shows"
-			{
-				keyAEFile, "file path", "The edited story file (<story id>.html)", FileType, kRequired
-			}
-		}
-
+		// ⛔**"kcm import story text" WENT ON 2026-10-25** with the import that wrote into the document (the tidy - its
+		//   road, Reject This Import Change and Redo from Word went together). Its ScriptID ('eKGn') and its
+		//   ScriptElement (+27) are graves (KCMScriptingDefs.h, KCMID.h); both halves of the pair went - this Method
+		//   block and its Method{} line on app below. app.kcmImportToSource is the import's door.
 		Method
 		{
 			kKCMExportStoryTextMethodScriptElement,
@@ -912,12 +903,12 @@ resource VersionedScriptElementInfo(10)
 				// method is simply not there, exactly as described above for the properties: no build
 				// error, no warning, ERR:55 at the first touch.
 				// The round trip's four (2026-09-17) - the other half of each Method block above.
-				// (⛔"kcm probe pdf route"'s line stood first here until 2026-10-02.)
-				Method{ kKCMImportStoryTextMethodScriptElement },
+				// (⛔"kcm probe pdf route"'s line stood first here until 2026-10-02, and "kcm import story text"'s
+				//  next until 2026-10-25.)
 				Method{ kKCMExportStoryTextMethodScriptElement },
 				Method{ kKCMStopComparisonMethodScriptElement },
 				Method{ kKCMCompareTrackedMethodScriptElement },	// (2026-10-05) the Track mode's test door
-				Method{ kKCMImportToSourceMethodScriptElement },	// (2026-10-24) the import-as-Source trial's two doors
+				Method{ kKCMImportToSourceMethodScriptElement },	// (2026-10-24) the import's two doors - into the copy, and Apply
 				Method{ kKCMApplyChangeMethodScriptElement },
 				Method{ kKCMRestoreFromCopyMethodScriptElement },	// (2026-10-24 evening) the "=" row's Restore from Copy
 				Method{ kKCMChangeReachMethodScriptElement },		// (2026-10-24 night) the list like KFC's - a row's reach

@@ -146,13 +146,13 @@
 #include "KCMTrackOriginal.h"	// KCMTakeTrackOriginalCopy - app.kcmCompareTracked (2026-10-05)
 #include "KCMCore.h"		// KCMGetCompareMode - which of the two lists the port reads
 #include "KCMRingAdornment.h"	// KCMGetNumItemsWithXP - document.kcmTransparencyItemCount
-#include "SysFileList.h"			// app.kcmImportStoryText hands its one file over as a list
+#include "SysFileList.h"			// app.kcmImportToSource hands its one file over as a list
 #include "KCMTaskStartSave.h"		// KCMTaskDocumentDB - the document app.kcmExportStoryText exports (2026-09-25)
 #include "KCMComparisonRun.h"		// KCMStopComparison - app.kcmStopComparison
 // (⛔KCMStoryRestore.h and KCMStoryDiffRun.h were included here for app.kcmTakeInChange and
 //  app.kcmUndoRestore, and went with those two methods on 2026-09-21.)
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - app.kcmExportStoryText
-#include "KCMStoryTextImport.h"	// KCMImportStoryText - app.kcmImportStoryText
+#include "KCMStoryTextImport.h"	// KCMImportStoryTextAsSource - app.kcmImportToSource
 #include "IKCMStoryEditsFacade.h"	// ApplyChange / ApplyStory / ApplyAll - app.kcmApplyChange (2026-10-24)
 #include "Utils.h"
 #include <cstdio>					// sscanf_s - app.kcmApplyChange's "<row> <change>"
@@ -481,7 +481,7 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 			data->AppendReturnData(script, methodID, returnData);
 			return kSuccess;
 		}
-		if (id == e_KCMImportStoryText || id == e_KCMImportToSource
+		if (id == e_KCMImportToSource
 			|| id == e_KCMExportStoryText || id == e_KCMStopComparison || id == e_KCMCompareTracked)
 		{
 			PMString message;
@@ -512,15 +512,10 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 					// "Compare with Tracked Changes..." with the file given instead of asked (2026-10-05, KCMTrackOriginal.h).
 					KCMTakeTrackOriginalCopy(&file, message);
 				}
-				else if (id == e_KCMImportStoryText)
-				{
-					SysFileList files;
-					files.AddFile(&file);
-					KCMImportStoryText(files, message);
-				}
 				else if (id == e_KCMImportToSource)
 				{
-					// ★The new "Import Story Text..." (2026-10-24, the import-as-Source trial): into a copy, not the document.
+					// ★"Import Story Text..." (2026-10-24, adopted 2026-10-25): into a copy, not the document.
+					//   (app.kcmImportStoryText - the import that wrote into the document - went with that road on 2026-10-25.)
 					SysFileList files;
 					files.AddFile(&file);
 					KCMImportStoryTextAsSource(files, message);
@@ -529,7 +524,7 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 				{
 					// An EMPTY list is the whole document - the rule KCMStoryTextExport.h states.
 					// ★★THE TASK DOCUMENT, as the flyout's item exports (2026-09-25, the user's decision - KCMTaskDocumentDB):
-					//   the chosen Target, else the active document - the one app.kcmImportStoryText writes into.
+					//   the chosen Target, else the active document - the one the import takes its copy of.
 					IDataBase* const db = KCMTaskDocumentDB();
 					if (db == nil)
 					{

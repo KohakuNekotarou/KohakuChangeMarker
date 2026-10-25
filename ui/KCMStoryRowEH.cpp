@@ -328,9 +328,11 @@ bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 // ***** A CHANGE ROW POPS ITS OWN MENU (kKCMChangeRowMenuName). ***** It had one from 2026-09-12,
 // carrying only items about the CHANGE under the cursor; the last of them ("Edit...") went on
 // 2026-09-21 and the subtree with it, and from then until 2026-09-24 a child row raised nothing.
-// ★It is back for "Reject This Import Change" (stage 2 A), which acts on that one change's range only -
-// so the decision of 2026-08-21 still holds: a reader pointing at ONE difference is never handed an
-// action over the whole story, and the story row's menu is never popped on a child row.
+// ★It came back for "Reject This Import Change" (stage 2 A - retired 2026-10-25), and carries Restore from
+// Source, Match the Source and, against an import's copy, Apply This Change / Restore from Copy now - each
+// acting on that one change only - so the decision of 2026-08-21 still holds: a reader pointing at ONE
+// difference is never handed an action over the whole story, and the story row's menu is never popped on
+// a child row.
 //
 // Deliberately NOT calling the stock handler and NOT changing the selection: a right click that is
 // only asking for a menu should not move the user's place in the list - the same rule the chapter
@@ -350,12 +352,9 @@ bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 	if (rowIndex < 0 || e == nil)
 		return TreeNodeEventHandler::RButtonDn(e);
 
-	// ★★A CHANGE ROW HAS ITS OWN MENU AGAIN (2026-09-24, stage 2 A and B): "Reject This Import Change" on a words or
-	//   table row, "Restore from Source" on an attribute row - never both live on one row - each about the
-	//   change under the cursor only - so the rule of 2026-08-21 (never the STORY row's menu on a child row,
-	//   never an action over the whole story) still holds. Its item is greyed where the change's range holds
-	//   none of the import's tracked changes, and a menu with only greyed items does not appear - so a plain
-	//   comparison's change rows still raise nothing.
+	// ★★A CHANGE ROW HAS ITS OWN MENU (2026-09-24): its items are each about the change under the cursor only -
+	//   so the rule of 2026-08-21 (never the STORY row's menu on a child row, never an action over the whole
+	//   story) still holds - and a menu with only greyed items does not appear.
 	const bool16 isChangeRow = (changeIndex >= 0);
 	if (isChangeRow)
 		KCMStorySetMenuChange(rowIndex, changeIndex);

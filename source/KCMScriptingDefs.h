@@ -247,7 +247,9 @@ enum KCMScriptMethods
 	// ⛔**'eKGw' (app.kcmTakeInAllStories) IS RETIRED** (2026-09-20, with the "Restore All Stories"
 	//   item itself - the user's decision to drop taking changes in by the bulk). The row stays here
 	//   as a retired one: **the code is never reused**, which is the rule the registry ledger keeps.
-	e_KCMImportStoryText = 'eKGn',	// n = in.    app.kcmImportStoryText(file)  -> the import's sentence
+	// ⛔**'eKGn' (app.kcmImportStoryText) IS RETIRED** (2026-10-25, with the import that wrote into the document - the
+	//   tidy). Same rule as 'eKGw': **the code is never reused.** Never registered with Adobe. Its successor is 'eKGI'
+	//   (app.kcmImportToSource), below.
 	e_KCMExportStoryText = 'eKGe',	// e = export. app.kcmExportStoryText(folder) -> "exported N ... to <folder>"
 									// ⚠**IT WRITES .docx SINCE 2026-09-21** (it wrote .html until then).
 	e_KCMStopComparison = 'eKGq',	// q = quit.  app.kcmStopComparison()       -> the status line after it
@@ -255,8 +257,8 @@ enum KCMScriptMethods
 	//   so the Track mode can be tested from KIDMCP. ⚠'eKGl' was MEASURED free (0 hits in source/sdksamples,
 	//   2026-10-05). ⚠Not registered with Adobe.
 	e_KCMCompareTracked = 'eKGl',	// l = log (the change log). app.kcmCompareTracked(file) -> the status line's sentence
-	// ★(2026-10-24, the import-as-Source trial) The new "Import Story Text..." and its Apply, without the dialog and the
-	//   right click - so the trial can be measured from KIDMCP. ⚠Every lowercase letter after 'eKG' is taken or avoided
+	// ★(2026-10-24, adopted 2026-10-25) "Import Story Text..." and its Apply, without the dialog and the right click -
+	//   so they can be measured from KIDMCP. ⚠Every lowercase letter after 'eKG' is taken or avoided
 	//   (the note above and the tree), so these two are UPPERCASE - 'eKGI' / 'eKGA' MEASURED free: 0 hits in source/ and
 	//   docs/, with 'eKGn' found by the same search as the control (2026-10-24). ⚠Not registered with Adobe.
 	e_KCMImportToSource = 'eKGI',	// I = import into the Source. app.kcmImportToSource(file) -> the import's sentence

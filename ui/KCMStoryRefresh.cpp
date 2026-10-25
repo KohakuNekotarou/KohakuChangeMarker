@@ -65,9 +65,8 @@ void KCMStorySetMenuRow(int32 rowIndex)
 }
 
 //----------------------------------------------------------------------------------------
-// KCMStorySetMenuChange / KCMChangeRowCanReject / KCMChangeRowReject
-//   "Reject This Import Change" on a CHANGE row (2026-09-24, stage 2 A - design section 13 of
-//   docs/superpowers/specs/2026-09-23-kcm-import-sync-design.md).
+// KCMStorySetMenuChange - a CHANGE row's own menu (2026-09-24; its first item, "Reject This Import Change", went on
+//   2026-10-25 with the import that wrote into the document, and "Redo from Word" with it).
 //----------------------------------------------------------------------------------------
 
 void KCMStorySetMenuChange(int32 rowIndex, int32 changeIndex)
@@ -78,8 +77,8 @@ void KCMStorySetMenuChange(int32 rowIndex, int32 changeIndex)
 
 namespace
 {
-/** What both change row items ask first: a CHANGE row was right-clicked, a comparison is armed, and the mode has
-	story rows. (Asked in this order for the reason KCMStoryRowCanRefresh gives: the mode is a setting that
+/** What the Story mode's change row items ask first: a CHANGE row was right-clicked, a comparison is armed, and the
+	mode has story rows. (Asked in this order for the reason KCMStoryRowCanRefresh gives: the mode is a setting that
 	outlives Stop.) What each item then asks of ITS row is its own. */
 bool16 ChangeRowMenuLive()
 {
@@ -87,9 +86,9 @@ bool16 ChangeRowMenuLive()
 		return kFalse;
 	if (!Utils<IKCMCompareFacade>()->IsArmed())
 		return kFalse;
-	// ★NONE OF THE FOUR AGAINST AN IMPORT'S COPY (2026-10-24, the import-as-Source trial): there the rows are what the
-	//   document WOULD become, and "Apply This Change" (below) is the one item - it uses the restore and the table's
-	//   redo itself where a row needs them. The reject has no import change to find, and the redo nothing taken back.
+	// ★NEITHER RESTORE NOR MATCH AGAINST AN IMPORT'S COPY (2026-10-24): there the rows are what the document WOULD
+	//   become, and "Apply This Change" (below) is the item - it uses the restore and the table's road itself where a
+	//   row needs them.
 	if (Utils<IKCMStoryEditsFacade>()->IsImportSource())
 		return kFalse;
 	// The change row's menu offers what only a DIFFED row can do - none of it in the Track mode (design D3, 2026-10-05).
@@ -113,7 +112,7 @@ void SayApplied(const char* what, int32 done, const PMString& why)
 
 //----------------------------------------------------------------------------------------
 // KCMChangeRowCanApply / KCMChangeRowApply / KCMStoryRowCanApply / KCMStoryRowApply / KCMStoryRowCanApplyAll /
-// KCMStoryRowApplyAll - the three Apply items (2026-10-24, the import-as-Source trial -
+// KCMStoryRowApplyAll - the three Apply items (2026-10-24 -
 // docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md). Each asks the model whether it may act and the
 // model does the work; the same test is asked again at the moment of acting (KCMStoryRefreshMenuRow's reason).
 //----------------------------------------------------------------------------------------
@@ -269,48 +268,6 @@ bool16 KCMStoryRowRestoreAll()
 	return (done > 0) ? kTrue : kFalse;
 }
 
-bool16 KCMChangeRowCanReject()
-{
-	if (!ChangeRowMenuLive())
-		return kFalse;
-	// ★ASKED OF THE RANGE, NOT REMEMBERED (design 13-1 item 3): a plain comparison, a ruby-only row and a
-	//   document opened again all answer from what the story holds now. 0 greys the item - and a menu whose
-	//   only item is greyed does not appear at all.
-	return (Utils<IKCMStoryEditsFacade>()->HasImportChange(gMenuRow, gMenuChange) > 0) ? kTrue : kFalse;
-}
-
-bool16 KCMChangeRowReject()
-{
-	// The same test the menu was greyed by, asked again at the moment of acting (KCMStoryRefreshMenuRow's reason).
-	if (!KCMChangeRowCanReject())
-	{
-		KCMSetStatus("reject: no import change on this row.");
-		return kFalse;
-	}
-	PMString why;
-	const int32 done = Utils<IKCMStoryEditsFacade>()->RejectImportChange(gMenuRow, gMenuChange, why);
-	PMString msg;
-	msg.SetTranslatable(kFalse);
-	if (done < 0)
-	{
-		msg.Append("reject: could not - ");
-		msg.Append(why);
-	}
-	else
-	{
-		msg.Append("rejected ");
-		msg.AppendNumber(done);
-		msg.Append(" import change(s) - Ctrl+Z brings them back");
-		if (!why.IsEmpty())		// the "=" did not come: the model says what it found (2026-09-24 night)
-		{
-			msg.Append(" - ");
-			msg.Append(why);
-		}
-	}
-	KCMSetStatus(msg);
-	return (done > 0) ? kTrue : kFalse;
-}
-
 //----------------------------------------------------------------------------------------
 // KCMChangeRowCanRestoreAttr / KCMChangeRowRestoreAttr
 //   "Restore from Source" on an ATTRIBUTE change row (2026-09-24, stage 2 B - design section 14).
@@ -380,46 +337,6 @@ bool16 KCMChangeRowRestoreAttr()
 	{
 		msg.Append(" - ");
 		msg.Append(why);
-	}
-	KCMSetStatus(msg);
-	return (done >= 0) ? kTrue : kFalse;
-}
-
-//----------------------------------------------------------------------------------------
-// KCMChangeRowCanRedo / KCMChangeRowRedo
-//   "Redo from Word" on a TAKEN-BACK change row (2026-09-24, stage 2 C - design section 15).
-//----------------------------------------------------------------------------------------
-
-bool16 KCMChangeRowCanRedo()
-{
-	if (!ChangeRowMenuLive())
-		return kFalse;
-	return Utils<IKCMStoryEditsFacade>()->CanRedoFromWord(gMenuRow, gMenuChange);
-}
-
-bool16 KCMChangeRowRedo()
-{
-	// The same test the menu was greyed by, asked again at the moment of acting (KCMStoryRefreshMenuRow's reason).
-	if (!KCMChangeRowCanRedo())
-	{
-		KCMSetStatus("redo: not a change that was taken back.");
-		return kFalse;
-	}
-	PMString why;
-	const int32 done = Utils<IKCMStoryEditsFacade>()->RedoFromWord(gMenuRow, gMenuChange, why);
-	PMString msg;
-	msg.SetTranslatable(kFalse);
-	if (done < 0)
-	{
-		msg.Append("redo: could not - ");
-		msg.Append(why);
-	}
-	else
-	{
-		msg.Append("redone from Word (");
-		msg.AppendNumber(done);
-		msg.Append(done == 1 ? " write)" : " writes)");
-		msg.Append(" - Ctrl+Z takes it back; Reject This Import Change takes it back one by one");
 	}
 	KCMSetStatus(msg);
 	return (done >= 0) ? kTrue : kFalse;
