@@ -1794,8 +1794,25 @@ void KCMStoryList::FollowRecords(int32 nth, IDataBase* targetDB)
 		//    place - the first that reads as the Source's is taken. A caret ("=" of a deletion: no words of its own) is read
 		//    by what stands on either side of it (CaretReadsAsSource). None reads = left where it was: it reads Stale, as
 		//    before this, and an undo of the hand edit may bring its "=" back.
+		//    ★★THE PRESENT PLACE FIRST WHEN THE MAP NAMES IT (measured 2026-10-26, the apply matrix's WDD-apply-1-0): two
+		//     paragraphs the Source has not, both at ONE Source caret, the second put in (its "=" a caret after the first) -
+		//     the map names both sides of the first ({8, 18}), and a caret read by its surroundings agreed with the WRONG one
+		//     (8: "st" + a return, as at the Source's end), so the record was moved off its right place (18) and the next
+		//     Apply landed on it. A place the comparison names AND the record stands at is kept: a caret without reading it
+		//     (the reading cannot tell two sides of one Source caret apart), words when they read. Only a record a hand
+		//     edit moved off every named place is looked for by the readings.
 		std::vector<int32> places = KCMSourceToTargetCandidates(lives, static_cast<int32>(r.fLive.fSourceStart));
-		places.push_back(static_cast<int32>(r.fNowStart));
+		const int32 present = static_cast<int32>(r.fNowStart);
+		const std::vector<int32>::iterator named = std::find(places.begin(), places.end(), present);
+		if (named != places.end())
+		{
+			if (sourceLen == 0)
+				continue;							// a caret the comparison still names: where it stands is where it is
+			places.erase(named);
+			places.insert(places.begin(), present);	// words: their own place read first
+		}
+		else
+			places.push_back(present);
 		for (size_t p = 0; p < places.size(); ++p)
 		{
 			const TextIndex t = places[p];
