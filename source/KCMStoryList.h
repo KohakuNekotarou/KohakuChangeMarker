@@ -481,6 +481,15 @@ struct KCMStoryRow
 		@warning **every field below that names a place is read out of that same document.** fText,
 		fFrameUID, fPageUID and fPageIndex all come from one db, chosen per row in Build. */
 	UID			fStoryUID;
+
+	/** ★THE SOURCE STORY THE ROW COMPARES AGAINST (2026-10-26) - KCMStoryDiff::fSourceStoryUID, copied by Build: the
+		same uid for a UID pair and a Removed row, the Source's own story for a row paired by place
+		(kKCMStoryKindByPosition), kInvalidUID for an Added row and a row standing for a file. ★**Every reader of the
+		Source side asks this** - the diff (KCMStoryDiffRun), the "=" records' readings, the restores and the import's
+		Apply (KCMFacades.cpp), the Source window's marks (KCMStoryMarkBuild) and the jump (through the facade's Row).
+		@warning it is NOT read out of the row's own document like the fields below: it names a story of the SOURCE. */
+	UID			fSourceStoryUID;
+
 	PMString	fText;		// first readable words. NOT shortened for display - the row's text cell
 							// is kEllipsizeMiddle and does that itself, at whatever width it has.
 							// ★A table in them stands as the sign U+25A6 (2026-09-19; KCMStoryList.cpp,
@@ -598,7 +607,7 @@ struct KCMStoryRow
 	std::vector<KCMEqualRecord> fEqual;
 
 	KCMStoryRow()
-		: fStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fFrameUID(kInvalidUID),
+		: fStoryUID(kInvalidUID), fSourceStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fFrameUID(kInvalidUID),
 		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32), fTextCompared(kFalse),
 		  fAttrKind(kKCMStoryAttrNone), fAttrKindCount(0), fHasTextChange(kFalse), fTargetTextCount(0), fAllCount(0) {}
 };
@@ -819,6 +828,8 @@ namespace KCMStoryList
 
 	/** Mark the row of `storyUID` as one an import could not fill (kKCMStoryKindRefused), making the
 		row when the comparison built none - the story's counter did not move because nothing went in.
+		★The row is found BY ITS SOURCE STORY (fSourceStoryUID, 2026-10-26): `storyUID` is the import copy's story, and a
+		  row paired by place compares a Target story of another uid against it.
 
 		★**CALLED FROM Build AND NOWHERE ELSE** (2026-09-19): the list starts empty on every build,
 		  so the "!" rows are put back each time from KCMImportRefusals. ⚠Before the sort.
@@ -1033,7 +1044,10 @@ namespace KCMStoryList
 		count in. Eight columns follow `text`: `state` (live / replaced / undone), `whole` (1 for a
 		paragraph added or removed whole), `place` (body / cell / note), the SHOWN ranges
 		`tstart tend sstart send` (through the facade, so a whole paragraph's break is already cut
-		off them - what the marks and the jump use), and `other` (the source side's words). */
+		off them - what the marks and the jump use), and `other` (the source side's words).
+		★★`suid` LAST (2026-10-26): the story line's Source story (KCMStoryRow::fSourceStoryUID - another number than
+		`uid` for a row paired by place, whose kinds say `ByPosition`), `-` on every other line. At the end so that the
+		readers that count columns from the left read what they always read. */
 	void RowsAsTsv(PMString& out);
 }
 

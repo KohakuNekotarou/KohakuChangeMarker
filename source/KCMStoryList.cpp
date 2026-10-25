@@ -870,6 +870,7 @@ static void AddRowsFromDocument(IDataBase* db, const std::vector<KCMStoryDiff>& 
 		KCMStoryRow row;
 		row.fStoryUID = it->fStoryUID;
 		row.fKinds = it->fKinds;
+		row.fSourceStoryUID = it->fSourceStoryUID;	// the Source story it compares against - written by the diff alone
 		// ⛔The uid translation went on 2026-09-21. A Task Start copy was REHYDRATED then and its
 		//   stories carried numbers the import had handed out; a copy saved to a file carries the
 		//   originals, so a Removed row is read under the uid it already holds.
@@ -1063,9 +1064,12 @@ int32 KCMStoryList::AddRefusalRow(IDataBase* targetDB, UID storyUID, const PMStr
 	// ⚠A Removed row of the same uid is NOT that row: it lives in the Source, and a refusal is about
 	//   the Target's story (the file was named after it). ⚠Nor is a row standing for a file
 	//   (kInvalidUID): two files with no story are two rows.
+	// ★★BY THE ROW'S SOURCE STORY (2026-10-26): the uid a refusal names is the import copy's story - the one the file was
+	//   named after - and the row that compares against it may be a Target story of another uid (a row paired by place,
+	//   KCMStoryRow::fSourceStoryUID). For every other row the two uids are one.
 	for (size_t i = 0; i < gRows.size(); ++i)
 	{
-		if (gRows[i].fStoryUID != kInvalidUID && gRows[i].fStoryUID == storyUID
+		if (gRows[i].fSourceStoryUID != kInvalidUID && gRows[i].fSourceStoryUID == storyUID
 			&& (gRows[i].fKinds & kKCMStoryKindRemoved) == 0)
 		{
 			gRows[i].fKinds |= kKCMStoryKindRefused;
@@ -1075,6 +1079,7 @@ int32 KCMStoryList::AddRefusalRow(IDataBase* targetDB, UID storyUID, const PMStr
 
 	KCMStoryRow row;
 	row.fStoryUID = storyUID;
+	row.fSourceStoryUID = storyUID;		// the copy's story of the same uid - what the diff compares it with
 	row.fKinds = kKCMStoryKindRefused;
 	if (targetDB != nil && ReadRowFromDocument(targetDB, row, storyUID))
 	{
@@ -1096,6 +1101,7 @@ int32 KCMStoryList::AddRefusalRow(IDataBase* targetDB, UID storyUID, const PMStr
 		//   that names nothing here - or a swatch, or a page - is never handed to the document as a
 		//   story. The file's own uid is in the text, for the reader.
 		row.fStoryUID = kInvalidUID;
+		row.fSourceStoryUID = kInvalidUID;
 		row.fText = textWhenNoStory;
 		row.fText.SetTranslatable(kFalse);
 		row.fFrameUID = kInvalidUID;
@@ -1857,6 +1863,7 @@ std::string KindsWord(uint32 kinds)
 	if (kinds & kKCMStoryKindAttr)    s += (s.empty() ? "" : ",") + std::string("Attr");
 	if (kinds & kKCMStoryKindOther)   s += (s.empty() ? "" : ",") + std::string("Other");
 	if (kinds & kKCMStoryKindRefused) s += (s.empty() ? "" : ",") + std::string("Refused");	// an import could not fill it (2026-09-19)
+	if (kinds & kKCMStoryKindByPosition) s += (s.empty() ? "" : ",") + std::string("ByPosition");	// paired by its first frame's place (2026-10-26)
 	return s.empty() ? std::string("-") : s;
 }
 
@@ -1967,7 +1974,7 @@ std::string FlagsWord(const KCMStoryRow& row)
 void KCMStoryList::RowsAsTsv(PMString& out)
 {
 	std::string s = "row\tchange\tuid\tkinds\tflags\tattr\tkind\tset\tvalue\ttext"
-					"\tstate\twhole\tplace\ttstart\ttend\tsstart\tsend\tother\r\n";
+					"\tstate\twhole\tplace\ttstart\ttend\tsstart\tsend\tother\tsuid\r\n";	// suid LAST (2026-10-26 - the header says why)
 
 	// ★THE SHOWN RANGES COME THROUGH THE FACADE (2026-09-19 night), because that is the ONE place a whole
 	//   paragraph's break is cut off them (KCMFacades' GetChange, KCMShownSpan): what a test reads here is
@@ -1988,7 +1995,9 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 		   + "\t" + KindsWord(row.fKinds)
 		   + "\t" + FlagsWord(row)
 		   + "\t" + AttrWord(static_cast<int32>(row.fAttrKind))
-		   + "\t-\t-\t-\t" + Field(row.fText) + NoTrailing() + "\r\n";
+		   + "\t-\t-\t-\t" + Field(row.fText) + NoTrailing()
+		   + "\t" + ((row.fSourceStoryUID == kInvalidUID) ? std::string("-") : Num(static_cast<int32>(row.fSourceStoryUID.Get())))
+		   + "\r\n";
 
 		// ★One line per CHILD, IN THE PANEL'S OWN INDEX SPACE (2026-09-19 night): the refusals first, then
 		//   the live changes and the ones already taken in, merged in text order - exactly the numbers
@@ -2010,7 +2019,7 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 			if (c.fWhat == KCMStoryChange::kRefused)
 			{
 				s += Num(nth) + "\t" + Num(k)
-				   + "\t-\t-\t-\t-\trefused\t" + Field(c.fTextPre) + "\t-\t" + Field(c.fText) + NoTrailing() + "\r\n";
+				   + "\t-\t-\t-\t-\trefused\t" + Field(c.fTextPre) + "\t-\t" + Field(c.fText) + NoTrailing() + "\t-\r\n";
 				continue;
 			}
 
@@ -2038,7 +2047,7 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 			   + "\t" + (haveShown ? Num(shown.fTargetEnd) : std::string("-"))
 			   + "\t" + (haveShown ? Num(shown.fSourceStart) : std::string("-"))
 			   + "\t" + (haveShown ? Num(shown.fSourceEnd) : std::string("-"))
-			   + "\t" + Field(c.fOtherText) + "\r\n";
+			   + "\t" + Field(c.fOtherText) + "\t-\r\n";
 		}
 	}
 

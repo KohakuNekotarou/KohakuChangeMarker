@@ -45,12 +45,22 @@ enum KCMStoryChangeKind
 									// older version and is gone from the newer one.
 									// **THE ROW THEN LIVES IN THE SOURCE DOCUMENT**, and it is the only
 									// kind for which that is true -- see KCMStoryDiff::fStoryUID
-	kKCMStoryKindRefused	= 32	// ★a story an IMPORT could not put words into, wholly or in part
+	kKCMStoryKindRefused	= 32,	// ★a story an IMPORT could not put words into, wholly or in part
 									// (2026-09-19, the user's ask: "what could not be imported - a red !
 									// in the Δ column, at the top of the list"). Not a counter and not a
 									// pairing: the import notes it (KCMStoryTextImport's refusals) and
 									// KCMStoryList::Build sets it, so it goes with the origin. The row's
 									// fRefusals name each thing that did not go in.
+	kKCMStoryKindByPosition	= 64	// ★★A STORY PAIRED BY THE PLACE OF ITS FIRST FRAME (2026-10-26, the author: "a frame
+									// copied from a past document gets a new UID - brought over and put in the same
+									// place"). No UID partner on either side - an Added Target story and a Removed
+									// Source story - and their first frames stand at exactly the same place and size on
+									// corresponding pages (KCMStoryPlacePairRule.h), so the two are ONE row, compared
+									// like a UID pair. **THE ROW'S SOURCE STORY IS ANOTHER UID**
+									// (KCMStoryRow::fSourceStoryUID) - everything that reads the Source side asks that.
+									// No counter bit comes with it: the two stories' counters belong to two histories
+									// and say nothing about each other, so the text diff always runs.
+									// ⚠NOT in kKCMStoryKindUnpaired below: the row has a partner.
 };
 
 /** Which kind of attribute a row's CHILDREN found a difference in.

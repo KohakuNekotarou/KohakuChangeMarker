@@ -61,7 +61,7 @@
 		textCompared is kTrue -- nobody looked, so nothing was found either way.
 	@return kTrue to keep the row.
 
-	The three answers, in the order they are decided:
+	The four answers, in the order they are decided:
 
 	**UNPAIRED ROWS ARE ALWAYS KEPT.** An added or a removed story is the largest content change
 	  there is -- a whole story appeared or went away -- and there is nothing to diff it against,
@@ -74,6 +74,12 @@
 	  setting moved: that is the row being dropped.
 	  @warning not "the story is unchanged". The counters moved or the row would never have been
 	    built (KCMStoryStamp.h). What is being said is that the difference is not one of these.
+
+	**A ROW PAIRED BY PLACE THAT WAS NOT DIFFED IS KEPT** (2026-10-26, kKCMStoryKindByPosition). Its Added
+	  and its Removed went into it, so dropping it would drop both - and it carries no counter bit to fall
+	  back on (the two stories' counters belong to two histories), so the next answer would always drop it.
+	  It stands the way an unpaired row stands: the spec map's "a story that could not be compared keeps its
+	  row" (ST-35). ⚠A row of this kind that WAS diffed follows the answer above, like any row.
 
 	**A ROW THAT WAS NOT DIFFED FALLS BACK ON THE TEXT COUNTER**, which is the best that can be
 	  known about it. Since 2026-10-11 one kind of row arrives here: a row in the story mode whose
@@ -99,6 +105,10 @@ inline bool16 KCMStoryRowHasContentChange(uint32 kinds, bool16 textCompared, int
 
 	if (textCompared)
 		return (changeCount > 0) ? kTrue : kFalse;
+
+	// ★Paired by place and not read (2026-10-26): kept - its two sides went into it (the header says why).
+	if ((kinds & kKCMStoryKindByPosition) != 0)
+		return kTrue;
 
 	return ((kinds & kKCMStoryKindText) != 0) ? kTrue : kFalse;
 }
