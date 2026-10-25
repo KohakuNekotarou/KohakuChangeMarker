@@ -67,7 +67,6 @@
 #include "IDataBase.h"			// SaveRestoreModifiedState - reading the two stories must not dirty them
 #include "WideString.h"
 #include "KCMApplyFromImport.h"		// Apply's paragraph road and table road (2026-10-24)
-#include "KCMWordKeep.h"			// the files' content an import kept - what "Apply All Changes" pours (2026-10-24)
 #include "KCMStoryFollowObserver.h"	// KCMStoryFollowEnsureObservers - the Undo follower attached again after an Apply
 #include "KCMTableMatch.h"		// "Match the Source" on a Table row (2026-09-25, design section 16)
 #include "CmdUtils.h"				// ...wrapped in one command sequence
@@ -1639,11 +1638,13 @@ public:
 		}
 		KCMStoryTextSet set;
 		KCMStoryShape::Story word;
-		// ★THE FILES' WORDS BY THE STORY THEY NAMED - the row's Source story, the copy's (2026-10-26): another uid than the
-		//   Target's for a row paired by place, whose Target story the pour below writes into (set.fUids).
-		if (!KCMWordKeepGet(targetDB, row.fSourceStoryUID, word))
+		// ★THE FILES' WORDS AS THE IMPORT'S COPY HOLDS THEM (2026-10-26, the import tidy S5 - KCMImportSourceStory: what the
+		//   list compared the document with), by the story they named - the row's Source story, the copy's: another uid than
+		//   the Target's for a row paired by place, whose Target story the pour below writes into (set.fUids).
+		PMString whyNot;
+		if (!KCMImportSourceStory(row.fSourceStoryUID, word, whyNot))
 		{
-			outMessage = "the imported text is not in memory any more - the document was closed or InDesign restarted; import again";
+			outMessage = whyNot;
 			return -1;
 		}
 		set.fUids.push_back(row.fStoryUID);
@@ -1674,7 +1675,8 @@ public:
 			std::vector<KCMStoryChange> lives;
 			KCMStoryList::LiveChanges(r, lives);
 			KCMStoryShape::Story word;
-			if (lives.empty() || !KCMWordKeepGet(targetDB, row.fSourceStoryUID, word))	// by the story the files named (ApplyStory says why)
+			PMString whyNot;
+			if (lives.empty() || !KCMImportSourceStory(row.fSourceStoryUID, word, whyNot))	// the import's copy, by the story the files named (ApplyStory says why)
 				continue;
 			set.fUids.push_back(row.fStoryUID);
 			set.fStories.push_back(word);
@@ -2596,14 +2598,13 @@ private:
 
 	/** The import's pour into the TARGET - unsigned and untracked since 2026-10-24 (design 11-2: the author asked for
 		Apply's writes to go in without a change history; they were signed and tracked until then), the "!" rows left as
-		the import noted them, nothing kept - as ONE undo step named `stepName`, then the row (oneRow >= 0) or every row
-		compared again. */
+		the import noted them - as ONE undo step named `stepName`, then the row (oneRow >= 0) or every row compared
+		again. */
 	int32 PourIntoTarget(IDataBase* targetDB, const KCMStoryTextSet& set, const std::vector<UID>& only,
 						 const char* stepName, int32 oneRow, PMString& outMessage)
 	{
 		KCMPourOptions options;
 		options.fNoteRefusals = kFalse;
-		options.fKeepFor = nil;
 		options.fOnly = only;
 		options.fStepName = stepName;
 		options.fStepName.SetTranslatable(kFalse);

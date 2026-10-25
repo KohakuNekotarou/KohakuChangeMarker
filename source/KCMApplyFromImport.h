@@ -6,9 +6,9 @@
 //
 //  APPLY THIS CHANGE'S TWO ROADS THAT WRITE MORE THAN ONE CHANGE'S WORDS (2026-10-24 - docs/superpowers/specs/
 //  2026-10-24-kcm-import-as-source-design.md): a change that cannot be written on its own is put in with its
-//  PARAGRAPH, and a "Table" row with its TABLE - from the files' content the import read (KCMWordKeep), by the
-//  import's own road - KCMStoryFromDocument, KCMStorySync::Compare and KCMStorySyncApply - NARROWED to that one
-//  paragraph (KCMStorySync::Narrow) or that one table.
+//  PARAGRAPH, and a "Table" row with its TABLE - from the files' content as the import's copy holds it
+//  (KCMImportSourceStory, since 2026-10-26 - the import tidy S5), by the import's own road - KCMStoryFromDocument,
+//  KCMStorySync::Compare and KCMStorySyncApply - NARROWED to that one paragraph (KCMStorySync::Narrow) or that one table.
 //
 //  ★★★**ONE MECHANISM FOR WORDS AND MARKS** (the user, design 14-1-5 of 2026-09-23-kcm-import-sync-design.md): a
 //   kSetPara step carries the paragraph's words AND its ruby, kenten, tate-chu-yoko and warichu, so a paragraph's
@@ -41,17 +41,18 @@ int32 KCMApplyParagraphPlan(const UIDRef& targetStory, const KCMStoryShape::Stor
 						   PMString& outWhy);
 
 /** ★"Apply This Change" (2026-10-24 - docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md): plans putting
-	a LIVE change of the import's comparison into the document - the files' content kept by the import (KCMWordKeep,
-	under the document), the document read now, the change's paragraph found from where the change stands in the
+	a LIVE change of the import's comparison into the document - the files' content as the import's copy holds it
+	(KCMImportSourceStory - what the list compared the document with), the document read now, the change's paragraph
+	found from where the change stands in the
 	document, and the import's comparison narrowed to it (a whole paragraph only the document has is taken out, one
 	only the files have is put in; anything else is the paragraph's own edit). The writing is KCMApplyParagraphPlan's,
 	and only for a change that cannot be written on its own (design section 11-1: an object's character or a return in
 	its range, or a whole paragraph). Refuses with a reason and writes nothing.
 	outParaStart / outParaEnd: the paragraph the plan writes, in the document, its return included - where the
 	changes that go in together stand.
-	★`wordStory` (2026-10-26) - THE STORY THE FILES NAMED: the files' content is kept under it, and it is the row's Source
-	  story (KCMStoryRow::fSourceStoryUID, the copy's) - `targetStory`'s own uid for every row but one paired by the place
-	  of its first frame, whose Target story is a new one. The same parameter on the two below. */
+	★`wordStory` (2026-10-26) - THE STORY THE FILES NAMED, in the import's copy: the row's Source story
+	  (KCMStoryRow::fSourceStoryUID) - `targetStory`'s own uid for every row but one paired by the place of its first
+	  frame, whose Target story is a new one. The same parameter on the two below. */
 bool16 KCMPlanApplyParagraph(const UIDRef& targetStory, UID wordStory, const KCMStoryChange& live,
 							KCMStoryShape::Story& outNow, KCMStorySync::Plan& outPlan,
 							int32& outParaStart, int32& outParaEnd, PMString& outWhy);
@@ -59,7 +60,7 @@ bool16 KCMPlanApplyParagraph(const UIDRef& targetStory, UID wordStory, const KCM
 /** ★Whether the import's comparison of this story begins with tables added or taken away (stage 0) - measured
 	2026-10-24 on matrix A55: then nothing of the story can be put in one change at a time (every paragraph and table is
 	paired only once the tables agree), and "Apply All Changes in This Story" is the way in. Reads the document and the
-	files' content kept for it; kFalse when either cannot be read (the Apply then says its own reason). */
+	import's copy of the story; kFalse when either cannot be read (the Apply then says its own reason). */
 bool16 KCMImportStoryNeedsTableRound(const UIDRef& targetStory, UID wordStory);
 
 /** Apply This Change on a "Table" row (Table ≠, 2026-10-24 - first written 2026-09-25 for the retired "Redo from Word"

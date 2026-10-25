@@ -73,7 +73,6 @@
 #include "KCMTrackList.h"          // KCMTrackList::ShutdownCleanup - the Track mode's rows, the same rule (2026-10-05)
 #include "KCMStoryTextImport.h"    // KCMClearImportRefusals - what the last import could not put in (PMStrings again)
 #include "KCMSourceCache.h"        // KCMSourceCacheClear - the Source text kept from the origin
-#include "KCMWordKeep.h"           // KCMWordKeepSweepClosed / KCMWordKeepClear - the Word content kept for "Redo from Word"
 #include "KCMCopyStore.h"          // KCMCopyStore::ShutdownCleanup - the copies Restore from Copy pastes back (2026-10-24)
 #include "KCMResourceStore.h"      // the Resources list, emptied on the same routes
 #include "KCMStoryMarker.h"        // KCMStoryMarker::Shutdown (the Story mode's marks are never drawn again)
@@ -760,8 +759,8 @@ void KCMPeekStartup::Shutdown()
 	//   of std::strings and WideStrings, so leaving it to static destruction is the very thing the
 	//   paragraph above records. It only empties a container.
 	KCMSourceCacheClear();
-	// The Word content kept per story for "Redo from Word" (2026-09-24, stage 2 C) - a map of stories, the same rule.
-	KCMWordKeepClear();
+	// (⛔The Word content kept per story - for "Redo from Word", then Apply - was emptied here from 2026-09-24 until it went
+	//  on 2026-10-26: Apply reads the import's copy now, the import tidy S5.)
 	// The copy stores Apply This Change filled for Restore from Copy (2026-10-24, KCMCopyStore.h) - each holds a data
 	// exchange controller and its scrap database, let go (Cleanup, Release) while the session is whole. The records name
 	// copies by number only, so the order against KCMStoryList::ShutdownCleanup above does not matter.
@@ -1132,7 +1131,6 @@ void KCMHandleDocsClosed()
 	KCMPageMapSweepClosedDocs();
 	KCMPageCheckSweepClosedDocs();	// and the ticks, the same way
 	KCMPawStampSweepClosedDocs();	// and the cat-paw stamps, likewise
-	KCMWordKeepSweepClosed();		// and the Word content kept for "Redo from Word" (2026-09-24, stage 2 C)
 
 	// All of the screen-side clean-up travels on **this one notification**.
 	//

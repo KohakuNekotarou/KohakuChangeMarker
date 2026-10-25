@@ -153,12 +153,13 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 struct KCMPourOptions
 {
 	bool16				fNoteRefusals;	// what could not go in becomes the "!" rows (KCMImportRefusals)
-	IDataBase*			fKeepFor;		// Word's content kept per story (KCMWordKeepPut) under this database; nil = none
+	// (⛔fKeepFor - the database Word's content was kept under, per story, for Apply - went on 2026-10-26 with the keep
+	//  itself: Apply reads the import's copy instead, KCMImportSourceStory below - the import tidy, S5.)
 	std::vector<UID>	fOnly;			// empty = every story of the set; otherwise these alone
 	PMString			fStepName;		// the undo step's name
 	PMString			fBarTitle;		// the progress bar's title
 
-	KCMPourOptions() : fNoteRefusals(kTrue), fKeepFor(nil),
+	KCMPourOptions() : fNoteRefusals(kTrue),
 					   fStepName("Import Story Text"), fBarTitle("Putting the edited text into the document...")
 	{
 		fStepName.SetTranslatable(kFalse);
@@ -175,8 +176,6 @@ struct KCMPourOptions
       pour stays. `outCancelled` says so.
     ★**WHAT COULD NOT GO IN IS NOTED** (KCMImportRefusals, when fNoteRefusals) as well as counted in `outMessage`,
       so that the "!" rows and the status line come from one walk.
-    ⚠fKeepFor is NOT defaulted to `db`: the caller names it, so that a pour into a copy keeps Word's content under
-     the document the copy was taken from.
     @return kFalse when nothing at all could be applied. */
 bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCMPourOptions& options,
 							PMString& outMessage, bool16& outCancelled);
@@ -205,6 +204,23 @@ bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCM
     @param outMessage what happened, for the panel's status line.
     @return kFalse when nothing could be read, the copy could not be taken, or the reader cancelled. */
 bool16 KCMImportStoryTextAsSource(const SysFileList& files, PMString& outMessage);
+
+/** ★WHAT APPLY PUTS IN, read from the import's copy (2026-10-26, the import tidy S5 - design 2): story `story` of the
+    armed Source - which has to be an import's copy (KCMIsImportClone) - read the way the export reads a story
+    (KCMStoryFromDocument, its footnote references placed), written in Word's format and read back
+    (KCMStoryDocx::WriteParts, then Read's fAfter): the split shape KCMStorySync::Compare expects of Word's side, the same
+    reading a file exported from the copy would give.
+    ★★WHY THE COPY AND NOT THE FILES: the rows are the comparison of the document with this copy, so Apply writes what
+      the list showed. A part of a file the pour could not put in (a "!" row - held, refused) is not in the copy, and so
+      it is not written either. (Until 2026-10-26 Word's content was also kept as read, per story, under the document -
+      KCMWordKeep - a second copy of the files that could disagree with the first.)
+    @param story the COPY's story - the row's Source story (KCMStoryRow::fSourceStoryUID: the document's own uid for a
+           row paired by UID, another for a row paired by the place of its first frame).
+    @param out Word's side of the story, on kTrue.
+    @param outWhyNot why not, on kFalse: the copy is not the Source any more (the comparison was stopped or the Source
+           changed - import again), or the story cannot be read or does not go through Word's format.
+    @return kFalse when nothing can be said - nothing is to be written then. */
+bool16 KCMImportSourceStory(UID story, KCMStoryShape::Story& out, PMString& outWhyNot);
 
 #endif // __KCMStoryTextImport_h__
 

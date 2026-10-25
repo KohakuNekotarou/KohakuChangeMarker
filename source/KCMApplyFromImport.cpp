@@ -20,7 +20,7 @@
 #include "KCMStoryTextExport.h"	// KCMStoryFromDocument / KCMTableRefsOfStory - the document, read the way the import reads it
 #include "KCMTextRead.h"		// ReadStory - the paragraphs and their places, for the change's paragraph
 #include "KCMTextWords.h"		// Refuse - shared with the restore
-#include "KCMWordKeep.h"
+#include "KCMStoryTextImport.h"	// KCMImportSourceStory - what is put in, read from the import's copy (2026-10-26)
 #include "KCMApplyPlace.h"		// KCMApplyPlace::Of - which paragraph the change is (2026-09-25)
 #include "KCMApplyFromImport.h"
 
@@ -205,9 +205,10 @@ bool16 KCMPlanApplyParagraph(const UIDRef& targetStory, UID wordStory, const KCM
 	outParaEnd = 0;
 
 	KCMStoryShape::Story word;
-	if (!KCMWordKeepGet(targetStory.GetDataBase(), wordStory, word))	// by the story the files named (the header says why)
+	PMString whyNot;
+	if (!KCMImportSourceStory(wordStory, word, whyNot))	// the import's copy, by the story the files named (the header says why)
 	{
-		Refuse(outWhy, "the imported text is not in memory any more - the document was closed or InDesign restarted; import again");
+		outWhy = whyNot;
 		return kFalse;
 	}
 	// ★A FOOTNOTE THE FILES ADD (measured 2026-10-24, matrix A57): its paragraphs are a note the document does not have
@@ -241,7 +242,8 @@ bool16 KCMPlanApplyParagraph(const UIDRef& targetStory, UID wordStory, const KCM
 bool16 KCMImportStoryNeedsTableRound(const UIDRef& targetStory, UID wordStory)
 {
 	KCMStoryShape::Story word;
-	if (!KCMWordKeepGet(targetStory.GetDataBase(), wordStory, word))	// by the story the files named (the header says why)
+	PMString whyNot;
+	if (!KCMImportSourceStory(wordStory, word, whyNot))	// the import's copy, by the story the files named (the header says why)
 		return kFalse;
 	KCMStoryShape::Story now;
 	bool16 placed = kTrue;
@@ -297,11 +299,12 @@ int32 KCMApplyTableFromImport(const UIDRef& targetStory, UID wordStory, UID tabl
 	outWhy.Clear();
 	outWhy.SetTranslatable(kFalse);
 
-	// 1. the files' content, kept by the import
+	// 1. the files' content, as the import's copy holds it (2026-10-26 - KCMImportSourceStory)
 	KCMStoryShape::Story word;
-	if (!KCMWordKeepGet(targetStory.GetDataBase(), wordStory, word))	// by the story the files named (the header says why)
+	PMString whyNot;
+	if (!KCMImportSourceStory(wordStory, word, whyNot))	// by the story the files named (the header says why)
 	{
-		Refuse(outWhy, "the imported text is not in memory any more - the document was closed or InDesign restarted; import again");
+		outWhy = whyNot;
 		return -1;
 	}
 

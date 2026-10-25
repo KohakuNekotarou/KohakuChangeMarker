@@ -39,7 +39,6 @@
 #include "KCMStoryDocx.h"			// Read - the parts as Word shows them
 #include "KCMPageDocx.h"			// ReadParts - a page file's boxes (2026-10-25, Export Pages to Word)
 #include "KCMPageImport.h"			// KCMSpliceBoxesIntoSet - the boxes made stories, in the import's copy
-#include "KCMWordKeep.h"			// Word's content kept per story under the document - what Apply writes from
 #include "KCMZipStore.h"			// Entry - a part, named
 #include "KCMModelNotify.h"			// KCMNotify - a cancelled import tells the panel the mode came back
 #include "KCMTextWords.h"			// PMStringOfUtf8 - a UTF-8 reason onto the status line without mojibake
@@ -746,17 +745,10 @@ bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCM
 	if (sequence != nil)
 		CmdUtils::EndCommandSequence(sequence);
 
-	// ★WORD'S CONTENT IS KEPT PER STORY for Apply (2026-09-24 for the retired "Redo from Word"; Apply's since
-	//   2026-10-24): every story this pour paired, whether or not anything went in - a story held whole has nothing to
-	//   apply, and Apply's own plan says so. Replaces what the last import kept for the same story.
-	// ★UNDER THE DATABASE THE CALLER NAMES (2026-10-24): a pour into the import's copy keeps it for the DOCUMENT the copy
-	//   was taken from - that is the database Apply writes into and asks.
-	if (options.fKeepFor != nil)
-	{
-		for (size_t k = 0; k < matched.size(); ++k)
-			if (matched[k] && k < set.fStories.size())
-				KCMWordKeepPut(options.fKeepFor, set.fUids[k], set.fStories[k]);
-	}
+	// (⛔WORD'S CONTENT KEPT PER STORY for Apply stood here - 2026-09-24 for the retired "Redo from Word", Apply's from
+	//  2026-10-24 - and went on 2026-10-26, the import tidy S5: what Apply puts in is read from the import's copy, where
+	//  this pour has just put it (KCMImportSourceStory). The two had been two copies of the files that could disagree -
+	//  a part the pour held back was in the keep and not in the copy.)
 
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
@@ -911,14 +903,13 @@ bool16 KCMImportStoryTextAsSource(const SysFileList& files, PMString& outMessage
 	KCMSetImportCloneStories(set.fUids);
 
 	// 3. ★★THE WORDS GO INTO THE COPY - unsigned and untracked (the copy keeps no change history), the "!" rows noted as
-	//    the import notes them, and Word's content kept under the DOCUMENT, which is what Apply writes into and asks.
+	//    the import notes them. ★What the copy then holds is what Apply puts in (KCMImportSourceStory reads it from here).
 	PMString pourStep("Putting the edited text into the Source");
 	pourStep.SetTranslatable(kFalse);
 	progress.Step(kImportUnitsCopy, pourStep);
 	outer.Slice(kImportUnitsCopy, kImportUnitsCompare);
 	KCMPourOptions options;
 	options.fNoteRefusals = kTrue;
-	options.fKeepFor = targetDB;
 	options.fStepName = "Import Story Text into the Source";
 	options.fStepName.SetTranslatable(kFalse);
 	options.fBarTitle = "Putting the edited text into the Source...";
@@ -1008,6 +999,53 @@ void KCMClearImportRefusals()
 {
 	// A fresh vector releases the storage too (the same reason KCMStoryList::ShutdownCleanup gives).
 	sRefusals = std::vector<KCMImportRefusal>();
+}
+
+//----------------------------------------------------------------------------------------
+// KCMImportSourceStory (2026-10-26, the import tidy S5)
+//----------------------------------------------------------------------------------------
+bool16 KCMImportSourceStory(UID story, KCMStoryShape::Story& out, PMString& outWhyNot)
+{
+	outWhyNot.Clear();
+	outWhyNot.SetTranslatable(kFalse);
+	// ★THE COPY HAS TO BE THE SOURCE NOW: the rows Apply acts on are this comparison's, and a Source that is no longer the
+	//   import's copy (stopped, another Source set, the copy let go) has no words of the files to give.
+	IDataBase* const copyDB = KCMArmedSourceDB();
+	if (copyDB == nil || !KCMIsImportClone(copyDB))
+	{
+		outWhyNot = "the imported text is no longer the Source - import again";
+		return kFalse;
+	}
+	// The copy's story, read the way the export reads a story; a footnote whose reference cannot be placed would be lost
+	// in Word's format, so such a story is not offered (the export refuses it the same way).
+	KCMStoryShape::Story read;
+	bool16 placed = kTrue;
+	bool16 readable = kFalse;
+	if (story != kInvalidUID)
+	{
+		IDataBase::SaveRestoreModifiedState guard(copyDB);	// reading must not dirty it (the copy has no window, but the rule is one)
+		readable = (KCMStoryFromDocument(UIDRef(copyDB, story), read, placed) && placed) ? kTrue : kFalse;
+	}
+	if (!readable)
+	{
+		outWhyNot = "the imported text's story could not be read - import again";
+		return kFalse;
+	}
+	// ★THROUGH WORD'S FORMAT AND BACK: Word's side is what Read makes of the parts (fAfter - a table splits a paragraph
+	//   into pieces there, and KCMStorySync::Compare rejoins them), so the copy's story is put into exactly that shape -
+	//   the reading a file exported from the copy would give. Pure functions on plain structs: nothing is written anywhere.
+	std::vector<KCMZipStore::Entry> parts;
+	std::string why;
+	KCMStoryDocx::ReadResult back;
+	if (!KCMStoryDocx::WriteParts(read, static_cast<int32>(story.Get()), parts, why) || !KCMStoryDocx::Read(parts, back, why))
+	{
+		outWhyNot = "the imported text's story does not go through Word's format: ";
+		outWhyNot.Append(KCMTextWords::PMStringOfUtf8(why));
+		outWhyNot.SetTranslatable(kFalse);
+		return kFalse;
+	}
+	out = back.fAfter;
+	return kTrue;
 }
 
 // End, KCMStoryTextImport.cpp.
