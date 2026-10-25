@@ -53,6 +53,7 @@
 #include "KCMTrackList.h"			// the Track Changes mode's rows (2026-10-05) - read in that mode instead
 #include "KCMTrackRead.h"			// ...read again by a refresh, and asked whether a change is still recorded
 #include "KCMTrackOriginal.h"		// "Compare with Tracked Changes..." - the copy with every change rejected
+#include "KCMTrackResolve.h"		// Accept / Reject in the Track mode (2026-10-25) - the records found again and processed
 #include "KCMStoryDiffRun.h"		// RunOne - re-comparing one row's story ("Refresh Story Comparison")
 #include "KCMOversetPoint.h"		// KCMFindOversetOutport - where the "+" of an overflow is
 #include "ITextModel.h"			// the story the two above are asked about
@@ -481,6 +482,16 @@ public:
 	// ★The PDF comparison (2026-10-14) - the whole road is the model's (KCMPdfDoc.h).
 	virtual bool16		ChoosePdfEnd(bool16 asTarget, const IDFile& pdf, PMString& outMessage)	{ return KCMChoosePdfEnd(asTarget, pdf, outMessage); }
 	virtual bool16		IsPdfDoc(IDataBase* db)		{ return KCMIsPdfDoc(db); }
+
+	// ★(2026-10-25 - the author: "while tracking, show on the Source line that the Track is the Source") the panel's
+	//   Source line asks. Both asked for life first: the panel asks from its Update, which runs during teardown as well
+	//   (KCMPanelObserver.cpp, KCMDocPathFromDB), and KCMIsTrackOriginalOf reads each database's file.
+	virtual bool16		IsTrackOriginalOf(IDataBase* sourceDB, IDataBase* targetDB)
+	{
+		if (sourceDB == nil || targetDB == nil || !KCMIsDocDBOpen(sourceDB) || !KCMIsDocDBOpen(targetDB))
+			return kFalse;
+		return KCMIsTrackOriginalOf(sourceDB, targetDB);
+	}
 };
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)
@@ -899,6 +910,9 @@ public:
 			// ★The whole list is read again, not one row: rows are (story, author) pairs, and one story's records
 			//   can make or lose rows for several authors at once. Reading every record is a walk of the stories
 			//   and no composition (KCMTrackRead.h).
+#ifdef KCM_DIAG
+			KCMStoryFollowDiagReport(trackTargetDB, "track row refresh");	// test builds: is the Undo follower still there
+#endif
 			const int32 trackCount = KCMTrackRead::Build(trackTargetDB, KCMArmedSourceDB(), nil);
 			KCMNotify(kKCMStoryEditsRebuiltMessage);
 			return trackCount;
@@ -2629,6 +2643,159 @@ private:
 	bool16	fStepWasModified;	// BeginStep's reading of the Target's modified flag - what an abort puts back (EndOrAbort)
 
 public:
+	// ---- ★ACCEPT AND REJECT IN THE TRACK MODE (2026-10-25) - IKCMStoryEditsFacade.h says what each answers; the design
+	//      is docs/superpowers/specs/2026-10-25-kcm-track-accept-reject-design.md. Each scope gathers the records its rows
+	//      were made of (KCMTrackChange::fRecords) and hands them to ResolveTrack - one step, the list read again. ----------
+
+	virtual bool16	CanResolveTrackChange(int32 nth, int32 which)
+	{
+		IDataBase* const targetDB = KCMArmedTargetDB();
+		return (KCMFacadeTrackMode() && KCMIsArmed() && targetDB != nil && KCMIsDocDBOpen(targetDB)
+				&& KCMTrackChangeAt(nth, which) != nil) ? kTrue : kFalse;
+	}
+
+	virtual int32	ResolveTrackChanges(const int32* rows, const int32* changes, int32 count, bool16 accept,
+										PMString& outMessage)
+	{
+		std::vector<KCMTrackResolveItem> items;
+		int32 named = 0;
+		for (int32 i = 0; rows != nil && changes != nil && i < count; ++i)
+			if (this->AddTrackChangeItems(rows[i], changes[i], items))
+				++named;
+		const char* step = (named > 1) ? (accept ? "Accept Changes" : "Reject Changes")
+									   : (accept ? "Accept Change" : "Reject Change");
+		return this->ResolveTrack(items, named, accept, step, outMessage);
+	}
+
+	virtual int32	ResolveTrackRow(int32 nth, bool16 accept, PMString& outMessage)
+	{
+		std::vector<KCMTrackResolveItem> items;
+		const int32 named = this->AddTrackRowItems(nth, items);
+		return this->ResolveTrack(items, named, accept,
+								  accept ? "Accept Author's Changes in Story" : "Reject Author's Changes in Story", outMessage);
+	}
+
+	virtual int32	ResolveTrackAuthor(int32 a, bool16 accept, PMString& outMessage)
+	{
+		std::vector<KCMTrackResolveItem> items;
+		int32 named = 0;
+		const KCMTrackAuthor* const author = KCMFacadeTrackMode() ? KCMTrackList::GetAuthor(a) : nil;
+		if (author != nil)
+			for (int32 r = author->fFirstRow; r < author->fFirstRow + author->fRowCount; ++r)
+				named += this->AddTrackRowItems(r, items);
+		return this->ResolveTrack(items, named, accept,
+								  accept ? "Accept All Changes by Author" : "Reject All Changes by Author", outMessage);
+	}
+
+	virtual int32	ResolveTrackAll(bool16 accept, PMString& outMessage)
+	{
+		std::vector<KCMTrackResolveItem> items;
+		int32 named = 0;
+		if (KCMFacadeTrackMode())
+			for (int32 r = 0; r < KCMTrackList::GetRowCount(); ++r)
+				named += this->AddTrackRowItems(r, items);
+		return this->ResolveTrack(items, named, accept, accept ? "Accept All Changes" : "Reject All Changes", outMessage);
+	}
+
+private:
+	/** The records change `which` of row `nth` was made of, onto `out`, with its story and its author's name.
+		@return kFalse when it is no Track change. */
+	bool16 AddTrackChangeItems(int32 nth, int32 which, std::vector<KCMTrackResolveItem>& out)
+	{
+		const KCMTrackRow* const row = KCMFacadeTrackMode() ? KCMTrackList::GetRow(nth) : nil;
+		const KCMTrackChange* const change = (row != nil) ? KCMTrackChangeAt(nth, which) : nil;
+		const KCMTrackAuthor* const author = (change != nil) ? KCMTrackList::GetAuthor(change->fAuthor) : nil;
+		if (author == nil)
+			return kFalse;
+		for (size_t k = 0; k < change->fRecords.size(); ++k)
+		{
+			KCMTrackResolveItem item;
+			item.fStory = row->fRow.fStoryUID;
+			item.fAuthor = author->fName;
+			item.fRecord = change->fRecords[k];
+			out.push_back(item);
+		}
+		return kTrue;
+	}
+
+	/** Every change of row `nth` onto `out`. @return how many changes. */
+	int32 AddTrackRowItems(int32 nth, std::vector<KCMTrackResolveItem>& out)
+	{
+		const KCMTrackRow* const row = KCMFacadeTrackMode() ? KCMTrackList::GetRow(nth) : nil;
+		int32 named = 0;
+		for (int32 c = 0; row != nil && c < static_cast<int32>(row->fChanges.size()); ++c)
+			if (this->AddTrackChangeItems(nth, c, out))
+				++named;
+		return named;
+	}
+
+	/** ONE abortable undo step named `stepName` (BeginStep / EndStep - EndOrAbort says why abortable) around
+		KCMTrackResolve::Run, then the Track list read again, kept or rolled back, and the Undo follower attached again
+		(the 2026-10-24 measurement PourIntoTarget records). `changes` is how many changes the records came from - the
+		number the sentence says. */
+	int32 ResolveTrack(const std::vector<KCMTrackResolveItem>& items, int32 changes, bool16 accept, const char* stepName,
+					   PMString& outMessage)
+	{
+		outMessage.Clear();
+		outMessage.SetTranslatable(kFalse);
+		IDataBase* const targetDB = KCMArmedTargetDB();
+		if (!KCMFacadeTrackMode() || !KCMIsArmed() || targetDB == nil || !KCMIsDocDBOpen(targetDB))
+		{
+			outMessage = "the Track Changes comparison is not running";
+			return -1;
+		}
+		if (items.empty())
+		{
+			outMessage = "no tracked change was named";
+			return -1;
+		}
+		IAbortableCmdSeq* sequence = this->BeginStep(stepName);
+		if (sequence == nil)
+		{
+			outMessage = "InDesign would not start an undoable step - nothing was changed";
+			return -1;
+		}
+		int32 gone = 0;
+		PMString why;
+		const int32 done = KCMTrackResolve::Run(targetDB, items, accept, gone, why);
+		const bool16 kept = this->EndStep(sequence, (done > 0) ? kTrue : kFalse);
+		KCMTrackRead::Build(targetDB, KCMArmedSourceDB(), nil);
+		KCMStoryFollowEnsureObservers(targetDB);
+		KCMNotify(kKCMStoryEditsRebuiltMessage);
+		if (done < 0)
+		{
+			outMessage = why;
+			outMessage.Append(" - the step was rolled back; nothing was changed");
+			outMessage.SetTranslatable(kFalse);
+			return -1;
+		}
+		if (done == 0)
+		{
+			outMessage = "Nothing to do - these changes are no longer recorded (accepted, rejected or undone since the list "
+						 "was read).";
+			outMessage.SetTranslatable(kFalse);
+			return 0;
+		}
+		if (!kept)
+		{
+			outMessage = "The step was rolled back - nothing was changed.";
+			outMessage.SetTranslatable(kFalse);
+			return -1;
+		}
+		outMessage = accept ? "Accepted: " : "Rejected: ";
+		outMessage.AppendNumber(changes);
+		outMessage.Append((changes == 1) ? " change" : " changes");
+		if (gone > 0)
+		{
+			outMessage.Append(" (");
+			outMessage.AppendNumber(gone);
+			outMessage.Append((gone == 1) ? " record was" : " records were");
+			outMessage.Append(" no longer recorded)");
+		}
+		outMessage.Append(" - Ctrl+Z takes it back.");
+		outMessage.SetTranslatable(kFalse);
+		return done;
+	}
 };
 
 CREATE_PMINTERFACE(KCMStoryEditsFacade, kKCMStoryEditsFacadeImpl)

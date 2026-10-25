@@ -860,6 +860,31 @@ public:
 		reads them BEFORE its folder dialog opens - the story export's rule (a modal dialog is a window of its own; reading
 		first cannot be wrong). Masters left out. @return kFalse when no page of the panel's document is selected. */
 	virtual bool16	GetPagesPanelSelection(UIDList& outPages) = 0;
+
+	// ---- ★ACCEPT AND REJECT IN THE TRACK MODE (2026-10-25 - the author: "a right click that takes the change back", "and
+	//      confirms it", "on the Story too", "on the Story Edits heading, for the document"; design
+	//      docs/superpowers/specs/2026-10-25-kcm-track-accept-reject-design.md). Each is ONE undo step - an abortable one,
+	//      rolled back whole when InDesign refuses a record - and the Track list is read again after it. Only the records the
+	//      list shows are touched (KCMTrackResolve.h). `accept` kTrue accepts, kFalse rejects. @return the records accepted
+	//      or rejected (0 = none were recorded any more); -1 when nothing was done, and outMessage says why - which carries
+	//      the sentence for the status line either way.
+	//      ⚠Appended last ([[facade-vtable-slot-append-only]]) - rebuild both halves. ----
+
+	/** Whether change `which` of row `nth` is a Track change of a running Track comparison. Reads no document. */
+	virtual bool16	CanResolveTrackChange(int32 nth, int32 which) = 0;
+
+	/** The changes rows[i] / changes[i] - "Accept Change" / "Reject Change" on the rows selected together. */
+	virtual int32	ResolveTrackChanges(const int32* rows, const int32* changes, int32 count, bool16 accept,
+										PMString& outMessage) = 0;
+
+	/** Every change of row `nth` - one story under one author: that author's changes in that story. */
+	virtual int32	ResolveTrackRow(int32 nth, bool16 accept, PMString& outMessage) = 0;
+
+	/** Every change of author `a` (GetTrackAuthor's index), in every story. */
+	virtual int32	ResolveTrackAuthor(int32 a, bool16 accept, PMString& outMessage) = 0;
+
+	/** Every change the list holds - the whole Target document. */
+	virtual int32	ResolveTrackAll(bool16 accept, PMString& outMessage) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

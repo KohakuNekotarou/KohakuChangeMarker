@@ -44,6 +44,14 @@ class IDataBase;
 	  built again (which calls this again). */
 void KCMStoryFollowEnsureObservers(IDataBase* targetDB);
 
+#ifdef KCM_DIAG
+/** TEST BUILDS ONLY (2026-10-25 - open item 10 of the Track mode, an Undo the list did not follow): one trace line per
+	story EnsureObservers would attach to - its ISubject's address and whether the observer is attached to it now. A
+	story purged and read back is a new object with nothing attached (memory observer-lost-when-object-purged), so a
+	changed address with "not attached" is that loss seen directly. `when` names the caller. Changes nothing. */
+void KCMStoryFollowDiagReport(IDataBase* targetDB, const char* when);
+#endif
+
 #endif // __KCMStoryFollowObserver_h__
 
 // End, KCMStoryFollowObserver.h.

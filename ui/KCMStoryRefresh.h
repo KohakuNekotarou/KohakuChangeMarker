@@ -155,6 +155,27 @@ bool16 KCMStoryRowCanRestoreAll();
 /** Every text change of that story made the Source's by copy (one undo step), and says what on the message line. */
 bool16 KCMStoryRowRestoreAll();
 
+// ---- ★ACCEPT AND REJECT IN THE TRACK MODE (2026-10-25 - docs/superpowers/specs/2026-10-25-kcm-track-accept-reject-design.md)
+// Four scopes, each a pair: the change rows (the ones selected together), a story row (its author's changes there), an
+// author row (all of theirs) and the section heading (every change listed). Live only in a running Track comparison; each
+// press is one undo step and says what on the panel's message line (the model's sentence). `accept` kFalse rejects.
+
+/** The AUTHOR row the menu was popped over (KCMStoryRowEH::RButtonDn on an author row - its node names no story row). */
+void KCMStorySetMenuAuthor(int32 author);
+
+/** A Track change row was right-clicked (or several selected with it) - facade CanResolveTrackChange. */
+bool16 KCMChangeRowCanResolveTrack();
+bool16 KCMChangeRowResolveTrack(bool16 accept);
+/** A Track story row was right-clicked: its author's changes in that story. */
+bool16 KCMStoryRowCanResolveTrack();
+bool16 KCMStoryRowResolveTrack(bool16 accept);
+/** A Track author row was right-clicked: all of that author's changes. */
+bool16 KCMAuthorRowCanResolveTrack();
+bool16 KCMAuthorRowResolveTrack(bool16 accept);
+/** The section heading in the Track mode (popped by KCMTopPaneEH): every change the list holds - asked of no row. */
+bool16 KCMHeadingCanResolveTrack();
+bool16 KCMHeadingResolveTrack(bool16 accept);
+
 #endif // __KCMStoryRefresh_h__
 
 // End, KCMStoryRefresh.h.

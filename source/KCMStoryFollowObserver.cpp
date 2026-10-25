@@ -20,6 +20,7 @@
 // Project includes:
 #include "KCMID.h"				// IID_IKCMSTORYFOLLOWOBSERVER / kKCMStoryEditsRebuiltMessage
 #include "KCMCore.h"			// KCMIsArmed / KCMArmedTargetDB / KCMArmedSourceDB / KCMIsDocDBOpen / KCMGetCompareMode
+#include "KCMDiag.h"			// KCM_DIAG_LOG - test builds only (nothing in a shipping .pln)
 #include "KCMModelNotify.h"		// KCMNotify - the panel is told, never called
 #include "KCMStoryDiffRun.h"	// RunOne - the row compared again
 #include "KCMStoryList.h"		// RowOfTargetStory / NeedsCompareAgain
@@ -78,12 +79,15 @@ void KCMStoryFollowObserver::LazyUpdate(ISubject* theSubject, const PMIID& proto
 	const UIDRef story = ::GetUIDRef(theSubject);
 	if (story.GetDataBase() != targetDB)
 		return;
+	KCM_DIAG_LOG("follow lazy: story %u subject %p", (unsigned)story.GetUID().Get(), (void*)theSubject);
 	// ★★THE TRACK MODE FOLLOWS THE SAME RULE (2026-10-05, design 7-2): an Undo or a Redo of a listed story reads
 	//   the whole list again - rows are (story, author) pairs, and one story's records can make or lose rows for
 	//   several authors. Plain typing is left alone, as in the Story mode.
 	if (KCMGetCompareMode() == kKCMModeTrack)
 	{
-		if (!KCMTrackList::NeedsReadAgain(story.GetUID(), targetDB))
+		const bool16 readAgain = KCMTrackList::NeedsReadAgain(story.GetUID(), targetDB);
+		KCM_DIAG_LOG("follow lazy: track story %u read again=%d", (unsigned)story.GetUID().Get(), (int)readAgain);
+		if (!readAgain)
 			return;
 		KCMTrackRead::Build(targetDB, sourceDB, nil);
 		KCMStoryFollowEnsureObservers(targetDB);
@@ -122,22 +126,20 @@ void KCMStoryFollowAttach(const UIDRef& storyRef)
 	InterfacePtr<IObserver> observer(storyRef, IID_IKCMSTORYFOLLOWOBSERVER);
 	if (subject == nil || observer == nil)
 		return;
-	if (!subject->IsAttached(ISubject::kLazyAttachment, observer, IID_ITEXTMODEL, IID_IKCMSTORYFOLLOWOBSERVER))
+	const bool16 attached = subject->IsAttached(ISubject::kLazyAttachment, observer, IID_ITEXTMODEL, IID_IKCMSTORYFOLLOWOBSERVER);
+	if (!attached)
 		subject->AttachObserver(ISubject::kLazyAttachment, observer, IID_ITEXTMODEL, IID_IKCMSTORYFOLLOWOBSERVER);
+	KCM_DIAG_LOG("follow attach: story %u subject %p %s", (unsigned)storyRef.GetUID().Get(), (void*)subject.get(),
+				 attached ? "already attached" : "attached now");
 }
-}	// namespace
 
-void KCMStoryFollowEnsureObservers(IDataBase* targetDB)
+/* The stories the follower is for, Track list or Story list (KCMStoryFollowEnsureObservers' choice). */
+void KCMStoryFollowStories(std::vector<UID>& out)
 {
-	if (targetDB == nil)
-		return;
-	// ★The Track mode's stories (2026-10-05): the same observer, on every story the Track list names.
+	out.clear();
 	if (KCMGetCompareMode() == kKCMModeTrack)
 	{
-		std::vector<UID> stories;
-		KCMTrackList::GetStoryUIDs(stories);
-		for (size_t i = 0; i < stories.size(); ++i)
-			KCMStoryFollowAttach(UIDRef(targetDB, stories[i]));
+		KCMTrackList::GetStoryUIDs(out);
 		return;
 	}
 	const int32 rows = KCMStoryList::GetRowCount();
@@ -146,8 +148,41 @@ void KCMStoryFollowEnsureObservers(IDataBase* targetDB)
 		const KCMStoryRow* const row = KCMStoryList::GetRow(i);
 		if (row == nil || row->fStoryUID == kInvalidUID || (row->fKinds & kKCMStoryKindRemoved) != 0)
 			continue;		// a story only the Source has is not in this document
-		KCMStoryFollowAttach(UIDRef(targetDB, row->fStoryUID));
+		out.push_back(row->fStoryUID);
 	}
 }
+}	// namespace
+
+void KCMStoryFollowEnsureObservers(IDataBase* targetDB)
+{
+	if (targetDB == nil)
+		return;
+	// ★The Track mode's stories (2026-10-05): the same observer, on every story the Track list names
+	//   (KCMStoryFollowStories - the one walk, which the test build's report walks too).
+	std::vector<UID> stories;
+	KCMStoryFollowStories(stories);
+	for (size_t i = 0; i < stories.size(); ++i)
+		KCMStoryFollowAttach(UIDRef(targetDB, stories[i]));
+}
+
+#ifdef KCM_DIAG
+void KCMStoryFollowDiagReport(IDataBase* targetDB, const char* when)
+{
+	if (targetDB == nil)
+		return;
+	std::vector<UID> stories;
+	KCMStoryFollowStories(stories);
+	for (size_t i = 0; i < stories.size(); ++i)
+	{
+		const UIDRef storyRef(targetDB, stories[i]);
+		InterfacePtr<ISubject> subject(storyRef, UseDefaultIID());
+		InterfacePtr<IObserver> observer(storyRef, IID_IKCMSTORYFOLLOWOBSERVER);
+		const bool attached = (subject != nil && observer != nil
+			&& subject->IsAttached(ISubject::kLazyAttachment, observer, IID_ITEXTMODEL, IID_IKCMSTORYFOLLOWOBSERVER));
+		KCM_DIAG_LOG("follow check (%s): story %u subject %p %s", when, (unsigned)stories[i].Get(), (void*)subject.get(),
+					 attached ? "attached" : "NOT ATTACHED");
+	}
+}
+#endif
 
 // End, KCMStoryFollowObserver.cpp.

@@ -510,6 +510,18 @@ DECLARE_PMID(kActionIDSpace, kKCMApplyAllActionID, kKCMUIPrefix + 93)	// ★"App
 DECLARE_PMID(kActionIDSpace, kKCMStoryRowRestoreAllActionID, kKCMUIPrefix + 95)	// ★"Restore All Changes in This Story" on a Story Edits STORY row in the Story mode (2026-10-24 night, design 1-8 - the author: "on the Story row too"): every text change of the story made the Source's by copy, one undo step (facade RestoreStoryFromSource). ⚠+95 the next after +94, counted
 DECLARE_PMID(kActionIDSpace, kKCMPopupExportPagesActionID, kKCMUIPrefix + 96)	// ★(2026-10-25) "Export Pages to Word..." - on the Pages panel's page menu (under Refresh Page Comparison) AND on the flyout (under Export Story Text...): the selected pages, each one .docx of text boxes (facade ExportPagesAsWord). +96 the next free slot - counted: the highest was +95
 DECLARE_PMID(kActionIDSpace, kKCMChangeRowRestoreCopyActionID, kKCMUIPrefix + 94)	// ★"Restore from Copy" on a "=" CHANGE row (2026-10-24 evening, design 11-3): the document's own words pasted back from the copy Apply This Change kept (facade RestoreChangeFromCopy). ⚠+94 the next after +93, never a grave
+// ★ACCEPT AND REJECT IN THE TRACK MODE (2026-10-25 - the author: "a right click that takes the change back", "and confirms it",
+//   "on the Story too", "on the Story Edits heading, for the document"; design docs/superpowers/specs/
+//   2026-10-25-kcm-track-accept-reject-design.md). Each pair acts on one scope; each press is one undo step (facade
+//   ResolveTrack*). ⚠+97..+104 the next free slots - counted: the highest was +96.
+DECLARE_PMID(kActionIDSpace, kKCMTrackAcceptChangeActionID, kKCMUIPrefix + 97)	// ★"Accept Change" on a Track CHANGE row - the change rows selected together, when this is one of them (facade ResolveTrackChanges)
+DECLARE_PMID(kActionIDSpace, kKCMTrackRejectChangeActionID, kKCMUIPrefix + 98)	// ★"Reject Change" - the same, rejected
+DECLARE_PMID(kActionIDSpace, kKCMTrackAcceptStoryActionID, kKCMUIPrefix + 99)	// ★"Accept This Author's Changes in Story" on a Track STORY row - the author the row stands under, that story (facade ResolveTrackRow)
+DECLARE_PMID(kActionIDSpace, kKCMTrackRejectStoryActionID, kKCMUIPrefix + 100)	// ★"Reject This Author's Changes in Story" - the same, rejected
+DECLARE_PMID(kActionIDSpace, kKCMTrackAcceptAuthorActionID, kKCMUIPrefix + 101)	// ★"Accept All Changes by This Author" on a Track AUTHOR row - every story (facade ResolveTrackAuthor)
+DECLARE_PMID(kActionIDSpace, kKCMTrackRejectAuthorActionID, kKCMUIPrefix + 102)	// ★"Reject All Changes by This Author" - the same, rejected
+DECLARE_PMID(kActionIDSpace, kKCMTrackAcceptAllActionID, kKCMUIPrefix + 103)	// ★"Accept All Changes in Document" on the SECTION HEADING in the Track mode - every change the list holds (facade ResolveTrackAll)
+DECLARE_PMID(kActionIDSpace, kKCMTrackRejectAllActionID, kKCMUIPrefix + 104)	// ★"Reject All Changes in Document" - the same, rejected
 
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
 //  **deleted**. ⚠★★It was not inert: **+41 is taken** (kKCMPopupTranslucentBookDialogActionID
@@ -843,6 +855,12 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// 
 //   so it sits on the heading that counts them ("Proposed Edits (N)"), not on one story's row. Popped by the upper pane's
 //   handler for a press on the heading (KCMTopPaneEH, KCMStorySection.cpp) only while the Source is an import's copy.
 #define kKCMProposedHeadingMenuName	"KCMRtMenuProposedHeading"
+// ★The Track mode's AUTHOR row menu and its SECTION HEADING menu (2026-10-25 - accept and reject: the author's row "on the
+//   Story too" asked for the author's level as well, and "on the Story Edits heading, for the document"). Each pops its two
+//   items with grey ones KEPT (the author's "grey is fine when it cannot be done"); a Track change row and story row use the
+//   two subtrees above (their other items are greyed there and hidden - KCMStoryRowEH::RButtonDn).
+#define kKCMTrackAuthorMenuName		"KCMRtMenuTrackAuthor"
+#define kKCMTrackHeadingMenuName	"KCMRtMenuTrackHeading"
 #define kKCMChangeRowRestoreAttrMenuKey	kKCMStringPrefix "kKCMChangeRowRestoreAttrMenuKey"	// "Restore from Source" on an attribute change row (2026-09-24, stage 2 B)
 #define kKCMChangeRowMatchTableMenuKey	kKCMStringPrefix "kKCMChangeRowMatchTableMenuKey"	// "Match the Source" on a Table row that differs from the Source's (2026-09-25)
 #define kKCMChangeRowApplyMenuKey	kKCMStringPrefix "kKCMChangeRowApplyMenuKey"	// "Apply This Change" (2026-10-24, the import-as-Source road)
@@ -850,6 +868,14 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// 
 #define kKCMStoryRowApplyMenuKey	kKCMStringPrefix "kKCMStoryRowApplyMenuKey"	// "Apply All Changes in This Story" (the same road)
 #define kKCMStoryRowRestoreAllMenuKey	kKCMStringPrefix "kKCMStoryRowRestoreAllMenuKey"	// "Restore All Changes in This Story" (2026-10-24 night, design 1-8 - the Story mode's)
 #define kKCMApplyAllMenuKey	kKCMStringPrefix "kKCMApplyAllMenuKey"	// "Apply All Changes" (the same road)
+#define kKCMTrackAcceptChangeMenuKey	kKCMStringPrefix "kKCMTrackAcceptChangeMenuKey"	// "Accept Change" (2026-10-25, the Track mode)
+#define kKCMTrackRejectChangeMenuKey	kKCMStringPrefix "kKCMTrackRejectChangeMenuKey"	// "Reject Change"
+#define kKCMTrackAcceptStoryMenuKey	kKCMStringPrefix "kKCMTrackAcceptStoryMenuKey"	// "Accept This Author's Changes in Story"
+#define kKCMTrackRejectStoryMenuKey	kKCMStringPrefix "kKCMTrackRejectStoryMenuKey"	// "Reject This Author's Changes in Story"
+#define kKCMTrackAcceptAuthorMenuKey	kKCMStringPrefix "kKCMTrackAcceptAuthorMenuKey"	// "Accept All Changes by This Author"
+#define kKCMTrackRejectAuthorMenuKey	kKCMStringPrefix "kKCMTrackRejectAuthorMenuKey"	// "Reject All Changes by This Author"
+#define kKCMTrackAcceptAllMenuKey	kKCMStringPrefix "kKCMTrackAcceptAllMenuKey"	// "Accept All Changes in Document"
+#define kKCMTrackRejectAllMenuKey	kKCMStringPrefix "kKCMTrackRejectAllMenuKey"	// "Reject All Changes in Document"
 // ⛔kKCMChangeRowRestoreMenuKey ("Restore Source Text") and kKCMChangeRowUndoRestoreMenuKey ("Undo
 //   the Restore") went on 2026-09-21 with the restore itself, and are gone from the enUS table.
 // ⛔The two Import-mode names went with the fourth mode on 2026-09-20 ("Change to Imported Text",
@@ -1312,6 +1338,14 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// 
 #define kKCMStoryRowRestoreAllMenuItemPosition	0.7	// ...and "Restore All Changes in This Story" (the Story mode's, 2026-10-24 night) - never live with the one above (an import's copy against two documents)
 #define kKCMChangeRowRestoreCopyStoryMenuItemPosition	2.5	// "Restore from Copy" on the Story mode's change row subtree too (2026-10-24 night) - under "Restore from Source", live on the "=" it left
 #define kKCMApplyAllMenuItemPosition	0.6	// "Apply All Changes" - alone on the section heading's menu since 2026-10-24 evening (kKCMProposedHeadingMenuName)
+#define kKCMTrackAcceptChangeMenuItemPosition	0.8	// the change row's subtree: "Accept Change" (2026-10-25) - live only in the Track mode, where every other item there is greyed (and hidden)
+#define kKCMTrackRejectChangeMenuItemPosition	0.9	// ...and "Reject Change" under it
+#define kKCMTrackAcceptStoryMenuItemPosition	0.8	// the story row's subtree: "Accept This Author's Changes in Story" (the Track mode's), above Refresh Story Comparison (1.0)
+#define kKCMTrackRejectStoryMenuItemPosition	0.9	// ...and "Reject This Author's Changes in Story"
+#define kKCMTrackAcceptAuthorMenuItemPosition	1.0	// the Track author row's own subtree (kKCMTrackAuthorMenuName)
+#define kKCMTrackRejectAuthorMenuItemPosition	2.0
+#define kKCMTrackAcceptAllMenuItemPosition	1.0	// the Track section heading's own subtree (kKCMTrackHeadingMenuName)
+#define kKCMTrackRejectAllMenuItemPosition	2.0
 // ⛔The CHANGE row's two restore positions (2.0 "Restore Source Text", 2.7 "Undo the Restore") went
 //   with the items on the morning of 2026-09-21, and "Edit..." (0.5) went that evening - **so the
 //   subtree they sorted within is gone as well** (kKCMChangeRowMenuName above).

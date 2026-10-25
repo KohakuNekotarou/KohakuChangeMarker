@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <map>
 
+#include "KCMDiag.h"			// KCM_DIAG_LOG - test builds only (nothing in a shipping .pln)
 #include "KCMTrackList.h"
 #include "KCMTrackPlan.h"		// KCMTrackChangeKind - the kind words
 
@@ -136,6 +137,8 @@ bool16 KCMTrackList::NeedsReadAgain(UID storyUID, IDataBase* targetDB)
 	if (it == gHistory.end() || targetDB == nil)
 		return kFalse;
 	const uint32 now = CounterOf(targetDB, storyUID);
+	KCM_DIAG_LOG("track counters: story %u now %u last read at %u, %d value(s) read", (unsigned)storyUID.Get(), (unsigned)now,
+				 (unsigned)it->second.fLast, (int)it->second.fSeen.size());
 	if (now == it->second.fLast)
 		return kFalse;
 	if (now < it->second.fLast)

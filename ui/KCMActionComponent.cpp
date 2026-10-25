@@ -1305,6 +1305,17 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMStoryRowRestoreAll();
 			break;
 
+		// ★ACCEPT AND REJECT IN THE TRACK MODE (2026-10-25): the four scopes' pairs - each one undo step by the model, which
+		//   reads the Track list again (KCMStoryRefresh.cpp names the row, the author or the heading the menu was about).
+		case kKCMTrackAcceptChangeActionID:	KCMChangeRowResolveTrack(kTrue);	break;
+		case kKCMTrackRejectChangeActionID:	KCMChangeRowResolveTrack(kFalse);	break;
+		case kKCMTrackAcceptStoryActionID:	KCMStoryRowResolveTrack(kTrue);		break;
+		case kKCMTrackRejectStoryActionID:	KCMStoryRowResolveTrack(kFalse);	break;
+		case kKCMTrackAcceptAuthorActionID:	KCMAuthorRowResolveTrack(kTrue);	break;
+		case kKCMTrackRejectAuthorActionID:	KCMAuthorRowResolveTrack(kFalse);	break;
+		case kKCMTrackAcceptAllActionID:	KCMHeadingResolveTrack(kTrue);		break;
+		case kKCMTrackRejectAllActionID:	KCMHeadingResolveTrack(kFalse);		break;
+
 		// "Show as XML" on a DEFINITION row's context menu (2026-09-09). Shows the element the row
 		// names, from both documents, in a modal alert. ★Which row it was is noted the same way as
 		// for the item above, by KCMStorySetMenuRow at the right click.
@@ -1930,6 +1941,23 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			// ★"Restore All Changes in This Story" (2026-10-24 night) - the same test as its execution.
 			case kKCMStoryRowRestoreAllActionID:
 				listToUpdate->SetNthActionState(i, KCMStoryRowCanRestoreAll() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			// ★Accept / Reject in the Track mode (2026-10-25) - each pair the same test as its execution.
+			case kKCMTrackAcceptChangeActionID:
+			case kKCMTrackRejectChangeActionID:
+				listToUpdate->SetNthActionState(i, KCMChangeRowCanResolveTrack() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			case kKCMTrackAcceptStoryActionID:
+			case kKCMTrackRejectStoryActionID:
+				listToUpdate->SetNthActionState(i, KCMStoryRowCanResolveTrack() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			case kKCMTrackAcceptAuthorActionID:
+			case kKCMTrackRejectAuthorActionID:
+				listToUpdate->SetNthActionState(i, KCMAuthorRowCanResolveTrack() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			case kKCMTrackAcceptAllActionID:
+			case kKCMTrackRejectAllActionID:
+				listToUpdate->SetNthActionState(i, KCMHeadingCanResolveTrack() ? kEnabledAction : kDisabled_Unselected);
 				break;
 			case kKCMResourceRowXmlActionID:
 			{

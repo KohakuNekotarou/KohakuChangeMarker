@@ -1485,6 +1485,51 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMApplyAllMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// ★ACCEPT AND REJECT IN THE TRACK MODE (2026-10-25 - the author: "a right click that takes the change back", "and
+		//   confirms it", "on the Story too", "on the Story Edits heading, for the document"). The change row's and the story
+		//   row's pairs sit on the two subtrees above, where every other item is greyed in this mode and dropped (the rows
+		//   pop those with grey items dropped); the author row and the heading have subtrees of their own, popped with grey
+		//   items kept (KCMStoryRowEH::RButtonDn / KCMTopPaneEH).
+		kKCMTrackAcceptChangeActionID,
+		kKCMChangeRowMenuName,
+		kKCMTrackAcceptChangeMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMTrackRejectChangeActionID,
+		kKCMChangeRowMenuName,
+		kKCMTrackRejectChangeMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMTrackAcceptStoryActionID,
+		kKCMStoryRowMenuName,
+		kKCMTrackAcceptStoryMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMTrackRejectStoryActionID,
+		kKCMStoryRowMenuName,
+		kKCMTrackRejectStoryMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMTrackAcceptAuthorActionID,
+		kKCMTrackAuthorMenuName,
+		kKCMTrackAcceptAuthorMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMTrackRejectAuthorActionID,
+		kKCMTrackAuthorMenuName,
+		kKCMTrackRejectAuthorMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMTrackAcceptAllActionID,
+		kKCMTrackHeadingMenuName,
+		kKCMTrackAcceptAllMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMTrackRejectAllActionID,
+		kKCMTrackHeadingMenuName,
+		kKCMTrackRejectAllMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// ----- The Story Edits CHANGE rows (child rows): ⛔THE SUBTREE IS GONE (2026-09-21) -----
 		// A subtree of its own (kKCMChangeRowMenuName) stood here from 2026-09-12, carrying only items
 		// about the CHANGE the cursor was over: "Copy Source Text" until 2026-09-15, then "Restore
@@ -2002,6 +2047,81 @@ resource ActionDef (kSDKDefActionResourceID)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// greyed unless the row holds a text change of two open documents (KCMStoryRowCanRestoreAll)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// ★(2026-10-25) ACCEPT AND REJECT IN THE TRACK MODE - the eight items of the four scopes, each greyed outside a running
+		//   Track comparison (KCMStoryRefresh.cpp). Not on the flyout: they act on the row, the author or the heading the menu
+		//   was popped over, which a flyout cannot name.
+		kKCMActionComponentBoss,
+		kKCMTrackAcceptChangeActionID,
+		kKCMTrackAcceptChangeMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// greyed unless a Track change row was right-clicked (KCMChangeRowCanResolveTrack)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMTrackRejectChangeActionID,
+		kKCMTrackRejectChangeMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMTrackAcceptStoryActionID,
+		kKCMTrackAcceptStoryMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// greyed unless a Track story row was right-clicked (KCMStoryRowCanResolveTrack)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMTrackRejectStoryActionID,
+		kKCMTrackRejectStoryMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMTrackAcceptAuthorActionID,
+		kKCMTrackAcceptAuthorMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// greyed unless a Track author row was right-clicked (KCMAuthorRowCanResolveTrack)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMTrackRejectAuthorActionID,
+		kKCMTrackRejectAuthorMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMTrackAcceptAllActionID,
+		kKCMTrackAcceptAllMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// greyed unless the Track list holds a change (KCMHeadingCanResolveTrack)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMTrackRejectAllActionID,
+		kKCMTrackRejectAllMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

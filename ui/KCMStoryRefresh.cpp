@@ -46,6 +46,11 @@ int32 gMenuRow = -1;
    row's menu can never find a change left over from an earlier right click. */
 int32 gMenuChange = -1;
 
+/* Which AUTHOR, when the menu was popped over a Track author row (2026-10-25 - accept and reject at the author's level); -1
+   otherwise. ★Written by every kind of right click (the two setters above clear it), so a row's menu can never find an
+   author left over from an earlier right click. */
+int32 gMenuAuthor = -1;
+
 }	// anonymous namespace
 
 //----------------------------------------------------------------------------------------
@@ -62,6 +67,7 @@ void KCMStorySetMenuRow(int32 rowIndex)
 {
 	gMenuRow = rowIndex;
 	gMenuChange = -1;		// a story row's menu: no change (2026-09-24)
+	gMenuAuthor = -1;		// ...and no author row (2026-10-25)
 }
 
 //----------------------------------------------------------------------------------------
@@ -73,6 +79,18 @@ void KCMStorySetMenuChange(int32 rowIndex, int32 changeIndex)
 {
 	gMenuRow = rowIndex;
 	gMenuChange = changeIndex;
+	gMenuAuthor = -1;
+}
+
+//----------------------------------------------------------------------------------------
+// KCMStorySetMenuAuthor - a Track AUTHOR row's own menu (2026-10-25)
+//----------------------------------------------------------------------------------------
+
+void KCMStorySetMenuAuthor(int32 author)
+{
+	gMenuRow = -1;
+	gMenuChange = -1;
+	gMenuAuthor = author;
 }
 
 namespace
@@ -471,6 +489,126 @@ bool16 KCMStoryRefreshMenuRow()
 	KCMSetStatus(msg);
 
 	return (count >= 0);
+}
+
+//----------------------------------------------------------------------------------------
+// ★ACCEPT AND REJECT IN THE TRACK MODE (2026-10-25 - the author: "a right click that takes the change back", "and confirms
+// it", "on the Story too", "on the Story Edits heading, for the document"; design
+// docs/superpowers/specs/2026-10-25-kcm-track-accept-reject-design.md). Each Can is the item's grey; each Do asks it again at
+// the moment of acting (KCMStoryRefreshMenuRow's reason) and puts the model's sentence on the message line.
+//----------------------------------------------------------------------------------------
+
+namespace
+{
+/** A Track comparison is running - what every item of the four scopes asks first. */
+bool16 TrackMenuLive()
+{
+	return (Utils<IKCMCompareFacade>()->IsArmed() && Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeTrack)
+		? kTrue : kFalse;
+}
+
+/** The status line's sentence for an accept or a reject: the model's words - the reason, when nothing was done. */
+void SayResolved(bool16 accept, int32 done, const PMString& why)
+{
+	PMString msg;
+	msg.SetTranslatable(kFalse);
+	if (done < 0)
+	{
+		msg.Append(accept ? "accept" : "reject");
+		msg.Append(": could not - ");
+	}
+	msg.Append(why);
+	KCMSetStatus(msg);
+}
+}	// anonymous namespace
+
+bool16 KCMChangeRowCanResolveTrack()
+{
+	if (gMenuRow < 0 || gMenuChange < 0 || !TrackMenuLive())
+		return kFalse;
+	std::vector<int32> rows, changes;
+	RowsOfMenuThatCan([](int32 r, int32 c) { return Utils<IKCMStoryEditsFacade>()->CanResolveTrackChange(r, c) != kFalse; },
+					  rows, changes);
+	return rows.empty() ? kFalse : kTrue;
+}
+
+bool16 KCMChangeRowResolveTrack(bool16 accept)
+{
+	std::vector<int32> rows, changes;
+	if (gMenuRow >= 0 && gMenuChange >= 0 && TrackMenuLive())
+		RowsOfMenuThatCan([](int32 r, int32 c) { return Utils<IKCMStoryEditsFacade>()->CanResolveTrackChange(r, c) != kFalse; },
+						  rows, changes);
+	if (rows.empty())
+	{
+		KCMSetStatus(accept ? "accept: not a change of a running Track comparison." : "reject: not a change of a running Track comparison.");
+		return kFalse;
+	}
+	// ★ONE UNDO STEP FOR THE ROWS SELECTED TOGETHER - as Apply These Changes (design 1-5 of 2026-10-24).
+	PMString why;
+	const int32 done = Utils<IKCMStoryEditsFacade>()->ResolveTrackChanges(&rows[0], &changes[0], static_cast<int32>(rows.size()),
+																		 accept, why);
+	SayResolved(accept, done, why);
+	return (done > 0) ? kTrue : kFalse;
+}
+
+bool16 KCMStoryRowCanResolveTrack()
+{
+	if (gMenuRow < 0 || gMenuChange >= 0 || !TrackMenuLive())
+		return kFalse;
+	return (Utils<IKCMStoryEditsFacade>()->GetChangeCount(gMenuRow) > 0) ? kTrue : kFalse;
+}
+
+bool16 KCMStoryRowResolveTrack(bool16 accept)
+{
+	if (!KCMStoryRowCanResolveTrack())
+	{
+		KCMSetStatus(accept ? "accept: not a story row of a running Track comparison." : "reject: not a story row of a running Track comparison.");
+		return kFalse;
+	}
+	PMString why;
+	const int32 done = Utils<IKCMStoryEditsFacade>()->ResolveTrackRow(gMenuRow, accept, why);
+	SayResolved(accept, done, why);
+	return (done > 0) ? kTrue : kFalse;
+}
+
+bool16 KCMAuthorRowCanResolveTrack()
+{
+	if (gMenuAuthor < 0 || !TrackMenuLive())
+		return kFalse;
+	IKCMStoryEditsFacade::TrackAuthor author;
+	return (Utils<IKCMStoryEditsFacade>()->GetTrackAuthor(gMenuAuthor, author) && author.fChangeCount > 0) ? kTrue : kFalse;
+}
+
+bool16 KCMAuthorRowResolveTrack(bool16 accept)
+{
+	if (!KCMAuthorRowCanResolveTrack())
+	{
+		KCMSetStatus(accept ? "accept: not an author of a running Track comparison." : "reject: not an author of a running Track comparison.");
+		return kFalse;
+	}
+	PMString why;
+	const int32 done = Utils<IKCMStoryEditsFacade>()->ResolveTrackAuthor(gMenuAuthor, accept, why);
+	SayResolved(accept, done, why);
+	return (done > 0) ? kTrue : kFalse;
+}
+
+bool16 KCMHeadingCanResolveTrack()
+{
+	// ★NO ROW ASKED: the heading's items act on every change the list holds (KCMHeadingCanApplyAll's reason).
+	return (TrackMenuLive() && Utils<IKCMStoryEditsFacade>()->GetTrackChangeTotal() > 0) ? kTrue : kFalse;
+}
+
+bool16 KCMHeadingResolveTrack(bool16 accept)
+{
+	if (!KCMHeadingCanResolveTrack())
+	{
+		KCMSetStatus(accept ? "accept: no tracked change is listed." : "reject: no tracked change is listed.");
+		return kFalse;
+	}
+	PMString why;
+	const int32 done = Utils<IKCMStoryEditsFacade>()->ResolveTrackAll(accept, why);
+	SayResolved(accept, done, why);
+	return (done > 0) ? kTrue : kFalse;
 }
 
 // End, KCMStoryRefresh.cpp.

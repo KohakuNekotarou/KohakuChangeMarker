@@ -94,6 +94,11 @@ private:
 	*/
 	int32 RowFromNode(int32* outChange = nil) const;
 
+	/** ★The Track mode's AUTHOR row this widget is (2026-10-25 - its own menu: accept and reject all of that author's
+		changes): the author's index, or -1 for every other row. An author row's node names no story row (RowFromNode
+		answers -1 for it), so a right click asks this first. */
+	int32 AuthorFromNode() const;
+
 	/** Which row this click is for, or -1 when it should be left alone.
 
 		Answers -1 for a click the stock handler already used, for a modified click, and for a row
@@ -128,6 +133,15 @@ int32 KCMStoryRowEH::RowFromNode(int32* outChange) const
 	if (outChange != nil && nodeID->IsChangeRow())
 		*outChange = nodeID->GetChange();
 	return nodeID->GetRow();
+}
+
+int32 KCMStoryRowEH::AuthorFromNode() const
+{
+	InterfacePtr<ITreeNodeIDData> nodeData(this, UseDefaultIID());
+	if (nodeData == nil)
+		return -1;
+	TreeNodePtr<KCMStoryNodeID> nodeID(nodeData->Get());
+	return (nodeID != nil && nodeID->IsAuthorRow()) ? nodeID->GetAuthor() : -1;
 }
 
 int32 KCMStoryRowEH::RowForClick(IEvent* e, bool16 baseHandled, int32* outChange) const
@@ -264,14 +278,18 @@ bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 {
 	int32 changeIndex = -1;
 	const int32 rowIndex = this->RowFromNode(&changeIndex);
-	if (rowIndex < 0 || e == nil)
+	const int32 authorIndex = this->AuthorFromNode();
+	if ((rowIndex < 0 && authorIndex < 0) || e == nil)
 		return TreeNodeEventHandler::RButtonDn(e);
 
 	// ★★A CHANGE ROW HAS ITS OWN MENU (2026-09-24): its items are each about the change under the cursor only -
 	//   so the rule of 2026-08-21 (never the STORY row's menu on a child row, never an action over the whole
 	//   story) still holds - and a menu with only greyed items does not appear.
+	// ★★AND A TRACK AUTHOR ROW HAS ITS OWN (2026-10-25): all of that author's changes, accepted or rejected.
 	const bool16 isChangeRow = (changeIndex >= 0);
-	if (isChangeRow)
+	if (authorIndex >= 0)
+		KCMStorySetMenuAuthor(authorIndex);
+	else if (isChangeRow)
 		KCMStorySetMenuChange(rowIndex, changeIndex);
 	else
 		KCMStorySetMenuRow(rowIndex);	// for the action and its enabling test to read (see above)
@@ -286,6 +304,14 @@ bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 	InterfacePtr<IMenuManager> menuMgr(actionMgr, UseDefaultIID());
 	if (menuMgr == nil)
 		return kTrue;
+
+	// ★The author row's two items, grey kept (the author's "grey is fine when it cannot be done" - the import's rows' rule).
+	if (authorIndex >= 0)
+	{
+		menuMgr->HandlePopupMenu(kKCMTrackAuthorMenuName, e->GlobalWhere(), e->GlobalWhere(),
+								 kFalse /*removeDisabledItems*/, this);
+		return kTrue;
+	}
 
 	// ★★AGAINST AN IMPORT'S COPY A CHANGE ROW POPS THE IMPORT'S OWN MENU, GREY ITEMS KEPT (2026-10-24 evening - the author:
 	//   "there are rows I cannot right-click"; a "=" row's items were all grey, and the fourth argument kTrue drops grey

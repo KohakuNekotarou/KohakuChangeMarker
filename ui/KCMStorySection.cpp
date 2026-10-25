@@ -572,7 +572,12 @@ public:
 		if (e == nil || !this->PressIsOnHeading(e))
 			return inherited::RButtonDn(e);
 		Utils<IKCMStoryEditsFacade> edits;
-		if (!edits || !edits->IsImportSource())
+		Utils<IKCMCompareFacade> compare;
+		// ★AND IN THE TRACK MODE, THE HEADING'S OWN PAIR (2026-10-25 - the author: "on the Story Edits heading, the document's
+		//   accept and reject"): "Accept / Reject All Changes in Document", on the heading that counts them
+		//   ("Tracked Changes (N)") - the import's Apply All Changes' reason for living there.
+		const bool16 track = (compare && compare->IsArmed() && compare->GetCompareMode() == kKCMModeTrack) ? kTrue : kFalse;
+		if (!track && (!edits || !edits->IsImportSource()))
 			return inherited::RButtonDn(e);
 		ISession* session = GetExecutionContextSession();
 		InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
@@ -580,8 +585,8 @@ public:
 		InterfacePtr<IMenuManager> menuMgr(actionMgr, UseDefaultIID());
 		if (menuMgr == nil)
 			return kTrue;
-		menuMgr->HandlePopupMenu(kKCMProposedHeadingMenuName, e->GlobalWhere(), e->GlobalWhere(),
-								 kFalse /*removeDisabledItems*/, this);
+		menuMgr->HandlePopupMenu(track ? kKCMTrackHeadingMenuName : kKCMProposedHeadingMenuName, e->GlobalWhere(),
+								 e->GlobalWhere(), kFalse /*removeDisabledItems*/, this);
 		return kTrue;
 	}
 

@@ -323,6 +323,32 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, IDataBase* sourceDB, bool16* outC
 		std::vector<KCMTrackPlanned> planned;
 		int32 other = 0;
 		KCMPlanTrackChanges(recs, planned, other);
+
+		// ★A MOVE'S TWO HALVES (2026-10-25 - measured: Reject Change on the moved words alone left the story without them,
+		//   "one threetwo " -> "one three", until the deletion where they stood was rejected too). InDesign records a move as
+		//   the moved text's insertion and a deletion of the same text where it stood, one stamp and one author (the probe's
+		//   U2, kcm-track-probe-2026-10-05.md) - two rows here, "»" and "-". Each is given the other's records as well
+		//   (KCMTrackChange::fRecords below), so that accepting or rejecting either row does the whole move.
+		std::vector<int32> partner(planned.size(), -1);
+		for (size_t m = 0; m < planned.size(); ++m)
+		{
+			if (planned[m].fKind != kKCMTrackMove || planned[m].fInsRec < 0)
+				continue;
+			const KCMTrackRecord& ins = recs[static_cast<size_t>(planned[m].fInsRec)];
+			const WideString moved = ReadRaw(model, ins.fAt, ins.fAt + ins.fLen);
+			for (size_t d = 0; d < planned.size(); ++d)
+			{
+				if (planned[d].fKind != kKCMTrackDelete || planned[d].fDelRec < 0 || partner[d] >= 0)
+					continue;
+				const KCMTrackRecord& del = recs[static_cast<size_t>(planned[d].fDelRec)];
+				if (del.fAuthor != ins.fAuthor || del.fTime != ins.fTime || del.fHidden != ins.fHidden
+					|| deleted[static_cast<size_t>(planned[d].fDelRec)] != moved)
+					continue;
+				partner[m] = static_cast<int32>(d);
+				partner[d] = static_cast<int32>(m);
+				break;
+			}
+		}
 		KCM_DIAG_LOG("track read: story %u records=%d planned=%d other=%d", (unsigned)storyRef.GetUID().Get(),
 					 (int)recs.size(), (int)planned.size(), (int)other);
 		otherRecords += other;
@@ -342,6 +368,26 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, IDataBase* sourceDB, bool16* outC
 				ch.fKind = p.fKind;
 				ch.fTime = p.fTime;
 				ch.fHidden = p.fHidden;
+				// ★THE RECORDS IT WAS MADE OF (2026-10-25): Accept and Reject find them again by these (KCMTrackResolve) -
+				//   a replacement is two, the insertion and the deletion beside it; a move's row carries its other half's too.
+				const KCMTrackPlanned* const halves[2] = { &p, (partner[k] >= 0) ? &planned[static_cast<size_t>(partner[k])] : nil };
+				for (int32 h = 0; h < 2; ++h)
+				{
+					if (halves[h] == nil)
+						continue;
+					const int32 own[2] = { halves[h]->fInsRec, halves[h]->fDelRec };
+					for (int32 o = 0; o < 2; ++o)
+					{
+						if (own[o] < 0)
+							continue;
+						const KCMTrackRecord& rec = recs[static_cast<size_t>(own[o])];
+						KCMTrackRecordRef ref;
+						ref.fDelete = (rec.fKind == kKCMTrackRecDelete) ? kTrue : kFalse;
+						ref.fAt = rec.fAt;
+						ref.fTime = rec.fTime;
+						ch.fRecords.push_back(ref);
+					}
+				}
 				KCMStoryChange& sc = ch.fChange;
 				sc.fWhat = KCMStoryChange::kText;
 				sc.fKind = (p.fKind == kKCMTrackDelete) ? KCMStoryChange::kDelete

@@ -28,6 +28,16 @@
 
 class IDataBase;
 
+/** One record a change was made of, as KCMTrackRead copied it out of the iterator (2026-10-25): what Accept and Reject
+	find it again by in its story (KCMTrackResolve) - with the author's name, which the change carries by index. */
+struct KCMTrackRecordRef
+{
+	bool16		fDelete;	// a deletion; else an insertion
+	TextIndex	fAt;		// the iterator's position: an insertion's first character, a deletion's anchor
+	uint64		fTime;		// VOSRedlineChange::GetTimeStamp
+	KCMTrackRecordRef() : fDelete(kFalse), fAt(0), fTime(0) {}
+};
+
 /** One change of the Track mode: the Story change it is drawn as, and who made it in what colour. */
 struct KCMTrackChange
 {
@@ -39,6 +49,7 @@ struct KCMTrackChange
 	uint8			fR, fG, fB;
 	bool16			fHidden;		// in hidden conditional text
 	bool16			fSourceExact;	// fChange's Source range was checked against the copy (KCMTrackRead)
+	std::vector<KCMTrackRecordRef>	fRecords;	// the insertion and / or the deletion it was made of (2026-10-25)
 	KCMTrackChange() : fAuthor(-1), fKind(0), fTime(0), fHasColour(kFalse), fR(0), fG(0), fB(0),
 					   fHidden(kFalse), fSourceExact(kFalse) {}
 };
