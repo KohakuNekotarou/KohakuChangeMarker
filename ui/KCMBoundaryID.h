@@ -154,7 +154,7 @@ DECLARE_PMID(kMessageIDSpace, kKCMComparisonDocsClosedMessage, kKCMPrefix + 6)	/
 //   front too): making a document active goes through IDocumentPresentation, which is the UI's world
 //   and which no model-side code may reach - the guide names that shape "crashes or corrupt
 //   documents", and this family of plug-ins has paid for it six times. The import's two roads (the
-//   flyout item and app.kcmImportStoryText) meet in the MODEL, so the model says this and the UI does
+//   flyout item and app.kcmImportToSource) meet in the MODEL, so the model says this and the UI does
 //   the work. Nobody listening means nothing happens, which is exactly right when only the model half
 //   is loaded. No payload, and no command: MakeActive changes nothing in the document and raises no
 //   undo step.

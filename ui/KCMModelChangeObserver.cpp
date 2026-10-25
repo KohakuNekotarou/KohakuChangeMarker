@@ -232,7 +232,7 @@ void KCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theSub
 	// ★**AN IMPORT ASKS FOR ITS TARGET TO BE PUT IN FRONT** (2026-09-22). The model cannot do it -
 	//   a document is made active through IDocumentPresentation, which is the UI's - so it says so
 	//   and the doing happens here, for BOTH of the import's roads at once (the flyout item and
-	//   app.kcmImportStoryText). ⚠KCMBringArmedTargetToFront does nothing at all when nothing is
+	//   app.kcmImportToSource - app.kcmImportStoryText until 2026-10-25). ⚠KCMBringArmedTargetToFront does nothing at all when nothing is
 	//   armed, so this branch needs no further question of its own.
 	if (theChange == kKCMTargetToFrontMessage)
 	{
