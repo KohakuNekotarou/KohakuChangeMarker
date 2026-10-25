@@ -51,7 +51,7 @@ bool16 gPressUseSource = kFalse;
 //   The history is worth keeping because the same mistake is easy to make again: this file
 //     first kept its own flag for "did I put the current mark up", which was one fact written
 //     down in two places ([[one-question-one-place]]) and went stale the moment anything ELSE
-//     took the mark down -- the double click does exactly that (KCMStorySelectChange), after
+//     took the mark down -- the double click did exactly that (KCMStorySelectChange, gone 2026-10-25), after
 //     which this file still believed a standing mark was on screen (bug A2). Asking the marker
 //     fixed the staleness; separating the two sets removed the question.
 
@@ -137,7 +137,7 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 		//   carries the UIDs across (KCMStoryStamp.h, "WHY TWO VERSIONS CAN BE MATCHED AT ALL").
 		//   Two other places already ask exactly this way, which is the check that this is not a local
 		//   assumption: the diff reads the older side with UIDRef(sourceDB, row->fStoryUID)
-		//   (KCMStoryDiffRun::Run), and the double click selects with it (KCMStoryJump.cpp).
+		//   (KCMStoryDiffRun::Run), and the click selects with it (KCMStoryJump.cpp).
 		//
 		// @warning **this used to ask "is this a removed row?" and require that to MATCH
 		//   useSourceDocument**, which quietly dropped every ORDINARY row from the source side -- found

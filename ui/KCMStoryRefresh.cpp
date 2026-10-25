@@ -30,7 +30,7 @@ namespace
 
 /* Which row the right-click menu was popped over.
 
-   ★A FILE STATIC, for the same reason KCMStoryRowEH's double-click flag is one: it belongs to
+   ★A FILE STATIC, because it belongs to
    "the menu that is up right now" rather than to any row widget - and row widgets are recycled as
    the list scrolls, so a member would be attached to the wrong story the moment the reader moved.
    One menu is up at a time.

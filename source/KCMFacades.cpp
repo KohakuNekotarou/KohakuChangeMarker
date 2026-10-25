@@ -841,7 +841,7 @@ public:
 		//   "the mark reaches the end of the paragraph above - I want that gone"). The model's ranges
 		//   carry the return of the paragraph before (or the paragraph's own) because the WRITE needs
 		//   it (KCMStoryList.h, fWholeParagraph); shown as they stand, the standing mark, the jump's
-		//   flash and the double click's selection all began on that return - at the END OF THE
+		//   flash and the selection (the double click's then) all began on that return - at the END OF THE
 		//   PARAGRAPH ABOVE. This is the ONE place the UI and the marks read a change's ranges from, so
 		//   the break is cut off here and nothing over there has to know it was ever in the range.
 		//   ★All four pairs, because all four are shown: the target's (whichever of the three the
@@ -2731,8 +2731,6 @@ public:
 								  TextIndex from, TextIndex to,
 								  TextIndex sourceFrom, TextIndex sourceTo);
 
-	virtual void	ClearJumpFlash()			{ KCMStoryMarker::ClearFlash(); }
-
 	virtual void	ShowJumpFlashColoured(IDataBase* db, UID storyUID,
 										  TextIndex from, TextIndex to,
 										  TextIndex sourceFrom, TextIndex sourceTo,
@@ -2751,7 +2749,7 @@ void KCMStoryMarkFacade::ShowJumpFlash(IDataBase* db, UID storyUID,
 	KCMStoryMarker::AddFlashRange(flash, db, storyUID, from, to);
 
 	// THE SAME STORY UID, IN THE OTHER DOCUMENT - which is what the whole Story mode is built on:
-	// the diff pairs stories by uid, the double click selects in both by uid, and the standing
+	// the diff pairs stories by uid, the click selects by uid, and the standing
 	// marks light both by uid (KCMStoryMarkBuild).
 	// @warning the general rule that a uid names a DIFFERENT object in another document is true
 	// and does not apply here. Believing that it did is what once left the older window bare.

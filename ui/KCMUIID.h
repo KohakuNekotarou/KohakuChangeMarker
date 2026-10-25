@@ -125,7 +125,7 @@ DECLARE_PMID(kClassIDSpace, kKCMTrackerRegisterBoss, kKCMUIPrefix + 15)	// regis
 DECLARE_PMID(kClassIDSpace, kKCMStorySectionToggleBoss, kKCMUIPrefix + 16)	// kRollOverIconButtonBoss + IID_IOBSERVER: the open/close triangle of the "Story Edits" section at the bottom of the panel. Its artwork is borrowed from InDesign (kTreeBranchCollapsed/Expanded)
 DECLARE_PMID(kClassIDSpace, kKCMStorySectionPanelBoss, kKCMUIPrefix + 17)	// kGenericPanelWidgetBoss + IID_IKCMSAVEDSECTIONHEIGHT (kPersistIntDataImpl): the lower pane itself. It remembers the height the section had when it was last closed (modelled on the product's linksui kLinkInfoPanelWidgetBoss)
 DECLARE_PMID(kClassIDSpace, kKCMStoryTreeWidgetBoss, kKCMUIPrefix + 18)	// kTreeViewWidgetBoss subclass: the Story Edits list (flat, one level). It carries only the adapter and the widget manager - kTreeViewWidgetBoss already provides the controller
-DECLARE_PMID(kClassIDSpace, kKCMStoryRowWidgetBoss, kKCMUIPrefix + 19)	// kTreeNodeWidgetBoss subclass: one row of the list. It carries only IID_IEVENTHANDLER (kKCMStoryRowEHImpl) = single click jumps, double click selects the whole story
+DECLARE_PMID(kClassIDSpace, kKCMStoryRowWidgetBoss, kKCMUIPrefix + 19)	// kTreeNodeWidgetBoss subclass: one row of the list. It carries only IID_IEVENTHANDLER (kKCMStoryRowEHImpl) = a click jumps (a change row's selects its words); a double click is two clicks (2026-10-25)
 DECLARE_PMID(kClassIDSpace, kKCMStoryRowCellBoss, kKCMUIPrefix + 20)	// kInfoStaticTextWidgetBoss + IID_ITIP (kKCMNoTipImpl): a cell of a row. ★The point is to TAKE the tooltip AWAY: a plain static text pops its full string up whenever it is ellipsized (measured - kStaticTextWidgetBoss carries IID_ITIP = kTextWidgetTipImpl), which is in the way on a list row, so an implementation that answers empty is put over it (user's call)
 // The book comparison dialog. ★It is MODELESS = the documents stay reachable while it is open,
 // which is what leaves room for "click a row to open that chapter" to be added later (a modal
@@ -262,7 +262,7 @@ DECLARE_PMID(kImplementationIDSpace, kKCMStoryTreeAdapterImpl, kKCMUIPrefix + 23
 DECLARE_PMID(kImplementationIDSpace, kKCMStoryTreeWidgetMgrImpl, kKCMUIPrefix + 24)	// ITreeViewWidgetMgr (CTreeViewWidgetMgr subclass. KCMStoryTreeWidgetMgr.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKCMNoTipImpl, kKCMUIPrefix + 25)	// ITip (always answers empty = no tooltip. KCMNoTip.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKCMPanelViewImpl, kKCMUIPrefix + 26)	// IControlView (PalettePanelView subclass; ConstrainDimensions keeps the panel's minimum size. KCMPanelView.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMStoryRowEHImpl, kKCMUIPrefix + 27)	// IEventHandler (TreeNodeEventHandler subclass. A Story Edits row: single click jumps, double click selects the whole story. KCMStoryRowEH.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryRowEHImpl, kKCMUIPrefix + 27)	// IEventHandler (TreeNodeEventHandler subclass. A Story Edits row: a click jumps (a change row's selects its words); a double click is two clicks since 2026-10-25. KCMStoryRowEH.cpp)
 // (kKCMUIPrefix + 28 was briefly kKCMStoryRowViewImpl, an IControlView that removed the rule
 //  between rows, and was withdrawn the same day -- the rules stay, by the user's call, so the
 //  implementation went with it (the account is in the row boss comment in KCMUI.fr).

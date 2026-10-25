@@ -144,7 +144,7 @@ namespace KCMStoryMarker
 	/** Take a jump's pointer down now, leaving the standing marks alone. Safe when there is none.
 
 		**IT IS NOT "Clear()", AND THAT IS THE POINT.** One call that took everything down meant the
-		double click had to put the standing marks back afterwards by asking for a full refresh -- a
+		double click (gone 2026-10-25) had to put the standing marks back afterwards by asking for a full refresh -- a
 		repair for damage it had just done itself, and one that was missing until a bug recheck found
 		the toggles going bare (A2). Naming which of the two kinds is coming down cannot go wrong that
 		way. */

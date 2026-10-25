@@ -438,8 +438,8 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	},
 
 	// One row of that list. The stock tree node already handles what a row IS (selection, keyboard);
-	// the one interface added says where a click on it GOES - single click scrolls the story into
-	// view, double click selects the whole story (KCMStoryRowEH.cpp).
+	// the one interface added says where a click on it GOES - a story row scrolls its story into
+	// view, a change row selects its words (KCMStoryRowEH.cpp); a double click is two clicks (2026-10-25).
 	// ★The three cells inside the row are static text and do not consume clicks, so a press anywhere
 	//   along the row reaches this handler.
 	// ★★THE LINE BETWEEN ROWS IS THE FRAMEWORK'S, AND IT STAYS. DVTreeNodeControlView draws a

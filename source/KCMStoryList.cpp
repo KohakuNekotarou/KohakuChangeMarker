@@ -1971,7 +1971,7 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 
 	// ★THE SHOWN RANGES COME THROUGH THE FACADE (2026-09-19 night), because that is the ONE place a whole
 	//   paragraph's break is cut off them (KCMFacades' GetChange, KCMShownSpan): what a test reads here is
-	//   what the marks, the jump and the double click use, not the model's write range.
+	//   what the marks and the jump (and its selection) use, not the model's write range.
 	//   ⚠Guarded: the facade lives on kUtilsBoss, which can be gone during teardown (the same test
 	//    KCMStoryMarkBuild's caller makes).
 	Utils<IKCMStoryEditsFacade> utils;

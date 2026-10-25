@@ -24,8 +24,8 @@
 //  *** THE PRICE OF HOLDING THE KEYBOARD (2026-08-11, still real) ***
 //
 //  This panel's job is to send the user into the document, and while the list holds the keyboard the tool shortcuts do
-//  not reach it. Accepted in exchange for the walk; a DOUBLE click hands the keyboard to the document (KCMStoryRowEH.cpp),
-//  and so does a click in the document.
+//  not reach it. Accepted in exchange for the walk; a click in the document hands the keyboard back to it (a DOUBLE
+//  click on a row did too, until 2026-10-25 - KCMStoryRowEH.cpp).
 //
 //  *** WHERE THE MOVEMENT COMES FROM ***
 //
