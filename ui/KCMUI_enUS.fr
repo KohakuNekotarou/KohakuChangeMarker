@@ -82,15 +82,14 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMBookHintKey,					"Right-click a changed chapter to start Change Marker.",
                 kKCMBookCompareConfirmKey,		"These two books will be compared chapter by chapter in three ways: as pictures, by their story text, and by their definitions - the comparison mode does not change this.",
                 kKCMBookNoPairKey,				"Select a book tab in the Book panel, and open a second book.",
-                kKCMImportTaskStartAdviceKey,	"It is best to take a Task Start just before an import. Compared against it afterwards, the document shows exactly what the import changed - a Task Start taken earlier shows your other edits as well. OK imports now; Cancel stops here so that you can take a Task Start first.",
                 kKCMBookRowStartMenuKey,			"Start Change Marker",
                 kKCMStoryRowRefreshMenuKey,		"Refresh Story Comparison",
                 kKCMChangeRowRestoreAttrMenuKey,	"Restore from Source",
                 kKCMChangeRowMatchTableMenuKey,	"Match the Source",
-                kKCMChangeRowApplyMenuKey,		"Apply This Change",				// (2026-10-24, the import-as-Source trial)
+                kKCMChangeRowApplyMenuKey,		"Apply This Change",				// (2026-10-24, the import-as-Source road)
                 kKCMChangeRowRestoreFromCopyMenuKey,	"Restore from Copy",			// (2026-10-24 evening - KFC's name for the same thing)
                 kKCMStoryRowApplyMenuKey,		"Apply All Changes in This Story",
-                kKCMStoryRowApplyAllMenuKey,	"Apply All Changes",
+                kKCMApplyAllMenuKey,	"Apply All Changes",
                 kKCMStoryRowRestoreAllMenuKey,	"Restore All Changes in This Story",	// (2026-10-24 night - the Story mode's, by copy)
                 kKCMResourceRowXmlMenuKey,		"Show as XML",
                 // (⛔Two "Edit..." strings stood here from 2026-09-13 and went on 2026-09-21 with

@@ -422,7 +422,7 @@ public:
 		return ((row.fKinds & kKCMStoryKindRefused) != 0) ? kTrue : kFalse;
 	}
 
-	/** Whether this node is a ONE-LINE "=" row Apply This Change put in (2026-10-24 evening, the import-as-Source trial -
+	/** Whether this node is a ONE-LINE "=" row Apply This Change put in (2026-10-24 evening, the import-as-Source road -
 		the author: "when a change goes in and shows =, make the = red"): the Source is an import's copy and the change
 		is a "=" record. ★One question for the resource to build and the widget type to recycle by, as IsBangNode is.
 		⚠One line only: a ruby / mark row of two or three lines keeps its own resource, and its "=" the stock colour.
@@ -1017,7 +1017,7 @@ private:
 		// The Track mode's who-and-what of this change (2026-10-05); kFalse in every other mode.
 		IKCMStoryEditsFacade::TrackChange track;
 		const bool16 isTrack = have && Utils<IKCMStoryEditsFacade>()->GetTrackChange(nodeID.GetRow(), nodeID.GetChange(), track);
-		// ★The rows are PROPOSALS against an import's copy (2026-10-24, the import-as-Source trial): what the document would become.
+		// ★The rows are PROPOSALS against an import's copy (2026-10-24, the import-as-Source road): what the document would become.
 		const bool16 isImport = (have && !isTrack && Utils<IKCMStoryEditsFacade>()->IsImportSource()) ? kTrue : kFalse;
 
 		// ★A "!" CHILD IS WRITTEN BY ITS OWN BRANCH AND RETURNS (2026-09-19). Its widget is the
@@ -1083,7 +1083,7 @@ private:
 				}
 			}
 			// ★★AGAINST AN IMPORT'S COPY THE SIGN SAYS WHAT THE DOCUMENT WILL BECOME (2026-10-24, the import-as-Source
-			//   trial - design section 4): the diff runs from the Source (the files) to the Target (the document), so what
+			//   road - design section 4): the diff runs from the Source (the files) to the Target (the document), so what
 			//   only the document has ("+" there) is what the files take away, and the other way round. A replacement is
 			//   ≠ either way, and "=" (put in) stays "=".
 			if (isImport && !change.fReplaced)
@@ -1185,7 +1185,7 @@ private:
 			//   paragraph": the "Text -" row was the one that showed the narrower rule was not enough.
 			//   A recycled widget with no row behind it keeps kFalse and stays blank.
 			const bool16 barWhenEmpty = have ? kTrue : kFalse;
-			// ★★"THIS IS WHAT IT WILL BECOME" (2026-10-24, the import-as-Source trial - the user: "the panel shows how it will be
+			// ★★"THIS IS WHAT IT WILL BECOME" (2026-10-24, the import-as-Source road - the user: "the panel shows how it will be
 			//   changed"): a one-line words row against an import's copy is drawn in the Track mode's look - the document's
 			//   words now, struck through, then the words the files put there - from the two sides the row already carries
 			//   (fText = the document, fOtherText = the files). Rows of two lines or more (a ruby, a mark, a layer) keep their

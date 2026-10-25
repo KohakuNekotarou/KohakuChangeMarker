@@ -265,7 +265,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableMatch.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableXmlCheck.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMWordKeep.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRedoFromWord.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMApplyFromImport.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryFollowObserver.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableSnippet.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMScratchDoc.cpp" />

@@ -1319,7 +1319,7 @@ void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, 
 			continue;
 		}
 		// ★★A TABLE THAT MAY NOT BE RESHAPED IS HELD EVEN WHEN ITS SHAPE COULD BE MADE: the caller reshapes nothing
-		//   there (the redo of one paragraph, and the redo of ANOTHER table - KCMRedoFromWord), and pairing the words of two tables that do not have
+		//   there (writing one paragraph, and writing ANOTHER table - KCMApplyFromImport), and pairing the words of two tables that do not have
 		//   the same cells is exactly what the shape rounds are there to avoid - so the whole table is
 		//   held, its words included. (The import passed kFalse for one day, 2026-09-24 - design 11-1
 		//   item 5, "the change history cannot record that" - and passes kTrue again since that evening,
@@ -1962,7 +1962,7 @@ void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& wher
 				break;
 			}
 			default:
-				continue;		// the shape steps: the import's own rounds, never a redo's
+				continue;		// the shape steps: the import's own rounds, never one row's write
 		}
 		out.fSteps.push_back(kept);
 	}

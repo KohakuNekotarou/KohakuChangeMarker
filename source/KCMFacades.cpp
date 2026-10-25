@@ -64,7 +64,7 @@
 #include "ErrorUtils.h"			// the error state a step leaves cleared (EndOrAbort) and a write's is read by
 #include "IDataBase.h"			// SaveRestoreModifiedState - reading the two stories must not dirty them
 #include "WideString.h"
-#include "KCMRedoFromWord.h"		// Apply's paragraph road and table road (2026-10-24)
+#include "KCMApplyFromImport.h"		// Apply's paragraph road and table road (2026-10-24)
 #include "KCMWordKeep.h"			// the files' content an import kept - what "Apply All Changes" pours (2026-10-24)
 #include "KCMStoryFollowObserver.h"	// KCMStoryFollowEnsureObservers - the Undo follower attached again after an Apply
 #include "KCMTableMatch.h"		// "Match the Source" on a Table row (2026-09-25, design section 16)
@@ -812,7 +812,7 @@ public:
 	{
 		if (KCMFacadeTrackMode())
 		{
-			// Nothing is taken back in the Track mode, and its ranges carry no paragraph break to cut (KCMTrackRead).
+			// No "=" record is made in the Track mode, and its ranges carry no paragraph break to cut (KCMTrackRead).
 			const KCMTrackChange* c = KCMTrackChangeAt(nth, which);
 			if (c == nil)
 				return kFalse;
@@ -826,12 +826,12 @@ public:
 
 		const KCMStoryChange& change = *found;
 		KCMFillChangeOut(change, out);		// every field a change hands out (Story and Track alike)
-		// ★★fReplaced IS BACK IN USE, WITH THE OPPOSITE MEANING (2026-09-24, stage 2 C): kTrue for a change the reader
-		//   TOOK BACK and still standing so - the "=" row, the Source's state - which is what its menu, its sign and
+		// ★★fReplaced IS BACK IN USE, WITH THE OPPOSITE MEANING (2026-09-24, stage 2 C): kTrue for a change KCM WROTE as
+		//   the Source's and still standing so - the "=" row, the Source's state - which is what its menu, its sign and
 		//   the marks ask. (From 2026-09-15 to 2026-09-21 it said "taken IN".) The layout is unchanged.
 		{
-			const KCMRejectedRecord* const rec = KCMStoryList::RejectedAt(nth, which);
-			out.fReplaced = (rec != nil && KCMStoryList::RejectedStateOf(nth, *rec, KCMArmedTargetDB()) == kKCMRejectedStanding)
+			const KCMEqualRecord* const rec = KCMStoryList::EqualAt(nth, which);
+			out.fReplaced = (rec != nil && KCMStoryList::EqualStateOf(nth, *rec, KCMArmedTargetDB()) == kKCMEqualStanding)
 				? kTrue : kFalse;
 		}
 
@@ -1201,7 +1201,7 @@ public:
 	}
 
 	/** RestoreAttr under an undo step of `stepName`'s - "Apply This Change" makes a mark the files' by the same road
-		(2026-10-24, the import-as-Source trial: the Source IS the files then). */
+		(2026-10-24, the import-as-Source road: the Source IS the files then). */
 	int32	RestoreAttrAs(int32 nth, int32 which, const char* stepName, PMString& outMessage)
 	{
 		outMessage.Clear();
@@ -1253,13 +1253,13 @@ public:
 		//   mark changes no length), with the ATTRIBUTE counter the restore left the story at (the text counter cannot
 		//   see a mark - KCMStoryDiffRun::CountForKind says why).
 		if (done >= 0)
-			KCMStoryList::AddRejected(nth, live, live.fTargetStart, live.fTargetEnd,
+			KCMStoryList::AddEqual(nth, live, live.fTargetStart, live.fTargetEnd,
 									  KCMStoryDiffRun::CountForKind(target, live.fAttrKind), live.fAttrKind);
 		// ★THE ROW IS COMPARED AGAIN either way: a rolled-back write leaves the document as it was, but the list is
 		//   compared against what stands there, whatever that is.
 		this->RefreshRow(nth);
-		// ★AND THE "=" IS CHECKED ONCE MORE, AFTER THE REFRESH (KCMRejectedRecord) - belt and braces.
-		if (done >= 0 && !KCMStoryList::RejectedStanding(nth, live, target.GetDataBase()))
+		// ★AND THE "=" IS CHECKED ONCE MORE, AFTER THE REFRESH (KCMEqualRecord) - belt and braces.
+		if (done >= 0 && !KCMStoryList::EqualStanding(nth, live, target.GetDataBase()))
 			outMessage = "the marks do not read as the Source's after the restore - the row shows what differs";
 		return done;
 	}
@@ -1347,7 +1347,7 @@ public:
 		//   many as the Source's now - with the text counter the match left the story at; an undo of the match shows the
 		//   live Table row again through it. (Its "Redo from Word" went on 2026-10-25; Ctrl+Z is the way back.)
 		if (done >= 0)
-			KCMStoryList::AddRejected(nth, live, live.fTargetStart,
+			KCMStoryList::AddEqual(nth, live, live.fTargetStart,
 									  live.fTargetStart + (live.fSourceEnd - live.fSourceStart),
 									  KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone);
 		// ★THE ROW IS COMPARED AGAIN either way: matched, the live Table row goes (the same table on both sides, by
@@ -1477,12 +1477,12 @@ public:
 		return kFalse;
 	}
 
-	// ---- ★THE IMPORT THE OTHER WAY ROUND (2026-10-24, the import-as-Source trial) - IKCMStoryEditsFacade.h says what
+	// ---- ★THE IMPORT THE OTHER WAY ROUND (2026-10-24, adopted 2026-10-25) - IKCMStoryEditsFacade.h says what
 	//      each one answers; the design is docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md ----------
 	// ★APPLY IS THE IMPORT'S OWN ROAD (design 6): the words of ONE change by the import's one write command
 	//   (ApplyWordsOne - since 2026-10-24 evening, design 11-1), or, when a change cannot be written on its own, by
-	//   KCMPlanApplyFromWord + KCMApplyRedoFromWord (the import's comparison narrowed to a paragraph); a mark by Restore
-	//   from Source (the Source IS the files), a table by KCMRedoTableFromWord (Match the Source reads the Source's table
+	//   KCMPlanApplyParagraph + KCMApplyParagraphPlan (the import's comparison narrowed to a paragraph); a mark by Restore
+	//   from Source (the Source IS the files), a table by KCMApplyTableFromImport (Match the Source reads the Source's table
 	//   back through INX, which a Task Start in memory cannot give - MatchTable says so), a whole story or all of them by
 	//   the import's pour. ★ALL OF THEM UNSIGNED AND UNTRACKED since the same evening (design 11-2 - they were signed and
 	//   tracked until then). What went in is a "=" record - the record Restore from Source and Match the Source leave
@@ -1639,7 +1639,7 @@ public:
 		if (!this->HasRestorableCopy(nth, which, targetDB, row))
 			return kFalse;
 		// ★Greyed, too, where a caret's place no longer reads as the Source's by its surroundings (CaretReadsAsSource).
-		const KCMRejectedRecord* const rec = KCMStoryList::RejectedAt(nth, which);
+		const KCMEqualRecord* const rec = KCMStoryList::EqualAt(nth, which);
 		return (rec != nil && (rec->fNowEnd != rec->fNowStart
 							   || CaretReadsAsSource(targetDB, row.fStoryUID, rec->fNowStart, rec->fLive.fSourceStart)))
 			   ? kTrue : kFalse;
@@ -1664,17 +1664,17 @@ public:
 			outMessage = "the list was out of date - it has been compared again; right-click the row once more";
 			return -1;
 		}
-		const KCMRejectedRecord* const rec = KCMStoryList::RejectedAt(nth, which);
+		const KCMEqualRecord* const rec = KCMStoryList::EqualAt(nth, which);
 		if (rec == nil || rec->fCopy.fWhyNot != kKCMCopyKept)
 		{
 			outMessage = "this row no longer holds its copy - compare again";
 			return -1;
 		}
-		const KCMRejectedRecord record = *rec;		// a copy: the list is rebuilt below
+		const KCMEqualRecord record = *rec;		// a copy: the list is rebuilt below
 		const UIDRef target(targetDB, row.fStoryUID);
 		// ★THE "=" HAS TO BE STANDING: Apply's words still where it put them. Words edited since are not overwritten - the
 		//   reader's edit is not this command's to take away (KFC's "edited since").
-		if (KCMStoryList::RejectedStateOf(nth, record, targetDB) != kKCMRejectedStanding)
+		if (KCMStoryList::EqualStateOf(nth, record, targetDB) != kKCMEqualStanding)
 		{
 			outMessage = "the words Apply put in have been edited since - left as they are";
 			return -1;
@@ -1722,9 +1722,9 @@ public:
 			outMessage = "the copy could not be put back (a locked story or layer?) - nothing was changed";
 			return -1;
 		}
-		// ★THE RECORD STAYS, MARKED PUT BACK (the counters' way - KCMRejectedRecord): it reads as the live change from
+		// ★THE RECORD STAYS, MARKED PUT BACK (the counters' way - KCMEqualRecord): it reads as the live change from
 		//   here, and as "=" again the moment the reader undoes this.
-		KCMStoryList::MarkRedone(nth, record, KCMStoryDiffRun::CountForKind(target, record.fCounterKind));
+		KCMStoryList::MarkPutBack(nth, record, KCMStoryDiffRun::CountForKind(target, record.fCounterKind));
 		this->RefreshRow(nth);
 		outMessage = "restored from the copy - Ctrl+Z takes it back";
 		return 1;
@@ -1734,7 +1734,7 @@ public:
 	{
 		outWhyNot.Clear();
 		outWhyNot.SetTranslatable(kFalse);
-		const KCMRejectedRecord* const rec = KCMStoryList::RejectedAt(nth, which);
+		const KCMEqualRecord* const rec = KCMStoryList::EqualAt(nth, which);
 		if (rec == nil)
 			return kFalse;
 		if (rec->fCopy.fWhyNot == kKCMCopyKept && KCMCopyStore::Length(rec->fCopy.fCopy) >= 0)
@@ -1905,7 +1905,7 @@ public:
 		std::vector<KCMStoryChange> group(1, live);
 		std::vector<TextIndex> nowStarts(1, tFrom);
 		std::vector<WideString> wordsBefore(1, targetWords);
-		KCMStoryList::AddRejectedGroup(nth, group, nowStarts, wordsBefore,
+		KCMStoryList::AddEqualGroup(nth, group, nowStarts, wordsBefore,
 									   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone, &copies);
 		this->RefreshRow(nth);
 		outMessage = "restored from the Source";
@@ -1976,7 +1976,7 @@ private:
 	/** Change `which` of row `nth` as Restore from Source (text) takes it: the Story mode - not the Track mode, not an
 		import's copy as the Source, not a PDF at either end - both documents open, the story paired, a TEXT change that is
 		not a "=" record (a record shown live - undone, or put back from its copy - is restored again, its record updated in
-		place: AddRejectedGroup's twin). Reads no document: whether the words can be copied is said on the press. */
+		place: AddEqualGroup's twin). Reads no document: whether the words can be copied is said on the press. */
 	bool16 SourceTextChange(int32 nth, int32 which, IDataBase*& outTargetDB, Row& outRow, Change& outChange)
 	{
 		if (KCMFacadeTrackMode() || this->IsImportSource() || !this->PairedTargetRow(nth, outTargetDB, outRow))
@@ -2143,7 +2143,7 @@ private:
 		Change change;
 		if (!this->GetChange(nth, which, change) || !change.fReplaced)
 			return kFalse;
-		const KCMRejectedRecord* const rec = KCMStoryList::RejectedAt(nth, which);
+		const KCMEqualRecord* const rec = KCMStoryList::EqualAt(nth, which);
 		return (rec != nil && rec->fCopy.fWhyNot == kKCMCopyKept && KCMCopyStore::Length(rec->fCopy.fCopy) >= 0)
 			   ? kTrue : kFalse;
 	}
@@ -2161,12 +2161,12 @@ private:
 		if (!this->GetChange(nth, which, outChange) || outChange.fReplaced)
 			return kFalse;		// a "=" record: put in already (Restore from Copy or Ctrl+Z is its way back)
 		// ★A RECORD THAT IS NOT "=" IS A CHANGE TO PUT IN AGAIN (corrected 2026-10-24 evening, the second try-out's tests):
-		//   one whose Apply was undone, or that Restore from Copy put back (marked redone), reads as the live change it
-		//   was - and the list shows the RECORD in its live twin's place (KCMMergeRejected hides the twin, "the record keeps
-		//   the place a later reject or redo acts from"). This refused any record until then, on the belief that the twin
+		//   one whose Apply was undone, or that Restore from Copy put back (marked PutBack), reads as the live change it
+		//   was - and the list shows the RECORD in its live twin's place (KCMMergeEqual hides the twin, "the record keeps
+		//   the place a later write or put-back acts from"). This refused any record until then, on the belief that the twin
 		//   stood beside it to be pressed - so a row put back from its copy could not be applied again (measured: "this row
 		//   is not a change of the imported text that can be put in"). The write's record then updates that one in place
-		//   (AddRejectedGroup's twin).
+		//   (AddEqualGroup's twin).
 		switch (outChange.fWhat)
 		{
 			case Change::kWhatText:
@@ -2299,7 +2299,7 @@ private:
 		std::vector<KCMStoryChange> group(1, live);
 		std::vector<TextIndex> nowStarts(1, live.fTargetStart);
 		std::vector<WideString> wordsBefore(1, liveWords);
-		KCMStoryList::AddRejectedGroup(nth, group, nowStarts, wordsBefore,
+		KCMStoryList::AddEqualGroup(nth, group, nowStarts, wordsBefore,
 									   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone, &copies);
 		this->RefreshRow(nth);
 		outMessage = "applied (1 write)";
@@ -2351,7 +2351,7 @@ private:
 		KCMStorySync::Plan plan;
 		int32 paraStart = 0;
 		int32 paraEnd = 0;
-		if (!KCMPlanApplyFromWord(target, live, now, plan, paraStart, paraEnd, outMessage))
+		if (!KCMPlanApplyParagraph(target, live, now, plan, paraStart, paraEnd, outMessage))
 			return -1;
 
 		// ★THE ROWS THAT GO IN TOGETHER: the import's road writes the whole paragraph - every change standing in it - a
@@ -2438,7 +2438,7 @@ private:
 
 		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
 		// ★UNSIGNED AND UNTRACKED (design 11-2, the author 2026-10-24: "if it is tracked, change it without tracking").
-		const int32 done = KCMApplyRedoFromWord(target, now, plan, outMessage);
+		const int32 done = KCMApplyParagraphPlan(target, now, plan, outMessage);
 		// ★ALL OF IT OR NONE OF IT (every write's rule here): a write refused halfway is aborted whole.
 		this->EndStep(sequence, (done > 0) ? kTrue : kFalse);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
@@ -2448,7 +2448,7 @@ private:
 			return -1;
 		}
 		// ★THE "=" RECORDS, WHEN THE PLACE READS AS THE SOURCE'S. A record whose place does not would be Stale and shown as
-		//   nothing (KCMRejectedRecord), so it is not made: the row then shows what still differs, which is the truth.
+		//   nothing (KCMEqualRecord), so it is not made: the row then shows what still differs, which is the truth.
 		KCMStoryChange whole = live;
 		whole.fSourceStart = sLo;
 		whole.fSourceEnd = sHi;
@@ -2458,7 +2458,7 @@ private:
 			std::vector<TextIndex> nowStarts;
 			for (size_t i = 0; i < group.size(); ++i)
 				nowStarts.push_back(tLo + (group[i].fSourceStart - sLo));
-			KCMStoryList::AddRejectedGroup(nth, group, nowStarts, liveWords,
+			KCMStoryList::AddEqualGroup(nth, group, nowStarts, liveWords,
 										   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone,
 										   &copies);
 		}
@@ -2489,7 +2489,7 @@ private:
 	}
 
 	/** A table that stands on both sides (Table ≠) made the files' - its shape and its cells' words - by
-		KCMRedoTableFromWord, as ONE undo step, then a "=" record over its anchor characters (MatchTable's geometry). */
+		KCMApplyTableFromImport, as ONE undo step, then a "=" record over its anchor characters (MatchTable's geometry). */
 	int32 ApplyTable(int32 nth, int32 which, IDataBase* targetDB, const Row& row, PMString& outMessage)
 	{
 		Change before;
@@ -2517,11 +2517,11 @@ private:
 		}
 		const UIDRef target(targetDB, row.fStoryUID);
 		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
-		const int32 done = KCMRedoTableFromWord(target, live.fTargetTableUID, outMessage);	// unsigned, untracked (design 11-2)
+		const int32 done = KCMApplyTableFromImport(target, live.fTargetTableUID, outMessage);	// unsigned, untracked (design 11-2)
 		this->EndStep(sequence, (done > 0) ? kTrue : kFalse);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
 		if (done > 0)
-			KCMStoryList::AddRejected(nth, live, live.fTargetStart,
+			KCMStoryList::AddEqual(nth, live, live.fTargetStart,
 									  live.fTargetStart + (live.fSourceEnd - live.fSourceStart),
 									  KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone);
 		this->RefreshRow(nth);

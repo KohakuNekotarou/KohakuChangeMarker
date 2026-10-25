@@ -4,49 +4,51 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  The taken-back records of a Story Edits row - where a new one goes, how the others slide when a write changes
-//  the story's length, and how the records and the live changes are shown as ONE list (2026-09-24, stage 2 C -
-//  design section 15 of docs/superpowers/specs/2026-09-23-kcm-import-sync-design.md).
+//  The "=" records of a Story Edits row - the places KCM wrote as the Source's (KCMEqualRecord) - where a new one
+//  goes, how the others slide when a write changes the story's length, and how the records and the live changes are
+//  shown as ONE list (2026-09-24, stage 2 C - design section 15 of
+//  docs/superpowers/specs/2026-09-23-kcm-import-sync-design.md; named KCMRejectedOrder.h until 2026-10-25).
 //
 //  ★PURE, AND MEASURED OUTSIDE InDesign (work/kcm-storydocx-test): positions and kinds only. The records
-//   themselves (KCMRejectedRecord, KCMStoryList.h) carry the change and the counters; what is here is the part
+//   themselves (KCMEqualRecord, KCMStoryList.h) carry the change and the counters; what is here is the part
 //   that has to be right for two records at once, which is where the retired restore was wrong twice
 //   (docs/ai-notes/kcm-restore-retired-2026-09-21.md section 3-3: two paragraphs taken out and put back came back
 //   as "ba" until the slot rule below existed).
 //
 //========================================================================================
 
-#ifndef __KCMRejectedOrder_h__
-#define __KCMRejectedOrder_h__
+#ifndef __KCMEqualOrder_h__
+#define __KCMEqualOrder_h__
 
 #include "BaseType.h"		// int32 / bool16
 #include <vector>
 
 /** What the order and the shifting need to know of a change: its place in the Target, what it is, and - for a
-	record - whether it is shown as taken back ("=") or as live. */
-struct KCMRejectedSpan
+	record - whether it is shown "=" (KCM's write standing) or as live. */
+struct KCMEqualSpan
 {
 	int32	fStart, fEnd;
 	int32	fWhat, fKind;
-	bool16	fShownRejected;
-	/** ★THE SOURCE'S RANGE TOO, when known (2026-09-25; -1 = not given): two paragraphs the import took away one after
-		the other are two rows at ONE caret of the Target - the same what, kind, start and end - and only the Source's
-		range tells them apart. A twin test on the Target alone took the second for the first (measured: after a
-		group reject only one "=" stood, and after its undo only one live row). */
+	bool16	fShownEqual;
+	/** ★THE SOURCE'S RANGE TOO, when known (2026-09-25; -1 = not given): two whole paragraphs the Source has one after
+		the other and the Target has not (the import's copy holding two Word added; on 2026-09-25, two the old import
+		took out of the Target) are two rows at ONE caret of the Target - the same what, kind, start and end - and only
+		the Source's range tells them apart. A twin test on the Target alone took the second for the first (measured
+		then: after a group reject only one "=" stood, and after its undo only one live row). */
 	int32	fSourceStart, fSourceEnd;
 	/** A RECORD's live range - where its change stands when it is live - when that is not fStart/fEnd (a record shown
 		"=" stands at the Source's words); -1 = the same as fStart/fEnd. What its live twin is looked for at. */
 	int32	fLiveStart, fLiveEnd;
-	KCMRejectedSpan() : fStart(0), fEnd(0), fWhat(0), fKind(0), fShownRejected(kFalse), fSourceStart(-1), fSourceEnd(-1),
+	KCMEqualSpan() : fStart(0), fEnd(0), fWhat(0), fKind(0), fShownEqual(kFalse), fSourceStart(-1), fSourceEnd(-1),
 						fLiveStart(-1), fLiveEnd(-1) {}
-	KCMRejectedSpan(int32 s, int32 e, int32 what = 0, int32 kind = 0, bool16 rejected = kTrue,
+	KCMEqualSpan(int32 s, int32 e, int32 what = 0, int32 kind = 0, bool16 shownEqual = kTrue,
 					int32 sourceStart = -1, int32 sourceEnd = -1, int32 liveStart = -1, int32 liveEnd = -1)
-		: fStart(s), fEnd(e), fWhat(what), fKind(kind), fShownRejected(rejected),
+		: fStart(s), fEnd(e), fWhat(what), fKind(kind), fShownEqual(shownEqual),
 		  fSourceStart(sourceStart), fSourceEnd(sourceEnd), fLiveStart(liveStart), fLiveEnd(liveEnd) {}
 	/** The span as its live change would stand. */
-	KCMRejectedSpan AsLive() const
+	KCMEqualSpan AsLive() const
 	{
-		KCMRejectedSpan s = *this;
+		KCMEqualSpan s = *this;
 		if (fLiveStart >= 0)
 		{
 			s.fStart = fLiveStart;
@@ -57,8 +59,8 @@ struct KCMRejectedSpan
 };
 
 /** Whether a record and a live change are the SAME change: what, kind and Target range - and the Source's range when
-	both carry one (KCMRejectedSpan says why it has to be asked). */
-inline bool16 KCMRejectedSameChange(const KCMRejectedSpan& a, const KCMRejectedSpan& b)
+	both carry one (KCMEqualSpan says why it has to be asked). */
+inline bool16 KCMEqualSameChange(const KCMEqualSpan& a, const KCMEqualSpan& b)
 {
 	if (a.fWhat != b.fWhat || a.fKind != b.fKind || a.fStart != b.fStart || a.fEnd != b.fEnd)
 		return kFalse;
@@ -69,10 +71,10 @@ inline bool16 KCMRejectedSameChange(const KCMRejectedSpan& a, const KCMRejectedS
 
 /** Where a new record whose live words began at writeAt goes among the records (their starts in list order):
 	after every record standing AT OR BEFORE writeAt, before the rest. ★THE RULE IS WHAT TELLS TOP-DOWN FROM
-	BOTTOM-UP: two adjacent paragraphs taken back in either order come out in the order they stood, because the
-	one taken back second either begins where the first now stands (top-down: after it) or has slid the first's
+	BOTTOM-UP: two adjacent paragraphs written in either order come out in the order they stood, because the
+	one written second either begins where the first now stands (top-down: after it) or has slid the first's
 	record past its own start (bottom-up: before it). */
-inline size_t KCMRejectedSlotFor(const std::vector<int32>& starts, int32 writeAt)
+inline size_t KCMEqualSlotFor(const std::vector<int32>& starts, int32 writeAt)
 {
 	size_t slot = 0;
 	while (slot < starts.size() && starts[slot] <= writeAt)
@@ -82,7 +84,7 @@ inline size_t KCMRejectedSlotFor(const std::vector<int32>& starts, int32 writeAt
 
 /** Slide the records from `slot` on by what a write at writeAt removed and put in - by the two lengths, not by
 	one delta, so that a caret standing where the removed words began is not pushed under writeAt. */
-inline void KCMShiftRejectedFrom(std::vector<KCMRejectedSpan>& spans, size_t slot, int32 writeAt, int32 removed, int32 inserted)
+inline void KCMShiftEqualFrom(std::vector<KCMEqualSpan>& spans, size_t slot, int32 writeAt, int32 removed, int32 inserted)
 {
 	for (size_t i = slot; i < spans.size(); ++i)
 	{
@@ -107,14 +109,14 @@ struct KCMMergedRef
 
 /** The live changes and the records as ONE list in text order: by start, a record before a live change at the
 	same start. ★A live change that is the TWIN of a record shown LIVE (the same what, kind, start and end) is
-	HIDDEN - the record stands for it, so that a change put back (an Undo of a reject, or a redo) is not shown
-	twice, and the record keeps the place a later reject or redo acts from.
+	HIDDEN - the record stands for it, so that a change live again (an Undo of KCM's write, or Restore from Copy) is
+	not shown twice, and the record keeps the place a later write or put-back acts from.
 	★★AND THE TWIN OF A RECORD SHOWN "=" TOO (2026-09-25): a "=" is read as the Source's words at its place, so a live
 	change that is its twin cannot stand in the document - it is the list's own copy from before an undo (the list
 	is not compared again on a Ctrl+Z). Shown, it pushed every row after it one index down against the panel's tree,
 	which is not rebuilt on an undo either: the reader's right-click on a "=" row landed on that stale row (measured -
-	an empty menu, where the redo was expected). */
-inline void KCMMergeRejected(const std::vector<KCMRejectedSpan>& live, const std::vector<KCMRejectedSpan>& records,
+	an empty menu, where the retired "Redo from Word" was expected). */
+inline void KCMMergeEqual(const std::vector<KCMEqualSpan>& live, const std::vector<KCMEqualSpan>& records,
 							 std::vector<KCMMergedRef>& out)
 {
 	out.clear();
@@ -129,13 +131,13 @@ inline void KCMMergeRejected(const std::vector<KCMRejectedSpan>& live, const std
 		}
 		bool16 hidden = kFalse;
 		for (size_t k = 0; k < records.size() && !hidden; ++k)
-			hidden = KCMRejectedSameChange(records[k].AsLive(), live[i]);
+			hidden = KCMEqualSameChange(records[k].AsLive(), live[i]);
 		if (!hidden)
 			out.push_back(KCMMergedRef(kFalse, static_cast<int32>(i)));
 		++i;
 	}
 }
 
-#endif // __KCMRejectedOrder_h__
+#endif // __KCMEqualOrder_h__
 
-// End, KCMRejectedOrder.h.
+// End, KCMEqualOrder.h.

@@ -1423,20 +1423,20 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMChangeRowMatchTableMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// ----- ★THE IMPORT THE OTHER WAY ROUND (2026-10-24, the import-as-Source trial) -----
+		// ----- ★THE IMPORT THE OTHER WAY ROUND (2026-10-24, the import-as-Source road) -----
 		// "Apply This Change" at the top of the SAME subtree: live only while the Source is an import's copy, where every
 		// item above is greyed (KCMStoryRefresh.cpp) - so a change row still shows one item or none.
 		kKCMChangeRowApplyActionID,
-		kKCMChangeRowTrialMenuName,
+		kKCMChangeRowImportMenuName,
 		kKCMChangeRowApplyMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// ...and right under it (2026-10-24 evening, design 11-3): "Restore from Copy", live on a "=" row that holds a copy.
-		// ★BOTH ON THE TRIAL'S OWN SUBTREE since the same evening (kKCMChangeRowTrialMenuName, KCMUIID.h says why): it is
+		// ★BOTH ON THE IMPORT'S OWN SUBTREE since the same evening (kKCMChangeRowImportMenuName, KCMUIID.h says why): it is
 		//  popped with its grey items kept, and the four items of the change row's subtree are never live against an
 		//  import's copy - kept off it, a "=" row with no copy opens two lines rather than six grey ones.
 		kKCMChangeRowRestoreCopyActionID,
-		kKCMChangeRowTrialMenuName,
+		kKCMChangeRowImportMenuName,
 		kKCMChangeRowRestoreCopyMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
@@ -1448,7 +1448,7 @@ resource MenuDef (kSDKDefMenuResourceID)
 
 		// ★THE STORY MODE'S RESTORE BY COPY (2026-10-24 night, design 1-8 - the author: "a function that puts the Source's text
 		//   back with a copy of the Source, in the right-click menu", "on the Story row too"). "Restore from Copy" is also on
-		//   the CHANGE row's subtree - the action of the trial's, the same row's "=" either way - under "Restore from Source"
+		//   the CHANGE row's subtree - the action of the import's, the same row's "=" either way - under "Restore from Source"
 		//   (which a text row's menu now shows too, KCMChangeRowCanRestoreAttr); and the story row's item above the refresh.
 		//   Both subtrees are popped with their grey items dropped, so a row shows what it can do.
 		kKCMChangeRowRestoreCopyActionID,
@@ -1464,9 +1464,9 @@ resource MenuDef (kSDKDefMenuResourceID)
 		// "Apply All Changes" - every story the import filled - on the SECTION HEADING's own menu (2026-10-24 evening, the
 		// author: on a story row it read as that story's; "put it on the Proposed Edits heading"). It stood under the item
 		// above until then.
-		kKCMStoryRowApplyAllActionID,
+		kKCMApplyAllActionID,
 		kKCMProposedHeadingMenuName,
-		kKCMStoryRowApplyAllMenuItemPosition,
+		kKCMApplyAllMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// ----- The Story Edits CHANGE rows (child rows): ⛔THE SUBTREE IS GONE (2026-09-21) -----
@@ -1927,7 +1927,7 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// ★(2026-10-24, the import-as-Source trial) The three Apply items. ⚠Not on the flyout: the first two act on the row
+		// ★(2026-10-24, the import-as-Source road) The three Apply items. ⚠Not on the flyout: the first two act on the row
 		// the menu was popped over (KCMStoryRowEH stashes it); "Apply All Changes" acts on no row and is popped by a right
 		// click on the section heading (KCMTopPaneEH) - it is offered where the reader is looking at the list.
 		kKCMActionComponentBoss,
@@ -1959,11 +1959,11 @@ resource ActionDef (kSDKDefActionResourceID)
 		kSDKDefInvisibleInKBSCEditorFlag,
 
 		kKCMActionComponentBoss,
-		kKCMStoryRowApplyAllActionID,
-		kKCMStoryRowApplyAllMenuKey,
+		kKCMApplyAllActionID,
+		kKCMApplyAllMenuKey,
 		kOtherActionArea,
 		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// greyed unless the Source is an import's copy (KCMStoryRowCanApplyAll)
+		kCustomEnabling|kDisableIfLowMem,	// greyed unless the Source is an import's copy (KCMHeadingCanApplyAll)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 

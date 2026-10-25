@@ -136,7 +136,7 @@ inline PMReal KCMCentredBaseline(const InterfaceFontInfo& font, const PMReal& to
 	  measures 1, not 0, in the palette font. So for a room above 0 and below that 1, nothing can ever be wide
 	  enough to stop it. Measured the same day: "" = 1, "..." = 15, and a capped copy of the loop swept over two
 	  row strings in 0.25 px steps never ended at 15.25 - 15.75 and nowhere else. It froze InDesign in the
-	  import-as-Source trial: the Track look (KCMStoryCellView.cpp) handed it 15.5 for a row's context - reproduced
+	  import-as-Source road's try-out (2026-10-24): the Track look (KCMStoryCellView.cpp) handed it 15.5 for a row's context - reproduced
 	  by narrowing the panel to 377 px, a pixel at a time. Any width worked out by subtraction can land there.
 	⇒ Below "..." plus the empty string (plus half a pixel) nothing but the dots can fit anyway: the answer is the
 	  dots when they fit and nothing when they do not - what the SDK itself answers on either side of the band.

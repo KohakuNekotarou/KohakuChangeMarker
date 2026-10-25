@@ -38,8 +38,8 @@ bool16 Normalize(const KCMStoryShape::Story& now, const KCMStoryShape::Story& wo
 	@param reshapeTables kTrue: a table whose rows, columns or merges differ is made Word's, one
 		stage per round (S1/S2) - ★what the import passes (2026-09-24 evening, the user's decision:
 		the change history does not record those, and the user accepted that they are not taken back
-		one by one). kFalse: that table is HELD, words and all - what the redo of ONE paragraph
-		(KCMRedoFromWord) passes, since it reshapes nothing. (The import passed kFalse for one day,
+		one by one). kFalse: that table is HELD, words and all - what writing ONE paragraph
+		(KCMApplyFromImport) passes, since it reshapes nothing. (The import passed kFalse for one day,
 		2026-09-24, design 11-1 item 5, since replaced.) ⚠NO DEFAULT, on purpose: every caller says
 		which it means. */
 void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, Plan& out,
@@ -99,7 +99,7 @@ void AllPlaces(const KCMStoryShape::Story& s, std::vector<Where>& out);
 void RenumberNotesByThread(KCMStoryShape::Story& s);
 
 /** WHICH OF A PARAGRAPH'S STEPS ONE ROW'S WRITE CARRIES OUT (2026-09-25 - for the retired "Redo from Word"; Apply's
-	paragraph road since 2026-10-24, which maps its row's kind onto these - KCMPlanApplyFromWord). A row is one kind of
+	paragraph road since 2026-10-24, which maps its row's kind onto these - KCMPlanApplyParagraph). A row is one kind of
 	change, and writing it is that change alone: until then every step touching the paragraph came along, so writing a
 	paragraph added in Word also wrote the NEXT paragraph's edit - which had a row of its own (measured, WN).
 	kNarrowOwn - a change INSIDE the paragraph: its kSetPara / kHeld, and the notes whose references stand in it.

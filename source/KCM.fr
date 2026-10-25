@@ -326,7 +326,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// ***** KCM'S OWN COPY STORE (2026-10-24, the import-as-Source trial). *****
+	// ***** KCM'S OWN COPY STORE (2026-10-24, the import-as-Source road). *****
 	// A data exchange controller whose scrap database holds the words Apply This Change wrote over, for Restore from
 	// Copy (KCMCopyStore.h). The shape of KFC's kKFCCopyStoreBoss: made with CreateObject, never registered with the
 	// clipboard or a drag, so the user's clipboard is never touched.
@@ -797,7 +797,7 @@ resource VersionedScriptElementInfo(10)
 			}
 		}
 
-		// (2026-10-24, the import-as-Source trial) "Import Story Text..." the other way round, and its Apply - test doors.
+		// (2026-10-24, the import-as-Source road) "Import Story Text..." the other way round, and its Apply - test doors.
 		Method
 		{
 			kKCMImportToSourceMethodScriptElement,
@@ -824,7 +824,7 @@ resource VersionedScriptElementInfo(10)
 			}
 		}
 
-		// (2026-10-24 evening, the trial's second try-out - design section 11-3) the "=" row's Restore from Copy, without
+		// (2026-10-24 evening, the import-as-Source road's second try-out - design section 11-3) the "=" row's Restore from Copy, without
 		// the right click - so that it can be measured from KIDMCP. ⚠Not registered with Adobe.
 		Method
 		{

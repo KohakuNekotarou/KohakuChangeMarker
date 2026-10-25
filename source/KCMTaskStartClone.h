@@ -82,7 +82,7 @@ void	KCMTaskStartCloneSweep(IDocumentList* docList);
 	clone cannot be exported (KCMResourceSnapshot.cpp). kFalse, with the reason ("source: ..."), when none were. */
 bool16	KCMTaskStartCloneResources(KCMResourceList& out, PMString& whyNot);
 
-// ---- ★THE IMPORT'S COPY (2026-10-24, the import-as-Source trial - docs/superpowers/specs/2026-10-24-kcm-import-as-
+// ---- ★THE IMPORT'S COPY (2026-10-24, the import-as-Source road - docs/superpowers/specs/2026-10-24-kcm-import-as-
 // source-design.md). "Import Story Text..." takes a Task Start in memory, pours the files into IT (not into the
 // document), and the Story mode then shows what the document would become. The clone is the same one this file
 // holds - one owner, one life (let go as every Task Start in memory is) - with two facts more.

@@ -1612,7 +1612,8 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 			// ★★★**A CHANGE IN A CELL THAT IS THE SAME CELL ON BOTH SIDES STAYS A ROW OF ITS OWN** (2026-09-25, the
 			//   user's rule: "the cells whose structure did not change - take those back with the change history;
 			//   the cells whose structure changed - with the new mechanism"). The same address and the same merge
-			//   on both sides (KCMTableCellSame): its words are a Cell Text row, rejected one by one; only a change
+			//   on both sides (KCMTableCellSame): its words are a Cell Text row, acted on one by one (rejected then, applied
+		//   or restored now); only a change
 			//   in a cell the shape brought, took or re-merged is folded into the Table row - which is exactly
 			//   what "Match the Source" rewrites (KCMTableMatch.h). ⚠Both tables have to exist for a cell to be the
 			//   same on both sides; a Table + or − folds everything, as before.
@@ -1729,11 +1730,11 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		//   a table Word added into a paragraph of its own - a return first, then the table (KCMStorySyncApply's
 		//   InsertTables) - and InDesign's change history holds the two as ONE change. The paragraph came out as a row of
 		//   its own until now: an "insert" with no words beside the Table + row, over the same characters. Rejecting
-		//   either took both back and left the other with nothing to stand for (measured on the running application: the
-		//   Table row vanished from the list, and the empty row's redo wrote nothing and still left an undo step). The
-		//   empty paragraph's row is folded into the table's, which takes its range - the return included, cut off again
-		//   for what the reader is shown (fBreakAt, KCMShownSpan) - so the one change is one row, taken back and redone
-		//   whole. ★ONLY A PARAGRAPH HOLDING NOTHING BUT THE TABLE: the row's shown range has to be exactly the table's
+		//   either took both back and left the other with nothing to stand for (measured on the running application with
+		//   Reject and Redo from Word: the Table row vanished from the list, and the empty row's redo wrote nothing and
+		//   still left an undo step). The empty paragraph's row is folded into the table's, which takes its range - the
+		//   return included, cut off again for what the reader is shown (fBreakAt, KCMShownSpan) - so the one change is
+		//   one row, acted on whole. ★ONLY A PARAGRAPH HOLDING NOTHING BUT THE TABLE: the row's shown range has to be exactly the table's
 		//   anchor, on the side that has the table - a paragraph with words of its own stays a row of its own.
 		if (haveT != haveS)
 		{
@@ -2281,10 +2282,10 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 		changes.clear();
 	MarkOverset(targetDB, storyUID, changes);
 	KCMStoryList::SetRowChanges(rowIndex, changes, compared);
-	// ★THE RECORDS OF WHAT THE READER TOOK BACK OUTLIVE THIS REFRESH (2026-09-24, stage 2 C - design 15-1-3): a
-	//   Standing one stays where the diff now finds nothing; one the reader undid or redid has its twin among the
-	//   changes just attached and is dropped, so that the change is not shown twice.
-	KCMStoryList::PruneRejected(rowIndex, targetDB);
+	// ★THE "=" RECORDS OUTLIVE THIS REFRESH (2026-09-24, stage 2 C - design 15-1-3): a Standing one stays where the
+	//   diff now finds nothing; one undone or put back has its twin among the changes just attached and is dropped, so
+	//   that the change is not shown twice.
+	KCMStoryList::PruneEqual(rowIndex, targetDB);
 	KCMStoryList::SetRowTargetTextCount(rowIndex, KCMStoryDiffRun::TextCountOf(UIDRef(targetDB, storyUID)));
 	// the state it was compared at, for the list to follow an Undo / Redo (KCMStoryFollowObserver - 2026-09-25)
 	KCMStoryList::SetRowComparedAt(rowIndex, KCMStoryDiffRun::CountForKind(UIDRef(targetDB, storyUID), kKCMStoryAttrRuby));

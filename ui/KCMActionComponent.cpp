@@ -220,7 +220,7 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 	else if (markedDB != nil && markedSrcDB != nil && mode != kKCMModeStory
 			 && Utils<IKCMStoryEditsFacade>()->IsImportSource())
 	{
-		// ★AN IMPORT'S COPY IS COMPARED IN THE STORY MODE ONLY (2026-10-24, the import-as-Source trial - found on the
+		// ★AN IMPORT'S COPY IS COMPARED IN THE STORY MODE ONLY (2026-10-24, the import-as-Source road - found on the
 		//   re-check the same day): Start refuses the other modes (KCMToggleStartStop), but a switch while Started
 		//   recompares right here without passing that test - and a Pixel or Resources comparison against the copy would
 		//   show what the files WOULD change as changes made. So it stops, in Start's own words, as a PDF pair does above.
@@ -1250,8 +1250,8 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		case kKCMStoryRowApplyActionID:
 			KCMStoryRowApply();
 			break;
-		case kKCMStoryRowApplyAllActionID:
-			KCMStoryRowApplyAll();
+		case kKCMApplyAllActionID:
+			KCMHeadingApplyAll();
 			break;
 		// ★"Restore from Copy" on a "=" change row (2026-10-24 evening, design 11-3): the document's own words back from the
 		//   copy Apply This Change kept, as one undo step by the model, which compares the row again.
@@ -1863,15 +1863,15 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 				                                                                : kDisabled_Unselected);
 				break;
 			}
-			// ★The three Apply items (2026-10-24, the import-as-Source trial) - each the same test as its execution.
+			// ★The three Apply items (2026-10-24, the import-as-Source road) - each the same test as its execution.
 			case kKCMChangeRowApplyActionID:
 				listToUpdate->SetNthActionState(i, KCMChangeRowCanApply() ? kEnabledAction : kDisabled_Unselected);
 				break;
 			case kKCMStoryRowApplyActionID:
 				listToUpdate->SetNthActionState(i, KCMStoryRowCanApply() ? kEnabledAction : kDisabled_Unselected);
 				break;
-			case kKCMStoryRowApplyAllActionID:
-				listToUpdate->SetNthActionState(i, KCMStoryRowCanApplyAll() ? kEnabledAction : kDisabled_Unselected);
+			case kKCMApplyAllActionID:
+				listToUpdate->SetNthActionState(i, KCMHeadingCanApplyAll() ? kEnabledAction : kDisabled_Unselected);
 				break;
 			// ★"Restore from Copy" (2026-10-24 evening) - the same test as its execution: a "=" row of Apply's holding a copy.
 			case kKCMChangeRowRestoreCopyActionID:

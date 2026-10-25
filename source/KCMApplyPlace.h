@@ -4,27 +4,28 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  WHICH PARAGRAPH A TAKEN-BACK CHANGE IS ABOUT (2026-09-25): the one question "Redo from Word" asks of the
-//  document before it plans anything - in the reading KCMTextRead gives (ReadStory's paragraphs, their document
-//  starts and their attributes), which paragraph holds the record's place, which paragraph the change itself is,
-//  and that paragraph's number within its place (the body, one cell, one note), which is what a plan names.
+//  WHICH PARAGRAPH A ROW'S CHANGE IS ABOUT (2026-09-25; KCMRedoPlace.h until 2026-10-25): the one question Apply's
+//  paragraph road (KCMApplyFromImport.cpp) asks of the document before it plans anything - first asked by the
+//  retired "Redo from Word" - in the reading KCMTextRead gives (ReadStory's paragraphs, their document starts and
+//  their attributes): which paragraph holds the change's place, which paragraph the change itself is, and that
+//  paragraph's number within its place (the body, one cell, one note), which is what a plan names.
 //  ★PURE: no SDK type, so work/kcm-storydocx-test checks it with no application in the room.
 //
 //  ★★WHY IT IS A QUESTION OF ITS OWN (the user's report of 2026-09-25: words typed after a table in Word, taken
 //    back, and "Redo from Word" answered "nothing to redo here"). A whole paragraph added or removed is cut WITH
 //    THE BREAK BEFORE IT whenever a paragraph of the same place stands before it ("\rNEW" - KCMStoryDiffRun's
-//    AddWholeParagraphs, kKCMBreakLeads), so the record's place begins ON the previous paragraph's return. The
+//    AddWholeParagraphs, kKCMBreakLeads), so the change's place begins ON the previous paragraph's return. The
 //    paragraph holding that position is the one BEFORE the change; the change's own paragraph is the next one in
 //    the same place - the Source's paragraph standing again for a deletion, and for an insertion the slot the
-//    words go back into, which may be past the place's last paragraph. Measured the same day on every such shape
-//    (work/kcm-table-spike/redo-matrix): an addition at the end, in the middle, after a table and inside a cell
-//    all answered "nothing to redo", a removal in the middle and at the end "the Source's words are not in this
-//    paragraph"; only a place's FIRST paragraph (the break after it, kKCMBreakTrails) came back.
+//    words go into, which may be past the place's last paragraph. Measured the same day with Redo from Word on
+//    every such shape (work/kcm-table-spike/redo-matrix): an addition at the end, in the middle, after a table and
+//    inside a cell all answered "nothing to redo", a removal in the middle and at the end "the Source's words are
+//    not in this paragraph"; only a place's FIRST paragraph (the break after it, kKCMBreakTrails) came back.
 //
 //========================================================================================
 
-#ifndef __KCMRedoPlace_h__
-#define __KCMRedoPlace_h__
+#ifndef __KCMApplyPlace_h__
+#define __KCMApplyPlace_h__
 
 #include "BaseType.h"
 #include "KCMParaText.h"		// KCMParaAttrs / ModelOffsetInParagraph / CountCodePoints
@@ -32,11 +33,11 @@
 #include <string>
 #include <vector>
 
-namespace KCMRedoPlace
+namespace KCMApplyPlace
 {
 
 /** Whether two paragraphs of the reading stand in the same place: the body, the same cell, the same note. ★The
-	four fields the redo has always numbered paragraphs by (KCMRedoFromWord's WhereParaOf) - one test, so that the
+	four fields the paragraph road has always numbered paragraphs by (KCMApplyFromImport.cpp's WhereOf) - one test, so that the
 	next paragraph and the numbering cannot disagree about what "the same place" is. */
 inline bool16 SamePlace(const KCMParaAttrs& a, const KCMParaAttrs& b)
 {
@@ -80,7 +81,7 @@ inline int32 NumberInPlace(const std::vector<KCMParaAttrs>& attrs, int32 k)
 	return n;
 }
 
-/** The paragraph a taken-back change is about. */
+/** The paragraph a row's change is about. */
 struct Para
 {
 	int32 fHold;	///< the reading paragraph holding the record's place - its place (body, cell, note) is the change's
@@ -90,7 +91,7 @@ struct Para
 	Para() : fHold(-1), fOwn(-1), fNumber(-1) {}
 };
 
-/** Where the change of a record standing at `at` is. `afterBreak`: the change is a whole paragraph cut with the break
+/** Where the change whose place begins at `at` is. `afterBreak`: the change is a whole paragraph cut with the break
 	before it (KCMStoryChange fWholeParagraph and fBreakAt == kKCMBreakLeads) - its paragraph is the one after the
 	paragraph holding `at`. kFalse when no paragraph holds `at`. */
 inline bool16 Of(const std::vector<std::string>& paras, const std::vector<int32>& starts,
@@ -106,8 +107,8 @@ inline bool16 Of(const std::vector<std::string>& paras, const std::vector<int32>
 	return kTrue;
 }
 
-}	// namespace KCMRedoPlace
+}	// namespace KCMApplyPlace
 
-#endif // __KCMRedoPlace_h__
+#endif // __KCMApplyPlace_h__
 
-// End, KCMRedoPlace.h.
+// End, KCMApplyPlace.h.

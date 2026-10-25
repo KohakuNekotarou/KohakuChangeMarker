@@ -552,7 +552,7 @@ void KCMUpdateStorySectionLabel()
 // every story; put it on the Proposed Edits heading"). While the Source is an import's copy, a right click ON THE HEADING
 // pops kKCMProposedHeadingMenuName ("Apply All Changes", which acts on no row); every other event, and a right click anywhere
 // else in the pane, goes to the stock handling. The same pop as the rows' (KCMStoryRowEH::RButtonDn), grey items kept as on
-// the trial's change rows (the author's "grey is fine when it cannot be done").
+// the import's change rows (the author's "grey is fine when it cannot be done").
 // ★THE UPPER PANE'S HANDLER, NOT THE HEADING'S (measured 2026-10-24 evening, KCM_DIAG traces): the heading is a static
 //   text, and its own handler never heard a press - on CEventHandler the right click opened no menu, and on
 //   DVControlEventHandler, every mouse event traced, not one arrived, from a press posted to the panel nor from the real

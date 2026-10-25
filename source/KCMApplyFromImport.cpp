@@ -1,6 +1,6 @@
 ﻿//========================================================================================
 //
-//  KCMRedoFromWord.cpp -- see the header.
+//  KCMApplyFromImport.cpp -- see the header.
 //
 //========================================================================================
 
@@ -21,8 +21,8 @@
 #include "KCMTextRead.h"		// ReadStory - the paragraphs and their places, for the change's paragraph
 #include "KCMTextWords.h"		// Refuse - shared with the restore
 #include "KCMWordKeep.h"
-#include "KCMRedoPlace.h"		// KCMRedoPlace::Of - which paragraph the change is (2026-09-25)
-#include "KCMRedoFromWord.h"
+#include "KCMApplyPlace.h"		// KCMApplyPlace::Of - which paragraph the change is (2026-09-25)
+#include "KCMApplyFromImport.h"
 
 namespace
 {
@@ -31,9 +31,9 @@ using KCMTextWords::Refuse;
 
 /** The place reading paragraph `k` stands in, as a plan's step names it: the body, a note, or a cell by its index
 	among its row's columns. kFalse for a paragraph out of range, or a cell whose column is not among its row's.
-	★THE PARAGRAPH'S NUMBER IN THAT PLACE IS KCMRedoPlace's TO SAY (2026-09-25): this answered both until then, from
+	★THE PARAGRAPH'S NUMBER IN THAT PLACE IS KCMApplyPlace's TO SAY (2026-09-25): this answered both until then, from
 	 the paragraph holding the record's start - which for a whole paragraph cut with the break before it is the
-	 paragraph BEFORE the change (KCMRedoPlace.h says what that broke). */
+	 paragraph BEFORE the change (KCMApplyPlace.h says what that broke). */
 bool16 WhereOf(const std::vector<KCMParaAttrs>& attrs, int32 k, KCMStorySync::Where& outWhere)
 {
 	if (k < 0 || static_cast<size_t>(k) >= attrs.size())
@@ -59,7 +59,7 @@ bool16 WhereOf(const std::vector<KCMParaAttrs>& attrs, int32 k, KCMStorySync::Wh
 }
 
 /** ★APPLY'S PLAN (2026-10-24): the document now, the way the import reads it; the paragraph the change at document
-	position `at` is (KCMRedoPlace); the import's comparison with Word's story, narrowed to that paragraph as `scope`
+	position `at` is (KCMApplyPlace); the import's comparison with Word's story, narrowed to that paragraph as `scope`
 	says; and the rule that a paragraph the comparison HOLDS is not half written. (The retired "Redo from Word" planned
 	the same steps for a taken-back change; it went on 2026-10-25, and this is their one copy now.)
 	outParaStart / outParaEnd: the change's paragraph in the document, its return included (the paragraph holding `at`
@@ -88,9 +88,9 @@ bool16 PlanApplyAt(const UIDRef& targetStory, const KCMStoryShape::Story& word, 
 			return kFalse;
 		}
 	}
-	KCMRedoPlace::Para place;
+	KCMApplyPlace::Para place;
 	KCMStorySync::Where where;
-	if (!KCMRedoPlace::Of(paras, starts, attrs, at, afterBreak, place) || !WhereOf(attrs, place.fHold, where))
+	if (!KCMApplyPlace::Of(paras, starts, attrs, at, afterBreak, place) || !WhereOf(attrs, place.fHold, where))
 	{
 		Refuse(outWhy, "the change's paragraph could not be found - compare again");
 		return kFalse;
@@ -161,10 +161,10 @@ bool16 PlanApplyAt(const UIDRef& targetStory, const KCMStoryShape::Story& word, 
 }	// namespace
 
 //----------------------------------------------------------------------------------------
-// KCMApplyRedoFromWord
+// KCMApplyParagraphPlan
 //----------------------------------------------------------------------------------------
 
-int32 KCMApplyRedoFromWord(const UIDRef& targetStory, const KCMStoryShape::Story& now, const KCMStorySync::Plan& plan,
+int32 KCMApplyParagraphPlan(const UIDRef& targetStory, const KCMStoryShape::Story& now, const KCMStorySync::Plan& plan,
 						   PMString& outWhy)
 {
 	outWhy.Clear();
@@ -191,10 +191,10 @@ int32 KCMApplyRedoFromWord(const UIDRef& targetStory, const KCMStoryShape::Story
 }
 
 //----------------------------------------------------------------------------------------
-// KCMPlanApplyFromWord (2026-10-24)
+// KCMPlanApplyParagraph (2026-10-24)
 //----------------------------------------------------------------------------------------
 
-bool16 KCMPlanApplyFromWord(const UIDRef& targetStory, const KCMStoryChange& live,
+bool16 KCMPlanApplyParagraph(const UIDRef& targetStory, const KCMStoryChange& live,
 							KCMStoryShape::Story& outNow, KCMStorySync::Plan& outPlan,
 							int32& outParaStart, int32& outParaEnd, PMString& outWhy)
 {
@@ -225,7 +225,7 @@ bool16 KCMPlanApplyFromWord(const UIDRef& targetStory, const KCMStoryChange& liv
 	// ★★THE DIFF RAN FROM THE SOURCE (the files) TO THE TARGET (the document), SO ITS KINDS ARE THE OTHER WAY ROUND FROM
 	//   WHAT APPLY DOES (design 5-2): a whole paragraph only the document holds ("+" in the diff) is one the files took
 	//   away - Apply takes it out; one only the files hold ("-") is one they put in - Apply puts it in. A whole paragraph
-	//   cut with the break before it ("\rNEW") starts ON the paragraph before's return (KCMRedoPlace.h).
+	//   cut with the break before it ("\rNEW") starts ON the paragraph before's return (KCMApplyPlace.h).
 	const bool16 afterBreak = (live.fWholeParagraph && live.fBreakAt == kKCMBreakLeads) ? kTrue : kFalse;
 	const KCMStorySync::NarrowScope scope = !live.fWholeParagraph ? KCMStorySync::kNarrowOwn
 		: (live.fKind == KCMStoryChange::kInsert) ? KCMStorySync::kNarrowRemoved
@@ -253,7 +253,7 @@ bool16 KCMImportStoryNeedsTableRound(const UIDRef& targetStory)
 }
 
 //----------------------------------------------------------------------------------------
-// KCMRedoTableFromWord (2026-09-25 for the retired table redo; Apply's table road since 2026-10-24)
+// KCMApplyTableFromImport (2026-09-25 for the retired table redo; Apply's table road since 2026-10-24)
 //----------------------------------------------------------------------------------------
 
 namespace
@@ -292,7 +292,7 @@ void StepsOfTable(const KCMStorySync::Plan& plan, int32 ordinal, bool16 shape, K
 
 }	// namespace
 
-int32 KCMRedoTableFromWord(const UIDRef& targetStory, UID tableUID, PMString& outWhy)
+int32 KCMApplyTableFromImport(const UIDRef& targetStory, UID tableUID, PMString& outWhy)
 {
 	outWhy.Clear();
 	outWhy.SetTranslatable(kFalse);
@@ -433,4 +433,4 @@ int32 KCMRedoTableFromWord(const UIDRef& targetStory, UID tableUID, PMString& ou
 	return total;
 }
 
-// End, KCMRedoFromWord.cpp.
+// End, KCMApplyFromImport.cpp.

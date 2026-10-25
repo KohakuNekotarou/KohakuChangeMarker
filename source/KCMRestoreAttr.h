@@ -59,7 +59,7 @@ bool16 KCMPlanRestoreAttrFromSource(const UIDRef& targetStory, const UIDRef& sou
 /** Whether the marks of `kind` over the Target's [tFrom, tTo) are the Source's over [sFrom, sTo) - the same
 	positions (aligned by tFrom - sFrom), values and, for ruby, the same group setting, once each side's marks
 	are clipped to its window. Both stories are read under IDataBase::SaveRestoreModifiedState; nothing is
-	written. ★What a taken-back attribute row's "=" is a comparison of (KCMStoryList::RejectedStateOf, 2026-09-24
+	written. ★What a taken-back attribute row's "=" is a comparison of (KCMStoryList::EqualStateOf, 2026-09-24
 	night). kFalse when a story cannot be read or the windows differ in length. */
 bool16 KCMAttrMarksSame(const UIDRef& targetStory, const UIDRef& sourceStory, int32 kind,
 						TextIndex tFrom, TextIndex tTo, TextIndex sFrom, TextIndex sTo);

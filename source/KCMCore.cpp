@@ -636,7 +636,7 @@ bool16 KCMBuildStoryRowsByDiff(IDataBase* targetDB, IDataBase* sourceDB)
 	std::vector<KCMStoryDiff> storyDiffs;
 	KCMStoryEdits::Compare(sourceStamps, targetStamps, storyDiffs);
 
-	// ★★AGAINST AN IMPORT'S COPY, ONLY THE STORIES THE FILES FILLED (2026-10-24, the import-as-Source trial - design
+	// ★★AGAINST AN IMPORT'S COPY, ONLY THE STORIES THE FILES FILLED (2026-10-24, the import-as-Source road - design
 	//   section 2-7): the copy is the document as it stood at the import with the files' words poured in, so every
 	//   other story differs only by what the reader has done since - and those differences are not the files'.
 	if (KCMIsImportClone(sourceDB))

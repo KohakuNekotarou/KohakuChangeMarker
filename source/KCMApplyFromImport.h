@@ -22,8 +22,8 @@
 //
 //========================================================================================
 
-#ifndef __KCMRedoFromWord_h__
-#define __KCMRedoFromWord_h__
+#ifndef __KCMApplyFromImport_h__
+#define __KCMApplyFromImport_h__
 
 #include "BaseType.h"
 #include "PMString.h"
@@ -37,19 +37,19 @@ class UIDRef;
 /** Carries a narrowed plan out as the import does - KCMApplySyncPlan - inside the CALLER's command sequence, unsigned
 	and untracked (a story the reader tracks still records it). @return the writes that went in (words + attributes +
 	notes + tables); -1 when nothing could be written (outWhy). */
-int32 KCMApplyRedoFromWord(const UIDRef& targetStory, const KCMStoryShape::Story& now, const KCMStorySync::Plan& plan,
+int32 KCMApplyParagraphPlan(const UIDRef& targetStory, const KCMStoryShape::Story& now, const KCMStorySync::Plan& plan,
 						   PMString& outWhy);
 
 /** ★"Apply This Change" (2026-10-24 - docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md): plans putting
 	a LIVE change of the import's comparison into the document - the files' content kept by the import (KCMWordKeep,
 	under the document), the document read now, the change's paragraph found from where the change stands in the
 	document, and the import's comparison narrowed to it (a whole paragraph only the document has is taken out, one
-	only the files have is put in; anything else is the paragraph's own edit). The writing is KCMApplyRedoFromWord's,
+	only the files have is put in; anything else is the paragraph's own edit). The writing is KCMApplyParagraphPlan's,
 	and only for a change that cannot be written on its own (design section 11-1: an object's character or a return in
 	its range, or a whole paragraph). Refuses with a reason and writes nothing.
 	outParaStart / outParaEnd: the paragraph the plan writes, in the document, its return included - where the
 	changes that go in together stand. */
-bool16 KCMPlanApplyFromWord(const UIDRef& targetStory, const KCMStoryChange& live,
+bool16 KCMPlanApplyParagraph(const UIDRef& targetStory, const KCMStoryChange& live,
 							KCMStoryShape::Story& outNow, KCMStorySync::Plan& outPlan,
 							int32& outParaStart, int32& outParaEnd, PMString& outWhy);
 
@@ -67,8 +67,8 @@ bool16 KCMImportStoryNeedsTableRound(const UIDRef& targetStory);
 	round has to be read back before the next is planned, so the two cannot be separated as the paragraph road's
 	are); the caller rolls the sequence back on -1. @return the moves and writes that went in; -1 when nothing could
 	be done, and outWhy says why. */
-int32 KCMRedoTableFromWord(const UIDRef& targetStory, UID tableUID, PMString& outWhy);
+int32 KCMApplyTableFromImport(const UIDRef& targetStory, UID tableUID, PMString& outWhy);
 
-#endif // __KCMRedoFromWord_h__
+#endif // __KCMApplyFromImport_h__
 
-// End, KCMRedoFromWord.h.
+// End, KCMApplyFromImport.h.

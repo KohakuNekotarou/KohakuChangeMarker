@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  Owner: KohakuNekotarou
 //
@@ -230,13 +230,14 @@ inline PMString KCMFormatNumberWithSuffix(double number, const char* suffix)
 
 /** The degree sign, AS BYTES AND NOT AS A LITERAL.
 
-	⚠★★★**This file has no UTF-8 BOM** (checked 2026-09-13), so a `°` typed into it would be read
-	by the compiler in the system code page and reach the reader as mojibake - the failure this
+	⚠★★★**This file had no UTF-8 BOM when this was written** (checked 2026-09-13; it has one since
+	2026-10-25 - its comments carry non-ASCII, the tidy's S9), so a `°` typed into it would have been
+	read by the compiler in the system code page and reached the reader as mojibake - the failure this
 	repository has already met and written down ([[cpp-japanese-needs-bom]]). U+00B0 is in CP932,
 	which is the dangerous half of that note: it would COMPILE and only go wrong on screen.
-	★Writing the two UTF-8 bytes keeps the source pure ASCII, and the string is handed over with
-	  SetUTF8String, which names the encoding at the other end too. Nothing has to agree by luck.
-	⇒ **Adding a BOM to this file would work as well; this way nothing depends on the BOM staying.** */
+	★Writing the two UTF-8 bytes keeps the literal pure ASCII, and the string is handed over with
+	  SetUTF8String, which names the encoding at the other end too. Nothing has to agree by luck,
+	  and nothing depends on the BOM staying. */
 const char* const kKCMDegreeSign = "\xC2\xB0";
 
 /** A Resources attribute's value IN THE DOCUMENT'S OWN UNIT - "24 Q" - when the attribute is a

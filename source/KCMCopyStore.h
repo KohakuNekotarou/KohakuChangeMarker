@@ -4,7 +4,7 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  KCM'S OWN COPY STORES (2026-10-24, the import-as-Source trial - docs/superpowers/specs/2026-10-24-kcm-import-as-
+//  KCM'S OWN COPY STORES (2026-10-24, the import-as-Source road - docs/superpowers/specs/2026-10-24-kcm-import-as-
 //  source-design.md section 11-3; the author: "when a row is put back by a right click, put it back from a Copy - the
 //  way KFC does"). Before Apply This Change writes over the document's words, the words are copied - their formatting
 //  with them - into a store of KCM's own, so that the row's Restore from Copy can paste them back later.

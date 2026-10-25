@@ -42,7 +42,7 @@ IDataBase*		gSource = nil;		// the document it was taken from - compared, and as
 KCMResourceList	gDefs;				// that document's definitions at that moment (the Resources mode's older side)
 bool16			gHaveDefs = kFalse;
 PMString		gDefsWhyNot;		// why there are none, when there are none ("source: ...")
-// ★TAKEN FOR AN IMPORT (2026-10-24, the import-as-Source trial): the clone then holds what the files say, and the
+// ★TAKEN FOR AN IMPORT (2026-10-24, the import-as-Source road): the clone then holds what the files say, and the
 //   stories they filled are the only ones the comparison lists (KCMBuildStoryRowsByDiff).
 bool16			gForImport = kFalse;
 std::vector<UID>	gImportStories;
@@ -126,7 +126,7 @@ bool16 KCMCanTakeTaskStartClone()
 
 namespace {
 
-/* The Task Start in memory, taken. `forImport`: the import-as-Source trial's (2026-10-24) - no definitions are read
+/* The Task Start in memory, taken. `forImport`: the import-as-Source road's (2026-10-24) - no definitions are read
    (nothing compares them: an import's Source is compared in the Story mode only) and `importLabel` is the Source
    line; otherwise the Task Start the flyout takes. */
 bool16 TakeClone(bool16 forImport, const PMString& importLabel, PMString& outWhyNot);

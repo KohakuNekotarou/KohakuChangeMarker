@@ -18,7 +18,7 @@
 //  a dark UI flips it; a warning mark is the one thing that must NOT flip - red on light and red
 //  on dark are both red. It is a fixed colour, chosen to be readable on both (0.85, 0.10, 0.10).
 //
-//  ★AND THE "=" OF A ROW APPLY THIS CHANGE PUT IN (2026-10-24 evening, the import-as-Source trial - the author:
+//  ★AND THE "=" OF A ROW APPLY THIS CHANGE PUT IN (2026-10-24 evening, the import-as-Source road - the author:
 //  "when a change goes in and shows =, make the = red"): the same cell with "=" for its mark (KCMStoryAppliedSignView
 //  below, kKCMStoryAppliedSignCellBoss). ★★AMBER SINCE 2026-10-24 NIGHT (the author: "make the = of the Word import
 //  amber") - the plug-in's own colour (Kohaku); the "!" stays red: it is a warning, and an "=" is not one. Not one

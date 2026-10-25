@@ -111,8 +111,8 @@ void SayApplied(const char* what, int32 done, const PMString& why)
 }	// anonymous namespace
 
 //----------------------------------------------------------------------------------------
-// KCMChangeRowCanApply / KCMChangeRowApply / KCMStoryRowCanApply / KCMStoryRowApply / KCMStoryRowCanApplyAll /
-// KCMStoryRowApplyAll - the three Apply items (2026-10-24 -
+// KCMChangeRowCanApply / KCMChangeRowApply / KCMStoryRowCanApply / KCMStoryRowApply / KCMHeadingCanApplyAll /
+// KCMHeadingApplyAll - the three Apply items (2026-10-24 -
 // docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md). Each asks the model whether it may act and the
 // model does the work; the same test is asked again at the moment of acting (KCMStoryRefreshMenuRow's reason).
 //----------------------------------------------------------------------------------------
@@ -190,16 +190,16 @@ bool16 KCMStoryRowApply()
 	return (done > 0) ? kTrue : kFalse;
 }
 
-bool16 KCMStoryRowCanApplyAll()
+bool16 KCMHeadingCanApplyAll()
 {
 	// ★NO ROW ASKED (2026-10-24 evening): the item is on the section heading's menu now (KCMTopPaneEH) and acts
 	//   on every story the import filled, so whichever row the last menu was popped over has nothing to say about it.
 	return Utils<IKCMStoryEditsFacade>()->IsImportSource();
 }
 
-bool16 KCMStoryRowApplyAll()
+bool16 KCMHeadingApplyAll()
 {
-	if (!KCMStoryRowCanApplyAll())
+	if (!KCMHeadingCanApplyAll())
 	{
 		KCMSetStatus("apply: no imported text is being compared.");
 		return kFalse;

@@ -372,10 +372,10 @@ bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 	if (menuMgr == nil)
 		return kTrue;
 
-	// ★★AGAINST AN IMPORT'S COPY A CHANGE ROW POPS THE TRIAL'S OWN MENU, GREY ITEMS KEPT (2026-10-24 evening - the author:
+	// ★★AGAINST AN IMPORT'S COPY A CHANGE ROW POPS THE IMPORT'S OWN MENU, GREY ITEMS KEPT (2026-10-24 evening - the author:
 	//   "there are rows I cannot right-click"; a "=" row's items were all grey, and the fourth argument kTrue drops grey
 	//   items, so the menu did not open at all - KFC found the same argument behind its SET-11, and the author chose grey
-	//   there: "grey is fine when it cannot be done"). Apply This Change and Restore from Copy alone (kKCMChangeRowTrialMenuName),
+	//   there: "grey is fine when it cannot be done"). Apply This Change and Restore from Copy alone (kKCMChangeRowImportMenuName),
 	//   so the grey line says which of the two this row cannot do. ⚠A "!" row stays without a menu: it holds nothing to put in.
 	Utils<IKCMStoryEditsFacade> edits;
 	if (isChangeRow && edits && edits->IsImportSource())
@@ -383,7 +383,7 @@ bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 		IKCMStoryEditsFacade::Change change;
 		if (!edits->GetChange(rowIndex, changeIndex, change) || change.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused)
 			return kTrue;
-		menuMgr->HandlePopupMenu(kKCMChangeRowTrialMenuName, e->GlobalWhere(), e->GlobalWhere(),
+		menuMgr->HandlePopupMenu(kKCMChangeRowImportMenuName, e->GlobalWhere(), e->GlobalWhere(),
 								 kFalse /*removeDisabledItems*/, this);
 		return kTrue;
 	}

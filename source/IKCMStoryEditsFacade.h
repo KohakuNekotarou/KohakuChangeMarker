@@ -723,7 +723,7 @@ public:
 	/** Is that change still recorded (KCMTrackRead::StillRecorded)? Asked before a click jumps. */
 	virtual bool16	TrackChangeStillRecorded(int32 nth, int32 which) = 0;
 
-	// ---- ★THE IMPORT THE OTHER WAY ROUND (2026-10-24, the import-as-Source trial - docs/superpowers/specs/
+	// ---- ★THE IMPORT THE OTHER WAY ROUND (2026-10-24, the import-as-Source road - docs/superpowers/specs/
 	// 2026-10-24-kcm-import-as-source-design.md). The files' words go into a Task Start in memory, which is the Source;
 	// the rows say what the document would become, and Apply puts them in. ⚠Appended at the END
 	// ([[facade-vtable-slot-append-only]]) - KCM's two halves are built together.
@@ -746,7 +746,7 @@ public:
 		first for Restore from Copy (11-1, 11-3 - since 2026-10-24 evening; until then the whole paragraph went in); a
 		change with an object's character or a return in it, or a whole paragraph, by the import's own road narrowed to
 		its paragraph (every change of that paragraph goes in with it then, and the message says so); a mark by "Restore
-		from Source"; a table by its redo from the files' content (KCMRedoTableFromWord - "Match the Source" reads the
+		from Source"; a table by its redo from the files' content (KCMApplyTableFromImport - "Match the Source" reads the
 		Source's table back through INX, which a copy kept in memory cannot give) - and compares the row again; what
 		went in reads "=". A story whose tables the files add or take away is refused: it goes in whole (ApplyStory).
 		@return the writes; 0 when nothing was left to do; -1 when nothing was written, and outMessage says why. */
@@ -759,11 +759,11 @@ public:
 		again. @return the writes; -1 when nothing was written (outMessage). */
 	virtual int32	ApplyStory(int32 nth, PMString& outMessage) = 0;
 
-	/** Every story the import filled, as ONE undo step - the result the import put in before the trial - then the list
+	/** Every story the import filled, as ONE undo step - what the old import put in at once until 2026-10-24 - then the list
 		compared again. @return the writes; -1 when nothing was written (outMessage). */
 	virtual int32	ApplyAll(PMString& outMessage) = 0;
 
-	// ---- ★CHANGE BY CHANGE, AND BACK FROM A COPY (2026-10-24 evening, the trial's second try-out - design section 11:
+	// ---- ★CHANGE BY CHANGE, AND BACK FROM A COPY (2026-10-24 evening, the import-as-Source road's second try-out - design section 11:
 	// the author, "change by change, not paragraph by paragraph", "put a row back from a Copy, the way KFC does").
 	// ⚠Appended at the END again ([[facade-vtable-slot-append-only]]) - KCM's two halves are built together.
 
@@ -786,7 +786,7 @@ public:
 		does not, or with outWhyNot empty when it is not a "=" row of Apply's. For the row's message line. */
 	virtual bool16	GetChangeCopyState(int32 nth, int32 which, PMString& outWhyNot) = 0;
 
-	/** How many changes are still proposals - live, not a "=" record, not a "!" row - over every row: the trial's
+	/** How many changes are still proposals - live, not a "=" record, not a "!" row - over every row: the import's
 		heading, "Proposed Edits (N)". -1 when the Source is not an import's copy. */
 	virtual int32	GetProposedCount() = 0;
 

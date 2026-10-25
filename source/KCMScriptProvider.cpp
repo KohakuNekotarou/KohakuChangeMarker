@@ -317,7 +317,7 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 	//    as the status number below: "0 changes taken in, 2 skipped" is an answer, not an error.
 	{
 		const int32 id = methodID.Get();
-		// ★(2026-10-24, the import-as-Source trial) app.kcmApplyChange(what) - Apply This Change / in This Story / All
+		// ★(2026-10-24, the import-as-Source road) app.kcmApplyChange(what) - Apply This Change / in This Story / All
 		//   without the right click: what the facade does for the panel's three items (IKCMStoryEditsFacade).
 		if (id == e_KCMApplyChange)
 		{
