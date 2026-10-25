@@ -135,10 +135,18 @@ public:
 			 and for the same reason. */
 		bool16		fHasTextChange;
 
+		/** ★THE SOURCE STORY THE ROW COMPARES AGAINST (2026-10-26, stories paired by place - KCMStoryRow::fSourceStoryUID):
+			fStoryUID itself for a UID pair, a Removed row and every Track row; the Source's own story for a row paired by
+			the place of its first frame (kKCMStoryKindByPosition - its fStoryUID is the Target's new story);
+			kInvalidUID for an Added row and a row standing for a file. ★**Whatever the UI asks of the SOURCE document
+			about this row - the window to aim, the flash to show - it asks under this uid, never under fStoryUID.**
+			**Added at the END of the struct**, as fAttrKindCount and fHasTextChange were and for the same reason. */
+		UID			fSourceStoryUID;
+
 		Row()
 			: fStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fFrameUID(kInvalidUID),
 			  fPageUID(kInvalidUID), fTextCompared(kFalse), fAttrKind(0), fAttrKindCount(0),
-			  fHasTextChange(kFalse) {}
+			  fHasTextChange(kFalse), fSourceStoryUID(kInvalidUID) {}
 	};
 
 	// ---- the list ------------------------------------------------------------------------

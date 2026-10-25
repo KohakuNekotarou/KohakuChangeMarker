@@ -31,6 +31,7 @@
 #include "IKCMStoryEditsFacade.h"		// the rows and their changes - what is marked
 #include "KCMBoundaryID.h"			// kKCMModeStory
 #include "KCMCore.h"					// KCMArmedTargetDB / KCMArmedSourceDB (@warning declared here, not in KCMPeek.h)
+#include "KCMDiag.h"					// KCM_DIAG_LOG - which story the Source side is marked under (test builds only)
 #include "KCMDrawEventHandler.h"		// sPrintMarks / sSrcMarksOn - the two toggles that decide printing
 #include "KCMStoryList.h"			// KCMCaretOnTableChars - a caret in front of a table stands after the character before it (2026-09-24)
 #include "KCMStoryMarkBuild.h"
@@ -136,8 +137,9 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 		//   feature stands on -- the two are versions of one document, and saving under a new name
 		//   carries the UIDs across (KCMStoryStamp.h, "WHY TWO VERSIONS CAN BE MATCHED AT ALL").
 		//   Two other places already ask exactly this way, which is the check that this is not a local
-		//   assumption: the diff reads the older side with UIDRef(sourceDB, row->fStoryUID)
-		//   (KCMStoryDiffRun::Run), and the click selects with it (KCMStoryJump.cpp).
+		//   assumption: the diff reads the older side with the row's Source story - UIDRef(sourceDB, row->fSourceStoryUID),
+		//   that same uid for every row paired by UID (KCMStoryDiffRun::Run) - and the click selects with it (KCMStoryJump.cpp).
+		//   ★A row paired by place (2026-10-26) is the one exception, and the next block takes it.
 		//
 		// @warning **this used to ask "is this a removed row?" and require that to MATCH
 		//   useSourceDocument**, which quietly dropped every ORDINARY row from the source side -- found
@@ -155,6 +157,14 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 		const bool16 addedRow   = ((row.fKinds & kKCMStoryKindAdded)   != 0) ? kTrue : kFalse;
 		const bool16 removedRow = ((row.fKinds & kKCMStoryKindRemoved) != 0) ? kTrue : kFalse;
 		if (useSourceDocument ? addedRow : removedRow)
+			continue;
+
+		// ★★THE STORY ON THIS SIDE (2026-10-26, stories paired by place): the Source side is the row's SOURCE story
+		//   (Row::fSourceStoryUID) - the same uid as fStoryUID for every row paired by UID and for a Removed one, but the
+		//   Source's own story for a row paired by the place of its first frame, whose fStoryUID is the Target's new story
+		//   and names something else (or nothing) over there. ⚠Every read below and the map's key are this story's.
+		const UID storyHere = useSourceDocument ? row.fSourceStoryUID : row.fStoryUID;
+		if (storyHere == kInvalidUID)
 			continue;
 
 		const int32 changeCount = edits->GetChangeCount(n);
@@ -180,7 +190,7 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 				continue;
 
 			TextIndex wholeEnd = 0;
-			if (!KCMStoryWholeTextEnd(db, row.fStoryUID, wholeEnd))
+			if (!KCMStoryWholeTextEnd(db, storyHere, wholeEnd))
 				continue;
 
 			ranges.push_back(KCMMarkRange(0, wholeEnd));
@@ -276,7 +286,7 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 				if (from > 0)
 				{
 					TextIndex storyEnd = 0;
-					if (KCMStoryWholeTextEnd(db, row.fStoryUID, storyEnd) && from >= storyEnd)
+					if (KCMStoryWholeTextEnd(db, storyHere, storyEnd) && from >= storyEnd)
 					{
 						ranges.push_back(KCMTrackColoured(edits, n, i, KCMMarkRange::CaretAfter(from)));
 						continue;
@@ -290,7 +300,7 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 				//   character before is in another run. KCMCaretOnTableChars says what was measured;
 				//   the jump's flash applies the same rule (KCMStoryMarker::AddFlashRange).
 				TextIndex afterTable = 0;
-				if (KCMCaretOnTableChars(db, row.fStoryUID, from, afterTable))
+				if (KCMCaretOnTableChars(db, storyHere, from, afterTable))
 				{
 					ranges.push_back(KCMTrackColoured(edits, n, i, KCMMarkRange::CaretAfter(afterTable)));
 					continue;
@@ -308,7 +318,10 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 			//   should not happen -- the list holds one row per story per side -- but if it ever did, an
 			//   assignment would silently throw the first one's edits away. Appending cannot: the marker
 			//   merges each story's list before it draws anything.
-			KCMMarkRangeList& dst = out[row.fStoryUID];
+			if (useSourceDocument)
+				KCM_DIAG_LOG("marks source story=%u ranges=%d", static_cast<unsigned>(storyHere.Get()),
+							 static_cast<int>(ranges.size()));	// test builds: which story the Source side is marked under
+			KCMMarkRangeList& dst = out[storyHere];
 			dst.insert(dst.end(), ranges.begin(), ranges.end());
 		}
 	}

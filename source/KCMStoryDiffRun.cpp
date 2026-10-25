@@ -1400,7 +1400,7 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 					  const std::vector<std::string>& targetParas, const std::vector<KCMParaAttrs>& targetAttrs,
 					  const std::vector<int32>& targetStarts,
 					  const std::vector<std::string>& sourceParas, const std::vector<KCMParaAttrs>& sourceAttrs,
-					  const std::vector<int32>& sourceStarts)
+					  const std::vector<int32>& sourceStarts, bool16 pairedByPlace)
 {
 	std::vector<KCMTableShape> tShapes, sShapes;
 	if (targetModel == nil || !KCMReadTableShapes(targetModel, tShapes))
@@ -1438,9 +1438,14 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		//   THIS story's uid answers only when the two are the same document - which is exactly the
 		//   condition the origin's version rested on ("a Source whose uids mean nothing here"), now
 		//   measured instead of inferred from which kind of comparison is running.
+		// ★★★NOT FOR A STORY PAIRED BY PLACE (2026-10-26 - KCMStoryKinds.h, kKCMStoryKindByPosition): the Target's story is
+		//   a COPY pasted in, so its tables were made anew with new ids, and no id of the Source's can name one - while the
+		//   Target's uid handed to the Source names some other story there, or none. The tables pair by their ORDER instead,
+		//   the fall-back this has always had for a Source that is another document: the copy holds the same tables in the
+		//   same order, so a cell edited in one of them is one "Table ≠" row (design 3-3), not a Table − and a Table +.
 		IDataBase* const sourceDB = (sourceModel != nil) ? ::GetDataBase(sourceModel) : nil;
 		KCMMemXferBytes sourceInx;
-		if (sourceDB != nil
+		if (!pairedByPlace && sourceDB != nil
 			&& KCMExportStoryInx(sourceDB, targetStoryUID, sourceInx)
 			&& KCMReadTableIdsInStory(sourceInx.GetData(), sourceInx.GetSize(), targetStoryUID, sIds)
 			&& sIds.size() == sShapes.size() && !sIds.empty())
@@ -1766,10 +1771,14 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 	}
 }
 
-bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
+bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory, bool16 pairedByPlace,
 					   std::vector<KCMStoryChange>& out)
 {
 	out.clear();
+
+	// ★`sourceStory` IS THE ROW'S SOURCE STORY (2026-10-26 - KCMStoryRow::fSourceStoryUID): the Target's own uid for a
+	//   story paired by UID, the Source's own story for one paired by the place of its first frame (`pairedByPlace`),
+	//   which is also what FoldTableChanges is told - its tables pair by order, not by id.
 
 	// ★★★READ STRAIGHT FROM THE TEXT MODEL. The story used to be exported as a snippet and parsed
 	//   back out of XML, and the positions counted from it then had to be checked against the
@@ -2075,7 +2084,7 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory,
 
 	// ★★A TABLE WHOSE SHAPE CHANGED IS ONE ROW (2026-09-19 night): its cell changes fold into it.
 	FoldTableChanges(out, targetStory.GetUID(), targetModel, sourceModel,
-					 targetParas, targetAttrs, targetStarts, sourceParas, sourceAttrs, sourceStarts);
+					 targetParas, targetAttrs, targetStarts, sourceParas, sourceAttrs, sourceStarts, pairedByPlace);
 	std::stable_sort(out.begin(), out.end(), ChangeIsBefore);
 
 	return kTrue;
@@ -2153,8 +2162,11 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 		std::vector<KCMStoryChange> changes;
 		// ⛔The uid translation went on 2026-09-21: a Task Start copy was rehydrated and its stories
 		//   carried new numbers. A copy saved to a file carries the originals.
+		// ★The Source side is the row's SOURCE STORY (2026-10-26 - KCMStoryRow::fSourceStoryUID): the same uid for a UID
+		//   pair, the Source's own story for a row paired by the place of its first frame.
 		if (CompareOneStory(UIDRef(targetDB, row->fStoryUID),
-							UIDRef(sourceDB, row->fStoryUID), changes))
+							UIDRef(sourceDB, row->fSourceStoryUID),
+							((row->fKinds & kKCMStoryKindByPosition) != 0) ? kTrue : kFalse, changes))
 		{
 			// **WRITTEN EVEN WHEN NOTHING DIFFERS.** It used to `continue` here, on the grounds that
 			//   writing an empty list changes nothing -- which was true of the CHANGES and false of the
@@ -2233,6 +2245,8 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	if (row == nil || row->fStoryUID == kInvalidUID)
 		return -1;
 	const UID storyUID = row->fStoryUID;
+	const UID sourceStoryUID = row->fSourceStoryUID;	// the row's Source story (2026-10-26 - another uid for a row paired by place)
+	const bool16 pairedByPlace = ((row->fKinds & kKCMStoryKindByPosition) != 0) ? kTrue : kFalse;
 	const bool16 unpaired = ((row->fKinds & kKCMStoryKindUnpaired) != 0);
 	row = nil;
 
@@ -2268,11 +2282,11 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	//   CompareOneStory never opens it - the cache answers first - so an invalid ref is the honest
 	//   thing to hand it, and the uid translator is not asked about a database that is not there.
 	const UIDRef sourceRef = (sourceDB != nil)
-		? UIDRef(sourceDB, storyUID)		// ⛔the uid translation went with the origin (2026-09-21)
+		? UIDRef(sourceDB, sourceStoryUID)	// ⛔the uid translation went with the origin (2026-09-21); the row's Source story since 2026-10-26
 		: UIDRef(nil, kInvalidUID);
 
 	std::vector<KCMStoryChange> changes;
-	const bool16 compared = CompareOneStory(UIDRef(targetDB, storyUID), sourceRef, changes);
+	const bool16 compared = CompareOneStory(UIDRef(targetDB, storyUID), sourceRef, pairedByPlace, changes);
 
 	// **WRITTEN EITHER WAY, INCLUDING EMPTY.** What stands under the row after a refresh is what
 	//   the documents say now, and "nothing" is a perfectly good thing for them to say -- the row

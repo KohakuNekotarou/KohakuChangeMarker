@@ -224,10 +224,12 @@ bool16 ParagraphStyleStands(IDataBase* db, UID style)
 	as "=" and Restore from Copy pasted the words there (measured after Apply All, before the pour was made to let the
 	records go: four characters early). Up to two characters each way are read instead, against the Source's on either
 	side of the Source's own caret. A Source that cannot be read answers kTrue, as RecordReadsAsSource does.
+	★`sourceStoryUID` is the row's Source story (KCMStoryRow::fSourceStoryUID, 2026-10-26) - another uid than `storyUID`
+	 for a row paired by the place of its first frame.
 	⚠THE COST: a change of the files' that is not in yet and stands within two characters of the caret makes it answer
 	kFalse at the right place too - Restore from Copy is refused there until that change is in (Ctrl+Z still takes the
 	Apply back). The safe side: a refusal leaves the document as it is, a wrong answer pastes words where they were not. */
-bool16 CaretReadsAsSource(IDataBase* targetDB, UID storyUID, TextIndex at, TextIndex sourceAt)
+bool16 CaretReadsAsSource(IDataBase* targetDB, UID storyUID, UID sourceStoryUID, TextIndex at, TextIndex sourceAt)
 {
 	IDataBase* const sourceDB = KCMArmedSourceDB();
 	if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
@@ -235,7 +237,7 @@ bool16 CaretReadsAsSource(IDataBase* targetDB, UID storyUID, TextIndex at, TextI
 	IDataBase::SaveRestoreModifiedState targetGuard(targetDB);		// reading must not dirty either document
 	IDataBase::SaveRestoreModifiedState sourceGuard(sourceDB);
 	InterfacePtr<ITextModel> tModel(UIDRef(targetDB, storyUID), UseDefaultIID());
-	InterfacePtr<ITextModel> sModel(UIDRef(sourceDB, storyUID), UseDefaultIID());
+	InterfacePtr<ITextModel> sModel(UIDRef(sourceDB, sourceStoryUID), UseDefaultIID());	// the row's Source story (2026-10-26)
 	if (tModel == nil || sModel == nil || at < 0 || sourceAt < 0)
 		return kFalse;
 	const int32 kSide = 2;
@@ -779,6 +781,7 @@ public:
 			out.fAttrKind	= 0;
 			out.fAttrKindCount = 0;
 			out.fHasTextChange = kTrue;
+			out.fSourceStoryUID = trackRow->fRow.fStoryUID;	// the Track original is a copy: the same uid (2026-10-26)
 			return kTrue;
 		}
 		const KCMStoryRow* row = KCMStoryList::GetRow(nth);
@@ -796,6 +799,7 @@ public:
 		out.fAttrKind	= static_cast<int32>(row->fAttrKind);	// 0 = none, 1 = ruby, 2 = kenten, 3 = footnote, 4 = endnote, 5 = warichu, 6 = tate-chu-yoko
 		out.fAttrKindCount = row->fAttrKindCount;				// how many DIFFERENT kinds - "Ruby+" when > 1
 		out.fHasTextChange = row->fHasTextChange;				// what the DIFF found, not what the counters said
+		out.fSourceStoryUID = row->fSourceStoryUID;				// the Source story it compares against (2026-10-26)
 		return kTrue;
 	}
 
@@ -1026,13 +1030,16 @@ private:
 		(KCMAttrMarksSame). ★Asked INSIDE a write's step, before it ends, so that a write that did not bring the
 		Source's back can be aborted whole (EndStep).
 		⚠A Source that is not open cannot be read; the answer is then kTrue - nothing can be said against it. */
-	bool16 PlaceReadsAsSource(const UIDRef& target, TextIndex tFrom, TextIndex tTo, const KCMStoryChange& live,
-							  int32 attrKind)
+	bool16 PlaceReadsAsSource(const UIDRef& target, UID sourceStory, TextIndex tFrom, TextIndex tTo,
+							  const KCMStoryChange& live, int32 attrKind)
 	{
 		IDataBase* const sourceDB = KCMArmedSourceDB();
 		if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
 			return kTrue;
-		const UIDRef source(sourceDB, target.GetUID());
+		// ★THE ROW'S SOURCE STORY, NOT THE TARGET'S UID (2026-10-26): the two are one story for a UID pair and two for a
+		//   row paired by place (KCMStoryRow::fSourceStoryUID) - read under the Target's uid, the Source would answer with
+		//   a different story or none, and a write that did go in would be rolled back as "not the Source's".
+		const UIDRef source(sourceDB, sourceStory);
 		const int32 len = tTo - tFrom;
 		if (len != live.fSourceEnd - live.fSourceStart || len < 0)
 			return kFalse;
@@ -1119,8 +1126,10 @@ private:
 
 	/** The Target and Source stories and the change, when change `which` of row `nth` is an attribute change of a
 		kind that is written back, on a paired story, with both documents open (2026-09-24, stage 2 B).
-		★THE SAME UID ON BOTH SIDES: a Task Start copy is a saved file and a pair saved under a new name keeps its
-		  uids (KCMStoryStamp.h) - the door RunOne walks through. */
+		★THE ROW'S SOURCE STORY ON THE SOURCE SIDE (2026-10-26 - KCMStoryRow::fSourceStoryUID): the same uid for every
+		  row paired by UID (a Task Start copy is a saved file and a pair saved under a new name keeps its uids -
+		  KCMStoryStamp.h), the Source's own story for a row paired by the place of its first frame - the door RunOne
+		  walks through. */
 	bool16 AttrChangeInBoth(int32 nth, int32 which, UIDRef& outTarget, UIDRef& outSource, Change& outChange)
 	{
 		IDataBase* targetDB = nil;
@@ -1138,7 +1147,7 @@ private:
 		if (k != kKCMStoryAttrRuby && k != kKCMStoryAttrKenten && k != kKCMStoryAttrWarichu && k != kKCMStoryAttrTcy)
 			return kFalse;
 		outTarget = UIDRef(targetDB, row.fStoryUID);
-		outSource = UIDRef(sourceDB, row.fStoryUID);
+		outSource = UIDRef(sourceDB, row.fSourceStoryUID);	// the row's Source story (2026-10-26)
 		return kTrue;
 	}
 
@@ -1161,7 +1170,7 @@ private:
 		if (outChange.fReplaced)
 			return kFalse;
 		outTarget = UIDRef(targetDB, row.fStoryUID);
-		outSource = UIDRef(sourceDB, row.fStoryUID);
+		outSource = UIDRef(sourceDB, row.fSourceStoryUID);	// the row's Source story (2026-10-26)
 		return kTrue;
 	}
 
@@ -1256,7 +1265,7 @@ public:
 		//   ROW'S range: the plan's window may be wider (KCMAttrRestorePlan grows it), and what the row promised is
 		//   what is checked. ⚠A half write (done < 0) is rolled back the same way: it changed the document too.
 		const bool16 same = (done >= 0)
-			? this->PlaceReadsAsSource(target, live.fTargetStart, live.fTargetEnd, live, live.fAttrKind)
+			? this->PlaceReadsAsSource(target, source.GetUID(), live.fTargetStart, live.fTargetEnd, live, live.fAttrKind)
 			: kFalse;
 		this->EndStep(sequence, same);
 		if (done >= 0 && !same)
@@ -1569,7 +1578,7 @@ public:
 		}
 		// ★A STORY WHOSE TABLES THE FILES ADD OR TAKE AWAY (measured 2026-10-24, matrix A55) is put in whole: the import
 		//   pairs its paragraphs and tables only once its tables agree, so no single row of it can go in first.
-		if (KCMImportStoryNeedsTableRound(UIDRef(targetDB, row.fStoryUID)))
+		if (KCMImportStoryNeedsTableRound(UIDRef(targetDB, row.fStoryUID), row.fSourceStoryUID))
 		{
 			outMessage = "the imported text adds or takes away a table in this story - put the story in with Apply All "
 						 "Changes in This Story (the tables go first)";
@@ -1630,7 +1639,9 @@ public:
 		}
 		KCMStoryTextSet set;
 		KCMStoryShape::Story word;
-		if (!KCMWordKeepGet(targetDB, row.fStoryUID, word))
+		// ★THE FILES' WORDS BY THE STORY THEY NAMED - the row's Source story, the copy's (2026-10-26): another uid than the
+		//   Target's for a row paired by place, whose Target story the pour below writes into (set.fUids).
+		if (!KCMWordKeepGet(targetDB, row.fSourceStoryUID, word))
 		{
 			outMessage = "the imported text is not in memory any more - the document was closed or InDesign restarted; import again";
 			return -1;
@@ -1663,7 +1674,7 @@ public:
 			std::vector<KCMStoryChange> lives;
 			KCMStoryList::LiveChanges(r, lives);
 			KCMStoryShape::Story word;
-			if (lives.empty() || !KCMWordKeepGet(targetDB, row.fStoryUID, word))
+			if (lives.empty() || !KCMWordKeepGet(targetDB, row.fSourceStoryUID, word))	// by the story the files named (ApplyStory says why)
 				continue;
 			set.fUids.push_back(row.fStoryUID);
 			set.fStories.push_back(word);
@@ -1689,7 +1700,7 @@ public:
 		// ★Greyed, too, where a caret's place no longer reads as the Source's by its surroundings (CaretReadsAsSource).
 		const KCMEqualRecord* const rec = KCMStoryList::EqualAt(nth, which);
 		return (rec != nil && (rec->fNowEnd != rec->fNowStart
-							   || CaretReadsAsSource(targetDB, row.fStoryUID, rec->fNowStart, rec->fLive.fSourceStart)))
+							   || CaretReadsAsSource(targetDB, row.fStoryUID, row.fSourceStoryUID, rec->fNowStart, rec->fLive.fSourceStart)))
 			   ? kTrue : kFalse;
 	}
 
@@ -1730,7 +1741,7 @@ public:
 		// ★A CARET'S PLACE HAS TO READ AS THE SOURCE'S BY ITS SURROUNDINGS (CaretReadsAsSource says why): otherwise the words
 		//   would go back where an edit has moved them from.
 		if (record.fNowEnd == record.fNowStart
-			&& !CaretReadsAsSource(targetDB, row.fStoryUID, record.fNowStart, record.fLive.fSourceStart))
+			&& !CaretReadsAsSource(targetDB, row.fStoryUID, row.fSourceStoryUID, record.fNowStart, record.fLive.fSourceStart))
 		{
 			outMessage = "the place it went in has moved since (an edit before it) - left as it is; Ctrl+Z takes it back";
 			return -1;
@@ -1866,7 +1877,7 @@ public:
 		const KCMStoryChange live = *modelChange;		// the model's own ranges - a whole paragraph's break and all
 		IDataBase* const sourceDB = KCMArmedSourceDB();
 		const UIDRef target(targetDB, row.fStoryUID);
-		const UIDRef source(sourceDB, row.fStoryUID);	// the same UID on both sides (AttrChangeInBoth says why)
+		const UIDRef source(sourceDB, row.fSourceStoryUID);	// the row's Source story (AttrChangeInBoth says why)
 		const TextIndex tFrom = live.fTargetStart;
 		const TextIndex tTo = live.fTargetEnd;
 		const TextIndex sFrom = live.fSourceStart;
@@ -1937,7 +1948,7 @@ public:
 		const bool16 wrote = KCMCopyStore::CopyOver(source, fromStart, fromEnd, target, tFrom + shift, tTo + shift);
 		// ★ALL OF IT OR NONE OF IT: the place has to read as the Source's before the step ends, or it is rolled back.
 		const bool16 same = (wrote && ErrorUtils::PMGetGlobalErrorCode() == kSuccess
-							 && this->PlaceReadsAsSource(target, tFrom, tFrom + (sTo - sFrom), live, kKCMStoryAttrNone))
+							 && this->PlaceReadsAsSource(target, source.GetUID(), tFrom, tFrom + (sTo - sFrom), live, kKCMStoryAttrNone))
 							? kTrue : kFalse;
 		this->EndStep(sequence, same);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
@@ -2303,7 +2314,7 @@ private:
 		if (readable && sourceDB != nil && KCMIsDocDBOpen(sourceDB))
 		{
 			IDataBase::SaveRestoreModifiedState guard(sourceDB);
-			InterfacePtr<ITextModel> sModel(UIDRef(sourceDB, row.fStoryUID), UseDefaultIID());
+			InterfacePtr<ITextModel> sModel(UIDRef(sourceDB, row.fSourceStoryUID), UseDefaultIID());	// the copy's story the row compares against
 			readable = KCMTextWords::WordsAt(sModel, live.fSourceStart, live.fSourceEnd - live.fSourceStart, sourceWords);
 		}
 		else
@@ -2331,7 +2342,7 @@ private:
 		}
 		// ★ALL OF IT OR NONE OF IT: the place has to read as the files' before the sequence ends, or it is rolled back.
 		const bool16 same = (wrote == kSuccess && ErrorUtils::PMGetGlobalErrorCode() == kSuccess
-							 && this->PlaceReadsAsSource(target, live.fTargetStart, live.fTargetStart + sourceWords.CharCount(),
+							 && this->PlaceReadsAsSource(target, row.fSourceStoryUID, live.fTargetStart, live.fTargetStart + sourceWords.CharCount(),
 														 live, kKCMStoryAttrNone)) ? kTrue : kFalse;
 		this->EndStep(sequence, same);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
@@ -2399,7 +2410,7 @@ private:
 		KCMStorySync::Plan plan;
 		int32 paraStart = 0;
 		int32 paraEnd = 0;
-		if (!KCMPlanApplyParagraph(target, live, now, plan, paraStart, paraEnd, outMessage))
+		if (!KCMPlanApplyParagraph(target, row.fSourceStoryUID, live, now, plan, paraStart, paraEnd, outMessage))
 			return -1;
 
 		// ★THE ROWS THAT GO IN TOGETHER: the import's road writes the whole paragraph - every change standing in it - a
@@ -2500,7 +2511,7 @@ private:
 		KCMStoryChange whole = live;
 		whole.fSourceStart = sLo;
 		whole.fSourceEnd = sHi;
-		const bool16 same = this->PlaceReadsAsSource(target, tLo, tLo + (sHi - sLo), whole, kKCMStoryAttrNone);
+		const bool16 same = this->PlaceReadsAsSource(target, row.fSourceStoryUID, tLo, tLo + (sHi - sLo), whole, kKCMStoryAttrNone);
 		if (same)
 		{
 			std::vector<TextIndex> nowStarts;
@@ -2565,7 +2576,7 @@ private:
 		}
 		const UIDRef target(targetDB, row.fStoryUID);
 		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
-		const int32 done = KCMApplyTableFromImport(target, live.fTargetTableUID, outMessage);	// unsigned, untracked (design 11-2)
+		const int32 done = KCMApplyTableFromImport(target, row.fSourceStoryUID, live.fTargetTableUID, outMessage);	// unsigned, untracked (design 11-2)
 		this->EndStep(sequence, (done > 0) ? kTrue : kFalse);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
 		if (done > 0)
@@ -2904,6 +2915,9 @@ public:
 										  TextIndex from, TextIndex to,
 										  TextIndex sourceFrom, TextIndex sourceTo,
 										  bool16 hasColour, uint8 r, uint8 g, uint8 b);
+	virtual void	ShowJumpFlashPaired(IDataBase* db, UID storyUID,
+										TextIndex from, TextIndex to,
+										UID sourceStoryUID, TextIndex sourceFrom, TextIndex sourceTo);
 	// No ShutdownMarks: teardown is model-side only and KCMPeek.cpp calls the marker directly
 	// (IKCMStoryMarkFacade.h says why a boundary method with no caller is worse than none).
 };
@@ -2947,6 +2961,25 @@ void KCMStoryMarkFacade::ShowJumpFlashColoured(IDataBase* db, UID storyUID,
 	IDataBase* const flashSourceDB = KCMArmedSourceDB();
 	if (sourceFrom >= 0 && flashSourceDB != nil && flashSourceDB != db && KCMIsDocDBOpen(flashSourceDB))
 		KCMStoryMarker::AddFlashRange(flash, flashSourceDB, storyUID, sourceFrom, sourceTo, hasColour, r, g, b);
+	KCMStoryMarker::ShowFlash(flash);
+}
+
+/* ShowJumpFlash with the older document's story named on its own (2026-10-26, stories paired by place -
+   IKCMStoryMarkFacade.h): ShowJumpFlash's body, with the Source's range lit under `sourceStoryUID` - the row's Source
+   story, another uid for a row paired by the place of its first frame. kInvalidUID lights nothing over there. */
+void KCMStoryMarkFacade::ShowJumpFlashPaired(IDataBase* db, UID storyUID,
+											 TextIndex from, TextIndex to,
+											 UID sourceStoryUID, TextIndex sourceFrom, TextIndex sourceTo)
+{
+	KCMStoryMarkDocs flash;
+	KCMStoryMarker::AddFlashRange(flash, db, storyUID, from, to);
+	IDataBase* const flashSourceDB = KCMArmedSourceDB();
+	if (sourceStoryUID != kInvalidUID && flashSourceDB != nil && flashSourceDB != db && KCMIsDocDBOpen(flashSourceDB))
+	{
+		KCM_DIAG_LOG("flash source story=%u [%d,%d)", static_cast<unsigned>(sourceStoryUID.Get()),
+					 static_cast<int>(sourceFrom), static_cast<int>(sourceTo));
+		KCMStoryMarker::AddFlashRange(flash, flashSourceDB, sourceStoryUID, sourceFrom, sourceTo);
+	}
 	KCMStoryMarker::ShowFlash(flash);
 }
 

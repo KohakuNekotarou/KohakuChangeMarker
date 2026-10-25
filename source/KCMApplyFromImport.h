@@ -48,8 +48,11 @@ int32 KCMApplyParagraphPlan(const UIDRef& targetStory, const KCMStoryShape::Stor
 	and only for a change that cannot be written on its own (design section 11-1: an object's character or a return in
 	its range, or a whole paragraph). Refuses with a reason and writes nothing.
 	outParaStart / outParaEnd: the paragraph the plan writes, in the document, its return included - where the
-	changes that go in together stand. */
-bool16 KCMPlanApplyParagraph(const UIDRef& targetStory, const KCMStoryChange& live,
+	changes that go in together stand.
+	★`wordStory` (2026-10-26) - THE STORY THE FILES NAMED: the files' content is kept under it, and it is the row's Source
+	  story (KCMStoryRow::fSourceStoryUID, the copy's) - `targetStory`'s own uid for every row but one paired by the place
+	  of its first frame, whose Target story is a new one. The same parameter on the two below. */
+bool16 KCMPlanApplyParagraph(const UIDRef& targetStory, UID wordStory, const KCMStoryChange& live,
 							KCMStoryShape::Story& outNow, KCMStorySync::Plan& outPlan,
 							int32& outParaStart, int32& outParaEnd, PMString& outWhy);
 
@@ -57,7 +60,7 @@ bool16 KCMPlanApplyParagraph(const UIDRef& targetStory, const KCMStoryChange& li
 	2026-10-24 on matrix A55: then nothing of the story can be put in one change at a time (every paragraph and table is
 	paired only once the tables agree), and "Apply All Changes in This Story" is the way in. Reads the document and the
 	files' content kept for it; kFalse when either cannot be read (the Apply then says its own reason). */
-bool16 KCMImportStoryNeedsTableRound(const UIDRef& targetStory);
+bool16 KCMImportStoryNeedsTableRound(const UIDRef& targetStory, UID wordStory);
 
 /** Apply This Change on a "Table" row (Table ≠, 2026-10-24 - first written 2026-09-25 for the retired "Redo from Word"
 	of a table): the table `tableUID` (its dictionary uid in the Target) is made the files' shape and its cells the
@@ -67,7 +70,7 @@ bool16 KCMImportStoryNeedsTableRound(const UIDRef& targetStory);
 	round has to be read back before the next is planned, so the two cannot be separated as the paragraph road's
 	are); the caller rolls the sequence back on -1. @return the moves and writes that went in; -1 when nothing could
 	be done, and outWhy says why. */
-int32 KCMApplyTableFromImport(const UIDRef& targetStory, UID tableUID, PMString& outWhy);
+int32 KCMApplyTableFromImport(const UIDRef& targetStory, UID wordStory, UID tableUID, PMString& outWhy);
 
 #endif // __KCMApplyFromImport_h__
 

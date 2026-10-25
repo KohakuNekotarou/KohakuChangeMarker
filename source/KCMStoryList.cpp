@@ -1150,7 +1150,7 @@ bool16 RecordReadsAsSource(const KCMStoryRow& row, const KCMEqualRecord& r, IDat
 	if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
 		return kTrue;
 	const UIDRef target(targetDB, row.fStoryUID);
-	const UIDRef source(sourceDB, row.fStoryUID);
+	const UIDRef source(sourceDB, row.fSourceStoryUID);	// the row's Source story (2026-10-26 - another uid for a row paired by place)
 	const int32 len = r.fNowEnd - r.fNowStart;
 	const int32 sLen = r.fLive.fSourceEnd - r.fLive.fSourceStart;
 	if (len != sLen)
@@ -1196,7 +1196,7 @@ bool16 LiveWordsHere(const KCMStoryRow& row, const KCMEqualRecord& r, IDataBase*
 	if (sourceDB != nil && KCMIsDocDBOpen(sourceDB))
 	{
 		IDataBase::SaveRestoreModifiedState sourceGuard(sourceDB);
-		InterfacePtr<ITextModel> sModel(UIDRef(sourceDB, row.fStoryUID), UseDefaultIID());
+		InterfacePtr<ITextModel> sModel(UIDRef(sourceDB, row.fSourceStoryUID), UseDefaultIID());	// the row's Source story
 		WideString sWords;
 		if (KCMTextWords::WordsAt(sModel, r.fLive.fSourceStart, len, sWords) && sWords == r.fLiveWords)
 			outSourceToo = kTrue;

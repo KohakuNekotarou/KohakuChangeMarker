@@ -150,6 +150,16 @@ public:
 										  TextIndex from, TextIndex to,
 										  TextIndex sourceFrom, TextIndex sourceTo,
 										  bool16 hasColour, uint8 r, uint8 g, uint8 b) = 0;
+
+	/** ShowJumpFlash with the OLDER document's story named on its own (2026-10-26, stories paired by place): the story
+		in `db` is `storyUID`, the one lit in the older document is `sourceStoryUID` - the row's Source story
+		(IKCMStoryEditsFacade::Row::fSourceStoryUID), which is another uid for a row paired by the place of its first frame
+		and the same uid for every other row. kInvalidUID = nothing lit over there (an Added row has no Source story).
+		★The Story mode's jump calls this; ShowJumpFlash above stands for its one-uid callers.
+		⚠Appended at the END ([[facade-vtable-slot-append-only]]). */
+	virtual void	ShowJumpFlashPaired(IDataBase* db, UID storyUID,
+										TextIndex from, TextIndex to,
+										UID sourceStoryUID, TextIndex sourceFrom, TextIndex sourceTo) = 0;
 };
 
 #endif // __IKCMStoryMarkFacade_h__

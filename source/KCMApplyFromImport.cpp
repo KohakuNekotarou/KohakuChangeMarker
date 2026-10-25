@@ -194,7 +194,7 @@ int32 KCMApplyParagraphPlan(const UIDRef& targetStory, const KCMStoryShape::Stor
 // KCMPlanApplyParagraph (2026-10-24)
 //----------------------------------------------------------------------------------------
 
-bool16 KCMPlanApplyParagraph(const UIDRef& targetStory, const KCMStoryChange& live,
+bool16 KCMPlanApplyParagraph(const UIDRef& targetStory, UID wordStory, const KCMStoryChange& live,
 							KCMStoryShape::Story& outNow, KCMStorySync::Plan& outPlan,
 							int32& outParaStart, int32& outParaEnd, PMString& outWhy)
 {
@@ -205,7 +205,7 @@ bool16 KCMPlanApplyParagraph(const UIDRef& targetStory, const KCMStoryChange& li
 	outParaEnd = 0;
 
 	KCMStoryShape::Story word;
-	if (!KCMWordKeepGet(targetStory.GetDataBase(), targetStory.GetUID(), word))
+	if (!KCMWordKeepGet(targetStory.GetDataBase(), wordStory, word))	// by the story the files named (the header says why)
 	{
 		Refuse(outWhy, "the imported text is not in memory any more - the document was closed or InDesign restarted; import again");
 		return kFalse;
@@ -238,10 +238,10 @@ bool16 KCMPlanApplyParagraph(const UIDRef& targetStory, const KCMStoryChange& li
 	return planned;
 }
 
-bool16 KCMImportStoryNeedsTableRound(const UIDRef& targetStory)
+bool16 KCMImportStoryNeedsTableRound(const UIDRef& targetStory, UID wordStory)
 {
 	KCMStoryShape::Story word;
-	if (!KCMWordKeepGet(targetStory.GetDataBase(), targetStory.GetUID(), word))
+	if (!KCMWordKeepGet(targetStory.GetDataBase(), wordStory, word))	// by the story the files named (the header says why)
 		return kFalse;
 	KCMStoryShape::Story now;
 	bool16 placed = kTrue;
@@ -292,14 +292,14 @@ void StepsOfTable(const KCMStorySync::Plan& plan, int32 ordinal, bool16 shape, K
 
 }	// namespace
 
-int32 KCMApplyTableFromImport(const UIDRef& targetStory, UID tableUID, PMString& outWhy)
+int32 KCMApplyTableFromImport(const UIDRef& targetStory, UID wordStory, UID tableUID, PMString& outWhy)
 {
 	outWhy.Clear();
 	outWhy.SetTranslatable(kFalse);
 
 	// 1. the files' content, kept by the import
 	KCMStoryShape::Story word;
-	if (!KCMWordKeepGet(targetStory.GetDataBase(), targetStory.GetUID(), word))
+	if (!KCMWordKeepGet(targetStory.GetDataBase(), wordStory, word))	// by the story the files named (the header says why)
 	{
 		Refuse(outWhy, "the imported text is not in memory any more - the document was closed or InDesign restarted; import again");
 		return -1;
