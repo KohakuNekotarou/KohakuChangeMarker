@@ -28,7 +28,6 @@
 #include "AutoGSave.h"
 #include "IControlView.h"
 #include "IPanorama.h"
-#include "IWidgetParent.h"
 #include "ISession.h"
 #include "PMMatrix.h"
 #include "PMReal.h"

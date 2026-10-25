@@ -20,9 +20,11 @@
 //  This widget is a container for the upper and lower panes; the only surface of its own is the
 //  bar. Each child has an event handler of its own, and an event is offered to the widget under
 //  the cursor before it travels upward, so a silent container changes nothing about working with
-//  what is inside it. That a plain GenericPanelWidget **carries no IID_IEVENTHANDLER at all**
-//  (also from the dump) is the other half of that argument: "a container that handles nothing"
-//  is the ordinary shape.
+//  what is inside it. (A plain GenericPanelWidget is no different: it carries an IID_IEVENTHANDLER
+//  too - 0xd17, inherited from kBaseWidgetBoss - docs/ai-notes/debug-boss-registry/
+//  IObjectModel_RomanFS.txt:4328, so a container's handler is always one inherited and replaced.
+//  ⛔Until 2026-10-25 this said a plain GenericPanelWidget carried none; the argument never needed
+//  that - the children answer first either way.)
 //
 //  ★Why CEventHandler as the base: CEventHandler.h:36-37 recommends it "for EventFilters or
 //  non-widget event handlers" and says to use DVControlEventHandler or a widget handler for a
