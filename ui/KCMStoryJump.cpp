@@ -58,6 +58,7 @@
 #include "IKCMMarkData.h"	// IsPageOnHiddenSpread - a row on a hidden page is labelled, not jumped to (2026-08-18)
 #include "KCMStoryTree.h"			// KCMListShowsResources - which kind of row the click landed on
 #include "KCMTrackLabels.h"		// the Track mode's heading: who, when, what (2026-10-05)
+#include "KCMTrackPlan.h"			// kKCMTrackDelete - a deletion's words are not in the layout (2026-10-25)
 #include "KCMResourceValue.h"		// KCMShowSelectedResource - what a Resources row does instead of jumping
 
 namespace
@@ -785,44 +786,53 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   on a HIDDEN SPREAD is neither shown nor selected, and said; an overset one is selected where its "+" is, and
 	//   said; an empty place (a deletion's) gets the caret. The Target is made the active document first - a selection
 	//   made in a document behind another is not the one the reader holds (ActivateDocument says how that was measured).
-	//   ★The Source window moves and flashes as before (design section 3, Q1); the Track mode is unchanged (Q2).
+	//   ★The Source window moves and flashes as before (design section 3, Q1).
+	//   ★★THE TRACK MODE SELECTS TOO SINCE 2026-10-25 (the author: "in the Track Change mode too, select the words when a
+	//     row is selected - remember that"; design Q2's "the Track mode as it is" reversed). The same rules on the same
+	//     place, and one thing more: what a record keeps out of the layout - a deletion's words, which InDesign shows in
+	//     the Story Editor only, and words under a hidden condition, whose place is where that text comes back
+	//     (KCMTrackRead) - cannot be selected as words, so the caret stands at the place and the message area says why
+	//     nothing shows there.
 	//   ★No flash on a selected place: an inversion over a selection cannot be read (KFC's JMP-29).
 	const char* landing = nil;		// what the message area says first - nil for a plain landing
+	const int32 reach = Utils<IKCMStoryEditsFacade>()->GetChangePlaceReach(rowIndex, changeIndex);
+	bool16 selected = kFalse;
+	if ((reach & IKCMStoryEditsFacade::kReachHiddenSpread) != 0)
+		landing = "That change is on a hidden spread - it cannot be shown or selected.";
+	else if ((reach & IKCMStoryEditsFacade::kReachLocked) != 0)
+		landing = "That change is locked - it cannot be selected.";
+	else
+	{
+		if (Utils<IKCMCompareFacade>()->GetActiveDocDB() != db)
+			ActivateDocument(db);
+		// A refusal is quiet, and the flash points instead: a story editor in front showing another story, a window
+		// that could not be had (SelectRangeIn says which).
+		selected = SelectRangeIn(db, row.fStoryUID, from, to);
+		if (selected && wentToOverset)
+			landing = "(Overset Text) The change is selected, past the end of its frames - nothing of it shows on the page.";
+		else if (selected && (reach & IKCMStoryEditsFacade::kReachHidden) != 0)
+			landing = "The change is selected, on a hidden layer - nothing of it shows.";
+		else if (selected && isTrack && track.fHidden)
+			landing = "That change is under a hidden condition - the caret stands where its text is hidden; nothing of it shows.";
+		else if (selected && isTrack && track.fKind == kKCMTrackDelete)
+			landing = "The deleted words show in the Story Editor only - the caret stands where they were.";
+	}
+	// The Target's flash only where nothing was selected and something can be shown; the Source's always (a nil
+	// document is skipped by the marker - KCMStoryMarker's AddFlashRange).
+	const bool16 targetFlash = (!selected && (reach & IKCMStoryEditsFacade::kReachHiddenSpread) == 0) ? kTrue : kFalse;
 	if (isTrack)
 	{
 		// ★In the author's colour (2026-10-05); in the Source window only where the change's place in the copy is
 		//   known exactly - otherwise its Source range is the story's start, and a flash there would point at nothing.
-		Utils<IKCMStoryMarkFacade>()->ShowJumpFlashColoured(db, row.fStoryUID, from, to,
+		Utils<IKCMStoryMarkFacade>()->ShowJumpFlashColoured(targetFlash ? db : nil, row.fStoryUID,
+			targetFlash ? from : 0, targetFlash ? to : 0,
 			track.fSourceExact ? change.fSourceStart : -1, track.fSourceExact ? change.fSourceEnd : -1,
 			track.fHasColour, track.fR, track.fG, track.fB);
 	}
 	else
-	{
-		const int32 reach = Utils<IKCMStoryEditsFacade>()->GetChangePlaceReach(rowIndex, changeIndex);
-		bool16 selected = kFalse;
-		if ((reach & IKCMStoryEditsFacade::kReachHiddenSpread) != 0)
-			landing = "That change is on a hidden spread - it cannot be shown or selected.";
-		else if ((reach & IKCMStoryEditsFacade::kReachLocked) != 0)
-			landing = "That change is locked - it cannot be selected.";
-		else
-		{
-			if (Utils<IKCMCompareFacade>()->GetActiveDocDB() != db)
-				ActivateDocument(db);
-			// A refusal is quiet, and the flash points instead: a story editor in front showing another story, a window
-			// that could not be had (SelectRangeIn says which).
-			selected = SelectRangeIn(db, row.fStoryUID, from, to);
-			if (selected && wentToOverset)
-				landing = "(Overset Text) The change is selected, past the end of its frames - nothing of it shows on the page.";
-			else if (selected && (reach & IKCMStoryEditsFacade::kReachHidden) != 0)
-				landing = "The change is selected, on a hidden layer - nothing of it shows.";
-		}
-		// The Target's flash only where nothing was selected and something can be shown; the Source's always (a nil
-		// document is skipped by the marker - KCMStoryMarker's AddFlashRange).
-		const bool16 targetFlash = (!selected && (reach & IKCMStoryEditsFacade::kReachHiddenSpread) == 0) ? kTrue : kFalse;
 		Utils<IKCMStoryMarkFacade>()->ShowJumpFlash(targetFlash ? db : nil, row.fStoryUID,
 													  targetFlash ? from : 0, targetFlash ? to : 0,
 													  change.fSourceStart, change.fSourceEnd);
-	}
 
 	// ***** AND THE OTHER SIDE OF THE EDIT GOES TO THE PANEL'S MESSAGE AREA. *****
 	//

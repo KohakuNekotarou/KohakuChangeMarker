@@ -40,10 +40,12 @@ bool16 KCMStoryJumpToRow(int32 rowIndex);
 
 	★★★A SELECTION AGAIN, THE WAY KFC MAKES ONE (docs/superpowers/specs/2026-10-24-kcm-list-like-kfc-design.md 1-1 /
 	1-2; the author: "in KFC, selecting a row selects the text too, and that is pleasant to use"). The Story mode and an
-	import's copy; the Track mode still marks. KFC's landing rules: locked - not selected, the flash points; hidden (its
-	layer or itself) - selected, said; on a hidden spread - neither, said; overset - selected at the "+", said; an
-	empty place - the caret. The Target is made the active document, and the Type tool goes on (IsToolOfType). The
-	Source window moves and flashes as before.
+	import's copy - and the Track mode since 2026-10-25 (the author: "the Track Change mode too"). KFC's landing rules:
+	locked - not selected, the flash points; hidden (its layer or itself) - selected, said; on a hidden spread - neither,
+	said; overset - selected at the "+", said; an empty place - the caret (in the Track mode a deletion's words and words
+	under a hidden condition are kept out of the layout, so their caret is said too). The Target is made the active
+	document, and the Type tool goes on (IsToolOfType). The Source window moves and flashes as before (in the Track
+	mode in the author's colour, where the change's place in the copy is known).
 	(⛔2026-08-20 to 2026-10-24: A MARK, NOT A SELECTION - the user's call then: "move to those characters and show a
 	marker for a short while". It cost the three things a selection costs - the reader's selection thrown away, the
 	Type tool forced on, the words left selected - which the KFC list showed to be the pointer worth having. The
@@ -74,7 +76,7 @@ bool16 KCMStoryJumpToRow(int32 rowIndex);
 	for. Change::fSourceStart carries it, with fSourceEnd equal to it (an empty range).
 
 	(⛔Until 2026-10-24 night: THE ACTIVE TOOL WAS LEFT ALONE, and so was the reader's own selection - a mark costs
-	neither. The Track mode, which still marks, keeps that.)
+	neither. The Track mode kept that until 2026-10-25.)
 
 	@param rowIndex which story row of KCMStoryList.
 	@param changeIndex which of that row's changes.

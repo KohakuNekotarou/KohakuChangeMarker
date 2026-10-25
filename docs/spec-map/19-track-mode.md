@@ -66,14 +66,14 @@
 
 ## 4. クリック・Prev/Next
 
-- **TCM-24** ★変更の行のクリック＝その場所へ飛び、**作成者の色の一瞬の印**。Source の窓も元の位置へ動き、**元の位置が正確なとき（TCM-15）だけ** Source にも印。承認・却下の操作は無い＝見るだけ。（ユーザー「見る＋ジャンプ」）
-  - 訂正:
+- **TCM-24** ★変更の行のクリック＝その場所へ飛び、**Target の文字を選ぶ**（Story モードと同じ着地の規則＝第8章 LIST-26・文字ツールになる）。**選べないとき（ロック）だけ** Target に作成者の色の一瞬の印。★**削除の記録の文字はレイアウトに無い**（本体はストーリーエディターにだけ出す）ので、削除の行はその場所にキャレットを置き、メッセージ欄の頭に `The deleted words show in the Story Editor only - the caret stands where they were.`。Source の窓も元の位置へ動き、**元の位置が正確なとき（TCM-15）だけ** Source に作成者の色の印。承認・却下の操作は無い＝見るだけ。（ユーザー「見る＋ジャンプ」）
+  - 訂正: ✅2026-10-25 作者決定で変更＝旧「作成者の色の一瞬の印（文字は選ばない）」（作者「TrackChangeでも行を選択で文字を選ぶようにで、おぼえておいてください」＝2026-10-24 の一覧の設計 Q2「Track は印のまま」を覆す）。`ui/KCMStoryJump.cpp` の KCMStoryJumpToChange。
 - **TCM-25** クリックのたびに、その変更がまだ記録されているかを文書に聞く。無ければ（本体のパネルで承認・却下した・取り消した）`This change is no longer recorded - accepted, rejected or undone. Refresh to read again.` と出し、飛ばない。
   - 訂正:
 - **TCM-26** ステータス欄の見出し＝`<作成者> · <OS の短い日付> <時刻> · <Replaced／Inserted／Deleted／Moved>:`（非表示の条件なら ` (hidden condition)`）、本文は元の側の文字。
   - 訂正:
-- **TCM-27** 非表示の条件の中の変更は、条件を表示すると戻る場所へ飛び、幅0の印。
-  - 訂正:
+- **TCM-27** 非表示の条件の中の変更は、条件を表示すると戻る場所へ飛び、そこにキャレット（メッセージ欄の頭に `That change is under a hidden condition - the caret stands where its text is hidden; nothing of it shows.`）。
+  - 訂正: ✅2026-10-25 TCM-24 の変更に合わせた（旧「幅0の印」）。
 - **TCM-28** 作成者の行は見出し＝押しても飛ばない（開閉と選択だけ）。
   - 訂正:
 - **TCM-29** Prev/Next は**変更の行だけ**に止まり、木の順（作成者ごと）に歩く。作成者の段も開く。「今どこ」は作成者名・ストーリー・行・変更で覚える。
