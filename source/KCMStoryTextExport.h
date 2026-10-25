@@ -32,6 +32,8 @@
 #include "UIDRef.h"
 #include "KCMStoryShape.h"		// Story - the shape a story is read into
 
+#include <string>
+
 class IDataBase;
 class IDFile;
 class UIDList;
@@ -77,6 +79,20 @@ bool16 KCMStoryFromDocument(const UIDRef& storyRef, KCMStoryShape::Story& out, b
 	changes (S1, 2026-09-23), which have to hold every table BEFORE any of them changes.
 	@return kFalse when the story could not be walked. */
 bool16 KCMTableRefsOfStory(const UIDRef& storyRef, std::vector<UIDRef>& out);
+
+/* ---- (2026-10-25) what a second export writes its files with - Export Pages to Word (KCMPageExport.h): the folder and
+   the file the same way as this one, so the two cannot drift apart. ---- */
+
+/** The document's name without its extension, every character a Windows path refuses made "_" ("document" for none). */
+std::wstring KCMDocumentFileStem(IDataBase* db);
+
+/** "<parent>\<stem> YYYY-MM-DD HHMMSS", created. ⚠kFalse when one of that name already stands there - the stamp keeps
+	two exports apart, and writing into somebody else's folder would be the silent overwrite it exists to prevent. */
+bool16 KCMMakeDatedExportFolder(const IDFile& parent, const std::wstring& stem, IDFile& outFolder);
+
+/** `bytes` into `file`, created or truncated. kFalse when the stream says it failed - read after Flush, where a full
+	disk shows. */
+bool16 KCMWriteFileBytes(const IDFile& file, const std::string& bytes);
 
 #endif // __KCMStoryTextExport_h__
 

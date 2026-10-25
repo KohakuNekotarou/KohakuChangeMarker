@@ -31,6 +31,11 @@
 	document's SaveRestoreModifiedState). */
 int32 KCMPlaceReach(const UIDRef& story, TextIndex from, TextIndex to);
 
+/** Whether the page item `frame` of `db` is hidden: its layer not visible, or the item itself hidden (Object > Hide) - the
+	two questions KCMPlaceReach asks for kReachHidden, here for a frame named by its UID (2026-10-25: Export Pages to Word
+	leaves a hidden frame out of its page). */
+bool16 KCMIsFrameHidden(IDataBase* db, UID frame);
+
 #endif // __KCMPlaceReach_h__
 
 // End, KCMPlaceReach.h.

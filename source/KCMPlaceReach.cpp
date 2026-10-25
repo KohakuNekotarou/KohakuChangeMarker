@@ -189,4 +189,11 @@ int32 KCMPlaceReach(const UIDRef& story, TextIndex from, TextIndex to)
 	return reach;
 }
 
+bool16 KCMIsFrameHidden(IDataBase* db, UID frame)
+{
+	if (db == nil || frame == kInvalidUID || !db->IsValidUID(frame))
+		return kFalse;
+	return IsFrameHidden(db, frame) ? kTrue : kFalse;
+}
+
 // End, KCMPlaceReach.cpp.

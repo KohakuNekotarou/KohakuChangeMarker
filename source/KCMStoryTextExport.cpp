@@ -607,6 +607,22 @@ bool16 KCMStoryFromDocument(const UIDRef& storyRef, KCMStoryShape::Story& out, b
 	return BuildStory(storyRef, out, outNoteRefsPlaced);
 }
 
+// (2026-10-25) The three a second export - Export Pages to Word, KCMPageExport.cpp - writes its files with, the same way.
+std::wstring KCMDocumentFileStem(IDataBase* db)
+{
+	return DocumentStem(db);
+}
+
+bool16 KCMMakeDatedExportFolder(const IDFile& parent, const std::wstring& stem, IDFile& outFolder)
+{
+	return MakeDatedFolder(parent, stem, outFolder);
+}
+
+bool16 KCMWriteFileBytes(const IDFile& file, const std::string& bytes)
+{
+	return WriteFileBytes(file, bytes);
+}
+
 bool16 KCMTableRefsOfStory(const UIDRef& storyRef, std::vector<UIDRef>& out)
 {
 	out.clear();
