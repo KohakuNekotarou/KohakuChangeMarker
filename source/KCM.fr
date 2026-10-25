@@ -486,6 +486,13 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//
 	// It is ATTACHED at run time and never persistently (KCMMarksObserver.cpp): an attachment
 	// written into the .indd would be a change made to the reader's file by merely opening it.
+	//
+	// ***** AND THE STORY EDITS LIST'S UNDO FOLLOWER, ON THE SAME BOSS (2026-10-25). *****
+	// It sat on kTextStoryBoss until 2026-10-25 (the block below says what it was). It is on the DOCUMENT now: a test
+	// build saw InDesign build the listed stories again right after Start - new subjects, nothing attached - and a
+	// document is not purged while it is open. It hears what a story's change repeats on its document's subject
+	// (KCMStoryFollowObserver.cpp, measured with KT's docnotify probe), attached at run time and never persistently,
+	// under an IID of our own for the reason above.
 	AddIn
 	{
 		kDocBoss,
@@ -493,6 +500,8 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			// Implementation: KCMMarksObserver.cpp
 			IID_IKCMMARKSOBSERVER, kKCMMarksObserverImpl,
+			// Implementation: KCMStoryFollowObserver.cpp
+			IID_IKCMSTORYFOLLOWOBSERVER, kKCMStoryFollowObserverImpl,
 		}
 	},
 
@@ -500,19 +509,10 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//  attached at run time and never persistently, so that Ctrl+Z after a restore redrew the list.
 	//  It listened under the SDK's own IID_ITEXTMODEL, because the change was InDesign's and not a
 	//  KCM command's, and LAZILY, because lazy is the only notification broadcast on undo and redo
-	//  (ISubject.h:78-82). It went with the restore on 2026-09-21.)
-	// ***** AND IS BACK UNDER NEW NUMBERS (2026-09-25): THE STORY EDITS LIST FOLLOWS AN UNDO / REDO. *****
-	// The same shape - run-time attachment only (KCMStoryFollowEnsureObservers), IID_ITEXTMODEL, lazy - but it
-	// compares the row AGAIN when the story came back to a state it was compared at (KCMStoryFollowObserver.h).
-	AddIn
-	{
-		kTextStoryBoss,
-		kInvalidClass,
-		{
-			// Implementation: KCMStoryFollowObserver.cpp
-			IID_IKCMSTORYFOLLOWOBSERVER, kKCMStoryFollowObserverImpl,
-		}
-	},
+	//  (ISubject.h:78-82). It went with the restore on 2026-09-21.
+	//  It came back under new numbers on 2026-09-25 - the Story Edits list following an Undo / Redo, the row
+	//  compared AGAIN - and moved to kDocBoss above on 2026-10-25, with the same IID and implementation: the story
+	//  it hung on could be built again and leave it behind.)
 
 	// Tasks 12-15 add their four interfaces to THIS block - they do not open a second AddIn.
 	AddIn

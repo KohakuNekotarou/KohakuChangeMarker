@@ -34,6 +34,11 @@ namespace KCMTrackRead
 	/** Is the change still in the document: a record of the same author, kind and time in its story?
 		An accept, a reject or an undo since the read leaves none. */
 	bool16	StillRecorded(IDataBase* targetDB, UID storyUID, const KCMTrackChange& change);
+
+	/** Has the Target's number of tracked-change records changed since Build last read it (2026-10-25 - the Undo
+		follower, KCMStoryFollowObserver.cpp)? Every record of every story is walked, so it is asked only when an accept
+		or a reject was notified - which may move no counter (an accept changes no text). kFalse when nothing was read. */
+	bool16	RecordsMovedSinceRead(IDataBase* targetDB);
 }
 
 #endif // __KCMTrackRead_h__

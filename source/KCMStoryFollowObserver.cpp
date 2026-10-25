@@ -10,12 +10,11 @@
 #include "IDataBase.h"
 #include "IObserver.h"
 #include "ISubject.h"
-#include "ITextModel.h"
 
 // General includes:
 #include "CObserver.h"
-#include "PersistUtils.h"		// ::GetUIDRef - which story the notification is about
-#include "TextID.h"				// IID_ITEXTMODEL - the protocol InDesign raises a story's change under
+#include "PersistUtils.h"		// ::GetDataBase - whose document the notification is about
+#include "TextID.h"				// IID_ITEXTMODELCHANGED and the six IID_..REDLINE_DOCUMENT - the protocols followed
 
 // Project includes:
 #include "KCMID.h"				// IID_IKCMSTORYFOLLOWOBSERVER / kKCMStoryEditsRebuiltMessage
@@ -23,12 +22,34 @@
 #include "KCMDiag.h"			// KCM_DIAG_LOG - test builds only (nothing in a shipping .pln)
 #include "KCMModelNotify.h"		// KCMNotify - the panel is told, never called
 #include "KCMStoryDiffRun.h"	// RunOne - the row compared again
-#include "KCMStoryList.h"		// RowOfTargetStory / NeedsCompareAgain
-#include "KCMTrackList.h"		// NeedsReadAgain / GetStoryUIDs - the Track mode follows the same rule (2026-10-05)
-#include "KCMTrackRead.h"		// Build - ...and reads the whole list again
-#include <vector>
+#include "KCMStoryList.h"		// NeedsCompareAgain
+#include "KCMTrackList.h"		// AnyNeedsReadAgain - the Track mode follows the same rule (2026-10-05)
+#include "KCMTrackRead.h"		// Build / RecordsMovedSinceRead - ...and reads the whole list again
 #include "KCMThreadSafety.h"	// KCMIsMainThread
 #include "KCMStoryFollowObserver.h"
+
+namespace
+{
+// ★★THE PROTOCOLS FOLLOWED (2026-10-25) - what a story's change repeats on its DOCUMENT's subject, measured with KT's
+//   docnotify probe (work/note-scripts/2026-10-25-kt-docnotify/ - the SDK writes it down nowhere; the three IIDs are in
+//   TextID.h with no boss carrying them):
+//   IID_ITEXTMODELCHANGED - a story's text or attributes changed: typing, a script's edit, a table cell's text, a
+//     reject, a new frame - once per change, and again on its Undo and its Redo (lazily, which is all an Undo sends).
+//   IID_ACCEPT..REDLINE_DOCUMENT / IID_REJECT..REDLINE_DOCUMENT - a tracked change accepted or rejected (one, a range,
+//     all). ★AN ACCEPT CHANGES NO TEXT: IID_ITEXTMODELCHANGED never comes for it, and the story's change counter does
+//     not move either (measured 7, 7, 7, 7 across a tracked insertion's accept, its Undo and its Redo).
+bool16 IsRedline(const PMIID& protocol)
+{
+	return (protocol == IID_ACCEPTREDLINE_DOCUMENT || protocol == IID_ACCEPTRANGEREDLINE_DOCUMENT
+			|| protocol == IID_ACCEPTALLREDLINE_DOCUMENT || protocol == IID_REJECTREDLINE_DOCUMENT
+			|| protocol == IID_REJECTRANGEREDLINE_DOCUMENT || protocol == IID_REJECTALLREDLINE_DOCUMENT) ? kTrue : kFalse;
+}
+
+bool16 IsFollowed(const PMIID& protocol)
+{
+	return (protocol == IID_ITEXTMODELCHANGED || IsRedline(protocol)) ? kTrue : kFalse;
+}
+}	// namespace
 
 //========================================================================================
 // The observer.
@@ -52,19 +73,18 @@ CREATE_PMINTERFACE(KCMStoryFollowObserver, kKCMStoryFollowObserverImpl)
 /* The rows an Undo or a Redo moved, compared again.
 
    ★ASKED, NOT ASSUMED, at every step: the main thread, a comparison running, in a mode with story rows, both
-   documents open, the story the Target's, a row for it - and then whether the story really came back to a state the
-   row was compared at (KCMStoryList::NeedsCompareAgain). A KCM write in the story (a reject, a redo, a match, the
-   import's own pour) has compared the row already, so the counter it left is the row's own and nothing is done twice.
+   documents open, the Target's document - and then whether a story really came back to a state its row was compared
+   at (KCMStoryList::NeedsCompareAgain). A KCM write in the story (a reject, a redo, a match, the import's own pour) has
+   compared the row already, so the counter it left is the row's own and nothing is done twice.
    ★★EVERY ROW THAT NEEDS IT, AND ONE NOTIFICATION (re-check 2026-09-25): one Undo can move many stories at once - the
-   whole import is one step - and each story sends its own notification. Answered one row at a time, the panel would
-   be rebuilt once per story. The first notification compares every row that needs it and tells the panel once; the
-   ones after it find the counters where the rows now are and do nothing.
-   The data is ignored: it names neither what changed nor whether it was an undo, and may be nil.
+   whole import is one step. The rows that need it are compared and the panel is told once.
+   ★The notification does not say WHICH story (the document's subject is the one LazyUpdate names - ISubject.h), nor
+   whether it was an undo, and its data is not ours to read: the counters say.
 */
 void KCMStoryFollowObserver::LazyUpdate(ISubject* theSubject, const PMIID& protocol,
 										const LazyNotificationData* data)
 {
-	if (protocol != IID_ITEXTMODEL || theSubject == nil)
+	if (!IsFollowed(protocol) || theSubject == nil)
 		return;
 	// ⚠The list, the armed state and the diff are the main thread's (KCMThreadSafety.h) - a background export's clone
 	//  carries no run-time attachment, and this is the belt in case one ever does.
@@ -76,27 +96,26 @@ void KCMStoryFollowObserver::LazyUpdate(ISubject* theSubject, const PMIID& proto
 	IDataBase* const sourceDB = KCMArmedSourceDB();
 	if (targetDB == nil || sourceDB == nil || !KCMIsDocDBOpen(targetDB) || !KCMIsDocDBOpen(sourceDB))
 		return;
-	const UIDRef story = ::GetUIDRef(theSubject);
-	if (story.GetDataBase() != targetDB)
+	// The Target's document only: a document compared before keeps its attachment (KCMStoryFollowEnsureObservers - no
+	// detach) and ends here.
+	if (::GetDataBase(theSubject) != targetDB)
 		return;
-	KCM_DIAG_LOG("follow lazy: story %u subject %p", (unsigned)story.GetUID().Get(), (void*)theSubject);
-	// ★★THE TRACK MODE FOLLOWS THE SAME RULE (2026-10-05, design 7-2): an Undo or a Redo of a listed story reads
-	//   the whole list again - rows are (story, author) pairs, and one story's records can make or lose rows for
-	//   several authors. Plain typing is left alone, as in the Story mode.
+	KCM_DIAG_LOG("follow lazy: protocol 0x%X", (unsigned)protocol.Get());
+	// ★★THE TRACK MODE FOLLOWS THE SAME RULE (2026-10-05, design 7-2): an Undo or a Redo of a listed story reads the
+	//   whole list again - rows are (story, author) pairs, and one story's records can make or lose rows for several
+	//   authors. Plain typing is left alone, as in the Story mode. ★And an accept or a reject (2026-10-25): it may move no
+	//   counter, so the records themselves are counted - which also brings a story back that had lost all its rows.
 	if (KCMGetCompareMode() == kKCMModeTrack)
 	{
-		const bool16 readAgain = KCMTrackList::NeedsReadAgain(story.GetUID(), targetDB);
-		KCM_DIAG_LOG("follow lazy: track story %u read again=%d", (unsigned)story.GetUID().Get(), (int)readAgain);
-		if (!readAgain)
+		const bool16 counters = KCMTrackList::AnyNeedsReadAgain(targetDB);
+		const bool16 records = (!counters && IsRedline(protocol)) ? KCMTrackRead::RecordsMovedSinceRead(targetDB) : kFalse;
+		KCM_DIAG_LOG("follow lazy: track counters=%d records=%d", (int)counters, (int)records);
+		if (!counters && !records)
 			return;
 		KCMTrackRead::Build(targetDB, sourceDB, nil);
-		KCMStoryFollowEnsureObservers(targetDB);
 		KCMNotify(kKCMStoryEditsRebuiltMessage);
 		return;
 	}
-	const int32 nth = KCMStoryList::RowOfTargetStory(story.GetUID());
-	if (nth < 0 || !KCMStoryList::NeedsCompareAgain(nth, targetDB))
-		return;
 	// ★None is a result too: an import undone at once leaves its rows standing with nothing under them (the user's
 	//   choice, 2026-09-25) - and a Redo brings the changes back under the same rows.
 	int32 compared = 0;
@@ -117,71 +136,69 @@ void KCMStoryFollowObserver::LazyUpdate(ISubject* theSubject, const PMIID& proto
 //========================================================================================
 namespace
 {
-/* The observer on one story, once (the Story list's stories and, 2026-10-05, the Track list's). */
-void KCMStoryFollowAttach(const UIDRef& storyRef)
+/* The Target document's subject and our observer on it (KCM.fr: AddIn on kDocBoss), nil when either is missing. */
+bool16 QueryFollow(IDataBase* targetDB, InterfacePtr<ISubject>& subject, InterfacePtr<IObserver>& observer)
 {
-	InterfacePtr<ISubject> subject(storyRef, UseDefaultIID());
-	// Asked for by OUR IID: kTextStoryBoss carries other people's IID_IOBSERVER, and the unit of collision
-	// between vendors is the ImplementationID (KCM.fr).
-	InterfacePtr<IObserver> observer(storyRef, IID_IKCMSTORYFOLLOWOBSERVER);
-	if (subject == nil || observer == nil)
-		return;
-	const bool16 attached = subject->IsAttached(ISubject::kLazyAttachment, observer, IID_ITEXTMODEL, IID_IKCMSTORYFOLLOWOBSERVER);
-	if (!attached)
-		subject->AttachObserver(ISubject::kLazyAttachment, observer, IID_ITEXTMODEL, IID_IKCMSTORYFOLLOWOBSERVER);
-	KCM_DIAG_LOG("follow attach: story %u subject %p %s", (unsigned)storyRef.GetUID().Get(), (void*)subject.get(),
-				 attached ? "already attached" : "attached now");
+	if (targetDB == nil)
+		return kFalse;
+	const UID root = targetDB->GetRootUID();
+	if (root == kInvalidUID)
+		return kFalse;
+	subject.reset(InterfacePtr<ISubject>(targetDB, root, IID_ISUBJECT).forget());
+	// Asked for by OUR IID: kDocBoss carries other people's IID_IOBSERVER (KCM.fr - KCMMarksObserver does the same).
+	observer.reset(InterfacePtr<IObserver>(targetDB, root, IID_IKCMSTORYFOLLOWOBSERVER).forget());
+	return (subject != nil && observer != nil) ? kTrue : kFalse;
 }
 
-/* The stories the follower is for, Track list or Story list (KCMStoryFollowEnsureObservers' choice). */
-void KCMStoryFollowStories(std::vector<UID>& out)
+/* The protocols, each once (IsFollowed above is the same list). */
+const PMIID* Protocols(int32& count)
 {
-	out.clear();
-	if (KCMGetCompareMode() == kKCMModeTrack)
-	{
-		KCMTrackList::GetStoryUIDs(out);
-		return;
-	}
-	const int32 rows = KCMStoryList::GetRowCount();
-	for (int32 i = 0; i < rows; ++i)
-	{
-		const KCMStoryRow* const row = KCMStoryList::GetRow(i);
-		if (row == nil || row->fStoryUID == kInvalidUID || (row->fKinds & kKCMStoryKindRemoved) != 0)
-			continue;		// a story only the Source has is not in this document
-		out.push_back(row->fStoryUID);
-	}
+	static const PMIID kList[] = { IID_ITEXTMODELCHANGED,
+		IID_ACCEPTREDLINE_DOCUMENT, IID_ACCEPTRANGEREDLINE_DOCUMENT, IID_ACCEPTALLREDLINE_DOCUMENT,
+		IID_REJECTREDLINE_DOCUMENT, IID_REJECTRANGEREDLINE_DOCUMENT, IID_REJECTALLREDLINE_DOCUMENT };
+	count = static_cast<int32>(sizeof(kList) / sizeof(kList[0]));
+	return kList;
 }
 }	// namespace
 
 void KCMStoryFollowEnsureObservers(IDataBase* targetDB)
 {
-	if (targetDB == nil)
+	InterfacePtr<ISubject> subject;
+	InterfacePtr<IObserver> observer;
+	if (!QueryFollow(targetDB, subject, observer))
 		return;
-	// ★The Track mode's stories (2026-10-05): the same observer, on every story the Track list names
-	//   (KCMStoryFollowStories - the one walk, which the test build's report walks too).
-	std::vector<UID> stories;
-	KCMStoryFollowStories(stories);
-	for (size_t i = 0; i < stories.size(); ++i)
-		KCMStoryFollowAttach(UIDRef(targetDB, stories[i]));
+	int32 count = 0;
+	const PMIID* const protocols = Protocols(count);
+	int32 attachedNow = 0;
+	for (int32 i = 0; i < count; ++i)
+	{
+		if (subject->IsAttached(ISubject::kLazyAttachment, observer, protocols[i], IID_IKCMSTORYFOLLOWOBSERVER))
+			continue;
+		subject->AttachObserver(ISubject::kLazyAttachment, observer, protocols[i], IID_IKCMSTORYFOLLOWOBSERVER);
+		++attachedNow;
+	}
+	KCM_DIAG_LOG("follow attach: document subject %p - %d of %d protocol(s) attached now", (void*)subject.get(),
+				 (int)attachedNow, (int)count);
 }
 
 #ifdef KCM_DIAG
 void KCMStoryFollowDiagReport(IDataBase* targetDB, const char* when)
 {
-	if (targetDB == nil)
-		return;
-	std::vector<UID> stories;
-	KCMStoryFollowStories(stories);
-	for (size_t i = 0; i < stories.size(); ++i)
+	InterfacePtr<ISubject> subject;
+	InterfacePtr<IObserver> observer;
+	if (!QueryFollow(targetDB, subject, observer))
 	{
-		const UIDRef storyRef(targetDB, stories[i]);
-		InterfacePtr<ISubject> subject(storyRef, UseDefaultIID());
-		InterfacePtr<IObserver> observer(storyRef, IID_IKCMSTORYFOLLOWOBSERVER);
-		const bool attached = (subject != nil && observer != nil
-			&& subject->IsAttached(ISubject::kLazyAttachment, observer, IID_ITEXTMODEL, IID_IKCMSTORYFOLLOWOBSERVER));
-		KCM_DIAG_LOG("follow check (%s): story %u subject %p %s", when, (unsigned)stories[i].Get(), (void*)subject.get(),
-					 attached ? "attached" : "NOT ATTACHED");
+		KCM_DIAG_LOG("follow check (%s): no document subject or observer", when);
+		return;
 	}
+	int32 count = 0;
+	const PMIID* const protocols = Protocols(count);
+	int32 attached = 0;
+	for (int32 i = 0; i < count; ++i)
+		if (subject->IsAttached(ISubject::kLazyAttachment, observer, protocols[i], IID_IKCMSTORYFOLLOWOBSERVER))
+			++attached;
+	KCM_DIAG_LOG("follow check (%s): document subject %p - %d of %d protocol(s) attached", when, (void*)subject.get(),
+				 (int)attached, (int)count);
 }
 #endif
 

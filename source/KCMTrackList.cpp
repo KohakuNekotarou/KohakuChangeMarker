@@ -34,6 +34,9 @@ struct CounterHistory
 	CounterHistory() : fLast(0) {}
 };
 std::map<UID, CounterHistory>	gHistory;
+// The Target's tracked-change records when the list was last read (KCMTrackRead::Build): what an accept or a reject is
+// told by, since it may move no counter (2026-10-25 - NoteRecordCount). -1 = not read since Clear.
+int32							gRecordsAtRead = -1;
 
 uint32 CounterOf(IDataBase* db, UID story)
 {
@@ -98,6 +101,7 @@ void KCMTrackList::Clear()
 	gNotRejectedInCopy = 0;
 	gOtherRecords = 0;
 	gHistory.clear();
+	gRecordsAtRead = -1;
 }
 
 int32 KCMTrackList::GetRowCount()		{ return static_cast<int32>(gRows.size()); }
@@ -147,12 +151,28 @@ bool16 KCMTrackList::NeedsReadAgain(UID storyUID, IDataBase* targetDB)
 		? kTrue : kFalse;									// came back to a value read before: a redo
 }
 
+bool16 KCMTrackList::AnyNeedsReadAgain(IDataBase* targetDB)
+{
+	for (std::map<UID, CounterHistory>::const_iterator it = gHistory.begin(); it != gHistory.end(); ++it)
+		if (NeedsReadAgain(it->first, targetDB))
+			return kTrue;
+	return kFalse;
+}
+
 void KCMTrackList::NoteStoryCounters(IDataBase* targetDB)
 {
 	if (targetDB == nil)
 		return;
+	// The listed stories AND every story noted before (2026-10-25): a story that has lost all its rows - every change
+	// in it rejected - keeps its place in the history, and its counter is read now too. Read only for the listed ones
+	// (until 2026-10-25), it stayed at the value from before the reject, and the reject's Undo, which takes the counter
+	// back to exactly that value, read as "nothing moved" (tests-track-ar.ps1 AR-8: Reject All Changes in Document, then
+	// Ctrl+Z - the list stayed empty).
 	std::vector<UID> stories;
 	GetStoryUIDs(stories);
+	for (std::map<UID, CounterHistory>::const_iterator it = gHistory.begin(); it != gHistory.end(); ++it)
+		if (std::find(stories.begin(), stories.end(), it->first) == stories.end())
+			stories.push_back(it->first);
 	for (size_t i = 0; i < stories.size(); ++i)
 	{
 		CounterHistory& h = gHistory[stories[i]];
@@ -160,6 +180,16 @@ void KCMTrackList::NoteStoryCounters(IDataBase* targetDB)
 		if (std::find(h.fSeen.begin(), h.fSeen.end(), h.fLast) == h.fSeen.end())
 			h.fSeen.push_back(h.fLast);
 	}
+}
+
+void KCMTrackList::NoteRecordCount(int32 records)
+{
+	gRecordsAtRead = records;
+}
+
+int32 KCMTrackList::GetRecordCountAtRead()
+{
+	return gRecordsAtRead;
 }
 
 void KCMTrackList::RowsAsTsv(PMString& out)

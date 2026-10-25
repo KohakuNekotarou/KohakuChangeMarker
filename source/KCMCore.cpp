@@ -584,7 +584,8 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 		return kFalse;
 
 	// ★★AND FROM NOW ON THE LIST FOLLOWS AN UNDO AND A REDO (2026-09-25, the user: "after Ctrl+Z the list is out of
-	//   date"). An observer on every listed Target story compares its row again when the story comes back to a state
+	//   date"). An observer on the Target document (on each listed story until 2026-10-25 - KCMStoryFollowObserver.h says
+	//   why it moved) compares a row again when its story comes back to a state
 	//   the row was compared at (KCMStoryFollowObserver.h). ⚠AFTER the drop: a dropped row has nothing to follow.
 	//   (⛔An observer stood here from 2026-09-15 to 2026-09-21 - KCMStoryUndoObserver, a redraw only - and went with
 	//    the restore, on the grounds that nothing a row drew depended on the live document any more. That stopped

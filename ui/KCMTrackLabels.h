@@ -25,7 +25,7 @@ PMString		KCMTrackTimeLabel(uint64 t);
 /** The author's colour, or the panel's Mark colour when InDesign draws them on white. */
 RealAGMColor	KCMTrackColour(bool16 hasColour, uint8 r, uint8 g, uint8 b);
 
-/** An author's name for the list: "(no name)" when the record holds none. */
+/** An author's name for the list: "(no name)" when the record holds none - or only spaces (2026-10-25). */
 PMString		KCMTrackAuthorName(const PMString& name);
 
 /** The author row's colour square in the ID column, then its name (2026-10-05): where the square starts, the gap after

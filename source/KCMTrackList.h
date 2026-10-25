@@ -94,8 +94,18 @@ namespace KCMTrackList
 		(ITextModel::GetChangeCount) went below the value it was read at, or came back to one it was read at.
 		Plain typing makes new values and answers kFalse. */
 	bool16	NeedsReadAgain(UID storyUID, IDataBase* targetDB);
-	/** After a read: every listed story's counter goes into its history. */
+	/** NeedsReadAgain for every story in the counter history - the listed ones and those that have lost their rows
+		(2026-10-25: the Undo follower is told by the document now, which does not say which story). */
+	bool16	AnyNeedsReadAgain(IDataBase* targetDB);
+	/** After a read: every listed story's counter goes into its history - and every story's already in it (2026-10-25:
+		a story whose rows all went must still recognise the Undo that brings them back). */
 	void	NoteStoryCounters(IDataBase* targetDB);
+	/** After a read: how many tracked-change records the Target had (KCMTrackRead::Build counts them as it reads), and
+		that number back (-1 = not read since Clear). An accept changes no text and moves no counter (measured
+		2026-10-25), so the records are what tells an accept, a reject and their Undo and Redo
+		(KCMTrackRead::RecordsMovedSinceRead). */
+	void	NoteRecordCount(int32 records);
+	int32	GetRecordCountAtRead();
 	/** The list as TSV for app.kcmStoryRows in the Track mode. */
 	void	RowsAsTsv(PMString& out);
 	void	ShutdownCleanup();

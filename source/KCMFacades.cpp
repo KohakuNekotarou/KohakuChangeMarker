@@ -2612,6 +2612,8 @@ private:
 		// ★THE UNDO FOLLOWER ATTACHED AGAIN (measured 2026-10-24 on the application: after "Apply All Changes in This
 		//   Story" an Undo put the words back and the list did not follow - its observer had gone from the story, the
 		//   loss memory observer-lost-when-object-purged describes). Attaching is idempotent (IsAttached first).
+		//   ★Since 2026-10-25 the follower is on the DOCUMENT (KCMStoryFollowObserver.h), which is not built again while
+		//   open: this call - and the other "attached again" ones - only make sure it is there.
 		KCMStoryFollowEnsureObservers(targetDB);
 		if (oneRow >= 0)
 			this->RefreshRow(oneRow);

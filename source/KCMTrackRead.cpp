@@ -242,6 +242,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, IDataBase* sourceDB, bool16* outC
 	barTitle.SetTranslatable(kFalse);
 	KCMProgressStepper progress(barTitle, count);
 	int32 otherRecords = 0;
+	int32 targetRecords = 0;			// every record read, a note's too - CountRecords' count (RecordsMovedSinceRead)
 	std::vector<bool16> colourAsked;	// per author: its colour has been asked (once - it is the author's)
 
 	for (int32 s = 0; s < count; ++s)
@@ -269,6 +270,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, IDataBase* sourceDB, bool16* outC
 			const VOSRedlineChange* record = it->GetCurrentChangeRecord(&at, &len);
 			if (record == nil)
 				continue;
+			++targetRecords;
 			const ClassID thread = ThreadClassAt(model, at);
 			if (thread == kNoteDataBoss)
 			{
@@ -536,9 +538,20 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, IDataBase* sourceDB, bool16* outC
 
 	KCMTrackList::Set(kept, rows, sourceIsCopy ? CountRecords(sourceDB) : 0, otherRecords);
 	KCMTrackList::NoteStoryCounters(targetDB);
-	KCM_DIAG_LOG("track read: done changes=%d authors=%d rows=%d sourceIsCopy=%d other=%d", (int)total, (int)kept.size(),
-				 (int)rows.size(), (int)sourceIsCopy, (int)otherRecords);
+	KCMTrackList::NoteRecordCount(targetRecords);
+	KCM_DIAG_LOG("track read: done changes=%d authors=%d rows=%d sourceIsCopy=%d other=%d records=%d", (int)total,
+				 (int)kept.size(), (int)rows.size(), (int)sourceIsCopy, (int)otherRecords, (int)targetRecords);
 	return total;
+}
+
+bool16 KCMTrackRead::RecordsMovedSinceRead(IDataBase* targetDB)
+{
+	const int32 atRead = KCMTrackList::GetRecordCountAtRead();
+	if (atRead < 0 || targetDB == nil || !KCMIsDocDBOpen(targetDB))
+		return kFalse;
+	const int32 now = CountRecords(targetDB);
+	KCM_DIAG_LOG("track records: now %d, %d when read", (int)now, (int)atRead);
+	return (now != atRead) ? kTrue : kFalse;
 }
 
 bool16 KCMTrackRead::StillRecorded(IDataBase* targetDB, UID storyUID, const KCMTrackChange& change)

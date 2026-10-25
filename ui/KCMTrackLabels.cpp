@@ -87,7 +87,17 @@ RealAGMColor KCMTrackColour(bool16 hasColour, uint8 r, uint8 g, uint8 b)
 
 PMString KCMTrackAuthorName(const PMString& name)
 {
-	PMString s = name.IsEmpty() ? PMString("(no name)") : name;
+	// ★A NAME OF SPACES ONLY IS NO NAME EITHER (2026-10-25, the author's answer to Review Focus 2): InDesign refuses an
+	//   empty user name but takes " ", and the author row drew as a colour square with nothing after it. Spaces, tabs,
+	//   no-break and ideographic spaces count as nothing; anything else is a name and is shown as written.
+	bool16 visible = kFalse;
+	const WideString w(name);
+	for (WideString::const_iterator it = w.begin(); it != w.end() && !visible; ++it)
+	{
+		const UniCodePoint c = *it;
+		visible = (c != 0x0020 && c != 0x0009 && c != 0x00A0 && c != 0x3000) ? kTrue : kFalse;
+	}
+	PMString s = visible ? name : PMString("(no name)");
 	s.SetTranslatable(kFalse);
 	return s;
 }
