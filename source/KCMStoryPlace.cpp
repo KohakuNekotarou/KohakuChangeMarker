@@ -36,22 +36,36 @@
 namespace
 {
 
-/** "Exactly the same place and size": PMRect's own ==, each side within kPMRealEpsilon (PMRect.h, PMReal.h). */
+/** A story's place as the pairing compares it: its first frame's box, and whether its words run on the frame's path. */
+struct Place
+{
+	PMRect	fBox;
+	bool16	fOnPath;
+	Place() : fOnPath(kFalse) {}
+};
+
+/** "Exactly the same place and size", standing there the same way: PMRect's own == (each side within kPMRealEpsilon -
+	PMRect.h, PMReal.h) and the same fOnPath - a frame's own words and the words on its path share the frame's box
+	(KCMStoryPlaceKey, KCMStoryPlace.h). */
 struct SamePlace
 {
-	bool operator()(const PMRect& a, const PMRect& b) const { return (a == b) ? true : false; }
+	bool operator()(const Place& a, const Place& b) const { return (a.fOnPath == b.fOnPath && a.fBox == b.fBox) ? true : false; }
 };
 
 /** The frame the reader sees for a text column: the SDK's two steps (SDKLayoutHelper::GetGraphicFrameRef - the same
-	pair KCMRingAdornment's story labels and KFC's FrameOwner ask): a column of text on a path names the path itself,
-	any other column is handed to QuerySplineFromTextFrame. kInvalidUID when neither answers. */
-UID HolderOf(ITextFrameColumn* column)
+	pair KCMRingAdornment's story labels and KFC's FrameOwner ask): a column of text on a path names the path itself
+	(outOnPath kTrue), any other column is handed to QuerySplineFromTextFrame. kInvalidUID when neither answers. */
+UID HolderOf(ITextFrameColumn* column, bool16& outOnPath)
 {
+	outOnPath = kFalse;
 	if (column == nil)
 		return kInvalidUID;
 	InterfacePtr<ITOPFrameData> onPath(column, UseDefaultIID());
 	if (onPath != nil)
+	{
+		outOnPath = kTrue;
 		return onPath->GetMainSplineItemUID();
+	}
 	Utils<ITextUtils> textUtils;
 	if (!textUtils)
 		return kInvalidUID;
@@ -63,7 +77,7 @@ UID HolderOf(ITextFrameColumn* column)
 
 /* KCMStoryPlaceKey
 */
-bool16 KCMStoryPlaceKey(IDataBase* db, UID storyUID, UID& outPage, PMRect& outBox)
+bool16 KCMStoryPlaceKey(IDataBase* db, UID storyUID, UID& outPage, PMRect& outBox, bool16& outOnPath)
 {
 	if (db == nil || storyUID == kInvalidUID)
 		return kFalse;
@@ -82,7 +96,8 @@ bool16 KCMStoryPlaceKey(IDataBase* db, UID storyUID, UID& outPage, PMRect& outBo
 	if (page == kInvalidUID)
 		return kFalse;							// the pasteboard
 
-	const UID holder = HolderOf(column);
+	bool16 onPath = kFalse;
+	const UID holder = HolderOf(column, onPath);
 	if (holder == kInvalidUID)
 		return kFalse;
 	InterfacePtr<IGeometry> holderGeo(db, holder, UseDefaultIID());
@@ -106,6 +121,7 @@ bool16 KCMStoryPlaceKey(IDataBase* db, UID storyUID, UID& outPage, PMRect& outBo
 
 	outPage = page;
 	outBox = box;
+	outOnPath = onPath;
 	return kTrue;
 }
 
@@ -154,41 +170,41 @@ void KCMStoryPairByPlace(IDataBase* targetDB, IDataBase* sourceDB, std::vector<K
 	}
 
 	std::vector<UID> tIds, tPages, sIds, sPages;
-	std::vector<PMRect> tBoxes, sBoxes;
+	std::vector<Place> tPlaces, sPlaces;
 	for (size_t k = 0; k < added.size(); ++k)
 	{
 		const UID story = diffs[added[k]].fStoryUID;
 		UID page = kInvalidUID;
-		PMRect box;
-		if (!KCMStoryPlaceKey(targetDB, story, page, box))
+		Place place;
+		if (!KCMStoryPlaceKey(targetDB, story, page, place.fBox, place.fOnPath))
 			continue;
-		KCM_DIAG_LOG("place key target story=%u page=%u box=%.6f,%.6f,%.6f,%.6f", static_cast<unsigned>(story.Get()),
-					 static_cast<unsigned>(page.Get()), ::ToDouble(box.Left()), ::ToDouble(box.Top()),
-					 ::ToDouble(box.Right()), ::ToDouble(box.Bottom()));
+		KCM_DIAG_LOG("place key target story=%u page=%u box=%.6f,%.6f,%.6f,%.6f path=%d", static_cast<unsigned>(story.Get()),
+					 static_cast<unsigned>(page.Get()), ::ToDouble(place.fBox.Left()), ::ToDouble(place.fBox.Top()),
+					 ::ToDouble(place.fBox.Right()), ::ToDouble(place.fBox.Bottom()), place.fOnPath ? 1 : 0);
 		const std::map<UID, UID>::const_iterator partner = toSource.find(page);
 		if (partner == toSource.end())
 			continue;							// its page is compared against nothing: no place to pair on
 		tIds.push_back(story);
 		tPages.push_back(partner->second);
-		tBoxes.push_back(box);
+		tPlaces.push_back(place);
 	}
 	for (size_t k = 0; k < removed.size(); ++k)
 	{
 		const UID story = diffs[removed[k]].fStoryUID;	// a Removed diff names the SOURCE's story
 		UID page = kInvalidUID;
-		PMRect box;
-		if (!KCMStoryPlaceKey(sourceDB, story, page, box))
+		Place place;
+		if (!KCMStoryPlaceKey(sourceDB, story, page, place.fBox, place.fOnPath))
 			continue;
-		KCM_DIAG_LOG("place key source story=%u page=%u box=%.6f,%.6f,%.6f,%.6f", static_cast<unsigned>(story.Get()),
-					 static_cast<unsigned>(page.Get()), ::ToDouble(box.Left()), ::ToDouble(box.Top()),
-					 ::ToDouble(box.Right()), ::ToDouble(box.Bottom()));
+		KCM_DIAG_LOG("place key source story=%u page=%u box=%.6f,%.6f,%.6f,%.6f path=%d", static_cast<unsigned>(story.Get()),
+					 static_cast<unsigned>(page.Get()), ::ToDouble(place.fBox.Left()), ::ToDouble(place.fBox.Top()),
+					 ::ToDouble(place.fBox.Right()), ::ToDouble(place.fBox.Bottom()), place.fOnPath ? 1 : 0);
 		sIds.push_back(story);
 		sPages.push_back(page);
-		sBoxes.push_back(box);
+		sPlaces.push_back(place);
 	}
 
 	std::vector<std::pair<UID, UID> > pairs;
-	KCMPairStoriesByPlace<UID, UID, PMRect, SamePlace>(tIds, tPages, tBoxes, sIds, sPages, sBoxes, SamePlace(), pairs);
+	KCMPairStoriesByPlace<UID, UID, Place, SamePlace>(tIds, tPages, tPlaces, sIds, sPages, sPlaces, SamePlace(), pairs);
 	if (pairs.empty())
 		return;
 
