@@ -1,0 +1,108 @@
+﻿//========================================================================================
+//
+//  KCMStoryPlacePairRule.h
+//
+//  THE RULE that pairs a story the UIDs could not pair: an Added story of the Target with a
+//  Removed story of the Source, when the first frame of each stands at EXACTLY the same place on
+//  corresponding pages.
+//
+//  ★WHY (2026-10-26, the author): "a frame copied from a past document gets a new UID - brought
+//  over and put in the same place". The Story mode pairs stories by UID (KCMStoryStamp.h), so the
+//  pasted story and the one it replaced came out as two rows - Added and Removed - and what had
+//  changed inside was never compared. This rule gives the two one row.
+//
+//  ★ONLY EXACTLY THE SAME PLACE AND SIZE (2026-10-25, the author: "位置とサイズだけでいいかな、
+//  一先ずは" / "ジオメトリックバウンドというのがまったくおなじならでいいかな"). What "the same" means
+//  is the caller's `equal` - in the plug-in PMRect's ==, which is InDesign's own (each side within
+//  kPMRealEpsilon); no tolerance of this file's own.
+//  ★ONLY ONE TO ONE, BOTH WAYS (the author's call on 2026-10-26, the page rule's thinking of
+//  2026-09-13): a target with two equal sources, or a source with two equal targets, pairs with
+//  nothing - a wrong pair would compare two different stories and show a difference that is not
+//  there, while two rows left unpaired only fail to show one.
+//  ★ONLY ON THE SAME PAGE: the caller hands the Target's pages in already turned into the Source
+//  pages they are compared against (the page pairing - KCMPageMap.h), so "the same page" here is
+//  the plain equality of two Source pages.
+//
+//  PURE. A template over the id, page and box types, so the offline test (work/kcm-storyplace-test)
+//  runs it on plain integers and doubles; the plug-in instantiates it on UID, UID and PMRect
+//  (KCMStoryPlace.cpp).
+//
+//========================================================================================
+#ifndef __KCMStoryPlacePairRule_h__
+#define __KCMStoryPlacePairRule_h__
+
+#include "BaseType.h"		// bool16
+#include <map>
+#include <utility>
+#include <vector>
+
+/** Pair the Target's unpaired stories with the Source's, by the place of their first frames.
+
+    @param targetIds / targetPages / targetBoxes  parallel: each Target story, the SOURCE page its page is
+                        compared against, and its first frame's box on that page. A story with no page (or whose
+                        page has no partner) is not handed in at all.
+    @param sourceIds / sourcePages / sourceBoxes  parallel, the same for the Source's stories (their own pages).
+    @param equal        equal(targetBox, sourceBox) - "exactly the same place and size".
+    @param outPairs     cleared on entry; one (target id, source id) per pair, in Target order. A target pairs
+                        when its page holds exactly one source whose box is equal to its own, and that source's
+                        page holds exactly one target whose box is equal to the source's. Arrays of unequal
+                        length on either side pair nothing (a caller's mistake is not guessed at). */
+template <class Id, class Page, class Box, class Equal>
+void KCMPairStoriesByPlace(const std::vector<Id>& targetIds, const std::vector<Page>& targetPages,
+						   const std::vector<Box>& targetBoxes,
+						   const std::vector<Id>& sourceIds, const std::vector<Page>& sourcePages,
+						   const std::vector<Box>& sourceBoxes,
+						   Equal equal, std::vector<std::pair<Id, Id> >& outPairs)
+{
+	outPairs.clear();
+	const size_t nt = targetIds.size();
+	const size_t ns = sourceIds.size();
+	if (targetPages.size() != nt || targetBoxes.size() != nt || sourcePages.size() != ns || sourceBoxes.size() != ns)
+		return;
+
+	// Each side's stories by page: a story is only ever compared with the other side's on its own page.
+	typedef std::map<Page, std::vector<size_t> > ByPage;
+	ByPage sourcesOn;
+	for (size_t s = 0; s < ns; ++s)
+		sourcesOn[sourcePages[s]].push_back(s);
+	ByPage targetsOn;
+	for (size_t t = 0; t < nt; ++t)
+		targetsOn[targetPages[t]].push_back(t);
+
+	for (size_t t = 0; t < nt; ++t)
+	{
+		const typename ByPage::const_iterator here = sourcesOn.find(targetPages[t]);
+		if (here == sourcesOn.end())
+			continue;
+
+		// exactly one source on this page stands where this target stands ...
+		size_t found = ns;
+		int32 equalSources = 0;
+		for (size_t k = 0; k < here->second.size(); ++k)
+		{
+			const size_t s = here->second[k];
+			if (equal(targetBoxes[t], sourceBoxes[s]))
+			{
+				found = s;
+				++equalSources;
+			}
+		}
+		if (equalSources != 1)
+			continue;
+
+		// ... and no other target on the page stands there too
+		const std::vector<size_t>& rivals = targetsOn[targetPages[t]];
+		int32 equalTargets = 0;
+		for (size_t k = 0; k < rivals.size(); ++k)
+			if (equal(targetBoxes[rivals[k]], sourceBoxes[found]))
+				++equalTargets;
+		if (equalTargets != 1)
+			continue;
+
+		outPairs.push_back(std::make_pair(targetIds[t], sourceIds[found]));
+	}
+}
+
+#endif // __KCMStoryPlacePairRule_h__
+
+// End, KCMStoryPlacePairRule.h.
