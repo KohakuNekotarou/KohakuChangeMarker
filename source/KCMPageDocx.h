@@ -16,14 +16,19 @@
 //
 //  HOW A PAGE IS SPELT (measured in Word 2007 - docs/ai-notes/kcm-page-docx-word-2026-10-25.md):
 //    the page      the section's w:pgSz, every margin 0, and ONE paragraph that anchors every box
-//    a box         a VML text box (w:pict / v:shape / v:textbox / w:txbxContent) placed against the page in points,
-//                  growing with its words (mso-fit-shape-to-text), the frame's insets as its own
+//    a box         a VML text box (w:pict / v:shape / v:textbox / w:txbxContent) placed against the page in points, the
+//                  frame's insets as its own; a horizontal one grows and shrinks with its words from its top left
+//                  (mso-fit-shape-to-text), a vertical one keeps the frame's size (Word fits a vertical box by its
+//                  width and keeps its LEFT edge; InDesign starts the text at the right)
 //    its words     KCMStoryDocx::WriteBlocks - the story round trip's own spelling, so ruby, kenten, tate-chu-yoko,
 //                  warichu and the invisible characters travel exactly as they do there - each paragraph in a style
 //                  carrying the frame's first character's size and font
-//    which box     ★A LOCKED CONTENT CONTROL AROUND THE WORDS, tagged "kcm-box-<n>". Word keeps it with the words
-//                  whatever it makes of the shape: Word 2010 and later save a VML box twice, as DrawingML and as VML
-//                  (mc:AlternateContent), and the reader counts it once.
+//    which box     ★THE SHAPE'S NAME, "kcmbox<n>" (v:shape@id - Word 2007 keeps it and names the shape by it; once a
+//                  later Word has made the shape DrawingML, the name on its wp:docPr), and the box's words are
+//                  EVERYTHING IN ITS TEXT BOX. ⛔A content control around the words was the first spelling (2026-10-25
+//                  morning) and did not survive Word 2007: it turned the control around one paragraph into one inside
+//                  the paragraph, and words typed at the paragraph's end landed outside it. Word 2010 and later save a
+//                  VML box twice, as DrawingML and as VML (mc:AlternateContent); the reader counts it once.
 //    which story   customXml/item1.xml - the page tag, format 2: per box its frame, its story, the range it came from
 //                  and a fingerprint of what stood there then. ★NOT A WORD OF THE STORY (the author's rule of
 //                  2026-09-19 for the story tag: a file is handed on, and words nobody can see must not go with it).
@@ -49,7 +54,7 @@ extern const char* const kPageTagNamespace;
 /** One text frame of the page, as its box. Places and sizes in points, the page's top left the origin, y down. */
 struct Box
 {
-	int32		fN;				// 1.. - the box's number, its content control's tag ("kcm-box-<n>")
+	int32		fN;				// 1.. - the box's number, its shape's name ("kcmbox<n>")
 	int32		fFrame;			// the text frame's UID
 	int32		fStory;			// its story's UID
 	int32		fStart;			// where the frame's text began in the story when exported (a TextIndex)

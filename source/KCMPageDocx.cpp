@@ -28,7 +28,7 @@ const char* const kWordNamespace = "xmlns:w=\"http://schemas.openxmlformats.org/
 const char* const kVmlNamespaces = "xmlns:v=\"urn:schemas-microsoft-com:vml\" "
 								   "xmlns:o=\"urn:schemas-microsoft-com:office:office\" "
 								   "xmlns:w10=\"urn:schemas-microsoft-com:office:word\"";
-const char* const kBoxTagPrefix = "kcm-box-";
+const char* const kBoxShapePrefix = "kcmbox";		// a box's shape: v:shape@id, and wp:docPr@name once Word made it DrawingML
 const char* const kBoxStylePrefix = "KCMBox";
 const char* const kPageFormat = "2";		// the story tag is format 1
 
@@ -201,12 +201,17 @@ const char* const kTextBoxShapeType =
 	"<v:shapetype id=\"_x0000_t202\" coordsize=\"21600,21600\" o:spt=\"202\" path=\"m,l,21600r21600,l21600,xe\">"
 	"<v:stroke joinstyle=\"miter\"/><v:path gradientshapeok=\"t\" o:connecttype=\"rect\"/></v:shapetype>";
 
+/** One box: a VML text box named for the box ("kcmbox<n>" - ★THE NAME IS THE BOX, see the header), its words straight
+	in its w:txbxContent. ★A HORIZONTAL BOX GROWS AND SHRINKS WITH ITS WORDS (mso-fit-shape-to-text) from its top left, the
+	corner InDesign starts the text from; ★A VERTICAL ONE KEEPS THE FRAME'S SIZE - Word fits a vertical box by its WIDTH and
+	keeps its left edge (measured in Word 2007), while InDesign sets the first column at the frame's right edge. */
 void AppendBox(const Box& box, const std::string& styledBlocks, bool16 first, std::string& out)
 {
 	out += "<w:r><w:pict>";
 	if (first)
 		out += kTextBoxShapeType;
-	out += "<v:shape id=\"kcmbox";
+	out += "<v:shape id=\"";
+	out += kBoxShapePrefix;
 	AppendInt(box.fN, out);
 	out += "\" type=\"#_x0000_t202\" style=\"position:absolute;margin-left:";
 	AppendPoints(box.fX, out);
@@ -229,14 +234,10 @@ void AppendBox(const Box& box, const std::string& styledBlocks, bool16 first, st
 	out += ",";
 	AppendPoints(box.fInsetB, out);
 	out += "\" style=\"";
-	if (box.fVertical)
-		out += "layout-flow:vertical-ideographic;";
-	out += "mso-fit-shape-to-text:t\"><w:txbxContent><w:sdt><w:sdtPr><w:tag w:val=\"";
-	out += kBoxTagPrefix;
-	AppendInt(box.fN, out);
-	out += "\"/><w:lock w:val=\"sdtLocked\"/></w:sdtPr><w:sdtContent>";
+	out += box.fVertical ? "layout-flow:vertical-ideographic" : "mso-fit-shape-to-text:t";
+	out += "\"><w:txbxContent>";
 	out += styledBlocks;
-	out += "</w:sdtContent></w:sdt></w:txbxContent></v:textbox>"
+	out += "</w:txbxContent></v:textbox>"
 		   "<w10:wrap type=\"none\" anchorx=\"page\" anchory=\"page\"/></v:shape></w:pict></w:r>";
 }
 
@@ -451,25 +452,61 @@ bool16 ParseUInt32(const std::string* text, uint32& out)
 	return kTrue;
 }
 
-/** One kcm-box-<n> content control met in the document. */
+const char* const kVml = "urn:schemas-microsoft-com:vml";
+const char* const kWp = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
+
+/** "kcmbox<n>" -> n. kFalse for any other name. */
+bool16 BoxNumberOfName(const std::string* name, int32& out)
+{
+	const std::string prefix = kBoxShapePrefix;
+	if (name == nil || name->size() <= prefix.size() || name->compare(0, prefix.size(), prefix) != 0)
+		return kFalse;
+	const std::string digits = name->substr(prefix.size());
+	return ParseInt32(&digits, out);
+}
+
+/** One box's text met in the document: the w:txbxContent of a shape named for a box. */
 struct Seen
 {
 	int32	fN;
-	int32	fSdt;
+	int32	fContent;		// the w:txbxContent
 	bool16	fInFallback;	// inside mc:Fallback - the VML copy Word 2010 and later keep beside the DrawingML one
 };
 
-/** The walk over the document: every box's content control, and whether any words stand outside every box. */
-void Walk(const KCMXmlTree& t, int32 node, bool16 inFallback, bool16 inBox, std::vector<Seen>& seen, bool16& outsideText)
+/** The walk over the document: every box's text, and whether words stand outside every box. `box` is the number of the
+	box whose shape the walk is inside (0: none). ★A TEXT BOX OF NO BOX'S SHAPE - one copied in Word, say - holds words that
+	will not be read, so they count as outside. */
+void Walk(const KCMXmlTree& t, int32 node, bool16 inFallback, int32 box, bool16 inBoxText, std::vector<Seen>& seen,
+		  bool16& outsideText)
 {
 	const KCMXmlNode& n = t.At(node);
 	if (n.IsText())
 		return;
 	if (n.fNs == kMc && n.fName == "Fallback")
 		inFallback = kTrue;
-	if (n.fNs == kW && n.fName == "txbxContent")
-		inBox = kTrue;
-	if (n.fNs == kW && n.fName == "t" && !inBox && !inFallback)
+	// ★WHICH BOX: the VML shape's id (Word 2007 keeps it, and names the shape by it), or - once Word has made the shape
+	//   DrawingML - the name on its anchor's wp:docPr.
+	if (n.fNs == kVml && n.fName == "shape")
+	{
+		int32 number = 0;
+		box = BoxNumberOfName(t.Attr(node, "id"), number) ? number : 0;
+	}
+	else if (n.fNs == kWp && (n.fName == "anchor" || n.fName == "inline"))
+	{
+		const int32 docPr = t.Child(node, kWp, "docPr");
+		int32 number = 0;
+		box = (docPr >= 0 && BoxNumberOfName(t.Attr(docPr, "name"), number)) ? number : 0;
+	}
+	if (n.fNs == kW && n.fName == "txbxContent" && box > 0)
+	{
+		Seen s;
+		s.fN = box;
+		s.fContent = node;
+		s.fInFallback = inFallback;
+		seen.push_back(s);
+		inBoxText = kTrue;
+	}
+	if (n.fNs == kW && n.fName == "t" && !inBoxText && !inFallback)
 	{
 		const std::string words = t.TextBelow(node);
 		for (size_t i = 0; i < words.size(); ++i)
@@ -482,28 +519,8 @@ void Walk(const KCMXmlTree& t, int32 node, bool16 inFallback, bool16 inBox, std:
 			}
 		}
 	}
-	if (n.fNs == kW && n.fName == "sdt")
-	{
-		const int32 pr = t.Child(node, kW, "sdtPr");
-		const int32 tagNode = (pr >= 0) ? t.Child(pr, kW, "tag") : -1;
-		const std::string* val = (tagNode >= 0) ? t.Attr(tagNode, "val") : nil;
-		const std::string prefix = kBoxTagPrefix;
-		if (val != nil && val->compare(0, prefix.size(), prefix) == 0)
-		{
-			const std::string digits = val->substr(prefix.size());
-			int32 number = 0;
-			if (ParseInt32(&digits, number))
-			{
-				Seen s;
-				s.fN = number;
-				s.fSdt = node;
-				s.fInFallback = inFallback;
-				seen.push_back(s);
-			}
-		}
-	}
 	for (size_t k = 0; k < n.fChildren.size(); ++k)
-		Walk(t, n.fChildren[k], inFallback, inBox, seen, outsideText);
+		Walk(t, n.fChildren[k], inFallback, box, inBoxText, seen, outsideText);
 }
 
 const std::string* FindPartBytes(const std::vector<KCMZipStore::Entry>& parts, const char* name)
@@ -600,7 +617,7 @@ bool16 ReadParts(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, 
 	const std::string styles = (stylesXml != nil) ? *stylesXml : std::string();
 
 	std::vector<Seen> seen;
-	Walk(document, body, kFalse, kFalse, seen, out.fTextOutsideBoxes);
+	Walk(document, body, kFalse, 0, kFalse, seen, out.fTextOutsideBoxes);
 
 	for (size_t i = 0; i < out.fBoxes.size(); ++i)
 	{
@@ -609,8 +626,8 @@ bool16 ReadParts(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, 
 		//   VML copy of every DrawingML box there, holding the same words.
 		int32 outside = 0;
 		int32 inFallback = 0;
-		int32 sdtOutside = -1;
-		int32 sdtFallback = -1;
+		int32 contentOutside = -1;
+		int32 contentFallback = -1;
 		for (size_t s = 0; s < seen.size(); ++s)
 		{
 			if (seen[s].fN != rb.fBox.fN)
@@ -618,16 +635,16 @@ bool16 ReadParts(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, 
 			if (seen[s].fInFallback)
 			{
 				++inFallback;
-				sdtFallback = seen[s].fSdt;
+				contentFallback = seen[s].fContent;
 			}
 			else
 			{
 				++outside;
-				sdtOutside = seen[s].fSdt;
+				contentOutside = seen[s].fContent;
 			}
 		}
 		const int32 count = (outside > 0) ? outside : inFallback;
-		const int32 sdt = (outside > 0) ? sdtOutside : sdtFallback;
+		const int32 content = (outside > 0) ? contentOutside : contentFallback;
 		if (count == 0)
 		{
 			rb.fWhyNot = "the box was not found in the file (deleted in Word?) - nothing of it goes in";
@@ -638,10 +655,10 @@ bool16 ReadParts(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, 
 			rb.fWhyNot = "the box is in the file twice (copied in Word?)";
 			continue;
 		}
-		const int32 content = document.Child(sdt, kW, "sdtContent");
+		// ★THE WHOLE TEXT BOX IS THE BOX'S WORDS - whatever Word did to the paragraphs inside it.
 		std::string why;
-		if (content < 0 || !KCMStoryDocx::ReadBlocksIn(document, content, styles, rb.fBox.fContent, why))
-			rb.fWhyNot = "the box's words cannot be read: " + (why.empty() ? std::string("the box is empty") : why);
+		if (!KCMStoryDocx::ReadBlocksIn(document, content, styles, rb.fBox.fContent, why))
+			rb.fWhyNot = "the box's words cannot be read: " + why;
 	}
 	return kTrue;
 }
