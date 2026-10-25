@@ -858,16 +858,16 @@ public:
 	//      ([[facade-vtable-slot-append-only]]) - rebuild both halves. ----
 
 	/** "Export Pages to Word...": each page one .docx of text boxes, into a dated folder under `parent`.
-		★AN EMPTY `pages` IS THE PAGES PANEL'S SELECTION, read by the one reader the panel's Register / Check / Refresh share
-		  (KCMPageMapReadSelection - masters left out); a script names its pages instead. ⚠The UI guards the [None] row
-		  before it calls (KCMPagesPanelSelectionHasNoRealPage) - this reader cannot tell it from the current page.
+		★`pages` NAMES THEM - the menu's are the Pages panel's selection as the UI read it (KCMReadSelectedPages, masters
+		  left out - before its folder dialog opens, the story export's rule), a script's the pages it named; the model
+		  decides on them in the one place the page items share (KCMPageMapPagesOf). An EMPTY list is refused (2026-10-26,
+		  the import tidy S7: it meant "the Pages panel's selection", read here - the model does not read the panel now).
 		@return kFalse with the reason in outMessage when nothing was written. */
 	virtual bool16	ExportPagesAsWord(const IDFile& parent, const UIDList& pages, PMString& outMessage) = 0;
 
-	/** The pages selected in the Pages panel, from the same one reader, asked ahead of time: ★"Export Pages to Word..."
-		reads them BEFORE its folder dialog opens - the story export's rule (a modal dialog is a window of its own; reading
-		first cannot be wrong). Masters left out. @return kFalse when no page of the panel's document is selected. */
-	virtual bool16	GetPagesPanelSelection(UIDList& outPages) = 0;
+	// (⛔GetPagesPanelSelection(UIDList&) - the Pages panel's selection read by the model for the menu - stood here from
+	//  2026-10-25 and went on 2026-10-26, the import tidy S7: the UI reads it (KCMReadSelectedPages). ⚠The slots below it
+	//  moved up one - both halves are rebuilt together, and nothing outside KCM includes this header.)
 
 	// ---- ★ACCEPT AND REJECT IN THE TRACK MODE (2026-10-25 - the author: "a right click that takes the change back", "and
 	//      confirms it", "on the Story too", "on the Story Edits heading, for the document"; design

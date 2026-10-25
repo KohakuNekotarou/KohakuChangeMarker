@@ -17,8 +17,8 @@
 //  ⚠While a comparison IS running, which of the compared pages may take a tick is still the mode's
 //  business (Pixel = the marked ones, Story = all) -- that part did not change.
 //
-//  The structure follows KCMPageMap.cpp: the same shared reader for the selection
-//  (KCMPageMapReadSelection), the same per-document UID set, and a close sweep that compares
+//  The structure follows KCMPageMap.cpp: the same one place the selection is decided on
+//  (KCMPageMapPagesOf - on the list the UI read), the same per-document UID set, and a close sweep that compares
 //  pointers without ever dereferencing one.
 //
 //  **Master pages count too.** The only difference from Register is that the shared reader is
@@ -48,7 +48,7 @@
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 #include "KCMComparisonRun.h"	// KCMStopComparison
 #include "KCMPageCheck.h"
-#include "KCMPageMap.h"		// KCMPageMapReadSelection - the Pages panel's selection, shared with Register
+#include "KCMPageMap.h"		// KCMPageMapPagesOf - the Pages panel's selection (the UI reads it), shared with Register
 #include "KCMPawStamp.h"		// KCMPawStampsOnPage - a tick is written with the paws the page already carries
 #include "KCMPageMarksCmd.h"	// KCMPageMarks / KCMMarksWrite -- the only door to a change
 #include "KCMDocUidSet.h"		// the shared "document -> page UID set" container (Register uses it too)
@@ -116,11 +116,11 @@ static void KCMFilterToCheckable(IDataBase* db, const std::vector<UID>& pages, s
 //========================================================================================
 // KCMPageCheckToggleSelectedPages (declared in KCMPageCheck.h)
 //========================================================================================
-void KCMPageCheckToggleSelectedPages()
+void KCMPageCheckToggleSelectedPages(const UIDList& selection)
 {
 	IDataBase* db = nil;
 	std::vector<UID> selPages;
-	if (!KCMPageMapReadSelection(db, selPages, kTrue /*includeMasters*/))
+	if (!KCMPageMapPagesOf(selection, kTrue /*includeMasters*/, db, selPages))
 		return;		// kCustomEnabling should already have greyed the menu out; belt and braces
 
 	// ★NO COMPARISON IS REQUIRED (2026-09-04, user decision). A tick is the reader's own marker:
@@ -191,13 +191,13 @@ void KCMPageCheckToggleSelectedPages()
 //   Like the Register side, this **only answers** and no longer takes an IActionStateList (the
 //   reasoning is with KCMPageToggleState in KCMPageMap.h).
 //========================================================================================
-KCMPageToggleState KCMPageCheckGetToggleState()
+KCMPageToggleState KCMPageCheckGetToggleState(const UIDList& selection)
 {
 	KCMPageToggleState st;	// disabled by default
 
 	IDataBase* db = nil;
 	std::vector<UID> pages;
-	if (!KCMPageMapReadSelection(db, pages, kTrue /*includeMasters*/))
+	if (!KCMPageMapPagesOf(selection, kTrue /*includeMasters*/, db, pages))
 		return st;
 
 	// ★NO COMPARISON IS REQUIRED (2026-09-04) -- **and it has to be the very same rule the toggle

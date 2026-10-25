@@ -36,15 +36,17 @@
 #include "KCMPageFlagState.h"	// KCMPageTick / KCMPageRole / KCMPageToggleState
 
 class IDataBase;
+class UIDList;			// the Pages panel's selection, as the UI read it (2026-10-26)
 
-// The shared reader of the Pages panel's selected pages. outDB is the document the selection
-// belongs to (the active / frontmost one) and outPages the selected page UIDs that really exist
-// in that document's page list, with duplicates removed. kTrue when at least one page is valid.
-// The selection comes from the official Utils<ILayoutUIUtils>()->GetSelectedPages, which expands
-// a selected spread into its page UIDs.
-// **This is the one reader all three context-menu features share** (Register / Check / Refresh),
-//   after three copies of it were merged into one. Change what "the selected pages" means here
-//   and nowhere else. The body is in KCMPageMap.cpp.
+// The pages of a Pages panel selection THE UI READ (2026-10-26, the import tidy S7: until then
+// this file read the panel itself - Utils<ILayoutUIUtils>()->GetSelectedPages, the one call from
+// the model to a UI part; the UI reads it now, KCMReadSelectedPages in ui/KCMThumbnailRefresh.h,
+// and hands the list over). outDB is the selection's database (the active document's) and
+// outPages its page UIDs that really exist in that document's page list - and master list, with
+// includeMasters - with duplicates removed. kTrue when at least one page is valid.
+// **This is the one place all the page-directed features read "the selected pages"** (Register /
+//   Check / Refresh / Export Pages to Word), after three copies of it were merged into one. Change
+//   what they mean here and nowhere else. The body is in KCMPageMap.cpp.
 //
 // includeMasters = are master pages read as part of the selection. The three features disagree
 //   about this, which is why it is a parameter:
@@ -55,13 +57,13 @@ class IDataBase;
 //               name and never look at the registrations at all (that is KCMBuildMasterPairing's
 //               contract), so allowing it would build a menu item that registers the page and
 //               then changes nothing about the comparison.
-bool16 KCMPageMapReadSelection(IDataBase*& outDB, std::vector<UID>& outPages, bool16 includeMasters = kFalse);
+bool16 KCMPageMapPagesOf(const UIDList& selection, bool16 includeMasters, IDataBase*& outDB, std::vector<UID>& outPages);
 
 // Runs the Pages panel context-menu toggle "Register as Added/Removed Pages": registers or
 // unregisters the selected pages as "no counterpart" (any unregistered one registers them all,
 // all registered unregisters them all). The outcome goes to the panel's status line.
-// The body is in KCMPageMap.cpp.
-void KCMPageMapToggleSelectedPages();
+// `selection` is the Pages panel's, as the UI read it (masters left out). The body is in KCMPageMap.cpp.
+void KCMPageMapToggleSelectedPages(const UIDList& selection);
 
 // How that toggle (kCustomEnabling) should look right now.
 //   - fEnabled . grey when the Pages panel selection holds no document page, when no comparison
@@ -69,8 +71,8 @@ void KCMPageMapToggleSelectedPages();
 //   - fTick .... All when every selected page is registered, Some when only part of it is
 //   - fRole .... whether the active document is the Target (= Added) or the Source (= Removed)
 // **The menu itself is not touched here.** SetNthActionState / SetNthActionName are called by
-//   the caller (UpdateActionStates in ui/KCMActionComponent.cpp).
-KCMPageToggleState KCMPageMapGetToggleState();
+//   the caller (UpdateActionStates in ui/KCMActionComponent.cpp), which also reads `selection`.
+KCMPageToggleState KCMPageMapGetToggleState(const UIDList& selection);
 
 // The liveness sweep run after documents close (called from KCMHandleDocsClosed). Drops the
 // registrations of closed documents, state only. **A closed database is never dereferenced**

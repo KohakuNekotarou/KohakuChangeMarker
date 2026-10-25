@@ -287,9 +287,9 @@ public:
 	virtual ErrorCode	MarkChanges(IDataBase* targetDB, IDataBase* sourceDB,
 								PMString& outReport, bool16 allowIncremental)
 								{ return KCMDoMarkChangesDoc(targetDB, sourceDB, outReport, allowIncremental); }
-	virtual bool16		RefreshSelectedPages(int32* outPages, int32* outChanged,
+	virtual bool16		RefreshSelectedPages(const UIDList& pages, int32* outPages, int32* outChanged,
 								bool16* outCancelled, int32* outFailed)
-								{ return KCMRefreshComparisonForSelectedPages(outPages, outChanged, outCancelled, outFailed); }
+								{ return KCMRefreshComparisonForSelectedPages(pages, outPages, outChanged, outCancelled, outFailed); }
 	virtual bool16		RefreshComparisonAvailable()	{ return KCMRefreshComparisonAvailable(); }
 
 	virtual void		SetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db)
@@ -605,11 +605,12 @@ class KCMPageFlagsFacade : public CPMUnknown<IKCMPageFlagsFacade>
 public:
 	KCMPageFlagsFacade(IPMUnknown* boss) : CPMUnknown<IKCMPageFlagsFacade>(boss) {}
 
-	virtual void	ToggleRegisterForSelection()	{ KCMPageMapToggleSelectedPages(); }
-	virtual void	ToggleCheckForSelection()		{ KCMPageCheckToggleSelectedPages(); }
+	// (2026-10-26, the import tidy S7) The pages are the Pages panel's selection as the UI read it.
+	virtual void	ToggleRegisterForSelection(const UIDList& pages)	{ KCMPageMapToggleSelectedPages(pages); }
+	virtual void	ToggleCheckForSelection(const UIDList& pages)		{ KCMPageCheckToggleSelectedPages(pages); }
 
-	virtual KCMPageToggleState	GetRegisterToggleState()	{ return KCMPageMapGetToggleState(); }
-	virtual KCMPageToggleState	GetCheckToggleState()		{ return KCMPageCheckGetToggleState(); }
+	virtual KCMPageToggleState	GetRegisterToggleState(const UIDList& pages)	{ return KCMPageMapGetToggleState(pages); }
+	virtual KCMPageToggleState	GetCheckToggleState(const UIDList& pages)		{ return KCMPageCheckGetToggleState(pages); }
 
 	// (SaveChecksAndRegister / LoadChecksAndRegister went on 2026-09-07 -- IKCMPageFlagsFacade.h
 	//  says why. Their model-side bodies went with them.)
@@ -1429,34 +1430,26 @@ public:
 	//   it borrows from - the vtable's order is the interface's.
 	virtual bool16	ExportPagesAsWord(const IDFile& parent, const UIDList& pages, PMString& outMessage)
 	{
-		// ★EMPTY = THE PAGES PANEL'S SELECTION, through the reader Register / Check / Refresh share - one question, one place.
-		//   The document is the one the panel shows (the active one): the pages are that document's.
-		if (pages.IsEmpty())
-		{
-			UIDList selected(pages.GetDataBase());
-			if (!this->GetPagesPanelSelection(selected))
-			{
-				outMessage = "Export Pages to Word: no page is selected in the Pages panel";
-				outMessage.SetTranslatable(kFalse);
-				return kFalse;
-			}
-			return KCMExportPagesAsWord(selected.GetDataBase(), selected, parent, outMessage);
-		}
-		return KCMExportPagesAsWord(pages.GetDataBase(), pages, parent, outMessage);
-	}
-
-	virtual bool16	GetPagesPanelSelection(UIDList& outPages)
-	{
+		// ★THE PAGES ARE NAMED (2026-10-26, the import tidy S7): the menu's are the Pages panel's selection as the UI read it,
+		//   a script's the ones it named. An empty list meant "the Pages panel's selection" read here until then - the model
+		//   does not read the panel any more. ★Decided on in the one place the page items share (KCMPageMapPagesOf, masters
+		//   left out - a master's items are every page's): pages of the list's document only, each once.
 		IDataBase* db = nil;
 		std::vector<UID> chosen;
-		if (!KCMPageMapReadSelection(db, chosen, kFalse /*no masters - a master's items are every page's*/))
+		if (!KCMPageMapPagesOf(pages, kFalse /*no masters*/, db, chosen))
+		{
+			outMessage = "Export Pages to Word: no page is named - select pages in the Pages panel, or name them (\"1,3\")";
+			outMessage.SetTranslatable(kFalse);
 			return kFalse;
+		}
 		UIDList list(db);
 		for (size_t i = 0; i < chosen.size(); ++i)
 			list.Append(chosen[i]);
-		outPages = list;
-		return kTrue;
+		return KCMExportPagesAsWord(db, list, parent, outMessage);
 	}
+
+	// (⛔GetPagesPanelSelection - the Pages panel's selection read by the model for the menu - went on 2026-10-26, the
+	//  import tidy S7: the UI reads it, KCMReadSelectedPages. IKCMStoryEditsFacade.h keeps its tombstone.)
 
 	// ---- ★THE TRACK CHANGES MODE (2026-10-05) - IKCMStoryEditsFacade.h says what each one answers ----
 	// ⚠The change-row menu's actions (Restore from Source, Match the Source, Apply, Restore from Copy) are not offered in

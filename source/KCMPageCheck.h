@@ -44,12 +44,13 @@
 #include "KCMPageMap.h"	// KCMPageToggleState -- the answer shape shared with Register (the type only)
 
 class IDataBase;
+class UIDList;			// the Pages panel's selection, as the UI read it (2026-10-26)
 
 // Runs the Pages panel context-menu toggle "Check": ticks or unticks the selected pages (any
 // unticked one ticks them all, all ticked unticks them all). The outcome goes to the panel's
 // status line, and the toggled pages' thumbnails are refreshed at once so the tick shows.
-// The body is in KCMPageCheck.cpp.
-void KCMPageCheckToggleSelectedPages();
+// `selection` is the Pages panel's, as the UI read it (masters in - KCMPageMap.h). The body is in KCMPageCheck.cpp.
+void KCMPageCheckToggleSelectedPages(const UIDList& selection);
 
 // How that toggle (kCustomEnabling) should look right now. fEnabled is grey when nothing is
 // selected, or when the selection holds no page that may be ticked; fTick is All when every
@@ -60,7 +61,7 @@ void KCMPageCheckToggleSelectedPages();
 //   document may be ticked, and KCMCollectCheckablePageUIDs says so in one line.
 // @warning **fRole is not used** -- Check's label never changes. The menu itself is not touched
 // here, exactly as on the Register side.
-KCMPageToggleState KCMPageCheckGetToggleState();
+KCMPageToggleState KCMPageCheckGetToggleState(const UIDList& selection);
 
 // The liveness sweep run after documents close (called from KCMHandleDocsClosed). Drops the ticks
 // of closed documents, state only. **A closed database is never dereferenced** (pointer

@@ -800,31 +800,40 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// ⚠★★With only the `[none]` row selected it does nothing -- the same reason as the guard in
 		//   UpdateActionStates: **the menu does not offer it, but a shortcut is another way in**, so
 		//   the executing side needs the guard too.
+		//   ★(2026-10-26, the import tidy S7) The selection is read HERE and handed over - the model does not read the Pages
+		//   panel any more - and the [None] guard is the reader's own (KCMReadSelectedPages).
 		case kKCMPageMapToggleActionID:
-			if (KCMPagesPanelSelectionHasNoRealPage())
+		{
+			UIDList pages;
+			if (!KCMReadSelectedPages(pages, kFalse /*no masters - KCMPageMap.h*/))
 				break;
-			Utils<IKCMPageFlagsFacade>()->ToggleRegisterForSelection();
+			Utils<IKCMPageFlagsFacade>()->ToggleRegisterForSelection(pages);
 			break;
+		}
 
 		// The "Check" toggle on the Pages panel page context menu: put a tick on the selected pages or
 		// take it off (the work is in KCMPageCheck.cpp; the tick is drawn by the isThumb branch of
 		// KCMDrawEventHandler).
 		case kKCMPageCheckToggleActionID:
-			if (KCMPagesPanelSelectionHasNoRealPage())
+		{
+			UIDList pages;
+			if (!KCMReadSelectedPages(pages, kTrue /*masters in - KCMPageMap.h*/))
 				break;		// ⚠the same reason as above
-			Utils<IKCMPageFlagsFacade>()->ToggleCheckForSelection();
+			Utils<IKCMPageFlagsFacade>()->ToggleCheckForSelection(pages);
 			break;
+		}
 
 		// "Refresh Page Comparison" on the Pages panel page context menu (a plain command): recompare
 		// the selected pages and update their frames and thumbnails. The work is in KCMPeek.cpp, and the
 		// outcome is reported briefly in the status line.
 		case kKCMPageRefreshCompareActionID:
 		{
-			if (KCMPagesPanelSelectionHasNoRealPage())
+			UIDList pages;
+			if (!KCMReadSelectedPages(pages, kTrue /*masters in - KCMPageMap.h*/))
 				break;		// ⚠do not run with only the `[none]` row selected (the same reason as the two above)
 			int32 nPages = 0, nChanged = 0, nFailed = 0;
 			bool16 wasCancelled = kFalse;
-			if (Utils<IKCMCompareFacade>()->RefreshSelectedPages(&nPages, &nChanged, &wasCancelled, &nFailed))
+			if (Utils<IKCMCompareFacade>()->RefreshSelectedPages(pages, &nPages, &nChanged, &wasCancelled, &nFailed))
 			{
 				PMString msg("refreshed ");
 				msg.SetTranslatable(kFalse);
@@ -1106,7 +1115,8 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// reader picks (the work is KCMPageExport.cpp, through the facade). Import Story Text... reads the files back.
 		// ⚠The [None] guard first, as Register / Check / Refresh have it: that row has no page behind it, and the reader
 		//  falls back to the current page - a file nobody asked for.
-		// ★THE SELECTION IS READ BEFORE THE DIALOG OPENS - the story export's rule, through the one reader (the facade).
+		// ★THE SELECTION IS READ BEFORE THE DIALOG OPENS - the story export's rule, through the one reader (KCMReadSelectedPages,
+		//   here since 2026-10-26 - the import tidy S7; the model decides on the list it is handed).
 		case kKCMPopupExportPagesActionID:
 			{
 				if (KCMPagesPanelSelectionHasNoRealPage())
@@ -1120,7 +1130,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 					break;
 				}
 				UIDList pages(db);
-				if (!Utils<IKCMStoryEditsFacade>()->GetPagesPanelSelection(pages) || pages.IsEmpty())
+				if (!KCMReadSelectedPages(pages, kFalse /*no masters - a master's items are every page's*/) || pages.IsEmpty())
 				{
 					PMString none("Export Pages to Word: no page is selected in the Pages panel");
 					none.SetTranslatable(kFalse);
@@ -1671,7 +1681,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 				// Source = Removed). ★**The model counts; this side writes.**
 				// ★★The model **only answers**; writing into the menu and holding the label strings is this
 				//   side’s job. The shape of the answer is KCMPageToggleState in KCMPageMap.h.
-				const KCMPageToggleState st = Utils<IKCMPageFlagsFacade>()->GetRegisterToggleState();
+				// (2026-10-26) the selection read here, as the command reads it (KCMReadSelectedPages - masters left out)
+				UIDList pages;
+				KCMReadSelectedPages(pages, kFalse);
+				const KCMPageToggleState st = Utils<IKCMPageFlagsFacade>()->GetRegisterToggleState(pages);
 				if (!st.fEnabled)
 				{
 					listToUpdate->SetNthActionState(i, kDisabled_Unselected);
@@ -1702,7 +1715,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 				// Source, with a selection) and the check (all ticked / some = intermediate). ★As with the
 				// registration toggle, the model counts and this side writes.
 				// ★Check has a fixed label, so fRole is not read.
-				const KCMPageToggleState st = Utils<IKCMPageFlagsFacade>()->GetCheckToggleState();
+				// (2026-10-26) the selection read here, as the command reads it (KCMReadSelectedPages - masters in)
+				UIDList pages;
+				KCMReadSelectedPages(pages, kTrue);
+				const KCMPageToggleState st = Utils<IKCMPageFlagsFacade>()->GetCheckToggleState(pages);
 				if (!st.fEnabled)
 				{
 					listToUpdate->SetNthActionState(i, kDisabled_Unselected);

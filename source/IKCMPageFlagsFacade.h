@@ -30,6 +30,8 @@
 							// through KCMPageMap.h, whose 13 model-side free functions the UI
 							// could then see and could not link to.
 
+class UIDList;		// the Pages panel's selection, as the UI read it (2026-10-26)
+
 class IKCMPageFlagsFacade : public IPMUnknown
 {
 public:
@@ -37,14 +39,17 @@ public:
 
 	// ---- the two toggles -----------------------------------------------------------------
 
-	/** Toggle Register on the pages currently selected in the Pages panel. Re-pairs the two
-		documents and re-compares, then notifies. Which pages are selected is read inside --
-		the menu handler does not gather them. */
-	virtual void	ToggleRegisterForSelection() = 0;
+	/** Toggle Register on the pages selected in the Pages panel. Re-pairs the two documents and
+		re-compares, then notifies.
+		★`pages` IS THE SELECTION THE UI READ (2026-10-26, the import tidy S7 - KCMReadSelectedPages,
+		  ui/KCMThumbnailRefresh.h, masters left out for Register): the model does not read the Pages
+		  panel any more - it was the one call from the model to a UI part. Reshaped in place: both
+		  halves are built together and nothing outside KCM includes this header. */
+	virtual void	ToggleRegisterForSelection(const UIDList& pages) = 0;
 
-	/** Toggle Check on the pages currently selected in the Pages panel. Only meaningful while a
-		comparison is armed; Stop clears every tick. */
-	virtual void	ToggleCheckForSelection() = 0;
+	/** Toggle Check on the pages selected in the Pages panel (`pages`, read by the UI with the masters
+		in). A tick is the reader's own mark: no comparison is needed. */
+	virtual void	ToggleCheckForSelection(const UIDList& pages) = 0;
 
 	// ---- what the context menu should look like ------------------------------------------
 	//
@@ -56,8 +61,9 @@ public:
 	// a model plug-in's boundary; the SDK's own model/UI pair does not do it either
 	// (ICusCondTxtFacade has no menu-state method at all). SetNthActionState, SetNthActionName and
 	// the label strings are UI text and live in ui/KCMActionComponent.cpp. The counting is here.
-	virtual KCMPageToggleState	GetRegisterToggleState() = 0;
-	virtual KCMPageToggleState	GetCheckToggleState() = 0;
+	// `pages` = the selection the UI read for the item, as the toggles above take it (2026-10-26).
+	virtual KCMPageToggleState	GetRegisterToggleState(const UIDList& pages) = 0;
+	virtual KCMPageToggleState	GetCheckToggleState(const UIDList& pages) = 0;
 
 	// ---- (the JSON store went on 2026-09-07) ---------------------------------------------
 	//

@@ -876,7 +876,7 @@ resource VersionedScriptElementInfo(10)
 			kKCMExportPagesMethodScriptElement,
 			e_KCMExportPages,
 			"kcm export pages",					// name -> app.kcmExportPages(folder, pages)
-			"Export pages of the active document to Word as Export Pages to Word does - each page one .docx, each text frame a text box at its place - into a dated folder inside the one given. The pages are named as the Pages panel names them, joined by \",\"; an empty string is the Pages panel's selection.",
+			"Export pages of the active document to Word as Export Pages to Word does - each page one .docx, each text frame a text box at its place - into a dated folder inside the one given. The pages are named as the Pages panel names them, joined by \",\"; an empty string is refused (a script names its pages; the Pages panel's selection is the menu's).",
 			StringType,
 			"The sentence the status line shows, with the dated folder in it"
 			{

@@ -535,8 +535,9 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 			return kSuccess;
 		}
 		// ★(2026-10-25) app.kcmExportPages(folder, pages) - "Export Pages to Word..." with the folder given and the pages named
-		//   as the Pages panel names them ("1,3"); "" is the Pages panel's selection (IKCMStoryEditsFacade::ExportPagesAsWord).
-		//   The document is the active one - the one the Pages panel shows.
+		//   as the Pages panel names them ("1,3"). The document is the active one - the one the Pages panel shows.
+		//   ⛔"" (the Pages panel's selection) is refused since 2026-10-26 - the import tidy S7: the model does not read the
+		//   panel any more (the menu's UI half does - KCMReadSelectedPages), and a script names what it wants.
 		if (id == e_KCMExportPages)
 		{
 			PMString message;
@@ -551,13 +552,13 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 				|| fileArg.GetFile(&folder, data->GetRequestContext()) != kSuccess)
 				message = "the folder argument could not be read";
 			else if (data->ExtractRequestData(p_Name, pagesArg) != kSuccess || pagesArg.GetPMString(names) != kSuccess)
-				message = "the pages argument could not be read - \"1,3\", or \"\" for the Pages panel's selection";
+				message = "the pages argument could not be read - name them as the Pages panel does: \"1,3\"";
 			else if (!edits)
 				message = "the Story Edits facade is not there";
 			else if (db == nil)
 				message = "Export Pages to Word: there is no active document";
 			else if (names.IsEmpty())
-				edits->ExportPagesAsWord(folder, UIDList(db), message);
+				message = "Export Pages to Word: name the pages (\"1,3\") - a script does not read the Pages panel's selection";
 			else
 			{
 				UIDList pages(db);

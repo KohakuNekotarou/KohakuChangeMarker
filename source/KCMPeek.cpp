@@ -59,7 +59,7 @@
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 // The UI's KCMViewLookup.h is deliberately absent. Resolving which view the mouse is over belongs
 //   to the caller (the UI); this .cpp only peeks at the spread of the point it is given.
-#include "KCMPageMap.h"            // KCMBuildPairing (the exclusion pairing) / KCMPageMapReadSelection / KCMPageMapSweepClosedDocs
+#include "KCMPageMap.h"            // KCMBuildPairing (the exclusion pairing) / KCMPageMapPagesOf / KCMPageMapSweepClosedDocs
 #include "KCMPageCheck.h"          // KCMPageCheckClearAllDocs / KCMPageCheckSweepClosedDocs (clearing the ticks)
 #include "KCMPawStamp.h"           // KCMPawStampSweepClosedDocs (the cat-paw stamps, same sweep)
 #include "KCMColorSampler.h"       // KCMSampleCmykEndDrag (the pairing cached while Alt + left is held; emptied at shutdown)
@@ -533,7 +533,8 @@ static bool16 KCMQueryPixelComparePair(IDataBase*& outTarget, IDataBase*& outSou
 // with the Target as the frontmost document.
 // outPages is how many pages were really re-compared (pages with no counterpart are not counted)
 // and outChanged how many of those differed. The return says whether at least one was processed.
-bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, bool16* outCancelled, int32* outFailed)
+bool16 KCMRefreshComparisonForSelectedPages(const UIDList& selection, int32* outPages, int32* outChanged, bool16* outCancelled,
+										   int32* outFailed)
 {
 	if (outPages)     *outPages = 0;
 	if (outChanged)   *outChanged = 0;
@@ -553,15 +554,15 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 	//   an origin - it had no Source database of its own. Every armed pair has one now, and the
 	//   resolver above refuses a pair without one, so the guard that followed this could not fire.
 
-	// Read the Pages panel's selection through the reader Register and Check share
-	// (KCMPageMap.cpp). Nothing happens unless the document that selection belongs to is the
+	// The Pages panel's selection, as the UI read it, through the one place Register and Check decide on it
+	// (KCMPageMapPagesOf, KCMPageMap.cpp). Nothing happens unless the document that selection belongs to is the
 	// Target; over the Source the menu item is not offered at all, which is what
 	// KCMRefreshComparisonAvailable arranges.
 	IDataBase* db = nil;
 	std::vector<UID> selPages;
 	// includeMasters=kTrue: master spreads are compared, so they can be re-compared too. It only
 	//   means anything together with the master pairs KCMRefreshComparisonCore puts in its table.
-	if (!KCMPageMapReadSelection(db, selPages, kTrue /*includeMasters*/) || db != targetDB)
+	if (!KCMPageMapPagesOf(selection, kTrue /*includeMasters*/, db, selPages) || db != targetDB)
 		return kFalse;
 
 	// The core is driven by Target pages, and the Target is the frontmost document here, so the
@@ -598,8 +599,9 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 // altogether; the reasoning is in the branch below.
 // It does not look at the selection: right-clicking a page normally selects it, and even with
 // nothing selected the command safely does nothing and reports "no comparable pages".
-// **The command itself decides from KCMPageMapReadSelection's database**, which comes from the
-//   same KCMActiveDocDB(), so the two can never disagree about which document is meant. The only
+// **The command itself decides from the selection's database** - the UI reads the selection for
+//   the same KCMActiveDocDB() (KCMReadSelectedPages asks the facade's GetActiveDocDB, 2026-10-26),
+//   so the two can never disagree about which document is meant. The only
 //   difference between them is that one looks at the selection and the other does not. Keep them
 //   on the same source ([[one-question-one-place]]).
 bool16 KCMRefreshComparisonAvailable()
