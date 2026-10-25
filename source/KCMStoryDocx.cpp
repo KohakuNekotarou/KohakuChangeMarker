@@ -170,6 +170,8 @@ void AppendPlaceholder(int32 cp, const Look& look, std::string& out)
 	out += "\xE2\x9F\xA7</w:t></w:r></w:sdtContent></w:sdt>";
 }
 
+}	// anonymous namespace (reopened below - PutWordsIntoPlaceholders is public since 2026-10-25, for the page format)
+
 /*	PutWordsIntoPlaceholders
 	Replace ⟦XXXX⟧ with ⟦WORD⟧ inside every placeholder whose character has a word, in an element
 	that has already been written.
@@ -227,6 +229,9 @@ void PutWordsIntoPlaceholders(std::string& xml)
 		at = quote;
 	}
 }
+
+namespace
+{
 
 /** The mark that says an ENDNOTE hangs here (2026-09-23, the user's call: the reader editing in
 	Word has to be able to see that a note is attached at this point).
@@ -903,6 +908,8 @@ void AppendKentenStyle(const std::string& cls, const char* wordMark, std::string
 	out += "\"/></w:rPr></w:style>";
 }
 
+}	// anonymous namespace (reopened below - WriteStyles is public since 2026-10-25, for the page format)
+
 bool16 WriteStyles(const KCMStoryShape::Story& s, std::string& out, std::string& whyNot)
 {
 	out = kXmlDeclaration;
@@ -974,6 +981,9 @@ bool16 WriteStyles(const KCMStoryShape::Story& s, std::string& out, std::string&
 	out += "</w:styles>";
 	return kTrue;
 }
+
+namespace
+{
 
 /** Tick off every note the paragraphs refer to. kFalse for a reference to a note that is not there. */
 bool16 TickReferences(const std::vector<KCMStoryShape::Para>& paras, std::vector<bool16>& seen,
@@ -2721,6 +2731,31 @@ void SettleParas(std::vector<KCMStoryShape::Para>& paras)
 	}
 }
 
+/** The blocks of `container` read into `out`'s body, with the notes `notesTree` holds (nil: none - a reference is then
+	refused, by the note's number). ★ONE ROAD FOR TWO CALLERS (2026-10-25): ReadSide reads a document's body this way, and
+	ReadBlocksIn whatever container the page format names - a box's content control. ⚠`out` is not cleared here. */
+bool16 ReadBlocksWith(const KCMXmlTree& document, int32 container, const KCMXmlTree* notesTree,
+					  const std::string& stylesXml, KCMStoryShape::Story& out, std::string& whyNot)
+{
+	Reader rd;
+	rd.fTree = &document;
+	rd.fStory = &out;
+	if (!stylesXml.empty())
+	{
+		// An unreadable styles part is not fatal: the style ids then stand for themselves.
+		KCMXmlTree styles;
+		std::string ignored;
+		if (styles.Parse(stylesXml.data(), stylesXml.size(), ignored))
+			CollectStyleNames(styles, rd.fStyleNames);
+	}
+	if (!ReadBlocks(rd, container, kInBody, 0, 0, out.fBody) || !ResolveNotes(rd, notesTree))
+	{
+		whyNot = rd.fWhy;
+		return kFalse;
+	}
+	return kTrue;
+}
+
 }	// anonymous namespace
 
 bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml, const std::string& stylesXml,
@@ -2741,18 +2776,6 @@ bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml,
 	{
 		whyNot = "word/footnotes.xml: " + whyNot;
 		return kFalse;
-	}
-
-	Reader rd;
-	rd.fTree = &document;
-	rd.fStory = &out;
-	if (!stylesXml.empty())
-	{
-		// An unreadable styles part is not fatal: the style ids then stand for themselves.
-		KCMXmlTree styles;
-		std::string ignored;
-		if (styles.Parse(stylesXml.data(), stylesXml.size(), ignored))
-			CollectStyleNames(styles, rd.fStyleNames);
 	}
 
 	const int32 root = document.Root();
@@ -2776,12 +2799,20 @@ bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml,
 			out.fVertical = kTrue;
 	}
 
-	if (!ReadBlocks(rd, body, kInBody, 0, 0, out.fBody) || !ResolveNotes(rd, hasNotes ? &notes : nil))
+	return ReadBlocksWith(document, body, hasNotes ? &notes : nil, stylesXml, out, whyNot);
+}
+
+bool16 ReadBlocksIn(const KCMXmlTree& document, int32 container, const std::string& stylesXml,
+					KCMStoryShape::Story& out, std::string& whyNot)
+{
+	out = KCMStoryShape::Story();
+	whyNot.clear();
+	if (container < 0 || container >= document.Count())
 	{
-		whyNot = rd.fWhy;
+		whyNot = "there is nothing to read the box from";
 		return kFalse;
 	}
-	return kTrue;
+	return ReadBlocksWith(document, container, nil, stylesXml, out, whyNot);
 }
 
 bool16 Read(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, std::string& whyNot)
