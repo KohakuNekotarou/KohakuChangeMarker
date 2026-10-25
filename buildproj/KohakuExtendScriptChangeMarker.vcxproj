@@ -231,6 +231,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDocxPackage.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMXmlTree.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDocx.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageDocx.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStorySyncApply.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStorySync.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryNoteEdit.cpp" />
@@ -339,6 +340,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMDocxPackage.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMXmlTree.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDocx.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPageDocx.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStorySyncApply.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStorySync.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryNoteEdit.h" />
