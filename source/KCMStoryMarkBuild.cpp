@@ -319,8 +319,9 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 			//   assignment would silently throw the first one's edits away. Appending cannot: the marker
 			//   merges each story's list before it draws anything.
 			if (useSourceDocument)
-				KCM_DIAG_LOG("marks source story=%u ranges=%d", static_cast<unsigned>(storyHere.Get()),
-							 static_cast<int>(ranges.size()));	// test builds: which story the Source side is marked under
+				KCM_DIAG_LOG("marks source story=%u ranges=%d first=[%d,%d)", static_cast<unsigned>(storyHere.Get()),
+							 static_cast<int>(ranges.size()), static_cast<int>(ranges[0].fFrom),
+							 static_cast<int>(ranges[0].fTo));	// test builds: which story, and where, the Source side is marked
 			KCMMarkRangeList& dst = out[storyHere];
 			dst.insert(dst.end(), ranges.begin(), ranges.end());
 		}
