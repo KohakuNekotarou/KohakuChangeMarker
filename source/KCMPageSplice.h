@@ -62,8 +62,8 @@ bool16 PlaceOfEnd(const std::vector<std::string>& paras, const std::vector<KCMPa
 
 /** The body's [from, to) as a story of its own: the paragraphs it touches, cut at both ends, the ruby, kenten,
 	tate-chu-yoko and warichu clipped to it and counted from the piece's own start (a tate-chu-yoko's or warichu's
-	value made its own characters again). No tables, no note references, no endnote marks, no notes. Places outside the
-	story give an empty story. */
+	value made its own characters again). No tables, no note references, no endnote marks, no notes - ★and no direction
+	(fVertical kFalse): that is the box's, not its words'. Places outside the story give an empty story. */
 KCMStoryShape::Story Cut(const KCMStoryShape::Story& s, const Place& from, const Place& to);
 
 /** A piece's fingerprint: its byte count and CRC-32 of one fixed spelling of every paragraph's words and every mark

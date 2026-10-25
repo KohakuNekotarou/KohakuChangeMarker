@@ -223,8 +223,10 @@ bool16 PlaceOfEnd(const std::vector<std::string>& paras, const std::vector<KCMPa
 
 KCMStoryShape::Story Cut(const KCMStoryShape::Story& s, const Place& from, const Place& to)
 {
+	// ★NO DIRECTION: a piece is a box's words, and the direction is the box's (KCMPageDocx::Box::fVertical) - a piece
+	//   carrying the story's read back unequal to its own box and the export refused every vertical frame (2026-10-25,
+	//   found live).
 	KCMStoryShape::Story piece;
-	piece.fVertical = s.fVertical;
 	const int32 n = static_cast<int32>(s.fBody.size());
 	if (from.fPara < 0 || to.fPara >= n || from.fPara > to.fPara)
 		return piece;
