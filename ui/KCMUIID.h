@@ -782,7 +782,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// 
 #define kKCMTaskStartCloneMenuKey	kKCMStringPrefix "kKCMTaskStartCloneMenuKey"	// ★the menu name of "Task Start" (kept in memory, 2026-10-13)
 // ⛔kKCMOpenOriginIdmlMenuKey went on 2026-09-21 with the item it named (ActionID +80).
 #define kKCMExportStoryTextMenuKey	kKCMStringPrefix "kKCMExportStoryTextMenuKey"	// the menu name of "Export Story Text..." on the panel flyout
-#define kKCMExportPagesMenuKey		kKCMStringPrefix "kKCMExportPagesMenuKey"	// (2026-10-25) "Export Pages to Word..." - one item on two menus. Length and character sum measured against every KCM key (work/note-scripts/2026-10-25-kcm-word-layout/key_collisions.py): no other key
+#define kKCMExportPagesMenuKey		kKCMStringPrefix "kKCMExportPagesMenuKey"	// (2026-10-25) "Export Pages to Word..." - one item on two menus. Length and character sum measured against every KCM key (work/note-scripts/2026-10-24-kcm-per-change/key_collisions_kcm.py): no other key
 #define kKCMImportStoryTextMenuKey	kKCMStringPrefix "kKCMImportStoryTextMenuKey"	// the menu name of "Import Story Text..." on the panel flyout
 #define kKCMCompareTrackedMenuKey	kKCMStringPrefix "kKCMCompareTrackedMenuKey"	// the menu name of "Compare with Tracked Changes..." (2026-10-05)
 #define kKCMClearChosenMenuKey	kKCMStringPrefix "kKCMClearChosenMenuKey"	// ★the menu name of "Clear Target and Source" on the panel flyout (drops both choices; the next Start falls back to the automatic rule)
