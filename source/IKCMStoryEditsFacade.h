@@ -845,6 +845,21 @@ public:
 
 	/** Restore from Source (text) for every pair ("Restore These from Source"). */
 	virtual int32	RestoreTextsFromSource(const int32* rows, const int32* changes, int32 count, PMString& outMessage) = 0;
+
+	// ---- ★EXPORT PAGES TO WORD (2026-10-25 - KCMPageExport.h). ⚠Appended last: the UI half calls by vtable slot
+	//      ([[facade-vtable-slot-append-only]]) - rebuild both halves. ----
+
+	/** "Export Pages to Word...": each page one .docx of text boxes, into a dated folder under `parent`.
+		★AN EMPTY `pages` IS THE PAGES PANEL'S SELECTION, read by the one reader the panel's Register / Check / Refresh share
+		  (KCMPageMapReadSelection - masters left out); a script names its pages instead. ⚠The UI guards the [None] row
+		  before it calls (KCMPagesPanelSelectionHasNoRealPage) - this reader cannot tell it from the current page.
+		@return kFalse with the reason in outMessage when nothing was written. */
+	virtual bool16	ExportPagesAsWord(const IDFile& parent, const UIDList& pages, PMString& outMessage) = 0;
+
+	/** The pages selected in the Pages panel, from the same one reader, asked ahead of time: ★"Export Pages to Word..."
+		reads them BEFORE its folder dialog opens - the story export's rule (a modal dialog is a window of its own; reading
+		first cannot be wrong). Masters left out. @return kFalse when no page of the panel's document is selected. */
+	virtual bool16	GetPagesPanelSelection(UIDList& outPages) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

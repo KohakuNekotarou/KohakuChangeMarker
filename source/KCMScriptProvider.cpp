@@ -154,6 +154,8 @@
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - app.kcmExportStoryText
 #include "KCMStoryTextImport.h"	// KCMImportStoryTextAsSource - app.kcmImportToSource
 #include "IKCMStoryEditsFacade.h"	// ApplyChange / ApplyStory / ApplyAll - app.kcmApplyChange (2026-10-24)
+#include "IPageList.h"				// app.kcmExportPages names its pages as the Pages panel does (2026-10-25)
+#include "UIDList.h"
 #include "Utils.h"
 #include <cstdio>					// sscanf_s - app.kcmApplyChange's "<row> <change>"
 #include <string>
@@ -161,6 +163,57 @@
 
 namespace
 {
+// "1,3" -> the pages of `db` the Pages panel names so - IPageList::GetPageString as KCMPageExport spells a page's name in its
+// file's (2026-10-25, app.kcmExportPages). kFalse with the first name no page carries in outMissing.
+bool16 PagesNamed(IDataBase* db, const PMString& names, UIDList& out, PMString& outMissing)
+{
+	outMissing.Clear();
+	outMissing.SetTranslatable(kFalse);
+	InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
+	if (pageList == nil)
+	{
+		outMissing = names;
+		outMissing.SetTranslatable(kFalse);
+		return kFalse;
+	}
+	const std::string all = names.GetUTF8String();
+	std::string::size_type at = 0;
+	for (;;)
+	{
+		const std::string::size_type comma = all.find(',', at);
+		std::string one = all.substr(at, (comma == std::string::npos) ? std::string::npos : comma - at);
+		while (!one.empty() && one[0] == ' ')
+			one.erase(0, 1);
+		while (!one.empty() && one[one.size() - 1] == ' ')
+			one.erase(one.size() - 1);
+		if (!one.empty())
+		{
+			bool16 found = kFalse;
+			for (int32 i = 0; i < pageList->GetPageCount() && !found; ++i)
+			{
+				const UID uid = pageList->GetNthPageUID(i);
+				PMString name;
+				pageList->GetPageString(uid, &name, kFalse, kFalse, kDefaultPageType, kTrue, kTrue);
+				if (name.GetUTF8String() == one)
+				{
+					out.Append(uid);
+					found = kTrue;
+				}
+			}
+			if (!found)
+			{
+				outMissing.SetUTF8String(one);
+				outMissing.SetTranslatable(kFalse);
+				return kFalse;
+			}
+		}
+		if (comma == std::string::npos)
+			break;
+		at = comma + 1;
+	}
+	return (out.Length() > 0) ? kTrue : kFalse;
+}
+
 // "<row> <change>;<row> <change>;..." read into the pairs - the batch doors (2026-10-24 night, the list like KFC's: several
 // rows put in, or put back, as one undo step). kFalse when a part does not read as two numbers.
 bool16 ReadChangePairs(const PMString& what, std::vector<int32>& rows, std::vector<int32>& changes)
@@ -478,6 +531,50 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 			answer.SetTranslatable(kFalse);
 			ScriptData returnData;
 			returnData.SetWideString(WideString(answer));
+			data->AppendReturnData(script, methodID, returnData);
+			return kSuccess;
+		}
+		// ★(2026-10-25) app.kcmExportPages(folder, pages) - "Export Pages to Word..." with the folder given and the pages named
+		//   as the Pages panel names them ("1,3"); "" is the Pages panel's selection (IKCMStoryEditsFacade::ExportPagesAsWord).
+		//   The document is the active one - the one the Pages panel shows.
+		if (id == e_KCMExportPages)
+		{
+			PMString message;
+			message.SetTranslatable(kFalse);
+			ScriptData fileArg;
+			ScriptData pagesArg;
+			IDFile folder;
+			PMString names;
+			Utils<IKCMStoryEditsFacade> edits;
+			IDataBase* const db = KCMActiveDocDB();
+			if (data->ExtractRequestData(keyAEFile, fileArg) != kSuccess
+				|| fileArg.GetFile(&folder, data->GetRequestContext()) != kSuccess)
+				message = "the folder argument could not be read";
+			else if (data->ExtractRequestData(p_Name, pagesArg) != kSuccess || pagesArg.GetPMString(names) != kSuccess)
+				message = "the pages argument could not be read - \"1,3\", or \"\" for the Pages panel's selection";
+			else if (!edits)
+				message = "the Story Edits facade is not there";
+			else if (db == nil)
+				message = "Export Pages to Word: there is no active document";
+			else if (names.IsEmpty())
+				edits->ExportPagesAsWord(folder, UIDList(db), message);
+			else
+			{
+				UIDList pages(db);
+				PMString missing;
+				if (PagesNamed(db, names, pages, missing))
+					edits->ExportPagesAsWord(folder, pages, message);
+				else
+				{
+					message = "Export Pages to Word: no page is named ";
+					message.Append(missing);
+				}
+			}
+			message.SetTranslatable(kFalse);
+			if (message.CharCount() > 0)
+				KCMNotifyStatus(message, kFalse);
+			ScriptData returnData;
+			returnData.SetWideString(WideString(message));
 			data->AppendReturnData(script, methodID, returnData);
 			return kSuccess;
 		}

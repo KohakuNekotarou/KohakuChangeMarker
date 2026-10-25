@@ -914,6 +914,14 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMExportStoryTextMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Export Pages to Word..." (2026-10-25): the pages selected in the Pages panel, each one .docx whose text boxes
+		// stand where the frames stand. Under Export Story Text... - the other way out, read back by the same Import.
+		// ★The same action is on the Pages panel's page menu too (below, with Register / Check / Refresh).
+		kKCMPopupExportPagesActionID,
+		kKCMPopupMenuPath,
+		kKCMExportPagesMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Import Story Text..." on the panel flyout (2026-09-15). Plain command: the edited Word
 		// documents are read and the Story comparison starts against a copy holding those words.
 		// Directly under Export - the two are one round trip.
@@ -1328,6 +1336,14 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMPageRefreshCompareMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Export Pages to Word..." on the Pages panel page context menu (2026-10-25): the selected pages, each one .docx
+		// of text boxes. Needs no comparison - only a document and a real page selected (the [None] guard,
+		// UpdateActionStates). The work is in KCMPageExport.cpp, through the facade.
+		kKCMPopupExportPagesActionID,
+		"RtMenuPagesPanel",
+		kKCMPageExportPagesMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// ----- The book comparison dialog's chapter rows: right-click menu (2026-08-12) -----
 		// A menu of its own - neither the panel flyout nor a built-in InDesign menu - so its path is
 		// a name nobody else uses and it is written last, after the menus above have been laid out.
@@ -1584,6 +1600,17 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKCMActionComponentBoss,
 		kKCMPopupExportStoryTextActionID,
 		kKCMExportStoryTextMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Export Pages to Word..." (2026-10-25): greyed with no active document, or when the Pages panel holds nothing
+		// but the [None] row (UpdateActionStates) - it reads and never compares, so no Target or Source is asked for.
+		kKCMActionComponentBoss,
+		kKCMPopupExportPagesActionID,
+		kKCMExportPagesMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,

@@ -57,6 +57,7 @@
 #include "KCMOversetPoint.h"		// KCMFindOversetOutport - where the "+" of an overflow is
 #include "ITextModel.h"			// the story the two above are asked about
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - "Export Story Text..." on the flyout
+#include "KCMPageExport.h"		// KCMExportPagesAsWord - "Export Pages to Word..." (2026-10-25)
 #include "KCMStoryTextImport.h"	// KCMImportStoryTextAsSource - "Import Story Text..."; KCMPourStoryTextWith - Apply All
 #include <algorithm>
 #include "KCMRestoreAttr.h"		// "Restore from Source" on an attribute change row (2026-09-24, stage 2 B); KCMAttrMarksSame
@@ -1415,6 +1416,39 @@ public:
 	}
 
 	virtual IDataBase*	GetTaskDocumentDB()	{ return KCMTaskDocumentDB(); }
+
+	// (2026-10-25) Export Pages to Word. ⚠Declared at the END of IKCMStoryEditsFacade, written here beside the story export
+	//   it borrows from - the vtable's order is the interface's.
+	virtual bool16	ExportPagesAsWord(const IDFile& parent, const UIDList& pages, PMString& outMessage)
+	{
+		// ★EMPTY = THE PAGES PANEL'S SELECTION, through the reader Register / Check / Refresh share - one question, one place.
+		//   The document is the one the panel shows (the active one): the pages are that document's.
+		if (pages.IsEmpty())
+		{
+			UIDList selected(pages.GetDataBase());
+			if (!this->GetPagesPanelSelection(selected))
+			{
+				outMessage = "Export Pages to Word: no page is selected in the Pages panel";
+				outMessage.SetTranslatable(kFalse);
+				return kFalse;
+			}
+			return KCMExportPagesAsWord(selected.GetDataBase(), selected, parent, outMessage);
+		}
+		return KCMExportPagesAsWord(pages.GetDataBase(), pages, parent, outMessage);
+	}
+
+	virtual bool16	GetPagesPanelSelection(UIDList& outPages)
+	{
+		IDataBase* db = nil;
+		std::vector<UID> chosen;
+		if (!KCMPageMapReadSelection(db, chosen, kFalse /*no masters - a master's items are every page's*/))
+			return kFalse;
+		UIDList list(db);
+		for (size_t i = 0; i < chosen.size(); ++i)
+			list.Append(chosen[i]);
+		outPages = list;
+		return kTrue;
+	}
 
 	// ---- ★THE TRACK CHANGES MODE (2026-10-05) - IKCMStoryEditsFacade.h says what each one answers ----
 	// ⚠The change-row menu's actions (Restore from Source, Match the Source, Apply, Restore from Copy) are not offered in

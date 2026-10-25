@@ -1101,6 +1101,47 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			}
 			break;
 
+		// "Export Pages to Word..." (2026-10-25) - on the Pages panel's page menu and on the flyout: the pages selected in
+		// the Pages panel, each one .docx whose text boxes stand where the frames stand, in a dated folder under the one the
+		// reader picks (the work is KCMPageExport.cpp, through the facade). Import Story Text... reads the files back.
+		// ⚠The [None] guard first, as Register / Check / Refresh have it: that row has no page behind it, and the reader
+		//  falls back to the current page - a file nobody asked for.
+		// ★THE SELECTION IS READ BEFORE THE DIALOG OPENS - the story export's rule, through the one reader (the facade).
+		case kKCMPopupExportPagesActionID:
+			{
+				if (KCMPagesPanelSelectionHasNoRealPage())
+					break;
+				IDataBase* const db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
+				if (db == nil)
+					break;			// the menu item is greyed without one; this is the belt
+				if (Utils<IKCMCompareFacade>()->IsPdfDoc(db))
+				{
+					KCMSetStatus(kKCMPdfTargetRefusal);
+					break;
+				}
+				UIDList pages(db);
+				if (!Utils<IKCMStoryEditsFacade>()->GetPagesPanelSelection(pages) || pages.IsEmpty())
+				{
+					PMString none("Export Pages to Word: no page is selected in the Pages panel");
+					none.SetTranslatable(kFalse);
+					KCMSetStatus(none);
+					break;
+				}
+				SDKFolderChooser chooser;
+				PMString title("Export Pages to Word - where to put the folder");
+				title.SetTranslatable(kFalse);
+				chooser.SetTitle(title);
+				chooser.ShowDialog();
+				if (chooser.IsChosen())
+				{
+					PMString exportMsg;
+					Utils<IKCMStoryEditsFacade>()->ExportPagesAsWord(chooser.GetIDFile(), pages, exportMsg);
+					if (exportMsg.CharCount() > 0)
+						KCMSetStatus(exportMsg);
+				}
+			}
+			break;
+
 		// Flyout "Import Story Text...": the other half of the round trip. The chosen .docx files are read, a Task
 		// Start in memory of the task document is taken, the files' words go INTO THAT COPY, and the Story comparison
 		// starts against it: the rows say what the document would become, and Apply puts them in (2026-10-24, adopted
@@ -1339,7 +1380,8 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		//     entrances.)
 		if ((action == kKCMPageMapToggleActionID ||
 		     action == kKCMPageCheckToggleActionID ||
-		     action == kKCMPageRefreshCompareActionID) &&
+		     action == kKCMPageRefreshCompareActionID ||
+		     action == kKCMPopupExportPagesActionID) &&		// (2026-10-25) Export Pages to Word, on the same menu
 		    KCMPagesPanelSelectionHasNoRealPage())
 		{
 			listToUpdate->SetNthActionState(i, kDisabled_Unselected);
@@ -1719,6 +1761,14 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 				//   (It asked for the active document alone until that day, while the import wrote into the Target.)
 				listToUpdate->SetNthActionState(i,
 					(Utils<IKCMStoryEditsFacade>()->GetTaskDocumentDB() != nil) ? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			case kKCMPopupExportPagesActionID:
+			{
+				// (2026-10-25) A document in front, and - on the Pages panel - a real page selected: the [None] row is turned
+				//   away above, with the other page items. It reads and never compares, so nothing else is asked.
+				listToUpdate->SetNthActionState(i,
+					(Utils<IKCMCompareFacade>()->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
 				break;
 			}
 			case kKCMPopupExportReportActionID:

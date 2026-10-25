@@ -71,6 +71,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMTaskStartMenuKey,				"Task Start (Save)...",
                 kKCMTaskStartCloneMenuKey,			"Task Start",
 		kKCMExportStoryTextMenuKey,			"Export Story Text...",
+		kKCMExportPagesMenuKey,				"Export Pages to Word...",
 		kKCMImportStoryTextMenuKey,			"Import Story Text...",
 		kKCMCompareTrackedMenuKey,			"Compare with Tracked Changes...",
                 kKCMClearChosenMenuKey,			"Clear Target and Source",

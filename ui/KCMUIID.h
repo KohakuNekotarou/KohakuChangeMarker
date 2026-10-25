@@ -508,6 +508,7 @@ DECLARE_PMID(kActionIDSpace, kKCMChangeRowApplyActionID, kKCMUIPrefix + 91)	// �
 DECLARE_PMID(kActionIDSpace, kKCMStoryRowApplyActionID, kKCMUIPrefix + 92)	// ★"Apply All Changes in This Story" on a Story Edits STORY row (facade ApplyStory)
 DECLARE_PMID(kActionIDSpace, kKCMApplyAllActionID, kKCMUIPrefix + 93)	// ★"Apply All Changes": every story the import filled (facade ApplyAll). ⚠On the SECTION HEADING's menu since 2026-10-24 evening (kKCMProposedHeadingMenuName - the author: on a story row it read as that story's), no longer a story row's - the ID keeps its first name
 DECLARE_PMID(kActionIDSpace, kKCMStoryRowRestoreAllActionID, kKCMUIPrefix + 95)	// ★"Restore All Changes in This Story" on a Story Edits STORY row in the Story mode (2026-10-24 night, design 1-8 - the author: "on the Story row too"): every text change of the story made the Source's by copy, one undo step (facade RestoreStoryFromSource). ⚠+95 the next after +94, counted
+DECLARE_PMID(kActionIDSpace, kKCMPopupExportPagesActionID, kKCMUIPrefix + 96)	// ★(2026-10-25) "Export Pages to Word..." - on the Pages panel's page menu (under Refresh Page Comparison) AND on the flyout (under Export Story Text...): the selected pages, each one .docx of text boxes (facade ExportPagesAsWord). +96 the next free slot - counted: the highest was +95
 DECLARE_PMID(kActionIDSpace, kKCMChangeRowRestoreCopyActionID, kKCMUIPrefix + 94)	// ★"Restore from Copy" on a "=" CHANGE row (2026-10-24 evening, design 11-3): the document's own words pasted back from the copy Apply This Change kept (facade RestoreChangeFromCopy). ⚠+94 the next after +93, never a grave
 
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
@@ -781,6 +782,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// 
 #define kKCMTaskStartCloneMenuKey	kKCMStringPrefix "kKCMTaskStartCloneMenuKey"	// ★the menu name of "Task Start" (kept in memory, 2026-10-13)
 // ⛔kKCMOpenOriginIdmlMenuKey went on 2026-09-21 with the item it named (ActionID +80).
 #define kKCMExportStoryTextMenuKey	kKCMStringPrefix "kKCMExportStoryTextMenuKey"	// the menu name of "Export Story Text..." on the panel flyout
+#define kKCMExportPagesMenuKey		kKCMStringPrefix "kKCMExportPagesMenuKey"	// (2026-10-25) "Export Pages to Word..." - one item on two menus. Length and character sum measured against every KCM key (work/note-scripts/2026-10-25-kcm-word-layout/key_collisions.py): no other key
 #define kKCMImportStoryTextMenuKey	kKCMStringPrefix "kKCMImportStoryTextMenuKey"	// the menu name of "Import Story Text..." on the panel flyout
 #define kKCMCompareTrackedMenuKey	kKCMStringPrefix "kKCMCompareTrackedMenuKey"	// the menu name of "Compare with Tracked Changes..." (2026-10-05)
 #define kKCMClearChosenMenuKey	kKCMStringPrefix "kKCMClearChosenMenuKey"	// ★the menu name of "Clear Target and Source" on the panel flyout (drops both choices; the next Start falls back to the automatic rule)
@@ -1245,6 +1247,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// 
 // ⛔kKCMOpenOriginIdmlMenuItemPosition (9.0205) went with it. A position is not an identity, so the number itself may be used again.
 #define kKCMExportStoryTextMenuItemPosition	9.021// "Export Story Text...", directly under Task Start: the two belong together (one takes the state, the other hands the words out)
 // ⛔**9.0215 IS FREE AGAIN** (2026-09-21): it held "Export Story Text as Word..." between the export and the import.
+#define kKCMExportPagesMenuItemPosition	9.0215	// (2026-10-25) "Export Pages to Word...", between Export Story Text... and Import Story Text...: the second way out, read back by the same Import
 #define kKCMImportStoryTextMenuItemPosition	9.022	// "Import Story Text...", directly under Export: the two halves of one round trip
 #define kKCMCompareTrackedMenuItemPosition	9.023	// "Compare with Tracked Changes...", directly under Import: the same road (a copy taken, then a comparison) - 2026-10-05
 #define kKCMSetTargetMenuItemPosition		9.03	// "Set as Target"
@@ -1329,6 +1332,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// 
 #define kKCMPageMapToggleMenuItemPosition	3000.0
 #define kKCMPageCheckMenuItemPosition		3001.0	// "Check", directly after Register
 #define kKCMPageRefreshCompareMenuItemPosition	3002.0	// "Refresh Page Comparison", directly after Check
+#define kKCMPageExportPagesMenuItemPosition	3003.0	// (2026-10-25) "Export Pages to Word...", the last of KCM's page items
 #define kKCMAboutThisMenuItemPosition		12.0	// "About this plug-in", at the end (11.0 was About Scripting, which has been removed)
 
 

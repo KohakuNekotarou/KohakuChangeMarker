@@ -270,6 +270,9 @@ enum KCMScriptMethods
 	//   case-sensitive, with 'eKGR' found by the same search). ⚠Not registered with Adobe.
 	e_KCMChangeReach = 'eKGP',		// P = place. app.kcmChangeReach("<row> <change>") -> "none" | "locked,hidden,hidden-spread" (the bits set)
 	e_KCMRestoreFromSource = 'eKGS',	// S = Source. app.kcmRestoreFromSource("<row> <change>" | "<row>" | "<r> <c>;<r> <c>...") -> the sentence
+	// (2026-10-25) "Export Pages to Word..." without the folder dialog and the Pages panel - 'eKGW' MEASURED free: 0 hits in
+	//   source/, docs/, work/ and .claude/ (case-sensitive; 'eKGg', a grave, found by the same search). ⚠Not registered with Adobe.
+	e_KCMExportPages = 'eKGW',		// W = Word pages. app.kcmExportPages(folder, "1,3") -> the sentence ("" = the Pages panel's selection)
 
 	// ★★ONE CHANGE TAKEN IN FROM A SCRIPT (2026-09-17 afternoon). The user asked for the order checks -
 	//   "1 became 1..5, and the user takes in 3, then 5, then 4, then 2: does the order hold?" The change
