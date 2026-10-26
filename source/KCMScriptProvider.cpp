@@ -136,11 +136,18 @@
 // KCMGetSessionStatus (declared in KCMModelNotify.h), which is not a reverse dependency.
 // (⛔KCMPdfSpike.h - app.kcmProbePdfRoute's experiment - went on 2026-10-02 with the spike, before
 //  shipping, as it was always meant to. The code is in git at 5720208.)
+#include "KCMBookCompare.h"	// KCMGetBookResultText - the last book comparison, also in the module
+#include "KCMStoryStamp.h"	// KCMStoryEdits::ReadStamp - the SAME reading the panel uses
+#include "Utils.h"			// Utils<IScriptErrorUtils> - a put refused
+// ★★★THE TEST DOORS ARE A TEST BUILD'S ONLY (2026-10-26, the author: "cut them out when it goes to the Exchange" - the KCM full test,
+//   docs/superpowers/specs/2026-10-26-kcm-full-test-design.md section 4): every property and method below that is not
+//   registered with Adobe - KCM.fr declares them inside #ifdef KCM_DIAG, and this file serves them inside the same #ifdef,
+//   with the includes only they use. The registered ones (app.kcmStatus, app.kcmBookResult, the four story counters) are in
+//   every build: what the published 1.5.0 held.
+#ifdef KCM_DIAG
 #include "KCMResourceSnapshot.h"	// KCMDescribeResourceSnapshot - the Resources mode's export
 #include "KCMResourceDiff.h"	// KCMDescribeResourceDiff - the same mode's comparison of the two
 								// armed documents, which is the reading the engine is checked by
-#include "KCMBookCompare.h"	// KCMGetBookResultText - the last book comparison, also in the module
-#include "KCMStoryStamp.h"	// KCMStoryEdits::ReadStamp - the SAME reading the panel uses
 #include "KCMStoryList.h"	// KCMStoryList::RowsAsTsv - app.kcmStoryRows, the reading port
 #include "KCMTrackList.h"	// KCMTrackList::RowsAsTsv - the same port in the Track Changes mode (2026-10-05)
 #include "KCMTrackOriginal.h"	// KCMTakeTrackOriginalCopy - app.kcmCompareTracked (2026-10-05)
@@ -155,8 +162,6 @@
 #include "KCMStoryTextImport.h"	// KCMImportStoryTextAsSource - app.kcmImportToSource
 #include "IKCMStoryEditsFacade.h"	// ApplyChange / ApplyStory / ApplyAll - app.kcmApplyChange (2026-10-24)
 #include "IPageList.h"				// app.kcmExportPages names its pages as the Pages panel does (2026-10-25)
-#include "UIDList.h"
-#include "Utils.h"
 #include <cstdio>					// sscanf_s - app.kcmApplyChange's "<row> <change>"
 #include <string>
 #include <vector>					// the batch doors' "<row> <change>;<row> <change>..." (2026-10-24 night)
@@ -239,6 +244,7 @@ bool16 ReadChangePairs(const PMString& what, std::vector<int32>& rows, std::vect
 	return rows.empty() ? kFalse : kTrue;
 }
 }	// anonymous namespace
+#endif // KCM_DIAG - the test doors' includes and helpers
 // ⚠**KCMTextRead.h WENT WITH THE FEATURE THAT NEEDED IT** (2026-09-08). It was included here for
 //   app.kcmStoryReadCompare - the direct-read migration's parallel run - and its own comment said
 //   "temporary". The property was removed on 2026-09-03; the include outlived it by five days and
@@ -278,7 +284,9 @@ private:
 	    **This is the one property here that reads the HOST's state rather than our own**: it
 	    exists so that "did we leave ourselves on that list when the document was saved?" can be
 	    answered from outside, and the list persists in the .indd. */
+#ifdef KCM_DIAG
 	ErrorCode ReadTransparencyItemCount(ScriptID propID, IScriptRequestData* data, IScript* script);
+#endif
 
 	// app.kcmStoryReadCompare, the direct-read migration's parallel run, stood here from
 	// 2026-08-31 to 2026-09-03 - the only property that ever accepted a put. It went with the old
@@ -294,14 +302,22 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 {
 	const int32 id = propID.Get();
 
+#ifdef KCM_DIAG
 	const bool16 isAppString = (id == p_KCMStatus || id == p_KCMBookResult || id == p_KCMStoryRows
 								|| id == p_KCMResourceSnapshot || id == p_KCMResourceDiff);
+#else
+	const bool16 isAppString = (id == p_KCMStatus || id == p_KCMBookResult);	// (the test doors: a test build's only)
+#endif
 	// ⛔p_KCMOriginStatus stood in that list until 2026-09-21. Its Property block went from KCM.fr
 	//   with the origin, so the engine can no longer name it and this branch could not be reached -
 	//   and nothing below served it either. The ScriptID itself stays retired (KCMScriptingDefs.h).
 	const bool16 isStoryCounter = (id == p_KCMChangeCount || id == p_KCMTextChangeCount ||
 								   id == p_KCMAttrChangeCount || id == p_KCMOtherChangeCount);
+#ifdef KCM_DIAG
 	const bool16 isDocXPCount = (id == p_KCMTransparencyItemCount);
+#else
+	const bool16 isDocXPCount = kFalse;		// (document.kcmTransparencyItemCount: a test door, a test build's only)
+#endif
 
 	if (!isAppString && !isStoryCounter && !isDocXPCount)
 		return CScriptProvider::AccessProperty(propID, data, script);
@@ -353,8 +369,10 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 
 	if (isAppString)
 		return this->ReadAppString(id, propID, data, script);
+#ifdef KCM_DIAG
 	if (isDocXPCount)
 		return this->ReadTransparencyItemCount(propID, data, script);
+#endif
 	return this->ReadStoryCounter(id, propID, data, script);
 }
 
@@ -363,6 +381,8 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 	// (⛔app.kcmProbePdfRoute() - the PDF spike's measuring door, 2026-09-14 - was served here and went
 	//  on 2026-10-02 with the spike.)
 
+	// ★★★EVERY METHOD HERE IS A TEST DOOR - a test build's only since 2026-10-26 (the file's head says why).
+#ifdef KCM_DIAG
 	// ★★THE STORY TEXT ROUND TRIP WITHOUT A DIALOG (2026-09-17) - the menu items' own model calls, so
 	//   a test can run every case the user asked for (KCMScriptingDefs.h says why). Each answers with
 	//   the sentence, and puts it on the status line the way the menu item's UI half does.
@@ -648,6 +668,7 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 			return kSuccess;
 		}
 	}
+#endif // KCM_DIAG - the test doors' methods
 
 	// ⛔**THE THREE ORIGIN WRITERS WENT ON 2026-09-21** (kcmSaveOriginXml / kcmSaveOriginIdml /
 	//   kcmSaveDocXml). They shared one body and one status scale, and all three read something
@@ -660,6 +681,8 @@ ErrorCode KCMScriptProvider::ReadAppString(int32 id, ScriptID propID, IScriptReq
 	PMString value;
 	if (id == p_KCMStatus)
 		KCMGetSessionStatus(value);		// the panel's status line
+#ifdef KCM_DIAG
+	// (the three test doors among the strings - a test build's only since 2026-10-26)
 	else if (id == p_KCMResourceSnapshot)
 		// The Resources mode's export, measured from outside while it has no panel of its own.
 		KCMDescribeResourceSnapshot(value);
@@ -678,6 +701,7 @@ ErrorCode KCMScriptProvider::ReadAppString(int32 id, ScriptID propID, IScriptReq
 		else
 			KCMStoryList::RowsAsTsv(value);
 	}
+#endif // KCM_DIAG
 	else
 		KCMGetBookResultText(value);		// the last book comparison, one line per chapter
 
@@ -712,6 +736,8 @@ ErrorCode KCMScriptProvider::ReadStoryCounter(int32 id, ScriptID propID, IScript
 	return this->ReturnInt32(static_cast<int32>(value), propID, data, script);
 }
 
+#ifdef KCM_DIAG
+// (a test door - a test build's only since 2026-10-26)
 ErrorCode KCMScriptProvider::ReadTransparencyItemCount(ScriptID propID, IScriptRequestData* data, IScript* script)
 {
 	// The script object names the document to read - same move as ReadStoryCounter above, except
@@ -730,6 +756,7 @@ ErrorCode KCMScriptProvider::ReadTransparencyItemCount(ScriptID propID, IScriptR
 	//   for why it must not arrive as a string.
 	return this->ReturnInt32(count, propID, data, script);
 }
+#endif // KCM_DIAG
 
 ErrorCode KCMScriptProvider::ReturnInt32(int32 value, ScriptID propID, IScriptRequestData* data,
 										 IScript* script)

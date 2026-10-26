@@ -83,8 +83,13 @@ void AppendSide(PMString& out, const char* heading, const PMString& body)
 	{
 		pretty.Remove(kKCMXmlSideLimit, kMaxInt32);
 		out.Append(pretty);
+		// (app.kcmResourceDiff is a test door - a test build's only since 2026-10-26 - so only a test build names it here)
+#ifdef KCM_DIAG
 		out.Append("\n... (cut here at 20,000 characters. The rest is not shown anywhere:"
 				   " app.kcmResourceDiff carries only a short excerpt around each difference.)\n\n");
+#else
+		out.Append("\n... (cut here at 20,000 characters. The rest is not shown anywhere.)\n\n");
+#endif
 		return;
 	}
 

@@ -683,6 +683,13 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
+		// ★★★THE TEST DOORS - EVERY PROPERTY AND METHOD FROM HERE TO THE MATCHING #endif - ARE A TEST BUILD'S ONLY (2026-10-26,
+		//   the author: "cut them out when it goes to the Exchange" - the KCM full test, docs/superpowers/specs/2026-10-26-kcm-full-test-design.md
+		//   section 4). None was in the published 1.5.0 (it held the registered two above and the story four below); each was
+		//   added since so that a test could drive or read KCM from KIDMCP. ODFRC is given -d KCM_DIAG by a test build
+		//   (KCMOdfrcDefines in the vcxproj, from KCMExtraDefines), and KCMScriptProvider.cpp serves them inside the same
+		//   #ifdef. Checked from outside: work\kcm-regress\full\ship_check.py reads the shipping build's resources for them.
+#ifdef KCM_DIAG
 		// app.kcmResourceSnapshot - the Resources comparison mode's export of the ACTIVE document,
 		// measured: "376004 bytes, 78 ms", or "FAILED: <the step that failed>". The mode has no
 		// panel yet, so this is the only way to see whether its engine works; it stays afterwards
@@ -884,6 +891,7 @@ resource VersionedScriptElementInfo(10)
 				p_Name, "pages", "The pages, as the Pages panel names them, joined by \",\" (\"1,3\")", StringType, kRequired
 			}
 		}
+#endif // KCM_DIAG - the test doors' declarations
 
 		// (⛔**TWO METHODS STOOD HERE AND WENT ON 2026-09-21** with the restore they drove:
 		//  "kcm take in change" (app.kcmTakeInChange, e_KCMTakeInChange) and "kcm undo restore"
@@ -906,6 +914,8 @@ resource VersionedScriptElementInfo(10)
 				Object{ kApplicationObjectScriptElement },
 				Property{ kKCMStatusPropertyScriptElement, kReadOnly },
 				Property{ kKCMBookResultPropertyScriptElement, kReadOnly },
+#ifdef KCM_DIAG
+				// (the test doors' halves - a test build's only, as their declarations above)
 				// ⚠★★★THIS LINE IS HALF OF A PAIR. The Property{} block above DEFINES the property;
 				//   this one PUTS IT ON app. Writing only the definition builds cleanly, loads
 				//   cleanly, warns about nothing - and the property simply is not there, which
@@ -932,6 +942,7 @@ resource VersionedScriptElementInfo(10)
 				Method{ kKCMExportPagesMethodScriptElement },		// (2026-10-25) Export Pages to Word
 				// ...and the export's .docx road (2026-09-19).
 				// (⛔The two halves of "kcm take in change" and "kcm undo restore" went on 2026-09-21.)
+#endif // KCM_DIAG - the test doors on app
 			}
 		}
 
@@ -994,6 +1005,9 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
+#ifdef KCM_DIAG
+		// (document.kcmTransparencyItemCount is a test door too - a test build's only since 2026-10-26, as the doors above;
+		//  its Provider block on document and its INX block at the end of this file go with it)
 		// ★★2026-08-20: the document property. ⚠**A Property has to be DECLARED here before a
 		//   Provider block can list it** - listing it in the Provider alone leaves it out of the DOM
 		//   entirely, with no build error and no warning ('kcmTransparencyItemCount' in doc -> false).
@@ -1009,6 +1023,7 @@ resource VersionedScriptElementInfo(10)
 			{}
 			kNoAttributeClass,
 		}
+#endif // KCM_DIAG - the document's test door
 
 		// Puts those four ON the story object - a SECOND Provider block on the SAME boss as the
 		// application properties above. What separates them is the Object field: a Property is
@@ -1030,8 +1045,10 @@ resource VersionedScriptElementInfo(10)
 				Property{ kKCMAttrChangeCountPropertyScriptElement, kReadOnly },
 				Property{ kKCMOtherChangeCountPropertyScriptElement, kReadOnly },
 			}
-		},
-
+		}
+		// (⚠No comma after the block above since 2026-10-26: what follows is a test build's only, and the items of this list
+		//  need none between them - the app Provider block above is followed by a Property with none.)
+#ifdef KCM_DIAG
 		// One property on document, in a Provider block of its own for the same reason as app and
 		// story: a Property with no Object of its own attaches to the preceding Object.
 		//
@@ -1051,6 +1068,7 @@ resource VersionedScriptElementInfo(10)
 				Property{ kKCMTransparencyItemCountPropertyScriptElement, kReadOnly },
 			}
 		}
+#endif // KCM_DIAG - the document's test door, on document
 	}
 };
 
@@ -1113,8 +1131,9 @@ resource VersionedScriptElementInfo(2)
 				Property{ kKCMAttrChangeCountPropertyScriptElement, kReadOnly },
 				Property{ kKCMOtherChangeCountPropertyScriptElement, kReadOnly },
 			}
-		},
-
+		}
+#ifdef KCM_DIAG
+		// (a test build's only since 2026-10-26, with the property itself - no comma before it, as in the resource above)
 		// The document property is kept out for the same reason, and with a stronger case than the
 		// four story counters: the count is the application's state at this instant, and it goes up
 		// only while an export runs - volatile session state in the purest form. Written into a
@@ -1128,6 +1147,7 @@ resource VersionedScriptElementInfo(2)
 				Property{ kKCMTransparencyItemCountPropertyScriptElement, kReadOnly },
 			}
 		}
+#endif // KCM_DIAG
 	}
 };
 

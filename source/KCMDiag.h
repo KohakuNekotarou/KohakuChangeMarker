@@ -19,6 +19,13 @@
 //  state to print it) goes inside #ifdef KCM_DIAG with it.
 //  Tested outside InDesign: work\kcm-diag-test (builds the same test both ways).
 //
+//  AND THE SCRIPT TEST DOORS (2026-10-26, the author: "cut them out when it goes to the Exchange" - the KCM full test,
+//  work\kcm-regress): the 13 script properties and methods added since the published 1.5.0 (app.kcmStoryRows,
+//  app.kcmApplyChange and the rest) are declared in KCM.fr and served in KCMScriptProvider.cpp inside #ifdef KCM_DIAG -
+//  ODFRC is given -d KCM_DIAG by the same test build (KCMOdfrcDefines in the vcxproj). A shipping build publishes the
+//  registered seven alone (app.kcmStatus, app.kcmBookResult, the four story counters, the tool's enumerator) - checked by
+//  work\kcm-regress\full\ship_check.py, which reads the build's resources for the doors' names and its .pln for "kcm-diag".
+//
 //  Why it exists: the Track Changes mode (2026-10-05) reads InDesign's tracked-change records, makes a copy
 //  with every change rejected and follows an Undo / Redo at idle - all of it out of sight. A trace of what
 //  was read and decided is the instrument when a live run disagrees with the list.
