@@ -62,8 +62,14 @@ struct KCMPageBoxEdit
 	KCMStoryShape::Story	fContent;		// what the box holds
 	PMString				fFileName;		// the page file's own name - for the "!" row
 	PMString				fWhyNot;		// non-empty: the file itself already says this box cannot go in
+	// (2026-10-26) the box is its whole story - an edited one is compared (KCMPageDocx::Box::fWhole); the page file's
+	// document, by its ids (KCMPageDocx::Page::fDocumentId) - both absent from a file of 2026-10-25
+	bool16					fWhole;
+	std::string				fDocumentId;
+	std::string				fOriginalDocumentId;
 
-	KCMPageBoxEdit() : fStory(kInvalidUID), fFrame(kInvalidUID), fStart(0), fEnd(0), fPrintBytes(0), fPrintCrc(0), fBoxN(0) {}
+	KCMPageBoxEdit() : fStory(kInvalidUID), fFrame(kInvalidUID), fStart(0), fEnd(0), fPrintBytes(0), fPrintCrc(0), fBoxN(0),
+					   fWhole(kFalse) {}
 };
 
 /** What one folder of edited stories holds: each story's own uid, and what was read for it.
@@ -221,6 +227,23 @@ bool16 KCMImportStoryTextAsSource(const SysFileList& files, PMString& outMessage
            changed - import again), or the story cannot be read or does not go through Word's format.
     @return kFalse when nothing can be said - nothing is to be written then. */
 bool16 KCMImportSourceStory(UID story, KCMStoryShape::Story& out, PMString& outWhyNot);
+
+/** ★ONE READING PER PRESS (2026-10-26, the author: "is there a way to make it quicker?" - the report's minor ③): while one of
+	these is alive, KCMImportSourceStory reads each story of the copy once and hands the same reading out again. Apply This
+	Change on the paragraph road read it twice (KCMImportStoryNeedsTableRound, then KCMPlanApplyParagraph) and N rows put in
+	together 2N times. ★SAFE BECAUSE NOTHING WRITES THE COPY DURING A PRESS: Apply writes the document, and only the import
+	writes its copy. Nested scopes share the outermost one's readings, and the last to go lets them go - nothing is kept
+	from one press to the next (that would be a second copy of the files' words again, the one S5 took away). Main thread
+	only, as the facade's presses are. */
+class KCMImportSourceReadScope
+{
+public:
+	KCMImportSourceReadScope();
+	~KCMImportSourceReadScope();
+private:
+	KCMImportSourceReadScope(const KCMImportSourceReadScope&);				// not copied
+	KCMImportSourceReadScope& operator=(const KCMImportSourceReadScope&);
+};
 
 #endif // __KCMStoryTextImport_h__
 

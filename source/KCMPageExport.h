@@ -62,8 +62,18 @@ bool16 KCMReadPageStoryFacts(const UIDRef& story, KCMPageStoryFacts& out);
 	tell a table just inside from one just outside. */
 bool16 KCMPagePartHoldsTableOrNote(ITextModel* model, TextIndex start, int32 span);
 
-/** Write each of `pages` as one .docx into a new folder "<document> pages YYYY-MM-DD HHMMSS" under `parent`: the file
-	"<document> p<page name>.docx", the page's size, a text box per text frame (top to bottom, then left to right).
+/** The document's xmpMM:DocumentID and OriginalDocumentID as UTF-8 (IAdobeMediaMgmtMetaData on kDocBoss - the road
+	IDataBase.h names "FOR EXTERNAL USE"; the PDF comparison read the same two). Empty when they cannot be read.
+	★What a page file names its document by (2026-10-26 - KCMPageDocx::Page::fDocumentId): a name can change after the export. */
+void KCMDocumentIds(IDataBase* db, std::string& outId, std::string& outOriginal);
+
+/** Whether a file's two ids are this document's: the same DocumentID, or the same OriginalDocumentID (a copy saved from the
+	same original) - the rule the PDF comparison measured on 2026-10-14. Two empty ids (a file that names none) match. */
+bool16 KCMDocumentIdsMatch(IDataBase* db, const std::string& id, const std::string& original);
+
+/** Write each of `pages` as one .docx into a new folder "Pages YYYY-MM-DD HHMMSS" under `parent`: the file "p<page
+	name>.docx" (no document name since 2026-10-26 - the tag names the document by its ids), the page's size, a text box per
+	text frame that is its story's only one and shows all of it (top to bottom, then left to right).
 	@param db         the document. Nothing in it is changed.
 	@param pages      pages of `db`. A master page, or a UID that is no page of the document, is counted and passed over.
 	@param outMessage what was written and where, and what was left out and why - for the panel's status line.

@@ -366,6 +366,18 @@ bool16 WriteParts(const Page& page, std::vector<KCMZipStore::Entry>& outParts, s
 	AppendInt(page.fPageUid, tag);
 	tag += "\" name=\"";
 	AppendEscaped(page.fPageName, tag);
+	// ★WHICH DOCUMENT, BY ID (2026-10-26 - Page::fDocumentId): only what is known is written. Format 2 still - a reader that
+	//  does not know the two attributes leaves them, as it leaves whole below.
+	if (!page.fDocumentId.empty())
+	{
+		tag += "\" doc=\"";
+		AppendEscaped(page.fDocumentId, tag);
+	}
+	if (!page.fOriginalDocumentId.empty())
+	{
+		tag += "\" orig=\"";
+		AppendEscaped(page.fOriginalDocumentId, tag);
+	}
 	tag += "\">";
 	for (size_t i = 0; i < page.fBoxes.size(); ++i)
 	{
@@ -384,6 +396,8 @@ bool16 WriteParts(const Page& page, std::vector<KCMZipStore::Entry>& outParts, s
 		AppendInt(box.fPrintBytes, tag);
 		tag += "\" crc=\"";
 		AppendInt(static_cast<long long>(box.fPrintCrc), tag);
+		if (box.fWhole)
+			tag += "\" whole=\"1";		// the box is its whole story (Box::fWhole)
 		tag += "\"/>";
 	}
 	tag += "</kcm:page>";
@@ -574,6 +588,13 @@ bool16 ReadParts(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, 
 	const std::string* name = tag.Attr(tagRoot, "name");
 	if (name != nil)
 		out.fPageName = *name;
+	// (2026-10-26) which document - absent from a file of 2026-10-25, and then not known
+	const std::string* docId = tag.Attr(tagRoot, "doc");
+	if (docId != nil)
+		out.fDocumentId = *docId;
+	const std::string* originalId = tag.Attr(tagRoot, "orig");
+	if (originalId != nil)
+		out.fOriginalDocumentId = *originalId;
 	const KCMXmlNode& rootNode = tag.At(tagRoot);
 	for (size_t k = 0; k < rootNode.fChildren.size(); ++k)
 	{
@@ -590,6 +611,8 @@ bool16 ReadParts(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, 
 			whyNot = "a box of the page tag cannot be read";
 			return kFalse;
 		}
+		const std::string* whole = tag.Attr(c, "whole");
+		b.fWhole = (whole != nil && *whole == "1") ? kTrue : kFalse;
 		out.fBoxes.push_back(rb);
 	}
 

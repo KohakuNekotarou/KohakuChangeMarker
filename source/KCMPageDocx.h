@@ -67,10 +67,16 @@ struct Box
 	double		fPointSize;		// the first character's size; 0 = none written
 	std::string	fFontName;		// UTF-8, the name Word knows the font by; empty = none written
 	KCMStoryShape::Story fContent;	// the body only - no tables, no notes
+	/** ★THE BOX IS ITS WHOLE STORY (2026-10-26, the author: a page file is for catalogue pages - a threaded story goes out
+		with Export Story Text): the export writes no threaded and no overset frame since, and marks each box so (the tag's
+		whole="1"). What lets the import compare a box whose frame was edited in InDesign after the export - it then stands
+		for the whole story, so nothing has to be found to put it back. kFalse = said nothing (a file of 2026-10-25): the
+		import only takes it where its fingerprint still matches. */
+	bool16		fWhole;
 
 	Box() : fN(0), fFrame(0), fStory(0), fStart(0), fEnd(0), fPrintBytes(0), fPrintCrc(0),
 			fX(0), fY(0), fW(0), fH(0), fInsetL(0), fInsetT(0), fInsetR(0), fInsetB(0),
-			fVertical(kFalse), fPointSize(0) {}
+			fVertical(kFalse), fPointSize(0), fWhole(kFalse) {}
 };
 
 /** One page: its UID and name, its size, and its boxes in the order they are written (top to bottom, then left to
@@ -81,6 +87,11 @@ struct Page
 	std::string			fPageName;		// UTF-8, as the Pages panel spells it
 	double				fWidth, fHeight;
 	std::vector<Box>	fBoxes;
+	/** ★WHICH DOCUMENT IT CAME FROM, BY ID AND NOT BY NAME (2026-10-26, the author: "the document may be renamed after the
+		export - decide by the page alone"): its xmpMM:DocumentID and OriginalDocumentID, UTF-8 (the tag's doc / orig), so
+		that the import can refuse another document's file whose UIDs happen to be this document's. Empty = not known. */
+	std::string			fDocumentId;
+	std::string			fOriginalDocumentId;
 
 	Page() : fPageUid(0), fWidth(0), fHeight(0) {}
 };
@@ -107,6 +118,8 @@ struct ReadResult
 	std::string				fPageName;
 	std::vector<ReadBox>	fBoxes;				// in the tag's order
 	bool16					fTextOutsideBoxes;	// words typed outside every box - they are not read, and the caller says so
+	std::string				fDocumentId;		// Page::fDocumentId as the tag holds it - empty in a file of 2026-10-25
+	std::string				fOriginalDocumentId;
 
 	ReadResult() : fIsPage(kFalse), fPageUid(0), fTextOutsideBoxes(kFalse) {}
 };

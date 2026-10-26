@@ -232,7 +232,10 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMXmlTree.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryDocx.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageImport.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageExport.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageExport.cpp">
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"> $(id_sdk_dir)\external\bibxmp\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'"> $(id_sdk_dir)\external\bibxmp\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageSplice.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageDocx.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStorySyncApply.cpp" />

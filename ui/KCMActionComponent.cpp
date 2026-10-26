@@ -1115,12 +1115,19 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// reader picks (the work is KCMPageExport.cpp, through the facade). Import Story Text... reads the files back.
 		// ⚠The [None] guard first, as Register / Check / Refresh have it: that row has no page behind it, and the reader
 		//  falls back to the current page - a file nobody asked for.
+		// ★★AND IT SAYS SO (2026-10-26, the author on the report's minor ①: "put some message in the panel"): it broke off
+		//   silently; the item is no longer greyed for [None] alone either (UpdateActionStates), so the press is what tells.
 		// ★THE SELECTION IS READ BEFORE THE DIALOG OPENS - the story export's rule, through the one reader (KCMReadSelectedPages,
 		//   here since 2026-10-26 - the import tidy S7; the model decides on the list it is handed).
 		case kKCMPopupExportPagesActionID:
 			{
 				if (KCMPagesPanelSelectionHasNoRealPage())
+				{
+					PMString onlyNone("Export Pages to Word: only [None] is selected in the Pages panel - select the pages to export");
+					onlyNone.SetTranslatable(kFalse);
+					KCMSetStatus(onlyNone);
 					break;
+				}
 				IDataBase* const db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
 				if (db == nil)
 					break;			// the menu item is greyed without one; this is the belt
@@ -1399,10 +1406,12 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		//     shortcut, so there is a way in that does not pass through the menu. ([[one-question-one-place]]
 		//     is kept by **having one test function**; it is called from two places because there are two
 		//     entrances.)
+		// (⛔Export Pages to Word stood here from 2026-10-25 to 10-26: greyed, it told the reader nothing - the author asked for
+		//  a message, and the press now says it, DoAction. Nothing lands on a page nobody chose: the press reads the
+		//  selection itself and stops.)
 		if ((action == kKCMPageMapToggleActionID ||
 		     action == kKCMPageCheckToggleActionID ||
-		     action == kKCMPageRefreshCompareActionID ||
-		     action == kKCMPopupExportPagesActionID) &&		// (2026-10-25) Export Pages to Word, on the same menu
+		     action == kKCMPageRefreshCompareActionID) &&
 		    KCMPagesPanelSelectionHasNoRealPage())
 		{
 			listToUpdate->SetNthActionState(i, kDisabled_Unselected);
@@ -1792,8 +1801,8 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			}
 			case kKCMPopupExportPagesActionID:
 			{
-				// (2026-10-25) A document in front, and - on the Pages panel - a real page selected: the [None] row is turned
-				//   away above, with the other page items. It reads and never compares, so nothing else is asked.
+				// (2026-10-25) A document in front. It reads and never compares, so nothing else is asked. (A [None] row alone is
+				//   no longer greyed here - since 2026-10-26 the press says what to select, DoAction.)
 				listToUpdate->SetNthActionState(i,
 					(Utils<IKCMCompareFacade>()->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
 				break;

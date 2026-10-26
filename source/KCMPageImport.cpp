@@ -87,10 +87,37 @@ bool16 MatchAt(ITextModel* model, const KCMPageStoryFacts& facts, int32 start, i
 	return kTrue;
 }
 
+/** The story's whole body as a box's part (2026-10-26 - a box that is its whole story, the header's B): from its start to
+	its last paragraph's return, holding no table and no note (asked of the model, as MatchAt asks) - and no fingerprint:
+	what InDesign changed since the export is what the comparison is to show. kFalse when the body cannot be placed. */
+bool16 WholeStoryAt(ITextModel* model, const KCMPageStoryFacts& facts, size_t which, Matched& out)
+{
+	if (facts.fParas.empty())
+		return kFalse;
+	const int32 start = 0;
+	const int32 end = KCMParaText::ParagraphReturn(facts.fParas, facts.fStarts, facts.fAttrs,
+													static_cast<int32>(facts.fParas.size()) - 1);
+	if (end < start || end > model->TotalLength())
+		return kFalse;
+	if (KCMPagePartHoldsTableOrNote(model, start, end - start))
+		return kFalse;
+	KCMPageSplice::Place from;
+	KCMPageSplice::Place to;
+	if (!KCMPageSplice::PlaceOfIndex(facts.fParas, facts.fAttrs, facts.fStarts, start, from)
+		|| !KCMPageSplice::PlaceOfEnd(facts.fParas, facts.fAttrs, facts.fStarts, start, end, to))
+		return kFalse;
+	out.fBox = which;
+	out.fFrom = from;
+	out.fTo = to;
+	out.fStart = start;
+	out.fEnd = end;
+	return kTrue;
+}
+
 }	// anonymous namespace
 
-void KCMSpliceBoxesIntoSet(IDataBase* copyDB, KCMStoryTextSet& inOutSet, std::vector<KCMImportRefusal>& outRefusals,
-						   int32& outBoxesIn, int32& outStoriesIn)
+void KCMSpliceBoxesIntoSet(IDataBase* copyDB, IDataBase* documentDB, KCMStoryTextSet& inOutSet,
+						   std::vector<KCMImportRefusal>& outRefusals, int32& outBoxesIn, int32& outStoriesIn)
 {
 	outRefusals.clear();
 	outBoxesIn = 0;
@@ -139,6 +166,10 @@ void KCMSpliceBoxesIntoSet(IDataBase* copyDB, KCMStoryTextSet& inOutSet, std::ve
 		{
 			if (!boxes[mine[i]].fWhyNot.IsEmpty())
 				Refuse(boxes[mine[i]], boxes[mine[i]].fWhyNot, outRefusals);		// the file itself says so
+			// ★ANOTHER DOCUMENT'S FILE (2026-10-26 - the header): its uids can be this document's, and an edited box is
+			//   compared now (below), so the ids decide. A file of 2026-10-25 names no document and is let through as before.
+			else if (!KCMDocumentIdsMatch(documentDB, boxes[mine[i]].fDocumentId, boxes[mine[i]].fOriginalDocumentId))
+				Refuse(boxes[mine[i]], "this page file was exported from another document", outRefusals);
 			else
 				live.push_back(mine[i]);
 		}
@@ -168,22 +199,38 @@ void KCMSpliceBoxesIntoSet(IDataBase* copyDB, KCMStoryTextSet& inOutSet, std::ve
 			const KCMPageBoxEdit& box = boxes[live[i]];
 			Matched m;
 			bool16 found = MatchAt(model, facts, box.fStart, box.fEnd, box, live[i], m);
-			if (!found && box.fFrame != kInvalidUID && copyDB->IsValidUID(box.fFrame))
+			InterfacePtr<IMultiColumnTextFrame> mc;
+			if (box.fFrame != kInvalidUID && copyDB->IsValidUID(box.fFrame))
 			{
 				InterfacePtr<IGraphicFrameData> frame(copyDB, box.fFrame, UseDefaultIID());
-				InterfacePtr<IMultiColumnTextFrame> mc((frame != nil) ? frame->QueryMCTextFrame() : nil);
-				if (mc != nil && mc->GetTextModelUID() == storyUID)
-				{
-					const int32 start = static_cast<int32>(mc->TextStart());
-					const int32 end = start + mc->TextSpan();
-					if (start != box.fStart || end != box.fEnd)
-						found = MatchAt(model, facts, start, end, box, live[i], m);
-				}
+				InterfacePtr<IMultiColumnTextFrame> mine((frame != nil) ? frame->QueryMCTextFrame() : nil);
+				if (mine != nil && mine->GetTextModelUID() == storyUID)
+					mc = mine;
+			}
+			if (!found && mc != nil)
+			{
+				const int32 start = static_cast<int32>(mc->TextStart());
+				const int32 end = start + mc->TextSpan();
+				if (start != box.fStart || end != box.fEnd)
+					found = MatchAt(model, facts, start, end, box, live[i], m);
+			}
+			// ★★AN EDITED BOX THAT IS ITS WHOLE STORY IS COMPARED, NOT REFUSED (2026-10-26, the author's B - the header): over
+			//   the story's whole body, while its frame is still the story's only one. Threaded since the export, the box is
+			//   no longer the whole story, and putting it back over the story would wipe the other frames' words.
+			const char* why = "the text of this frame changed after the export - export the page again";
+			if (!found && box.fWhole)
+			{
+				if (mc == nil)
+					why = "the box's frame is not this story's any more - export the page again";
+				else if (!mc->GetIsOnlyMCF())
+					why = "the frame was threaded after the export - export its story with Export Story Text...";
+				else if (!(found = WholeStoryAt(model, facts, live[i], m)))
+					why = "the story holds a table or a note now - export it with Export Story Text...";
 			}
 			if (found)
 				matched.push_back(m);
 			else
-				Refuse(box, "the text of this frame changed after the export - export the page again", outRefusals);
+				Refuse(box, why, outRefusals);
 		}
 
 		// ---- two boxes over one text (one page chosen twice, two exports of it): neither ------------------------

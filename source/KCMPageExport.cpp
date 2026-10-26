@@ -6,10 +6,12 @@
 
 #include "VCPlugInHeaders.h"
 
+#include <algorithm>
 #include <set>
 #include <string>
 #include <vector>
 
+#include "IAdobeMediaMgmtMetaData.h"	// the document's xmpMM ids - what a page file names its document by
 #include "IComposeScanner.h"		// GetCompleteStyleAt - the first character's size and font
 #include "IDataBase.h"
 #include "IDrawingStyle.h"
@@ -172,11 +174,38 @@ struct Tally
 	int32		fRefused;
 	int32		fNotAPage;		// a master page, or no page of this document
 	int32		fNoFrame;		// a page with no text frame
+	int32		fThreaded;		// a frame that is not its story's only one (2026-10-26 - BoxOfFrame says why)
+	int32		fOverset;		// a frame whose words do not all show
 	PMString	fFirstRefusal;
+	std::vector<PMString>	fThreadedPages;	// where they are, each page once - the sentence names them (the author: "say it
+	std::vector<PMString>	fOversetPages;	//   in the panel")
 
-	Tally() : fPages(0), fBoxes(0), fTableOrNote(0), fHidden(0), fEmpty(0), fRefused(0), fNotAPage(0), fNoFrame(0)
+	Tally() : fPages(0), fBoxes(0), fTableOrNote(0), fHidden(0), fEmpty(0), fRefused(0), fNotAPage(0), fNoFrame(0),
+			  fThreaded(0), fOverset(0)
 	{
 		fFirstRefusal.SetTranslatable(kFalse);
+	}
+
+	/** `pageName` onto `pages`, unless it is there already. */
+	static void NotePage(std::vector<PMString>& pages, const PMString& pageName)
+	{
+		if (std::find(pages.begin(), pages.end(), pageName) == pages.end())
+			pages.push_back(pageName);
+	}
+
+	/** "p1, p3" - the pages as the files name them. */
+	static PMString Pages(const std::vector<PMString>& pages)
+	{
+		PMString out;
+		for (size_t i = 0; i < pages.size(); ++i)
+		{
+			if (i > 0)
+				out.Append(", ");
+			out.Append("p");
+			out.Append(pages[i]);
+		}
+		out.SetTranslatable(kFalse);
+		return out;
 	}
 
 	void Refuse(const char* what, UID uid, const std::string& why)
@@ -207,11 +236,26 @@ bool16 BoxOfFrame(IDataBase* db, UID frameUID, const PMMatrix& spreadToPage, con
 		++tally.fHidden;
 		return kFalse;
 	}
+	// ★★ONE FRAME, ONE WHOLE STORY (2026-10-26, the author: "a threaded frame is not written - export it with Story"; a page
+	//   file is for catalogue pages of many frames, and a threaded story - a long one - goes out with Export Story Text). A
+	//   frame that is not its story's only one is left out, and so is an OVERSET one: a box holds what its frame shows, and
+	//   the import puts a box back over its whole story (KCMPageImport - Box::fWhole), which would take the hidden words out.
+	//   The two are said apart, with their pages (the caller's sentence).
+	if (!mc->GetIsOnlyMCF())
+	{
+		++tally.fThreaded;
+		return kFalse;
+	}
 	const TextIndex start = mc->TextStart();
 	const int32 span = mc->TextSpan();
 	if (span <= 0)
 	{
-		++tally.fEmpty;			// a frame of a thread the text has not reached
+		++tally.fEmpty;			// no text composed into it
+		return kFalse;
+	}
+	if (mc->GetIsOverset())
+	{
+		++tally.fOverset;
 		return kFalse;
 	}
 	if (KCMPagePartHoldsTableOrNote(model, start, span))
@@ -260,6 +304,7 @@ bool16 BoxOfFrame(IDataBase* db, UID frameUID, const PMMatrix& spreadToPage, con
 	box.fEnd = static_cast<int32>(start + span);
 	KCMPageSplice::Fingerprint(piece, box.fPrintBytes, box.fPrintCrc);
 	box.fContent = piece;
+	box.fWhole = kTrue;			// the frame is its story's only one and shows all of it (above)
 
 	// ---- where it stands: the frame's bounds, through the spread, on the page, from its top left ----------------
 	InterfacePtr<IGeometry> geometry(db, frameUID, UseDefaultIID());
@@ -337,6 +382,29 @@ void AppendCount(PMString& out, const char* before, int32 n, const char* after)
 
 }	// anonymous namespace
 
+void KCMDocumentIds(IDataBase* db, std::string& outId, std::string& outOriginal)
+{
+	outId.clear();
+	outOriginal.clear();
+	if (db == nil)
+		return;
+	InterfacePtr<IAdobeMediaMgmtMetaData> mm(db, db->GetRootUID(), UseDefaultIID());
+	if (mm == nil)
+		return;
+	outId = mm->GetDocumentID().GetUTF8String();
+	outOriginal = mm->GetOrigDocumentID().GetUTF8String();
+}
+
+bool16 KCMDocumentIdsMatch(IDataBase* db, const std::string& id, const std::string& original)
+{
+	if (id.empty() && original.empty())
+		return kTrue;
+	std::string mine;
+	std::string myOriginal;
+	KCMDocumentIds(db, mine, myOriginal);
+	return ((!id.empty() && id == mine) || (!original.empty() && original == myOriginal)) ? kTrue : kFalse;
+}
+
 bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& parent, PMString& outMessage)
 {
 	outMessage.Clear();
@@ -373,7 +441,11 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 		return kFalse;
 	}
 
-	const std::wstring stem = KCMDocumentFileStem(db);
+	// ★NO DOCUMENT NAME IN THE FILES' NAMES (2026-10-26, the author: "the document may be renamed after the export - decide by
+	//   the page alone"): "p<page>.docx" in "Pages <date>"; which document they came from is the tag's, by its ids.
+	std::string documentId;
+	std::string originalDocumentId;
+	KCMDocumentIds(db, documentId, originalDocumentId);
 	std::vector<StoryFacts> cache;
 	Tally tally;
 	std::vector< std::vector<KCMZipStore::Entry> > files;
@@ -436,14 +508,23 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 		page.fPageUid = static_cast<int32>(pageUID.Get());
 		PMString name;
 		pageList->GetPageString(pageUID, &name, kFalse, kFalse, kDefaultPageType, kTrue, kTrue);
+		name.SetTranslatable(kFalse);
 		page.fPageName = name.GetUTF8String();
 		page.fWidth = ::ToDouble(pageBounds.Width());
 		page.fHeight = ::ToDouble(pageBounds.Height());
+		page.fDocumentId = documentId;
+		page.fOriginalDocumentId = originalDocumentId;
 		for (size_t f = 0; f < frames.size(); ++f)
 		{
+			const int32 threadedBefore = tally.fThreaded;
+			const int32 oversetBefore = tally.fOverset;
 			KCMPageDocx::Box box;
 			if (BoxOfFrame(db, frames[f], spreadToPage, origin, cache, tally, box))
 				page.fBoxes.push_back(box);
+			if (tally.fThreaded > threadedBefore)
+				Tally::NotePage(tally.fThreadedPages, name);
+			if (tally.fOverset > oversetBefore)
+				Tally::NotePage(tally.fOversetPages, name);
 		}
 		if (page.fBoxes.empty())
 			continue;
@@ -464,7 +545,7 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 			continue;
 		}
 		// ★TWO PAGES OF ONE NAME (two sections numbered alike) get two files.
-		std::wstring leaf = stem + L" p" + FileSafe(WideOf(name));
+		std::wstring leaf = L"p" + FileSafe(WideOf(name));
 		for (int32 again = 2; ; ++again)
 		{
 			bool16 taken = kFalse;
@@ -472,7 +553,7 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 				taken = (leaves[l] == leaf + L".docx") ? kTrue : kFalse;
 			if (!taken)
 				break;
-			leaf = stem + L" p" + FileSafe(WideOf(name)) + L" (" + std::to_wstring(again) + L")";
+			leaf = L"p" + FileSafe(WideOf(name)) + L" (" + std::to_wstring(again) + L")";
 		}
 		leaves.push_back(leaf + L".docx");
 		files.push_back(parts);
@@ -485,7 +566,7 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 	int32 notWritten = 0;
 	if (!files.empty())
 	{
-		folderMade = KCMMakeDatedExportFolder(parent, stem + L" pages", folder);
+		folderMade = KCMMakeDatedExportFolder(parent, L"Pages", folder);
 		for (size_t i = 0; folderMade && i < files.size(); ++i)
 		{
 			std::string docx;
@@ -528,6 +609,19 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 		if (tally.fEmpty > 0) { AppendCount(outMessage, first ? "" : ", ", tally.fEmpty, " empty"); first = kFalse; }
 		if (tally.fRefused > 0) { AppendCount(outMessage, first ? "" : ", ", tally.fRefused, " refused - the first: "); outMessage.Append(tally.fFirstRefusal); }
 		outMessage.Append(") - their stories can go out whole with Export Story Text...");
+	}
+	// ★THE TWO THE AUTHOR ASKED TO BE TOLD OF (2026-10-26), each with where it is.
+	if (tally.fThreaded > 0)
+	{
+		AppendCount(outMessage, "; ", tally.fThreaded, " threaded frame(s) not written (");
+		outMessage.Append(Tally::Pages(tally.fThreadedPages));
+		outMessage.Append(") - a threaded story goes out whole with Export Story Text...");
+	}
+	if (tally.fOverset > 0)
+	{
+		AppendCount(outMessage, "; ", tally.fOverset, " overset frame(s) not written (");
+		outMessage.Append(Tally::Pages(tally.fOversetPages));
+		outMessage.Append(") - their words do not all show: fit them first, or use Export Story Text...");
 	}
 	if (tally.fNoFrame > 0)
 		AppendCount(outMessage, "; ", tally.fNoFrame, " page(s) with no text frame");

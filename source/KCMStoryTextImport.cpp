@@ -42,6 +42,7 @@
 #include "KCMZipStore.h"			// Entry - a part, named
 #include "KCMModelNotify.h"			// KCMNotify - a cancelled import tells the panel the mode came back
 #include "KCMTextWords.h"			// PMStringOfUtf8 - a UTF-8 reason onto the status line without mojibake
+#include "KCMDiag.h"				// KCM_DIAG_LOG - a test build's trace of what one reading of the copy costs (2026-10-26)
 #include "KCMPdfDoc.h"				// KCMIsPdfDoc - a PDF document is refused here (2026-10-14)
 #include "IKCMCompareFacade.h"		// the refusal's words, which the UI says too
 
@@ -328,6 +329,9 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 					edit.fFileName = PMStringOfLeaf(leaf);
 					edit.fWhyNot = KCMTextWords::PMStringOfUtf8(rb.fWhyNot);
 					edit.fWhyNot.SetTranslatable(kFalse);
+					edit.fWhole = rb.fBox.fWhole;
+					edit.fDocumentId = page.fDocumentId;
+					edit.fOriginalDocumentId = page.fOriginalDocumentId;
 					out.fBoxes.push_back(edit);
 				}
 				if (page.fTextOutsideBoxes)
@@ -897,7 +901,7 @@ bool16 KCMImportStoryTextAsSource(const SysFileList& files, PMString& outMessage
 	if (!set.fBoxes.empty())
 	{
 		std::vector<KCMImportRefusal> boxRefusals;
-		KCMSpliceBoxesIntoSet(copyDB, set, boxRefusals, boxesIn, storiesFromBoxes);
+		KCMSpliceBoxesIntoSet(copyDB, targetDB, set, boxRefusals, boxesIn, storiesFromBoxes);
 		sRefusals.insert(sRefusals.end(), boxRefusals.begin(), boxRefusals.end());
 	}
 	KCMSetImportCloneStories(set.fUids);
@@ -1004,6 +1008,31 @@ void KCMClearImportRefusals()
 //----------------------------------------------------------------------------------------
 // KCMImportSourceStory (2026-10-26, the import tidy S5)
 //----------------------------------------------------------------------------------------
+namespace
+{
+
+// ★THE READINGS OF ONE PRESS (KCMImportSourceReadScope): the copy they were read from, and each story's, by its uid.
+int32 gReadScopeDepth = 0;
+IDataBase* gReadScopeCopy = nil;
+std::map<uint32, KCMStoryShape::Story> gReadScopeStories;
+
+}	// anonymous namespace
+
+KCMImportSourceReadScope::KCMImportSourceReadScope()
+{
+	++gReadScopeDepth;
+}
+
+KCMImportSourceReadScope::~KCMImportSourceReadScope()
+{
+	if (--gReadScopeDepth <= 0)
+	{
+		gReadScopeDepth = 0;
+		gReadScopeStories.clear();
+		gReadScopeCopy = nil;
+	}
+}
+
 bool16 KCMImportSourceStory(UID story, KCMStoryShape::Story& out, PMString& outWhyNot)
 {
 	outWhyNot.Clear();
@@ -1016,6 +1045,20 @@ bool16 KCMImportSourceStory(UID story, KCMStoryShape::Story& out, PMString& outW
 		outWhyNot = "the imported text is no longer the Source - import again";
 		return kFalse;
 	}
+	// ★READ ONCE A PRESS (KCMImportSourceReadScope): the same copy, the same story - the same reading.
+	if (gReadScopeDepth > 0 && gReadScopeCopy == copyDB)
+	{
+		const std::map<uint32, KCMStoryShape::Story>::const_iterator kept = gReadScopeStories.find(story.Get());
+		if (kept != gReadScopeStories.end())
+		{
+			out = kept->second;
+			KCM_DIAG_LOG("IMPORT-SOURCE story=%u kept (one reading a press)", static_cast<unsigned>(story.Get()));
+			return kTrue;
+		}
+	}
+#ifdef KCM_DIAG
+	const std::chrono::steady_clock::time_point readBegan = std::chrono::steady_clock::now();	// what one reading costs
+#endif
 	// The copy's story, read the way the export reads a story; a footnote whose reference cannot be placed would be lost
 	// in Word's format, so such a story is not offered (the export refuses it the same way).
 	KCMStoryShape::Story read;
@@ -1045,6 +1088,21 @@ bool16 KCMImportSourceStory(UID story, KCMStoryShape::Story& out, PMString& outW
 		return kFalse;
 	}
 	out = back.fAfter;
+	if (gReadScopeDepth > 0)
+	{
+		if (gReadScopeCopy != copyDB)
+		{
+			gReadScopeStories.clear();
+			gReadScopeCopy = copyDB;
+		}
+		gReadScopeStories[story.Get()] = back.fAfter;
+	}
+#ifdef KCM_DIAG
+	KCM_DIAG_LOG("IMPORT-SOURCE story=%u read ms=%lld paras=%u scoped=%d", static_cast<unsigned>(story.Get()),
+				 static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+					 std::chrono::steady_clock::now() - readBegan).count()),
+				 static_cast<unsigned>(back.fAfter.fBody.size()), (gReadScopeDepth > 0) ? 1 : 0);
+#endif
 	return kTrue;
 }
 
