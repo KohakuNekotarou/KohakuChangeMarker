@@ -276,17 +276,20 @@ void KCMSpliceBoxesIntoSet(IDataBase* copyDB, IDataBase* documentDB, KCMStoryTex
 		KCMStoryShape::Story whole = facts.fShape;
 		int32 in = 0;
 		PMString fileName;
-		if (going.size() == 1 && going[0].fWhole)
+		// ★A WHOLE BOX IS THE STORY (2026-10-26 evening): its body, its tables and its footnotes as Word holds them - the
+		//   direction the document's (a box carries none). Alone by now: it overlaps any other box of its story. ⚠Every
+		//   other box is a PART and they ALL go in (a threaded story's frames): the first version stopped that loop after
+		//   one part (tests-tr.ps1 PG11 - a file of 2026-10-25 with two parts of one story put back six boxes of seven).
+		const bool16 asWhole = (going.size() == 1 && going[0].fWhole) ? kTrue : kFalse;
+		if (asWhole)
 		{
-			// ★A WHOLE BOX IS THE STORY (2026-10-26 evening): its body, its tables and its footnotes as Word holds them -
-			//   the direction the document's (a box carries none). Alone by now: it overlaps any other box of its story.
 			const KCMPageBoxEdit& box = boxes[going[0].fBox];
 			whole = box.fContent;
 			whole.fVertical = facts.fShape.fVertical;
 			in = 1;
 			fileName = box.fFileName;
 		}
-		for (size_t i = 0; i < going.size() && in == 0; ++i)
+		for (size_t i = 0; !asWhole && i < going.size(); ++i)
 		{
 			const KCMPageBoxEdit& box = boxes[going[i].fBox];
 			std::string why;
