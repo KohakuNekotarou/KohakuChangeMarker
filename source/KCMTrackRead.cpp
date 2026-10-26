@@ -253,6 +253,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, IDataBase* sourceDB, bool16* outC
 		item.AppendNumber(count);
 		item.SetTranslatable(kFalse);
 		progress.Step(s, item);
+		KCM_DIAG_SLOW("track-read-slow", 200);	// test builds only: the bar and its Cancel within reach (KCMDiag.h)
 
 		const UIDRef storyRef = stories->GetNthTextModelUID(s);
 		InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
