@@ -13,12 +13,14 @@
 //
 //  ★**READING ONLY.** The walk composes text, and composing dirties: everything runs inside the document's
 //    SaveRestoreModifiedState, the guard the story export keeps.
-//  ★**WHAT A PAGE LEAVES OUT IS COUNTED AND NAMED** in the sentence: a frame whose part holds a table, a footnote
-//    reference or an endnote mark (a box is text only in this version - Export Story Text carries those), a hidden one
-//    (layer or object), an empty one (a thread the text has not reached), one whose part does not survive the format's
-//    own round trip. Master pages' items are not the page's (ISpread::GetItemsOnPage does not return them).
-//  ★**EACH BOX CHECKS ITSELF BEFORE ITS FILE IS WRITTEN** - the story export's rule: the part goes back into its story
-//    exactly as it was cut, and written as a page it reads back as written.
+//  ★**WHAT A PAGE LEAVES OUT IS COUNTED AND NAMED** in the sentence: a threaded or an overset frame (a box is its whole
+//    story since 2026-10-26), a frame holding an endnote's marker (the note's words are another story's), a VERTICAL
+//    frame whose story holds a table (Word 2007 cannot lay one out in a vertical text box - measured 2026-10-26), a
+//    hidden one (layer or object), an empty one (a thread the text has not reached), one whose box does not survive the
+//    format's own round trip. ★A table and a footnote go in since 2026-10-26 (KCMPageDocx.h says how they are spelt).
+//    Master pages' items are not the page's (ISpread::GetItemsOnPage does not return them).
+//  ★**EACH BOX CHECKS ITSELF BEFORE ITS FILE IS WRITTEN** - the story export's rule: written as a page, it reads back as
+//    written - its tables, its footnotes and where their references stand included.
 //
 //========================================================================================
 #ifndef __KCMPageExport_h__
@@ -57,10 +59,15 @@ struct KCMPageStoryFacts
 /** `story` read the way the page format reads it. @return fReadable. */
 bool16 KCMReadPageStoryFacts(const UIDRef& story, KCMPageStoryFacts& out);
 
-/** Whether [start, start + span) of `model` holds what a box cannot carry in this version: a table's anchor, a footnote's
-	reference or an endnote's marker. ★Asked of the MODEL, not of the shape: at the edge of a part a text offset cannot
-	tell a table just inside from one just outside. */
+/** Whether [start, start + span) of `model` holds what a PART of a story cannot carry (a box of 2026-10-25 - the import's
+	rule for such a box): a table's anchor, a footnote's reference or an endnote's marker. ★Asked of the MODEL, not of
+	the shape: at the edge of a part a text offset cannot tell a table just inside from one just outside. */
 bool16 KCMPagePartHoldsTableOrNote(ITextModel* model, TextIndex start, int32 span);
+
+/** Whether [start, start + span) of `model` holds an endnote's reference - what a WHOLE box cannot carry (2026-10-26: its
+	tables and footnotes go with it, and an endnote's words are another story's). ★Told by the owned item standing there
+	(kEndnoteAnchorBoss), not by the character: in the text it is the same U+0004 as a footnote's reference. */
+bool16 KCMPagePartHoldsEndnote(ITextModel* model, TextIndex start, int32 span);
 
 /** The document's xmpMM:DocumentID and OriginalDocumentID as UTF-8 (IAdobeMediaMgmtMetaData on kDocBoss - the road
 	IDataBase.h names "FOR EXTERNAL USE"; the PDF comparison read the same two). Empty when they cannot be read.

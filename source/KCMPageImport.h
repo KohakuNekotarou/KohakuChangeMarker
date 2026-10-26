@@ -19,12 +19,15 @@
 //    story's only one and show all of it, and marks each box so (whole="1"). Such a box is put back over the story's
 //    whole body - nothing has to be found - and the comparison then shows what InDesign changed since the export as
 //    proposals back to the file's words; nothing is written until Apply. Refused instead: a frame threaded since, and a
-//    story that holds a table or a note now. A box of 2026-10-25 (no whole) keeps the fingerprint's rule: a "!" row.
+//    story that holds an endnote now. A box of 2026-10-25 (no whole) keeps the fingerprint's rule: a "!" row.
+//  ★★**A WHOLE BOX IS THE STORY, ITS TABLES AND FOOTNOTES WITH IT** (2026-10-26 evening - KCMPageDocx.h): the story the
+//    import holds is the box's own - body, tables, notes - not the document's story with a range replaced.
 //  ★**ANOTHER DOCUMENT'S FILE IS REFUSED BY ITS IDS** (2026-10-26 - KCMPageDocx::Page::fDocumentId): a document made from
 //    the same template numbers its stories alike, so a uid alone does not tell; the name is not asked (it can change).
 //  ★**WHAT CANNOT GO IN IS NAMED, BOX BY BOX** ("Page", the file and the box's number): the story's own file chosen too,
-//    a box the file itself refuses, a story the document does not have, a part that changed, two boxes over one text, a
-//    box holding what this version does not put back (a table, a note).
+//    a box the file itself refuses (a note's mark twice, a note's box gone...), a story the document does not have, a part
+//    that changed, two boxes over one text, a box holding what this version does not put back (an endnote now; a table
+//    or a note in a box of 2026-10-25).
 //
 //========================================================================================
 #ifndef __KCMPageImport_h__

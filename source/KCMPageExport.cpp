@@ -26,6 +26,9 @@
 #include "IStoryOptions.h"			// IsVertical
 #include "ITextInset.h"				// the frame's insets
 #include "ITextModel.h"
+#include "ITextUtils.h"				// CollectOwnedItems - an endnote's reference is told by what the text owns there
+#include "TextID.h"					// kEndnoteAnchorBoss
+#include "Utils.h"
 #include "FileUtils.h"
 #include "GroupID.h"				// kGroupItemBoss - a group's items are the page's too
 #include "PMMatrix.h"
@@ -78,9 +81,32 @@ bool16 KCMPagePartHoldsTableOrNote(ITextModel* model, TextIndex start, int32 spa
 	for (int32 i = 0; i < span; ++i, ++iter)
 	{
 		// ⚠TextIterator's value_type is UTF32TextChar, a class: GetValue() is the way out of it (KCMTextRead's note).
+		// (An endnote's reference is caught by the footnote's character - KCMPagePartHoldsEndnote says why.)
 		const int32 c = static_cast<int32>((*iter).GetValue());
 		if (c == kTextChar_Table || c == kTextChar_TableContinued || c == kTextChar_FootnoteMarker
 			|| c == kTextChar_EndnoteMarker)
+			return kTrue;
+	}
+	return kFalse;
+}
+
+bool16 KCMPagePartHoldsEndnote(ITextModel* model, TextIndex start, int32 span)
+{
+	// ★BY WHAT THE TEXT OWNS THERE, NOT BY ITS CHARACTER (2026-10-26 - the first version asked for kTextChar_EndnoteMarker
+	//   and wrote an endnote's frame, page-tables-notes PT1): in the text an endnote's reference is the same U+0004 as a
+	//   footnote's, and only its owned item says which (KIDMCP measured it on 2026-10-13 - KIDMCPCallValues' OwnedWordAt).
+	//   The route is the SDK's own: SnpManipulateTextEndnotes.cpp collects the owned items and keeps kEndnoteAnchorBoss.
+	//   Nested, so that one standing in a table's cell counts too.
+	if (model == nil || span <= 0)
+		return kFalse;
+	Utils<ITextUtils> textUtils;
+	if (!textUtils)
+		return kTrue;			// cannot be told: the frame is left out rather than written with a note nobody can carry
+	OwnedItemDataList owned;
+	textUtils->CollectOwnedItems(model, start, span, &owned, kTrue);
+	for (size_t i = 0; i < owned.size(); ++i)
+	{
+		if (owned[i].fClassID == kEndnoteAnchorBoss)
 			return kTrue;
 	}
 	return kFalse;
@@ -168,7 +194,7 @@ struct Tally
 {
 	int32		fPages;			// files written
 	int32		fBoxes;
-	int32		fTableOrNote;
+	int32		fEndnote;		// a frame holding an endnote's marker (its words are another story's - 2026-10-26)
 	int32		fHidden;
 	int32		fEmpty;
 	int32		fRefused;
@@ -176,12 +202,14 @@ struct Tally
 	int32		fNoFrame;		// a page with no text frame
 	int32		fThreaded;		// a frame that is not its story's only one (2026-10-26 - BoxOfFrame says why)
 	int32		fOverset;		// a frame whose words do not all show
+	int32		fVerticalTable;	// a vertical frame whose story holds a table (2026-10-26: Word cannot lay it out)
 	PMString	fFirstRefusal;
 	std::vector<PMString>	fThreadedPages;	// where they are, each page once - the sentence names them (the author: "say it
 	std::vector<PMString>	fOversetPages;	//   in the panel")
+	std::vector<PMString>	fVerticalTablePages;
 
-	Tally() : fPages(0), fBoxes(0), fTableOrNote(0), fHidden(0), fEmpty(0), fRefused(0), fNotAPage(0), fNoFrame(0),
-			  fThreaded(0), fOverset(0)
+	Tally() : fPages(0), fBoxes(0), fEndnote(0), fHidden(0), fEmpty(0), fRefused(0), fNotAPage(0), fNoFrame(0),
+			  fThreaded(0), fOverset(0), fVerticalTable(0)
 	{
 		fFirstRefusal.SetTranslatable(kFalse);
 	}
@@ -222,6 +250,18 @@ struct Tally
 	}
 };
 
+/** The code points of a UTF-8 text - what a KCMPageSplice::Place's offset counts. */
+int32 CodePointsOf(const std::string& utf8)
+{
+	int32 n = 0;
+	for (size_t i = 0; i < utf8.size(); ++i)
+	{
+		if ((static_cast<unsigned char>(utf8[i]) & 0xC0) != 0x80)
+			++n;
+	}
+	return n;
+}
+
 /** One frame as its box - kFalse (the tally says why) when it cannot be one. The box's number is given later. */
 bool16 BoxOfFrame(IDataBase* db, UID frameUID, const PMMatrix& spreadToPage, const PMPoint& origin,
 				  std::vector<StoryFacts>& cache, Tally& tally, KCMPageDocx::Box& out)
@@ -258,9 +298,10 @@ bool16 BoxOfFrame(IDataBase* db, UID frameUID, const PMMatrix& spreadToPage, con
 		++tally.fOverset;
 		return kFalse;
 	}
-	if (KCMPagePartHoldsTableOrNote(model, start, span))
+	// (an endnote's marker: its words are another story's, which no box carries - 2026-10-26; a table and a footnote go in)
+	if (KCMPagePartHoldsEndnote(model, start, span))
 	{
-		++tally.fTableOrNote;
+		++tally.fEndnote;
 		return kFalse;
 	}
 
@@ -279,22 +320,27 @@ bool16 BoxOfFrame(IDataBase* db, UID frameUID, const PMMatrix& spreadToPage, con
 		tally.Refuse("frame", frameUID, "its text is not in its story's body");
 		return kFalse;
 	}
-	const KCMStoryShape::Story piece = KCMPageSplice::Cut(facts.fShape, from, to);
-
-	// ★THE PART GOES BACK EXACTLY AS IT WAS CUT - what the import will do with an untouched box.
+	// ★★THE BOX IS THE STORY ITSELF (2026-10-26 - its tables and footnotes with it): the frame is the story's only one and
+	//   shows all of it (above), so nothing is cut out of the story and nothing has to go back into it; only the direction
+	//   is the box's, not the words' (KCMPageSplice::Cut's rule). The frame's range is still asked to be the whole body.
+	const int32 last = static_cast<int32>(facts.fShape.fBody.size()) - 1;
+	if (last < 0 || from.fPara != 0 || from.fOffset != 0 || to.fPara != last
+		|| to.fOffset != CodePointsOf(facts.fShape.fBody[static_cast<size_t>(last)].fText))
 	{
-		KCMStoryShape::Story back = facts.fShape;
-		std::string why;
-		if (!KCMPageSplice::Splice(back, from, to, piece, why))
-		{
-			tally.Refuse("frame", frameUID, why);
-			return kFalse;
-		}
-		if (!KCMStoryShape::Same(facts.fShape, back, why, kTrue))
-		{
-			tally.Refuse("frame", frameUID, "the part does not go back the way it was cut (" + why + ")");
-			return kFalse;
-		}
+		tally.Refuse("frame", frameUID, "the frame does not show its whole story");
+		return kFalse;
+	}
+	KCMStoryShape::Story piece = facts.fShape;
+	piece.fVertical = kFalse;
+
+	// ⛔A VERTICAL FRAME WHOSE STORY HOLDS A TABLE IS NOT WRITTEN (2026-10-26, measured in Word 2007: a vertical text box
+	//   holding a table is not laid out - no position, no PDF); named with its page, in the caller's sentence.
+	InterfacePtr<IStoryOptions> options(mc->QueryStoryOptions());
+	const bool16 vertical = (options != nil && options->IsVertical()) ? kTrue : kFalse;
+	if (vertical && !piece.fTables.empty())
+	{
+		++tally.fVerticalTable;
+		return kFalse;
 	}
 
 	KCMPageDocx::Box box;
@@ -327,8 +373,7 @@ bool16 BoxOfFrame(IDataBase* db, UID frameUID, const PMMatrix& spreadToPage, con
 		box.fInsetR = ::ToDouble(in.Right());
 		box.fInsetB = ::ToDouble(in.Bottom());
 	}
-	InterfacePtr<IStoryOptions> options(mc->QueryStoryOptions());
-	box.fVertical = (options != nil && options->IsVertical()) ? kTrue : kFalse;
+	box.fVertical = vertical;
 
 	// ---- what the box's words look like: its first character's size and font --------------------------------------
 	InterfacePtr<IComposeScanner> scanner(model, UseDefaultIID());
@@ -518,6 +563,7 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 		{
 			const int32 threadedBefore = tally.fThreaded;
 			const int32 oversetBefore = tally.fOverset;
+			const int32 verticalTableBefore = tally.fVerticalTable;
 			KCMPageDocx::Box box;
 			if (BoxOfFrame(db, frames[f], spreadToPage, origin, cache, tally, box))
 				page.fBoxes.push_back(box);
@@ -525,6 +571,8 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 				Tally::NotePage(tally.fThreadedPages, name);
 			if (tally.fOverset > oversetBefore)
 				Tally::NotePage(tally.fOversetPages, name);
+			if (tally.fVerticalTable > verticalTableBefore)
+				Tally::NotePage(tally.fVerticalTablePages, name);
 		}
 		if (page.fBoxes.empty())
 			continue;
@@ -599,12 +647,12 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 		if (notWritten > 0)
 			AppendCount(outMessage, ", ", notWritten, " file(s) could not be written (is the folder writable, is the disk full?)");
 	}
-	const int32 leftOut = tally.fTableOrNote + tally.fHidden + tally.fEmpty + tally.fRefused;
+	const int32 leftOut = tally.fEndnote + tally.fHidden + tally.fEmpty + tally.fRefused;
 	if (leftOut > 0)
 	{
 		AppendCount(outMessage, "; ", leftOut, " frame(s) left out (");
 		bool16 first = kTrue;
-		if (tally.fTableOrNote > 0) { AppendCount(outMessage, "", tally.fTableOrNote, " with a table or a note"); first = kFalse; }
+		if (tally.fEndnote > 0) { AppendCount(outMessage, "", tally.fEndnote, " with an endnote marker"); first = kFalse; }
 		if (tally.fHidden > 0) { AppendCount(outMessage, first ? "" : ", ", tally.fHidden, " hidden"); first = kFalse; }
 		if (tally.fEmpty > 0) { AppendCount(outMessage, first ? "" : ", ", tally.fEmpty, " empty"); first = kFalse; }
 		if (tally.fRefused > 0) { AppendCount(outMessage, first ? "" : ", ", tally.fRefused, " refused - the first: "); outMessage.Append(tally.fFirstRefusal); }
@@ -622,6 +670,12 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 		AppendCount(outMessage, "; ", tally.fOverset, " overset frame(s) not written (");
 		outMessage.Append(Tally::Pages(tally.fOversetPages));
 		outMessage.Append(") - their words do not all show: fit them first, or use Export Story Text...");
+	}
+	if (tally.fVerticalTable > 0)
+	{
+		AppendCount(outMessage, "; ", tally.fVerticalTable, " vertical frame(s) with a table not written (");
+		outMessage.Append(Tally::Pages(tally.fVerticalTablePages));
+		outMessage.Append(") - Word cannot lay a table out in a vertical text box: use Export Story Text...");
 	}
 	if (tally.fNoFrame > 0)
 		AppendCount(outMessage, "; ", tally.fNoFrame, " page(s) with no text frame");
