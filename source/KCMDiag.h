@@ -45,6 +45,9 @@
 //    focus-off   no "=" record gets a text focus (KCMRecordFoci::Make, 2026-10-26): the records are placed by their
 //                readings alone, as before foci - so the full test's equal-follow suite (E12) shows what the foci add.
 //                The trace's FOCUS lines (make / move / let / lost / follow / carry) say what the foci did.
+//    page-whole-unplaced  a page file's WHOLE box finds no place for its story's body (WholeStoryAt, KCMPageImport.cpp,
+//                2026-10-26 night): the refusal a story read unlike the export would get - "cannot be read the way the
+//                export reads it", not "an endnote" (table-move-pages PG12).
 //    (none else in use - counted 2026-10-26: step-fail and batch-fail had been in use without a line here.
 //     ⛔track-describe-only / track-no-colour stood here on 2026-10-05 for one afternoon, to bisect an undo
 //     step a Refresh seemed to drop; the cause was InDesign cutting SCRIPT-made steps at the next real command - the

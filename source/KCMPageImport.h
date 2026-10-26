@@ -24,6 +24,9 @@
 //    import holds is the box's own - body, tables, notes - not the document's story with a range replaced.
 //  ★**ANOTHER DOCUMENT'S FILE IS REFUSED BY ITS IDS** (2026-10-26 - KCMPageDocx::Page::fDocumentId): a document made from
 //    the same template numbers its stories alike, so a uid alone does not tell; the name is not asked (it can change).
+//    ★A file that names only this document's ORIGINAL goes in, and the import says so (2026-10-26 night, the author's
+//    choice 3): a Save As keeps the OriginalDocumentID - and so do a Save a Copy, a template and every document made from
+//    it (measured that night), so ANOTHER document of the same original passes too (KCMDocumentIdsMatch).
 //  ★**WHAT CANNOT GO IN IS NAMED, BOX BY BOX** ("Page", the file and the box's number): the story's own file chosen too,
 //    a box the file itself refuses (a note's mark twice, a note's box gone...), a story the document does not have, a part
 //    that changed, two boxes over one text, a box holding what this version does not put back (an endnote now; a table
@@ -45,9 +48,13 @@ class IDataBase;
 	fStories / fFileNames - its shape in the split form a story file reads back in (KCMStoryDocx::SettleForThisFormat) -
 	and fBoxes is emptied. Reads `copyDB`, and `documentDB` (the document the copy was taken of) for its ids only.
 	@param outRefusals one "!" row per box that cannot go in (fKind "Page").
-	@param outBoxesIn the boxes that went in; @param outStoriesIn the stories they made. */
+	@param outBoxesIn the boxes that went in; @param outStoriesIn the stories they made.
+	@param outBoxesFromOriginal of outBoxesIn, those whose file names only this document's ORIGINAL (KCMIdsMatch's
+	       kKCMIdsOriginal - exported before a Save As, or from another document of that original): the import says so
+	       (2026-10-26 night, the author's choice 3). */
 void KCMSpliceBoxesIntoSet(IDataBase* copyDB, IDataBase* documentDB, KCMStoryTextSet& inOutSet,
-						   std::vector<KCMImportRefusal>& outRefusals, int32& outBoxesIn, int32& outStoriesIn);
+						   std::vector<KCMImportRefusal>& outRefusals, int32& outBoxesIn, int32& outStoriesIn,
+						   int32& outBoxesFromOriginal);
 
 #endif // __KCMPageImport_h__
 

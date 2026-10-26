@@ -898,10 +898,11 @@ bool16 KCMImportStoryTextAsSource(const SysFileList& files, PMString& outMessage
 	//     (its fingerprint); the whole story then goes on the way a story file's does. What cannot go in is a "!" row.
 	int32 boxesIn = 0;
 	int32 storiesFromBoxes = 0;
+	int32 boxesFromOriginal = 0;
 	if (!set.fBoxes.empty())
 	{
 		std::vector<KCMImportRefusal> boxRefusals;
-		KCMSpliceBoxesIntoSet(copyDB, targetDB, set, boxRefusals, boxesIn, storiesFromBoxes);
+		KCMSpliceBoxesIntoSet(copyDB, targetDB, set, boxRefusals, boxesIn, storiesFromBoxes, boxesFromOriginal);
 		sRefusals.insert(sRefusals.end(), boxRefusals.begin(), boxRefusals.end());
 	}
 	KCMSetImportCloneStories(set.fUids);
@@ -964,6 +965,13 @@ bool16 KCMImportStoryTextAsSource(const SysFileList& files, PMString& outMessage
 	{
 		AppendCount(outMessage, ", ", boxesIn, " box(es) put back into ");
 		AppendCount(outMessage, "", storiesFromBoxes, " story(ies)");
+		// ★A FILE THAT NAMES ONLY THIS DOCUMENT'S ORIGINAL (2026-10-26 night, the author's choice 3 - KCMIdsMatch): let in,
+		//   and said - a Save As after the export is the reason as a rule, but another document of the same original (a
+		//   variant saved from it, one made from the same template) passes the same way, its uids the same.
+		if (boxesFromOriginal > 0)
+			AppendCount(outMessage, " (", boxesFromOriginal,
+						" of them from another save of this document's original - exported before a Save As, or from another"
+						" document saved from the same original: look at the changes before Apply)");
 	}
 	outMessage.Append("; ");
 	if (!(KCMIsArmed() && KCMArmedTargetDB() != nil))
