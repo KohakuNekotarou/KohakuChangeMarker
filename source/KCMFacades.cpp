@@ -176,6 +176,7 @@ const char* CopyWhyNotWords(int32 why)
 		case kKCMCopyGroup:			return "it went in with other paragraphs put in at the same place";
 		case kKCMCopyFailed:		return "the copy could not be made";
 		case kKCMCopyMark:			return "it is a mark (ruby, kenten, warichu or tate-chu-yoko) - this version keeps no copy of one";
+		case kKCMCopyWholeStory:	return "its story went in whole (Apply All Changes) - Ctrl+Z takes it back";
 		default:					return "it was not put in by Apply This Change";
 	}
 }
@@ -1546,6 +1547,9 @@ public:
 	{
 		outMessage.Clear();
 		outMessage.SetTranslatable(kFalse);
+		// ★THE COPY READ ONCE FOR THE WHOLE PRESS (2026-10-26 - KCMImportSourceReadScope): the table check below and the
+		//   paragraph's plan read the same story - and a batch's scope (ApplyChanges) covers every row of it.
+		KCMImportSourceReadScope oneReading;
 		IDataBase* targetDB = nil;
 		Row row;
 		Change change;
@@ -1608,6 +1612,7 @@ public:
 	{
 		outMessage.Clear();
 		outMessage.SetTranslatable(kFalse);
+		KCMImportSourceReadScope oneReading;		// (ApplyChange says why)
 		IDataBase* targetDB = nil;
 		Row row;
 		if (!this->CanApplyStory(nth) || !this->PairedTargetRow(nth, targetDB, row))
@@ -1637,6 +1642,7 @@ public:
 	{
 		outMessage.Clear();
 		outMessage.SetTranslatable(kFalse);
+		KCMImportSourceReadScope oneReading;		// (ApplyChange says why)
 		IDataBase* const targetDB = KCMArmedTargetDB();
 		if (KCMFacadeTrackMode() || !this->IsImportSource() || targetDB == nil || !KCMIsDocDBOpen(targetDB))
 		{
@@ -2008,6 +2014,7 @@ public:
 
 	virtual int32	ApplyChanges(const int32* rows, const int32* changes, int32 count, PMString& outMessage)
 	{
+		KCMImportSourceReadScope oneReading;		// every row of the batch reads its story once (ApplyChange says why)
 		return this->RunBatch(rows, changes, count, "Apply These Changes", &KCMStoryEditsFacade::ApplyChange, kFalse,
 							  outMessage);
 	}
@@ -2594,6 +2601,46 @@ private:
 	int32 PourIntoTarget(IDataBase* targetDB, const KCMStoryTextSet& set, const std::vector<UID>& only,
 						 const char* stepName, int32 oneRow, PMString& outMessage)
 	{
+		// ★★THE ROWS STAY, AS "=" (2026-10-26, the author: "Apply on the Story row makes the rows go - keep them"; "the same on
+		//   Proposed Edits"): each poured row's live changes - not its "!" rows - and the document's words at each, taken
+		//   BEFORE the pour, become its "=" records after it (KCMStoryList::RecordPour). A row whose story is not poured keeps
+		//   its records as they are: nothing wrote over them.
+		std::vector<int32> pouredRows;
+		std::vector< std::vector<KCMStoryChange> > pouredLives;
+		std::vector< std::vector<WideString> > pouredWords;
+		for (int32 r = 0; r < KCMStoryList::GetRowCount(); ++r)
+		{
+			if (oneRow >= 0 && r != oneRow)
+				continue;
+			IDataBase* rowDB = nil;
+			Row row;
+			if (!this->PairedTargetRow(r, rowDB, row)
+				|| std::find(set.fUids.begin(), set.fUids.end(), row.fStoryUID) == set.fUids.end()
+				|| (!only.empty() && std::find(only.begin(), only.end(), row.fStoryUID) == only.end()))
+				continue;
+			std::vector<KCMStoryChange> lives;
+			KCMStoryList::LiveChanges(r, lives);
+			std::vector<KCMStoryChange> going;
+			std::vector<WideString> words;
+			{
+				IDataBase::SaveRestoreModifiedState guard(targetDB);
+				InterfacePtr<ITextModel> tModel(UIDRef(targetDB, row.fStoryUID), UseDefaultIID());
+				for (size_t i = 0; i < lives.size(); ++i)
+				{
+					if (lives[i].fWhat == KCMStoryChange::kRefused)
+						continue;
+					WideString w;
+					if (tModel != nil && lives[i].fTargetEnd > lives[i].fTargetStart)
+						KCMTextWords::WordsAt(tModel, lives[i].fTargetStart, lives[i].fTargetEnd - lives[i].fTargetStart, w);
+					going.push_back(lives[i]);
+					words.push_back(w);
+				}
+			}
+			pouredRows.push_back(r);
+			pouredLives.push_back(going);
+			pouredWords.push_back(words);
+		}
+
 		KCMPourOptions options;
 		options.fNoteRefusals = kFalse;
 		options.fOnly = only;
@@ -2602,15 +2649,29 @@ private:
 		PMString poured;
 		bool16 cancelled = kFalse;
 		const bool16 any = KCMPourStoryTextWith(targetDB, set, options, poured, cancelled);
-		// ★THE POURED ROWS' RECORDS GO (2026-10-24 night, the re-check - KCMStoryList::DropRecords says what they did): the
-		//   pour wrote their stories over without sliding them. Only when something went in - a cancelled pour put nothing in.
+		// ★THE POURED ROWS' RECORDS, KEPT AND ADDED TO (2026-10-26 - until then they went: DropRecords, the 10-24 night
+		//   re-check; the compare below now places them from their Source ranges, KCMStoryList::RecordPour says why). Only
+		//   when something went in - a cancelled pour put nothing in.
 		if (any && !cancelled)
 		{
-			if (oneRow >= 0)
-				KCMStoryList::DropRecords(oneRow);
-			else
-				for (int32 r = 0; r < KCMStoryList::GetRowCount(); ++r)
-					KCMStoryList::DropRecords(r);
+			for (size_t i = 0; i < pouredRows.size(); ++i)
+			{
+				IDataBase* rowDB = nil;
+				Row row;
+				if (!this->PairedTargetRow(pouredRows[i], rowDB, row))
+					continue;
+				const UIDRef target(targetDB, row.fStoryUID);
+				std::vector<uint32> counters;
+				std::vector<int32> kinds;
+				for (size_t k = 0; k < pouredLives[i].size(); ++k)
+				{
+					const KCMStoryChange& c = pouredLives[i][k];
+					const int32 kind = (c.fWhat == KCMStoryChange::kAttr) ? c.fAttrKind : kKCMStoryAttrNone;
+					kinds.push_back(kind);
+					counters.push_back(KCMStoryDiffRun::CountForKind(target, kind));
+				}
+				KCMStoryList::RecordPour(pouredRows[i], pouredLives[i], pouredWords[i], counters, kinds);
+			}
 		}
 		// ★THE UNDO FOLLOWER ATTACHED AGAIN (measured 2026-10-24 on the application: after "Apply All Changes in This
 		//   Story" an Undo put the words back and the list did not follow - its observer had gone from the story, the

@@ -1844,13 +1844,61 @@ void KCMStoryList::FollowRecords(int32 nth, IDataBase* targetDB)
 	}
 }
 
-/* DropRecords
+// (⛔DropRecords stood here until 2026-10-26 - the header says what it did, and why RecordPour came in its place.)
+
+/* RecordPour
 */
-void KCMStoryList::DropRecords(int32 nth)
+void KCMStoryList::RecordPour(int32 nth, const std::vector<KCMStoryChange>& lives, const std::vector<WideString>& liveWords,
+								 const std::vector<uint32>& counters, const std::vector<int32>& counterKinds)
 {
-	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || lives.size() != liveWords.size()
+		|| lives.size() != counters.size() || lives.size() != counterKinds.size())
 		return;
-	gRows[nth].fEqual.clear();
+	KCMStoryRow& row = gRows[nth];
+
+	// 1. the records already there: kept, their copies let go (the header says why)
+	for (size_t i = 0; i < row.fEqual.size(); ++i)
+	{
+		row.fEqual[i].fCopy = KCMRecordCopy();
+		row.fEqual[i].fCopy.fWhyNot = kKCMCopyWholeStory;
+		row.fEqual[i].fChecked = kFalse;
+	}
+
+	// 2. one for each change the pour put in, where its Source words stand once the story reads as the Source - its live
+	//    range there too, the place its own words would come back to (AddEqualGroup's rule)
+	for (size_t k = 0; k < lives.size(); ++k)
+	{
+		const KCMStoryChange& live = lives[k];
+		KCMStoryChange placed = live;
+		placed.fTargetStart = live.fSourceStart;
+		placed.fTargetEnd = live.fSourceStart + (live.fTargetEnd - live.fTargetStart);
+		KCMEqualRecord rec;
+		rec.fLive = placed;
+		rec.fNowStart = live.fSourceStart;
+		rec.fNowEnd = live.fSourceEnd;
+		rec.fWrittenAt = counters[k];
+		rec.fPutBackAt = 0;
+		rec.fCounterKind = counterKinds[k];
+		rec.fPlacedForSource = kTrue;
+		rec.fLiveWords = liveWords[k];
+		rec.fHasLiveWords = kTrue;
+		rec.fCopy.fWhyNot = kKCMCopyWholeStory;
+		bool16 updated = kFalse;
+		for (size_t i = 0; i < row.fEqual.size() && !updated; ++i)
+		{
+			if (!IsTwin(row.fEqual[i], live))
+				continue;
+			row.fEqual[i] = rec;
+			updated = kTrue;
+		}
+		if (updated)
+			continue;
+		std::vector<int32> starts;
+		for (size_t i = 0; i < row.fEqual.size(); ++i)
+			starts.push_back(row.fEqual[i].fNowStart);
+		const size_t slot = KCMEqualSlotFor(starts, rec.fNowStart);
+		row.fEqual.insert(row.fEqual.begin() + static_cast<std::ptrdiff_t>(slot), rec);
+	}
 }
 
 // (⛔ReplacedSlotOfMerged and RemoveReplacedChangeAt went on 2026-09-21: the first answered which

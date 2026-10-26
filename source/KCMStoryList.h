@@ -365,7 +365,9 @@ enum KCMCopyWhyNot
 	kKCMCopyParagraphRoad = 4,		// it went in with its paragraph (an object or a return in the change) - Ctrl+Z only
 	kKCMCopyGroup = 5,				// it went in with other paragraphs at one place - Ctrl+Z only
 	kKCMCopyFailed = 6,				// the copy could not be made (a test build's copy-fail switch too)
-	kKCMCopyMark = 7				// a mark's record (ruby, kenten, warichu, tate-chu-yoko) - this version keeps none
+	kKCMCopyMark = 7,				// a mark's record (ruby, kenten, warichu, tate-chu-yoko) - this version keeps none
+	kKCMCopyWholeStory = 8			// (2026-10-26) it went in with its whole story (Apply All Changes, ... in This Story) - and a
+									//   record standing when such a pour wrote its story over lets its copy go: Ctrl+Z only
 };
 
 /** What Restore from Copy needs of one "=" record of Apply This Change (2026-10-24, design section 11-3). */
@@ -930,14 +932,25 @@ namespace KCMStoryList
 		side: a refusal leaves the document as it is, a wrong answer pastes words where they were not. */
 	bool16 CaretReadsAsSource(IDataBase* targetDB, UID story, UID sourceStory, TextIndex at, TextIndex sourceAt);
 
-	/** ★Let go of EVERY record of row `nth` (2026-10-24 night, the re-check): the import's pour - Apply All Changes, Apply
-		All Changes in This Story - wrote its story over, and a pour does not slide the records the way KCM's own writes do
-		(AddEqualGroup), so their places are stale from then on. Measured: a deletion's "=" (a caret, which reads as the
-		Source's empty words anywhere) came back after Apply All, and its Restore from Copy pasted the words four characters
-		before their place. ⇒ After a pour no "=" is left (design 9-3 #6: Apply All stacks none - the rows go), and Ctrl+Z
-		of the pour brings the proposals back as live rows; a change put in one by one before the pour stays in by its own
-		undo step, without its "=" and its copy. */
-	void DropRecords(int32 nth);
+	// ⛔DropRecords (2026-10-24 night - 2026-10-26) let go of every record of a row after the import's pour (Apply All Changes,
+	//   Apply All Changes in This Story): a pour does not slide the records the way KCM's own writes do, and measured then, a
+	//   deletion's "=" (a caret, which reads as the Source's empty words anywhere) came back after Apply All and its Restore
+	//   from Copy pasted the words four characters before their place. The rows went with it (design 9-3 #6), which the
+	//   author asked to change on 2026-10-26 - RecordPour below keeps them, without their copies, and the compare places them.
+
+	/** ★★AFTER A POUR THE ROWS STAY, AS "=" (2026-10-26, the author: "Apply on the Story row makes the rows go - keep them",
+		and the same for Apply All Changes on the heading) - the import's pour calls this where it let them all go: row
+		`nth`'s records are KEPT, each letting its copy go (kKCMCopyWholeStory - the pour wrote the story over, so where a
+		copy would paste is not known), and one record is added for each of `lives` - the row's live changes the pour was
+		asked to put in - at its Source range. ★WHAT MAKES IT SAFE SINCE DropRecords' MEASUREMENT (above): the compare after a
+		pour places every record again from its Source range (FollowRecords, the import tidy S10), and one whose place does
+		not read as the Source shows as what still differs. Nothing slides here. A record that is one of them already (its
+		twin) is updated in place.
+		@param liveWords per change, the Target's words at its live range before the pour (what an undone write reads).
+		@param counters / counterKinds per change, CountForKind after the pour, and its kind (kKCMStoryAttrNone for words and
+			tables, the mark's own for a mark). */
+	void RecordPour(int32 nth, const std::vector<KCMStoryChange>& lives, const std::vector<WideString>& liveWords,
+					const std::vector<uint32>& counters, const std::vector<int32>& counterKinds);
 
 	/** The row of the Target's story `storyUID` (a row standing for a story only the Source has is not one), or -1. */
 	int32 RowOfTargetStory(UID storyUID);

@@ -685,8 +685,19 @@ public:
 			//   (fTextCompared), and what they found is the children's. Asking the row how many
 			//   children it has is the same question the tree itself asks to decide whether to
 			//   draw a triangle, so the two can never disagree.
-			const bool16 sameKind = row.fTextCompared
-				&& (Utils<IKCMStoryEditsFacade>()->GetChangeCount(nodeID->GetRow()) == 0);
+			// ★★AND A ROW WHOSE EVERY CHANGE IS "=" READS "=" TOO (2026-10-26, the author: "after Apply, when every row of the
+			//   Story is =, make the Story = as well"): the document reads as the Source there - put in, matched or restored.
+			//   One "!" (what could not go in) or one live change keeps the row's own sign.
+			const int32 changeCount = Utils<IKCMStoryEditsFacade>()->GetChangeCount(nodeID->GetRow());
+			bool16 everyChangeEqual = (changeCount > 0) ? kTrue : kFalse;
+			for (int32 k = 0; k < changeCount && everyChangeEqual; ++k)
+			{
+				IKCMStoryEditsFacade::Change child;
+				if (!Utils<IKCMStoryEditsFacade>()->GetChange(nodeID->GetRow(), k, child)
+					|| child.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused || !child.fReplaced)
+					everyChangeEqual = kFalse;
+			}
+			const bool16 sameKind = row.fTextCompared && (changeCount == 0 || everyChangeEqual);
 			// ★In the Track mode the Δ column says how many of this author's changes the story holds (2026-10-05).
 			if (nodeID->GetAuthor() >= 0)
 			{
