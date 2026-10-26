@@ -8,7 +8,7 @@
 //  of the document to a FILE and Start opens it, so nothing is built out of held bytes any more.
 //
 //  ★★**WHAT WENT WITH IT**: this plug-in does not call IINXManager::ImportINX anywhere now
-//  (KCMPdfSpike.cpp still does, and that goes before shipping). The measurements those functions
+//  (KCMPdfSpike.cpp still did, until it went before shipping on 2026-10-02 - in git at 5720208). The measurements those functions
 //  carried - how ImportINX has to be called, why the document under it cannot be
 //  IDocumentCommands::New, what the import drops and what it keeps - are in
 //  **docs/ai-notes/kcm-rehydration-retired-2026-09-21.md**, and the code is one `git revert` away.

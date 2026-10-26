@@ -41,19 +41,19 @@
 #include "KCMPairChoice.h"		// the pair this chooses
 #include "KCMCore.h"				// KCMActiveDocDB / KCMIsArmed / KCMArmedTargetDB
 #include "KCMComparisonRun.h"	// KCMStopComparison
+#include "KCMPdfDoc.h"			// KCMIsPdfDoc - a PDF document is refused here (2026-10-14)
+#include "IKCMCompareFacade.h"	// the refusal's words, which the UI says too
 
 #include <time.h>
 
 namespace {
 
-/*	The document a Task Start copies: the chosen Target when there is one, else the active
-	document (the user's rule, 2026-09-21). ★ONE PLACE - the grey state and the command both
-	reach it through KCMCanTakeTaskStartCopy, which is this question asked once.
+/*	The document a Task Start copies - KCMTaskDocumentDB, below. (A name of its own here because the steps
+	of KCMTakeTaskStartCopy read as "the document to copy".)
 */
 IDataBase* DocumentToCopy()
 {
-	IDataBase* const chosen = KCMChosenTargetDB();
-	return (chosen != nil) ? chosen : KCMActiveDocDB();
+	return KCMTaskDocumentDB();
 }
 
 /*	"20260921-143052" - what makes the suggested name unique.
@@ -102,7 +102,15 @@ void BareName(IDataBase* db, PMString& out)
 		out.AppendW(UTF32TextChar(b[i]));
 }
 
+}	// namespace
+
+//----------------------------------------------------------------------------------------
+
+namespace {
+
 /*	The save dialog, opened ON THE DOCUMENT'S OWN FOLDER. kFalse when the reader cancelled.
+	★Shared by Task Start and "Compare with Tracked Changes..." (2026-10-05): each passes its own suggested
+	  name and title.
 
 	⚠★★★**NOT SDKFileSaveChooser, and the reason is one argument** (measured 2026-09-21). That
 	  helper fixes DoDialog's fourth argument, useSystemDefaultDir, at kTrue
@@ -114,7 +122,7 @@ void BareName(IDataBase* db, PMString& out)
 	⚠**The header's own instructions name a method that does not exist** (ISaveFileDialog.h:44
 	  says "Call SetFileTypeInfo()"; the interface has AddFileTypeInfo).
 */
-bool16 AskWhereToSave(IDataBase* docDB, IDFile& outFile)
+bool16 AskOnce(IDataBase* docDB, const PMString& suggestedName, const PMString& title, IDFile& outFile)
 {
 	InterfacePtr<ISaveFileDialog> dlg(
 		(ISaveFileDialog*)::CreateObject(kSaveFileDialogBoss, IID_ISAVEFILEDIALOG));
@@ -128,8 +136,7 @@ bool16 AskWhereToSave(IDataBase* docDB, IDFile& outFile)
 	dlg->SetAdditionalFOSFlags(FOS_OVERWRITEPROMPT | FOS_NOREADONLYRETURN);
 #endif
 
-	PMString suggested;
-	KCMSuggestedTaskStartName(docDB, suggested);
+	const PMString& suggested = suggestedName;
 
 	// ★**A FULL PATH INTO IDFile::SetString** is the Windows form SDKFileHelper uses for exactly
 	//   this (SDKFileHelper.cpp). KCM ships Windows-only, so there is no second branch here.
@@ -152,19 +159,44 @@ bool16 AskWhereToSave(IDataBase* docDB, IDFile& outFile)
 		defaultFile.SetString(suggested);
 	}
 
-	PMString title("Task Start - save a copy of this document");
-	title.SetTranslatable(kFalse);
+	PMString shownTitle(title);
+	shownTitle.SetTranslatable(kFalse);
 	int32 selectedIndex = 0;
 	return dlg->DoDialog(&defaultFile, &outFile, &selectedIndex,
 						 kFalse /*useSystemDefaultDir - see the note above*/,
-						 kTrue /*showTypeMenu*/, &title);
+						 kTrue /*showTypeMenu*/, &shownTitle);
 }
 
 }	// namespace
 
+/*	★NEVER A FILE THAT IS OPEN (2026-10-05). The reader who names an open document's file - their own, or another one
+	  open beside it - says yes to the OS's "replace?" prompt, and then InDesign refuses the save: measured 2026-10-11 on
+	  the build without this, the status line read "Task Start not taken: The copy could not be saved (error 3596)" for
+	  the document's own file and "(error 3586)" for another open document's, and neither file was touched. ⚠So this
+	  protects no file (the 10-05 reasoning here said it did - an overwrite, then a pair of the document with itself -
+	  and the measurement says InDesign never lets the save through). What it gives the reader is the REASON, at the
+	  moment they can still act on it, instead of a number after the dialog has gone.
+	★ASKED AGAIN RATHER THAN REFUSED: the dialog cannot turn a name down before it closes (ISaveFileDialog offers
+	  DoDialog, AddFileTypeInfo and SetAdditionalFOSFlags, nothing else), and a refusal would send the reader back to
+	  the menu to start over. A fresh dialog each time, titled with the reason; a cancel still ends it with nothing
+	  written.
+*/
+bool16 KCMAskWhereToSaveCopy(IDataBase* docDB, const PMString& suggestedName, const PMString& title, IDFile& outFile)
+{
+	PMString shownTitle(title);
+	for (;;)
+	{
+		if (!AskOnce(docDB, suggestedName, shownTitle, outFile))
+			return kFalse;
+		if (KCMOpenDocOnFile(outFile) == nil)
+			return kTrue;
+		shownTitle = PMString("That file is open in InDesign - choose another name for the copy");
+	}
+}
+
 //----------------------------------------------------------------------------------------
 
-void KCMSuggestedTaskStartName(IDataBase* docDB, PMString& out)
+void KCMSuggestedCopyName(IDataBase* docDB, const char* infix, PMString& out)
 {
 	PMString stem;
 	BareName(docDB, stem);
@@ -176,10 +208,21 @@ void KCMSuggestedTaskStartName(IDataBase* docDB, PMString& out)
 	NowStamp(stamp);
 
 	out = stem;
-	out.Append("_TaskStart_");
+	out.Append(infix);			// "_TaskStart_" / "_TrackOriginal_"
 	out.Append(stamp);
 	out.Append(".indd");
 	out.SetTranslatable(kFalse);
+}
+
+void KCMSuggestedTaskStartName(IDataBase* docDB, PMString& out)
+{
+	KCMSuggestedCopyName(docDB, "_TaskStart_", out);
+}
+
+IDataBase* KCMTaskDocumentDB()
+{
+	IDataBase* const chosen = KCMChosenTargetDB();
+	return (chosen != nil) ? chosen : KCMActiveDocDB();
 }
 
 bool16 KCMCanTakeTaskStartCopy()
@@ -200,6 +243,15 @@ bool16 KCMTakeTaskStartCopy(PMString& outWhyNot)
 		outWhyNot = "Task Start needs a document to copy";
 		return kFalse;
 	}
+	// ★A PDF DOCUMENT IS NOT A DOCUMENT OF THE READER'S (2026-10-14, design 3.7): KCM made it to compare a PDF, and a Task
+	//   Start of it would compare KCM's placing against itself. A Target CHOSEN as a PDF file is not this case - the
+	//   document in front is taken then, as always (KCMTaskDocumentDB).
+	if (KCMIsPdfDoc(docDB))
+	{
+		outWhyNot = kKCMPdfTaskStartRefusal;
+		outWhyNot.SetTranslatable(kFalse);
+		return kFalse;
+	}
 	// ★A document's UIDRef is its database's root - the form KCM uses elsewhere (KCMCore.cpp).
 	const UIDRef docRef(docDB, docDB->GetRootUID());
 
@@ -216,7 +268,9 @@ bool16 KCMTakeTaskStartCopy(PMString& outWhyNot)
 	// 3. WHERE. ★★A cancel ends the whole thing here, having changed nothing - no stop, no choice,
 	//    and outWhyNot stays EMPTY so that the caller says nothing either (the user's rule).
 	IDFile dest;
-	if (!AskWhereToSave(docDB, dest))
+	PMString suggested;
+	KCMSuggestedTaskStartName(docDB, suggested);
+	if (!KCMAskWhereToSaveCopy(docDB, suggested, PMString("Task Start - save a copy of this document"), dest))
 		return kFalse;
 
 	// 4. WRITE IT. ★SaveACopy adds no undo step (measured 2026-08-30), so the reader's undo stack

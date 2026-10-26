@@ -135,7 +135,16 @@ struct KCMStoryDiff
 	UID		fStoryUID;
 	uint32	fKinds;		// OR of KCMStoryChangeKind - what the row names
 
-	KCMStoryDiff() : fStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone) {}
+	/** ★THE SOURCE STORY THIS ROW COMPARES AGAINST (2026-10-26, stories paired by place): the same uid as fStoryUID
+		for a story paired by UID and for a Removed one (whose fStoryUID is the Source's already), the Source's own
+		story for a row paired by the place of its first frame (kKCMStoryKindByPosition - its fStoryUID is the
+		Target's new one), kInvalidUID for an Added one. Written by Compare and by the place pairing
+		(KCMStoryPairByPlace) and by nothing else; **every reader of the Source side asks this, never fStoryUID.**
+		⚠It looks like the "second field naming the document" the note above refuses, and is not: WHICH DOCUMENT a
+		 row lives in is still fKinds' to say; this names which STORY stands for it on the Source's side. */
+	UID		fSourceStoryUID;
+
+	KCMStoryDiff() : fStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fSourceStoryUID(kInvalidUID) {}
 };
 
 namespace KCMStoryEdits

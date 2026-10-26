@@ -59,6 +59,22 @@ static const PMReal kKCMResolution = 36.0;
 // Comparison resolution = kKCMResolution * kKCMHiResMul = 144dpi.
 static const PMReal kKCMHiResMul    = 4.0;
 static const int32  kKCMPoolMinCount = 1;	// Pooling: a stored cell counts as changed when this many high-res pixels inside it changed. 1 = most sensitive (picks up edge noise); higher survives noise better, at a slightly higher risk of missing a change.
+// ★THE PDF EXPORT CHECK'S RASTER AND COUNTING (2026-10-14, design 2026-10-14-kcm-pdf-export-check 3.5): a document against
+//   its PDF is drawn RGB, anti-aliased, at full resolution on both sides - a placed PDF is always drawn anti-aliased and
+//   reaches CMYK values by another path, so the comparison's own settings would mark every edge and image - and only a
+//   large difference counts: a pixel whose largest RGB channel differs by more than kKCMExportThr, a cell when at least
+//   kKCMExportPoolMinCount of its 16 pixels (4x4 at 144dpi) do, and a cell only in a patch of at least
+//   kKCMExportMinPatchCells such cells, touching at a side or a corner (KCMPatchFilter.h).
+//   ★SET BY THE LIVE TEST (2026-10-14, plan Task 9 - the first values were 128 / 6 and no patch rule): at 128 / 6 every
+//   correct export of 3 documents x 3 presets was marked (32 cells of letter edges, up to 88 around transparency), and
+//   no threshold alone separates that noise from a real loss - above 192 a PDF whose drop shadow and opacity were
+//   removed is not marked at all. At 160 / 6 the noise's largest patch is 6 cells, so a patch of 8 clears it in all 12
+//   page cases measured, while the shadow-and-opacity PDF keeps 165 cells, a missing image 9,235, and a page whose text
+//   all went missing 65 / 9 (work/kcm-pdf-live2/knobs2.py..knobs7.py on the KT probe's dumps of this very raster).
+//   ⚠The price: a thin line, a line of small text or one word may change and go unmarked.
+static const int   kKCMExportThr = 160;
+static const int32 kKCMExportPoolMinCount = 6;
+static const int32 kKCMExportMinPatchCells = 8;
 
 // How long a comparison runs before its progress bar (with Cancel) appears, in milliseconds.
 // Pixel and Story alike (2026-09-05, the user's call: three seconds). It used to be a PAGE

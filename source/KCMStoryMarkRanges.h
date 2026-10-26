@@ -22,7 +22,7 @@
 //   calls and one seam, and a press over a story with a few hundred small edits makes plenty of
 //   both.
 //
-//  **HEADER-ONLY AND FREE OF THE SDK EXCEPT FOR TextIndex, WHICH IS WHAT MAKES IT TESTABLE.**
+//  **HEADER-ONLY AND FREE OF THE SDK EXCEPT FOR TextIndex AND uint8, WHICH IS WHAT MAKES IT TESTABLE.**
 //  The test outside InDesign is work\kescm-markranges-test (it stubs BaseType.h and includes
 //  this file as it stands -- it is not a copy that can drift, the way KTTextDiff drifted from
 //  KCMTextDiff).
@@ -63,10 +63,26 @@ struct KCMMarkRange
 		drawing side to stand the bar after it. Meaningless unless fCaret. */
 	bool16		fCaretAfter;
 
-	KCMMarkRange() : fFrom(0), fTo(0), fCaret(kFalse), fCaretAfter(kFalse) {}
-	KCMMarkRange(TextIndex from, TextIndex to) : fFrom(from), fTo(to), fCaret(kFalse), fCaretAfter(kFalse) {}
+	/** ★A COLOUR OF ITS OWN (2026-10-05, the Track mode: each change in its AUTHOR's tracked-change colour).
+		kFalse = the panel's Mark colour, which is every range of the other modes - so nothing they draw
+		changes. Ranges are fused only with ranges of the same colour (KCMMergeMarkRanges). */
+	bool16		fHasColour;
+	uint8		fR, fG, fB;
+
+	KCMMarkRange() : fFrom(0), fTo(0), fCaret(kFalse), fCaretAfter(kFalse), fHasColour(kFalse), fR(0), fG(0), fB(0) {}
+	KCMMarkRange(TextIndex from, TextIndex to)
+		: fFrom(from), fTo(to), fCaret(kFalse), fCaretAfter(kFalse), fHasColour(kFalse), fR(0), fG(0), fB(0) {}
 	KCMMarkRange(TextIndex from, TextIndex to, bool16 caret, bool16 caretAfter = kFalse)
-		: fFrom(from), fTo(to), fCaret(caret), fCaretAfter(caretAfter) {}
+		: fFrom(from), fTo(to), fCaret(caret), fCaretAfter(caretAfter), fHasColour(kFalse), fR(0), fG(0), fB(0) {}
+
+	/** This range in a colour of its own (the Track mode). */
+	KCMMarkRange WithColour(uint8 r, uint8 g, uint8 b) const
+	{
+		KCMMarkRange c(*this);
+		c.fHasColour = kTrue;
+		c.fR = r; c.fG = g; c.fB = b;
+		return c;
+	}
 
 	/** The caret standing in front of character `at`. */
 	static KCMMarkRange Caret(TextIndex at) { return KCMMarkRange(at, at + 1, kTrue); }
@@ -77,6 +93,14 @@ struct KCMMarkRange
 };
 
 typedef std::vector<KCMMarkRange> KCMMarkRangeList;
+
+/** Do two ranges paint the same colour? Two "Mark colour" ranges do; a colour of its own only matches itself. */
+inline bool KCMMarkRangeSameColour(const KCMMarkRange& a, const KCMMarkRange& b)
+{
+	if (!a.fHasColour || !b.fHasColour)
+		return !a.fHasColour && !b.fHasColour;
+	return a.fR == b.fR && a.fG == b.fG && a.fB == b.fB;
+}
 
 /** Reading order, and a stable tie-break so that a merge of equal starts is deterministic. */
 inline bool KCMMarkRangeIsBefore(const KCMMarkRange& a, const KCMMarkRange& b)
@@ -131,11 +155,27 @@ inline void KCMMergeMarkRanges(KCMMarkRangeList& ranges)
 	for (KCMMarkRangeList::const_iterator it = kept.begin(); it != kept.end(); ++it)
 	{
 		// ">" and not ">=": a range that STARTS where the last one ended touches it, and touching
-		// ranges are fused (see the header note).
+		// ranges OF ONE COLOUR are fused (see the header note).
 		if (merged.empty() || it->fFrom > merged.back().fTo)
+		{
 			merged.push_back(*it);
-		else if (it->fTo > merged.back().fTo)
-			merged.back().fTo = it->fTo;
+			continue;
+		}
+		if (KCMMarkRangeSameColour(*it, merged.back()))
+		{
+			if (it->fTo > merged.back().fTo)
+				merged.back().fTo = it->fTo;
+			continue;
+		}
+		// ★TWO COLOURS MEET (2026-10-05): the earlier one keeps its characters, and the later one is cut
+		//   to start where the earlier ends - the list stays sorted and non-overlapping, which the binary
+		//   searches below rely on. A later range wholly inside the earlier is dropped.
+		if (it->fTo > merged.back().fTo)
+		{
+			KCMMarkRange rest(*it);
+			rest.fFrom = merged.back().fTo;
+			merged.push_back(rest);
+		}
 	}
 
 	if (!carets.empty())
@@ -215,7 +255,12 @@ inline void KCMIntersectMarkRanges(const KCMMarkRangeList& merged,
 		//   flag, which is right: the bar belongs at the START of its character, and that is the end
 		//   the run containing it sees.
 		if (from < to)
-			out.push_back(KCMMarkRange(from - runStart, to - runStart, it->fCaret, it->fCaretAfter));
+		{
+			KCMMarkRange piece(*it);		// the flags AND the colour travel with the piece
+			piece.fFrom = from - runStart;
+			piece.fTo = to - runStart;
+			out.push_back(piece);
+		}
 	}
 }
 

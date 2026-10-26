@@ -92,10 +92,13 @@ bool16 KCMReadTableShapes(ITextModel* model, const KCMSkippedText& skipped, std:
 		const RowRange rows = table->GetTotalRows();
 		const ColRange cols = table->GetTotalCols();
 		const RowRange header = table->GetHeaderRows();
+		const RowRange footer = table->GetFooterRows();
 		shape.fRows = rows.count;
 		shape.fCols = cols.count;
 		shape.fHeaderStart = header.start;
 		shape.fHeaderCount = header.count;
+		shape.fFooterStart = footer.start;
+		shape.fFooterCount = footer.count;
 
 		for (int32 r = rows.start; r < rows.start + rows.count; ++r)
 		{
@@ -121,11 +124,15 @@ bool16 KCMReadTableShapes(ITextModel* model, const KCMSkippedText& skipped, std:
 				}
 
 				InterfacePtr<ITextStoryThread> thread(dict->QueryThread(table->GetGridID(addr)));
-				if (thread == nil)
-					continue;
 				KCMTableCellPlace place;
 				place.fRow = r;
 				place.fCol = c;
+				if (thread == nil)
+				{
+					// a cell with no text of its own - a graphic cell (2026-09-25; KCMTableShape::fThreadless)
+					shape.fThreadless.push_back(place);
+					continue;
+				}
 				place.fStart = thread->GetTextStart();
 				place.fEnd = thread->GetTextEnd();
 				shape.fCells.push_back(place);

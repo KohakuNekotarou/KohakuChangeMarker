@@ -409,6 +409,9 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//   move the selection, and KCMStoryTreeEH makes the row they land on SHOW ITSELF, so the list
 	//   can be walked with the keyboard. ⚠It is only ever constructed because KCMStoryRowEH asks
 	//   the tree for it - naming it here is not enough (implementations are lazy).
+	// ★(2026-10-24 night - the list like KFC's) IID_ITREEVIEWCONTROLLER is this panel's own too: change rows selected
+	//   together (KCMStoryTreeController.cpp). PERSISTENT, as the stock one it replaces is - a non-persistent
+	//   implementation over an inherited persistent one fails as the resource is read.
 	Class
 	{
 		kKCMStoryTreeWidgetBoss,
@@ -417,12 +420,26 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			IID_ITREEVIEWHIERARCHYADAPTER, kKCMStoryTreeAdapterImpl,
 			IID_ITREEVIEWWIDGETMGR, kKCMStoryTreeWidgetMgrImpl,
 			IID_IEVENTHANDLER, kKCMStoryTreeEHImpl,
+			IID_ITREEVIEWCONTROLLER, kKCMStoryTreeControllerImpl,
+		}
+	},
+
+	// THE RETURN FILTER (2026-10-24 night - KFC's kKFCReturnFilterBoss): pushed on the application's IEventDispatcher - whose
+	// stack sees an event before anything below it - while the Story Edits list holds the keyboard, and takes a Return on
+	// the change rows selected there (KCMStoryTreeEH.cpp). A boss of its own, made once and released at shutdown, so its
+	// life is not a widget's.
+	Class
+	{
+		kKCMReturnFilterBoss,
+		kInvalidClass,
+		{
+			IID_IEVENTHANDLER, kKCMReturnFilterEHImpl,
 		}
 	},
 
 	// One row of that list. The stock tree node already handles what a row IS (selection, keyboard);
-	// the one interface added says where a click on it GOES - single click scrolls the story into
-	// view, double click selects the whole story (KCMStoryRowEH.cpp).
+	// the one interface added says where a click on it GOES - a story row scrolls its story into
+	// view, a change row selects its words (KCMStoryRowEH.cpp); a double click is two clicks (2026-10-25).
 	// ★The three cells inside the row are static text and do not consume clicks, so a press anywhere
 	//   along the row reaches this handler.
 	// ★★THE LINE BETWEEN ROWS IS THE FRAMEWORK'S, AND IT STAYS. DVTreeNodeControlView draws a
@@ -499,6 +516,46 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		kGenericPanelWidgetBoss,
 		{
 			IID_ICONTROLVIEW, kKCMStoryBangViewImpl,
+		}
+	},
+
+	// The Δ cell of a "=" row Apply This Change put in (2026-10-24 evening, the author: "when a change goes in and shows
+	// =, make the = red"): an amber "=", built exactly as the "!" cell above and for the same reason - a stock static text
+	// draws in one colour, the theme's.
+	Class
+	{
+		kKCMStoryAppliedSignCellBoss,
+		kGenericPanelWidgetBoss,
+		{
+			IID_ICONTROLVIEW, kKCMStoryAppliedSignViewImpl,
+		}
+	},
+
+	// The splitter's UPPER pane, with an event handler of its own (2026-10-24 evening, the author: "Apply All Changes on a story
+	// row is odd - it acts on every story; put it on the Proposed Edits heading"): a right click on the section heading pops
+	// "Apply All Changes" against an import's copy. ★On the pane, not on the heading: the heading is a static text, and its own
+	// handler never heard a press (measured - KCMStorySection.cpp). The product's Link Info section takes the right clicks over
+	// its labels in its panel's handler (LinksUIClass.fr, kLinkInfoPanelWidgetBoss on kGenericPanelWidgetBoss).
+	// GenericPanelWidget's resource reads no event handler (Widgets.fh: the control view, the panel name, the children), so a
+	// handler that is not persistent is safe in place of the stock one (memory widget-boss-inherited-persistent-interface).
+	Class
+	{
+		kKCMTopPaneBoss,
+		kGenericPanelWidgetBoss,
+		{
+			IID_IEVENTHANDLER, kKCMTopPaneEHImpl,
+		}
+	},
+
+	// The colour square of a Track mode AUTHOR row (2026-10-05). Built like the "!" cell above; its colour comes
+	// through the same data interface the change row's text cell uses (SetTrackLook).
+	Class
+	{
+		kKCMTrackChipCellBoss,
+		kGenericPanelWidgetBoss,
+		{
+			IID_ICONTROLVIEW, kKCMTrackChipViewImpl,
+			IID_IKCMSTORYCELLDATA, kKCMStoryCellDataImpl,
 		}
 	},
 
@@ -820,10 +877,27 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMSetSourceMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Task Start" on the panel flyout (popup) menu (2026-09-12). Plain command: the active
-		// document's INX is taken as the origin, and the pair becomes (that document, the origin).
-		// Start / Refresh then compare the document against a rehydration of it. One origin at a
-		// time (UpdateActionStates, kCustomEnabling).
+		// "Set PDF as Target..." / "Set PDF as Source..." (2026-10-14, the PDF comparison): a PDF picked in a file dialog
+		// becomes that end - a file choice, as a Task Start (Save)... makes one. Under the two "Set as" items they stand
+		// beside. Live while nothing is compared (UpdateActionStates, kCustomEnabling).
+		kKCMPopupSetPdfTargetActionID,
+		kKCMPopupMenuPath,
+		kKCMSetPdfTargetMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMPopupSetPdfSourceActionID,
+		kKCMPopupMenuPath,
+		kKCMSetPdfSourceMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Task Start" (2026-10-13): the document's state kept in memory and chosen as the Source - directly above
+		// "Task Start (Save)...", which saves a copy to a file instead (the user's order).
+		kKCMPopupTaskStartCloneActionID,
+		kKCMPopupMenuPath,
+		kKCMTaskStartCloneMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Task Start (Save)..." (named "Task Start" until 2026-10-13): a copy of the document saved to a file the reader picks becomes the Source.
 		kKCMPopupTaskStartActionID,
 		kKCMPopupMenuPath,
 		kKCMTaskStartMenuItemPosition,
@@ -840,12 +914,27 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMExportStoryTextMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Export Pages to Word..." (2026-10-25): the pages selected in the Pages panel, each one .docx whose text boxes
+		// stand where the frames stand. Under Export Story Text... - the other way out, read back by the same Import.
+		// ★The same action is on the Pages panel's page menu too (below, with Register / Check / Refresh).
+		kKCMPopupExportPagesActionID,
+		kKCMPopupMenuPath,
+		kKCMExportPagesMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// "Import Story Text..." on the panel flyout (2026-09-15). Plain command: the edited Word
 		// documents are read and the Story comparison starts against a copy holding those words.
 		// Directly under Export - the two are one round trip.
 		kKCMPopupImportStoryTextActionID,
 		kKCMPopupMenuPath,
 		kKCMImportStoryTextMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Compare with Tracked Changes..." (2026-10-05): the import's road for the Track mode - a copy with every
+		// tracked change rejected becomes the Source, and the Track Changes comparison starts. Directly under Import.
+		kKCMCompareTrackedActionID,
+		kKCMPopupMenuPath,
+		kKCMCompareTrackedMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Clear Target and Source" on the panel flyout (popup) menu. Plain command: stops a running
@@ -946,6 +1035,12 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMPopupModeResourcesActionID,
 		kKCMCompareModeSubmenuPath,
 		kKCMModeResourcesSubMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Compare mode > Track Changes" (2026-10-05): the Target's own tracked changes are the older version.
+		kKCMPopupModeTrackActionID,
+		kKCMCompareModeSubmenuPath,
+		kKCMModeTrackSubMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// "Always Show Marks on Source" on the panel flyout (popup) menu. Check-mark toggle:
@@ -1241,6 +1336,14 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMPageRefreshCompareMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
+		// "Export Pages to Word..." on the Pages panel page context menu (2026-10-25): the selected pages, each one .docx
+		// of text boxes. Needs no comparison - only a document and a real page selected (the [None] guard,
+		// UpdateActionStates). The work is in KCMPageExport.cpp, through the facade.
+		kKCMPopupExportPagesActionID,
+		"RtMenuPagesPanel",
+		kKCMPageExportPagesMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
 		// ----- The book comparison dialog's chapter rows: right-click menu (2026-08-12) -----
 		// A menu of its own - neither the panel flyout nor a built-in InDesign menu - so its path is
 		// a name nobody else uses and it is written last, after the menus above have been laid out.
@@ -1312,32 +1415,119 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMResourceRowXmlMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// ----- The Story Edits CHANGE rows (child rows): "Reject This Import Change" (2026-09-24, stage 2 A) -----
-		// ★A SUBTREE OF ITS OWN, not the story row's (KCMStoryRowEH::RButtonDn): it acts on the change under the
-		//   cursor only - the import's tracked changes touching that change's range - so a reader pointing at one
-		//   difference is never handed an action over the whole story (the rule of 2026-08-21).
-		// ★Greyed where the range holds none of the import's changes (kCustomEnabling -> KCMChangeRowCanReject),
-		//   and a menu with only greyed items does not appear: a plain comparison's change rows raise nothing.
-		kKCMChangeRowRejectActionID,
-		kKCMChangeRowMenuName,
-		kKCMChangeRowRejectMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
+		// ----- The Story Edits CHANGE rows (child rows): their own subtree (2026-09-24) -----
+		// ★A SUBTREE OF ITS OWN, not the story row's (KCMStoryRowEH::RButtonDn): its items act on the change under the
+		//   cursor only, so a reader pointing at one difference is never handed an action over the whole story (the
+		//   rule of 2026-08-21). A menu with only greyed items does not appear.
+		// (⛔Its first item, "Reject This Import Change" - kKCMChangeRowRejectActionID - and its third, "Redo from Word"
+		//  - kKCMChangeRowRedoActionID - stood here until 2026-10-25; they went with the import that wrote into the
+		//  document. Their ActionIDs are graves, ui/KCMUIID.h.)
 
-		// "Restore from Source" on the SAME subtree (2026-09-24, stage 2 B): the OTHER kind of change row - a ruby,
-		// kenten, warichu or tate-chu-yoko change - whose mark is made what the Source document has there, read
-		// from the Source story itself. ★The two items are never live on one row (A: words and tables; B: these
-		// four), so a change row shows one item or none - and a footnote / endnote row still raises nothing.
+		// "Restore from Source" (2026-09-24, stage 2 B; a text row's too since 2026-10-24 night): a ruby, kenten,
+		// warichu or tate-chu-yoko change - or the words - made what the Source document has there, read from the
+		// Source story itself.
 		kKCMChangeRowRestoreAttrActionID,
 		kKCMChangeRowMenuName,
 		kKCMChangeRowRestoreAttrMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Redo from Word" on the SAME subtree (2026-09-24, stage 2 C): the THIRD kind of change row - one the reader
-		// took back with either item above, shown "=" - whose paragraph is made what Word shows again, from the
-		// content the import read. ★Live only on a "=" row, where the other two are greyed: still one item per row.
-		kKCMChangeRowRedoActionID,
+		// "Match the Source" on the SAME subtree (2026-09-25, design section 16): a TABLE whose rows, columns, merged
+		// cells or cells differ from the Source's (Table ≠) - which is reshaped and refilled from the Source document's
+		// table, keeping its id. ★Live only on that row, where Restore from Source is greyed: still one item per row.
+		kKCMChangeRowMatchTableActionID,
 		kKCMChangeRowMenuName,
-		kKCMChangeRowRedoMenuItemPosition,
+		kKCMChangeRowMatchTableMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// ----- ★THE IMPORT THE OTHER WAY ROUND (2026-10-24, the import-as-Source road) -----
+		// "Apply This Change" at the top of the SAME subtree: live only while the Source is an import's copy, where every
+		// item above is greyed (KCMStoryRefresh.cpp) - so a change row still shows one item or none.
+		kKCMChangeRowApplyActionID,
+		kKCMChangeRowImportMenuName,
+		kKCMChangeRowApplyMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// ...and right under it (2026-10-24 evening, design 11-3): "Restore from Copy", live on a "=" row that holds a copy.
+		// ★BOTH ON THE IMPORT'S OWN SUBTREE since the same evening (kKCMChangeRowImportMenuName, KCMUIID.h says why): it is
+		//  popped with its grey items kept, and the four items of the change row's subtree are never live against an
+		//  import's copy - kept off it, a "=" row with no copy opens two lines rather than six grey ones.
+		kKCMChangeRowRestoreCopyActionID,
+		kKCMChangeRowImportMenuName,
+		kKCMChangeRowRestoreCopyMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// ...and on the STORY row's subtree, above "Refresh Story Comparison": the story's changes.
+		kKCMStoryRowApplyActionID,
+		kKCMStoryRowMenuName,
+		kKCMStoryRowApplyMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// ★THE STORY MODE'S RESTORE BY COPY (2026-10-24 night, design 1-8 - the author: "a function that puts the Source's text
+		//   back with a copy of the Source, in the right-click menu", "on the Story row too"). "Restore from Copy" is also on
+		//   the CHANGE row's subtree - the action of the import's, the same row's "=" either way - under "Restore from Source"
+		//   (which a text row's menu now shows too, KCMChangeRowCanRestoreAttr); and the story row's item above the refresh.
+		//   Both subtrees are popped with their grey items dropped, so a row shows what it can do.
+		kKCMChangeRowRestoreCopyActionID,
+		kKCMChangeRowMenuName,
+		kKCMChangeRowRestoreCopyStoryMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMStoryRowRestoreAllActionID,
+		kKCMStoryRowMenuName,
+		kKCMStoryRowRestoreAllMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// "Apply All Changes" - every story the import filled - on the SECTION HEADING's own menu (2026-10-24 evening, the
+		// author: on a story row it read as that story's; "put it on the Proposed Edits heading"). It stood under the item
+		// above until then.
+		kKCMApplyAllActionID,
+		kKCMProposedHeadingMenuName,
+		kKCMApplyAllMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		// ★ACCEPT AND REJECT IN THE TRACK MODE (2026-10-25 - the author: "a right click that takes the change back", "and
+		//   confirms it", "on the Story too", "on the Story Edits heading, for the document"). The change row's and the story
+		//   row's pairs sit on the two subtrees above, where every other item is greyed in this mode and dropped (the rows
+		//   pop those with grey items dropped); the author row and the heading have subtrees of their own, popped with grey
+		//   items kept (KCMStoryRowEH::RButtonDn / KCMTopPaneEH).
+		kKCMTrackAcceptChangeActionID,
+		kKCMChangeRowMenuName,
+		kKCMTrackAcceptChangeMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMTrackRejectChangeActionID,
+		kKCMChangeRowMenuName,
+		kKCMTrackRejectChangeMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMTrackAcceptStoryActionID,
+		kKCMStoryRowMenuName,
+		kKCMTrackAcceptStoryMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMTrackRejectStoryActionID,
+		kKCMStoryRowMenuName,
+		kKCMTrackRejectStoryMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMTrackAcceptAuthorActionID,
+		kKCMTrackAuthorMenuName,
+		kKCMTrackAcceptAuthorMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMTrackRejectAuthorActionID,
+		kKCMTrackAuthorMenuName,
+		kKCMTrackRejectAuthorMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMTrackAcceptAllActionID,
+		kKCMTrackHeadingMenuName,
+		kKCMTrackAcceptAllMenuItemPosition,
+		kSDKDefIsNotDynamicMenuFlag,
+
+		kKCMTrackRejectAllActionID,
+		kKCMTrackHeadingMenuName,
+		kKCMTrackRejectAllMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
 		// ----- The Story Edits CHANGE rows (child rows): ⛔THE SUBTREE IS GONE (2026-09-21) -----
@@ -1401,7 +1591,38 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// "Task Start" (2026-09-21): a COPY of the document is saved to a file the reader picks, and
+		// "Set PDF as Target..." / "Set PDF as Source..." (2026-10-14): greyed while a comparison runs (UpdateActionStates).
+		kKCMActionComponentBoss,
+		kKCMPopupSetPdfTargetActionID,
+		kKCMSetPdfTargetMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMPopupSetPdfSourceActionID,
+		kKCMSetPdfSourceMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Task Start" (2026-10-13): kept in memory. Greyed only when there is no document to take - the question
+		// "Task Start (Save)..." asks (facade CanTakeTaskStartClone, UpdateActionStates). Not greyed while a comparison
+		// runs: the press stops it first.
+		kKCMActionComponentBoss,
+		kKCMPopupTaskStartCloneActionID,
+		kKCMTaskStartCloneMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Task Start (Save)..." (2026-09-21; renamed 2026-10-13): a COPY of the document is saved to a file the reader picks, and
 		// that file becomes the Source. Greyed only when there is no document to copy - the chosen
 		// Target, or the one in front (facade CanTakeTaskStartCopy, the one place -
 		// UpdateActionStates). ⚠**Not greyed while a comparison runs**: pressing it stops that
@@ -1430,12 +1651,33 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
+		// "Export Pages to Word..." (2026-10-25): greyed with no active document, or when the Pages panel holds nothing
+		// but the [None] row (UpdateActionStates) - it reads and never compares, so no Target or Source is asked for.
+		kKCMActionComponentBoss,
+		kKCMPopupExportPagesActionID,
+		kKCMExportPagesMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
 		// "Import Story Text..." (2026-09-15): the edited words back in, against a copy. Greyed
 		// with no active document and while a comparison is running - ⚠unlike Task Start, which
 		// stops one and takes over, this one waits (UpdateActionStates).
 		kKCMActionComponentBoss,
 		kKCMPopupImportStoryTextActionID,
 		kKCMImportStoryTextMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// "Compare with Tracked Changes..." (2026-10-05). Greyed with no document to copy (UpdateActionStates).
+		kKCMActionComponentBoss,
+		kKCMCompareTrackedActionID,
+		kKCMCompareTrackedMenuKey,
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,
@@ -1522,6 +1764,15 @@ resource ActionDef (kSDKDefActionResourceID)
 		kKCMActionComponentBoss,
 		kKCMPopupModeResourcesActionID,
 		kKCMModeResourcesKey,				// "Resources Changes"
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// ⚠kCustomEnabling is what makes UpdateActionStates run at all -- without it the check mark can never appear, however correctly the state is set (ActionDefs.h:40)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMPopupModeTrackActionID,
+		kKCMModeTrackKey,					// "Track Changes" (2026-10-05)
 		kOtherActionArea,
 		kNormalAction,
 		kCustomEnabling|kDisableIfLowMem,	// ⚠kCustomEnabling is what makes UpdateActionStates run at all -- without it the check mark can never appear, however correctly the state is set (ActionDefs.h:40)
@@ -1723,16 +1974,8 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// "Reject This Import Change" on a Story Edits CHANGE row's right-click menu (2026-09-24, stage 2 A).
-		// ⚠Not on the flyout: it acts on the change the menu was popped over (KCMStoryRowEH stashes it).
-		kKCMActionComponentBoss,
-		kKCMChangeRowRejectActionID,
-		kKCMChangeRowRejectMenuKey,
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the range holds an import change (KCMChangeRowCanReject)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
+		// (⛔The ActionDefs of "Reject This Import Change" and "Redo from Word" stood here until 2026-10-25 - their MenuDefs
+		//  went with them; the ActionIDs are graves, ui/KCMUIID.h.)
 
 		// "Restore from Source" on a Story Edits CHANGE row's right-click menu (2026-09-24, stage 2 B).
 		// ⚠Not on the flyout: it acts on the change the menu was popped over (KCMStoryRowEH stashes it).
@@ -1745,14 +1988,140 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// "Redo from Word" on a taken-back Story Edits CHANGE row's right-click menu (2026-09-24, stage 2 C).
+		// "Match the Source" on a Story Edits TABLE row's right-click menu (2026-09-25, design section 16).
 		// ⚠Not on the flyout: it acts on the change the menu was popped over (KCMStoryRowEH stashes it).
 		kKCMActionComponentBoss,
-		kKCMChangeRowRedoActionID,
-		kKCMChangeRowRedoMenuKey,
+		kKCMChangeRowMatchTableActionID,
+		kKCMChangeRowMatchTableMenuKey,
 		kOtherActionArea,
 		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the row is a taken-back change still standing so (KCMChangeRowCanRedo)
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the row is a table that differs from the Source's, both open (KCMChangeRowCanMatchTable)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// ★(2026-10-24, the import-as-Source road) The three Apply items. ⚠Not on the flyout: the first two act on the row
+		// the menu was popped over (KCMStoryRowEH stashes it); "Apply All Changes" acts on no row and is popped by a right
+		// click on the section heading (KCMTopPaneEH) - it is offered where the reader is looking at the list.
+		kKCMActionComponentBoss,
+		kKCMChangeRowApplyActionID,
+		kKCMChangeRowApplyMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the row is a change of the imported text (KCMChangeRowCanApply)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// ★(2026-10-24 evening, design 11-3) "Restore from Copy" on a "=" change row - the menu's own row, like the three above.
+		kKCMActionComponentBoss,
+		kKCMChangeRowRestoreCopyActionID,
+		kKCMChangeRowRestoreFromCopyMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// UpdateActionStates greys it unless the row is a "=" of Apply's holding a copy (KCMChangeRowCanRestoreCopy)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMStoryRowApplyActionID,
+		kKCMStoryRowApplyMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// greyed unless the row is a story of the imported text with changes left (KCMStoryRowCanApply)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMApplyAllActionID,
+		kKCMApplyAllMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// greyed unless the Source is an import's copy (KCMHeadingCanApplyAll)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// ★(2026-10-24 night, design 1-8) "Restore All Changes in This Story" on a STORY row of the Story mode - the menu's own
+		//   row, like "Apply All Changes in This Story", which is the import's.
+		kKCMActionComponentBoss,
+		kKCMStoryRowRestoreAllActionID,
+		kKCMStoryRowRestoreAllMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// greyed unless the row holds a text change of two open documents (KCMStoryRowCanRestoreAll)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		// ★(2026-10-25) ACCEPT AND REJECT IN THE TRACK MODE - the eight items of the four scopes, each greyed outside a running
+		//   Track comparison (KCMStoryRefresh.cpp). Not on the flyout: they act on the row, the author or the heading the menu
+		//   was popped over, which a flyout cannot name.
+		kKCMActionComponentBoss,
+		kKCMTrackAcceptChangeActionID,
+		kKCMTrackAcceptChangeMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// greyed unless a Track change row was right-clicked (KCMChangeRowCanResolveTrack)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMTrackRejectChangeActionID,
+		kKCMTrackRejectChangeMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMTrackAcceptStoryActionID,
+		kKCMTrackAcceptStoryMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// greyed unless a Track story row was right-clicked (KCMStoryRowCanResolveTrack)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMTrackRejectStoryActionID,
+		kKCMTrackRejectStoryMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMTrackAcceptAuthorActionID,
+		kKCMTrackAcceptAuthorMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// greyed unless a Track author row was right-clicked (KCMAuthorRowCanResolveTrack)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMTrackRejectAuthorActionID,
+		kKCMTrackRejectAuthorMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMTrackAcceptAllActionID,
+		kKCMTrackAcceptAllMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,	// greyed unless the Track list holds a change (KCMHeadingCanResolveTrack)
+		kInvalidInterfaceID,
+		kSDKDefInvisibleInKBSCEditorFlag,
+
+		kKCMActionComponentBoss,
+		kKCMTrackRejectAllActionID,
+		kKCMTrackRejectAllMenuKey,
+		kOtherActionArea,
+		kNormalAction,
+		kCustomEnabling|kDisableIfLowMem,
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
@@ -2182,6 +2551,13 @@ type KCMStoryChangeCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCM
 // GenericPanelWidget field list as the cell above - no text, no font, no alignment: the drawing
 // code decides all of it (KCMStoryBangView.cpp).
 type KCMStoryBangCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMStoryBangCellBoss) { };
+// The Δ cell of a "=" row Apply This Change put in: an amber "=" drawn by hand (kKCMStoryAppliedSignCellBoss above, 2026-10-24).
+type KCMStoryAppliedSignCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMStoryAppliedSignCellBoss) { };
+// The colour square of a Track AUTHOR row (2026-10-05, kKCMTrackChipCellBoss above).
+type KCMTrackChipCellWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMTrackChipCellBoss) { };
+// The splitter's upper pane, whose handler takes the heading's right click (2026-10-24 evening, kKCMTopPaneBoss above). The
+// field list is GenericPanelWidget's, unchanged.
+type KCMTopPaneWidget(kViewRsrcType) : GenericPanelWidget(ClassID = kKCMTopPaneBoss) { };
 
 // The panel's message area: drawn by hand for the same reason (see kKCMStatusTextWidgetBoss).
 // ⚠The field list is GenericPanelWidget's, NOT StaticMultiLineTextWidget's - gone from the line
@@ -2667,6 +3043,71 @@ resource KCMStoryRowWidget(kKCMStoryChangeRowRsrcID + index_enUS)
 };
 
 // ---------------------------------------------------------------------------------------
+// ★★A ONE-LINE "=" ROW APPLY THIS CHANGE PUT IN (2026-10-24 evening, the author: "when a change goes in and shows =,
+// make the = red"). The change row above, cell for cell and pixel for pixel, with the Δ cell an amber "=" drawn by hand
+// (KCMStoryAppliedSignCellWidget) - the "!" rows' road, since a stock static text draws in one colour.
+// ⚠Its own WidgetID (kKCMStoryAppliedRowWidgetID): the tree recycles by GetWidgetTypeForNode's answer, and a plain
+// change row handed this widget would show an amber "=" it has no business showing (the "!" rows' reason).
+// ---------------------------------------------------------------------------------------
+resource LocaleIndex (kKCMStoryAppliedRowRsrcID)
+{
+	kViewRsrcType,
+	{
+		kWildFS, k_Wild, kKCMStoryAppliedRowRsrcID + index_enUS
+	}
+};
+
+resource KCMStoryRowWidget(kKCMStoryAppliedRowRsrcID + index_enUS)
+{
+	__FILE__, __LINE__,
+	kKCMStoryAppliedRowWidgetID, kPMRsrcID_None,	// WidgetId (★NOT the change row's - see above)
+	kBindLeft | kBindRight,				// Frame binding: follow the list's width
+	Frame(0, 0, 224, kKCMStoryRowHeight),	// Frame (left, top, right, bottom)
+	kTrue, kTrue,						// Visible, Enabled
+	"",									// Panel name
+	{
+		KCMStoryRowCellWidget
+		(
+			kKCMStoryRowUIDWidgetID,		// WidgetId (the change row's left column)
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft,						// Frame binding
+			Frame(24, 1, 64, kKCMStoryRowHeight - 2),	// Frame - the change row's, to the pixel
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+
+		KCMStoryChangeCellWidget
+		(
+			kKCMStoryRowTextWidgetID,		// WidgetId (reused)
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft | kBindRight,			// Frame binding: this is the cell that grows
+			Frame(68, 1, 176, kKCMStoryRowHeight - 2),	// Frame - the change row's
+			kTrue, kTrue,					// Visible, Enabled
+			"",								// Panel name (none)
+			{
+			}
+		),
+
+		// ★THE ONE DIFFERENCE: the Δ cell, an amber "=" drawn by hand.
+		KCMStoryAppliedSignCellWidget
+		(
+			kKCMStoryRowKindWidgetID,		// WidgetId (the same column as every other row's Δ)
+			kPMRsrcID_None,					// RsrcId
+			kBindRight,						// Frame binding: stay at the row's right edge
+			Frame(176, 1, 216, kKCMStoryRowHeight - 2),	// Frame - the change row's
+			kTrue, kTrue,					// Visible, Enabled
+			"",								// Panel name (none)
+			{
+			}
+		),
+	}
+};
+
+// ---------------------------------------------------------------------------------------
 // ★★A RUBY CHANGE ROW - the same row as above, on two lines (2026-08-22).
 //
 // Ruby is set ABOVE the characters it belongs to, and the user asked for it to look like that
@@ -2954,6 +3395,90 @@ resource KCMStoryRowWidget(kKCMStoryBangRowRsrcID + index_enUS)
 			"",								// Panel name (none)
 			{
 			}
+		),
+	}
+};
+
+// ---------------------------------------------------------------------------------------
+// ★★A TRACK MODE AUTHOR ROW (2026-10-05, design 4-1): the top level of the Track Changes list - the author's
+// colour square, the name, and how many changes are theirs. The "!" story row above, cell for cell, with the
+// UID cell a hand-drawn colour square (KCMTrackChipCellWidget) and the Δ cell the story row's stock text.
+// ⚠Its own WidgetID (kKCMTrackAuthorRowWidgetID), for the recycling reason the "!" row gives.
+// ---------------------------------------------------------------------------------------
+resource LocaleIndex (kKCMTrackAuthorRowRsrcID)
+{
+	kViewRsrcType,
+	{
+		kWildFS, k_Wild, kKCMTrackAuthorRowRsrcID + index_enUS
+	}
+};
+
+resource KCMStoryRowWidget(kKCMTrackAuthorRowRsrcID + index_enUS)
+{
+	__FILE__, __LINE__,
+	kKCMTrackAuthorRowWidgetID, kPMRsrcID_None,	// WidgetId (★NOT the story row's - see above)
+	kBindLeft | kBindRight,				// Frame binding: follow the list's width
+	Frame(0, 0, 224, kKCMStoryRowHeight),	// Frame (left, top, right, bottom)
+	kTrue, kTrue,						// Visible, Enabled
+	"",									// Panel name
+	{
+		TreeExpanderWidget
+		(
+			kTreeNodeExpanderWidgetID,		// WidgetId (stock - the base class looks for exactly this)
+			kTreeBranchCollapsedRsrcID,		// RsrcId for collapsed node icon
+			kApplicationRsrcPluginID,		// RsrcPlugin for collapsed node icon
+			kBindNone,						// Frame binding
+			Frame(4, 1, 20, kKCMStoryRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			kTreeBranchExpandedRsrcID,		// RsrcId for expanded node icon
+			kApplicationRsrcPluginID,		// RsrcPlugin for expanded node icon
+			kTrue,							// Cmd-Click expands/collapses children
+			kFalse,							// Scroll to show children when expanded
+			kIconNoCentering,
+			kIconRaisedLook,				// Icon look
+			kFalse							// Draws a well
+		),
+
+		// ★THE AUTHOR'S COLOUR, in the UID column (a story row's UID sits 12px further in under it).
+		KCMTrackChipCellWidget
+		(
+			kKCMStoryRowUIDWidgetID,		// WidgetId (the UID column's - KCMApplyListColumnWidths lays it out)
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft,						// Frame binding: stay at the row's left edge
+			Frame(24, 1, 64, kKCMStoryRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			"",								// Panel name (none)
+			{
+			}
+		),
+
+		KCMStoryRowCellWidget
+		(
+			kKCMStoryRowTextWidgetID,		// WidgetId
+			kPMRsrcID_None,					// RsrcId
+			kBindLeft | kBindRight,			// Frame binding: take the space the kind cell leaves
+			Frame(68, 1, 154, kKCMStoryRowHeight - 2),	// Frame
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignLeft,						// Alignment
+			kEllipsizeMiddle, kFalse,		// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
+		),
+
+		// The Δ column: how many changes are this author's - the story row's own stock cell.
+		KCMStoryRowCellWidget
+		(
+			kKCMStoryRowKindWidgetID,		// WidgetId
+			kPMRsrcID_None,					// RsrcId
+			kBindRight,						// Frame binding: stay at the row's right edge
+			Frame(154, 1, 216, kKCMStoryRowHeight - 2),	// Frame (the story row's)
+			kTrue, kTrue,					// Visible, Enabled
+			kAlignRight,					// Alignment
+			kDontEllipsize, kFalse,			// Ellipsize style, Convert ampersands
+			"",								// Text Control Data
+			0,								// WidgetId for associated control for shortcut focus
+			kPaletteWindowSystemScriptFontId, kPaletteWindowSystemScriptFontId,
 		),
 	}
 };
@@ -3256,7 +3781,9 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		kDrawXORSplitter,
 	#endif
 		{
-			GenericPanelWidget
+			// ★A KCMTopPaneWidget since 2026-10-24 evening - a GenericPanelWidget whose handler takes the section heading's
+			//   right click (kKCMTopPaneBoss). The fields are GenericPanelWidget's.
+			KCMTopPaneWidget
 			(
 				kKCMTopPaneWidgetID, kPMRsrcID_None,
 				kBindAll,
@@ -3530,6 +4057,8 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 		//   used, and one more would push `failed=N` out of the box. It also means the count stays
 		//   readable while the section is closed.
 		// ★The binding matches the expander's, kBindLeft | kBindTop (the reason is in its comment).
+		// ★Its right click ("Apply All Changes" against an import's copy, 2026-10-24 evening) is the upper pane's to take: a
+		//   static text is handed no mouse event (kKCMTopPaneBoss).
 		StaticTextWidget
 		(
 			kKCMStorySectionLabelWidgetID,
@@ -3678,9 +4207,10 @@ resource KCMPanelWidget(kSDKDefPanelResourceID + index_enUS)
 						kKCMStoryRowHeight,			// fVThumbScrollIncrement
 						kKCMStoryRowHeight,			// fHScrollButtonIncrement (unused, no H bar)
 						kKCMStoryRowHeight,			// fHThumbScrollIncrement
-						1,								// Items selectable: 1 = single selection
-						kFalse,							// Allow children from multiple parents to be selected
-						kFalse,							// Allow discontiguous selection
+						2,								// Items selectable: 2 = multiple selection - change rows together (2026-10-24
+														// night; KCMStoryTreeController.cpp sets the same three again)
+						kTrue,							// Allow children from multiple parents: the change rows of two stories
+						kTrue,							// Allow discontiguous selection: Ctrl+click
 						{
 						},
 					),

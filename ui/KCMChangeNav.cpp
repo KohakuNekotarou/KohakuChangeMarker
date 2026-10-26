@@ -101,6 +101,7 @@ struct KCMNavStop
 	int32		storyRow;			// the row number in KCMStoryList (the vocabulary the facade is given)
 	int32		storyChange;		// which change of that row; -1 = the row itself, which has no children
 	UID			storyUID;			// which story it is, for finding it again (see sNavStoryUID below)
+	PMString	storyAuthor;		// ...and whose, in the Track mode (one story is one row per author there, 2026-10-05)
 
 	KCMNavStop() : pageUID(kInvalidUID),
 					 isStory(kFalse), storyRow(-1), storyChange(-1), storyUID(kInvalidUID) {}
@@ -121,6 +122,7 @@ static bool16 sNavIsStory     = kFalse;
 static UID    sNavStoryUID    = kInvalidUID;
 static int32  sNavStoryRow    = -1;
 static int32  sNavStoryChange = -1;
+static PMString sNavStoryAuthor;		// the Track mode's author of that row; empty in every other mode (2026-10-05)
 
 // "Standing at the entrance" means THE WALK HAS NOT YET GONE to the stop the anchor above points
 // at. It happens only when a parent row with children was selected: such a row is not a stop
@@ -208,6 +210,7 @@ static void KCMBuildStops(std::vector<KCMNavStop>& out)
 			s.storyRow    = storyStops[i].fRow;
 			s.storyChange = storyStops[i].fChange;
 			s.storyUID    = storyStops[i].fStoryUID;
+			s.storyAuthor = storyStops[i].fAuthorName;
 			out.push_back(s);
 		}
 	}
@@ -283,7 +286,7 @@ static int32 KCMFindCurrentStop(const std::vector<KCMNavStop>& stops)
 			// Story Comparison" rebuilds one row's children and leaves the order alone
 			// (IKCMStoryEditsFacade::RefreshRow says so).
 			if (stops[i].storyUID == sNavStoryUID && stops[i].storyRow == sNavStoryRow &&
-				stops[i].storyChange == sNavStoryChange)
+				stops[i].storyChange == sNavStoryChange && stops[i].storyAuthor == sNavStoryAuthor)
 				return (int32)i;
 			continue;
 		}
@@ -1058,7 +1061,7 @@ void KCMGotoPrevChange() { KCMGoto(-1); }
 //========================================================================================
 // KCMGotoStoryFrame (declared in KCMChangeNav.h)
 //========================================================================================
-bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
+bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID, UID sourceStoryUID,
 	TextIndex focusIndex, TextIndex sourceFocusIndex, const PBPMPoint* oversetPb,
 	bool16 focusIsCaret, bool16 sourceFocusIsCaret)
 {
@@ -1122,8 +1125,11 @@ bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 	// CARRIES THE STORY UID OVER (measured; the section "WHY TWO VERSIONS CAN BE MATCHED AT ALL"
 	// in KCMStoryStamp.h). A story with no counterpart on the Source -- an Added row -- comes back
 	// as kInvalidUID, and then only the Target moves.
+	// ★★AND THE STORY IT IS LINED UP ON IS THE ROW'S SOURCE STORY (2026-10-26, stories paired by place - KCMChangeNav.h):
+	//   storyUID itself for every row paired by UID, the Source's own story for a row paired by the place of its first
+	//   frame. kInvalidUID (an Added row) leaves the Source window where it is.
 	IDataBase* sourceDB = marks->GetMarkedSourceDB();
-	if (sourceDB != nil && sourceDB != db && storyUID != kInvalidUID)
+	if (sourceDB != nil && sourceDB != db && sourceStoryUID != kInvalidUID)
 	{
 		// THE OLD SIDE NEEDS A DIRTY GUARD OF ITS OWN. Passing sourceFocusIndex can bring THE OLD
 		// DOCUMENT'S COMPOSITION up to date, in order to produce that character's position and the
@@ -1135,7 +1141,7 @@ bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 		// does nothing.
 		IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
 
-		UID srcFrame = Utils<IKCMStoryEditsFacade>()->GetFirstFrameUID(sourceDB, storyUID);
+		UID srcFrame = Utils<IKCMStoryEditsFacade>()->GetFirstFrameUID(sourceDB, sourceStoryUID);
 
 			// THE OLD SIDE ALSO ASKS FOR "THE FRAME CONTAINING THE CHANGE".
 			// GetFirstFrameUID above returns THE STORY'S FIRST FRAME, which is right when what the
@@ -1153,8 +1159,8 @@ bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 			// A gap (an insertion, seen from here) is asked as a gap - the same distinction the point
 			// below makes, so that the two readings are of one place (KCMChangeNav.h on focusIsCaret).
 			const UID srcFocusFrame = sourceFocusIsCaret
-				? Utils<IKCMStoryEditsFacade>()->GetCaretFrameAt(sourceDB, storyUID, sourceFocusIndex)
-				: Utils<IKCMStoryEditsFacade>()->GetStoryFrameAt(sourceDB, storyUID, sourceFocusIndex);
+				? Utils<IKCMStoryEditsFacade>()->GetCaretFrameAt(sourceDB, sourceStoryUID, sourceFocusIndex)
+				: Utils<IKCMStoryEditsFacade>()->GetStoryFrameAt(sourceDB, sourceStoryUID, sourceFocusIndex);
 			if (srcFocusFrame != kInvalidUID)
 				srcFrame = srcFocusFrame;
 		}
@@ -1188,7 +1194,7 @@ bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
 					// fSourceStart (the start of an empty range, i.e. where the caret goes) now
 					// arrives for it too, so nothing branches here.
 				UID srcLanded = kInvalidUID;
-				KCMScrollDocToStoryStart(sourceDB, storyUID, srcFrame, srcLanded, KCMReadDocZoom(db),
+				KCMScrollDocToStoryStart(sourceDB, sourceStoryUID, srcFrame, srcLanded, KCMReadDocZoom(db),
 										   sourceFocusIndex, sourceFocusIsCaret);
 				if (srcLanded != kInvalidUID)
 					srcFrame = srcLanded;
@@ -1242,6 +1248,12 @@ void KCMNoteStoryStop(int32 rowIndex, int32 changeIndex)
 
 	sNavIsStory    = kTrue;
 	sNavStoryUID   = row.fStoryUID;
+	{
+		IKCMStoryEditsFacade::TrackAuthor au;
+		const int32 a = edits->GetTrackAuthorOfRow(rowIndex);
+		sNavStoryAuthor = (a >= 0 && edits->GetTrackAuthor(a, au)) ? au.fName : PMString();
+		sNavStoryAuthor.SetTranslatable(kFalse);
+	}
 	sNavStoryRow   = rowIndex;		// identified together with the UID (KCMFindCurrentStop explains
 									// why all three are checked)
 	sNavPageUID    = kInvalidUID;	// the page-side anchor is not carried over
@@ -1283,6 +1295,7 @@ void KCMResetNav()
 	//   A ROW WHOSE UID HAPPENS TO MATCH -- the same shape of defect the note above describes for
 	//   page UIDs.
 	sNavIsStory = kFalse; sNavStoryUID = kInvalidUID; sNavStoryRow = -1; sNavStoryChange = -1;
+	sNavStoryAuthor.Clear();
 	sNavStoryAtEntry = kFalse;
 }
 

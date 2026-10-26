@@ -152,7 +152,8 @@ bool16 KCMScratchDoc::ImportSnippet(const std::string& snippet, std::vector<UIDR
 	std::set<uint32> before;
 	CollectDescendants(db, spreadUID, before);
 
-	// The snippet's bytes, read from memory - the same stream KCMPdfSpike's SnippetOnePageInto reads.
+	// The snippet's bytes, read from memory - the same stream the PDF spike's SnippetOnePageInto read
+	// (KCMPdfSpike.cpp, removed before shipping on 2026-10-02; in git at 5720208).
 	KCMMemXferBytes bytes;
 	FillBytes(snippet, bytes);
 	InterfacePtr<IPMStream> read(StreamUtil::CreateMemoryStreamRead(&bytes, kFalse, kFalse));

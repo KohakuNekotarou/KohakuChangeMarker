@@ -133,4 +133,11 @@ void	KCMDetachPanelVisibilityObserver();
 // Defined in KCMPanelAlpha.cpp (empty on the Mac).
 void	KCMShutdownPanelAlpha();
 
+// Is the window the SYSTEM sends the keys to in the panel's own window (2026-10-24 night, KFC's KFCPanelHasSystemKeyboard)?
+// The root of ::GetFocus() against the root of the panel's palette window (KCMQueryPaletteWindow - the one the
+// translucency aims at). InDesign's keyboard holder is not the whole answer: a click on another window's title bar moves
+// the system's keyboard and leaves InDesign's on the list (memory ikeyboard-holder-vs-system-keyboard). kFalse when either
+// window cannot be had; kTrue on the Mac, which has no second keyboard to ask.
+bool16	KCMPanelHasSystemKeyboard();
+
 #endif // __KCMPanelAlpha_h__

@@ -23,7 +23,7 @@
 #include "FileUtils.h"			// DoesFileExist / IsEqual -- what a file choice is asked
 #include "IGlobalRecompose.h"		// ForceRecompositionToComplete -- a document just opened is not composed
 #include "ErrorUtils.h"			// GlobalErrorStatePreserver -- an open that may fail must not poison the next command
-#include "PersistUtils.h"			// ::GetUIDRef
+#include "PersistUtils.h"			// ::GetUIDRef / ::GetDataBase
 #include "PMString.h"
 #include "SDKFileHelper.h"		// GetPath -- a file choice shows its path on the panel
 #include "SDKLayoutHelper.h"		// OpenDocument / OpenLayoutWindow -- the SDK's own recipe
@@ -33,6 +33,8 @@
 #include "KCMPairChoice.h"
 #include "KCMCore.h"				// KCMActiveDoc / KCMActiveDocDB / KCMArmedSourceDB
 #include "KCMExternalSource.h"	// the lent Source: KCMIsExternalSource / KCMForgetExternalSource / KCMIsDbAlive
+#include "KCMTaskStartClone.h"	// a Task Start kept in memory goes when the Source choice leaves it (2026-10-13)
+#include "KCMPdfDoc.h"			// a PDF end is made into a document, not opened (2026-10-14)
 
 //----------------------------------------------------------------------------------------
 // The slots
@@ -65,6 +67,20 @@ static IDFile sChosenTargetFile;
 static IDFile sChosenSourceFile;
 static bool16 sTargetIsFile = kFalse;
 static bool16 sSourceIsFile = kFalse;
+
+/*	★THE SOURCE CHOICE LEAVES A TASK START KEPT IN MEMORY (2026-10-13, the user: "throw the clone away properly -
+	when the Source changes"). Every setter of the Source slot is in this file, so the question is asked here, at
+	the head of each of them, and nowhere else ([[one-question-one-place]]). ⚠KCMChooseDBPair forgets no lent
+	registration of its own - "Compare with Tracked Changes..." goes through it - so without this the clone would
+	outlive its choice there.
+	⚠KCMForgetChosenSourceIfDB does not ask: KCMLetGoTaskStartClone itself calls it.
+	@param arriving what the slot is about to hold (nil for a file or for nothing).
+	@param stopIfDrawing kFalse only from KCMClearChosenDocs (the model's shutdown too). */
+static void KCMSourceChoiceLeaves(IDataBase* arriving, bool16 stopIfDrawing)
+{
+	if (sChosenSourceDB != nil && sChosenSourceDB != arriving && KCMIsTaskStartClone(sChosenSourceDB))
+		KCMLetGoTaskStartClone(stopIfDrawing);
+}
 
 /*	Does a chosen file still exist?
 	★**THIS RUNS EVERY TIME THE FLYOUT IS OPENED** (through KCMCanStartComparison), so it asks the
@@ -208,26 +224,26 @@ bool16 KCMResolveComparisonPair(KCMPairEnd& outTarget, KCMPairEnd& outSource)
 
 /*	The open document whose file is this one, or nil when no open document has it.
 
-	★**IDENTITY IS ASKED OF GetSysFile THROUGH FileUtils::IsEqual, NEVER OF THE PATH STRING** -
-	  the same door KCMIsSameDoc uses (KCMThreadSafety.cpp). One file can be spelled two ways.
+	★**ASKED OF THE DOCUMENT LIST ITSELF** - IDocumentList::FindDoc(const IDFile&), "search to see
+	  if one (whatFile) is already open" (IDocumentList.h:64-69). It takes the IDFile, never the
+	  path string (one file can be spelled two ways), and it is how this plug-in's book comparison
+	  asks the same question (KCMBookCompare.cpp, ui/KCMBookOpen.cpp - and KBS's KBSBookScope.cpp).
+	  Until 2026-09-27 this walked GetNthDoc and compared each GetSysFile with FileUtils::IsEqual by
+	  hand: the same question answered a second way inside one plug-in (re-audit M16).
+	⚠**THE ANSWER IS STILL CHECKED** against the file asked for, with the same FileUtils::IsEqual:
+	  FindDoc's comparison rule is not published, and a lookup's answer trusted unchecked is how KBS
+	  once took the wrong chapter (api-official-examples.md, the FindDoc row). The book comparison
+	  checks the same way, by path (KCMBookCompare.cpp, DocumentLivesInFile).
 */
-static IDataBase* KCMOpenDocOnFile(const IDFile& file)
+IDataBase* KCMOpenDocOnFile(const IDFile& file)
 {
 	ISession* const session = GetExecutionContextSession();
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
-	if (docList == nil)
-		return nil;
-	const int32 n = docList->GetDocCount();
-	for (int32 i = 0; i < n; ++i)
-	{
-		IDocument* const d = docList->GetNthDoc(i);
-		IDataBase* const db = (d != nil) ? ::GetUIDRef(d).GetDataBase() : nil;
-		const IDFile* const f = (db != nil) ? db->GetSysFile() : nil;
-		if (f != nil && FileUtils::IsEqual(*f, file))
-			return db;
-	}
-	return nil;
+	IDocument* const doc = (docList != nil) ? docList->FindDoc(file) : nil;
+	IDataBase* const db = (doc != nil) ? ::GetDataBase(doc) : nil;
+	const IDFile* const f = (db != nil) ? db->GetSysFile() : nil;
+	return (f != nil && FileUtils::IsEqual(*f, file)) ? db : nil;
 }
 
 bool16 KCMRealisePairEnd(const KCMPairEnd& end, IDataBase*& outDB, PMString& why)
@@ -255,6 +271,12 @@ bool16 KCMRealisePairEnd(const KCMPairEnd& end, IDataBase*& outDB, PMString& why
 		why.Append(helper.GetPath());
 		return kFalse;
 	}
+
+	// ★A PDF IS NOT OPENED - A DOCUMENT IS MADE OF IT (2026-10-14, the PDF comparison: KCMPdfDoc.h). Asked of the file's
+	//   first bytes, never of its name. After the two tests above: no document is ever open ON a PDF's file (the one made
+	//   from it is unsaved), and a PDF that has gone is named in the words above.
+	if (KCMFileIsPdf(end.fFile))
+		return KCMRealisePdfEnd(end.fFile, outDB, why);
 
 	// ⚠An open that is allowed to fail must not poison the caller's next command.
 	GlobalErrorStatePreserver openErrorState;
@@ -330,6 +352,7 @@ bool16 KCMSetChosenSourceToActive()
 	IDataBase* db = KCMActiveDocDB();
 	if (db == nil)
 		return kFalse;
+	KCMSourceChoiceLeaves(db, kTrue);
 	// A real document replaces the lent Source. Its registration goes with it -- unless a
 	// comparison is still drawing from it, in which case the lender's Release ends it later
 	// (KCMExternalSource.h: registered while chosen OR armed).
@@ -350,6 +373,7 @@ void KCMSetChosenTargetDB(IDataBase* db)
 
 void KCMChooseDBPair(IDataBase* targetDB, IDataBase* sourceDB)
 {
+	KCMSourceChoiceLeaves(sourceDB, kTrue);
 	sChosenTargetDB = targetDB;
 	sChosenSourceDB = sourceDB;
 	sTargetIsFile = kFalse;		// ★one end, one kind of choice
@@ -387,6 +411,7 @@ void KCMSetChosenTargetFile(const IDFile& file)
 
 void KCMSetChosenSourceFile(const IDFile& file)
 {
+	KCMSourceChoiceLeaves(nil, kTrue);
 	// A file replaces whatever stood on this end, of whichever kind - the same courtesies "Set as
 	// Source" pays when a document replaces them.
 	if (KCMIsExternalSource(sChosenSourceDB) && KCMArmedSourceDB() != sChosenSourceDB)
@@ -463,6 +488,8 @@ void KCMForgetChosenDocsThatClosed(IDocumentList* docList)
 // safe at any point in the shutdown sequence.
 void KCMClearChosenDocs()
 {
+	// ★kFalse: this is the model's shutdown as well as "Clear Target and Source" (which stops first itself).
+	KCMSourceChoiceLeaves(nil, kFalse);
 	sChosenTargetDB = nil;
 	sChosenSourceDB = nil;
 	KCMForgetExternalSource();	// the lent Source is a choice too, and this is the shutdown slot for choices

@@ -43,30 +43,23 @@
 #include "VCPlugInHeaders.h"
 
 // Interface includes:
-#include "IGraphicsPort.h"
 #include "IInterfaceColors.h"	// RealAGMColor, InterfaceColor indices
 #include "IInterfaceFonts.h"	// the palette window font
 
 // General includes:
-#include "AGMGraphicsContext.h"
-#include "AutoGSave.h"
 #include "CPMUnknown.h"
-#include "DVControlView.h"
-#include "DrawStringUtils.h"	// StringUtils::PMDrawStringRGB / PMMeasureString
-#include "DVPublicUtilities.h"	// dv_utils::FontInfoGetDVAFontMetrics - the font's own ascent/descent
+#include "DVAPublicIncludes.h"	// dvaui::drawbot - what DV_Draw is handed
 #include "ISession.h"			// GetExecutionContextSession
-#include "IWidgetUtils.h"		// GetViewYPosition - only for the fallback when the metrics are refused
 #include "ShuksanID.h"			// kPaletteWindowSystemScriptFontId
-#include "Utils.h"				// Utils<IWidgetUtils>()
 #include "WidgetDefs.h"			// EllipsizeStyle (kEllipsizeEnd) - only the reading is ever ellipsized here
 
 // Project includes:
 #include "IKCMStatusTextData.h"
 #include "KCMUIID.h"
-#include "KCMKentenMark.h"	// the emphasis marks - the SAME drawing the change row uses
+#include "KCMKentenMark.h"	// the emphasis marks - the SAME drawing the change row uses - and KCMMarkPassView, this box's base
 #include "KCMStoryKinds.h"	// kKCMStoryAttrKenten - which attribute the upper line belongs to
 #include "KCMLayerDraw.h"	// a warichu / tate-chu-yoko message, drawn in layers (shared with the change row)
-#include "KCMPanelTextDraw.h"	// kKCMContextTextWeight, KCMBlendColor - shared with the row cell
+#include "KCMPanelTextDraw.h"	// the drawbot draws, measure and font line, kKCMContextTextWeight, KCMBlendColor - shared with the row cell
 
 // Std includes:
 #include <vector>
@@ -177,13 +170,6 @@ PMString KCMEllipsis()
 	return s;
 }
 
-PMReal KCMWidth(IGraphicsContext* gc, const PMString& s, const InterfaceFontInfo& font)
-{
-	if (s.IsEmpty())
-		return PMReal(0.0);
-	return StringUtils::PMMeasureString(gc, s, font, kKCMDontConvertAmpersand).X();
-}
-
 /* KCMFitCount
    How many characters from the front of s fit in `room`.
 
@@ -191,20 +177,19 @@ PMReal KCMWidth(IGraphicsContext* gc, const PMString& s, const InterfaceFontInfo
    turn would be one measurement cheaper but would ignore the spacing a font puts BETWEEN glyphs,
    and the error accumulates along the line. A binary search over prefixes asks the same question
    the drawing will ask, about six times per line. */
-int32 KCMFitCount(IGraphicsContext* gc, const InterfaceFontInfo& font,
-					const PMString& s, const PMReal& room)
+int32 KCMFitCount(const InterfaceFontInfo& font, const PMString& s, const PMReal& room)
 {
 	const int32 total = s.CharCount();
 	if (total <= 0 || room <= PMReal(0.0))
 		return 0;
-	if (KCMWidth(gc, s, font) <= room)
+	if (KCMDrawnWidth(s, font) <= room)
 		return total;
 
 	int32 lo = 0, hi = total;
 	while (lo < hi)
 	{
 		const int32 mid = (lo + hi + 1) / 2;
-		if (KCMWidth(gc, KCMHead(s, mid), font) <= room)
+		if (KCMDrawnWidth(KCMHead(s, mid), font) <= room)
 			lo = mid;
 		else
 			hi = mid - 1;
@@ -239,7 +224,7 @@ bool16 KCMAnythingLeft(const std::vector<KCMRun>& runs, size_t atRun, const PMSt
 		thing a long path offers;
 	 3. a wrapped line never starts with the space it was broken at. (A line the TEXT broke keeps
 		its spaces: those are the author's.) */
-bool16 KCMLayoutRuns(IGraphicsContext* gc, const InterfaceFontInfo& font,
+bool16 KCMLayoutRuns(const InterfaceFontInfo& font,
 					   const std::vector<KCMRun>& runs, const PMReal& availWidth,
 					   int32 maxLines, std::vector<KCMFrag>& out)
 {
@@ -276,7 +261,10 @@ bool16 KCMLayoutRuns(IGraphicsContext* gc, const InterfaceFontInfo& font,
 			}
 
 			// (3) The space a wrap broke at does not start the next line.
-			if (justWrapped && rest.GetChar(0).IsSpace())
+			// ★EXCEPT THE BAR'S ROOM (2026-10-02, brought over from KBS's fix of 2026-09-29): the bar stands
+			//   in one space (KCMCaretPlaceholder), and a bar that fell at the head of a wrapped line was
+			//   thrown away as "the space the wrap broke at" - the place it marks vanished.
+			if (justWrapped && !isCaret && rest.GetChar(0).IsSpace())
 			{
 				rest.Remove(0, 1);
 				continue;
@@ -296,7 +284,7 @@ bool16 KCMLayoutRuns(IGraphicsContext* gc, const InterfaceFontInfo& font,
 			const PMString chunk = (breakAt < 0) ? rest : KCMHead(rest, breakAt);
 
 			const PMReal room = availWidth - x;
-			int32 fit = KCMFitCount(gc, font, chunk, room);
+			int32 fit = KCMFitCount(font, chunk, room);
 
 			if (fit >= chunk.CharCount())
 			{
@@ -304,7 +292,7 @@ bool16 KCMLayoutRuns(IGraphicsContext* gc, const InterfaceFontInfo& font,
 				if (!chunk.IsEmpty())
 				{
 					out.push_back(KCMFrag(chunk, faded, isChange, isCaret, line, x));
-					x += KCMWidth(gc, chunk, font);
+					x += KCMDrawnWidth(chunk, font);
 				}
 				rest = (breakAt < 0) ? PMString() : KCMTail(rest, breakAt);	// leave the break itself
 				justWrapped = kFalse;
@@ -487,26 +475,25 @@ CREATE_PMINTERFACE(KCMStatusTextData, kKCMStatusTextDataImpl)
 // KCMStatusTextView - the self-drawing message area
 //----------------------------------------------------------------------------------------
 
-/** Implements IControlView: wraps the message into the box and draws it in up to two colours. */
-class KCMStatusTextView : public DVControlView
+/** Implements IControlView: wraps the message into the box and draws it in up to two colours.
+	★IN DV_Draw, BY DROVER (2026-10-24 - KCMPanelTextDraw.h's kKCMTextSmoothing says why); a kenten's shapes are
+	painted by KCMMarkPassView's AGM pass, run before any text is drawn. */
+class KCMStatusTextView : public KCMMarkPassView
 {
-	typedef DVControlView inherited;
+	typedef KCMMarkPassView inherited;
 public:
 	KCMStatusTextView(IPMUnknown* boss) : inherited(boss) {}
 	virtual ~KCMStatusTextView() {}
 
-	virtual void Draw(IViewPort* viewPort, SysRgn updateRgn);
+	virtual void DV_Draw(dvaui::drawbot::Drawbot* drawbotP) const;
 };
 
 CREATE_PERSIST_PMINTERFACE(KCMStatusTextView, kKCMStatusTextViewImpl)
 
-void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
+void KCMStatusTextView::DV_Draw(dvaui::drawbot::Drawbot* drawbotP) const
 {
-	AGMGraphicsContext gc(viewPort, this, updateRgn);
-	InterfacePtr<IGraphicsPort> gPort(gc.GetViewPort(), UseDefaultIID());
-	if (gPort == nil)
+	if (drawbotP == nil)
 		return;
-	AutoGSave gSave(gPort);
 
 	InterfacePtr<IKCMStatusTextData> data(this, UseDefaultIID());
 	if (data == nil)
@@ -567,27 +554,15 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	//   same 17.9px measurement: memory palette-font-line-height-by-ui-language). Measuring a
 	//   string answers "how tall is this ink", which is a different question from "how far to the
 	//   next line".
-	// ★The fallback is the measured string, so a font whose metrics are refused still draws
-	//   something readable rather than nothing.
+	// ⚠A FONT WHOSE METRICS ARE REFUSED DRAWS NOTHING (2026-10-24, the DV_Draw port - KFC's message
+	//   area's rule): drover answers the metrics and every width below alike, so a font it does not
+	//   know could not be laid out either. (The AGM-drawn box fell back on a measured "Ag" and an
+	//   AGM baseline.)
 	PMReal lineHeight(0.0);
 	PMReal ascent(0.0);
-	bool16 haveMetrics = kFalse;
-	{
-		float fontSize = 0.0f, fontAscent = 0.0f, fontDescent = 0.0f, fontLeading = 0.0f;
-		if (dv_utils::FontInfoGetDVAFontMetrics(fontInfo, &fontSize, &fontAscent, &fontDescent, &fontLeading))
-		{
-			lineHeight = PMReal(fontAscent + fontDescent + fontLeading);
-			ascent = PMReal(fontAscent);
-			haveMetrics = (lineHeight > PMReal(0.0));
-		}
-	}
-	if (!haveMetrics)
-	{
-		lineHeight = StringUtils::PMMeasureString(&gc, PMString("Ag"), fontInfo, kKCMDontConvertAmpersand).Y();
-		if (lineHeight <= PMReal(0.0))
-			return;
-		ascent = Utils<IWidgetUtils>()->GetViewYPosition(&gc, fontInfo, lineHeight);
-	}
+	PMReal descent(0.0);
+	if (!KCMFontLine(fontInfo, lineHeight, ascent, descent))
+		return;
 
 	// ★★A READING COSTS ONE LINE OF THE BOX, AND IT IS TAKEN OUT HERE (2026-08-22) - before the
 	//   wrapping, so that everything downstream (the two binary searches that give the context away,
@@ -644,8 +619,7 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 			return frame.Top() + ascent + lineHeight * PMReal(row);
 		};
 		if (firstRow == 1)
-			StringUtils::PMDrawStringRGB(&gc, PMPoint(frame.Left(), baselineOfRow(0)), label, fontInfo,
-										 kChangeColor, kKCMDontConvertAmpersand, kKCMNoUnderline);
+			KCMDrawAtBaseline(drawbotP, frame.Left(), baselineOfRow(0), label, fontInfo, kChangeColor);
 
 		KCMLayerCanvas canvas;
 		canvas.fLeft = frame.Left();
@@ -659,14 +633,14 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 			canvas.fBaseline[level] = baselineOfRow(row);
 			canvas.fTop[level] = canvas.fBaseline[level] - ascent;
 		}
-		KCMDrawLayers(gc, gPort, fontInfo, layers, canvas);
+		KCMDrawLayers(drawbotP, fontInfo, layers, canvas);
 		return;
 	}
 
 	// ---- lay the message out, giving the context away first if it does not fit ----------------
 
 	std::vector<KCMFrag> frags;
-	if (!KCMLayoutRuns(&gc, fontInfo, KCMMakeRuns(label, pre, mid, post, wantCaret), availWidth, maxLines, frags))
+	if (!KCMLayoutRuns(fontInfo, KCMMakeRuns(label, pre, mid, post, wantCaret), availWidth, maxLines, frags))
 	{
 		// ★frags now holds as much of the whole message as the box could take. It is kept as the
 		//   last resort below, so nothing here has to succeed for something to be drawn.
@@ -690,7 +664,7 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 			{
 				const int32 keep = lo + (hi - lo) / 2;
 				std::vector<KCMFrag> trial;
-				if (KCMLayoutRuns(&gc, fontInfo, build(keep), availWidth, maxLines, trial))
+				if (KCMLayoutRuns(fontInfo, build(keep), availWidth, maxLines, trial))
 				{
 					best.swap(trial);
 					any = kTrue;
@@ -761,7 +735,7 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 				continue;
 			rubyLine  = frags[i].fLine;
 			rubyBaseX = frags[i].fX;
-			rubyBaseW = KCMWidth(&gc, frags[i].fText, fontInfo);
+			rubyBaseW = KCMDrawnWidth(frags[i].fText, fontInfo);
 			rubyBaseChars = frags[i].fText.CharCount();
 			break;
 		}
@@ -778,10 +752,38 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		return baseline0 + lineHeight * PMReal(shifted);
 	};
 
+	// The reading's own line - the gap lineOf opens (unshifted, so it is the line the reading sits on).
+	const PMReal rubyBaseline = baseline0 + lineHeight * PMReal(rubyLine);
+
+	// ★★A KENTEN IS DRAWN HERE EXACTLY AS IT IS IN THE LIST - same function, same rules (user's
+	//   call, 2026-09-01: "the source text should show it the way ruby does, and use the same
+	//   code"). This box shows the OTHER version, so it is where a mark that was REMOVED can be
+	//   seen at all - the row itself shows the newer version, where there is nothing left.
+	// ★PLANNED HERE, ITS SHAPES PAINTED BEFORE ANY TEXT (2026-10-24, the DV_Draw port): the shapes are
+	//   an AGM pass that has to run first (KCMMarkPassView), and the wrapping has already decided
+	//   where they go.
+	KCMKentenMark::Marks marks;
+	const bool16 kentenPlanned =
+		(rubyLine >= 0 && !ruby.IsEmpty() && attrKind == static_cast<int32>(kKCMStoryAttrKenten))
+		? KCMKentenMark::PlanOverRun(fontInfo, ruby,
+									 frame.Left() + rubyBaseX, rubyBaseW, rubyBaseChars,
+									 lineHeight,
+									 // ⚠THE MARKS' CENTRE, WORKED OUT HERE. A text baseline sits
+									 //   near the BOTTOM of its line, so a shape centred on it
+									 //   would hang into the characters below; the middle of the
+									 //   line is about a third of a line-height above it.
+									 //   ★This box has MANY lines, which is why the function
+									 //   cannot work this out for itself (KCMKentenMark.h).
+									 rubyBaseline - lineHeight * PMReal(0.33),
+									 frame.Right(), kChangeColor, marks)
+		: kFalse;
+	this->PaintMarks(drawbotP, marks);
+
 	for (size_t i = 0; i < frags.size(); ++i)
 	{
 		const KCMFrag& f = frags[i];
-		const PMPoint at(frame.Left() + f.fX, lineOf(f.fLine));
+		const PMReal fx = frame.Left() + f.fX;
+		const PMReal baseline = lineOf(f.fLine);
 
 		// ★**A PLACE WITH NOTHING IN IT IS DRAWN, NOT WRITTEN** (2026-09-08) - an insertion seen from
 		//   this box has no characters on the older side, and the bar is what says where they went in.
@@ -791,14 +793,12 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 			// ⚠UNDER A MARK'S LINE the bar keeps a pixel clear at each end, so that it and a bar
 			//   above it read as two rather than as one tall line.
 			const PMReal inset = markLine ? PMReal(1.0) : PMReal(0.0);
-			KCMDrawCaret(gPort, kChangeColor, at.X(), KCMWidth(&gc, f.fText, fontInfo),
-						 at.Y() - ascent + inset, lineHeight - inset - inset);
+			KCMDrawCaret(drawbotP, kChangeColor, fx, KCMDrawnWidth(f.fText, fontInfo),
+						 baseline - ascent + inset, lineHeight - inset - inset);
 			continue;
 		}
 
-		StringUtils::PMDrawStringRGB(&gc, at, f.fText, fontInfo,
-									 f.fFaded ? kContextColor : kChangeColor,
-									 kKCMDontConvertAmpersand, kKCMNoUnderline);
+		KCMDrawAtBaseline(drawbotP, fx, baseline, f.fText, fontInfo, f.fFaded ? kContextColor : kChangeColor);
 	}
 
 	if (rubyLine >= 0)
@@ -807,36 +807,21 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		//   characters, or over the lower bar when this side has none.
 		if (ruby.IsEmpty())
 		{
-			KCMDrawCaret(gPort, kChangeColor, frame.Left() + rubyBaseX, rubyBaseW,
-						 baseline0 + lineHeight * PMReal(rubyLine) - ascent + PMReal(1.0),
-						 lineHeight - PMReal(2.0));
+			KCMDrawCaret(drawbotP, kChangeColor, frame.Left() + rubyBaseX, rubyBaseW,
+						 rubyBaseline - ascent + PMReal(1.0), lineHeight - PMReal(2.0));
 			return;
 		}
 
-		// ★★A KENTEN IS DRAWN HERE EXACTLY AS IT IS IN THE LIST - same function, same rules (user's
-		//   call, 2026-09-01: "the source text should show it the way ruby does, and use the same
-		//   code"). This box shows the OTHER version, so it is where a mark that was REMOVED can be
-		//   seen at all - the row itself shows the newer version, where there is nothing left.
-		if (attrKind == static_cast<int32>(kKCMStoryAttrKenten) &&
-			KCMKentenMark::DrawOverRun(gc, gPort, fontInfo, ruby,
-									   frame.Left() + rubyBaseX, rubyBaseW, rubyBaseChars,
-									   lineHeight,
-									   // ⚠THE MARKS' CENTRE, WORKED OUT HERE. A text baseline sits
-									   //   near the BOTTOM of its line, so a shape centred on it
-									   //   would hang into the characters below; the middle of the
-									   //   line is about a third of a line-height above it.
-									   //   ★This box has MANY lines, which is why the function
-									   //   cannot work this out for itself (KCMKentenMark.h).
-									   baseline0 + lineHeight * PMReal(rubyLine)
-											 - lineHeight * PMReal(0.33),
-									   baseline0 + lineHeight * PMReal(rubyLine),
-									   frame.Right(), kChangeColor))
+		// A kenten: its shapes went in above; a CUSTOM mark is written here, in the line's box.
+		if (kentenPlanned)
 		{
+			KCMKentenMark::WriteGlyphs(drawbotP, fontInfo, marks,
+									   rubyBaseline - ascent, rubyBaseline - ascent + lineHeight);
 			return;		// the marks are the upper line - nothing is written over them
 		}
 
 		// ★The same centring rule the change row's cell uses (KCMPanelTextDraw.h).
-		const PMReal rubyW = KCMWidth(&gc, ruby, fontInfo);
+		const PMReal rubyW = KCMDrawnWidth(ruby, fontInfo);
 		const PMReal rubyX = KCMRubyX(frame.Left() + rubyBaseX, rubyBaseW, rubyW, frame.Left());
 
 		// ⚠The box's right edge is the one thing the reading may not overhang. It is cut at its
@@ -845,15 +830,12 @@ void KCMStatusTextView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		PMString shown = ruby;
 		const PMReal room = frame.Right() - rubyX;
 		if (rubyW > room && room > PMReal(0.0))
-			shown = StringUtils::PMEllipsizeString(&gc, room, ruby, fontInfo, kEllipsizeEnd, nil,
-												   kKCMDontConvertAmpersand);
+			shown = KCMEllipsize(room, ruby, fontInfo, kEllipsizeEnd);
 
 		if (room > PMReal(0.0))
 		{
 			// Full strength: on these messages the reading IS what changed. Only pre/post are faded.
-			StringUtils::PMDrawStringRGB(&gc, PMPoint(rubyX, baseline0 + lineHeight * PMReal(rubyLine)),
-										 shown, fontInfo, kChangeColor,
-										 kKCMDontConvertAmpersand, kKCMNoUnderline);
+			KCMDrawAtBaseline(drawbotP, rubyX, rubyBaseline, shown, fontInfo, kChangeColor);
 		}
 	}
 }

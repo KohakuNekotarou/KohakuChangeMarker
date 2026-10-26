@@ -97,7 +97,7 @@ void KCMNoteStoryStop(int32 rowIndex, int32 changeIndex);
 // The jump a Story Edits row makes: put the first frame of that story in the centre of the view.
 //   - the spread of frameUID is shown first, so this reaches another spread, a master, or the
 //     pasteboard
-//   - THE SOURCE WINDOW COMES ALONG TOO, but what it is lined up on is THE SAME STORY (storyUID),
+//   - THE SOURCE WINDOW COMES ALONG TOO, but what it is lined up on is THE ROW'S SOURCE STORY (sourceStoryUID),
 //     not the same page: when that story sits somewhere else in the two versions, both windows
 //     still show the story. That is deliberately unlike Prev/Next, which looks a page up in the
 //     pairing table. For a story with no counterpart in the Source (an Added one) only the Target
@@ -132,7 +132,11 @@ void KCMNoteStoryStop(int32 rowIndex, int32 changeIndex);
 //   the window on the table's corner, while the gap is the end of the line before it
 //   (IKCMStoryEditsFacade::GetCaretPointAt / GetCaretFrameAt). A row pointing AT a table keeps
 //   passing kFalse and lands on the table as before.
-bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID,
+// ★★sourceStoryUID (2026-10-26, stories paired by place): THE STORY THE SOURCE WINDOW IS AIMED AT - the row's Source story
+//   (IKCMStoryEditsFacade::Row::fSourceStoryUID): storyUID itself for every row paired by UID, the Source's own story for a
+//   row paired by the place of its first frame (whose storyUID is the Target's new story and names something else, or
+//   nothing, over there). kInvalidUID = the Source window is not moved (an Added row has no Source story).
+bool16 KCMGotoStoryFrame(IDataBase* db, UID frameUID, UID pageUID, UID storyUID, UID sourceStoryUID,
 	TextIndex focusIndex = kInvalidTextIndex, TextIndex sourceFocusIndex = kInvalidTextIndex,
 	const PBPMPoint* oversetPb = nil, bool16 focusIsCaret = kFalse, bool16 sourceFocusIsCaret = kFalse);
 

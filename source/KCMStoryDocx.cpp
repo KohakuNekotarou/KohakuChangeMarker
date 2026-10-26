@@ -170,6 +170,8 @@ void AppendPlaceholder(int32 cp, const Look& look, std::string& out)
 	out += "\xE2\x9F\xA7</w:t></w:r></w:sdtContent></w:sdt>";
 }
 
+}	// anonymous namespace (reopened below - PutWordsIntoPlaceholders is public since 2026-10-25, for the page format)
+
 /*	PutWordsIntoPlaceholders
 	Replace ⟦XXXX⟧ with ⟦WORD⟧ inside every placeholder whose character has a word, in an element
 	that has already been written.
@@ -227,6 +229,9 @@ void PutWordsIntoPlaceholders(std::string& xml)
 		at = quote;
 	}
 }
+
+namespace
+{
 
 /** The mark that says an ENDNOTE hangs here (2026-09-23, the user's call: the reader editing in
 	Word has to be able to see that a note is attached at this point).
@@ -903,6 +908,8 @@ void AppendKentenStyle(const std::string& cls, const char* wordMark, std::string
 	out += "\"/></w:rPr></w:style>";
 }
 
+}	// anonymous namespace (reopened below - WriteStyles is public since 2026-10-25, for the page format)
+
 bool16 WriteStyles(const KCMStoryShape::Story& s, std::string& out, std::string& whyNot)
 {
 	out = kXmlDeclaration;
@@ -974,6 +981,9 @@ bool16 WriteStyles(const KCMStoryShape::Story& s, std::string& out, std::string&
 	out += "</w:styles>";
 	return kTrue;
 }
+
+namespace
+{
 
 /** Tick off every note the paragraphs refer to. kFalse for a reference to a note that is not there. */
 bool16 TickReferences(const std::vector<KCMStoryShape::Para>& paras, std::vector<bool16>& seen,
@@ -1396,6 +1406,9 @@ struct Reader
 	StyleNames				fStyleNames;
 	KCMStoryShape::Story*	fStory;
 	std::string				fWhy;
+	// ★THE MOVE-FROM RANGES OPEN RIGHT NOW, by their w:id (2026-09-25, the Word round trip re-check, item 5): a paragraph
+	//   that ENDS inside one has had its mark moved away - see WordlessMarker.
+	std::vector<std::string>	fMovedAway;
 
 	Reader() : fTree(nil), fStory(nil) {}
 };
@@ -1464,6 +1477,68 @@ bool16 KindOfChild(Reader& rd, int32 c, const char* outside, bool16 mcOk, ChildK
 		return Refuse(rd, "an element this reader does not know: " + QName(t, c));
 	outKind = kChildWord;
 	return kTrue;
+}
+
+/** kTrue for a Word element that marks a place and carries no words - a bookmark's ends, a comment's range, a
+	permission's, a proofing mark, and the two ends of a move range - so a walker reads past it wherever it stands.
+
+	★★**ONE LIST FOR THE FOUR WALKERS THAT MEET THEM** (2026-09-25, the Word round trip re-check): paragraphs held the
+	  whole list, while the body, a table and a row held three names of it - so a comment or a move range whose end
+	  fell BETWEEN two paragraphs refused the whole file by name (measured on Word 2007's own files: a paragraph moved
+	  with Track Changes on closes its range after </w:p>).
+	★★**THE MOVE-FROM RANGE IS KEPT TRACK OF, NOT ONLY PASSED OVER**: Word 2007 says a moved paragraph's MARK went with it
+	  by nothing but where the range ends - after the paragraph - and nothing in its pPr (measured; accepting every
+	  revision in Word then leaves no paragraph there). ReadParagraph asks whether one is still open when a paragraph
+	  ends. A move-TO range needs nothing: what is moved in is read like an insertion. */
+bool16 WordlessMarker(Reader& rd, int32 c)
+{
+	const KCMXmlTree& t = *rd.fTree;
+	const std::string& name = t.At(c).fName;
+	if (name == "moveFromRangeStart" || name == "moveFromRangeEnd")
+	{
+		const std::string* idAttr = t.Attr(c, "id");
+		const std::string id = (idAttr != nil) ? *idAttr : std::string();
+		if (name == "moveFromRangeStart")
+		{
+			rd.fMovedAway.push_back(id);
+		}
+		else
+		{
+			for (size_t k = rd.fMovedAway.size(); k > 0; --k)
+			{
+				if (rd.fMovedAway[k - 1] == id)
+				{
+					rd.fMovedAway.erase(rd.fMovedAway.begin() + static_cast<std::ptrdiff_t>(k - 1));
+					break;
+				}
+			}
+		}
+		return kTrue;
+	}
+	return (name == "bookmarkStart" || name == "bookmarkEnd" || name == "proofErr"
+			|| name == "commentRangeStart" || name == "commentRangeEnd"
+			|| name == "permStart" || name == "permEnd"
+			|| name == "moveToRangeStart" || name == "moveToRangeEnd") ? kTrue : kFalse;
+}
+
+/** The move-from range ends standing anywhere INSIDE an element whose words are not read (<w:del>, <w:moveFrom>),
+	seen all the same (2026-09-25). ⚠The schema lets a range end stand inside the moved words; Word 2007 writes it
+	outside, but one missed would leave the range open for the rest of the part and join every paragraph after it. */
+void RangesInside(Reader& rd, int32 node)
+{
+	const KCMXmlTree& t = *rd.fTree;
+	const KCMXmlNode& n = t.At(node);
+	for (size_t k = 0; k < n.fChildren.size(); ++k)
+	{
+		const int32 c = n.fChildren[k];
+		const KCMXmlNode& cn = t.At(c);
+		if (cn.IsText() || cn.fNs != kW)
+			continue;
+		if (cn.fName == "moveFromRangeStart" || cn.fName == "moveFromRangeEnd")
+			WordlessMarker(rd, c);
+		else
+			RangesInside(rd, c);
+	}
 }
 
 /** A w:vert / w:combine value: "1", "true" and "on" mean on; absent or anything else means off. */
@@ -1950,6 +2025,14 @@ bool16 ReadRunChildren(Reader& rd, int32 node, const RLook& look, Building& b)
 		{
 			continue;
 		}
+		else if (name == "commentReference" || name == "annotationRef")
+		{
+			// ★A WORD COMMENT CARRIES NO WORDS OF THE STORY (2026-09-25, the user's call): its words are in
+			//   comments.xml, which is not read, and this run only says where its balloon hangs. A file somebody
+			//   commented on was refused whole until this day (the matrix's W13); its range markers were read past
+			//   already (WordlessMarker).
+			continue;
+		}
 		else
 		{
 			return Refuse(rd, "an element this reader does not know: " + QName(t, c));
@@ -1996,7 +2079,8 @@ bool16 ReadContent(Reader& rd, int32 node, Building& b)
 		}
 		else if (name == "del" || name == "moveFrom")
 		{
-			continue;					// what Word deleted is not
+			RangesInside(rd, c);		// what Word deleted is not read - but a move range's end inside it counts
+			continue;
 		}
 		else if (name == "sdt")
 		{
@@ -2034,11 +2118,7 @@ bool16 ReadContent(Reader& rd, int32 node, Building& b)
 			if (!ReadContent(rd, c, b))
 				return kFalse;
 		}
-		else if (name == "bookmarkStart" || name == "bookmarkEnd" || name == "proofErr"
-				 || name == "commentRangeStart" || name == "commentRangeEnd"
-				 || name == "permStart" || name == "permEnd"
-				 || name == "moveFromRangeStart" || name == "moveFromRangeEnd"
-				 || name == "moveToRangeStart" || name == "moveToRangeEnd"
+		else if (WordlessMarker(rd, c)
 				 || name == "smartTagPr" || name == "customXmlPr")		// the properties of what is seen through (R4)
 		{
 			continue;
@@ -2079,13 +2159,20 @@ bool16 ReadParagraph(Reader& rd, int32 p, Building& b)
 		{
 			if (t.Child(rPr, kW, "ins") >= 0)
 				b.fMarkRevision = 1;
-			if (t.Child(rPr, kW, "del") >= 0)
+			// ★moveFrom beside del (2026-09-25): OOXML's own slot for a mark moved away. Word 2007 does not write it
+			//   (the range test below is how it says so), a later Word may.
+			if (t.Child(rPr, kW, "del") >= 0 || t.Child(rPr, kW, "moveFrom") >= 0)
 				b.fMarkRevision = -1;
 		}
 	}
 
 	if (!ReadContent(rd, p, b))
 		return kFalse;
+	// ★★A PARAGRAPH ENDING INSIDE A MOVE-FROM RANGE HAS HAD ITS MARK MOVED AWAY (2026-09-25, the Word round trip
+	//   re-check, item 5 - measured on Word 2007's files, WordlessMarker says how): the words left in it, if any, run
+	//   on into the next paragraph, exactly as when the mark is deleted.
+	if (!rd.fMovedAway.empty())
+		b.fMarkRevision = -1;
 	if (b.fFieldDepth > 0)
 		return Refuse(rd, "a field runs past the end of its paragraph");
 	return kTrue;
@@ -2157,6 +2244,11 @@ void JoinOnto(KCMStoryShape::Para& prev, const KCMStoryShape::Para& next)
 		ref.fAt += shift;
 		prev.fNoteRefs.push_back(ref);
 	}
+	// ★AND THE ENDNOTE MARKS, on the same terms (2026-09-25, the Word round trip re-check, item 6). Left out, a paragraph
+	//   joined in Word lost its mark here - read as the mark gone, and held - and the words after a table lost theirs in
+	//   RejoinParas on BOTH sides alike, which blinded the comparison's endnote check for that paragraph.
+	for (size_t k = 0; k < next.fEndnoteAt.size(); ++k)
+		prev.fEndnoteAt.push_back(next.fEndnoteAt[k] + shift);
 }
 
 /** Where a run of blocks stands: the body, a cell of a table, or a footnote. */
@@ -2279,8 +2371,7 @@ bool16 ReadCells(Reader& rd, int32 container, int32 slot, int32 rowIndex, KCMSto
 			if (content >= 0 && !ReadCells(rd, content, slot, rowIndex, row, col, open))
 				return kFalse;
 		}
-		else if (name == "trPr" || name == "tblPrEx" || name == "bookmarkStart" || name == "bookmarkEnd"
-				 || name == "proofErr" || name == "customXmlPr")
+		else if (name == "trPr" || name == "tblPrEx" || name == "customXmlPr" || WordlessMarker(rd, c))
 		{
 			continue;
 		}
@@ -2345,8 +2436,7 @@ bool16 ReadRows(Reader& rd, int32 container, int32 slot, GridOpen& open)
 			if (content >= 0 && !ReadRows(rd, content, slot, open))
 				return kFalse;
 		}
-		else if (name == "tblPr" || name == "tblGrid" || name == "bookmarkStart" || name == "bookmarkEnd"
-				 || name == "proofErr" || name == "customXmlPr")
+		else if (name == "tblPr" || name == "tblGrid" || name == "customXmlPr" || WordlessMarker(rd, c))
 		{
 			continue;
 		}
@@ -2377,6 +2467,34 @@ bool16 ReadTable(Reader& rd, int32 tbl, int32 inTable, int32 inRow, int32 inCell
 	}
 	GridOpen open;
 	return ReadRows(rd, tbl, slot, open);
+}
+
+/** How many rows a <w:tbl> holds, and how many of them Word took away (<w:trPr><w:del/>) - rows standing inside a
+	content control or custom XML counted too, the way ReadRows reads them. */
+void CountRows(const KCMXmlTree& t, int32 container, int32& rows, int32& deleted)
+{
+	const KCMXmlNode& n = t.At(container);
+	for (size_t k = 0; k < n.fChildren.size(); ++k)
+	{
+		const int32 c = n.fChildren[k];
+		if (t.Is(c, kW, "tr"))
+		{
+			++rows;
+			const int32 trPr = t.Child(c, kW, "trPr");
+			if (trPr >= 0 && t.Child(trPr, kW, "del") >= 0)
+				++deleted;
+		}
+		else if (t.Is(c, kW, "sdt"))
+		{
+			const int32 content = t.Child(c, kW, "sdtContent");
+			if (content >= 0)
+				CountRows(t, content, rows, deleted);
+		}
+		else if (t.Is(c, kW, "customXml"))
+		{
+			CountRows(t, c, rows, deleted);
+		}
+	}
 }
 
 /*	ReadBlocks
@@ -2434,6 +2552,20 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 		}
 		else if (name == "tbl")
 		{
+			// ★★A TABLE WORD DELETED UNDER TRACK CHANGES IS NOT THERE (2026-09-25, the Word round trip re-check, item 5).
+			//   Word 2007 writes it as the table with EVERY row <w:trPr><w:del/> and the table itself unmarked; accepting
+			//   every revision in Word leaves no table at all (both measured, word_tracked_move_table.ps1). Read row by
+			//   row it came back as a table of no rows, which the comparison held ("no row or column left") instead of
+			//   taking the table away. ⚠A join pending in front of it runs on to the paragraph after it - the paragraph
+			//   the mark joins once the table is gone. ⚠A table with no rows at all is NOT this, and is still refused
+			//   downstream (the matrix's A56).
+			{
+				int32 rows = 0;
+				int32 deleted = 0;
+				CountRows(t, c, rows, deleted);
+				if (rows > 0 && deleted == rows)
+					continue;
+			}
 			if (inTable == kInNote)
 				return Refuse(rd, "a table stands inside a footnote");
 			if (pendingJoin)
@@ -2474,7 +2606,7 @@ bool16 ReadBlocks(Reader& rd, int32 container, int32 inTable, int32 inRow, int32
 			if (content >= 0 && !ReadBlocks(rd, content, inTable, inRow, inCell, out))
 				return kFalse;
 		}
-		else if (name == "bookmarkStart" || name == "bookmarkEnd" || name == "proofErr" || name == "customXmlPr")
+		else if (name == "customXmlPr" || WordlessMarker(rd, c))
 		{
 			continue;
 		}
@@ -2535,6 +2667,7 @@ bool16 ResolveNotes(Reader& rd, const KCMXmlTree* notesTree)
 
 	const KCMXmlTree* const saved = rd.fTree;
 	rd.fTree = notesTree;
+	rd.fMovedAway.clear();		// a move range does not reach from one part into another
 	const KCMXmlNode& all = notesTree->At(root);
 	for (size_t n = 0; n < ids.size(); ++n)
 	{
@@ -2598,6 +2731,31 @@ void SettleParas(std::vector<KCMStoryShape::Para>& paras)
 	}
 }
 
+/** The blocks of `container` read into `out`'s body, with the notes `notesTree` holds (nil: none - a reference is then
+	refused, by the note's number). ★ONE ROAD FOR TWO CALLERS (2026-10-25): ReadSide reads a document's body this way, and
+	ReadBlocksIn whatever container the page format names - a box's content control. ⚠`out` is not cleared here. */
+bool16 ReadBlocksWith(const KCMXmlTree& document, int32 container, const KCMXmlTree* notesTree,
+					  const std::string& stylesXml, KCMStoryShape::Story& out, std::string& whyNot)
+{
+	Reader rd;
+	rd.fTree = &document;
+	rd.fStory = &out;
+	if (!stylesXml.empty())
+	{
+		// An unreadable styles part is not fatal: the style ids then stand for themselves.
+		KCMXmlTree styles;
+		std::string ignored;
+		if (styles.Parse(stylesXml.data(), stylesXml.size(), ignored))
+			CollectStyleNames(styles, rd.fStyleNames);
+	}
+	if (!ReadBlocks(rd, container, kInBody, 0, 0, out.fBody) || !ResolveNotes(rd, notesTree))
+	{
+		whyNot = rd.fWhy;
+		return kFalse;
+	}
+	return kTrue;
+}
+
 }	// anonymous namespace
 
 bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml, const std::string& stylesXml,
@@ -2618,18 +2776,6 @@ bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml,
 	{
 		whyNot = "word/footnotes.xml: " + whyNot;
 		return kFalse;
-	}
-
-	Reader rd;
-	rd.fTree = &document;
-	rd.fStory = &out;
-	if (!stylesXml.empty())
-	{
-		// An unreadable styles part is not fatal: the style ids then stand for themselves.
-		KCMXmlTree styles;
-		std::string ignored;
-		if (styles.Parse(stylesXml.data(), stylesXml.size(), ignored))
-			CollectStyleNames(styles, rd.fStyleNames);
 	}
 
 	const int32 root = document.Root();
@@ -2653,12 +2799,20 @@ bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml,
 			out.fVertical = kTrue;
 	}
 
-	if (!ReadBlocks(rd, body, kInBody, 0, 0, out.fBody) || !ResolveNotes(rd, hasNotes ? &notes : nil))
+	return ReadBlocksWith(document, body, hasNotes ? &notes : nil, stylesXml, out, whyNot);
+}
+
+bool16 ReadBlocksIn(const KCMXmlTree& document, int32 container, const std::string& stylesXml,
+					KCMStoryShape::Story& out, std::string& whyNot)
+{
+	out = KCMStoryShape::Story();
+	whyNot.clear();
+	if (container < 0 || container >= document.Count())
 	{
-		whyNot = rd.fWhy;
+		whyNot = "there is nothing to read the box from";
 		return kFalse;
 	}
-	return kTrue;
+	return ReadBlocksWith(document, container, nil, stylesXml, out, whyNot);
 }
 
 bool16 Read(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, std::string& whyNot)

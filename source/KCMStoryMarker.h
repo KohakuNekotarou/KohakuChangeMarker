@@ -103,9 +103,12 @@ namespace KCMStoryMarker
 		@param storyUID which story.
 		@param from first character to light up.
 		@param to one past the last. from == to is the caret case described above.
+		@param hasColour, r, g, b the Track mode's author colour (2026-10-05); kFalse = the Mark colour,
+			which is what every other caller wants.
 	*/
 	void AddFlashRange(KCMStoryMarkDocs& docs, IDataBase* db, UID storyUID,
-					   TextIndex from, TextIndex to);
+					   TextIndex from, TextIndex to,
+					   bool16 hasColour = kFalse, uint8 r = 0, uint8 g = 0, uint8 b = 0);
 
 	/** Show a jump's pointer, and start the countdown that takes it away.
 
@@ -141,7 +144,7 @@ namespace KCMStoryMarker
 	/** Take a jump's pointer down now, leaving the standing marks alone. Safe when there is none.
 
 		**IT IS NOT "Clear()", AND THAT IS THE POINT.** One call that took everything down meant the
-		double click had to put the standing marks back afterwards by asking for a full refresh -- a
+		double click (gone 2026-10-25) had to put the standing marks back afterwards by asking for a full refresh -- a
 		repair for damage it had just done itself, and one that was missing until a bug recheck found
 		the toggles going bare (A2). Naming which of the two kinds is coming down cannot go wrong that
 		way. */

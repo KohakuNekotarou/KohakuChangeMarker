@@ -20,25 +20,18 @@
 //  alone on purpose (user's call, 2026-08-10): this panel's job is to send the user INTO the
 //  document, and a panel holding the keyboard is a panel where the tool shortcuts have quietly
 //  stopped working. That was reversed at the user's request - "like KBS, I want to move up and down
-//  with the cursor" - so a click now hands the focus to the list (the foot of LButtonUp) and a
-//  DOUBLE click hands it back. The cost is still real and is still the cost described above; it was
-//  accepted in exchange for being able to walk the list.
+//  with the cursor" - so a click now hands the focus to the list (the foot of LButtonUp), and a
+//  click in the document hands it back. The cost is still real and is still the cost described above;
+//  it was accepted in exchange for being able to walk the list.
 //  ⚠This paragraph said "KCM deliberately does not" until 2026-08-18 (bug recheck B-U4), while
 //  the code 180 lines below had already been doing the opposite for a week and said so.
 //
-//  ***** THE DOUBLE CLICK'S ONE BIT OF STATE. ***** A double click arrives as FOUR events:
-//
-//      LButtonDn   LButtonUp   ButtonDblClk   LButtonUp
-//
-//  - so the FIRST up has already jumped by the time the double click is announced, and a SECOND up
-//  follows it. Selecting the story inside ButtonDblClk therefore does not work: the trailing up would
-//  run the jump all over again. So ButtonDblClk only RAISES A FLAG, and the trailing up reads it
-//  and selects the story instead of jumping.
-//
-//  ! The flag is cleared in LButtonDn, which is what makes it safe: every click begins with a down,
-//    so a flag that was set but never consumed cannot survive into the next click and turn an
-//    ordinary single click into something else. (KBS learned this the same way -
-//    KBSResultNodeEH.cpp:75-93.)
+//  ★★A DOUBLE CLICK IS TWO CLICKS (2026-10-25 - the author: "remove the double click's behaviour", "the way KFC
+//   does it"; KFC's KFCResultNodeEH tells no double click apart): each button-up jumps again, and the keyboard stays
+//   on the list. Since 2026-10-24 night one click selects a change's words, so what the double click still added was
+//   the keyboard handed to the document - and, on a story row, the whole story selected.
+//   (⛔Until then ButtonDblClk raised a flag that the trailing button-up read - a double click arrives as LButtonDn,
+//   LButtonUp, ButtonDblClk, LButtonUp, so the first up had already jumped - and LButtonDn cleared it.)
 //
 //========================================================================================
 
@@ -49,7 +42,7 @@
 #include "IApplication.h"			// the app boss carries IKeyBoard
 #include "IEvent.h"					// ShiftKeyDown / CmdKeyDown, GlobalWhere
 #include "IEventHandler.h"			// the LIST's handler - the arrow keys' owner (see the hand-off below)
-#include "IKeyBoard.h"				// AcquireKeyFocus / RelinquishKeyFocus
+#include "IKeyBoard.h"				// AcquireKeyFocus - the hand-off's fallback
 #include "IMenuManager.h"			// HandlePopupMenu - pops kKCMStoryRowMenuName at the cursor
 #include "ISession.h"				// GetExecutionContextSession - the route to the application
 #include "ITreeNodeIDData.h"		// this node's NodeID
@@ -58,6 +51,8 @@
 
 // General includes:
 #include "KCMStoryNodeID.h"		// our node class: (row, change). Was ListIndexNodeID until 2026-08-20
+#include "IKCMStoryEditsFacade.h"	// IsImportSource / GetChange - which menu a change row pops (2026-10-24 evening)
+#include "Utils.h"
 
 // Published under source/open, reached by a relative path rather than by adding an include
 // directory - the same reasoning, and the same route, as KCMStoryTreeWidgetMgr.cpp's
@@ -74,16 +69,7 @@
 // (⛔KCMStoryCopy.h - where a CHANGE row's menu stashed the row AND the change - went on
 //  2026-09-21 with the last item that read it, the Resources mode's "Edit...". Nothing here has a
 //  second stash to write, because a change row no longer raises a menu to write one for.)
-#include "KCMStoryTree.h"			// KCMListShowsResources - which kind of row the double click landed on
-
-namespace
-{
-
-// A file static rather than a member: row widgets are recycled as the list scrolls, so this belongs
-// to "the click going on right now" rather than to any one row. One click happens at a time.
-bool gSelectOnNextButtonUp = false;
-
-}	// anonymous namespace
+#include "KCMStoryTreeController.h"	// FollowModifiedClick / TakeKeyboard - rows selected together (2026-10-24 night)
 
 class KCMStoryRowEH : public TreeNodeEventHandler
 {
@@ -91,9 +77,7 @@ public:
 	KCMStoryRowEH(IPMUnknown* boss) : TreeNodeEventHandler(boss) {}
 	virtual ~KCMStoryRowEH() {}
 
-	virtual bool16 LButtonDn(IEvent* e);
 	virtual bool16 LButtonUp(IEvent* e);
-	virtual bool16 ButtonDblClk(IEvent* e);
 	virtual bool16 RButtonDn(IEvent* e);
 
 private:
@@ -109,6 +93,11 @@ private:
 		@return the story row's index, or -1 when this widget carries no node of ours.
 	*/
 	int32 RowFromNode(int32* outChange = nil) const;
+
+	/** ★The Track mode's AUTHOR row this widget is (2026-10-25 - its own menu: accept and reject all of that author's
+		changes): the author's index, or -1 for every other row. An author row's node names no story row (RowFromNode
+		answers -1 for it), so a right click asks this first. */
+	int32 AuthorFromNode() const;
 
 	/** Which row this click is for, or -1 when it should be left alone.
 
@@ -146,6 +135,15 @@ int32 KCMStoryRowEH::RowFromNode(int32* outChange) const
 	return nodeID->GetRow();
 }
 
+int32 KCMStoryRowEH::AuthorFromNode() const
+{
+	InterfacePtr<ITreeNodeIDData> nodeData(this, UseDefaultIID());
+	if (nodeData == nil)
+		return -1;
+	TreeNodePtr<KCMStoryNodeID> nodeID(nodeData->Get());
+	return (nodeID != nil && nodeID->IsAuthorRow()) ? nodeID->GetAuthor() : -1;
+}
+
 int32 KCMStoryRowEH::RowForClick(IEvent* e, bool16 baseHandled, int32* outChange) const
 {
 	if (outChange != nil)
@@ -175,31 +173,25 @@ int32 KCMStoryRowEH::RowForClick(IEvent* e, bool16 baseHandled, int32* outChange
 	return this->RowFromNode(outChange);
 }
 
-// Nothing of this plug-in's own happens on the way DOWN. The one job here is to start every click
-// with the double-click flag down.
-bool16 KCMStoryRowEH::LButtonDn(IEvent* e)
-{
-	gSelectOnNextButtonUp = false;
-	return TreeNodeEventHandler::LButtonDn(e);
-}
-
-// The second click of a double click. Only raises the flag - see the note at the head of this file.
-bool16 KCMStoryRowEH::ButtonDblClk(IEvent* e)
-{
-	const bool16 result = TreeNodeEventHandler::ButtonDblClk(e);
-	if (this->RowForClick(e, result) >= 0)
-		gSelectOnNextButtonUp = true;
-	return result;
-}
-
+// Nothing of this plug-in's own happens on the way DOWN, nor on a double click (the note at the head of this file):
+// every button-up is a click.
 bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 {
-	// Consumed here, on the way in, so that every path out of this function leaves it down.
-	const bool selectRatherThanJump = gSelectOnNextButtonUp;
-	gSelectOnNextButtonUp = false;
-
 	// Let the stock handler finish the click first (selection, the end of a drag).
 	const bool16 result = TreeNodeEventHandler::LButtonUp(e);
+
+	// ★SHIFT / CTRL - ROWS SELECTED TOGETHER (2026-10-24 night - design 1-3, KFC's KFCResultNodeEH): the press has made
+	//   the selection (KCMStoryTreeController); the page follows it - the row ADDED landed on, as a click lands (the page
+	//   shows the row selected last), a row taken away leaving the page as it is. A story row so clicked is selected alone,
+	//   with no jump. The keyboard to the list after it, as after every click, so Shift+Down goes on from here.
+	if (!result && e != nil && (e->ShiftKeyDown() || e->CmdKeyDown()))
+	{
+		InterfacePtr<ITreeNodeIDData> clickedData(this, UseDefaultIID());
+		if (clickedData != nil)
+			KCMStoryFollowModifiedClick(clickedData->Get());
+		(void)KCMStoryTakeKeyboard();
+		return result;
+	}
 
 	int32 changeIndex = -1;
 	const int32 rowIndex = this->RowForClick(e, result, &changeIndex);
@@ -221,59 +213,12 @@ bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IKeyBoard> keyBoard(app, UseDefaultIID());
 
-	// ***** The second click of a double click SELECTS, rather than jumping again. ***** The first
-	// click already moved the view there, so repeating it would only redo that. What is added is
-	// handing the user the text itself - Type tool, and a selection.
-	// ★WHAT gets selected depends on which row it is, and the two answers are not the same size:
-	//     * a STORY row  -> the whole story. That is what a row naming a story is a report of.
-	//     * a CHANGE row -> just the words that edit names (2026-08-20, user's call). Widening to
-	//       the story here would throw away the very thing the reader double-clicked on.
-	//   ⚠Until 2026-08-20 a change row's double click did NOTHING, because its SINGLE click already
-	//     made this selection. The single click is a mark now, so the selection moved here.
-	if (selectRatherThanJump)
+	// ★The jump, on every button-up: a double click's second click is a click like the first (the note at the head of
+	//  this file - KCMStorySelectChange and KCMStorySelectWholeStory went with the double click on 2026-10-25).
+	if (changeIndex >= 0)
 	{
-		// ***** A RESOURCES ROW HAS NOTHING TO SELECT, AND A DOUBLE CLICK DOES NOTHING. *****
-		// A definition is not text, so there is no "select the words this names". Opening its
-		// editor lived here for a few hours on 2026-09-13 and moved to the row menu the same day (a
-		// double click is silent about what it is going to do, and a menu saying "Edit..." is not) -
-		// and ⛔**on 2026-09-21 it went altogether**, on the user's word. Nothing in this list opens
-		// an editor from either kind of click now.
-		// ⚠BEFORE the story path, for the reason KCMStoryJumpToRow gives: the story facade's list
-		//   is a different list, and reading a Resources row out of it answers about nothing.
-		if (KCMListShowsResources())
-			return result;
-
-		const bool16 selected = (changeIndex >= 0)
-								? KCMStorySelectChange(rowIndex, changeIndex)
-								: KCMStorySelectWholeStory(rowIndex);
-		if (selected)
-		{
-			// ***** AND GIVE THE KEYBOARD BACK. ***** The FIRST click of this double click ended in
-			// the AcquireKeyFocus below, so the tree is holding the keyboard right now. Left that
-			// way, the story would sit selected while the arrows walked the panel and typing went
-			// nowhere - which is the one thing a user who just selected a story wants to do.
-			// ! Relinquish is a POP, not a hand-off: IKeyBoard.h:49-53 restores the PREVIOUS holder,
-			//   and what makes that the document window is the ORDER of the first click - the jump
-			//   fronted the window and only then did the tree acquire.
-			// ! KBS's KBSResultNodeEH.cpp:175-202 carries the same reasoning and THREE caveats, not
-			//   the one this used to point at: (a) if anything comes to hold the focus between the
-			//   jump and the acquire - another palette, an edit box of ours - the pop hands the
-			//   keyboard to THAT, and it looks like the double click stopped working; (b) the product
-			//   does not lean on the pop when it cares where the focus lands, it remembers the handler
-			//   and calls AcquireKeyFocus(saved) instead (spellpanel's SaveKeyboardEventHandler);
-			//   (c) the bool16 both calls return - kFalse meaning the current holder would not let go
-			//   - is ignored here, as it is at every product call site. Written out rather than
-			//   pointed at, because "the same caveat" lost two of them (2026-08-18, bug recheck B-U4).
-			if (treeEH != nil && keyBoard != nil && keyBoard->GetKeyFocus() == treeEH)
-				keyBoard->RelinquishKeyFocus();
-			return result;
-		}
-		// It refused, and has said why. Fall through: the arrows below still want the tree.
-	}
-	else if (changeIndex >= 0)
-	{
-		// ★A CHANGE ROW: go to the edit itself and select the words it names (2026-08-20).
-		//   The story row's jump goes to the top of the story; this one goes to the place inside it.
+		// ★A CHANGE ROW: go to the edit itself and select the words it names (2026-08-20; the selection again since
+		//   2026-10-24 night). The story row's jump goes to the top of the story; this one goes to the place inside it.
 		KCMStoryJumpToChange(rowIndex, changeIndex);
 	}
 	else
@@ -284,13 +229,17 @@ bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 	// ***** HAND THE KEYBOARD TO THE LIST, so the up / down arrows walk it from here on. *****
 	// (KCMStoryTreeEH, added 2026-08-11 at the user's request - "like KBS, move up and down with
 	// the cursor".) ⚠This is the deliberate decision noted at the head of this file being reversed:
-	// while the tree holds the keyboard, the tool shortcuts do not reach the document. The double
-	// click above is the way back.
+	// while the tree holds the keyboard, the tool shortcuts do not reach the document. A click in the
+	// document is the way back (the double click was one too, until 2026-10-25).
 	// ★The QUERY of treeEH above is not incidental - it BRINGS KCMStoryTreeEH INTO EXISTENCE.
 	//   Implementations are created on first use and nothing else in this plug-in ever asks the tree
 	//   for its event handler, so without it the class is never constructed and the arrows keep the
 	//   stock behaviour ([[lazy-interface-instantiation]]; KBS measured exactly this).
-	if (treeEH != nil && keyBoard != nil)
+	// ★★THROUGH THE PANEL'S DOORS SINCE 2026-10-24 NIGHT (KCMStoryTakeKeyboard - KFC's TakeKeyboard; design 6-2, the
+	//   10-10 item): the click now SELECTS the change's words and makes the Target the active document, and a list holding
+	//   InDesign's keyboard inside a panel that is no longer the active one lost the next key to the document (KFC
+	//   measured it after a click on another window's title bar). IKeyBoard alone stays as the fallback.
+	if (!KCMStoryTakeKeyboard() && treeEH != nil && keyBoard != nil && keyBoard->GetKeyFocus() != treeEH)
 		keyBoard->AcquireKeyFocus(treeEH);
 
 	return result;
@@ -308,9 +257,11 @@ bool16 KCMStoryRowEH::LButtonUp(IEvent* e)
 // ***** A CHANGE ROW POPS ITS OWN MENU (kKCMChangeRowMenuName). ***** It had one from 2026-09-12,
 // carrying only items about the CHANGE under the cursor; the last of them ("Edit...") went on
 // 2026-09-21 and the subtree with it, and from then until 2026-09-24 a child row raised nothing.
-// ★It is back for "Reject This Import Change" (stage 2 A), which acts on that one change's range only -
-// so the decision of 2026-08-21 still holds: a reader pointing at ONE difference is never handed an
-// action over the whole story, and the story row's menu is never popped on a child row.
+// ★It came back for "Reject This Import Change" (stage 2 A - retired 2026-10-25), and carries Restore from
+// Source, Match the Source and, against an import's copy, Apply This Change / Restore from Copy now - each
+// acting on that one change only - so the decision of 2026-08-21 still holds: a reader pointing at ONE
+// difference is never handed an action over the whole story, and the story row's menu is never popped on
+// a child row.
 //
 // Deliberately NOT calling the stock handler and NOT changing the selection: a right click that is
 // only asking for a menu should not move the user's place in the list - the same rule the chapter
@@ -327,17 +278,18 @@ bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 {
 	int32 changeIndex = -1;
 	const int32 rowIndex = this->RowFromNode(&changeIndex);
-	if (rowIndex < 0 || e == nil)
+	const int32 authorIndex = this->AuthorFromNode();
+	if ((rowIndex < 0 && authorIndex < 0) || e == nil)
 		return TreeNodeEventHandler::RButtonDn(e);
 
-	// ★★A CHANGE ROW HAS ITS OWN MENU AGAIN (2026-09-24, stage 2 A and B): "Reject This Import Change" on a words or
-	//   table row, "Restore from Source" on an attribute row - never both live on one row - each about the
-	//   change under the cursor only - so the rule of 2026-08-21 (never the STORY row's menu on a child row,
-	//   never an action over the whole story) still holds. Its item is greyed where the change's range holds
-	//   none of the import's tracked changes, and a menu with only greyed items does not appear - so a plain
-	//   comparison's change rows still raise nothing.
+	// ★★A CHANGE ROW HAS ITS OWN MENU (2026-09-24): its items are each about the change under the cursor only -
+	//   so the rule of 2026-08-21 (never the STORY row's menu on a child row, never an action over the whole
+	//   story) still holds - and a menu with only greyed items does not appear.
+	// ★★AND A TRACK AUTHOR ROW HAS ITS OWN (2026-10-25): all of that author's changes, accepted or rejected.
 	const bool16 isChangeRow = (changeIndex >= 0);
-	if (isChangeRow)
+	if (authorIndex >= 0)
+		KCMStorySetMenuAuthor(authorIndex);
+	else if (isChangeRow)
 		KCMStorySetMenuChange(rowIndex, changeIndex);
 	else
 		KCMStorySetMenuRow(rowIndex);	// for the action and its enabling test to read (see above)
@@ -353,6 +305,29 @@ bool16 KCMStoryRowEH::RButtonDn(IEvent* e)
 	if (menuMgr == nil)
 		return kTrue;
 
+	// ★The author row's two items, grey kept (the author's "grey is fine when it cannot be done" - the import's rows' rule).
+	if (authorIndex >= 0)
+	{
+		menuMgr->HandlePopupMenu(kKCMTrackAuthorMenuName, e->GlobalWhere(), e->GlobalWhere(),
+								 kFalse /*removeDisabledItems*/, this);
+		return kTrue;
+	}
+
+	// ★★AGAINST AN IMPORT'S COPY A CHANGE ROW POPS THE IMPORT'S OWN MENU, GREY ITEMS KEPT (2026-10-24 evening - the author:
+	//   "there are rows I cannot right-click"; a "=" row's items were all grey, and the fourth argument kTrue drops grey
+	//   items, so the menu did not open at all - KFC found the same argument behind its SET-11, and the author chose grey
+	//   there: "grey is fine when it cannot be done"). Apply This Change and Restore from Copy alone (kKCMChangeRowImportMenuName),
+	//   so the grey line says which of the two this row cannot do. ⚠A "!" row stays without a menu: it holds nothing to put in.
+	Utils<IKCMStoryEditsFacade> edits;
+	if (isChangeRow && edits && edits->IsImportSource())
+	{
+		IKCMStoryEditsFacade::Change change;
+		if (!edits->GetChange(rowIndex, changeIndex, change) || change.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused)
+			return kTrue;
+		menuMgr->HandlePopupMenu(kKCMChangeRowImportMenuName, e->GlobalWhere(), e->GlobalWhere(),
+								 kFalse /*removeDisabledItems*/, this);
+		return kTrue;
+	}
 	menuMgr->HandlePopupMenu(isChangeRow ? kKCMChangeRowMenuName : kKCMStoryRowMenuName,
 							 e->GlobalWhere(), e->GlobalWhere(), kTrue, this);
 	return kTrue;

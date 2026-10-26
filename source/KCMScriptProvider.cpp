@@ -134,21 +134,117 @@
 // KCMUIShared.h is deliberately NOT included: it was added once, but this provider called none
 // of the widget-touching functions in it -- a dead dependency. What it reads is
 // KCMGetSessionStatus (declared in KCMModelNotify.h), which is not a reverse dependency.
-#include "KCMPdfSpike.h"		// KCMProbePdfRoute - the measuring door for the report's temp-file question
+// (⛔KCMPdfSpike.h - app.kcmProbePdfRoute's experiment - went on 2026-10-02 with the spike, before
+//  shipping, as it was always meant to. The code is in git at 5720208.)
+#include "KCMBookCompare.h"	// KCMGetBookResultText - the last book comparison, also in the module
+#include "KCMStoryStamp.h"	// KCMStoryEdits::ReadStamp - the SAME reading the panel uses
+#include "Utils.h"			// Utils<IScriptErrorUtils> - a put refused
+// ★★★THE TEST DOORS ARE A TEST BUILD'S ONLY (2026-10-26, the author: "cut them out when it goes to the Exchange" - the KCM full test,
+//   docs/superpowers/specs/2026-10-26-kcm-full-test-design.md section 4): every property and method below that is not
+//   registered with Adobe - KCM.fr declares them inside #ifdef KCM_DIAG, and this file serves them inside the same #ifdef,
+//   with the includes only they use. The registered ones (app.kcmStatus, app.kcmBookResult, the four story counters) are in
+//   every build: what the published 1.5.0 held.
+#ifdef KCM_DIAG
 #include "KCMResourceSnapshot.h"	// KCMDescribeResourceSnapshot - the Resources mode's export
 #include "KCMResourceDiff.h"	// KCMDescribeResourceDiff - the same mode's comparison of the two
 								// armed documents, which is the reading the engine is checked by
-#include "KCMBookCompare.h"	// KCMGetBookResultText - the last book comparison, also in the module
-#include "KCMStoryStamp.h"	// KCMStoryEdits::ReadStamp - the SAME reading the panel uses
 #include "KCMStoryList.h"	// KCMStoryList::RowsAsTsv - app.kcmStoryRows, the reading port
+#include "KCMTrackList.h"	// KCMTrackList::RowsAsTsv - the same port in the Track Changes mode (2026-10-05)
+#include "KCMTrackOriginal.h"	// KCMTakeTrackOriginalCopy - app.kcmCompareTracked (2026-10-05)
+#include "KCMCore.h"		// KCMGetCompareMode - which of the two lists the port reads
 #include "KCMRingAdornment.h"	// KCMGetNumItemsWithXP - document.kcmTransparencyItemCount
-#include "SysFileList.h"			// app.kcmImportStoryText hands its one file over as a list
-#include "KCMCore.h"				// KCMActiveDocDB - app.kcmExportStoryText exports the active document
+#include "SysFileList.h"			// app.kcmImportToSource hands its one file over as a list
+#include "KCMTaskStartSave.h"		// KCMTaskDocumentDB - the document app.kcmExportStoryText exports (2026-09-25)
 #include "KCMComparisonRun.h"		// KCMStopComparison - app.kcmStopComparison
 // (⛔KCMStoryRestore.h and KCMStoryDiffRun.h were included here for app.kcmTakeInChange and
 //  app.kcmUndoRestore, and went with those two methods on 2026-09-21.)
 #include "KCMStoryTextExport.h"	// KCMExportStoryText - app.kcmExportStoryText
-#include "KCMStoryTextImport.h"	// KCMImportStoryText - app.kcmImportStoryText
+#include "KCMStoryTextImport.h"	// KCMImportStoryTextAsSource - app.kcmImportToSource
+#include "IKCMStoryEditsFacade.h"	// ApplyChange / ApplyStory / ApplyAll - app.kcmApplyChange (2026-10-24)
+#include "IPageList.h"				// app.kcmExportPages names its pages as the Pages panel does (2026-10-25)
+#include <cstdio>					// sscanf_s - app.kcmApplyChange's "<row> <change>"
+#include <string>
+#include <vector>					// the batch doors' "<row> <change>;<row> <change>..." (2026-10-24 night)
+
+namespace
+{
+// "1,3" -> the pages of `db` the Pages panel names so - IPageList::GetPageString as KCMPageExport spells a page's name in its
+// file's (2026-10-25, app.kcmExportPages). kFalse with the first name no page carries in outMissing.
+bool16 PagesNamed(IDataBase* db, const PMString& names, UIDList& out, PMString& outMissing)
+{
+	outMissing.Clear();
+	outMissing.SetTranslatable(kFalse);
+	InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
+	if (pageList == nil)
+	{
+		outMissing = names;
+		outMissing.SetTranslatable(kFalse);
+		return kFalse;
+	}
+	const std::string all = names.GetUTF8String();
+	std::string::size_type at = 0;
+	for (;;)
+	{
+		const std::string::size_type comma = all.find(',', at);
+		std::string one = all.substr(at, (comma == std::string::npos) ? std::string::npos : comma - at);
+		while (!one.empty() && one[0] == ' ')
+			one.erase(0, 1);
+		while (!one.empty() && one[one.size() - 1] == ' ')
+			one.erase(one.size() - 1);
+		if (!one.empty())
+		{
+			bool16 found = kFalse;
+			for (int32 i = 0; i < pageList->GetPageCount() && !found; ++i)
+			{
+				const UID uid = pageList->GetNthPageUID(i);
+				PMString name;
+				pageList->GetPageString(uid, &name, kFalse, kFalse, kDefaultPageType, kTrue, kTrue);
+				if (name.GetUTF8String() == one)
+				{
+					out.Append(uid);
+					found = kTrue;
+				}
+			}
+			if (!found)
+			{
+				outMissing.SetUTF8String(one);
+				outMissing.SetTranslatable(kFalse);
+				return kFalse;
+			}
+		}
+		if (comma == std::string::npos)
+			break;
+		at = comma + 1;
+	}
+	return (out.Length() > 0) ? kTrue : kFalse;
+}
+
+// "<row> <change>;<row> <change>;..." read into the pairs - the batch doors (2026-10-24 night, the list like KFC's: several
+// rows put in, or put back, as one undo step). kFalse when a part does not read as two numbers.
+bool16 ReadChangePairs(const PMString& what, std::vector<int32>& rows, std::vector<int32>& changes)
+{
+	rows.clear();
+	changes.clear();
+	const std::string s = what.GetUTF8String();
+	std::string::size_type at = 0;
+	for (;;)
+	{
+		const std::string::size_type semi = s.find(';', at);
+		const std::string part = s.substr(at, (semi == std::string::npos) ? std::string::npos : semi - at);
+		int32 row = -1;
+		int32 change = -1;
+		if (::sscanf_s(part.c_str(), "%d %d", &row, &change) != 2)
+			return kFalse;
+		rows.push_back(row);
+		changes.push_back(change);
+		if (semi == std::string::npos)
+			break;
+		at = semi + 1;
+	}
+	return rows.empty() ? kFalse : kTrue;
+}
+}	// anonymous namespace
+#endif // KCM_DIAG - the test doors' includes and helpers
 // ⚠**KCMTextRead.h WENT WITH THE FEATURE THAT NEEDED IT** (2026-09-08). It was included here for
 //   app.kcmStoryReadCompare - the direct-read migration's parallel run - and its own comment said
 //   "temporary". The property was removed on 2026-09-03; the include outlived it by five days and
@@ -169,8 +265,9 @@ public:
 	    whichever object we were asked about. */
 	virtual ErrorCode AccessProperty(ScriptID propID, IScriptRequestData* data, IScript* script);
 
-	/** Serve the methods on app: kcmProbePdfRoute() and the story text round trip's four
-	    (2026-09-17). ⛔The three origin writers went on 2026-09-21 with the origin itself.
+	/** Serve the methods on app: the story text round trip's four (2026-09-17). ⛔The three origin
+	    writers went on 2026-09-21 with the origin itself, and kcmProbePdfRoute() on 2026-10-02 with
+	    the PDF spike.
 	    Anything else goes to the base
 	    class, which is what keeps the rest of the scripting working on whichever object we were
 	    asked about. */
@@ -187,7 +284,9 @@ private:
 	    **This is the one property here that reads the HOST's state rather than our own**: it
 	    exists so that "did we leave ourselves on that list when the document was saved?" can be
 	    answered from outside, and the list persists in the .indd. */
+#ifdef KCM_DIAG
 	ErrorCode ReadTransparencyItemCount(ScriptID propID, IScriptRequestData* data, IScript* script);
+#endif
 
 	// app.kcmStoryReadCompare, the direct-read migration's parallel run, stood here from
 	// 2026-08-31 to 2026-09-03 - the only property that ever accepted a put. It went with the old
@@ -203,14 +302,22 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 {
 	const int32 id = propID.Get();
 
+#ifdef KCM_DIAG
 	const bool16 isAppString = (id == p_KCMStatus || id == p_KCMBookResult || id == p_KCMStoryRows
 								|| id == p_KCMResourceSnapshot || id == p_KCMResourceDiff);
+#else
+	const bool16 isAppString = (id == p_KCMStatus || id == p_KCMBookResult);	// (the test doors: a test build's only)
+#endif
 	// ⛔p_KCMOriginStatus stood in that list until 2026-09-21. Its Property block went from KCM.fr
 	//   with the origin, so the engine can no longer name it and this branch could not be reached -
 	//   and nothing below served it either. The ScriptID itself stays retired (KCMScriptingDefs.h).
 	const bool16 isStoryCounter = (id == p_KCMChangeCount || id == p_KCMTextChangeCount ||
 								   id == p_KCMAttrChangeCount || id == p_KCMOtherChangeCount);
+#ifdef KCM_DIAG
 	const bool16 isDocXPCount = (id == p_KCMTransparencyItemCount);
+#else
+	const bool16 isDocXPCount = kFalse;		// (document.kcmTransparencyItemCount: a test door, a test build's only)
+#endif
 
 	if (!isAppString && !isStoryCounter && !isDocXPCount)
 		return CScriptProvider::AccessProperty(propID, data, script);
@@ -262,28 +369,20 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 
 	if (isAppString)
 		return this->ReadAppString(id, propID, data, script);
+#ifdef KCM_DIAG
 	if (isDocXPCount)
 		return this->ReadTransparencyItemCount(propID, data, script);
+#endif
 	return this->ReadStoryCounter(id, propID, data, script);
 }
 
 ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData* data, IScript* script)
 {
-	// ★A MEASURING DOOR (2026-09-14), and the only method here that takes no argument: it reads
-	// the active document's first page and answers with the whole experiment, a line per step.
-	// ⚠**kSuccess with the reading in the return data, even when every step failed** - the same
-	//   shape as the status number below, and for the same reason: "the route does not work" is
-	//   an answer to the question asked, not an error in the scripting sense.
-	if (methodID.Get() == e_KCMProbePdfRoute)
-	{
-		PMString reading;
-		KCMProbePdfRoute(reading);
-		ScriptData returnData;
-		returnData.SetWideString(WideString(reading));
-		data->AppendReturnData(script, methodID, returnData);
-		return kSuccess;
-	}
+	// (⛔app.kcmProbePdfRoute() - the PDF spike's measuring door, 2026-09-14 - was served here and went
+	//  on 2026-10-02 with the spike.)
 
+	// ★★★EVERY METHOD HERE IS A TEST DOOR - a test build's only since 2026-10-26 (the file's head says why).
+#ifdef KCM_DIAG
 	// ★★THE STORY TEXT ROUND TRIP WITHOUT A DIALOG (2026-09-17) - the menu items' own model calls, so
 	//   a test can run every case the user asked for (KCMScriptingDefs.h says why). Each answers with
 	//   the sentence, and puts it on the status line the way the menu item's UI half does.
@@ -291,8 +390,217 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 	//    as the status number below: "0 changes taken in, 2 skipped" is an answer, not an error.
 	{
 		const int32 id = methodID.Get();
-		if (id == e_KCMImportStoryText
-			|| id == e_KCMExportStoryText || id == e_KCMStopComparison)
+		// ★(2026-10-24, the import-as-Source road) app.kcmApplyChange(what) - Apply This Change / in This Story / All
+		//   without the right click: what the facade does for the panel's three items (IKCMStoryEditsFacade).
+		if (id == e_KCMApplyChange)
+		{
+			PMString message;
+			message.SetTranslatable(kFalse);
+			ScriptData arg;
+			PMString what;
+			if (data->ExtractRequestData(p_Name, arg) != kSuccess || arg.GetPMString(what) != kSuccess)
+				message = "the argument could not be read - \"<row> <change>\", \"<row>\" or \"all\"";
+			else
+			{
+				// ⚠Utils<> asked before it is used (memory utils-boss-facade-access: QueryUtilInterface has no nil guard).
+				Utils<IKCMStoryEditsFacade> edits;
+				if (!edits)
+					message = "the Story Edits facade is not there";
+				else if (what == PMString("all"))
+					edits->ApplyAll(message);
+				else
+				{
+					int32 row = -1;
+					int32 change = -1;
+					const std::string s = what.GetUTF8String();
+					std::vector<int32> rows;
+					std::vector<int32> changes;
+					// ★(2026-10-24 night) "<row> <change>;<row> <change>..." - several, as ONE undo step (ApplyChanges).
+					if (s.find(';') != std::string::npos)
+					{
+						if (ReadChangePairs(what, rows, changes))
+							edits->ApplyChanges(&rows[0], &changes[0], static_cast<int32>(rows.size()), message);
+						else
+							message = "the argument does not read as \"<row> <change>;<row> <change>...\"";
+					}
+					else if (::sscanf_s(s.c_str(), "%d %d", &row, &change) == 2)
+						edits->ApplyChange(row, change, message);
+					else if (::sscanf_s(s.c_str(), "%d", &row) == 1)
+						edits->ApplyStory(row, message);
+					else
+						message = "the argument reads as neither \"<row> <change>\", \"<row>\" nor \"all\"";
+				}
+			}
+			message.SetTranslatable(kFalse);
+			if (message.CharCount() > 0)
+				KCMNotifyStatus(message, kFalse);
+			ScriptData returnData;
+			returnData.SetWideString(WideString(message));
+			data->AppendReturnData(script, methodID, returnData);
+			return kSuccess;
+		}
+		// ★(2026-10-24 evening) app.kcmRestoreFromCopy("<row> <change>") - the "=" row's Restore from Copy without the right
+		//   click: what the facade does for the panel's item (IKCMStoryEditsFacade::RestoreChangeFromCopy).
+		if (id == e_KCMRestoreFromCopy)
+		{
+			PMString message;
+			message.SetTranslatable(kFalse);
+			ScriptData arg;
+			PMString what;
+			std::vector<int32> rows;
+			std::vector<int32> changes;
+			// ★(2026-10-24 night) "<row> <change>;<row> <change>..." too - several, as ONE undo step (RestoreChangesFromCopy).
+			if (data->ExtractRequestData(p_Name, arg) != kSuccess || arg.GetPMString(what) != kSuccess)
+				message = "the argument could not be read - \"<row> <change>\"";
+			else if (!ReadChangePairs(what, rows, changes))
+				message = "the argument does not read as \"<row> <change>\" (or several, joined by \";\")";
+			else
+			{
+				// ⚠Utils<> asked before it is used (memory utils-boss-facade-access: QueryUtilInterface has no nil guard).
+				Utils<IKCMStoryEditsFacade> edits;
+				if (!edits)
+					message = "the Story Edits facade is not there";
+				else if (rows.size() == 1)
+					edits->RestoreChangeFromCopy(rows[0], changes[0], message);
+				else
+					edits->RestoreChangesFromCopy(&rows[0], &changes[0], static_cast<int32>(rows.size()), message);
+			}
+			message.SetTranslatable(kFalse);
+			if (message.CharCount() > 0)
+				KCMNotifyStatus(message, kFalse);
+			ScriptData returnData;
+			returnData.SetWideString(WideString(message));
+			data->AppendReturnData(script, methodID, returnData);
+			return kSuccess;
+		}
+		// ★(2026-10-24 night, design 1-8) app.kcmRestoreFromSource(what) - Story mode's Restore from Source by copy without the
+		//   right click: "<row> <change>" (RestoreTextFromSource), "<row>" (Restore All Changes in This Story), or
+		//   "<row> <change>;<row> <change>..." (several, as one undo step - RestoreTextsFromSource).
+		if (id == e_KCMRestoreFromSource)
+		{
+			PMString message;
+			message.SetTranslatable(kFalse);
+			ScriptData arg;
+			PMString what;
+			std::vector<int32> rows;
+			std::vector<int32> changes;
+			int32 row = -1;
+			if (data->ExtractRequestData(p_Name, arg) != kSuccess || arg.GetPMString(what) != kSuccess)
+				message = "the argument could not be read - \"<row> <change>\", \"<row>\" or several \"<row> <change>\" joined by \";\"";
+			else
+			{
+				// ⚠Utils<> asked before it is used (memory utils-boss-facade-access: QueryUtilInterface has no nil guard).
+				Utils<IKCMStoryEditsFacade> edits;
+				const std::string s = what.GetUTF8String();
+				if (!edits)
+					message = "the Story Edits facade is not there";
+				else if (ReadChangePairs(what, rows, changes))
+				{
+					if (rows.size() == 1)
+						edits->RestoreTextFromSource(rows[0], changes[0], message);
+					else
+						edits->RestoreTextsFromSource(&rows[0], &changes[0], static_cast<int32>(rows.size()), message);
+				}
+				else if (s.find(';') == std::string::npos && ::sscanf_s(s.c_str(), "%d", &row) == 1)
+					edits->RestoreStoryFromSource(row, message);
+				else
+					message = "the argument reads as neither \"<row> <change>\", \"<row>\" nor several \"<row> <change>\" joined by \";\"";
+			}
+			message.SetTranslatable(kFalse);
+			if (message.CharCount() > 0)
+				KCMNotifyStatus(message, kFalse);
+			ScriptData returnData;
+			returnData.SetWideString(WideString(message));
+			data->AppendReturnData(script, methodID, returnData);
+			return kSuccess;
+		}
+		// ★(2026-10-24 night, the list like KFC's) app.kcmChangeReach("<row> <change>") - how far a row's selection reaches
+		//   its change's place in the Target (IKCMStoryEditsFacade::GetChangePlaceReach): "none", or the bits set joined by
+		//   commas - "locked", "hidden", "hidden-spread". A reading: nothing goes on the status line.
+		if (id == e_KCMChangeReach)
+		{
+			PMString answer;
+			answer.SetTranslatable(kFalse);
+			ScriptData arg;
+			PMString what;
+			int32 row = -1;
+			int32 change = -1;
+			if (data->ExtractRequestData(p_Name, arg) != kSuccess || arg.GetPMString(what) != kSuccess)
+				answer = "the argument could not be read - \"<row> <change>\"";
+			else if (::sscanf_s(what.GetUTF8String().c_str(), "%d %d", &row, &change) != 2)
+				answer = "the argument does not read as \"<row> <change>\"";
+			else
+			{
+				// ⚠Utils<> asked before it is used (memory utils-boss-facade-access: QueryUtilInterface has no nil guard).
+				Utils<IKCMStoryEditsFacade> edits;
+				if (!edits)
+					answer = "the Story Edits facade is not there";
+				else
+				{
+					const int32 reach = edits->GetChangePlaceReach(row, change);
+					if ((reach & IKCMStoryEditsFacade::kReachLocked) != 0)
+						answer.Append("locked");
+					if ((reach & IKCMStoryEditsFacade::kReachHidden) != 0)
+						answer.Append(answer.CharCount() > 0 ? ",hidden" : "hidden");
+					if ((reach & IKCMStoryEditsFacade::kReachHiddenSpread) != 0)
+						answer.Append(answer.CharCount() > 0 ? ",hidden-spread" : "hidden-spread");
+					if (answer.CharCount() == 0)
+						answer = "none";
+				}
+			}
+			answer.SetTranslatable(kFalse);
+			ScriptData returnData;
+			returnData.SetWideString(WideString(answer));
+			data->AppendReturnData(script, methodID, returnData);
+			return kSuccess;
+		}
+		// ★(2026-10-25) app.kcmExportPages(folder, pages) - "Export Pages to Word..." with the folder given and the pages named
+		//   as the Pages panel names them ("1,3"). The document is the active one - the one the Pages panel shows.
+		//   ⛔"" (the Pages panel's selection) is refused since 2026-10-26 - the import tidy S7: the model does not read the
+		//   panel any more (the menu's UI half does - KCMReadSelectedPages), and a script names what it wants.
+		if (id == e_KCMExportPages)
+		{
+			PMString message;
+			message.SetTranslatable(kFalse);
+			ScriptData fileArg;
+			ScriptData pagesArg;
+			IDFile folder;
+			PMString names;
+			Utils<IKCMStoryEditsFacade> edits;
+			IDataBase* const db = KCMActiveDocDB();
+			if (data->ExtractRequestData(keyAEFile, fileArg) != kSuccess
+				|| fileArg.GetFile(&folder, data->GetRequestContext()) != kSuccess)
+				message = "the folder argument could not be read";
+			else if (data->ExtractRequestData(p_Name, pagesArg) != kSuccess || pagesArg.GetPMString(names) != kSuccess)
+				message = "the pages argument could not be read - name them as the Pages panel does: \"1,3\"";
+			else if (!edits)
+				message = "the Story Edits facade is not there";
+			else if (db == nil)
+				message = "Export Pages to Word: there is no active document";
+			else if (names.IsEmpty())
+				message = "Export Pages to Word: name the pages (\"1,3\") - a script does not read the Pages panel's selection";
+			else
+			{
+				UIDList pages(db);
+				PMString missing;
+				if (PagesNamed(db, names, pages, missing))
+					edits->ExportPagesAsWord(folder, pages, message);
+				else
+				{
+					message = "Export Pages to Word: no page is named ";
+					message.Append(missing);
+				}
+			}
+			message.SetTranslatable(kFalse);
+			if (message.CharCount() > 0)
+				KCMNotifyStatus(message, kFalse);
+			ScriptData returnData;
+			returnData.SetWideString(WideString(message));
+			data->AppendReturnData(script, methodID, returnData);
+			return kSuccess;
+		}
+		if (id == e_KCMImportToSource
+			|| id == e_KCMExportStoryText || id == e_KCMStopComparison || id == e_KCMCompareTracked)
 		{
 			PMString message;
 			message.SetTranslatable(kFalse);
@@ -317,19 +625,28 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 					message = "the file argument could not be read";
 					message.SetTranslatable(kFalse);
 				}
-				else if (id == e_KCMImportStoryText)
+				else if (id == e_KCMCompareTracked)
 				{
+					// "Compare with Tracked Changes..." with the file given instead of asked (2026-10-05, KCMTrackOriginal.h).
+					KCMTakeTrackOriginalCopy(&file, message);
+				}
+				else if (id == e_KCMImportToSource)
+				{
+					// ★"Import Story Text..." (2026-10-24, adopted 2026-10-25): into a copy, not the document.
+					//   (app.kcmImportStoryText - the import that wrote into the document - went with that road on 2026-10-25.)
 					SysFileList files;
 					files.AddFile(&file);
-					KCMImportStoryText(files, message);
+					KCMImportStoryTextAsSource(files, message);
 				}
 				else
 				{
 					// An EMPTY list is the whole document - the rule KCMStoryTextExport.h states.
-					IDataBase* const db = KCMActiveDocDB();
+					// ★★THE TASK DOCUMENT, as the flyout's item exports (2026-09-25, the user's decision - KCMTaskDocumentDB):
+					//   the chosen Target, else the active document - the one the import takes its copy of.
+					IDataBase* const db = KCMTaskDocumentDB();
 					if (db == nil)
 					{
-						message = "there is no active document";
+						message = "there is no document to export (no Target and no active document)";
 						message.SetTranslatable(kFalse);
 					}
 					else
@@ -351,6 +668,7 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 			return kSuccess;
 		}
 	}
+#endif // KCM_DIAG - the test doors' methods
 
 	// ⛔**THE THREE ORIGIN WRITERS WENT ON 2026-09-21** (kcmSaveOriginXml / kcmSaveOriginIdml /
 	//   kcmSaveDocXml). They shared one body and one status scale, and all three read something
@@ -363,6 +681,8 @@ ErrorCode KCMScriptProvider::ReadAppString(int32 id, ScriptID propID, IScriptReq
 	PMString value;
 	if (id == p_KCMStatus)
 		KCMGetSessionStatus(value);		// the panel's status line
+#ifdef KCM_DIAG
+	// (the three test doors among the strings - a test build's only since 2026-10-26)
 	else if (id == p_KCMResourceSnapshot)
 		// The Resources mode's export, measured from outside while it has no panel of its own.
 		KCMDescribeResourceSnapshot(value);
@@ -375,7 +695,13 @@ ErrorCode KCMScriptProvider::ReadAppString(int32 id, ScriptID propID, IScriptReq
 		// ★THE WHOLE LIST, and it answers with a header line even when there is nothing to report:
 		//   an empty list is a real answer, and it has to read differently from the property being
 		//   absent (which is ERR:55, not an empty string).
-		KCMStoryList::RowsAsTsv(value);
+	{
+		if (KCMGetCompareMode() == kKCMModeTrack)
+			KCMTrackList::RowsAsTsv(value);		// the Track mode's list (2026-10-05) - its own columns, its header says which
+		else
+			KCMStoryList::RowsAsTsv(value);
+	}
+#endif // KCM_DIAG
 	else
 		KCMGetBookResultText(value);		// the last book comparison, one line per chapter
 
@@ -410,6 +736,8 @@ ErrorCode KCMScriptProvider::ReadStoryCounter(int32 id, ScriptID propID, IScript
 	return this->ReturnInt32(static_cast<int32>(value), propID, data, script);
 }
 
+#ifdef KCM_DIAG
+// (a test door - a test build's only since 2026-10-26)
 ErrorCode KCMScriptProvider::ReadTransparencyItemCount(ScriptID propID, IScriptRequestData* data, IScript* script)
 {
 	// The script object names the document to read - same move as ReadStoryCounter above, except
@@ -428,6 +756,7 @@ ErrorCode KCMScriptProvider::ReadTransparencyItemCount(ScriptID propID, IScriptR
 	//   for why it must not arrive as a string.
 	return this->ReturnInt32(count, propID, data, script);
 }
+#endif // KCM_DIAG
 
 ErrorCode KCMScriptProvider::ReturnInt32(int32 value, ScriptID propID, IScriptRequestData* data,
 										 IScript* script)

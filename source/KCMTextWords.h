@@ -6,7 +6,7 @@
 //
 //  The small helpers the Word round trip's writers share (2026-09-24): the characters of a range of a story, a
 //  refusal worded for the panel's message line, and the file's UTF-8 as the strings InDesign takes. ★Each stood
-//  in two or more files' anonymous namespaces (KCMRestoreAttr.cpp, KCMRedoFromWord.cpp, KCMStoryAttrPour.cpp,
+//  in two or more files' anonymous namespaces (KCMRestoreAttr.cpp, KCMApplyFromImport.cpp, KCMStoryAttrPour.cpp,
 //  KCMStorySyncApply.cpp); a second copy was the sign to give them one home.
 //
 //========================================================================================

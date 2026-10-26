@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //
 //  Owner: KohakuNekotarou
 //
@@ -47,6 +47,19 @@ void KCMStoryTreeRebuild();
 	  heights and hit-testing of the change rows are left to the Story mode alone.
 */
 bool16 KCMListShowsResources();
+
+/** kTrue when the list is in the PIXEL MODE'S shape (2026-10-11): one row that says the mode
+	compares no story, and nothing else. The Pixel mode reads no story at all now, so while it
+	compares, a blank row would read as "no story changed" - which nobody looked at.
+
+	The same kind of question as KCMListShowsResources and asked in the same three places (the
+	adapter, the widget manager, the heading), so it is answered next to it. ⚠Asked by the mode's
+	NAME: "the mode keeps no story list" is true of the Resources mode too, and of a mode added
+	later, while the note names the Pixel mode.
+	⚠The list's MODEL is not consulted in this shape: for the length of a Before/After report the
+	report builds story rows of its own (KCMReport.cpp), and they are not this mode's to show.
+*/
+bool16 KCMListShowsPixelNote();
 
 /** Whether a Resources row of this change kind has attribute rows under it. ★THE ONE PLACE
 	(2026-09-12): the tree adapter asks it to grow the children, and the Kind column's fit asks it

@@ -3,8 +3,9 @@
 //  KCMTableSnippet.cpp -- see the header.
 //
 //  THE CUTS ARE TEXT CUTS, NOT EDITS: a subtree is found by its tags and copied out untouched,
-//  the way KCMPdfSpike's MakeObjectPart cuts a <Story> for an IDML part ("a cut cannot corrupt
-//  what it does not touch"). Nothing inside a <Table> is read.
+//  the way the PDF spike's MakeObjectPart cut a <Story> for an IDML part ("a cut cannot corrupt
+//  what it does not touch"; KCMPdfSpike.cpp, removed before shipping on 2026-10-02 - in git at
+//  5720208). Nothing inside a <Table> is read.
 //
 //========================================================================================
 
@@ -854,14 +855,15 @@ void KCMBuildTableSnippet(const std::string& tableXml, const std::string& styleG
 #ifndef KCM_TABLESNIPPET_STANDALONE
 bool16 KCMExportStoryInx(IDataBase* db, UID storyUID, KCMMemXferBytes& out, bool16 includeStyleRoots)
 {
-	// The call KCMPdfSpike's S17.8 measured (ExportElementAsInxWith), on a story: what comes out is the
+	// The call the PDF spike's S17.8 measured (ExportElementAsInxWith; KCMPdfSpike.cpp, in git at 5720208),
+	// on a story: what comes out is the
 	// <Story> the IDML holds, byte for byte, dressed as <?aid type="action"?><Document>…</Document>.
 	if (db == nil || storyUID == kInvalidUID)
 		return kFalse;
 	ISession* const session = GetExecutionContextSession();
 	InterfacePtr<IDocumentList> docList(session != nil ? session->QueryDocumentList() : nil);
-	// ★★★THE DATABASE HAS TO BE ONE THE SESSION KNOWS ABOUT - the guard KCMResourceSnapshot.cpp:62-93
-	//   states at length: handed a cloned database, ExportINX does not fail and does not return nil,
+	// ★★★THE DATABASE HAS TO BE ONE THE SESSION KNOWS ABOUT - the guard KCMTakeResourceSnapshot
+	//   (KCMResourceSnapshot.cpp) states at length: handed a cloned database, ExportINX does not fail and does not return nil,
 	//   THE PROCESS IS GONE. There is nothing to nil-check afterwards; the only defence is to refuse
 	//   before starting. A KIDMCP comparison lends exactly such a database as its Source.
 	if (docList == nil || docList->FindDocByDataBase(db) == nil)
@@ -869,7 +871,7 @@ bool16 KCMExportStoryInx(IDataBase* db, UID storyUID, KCMMemXferBytes& out, bool
 	InterfacePtr<IDOMElement> element(db, storyUID, UseDefaultIID());
 	InterfacePtr<IINXManager> inx(session->QueryINXManager());
 	// ⚠IINXExportPolicy is forward-declared only in the SDK: received as IPMUnknown and C-cast, the
-	//   way the product's own InCopyImportProvider.cpp does (KCMPdfSpike says so at length).
+	//   way the product's own InCopyImportProvider.cpp does (the PDF spike said so at length - in git at 5720208).
 	InterfacePtr<IPMUnknown> holder((IPMUnknown*)::CreateObject(kActionExportPolicyBoss, IID_IINXEXPORTPOLICY));
 	if (element == nil || inx == nil || holder == nil)
 		return kFalse;

@@ -24,9 +24,9 @@
 //  in" walk. That walk moved to the model side on 2026-08-22 so that it composes before it answers
 //  - see KCMStoryJumpToChange - and nothing else in this file needed them.)
 #include "ITextModel.h"
-#include "ITextSelectionSuite.h"	// SetTextSelection - the double click's whole point
+#include "ITextSelectionSuite.h"	// SetTextSelection - the click's selection (SelectRangeIn)
 #include "ITextUtils.h"				// GetPageUIDRef - which page that frame is on
-#include "ITool.h"					// IsTextTool - is a text tool already active?
+#include "ITool.h"					// IsToolOfType(kTextSelectionTool) - is a text tool already active?
 #include "IToolBoxUtils.h"			// QueryActiveTool / QueryTool / SetActiveTool
 #include "DocumentPresFindCriteria.h"	// FindPresCriteria::accept_all - the SDK's own "any
 									//  presentation will do" predicate
@@ -38,11 +38,11 @@
 // General includes:
 #include "PMString.h"
 #include "RangeData.h"				// the range handed to SetTextSelection
-#include "TextEditorID.h"			// kIBeamToolBoss - the Type tool the double click switches to
+#include "TextEditorID.h"			// kIBeamToolBoss - the Type tool a selection switches to
 #include "UIDRef.h"
 #include "Utils.h"
 #include "WritingModeID2.h"			// IID_ITEMPTEXTSELECTION_SUITE - the second way to ask for the
-									//  text selection suite (see SelectWholeStory). Only the IID is
+									//  text selection suite (see SelectRangeIn). Only the IID is
 									//  published; there is no ITemptextselection_suite.h in the SDK
 
 // Project includes:
@@ -57,6 +57,8 @@
 #include "IKCMStoryEditsFacade.h"	// the row a click landed on (Facade since 2026-08-13, Task 14)
 #include "IKCMMarkData.h"	// IsPageOnHiddenSpread - a row on a hidden page is labelled, not jumped to (2026-08-18)
 #include "KCMStoryTree.h"			// KCMListShowsResources - which kind of row the click landed on
+#include "KCMTrackLabels.h"		// the Track mode's heading: who, when, what (2026-10-05)
+#include "KCMTrackPlan.h"			// kKCMTrackDelete - a deletion's words are not in the layout (2026-10-25)
 #include "KCMResourceValue.h"		// KCMShowSelectedResource - what a Resources row does instead of jumping
 
 namespace
@@ -143,6 +145,8 @@ IControlView* FirstLayoutView(IDataBase* db)
 	document's. Asking it to select in the other document is what made a Deleted row's double click
 	do nothing at all while the target was in front (user's report: "double-clicking does not select
 	when the source is not active").
+	(⚠Since 2026-10-25 - the double click gone - the one caller is the click's selection, which makes its document the
+	 active one first (KCMStoryJumpToChange), so the second road below is the fallback for when that did not take.)
 
 	⇒ The front document keeps the road it had, because THAT is where the story editor and the
 	galley live: their selection does not answer to ITextSelectionSuite's default IID and has to be
@@ -178,13 +182,12 @@ ISelectionManager* QuerySelectionManagerFor(IDataBase* db)
 /** Make this document the active one, so that a selection made in it is the selection the reader
 	is looking at.
 
-	★ONLY THE DELETED ROW DOES THIS (user's call, 2026-08-21 - and it is a REVERSAL of the same
-	day's earlier "windows do not move": "for a deletion, selecting on the source side should make
-	the source document active"). Its story exists in the source alone, so leaving the target in front
-	would put the reader's attention on the one document that has nothing to show.
-	⚠Every other row leaves the front document alone: it has something to show on both sides, and
-	moving the front document under a reader who did not ask for it is a bigger intervention than
-	the selection itself.
+	★WHO CALLS IT NOW: the click on a change row, which makes the Target the active document before selecting in it
+	(since 2026-10-24 night - a selection made in a document behind another is not the one the reader holds), and
+	KCMBringArmedTargetToFront / KCMBringDocumentToFront.
+	(⛔"ONLY THE DELETED ROW DOES THIS" stood here from 2026-08-21 - the user's call then, a REVERSAL of the same day's
+	"windows do not move": "for a deletion, selecting on the source side should make the source document active". It
+	was the Deleted row's whole-story double click, gone on 2026-10-25.)
 
 	***** "THE ACTIVE DOCUMENT" IS A PRESENTATION, NOT A WINDOW, AND TWO CALLS WERE MEASURED
 		  WRONG BEFORE THIS ONE (2026-08-22). *****
@@ -243,14 +246,11 @@ void ActivateDocument(IDataBase* db)
 	★The diff ran against the story as it was when the comparison did, and the reader may have
 	edited it since - a stale end would be refused by the selection suite, and a stale start would
 	select the wrong words silently.
-	@param to a NEGATIVE value means "to the end of the story", which is what the whole-story
-		double click asks for. ⚠Nothing the diff hands over is ever negative, so that rule only
-		fires for the caller that asks for it on purpose.
+	(⛔A NEGATIVE `to` meant "to the end of the story" until 2026-10-25 - the whole-story double click's, gone that day.)
 */
 void ClampToStory(ITextModel* model, TextIndex& from, TextIndex& to)
 {
 	const TextIndex total = model->TotalLength();
-	if (to < 0) to = total;
 	if (from < 0) from = 0;
 	if (to > total) to = total;
 	if (from > total) from = total;
@@ -259,12 +259,10 @@ void ClampToStory(ITextModel* model, TextIndex& from, TextIndex& to)
 
 /** Select from..to of one story in ONE document, with the Type tool on.
 
-	Everything the two double clicks have in common lives here, so that "how KCM makes a text
-	selection" is written once and the callers are left saying only WHERE.
+	"How KCM makes a text selection", written once - the click on a change row is its caller (KCMStoryJumpToChange;
+	the two double clicks were too, until 2026-10-25).
 
-	@param to the end of the range, or a NEGATIVE value for "to the end of the story" - what the
-		whole-story double click wants. The story has to be opened here to clamp the range anyway,
-		so its length is known here and the caller is not made to open it a second time to say so.
+	@param to the end of the range (clamped to the story as it stands - ClampToStory).
 	@return kFalse when this document has no such story, no window, or the suite refused.
 */
 bool16 SelectRangeIn(IDataBase* db, UID storyUID, TextIndex from, TextIndex to)
@@ -275,17 +273,17 @@ bool16 SelectRangeIn(IDataBase* db, UID storyUID, TextIndex from, TextIndex to)
 	const UIDRef storyRef(db, storyUID);
 	InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
 	if (model == nil)
-		return kFalse;	// no such story here. Normal on the source side: an added story never
-						//  existed over there, and the two versions have to be versions of each
-						//  other for a uid to mean the same story at all (KCMStoryStamp.h, "WHY TWO VERSIONS CAN BE MATCHED AT ALL")
+		return kFalse;	// no such story here - deleted since the comparison read it (the one caller asks of the
+						//  Target; until 2026-10-25 the double click asked of the Source too, where an added
+						//  story never existed: KCMStoryStamp.h, "WHY TWO VERSIONS CAN BE MATCHED AT ALL")
 
-	ClampToStory(model, from, to);		// "to" may be -1 here: the story row asks for the whole story
+	ClampToStory(model, from, to);
 
 	// ★Making a selection recomposes, and this plug-in may only have the document open in order to
 	//   look at it. IDataBase.h:389-412 restores the flag the document came in with rather than
 	//   forcing it clean - the same guard KBS puts round the identical operation.
-	//   ★ONE GUARD, ON THE DOCUMENT BEING SELECTED INTO - and now that two documents can be
-	//     selected into for one click, each of them gets its own by being its own call.
+	//   ★ONE GUARD, ON THE DOCUMENT BEING SELECTED INTO - each document a call selects into gets its own by being its
+	//     own call (two for one double click, until 2026-10-25).
 	IDataBase::SaveRestoreModifiedState dirtyGuard(db);
 
 	InterfacePtr<ISelectionManager> selectionManager(QuerySelectionManagerFor(db));
@@ -303,18 +301,22 @@ bool16 SelectRangeIn(IDataBase* db, UID storyUID, TextIndex from, TextIndex to)
 	selectionManager->DeselectAll(nil);
 
 	// ***** THE TYPE TOOL, BECAUSE THIS IS AN INVITATION TO EDIT. ***** Text selected while some
-	// other tool is active is not text the user can act on, which is the whole of what a double click
-	// here is asking for. The tool goes on before the selection is made, as in the sample.
+	// other tool is active is not text the user can act on, which is the whole of what the click's
+	// selection is for (KFC's PutTypeToolOn). The tool goes on before the selection is made, as in the sample.
 	// ! This takes the KCM tool off, if it was on. Deliberate (user's call, 2026-08-10), and
 	//   written down in How to Use so that it is not a surprise.
 	// ★The nil test on the active tool is ours: the sample does not test it at all - it calls
 	//   IsTextTool() straight off whatever QueryActiveTool answered (GTTxtEdtUtils.cpp:118-119).
 	//   The ASSERT a few lines below it is on the I-beam tool queried next, not on this one.
-	// ★The tool is the APPLICATION's, not a document's, so the second call of a two-document click
-	//   finds it already on and does nothing. Asking again costs one Query and keeps this function
-	//   true on its own.
+	// ★The tool is the APPLICATION's, not a document's, so a second call finds it already on and does nothing.
+	//   Asking again costs one Query and keeps this function true on its own.
+	// ★★IsToolOfType(kTextSelectionTool), NOT IsTextTool() (2026-10-24 night - the 10-03 item, KFC's PutTypeToolOn):
+	//   ITool.h:178-183 says IsTextTool "could be more accurately called DoesToolDeactivateTextEditor" - the Zoom,
+	//   Gradient and Hand tools answer kTrue to it too - and names this call for "traditional 'text' tools that select
+	//   text". KFC measured it: with IsTextTool, text came out selected under the Hand tool, in a window the user
+	//   cannot type into. (The sample asks IsTextTool; its header is what it does not read.)
 	InterfacePtr<ITool> activeTool(Utils<IToolBoxUtils>()->QueryActiveTool());
-	if (activeTool == nil || !activeTool->IsTextTool())
+	if (activeTool == nil || !activeTool->IsToolOfType(ITool::kTextSelectionTool))
 	{
 		InterfacePtr<ITool> iBeamTool(Utils<IToolBoxUtils>()->QueryTool(kIBeamToolBoss));
 		if (iBeamTool == nil)
@@ -338,11 +340,12 @@ bool16 SelectRangeIn(IDataBase* db, UID storyUID, TextIndex from, TextIndex to)
 	//   nothing, because the DeselectAll above had already run, so the caret the user was holding
 	//   was taken away and nothing was put back. With the second ask, the same double click selects
 	//   the whole story (Paragraph, 15 chars), exactly as it does from a layout window.
+	//   (The double click measured here went on 2026-10-25; the click's selection takes the same road.)
 	// ⚠STILL NOT POSSIBLE, and this is the suite's own rule rather than something to work around
 	//   here: a row whose story the front story editor is NOT showing. That window's selection
 	//   belongs to its own story, so SetTextSelection for any other one is refused - measured on
-	//   the two rows either side of it. The jump on the first click still reports the page, so the
-	//   click is not silent; only the selecting half of it declines.
+	//   the two rows either side of it. The jump still reports the page, so the click is not silent;
+	//   only its selecting half declines (and the flash points instead - KCMStoryJumpToChange).
 	InterfacePtr<ITextSelectionSuite> textSelectionSuite(selectionManager, UseDefaultIID());
 	if (textSelectionSuite == nil)
 		textSelectionSuite.reset(InterfacePtr<ITextSelectionSuite>(selectionManager, IID_ITEMPTEXTSELECTION_SUITE).forget());
@@ -361,7 +364,7 @@ bool16 SelectRangeIn(IDataBase* db, UID storyUID, TextIndex from, TextIndex to)
 	//     table cell was edited. The trailing carriage return is inside the range on purpose: it is
 	//     a character of the story, and InDesign's own Select All takes it too.
 	//
-	//   kDontScrollSelection: the first click of the double click already centred the frame with
+	//   kDontScrollSelection: the click's jump (KCMGotoStoryFrame) has just centred the frame with
 	//   IPanorama::ScrollContentLocationToFrameCenter. kScrollIntoView would only promise the
 	//   selection is somewhere on screen, undoing the better answer already given. (The official
 	//   sample asks for kScrollIntoView because nothing has scrolled on its behalf.)
@@ -395,6 +398,19 @@ void KCMBringArmedTargetToFront()
 	//   to be in front, or the one a Task Start copied - and the armed state is the only place
 	//   that knows which it became.
 	ActivateDocument(targetDB);
+}
+
+//----------------------------------------------------------------------------------------
+// KCMBringDocumentToFront (declared in KCMStoryJump.h)
+//----------------------------------------------------------------------------------------
+void KCMBringDocumentToFront(IDataBase* db)
+{
+	// ⚠**ASKED BEFORE IT IS USED.** The caller noted this pointer before a long run (the report), and a
+	//   document closed meanwhile leaves its address behind for another to reuse ([[uidref-reuse-after-close]]);
+	//   the facade answers by comparing it against the open documents, never by dereferencing it.
+	if (db == nil || !Utils<IKCMCompareFacade>()->IsDocDBOpen(db))
+		return;
+	ActivateDocument(db);
 }
 
 //----------------------------------------------------------------------------------------
@@ -468,6 +484,18 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 		return kFalse;
 	}
 
+	// ★A SOURCE KEPT IN MEMORY HAS NO WINDOW (2026-10-13): a Removed row's story is in the Source alone, and a Task
+	//   Start kept in memory is a database clone no window shows - said, rather than "Could not scroll.".
+	if (removedRow)
+	{
+		PMString label;
+		if (Utils<IKCMCompareFacade>()->GetExternalSourceLabel(db, label))
+		{
+			KCMSetStatus("The Source is a Task Start kept in memory - it has no window to show this story in.");
+			return kFalse;
+		}
+	}
+
 	// ★A ROW STANDING FOR A FILE (2026-09-19): an import was handed a file named after a story the
 	//   document does not hold. There is no story, so there is nowhere to go; the row's text says
 	//   which file, and this says why the page did not move.
@@ -498,19 +526,31 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 	//   clicked was a story on page 3 - a DIFFERENT SPREAD, so KCMEnsureSpreadInView really did
 	//   run kSetSpreadCmdBoss through CmdUtils::ProcessCommand. Both windows moved to page 3, the
 	//   status line said "Page: 3", and app.documents[i].modified was FALSE for target AND source
-	//   afterwards. Start itself, Next Change, Stop and the double click below were all measured the
+	//   afterwards. Start itself, Next Change, Stop and the double click (gone 2026-10-25) were all measured the
 	//   same way and are all clean too.
 	// ⇒ Scrolling and switching the spread do not dirty a document; the guard below is for the
 	//   SELECTION, which is a different operation (see its own note).
 	// ⚠WHAT WOULD CHANGE THE ANSWER: anything added to this path that touches the model rather than
 	//   the view. Then measure again rather than reasoning from here.
-	if (!KCMGotoStoryFrame(db, row.fFrameUID, row.fPageUID, row.fStoryUID))
+	// ★The Source window is lined up on the row's SOURCE story (2026-10-26 - Row::fSourceStoryUID; another uid for a row
+	//   paired by the place of its first frame, the same one for every other).
+	if (!KCMGotoStoryFrame(db, row.fFrameUID, row.fPageUID, row.fStoryUID, row.fSourceStoryUID))
 	{
 		KCMSetStatus("Could not scroll.");	// the same wording as a failed Prev/Next (it is the same event)
 		return kFalse;
 	}
 
-	KCMSetStatus(PageLabel(db, row.fPageUID));
+	// ★★A ROW PAIRED BY PLACE SAYS SO (2026-10-26, design 2-2 #13): the list shows the Target's story number, and nothing
+	//   else on the panel tells the reader that the Source side is ANOTHER story - the one whose frame stood where this
+	//   story's frame stands now.
+	PMString status = PageLabel(db, row.fPageUID);
+	if ((row.fKinds & kKCMStoryKindByPosition) != 0 && row.fSourceStoryUID != kInvalidUID)
+	{
+		status.Append(" - paired by place with the Source's story ");
+		status.AppendNumber(static_cast<int32>(row.fSourceStoryUID.Get()));
+	}
+	status.SetTranslatable(kFalse);
+	KCMSetStatus(status);
 	return kTrue;
 }
 
@@ -560,6 +600,16 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	// is done before the refusals below, and KCMChangeNav.h for what it means on a parent row.
 	KCMNoteStoryStop(rowIndex, changeIndex);
 
+	// ★★THE TRACK MODE ASKS THE DOCUMENT FIRST (2026-10-05, design 5-1): a change accepted, rejected or undone since
+	//   the read is no longer recorded, and a jump to where it stood would point at words that are not the change.
+	IKCMStoryEditsFacade::TrackChange track;
+	const bool16 isTrack = Utils<IKCMStoryEditsFacade>()->GetTrackChange(rowIndex, changeIndex, track);
+	if (isTrack && !Utils<IKCMStoryEditsFacade>()->TrackChangeStillRecorded(rowIndex, changeIndex))
+	{
+		KCMSetStatus("This change is no longer recorded - accepted, rejected or undone. Refresh to read again.");
+		return kFalse;
+	}
+
 	IDataBase* db = Utils<IKCMCompareFacade>()->GetArmedTargetDB();
 	if (db == nil || !Utils<IKCMCompareFacade>()->IsDocDBOpen(db))
 		return kFalse;
@@ -573,7 +623,8 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	TextIndex to = change.fTargetEnd;
 	ClampToStory(model, from, to);
 
-	// Making a selection recomposes - the same guard, and the same reason, as the double click's.
+	// Asking where the edit is composes, and so does the selection below - the same guard, and the same reason, as
+	// SelectRangeIn's.
 	IDataBase::SaveRestoreModifiedState dirtyGuard(db);
 
 	// ***** THE FRAME THE EDIT IS IN, not the story's first one. ***** A story threaded across
@@ -641,7 +692,8 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	const UIDRef pageRef = Utils<ITextUtils>()->GetPageUIDRef(UIDRef(db, frameUID));
 	const UID pageUID = (pageRef.GetDataBase() != nil) ? pageRef.GetUID() : row.fPageUID;
 
-	// Both windows move here - the target to this frame, the source to the same story.
+	// Both windows move here - the target to this frame, the source to the row's Source story (the same story for every
+	// row paired by UID; another for one paired by place - 2026-10-26).
 	//
 	// ★★★AND BOTH LAND ON THE EDIT ITSELF, NOT ON THE TOP OF THE STORY (user's request, 2026-08-22:
 	//   "the very start of the changed part should move to the centre of the layout view" - what was arriving
@@ -693,7 +745,7 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 		}
 	}
 
-	const bool16 moved = KCMGotoStoryFrame(db, frameUID, pageUID, row.fStoryUID, from, sourceFocus,
+	const bool16 moved = KCMGotoStoryFrame(db, frameUID, pageUID, row.fStoryUID, row.fSourceStoryUID, from, sourceFocus,
 										   haveCorner ? &tableCorner : (wentToOverset ? &oversetPb : nil),
 										   targetCaret, sourceCaret);
 
@@ -703,8 +755,8 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   short while"). Until then this made a text selection, which had three costs a pointer does
 	//   not: it threw away whatever the reader had selected, it forced the Type tool on, and it left
 	//   the words sitting selected long after the reader had looked at them. The mark says "here" and
-	//   then gets out of the way. ⇒ The selection is still available - it is what a DOUBLE click does
-	//   now (KCMStorySelectChange below).
+	//   then gets out of the way. ⇒ The selection stayed available on the DOUBLE click (KCMStorySelectChange) until
+	//   2026-10-24 night, when the click took it back (below); the double click went on 2026-10-25.
 	// ★It is drawn ON the characters by the text engine (KCMStoryMarker.cpp), so it needs no
 	//   coordinates from here: the story and the character range are the whole of the request.
 	//
@@ -720,8 +772,8 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   drawn as the caret standing where the new words went in (KCMStoryMarker::AddFlashRange) -
 	//   the same thing the standing marks show for it.
 	// ⚠THE OLDER SIDE'S RANGE IS NOT CLAMPED to the story as it stands now, and the target's is
-	//   (above). The difference is real: the target's numbers also make a SELECTION on the double
-	//   click, which the suite would refuse if they were stale, while a mark is only ever asked "is
+	//   (above). The difference is real: the target's numbers also make a SELECTION (below), which
+	//   the suite would refuse if they were stale, while a mark is only ever asked "is
 	//   any of this run marked" and a stale range simply never meets a run (KCMStoryPressMarks
 	//   records the same reasoning for the standing marks).
 	// ★★ONE CALL SINCE 2026-08-23, WHERE THIS USED TO BUILD THE SET ITSELF. The marker moved to the
@@ -736,8 +788,65 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   there; that file's Refresh hangs off a model NOTIFICATION, which can arrive while the
 	//   application is tearing down. Every other facade call in this file (IKCMCompareFacade,
 	//   IKCMStoryEditsFacade) is written the same way for the same reason.
-	Utils<IKCMStoryMarkFacade>()->ShowJumpFlash(db, row.fStoryUID, from, to,
-												  change.fSourceStart, change.fSourceEnd);
+	//
+	// ★★★AND SINCE 2026-10-24 NIGHT THE TARGET'S WORDS ARE SELECTED WHERE THEY CAN BE (docs/superpowers/specs/
+	//   2026-10-24-kcm-list-like-kfc-design.md 1-1 / 1-2; the author: "in KFC, selecting a row selects the text too,
+	//   and that is pleasant to use - KCM too, the Story mode and Word / PDF", "the hidden and locked cases too - select
+	//   the way KFC does"). The 2026-08-20 call above is changed the way design section 4 says: its first two costs (the
+	//   reader's selection thrown away, the Type tool) are taken as KFC takes them - the selection IS the pointer. KFC's
+	//   rules, which are Find/Change's own (KFCJump.cpp, NotSelected): a LOCKED place is not selected and the flash
+	//   points at it instead; a HIDDEN one (its layer or itself) is selected with nothing of it showing, and said; one
+	//   on a HIDDEN SPREAD is neither shown nor selected, and said; an overset one is selected where its "+" is, and
+	//   said; an empty place (a deletion's) gets the caret. The Target is made the active document first - a selection
+	//   made in a document behind another is not the one the reader holds (ActivateDocument says how that was measured).
+	//   ★The Source window moves and flashes as before (design section 3, Q1).
+	//   ★★THE TRACK MODE SELECTS TOO SINCE 2026-10-25 (the author: "in the Track Change mode too, select the words when a
+	//     row is selected - remember that"; design Q2's "the Track mode as it is" reversed). The same rules on the same
+	//     place, and one thing more: what a record keeps out of the layout - a deletion's words, which InDesign shows in
+	//     the Story Editor only, and words under a hidden condition, whose place is where that text comes back
+	//     (KCMTrackRead) - cannot be selected as words, so the caret stands at the place and the message area says why
+	//     nothing shows there.
+	//   ★No flash on a selected place: an inversion over a selection cannot be read (KFC's JMP-29).
+	const char* landing = nil;		// what the message area says first - nil for a plain landing
+	const int32 reach = Utils<IKCMStoryEditsFacade>()->GetChangePlaceReach(rowIndex, changeIndex);
+	bool16 selected = kFalse;
+	if ((reach & IKCMStoryEditsFacade::kReachHiddenSpread) != 0)
+		landing = "That change is on a hidden spread - it cannot be shown or selected.";
+	else if ((reach & IKCMStoryEditsFacade::kReachLocked) != 0)
+		landing = "That change is locked - it cannot be selected.";
+	else
+	{
+		if (Utils<IKCMCompareFacade>()->GetActiveDocDB() != db)
+			ActivateDocument(db);
+		// A refusal is quiet, and the flash points instead: a story editor in front showing another story, a window
+		// that could not be had (SelectRangeIn says which).
+		selected = SelectRangeIn(db, row.fStoryUID, from, to);
+		if (selected && wentToOverset)
+			landing = "(Overset Text) The change is selected, past the end of its frames - nothing of it shows on the page.";
+		else if (selected && (reach & IKCMStoryEditsFacade::kReachHidden) != 0)
+			landing = "The change is selected, on a hidden layer - nothing of it shows.";
+		else if (selected && isTrack && track.fHidden)
+			landing = "That change is under a hidden condition - the caret stands where its text is hidden; nothing of it shows.";
+		else if (selected && isTrack && track.fKind == kKCMTrackDelete)
+			landing = "The deleted words show in the Story Editor only - the caret stands where they were.";
+	}
+	// The Target's flash only where nothing was selected and something can be shown; the Source's always (a nil
+	// document is skipped by the marker - KCMStoryMarker's AddFlashRange).
+	const bool16 targetFlash = (!selected && (reach & IKCMStoryEditsFacade::kReachHiddenSpread) == 0) ? kTrue : kFalse;
+	if (isTrack)
+	{
+		// ★In the author's colour (2026-10-05); in the Source window only where the change's place in the copy is
+		//   known exactly - otherwise its Source range is the story's start, and a flash there would point at nothing.
+		Utils<IKCMStoryMarkFacade>()->ShowJumpFlashColoured(targetFlash ? db : nil, row.fStoryUID,
+			targetFlash ? from : 0, targetFlash ? to : 0,
+			track.fSourceExact ? change.fSourceStart : -1, track.fSourceExact ? change.fSourceEnd : -1,
+			track.fHasColour, track.fR, track.fG, track.fB);
+	}
+	else
+		// ★The Source's range under the row's SOURCE story (2026-10-26 - another uid for a row paired by place).
+		Utils<IKCMStoryMarkFacade>()->ShowJumpFlash(targetFlash ? db : nil, row.fStoryUID,
+													  targetFlash ? from : 0, targetFlash ? to : 0,
+													  row.fSourceStoryUID, change.fSourceStart, change.fSourceEnd);
 
 	// ***** AND THE OTHER SIDE OF THE EDIT GOES TO THE PANEL'S MESSAGE AREA. *****
 	//
@@ -826,6 +935,29 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	if (wentToOverset)
 		label.Append(" (overset)");
 
+	// ★THE TRACK MODE'S HEADING (2026-10-05, design 4-3): who, when, and what - then the words it took away.
+	if (isTrack)
+	{
+		// ★" · " as UTF-16 (the "≠" road of this list): a narrow literal with a non-ASCII byte goes through the
+		//   code page and draws as something else (memory cpp-japanese-needs-bom).
+		const char16_t kDot[] = u" · ";
+		PMString dot;
+		dot.SetXString(reinterpret_cast<const UTF16TextChar*>(kDot), 3);
+		dot.SetTranslatable(kFalse);
+		IKCMStoryEditsFacade::TrackAuthor au;
+		label = Utils<IKCMStoryEditsFacade>()->GetTrackAuthor(track.fAuthor, au) ? KCMTrackAuthorName(au.fName) : PMString();
+		label.Append(dot);
+		label.Append(KCMTrackTimeLabel(track.fTime));
+		label.Append(dot);
+		label.Append(KCMTrackKindWord(track.fKind));
+		label.Append(":");
+		if (track.fHidden)
+			label.Append(" (hidden condition)");
+		if (wentToOverset)
+			label.Append(" (overset)");
+		label.SetTranslatable(kFalse);
+	}
+
 	// ★★THE OTHER SIDE'S READING GOES WITH IT (2026-08-22). The list shows the NEWER version, so a
 	//   reading that was REMOVED can be seen nowhere else - and the row's own upper line is left
 	//   empty for exactly those (user's call). This box is where it is answered.
@@ -871,10 +1003,45 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	PMString shownLabel(label);
 	if (change.fReplaced)
 	{
-		PMString taken("Taken back - the Source's words stand here now; Redo from Word puts Word's back. ");
+		PMString taken;
+		taken.SetTranslatable(kFalse);
+		// ★APPLY'S "=" READS THE OTHER WAY ROUND (2026-10-24 evening, design 11-4): against an import's copy the files'
+		//   words went IN here, and the way back is the row's Restore from Copy or Ctrl+Z - the take-back's sentence
+		//   below ("Redo puts Word's back") said the opposite of what had happened.
+		PMString whyNot;
+		const bool16 copyKept = Utils<IKCMStoryEditsFacade>()->GetChangeCopyState(rowIndex, changeIndex, whyNot);
+		if (Utils<IKCMStoryEditsFacade>()->IsImportSource())
+		{
+			taken.Append("Applied - the imported words stand here now; ");
+			if (copyKept)
+				taken.Append("right-click: Restore from Copy, or Ctrl+Z. ");
+			else
+			{
+				taken.Append("Ctrl+Z takes it back (no copy was kept: ");
+				taken.Append(whyNot);
+				taken.Append("). ");
+			}
+		}
+		// ★THE STORY MODE'S "=" (2026-10-24 night, design 1-8): Restore from Source put the Source's words here, and its
+		//   way back is the same as Apply's. (The old sentence - "Redo puts Word's back" - was the 2026-09 import's.)
+		else if (copyKept)
+			taken.Append("Restored - the Source's words stand here now; right-click: Restore from Copy, or Ctrl+Z. ");
+		else
+			taken.Append("Restored - the Source's words stand here now; Ctrl+Z takes it back. ");
 		taken.SetTranslatable(kFalse);
 		taken.Append(label);
 		shownLabel = taken;
+	}
+	// ★HOW THE LANDING LEFT THE TARGET COMES FIRST (2026-10-24 night - KFC's sentences, word for word but "change" for
+	//   "match"): the reader is looking here the instant after the press, and a press that selected nothing, or selected
+	//   what cannot be seen, deserves its answer then.
+	if (landing != nil)
+	{
+		PMString first(landing);
+		first.SetTranslatable(kFalse);
+		first.Append(" ");
+		first.Append(shownLabel);
+		shownLabel = first;
 	}
 	KCMSetStatusSegments(shownLabel, otherPre, otherMid, otherPost,
 						   otherRuby, change.fAttrKind, change.fOtherLayers);
@@ -882,144 +1049,8 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	return moved;
 }
 
-bool16 KCMStorySelectChange(int32 rowIndex, int32 changeIndex)
-{
-	IKCMStoryEditsFacade::Row row;
-	IKCMStoryEditsFacade::Change change;
-	if (!Utils<IKCMStoryEditsFacade>()->GetRow(rowIndex, row))
-		return kFalse;
-	if (!Utils<IKCMStoryEditsFacade>()->GetChange(rowIndex, changeIndex, change))
-		return kFalse;
-
-	// ★A "!" CHILD HAS NOTHING TO SELECT (2026-09-19): no range, no words of its own. The single
-	//   click before this double click has already shown the reason (KCMStoryJumpToChange).
-	if (change.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused)
-		return kFalse;
-
-	// ★A CHILD ROW IS ALWAYS A TARGET ROW. Only a story that exists in both versions is diffed, so
-	//   an added story and a removed one have no children at all (KCMStoryStamp.h's Unpaired kinds,
-	//   and IKCMStoryEditsFacade::GetChangeCount says the same). ⇒ No Removed test here; if that
-	//   ever changes, this is one of the places that has to be told.
-	IDataBase* targetDB = Utils<IKCMCompareFacade>()->GetArmedTargetDB();
-	if (targetDB == nil || !Utils<IKCMCompareFacade>()->IsDocDBOpen(targetDB))
-		return kFalse;
-
-	// ★THE MARK COMES DOWN. The single click that opened this double click put one up; leaving it
-	//   there would put an inversion on top of the selection's own inversion, and the text under
-	//   both is unreadable (KBS records exactly this in KBSJump.cpp).
-	// ⚠★★AND THEN WHATEVER STANDS ON ITS OWN GOES BACK UP (2026-08-22 bug recheck A2). Clear() takes
-	//   down the ONE adornment both kinds of mark share, so before this it also wiped the marks the
-	//   "Always Show Marks on Target / Source" toggles were holding there - and nothing put them back:
-	//   the toggle stayed on, the screen stayed bare, and only a fresh comparison or a press of the
-	//   tool would bring them round again. A reader who turned a toggle on precisely so as not to
-	//   have to hold the tool would never see them return.
-	//   ★The refresh is idempotent and decides for itself, so this says "something changed", not
-	//     "put the marks back" - which is why it is right even when no toggle is on (it then leaves
-	//     the screen clear) and in the Pixel mode (it does nothing at all).
-	//   ★THE INVERSION-ON-INVERSION PROBLEM ABOVE IS NOT REINTRODUCED: a standing mark being hard to
-	//     read under a selection is the reader's own choice of two things at once, and it is a
-	//     choice they can undo from the flyout. The jump's flash is not - it appears unasked, one
-	//     click before this one.
-	// ★★★AND THE REFRESH THAT PUT THEM BACK IS GONE (2026-08-23), because there is nothing left to
-	//   put back: this now takes down the FLASH and says so, where it used to take down the one
-	//   adornment both kinds shared and then ask for a full refresh to repair the standing marks it
-	//   had just wiped. ⚠The repair was itself a fix, added after the bug recheck of 2026-08-22
-	//   found the toggles going bare (A2) - a fix for damage this line was doing to itself. Naming
-	//   which of the two is coming down removes both (KCMStoryMarker.h).
-	Utils<IKCMStoryMarkFacade>()->ClearJumpFlash();
-
-	// ***** AND THE SAME EDIT IS SELECTED ON THE OLDER SIDE TOO (user's call, 2026-08-21). *****
-	//
-	// ★The row names ONE edit, and that edit has two ends - what it says now and what it said
-	//   before. Selecting only the new one leaves the reader to find the old words by eye in a
-	//   window that is already pointed at the right story.
-	// ★The older side's range is carried on the Change (fSourceStart / fSourceEnd) - the diff
-	//   worked it out and there is nothing to recompute here.
-	// ★★AN INSERTION SELECTS ITS PLACE - AS A CARET (2026-08-22). This used to be skipped for one,
-	//   because fSourceStart/fSourceEnd were said to be meaningless there. They are not: the range
-	//   is EMPTY, which puts the insertion point exactly where the new words went in. That is the
-	//   same thing the target side already does for a DELETION, on the very next line - the two are
-	//   mirror images, and one of them was written years before the other was noticed.
-	// ★THE OLDER SIDE GOES FIRST, so that the target's selection is the last one made. Nothing
-	//   here moves the active context, so the order does not decide which window the reader is
-	//   in - but if one of the two ever fails, the one left standing should be the target's.
-	// ★A refusal on that side is SILENT. It is normal: the source may have no window open, and the
-	//   row has just been reported on by the single click. The return value is the target's.
-	IDataBase* sourceDB = Utils<IKCMCompareFacade>()->GetArmedSourceDB();
-	if (sourceDB != nil && Utils<IKCMCompareFacade>()->IsDocDBOpen(sourceDB))
-		SelectRangeIn(sourceDB, row.fStoryUID, change.fSourceStart, change.fSourceEnd);
-
-	return SelectRangeIn(targetDB, row.fStoryUID, change.fTargetStart, change.fTargetEnd);
-}
-
-bool16 KCMStorySelectWholeStory(int32 rowIndex)
-{
-	IKCMStoryEditsFacade::Row row;
-	if (!Utils<IKCMStoryEditsFacade>()->GetRow(rowIndex, row))
-		return kFalse;
-
-	// Both of these have just been reported by the single click that preceded this one - see the
-	// header for why the second one says nothing.
-	//
-	// ***** WHICH DOCUMENTS GET SELECTED IS DECIDED BY THE ROW (user's calls, 2026-08-21). *****
-	//
-	//   | the row                        | selected                                    |
-	//   |--------------------------------|---------------------------------------------|
-	//   | a normal changed row (in both) | the target AND the source                   |
-	//   | Added   (target only)          | the target                                  |
-	//   | Deleted (source only)          | the source, and the source is brought to front |
-	//
-	// ★The first line is the new one ("select both"). The row is a report about ONE story that exists
-	//   in two versions, and the reader who double clicks it is asking for that story - not for the
-	//   half of it that happens to be in the newer file. Both windows are already pointed at it by
-	//   the single click; this makes both of them usable.
-	// ★The database each half is read out of is picked exactly as the single click picks it - the
-	//   reasoning is written out at KCMStoryJumpToRow and must not drift apart from this, since
-	//   selecting in one document after scrolling the other would be two windows disagreeing.
-	const bool16 removedRow = ((row.fKinds & kKCMStoryKindRemoved) != 0) ? kTrue : kFalse;
-	const bool16 addedRow = ((row.fKinds & kKCMStoryKindAdded) != 0) ? kTrue : kFalse;
-
-	IDataBase* targetDB = Utils<IKCMCompareFacade>()->GetArmedTargetDB();
-	IDataBase* sourceDB = Utils<IKCMCompareFacade>()->GetArmedSourceDB();
-
-	// ⚠fFrameUID belongs to the row's OWN document (IKCMStoryEditsFacade.h), so this one test
-	//   covers whichever side the row is about: a story in no frame at all cannot be shown, and the
-	//   single click has already said so.
-	if (row.fFrameUID == kInvalidUID)
-		return kFalse;
-
-	// ***** A DELETED ROW: THE SOURCE ALONE, AND THE SOURCE IN FRONT. *****
-	// The story is not in the target at all. Selecting it needs the source's selection manager, and
-	// - this is the part measured the hard way - a selection made in a document that is not the
-	// active one is not the selection the reader is holding, so the document is activated first
-	// (see ActivateDocument for why this row and no other).
-	if (removedRow)
-	{
-		if (sourceDB == nil || !Utils<IKCMCompareFacade>()->IsDocDBOpen(sourceDB))
-			return kFalse;
-
-		ActivateDocument(sourceDB);
-		return SelectRangeIn(sourceDB, row.fStoryUID, 0, -1);
-	}
-
-	if (targetDB == nil || !Utils<IKCMCompareFacade>()->IsDocDBOpen(targetDB))
-		return kFalse;
-
-	// ***** A ROW THAT EXISTS IN BOTH: THE OLDER SIDE TOO. *****
-	// ★Added is excluded because there is nothing over there to select - the story is new. It is
-	//   asked as its own question rather than left to SelectRangeIn's "no such story" refusal: that
-	//   refusal is a fallback for a pair of documents that are not versions of each other, and a
-	//   fallback should not be a plug-in's way of expressing a decision it has already made.
-	// ★THE OLDER SIDE GOES FIRST so the target's selection is the last one made, and its refusals
-	//   are SILENT: the source may have no window open, and it is not what the row is about. The
-	//   return value is the target's.
-	// ⚠The source's story can be a different LENGTH - it is the older wording. SelectRangeIn asks
-	//   that document for its own TotalLength, which is the whole point of "-1" being resolved
-	//   there rather than here.
-	if (!addedRow && sourceDB != nil && Utils<IKCMCompareFacade>()->IsDocDBOpen(sourceDB))
-		SelectRangeIn(sourceDB, row.fStoryUID, 0, -1);
-
-	return SelectRangeIn(targetDB, row.fStoryUID, 0, -1);
-}
+// (⛔KCMStorySelectChange and KCMStorySelectWholeStory stood here until 2026-10-25 - the double click's selection:
+//  a change's words on both sides, or the whole story, Deleted rows in the Source with it brought to front. They went
+//  with the double click (KCMStoryRowEH.cpp; KCMStoryJump.h says why); SelectRangeIn above is what selects now.)
 
 // End, KCMStoryJump.cpp.

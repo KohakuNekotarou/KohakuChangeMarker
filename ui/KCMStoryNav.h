@@ -35,6 +35,7 @@
 
 #include "BaseType.h"	// int32
 #include "OMTypes.h"	// UID / kInvalidUID
+#include "PMString.h"	// KCMStoryNavStop::fAuthorName (2026-10-05)
 
 #include <vector>
 
@@ -59,6 +60,8 @@ struct KCMStoryNavStop
 	int32	fRow;		// which row of the Story Edits list
 	int32	fChange;	// which change under it, or -1 for a row that has none
 	UID		fStoryUID;	// the row's story: what this stop is remembered by
+	PMString fAuthorName;	// the row's author in the Track mode (empty otherwise) - what the stop is remembered by too
+						//  (2026-10-05: one story is one row PER AUTHOR there)
 
 	KCMStoryNavStop() : fRow(-1), fChange(-1), fStoryUID(kInvalidUID) {}
 };

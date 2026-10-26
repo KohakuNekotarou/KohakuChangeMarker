@@ -91,10 +91,11 @@ public:
 
 		/** Whether the two versions' TEXT was actually diffed for this row.
 
-			IT IS HOW AN EMPTY CHILD LIST IS READ. GetChangeCount answers 0 for three unrelated
-			reasons - the pixel mode diffs nothing, the story could not be compared, or it was
-			compared and the words agree - and only the last one is worth telling the reader
-			about. kTrue with no children is that case, and the row draws "None" for it.
+			IT IS HOW AN EMPTY CHILD LIST IS READ. GetChangeCount answers 0 for two unrelated
+			reasons - the story could not be compared, or it was compared and the words agree -
+			and only the second is worth telling the reader about. kTrue with no children is that
+			case, and the row draws "None" for it. (The pixel mode was a third reason until
+			2026-10-11, when it stopped keeping rows at all.)
 			@warning it does NOT mean the story is unchanged: the change counters moved, or there
 			would be no row (KCMStoryStamp.h). It means the WORDS come out the same. */
 		bool16		fTextCompared;
@@ -134,10 +135,18 @@ public:
 			 and for the same reason. */
 		bool16		fHasTextChange;
 
+		/** ★THE SOURCE STORY THE ROW COMPARES AGAINST (2026-10-26, stories paired by place - KCMStoryRow::fSourceStoryUID):
+			fStoryUID itself for a UID pair, a Removed row and every Track row; the Source's own story for a row paired by
+			the place of its first frame (kKCMStoryKindByPosition - its fStoryUID is the Target's new story);
+			kInvalidUID for an Added row and a row standing for a file. ★**Whatever the UI asks of the SOURCE document
+			about this row - the window to aim, the flash to show - it asks under this uid, never under fStoryUID.**
+			**Added at the END of the struct**, as fAttrKindCount and fHasTextChange were and for the same reason. */
+		UID			fSourceStoryUID;
+
 		Row()
 			: fStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fFrameUID(kInvalidUID),
 			  fPageUID(kInvalidUID), fTextCompared(kFalse), fAttrKind(0), fAttrKindCount(0),
-			  fHasTextChange(kFalse) {}
+			  fHasTextChange(kFalse), fSourceStoryUID(kInvalidUID) {}
 	};
 
 	// ---- the list ------------------------------------------------------------------------
@@ -353,9 +362,9 @@ public:
 
 	/** How many differences row nth holds.
 
-		0 IS THE NORMAL ANSWER IN THE PIXEL MODE - nothing runs the text diff there, so no row has
-		children and the tree stays one level deep. It is also the answer for a story that could not
-		be compared (added, too different, or a failed length check); the row is still there. */
+		0 is the answer for a story that could not be compared (added, too different, or a failed
+		length check); the row is still there. (It was also the normal answer in the pixel mode,
+		which ran no text diff, until 2026-10-11 - that mode keeps no rows at all now.) */
 	virtual int32	GetChangeCount(int32 nth) = 0;
 
 	/** Fill out with difference which of row nth. kFalse when either index is out of range,
@@ -520,28 +529,11 @@ public:
 	virtual bool16	ExportStoryText(const IDFile& parent, const UIDList& onlyThese,
 									PMString& outMessage) = 0;
 
-	/** "Import Story Text..." (2026-09-15; remade 2026-09-19 and 2026-09-21): read the chosen
-		files of edited stories, SAVE A TASK START COPY of the document to a file the reader picks,
-		pour the edited words into the DOCUMENT, and start the Story comparison against that copy.
-
-		★★★**THE DOCUMENT IS CHANGED BY THIS, AND EVERYTHING GOES IN AT ONCE** (2026-09-19, the
-		  reader's own proposal, adopted the same day). What decided it: overset shows itself on the
-		  real page the moment the words are in. The Story mode then lists what went in - against the
-		  copy taken a moment earlier. ⚠**NOTHING SENDS ONE CHANGE BACK SINCE 2026-09-21**: Ctrl+Z takes
-		  the whole import, and anything else is copied out of the Source document Start has open.
-		  ⚠**The line that stood here until 2026-09-21, "the document is not changed by this", was
-		    the 2026-09-15 design; it was measured false on the application.**
-		★**A TASK START OF ITS OWN** (2026-09-21): the save dialog comes up once the files have been
-		  chosen, and a reader who cancels it ends the import - there is nothing to compare against.
-		★**FILES, NOT A FOLDER** (2026-09-15, the user's decision): the reader picks the stories
-		  they mean, several at once, instead of handing over everything that happens to be in a
-		  folder.
-
-		@param files the files the reader chose, in the dialog's own order.
-		@param outMessage what happened, for the panel's status line.
-		@return kFalse when nothing readable was chosen, or no origin could be taken.
-		⚠Appended at the END of the class, like the one above and for the same reason. */
-	virtual bool16	ImportStoryText(const SysFileList& files, PMString& outMessage) = 0;
+	/*	⛔**ImportStoryText STOOD HERE UNTIL 2026-10-25** - "Import Story Text..." that poured the edited words into the
+		DOCUMENT, tracked and signed, against a Task Start saved to a file (2026-09-19). It went with the tidy
+		(docs/superpowers/specs/2026-10-24-kcm-import-tidy-design.md): ImportStoryTextAsSource, further down, is the one
+		import. ★Taken out of the MIDDLE of the vtable on purpose - nothing outside KCM includes this facade (grep,
+		2026-10-25) and KCM's two halves are built and shipped together ([[facade-vtable-slot-append-only]]). */
 
 	/** ⛔**RETIRED 2026-09-20 - ALWAYS kFalse, AND THE SLOT STAYS.** It said whether the fourth mode
 		was up, which the UI asked in order to grey the other three modes and Task Start while it was.
@@ -635,20 +627,9 @@ public:
 		 includes this facade (measured by grep, 2026-09-20), so only KCM's two halves are rebuilt. */
 	virtual bool16	GetChangeMarkSpan(int32 nth, int32 which, int32 i, TextIndex& outFrom, TextIndex& outTo) = 0;
 
-	/** (2026-09-24, stage 2 A - "Reject This Import Change") How many of the import's tracked changes (signed
-		"KohakuChangeMarker") touch change `which` of row `nth` in the Target - the test the change row's menu
-		item is greyed by, asked of the RANGE rather than remembered (design 13-1 item 3): a plain comparison, a
-		ruby-only row and a document opened again all answer from what the story holds now. 0 for none, an
-		unpaired story, or nothing armed.
-		⚠Appended at the END of the class ([[facade-vtable-slot-append-only]]). */
-	virtual int32	HasImportChange(int32 nth, int32 which) = 0;
-
-	/** Rejects them as ONE undo step ("Reject This Import Change" - a plain command sequence: an abortable one
-		took the import's own undo step below it away, measured) and compares the row again (RefreshRow) - the
-		list does not follow a reject by itself (measured 2026-09-24). @return how many were rejected (0 when
-		there were none, and then nothing lands on the undo stack); -1 when nothing could be done, and then
-		outMessage says why. */
-	virtual int32	RejectImportChange(int32 nth, int32 which, PMString& outMessage) = 0;
+	/*	⛔**HasImportChange / RejectImportChange STOOD HERE UNTIL 2026-10-25** - "Reject This Import Change": the import's
+		tracked changes (signed "KohakuChangeMarker") over a change row, rejected as one step. They went with the import
+		that wrote them (ImportStoryText, above) - out of the middle of the vtable for the reason given there. */
 
 	/** (2026-09-24, stage 2 B - "Restore from Source") Whether change `which` of row `nth` is one this acts on: an
 		attribute change (kWhatAttr) of a kind that is written back - ruby, kenten, warichu, tate-chu-yoko - on a
@@ -660,24 +641,15 @@ public:
 
 	/** Makes that kind, over the change's characters, what the SOURCE document has there - read from the Source
 		story itself (KCMTextRead::ReadStory; the user: "the Source document is there, take it from there"), never
-		from what the row remembers - as ONE undo step ("Restore from Source", a plain sequence: RejectImportChange
-		says why), then compares the row again. The row is compared again FIRST and has to be the same change
-		(the same lesson). Planned before the sequence begins, so a refusal puts nothing on the undo stack.
+		from what the row remembers - as ONE abortable undo step ("Restore from Source"), then compares the row again.
+		The row is compared again FIRST and has to be the same change (the same lesson). Planned before the step
+		begins, so a refusal puts nothing on the undo stack.
 		@return how many of the Source's marks went on (0 = the Target's were taken off and the Source has none
 		there); -1 when nothing was done, and outMessage says why. */
 	virtual int32	RestoreAttr(int32 nth, int32 which, PMString& outMessage) = 0;
 
-	/** (2026-09-24, stage 2 C - "Redo from Word") Whether change `which` of row `nth` is a change the reader took
-		back and still standing so (Change::fReplaced), on a paired story of the armed Target. The item is greyed by
-		this; whether Word's content is still in memory is NOT asked here (design 15-1-5): the action says why.
-		⚠Appended at the END ([[facade-vtable-slot-append-only]]). */
-	virtual bool16	CanRedoFromWord(int32 nth, int32 which) = 0;
-
-	/** Makes that change's paragraph what Word shows again - the import's own Compare -> Apply narrowed to it, under
-		the import's signature and change tracking - as ONE undo step ("Redo from Word"), then compares the row again.
-		Planned before the sequence begins, so a refusal (nothing kept, the words edited since) lands nothing on the
-		undo stack. @return the writes that went in; -1 when nothing was written, and outMessage says why. */
-	virtual int32	RedoFromWord(int32 nth, int32 which, PMString& outMessage) = 0;
+	/*	⛔**CanRedoFromWord / RedoFromWord STOOD HERE UNTIL 2026-10-25** - "Redo from Word": a taken-back change's
+		paragraph made Word's again from the content the import kept. They went with the reject they undid (above). */
 
 	/** (2026-09-24) GetStoryPointAt for a CARET rather than a character - the place a zero-width change
 		stands at: a deletion seen from the Target, an insertion seen from the Source. The one difference is
@@ -694,6 +666,233 @@ public:
 		readings of one jump are of one place (a table that starts a new column puts its own characters in
 		the next parcel). Same warnings as GetStoryFrameAt. */
 	virtual UID		GetCaretFrameAt(IDataBase* db, UID storyUID, TextIndex at) = 0;
+
+	/** (2026-09-25 - "Match the Source", design section 16) Whether change `which` of row `nth` is one this acts on: a
+		TABLE row whose table stands on both sides (Table ≠ - kWhatTable, fKind 0), on a paired story, with the Target
+		armed and open and the Source document open. The test the change row's item is greyed by. ⚠It reads NO
+		document; what needs the documents is MatchTable's, which refuses with a reason.
+		⚠Appended at the END of the class ([[facade-vtable-slot-append-only]]). */
+	virtual bool16	CanMatchTable(int32 nth, int32 which) = 0;
+
+	/** Makes that table the Source's - rows, columns, merged cells, header and footer rows, and every cell's content,
+		read from the Source document itself (KCMTableMatch.h says how, and why the table keeps its id) - as ONE
+		abortable undo step ("Match the Source"; a plain sequence until 2026-10-25), then reads the two tables back and
+		ABORTS THE STEP when they differ (the user's rule: all the way, or not at all - from a script too, which a plain
+		sequence did not keep), and compares the row again either way. The row is
+		compared again FIRST and has to be the same change. @return how many shape moves were made (0 = only the
+		cells were copied); -1 when nothing was left done, and outMessage says why. */
+	virtual int32	MatchTable(int32 nth, int32 which, PMString& outMessage) = 0;
+
+	/** (2026-09-25, the user's decision) The document the Word round trip works on - the chosen Target, else the active
+		document (KCMTaskDocumentDB): what "Export Story Text..." reads and what "Import Story Text..." takes its copy of
+		(and Apply then writes into). The
+		export item is greyed by it and asks it for the document to export, so that the export and the import cannot
+		name two different documents again (they did: the import went into a Target left open from an earlier
+		comparison while the export read the document in front). nil when there is neither.
+		⚠Appended at the END of the class ([[facade-vtable-slot-append-only]]). */
+	virtual IDataBase*	GetTaskDocumentDB() = 0;
+
+	// ---- ★THE TRACK CHANGES MODE (2026-10-05, design docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md) ----
+	// In the Track mode the methods above answer from the Track list (rows = one story under one author, in
+	// author order); these say who and in what colour. ⚠Appended at the END ([[facade-vtable-slot-append-only]]).
+
+	/** One author: the rows [fFirstRow, fFirstRow + fRowCount) are theirs. fName may be empty. */
+	struct TrackAuthor
+	{
+		PMString	fName;
+		int32		fFirstRow;
+		int32		fRowCount;
+		int32		fChangeCount;
+		bool16		fHasColour;		// kFalse = InDesign draws them on white; the Mark colour stands in
+		uint8		fR, fG, fB;
+		TrackAuthor() : fFirstRow(0), fRowCount(0), fChangeCount(0), fHasColour(kFalse), fR(0), fG(0), fB(0) {}
+	};
+
+	/** What a Track change is besides its ranges and words (GetChange carries those). */
+	struct TrackChange
+	{
+		int32		fAuthor;
+		int32		fKind;			// 0 replace, 1 insert, 2 delete, 3 move (KCMTrackChangeKind)
+		uint64		fTime;			// the record's (100 ns since 1601, UTC)
+		bool16		fHasColour;
+		uint8		fR, fG, fB;
+		bool16		fHidden;		// in hidden conditional text
+		bool16		fSourceExact;	// GetChange's Source range is the change's place in the copy
+		TrackChange() : fAuthor(-1), fKind(0), fTime(0), fHasColour(kFalse), fR(0), fG(0), fB(0), fHidden(kFalse), fSourceExact(kFalse) {}
+	};
+
+	virtual int32	GetTrackAuthorCount() = 0;
+	virtual bool16	GetTrackAuthor(int32 a, TrackAuthor& out) = 0;
+	/** The author of row nth, or -1 outside the Track mode (the tree's node factory asks it - KCMStoryNodeID). */
+	virtual int32	GetTrackAuthorOfRow(int32 nth) = 0;
+	virtual bool16	GetTrackChange(int32 nth, int32 which, TrackChange& out) = 0;
+	/** Every change in the list (the section heading's number). */
+	virtual int32	GetTrackChangeTotal() = 0;
+	/** Is that change still recorded (KCMTrackRead::StillRecorded)? Asked before a click jumps. */
+	virtual bool16	TrackChangeStillRecorded(int32 nth, int32 which) = 0;
+
+	// ---- ★THE IMPORT THE OTHER WAY ROUND (2026-10-24, the import-as-Source road - docs/superpowers/specs/
+	// 2026-10-24-kcm-import-as-source-design.md). The files' words go into a Task Start in memory, which is the Source;
+	// the rows say what the document would become, and Apply puts them in. ⚠Appended at the END
+	// ([[facade-vtable-slot-append-only]]) - KCM's two halves are built together.
+
+	/** "Import Story Text..." the other way round (KCMImportStoryTextAsSource): read the files, take the copy, pour the
+		words into IT, start the Story comparison. The document is not changed. */
+	virtual bool16	ImportStoryTextAsSource(const SysFileList& files, PMString& outMessage) = 0;
+
+	/** The armed comparison's Source is an import's copy (KCMIsImportClone) - the rows are proposals then: the UI shows
+		a row as "the words now, struck through, and the words to come", turns + and - round, and offers Apply. */
+	virtual bool16	IsImportSource() = 0;
+
+	/** Whether change `which` of row `nth` can be put into the document: the Source is an import's copy, the story is
+		paired, and the change is a live one (not a "=" record, not a "!" row) of a kind Apply carries - words, a ruby /
+		kenten / warichu / tate-chu-yoko mark, or a table whose shape or cells differ. Reads no document. */
+	virtual bool16	CanApplyChange(int32 nth, int32 which) = 0;
+
+	/** Puts that change into the document as ONE undo step, unsigned and untracked (design section 11-2) - the words
+		of THAT change alone, its range made the files' by the import's one write command, the document's words copied
+		first for Restore from Copy (11-1, 11-3 - since 2026-10-24 evening; until then the whole paragraph went in); a
+		change with an object's character or a return in it, or a whole paragraph, by the import's own road narrowed to
+		its paragraph (every change of that paragraph goes in with it then, and the message says so); a mark by "Restore
+		from Source"; a table by its redo from the files' content (KCMApplyTableFromImport - "Match the Source" reads the
+		Source's table back through INX, which a copy kept in memory cannot give) - and compares the row again; what
+		went in reads "=". A story whose tables the files add or take away is refused: it goes in whole (ApplyStory).
+		@return the writes; 0 when nothing was left to do; -1 when nothing was written, and outMessage says why. */
+	virtual int32	ApplyChange(int32 nth, int32 which, PMString& outMessage) = 0;
+
+	/** Whether row `nth` is a paired story of an import's copy with anything to put in. */
+	virtual bool16	CanApplyStory(int32 nth) = 0;
+
+	/** Every change of row `nth`'s story, as ONE undo step (the import's pour, for that story), then the row compared
+		again. @return the writes; -1 when nothing was written (outMessage). */
+	virtual int32	ApplyStory(int32 nth, PMString& outMessage) = 0;
+
+	/** Every story the import filled, as ONE undo step - what the old import put in at once until 2026-10-24 - then the list
+		compared again. @return the writes; -1 when nothing was written (outMessage). */
+	virtual int32	ApplyAll(PMString& outMessage) = 0;
+
+	// ---- ★CHANGE BY CHANGE, AND BACK FROM A COPY (2026-10-24 evening, the import-as-Source road's second try-out - design section 11:
+	// the author, "change by change, not paragraph by paragraph", "put a row back from a Copy, the way KFC does").
+	// ⚠Appended at the END again ([[facade-vtable-slot-append-only]]) - KCM's two halves are built together.
+
+	/** Whether change `which` of row `nth` is a "=" record that holds a copy still in the store (KCMCopyStore) - Apply This
+		Change's (an import's copy as the Source) or, since 2026-10-24 night, Restore from Source's (the Story mode) - on a
+		paired story. Reads no document - whether the words still stand as the write left them is asked on the press
+		(RestoreChangeFromCopy). */
+	virtual bool16	CanRestoreChangeFromCopy(int32 nth, int32 which) = 0;
+
+	/** "Restore from Copy": the document's own words, copied with their formatting just before Apply (or, in the Story
+		mode, Restore from Source) wrote over them, pasted back over what it wrote - and, for a whole paragraph Apply put in
+		or took out next to a return, the
+		formatting of the paragraph before it put back - as ONE undo step; the record is marked redone (Ctrl+Z makes the
+		row "=" again, a redo a proposal). @return 1; -1 when nothing was written, and outMessage says why (the words
+		edited since, no copy held, a locked story). */
+	virtual int32	RestoreChangeFromCopy(int32 nth, int32 which, PMString& outMessage) = 0;
+
+	/** Whether the "=" row `which` of row `nth` holds a copy: kTrue (outWhyNot empty) when it does; kFalse with the
+		reason ("its words hold an object - put back from a copy, it would be made anew with a new UID", ...) when it
+		does not, or with outWhyNot empty when it is not a "=" row of Apply's. For the row's message line. */
+	virtual bool16	GetChangeCopyState(int32 nth, int32 which, PMString& outWhyNot) = 0;
+
+	/** How many changes are still proposals - live, not a "=" record, not a "!" row - over every row: the import's
+		heading, "Proposed Edits (N)". -1 when the Source is not an import's copy. */
+	virtual int32	GetProposedCount() = 0;
+
+	// ---- ★THE LIST LIKE KFC'S (2026-10-24 night - docs/superpowers/specs/2026-10-24-kcm-list-like-kfc-design.md).
+	// ⚠Appended at the END again ([[facade-vtable-slot-append-only]]) - KCM's two halves are built together.
+
+	/** GetChangePlaceReach's bits. (An enum adds no slot to the vtable.) */
+	enum
+	{
+		kReachLocked		= 1,	// not to be selected - the jump's flash points instead
+		kReachHidden		= 2,	// selected all the same, nothing of it shows
+		kReachHiddenSpread	= 4		// neither shown nor selected
+	};
+
+	/** How far a selection can reach change `which` of row `nth` in the Target (design 1-2 - KFC's landing rules): 0, or the
+		kReach* bits above - locked (the story's insert lock, the frame's or its outermost parent's lock, the frame's
+		layer), hidden (the frame's layer or the frame itself), on a hidden spread. Reads only (KCMPlaceReach.h). 0 for a row
+		or change that is not there. */
+	virtual int32	GetChangePlaceReach(int32 nth, int32 which) = 0;
+
+	// ---- ★RESTORE FROM SOURCE BY COPY, IN THE STORY MODE (design 1-8 - the author: "in Story mode, a function that puts
+	// the Source's text back using a copy of the Source - in the right-click menu", "on the Story row too").
+
+	/** Whether change `which` of row `nth` is a TEXT change of the Story mode - two documents, open, compared; not an
+		import's copy as the Source, not the Track mode, not a PDF at either end; the story paired - that is not a "="
+		record: what Restore from Source offers itself for on a text row. Reads no document (whether the words can be
+		copied is said on the press). */
+	virtual bool16	CanRestoreTextFromSource(int32 nth, int32 which) = 0;
+
+	/** "Restore from Source" on a text row: the Source document's words of the change, copied with their formatting
+		(KCMCopyStore::CopyOver), put over the Target's - as ONE undo step, after the Target's own words were copied for the
+		row's Restore from Copy; the row becomes "=". A whole paragraph goes with its own return. @return 1; -1 when nothing
+		was written, and outMessage says why (an object's character or a hyperlink on either side, paragraphs joined or
+		split, the last paragraph of a story with the break before it, a place not in one story thread, a locked story). */
+	virtual int32	RestoreTextFromSource(int32 nth, int32 which, PMString& outMessage) = 0;
+
+	/** Whether row `nth` holds a change CanRestoreTextFromSource offers itself for. */
+	virtual bool16	CanRestoreStoryFromSource(int32 nth) = 0;
+
+	/** "Restore All Changes in This Story": every such change of row `nth` restored as RestoreTextFromSource does,
+		bottom-up, as ONE undo step; the ones that cannot be copied are left as they are and said. @return the changes
+		restored; -1 when nothing was written (outMessage). */
+	virtual int32	RestoreStoryFromSource(int32 nth, PMString& outMessage) = 0;
+
+	// ---- ★SEVERAL ROWS AT ONCE, ONE UNDO STEP (design 1-4 / 1-5 - KFC's "rows selected together go in as one step").
+	// rows[i] / changes[i] name one change each - plain arrays cross the DLL edge, a std::vector does not
+	// (IKCMStoryMarkFacade's rule). A change that cannot be done is left and said; a write that does not go in rolls the
+	// WHOLE step back. One pair alone is the single command, with its own step. @return the changes done; -1 when nothing
+	// was written (outMessage).
+
+	/** Apply This Change for every pair ("Apply These Changes"). */
+	virtual int32	ApplyChanges(const int32* rows, const int32* changes, int32 count, PMString& outMessage) = 0;
+
+	/** Restore from Copy for every pair ("Restore These from Copy"). */
+	virtual int32	RestoreChangesFromCopy(const int32* rows, const int32* changes, int32 count, PMString& outMessage) = 0;
+
+	/** Restore from Source (text) for every pair ("Restore These from Source"). */
+	virtual int32	RestoreTextsFromSource(const int32* rows, const int32* changes, int32 count, PMString& outMessage) = 0;
+
+	// ---- ★EXPORT PAGES TO WORD (2026-10-25 - KCMPageExport.h). ⚠Appended last: the UI half calls by vtable slot
+	//      ([[facade-vtable-slot-append-only]]) - rebuild both halves. ----
+
+	/** "Export Pages to Word...": each page one .docx of text boxes, into a dated folder under `parent`.
+		★`pages` NAMES THEM - the menu's are the Pages panel's selection as the UI read it (KCMReadSelectedPages, masters
+		  left out - before its folder dialog opens, the story export's rule), a script's the pages it named; the model
+		  decides on them in the one place the page items share (KCMPageMapPagesOf). An EMPTY list is refused (2026-10-26,
+		  the import tidy S7: it meant "the Pages panel's selection", read here - the model does not read the panel now).
+		@return kFalse with the reason in outMessage when nothing was written. */
+	virtual bool16	ExportPagesAsWord(const IDFile& parent, const UIDList& pages, PMString& outMessage) = 0;
+
+	// (⛔GetPagesPanelSelection(UIDList&) - the Pages panel's selection read by the model for the menu - stood here from
+	//  2026-10-25 and went on 2026-10-26, the import tidy S7: the UI reads it (KCMReadSelectedPages). ⚠The slots below it
+	//  moved up one - both halves are rebuilt together, and nothing outside KCM includes this header.)
+
+	// ---- ★ACCEPT AND REJECT IN THE TRACK MODE (2026-10-25 - the author: "a right click that takes the change back", "and
+	//      confirms it", "on the Story too", "on the Story Edits heading, for the document"; design
+	//      docs/superpowers/specs/2026-10-25-kcm-track-accept-reject-design.md). Each is ONE undo step - an abortable one,
+	//      rolled back whole when InDesign refuses a record - and the Track list is read again after it. Only the records the
+	//      list shows are touched (KCMTrackResolve.h). `accept` kTrue accepts, kFalse rejects. @return the records accepted
+	//      or rejected (0 = none were recorded any more); -1 when nothing was done, and outMessage says why - which carries
+	//      the sentence for the status line either way.
+	//      ⚠Appended last ([[facade-vtable-slot-append-only]]) - rebuild both halves. ----
+
+	/** Whether change `which` of row `nth` is a Track change of a running Track comparison. Reads no document. */
+	virtual bool16	CanResolveTrackChange(int32 nth, int32 which) = 0;
+
+	/** The changes rows[i] / changes[i] - "Accept Change" / "Reject Change" on the rows selected together. */
+	virtual int32	ResolveTrackChanges(const int32* rows, const int32* changes, int32 count, bool16 accept,
+										PMString& outMessage) = 0;
+
+	/** Every change of row `nth` - one story under one author: that author's changes in that story. */
+	virtual int32	ResolveTrackRow(int32 nth, bool16 accept, PMString& outMessage) = 0;
+
+	/** Every change of author `a` (GetTrackAuthor's index), in every story. */
+	virtual int32	ResolveTrackAuthor(int32 a, bool16 accept, PMString& outMessage) = 0;
+
+	/** Every change the list holds - the whole Target document. */
+	virtual int32	ResolveTrackAll(bool16 accept, PMString& outMessage) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

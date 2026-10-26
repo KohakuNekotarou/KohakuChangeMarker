@@ -309,9 +309,9 @@ void KCMDescribeResourceDiff(PMString& out)
 
 	PMString whyNot;
 	const uint32 began = ::GetTickCount();
-	// Task Start (an armed origin pair has no Source database; the older side is the origin's own
-	// bytes) or not: the store decides, exactly as the comparison run has it decide
-	// (KCMResourceStore::RebuildForPair, one place since 2026-09-13).
+	// Through the same call the comparison run makes (KCMResourceStore::RebuildForPair), so this
+	// port reads what the panel would. (Until 2026-09-21 that call also chose a Task Start origin's
+	// held bytes as the older side; a Task Start is a file now and opens as the Source.)
 	const bool16 built = KCMResourceStore::RebuildForPair(KCMArmedTargetDB(), KCMArmedSourceDB(), whyNot);
 	const uint32 took = ::GetTickCount() - began;
 

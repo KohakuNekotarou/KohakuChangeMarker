@@ -102,7 +102,7 @@ public:
 	*/
 	virtual void	SetPress(bool16 active, bool16 useSourceDocument) = 0;
 
-	/** Point at one edit in both windows for about a second (a Story Edits row was double-clicked).
+	/** Point at one edit in both windows for about a second (a Story Edits row was clicked).
 
 		Calling it again replaces the flash and restarts the countdown, so the newest jump always
 		gets the full time.
@@ -118,8 +118,13 @@ public:
 
 		@param db the document the ROW was read out of - the older one for a Removed story, the
 			newer one otherwise. Not necessarily the target: see the note above this class.
-		@param storyUID the story, which names the same story in BOTH documents (the whole Story
-			mode rests on that - the diff pairs stories by uid and the double click selects by uid).
+		@param storyUID the story in `db`.
+		@param sourceStoryUID ★the story lit in the OLDER document (2026-10-26) - the row's Source story
+			(IKCMStoryEditsFacade::Row::fSourceStoryUID): the same uid as storyUID for every row paired by UID (the
+			Story mode rests on that - the diff pairs stories by uid and the click selects by uid), the Source's own
+			story for a row paired by the place of its first frame. kInvalidUID lights nothing over there (an Added row
+			has no Source story). ⚠Until 2026-10-26 the one storyUID was used on both sides; reshaped in place - both
+			halves are built together and no other plug-in reaches this facade ([[facade-vtable-slot-append-only]]).
 		@param from first character to light in `db`.
 		@param to one past the last. from == to is the caret case.
 		@param sourceFrom first character to light in the OLDER document, which is pointed at as
@@ -129,16 +134,27 @@ public:
 	*/
 	virtual void	ShowJumpFlash(IDataBase* db, UID storyUID,
 								  TextIndex from, TextIndex to,
-								  TextIndex sourceFrom, TextIndex sourceTo) = 0;
+								  UID sourceStoryUID, TextIndex sourceFrom, TextIndex sourceTo) = 0;
 
-	/** Take a jump's pointer down now, leaving the standing marks alone. Safe when there is none. */
-	virtual void	ClearJumpFlash() = 0;
+	// (⛔ClearJumpFlash() - take a jump's pointer down now, leaving the standing marks alone - stood here until
+	//  2026-10-25. Its one caller was the double click's selection (KCMStorySelectChange), which went with the double
+	//  click; the flash still takes itself down (KCMStoryMarker::ClearFlash, from its expiry timer). Taken out of the
+	//  MIDDLE of the vtable, so ShowJumpFlashColoured moved up one slot: both halves are built together
+	//  ([[facade-vtable-slot-append-only]]) and no other plug-in reaches this facade.)
 
 	// NO ShutdownMarks() HERE, AND THE ABSENCE IS DELIBERATE. Teardown happens entirely on the
 	// model side (kKCMPeekStartupBoss's Shutdown calls KCMStoryMarker::Shutdown directly, which it
 	// can, being in the same plug-in), so the UI has nothing to say about it.
 	// **A method on a boundary that nobody calls is a promise nobody keeps** - the same rule
 	// IKCMStoryEditsFacade.h states about its own missing Build().
+
+	/** ShowJumpFlash in a colour of its own (2026-10-05, the Track mode: the author's tracked-change colour).
+		sourceFrom < 0 = no flash in the Source window (the change's place in the copy is not known exactly).
+		⚠Appended at the END ([[facade-vtable-slot-append-only]]). */
+	virtual void	ShowJumpFlashColoured(IDataBase* db, UID storyUID,
+										  TextIndex from, TextIndex to,
+										  TextIndex sourceFrom, TextIndex sourceTo,
+										  bool16 hasColour, uint8 r, uint8 g, uint8 b) = 0;
 };
 
 #endif // __IKCMStoryMarkFacade_h__

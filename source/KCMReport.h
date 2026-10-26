@@ -13,9 +13,11 @@
 //       right, context pale and the change dark, ruby and kenten set for real, note numbers as
 //       superscripts;
 //    4. the Resources table - the same two columns per differing attribute of each definition.
-//  Whatever mode the comparison ran in, the two tables are filled (the detail is borrowed for the
-//  report and put back - KCMReport.cpp's StoryDetailLoan / ResourceLoan); the Pixel pages exist
-//  only when the Pixel comparison ran, and the first page says so otherwise.
+//  ★Made only while nothing is started, and all three in every compare mode (2026-10-11, the
+//  user's decision): the report compares the pair a Start would, for itself - every page's pixels,
+//  the Story rows the Story mode's way, the Resources result - and takes it all down once it is
+//  written (KCMReport.cpp's ReportComparison / StoryDetailLoan / ResourceLoan). While a comparison
+//  runs it refuses, and the flyout greys its item.
 //
 //  HOW: both sides are exported to temporary PDFs (kPDFExportCmdBoss, the session's PDF
 //  preferences, no UI, no progress bar; the Before side with sPrintMarks forced on), a windowless
@@ -36,8 +38,9 @@
 #include "BaseType.h"
 #include "PMString.h"
 
-/** Build and write the report for the comparison that is running. kTrue when the PDF was
-    written (outMessage names it), kFalse with the reason in outMessage. */
+/** Compare the pair a Start would (nothing may be started), build and write the report, and take
+    the comparison down again. kTrue when the PDF was written (outMessage names its folder), kFalse
+    with the reason in outMessage. */
 bool16 KCMExportBeforeAfterReport(PMString& outMessage);
 
 #endif // __KCMReport_h__

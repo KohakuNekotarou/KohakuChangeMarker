@@ -23,6 +23,7 @@
 #include "OMTypes.h"		// UID (which spread the view is showing)
 
 class IDataBase;
+class UIDList;			// the Pages panel's selection, as the UI read it (2026-10-26)
 
 // The "base" on-screen opacity of the permanently visible marks, decided by the print setting:
 // the chosen 25%/75% while printing marks is on, and 1.0 while it is off. The body is in
@@ -88,8 +89,10 @@ bool16 KCMArmedDocsAlive();
 // updated so far**: the rest simply stay as they were, which is the same state as running the
 // command on a narrower selection. The page being processed when Cancel is pressed is finished, so
 // a cancelled run returns kTrue with outCancelled set; kFalse means only that nothing was eligible.
-// The body is in KCMPeek.cpp; KCMActionComponent.cpp calls it.
-bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, bool16* outCancelled = nil, int32* outFailed = nil);
+// `selection` is the Pages panel's, as the UI read it (masters in - KCMPageMap.h; 2026-10-26, the import tidy S7).
+// The body is in KCMPeek.cpp; KCMActionComponent.cpp calls it through the facade.
+bool16 KCMRefreshComparisonForSelectedPages(const UIDList& selection, int32* outPages, int32* outChanged, bool16* outCancelled = nil,
+										   int32* outFailed = nil);
 
 // Whether that menu item should be enabled (for UpdateActionStates in KCMActionComponent.cpp):
 // kTrue while a comparison is armed, in the **Pixel mode**, with the Target frontmost. Over the

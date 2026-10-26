@@ -10,18 +10,14 @@
 
 #include "VCPlugInHeaders.h"
 
-// Interface includes:
-#include "IGraphicsPort.h"
-
 // General includes:
-#include "DrawStringUtils.h"	// StringUtils::PMDrawStringRGB / PMMeasureString / PMEllipsizeString
 #include "WidgetDefs.h"			// kEllipsizeBeginning / kEllipsizeEnd
 
 #include <vector>
 
 // Project includes:
 #include "KCMLayerDraw.h"
-#include "KCMPanelTextDraw.h"	// KCMDrawCaret / KCMCaretPlaceholder / the two draw flags
+#include "KCMPanelTextDraw.h"	// the drawbot draws and measure (KCMDrawAtBaseline / KCMDrawnWidth), KCMDrawCaret, KCMEllipsize
 
 namespace
 {
@@ -29,10 +25,9 @@ namespace
 /** How far apart two pieces of line 2 are kept when centring them would make them touch. */
 const PMReal kKCMLayerPieceGap(4.0);
 
-PMReal Width(AGMGraphicsContext& gc, const InterfaceFontInfo& font, const PMString& s)
+PMReal Width(const InterfaceFontInfo& font, const PMString& s)
 {
-	return s.IsEmpty() ? PMReal(0.0)
-					   : StringUtils::PMMeasureString(&gc, s, font, kKCMDontConvertAmpersand).X();
+	return KCMDrawnWidth(s, font);
 }
 
 /** One bar or one run of text on a line, in the order it is drawn. */
@@ -45,10 +40,10 @@ struct Segment
 
 }	// anonymous namespace
 
-void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const InterfaceFontInfo& font,
+void KCMDrawLayers(dvaui::drawbot::Drawbot* drawbotP, const InterfaceFontInfo& font,
 				   const KCMStoryLayers& layers, const KCMLayerCanvas& canvas)
 {
-	if (gPort == nil || layers.fCount < 2)
+	if (drawbotP == nil || layers.fCount < 2)
 		return;
 
 	const PMReal left = canvas.fLeft;
@@ -57,7 +52,7 @@ void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const Interface
 	if (avail <= PMReal(0.0))
 		return;
 
-	const PMReal barW = Width(gc, font, KCMCaretPlaceholder());
+	const PMReal barW = Width(font, KCMCaretPlaceholder());
 
 	// ★THE CANVAS COUNTS LINES DRAWN, THE LAYERS COUNT LAYERS (2026-09-16). With the text line left
 	//   out (KCMStoryLayers::fShowsText - a tate-chu-yoko changing inside a warichu), layer 1 is drawn
@@ -68,9 +63,8 @@ void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const Interface
 	auto drawText = [&](const PMString& s, const PMReal& x, int32 layer, const RealAGMColor& colour)
 	{
 		const int32 line = lineOf(layer);
-		if (!s.IsEmpty() && line >= 0 && line < 3)
-			StringUtils::PMDrawStringRGB(&gc, PMPoint(x, canvas.fBaseline[line]), s, font, colour,
-										 kKCMDontConvertAmpersand, kKCMNoUnderline);
+		if (line >= 0 && line < 3)
+			KCMDrawAtBaseline(drawbotP, x, canvas.fBaseline[line], s, font, colour);
 	};
 	// ⚠A pixel clear at each end of its line, so a bar over a bar reads as two - "the two bars in the
 	//   same place", not one tall line.
@@ -78,7 +72,7 @@ void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const Interface
 	{
 		const int32 line = lineOf(layer);
 		if (line >= 0 && line < 3)
-			KCMDrawCaret(gPort, canvas.fStrong, x, roomW, canvas.fTop[line] + PMReal(1.0),
+			KCMDrawCaret(drawbotP, canvas.fStrong, x, roomW, canvas.fTop[line] + PMReal(1.0),
 						 canvas.fLineHeight - PMReal(2.0));
 	};
 
@@ -93,20 +87,20 @@ void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const Interface
 	{
 		PMString pre = layers.fBottomPre;
 		PMString post = layers.fBottomPost;
-		PMReal preW = Width(gc, font, pre);
-		PMReal postW = Width(gc, font, post);
+		PMReal preW = Width(font, pre);
+		PMReal postW = Width(font, post);
 		if (preW + barW + postW > avail)
 		{
 			const PMReal rem = avail - barW;
 			pre = (rem > PMReal(0.0) && !pre.IsEmpty())
-				? StringUtils::PMEllipsizeString(&gc, rem, pre, font, kEllipsizeBeginning, nil, kKCMDontConvertAmpersand)
+				? KCMEllipsize(rem, pre, font, kEllipsizeBeginning)
 				: PMString();
-			preW = Width(gc, font, pre);
+			preW = Width(font, pre);
 			const PMReal postBudget = rem - preW;
 			post = (postBudget > PMReal(0.0) && !post.IsEmpty())
-				? StringUtils::PMEllipsizeString(&gc, postBudget, post, font, kEllipsizeEnd, nil, kKCMDontConvertAmpersand)
+				? KCMEllipsize(postBudget, post, font, kEllipsizeEnd)
 				: PMString();
-			postW = Width(gc, font, post);
+			postW = Width(font, post);
 		}
 		const RealAGMColor& bottomColour = (layers.fChanged == 0) ? canvas.fStrong : canvas.fFaded;
 		drawText(pre, x, 0, bottomColour);
@@ -134,7 +128,7 @@ void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const Interface
 			segments.push_back(bar);
 			lineW += barW;
 		}
-		Segment part = { layers.fMiddleParts[k], kFalse, Width(gc, font, layers.fMiddleParts[k]) };
+		Segment part = { layers.fMiddleParts[k], kFalse, Width(font, layers.fMiddleParts[k]) };
 		segments.push_back(part);
 		lineW += part.fWidth;
 	}
@@ -177,22 +171,22 @@ void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const Interface
 			after.Append(ellipsis);					// nor are the ones after it
 
 		const PMReal rem = avail - barW;
-		PMReal beforeW = Width(gc, font, before);
+		PMReal beforeW = Width(font, before);
 		if (beforeW > rem)
 		{
 			before = (rem > PMReal(0.0))
-				? StringUtils::PMEllipsizeString(&gc, rem, before, font, kEllipsizeBeginning, nil, kKCMDontConvertAmpersand)
+				? KCMEllipsize(rem, before, font, kEllipsizeBeginning)
 				: PMString();
-			beforeW = Width(gc, font, before);
+			beforeW = Width(font, before);
 		}
-		PMReal afterW = Width(gc, font, after);
+		PMReal afterW = Width(font, after);
 		const PMReal afterBudget = rem - beforeW;
 		if (afterW > afterBudget)
 		{
 			after = (afterBudget > PMReal(0.0))
-				? StringUtils::PMEllipsizeString(&gc, afterBudget, after, font, kEllipsizeEnd, nil, kKCMDontConvertAmpersand)
+				? KCMEllipsize(afterBudget, after, font, kEllipsizeEnd)
 				: PMString();
-			afterW = Width(gc, font, after);
+			afterW = Width(font, after);
 		}
 
 		const PMReal shortW = beforeW + barW + afterW;
@@ -242,8 +236,8 @@ void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const Interface
 				if (room <= PMReal(0.0))
 					continue;
 				// Cut the TAIL: the words at the head are the ones nearest the bar below.
-				shown = StringUtils::PMEllipsizeString(&gc, room, seg.fText, font, kEllipsizeEnd, nil, kKCMDontConvertAmpersand);
-				shownW = Width(gc, font, shown);
+				shown = KCMEllipsize(room, seg.fText, font, kEllipsizeEnd);
+				shownW = Width(font, shown);
 			}
 			drawText(shown, x, 1, middleColour);
 			x += shownW;
@@ -277,7 +271,7 @@ void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const Interface
 		}
 
 		const PMString& piece = layers.fUpperPieces[k];
-		PMReal pieceW = Width(gc, font, piece);
+		PMReal pieceW = Width(font, piece);
 		PMReal px = holeAt + barW / PMReal(2.0) - pieceW / PMReal(2.0);
 		if (px < nextFree)
 			px = nextFree;				// pieces over neighbouring bars must not run into each other
@@ -290,8 +284,8 @@ void KCMDrawLayers(AGMGraphicsContext& gc, IGraphicsPort* gPort, const Interface
 			const PMReal room = right - px;
 			if (room <= PMReal(0.0))
 				break;
-			shown = StringUtils::PMEllipsizeString(&gc, room, piece, font, kEllipsizeEnd, nil, kKCMDontConvertAmpersand);
-			pieceW = Width(gc, font, shown);
+			shown = KCMEllipsize(room, piece, font, kEllipsizeEnd);
+			pieceW = Width(font, shown);
 		}
 		drawText(shown, px, 2, isChange ? canvas.fStrong : canvas.fFaded);
 		nextFree = px + pieceW + kKCMLayerPieceGap;

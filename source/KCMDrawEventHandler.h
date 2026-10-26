@@ -216,7 +216,9 @@ public:
 	// and After alike. Read by the story ID labels (KCMRingAdornment.cpp section 1.5): with their
 	// toggle on they go into the report's After side (the user's call, 2026-09-13; the Before side
 	// - sRingFrameOff up - is a copy with renumbered UIDs and gets none), while an ordinary print
-	// or PDF takes them only with sPrintMarks. Nothing else reads it.
+	// or PDF takes them only with sPrintMarks. ★And by the ring itself (drawRings in
+	// DrawSpreadMarks, 2026-10-11): the report compares the pixels in every compare mode, so its
+	// rings are drawn whatever mode is chosen.
 	static bool16 sReportExport;
 	// Force every entry's ring image to be rebuilt on its next draw (lastRadius = -1, under the
 	// mark-state lock). Main thread only, like the other writers of sEntries' contents.

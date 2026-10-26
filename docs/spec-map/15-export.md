@@ -16,8 +16,8 @@
 ## 2. Before/After 報告書（Export Before/After Report・2026-09-13）
 
 - **REP-01** ★**変更ページだけ**を出す（ユーザー決定）。対象＝リングの付いた Target のページ∪追加ページ（文書順）、そのあとに削除ページ（Source の文書順）。
-  Story／Resources モードではリングが無いので、要約と追加・削除ページだけになる。
-  - 訂正:
+  リングは報告書が自分で比べて作る（REP-22）ので、**どのモードでも同じページが出る**。
+  - 訂正: ✅2026-10-11 作者決定で変更＝旧「Story／Resources モードではリングが無いので、要約と追加・削除ページだけ」をやめた（REP-22）
 
 - **REP-02** 1ページ目は**要約**＝Before（Source か Task Start の時刻）／After（Target）の名前・モード・`changed / added / removed`・作成日時・
   Story Edits の行（先頭 40 行。`+`＝追加・`-`＝削除・`*`＝変更、右に種類）・Resources の要約 1 行。
@@ -26,9 +26,9 @@
 - **REP-03** 変更ページごとに横長 1 ページ＝上に見出し `p.N   Before: <名前> p.M   After: <名前> p.N`、左に旧版、右に新版。
   **左（旧版）は「Print comparison marks」を一時的に ON にして書き出す**ので、リングと削除ページの赤「/」が載る。右（新版）は素のまま
   （2026-09-13 ユーザー要望「マークはソースの方のみ」。最初の実装は逆だった）。
-  ⚠Task Start の写しは比較後に離してあるので、書き出しの間だけ `sSrcDB`／`sSrcPageToTarget`／`sOverflowS` を写しに貸し、終わったら離した状態に戻す。
+  左の印は、報告書が直前に自分で比べた結果（`sSrcDB`／`sSrcPageToTarget`／`sOverflowS`）がそのまま描く（REP-22）。
   追加ページは左が空で `(added - nothing on the Before side)`、削除ページは右が空で `(removed - ...)`。
-  - 訂正:
+  - 訂正: ✅2026-10-11 実装に合わせた＝旧「Task Start の写しは比較後に離してあるので、書き出しの間だけ写しに貸す」の処理は撤去（09-21 から写しを離すことは無く、報告書が自分で比べる今は貸すものも無い）
 
 - **REP-04** 寸法＝Target の 1 ページ目の大きさ W×H から、報告書ページ＝`2W+3×24pt` × `H+48+18+2×24pt`。**縮めない**（両側の縮尺を揃えるため）。
   Source のページが別寸法でもそのまま置く。
@@ -47,16 +47,17 @@
     - ⚠**「1つもファイルを作らない」道は丸一日かけて全部つぶれた**（メモリ上の PDF＝`kPDFExportItemsCmdBoss` は**重なり順が逆転し半透明が消える**／
       スニペットは**マスターのアイテムとノンブルを運べない**／ページ書き出しをメモリへ出す公開の道は無い）。
       全文＝`docs/ai-notes/kcm-report-without-temp-files-2026-09-14.md`。**再挑戦する前にそれを読むこと。**
-  ⚠Task Start の写しは報告書のために**もう一度再水和**する（比較のときの写しは離して閉じてある）。ページの対応は写しのラベルで取れる（第3章 CMP-04）。
-  - 訂正:
+  Task Start の写しが閉じていれば、Start と同じく**窓で開いて**読む（`KCMOpenComparisonPair`・REP-22）。報告書の後も開いたまま。
+  - 訂正: ✅2026-10-11 実装に合わせた＝旧「Task Start の写しは報告書のためにもう一度再水和する」は 09-21（写しがファイルになった日）から事実でなかった
 
 - **REP-06** 出力先＝**保存ダイアログで選ぶ**（2026-09-13 ユーザー要望「保存場所と名前をつけられるように」。最初は Target の隣に固定だった）。
   初期名は `<Target 名>.compare-report.pdf`。書けたら**既定の PDF ビューアで開く**（開くのは合体した PDF）。
   ★**2026-09-14 改訂**＝選んだ名前は**フォルダー名の元**になる（REP-05）。ステータス行は
   `Report: N pages, with the Before and After PDFs -> <フォルダーのパス>`＝**ファイルではなくフォルダーを示す**（3つ書いたので）。
+  ★**書いた側の PDF だけを名指す**（2026-10-11）＝片側だけなら `, with the Before PDF`／`, with the After PDF`、変更ページが無ければ何も付けない（旧は書いていない2つも名指していた＝RED で実測）。
   キャンセルは `Report cancelled.`、失敗は `Report failed: <理由>`。
   ⚠**失敗しても書けたところまでは残す**（消さない）＝どこまで進んだかが見えるほうが親切。
-  - 訂正:
+  - 訂正: ✅2026-10-11 実装に合わせた（書いた側だけを名指す）
 
 - **REP-08** ★**左側のマークにはページの縁の枠（frame）を付けない**（2026-09-13 ユーザー要望）＝変わった箇所のリングだけ。
   実装＝`KCMDrawEventHandler::sRingFrameOff` を Before の書き出しの間だけ立て、リング画像のキャッシュを前後で無効化（`InvalidateRingCache`）。
@@ -68,8 +69,8 @@
 
 - **REP-07** 書き出しの前後で Target／Source の `modified` は変えない（`SaveRestoreModifiedState`）。実測＝2文書とも false のまま。
   ⚠**Source が貸し DB（KIDMCP のクローン）のときは断る**（`the Source is a lent copy ...`）＝クローンへの書き出しは落ちる恐れがあり試さない（09-13 再検査で追加）。
-  保存ダイアログは**書き出しの前**に出す（キャンセルが無料）。配置設定の復元は `PlacePrefsRestorer` のデストラクタ＝途中で失敗しても戻る。
-  - 訂正:
+  保存ダイアログは**比較と書き出しの前**に出す（キャンセルが無料。⚠閉じていた Task Start の写しはその前に開く＝組を決める段）。配置設定の復元は `PlacePrefsRestorer` のデストラクタ＝途中で失敗しても戻る。
+  - 訂正: ✅2026-10-11 実装に合わせた（報告書が自分で比べるようになり、ダイアログは比較の前）
 
 ## 2b. 3部構成への拡張（Export Before/After **PDF** Report・2026-09-13 午後）
 
@@ -77,8 +78,8 @@
   - 訂正:
 
 - **REP-11** 1P目は**3行だけ**（タイトル／`Before (Source): 名前`／`After (Target): 名前`）。**最下部に、左の絵の位置に「Before」、右の絵の位置に「After」**。
-  旧 REP-02 の Mode・Pages・Made・Story Edits の行・Resources の行は撤去。Pixel モード以外では 4 行目に `Pixel: not compared in this mode (only added / removed pages are shown)`。
-  - 訂正:
+  旧 REP-02 の Mode・Pages・Made・Story Edits の行・Resources の行は撤去。
+  - 訂正: ✅2026-10-11 作者決定で変更＝旧「Pixel モード以外では 4 行目に `Pixel: not compared in this mode (only added / removed pages are shown)`」を撤去（報告書がどのモードでも画素を比べる＝REP-22）
 
 - **REP-12** Pixel の変更ページ（REP-03）には**文字を一切入れない**＝見出し・注記・キャプションを撤去。追加／削除ページの空側も白紙のまま（ユーザー指示「実際のレイアウト画面が配置されているほうには文字情報なにもいりません」）。
   - 訂正:
@@ -91,10 +92,9 @@
 - **REP-14** ★**Resources の表**＝Story の後に、見出し `Resources Changes: <要約>` と同じ2列の表。定義ごとに見出し行 `<Kind>  <Key（%エスケープ復号）>  [added / removed / changed]`、差のある属性ごとに1行（左＝`名前: 旧値`／右＝`名前: 新値`・片側に無ければ `-`・値はパネルと同じ短縮 `KCMShortResourceValue`）。属性差 0 の Changed は `(the difference is inside a child element)`。
   - 訂正:
 
-- **REP-15** ★**どのモードで比較していても表2つは出る**＝Story モード以外では `KCMStoryDiffRun::Run` を報告書のために回し、終わったら各行の子・fTextCompared・fTargetTextCount を元に戻す（`StoryDetailLoan`）。Resources の結果が無ければ `KCMResourceStore::RebuildForPair` で作り、終わったら `Clear`＋通知（`ResourceLoan`）。
-  ⚠Pixel のページだけは借りられない（ラスタ化は画面のリング・対応表・あふれキャッシュを作り替える）＝Pixel モード以外では出さず、1P目に書く。
-  ⚠Pixel モードの Story 行は `DropRowsWithNoContentChange` を通った後なので、ルビだけ・圏点だけのストーリーは行が無い（Pixel モードの既知の限界）。
-  - 訂正:
+- **REP-15** ★**どのモードでも表2つは出る**＝報告書が自分で作る。Story は **Story モードと同じ手順**（変更カウンター→本文の比較→体裁だけ動いた行を落とす＝`KCMBuildStoryRowsByDiff`）で行を作り、終わったら一覧を空に戻す（`StoryDetailLoan`）⇒ **Story の表はどのモードでも Story モードの一覧と同じ中身**（Track モードも＝変更履歴の行ではなく本文の比較）。Resources は `KCMResourceStore::RebuildForPair` で作り、終わったら `Clear`＋通知（`ResourceLoan`）。
+  ★止めているときに作る（REP-22）ので、モードが持っている一覧を借りることも壊すことも無い。
+  - 訂正: ✅2026-10-11 **作者決定で変更**＝Pixel モードが Story の一覧をやめた（LIST-02）のに合わせて、報告書は Pixel・Resources とも Story モードと同じ手順で表を作る形にそろえた。旧「各行の子を借りて元に戻す」は撤去、旧⚠「Pixel モードではルビだけ・圏点だけのストーリーの行が無い（既知の限界）」は解消。／✅2026-10-11（同日2回目）作者決定で変更＝報告書は Start していないときだけ・3つとも自分で比べる（REP-22）。旧⚠「Pixel のページだけは借りられない＝Pixel モード以外では出さず1P目に書く」「Track モードでは Story の表が空になる見込み」は解消。
 
 - **REP-16** 表の作り方＝`KCMReportTable.cpp`。節の先頭ページに見出し（18pt）と全幅のテキストフレーム → `ITableUtils::InsertTable`（2列・行の高さ 0＝自動）→ セルは `ITableModel::QueryCellContentBoss`→`ITextStoryThread::GetTextStart` の位置に `ITextModelCmds::InsertCmd`、属性は範囲ごとに（14pt・左揃え・tint・上付き・ルビ・圏点）→ `ITextUtils::IsOverset` の間、`kNewSpreadCmdBoss` でページを足し `kTextLinkCmdBoss` で連結（上限 200 ページ）。表の行数は節ごと 400 行で打ち切り（`... (the table stops here)`）。
   - 訂正:
@@ -119,6 +119,19 @@
 - **REP-21** ★**Resources の値に文書の単位を添える**＝`8.503937007874015 (12 Q)`（`KCMResourceUnits.h`）。属性名で振り分け＝`PointSize`／`…FontSize`→文字サイズ単位、`…Weight`→線の単位、`Leading`／`BaselineShift`／`Space*`／`…Indent`／`…Offset`→テキスト単位（J 以外は水平単位）、`Left/RightInset`／`…Gutter`／`…Width`→水平、`Top/BottomInset`／`…Height`→垂直。知らない名前・数でない値・単位が pt のときは添えない。**PDF・パネルの行・パネルの帯の3か所が同じ inline 関数**。
   - 訂正:
 
+- **REP-22** ★★★**報告書は Start していないときだけ作る**（2026-10-11 作者決定「Start されていたらメニューを灰色に」）。
+  比較中は項目が灰色（`KCMActionComponent.cpp`＝armed なら灰色、そうでなければ組が決まるとき生きる）。facade・スクリプトから呼ばれたら `Stop the comparison first - the report runs a comparison of its own.` で断る。
+  組は **Start と同じ決め方**（`KCMOpenComparisonPair`＝選んだ組・無ければ自動の規則・閉じた Task Start の写しは窓で開く・同じ文書は Start と同じ文言で断る）。
+  保存ダイアログの後に**報告書が自分で比べる**（`KCMRunReportComparison`＝`KCMDoMarkChangesDoc` の `pixelsOnly`＝**どのモードでも全ページの画素**・一覧も Resources も作らず・画面は描き直さず知らせない）→ 表2つ（REP-15）→ 書き出し（Before のリングは `sReportExport` の間はモードによらず描く＝`drawRings`）→ **すべて片付ける**（`KCMClearReportComparison`＝Stop と同じ `KCMDoClearMarks`）。
+  ★**作ったあとも Start していないまま**（作者決定）・前面は押したときの文書に戻す（`KCMBringDocumentToFront`＝写しを開いて前に出た窓を戻す）。比較の進捗バーで取り消すと `Report cancelled.`。
+  ⛔旧（2026-09-14〜10-11）＝比較中も生きていて、Start していなければ Start を走らせて**比較中のまま**にし、Pixel 以外のモードでは絵が出なかった。Track モードでは灰色だった。
+  - 訂正: ✅2026-10-11 作者決定で新設
+
+- **REP-23** ★**Source がメモリに取った Task Start なら断る**（2026-10-13・作者「報告書はことわりましょう」）＝組が決まった直後・**保存ダイアログの前**に
+  `The Source is a Task Start kept in memory, which cannot be printed for the Before side - take a Task Start (Save)... for a report.`（第2章 RUN-79）。
+  ★理由＝複製を PDF 書き出しに渡しても失敗せず、**生きている文書の状態**を書く（2026-10-13 実測）＝Before が黙って After になる。Task Start (Save)... の写しは開いた文書なので、これまでどおり作れる。
+  - 訂正:
+
 ## 3. やっていないこと
 
-ページの中の差分行（Story Edits をページ別に振る）／全ページ出力／プリセットの選択 UI／ページ内の変更領域の枠（右側のリングで代替）／Story／Resources モードで Pixel の絵を出すこと（REP-15）。
+ページの中の差分行（Story Edits をページ別に振る）／全ページ出力／プリセットの選択 UI／ページ内の変更領域の枠（右側のリングで代替）／比較中の報告書（作者決定で灰色＝REP-22。手で Added/Removed に登録したページの組は Stop で消えるので、報告書には乗らない）。

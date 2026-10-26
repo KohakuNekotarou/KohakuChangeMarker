@@ -15,12 +15,14 @@
 #include "IGraphicsPort.h"		// newpath / moveto / curveto / fill / stroke / gsave
 
 // General includes:
+#include "AGMGraphicsContext.h"	// KCMMarkPassView::Draw - the pass's AGM port
+#include "AutoGSave.h"
 #include "K2SmartPtr.h"		// K2::scoped_ptr - GetItem hands back a string this has to free
 // ⚠RealAGMColor IS DECLARED IN IInterfaceColors.h, not in any AGM header - the name says otherwise
 //   and costs a build to find out (measured 2026-09-01: AGMGraphicsContext.h leaves it incomplete,
 //   and the error that follows names setrgbcolor rather than the type).
 #include "IInterfaceColors.h"	// class RealAGMColor (:38) - .red / .green / .blue
-#include "DrawStringUtils.h"	// StringUtils::PMDrawStringRGB / PMMeasureString - a custom mark is WRITTEN
+#include "DrawStringUtils.h"	// StringUtils::PMDrawStringRGB (drawbot) - a custom mark is WRITTEN
 
 // Project includes:
 #include "KCMPanelTextDraw.h"	// kKCMDontConvertAmpersand / kKCMNoUnderline - shared with both drawers
@@ -318,14 +320,14 @@ bool16 KCMKentenMark::CanDraw(const PMString& kindValue)
 }
 
 //----------------------------------------------------------------------------------------
-bool16 KCMKentenMark::DrawOverRun(AGMGraphicsContext& gc, IGraphicsPort* gPort,
-								  const InterfaceFontInfo& font, const PMString& kindValue,
+bool16 KCMKentenMark::PlanOverRun(const InterfaceFontInfo& font, const PMString& kindValue,
 								  const PMReal& runLeft, const PMReal& runWidth, int32 charCount,
 								  const PMReal& lineHeight, const PMReal& markCentreY,
-								  const PMReal& baselineY,
-								  const PMReal& rightEdge, const RealAGMColor& colour)
+								  const PMReal& rightEdge, const RealAGMColor& colour, Marks& out)
 {
-	// ★THE KIND'S NAME IS READ ONCE, HERE, and the shape is what goes into the loop below. It was
+	out = Marks();
+
+	// ★THE KIND'S NAME IS READ ONCE, HERE, and the shape is what goes into the plan below. It was
 	//   read per character until 2026-09-04 - CanDraw walked a list of ten names and then every
 	//   Draw walked a chain of ten more, to reach the same answer for every mark of one run.
 	const Shape shape = ShapeFor(kindValue);
@@ -344,7 +346,7 @@ bool16 KCMKentenMark::DrawOverRun(AGMGraphicsContext& gc, IGraphicsPort* gPort,
 	//   (KCMStoryCellView: "nothing is drawn for a ruby that was taken away"). Returning kTrue
 	//   keeps the caller from falling back to writing the name, which would put a word where the
 	//   reader is looking for a mark.
-	if (charCount <= 0 || runWidth <= PMReal(0.0) || gPort == nil)
+	if (charCount <= 0 || runWidth <= PMReal(0.0))
 		return kTrue;
 
 	// The width one character got, which is what a mark has to fit in. CJK is even enough for this
@@ -356,27 +358,75 @@ bool16 KCMKentenMark::DrawOverRun(AGMGraphicsContext& gc, IGraphicsPort* gPort,
 	if (perChar < markSize)
 		markSize = perChar;		// a narrow column shrinks the marks rather than overlapping them
 
-
-	const PMReal glyphW = glyph.IsEmpty()
-						  ? PMReal(0.0)
-						  : StringUtils::PMMeasureString(&gc, glyph, font,
-														 kKCMDontConvertAmpersand).X();
-
+	out.fShape = asShape ? static_cast<int32>(shape) : 0;
+	out.fGlyph = glyph;
+	out.fGlyphW = KCMDrawnWidth(glyph, font);
+	out.fCentreY = markCentreY;
+	out.fSize = markSize;
+	out.fRight = rightEdge;
+	out.fColour = colour;
 	for (int32 i = 0; i < charCount; ++i)
 	{
 		const PMReal cx = runLeft + perChar * (PMReal(i) + PMReal(0.5));
 		if (cx + (markSize / PMReal(2.0)) > rightEdge)
 			break;				// ran out of room - the rest are simply not shown
-
-		if (asShape)
-			DrawShape(gPort, shape, cx, markCentreY, markSize, colour);
-		else
-			StringUtils::PMDrawStringRGB(&gc, PMPoint(cx - (glyphW / PMReal(2.0)), baselineY),
-										 glyph, font, colour,
-										 kKCMDontConvertAmpersand, kKCMNoUnderline);
+		out.fCentreX.push_back(cx);
 	}
 
 	return kTrue;
+}
+
+//----------------------------------------------------------------------------------------
+void KCMKentenMark::PaintShapes(IGraphicsPort* gPort, const Marks& marks)
+{
+	if (gPort == nil || !marks.HasShapes())
+		return;
+	const Shape shape = static_cast<Shape>(marks.fShape);
+	for (size_t i = 0; i < marks.fCentreX.size(); ++i)
+		DrawShape(gPort, shape, marks.fCentreX[i], marks.fCentreY, marks.fSize, marks.fColour);
+}
+
+//----------------------------------------------------------------------------------------
+void KCMKentenMark::WriteGlyphs(dvaui::drawbot::Drawbot* drawbotP, const InterfaceFontInfo& font,
+								const Marks& marks, const PMReal& lineTop, const PMReal& lineBottom)
+{
+	if (drawbotP == nil || marks.fGlyph.IsEmpty())
+		return;
+	for (size_t i = 0; i < marks.fCentreX.size(); ++i)
+	{
+		const PMReal left = marks.fCentreX[i] - (marks.fGlyphW / PMReal(2.0));
+		KCMDrawInBox(drawbotP, PMRect(left, lineTop, marks.fRight, lineBottom), marks.fGlyph, font, marks.fColour);
+	}
+}
+
+//----------------------------------------------------------------------------------------
+// KCMMarkPassView - the AGM pass for the shapes (KCMKentenMark.h)
+//----------------------------------------------------------------------------------------
+
+void KCMMarkPassView::PaintMarks(dvaui::drawbot::Drawbot* drawbotP, const KCMKentenMark::Marks& marks) const
+{
+	if (drawbotP == nil || !marks.HasShapes())
+		return;
+	fMarks = marks;
+	fInMarkPass = kTrue;
+	inherited::DV_Draw(drawbotP);		// sets up the offscreen AGM port, calls Draw below, blits it back
+	fInMarkPass = kFalse;
+	fMarks = KCMKentenMark::Marks();
+}
+
+void KCMMarkPassView::Draw(IViewPort* viewPort, SysRgn updateRgn)
+{
+	if (!fInMarkPass)
+	{
+		inherited::Draw(viewPort, updateRgn);
+		return;
+	}
+	AGMGraphicsContext gc(viewPort, this, updateRgn);
+	InterfacePtr<IGraphicsPort> gPort(gc.GetViewPort(), UseDefaultIID());
+	if (gPort == nil)
+		return;
+	AutoGSave gSave(gPort);
+	KCMKentenMark::PaintShapes(gPort, fMarks);
 }
 
 //----------------------------------------------------------------------------------------

@@ -38,6 +38,7 @@
 // General includes:
 #include "PMString.h"
 #include "PMReal.h"		// GetBaseScreenOpacity
+#include "IDFile.h"		// ChoosePdfEnd
 // (UIDRef.h went on 2026-09-14 with the three virtuals that used it - RehydrateOriginRaw and its
 //  twin, removed with their menu items. Nothing in this header names the type any more; measured
 //  rather than assumed, by grepping this file for UIDRef and finding only the include itself.)
@@ -52,6 +53,16 @@
 
 class IDataBase;
 class IDocument;
+class UIDList;		// RefreshSelectedPages - the Pages panel's selection, as the UI read it (2026-10-26)
+
+// ★THE WORDS BOTH HALVES SAY ABOUT THE PDF COMPARISON (2026-10-14) - here because both read this header: the model for
+//  the press and a script's road, the UI before a dialog it would otherwise open for nothing. English, as every status line.
+#define kKCMPdfPixelOnly			"PDFs are compared in the Pixel mode only. Switch the Compare mode to Pixel."
+#define kKCMPdfTaskStartRefusal		"The Target is a PDF. A Task Start takes a document."
+#define kKCMPdfTargetRefusal		"The Target is a PDF. This works on a document."
+// ★(2026-10-24, the import-as-Source road) The Source is an import's copy: the files' words poured into a Task Start in
+//  memory. It is compared in the Story mode alone (design section 2-10).
+#define kKCMImportSourceModeRefusal	"The Source is the imported text - it is compared in the Story mode. Switch the Compare mode to Story."
 
 class IKCMCompareFacade : public IPMUnknown
 {
@@ -130,8 +141,11 @@ public:
 
 	/** Re-compare only the pages selected in the Pages panel. Returns kFalse when there was
 		nothing to do. Cancelling here KEEPS what was already refreshed -- this is a partial
-		update, so stopping half way leaves a narrower version of the same operation. */
-	virtual bool16		RefreshSelectedPages(int32* outPages, int32* outChanged,
+		update, so stopping half way leaves a narrower version of the same operation.
+		★`pages` IS THE SELECTION THE UI READ (2026-10-26, the import tidy S7 - KCMReadSelectedPages,
+		  masters in): the model does not read the Pages panel any more. Re-typed in place, and the
+		  stamp below bumped (only KCM's two halves are rebuilt: KIDMCP names no KCM facade). */
+	virtual bool16		RefreshSelectedPages(const UIDList& pages, int32* outPages, int32* outChanged,
 								bool16* outCancelled = nil, int32* outFailed = nil) = 0;
 
 	/** Whether "Refresh Page Comparison" may be offered right now.
@@ -626,10 +640,12 @@ public:
 
 	// ---- the Before/After report ---------------------------------------------------------
 	//
-	// One PDF: a summary page, then every changed page of the running comparison with the
-	// older version on the left and the newer (rings printed) on the right (KCMReport.h). kTrue
-	// when written; outMessage names the file, or says why not. The flyout item calls it and
-	// shows the message.
+	// One PDF: a first page, then every changed page with the older version (rings printed) on
+	// the left and the newer on the right, then the Story and the Resources tables (KCMReport.h).
+	// ★Made only while NOTHING IS STARTED (2026-10-11): it compares the pair a Start would, for
+	// itself - the pixels in every compare mode - and leaves nothing started; while a comparison
+	// runs it refuses and says to Stop (the flyout greys its item then). kTrue when written;
+	// outMessage names the folder, or says why not. The flyout item calls it and shows the message.
 
 	virtual bool16		ExportBeforeAfterReport(PMString& outMessage) = 0;
 
@@ -677,6 +693,37 @@ public:
 		 caller says nothing at all in that case. Anything else is a real failure. */
 	virtual bool16		CanTakeTaskStartCopy() = 0;
 	virtual bool16		TakeTaskStartCopy(PMString& outWhyNot) = 0;
+
+	/** ★★"COMPARE WITH TRACKED CHANGES..." (2026-10-05, the user's design - the Word import's road): a copy of the
+		document saved where the reader picks, every tracked change rejected in it, chosen as the Source, and the
+		Track Changes mode started. ⚠kFalse with an EMPTY outMessage = the reader cancelled the save dialog: say
+		nothing. ⚠Appended at the END ([[facade-vtable-slot-append-only]]). */
+	virtual bool16		CanTakeTrackOriginalCopy() = 0;
+	virtual bool16		TakeTrackOriginalCopy(PMString& outMessage) = 0;
+
+	/** ★★TASK START, KEPT IN MEMORY (2026-10-13, the user: "make a Task Start that is a clone, as a new menu" - the menu
+		says "Task Start", and the item that saves a copy became "Task Start (Save)..."). The document's state is cloned
+		and chosen as the Source - no dialog, no file, nothing started. KCMTaskStartClone.h carries the steps and when
+		the clone goes. kFalse with the reason when it was not taken (nothing was changed then).
+		⚠Appended at the END ([[facade-vtable-slot-append-only]]). */
+	virtual bool16		CanTakeTaskStartClone() = 0;
+	virtual bool16		TakeTaskStartClone(PMString& outWhyNot) = 0;
+
+	/** ★★THE PDF COMPARISON (2026-10-14, docs/superpowers/specs/2026-10-14-kcm-pdf-compare-design.md). ChoosePdfEnd: the
+		PDF the reader picked in "Set PDF as Target..." / "Set PDF as Source..." becomes that end of the pair - a FILE choice,
+		as a Task Start (Save)... makes one; Start makes a document of each PDF (KCMPdfDoc.h). kFalse, with the reason and
+		nothing changed, when the file is not a PDF; outMessage says what to do next either way.
+		IsPdfDoc: whether a database is a document KCM made from a PDF - the UI asks before a dialog only a document can use,
+		and when the compare mode changes under a running PDF comparison.
+		⚠Appended at the END ([[facade-vtable-slot-append-only]]). */
+	virtual bool16		ChoosePdfEnd(bool16 asTarget, const IDFile& pdf, PMString& outMessage) = 0;
+	virtual bool16		IsPdfDoc(IDataBase* db) = 0;
+
+	/** ★(2026-10-25 - the author: "while tracking, show on the Source line that the Track is the Source") Is sourceDB the
+		copy "Compare with Tracked Changes..." made from targetDB - its tracked changes all rejected (KCMIsTrackOriginalOf,
+		asked of the files)? kFalse for nil or a document no longer open. The panel's Source line ends in
+		"(Track original)" when it is. ⚠Appended at the END ([[facade-vtable-slot-append-only]]). */
+	virtual bool16		IsTrackOriginalOf(IDataBase* sourceDB, IDataBase* targetDB) = 0;
 };
 
 /** THE ABI STAMP OF THE CLASS ABOVE. ★BUMP IT (the date, YYYYMMDD) EVERY TIME A VIRTUAL IS ADDED,
@@ -685,6 +732,6 @@ public:
 	compares it with the value ITS build saw in this header before it calls anything here
 	(KIDMCPKcmBridge::AbiState). Two binaries built from different versions of this class then
 	refuse each other instead of running the wrong method (2026-09-13: the header's warning). */
-const int32 kKCMCompareFacadeAbi = 2026092103;	// 2026-09-21 (the third change of that day): CanTakeTaskStartCopy / TakeTaskStartCopy appended - Task Start saves a copy to a file instead of holding a snapshot. ⚠KIDMCP must be rebuilt with it. Previously 2026092102 = GetChosenSourceFileLabel / GetChosenTargetFileLabel appended - a chosen end may now be a FILE, which the panel names by its path. ⚠KIDMCP must be rebuilt with it. Previously 2026092101 = TakeStatusWarning appended (the model can now raise a red message: the round-trip check on the comparison's own copy). ⚠KIDMCP must be rebuilt with it. Previously 2026092001 = OpenOriginAsIdml appended (the menu item that shows the Task Start state as a document). ⚠KIDMCP must be rebuilt with it. Previously 2026091402 = the second change of 2026-09-14 (SaveOriginRawToDesktop removed: the script method app.kcmSaveOriginXml reaches KCMOriginSaveRaw from inside this plug-in, so the facade door had no caller left). 01 was the first change that day (ExportChangedPagesTSV, RehydrateOriginRaw, RehydrateOriginAsCompared, removed with the menu items that called them)
+const int32 kKCMCompareFacadeAbi = 2026102601;	// 2026-10-26: RefreshSelectedPages re-typed in place - it takes the pages the UI read from the Pages panel (the import tidy S7; only KCM's two halves are rebuilt). Previously 2026102501 = 2026-10-25: IsTrackOriginalOf appended - the Source line's "(Track original)" (only KCM's two halves are rebuilt; KIDMCP names no KCM facade). Previously 2026101401 = 2026-10-14: ChoosePdfEnd / IsPdfDoc appended - the PDF comparison (KIDMCP has not called this facade since 2026-10-12: only KCM's two halves are rebuilt). Previously 2026101301 = 2026-10-13: CanTakeTaskStartClone / TakeTaskStartClone appended - Task Start kept in memory. Previously 2026100501 = 2026-10-05: CanTakeTrackOriginalCopy / TakeTrackOriginalCopy appended - Compare with Tracked Changes. ⚠KIDMCP must be rebuilt with it. Previously 2026092103 = 2026-09-21 (the third change of that day): CanTakeTaskStartCopy / TakeTaskStartCopy appended - Task Start saves a copy to a file instead of holding a snapshot. ⚠KIDMCP must be rebuilt with it. Previously 2026092102 = GetChosenSourceFileLabel / GetChosenTargetFileLabel appended - a chosen end may now be a FILE, which the panel names by its path. ⚠KIDMCP must be rebuilt with it. Previously 2026092101 = TakeStatusWarning appended (the model can now raise a red message: the round-trip check on the comparison's own copy). ⚠KIDMCP must be rebuilt with it. Previously 2026092001 = OpenOriginAsIdml appended (the menu item that shows the Task Start state as a document). ⚠KIDMCP must be rebuilt with it. Previously 2026091402 = the second change of 2026-09-14 (SaveOriginRawToDesktop removed: the script method app.kcmSaveOriginXml reaches KCMOriginSaveRaw from inside this plug-in, so the facade door had no caller left). 01 was the first change that day (ExportChangedPagesTSV, RehydrateOriginRaw, RehydrateOriginAsCompared, removed with the menu items that called them)
 
 #endif // __IKCMCompareFacade_h__

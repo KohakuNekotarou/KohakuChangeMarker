@@ -125,7 +125,7 @@ DECLARE_PMID(kClassIDSpace, kKCMTrackerRegisterBoss, kKCMUIPrefix + 15)	// regis
 DECLARE_PMID(kClassIDSpace, kKCMStorySectionToggleBoss, kKCMUIPrefix + 16)	// kRollOverIconButtonBoss + IID_IOBSERVER: the open/close triangle of the "Story Edits" section at the bottom of the panel. Its artwork is borrowed from InDesign (kTreeBranchCollapsed/Expanded)
 DECLARE_PMID(kClassIDSpace, kKCMStorySectionPanelBoss, kKCMUIPrefix + 17)	// kGenericPanelWidgetBoss + IID_IKCMSAVEDSECTIONHEIGHT (kPersistIntDataImpl): the lower pane itself. It remembers the height the section had when it was last closed (modelled on the product's linksui kLinkInfoPanelWidgetBoss)
 DECLARE_PMID(kClassIDSpace, kKCMStoryTreeWidgetBoss, kKCMUIPrefix + 18)	// kTreeViewWidgetBoss subclass: the Story Edits list (flat, one level). It carries only the adapter and the widget manager - kTreeViewWidgetBoss already provides the controller
-DECLARE_PMID(kClassIDSpace, kKCMStoryRowWidgetBoss, kKCMUIPrefix + 19)	// kTreeNodeWidgetBoss subclass: one row of the list. It carries only IID_IEVENTHANDLER (kKCMStoryRowEHImpl) = single click jumps, double click selects the whole story
+DECLARE_PMID(kClassIDSpace, kKCMStoryRowWidgetBoss, kKCMUIPrefix + 19)	// kTreeNodeWidgetBoss subclass: one row of the list. It carries only IID_IEVENTHANDLER (kKCMStoryRowEHImpl) = a click jumps (a change row's selects its words); a double click is two clicks (2026-10-25)
 DECLARE_PMID(kClassIDSpace, kKCMStoryRowCellBoss, kKCMUIPrefix + 20)	// kInfoStaticTextWidgetBoss + IID_ITIP (kKCMNoTipImpl): a cell of a row. ★The point is to TAKE the tooltip AWAY: a plain static text pops its full string up whenever it is ellipsized (measured - kStaticTextWidgetBoss carries IID_ITIP = kTextWidgetTipImpl), which is in the way on a list row, so an implementation that answers empty is put over it (user's call)
 // The book comparison dialog. ★It is MODELESS = the documents stay reachable while it is open,
 // which is what leaves room for "click a row to open that chapter" to be added later (a modal
@@ -216,6 +216,10 @@ DECLARE_PMID(kClassIDSpace, kKCMPawTrackerBoss, kKCMUIPrefix + 34)
 //   selected raises no kTrueStateMessage at all -- measured 2026-09-04, which is exactly why
 //   pressing the button a second time did nothing.
 DECLARE_PMID(kClassIDSpace, kKCMToolButtonBoss, kKCMUIPrefix + 35)
+DECLARE_PMID(kClassIDSpace, kKCMTrackChipCellBoss, kKCMUIPrefix + 38)	// kGenericPanelWidgetBoss + IID_ICONTROLVIEW (kKCMTrackChipViewImpl) + IID_IKCMSTORYCELLDATA: the colour square of a Track AUTHOR row (2026-10-05)
+DECLARE_PMID(kClassIDSpace, kKCMStoryAppliedSignCellBoss, kKCMUIPrefix + 39)	// kGenericPanelWidgetBoss + IID_ICONTROLVIEW (kKCMStoryAppliedSignViewImpl): the Δ cell of a "=" row Apply This Change put in - an amber "=" drawn by hand, as the "!" row's is (KCMStoryBangView.cpp, 2026-10-24 evening - the author: "when a change goes in and shows =, make the = red"). ⚠+39 counted (the class space; +39 elsewhere in this file is another space's)
+DECLARE_PMID(kClassIDSpace, kKCMTopPaneBoss, kKCMUIPrefix + 40)	// kGenericPanelWidgetBoss + IID_IEVENTHANDLER (kKCMTopPaneEHImpl): the splitter's UPPER pane (kKCMTopPaneWidgetID), whose handler pops "Apply All Changes" for a right click on the section heading ("Proposed Edits (N)") - 2026-10-24 evening, the author: "Apply All Changes on a story row is odd; put it on the Proposed Edits heading". On the pane because the heading, a static text, is handed no mouse event (KCMStorySection.cpp); the product's Link Info section has the same shape (kLinkInfoPanelWidgetBoss). ⚠+40 counted (the class space)
+DECLARE_PMID(kClassIDSpace, kKCMReturnFilterBoss, kKCMUIPrefix + 41)	// kInvalidClass + IID_IEVENTHANDLER (kKCMReturnFilterEHImpl): the Return filter, made once and pushed on the application's IEventDispatcher while the Story Edits list holds the keyboard (2026-10-24 night - KFC's kKFCReturnFilterBoss). ⚠+41 counted (the class space)
 // InterfaceIDs:
 // ⚠★What is here are **the IIDs that appear only on UI-side bosses**. The ones that cross the
 //   boundary (the five facades plus the notification protocol) are in **KCMBoundaryID.h**,
@@ -258,7 +262,7 @@ DECLARE_PMID(kImplementationIDSpace, kKCMStoryTreeAdapterImpl, kKCMUIPrefix + 23
 DECLARE_PMID(kImplementationIDSpace, kKCMStoryTreeWidgetMgrImpl, kKCMUIPrefix + 24)	// ITreeViewWidgetMgr (CTreeViewWidgetMgr subclass. KCMStoryTreeWidgetMgr.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKCMNoTipImpl, kKCMUIPrefix + 25)	// ITip (always answers empty = no tooltip. KCMNoTip.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKCMPanelViewImpl, kKCMUIPrefix + 26)	// IControlView (PalettePanelView subclass; ConstrainDimensions keeps the panel's minimum size. KCMPanelView.cpp)
-DECLARE_PMID(kImplementationIDSpace, kKCMStoryRowEHImpl, kKCMUIPrefix + 27)	// IEventHandler (TreeNodeEventHandler subclass. A Story Edits row: single click jumps, double click selects the whole story. KCMStoryRowEH.cpp)
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryRowEHImpl, kKCMUIPrefix + 27)	// IEventHandler (TreeNodeEventHandler subclass. A Story Edits row: a click jumps (a change row's selects its words); a double click is two clicks since 2026-10-25. KCMStoryRowEH.cpp)
 // (kKCMUIPrefix + 28 was briefly kKCMStoryRowViewImpl, an IControlView that removed the rule
 //  between rows, and was withdrawn the same day -- the rules stay, by the user's call, so the
 //  implementation went with it (the account is in the row boss comment in KCMUI.fr).
@@ -299,6 +303,11 @@ DECLARE_PMID(kImplementationIDSpace, kKCMPawTrackerImpl, kKCMUIPrefix + 46)	// I
 DECLARE_PMID(kImplementationIDSpace, kKCMPawTrackerEHImpl, kKCMUIPrefix + 47)	// IEventHandler (CTrackerEventHandler subclass, the companion of the tracker above -- a bare subclass, as kKCMTrackerEHImpl is. KCMPawTracker.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKCMToolButtonEHImpl, kKCMUIPrefix + 49)	// IEventHandler (CEventHandler subclass; the panel tool button's press-and-hold. KCMToolButtonEH.cpp). ⚠It REPLACES the stock kAssociatedActionEventHandlerImpl, so it owns the whole press -- see kKCMToolButtonBoss
 DECLARE_PMID(kImplementationIDSpace, kKCMPawCursorProviderImpl, kKCMUIPrefix + 48)	// ICursorProvider (CToolCursorProvider subclass; the pink paw shown while the stamp tool is active. KCMPawCursorProvider.cpp). ★Simpler than the KCM tool's, which has two states (black while armed, outlined while stopped): a paw can be placed at any time, so it has nothing to say about the comparison's state
+DECLARE_PMID(kImplementationIDSpace, kKCMTrackChipViewImpl, kKCMUIPrefix + 52)	// IControlView (DVControlView subclass, PERSIST): the author row's colour square (KCMTrackChipView.cpp, 2026-10-05)
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryAppliedSignViewImpl, kKCMUIPrefix + 53)	// IControlView (DVControlView subclass, PERSIST): the amber "=" of a row Apply This Change put in (KCMStoryBangView.cpp, 2026-10-24)
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryTreeControllerImpl, kKCMUIPrefix + 55)	// ITreeViewController (CTreeViewController subclass, PERSIST - the stock one it replaces is): the Story Edits list's selection - change rows selected together (KCMStoryTreeController.cpp, 2026-10-24 night - the list like KFC's). ⚠+55 counted (41 and 42 stay vacant)
+DECLARE_PMID(kImplementationIDSpace, kKCMReturnFilterEHImpl, kKCMUIPrefix + 56)	// IEventHandler (CEventHandler subclass): the Return filter pushed on the application's IEventDispatcher while the list holds the keyboard - a Return on the change rows selected applies them before the widget layer can hand the keyboard back to the document (KCMStoryTreeEH.cpp; KFC's KFCReturnFilterEH). ⚠+56 counted
+DECLARE_PMID(kImplementationIDSpace, kKCMTopPaneEHImpl, kKCMUIPrefix + 54)	// IEventHandler (DVHostedWidgetEH subclass, as the product's LinkInfoPanelEH; not persistent - GenericPanelWidget's resource reads no event handler, Widgets.fh): the upper pane's - a right click on the section heading pops kKCMProposedHeadingMenuName while the Source is an import's copy (KCMStorySection.cpp, 2026-10-24 evening). ⚠+54 counted
 // ActionIDs:
 DECLARE_PMID(kActionIDSpace, kKCMAboutActionID, kKCMUIPrefix + 0)
 DECLARE_PMID(kActionIDSpace, kKCMPanelWidgetActionID, kKCMUIPrefix + 1)	// show / hide the panel (Window menu)
@@ -445,7 +454,7 @@ DECLARE_PMID(kActionIDSpace, kKCMResourceRowXmlActionID, kKCMUIPrefix + 58)
 //   want it back, take it from there". Task Start had become a copy saved to a file and opened by
 //   Start, so every comparison has its older side open on screen and nothing has to be written for
 //   the reader. **Never reused** (the rule +38 set: a reader's .indk stores a shortcut as a number).
-DECLARE_PMID(kActionIDSpace, kKCMPopupExportReportActionID, kKCMUIPrefix + 65)	// ★"Export Before/After PDF Report" on the panel flyout (a plain command, 2026-09-13, the user's pick; "PDF" in the name the same day): one PDF in three parts - a first page, every changed page of the pixel comparison with the older version (rings printed) on the left and the newer on the right, then the Story table and the Resources table (older on the left, newer on the right). ★**Live while a comparison is running OR while one could be started** (2026-09-14, the user's instruction "let it be pressed whenever a Target and a Source are there, and run whatever comparison it needs"): pressed before a Start, the model runs the comparison itself through the toggle's own start branch, and ⚠**that comparison stays armed** (a pixel comparison cannot be borrowed and given back the way the Story and Resources results are). Facade ExportBeforeAfterReport; the work is KCMReport.cpp / KCMReportTable.cpp
+DECLARE_PMID(kActionIDSpace, kKCMPopupExportReportActionID, kKCMUIPrefix + 65)	// ★"Export Before/After PDF Report" on the panel flyout (a plain command, 2026-09-13, the user's pick; "PDF" in the name the same day): one PDF in three parts - a first page, every changed page of the pixel comparison with the older version (rings printed) on the left and the newer on the right, then the Story table and the Resources table (older on the left, newer on the right). ★★**Live only while NOTHING IS STARTED and a pair is there** (2026-10-11, the user's decision - grey while a comparison runs): the model compares the pair a Start would, for itself - every page's pixels in every compare mode, the Track mode included - and takes it all down once the report is written, so nothing is left started. (Until that day it was live while comparing too, and a press before a Start ran the toggle's own Start and left that comparison armed - outside the Pixel mode without the pictures.) Facade ExportBeforeAfterReport; the work is KCMReport.cpp / KCMReportTable.cpp
 DECLARE_PMID(kActionIDSpace, kKCMPopupPairByUidActionID, kKCMUIPrefix + 64)	// ★"Pair Pages by UID" check toggle on the panel flyout (2026-09-13, the user's ask: choose between UID and order). ON (the default) = ordinary pages pair with the page of the same UID on the other side, a UID found on one side only being an added / removed page (the red "/"); OFF = the rule that stood before, by position. The model holds it (KCMPageMap.cpp, sPairPagesByUid); flipping it re-compares like Ignore Page Number Marker. Saved with the panel settings ("pairPagesByUid")
 DECLARE_PMID(kActionIDSpace, kKCMPopupShowStoryIdsActionID, kKCMUIPrefix + 67)	// ★"Show Story IDs" check toggle on the panel flyout (2026-09-13, the user's ask: the story's UID on the layout, found from the story and put on the item that holds it; then "the number alone, outside the frame, above it, twice the size"). ON = every page item holding a story - a text frame, text on a path, an anchored frame alike - has its story's UID written as a bare number above its box; on screen always, in print and PDF with "Print comparison marks" on. Default OFF. The model draws it from the same global adornment as the rings (KCMRingAdornment.cpp §1.5); facade Get/SetShowStoryIds; saved with the panel settings ("showStoryIds"). (It was "Show Frame UIDs" with "ID:/Story:" inside the frame for two hours that afternoon.)
 // ⛔**+68 AND +69 ARE RETIRED** (2026-09-21, the user's instruction: "take Edit out of the Resources
@@ -461,13 +470,17 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupShowStoryIdsActionID, kKCMUIPrefix + 67)	/
 //   the rule +38 set: a reader's .indk stores a shortcut as a plain number.
 //   ★What was measured while building them is kept, because the route out-lives the feature:
 //   docs/ai-notes/kcm-resources-edit-style-dialog-2026-09-13.md and the removal note of 2026-09-21.
-DECLARE_PMID(kActionIDSpace, kKCMPopupTaskStartActionID, kKCMUIPrefix + 59)	// ★"Task Start" on the panel flyout (a plain command; **remade 2026-09-21**): a COPY of the document is saved to a file the reader picks through a save dialog, and THAT FILE is chosen as the Source. Nothing is opened and no comparison runs - Start opens the copy, in a window, and leaves it open. ★**Which document is copied**: the chosen Target if there is one, else the document in front; that same document becomes the Target. ★**Live whenever there is a document to copy** (facade CanTakeTaskStartCopy - the one place). ⚠**Pressing it while a comparison runs stops that comparison first** (the user's instruction of 2026-09-14, kept). ⚠**A cancelled save dialog changes nothing and says nothing.** (Until 2026-09-21 this took the document's INX into memory as "the origin" instead, and the copy was rebuilt from those bytes for every comparison.)
+DECLARE_PMID(kActionIDSpace, kKCMPopupTaskStartActionID, kKCMUIPrefix + 59)	// ★(2026-10-13) Now named "Task Start (Save)..." - "Task Start" is +88, kept in memory. ★"Task Start" on the panel flyout (a plain command; **remade 2026-09-21**): a COPY of the document is saved to a file the reader picks through a save dialog, and THAT FILE is chosen as the Source. Nothing is opened and no comparison runs - Start opens the copy, in a window, and leaves it open. ★**Which document is copied**: the chosen Target if there is one, else the document in front; that same document becomes the Target. ★**Live whenever there is a document to copy** (facade CanTakeTaskStartCopy - the one place). ⚠**Pressing it while a comparison runs stops that comparison first** (the user's instruction of 2026-09-14, kept). ⚠**A cancelled save dialog changes nothing and says nothing.** (Until 2026-09-21 this took the document's INX into memory as "the origin" instead, and the copy was rebuilt from those bytes for every comparison.)
 DECLARE_PMID(kActionIDSpace, kKCMPopupExportStoryTextActionID, kKCMUIPrefix + 70)	// ★"Export Story Text..." on the panel flyout (a plain command, 2026-09-15), directly under Task Start: every story of the active document is written as one **Word document (.docx)** in a dated folder under one the reader picks, for editing in Word and importing again. **It only reads** - nothing is written into the document, and the walk is wrapped in IDataBase::SaveRestoreModifiedState so it is not even dirtied. ★Live whenever there is an active document (facade GetActiveDocDB). ⚠It borrowed CanTakeTaskStart for this until 2026-09-21, when the two stopped being the same question - Task Start copies the chosen Target when there is one. ⚠**IT WROTE .html UNTIL 2026-09-21** and a second item (+79) wrote the .docx; the HTML road was retired on the user's word ("Word format only") and this item took the one spelling left. Facade ExportStoryText; the work is KCMStoryTextExport.cpp and the format is KCMStoryDocx.cpp on KCMStoryShape.cpp (pure functions, tested outside InDesign in work/kcm-storydocx-test)
 // ⛔**+80 IS RETIRED** (2026-09-21): it was "Open Task Start as IDML", and it went with the origin itself. By then it could not be pressed at all - its one condition was HasOrigin, which nothing had made true since Task Start began saving a copy to a file. **The number is never reused** (the rule ActionID +38 set: a reader's .indk stores a shortcut as a plain number).
-DECLARE_PMID(kActionIDSpace, kKCMPopupImportStoryTextActionID, kKCMUIPrefix + 71)	// ★"Import Story Text..." on the panel flyout (a plain command, 2026-09-15), under Export: the reader picks the edited story FILES (a "<decimal>.html", or a .docx written by Export Story Text as Word...), a Task Start copy of the document is saved to a file THEY pick, the edited words go into the DOCUMENT, and the Story comparison starts against that copy. ★★★**THE DOCUMENT IS CHANGED BY THIS, AND EVERYTHING GOES IN AT ONCE** (2026-09-19, the reader's decision: overset then shows itself on the real page). ⚠★★**NOTHING SENDS ONE CHANGE BACK ANY MORE** (2026-09-21): the restore went, so what the reader does not want is either undone whole with Ctrl+Z or taken from the Source document, which Start has open in a window. ⚠**The old note here - "the document is not changed by this" - was the 2026-09-15 design and is measured false.** ★A cancelled save dialog ends the import, in silence. ★Live with an active document and no comparison running (⚠unlike Task Start, it does NOT stop one and take over). Facade ImportStoryText; the work is KCMStoryTextImport.cpp, and the copy is KCMTakeTaskStartCopy (KCMTaskStartSave.cpp) - the same one the flyout's Task Start takes
-DECLARE_PMID(kActionIDSpace, kKCMChangeRowRejectActionID, kKCMUIPrefix + 82)	// ★"Reject This Import Change" on a Story Edits CHANGE row (2026-09-24, stage 2 A). ⚠+72..+81 are all retired (the notes below) - +82 was the lowest action slot never used, counted.
+DECLARE_PMID(kActionIDSpace, kKCMPopupImportStoryTextActionID, kKCMUIPrefix + 71)	// ★"Import Story Text..." on the panel flyout (a plain command, 2026-09-15), under Export: the reader picks the edited story FILES (a .docx written by Export Story Text; the file dialog shows Word's files first, 2026-09-25), a Task Start in memory of the task document is taken (KCMTakeImportClone), the files' words go into THAT COPY, and the Story comparison starts against it - the rows say what the document would become, and Apply puts them in (2026-10-24, adopted 2026-10-25). The document is not changed. ★Live with a document to take the copy of (CanTakeTaskStartClone), a comparison running too (the take stops it first). Facade ImportStoryTextAsSource; the work is KCMStoryTextImport.cpp. ⛔From 2026-09-19 to 2026-10-25 the words went into the DOCUMENT against a Task Start saved to a file (facade ImportStoryText, KCMTakeTaskStartCopy) - retired with the tidy
+DECLARE_PMID(kActionIDSpace, kKCMCompareTrackedActionID, kKCMUIPrefix + 86)	// ★"Compare with Tracked Changes..." on the panel flyout (2026-10-05): the Word import's road for the Track mode - a save dialog, a copy with every change rejected as the Source, and the Track comparison started
+// ⛔**+82 IS RETIRED** (2026-10-25): "Reject This Import Change" on a Story Edits CHANGE row (2026-09-24, stage 2 A) - it rejected the
+//   import's tracked changes over the row, and went with the import that wrote them into the document. Never reused.
 DECLARE_PMID(kActionIDSpace, kKCMChangeRowRestoreAttrActionID, kKCMUIPrefix + 83)	// ★"Restore from Source" on a Story Edits CHANGE row that is a ruby / kenten / warichu / tate-chu-yoko change (2026-09-24, stage 2 B): the mark over those characters is made what the Source document has, read from the Source story itself. +83 was the lowest action slot never used, counted (the +82 note says how).
-DECLARE_PMID(kActionIDSpace, kKCMChangeRowRedoActionID, kKCMUIPrefix + 84)	// ★"Redo from Word" on a Story Edits CHANGE row the reader took back (the "=" row; 2026-09-24, stage 2 C): the change's paragraph is made what Word shows again, from the content the import read, under the import's signature. +84 was the lowest action slot never used, counted.
+DECLARE_PMID(kActionIDSpace, kKCMChangeRowMatchTableActionID, kKCMUIPrefix + 85)	// ★"Match the Source" on a Story Edits TABLE row whose table differs from the Source's (2026-09-25, design section 16): the table is reshaped and its cells copied from the Source document's table, and the table keeps its id. +85 was the lowest action slot never used, counted.
+// ⛔**+84 IS RETIRED** (2026-10-25): "Redo from Word" (shown "Redo") on a taken-back change row (2026-09-24, stage 2 C) - it went
+//   with the reject it undid. Never reused.
 // ⛔**+72 IS RETIRED** (2026-09-20, with the fourth mode): "Change to Imported Text", the name the
 //   Import mode gave "Restore Source Text". The mode is gone; one item, one name. Never reused.
 // ⛔**+73..+76 ARE RETIRED** (2026-09-20, the user's decision to drop Restore All): "Restore All in This Story" / "Change All in This Story" / "Restore All Stories" / "Change All Stories to Imported Text". **The numbers are never reused** - the rule ActionID +38 (Translucent Toolbox) set.
@@ -484,6 +497,31 @@ DECLARE_PMID(kActionIDSpace, kKCMChangeRowRedoActionID, kKCMUIPrefix + 84)	// �
 // ⛔**+79 IS RETIRED** (2026-09-21): it was "Export Story Text as Word...", added 2026-09-19 beside "Export Story Text..." so that the same stories could be written in the OTHER spelling (.docx rather than .html). The HTML road went on the user's word ("Word format only"), so +70 - the item the public version already has, and the one a reader may have a shortcut on - is the one that stayed, and it writes the .docx. **Never reused.**
 
 DECLARE_PMID(kActionIDSpace, kKCMPopupModeResourcesActionID, kKCMUIPrefix + 57)	// ★"Compare mode > Resources Changes" on the flyout (2026-09-09). The third mode: export each document as XML and compare the DEFINITIONS - styles, swatches, layers - so that a change to something nobody has applied is reported. It moves no pixel and touches no word, which is why neither of the other two modes can see it. Exclusive with Pixel and Story, the selected one carrying the check (kCustomEnabling + kSelectedAction). KCMActionComponent.cpp
+DECLARE_PMID(kActionIDSpace, kKCMPopupModeTrackActionID, kKCMUIPrefix + 87)	// ★"Compare mode > Track Changes" on the flyout (2026-10-05): the Target's own tracked changes are the older version (design docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md). (+86 is "Compare with Tracked Changes...", Task 6 of the plan.)
+DECLARE_PMID(kActionIDSpace, kKCMPopupTaskStartCloneActionID, kKCMUIPrefix + 88)	// ★"Task Start" on the panel flyout (2026-10-13): the document's state is kept IN MEMORY (a database clone - KCMTaskStartClone.h) and chosen as the Source - no dialog, no file, nothing started. Live whenever there is a document to take (facade CanTakeTaskStartClone - the question "Task Start (Save)..." asks); pressing it while comparing stops that comparison first. ⚠Every word the reader sees says "kept in memory", never "clone" (the user's decision). The item that saves a copy (+59) became "Task Start (Save)..." the same day.
+DECLARE_PMID(kActionIDSpace, kKCMPopupSetPdfTargetActionID, kKCMUIPrefix + 89)	// ★"Set PDF as Target..." on the panel flyout (2026-10-14, the PDF comparison): a PDF the reader picks becomes the Target - a FILE choice; Start makes a document of it (KCMPdfDoc.h). Live while nothing is compared, with or without a document open. +89 and +90 were the lowest action slots never used, counted on every branch that day.
+DECLARE_PMID(kActionIDSpace, kKCMPopupSetPdfSourceActionID, kKCMUIPrefix + 90)	// ★"Set PDF as Source..." - the same for the Source (the older PDF)
+// ★(2026-10-24, the import-as-Source road - docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md) The three Apply
+//   items: live only while the Source is an import's copy (facade IsImportSource). +91..+93 were the lowest action slots never
+//   used, counted on every branch that day (the highest was +90).
+DECLARE_PMID(kActionIDSpace, kKCMChangeRowApplyActionID, kKCMUIPrefix + 91)	// ★"Apply This Change" on a Story Edits CHANGE row: the change goes into the document by the import's own road (facade ApplyChange)
+DECLARE_PMID(kActionIDSpace, kKCMStoryRowApplyActionID, kKCMUIPrefix + 92)	// ★"Apply All Changes in This Story" on a Story Edits STORY row (facade ApplyStory)
+DECLARE_PMID(kActionIDSpace, kKCMApplyAllActionID, kKCMUIPrefix + 93)	// ★"Apply All Changes": every story the import filled (facade ApplyAll). ⚠On the SECTION HEADING's menu since 2026-10-24 evening (kKCMProposedHeadingMenuName - the author: on a story row it read as that story's), no longer a story row's - the ID keeps its first name
+DECLARE_PMID(kActionIDSpace, kKCMStoryRowRestoreAllActionID, kKCMUIPrefix + 95)	// ★"Restore All Changes in This Story" on a Story Edits STORY row in the Story mode (2026-10-24 night, design 1-8 - the author: "on the Story row too"): every text change of the story made the Source's by copy, one undo step (facade RestoreStoryFromSource). ⚠+95 the next after +94, counted
+DECLARE_PMID(kActionIDSpace, kKCMPopupExportPagesActionID, kKCMUIPrefix + 96)	// ★(2026-10-25) "Export Pages to Word..." - on the Pages panel's page menu (under Refresh Page Comparison) AND on the flyout (under Export Story Text...): the selected pages, each one .docx of text boxes (facade ExportPagesAsWord). +96 the next free slot - counted: the highest was +95
+DECLARE_PMID(kActionIDSpace, kKCMChangeRowRestoreCopyActionID, kKCMUIPrefix + 94)	// ★"Restore from Copy" on a "=" CHANGE row (2026-10-24 evening, design 11-3): the document's own words pasted back from the copy Apply This Change kept (facade RestoreChangeFromCopy). ⚠+94 the next after +93, never a grave
+// ★ACCEPT AND REJECT IN THE TRACK MODE (2026-10-25 - the author: "a right click that takes the change back", "and confirms it",
+//   "on the Story too", "on the Story Edits heading, for the document"; design docs/superpowers/specs/
+//   2026-10-25-kcm-track-accept-reject-design.md). Each pair acts on one scope; each press is one undo step (facade
+//   ResolveTrack*). ⚠+97..+104 the next free slots - counted: the highest was +96.
+DECLARE_PMID(kActionIDSpace, kKCMTrackAcceptChangeActionID, kKCMUIPrefix + 97)	// ★"Accept Change" on a Track CHANGE row - the change rows selected together, when this is one of them (facade ResolveTrackChanges)
+DECLARE_PMID(kActionIDSpace, kKCMTrackRejectChangeActionID, kKCMUIPrefix + 98)	// ★"Reject Change" - the same, rejected
+DECLARE_PMID(kActionIDSpace, kKCMTrackAcceptStoryActionID, kKCMUIPrefix + 99)	// ★"Accept This Author's Changes in Story" on a Track STORY row - the author the row stands under, that story (facade ResolveTrackRow)
+DECLARE_PMID(kActionIDSpace, kKCMTrackRejectStoryActionID, kKCMUIPrefix + 100)	// ★"Reject This Author's Changes in Story" - the same, rejected
+DECLARE_PMID(kActionIDSpace, kKCMTrackAcceptAuthorActionID, kKCMUIPrefix + 101)	// ★"Accept All Changes by This Author" on a Track AUTHOR row - every story (facade ResolveTrackAuthor)
+DECLARE_PMID(kActionIDSpace, kKCMTrackRejectAuthorActionID, kKCMUIPrefix + 102)	// ★"Reject All Changes by This Author" - the same, rejected
+DECLARE_PMID(kActionIDSpace, kKCMTrackAcceptAllActionID, kKCMUIPrefix + 103)	// ★"Accept All Changes in Document" on the SECTION HEADING in the Track mode - every change the list holds (facade ResolveTrackAll)
+DECLARE_PMID(kActionIDSpace, kKCMTrackRejectAllActionID, kKCMUIPrefix + 104)	// ★"Reject All Changes in Document" - the same, rejected
 
 // (The template's spare //DECLARE_PMID(kActionIDSpace, kKCMActionID, kKCMUIPrefix + 41) was
 //  **deleted**. ⚠★★It was not inert: **+41 is taken** (kKCMPopupTranslucentBookDialogActionID
@@ -538,7 +576,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStorySectionToggleWidgetID, kKCMUIPrefix + 46)	
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryTreeWidgetID, kKCMUIPrefix + 47)		// the Story Edits list itself (filling the lower pane)
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowTextWidgetID, kKCMUIPrefix + 48)	// row, left: the beginning of the text
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryRowKindWidgetID, kKCMUIPrefix + 49)	// row, right: what kind of change it is (Text / Attr / Other / Added)
-DECLARE_PMID(kWidgetIDSpace, kKCMStorySectionLabelWidgetID, kKCMUIPrefix + 50)	// next to the triangle in the upper pane: "Story Edits (3)". The count is appended at run time
+DECLARE_PMID(kWidgetIDSpace, kKCMStorySectionLabelWidgetID, kKCMUIPrefix + 50)	// next to the triangle in the upper pane: "Story Edits (3)" ("Proposed Edits (3)" against an import's copy). The count is appended at run time. ★A right click on it pops "Apply All Changes" against an import's copy since 2026-10-24 evening - taken by the upper pane's handler (kKCMTopPaneBoss)
 // ★The three column headings above the list. They carried kInvalidWidgetID until 2026-09-09, on the rule that a widget nothing refers to needs no ID -- and then the Resources mode gave the same three columns different names ("Kind / Definition / Change" rather than "UID / Story / Change"), which made them referable after all. ⇒ An ID is not a property of a widget; it is a record of somebody needing to find it.
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryColUIDWidgetID, kKCMUIPrefix + 69)	// heading over the left cell
 DECLARE_PMID(kWidgetIDSpace, kKCMStoryColTextWidgetID, kKCMUIPrefix + 70)	// heading over the middle cell (the one that grows)
@@ -630,6 +668,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowStateWidgetID, kKCMUIPrefix + 49)	// = t
 //   ⚠**+72 was the highest unused slot when this was added**, counted rather than guessed: in use
 //     were 0, 1, 26, 34-53 and 57-71.
 DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Row, far right: which comparisons found a difference ("Pixel Story Resources"; a mode that could not be judged carries a '?'). ★Empty for ChapterAdded / ChapterDeleted / NotCompared and for an unchanged chapter -- nothing was looked at, and an empty cell is the honest answer
+DECLARE_PMID(kWidgetIDSpace, kKCMTrackAuthorRowWidgetID, kKCMUIPrefix + 77)	// ★the template of a Track AUTHOR row (2026-10-05): its own WidgetID, so a story row is never handed its widget
+DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// ★the template of a one-line "=" row Apply This Change put in (2026-10-24 evening): the change row with its Δ cell an amber "=" drawn by hand - its own WidgetID, so a plain change row is never handed its widget (the "!" rows' reason). ⚠+78 counted in the widget space (the ACTION space's +78 is a grave - another space)
 //====================================================================================
 // ★★MIND THE CEILING -- this prefix owns "+0 .. +127" (★128 slots **per ID space**)
 //
@@ -748,10 +788,15 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMCompareBooksMenuKey	kKCMStringPrefix "kKCMCompareBooksMenuKey"	// the menu name of "Compare Books" on the panel flyout (compare two books chapter by chapter)
 #define kKCMSetTargetMenuKey		kKCMStringPrefix "kKCMSetTargetMenuKey"	// ★the menu name of "Set as Target" on the panel flyout (the active document becomes the comparison's Target)
 #define kKCMSetSourceMenuKey		kKCMStringPrefix "kKCMSetSourceMenuKey"	// ★the menu name of "Set as Source" on the panel flyout (the active document becomes the older version)
-#define kKCMTaskStartMenuKey		kKCMStringPrefix "kKCMTaskStartMenuKey"	// ★the menu name of "Task Start" on the panel flyout (the active document's state now becomes the Source)
+#define kKCMSetPdfTargetMenuKey	kKCMStringPrefix "kKCMSetPdfTargetMenuKey"	// ★the menu name of "Set PDF as Target..." (2026-10-14)
+#define kKCMSetPdfSourceMenuKey	kKCMStringPrefix "kKCMSetPdfSourceMenuKey"	// ★the menu name of "Set PDF as Source..." (2026-10-14)
+#define kKCMTaskStartMenuKey		kKCMStringPrefix "kKCMTaskStartMenuKey"	// ★the menu name of "Task Start (Save)..." on the panel flyout (a copy saved to a file becomes the Source; "Task Start" was its name until 2026-10-13)
+#define kKCMTaskStartCloneMenuKey	kKCMStringPrefix "kKCMTaskStartCloneMenuKey"	// ★the menu name of "Task Start" (kept in memory, 2026-10-13)
 // ⛔kKCMOpenOriginIdmlMenuKey went on 2026-09-21 with the item it named (ActionID +80).
 #define kKCMExportStoryTextMenuKey	kKCMStringPrefix "kKCMExportStoryTextMenuKey"	// the menu name of "Export Story Text..." on the panel flyout
+#define kKCMExportPagesMenuKey		kKCMStringPrefix "kKCMExportPagesMenuKey"	// (2026-10-25) "Export Pages to Word..." - one item on two menus. Length and character sum measured against every KCM key (work/note-scripts/2026-10-24-kcm-per-change/key_collisions_kcm.py): no other key
 #define kKCMImportStoryTextMenuKey	kKCMStringPrefix "kKCMImportStoryTextMenuKey"	// the menu name of "Import Story Text..." on the panel flyout
+#define kKCMCompareTrackedMenuKey	kKCMStringPrefix "kKCMCompareTrackedMenuKey"	// the menu name of "Compare with Tracked Changes..." (2026-10-05)
 #define kKCMClearChosenMenuKey	kKCMStringPrefix "kKCMClearChosenMenuKey"	// ★the menu name of "Clear Target and Source" on the panel flyout (drops both choices; the next Start falls back to the automatic rule)
 #define kKCMBookDialogTitleKey	kKCMStringPrefix "kKCMBookDialogTitleKey"	// the title of the book comparison dialog
 #define kKCMPawWordDialogTitleKey	kKCMStringPrefix "kKCMPawWordDialogTitleKey"	// the title of the paw word box
@@ -769,12 +814,12 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 // ⛔kKCMParagraphOrderConfirmKey went on 2026-09-21 with the restore. It was asked before a new
 //   paragraph was taken in ahead of the new paragraph standing before it (2026-09-17), because the
 //   order of the two decided which style the later one got - a question only a restore could raise.
-// ★After "Import Story Text..." (2026-09-24, the user's rule): the panel's status line says only that it
-//   happened, and the details go to a dialog that says the change history was applied. Japanese for both
-//   is in ui/KCMLoc.h (KCMJa::kImported / kImportTracked).
-#define kKCMImportedStatusKey		kKCMStringPrefix "kKCMImportedStatusKey"
-#define kKCMImportTrackedKey		kKCMStringPrefix "kKCMImportTrackedKey"
-#define kKCMImportTaskStartAdviceKey	kKCMStringPrefix "kKCMImportTaskStartAdviceKey"	// ⚠UNUSED SINCE 2026-09-19: it was asked before every "Import Story Text..." from the flyout (take a Task Start just before it, 2026-09-17). The import takes a Task Start of its own now, so nothing is asked; the string stays in the table until the trial is decided
+// ⛔kKCMImportedStatusKey and kKCMImportTrackedKey went on 2026-09-25 (the user: stop the dialog after an import,
+//   show the result on the panel only). From 2026-09-24 the status line said "Imported" and a dialog carried the rest;
+//   the line now shows the model's own sentence (KCMActionComponent's Import Story Text...).
+// ⛔kKCMImportTaskStartAdviceKey went on 2026-10-25 (the tidy): unused since 2026-09-19, it was asked before every "Import
+//   Story Text..." (take a Task Start just before it, 2026-09-17), and stayed in the table until the import-as-Source
+//   road was decided - adopted that day, the import takes a Task Start of its own.
 #define kKCMBookNoPairKey			kKCMStringPrefix "kKCMBookNoPairKey"			// the warning when two books could not be resolved (normally unreachable, since the menu item is greyed)
 #define kKCMBookRowStartMenuKey	kKCMStringPrefix "kKCMBookRowStartMenuKey"	// the "Start Change Marker" item on a chapter row context menu
 // The chapter row context menu. KCMBookRowEH::RButtonDn puts the MenuDef subtree of this name up
@@ -798,18 +843,47 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 // HandlePopupMenu.
 // ★Its root name never reaches the screen either, so a plain literal will do.
 #define kKCMStoryRowMenuName		"KCMRtMenuStoryRow"
-// ★A CHANGE row's own menu, back on 2026-09-24 (stage 2 A) for "Reject This Import Change" - the name it had
+// ★A CHANGE row's own menu, back on 2026-09-24 (stage 2 A - for "Reject This Import Change", retired 2026-10-25; it holds
+//   Restore from Source and Match the Source now) - the name it had
 //   from 2026-09-12 to 2026-09-21 (KCMStoryRowEH::RButtonDn says why a child row has a menu of its own).
 #define kKCMChangeRowMenuName		"KCMRtMenuChangeRow"
-#define kKCMChangeRowRejectMenuKey	kKCMStringPrefix "kKCMChangeRowRejectMenuKey"	// "Reject This Import Change" on a change row
+// ★A CHANGE row's menu WHILE THE SOURCE IS AN IMPORT'S COPY (2026-10-24 evening): Apply This Change and Restore from Copy
+//   alone - the items of the menu above are never live there - popped with its grey items KEPT (KFC's SET-11, the
+//   author's "grey is fine when it cannot be done"), so that a "=" row with no copy still opens a menu and shows why not.
+#define kKCMChangeRowImportMenuName	"KCMRtMenuChangeRowImport"
+// ★The SECTION HEADING's menu (2026-10-24 evening): "Apply All Changes" alone - it acts on every story the import filled,
+//   so it sits on the heading that counts them ("Proposed Edits (N)"), not on one story's row. Popped by the upper pane's
+//   handler for a press on the heading (KCMTopPaneEH, KCMStorySection.cpp) only while the Source is an import's copy.
+#define kKCMProposedHeadingMenuName	"KCMRtMenuProposedHeading"
+// ★The Track mode's AUTHOR row menu and its SECTION HEADING menu (2026-10-25 - accept and reject: the author's row "on the
+//   Story too" asked for the author's level as well, and "on the Story Edits heading, for the document"). Each pops its two
+//   items with grey ones KEPT (the author's "grey is fine when it cannot be done"); a Track change row and story row use the
+//   two subtrees above (their other items are greyed there and hidden - KCMStoryRowEH::RButtonDn).
+#define kKCMTrackAuthorMenuName		"KCMRtMenuTrackAuthor"
+#define kKCMTrackHeadingMenuName	"KCMRtMenuTrackHeading"
 #define kKCMChangeRowRestoreAttrMenuKey	kKCMStringPrefix "kKCMChangeRowRestoreAttrMenuKey"	// "Restore from Source" on an attribute change row (2026-09-24, stage 2 B)
-#define kKCMChangeRowRedoMenuKey	kKCMStringPrefix "kKCMChangeRowRedoMenuKey"	// "Redo from Word" on a taken-back change row (2026-09-24, stage 2 C)
+#define kKCMChangeRowMatchTableMenuKey	kKCMStringPrefix "kKCMChangeRowMatchTableMenuKey"	// "Match the Source" on a Table row that differs from the Source's (2026-09-25)
+#define kKCMChangeRowApplyMenuKey	kKCMStringPrefix "kKCMChangeRowApplyMenuKey"	// "Apply This Change" (2026-10-24, the import-as-Source road)
+#define kKCMChangeRowRestoreFromCopyMenuKey	kKCMStringPrefix "kKCMChangeRowRestoreFromCopyMenuKey"	// "Restore from Copy" (2026-10-24 evening - KFC's own name for the same thing, the author: "the way KFC does"). ⚠NOT "...RestoreCopyMenuKey": that one has the length and the character sum of kKCMChangeRowRestoreAttrMenuKey ("Copy" and "Attr" both sum 411 - measured with work/note-scripts/2026-10-24-kcm-per-change/key_collisions_kcm.py; memory indesign-string-key-hash-collision)
+#define kKCMStoryRowApplyMenuKey	kKCMStringPrefix "kKCMStoryRowApplyMenuKey"	// "Apply All Changes in This Story" (the same road)
+#define kKCMStoryRowRestoreAllMenuKey	kKCMStringPrefix "kKCMStoryRowRestoreAllMenuKey"	// "Restore All Changes in This Story" (2026-10-24 night, design 1-8 - the Story mode's)
+#define kKCMApplyAllMenuKey	kKCMStringPrefix "kKCMApplyAllMenuKey"	// "Apply All Changes" (the same road)
+#define kKCMTrackAcceptChangeMenuKey	kKCMStringPrefix "kKCMTrackAcceptChangeMenuKey"	// "Accept Change" (2026-10-25, the Track mode)
+#define kKCMTrackRejectChangeMenuKey	kKCMStringPrefix "kKCMTrackRejectChangeMenuKey"	// "Reject Change"
+#define kKCMTrackAcceptStoryMenuKey	kKCMStringPrefix "kKCMTrackAcceptStoryMenuKey"	// "Accept This Author's Changes in Story"
+#define kKCMTrackRejectStoryMenuKey	kKCMStringPrefix "kKCMTrackRejectStoryMenuKey"	// "Reject This Author's Changes in Story"
+#define kKCMTrackAcceptAuthorMenuKey	kKCMStringPrefix "kKCMTrackAcceptAuthorMenuKey"	// "Accept All Changes by This Author"
+#define kKCMTrackRejectAuthorMenuKey	kKCMStringPrefix "kKCMTrackRejectAuthorMenuKey"	// "Reject All Changes by This Author"
+#define kKCMTrackAcceptAllMenuKey	kKCMStringPrefix "kKCMTrackAcceptAllMenuKey"	// "Accept All Changes in Document"
+#define kKCMTrackRejectAllMenuKey	kKCMStringPrefix "kKCMTrackRejectAllMenuKey"	// "Reject All Changes in Document"
 // ⛔kKCMChangeRowRestoreMenuKey ("Restore Source Text") and kKCMChangeRowUndoRestoreMenuKey ("Undo
 //   the Restore") went on 2026-09-21 with the restore itself, and are gone from the enUS table.
 // ⛔The two Import-mode names went with the fourth mode on 2026-09-20 ("Change to Imported Text",
 //   "Change Back to the Original"), and the four bulk items' keys went the same day with them.
 // (The flyout pair's question carries the counts, so it is built in code and marked untranslatable,
 //  the way the status line and the book comparison's own question are - not a string key here.)
+// ⛔kKCMChangeRowRejectMenuKey ("Reject This Import Change") and kKCMChangeRowRedoMenuKey ("Redo") went on 2026-10-25 with
+//   the import that wrote into the document, and are gone from the enUS table.
 // ★(2026-09-24: kKCMChangeRowMenuName IS BACK - above - for "Reject This Import Change". What follows is the
 //   record of the three days it was gone.)
 // ⛔**kKCMChangeRowMenuName IS GONE TOO** (2026-09-21, the evening): it named the CHANGE row's own
@@ -899,6 +973,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMModePixelKey		kKCMStringPrefix "kKCMModePixelKey"	// the child item name inside "Compare mode" (= "Pixel Changes")
 #define kKCMModeStoryKey		kKCMStringPrefix "kKCMModeStoryKey"	// the child item name inside "Compare mode" (= "Story Changes")
 #define kKCMModeResourcesKey	kKCMStringPrefix "kKCMModeResourcesKey"	// the child item name inside "Compare mode" (= "Resources Changes")
+#define kKCMModeTrackKey	kKCMStringPrefix "kKCMModeTrackKey"	// the child item name inside "Compare mode" (= "Track Changes")
+#define kKCMTrackSectionLabelKey	kKCMStringPrefix "kKCMTrackSectionLabelKey"	// the section heading in the Track mode, "Tracked Changes" (the count is appended by C++) - 2026-10-05
 #define kKCMPrevChangeKey		kKCMStringPrefix "kKCMPrevChangeKey"	// the caption of the "< Prev" button on the panel (English everywhere)
 #define kKCMNextChangeKey		kKCMStringPrefix "kKCMNextChangeKey"	// the caption of the "Next >" button on the panel (English everywhere)
 #define kKCMHintKey			kKCMStringPrefix "kKCMHintKey"
@@ -925,13 +1001,23 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 //   DoUsage reads hint / hint3 / hint4 / hint2; the Japanese side carries the section inside its
 //   kHint2 at the same seam (after Story IDs, before the books).
 #define kKCMHint4Key			kKCMStringPrefix "kKCMHint4Key"
+// ★**The fifth part (2026-10-05): the Track Changes mode** (Compare with Tracked Changes...). A key of its own for
+//   the same reason as the third and fourth (each older key is near odfrc's cap). DoUsage reads hint / hint3 / hint4 /
+//   hint5 / hint2; the Japanese side carries the section inside kHint2 at the same seam (after the round trip).
+#define kKCMHint5Key			kKCMStringPrefix "kKCMHint5Key"
+// ★**The sixth part (2026-10-14): comparing PDFs** (Set PDF as Target... / Set PDF as Source...). A key of its own for the
+//   same reason as the third to fifth. DoUsage reads hint / hint3 / hint4 / hint5 / hint6 / hint2; the Japanese side carries
+//   the section inside kHint2 at the same seam (after Track Changes).
+#define kKCMHint6Key			kKCMStringPrefix "kKCMHint6Key"
 #define kKCMToolStringKey		kKCMStringPrefix "kKCMToolStringKey"	// the tool name in the toolbox (its tooltip). English in every locale
 #define kKCMPawToolStringKey	kKCMStringPrefix "kKCMPawToolStringKey"	// the cat-paw stamp tool's name in the flyout (its tooltip). ★English in every locale, as the line above: the jaJP string table was retired on 2026-08-05 and Japanese now comes from ui/KCMLoc.h at run time -- a tool name is not one of the strings that file carries
 
 // The strings of the Story Edits section. ⚠**Do not use the word "text" in them** -- the list
 // carries changes that are not text, so a phrase like "No text edits" would not be true.
 #define kKCMStorySectionLabelKey	kKCMStringPrefix "kKCMStorySectionLabelKey"	// the section heading (the count is appended by C++)
+#define kKCMProposedSectionLabelKey	kKCMStringPrefix "kKCMProposedSectionLabelKey"	// the section heading while the Source is an import's copy, "Proposed Edits" (the count of proposals still to put in is appended by C++) - 2026-10-24 evening, the author's choice of words
 #define kKCMStoryNoEditsKey		kKCMStringPrefix "kKCMStoryNoEditsKey"		// the single line shown when there is no change
+#define kKCMStoryPixelNoteKey	kKCMStringPrefix "kKCMStoryPixelNoteKey"	// ★the single line the list shows while the PIXEL mode compares (2026-10-11): that mode reads no story, so the list says so instead of standing blank (KCMListShowsPixelNote)
 #define kKCMResourcesSectionLabelKey	kKCMStringPrefix "kKCMResourcesSectionLabelKey"	// the SAME section heading while the Resources mode is on (= "Resources"). The count is appended by C++, as above
 #define kKCMResourcesNoChangesKey		kKCMStringPrefix "kKCMResourcesNoChangesKey"	// the single line shown when the two documents define the same things
 #define kKCMResourcesColKindKey		kKCMStringPrefix "kKCMResourcesColKindKey"	// column heading over the left cell in the Resources mode (= "Kind"), where the story list says "UID"
@@ -1025,7 +1111,9 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 // could not put in. The story row and the change row respectively, with the Δ cell replaced by the
 // hand-drawn red "!" (kKCMStoryBangCellBoss). Own WidgetIDs, own resources, one line tall.
 #define kKCMStoryBangRowRsrcID			1018
-#define kKCMStoryBangChangeRowRsrcID	1019	// ⚠Next free: 1020
+#define kKCMStoryBangChangeRowRsrcID	1019
+#define kKCMTrackAuthorRowRsrcID		1020	// a Track mode AUTHOR row (2026-10-05)
+#define kKCMStoryAppliedRowRsrcID		1021	// a one-line "=" row Apply This Change put in, its Δ an amber "=" (2026-10-24 evening). ⚠Next free: 1022
 
 // The row height of the chapter list. ★As with kKCMStoryRowHeight below, **both the .fr and the
 // C++ read this one constant** (the row resource's Frame, the tree's scroll increment,
@@ -1178,14 +1266,20 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMModePixelSubMenuItemPosition		1.0	// inside "Compare mode": Pixel Changes (checked when selected)
 #define kKCMModeStorySubMenuItemPosition		2.0	// inside "Compare mode": Story Changes (exclusive with Pixel)
 #define kKCMModeResourcesSubMenuItemPosition	3.0	// inside "Compare mode": Resources Changes (exclusive with the two above). ★Last of the three because it is the widest net: pixels answer "which page looks different", stories "which words changed", and this one "which definition changed" - which includes definitions nothing on any page uses
+#define kKCMModeTrackSubMenuItemPosition	4.0	// inside "Compare mode": Track Changes (exclusive with the three above). Last: it compares no second version at all - the Target's own records are the older one (2026-10-05)
 // -- the pair those verbs run on (2026-09-14: the user moved Task Start to the head of this group) --
-#define kKCMTaskStartMenuItemPosition	9.02	// "Task Start": a Source that is a moment rather than a document, which is why it heads the group that chooses the pair
+#define kKCMTaskStartCloneMenuItemPosition	9.019	// "Task Start" (kept in memory, 2026-10-13), directly above "Task Start (Save)...": the moment without a file first (the user's order)
+#define kKCMTaskStartMenuItemPosition	9.02	// "Task Start (Save)...": a copy saved to a file becomes the Source. Under "Task Start" (kept in memory) since 2026-10-13; the group that chooses the pair still begins with the two.
 // ⛔kKCMOpenOriginIdmlMenuItemPosition (9.0205) went with it. A position is not an identity, so the number itself may be used again.
 #define kKCMExportStoryTextMenuItemPosition	9.021// "Export Story Text...", directly under Task Start: the two belong together (one takes the state, the other hands the words out)
 // ⛔**9.0215 IS FREE AGAIN** (2026-09-21): it held "Export Story Text as Word..." between the export and the import.
+#define kKCMExportPagesMenuItemPosition	9.0215	// (2026-10-25) "Export Pages to Word...", between Export Story Text... and Import Story Text...: the second way out, read back by the same Import
 #define kKCMImportStoryTextMenuItemPosition	9.022	// "Import Story Text...", directly under Export: the two halves of one round trip
+#define kKCMCompareTrackedMenuItemPosition	9.023	// "Compare with Tracked Changes...", directly under Import: the same road (a copy taken, then a comparison) - 2026-10-05
 #define kKCMSetTargetMenuItemPosition		9.03	// "Set as Target"
 #define kKCMSetSourceMenuItemPosition		9.04	// "Set as Source", right below its Target counterpart (the pair reads new-then-old, as the two "Always Show Marks on" toggles do)
+#define kKCMSetPdfTargetMenuItemPosition	9.041	// "Set PDF as Target..." (2026-10-14): under the two "Set as" items it stands beside - a file picked instead of the document in front
+#define kKCMSetPdfSourceMenuItemPosition	9.042	// "Set PDF as Source...", right below its Target counterpart (new-then-old, as the pair above)
 #define kKCMClearChosenMenuItemPosition	9.05	// "Clear Target and Source", directly below the items it undoes
 #define kKCMCompareBooksMenuItemPosition	9.06	// "Compare Books" (chapter by chapter), still above Sep1 so that everything which BEGINS a comparison reads as one group
 #define kKCMExportReportMenuItemPosition	9.07	// "Export Before/After PDF Report", last of the group because it writes out what the comparison found (2026-09-14: moved up from 9.535, out of the plain commands)
@@ -1234,11 +1328,24 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 //   CHANGE row's own subtree) went on 2026-09-21 with the items. ★A position is a sort key, not a
 //   reservation - unlike an ActionID, a later item may take the number.
 // ⛔The STORY row's "Restore All in This Story" position (3.0) went with the item on 2026-09-21.
-#define kKCMChangeRowRejectMenuItemPosition	1.0	// the change row's menu: "Reject This Import Change" (its own subtree - 2026-09-24)
 #define kKCMStoryRowRefreshMenuItemPosition	1.0	// Story Edits row context menu: "Refresh Story Comparison" (a different subtree, so it may share 1.0 with the chapter row)
 #define kKCMResourceRowXmlMenuItemPosition	2.0	// ★the SAME subtree: "Show as XML" sits under the refresh item. The two are never live at once (opposite modes), so the order only decides what a future third item would sit between
-#define kKCMChangeRowRestoreAttrMenuItemPosition	2.0	// the change row's subtree: "Restore from Source" under the reject (2026-09-24, stage 2 B). The two are never live on one row (A: words and tables; B: the four attributes), so the order only decides what a future third item sits between
-#define kKCMChangeRowRedoMenuItemPosition	3.0	// the change row's subtree: "Redo from Word" under the two above (2026-09-24, stage 2 C). Live only on a "=" row, where the other two are greyed
+#define kKCMChangeRowRestoreAttrMenuItemPosition	2.0	// the change row's subtree: "Restore from Source" (2026-09-24, stage 2 B; a text row's too since 2026-10-24 night). (1.0 and 3.0 were "Reject This Import Change" and "Redo from Word" until 2026-10-25 - a position is a sort key, not a reservation)
+#define kKCMChangeRowMatchTableMenuItemPosition	4.0	// the change row's subtree: "Match the Source" under it (2026-09-25). Live only on a Table ≠ row, where Restore from Source is greyed - still one item per row
+#define kKCMChangeRowApplyMenuItemPosition	0.5	// the change row's subtree: "Apply This Change" at the top (2026-10-24). Live only while the Source is an import's copy, where the two below are greyed
+#define kKCMChangeRowRestoreCopyMenuItemPosition	0.6	// ...and "Restore from Copy" right under it (2026-10-24 evening): live on a "=" row that holds a copy - the two are never live together
+#define kKCMStoryRowApplyMenuItemPosition	0.5	// the story row's subtree: "Apply All Changes in This Story" above the refresh (the same road)
+#define kKCMStoryRowRestoreAllMenuItemPosition	0.7	// ...and "Restore All Changes in This Story" (the Story mode's, 2026-10-24 night) - never live with the one above (an import's copy against two documents)
+#define kKCMChangeRowRestoreCopyStoryMenuItemPosition	2.5	// "Restore from Copy" on the Story mode's change row subtree too (2026-10-24 night) - under "Restore from Source", live on the "=" it left
+#define kKCMApplyAllMenuItemPosition	0.6	// "Apply All Changes" - alone on the section heading's menu since 2026-10-24 evening (kKCMProposedHeadingMenuName)
+#define kKCMTrackAcceptChangeMenuItemPosition	0.8	// the change row's subtree: "Accept Change" (2026-10-25) - live only in the Track mode, where every other item there is greyed (and hidden)
+#define kKCMTrackRejectChangeMenuItemPosition	0.9	// ...and "Reject Change" under it
+#define kKCMTrackAcceptStoryMenuItemPosition	0.8	// the story row's subtree: "Accept This Author's Changes in Story" (the Track mode's), above Refresh Story Comparison (1.0)
+#define kKCMTrackRejectStoryMenuItemPosition	0.9	// ...and "Reject This Author's Changes in Story"
+#define kKCMTrackAcceptAuthorMenuItemPosition	1.0	// the Track author row's own subtree (kKCMTrackAuthorMenuName)
+#define kKCMTrackRejectAuthorMenuItemPosition	2.0
+#define kKCMTrackAcceptAllMenuItemPosition	1.0	// the Track section heading's own subtree (kKCMTrackHeadingMenuName)
+#define kKCMTrackRejectAllMenuItemPosition	2.0
 // ⛔The CHANGE row's two restore positions (2.0 "Restore Source Text", 2.7 "Undo the Restore") went
 //   with the items on the morning of 2026-09-21, and "Edit..." (0.5) went that evening - **so the
 //   subtree they sorted within is gone as well** (kKCMChangeRowMenuName above).
@@ -1259,6 +1366,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMBookRowChangeWidgetID, kKCMUIPrefix + 72)	// Ro
 #define kKCMPageMapToggleMenuItemPosition	3000.0
 #define kKCMPageCheckMenuItemPosition		3001.0	// "Check", directly after Register
 #define kKCMPageRefreshCompareMenuItemPosition	3002.0	// "Refresh Page Comparison", directly after Check
+#define kKCMPageExportPagesMenuItemPosition	3003.0	// (2026-10-25) "Export Pages to Word...", the last of KCM's page items
 #define kKCMAboutThisMenuItemPosition		12.0	// "About this plug-in", at the end (11.0 was About Scripting, which has been removed)
 
 

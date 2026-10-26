@@ -93,7 +93,7 @@
               ⚠ .rsp ファイルは KCM リポジトリの控え(buildproj/)に無いので、ここ(vcxproj)に書く。 -->
          <AdditionalIncludeDirectories>..\..\..\source\sdksamples\KCM\source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
          <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarkerUI.pch</PrecompiledHeaderOutputFile>
-         <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;DEBUG;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <PreprocessorDefinitions>$(KCMExtraDefines);_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;DEBUG;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
          <PrecompiledHeader>Use</PrecompiledHeader>
          <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
          <ObjectFileName>$(IntDir)</ObjectFileName>
@@ -129,7 +129,7 @@
               読む（ID・widget ID・文字列キー・定数はまだ model 側にある）。UI→model なので向きは正しい。
               ⚠ .rsp ファイルは KCM リポジトリの控え(buildproj/)に無いので、ここ(vcxproj)に書く。 -->
          <AdditionalIncludeDirectories>..\..\..\source\sdksamples\KCM\source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-         <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;DEBUG;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <PreprocessorDefinitions>$(KCMExtraDefines);_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;DEBUG;STRICT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
          <PrecompiledHeader>Use</PrecompiledHeader>
          <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
          <PrecompiledHeaderOutputFile>$(IntDir)KohakuChangeMarkerUI.pch</PrecompiledHeaderOutputFile>
@@ -166,7 +166,7 @@
               読む（ID・widget ID・文字列キー・定数はまだ model 側にある）。UI→model なので向きは正しい。
               ⚠ .rsp ファイルは KCM リポジトリの控え(buildproj/)に無いので、ここ(vcxproj)に書く。 -->
          <AdditionalIncludeDirectories>..\..\..\source\sdksamples\KCM\source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-         <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;STRICT;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <PreprocessorDefinitions>$(KCMExtraDefines);_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;STRICT;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
          <StringPooling>true</StringPooling>
          <PrecompiledHeader>Use</PrecompiledHeader>
          <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
@@ -205,7 +205,7 @@
               読む（ID・widget ID・文字列キー・定数はまだ model 側にある）。UI→model なので向きは正しい。
               ⚠ .rsp ファイルは KCM リポジトリの控え(buildproj/)に無いので、ここ(vcxproj)に書く。 -->
          <AdditionalIncludeDirectories>..\..\..\source\sdksamples\KCM\source;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-         <PreprocessorDefinitions>_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;STRICT;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+         <PreprocessorDefinitions>$(KCMExtraDefines);_CRT_SECURE_NO_DEPRECATE;BOOST_SYSTEM_NO_DEPRECATED;STRICT;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
          <StringPooling>true</StringPooling>
          <PrecompiledHeader>Use</PrecompiledHeader>
          <PrecompiledHeaderFile>VCPlugInHeaders.h</PrecompiledHeaderFile>
@@ -244,8 +244,13 @@
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryTreeAdapter.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryTreeWidgetMgr.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryTreeEH.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryTreeController.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMKentenMark.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMLayerDraw.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryCellView.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryBangView.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMTrackLabels.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMTrackChipView.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStatusTextView.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryPressMarks.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryRowEH.cpp"/>
@@ -271,8 +276,6 @@
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMResourceXml.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMXmlPretty.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryJump.cpp"/>
-      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMKentenMark.cpp"/>
-      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMLayerDraw.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStorySelection.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryNav.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryRefresh.cpp"/>
@@ -309,8 +312,11 @@
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMUIFactoryList.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMUIShared.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryTree.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryTreeController.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMTrackLabels.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryNodeID.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\IKCMStoryCellData.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMKentenMark.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\IKCMStatusTextData.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMPanelTextDraw.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMLayerDraw.h"/>
@@ -330,7 +336,6 @@
       <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceUnits.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceDisplay.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryJump.h"/>
-      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMKentenMark.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStorySelection.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryNav.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryRefresh.h"/>

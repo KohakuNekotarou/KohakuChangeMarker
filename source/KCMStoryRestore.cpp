@@ -65,7 +65,13 @@
 //   second time there would be the same recipe in two places. Declared in KCMStoryRestore.h.
 
 /** The ruby strand exists on a story only once something put ruby on it; a story that never had
-    any needs it made first (kPrivateCreateStrandCmdBoss - KIDMCPRuby.cpp measured the shape). */
+    any needs it made first (kPrivateCreateStrandCmdBoss - KIDMCPRuby.cpp measured the shape).
+    ★THE OFFICIAL RECIPE, name and all: codesnippets/SnpPerformTextAttrRuby.cpp:821-850
+      (CreateRubyStrandIfNeeded - QueryStrand first, the command only when there is none).
+    ★"PRIVATE" IN THE NAME, AND STILL CLEARED FOR EXCHANGE (the user, 2026-09-03 - written out at
+      KIDMCPRuby.cpp's CreateRubyStrandIfNeeded): declared in public TextID.h:264 with no internal
+      marking, used by the codesnippet above. This plug-in ships through Exchange too, so the licence
+      is named here rather than left to be found in the other product (re-audit M19, 2026-09-27). */
 ErrorCode KCMCreateRubyStrandIfNeeded(ITextModel* model)
 {
 	InterfacePtr<IRubyAttrStrand> existing(

@@ -38,12 +38,22 @@ bool16 Normalize(const KCMStoryShape::Story& now, const KCMStoryShape::Story& wo
 	@param reshapeTables kTrue: a table whose rows, columns or merges differ is made Word's, one
 		stage per round (S1/S2) - ★what the import passes (2026-09-24 evening, the user's decision:
 		the change history does not record those, and the user accepted that they are not taken back
-		one by one). kFalse: that table is HELD, words and all - what the redo of ONE paragraph
-		(KCMRedoFromWord) passes, since it reshapes nothing. (The import passed kFalse for one day,
+		one by one). kFalse: that table is HELD, words and all - what writing ONE paragraph
+		(KCMApplyFromImport) passes, since it reshapes nothing. (The import passed kFalse for one day,
 		2026-09-24, design 11-1 item 5, since replaced.) ⚠NO DEFAULT, on purpose: every caller says
 		which it means. */
 void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, Plan& out,
 			 bool16 reshapeTables);
+
+/** The same, said TABLE BY TABLE (2026-09-25): mayReshape[t] says whether N's table t (Story::fTables - the order
+	KCMTableRefsOfStory reads them, which a plan's Where::fTable names) may be made Word's; a table past the end of the
+	vector may not, and is held as reshapeTables kFalse holds it. ★For writing ONE table (Apply This Change on a
+	"Table" row - first written 2026-09-25 for the retired "Redo from Word" of a table): a shape round returns the lowest
+	stage among the tables allowed, and with every table allowed that could be ANOTHER table's stage - the write then
+	found none of its own steps and stopped short (re-check of 2026-09-25; work/kcm-storydocx-test TestReshapeOneTable).
+	The bool form above is this with every table the same. */
+void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, Plan& out,
+			 const std::vector<bool16>& mayReshape);
 
 /** The plan's kResizeRows steps carried out on `now` (the document's own shape), the way InDesign
 	does it (measured: docs/ai-notes/kcm-table-reshape-spike-2026-09-23.md): a row added at the end
@@ -88,15 +98,29 @@ void AllPlaces(const KCMStoryShape::Story& s, std::vector<Where>& out);
 	document calls note n - so the apply pairs a note of the finished shape with the document's by it. */
 void RenumberNotesByThread(KCMStoryShape::Story& s);
 
-/** The steps of `plan` that make ONE paragraph of `now` Word's - (where, para) in N's numbering - for the redo of one
-	change the reader took back (2026-09-24, stage 2 C - design 15-1-7). Kept: kSetPara / kHeld of that paragraph;
-	kDeleteParas covering it, narrowed to that one paragraph; kInsertParas standing right before it (fPara == para - 1,
-	or -1 when para == 0) - ★WHOLE: every paragraph Word put in at that place goes back together, and the other records
-	there become twins of the redo; kAddNote whose reference lands in the kept paragraphs, its fPara renumbered for the
-	narrowed plan; kDeleteNote whose reference `now` holds in that paragraph; kInsertTable at that body paragraph and
-	kDeleteTable of a table `now` holds at it (a table record). Shape steps are never kept - they are the import's own
-	rounds, and the import holds them anyway (design 11-1 item 5). */
-void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& where, int32 para, Plan& out);
+/** WHICH OF A PARAGRAPH'S STEPS ONE ROW'S WRITE CARRIES OUT (2026-09-25 - for the retired "Redo from Word"; Apply's
+	paragraph road since 2026-10-24, which maps its row's kind onto these - KCMPlanApplyParagraph). A row is one kind of
+	change, and writing it is that change alone: until then every step touching the paragraph came along, so writing a
+	paragraph added in Word also wrote the NEXT paragraph's edit - which had a row of its own (measured, WN).
+	kNarrowOwn - a change INSIDE the paragraph: its kSetPara / kHeld, and the notes whose references stand in it.
+	kNarrowInserted - a whole paragraph added (the record's KCMStoryChange fWholeParagraph, kInsert): the kInsertParas
+	  standing right before `para`, kept whole, and the notes added in those paragraphs.
+	kNarrowRemoved - a whole paragraph taken away (fWholeParagraph, kDelete): the kDeleteParas covering `para`, narrowed
+	  to that one paragraph, and the notes that go with it. */
+enum NarrowScope { kNarrowOwn, kNarrowInserted, kNarrowRemoved };
+
+/** The steps of `plan` that make ONE paragraph of `now` Word's - (where, para) in N's numbering - for writing one row's
+	change (2026-09-24 for the retired redo - design 15-1-7; Apply's paragraph road since 2026-10-24), of the kind `scope`
+	says (2026-09-25). Kept: kSetPara / kHeld of that paragraph (own); kDeleteParas covering it, narrowed to that one
+	paragraph (removed); kInsertParas standing right before it (fPara == para - 1, or -1 when para == 0 - inserted) -
+	★WHOLE: every paragraph Word put in at that place goes in together, and the other rows there are written with it;
+	kAddNote whose reference lands in the kept paragraphs, its fPara renumbered for the narrowed plan; kDeleteNote whose
+	reference `now` holds in that paragraph; kInsertTable at that body paragraph and kDeleteTable of a table `now` holds
+	at it (⚠not reached: Apply refuses a story whose tables the files add or take away - KCMImportStoryNeedsTableRound -
+	and puts it in whole). Shape steps are never kept - they are the import's own rounds, and the import holds them
+	anyway (design 11-1 item 5). */
+void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& where, int32 para, NarrowScope scope,
+			Plan& out);
 
 }	// namespace KCMStorySync
 

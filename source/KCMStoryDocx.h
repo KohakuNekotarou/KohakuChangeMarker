@@ -62,6 +62,8 @@
 #include <string>
 #include <vector>
 
+class KCMXmlTree;			// ReadBlocksIn reads a container of a tree the caller already parsed
+
 namespace KCMStoryDocx
 {
 
@@ -98,6 +100,16 @@ bool16 WriteParagraphContent(const KCMStoryShape::Para& p, std::string& out, std
 	@return kFalse with a reason: WriteParagraphContent's refusals, from however deep. */
 bool16 WriteBlocks(const KCMStoryShape::Story& s, int32 inTable, int32 inRow, int32 inCell,
 				   std::string& out, std::string& whyNot);
+
+/** The words each placeholder SHOWS (⟦OBJECT⟧, ⟦PAGE⟧...), put into blocks already written - the last pass over an
+	element, after everything that can refuse it (WriteParts runs it on its two). ★Public since 2026-10-25 for the page
+	format (KCMPageDocx), which writes its boxes with WriteBlocks and has to finish them the same way. */
+void PutWordsIntoPlaceholders(std::string& xml);
+
+/** word/styles.xml for `s`: the defaults, every built-in kenten kind and each custom mark the story uses, in a fixed
+	order. ⚠It ENDS WITH "</w:styles>" and that is relied on: the page format (2026-10-25) puts its boxes' paragraph
+	styles in front of it. @return kFalse with a reason: a kenten kind this format cannot name. */
+bool16 WriteStyles(const KCMStoryShape::Story& s, std::string& out, std::string& whyNot);
 
 /* (⛔Fingerprint stood here until 2026-09-23 - "<bytes>-<crc32>" of what Write made of a story, written
 	into the tag so the import could tell whether Word's revision marks were the whole truth. The import
@@ -183,10 +195,20 @@ bool16 ReadTag(const std::string& customXmlPart, Tag& out, std::string& whyNot);
 	★**IT REFUSES, BY NAME, WHATEVER IT DOES NOT UNDERSTAND** - a drawing, a field that is not a
 	  ruby, an automatic number, an element it has never heard of - and never skips it: skipping
 	  would drop somebody's words without a word (the rule every reader of this round trip keeps). What it
-	  ignores is only what carries no text: bookmarks, proofing marks, Word's own formatting-change
-	  records on tables, and every kind of formatting this format does not carry. */
+	  ignores is only what carries no text: bookmarks, proofing marks, Word's comments (their ranges and the
+	  run their balloon hangs on - the user's call, 2026-09-25), Word's own formatting-change records on
+	  tables, and every kind of formatting this format does not carry.
+	★Revision marks are read ACCEPTED, the way Word itself accepts them (2026-09-25, measured in Word 2007):
+	  a paragraph moved away takes its mark with it, and a table whose every row was deleted is not there. */
 bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml, const std::string& stylesXml,
 				KCMStoryShape::Story& out, std::string& whyNot);
+
+/** The blocks inside `container` - a node of `document`, a tree the caller parsed - read as a body, exactly as ReadSide
+	reads w:body (2026-10-25, for the page format: a box's words stand inside its w:sdtContent, inside a text box).
+	★NO FOOTNOTES: a box has none to point at, so a reference is refused by the note's number. `stylesXml` may be empty.
+	@return kFalse with a reason: ReadSide's refusals, from however deep. */
+bool16 ReadBlocksIn(const KCMXmlTree& document, int32 container, const std::string& stylesXml,
+					KCMStoryShape::Story& out, std::string& whyNot);
 
 /** What one package holds, once read. */
 struct ReadResult

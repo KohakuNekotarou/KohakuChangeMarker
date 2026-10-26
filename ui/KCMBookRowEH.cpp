@@ -26,14 +26,13 @@
 //
 //  ! The flag is cleared in LButtonDn, which is what makes it safe: every click begins with a down,
 //    so a flag that was set but never consumed cannot survive into the next click and turn an
-//    ordinary single click into an open. (Story Edits learned this the same way - the paragraph
-//    headed "THE DOUBLE CLICK'S ONE BIT OF STATE" in KCMStoryRowEH.cpp; KBS before it,
-//    KBSResultNodeEH.cpp:75-93.)
-//    ⚠ That was written as KCMStoryRowEH.cpp:24-36 and pointed five lines short by 2026-08-18
-//      (bug recheck B-U5). B-U4 had corrected a stale claim at the head of that file the SAME DAY,
-//      which pushed the paragraph down - a reference into a file being edited goes wrong on the day
-//      it is edited. ★The heading is what to quote: it has been there since the file was written
-//      and does not move when the lines above it do.
+//    ordinary single click into an open. (Story Edits' rows carried the same flag, and KBS's result
+//    rows before them; since 2026-10-25 a double click there is two clicks - KCMStoryRowEH.cpp's head
+//    says why - and KFC's rows tell no double click apart either. This list is the one left that does.)
+//    ⚠ That sentence pointed into KCMStoryRowEH.cpp - by line numbers until 2026-08-18, five lines
+//      short by then (bug recheck B-U5), and after that by a paragraph's heading, which went with the
+//      double click on 2026-10-25 (re-check that night). A pointer into another file goes wrong when
+//      that file is edited; what the other file did, written here, does not.
 //
 //  ★THE KEYBOARD IS LEFT ALONE - no AcquireKeyFocus anywhere in this file. The panel's list takes
 //  the key focus so the arrows walk it; this list lives in a DIALOG, where the keyboard belongs to

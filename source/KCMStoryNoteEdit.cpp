@@ -45,8 +45,10 @@ void TakeMarkerBack(ITextModelCmds* cmds, TextIndex at)
 {
 	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 	InterfacePtr<ICommand> back(cmds->DeleteCmd(at, 1));
-	if (back != nil)
-		CmdUtils::ProcessCommand(back);
+	// ★and after it, when the taking back fails too (2026-09-25, the Word round trip re-check, item 2): the import goes
+	//   straight on to its next command, which must not run with this one's error standing (CmdUtils.h:74)
+	if (back != nil && CmdUtils::ProcessCommand(back) != kSuccess)
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 }
 
 }	// anonymous namespace
@@ -99,6 +101,9 @@ ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outWordsFr
 	InterfacePtr<ICommand> insert(cmds->InsertCmd(at, marker));
 	if (insert == nil || CmdUtils::ProcessCommand(insert) != kSuccess)
 	{
+		// ★THE ERROR CLEARED (2026-09-25, the Word round trip re-check, item 2): the caller names this and goes on to
+		//   its next note - a command - so the error must not be left standing (CmdUtils.h:74)
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 		whyNot = "the footnote's marker could not be put in";
 		whyNot.SetTranslatable(kFalse);
 		return kFailure;
@@ -172,6 +177,9 @@ ErrorCode KCMDeleteNoteAt(ITextModel* model, TextIndex markerAt, PMString& whyNo
 	InterfacePtr<ICommand> del(cmds->DeleteCmd(markerAt, 1));
 	if (del == nil || CmdUtils::ProcessCommand(del) != kSuccess)
 	{
+		// ★THE ERROR CLEARED (2026-09-25, the Word round trip re-check, item 2): the import takes the next note away
+		//   right after this one - a command - and must not do it with this one's error standing (CmdUtils.h:74)
+		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 		whyNot = "the footnote's marker could not be taken out";
 		whyNot.SetTranslatable(kFalse);
 		return kFailure;

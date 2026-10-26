@@ -36,6 +36,7 @@
 #include "KCMPanelState.h"		// KCMLoadPanelStateIfPresent (restore the saved panel settings)
 #include "KCMPanelTitle.h"		// KCMPanelTitle::Restore (put the tab name back on the way out)
 #include "KCMPanelAlpha.h"		// subscribe / unsubscribe the translucency toggle, and its clean-up
+#include "KCMStoryTreeController.h"	// KCMStoryShutdownReturnFilter (the list's Return filter off the dispatcher)
 #include "KCMTrackerHud.h"		// KCMTrackerHudShutdown (return the on-press HUD’s font)
 #include "KCMPeekGesture.h"		// KCMAttachDocsClosedObserver / KCMPeekGestureShutdown
 #include "KCMThumbIdleTask.h"		// KCMShutdownThumbIdleTask (release the deferred thumbnail idle task)
@@ -136,6 +137,9 @@ void KCMUIStartup::Shutdown()
 	// destructor); what this door adds is that refusal -- the same pair KCMShutdownPanelAlpha and
 	// KCMShutdownThumbIdleTask keep.
 	KCMToolButtonShutdown();
+	// the Story Edits list's Return filter (2026-10-24 night) off the application's event dispatcher and released - a
+	// handler left on the dispatcher when this .pln unloads would be called into nothing
+	KCMStoryShutdownReturnFilter();
 	// return the font reference the on-press HUD holds; the path where the application quits
 	// mid-press is cleaned up too
 	KCMTrackerHudShutdown();

@@ -26,13 +26,12 @@
 //  already carries the answer to "how much do we know about this one": fTextCompared. The rule
 //  below reads that, and the mode never comes into it.
 //
-//  **WHAT THE PIXEL MODE CANNOT DO, AND THAT IS DELIBERATE.** Ruby is an ATTRIBUTE, so a story
-//  where only the reading changed moves the Attr counter and nothing else -- exactly like a
-//  story where only the font changed. Telling those two apart takes the text diff, which the
-//  pixel mode does not run. Running it there was offered and declined, so in the pixel mode a
-//  ruby-only edit does not produce a row.
-//  @warning a row LOST here is lost from the panel, not from the comparison: the pixel
-//    comparison still marks the page, which is what that mode is for.
+//  ⛔**WHAT THE PIXEL MODE COULD NOT DO** - until 2026-10-11, when it stopped keeping a story list
+//  at all (the user: "the Pixel comparison compares pixels and nothing else"). Ruby is an
+//  ATTRIBUTE, so a story where only the reading changed moves the Attr counter and nothing else --
+//  exactly like a story where only the font changed. Telling those two apart takes the text diff,
+//  which the pixel mode did not run, so a ruby-only edit made no row there. The Before/After report,
+//  which read those rows for its Story table, builds the Story mode's own rows now.
 //
 //  **IT IS A FREE FUNCTION TAKING THREE PLAIN NUMBERS SO THAT IT CAN BE MEASURED.** A row is
 //  full of PMStrings and UIDs and cannot leave InDesign; these three fields can, and they are
@@ -62,7 +61,7 @@
 		textCompared is kTrue -- nobody looked, so nothing was found either way.
 	@return kTrue to keep the row.
 
-	The three answers, in the order they are decided:
+	The four answers, in the order they are decided:
 
 	**UNPAIRED ROWS ARE ALWAYS KEPT.** An added or a removed story is the largest content change
 	  there is -- a whole story appeared or went away -- and there is nothing to diff it against,
@@ -76,10 +75,16 @@
 	  @warning not "the story is unchanged". The counters moved or the row would never have been
 	    built (KCMStoryStamp.h). What is being said is that the difference is not one of these.
 
+	**A ROW PAIRED BY PLACE THAT WAS NOT DIFFED IS KEPT** (2026-10-26, kKCMStoryKindByPosition). Its Added
+	  and its Removed went into it, so dropping it would drop both - and it carries no counter bit to fall
+	  back on (the two stories' counters belong to two histories), so the next answer would always drop it.
+	  It stands the way an unpaired row stands: the spec map's "a story that could not be compared keeps its
+	  row" (ST-35). ⚠A row of this kind that WAS diffed follows the answer above, like any row.
+
 	**A ROW THAT WAS NOT DIFFED FALLS BACK ON THE TEXT COUNTER**, which is the best that can be
-	  known about it. Two quite different rows arrive here and the same reading serves both: every
-	  row in the pixel mode, and a row in the story mode whose story could not be READ at all
-	  (KCMStoryDiffRun's ReadStory).
+	  known about it. Since 2026-10-11 one kind of row arrives here: a row in the story mode whose
+	  story could not be READ at all (KCMStoryDiffRun's ReadStory). (Every row of the pixel mode
+	  arrived here as well, until that mode stopped keeping a story list.)
 	  ⚠**THIS USED TO NAME TWO MORE REASONS AND NEITHER EXISTS** (measured 2026-09-08): the length
 	    check went with the XML route on 2026-09-03, and "the edit distance ran past the limit"
 	    cannot happen -- KCMTextDiff::Diff takes a ceiling and KCM never passes one (maxEdits
@@ -88,8 +93,8 @@
 	  evidence that characters were inserted, removed or replaced, and it is evidence nobody else
 	  is offering.
 	  @warning Attr or Other alone is dropped here -- and in the story mode that costs the ruby of
-	    a story too large to diff. That is the same trade the pixel mode makes above, arrived at
-	    from the other direction.
+	    a story too large to diff. That is the trade the pixel mode made above while it kept a
+	    list, arrived at from the other direction.
 */
 inline bool16 KCMStoryRowHasContentChange(uint32 kinds, bool16 textCompared, int32 changeCount)
 {
@@ -100,6 +105,10 @@ inline bool16 KCMStoryRowHasContentChange(uint32 kinds, bool16 textCompared, int
 
 	if (textCompared)
 		return (changeCount > 0) ? kTrue : kFalse;
+
+	// ★Paired by place and not read (2026-10-26): kept - its two sides went into it (the header says why).
+	if ((kinds & kKCMStoryKindByPosition) != 0)
+		return kTrue;
 
 	return ((kinds & kKCMStoryKindText) != 0) ? kTrue : kFalse;
 }

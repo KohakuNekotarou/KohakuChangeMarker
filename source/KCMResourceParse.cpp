@@ -364,6 +364,10 @@ void AppendOpenTag(PMString& body, const PMString& name, ISAXAttributes* attrs)
 			//     being dropped here - this excludes something that never used to arrive.
 			//   ★Written as a SHAPE and not as the one name: xmlns="..." and xmlns:anything="..."
 			//     are the same kind of thing, and the next one to appear should be excluded too.
+			//   ⛔**THE DESIGNMAP ORIGIN WENT ON 2026-09-21** (a Task Start is a file now), so both
+			//     sides are INX again and, by the measurement above, nothing reaching this line
+			//     carries an xmlns. The rule stays because it costs nothing and is true of any XML
+			//     this parser is handed; its REASON is history (re-audit M15, 2026-09-27).
 			{
 				const std::string an(attrName.GetUTF8String());
 				if (an.size() >= 5 && an.compare(0, 5, "xmlns") == 0)

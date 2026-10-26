@@ -50,16 +50,16 @@
 #include "KCMID.h"
 #include "KCMConstants.h"
 #include "KCMDrawEventHandler.h"   // the engine's shared statics
+#include "KCMTaskStartClone.h"			// the after-close sweep's second line for a Task Start kept in memory
 #include "KCMRingAdornment.h"      // KCMForgetStoryHolders - the story ID labels' tables go when documents close
 #include "KCMCore.h"               // the arm/disarm/state declarations
 #include "KCMComparisonRun.h"      // KCMStartComparisonFor / KCMStopComparison / KCMRefreshComparison
 #include "KCMPairChoice.h"         // KCMForgetChosenDocsThatClosed -- the chosen Target/Source lose whichever document closed
 #include "KCMExternalSource.h"     // KCMIsDbAlive (the lent Source counts as alive)
-#include "KCMResourceBytes.h"
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 // The UI's KCMViewLookup.h is deliberately absent. Resolving which view the mouse is over belongs
 //   to the caller (the UI); this .cpp only peeks at the spread of the point it is given.
-#include "KCMPageMap.h"            // KCMBuildPairing (the exclusion pairing) / KCMPageMapReadSelection / KCMPageMapSweepClosedDocs
+#include "KCMPageMap.h"            // KCMBuildPairing (the exclusion pairing) / KCMPageMapPagesOf / KCMPageMapSweepClosedDocs
 #include "KCMPageCheck.h"          // KCMPageCheckClearAllDocs / KCMPageCheckSweepClosedDocs (clearing the ticks)
 #include "KCMPawStamp.h"           // KCMPawStampSweepClosedDocs (the cat-paw stamps, same sweep)
 #include "KCMColorSampler.h"       // KCMSampleCmykEndDrag (the pairing cached while Alt + left is held; emptied at shutdown)
@@ -70,13 +70,15 @@
 // and the peek's held-down state are all the UI's property. What used to be called directly from
 // here now happens in KCMModelChangeObserver, which receives the notifications this file sends.
 #include "KCMStoryList.h"          // KCMStoryList::ShutdownCleanup (letting go of the rows' PMStrings)
+#include "KCMTrackList.h"          // KCMTrackList::ShutdownCleanup - the Track mode's rows, the same rule (2026-10-05)
 #include "KCMStoryTextImport.h"    // KCMClearImportRefusals - what the last import could not put in (PMStrings again)
 #include "KCMSourceCache.h"        // KCMSourceCacheClear - the Source text kept from the origin
-#include "KCMWordKeep.h"           // KCMWordKeepSweepClosed / KCMWordKeepClear - the Word content kept for "Redo from Word"
+#include "KCMCopyStore.h"          // KCMCopyStore::ShutdownCleanup - the copies Restore from Copy pastes back (2026-10-24)
 #include "KCMResourceStore.h"      // the Resources list, emptied on the same routes
 #include "KCMStoryMarker.h"        // KCMStoryMarker::Shutdown (the Story mode's marks are never drawn again)
 #include "KCMBookCompare.h"        // KCMClearBookResultText (the book comparison's result text)
 #include "KCMHideUnchanged.h"      // KCMResetHideUnchanged and the getters for the hidden documents
+#include "KCMPdfDoc.h"             // the PDF documents' register - swept on a close, emptied at shutdown (2026-10-14)
 #include "KCMPeek.h"
 
 //========================================================================================
@@ -531,7 +533,8 @@ static bool16 KCMQueryPixelComparePair(IDataBase*& outTarget, IDataBase*& outSou
 // with the Target as the frontmost document.
 // outPages is how many pages were really re-compared (pages with no counterpart are not counted)
 // and outChanged how many of those differed. The return says whether at least one was processed.
-bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, bool16* outCancelled, int32* outFailed)
+bool16 KCMRefreshComparisonForSelectedPages(const UIDList& selection, int32* outPages, int32* outChanged, bool16* outCancelled,
+										   int32* outFailed)
 {
 	if (outPages)     *outPages = 0;
 	if (outChanged)   *outChanged = 0;
@@ -551,15 +554,15 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 	//   an origin - it had no Source database of its own. Every armed pair has one now, and the
 	//   resolver above refuses a pair without one, so the guard that followed this could not fire.
 
-	// Read the Pages panel's selection through the reader Register and Check share
-	// (KCMPageMap.cpp). Nothing happens unless the document that selection belongs to is the
+	// The Pages panel's selection, as the UI read it, through the one place Register and Check decide on it
+	// (KCMPageMapPagesOf, KCMPageMap.cpp). Nothing happens unless the document that selection belongs to is the
 	// Target; over the Source the menu item is not offered at all, which is what
 	// KCMRefreshComparisonAvailable arranges.
 	IDataBase* db = nil;
 	std::vector<UID> selPages;
 	// includeMasters=kTrue: master spreads are compared, so they can be re-compared too. It only
 	//   means anything together with the master pairs KCMRefreshComparisonCore puts in its table.
-	if (!KCMPageMapReadSelection(db, selPages, kTrue /*includeMasters*/) || db != targetDB)
+	if (!KCMPageMapPagesOf(selection, kTrue /*includeMasters*/, db, selPages) || db != targetDB)
 		return kFalse;
 
 	// The core is driven by Target pages, and the Target is the frontmost document here, so the
@@ -579,13 +582,10 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 	// (Prev/Next's position readout and the enabling of its buttons ride on the
 	//  kKCMMarksRebuiltMessage that KCMRefreshComparisonCore above sends.)
 
-	// The Story Edits list is rebuilt from here as well, and **it cannot be rebuilt for the
-	//   selected pages alone**: one story can flow across pages that were re-compared and pages
-	//   that were not, so there is no way to split it per page. Rebuilding the whole list is
-	//   KCMRebuildStoryEdits' job.
-	// @warning without this, the list kept showing its pre-edit state after a Refresh and only
-	//   after a Refresh.
-	KCMRebuildStoryEdits(targetDB, sourceDB);	// its "cancelled" answer is not read: this item is greyed in the Story mode, and only there does a story diff (and its bar) run
+	// ⛔The Story Edits list was rebuilt from here until 2026-10-11 (KCMRebuildStoryEdits - a list cannot be
+	//   rebuilt for the selected pages alone, since one story can flow across pages that were re-compared and
+	//   pages that were not). This item works in the Pixel mode only (KCMQueryPixelComparePair), and the Pixel
+	//   mode keeps no story list any more, so there is nothing here for it to rebuild.
 
 	if (outPages)   *outPages = processed;
 	if (outChanged) *outChanged = changed;
@@ -599,8 +599,9 @@ bool16 KCMRefreshComparisonForSelectedPages(int32* outPages, int32* outChanged, 
 // altogether; the reasoning is in the branch below.
 // It does not look at the selection: right-clicking a page normally selects it, and even with
 // nothing selected the command safely does nothing and reports "no comparable pages".
-// **The command itself decides from KCMPageMapReadSelection's database**, which comes from the
-//   same KCMActiveDocDB(), so the two can never disagree about which document is meant. The only
+// **The command itself decides from the selection's database** - the UI reads the selection for
+//   the same KCMActiveDocDB() (KCMReadSelectedPages asks the facade's GetActiveDocDB, 2026-10-26),
+//   so the two can never disagree about which document is meant. The only
 //   difference between them is that one looks at the selection and the other does not. Keep them
 //   on the same source ([[one-question-one-place]]).
 bool16 KCMRefreshComparisonAvailable()
@@ -753,14 +754,19 @@ void KCMPeekStartup::Shutdown()
 	//   it three times (see ShutdownCleanup in KBSResultTree.h). It touches no UI, only drops the
 	//   rows, so it is safe during shutdown.
 	KCMStoryList::ShutdownCleanup();
+	KCMTrackList::ShutdownCleanup();	// the Track Changes mode's rows hold PMStrings too (2026-10-05)
 	// What the last import could not put in (2026-09-19) - PMStrings again, the same rule.
 	KCMClearImportRefusals();
 	// The Source text kept from the origin (2026-09-16). **Its rule is the same one**: a std::map
 	//   of std::strings and WideStrings, so leaving it to static destruction is the very thing the
 	//   paragraph above records. It only empties a container.
 	KCMSourceCacheClear();
-	// The Word content kept per story for "Redo from Word" (2026-09-24, stage 2 C) - a map of stories, the same rule.
-	KCMWordKeepClear();
+	// (⛔The Word content kept per story - for "Redo from Word", then Apply - was emptied here from 2026-09-24 until it went
+	//  on 2026-10-26: Apply reads the import's copy now, the import tidy S5.)
+	// The copy stores Apply This Change filled for Restore from Copy (2026-10-24, KCMCopyStore.h) - each holds a data
+	// exchange controller and its scrap database, let go (Cleanup, Release) while the session is whole. The records name
+	// copies by number only, so the order against KCMStoryList::ShutdownCleanup above does not matter.
+	KCMCopyStore::ShutdownCleanup();
 	// And the stories this comparison had read, with what a restore learned about their tables -
 	//   two maps of strings, the same rule again.
 	// The Story mode's marks. **Until they moved into the model plug-in this clean-up had no
@@ -800,6 +806,8 @@ void KCMPeekStartup::Shutdown()
 	// ⚠**Here and not in the close sweep's comparisonDocClosed branch**: that branch is the
 	// comparison's own all-or-nothing clean-up, and a choice outlives a Stop by design.
 	KCMClearChosenDocs();
+	// The PDF documents' register (2026-10-14) - IDFiles and PMStrings, the same rule. Assignment only.
+	KCMPdfDocShutdown();
 
 	// (Dropping the sync caches, clearing the sync flags and the CMYK clean-up all live in the UI's
 	//  KCMUIStartup.cpp, that state belonging to UI files.)
@@ -858,28 +866,13 @@ void KCMDoDisarmMousePeek(IDataBase* db)
 		KCMInvalidateDB(db);
 }
 
-// KCMDetachArmedSource (declared in KCMCore.h) -- Task Start: the copy leaves the armed state
-// before it is closed. The Target, the marks (sEntries on sDB) and the stores stay.
-void KCMDetachArmedSource()
-{
-	sPeekSourceDB = nil;
-	KCMDrawEventHandler::sSrcDB = nil;
-	KCMDrawEventHandler::sSrcPageToTarget.clear();
-	KCMDrawEventHandler::DropAllOrig();		// the older-version images were of the copy
-
-	// The overflow ("/") cache stays. It was built by the comparison while the copy was the
-	// Source, and it holds the pages ADDED since the task start - the Target-side set. Left as
-	// it was, the cache read as built for (sDB, copy) while the current pair is (sDB, nil), so the
-	// next draw's EnsureOverflowCache rebuilt it against no Source at all and came back empty:
-	// measured 2026-09-13, "added=1" on the status line and no "/" on the page. The cache is
-	// re-stamped as built for (sDB, nil) instead; the Source-side set names pages of a document
-	// about to close and is dropped under the lock the drawing thread reads it with.
-	KCMDrawEventHandler::sOverflowCacheSrcDB = nil;
-	{
-		KCMMarkStateLock lock(KCMMarkStateMutex());
-		KCMDrawEventHandler::sOverflowS.clear();
-	}
-}
+// (KCMDetachArmedSource stood here until 2026-09-27: it took a REHYDRATED Task Start copy out of
+//  the armed state before the copy was closed, keeping the Target, its marks and its stores. The
+//  rehydration went on 2026-09-21 - a Task Start is a file that opens as an ordinary Source - and
+//  the function had no caller from that day; re-audit M6 round 3 took it out. Its one measurement
+//  worth keeping: the overflow ("/") cache had to be re-stamped as built for (sDB, nil) rather than
+//  left for (sDB, copy), or the next draw rebuilt it against no Source and came back empty
+//  ("added=1" and no "/", 2026-09-13).)
 
 // The state accessors the panel reads: an armed peek is what "a comparison is running" means.
 bool16     KCMIsArmed()        { return sPeekArmed; }
@@ -966,6 +959,14 @@ void KCMHandleDocsClosed()
 	//   other perfectly good).
 	//   Memory only, so it is safe while quitting; the pointers are compared, never dereferenced.
 	KCMForgetChosenDocsThatClosed(docList);
+
+	// ★A Task Start kept in memory whose document closed without kBeforeCloseDoc reaching us (2026-10-13): forgotten,
+	//   NEVER deleted - its document has gone (KCMTaskStartClone.h). The normal road is kBeforeCloseDoc.
+	KCMTaskStartCloneSweep(docList);
+
+	// ★The PDF documents KCM made (2026-10-14): whichever has closed is forgotten - the file choice stays, and the next
+	//   Start makes it again (KCMPdfDoc.h). Memory only, pointers compared.
+	KCMPdfDocSweep(docList);
 
 	// A document has closed, so neither the page structure nor any database pointer can be relied
 	// on: the sync caches are dropped unconditionally. They belong to the UI (KCMViewSync), so what
@@ -1070,6 +1071,8 @@ void KCMHandleDocsClosed()
 		//   being reused ([[uidref-reuse-after-close]]). comparisonDocClosed above already answered
 		//   that through FindDocByDataBase, so this rides on its answer.
 		KCMStoryList::Clear();
+		KCMTrackList::Clear();			// the Track mode's rows hold the same Target UIDs (live 2026-10-05: closing the copy
+										//  left all eleven standing after the comparison had stopped)
 		KCMResourceStore::Clear();		// same reason, same moment - see KCMDoClearMarks
 		// The traversal's anchor is forgotten too. Stop does that, and this "clean-up as Stop
 		//   would" was the one route that did not: a closed document's page UID left as the anchor
@@ -1130,7 +1133,6 @@ void KCMHandleDocsClosed()
 	KCMPageMapSweepClosedDocs();
 	KCMPageCheckSweepClosedDocs();	// and the ticks, the same way
 	KCMPawStampSweepClosedDocs();	// and the cat-paw stamps, likewise
-	KCMWordKeepSweepClosed();		// and the Word content kept for "Redo from Word" (2026-09-24, stage 2 C)
 
 	// All of the screen-side clean-up travels on **this one notification**.
 	//

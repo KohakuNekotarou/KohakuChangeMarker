@@ -34,6 +34,9 @@
 #include "KCMRingAdornment.h"		// KCMRevalidateItemXPList -- the transparency-list insurance, at Start and at Stop
 #include "KCMThreadSafety.h"		// KCMIsSameDoc -- the one place this plug-in asks whether two dbs are one document
 #include "KCMExternalSource.h"	// the lent Source: registered and chosen by KCMStartComparisonWithSourceDB, forgotten by the lender's Release
+#include "KCMPdfDoc.h"			// the PDF comparison: which end is a PDF, how its pages were paired (2026-10-14)
+#include "IKCMCompareFacade.h"	// kKCMPdfPixelOnly - the words both halves say
+#include "KCMTaskStartClone.h"	// KCMIsImportClone - an import's copy is compared in the Story mode only (2026-10-24)
 // ⛔KCMOrigin.h went on 2026-09-21. It was included for "the third kind of Source, chosen by
 //   KCMChooseOriginPair" - and that function had already gone with the origin, leaving an include
 //   this file reads nothing from and a comment naming something that no longer exists.
@@ -134,6 +137,20 @@ bool16 KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 	// arm and the strips out puts everything back the way it was before the press, rather than
 	// creating an armed state with no marks in it.
 	const bool16 compared = (KCMDoMarkChangesDoc(targetDB, sourceDB, report) == kSuccess) ? kTrue : kFalse;
+	// ★A PDF PAIR SAYS HOW ITS PAGES WERE PAIRED (2026-10-14, design 3.5) - by the InDesign page ids the PDFs carry, or
+	//   in order - at the head of the second line, so that "marks start" stays the first line as every Start says it.
+	if (compared)
+	{
+		PMString note;
+		KCMPdfPairingNote(targetDB, sourceDB, note);
+		if (!note.IsEmpty())
+		{
+			const CharCounter nl = report.IndexOfWChar(UTF32TextChar(0x0A));
+			note.Append(" ");
+			report.Insert(note, (nl >= 0) ? nl + 1 : 0);
+			report.SetTranslatable(kFalse);
+		}
+	}
 	if (compared)
 	{
 		KCMDoArmMousePeek(targetDB, sourceDB);
@@ -285,25 +302,85 @@ void KCMToggleStartStop()
 
 	// ⛔The origin's own Start stood here until 2026-09-21, because the chosen Source could be a
 	//   thing that was not a database at all. A Task Start chooses a FILE now, and the resolver
-	//   below opens it like any other end.
+	//   opens it like any other end.
 
-	// Start: active (front) document = Target, another open document = Source.
+	// Start: active (front) document = Target, another open document = Source - which two, opened, is
+	// KCMOpenComparisonPair's (below), which the Before/After report asks as well (2026-10-11).
 	// The flyout's Start is grey unless two documents are there (KCMCanStartComparison goes
 	// through the same resolver), so this normally cannot fail. It is the guard for the case
 	// where a document is closed while the menu stands open.
+
+	// ★PDFS ARE COMPARED IN THE PIXEL MODE ONLY (2026-10-14, design 3.2) - asked HERE and not in KCMOpenComparisonPair,
+	//   because the Before/After report goes through that one too and makes its pictures in every mode. Before anything
+	//   is opened or made: the resolver opens nothing.
+	if (KCMGetCompareMode() != kKCMModePixel)
+	{
+		KCMPairEnd pdfTarget, pdfSource;
+		KCMResolveComparisonPair(pdfTarget, pdfSource);
+		if (KCMPairEndIsPdf(pdfTarget) || KCMPairEndIsPdf(pdfSource))
+		{
+			KCMSayStatus(kKCMPdfPixelOnly);
+			KCMNotify(kKCMMarksRebuiltMessage);
+			return;
+		}
+	}
+
+	// ★AN IMPORT'S COPY IS COMPARED IN THE STORY MODE ONLY (2026-10-24, the import-as-Source road - design 2-10): it is
+	//   the document with the files' words poured in, so a Pixel or a Resources comparison would report what the files
+	//   would move as though it had happened, and the Track mode reads the Target's own records. Asked of the chosen
+	//   Source (the clone is a lent database: nothing is opened to ask).
+	if (KCMGetCompareMode() != kKCMModeStory && KCMIsImportClone(KCMChosenSourceDB()))
+	{
+		KCMSayStatus(kKCMImportSourceModeRefusal);
+		KCMNotify(kKCMMarksRebuiltMessage);
+		return;
+	}
+
+	IDataBase* targetDB = nil;
+	IDataBase* sourceDB = nil;
+	PMString why;
+	if (!KCMOpenComparisonPair(targetDB, sourceDB, why))
+	{
+		KCMNotifyStatus(why);
+		// Every refusal needs the notification too. It returns before the end of the function -- an
+		// early implementation refreshed the panel only at the end and left these paths without a
+		// redraw. No document travels with it: nothing has changed but what the status line says.
+		KCMNotify(kKCMMarksRebuiltMessage);
+		return;
+	}
+
+	KCMStartComparisonOn(targetDB, sourceDB);
+}
+
+// KCMOpenComparisonPair (declared in KCMComparisonRun.h) -- which two, opened: Start's steps before it
+// compares, moved out of the toggle on 2026-10-11 when the Before/After report began to compare for itself.
+bool16 KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMString& outWhy)
+{
+	outTarget = nil;
+	outSource = nil;
+	outWhy.Clear();
+	outWhy.SetTranslatable(kFalse);
+
 	KCMPairEnd targetEnd;
 	KCMPairEnd sourceEnd;
 	if (!KCMResolveComparisonPair(targetEnd, sourceEnd))
 	{
 		// Name what is actually missing: if the target resolved, only the Source is absent.
-		KCMSayStatus(targetEnd.IsEmpty() ? "Target and source documents not found."
-		                           : "Source document not found.");
-		// This branch needs the notification too. It returns from inside the else, so it never
-		// reaches the end of the function -- an early implementation refreshed the panel only at
-		// the end and left this path without a redraw.
-		// No document travels with it: the display is only being brought up to the current state.
-		KCMNotify(kKCMMarksRebuiltMessage);
-		return;
+		outWhy = PMString(targetEnd.IsEmpty() ? "Target and source documents not found."
+		                                     : "Source document not found.");
+		outWhy.SetTranslatable(kFalse);
+		return kFalse;
+	}
+
+	// ★A DOCUMENT AGAINST ITS PDF IS THE EXPORT CHECK, THE PDF ON THE SOURCE SIDE (2026-10-14, design
+	//   2026-10-14-kcm-pdf-export-check 3.2 - it replaced the PDF comparison's D1). The other way round is refused BEFORE
+	//   either end is realised, so it makes nothing - and the Before/After report, which comes through here too, refuses in
+	//   the same words.
+	if (KCMPairEndIsPdf(targetEnd) && !KCMPairEndIsPdf(sourceEnd))
+	{
+		outWhy = PMString("For a PDF export check, set the PDF as the Source and the document as the Target.");
+		outWhy.SetTranslatable(kFalse);
+		return kFalse;
 	}
 
 	// ★★★**THE ONE PLACE A DOCUMENT IS OPENED FOR A COMPARISON** (2026-09-21). A chosen end may be
@@ -316,22 +393,25 @@ void KCMToggleStartStop()
 	// ⚠**AND BEFORE THE SAME-DOCUMENT TEST BELOW**, which needs two databases to compare.
 	IDataBase* targetDB = nil;
 	IDataBase* sourceDB = nil;
-	PMString whyNotRealised;
-	if (!KCMRealisePairEnd(targetEnd, targetDB, whyNotRealised)
-		|| !KCMRealisePairEnd(sourceEnd, sourceDB, whyNotRealised))
+	bool16 realised = KCMRealisePairEnd(targetEnd, targetDB, outWhy);
+	// ★THE EXPORT CHECK'S PDF MUST BE THIS DOCUMENT'S (2026-10-14, design 3.2) - asked once the Target is open (its ids are
+	//   read from it) and BEFORE the PDF document is made, so a refusal makes nothing.
+	if (realised && !KCMPairEndIsPdf(targetEnd) && KCMPairEndIsPdf(sourceEnd) && !KCMCheckExportPdf(targetDB, sourceEnd, outWhy))
+		return kFalse;
+	if (realised)
+		realised = KCMRealisePairEnd(sourceEnd, sourceDB, outWhy);
+	if (!realised)
 	{
 		// ⚠**A resolved end that will not realise AND gives no reason** cannot come out of the
 		//  resolver's own answers - a database end that resolved is non-nil, and a file end that
 		//  resolved exists. This is the guard, not the message: an empty status line would say
 		//  less than nothing.
-		if (whyNotRealised.CharCount() == 0)
+		if (outWhy.CharCount() == 0)
 		{
-			whyNotRealised = PMString("The documents to compare could not be opened.");
-			whyNotRealised.SetTranslatable(kFalse);
+			outWhy = PMString("The documents to compare could not be opened.");
+			outWhy.SetTranslatable(kFalse);
 		}
-		KCMNotifyStatus(whyNotRealised);
-		KCMNotify(kKCMMarksRebuiltMessage);
-		return;
+		return kFalse;
 	}
 
 	// **One document cannot be compared against itself**, and with "Set as Target" / "Set as
@@ -367,17 +447,53 @@ void KCMToggleStartStop()
 	// the front -- setting something is what the reader has already done.
 	//   ★**And a lent Source is never "the same document"** (KCMIsSameDoc answers by pointer for
 	//   it): the copy IS a copy of the Target, and comparing the two is the whole request.
+	//   (The Before/After report's item is live on the same grounds, and its press answers with the
+	//   same words, 2026-10-11.)
 	if (KCMIsSameDoc(targetDB, sourceDB))
 	{
-		KCMSayStatus("Target and Source are the same document. Bring another document to the front, or set one of them to another document.");
-		// As in the branch above: this one returns without reaching the end of the function, so it
-		// asks for the panel refresh itself. No document travels with it -- nothing has changed but
-		// what the status line says.
-		KCMNotify(kKCMMarksRebuiltMessage);
-		return;
+		outWhy = PMString("Target and Source are the same document. Bring another document to the front, or set one of them to another document.");
+		outWhy.SetTranslatable(kFalse);
+		return kFalse;
 	}
 
-	KCMStartComparisonOn(targetDB, sourceDB);
+	outTarget = targetDB;
+	outSource = sourceDB;
+	return kTrue;
+}
+
+// KCMRunReportComparison (declared in KCMComparisonRun.h) -- the Before/After report's own comparison.
+bool16 KCMRunReportComparison(IDataBase* targetDB, IDataBase* sourceDB)
+{
+	if (targetDB == nil || sourceDB == nil)
+		return kFalse;
+
+	// **The transparency-list insurance, on both documents, before anything is drawn** - as at Start
+	//   (KCMStartComparisonOn): the report's Before export prints the rings, which is when the list is
+	//   declared (KCMRingAdornment.h says what the insurance is for).
+	KCMRevalidateItemXPList(targetDB);
+	KCMRevalidateItemXPList(sourceDB);
+
+	// The comparison's own words ("pages compared=...") are a Start's status line; the report says what
+	// it wrote instead, so they are not passed on.
+	PMString unused;
+	return (KCMDoMarkChangesDoc(targetDB, sourceDB, unused, kFalse /*allowIncremental*/, kTrue /*pixelsOnly*/) == kSuccess)
+		? kTrue : kFalse;
+}
+
+// KCMClearReportComparison (declared in KCMComparisonRun.h) -- and taken down again.
+void KCMClearReportComparison(IDataBase* targetDB, IDataBase* sourceDB)
+{
+	// The insurance again, as at Stop - asked through KCMIsDocDBOpen first, because a document closed
+	//   while the report was being written leaves a pointer nothing may dereference.
+	if (KCMIsDocDBOpen(targetDB))
+		KCMRevalidateItemXPList(targetDB);
+	if (KCMIsDocDBOpen(sourceDB))
+		KCMRevalidateItemXPList(sourceDB);
+
+	// **Stop's own clearing** (marks, pairing, overflow, the story and Resources lists) and its Cleared
+	//   notification - the pair of the Rebuilt that the report's run did NOT send - with nothing to disarm:
+	//   nothing was armed. nil: the documents the marks were on are the ones it redraws.
+	KCMDoClearMarks(nil);
 }
 
 // Put the state of the two mark settings on the status line. Both callers below change one of the

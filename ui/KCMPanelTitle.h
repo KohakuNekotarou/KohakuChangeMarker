@@ -3,7 +3,8 @@
 //  KCMPanelTitle.h
 //
 //  Shows **which mode the comparison is in** on the panel's tab (user's instruction):
-//    "Kohaku Change Marker - Pixel" / "- Story" / "- Resources" / "- Import"
+//    "Kohaku Change Marker - Pixel" / "- Story" / "- Resources" / "- Track", and "- Word Import" while a Word import
+//    is compared (2026-10-24 night). (An "- Import" stood here for the fourth mode, gone since 2026-09-20.)
 //
 //  ★★Modelled on the file of the same name in KBS (`KBS/source/KBSPanelTitle.cpp`), which shows
 //    its search scope as "- Document" / "- Book" -- the user asked for it "like the document and

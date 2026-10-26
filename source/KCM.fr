@@ -68,6 +68,7 @@
 						// resource at the end of this file, which keeps the story counters out of IDML
 #include "TextScriptID.h"	// kStoryObjectScriptElement (TextScriptID.h:49) - the story object the
 							// four change-counter properties are added to
+#include "DragDropID.h"	// IID_IDATAEXCHANGECONTROLLER - the copy store's controller (KCMCopyStore.cpp, 2026-10-24)
 
 // Project includes:
 #include "KCMID.h"
@@ -311,6 +312,46 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// ***** A TASK START KEPT IN MEMORY GOES WITH ITS DOCUMENT (2026-10-13). *****
+	// kBeforeCloseDoc, because it is the last moment the document is certainly alive - a clone deleted after its
+	// document has gone kills InDesign (KCMTaskStartClone.h). Same "one signal, one boss, no ServiceProvider of its
+	// own" shape as the three above.
+	Class
+	{
+		kKCMBeforeCloseResponderServiceBoss,
+		kInvalidClass,
+		{
+			IID_IK2SERVICEPROVIDER, kBeforeCloseDocSignalRespServiceImpl,
+			IID_IRESPONDER,         kKCMBeforeCloseResponderImpl,
+		}
+	},
+
+	// ***** KCM'S OWN COPY STORE (2026-10-24, the import-as-Source road). *****
+	// A data exchange controller whose scrap database holds the words Apply This Change wrote over, for Restore from
+	// Copy (KCMCopyStore.h). The shape of KFC's kKFCCopyStoreBoss: made with CreateObject, never registered with the
+	// clipboard or a drag, so the user's clipboard is never touched.
+	Class
+	{
+		kKCMCopyStoreBoss,
+		kInvalidClass,
+		{
+			IID_IDATAEXCHANGECONTROLLER, kKCMCopyStoreImpl,
+		}
+	},
+
+	// ***** A "=" RECORD'S TEXT FOCUS, OF KCM'S OWN CLASS (2026-10-26 - KCMRecordFocus.h). *****
+	// kTextFocusBoss with IID_ITEXTFOCUS replaced and nothing else - the shape of InDesign's own foci, which each replace
+	// that implementation of the parent's (and of KFC's kKFCRowFocusBoss, whose implementation this one copies). Made by
+	// ITextFocusManager::NewFocus(range, kKCMRecordFocusBoss) - KCMRecordFoci.cpp. Never persisted: a focus lives in memory.
+	Class
+	{
+		kKCMRecordFocusBoss,
+		kTextFocusBoss,
+		{
+			IID_ITEXTFOCUS, kKCMRecordFocusImpl,
+		}
+	},
+
 	// ***** THE COMMAND THAT WRITES THEM (2026-09-07). *****
 	// Every tick and every cat paw goes through this one boss, and nothing else may write the
 	// labels. It exists so the change is UNDOABLE: Do() writes, DoNotify() raises a ModelChange on
@@ -458,6 +499,13 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//
 	// It is ATTACHED at run time and never persistently (KCMMarksObserver.cpp): an attachment
 	// written into the .indd would be a change made to the reader's file by merely opening it.
+	//
+	// ***** AND THE STORY EDITS LIST'S UNDO FOLLOWER, ON THE SAME BOSS (2026-10-25). *****
+	// It sat on kTextStoryBoss until 2026-10-25 (the block below says what it was). It is on the DOCUMENT now: a test
+	// build saw InDesign build the listed stories again right after Start - new subjects, nothing attached - and a
+	// document is not purged while it is open. It hears what a story's change repeats on its document's subject
+	// (KCMStoryFollowObserver.cpp, measured with KT's docnotify probe), attached at run time and never persistently,
+	// under an IID of our own for the reason above.
 	AddIn
 	{
 		kDocBoss,
@@ -465,6 +513,8 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			// Implementation: KCMMarksObserver.cpp
 			IID_IKCMMARKSOBSERVER, kKCMMarksObserverImpl,
+			// Implementation: KCMStoryFollowObserver.cpp
+			IID_IKCMSTORYFOLLOWOBSERVER, kKCMStoryFollowObserverImpl,
 		}
 	},
 
@@ -472,7 +522,10 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	//  attached at run time and never persistently, so that Ctrl+Z after a restore redrew the list.
 	//  It listened under the SDK's own IID_ITEXTMODEL, because the change was InDesign's and not a
 	//  KCM command's, and LAZILY, because lazy is the only notification broadcast on undo and redo
-	//  (ISubject.h:78-82). It went with the restore on 2026-09-21.)
+	//  (ISubject.h:78-82). It went with the restore on 2026-09-21.
+	//  It came back under new numbers on 2026-09-25 - the Story Edits list following an Undo / Redo, the row
+	//  compared AGAIN - and moved to kDocBoss above on 2026-10-25, with the same IID and implementation: the story
+	//  it hung on could be built again and leave it behind.)
 
 	// Tasks 12-15 add their four interfaces to THIS block - they do not open a second AddIn.
 	AddIn
@@ -643,6 +696,13 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
+		// ★★★THE TEST DOORS - EVERY PROPERTY AND METHOD FROM HERE TO THE MATCHING #endif - ARE A TEST BUILD'S ONLY (2026-10-26,
+		//   the author: "cut them out when it goes to the Exchange" - the KCM full test, docs/superpowers/specs/2026-10-26-kcm-full-test-design.md
+		//   section 4). None was in the published 1.5.0 (it held the registered two above and the story four below); each was
+		//   added since so that a test could drive or read KCM from KIDMCP. ODFRC is given -d KCM_DIAG by a test build
+		//   (KCMOdfrcDefines in the vcxproj, from KCMExtraDefines), and KCMScriptProvider.cpp serves them inside the same
+		//   #ifdef. Checked from outside: work\kcm-regress\full\ship_check.py reads the shipping build's resources for them.
+#ifdef KCM_DIAG
 		// app.kcmResourceSnapshot - the Resources comparison mode's export of the ACTIVE document,
 		// measured: "376004 bytes, 78 ms", or "FAILED: <the step that failed>". The mode has no
 		// panel yet, so this is the only way to see whether its engine works; it stays afterwards
@@ -701,27 +761,12 @@ resource VersionedScriptElementInfo(10)
 		// Start that is a file on disk now, not bytes this plug-in holds. Their ScriptIDs are graves
 		// (KCMScriptingDefs.h) and their ScriptElements are too (KCMID.h).
 
-		// ★A MEASURING DOOR, not a feature (2026-09-14): app.kcmProbePdfRoute() runs the
-		// experiment in KCMPdfSpike.cpp and hands the whole reading back as one string, a line
-		// per step. The question it exists to answer is whether the Before/After report can stop
-		// writing temporary PDFs to disk AND stay vector ("raster is hard to read when you zoom
-		// in", the user, the same day).
-		//
-		// No arguments: it measures the ACTIVE document's first page, so there is nothing for a
-		// caller to choose. The shape with the empty braces is snippetrunner's "get snip log"
-		// (SnipRun.fr:1465-1474), which likewise takes nothing and answers with a string.
-		// ⚠It READS. The active document is not changed; what it imports goes into a windowless
-		//   document of its own that is closed again before the answer comes back.
-		Method
-		{
-			kKCMProbePdfRouteMethodScriptElement,
-			e_KCMProbePdfRoute,
-			"kcm probe pdf route",				// name -> app.kcmProbePdfRoute()
-			"Measure whether a page can become a PDF in memory, or travel as a snippet, without a temporary file.",
-			StringType,							// the reading
-			"One line per step of the experiment"
-			{ /* void */ }
-		}
+		// ⛔**"kcm probe pdf route" WENT ON 2026-10-02** with the PDF spike it ran (KCMPdfSpike.cpp),
+		// before shipping, as it was always meant to. Its ScriptID ('eKGv') and its ScriptElement
+		// (+25) are graves (KCMScriptingDefs.h, KCMID.h). ⚠Both halves of the pair went: this Method
+		// block and its Method{} line on app below.
+		// ★A method with NO arguments is written with empty braces - { /* void */ } - the shape of
+		// snippetrunner's "get snip log" (SnipRun.fr:1465-1474), should one be needed again.
 
 		// ★★THE STORY TEXT ROUND TRIP WITHOUT A DIALOG (2026-09-17). The menu items' own model calls,
 		// with the file dialog and the confirmation left out, so that a test can run dozens of cases:
@@ -730,19 +775,10 @@ resource VersionedScriptElementInfo(10)
 		// has the codes and why they were free.
 		// ⚠Each answers with the sentence the status line would show (StringType) - the outcome is
 		//   words, and "0 changes taken in, 2 skipped (...)" is exactly what a test has to read.
-		Method
-		{
-			kKCMImportStoryTextMethodScriptElement,
-			e_KCMImportStoryText,
-			"kcm import story text",			// name -> app.kcmImportStoryText(file)
-			"Import one edited story file into the active document, as Import Story Text does, without the dialog.",
-			StringType,
-			"The sentence the status line shows"
-			{
-				keyAEFile, "file path", "The edited story file (<story id>.html)", FileType, kRequired
-			}
-		}
-
+		// ⛔**"kcm import story text" WENT ON 2026-10-25** with the import that wrote into the document (the tidy - its
+		//   road, Reject This Import Change and Redo from Word went together). Its ScriptID ('eKGn') and its
+		//   ScriptElement (+27) are graves (KCMScriptingDefs.h, KCMID.h); both halves of the pair went - this Method
+		//   block and its Method{} line on app below. app.kcmImportToSource is the import's door.
 		Method
 		{
 			kKCMExportStoryTextMethodScriptElement,
@@ -767,6 +803,109 @@ resource VersionedScriptElementInfo(10)
 			{ /* void */ }
 		}
 
+		// (2026-10-05) "Compare with Tracked Changes..." without the save dialog - the Track mode's test door.
+		Method
+		{
+			kKCMCompareTrackedMethodScriptElement,
+			e_KCMCompareTracked,
+			"kcm compare tracked",				// name -> app.kcmCompareTracked(file)
+			"Save the active (or chosen Target) document's original version - every tracked change rejected - to the file, choose it as the Source, and start the Track Changes comparison, as Compare with Tracked Changes does, without the dialog.",
+			StringType,
+			"The sentence the status line shows"
+			{
+				keyAEFile, "file path", "Where the original version is saved (.indd)", FileType, kRequired
+			}
+		}
+
+		// (2026-10-24, the import-as-Source road) "Import Story Text..." the other way round, and its Apply - test doors.
+		Method
+		{
+			kKCMImportToSourceMethodScriptElement,
+			e_KCMImportToSource,
+			"kcm import to source",				// name -> app.kcmImportToSource(file)
+			"Read an edited story file into a Task Start kept in memory of the active (or chosen Target) document, choose it as the Source and start the Story comparison - the document is not changed.",
+			StringType,
+			"The sentence the status line shows"
+			{
+				keyAEFile, "file path", "The edited story file (.docx)", FileType, kRequired
+			}
+		}
+
+		Method
+		{
+			kKCMApplyChangeMethodScriptElement,
+			e_KCMApplyChange,
+			"kcm apply change",					// name -> app.kcmApplyChange(what)
+			"Put a change of the imported text into the document, as Apply This Change does: \"<row> <change>\" (0-based, the Story Edits list's indices), \"<row>\" for every change of that story, \"all\", or several \"<row> <change>\" joined by \";\" as one undo step.",
+			StringType,
+			"The sentence the status line shows"
+			{
+				p_Name, "what", "Which change: \"<row> <change>\", \"<row>\" or \"all\"", StringType, kRequired
+			}
+		}
+
+		// (2026-10-24 evening, the import-as-Source road's second try-out - design section 11-3) the "=" row's Restore from Copy, without
+		// the right click - so that it can be measured from KIDMCP. ⚠Not registered with Adobe.
+		Method
+		{
+			kKCMRestoreFromCopyMethodScriptElement,
+			e_KCMRestoreFromCopy,
+			"kcm restore from copy",			// name -> app.kcmRestoreFromCopy(what)
+			"Put the document's own words back over a change Apply This Change (or Restore from Source) put in, from the copy it kept, as Restore from Copy does: \"<row> <change>\" (0-based, the Story Edits list's indices), or several joined by \";\" as one undo step.",
+			StringType,
+			"The sentence the status line shows"
+			{
+				p_Name, "what", "Which change: \"<row> <change>\"", StringType, kRequired
+			}
+		}
+
+		// (2026-10-24 night, the list like KFC's - docs/superpowers/specs/2026-10-24-kcm-list-like-kfc-design.md) how far a
+		// row's selection reaches its place in the Target, read without a click - so that the landing rules (locked, hidden)
+		// can be measured from KIDMCP. ⚠Not registered with Adobe.
+		Method
+		{
+			kKCMChangeReachMethodScriptElement,
+			e_KCMChangeReach,
+			"kcm change reach",					// name -> app.kcmChangeReach(what)
+			"How far a selection of a change row reaches its place in the Target: \"none\", or \"locked\", \"hidden\" and \"hidden-spread\" joined by commas - \"<row> <change>\" (0-based, the Story Edits list's indices).",
+			StringType,
+			"none, or the reach's bits"
+			{
+				p_Name, "what", "Which change: \"<row> <change>\"", StringType, kRequired
+			}
+		}
+
+		// (2026-10-24 night, design 1-8) Story mode's Restore from Source by copy, without the right click. ⚠Not registered.
+		Method
+		{
+			kKCMRestoreFromSourceMethodScriptElement,
+			e_KCMRestoreFromSource,
+			"kcm restore from source",			// name -> app.kcmRestoreFromSource(what)
+			"Put the Source document's words of a text change over the Target's, copied with their formatting, as Restore from Source does: \"<row> <change>\" (0-based, the Story Edits list's indices), \"<row>\" for every text change of that story, or several \"<row> <change>\" joined by \";\" as one undo step.",
+			StringType,
+			"The sentence the status line shows"
+			{
+				p_Name, "what", "Which change: \"<row> <change>\", \"<row>\" or \"<row> <change>;<row> <change>...\"", StringType, kRequired
+			}
+		}
+
+		// (2026-10-25) Export Pages to Word, without the folder dialog and the Pages panel - so it can be measured from
+		// KIDMCP. ⚠Not registered.
+		Method
+		{
+			kKCMExportPagesMethodScriptElement,
+			e_KCMExportPages,
+			"kcm export pages",					// name -> app.kcmExportPages(folder, pages)
+			"Export pages of the active document to Word as Export Pages to Word does - each page one .docx, each text frame a text box at its place - into a dated folder inside the one given. The pages are named as the Pages panel names them, joined by \",\"; an empty string is refused (a script names its pages; the Pages panel's selection is the menu's).",
+			StringType,
+			"The sentence the status line shows, with the dated folder in it"
+			{
+				keyAEFile, "folder path", "The folder to make the dated folder in", FileType, kRequired,
+				p_Name, "pages", "The pages, as the Pages panel names them, joined by \",\" (\"1,3\")", StringType, kRequired
+			}
+		}
+#endif // KCM_DIAG - the test doors' declarations
+
 		// (⛔**TWO METHODS STOOD HERE AND WENT ON 2026-09-21** with the restore they drove:
 		//  "kcm take in change" (app.kcmTakeInChange, e_KCMTakeInChange) and "kcm undo restore"
 		//  (app.kcmUndoRestore, e_KCMUndoRestoreChange). Each named a change by WORDS it holds, so that
@@ -788,6 +927,8 @@ resource VersionedScriptElementInfo(10)
 				Object{ kApplicationObjectScriptElement },
 				Property{ kKCMStatusPropertyScriptElement, kReadOnly },
 				Property{ kKCMBookResultPropertyScriptElement, kReadOnly },
+#ifdef KCM_DIAG
+				// (the test doors' halves - a test build's only, as their declarations above)
 				// ⚠★★★THIS LINE IS HALF OF A PAIR. The Property{} block above DEFINES the property;
 				//   this one PUTS IT ON app. Writing only the definition builds cleanly, loads
 				//   cleanly, warns about nothing - and the property simply is not there, which
@@ -800,13 +941,21 @@ resource VersionedScriptElementInfo(10)
 				// thing you call rather than a thing you read. Leave one of these lines out and the
 				// method is simply not there, exactly as described above for the properties: no build
 				// error, no warning, ERR:55 at the first touch.
-				Method{ kKCMProbePdfRouteMethodScriptElement },
-				// ...and the round trip's four (2026-09-17) - the other half of each Method block above.
-				Method{ kKCMImportStoryTextMethodScriptElement },
+				// The round trip's four (2026-09-17) - the other half of each Method block above.
+				// (⛔"kcm probe pdf route"'s line stood first here until 2026-10-02, and "kcm import story text"'s
+				//  next until 2026-10-25.)
 				Method{ kKCMExportStoryTextMethodScriptElement },
 				Method{ kKCMStopComparisonMethodScriptElement },
+				Method{ kKCMCompareTrackedMethodScriptElement },	// (2026-10-05) the Track mode's test door
+				Method{ kKCMImportToSourceMethodScriptElement },	// (2026-10-24) the import's two doors - into the copy, and Apply
+				Method{ kKCMApplyChangeMethodScriptElement },
+				Method{ kKCMRestoreFromCopyMethodScriptElement },	// (2026-10-24 evening) the "=" row's Restore from Copy
+				Method{ kKCMChangeReachMethodScriptElement },		// (2026-10-24 night) the list like KFC's - a row's reach
+				Method{ kKCMRestoreFromSourceMethodScriptElement },	// (the same night) Story mode's Restore from Source by copy
+				Method{ kKCMExportPagesMethodScriptElement },		// (2026-10-25) Export Pages to Word
 				// ...and the export's .docx road (2026-09-19).
 				// (⛔The two halves of "kcm take in change" and "kcm undo restore" went on 2026-09-21.)
+#endif // KCM_DIAG - the test doors on app
 			}
 		}
 
@@ -869,6 +1018,9 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
+#ifdef KCM_DIAG
+		// (document.kcmTransparencyItemCount is a test door too - a test build's only since 2026-10-26, as the doors above;
+		//  its Provider block on document and its INX block at the end of this file go with it)
 		// ★★2026-08-20: the document property. ⚠**A Property has to be DECLARED here before a
 		//   Provider block can list it** - listing it in the Provider alone leaves it out of the DOM
 		//   entirely, with no build error and no warning ('kcmTransparencyItemCount' in doc -> false).
@@ -884,6 +1036,7 @@ resource VersionedScriptElementInfo(10)
 			{}
 			kNoAttributeClass,
 		}
+#endif // KCM_DIAG - the document's test door
 
 		// Puts those four ON the story object - a SECOND Provider block on the SAME boss as the
 		// application properties above. What separates them is the Object field: a Property is
@@ -905,8 +1058,10 @@ resource VersionedScriptElementInfo(10)
 				Property{ kKCMAttrChangeCountPropertyScriptElement, kReadOnly },
 				Property{ kKCMOtherChangeCountPropertyScriptElement, kReadOnly },
 			}
-		},
-
+		}
+		// (⚠No comma after the block above since 2026-10-26: what follows is a test build's only, and the items of this list
+		//  need none between them - the app Provider block above is followed by a Property with none.)
+#ifdef KCM_DIAG
 		// One property on document, in a Provider block of its own for the same reason as app and
 		// story: a Property with no Object of its own attaches to the preceding Object.
 		//
@@ -926,6 +1081,7 @@ resource VersionedScriptElementInfo(10)
 				Property{ kKCMTransparencyItemCountPropertyScriptElement, kReadOnly },
 			}
 		}
+#endif // KCM_DIAG - the document's test door, on document
 	}
 };
 
@@ -988,8 +1144,9 @@ resource VersionedScriptElementInfo(2)
 				Property{ kKCMAttrChangeCountPropertyScriptElement, kReadOnly },
 				Property{ kKCMOtherChangeCountPropertyScriptElement, kReadOnly },
 			}
-		},
-
+		}
+#ifdef KCM_DIAG
+		// (a test build's only since 2026-10-26, with the property itself - no comma before it, as in the resource above)
 		// The document property is kept out for the same reason, and with a stronger case than the
 		// four story counters: the count is the application's state at this instant, and it goes up
 		// only while an export runs - volatile session state in the purest form. Written into a
@@ -1003,6 +1160,7 @@ resource VersionedScriptElementInfo(2)
 				Property{ kKCMTransparencyItemCountPropertyScriptElement, kReadOnly },
 			}
 		}
+#endif // KCM_DIAG
 	}
 };
 

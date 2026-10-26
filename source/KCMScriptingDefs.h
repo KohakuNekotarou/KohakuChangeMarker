@@ -226,22 +226,12 @@ enum KCMScriptMethods
 	//   rather than the origin, so it could have been kept - the reader's call was to let it go
 	//   with the file it lived in.
 
-	// ★A MEASURING DOOR, not a feature (2026-09-14). app.kcmProbePdfRoute() runs the experiment
-	// in KCMPdfSpike.cpp on the active document's first page and returns the whole reading as one
-	// string, a line per step. It exists because the Before/After report has to stop writing
-	// temporary PDFs to disk (the user's ask that day), and the two routes that could replace
-	// them - a PDF made in memory, and the page's items carried across as a snippet - are both
-	// things the SDK describes but neither the SDK nor this plug-in has ever run.
-	// ⚠**It reads; it does not change the active document.** What it imports goes into a
-	//   windowless document of its own, which is closed again before the answer comes back.
-	// ⚠**'eKGv' is free, and that was measured rather than assumed** (2026-09-14), the same way
-	//   'eKGs' was earlier the same day: 0 hits in source/, and the registry
-	//   (docs/ai-notes/kes-scriptid-registry.md) has no row for it - ITS RETIRED ROWS READ TOO,
-	//   which is what caught 'eKGp' (KESCM's old kescmSetPrintMarks) on the first try here. The
-	//   search was validated on 'eKGs', which does exist and was found.
-	// ⚠**Registered with Adobe? NOT YET** - it goes in with the next submission if it is still
-	//   here. If the report ends up not needing it, retire the row rather than reusing the code.
-	e_KCMProbePdfRoute = 'eKGv',	// v = vector: is there a route that keeps the pages vector without a file?
+	// ⛔**'eKGv' IS A GRAVE** (2026-10-02, the user: "take it out before shipping"): app.kcmProbePdfRoute(),
+	//   the measuring door of the PDF spike (KCMPdfSpike.cpp, 2026-09-14) - whether the Before/After
+	//   report could stop writing temporary PDFs and stay vector. It went with the spike, as this note
+	//   said it would; its findings are in memory (pdf-through-memory-without-a-file,
+	//   idml-package-in-memory-via-pipe, idml-built-by-hand) and its code in git at 5720208.
+	//   ⚠Never registered with Adobe, and NOT reused.
 
 	// ★★THE STORY TEXT ROUND TRIP, DRIVEN WITHOUT A DIALOG (2026-09-17, the user's go-ahead: "script
 	//   extensions if they are needed"). An import of "tags kept, contents emptied" crashed InDesign,
@@ -257,10 +247,32 @@ enum KCMScriptMethods
 	// ⛔**'eKGw' (app.kcmTakeInAllStories) IS RETIRED** (2026-09-20, with the "Restore All Stories"
 	//   item itself - the user's decision to drop taking changes in by the bulk). The row stays here
 	//   as a retired one: **the code is never reused**, which is the rule the registry ledger keeps.
-	e_KCMImportStoryText = 'eKGn',	// n = in.    app.kcmImportStoryText(file)  -> the import's sentence
+	// ⛔**'eKGn' (app.kcmImportStoryText) IS RETIRED** (2026-10-25, with the import that wrote into the document - the
+	//   tidy). Same rule as 'eKGw': **the code is never reused.** Never registered with Adobe. Its successor is 'eKGI'
+	//   (app.kcmImportToSource), below.
 	e_KCMExportStoryText = 'eKGe',	// e = export. app.kcmExportStoryText(folder) -> "exported N ... to <folder>"
 									// ⚠**IT WRITES .docx SINCE 2026-09-21** (it wrote .html until then).
 	e_KCMStopComparison = 'eKGq',	// q = quit.  app.kcmStopComparison()       -> the status line after it
+	// ★(2026-10-05) "Compare with Tracked Changes..." without the save dialog - the menu item's own model call,
+	//   so the Track mode can be tested from KIDMCP. ⚠'eKGl' was MEASURED free (0 hits in source/sdksamples,
+	//   2026-10-05). ⚠Not registered with Adobe.
+	e_KCMCompareTracked = 'eKGl',	// l = log (the change log). app.kcmCompareTracked(file) -> the status line's sentence
+	// ★(2026-10-24, adopted 2026-10-25) "Import Story Text..." and its Apply, without the dialog and the right click -
+	//   so they can be measured from KIDMCP. ⚠Every lowercase letter after 'eKG' is taken or avoided
+	//   (the note above and the tree), so these two are UPPERCASE - 'eKGI' / 'eKGA' MEASURED free: 0 hits in source/ and
+	//   docs/, with 'eKGn' found by the same search as the control (2026-10-24). ⚠Not registered with Adobe.
+	e_KCMImportToSource = 'eKGI',	// I = import into the Source. app.kcmImportToSource(file) -> the import's sentence
+	e_KCMApplyChange = 'eKGA',		// A = apply. app.kcmApplyChange("<row> <change>" | "<row>" | "all") -> the sentence
+	// (2026-10-24 evening) the "=" row's Restore from Copy - 'eKGR' MEASURED free the same way (0 hits in source/sdksamples
+	//   with the search case-sensitive; a case-blind one finds the lowercase 'eKGr', which is taken). ⚠Not registered with Adobe.
+	e_KCMRestoreFromCopy = 'eKGR',	// R = restore. app.kcmRestoreFromCopy("<row> <change>") -> the sentence
+	// (2026-10-24 night, the list like KFC's) test doors - 'eKGP' and 'eKGS' MEASURED free the same way (0 hits in the tree,
+	//   case-sensitive, with 'eKGR' found by the same search). ⚠Not registered with Adobe.
+	e_KCMChangeReach = 'eKGP',		// P = place. app.kcmChangeReach("<row> <change>") -> "none" | "locked,hidden,hidden-spread" (the bits set)
+	e_KCMRestoreFromSource = 'eKGS',	// S = Source. app.kcmRestoreFromSource("<row> <change>" | "<row>" | "<r> <c>;<r> <c>...") -> the sentence
+	// (2026-10-25) "Export Pages to Word..." without the folder dialog and the Pages panel - 'eKGW' MEASURED free: 0 hits in
+	//   source/, docs/, work/ and .claude/ (case-sensitive; 'eKGg', a grave, found by the same search). ⚠Not registered with Adobe.
+	e_KCMExportPages = 'eKGW',		// W = Word pages. app.kcmExportPages(folder, "1,3") -> the sentence ("" = the Pages panel's selection)
 
 	// ★★ONE CHANGE TAKEN IN FROM A SCRIPT (2026-09-17 afternoon). The user asked for the order checks -
 	//   "1 became 1..5, and the user takes in 3, then 5, then 4, then 2: does the order hold?" The change

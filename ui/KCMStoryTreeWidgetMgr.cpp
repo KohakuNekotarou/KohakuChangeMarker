@@ -18,12 +18,14 @@
 //  the indent arithmetic KBS's widget manager exists for: each level's layout lives in its own
 //  resource. See ApplyIndentToWidget below for why that was the right way round.
 //
-//  ★ApplyNodeIDToWidget is deliberately NOT overridden. KBS has to override it - and to call the
-//  base FIRST - because it rewrites its rows' frames itself and has to land on top of the
-//  framework's indent; getting that order wrong cost it two separate bugs. Here the framework
-//  places the row content and nothing argues with it, so overriding ApplyDataToWidget alone means
-//  the question of "before or after the base" never arises. paneltreeview and loggerpreferences
-//  are this same shape.
+//  ★ApplyNodeIDToWidget is deliberately NOT overridden. On the V2 path (the two-argument
+//  constructor) the base runs the highlight, the expander, the indent and only THEN
+//  ApplyDataToWidget (CTreeViewWidgetMgr.cpp:207-219), so overriding ApplyDataToWidget alone means
+//  the question of "before or after the base" never arises. KBS overrode ApplyNodeIDToWidget and
+//  had to call the base FIRST - getting that order wrong cost it two separate bugs - until it moved
+//  to ApplyDataToWidget as well (2026-10-02, its API re-audit). loggerpreferences and the shipping
+//  MSO panel are this same shape; paneltreeview is not (the deprecated one-argument constructor,
+//  where the base call is the highlight alone).
 //
 //========================================================================================
 
@@ -55,6 +57,7 @@
 #include "IStaticTextAttributes.h"	// SetEllipsizeStyle - WHERE a cell that does not fit loses its characters
 #include "KCMUIID.h"
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
+#include "KCMTrackLabels.h"	// the Track mode's signs, colours and author names (2026-10-05)
 #include "Utils.h"					// Utils<IKCMStoryEditsFacade>()
 #include "IKCMStoryEditsFacade.h"	// the rows themselves (Facade since 2026-08-13, Task 14)
 #include "IKCMCompareFacade.h"		// GetCompareMode - asked in ONE function, KCMListShowsResources
@@ -314,7 +317,15 @@ public:
 		bool16 bangChild = kFalse;
 		const bool16 bang = this->IsBangNode(nodeID, bangChild);
 		const int32 lines = (isChange && !bang) ? LineCountOfNode(node) : 1;
-		const RsrcID rsrcID = bang        ? (bangChild ? kKCMStoryBangChangeRowRsrcID : kKCMStoryBangRowRsrcID)
+		// ★A TRACK AUTHOR ROW HAS A RESOURCE OF ITS OWN (2026-10-05): the story row with a colour square in the UID column.
+		const bool16 authorRow = (nodeID != nil && nodeID->IsAuthorRow()) ? kTrue : kFalse;
+		// (⛔A "=" ROW APPLY THIS CHANGE PUT IN had a resource of its own from 2026-10-24 evening to 2026-10-26 - the change row
+		//  with its "=" drawn red, then amber (kKCMStoryAppliedRowRsrcID). The author took it back on 2026-10-26: "the '=' of
+		//  the Word import changes colour - put it back to the same colour as the others" - so a "=" row is the change row
+		//  like any other, its "=" in the theme's colour. The resource and its cell's boss are left registered, unused, for a
+		//  tidy of their own.)
+		const RsrcID rsrcID = authorRow   ? kKCMTrackAuthorRowRsrcID
+							  : bang        ? (bangChild ? kKCMStoryBangChangeRowRsrcID : kKCMStoryBangRowRsrcID)
 							  : !isChange   ? kKCMStoryRowRsrcID
 							  : (lines >= 3) ? kKCMStoryTallRowRsrcID
 							  : (lines == 2) ? kKCMStoryRubyRowRsrcID
@@ -363,12 +374,18 @@ public:
 		// ★THE "!" ROWS ANSWER THEIR OWN IDs (2026-09-19) - a plain row handed one of their widgets
 		//   would show a red "!" it has no business showing, and the other way round. Asked first,
 		//   before the Resources shortcut below: a "!" story row is a story row in every other respect.
+		// ★A Track author row answers its own ID too (2026-10-05) - for the same reason as the "!" rows below.
+		if (nodeID != nil && nodeID->IsAuthorRow())
+			return kKCMTrackAuthorRowWidgetID;
+
 		bool16 bangChild = kFalse;
 		if (this->IsBangNode(nodeID, bangChild))
 			return bangChild ? kKCMStoryBangChangeRowWidgetID : kKCMStoryBangRowWidgetID;
 
 		if (nodeID == nil || !nodeID->IsChangeRow() || KCMListShowsResources())
 			return kKCMStoryRowWidgetID;
+
+		// (⛔The red-"=" row answered its own ID from 2026-10-24 evening to 2026-10-26 - CreateWidgetForNode says why it went.)
 
 		const int32 lines = LineCountOfNode(node);
 		return (lines >= 3) ? kKCMStoryTallRowWidgetID
@@ -403,6 +420,9 @@ public:
 			return kFalse;
 		return ((row.fKinds & kKCMStoryKindRefused) != 0) ? kTrue : kFalse;
 	}
+
+	// (⛔IsAppliedNode - "a one-line '=' row Apply This Change put in, against an import's copy" - chose the red, then amber,
+	//  "=" row's resource from 2026-10-24 evening to 2026-10-26, when the author took the colour back: CreateWidgetForNode.)
 
 	// Answer both size questions rather than letting the base class build a widget and measure it.
 	// A row is as wide as the list, which has no columns to add up and no horizontal scroll bar.
@@ -500,6 +520,7 @@ public:
 
 		TreeNodePtr<KCMStoryNodeID> nodeID(node);
 		const bool16 showsResources = KCMListShowsResources();
+		const bool16 showsPixelNote = KCMListShowsPixelNote();	// the Pixel mode's one row (2026-10-11)
 		const bool16 isChangeNode = (nodeID != nil && nodeID->IsChangeRow()) ? kTrue : kFalse;
 
 		// ***** THE COLUMNS ARE LAID OUT HERE, ONCE, FOR EVERY ROW. *****
@@ -523,7 +544,8 @@ public:
 			KCMApplyListColumnWidths(widgetList->FindWidget(kKCMStoryRowUIDWidgetID),
 									 widgetList->FindWidget(kKCMStoryRowTextWidgetID),
 									 widgetList->FindWidget(kKCMStoryRowKindWidgetID),
-									 (showsResources && isChangeNode) ? kKCMAttrNameIndent : 0);
+									 (showsResources && isChangeNode) ? kKCMAttrNameIndent
+									 : (KCMTrackStoryRow(nodeID) ? kKCMAttrNameIndent : 0));	// a story under a Track author steps in too (2026-10-05)
 
 			// ★★★AND WHERE THE ELLIPSIS FALLS, on the same schedule and for the same reason
 			//   (2026-09-10, the user's call: "when the panel is narrowed it shortens from both
@@ -539,8 +561,8 @@ public:
 			//     value, not nothing).
 			InterfacePtr<IStaticTextAttributes> textAttrs(
 				widgetList->FindWidget(kKCMStoryRowTextWidgetID), UseDefaultIID());
-			if (textAttrs != nil)
-				textAttrs->SetEllipsizeStyle(showsResources ? kEllipsizeEnd : kEllipsizeMiddle);
+			if (textAttrs != nil)	// the Pixel mode's note is a sentence, read from the left like a definition (2026-10-11)
+				textAttrs->SetEllipsizeStyle((showsResources || showsPixelNote) ? kEllipsizeEnd : kEllipsizeMiddle);
 		}
 
 		// ★★THE RESOURCES MODE OWNS BOTH OF ITS LEVELS AND IS ASKED FIRST (2026-09-09). A definition
@@ -557,9 +579,56 @@ public:
 			return this->ApplyResourceRow((nodeID != nil) ? nodeID->GetRow() : -1, widgetList);
 		}
 
+		// ★★THE PIXEL MODE'S ONE ROW IS A NOTE (2026-10-11, the user: "the Pixel comparison compares pixels and
+		//   nothing else"). The Pixel mode reads no story now, so the row the adapter gives it while comparing says
+		//   so - left blank like the Story mode's empty row, it would read as "no story changed".
+		//   ⚠ASKED BEFORE THE STORY MODEL, like the Resources branch above, and for a reason of its own: for the
+		//    length of a Before/After report the list holds rows the report built for itself (KCMReport.cpp), and
+		//    the model would hand one of them to this row.
+		//   ⚠All three cells written, blanks included - the recycling rule every branch keeps.
+		//   ★AND THE NOTE RUNS FROM THE LIST'S LEFT EDGE: in the wide column alone a panel of the default width showed
+		//    "Pixel mo..." (measured that day, 224px). The ID and the change cells are blank on this row, so they are
+		//    shut to nothing rather than left under the text. ⚠Safe for a recycled widget: every apply lays all three
+		//    cells out again first (KCMApplyListColumnWidths, above), so a story or definition row comes back whole.
+		if (showsPixelNote)
+		{
+			IControlView* const uidCell  = widgetList->FindWidget(kKCMStoryRowUIDWidgetID);
+			IControlView* const textCell = widgetList->FindWidget(kKCMStoryRowTextWidgetID);
+			IControlView* const kindCell = widgetList->FindWidget(kKCMStoryRowKindWidgetID);
+			if (uidCell != nil && textCell != nil)
+			{
+				PMRect text = textCell->GetFrame();
+				text.Left(uidCell->GetFrame().Left());
+				textCell->SetFrame(text);
+			}
+			if (uidCell != nil)
+			{
+				PMRect shut = uidCell->GetFrame();
+				shut.Right(shut.Left());
+				uidCell->SetFrame(shut);
+			}
+			if (kindCell != nil)
+			{
+				PMRect shut = kindCell->GetFrame();
+				shut.Right(shut.Left());
+				kindCell->SetFrame(shut);
+			}
+
+			PMString blank;
+			blank.SetTranslatable(kFalse);
+			this->SetNodeName(widgetList, blank, kKCMStoryRowUIDWidgetID);
+			this->SetNodeName(widgetList, Translated(kKCMStoryPixelNoteKey), kKCMStoryRowTextWidgetID);
+			this->SetNodeName(widgetList, blank, kKCMStoryRowKindWidgetID);
+			return kTrue;
+		}
+
 		// ★A CHANGE ROW IS WRITTEN BY ITS OWN BRANCH AND RETURNS. Its three cells hold different
 		//   things from a story row's, and its widget came from a different resource, so nothing
 		//   below applies to it.
+		// ★A Track author row (2026-10-05) is written by its own branch and returns, like a change row.
+		if (nodeID != nil && nodeID->IsAuthorRow())
+			return this->ApplyTrackAuthorRow(nodeID->GetAuthor(), widgetList);
+
 		if (isChangeNode)
 			return this->ApplyChangeRow(*nodeID, widgetList);
 
@@ -600,10 +669,29 @@ public:
 			//   (fTextCompared), and what they found is the children's. Asking the row how many
 			//   children it has is the same question the tree itself asks to decide whether to
 			//   draw a triangle, so the two can never disagree.
-			const bool16 sameKind = row.fTextCompared
-				&& (Utils<IKCMStoryEditsFacade>()->GetChangeCount(nodeID->GetRow()) == 0);
-			kinds = KindLabel(row.fKinds, sameKind, row.fAttrKind, row.fAttrKindCount,
-							  row.fHasTextChange);
+			// ★★AND A ROW WHOSE EVERY CHANGE IS "=" READS "=" TOO (2026-10-26, the author: "after Apply, when every row of the
+			//   Story is =, make the Story = as well"): the document reads as the Source there - put in, matched or restored.
+			//   One "!" (what could not go in) or one live change keeps the row's own sign.
+			const int32 changeCount = Utils<IKCMStoryEditsFacade>()->GetChangeCount(nodeID->GetRow());
+			bool16 everyChangeEqual = (changeCount > 0) ? kTrue : kFalse;
+			for (int32 k = 0; k < changeCount && everyChangeEqual; ++k)
+			{
+				IKCMStoryEditsFacade::Change child;
+				if (!Utils<IKCMStoryEditsFacade>()->GetChange(nodeID->GetRow(), k, child)
+					|| child.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused || !child.fReplaced)
+					everyChangeEqual = kFalse;
+			}
+			const bool16 sameKind = row.fTextCompared && (changeCount == 0 || everyChangeEqual);
+			// ★In the Track mode the Δ column says how many of this author's changes the story holds (2026-10-05).
+			if (nodeID->GetAuthor() >= 0)
+			{
+				kinds.Clear();
+				kinds.AppendNumber(Utils<IKCMStoryEditsFacade>()->GetChangeCount(nodeID->GetRow()));
+				kinds.SetTranslatable(kFalse);
+			}
+			else
+				kinds = KindLabel(row.fKinds, sameKind, row.fAttrKind, row.fAttrKindCount,
+								  row.fHasTextChange);
 		}
 		else if (Utils<IKCMStoryEditsFacade>()->GetRowCount() == 0)
 		{
@@ -880,11 +968,52 @@ private:
 		pieces through IKCMStoryCellData instead. The sign's cell is a stock static text and
 		still goes through SetNodeName.
 	*/
+	/** Is this a story row under a Track author (2026-10-05)? Its name steps in 12px, the way a Resources child's
+		does - the mark that it hangs under the author above it. */
+	static bool16 KCMTrackStoryRow(const KCMStoryNodeID* nodeID)
+	{
+		return (nodeID != nil && !nodeID->IsChangeRow() && !nodeID->IsAuthorRow() && nodeID->GetAuthor() >= 0) ? kTrue : kFalse;
+	}
+
+	/** One Track AUTHOR row (2026-10-05): the colour square, the name, and how many changes are theirs.
+		⚠All three cells written on every apply - the recycling rule every branch keeps. */
+	bool16 ApplyTrackAuthorRow(int32 author, IPanelControlData* widgetList) const
+	{
+		IKCMStoryEditsFacade::TrackAuthor au;
+		const bool16 have = Utils<IKCMStoryEditsFacade>()->GetTrackAuthor(author, au);
+		// ★THE NAME GOES IN THE ID CELL, AFTER THE SQUARE; the Story cell stays empty (the user, 2026-10-05).
+		PMString name = have ? KCMTrackAuthorName(au.fName) : PMString();
+		name.SetTranslatable(kFalse);
+		InterfacePtr<IKCMStoryCellData> chip(widgetList->FindWidget(kKCMStoryRowUIDWidgetID), UseDefaultIID());
+		if (chip != nil)
+		{
+			chip->SetSegments(PMString(), name, PMString(), PMString(), 1, 0, KCMStoryLayers(), kFalse);
+			chip->SetTrackLook(have, KCMTrackColour(au.fHasColour, au.fR, au.fG, au.fB), PMString());
+			InterfacePtr<IControlView> chipView(chip, UseDefaultIID());
+			if (chipView != nil)
+				chipView->Invalidate();
+		}
+		PMString count;
+		if (have)
+			count.AppendNumber(au.fChangeCount);
+		count.SetTranslatable(kFalse);
+		PMString empty;
+		empty.SetTranslatable(kFalse);
+		this->SetNodeName(widgetList, empty, kKCMStoryRowTextWidgetID);
+		this->SetNodeName(widgetList, count, kKCMStoryRowKindWidgetID);
+		return kTrue;
+	}
+
 	bool16 ApplyChangeRow(const KCMStoryNodeID& nodeID, IPanelControlData* widgetList) const
 	{
 		IKCMStoryEditsFacade::Change change;
 		const bool16 have = Utils<IKCMStoryEditsFacade>()->GetChange(
 								nodeID.GetRow(), nodeID.GetChange(), change);
+		// The Track mode's who-and-what of this change (2026-10-05); kFalse in every other mode.
+		IKCMStoryEditsFacade::TrackChange track;
+		const bool16 isTrack = have && Utils<IKCMStoryEditsFacade>()->GetTrackChange(nodeID.GetRow(), nodeID.GetChange(), track);
+		// ★The rows are PROPOSALS against an import's copy (2026-10-24, the import-as-Source road): what the document would become.
+		const bool16 isImport = (have && !isTrack && Utils<IKCMStoryEditsFacade>()->IsImportSource()) ? kTrue : kFalse;
 
 		// ★A "!" CHILD IS WRITTEN BY ITS OWN BRANCH AND RETURNS (2026-09-19). Its widget is the
 		//   bang change row's, whose text cell is a STOCK static text - so there is no
@@ -932,10 +1061,11 @@ private:
 			//   literal - MSVC would convert a narrow "≠" to the system code page and the cell
 			//   would show whatever that came to (memory cpp-japanese-needs-bom, and the same
 			//   reason KCMLoc.h keeps its Japanese in u"..." and calls SetXString).
-			// ★★THE FOURTH SIGN, "=", IS BACK (2026-09-24, stage 2 C): a change the reader TOOK BACK - "Reject This
-			//   Import Change" or "Restore from Source" - stays on the list, and "=" is read straight off the sign
-			//   it replaces: the two sides were not equal here, and now they are (the Source's state). Its menu
-			//   offers "Redo from Word". (It stood for a change taken IN from 2026-09-15 to 2026-09-21.)
+			// ★★THE FOURTH SIGN, "=", IS BACK (2026-09-24, stage 2 C): a change KCM made the Source's - "Restore from
+			//   Source", "Match the Source" or Apply This Change - stays on the list, and "=" is read straight off the
+			//   sign it replaces: the two sides were not equal here, and now they are (the Source's state). Where a copy
+			//   was kept its menu offers Restore from Copy. (It stood for a change taken IN from 2026-09-15 to
+			//   2026-09-21, and for the retired "Reject This Import Change" too until 2026-10-25.)
 			switch (change.fKind)
 			{
 				case 1:  kind = PMString("+"); break;	// insert
@@ -947,8 +1077,22 @@ private:
 					break;
 				}
 			}
+			// ★★AGAINST AN IMPORT'S COPY THE SIGN SAYS WHAT THE DOCUMENT WILL BECOME (2026-10-24, the import-as-Source
+			//   road - design section 4): the diff runs from the Source (the files) to the Target (the document), so what
+			//   only the document has ("+" there) is what the files take away, and the other way round. A replacement is
+			//   ≠ either way, and "=" (put in) stays "=".
+			if (isImport && !change.fReplaced)
+			{
+				if (change.fKind == 1)
+					kind = PMString("-");
+				else if (change.fKind == 2)
+					kind = PMString("+");
+			}
 			if (change.fReplaced)
 				kind = PMString("=");					// ASCII: no SetXString needed
+			// ★THE TRACK MODE'S SIGN (2026-10-05): its own four - a move is "»" (design 3-1).
+			if (isTrack)
+				kind = KCMTrackKindSign(track.fKind);
 			kind.SetTranslatable(kFalse);
 
 			// ★Already the right side for its kind, already cut to length, and already SPLIT where
@@ -1036,7 +1180,32 @@ private:
 			//   paragraph": the "Text -" row was the one that showed the narrower rule was not enough.
 			//   A recycled widget with no row behind it keeps kFalse and stays blank.
 			const bool16 barWhenEmpty = have ? kTrue : kFalse;
-			cellData->SetSegments(textPre, textMid, textPost, ruby, lineCount, attrKind, layers, barWhenEmpty);
+			// ★★"THIS IS WHAT IT WILL BECOME" (2026-10-24, the import-as-Source road - the user: "the panel shows how it will be
+			//   changed"): a one-line words row against an import's copy is drawn in the Track mode's look - the document's
+			//   words now, struck through, then the words the files put there - from the two sides the row already carries
+			//   (fText = the document, fOtherText = the files). Rows of two lines or more (a ruby, a mark, a layer) keep their
+			//   own drawing, which shows the document's side; "=" rows (put in already) show the words as they now stand.
+			const bool16 proposalLook = (isImport && !change.fReplaced && lineCount == 1
+										 && change.fWhat == IKCMStoryEditsFacade::Change::kWhatText) ? kTrue : kFalse;
+			// ★A "=" ROW SHOWS THE WORDS THAT WENT IN (measured 2026-10-24: it showed the words they replaced, which the
+			//   document no longer holds) - the files' side, drawn plain.
+			const bool16 appliedLook = (isImport && change.fReplaced && lineCount == 1
+										&& change.fWhat == IKCMStoryEditsFacade::Change::kWhatText) ? kTrue : kFalse;
+			if (proposalLook || appliedLook)
+			{
+				PMString incoming = change.fOtherText;
+				incoming.SetTranslatable(kFalse);
+				cellData->SetSegments(textPre, incoming, textPost, ruby, lineCount, attrKind, layers, barWhenEmpty);
+			}
+			else
+				cellData->SetSegments(textPre, textMid, textPost, ruby, lineCount, attrKind, layers, barWhenEmpty);
+			// ★THE TRACK LOOK, OR NONE - written every time (the recycling rule), after the segments.
+			if (isTrack)
+				cellData->SetTrackLook(kTrue, KCMTrackColour(track.fHasColour, track.fR, track.fG, track.fB), change.fOtherText);
+			else if (proposalLook)
+				cellData->SetTrackLook(kTrue, RealAGMColor(0.0, 0.0, 0.0), textMid);
+			else
+				cellData->SetTrackLook(kFalse, RealAGMColor(0.0, 0.0, 0.0), PMString());
 			// ★Writing the strings does not ask for a redraw - SetNodeName does that for a stock
 			//   cell, and this one has no such courtesy. Without it a recycled row can keep the
 			//   picture the row it used to be left behind. (KBS's widget manager makes the same
@@ -1065,6 +1234,8 @@ private:
 		if (have)
 			idText = KCMChangeIdLabel(change.fAttrKind, change.fPlace, change.fWholeParagraph,
 									  change.fWhat, change.fOverset);
+		if (isTrack && track.fHidden)
+			idText = PMString("Hidden");		// in hidden conditional text (design 3-2, 2026-10-05)
 		idText.SetTranslatable(kFalse);
 		this->SetNodeName(widgetList, idText, kKCMStoryRowUIDWidgetID);
 
@@ -1146,6 +1317,17 @@ bool16 KCMListShowsResources()
 		return kFalse;
 
 	return (compare->GetCompareMode() == kKCMModeResources) ? kTrue : kFalse;
+}
+
+bool16 KCMListShowsPixelNote()
+{
+	// ⚠Guarded the same way as KCMListShowsResources above: with the model half absent there is no
+	//   comparison, so there is no note to show either.
+	Utils<IKCMCompareFacade> compare;
+	if (!compare)
+		return kFalse;
+
+	return (compare->GetCompareMode() == kKCMModePixel) ? kTrue : kFalse;
 }
 
 //----------------------------------------------------------------------------------------
@@ -1278,7 +1460,11 @@ void KCMRecomputeListLeftColumnWidth()
 			PMString uid;
 			uid.SetTranslatable(kFalse);
 			uid.AppendNumber(static_cast<int32>(row.fStoryUID.Get()));
-			const PMReal w = StringUtils::PMMeasureString(uid, font, kFalse).X();
+			// ★A story row under a Track author has its UID cell kKCMAttrNameIndent further in (ApplyDataToWidget), so it
+			//   is measured with that indent - the Resources child's rule below (re-check 2026-10-05: it was measured
+			//   without, and a long UID lost its last digit to the narrower cell).
+			const PMReal indent = (stories->GetTrackAuthorOfRow(i) >= 0) ? PMReal(kKCMAttrNameIndent) : PMReal(0.0);
+			const PMReal w = StringUtils::PMMeasureString(uid, font, kFalse).X() + indent;
 			if (w > widestUid)
 				widestUid = w;
 
@@ -1295,6 +1481,20 @@ void KCMRecomputeListLeftColumnWidth()
 				if (lw > widestUid)
 					widestUid = lw;
 			}
+		}
+
+		// ★A Track author row puts its square and its name in this column (2026-10-05) - measured the way the cell draws
+		//   them (KCMTrackLabels.h), at the row's height.
+		const int32 authors = stories->GetTrackAuthorCount();
+		for (int32 a = 0; a < authors; ++a)
+		{
+			IKCMStoryEditsFacade::TrackAuthor au;
+			if (!stories->GetTrackAuthor(a, au))
+				continue;
+			const PMReal w = PMReal(kKCMTrackChipLeft) + KCMTrackChipSide(PMReal(kKCMStoryRowHeight - 2)) + PMReal(kKCMTrackChipGap)
+						   + StringUtils::PMMeasureString(KCMTrackAuthorName(au.fName), font, kFalse).X();
+			if (w > widestUid)
+				widestUid = w;
 		}
 
 		if (widestUid > PMReal(0.0))

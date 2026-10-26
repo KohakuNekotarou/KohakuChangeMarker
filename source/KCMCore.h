@@ -188,7 +188,13 @@ bool16		KCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KCMPage
 // Pass kFalse (the default) where content may differ (Start) or the exclusions may (the Ignore
 // Page Number Marker toggle). Inconsistent state (a different document pair, or no previous
 // pairing) falls back to a full comparison by itself.
-ErrorCode	KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport, bool16 allowIncremental = kFalse);
+//
+// pixelsOnly=kTrue is the Before/After report's own run (2026-10-11, KCMRunReportComparison): the
+// pages are rasterised WHATEVER THE COMPARE MODE, the mode's own work (the Story list, the
+// Resources result) is left out - the report builds both tables for itself - and the screen is
+// neither redrawn nor told, since nothing is started and nothing is to be shown.
+ErrorCode	KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport, bool16 allowIncremental = kFalse,
+								bool16 pixelsOnly = kFalse);
 
 // Redraw every view of this document, if db is not nil (nil, or a document that cannot be
 // resolved, does nothing). Shared by Clear, the print-mark toggles and the peek disarm so that
@@ -213,23 +219,28 @@ void		KCMDoDisarmMousePeek(IDataBase* db);
 // OFF.
 bool16		KCMIsArmed();
 // Rebuild the Story Edits list from what these two documents hold **now**, and reflect it in the
-// tree and the heading.
-// Two callers: the whole-document comparison (KCMDoMarkChangesDoc) and "Refresh Page Comparison".
-// The second one does not go through KCMDoMarkChangesDoc, so without sharing this the list would
-// be left stale after a refresh and only after a refresh. nil is ignored silently.
+// tree and the heading. ★The Pixel and the Resources modes keep NO list (2026-10-11): there it
+// only empties it.
+// One caller: the whole-document comparison (KCMDoMarkChangesDoc). ("Refresh Page Comparison" was
+// the second until the Pixel mode - the only mode it works in - stopped keeping a list.) nil is
+// ignored silently.
 // @return kFalse when the Story comparison inside it was CANCELLED at its progress bar (the list
 //   is then half built; the caller goes back to Stop, which clears it). kTrue otherwise, and
-//   always in the Pixel mode, which runs no story diff.
+//   always in the Pixel and the Resources modes, which read no story.
 bool16		KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB);
+// Build the Story mode's rows into the Story Edits list - counters, then the text diff, then the
+// rows where only formatting moved dropped - WITHOUT telling the panel or the Undo follower.
+// Two callers, so the two lists cannot differ: KCMRebuildStoryEdits in the Story mode, and the
+// Before/After report, which builds its Story table this way in the modes that keep no list.
+// @return kFalse when the diff was CANCELLED at its progress bar (the list is then half built and
+//   the caller empties it).
+bool16		KCMBuildStoryRowsByDiff(IDataBase* targetDB, IDataBase* sourceDB);
 
 IDataBase*	KCMArmedTargetDB();
 IDataBase*	KCMArmedSourceDB();
 
-// Task Start (2026-09-12): the armed comparison keeps its Target and its results and LOSES its
-// Source - the rehydrated copy is about to be closed. Clears the armed Source, the drawing side's
-// sSrcDB and its Source-page map, and the older-version image cache, so that the close sweep
-// finds no pointer of ours at the copy. The body is in KCMPeek.cpp with the other armed state.
-void		KCMDetachArmedSource();
+// (KCMDetachArmedSource - a rehydrated Task Start copy leaving the armed state - went on
+//  2026-09-27, dead since the rehydration went on 2026-09-21. KCMPeek.cpp keeps its one lesson.)
 
 // kTrue when a comparison is running AND db is one of the two documents in it.
 //

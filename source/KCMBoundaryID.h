@@ -154,7 +154,7 @@ DECLARE_PMID(kMessageIDSpace, kKCMComparisonDocsClosedMessage, kKCMPrefix + 6)	/
 //   front too): making a document active goes through IDocumentPresentation, which is the UI's world
 //   and which no model-side code may reach - the guide names that shape "crashes or corrupt
 //   documents", and this family of plug-ins has paid for it six times. The import's two roads (the
-//   flyout item and app.kcmImportStoryText) meet in the MODEL, so the model says this and the UI does
+//   flyout item and app.kcmImportToSource) meet in the MODEL, so the model says this and the UI does
 //   the work. Nobody listening means nothing happens, which is exactly right when only the model half
 //   is loaded. No payload, and no command: MakeActive changes nothing in the document and raises no
 //   undo step.
@@ -185,10 +185,16 @@ enum KCMCompareMode
 {
 	kKCMModePixel = 0,	// the default: rasterize the pages and compare pixels (KCM's original comparison)
 	kKCMModeStory = 1,		// compare the stories' text, paragraph by paragraph and then character by character
-	kKCMModeResources = 2	// compare the DEFINITIONS - styles, swatches, layers - by exporting each document as
+	kKCMModeResources = 2,	// compare the DEFINITIONS - styles, swatches, layers - by exporting each document as
 							// XML and pairing the definitions by name. It is the only mode that sees a change
 							// to something nobody has applied: such a change cannot move a pixel and does not
 							// touch a word, so neither of the other two can report it.
+	kKCMModeTrack = 3		// ★TRACK CHANGES (2026-10-05): the Target's own tracked changes stand in for the older version -
+							// every author's records, one row each, under the author
+							// (docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md). The Source is the
+							// copy "Compare with Tracked Changes..." saved with every change rejected, there for the peek
+							// and the Source window. ⚠The VALUE 3 was Import's, retired 2026-09-20 - the note below says
+							// why it was free (the settings file never wrote it).
 
 	// ⛔**THERE WAS A FOURTH, `kKCMModeImport = 3`, AND IT IS GONE** (2026-09-20, with the
 	//   Import-mode code it belonged to). It did not answer "what is being compared" like these
@@ -199,6 +205,7 @@ enum KCMCompareMode
 	//   ⚠The VALUE 3 is free again as far as anything saved goes: the settings file never wrote
 	//    this mode (KCMPanelState spells out the three it knows and treats anything else as "leave
 	//    it alone"), which was measured before the removal.
+	//   ★2026-10-05: reused by kKCMModeTrack.
 };
 
 // ⚠★★**EVERYTHING BELOW IS HIDDEN FROM ODFRC.** This header is included by KCM.fr, and the
@@ -208,13 +215,26 @@ enum KCMCompareMode
 
 /** Does this mode show the Story Edits rows - the paragraph and character comparison?
 
-	★★★**ONE QUESTION, ONE PLACE** - and it stays a function although only one mode answers
-	yes today. ⚠When a fourth mode shared this answer (the Import mode, 2026-09-15), TWELVE places
+	★★★**ONE QUESTION, ONE PLACE** - and it stays a function; Story and Track answer yes
+	(2026-10-05). ⚠When a fourth mode shared this answer (the Import mode, 2026-09-15), TWELVE places
 	asked `== kKCMModeStory` by hand and five of them decided real behaviour; the first import
 	reported nothing at all because ONE of those five - the line that runs the text diff - had not
 	been taught the new mode. **A question spelled out at each call site is a question that will be
-	answered differently at one of them.** */
+	answered differently at one of them.**
+	★★AND IT DECIDES WHETHER A MODE KEEPS A STORY LIST AT ALL (2026-10-11): KCMRebuildStoryEdits empties the
+	list in every mode that answers no, so the Pixel and the Resources modes read no story, and the
+	Before/After report builds its Story table for itself there (KCMReport.cpp, StoryDetailLoan). */
 inline bool16 KCMModeUsesStoryRows(KCMCompareMode mode)
+{
+	return (mode == kKCMModeStory || mode == kKCMModeTrack) ? kTrue : kFalse;
+}
+
+/** Are the Story Edits rows built by the TEXT DIFF against the Source? Story only.
+	★THE OTHER HALF OF WHAT KCMModeUsesStoryRows USED TO ANSWER ALONE (2026-10-05): the Track mode shows
+	the same rows but builds them from the Target's tracked-change records. A caller that runs the diff, or
+	offers what only a diffed row can do (the change row's menu), asks THIS; one that walks, marks or
+	refreshes rows asks KCMModeUsesStoryRows. */
+inline bool16 KCMModeDiffsStoryText(KCMCompareMode mode)
 {
 	return (mode == kKCMModeStory) ? kTrue : kFalse;
 }

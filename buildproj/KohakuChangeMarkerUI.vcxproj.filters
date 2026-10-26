@@ -57,6 +57,12 @@
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryBangView.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMTrackLabels.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMTrackChipView.cpp">
+         <Filter>Source Files</Filter>
+      </ClCompile>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStatusTextView.cpp">
          <Filter>Source Files</Filter>
       </ClCompile>
@@ -207,6 +213,9 @@
          <Filter>Header Files</Filter>
       </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryTree.h">
+         <Filter>Header Files</Filter>
+      </ClInclude>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMTrackLabels.h">
          <Filter>Header Files</Filter>
       </ClInclude>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryNodeID.h">

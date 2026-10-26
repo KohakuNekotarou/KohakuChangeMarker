@@ -602,6 +602,53 @@ bool16 KCMTextDiff::DiffInPieces(const std::vector<int32>& a, const std::vector<
 	return kTrue;
 }
 
+/* DiffCharacters
+*/
+bool16 KCMTextDiff::DiffCharacters(const std::vector<int32>& a, const std::vector<int32>& aMarks,
+								   const std::vector<int32>& b, const std::vector<int32>& bMarks,
+								   std::vector<Change>& changes, int32 doNotSwallow, bool16 widenWords)
+{
+	changes.clear();
+	if (aMarks.size() != bMarks.size())
+		return kFalse;
+	int32 aFrom = 0;
+	int32 bFrom = 0;
+	for (size_t k = 0; k <= aMarks.size(); ++k)
+	{
+		const int32 aTo = (k < aMarks.size()) ? aMarks[k] : static_cast<int32>(a.size());
+		const int32 bTo = (k < bMarks.size()) ? bMarks[k] : static_cast<int32>(b.size());
+		if (aTo < aFrom || bTo < bFrom || aTo > static_cast<int32>(a.size()) || bTo > static_cast<int32>(b.size()))
+		{
+			changes.clear();
+			return kFalse;
+		}
+		// ★EACH STEP INSIDE THE PIECE - the merge and the slide too, not the diff alone (the header says why).
+		const std::vector<int32> pa(a.begin() + aFrom, a.begin() + aTo);
+		const std::vector<int32> pb(b.begin() + bFrom, b.begin() + bTo);
+		std::vector<Change> piece;
+		if (!Diff(pa, pb, piece))
+		{
+			changes.clear();
+			return kFalse;
+		}
+		if (!piece.empty())
+		{
+			MergeNearbyChanges(piece, &pa, doNotSwallow);
+			AlignChangeBoundaries(pa, pb, piece, widenWords);
+		}
+		for (size_t c = 0; c < piece.size(); ++c)
+		{
+			Change x = piece[c];
+			x.aStart += aFrom;
+			x.bStart += bFrom;
+			changes.push_back(x);
+		}
+		aFrom = aTo;
+		bFrom = bTo;
+	}
+	return kTrue;
+}
+
 /* MergeNearbyChanges
    See the header for where the rule comes from and why it is not applied to paragraphs.
 

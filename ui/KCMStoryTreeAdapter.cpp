@@ -12,6 +12,10 @@
 //  hierarchy, and the pixel mode simply never grows a branch: nothing fills a row's fChanges
 //  there, so GetChangeCount answers 0 and every story row is a leaf. The list looks and behaves
 //  exactly as it always has.
+//  ⛔★★SINCE 2026-10-11 THE PIXEL MODE HAS NO STORY ROWS AT ALL (the user: "the Pixel comparison
+//  compares pixels and nothing else"). Its list is one note while it compares, answered by mode
+//  before the story model is asked (KCMListShowsPixelNote, KCMStoryTree.h); the paragraph above is
+//  how the tree came to have two levels, not what the Pixel mode shows now.
 //
 //  ⚠THE ALTERNATIVE - two trees, switched by mode - WAS REJECTED (user's call). It would have
 //  meant two row templates, two widget managers and two click handlers, i.e. the same judgements
@@ -58,10 +62,11 @@
 #include "IKCMCompareFacade.h"	// IsArmed - is a comparison running at all (Facade since 2026-08-13, Task 11)
 #include "IKCMStoryEditsFacade.h"	// GetRowCount / GetChangeCount (Facade since 2026-08-13, Task 14)
 #include "IKCMResourcesFacade.h"	// GetChangeCount - the rows while the Resources mode is on
-#include "KCMStoryTree.h"			// KCMListShowsResources - the one place the list asks the mode
+#include "KCMStoryTree.h"			// KCMListShowsResources / KCMListShowsPixelNote - the one place the list asks the mode
+#include "KCMBoundaryID.h"			// kKCMModeTrack - the root holds authors in that mode (2026-10-05)
 
 /** Hierarchy adapter for the Story Edits list: hidden root -> one node per changed story ->
-	one node per difference inside it (none at all in the pixel mode).
+	one node per difference inside it. (The Pixel mode: one note row and nothing else, 2026-10-11.)
 */
 class KCMStoryTreeAdapter : public CPMUnknown<ITreeViewHierarchyAdapter>
 {
@@ -83,6 +88,13 @@ public:
 		if (nodeID->IsChangeRow())
 			return KCMStoryNodeID::CreateStory(nodeID->GetRow());
 
+		if (nodeID->IsAuthorRow())
+			return KCMStoryNodeID::CreateRoot();
+
+		// ★A story row hangs under its author in the Track mode (2026-10-05), under the root otherwise.
+		if (nodeID->GetAuthor() >= 0)
+			return KCMStoryNodeID::CreateAuthor(nodeID->GetAuthor());
+
 		return KCMStoryNodeID::CreateRoot();
 	}
 
@@ -91,6 +103,17 @@ public:
 		TreeNodePtr<KCMStoryNodeID> nodeID(node);
 		if (nodeID == nil || nodeID->IsChangeRow())
 			return 0;					// a change is a leaf
+
+		// ★★THE PIXEL MODE'S LIST IS ONE NOTE AND NOTHING ELSE (2026-10-11, the user: "the Pixel comparison
+		//   compares pixels and nothing else"): one row under the root while a comparison runs - the widget
+		//   manager writes what it says - and no children anywhere. ⚠Asked before the story model is, for the
+		//   reason KCMListShowsPixelNote gives: a Before/After report's own rows stand in the model for the
+		//   length of the report, and they are not this mode's to show.
+		if (KCMListShowsPixelNote())
+		{
+			Utils<IKCMCompareFacade> compare;
+			return (nodeID->IsRoot() && compare && compare->IsArmed()) ? 1 : 0;
+		}
 
 		// ★★A DEFINITION'S CHILDREN ARE THE ATTRIBUTES THAT DIFFER (2026-09-09, the user's request:
 		//   "give the result rows children ... PointSize in the Kind part and the number in the
@@ -125,8 +148,12 @@ public:
 				// ⚠GUARDED THE SAME WAY THE BRANCH ABOVE IS. That one takes a Utils object and tests
 				//  it; this one used to dereference straight through, and the two are eleven lines
 				//  apart in the same function ([[utils-boss-facade-access]]).
+				// ★★ONLY WHILE A COMPARISON RUNS (2026-10-11): the Before/After report is made with
+				//   nothing started and builds the Resources result for itself, and the result tells the
+				//   panel when it is built - so a stopped panel would have shown the report's definitions
+				//   until it gave them back. Stopped, there is otherwise never a result (Stop clears it).
 				Utils<IKCMResourcesFacade> resources;
-				const int32 defs = resources ? resources->GetChangeCount() : 0;
+				const int32 defs = (resources && Utils<IKCMCompareFacade>()->IsArmed()) ? resources->GetChangeCount() : 0;
 				if (defs > 0)
 					return defs;
 
@@ -136,7 +163,21 @@ public:
 				return Utils<IKCMCompareFacade>()->IsArmed() ? 1 : 0;
 			}
 
-			const int32 rows = Utils<IKCMStoryEditsFacade>()->GetRowCount();
+			// ★THE TRACK MODE'S ROOT HOLDS THE AUTHORS (2026-10-05); the placeholder rule is the same as below.
+			if (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeTrack)
+			{
+				const int32 authors = Utils<IKCMStoryEditsFacade>()->GetTrackAuthorCount();
+				if (authors > 0)
+					return authors;
+				return Utils<IKCMCompareFacade>()->IsArmed() ? 1 : 0;
+			}
+
+			// ★★ONLY WHILE A COMPARISON RUNS (2026-10-11), for the reason the Resources branch above gives:
+			//   the Before/After report, made with nothing started, builds the Story mode's rows for itself
+			//   and they stand in the model for the length of the report - a rebuild meanwhile (the
+			//   Resources result tells the panel when it gives back) would have listed them under a
+			//   stopped panel. Stopped, the list is otherwise always empty (Stop empties it).
+			const int32 rows = Utils<IKCMCompareFacade>()->IsArmed() ? Utils<IKCMStoryEditsFacade>()->GetRowCount() : 0;
 			if (rows > 0)
 				return rows;
 
@@ -147,11 +188,18 @@ public:
 			return Utils<IKCMCompareFacade>()->IsArmed() ? 1 : 0;
 		}
 
-		// ★A story row's children are its differences - and there are none in the pixel mode,
-		//   which is what keeps that mode's list one level deep.
+		// ★A story row's children are its differences. (The Pixel mode never reaches here since
+		//   2026-10-11 - its one row is answered above; until then its rows were leaves because
+		//   nothing filled their differences.)
 		//   ⚠The placeholder row asks this too (row 0 with no model behind it); the Facade
 		//   bounds-checks and answers 0, so the placeholder is a leaf like any story with no
 		//   located differences.
+		// ★A Track author's children are their story rows (2026-10-05).
+		if (nodeID->IsAuthorRow())
+		{
+			IKCMStoryEditsFacade::TrackAuthor au;
+			return Utils<IKCMStoryEditsFacade>()->GetTrackAuthor(nodeID->GetAuthor(), au) ? au.fRowCount : 0;
+		}
 		return Utils<IKCMStoryEditsFacade>()->GetChangeCount(nodeID->GetRow());
 	}
 
@@ -165,7 +213,19 @@ public:
 		{
 			if (nth >= this->GetNumChildren(node))
 				return kInvalidNodeID;
-			return KCMStoryNodeID::CreateStory(nth);
+			IKCMStoryEditsFacade::TrackAuthor au;
+			if (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeTrack
+				&& Utils<IKCMStoryEditsFacade>()->GetTrackAuthor(nth, au))
+				return KCMStoryNodeID::CreateAuthor(nth);
+			return KCMStoryNodeID::CreateStory(nth);	// (the Track mode's empty placeholder lands here too)
+		}
+
+		if (nodeID->IsAuthorRow())
+		{
+			IKCMStoryEditsFacade::TrackAuthor au;
+			if (!Utils<IKCMStoryEditsFacade>()->GetTrackAuthor(nodeID->GetAuthor(), au) || nth >= au.fRowCount)
+				return kInvalidNodeID;
+			return KCMStoryNodeID::CreateStory(au.fFirstRow + nth);
 		}
 
 		// ★Bounds-checked against GetNumChildren rather than against the facade directly, so that
@@ -187,7 +247,18 @@ public:
 		//   whole reason the node is a pair of indices rather than anything richer. The parent is
 		//   not consulted: a change row's place under its story is its change index, and a story
 		//   row's place under the root is its row index, and neither can be anything else.
-		return childID->IsChangeRow() ? childID->GetChange() : childID->GetRow();
+		if (childID->IsChangeRow())
+			return childID->GetChange();
+		if (childID->IsAuthorRow())
+			return childID->GetAuthor();
+		// ★A story row under an author is counted from that author's first row (2026-10-05, the Track mode).
+		if (childID->GetAuthor() >= 0)
+		{
+			IKCMStoryEditsFacade::TrackAuthor au;
+			if (Utils<IKCMStoryEditsFacade>()->GetTrackAuthor(childID->GetAuthor(), au))
+				return childID->GetRow() - au.fFirstRow;
+		}
+		return childID->GetRow();
 	}
 
 	virtual NodeID_rv GetGenericNodeID() const
@@ -200,6 +271,14 @@ public:
 		return kTrue;
 	}
 };
+
+/* The author of a Track row, or -1 outside the Track mode - what the node factories stamp on every node
+   (KCMStoryNodeID.h says why there). */
+int32 KCMStoryNodeAuthorOfRow(int32 row)
+{
+	Utils<IKCMStoryEditsFacade> edits;
+	return (edits && row >= 0) ? edits->GetTrackAuthorOfRow(row) : -1;
+}
 
 CREATE_PMINTERFACE(KCMStoryTreeAdapter, kKCMStoryTreeAdapterImpl)
 

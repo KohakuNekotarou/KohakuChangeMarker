@@ -43,23 +43,17 @@
 #include "KCMSkippedText.h"		// what the page does not set - deleted text and what stands in it (2026-09-24)
 #include "KCMParaText.h"
 #include "KCMTextDiff.h"		// ToCodePoints - the one walk over UTF-8 this half is allowed
+#include "KCMTextWords.h"		// PMStringOfUtf8 - a UTF-8 reason onto the status line without mojibake
+#include "KCMPdfDoc.h"			// KCMIsPdfDoc - a PDF document is refused here (2026-10-14)
+#include "IKCMCompareFacade.h"	// the refusal's words, which the UI says too
 
 namespace
 {
 
-/** The path of an IDFile as Windows spells it. (KCMReport.cpp has the same three lines; this one
-	is here rather than shared because the two files share nothing else, and a header holding one
-	helper would be a worse thing to maintain than four lines.) */
-std::wstring WidePath(const IDFile& file)
-{
-	PMString s;
-	FileUtils::IDFileToPMString(file, s);
-	int32 n = 0;
-	const UTF16TextChar* b = s.GrabUTF16Buffer(&n);
-	return (b != nil && n > 0)
-		   ? std::wstring(reinterpret_cast<const wchar_t*>(b), static_cast<size_t>(n))
-		   : std::wstring();
-}
+/* (WidePath stood here until 2026-09-27: every path this file makes went IDFile -> std::wstring ->
+   joined with L"\\" -> PMString -> IDFile again. It stays an IDFile now and is joined with
+   FileUtils::AppendPath, the SDK's own way to put a name onto a path (FileUtils.h:123-124; the
+   product's DynamicDocumentsUIUtils.cpp and the diagnostic logger do the same) - re-audit M17.) */
 
 /** The document's name, with any extension taken off - the stem of the folder's name. */
 std::wstring DocumentStem(IDataBase* db)
@@ -101,7 +95,7 @@ std::wstring DocumentStem(IDataBase* db)
 	  one of this name was made by something else, and writing into it would be the silent overwrite
 	  the stamp exists to prevent. CreateFolderIfNeeded answers kTrue for one that exists, which is
 	  why DoesFileExist is asked first. */
-bool16 MakeDatedFolder(const std::wstring& parent, const std::wstring& stem, std::wstring& outFolder)
+bool16 MakeDatedFolder(const IDFile& parent, const std::wstring& stem, IDFile& outFolder)
 {
 	wchar_t stamp[40] = { 0 };
 	{
@@ -111,17 +105,14 @@ bool16 MakeDatedFolder(const std::wstring& parent, const std::wstring& stem, std
 		::wcsftime(stamp, 40, L" %Y-%m-%d %H%M%S", &local);
 	}
 
-	std::wstring folder = parent;
-	if (!folder.empty() && folder[folder.size() - 1] != L'\\' && folder[folder.size() - 1] != L'/')
-		folder += L"\\";
-	folder += stem;
-	folder += stamp;
+	PMString leaf;
+	leaf.SetTranslatable(kFalse);
+	leaf.AppendW(reinterpret_cast<const UTF16TextChar*>(stem.c_str()));
+	leaf.AppendW(reinterpret_cast<const UTF16TextChar*>(stamp));
 
-	PMString path;
-	path.SetTranslatable(kFalse);
-	path.AppendW(reinterpret_cast<const UTF16TextChar*>(folder.c_str()));
-	const IDFile file = FileUtils::PMStringToSysFile(path);
-	if (FileUtils::DoesFileExist(file) || !FileUtils::CreateFolderIfNeeded(file))
+	IDFile folder = parent;
+	FileUtils::AppendPath(&folder, leaf);		// the separator is the SDK's business, not this file's
+	if (FileUtils::DoesFileExist(folder) || !FileUtils::CreateFolderIfNeeded(folder))
 		return kFalse;
 
 	outFolder = folder;
@@ -570,14 +561,8 @@ bool16 BuildStory(const UIDRef& storyRef, KCMStoryShape::Story& out, bool16& out
 	⚠**NO BOM, EVER.** A .docx is a zip, and three bytes in front of a zip's first signature are three
 	 bytes in front of everything its directory points at. (The retired .html spelling asked for one,
 	 and this took a `withBom` until 2026-09-24 - always kFalse since the spelling went.) */
-bool16 WriteFileBytes(const std::wstring& path, const std::string& bytes)
+bool16 WriteFileBytes(const IDFile& file, const std::string& bytes)
 {
-	PMString pathString;
-	pathString.SetTranslatable(kFalse);
-	pathString.AppendW(reinterpret_cast<const UTF16TextChar*>(path.c_str()));
-
-	const IDFile file = FileUtils::PMStringToSysFile(pathString);
-
 	InterfacePtr<IPMStream> stream(StreamUtil::CreateFileStreamWriteLazy(file, kOpenOut | kOpenTrunc));
 	if (stream == nil)
 		return kFalse;
@@ -586,17 +571,26 @@ bool16 WriteFileBytes(const std::wstring& path, const std::string& bytes)
 		stream->XferByte(reinterpret_cast<uchar*>(const_cast<char*>(bytes.c_str())),
 						 static_cast<int32>(bytes.size()));
 	}
+	// ★★THE STATE, READ AFTER Flush (2026-09-25, the Word round trip re-check, item 8). A LAZY stream opens the file at
+	//   its first write, so it cannot answer nil for a folder it may not write into - the state is the only thing that
+	//   can say so, and XferByte may only buffer, so a full disk surfaces at Flush. This counted every file as
+	//   written until today. KBS (KBSReportSave) and KESCL read it the same way.
 	stream->Flush();
+	const bool16 failed = (stream->GetStreamState() == kStreamStateFailure) ? kTrue : kFalse;
 	stream->Close();
-	return kTrue;
+	return failed ? kFalse : kTrue;
 }
 
 /** The bytes of one story, into "<folder>\<uid>.docx". */
-bool16 WriteStoryFile(const std::wstring& folder, int32 uid, const std::string& bytes)
+bool16 WriteStoryFile(const IDFile& folder, int32 uid, const std::string& bytes)
 {
-	wchar_t leaf[64] = { 0 };
-	::swprintf_s(leaf, 64, L"\\%d.docx", static_cast<int>(uid));
-	return WriteFileBytes(folder + leaf, bytes);
+	PMString leaf;
+	leaf.SetTranslatable(kFalse);
+	leaf.AppendNumber(uid);
+	leaf.Append(".docx");
+	IDFile file = folder;
+	FileUtils::AppendPath(&file, leaf);
+	return WriteFileBytes(file, bytes);
 }
 
 // (⛔DocumentNameUtf8 stood here until 2026-09-22. It read the document's name for the .docx's story
@@ -611,6 +605,22 @@ bool16 KCMStoryFromDocument(const UIDRef& storyRef, KCMStoryShape::Story& out, b
 	// The one reader, made public for the import's comparison (the header says why); BuildStory stays
 	// where the export's other helpers are.
 	return BuildStory(storyRef, out, outNoteRefsPlaced);
+}
+
+// (2026-10-25) The three a second export - Export Pages to Word, KCMPageExport.cpp - writes its files with, the same way.
+std::wstring KCMDocumentFileStem(IDataBase* db)
+{
+	return DocumentStem(db);
+}
+
+bool16 KCMMakeDatedExportFolder(const IDFile& parent, const std::wstring& stem, IDFile& outFolder)
+{
+	return MakeDatedFolder(parent, stem, outFolder);
+}
+
+bool16 KCMWriteFileBytes(const IDFile& file, const std::string& bytes)
+{
+	return WriteFileBytes(file, bytes);
 }
 
 bool16 KCMTableRefsOfStory(const UIDRef& storyRef, std::vector<UIDRef>& out)
@@ -643,9 +653,17 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 		outMessage.SetTranslatable(kFalse);
 		return kFalse;
 	}
+	// ★Not a PDF document (2026-10-14, design 3.7): its stories are KCM's - there are none of the reader's to write out.
+	if (KCMIsPdfDoc(db))
+	{
+		outMessage = kKCMPdfTargetRefusal;
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
 
-	const std::wstring parentPath = WidePath(parent);
-	if (parentPath.empty())
+	PMString parentPath;
+	FileUtils::IDFileToPMString(parent, parentPath);
+	if (parentPath.IsEmpty())
 	{
 		outMessage = "the chosen folder could not be read";
 		outMessage.SetTranslatable(kFalse);
@@ -712,8 +730,8 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 		return kFalse;
 	}
 
-	std::wstring folder;
-	if (!MakeDatedFolder(parentPath, DocumentStem(db), folder))
+	IDFile folder;
+	if (!MakeDatedFolder(parent, DocumentStem(db), folder))
 	{
 		outMessage = "the export folder could not be created";
 		outMessage.SetTranslatable(kFalse);
@@ -778,7 +796,9 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 				{
 					firstRefusal.AppendNumber(static_cast<int32>(storyRef.GetUID().Get()));
 					firstRefusal.Append(": ");
-					firstRefusal.Append(why.c_str());
+					// ⚠UTF-8 (a kenten's name can be Japanese): through SetUTF8String, not Append(c_str()), which read
+					//  the bytes in the machine's codepage (2026-09-25, the Word round trip re-check, item 7)
+					firstRefusal.Append(KCMTextWords::PMStringOfUtf8(why));
 				}
 				continue;
 			}
@@ -788,13 +808,20 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 			if (WriteStoryFile(folder, storyRef.GetUID().Get(), docx))
 				++written;
 			else
+			{
 				++refused;
+				if (firstRefusal.IsEmpty())
+				{
+					firstRefusal.AppendNumber(static_cast<int32>(storyRef.GetUID().Get()));
+					firstRefusal.Append(": the file could not be written (is the folder writable, is the disk full?)");
+				}
+			}
 		}
 	}
 
 	PMString path;
+	FileUtils::IDFileToPMString(folder, path);
 	path.SetTranslatable(kFalse);
-	path.AppendW(reinterpret_cast<const UTF16TextChar*>(folder.c_str()));
 
 	outMessage = "exported ";
 	outMessage.SetTranslatable(kFalse);

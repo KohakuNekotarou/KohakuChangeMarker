@@ -15,6 +15,10 @@
 //  the text that contains a quote. Two copies of an escape rule are two rules the day one is
 //  fixed ([[one-question-one-place]]), and the failure would be silent in the worst way: a
 //  document that saves and then reads back as something else.
+//  ⛔**ONLY THE SECOND IS LEFT** (2026-09-27): KCMPageChecks.json's writer and reader went with the
+//   private store (the removal was begun on 2026-09-07 and finished by re-audit M5 round 3, see the
+//   end of KCMPageCheck.cpp). The header stays a header of its own - the paws' label format is
+//   still two helpers the tests and the label code share - but "two places" is now one.
 //
 //  Inline in a header rather than a .cpp because these are eight lines each and have no state --
 //  and because a .cpp has to be registered in TWO vcxproj files, of which the one that matters is

@@ -692,6 +692,22 @@ bool16 KCMApplyPagesPanelTranslucency()
 	return KCMApplyFor(kKCMAlphaPages);
 }
 
+bool16 KCMPanelHasSystemKeyboard()
+{
+#ifdef WINDOWS
+	// KFC's measure (its trace beside the system's focus): while the list walked on the arrows the system's keyboard was
+	// the panel's window; after another window's title bar was clicked it was that window, with InDesign's keyboard still
+	// on the list - and the down arrow moved the page item selected in the layout.
+	const HWND focus = ::GetFocus();
+	const HWND palette = KCMQueryPaletteWindow(kKCMAlphaSelf);
+	if (focus == nullptr || palette == nullptr)
+		return kFalse;
+	return (::GetAncestor(focus, GA_ROOT) == ::GetAncestor(palette, GA_ROOT)) ? kTrue : kFalse;
+#else
+	return kTrue;
+#endif
+}
+
 bool16 KCMGetBookDialogTranslucent()
 {
 	return sTranslucentOn[kKCMAlphaBookDialog];
@@ -844,9 +860,12 @@ static uint32 KCMReapplyTimerProc(void* /*refPtr*/)
 	// turned out to be two (measured). The return value IS the reschedule, so returning a delay is
 	// how it carries on.
 	// @warning ICallbackTimer's documented contract is one-shot ("register a one time only
-	//   callback"), so this chain rides on an observation about the implementation. Even where it
-	//   does not hold, the next notification re-arms KCMScheduleReapply unconditionally, so it can
-	//   never end up never running again.
+	//   callback"), so this chain rides on an INFERENCE, not on a measurement: what was measured is the
+	//   old way failing (two rounds), and whether this way runs all eight is listed as unmeasured
+	//   (docs/ai-notes/kescm-selfreview-2026-07-29.md; until 2026-10-02 this said "an observation about
+	//   the implementation"). KT's app.ktProbe "callbacktimer" measures it. Even where it does not hold,
+	//   the next notification re-arms KCMScheduleReapply unconditionally, so it can never end up never
+	//   running again.
 	if (sReapplyLeft > 0)
 		return kKCMPanelAlphaReapplyDelayMillis;
 

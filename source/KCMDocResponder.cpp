@@ -56,6 +56,9 @@
 #include "KCMHideUnchanged.h"		// KCMResetHideUnchanged / the two hidden-side getters
 #include "KCMID.h"
 #include "KCMThreadSafety.h"		// KCMIsMainThread
+#include "KCMTaskStartClone.h"		// KCMTaskStartCloneDocClosing - a Task Start kept in memory goes with its document
+#include "KCMCopyStore.h"			// DocumentClosing - the document's copy store goes with it (2026-10-24)
+#include "KCMRecordFoci.h"			// LetDocument - the "=" records' foci on it go before it closes (2026-10-26)
 #include "KCMMarksObserver.h"		// KCMMarksEnsureObserver -- so later writes reach the store
 #include "KCMPageMarksDoc.h"		// KCMMarksSyncFromDocument -- the marks the document carries
 #include "KCMModelNotify.h"		// KCMSayStatus -- the model owns the words, the UI shows them
@@ -227,6 +230,48 @@ void KCMAfterOpenDocResponder::Respond(ISignalMgr* signalMgr)
 	msg.AppendNumber(paws);
 	msg.Append(paws == 1 ? " paw." : " paws.");
 	KCMNotifyStatus(msg);		// the PMString door; KCMSayStatus is the const char* one
+}
+
+/** KCMBeforeCloseDocResponder (2026-10-13)
+
+	A Task Start kept in memory goes with the document it was taken from, at kBeforeCloseDoc - the last moment that
+	document is certainly alive, which is what makes deleting the clone safe (KCMTaskStartClone.h).
+	★Measured 2026-10-13: a revert raises it too (BeforeRevert -> BeforeClose -> AfterClose -> AfterRevert, the
+	  document coming back on another database), and a close cancelled at the save prompt does NOT (the prompt comes
+	  first) - so the clone never goes for a close that does not happen.
+	⚠It only lets the clone go - ending a comparison that draws from it first, the one thing that cannot wait for the
+	 sweep (KCMTaskStartClone.h). Everything else this plug-in does on a close stays on kAfterCloseDoc (the top of
+	 this file says why).
+	★AND THE DOCUMENT'S COPY STORE (2026-10-24, KCMCopyStore.h): the copies Apply This Change took of its words go with
+	 it - the comparison and its records go with the document, so nothing can name them again. Here rather than at
+	 kAfterCloseDoc because a store is found by the document's database, compared while that database is certainly the
+	 document's.
+	★AND THE "=" RECORDS' FOCI (2026-10-26, KCMRecordFoci.h) for the same reason: letting one go reads its story's focus
+	 manager, which only a document that still stands can answer.
+*/
+class KCMBeforeCloseDocResponder : public CResponder
+{
+public:
+	KCMBeforeCloseDocResponder(IPMUnknown* boss) : CResponder(boss) {}
+
+	virtual void Respond(ISignalMgr* signalMgr);
+};
+
+CREATE_PMINTERFACE(KCMBeforeCloseDocResponder, kKCMBeforeCloseResponderImpl)
+
+void KCMBeforeCloseDocResponder::Respond(ISignalMgr* signalMgr)
+{
+	// A background thread closes the export's own copies here too - nothing of ours, and nothing to judge there.
+	if (!KCMIsMainThread())
+		return;
+	InterfacePtr<IDocumentSignalData> signalData(signalMgr, UseDefaultIID());
+	if (signalData == nil)
+		return;
+	KCMTaskStartCloneDocClosing(signalData->GetDocument().GetDataBase());
+	KCMCopyStore::DocumentClosing(signalData->GetDocument().GetDataBase());
+	// ★AND THE "=" RECORDS' FOCI ON IT (2026-10-26 - KCMRecordFoci.h): each let go while the document certainly stands - its
+	//  target database cleared, out of its story's manager, released. The list itself goes at kAfterCloseDoc (the sweep).
+	KCMRecordFoci::LetDocument(signalData->GetDocument().GetDataBase());
 }
 
 // End, KCMDocResponder.cpp.

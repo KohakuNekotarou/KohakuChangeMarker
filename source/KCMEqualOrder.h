@@ -1,0 +1,183 @@
+﻿//========================================================================================
+//
+//  Owner: KohakuNekotarou
+//
+//  Kohaku Change Marker (KCM)
+//
+//  The "=" records of a Story Edits row - the places KCM wrote as the Source's (KCMEqualRecord) - where a new one
+//  goes, how the others slide when a write changes the story's length, and how the records and the live changes are
+//  shown as ONE list (2026-09-24, stage 2 C - design section 15 of
+//  docs/superpowers/specs/2026-09-23-kcm-import-sync-design.md; named KCMRejectedOrder.h until 2026-10-25).
+//
+//  ★PURE, AND MEASURED OUTSIDE InDesign (work/kcm-storydocx-test): positions and kinds only. The records
+//   themselves (KCMEqualRecord, KCMStoryList.h) carry the change and the counters; what is here is the part
+//   that has to be right for two records at once, which is where the retired restore was wrong twice
+//   (docs/ai-notes/kcm-restore-retired-2026-09-21.md section 3-3: two paragraphs taken out and put back came back
+//   as "ba" until the slot rule below existed).
+//
+//========================================================================================
+
+#ifndef __KCMEqualOrder_h__
+#define __KCMEqualOrder_h__
+
+#include "BaseType.h"		// int32 / bool16
+#include <vector>
+
+/** What the order and the shifting need to know of a change: its place in the Target, what it is, and - for a
+	record - whether it is shown "=" (KCM's write standing) or as live. */
+struct KCMEqualSpan
+{
+	int32	fStart, fEnd;
+	int32	fWhat, fKind;
+	bool16	fShownEqual;
+	/** ★THE SOURCE'S RANGE TOO, when known (2026-09-25; -1 = not given): two whole paragraphs the Source has one after
+		the other and the Target has not (the import's copy holding two Word added; on 2026-09-25, two the old import
+		took out of the Target) are two rows at ONE caret of the Target - the same what, kind, start and end - and only
+		the Source's range tells them apart. A twin test on the Target alone took the second for the first (measured
+		then: after a group reject only one "=" stood, and after its undo only one live row). */
+	int32	fSourceStart, fSourceEnd;
+	/** A RECORD's live range - where its change stands when it is live - when that is not fStart/fEnd (a record shown
+		"=" stands at the Source's words); -1 = the same as fStart/fEnd. What its live twin is looked for at. */
+	int32	fLiveStart, fLiveEnd;
+	KCMEqualSpan() : fStart(0), fEnd(0), fWhat(0), fKind(0), fShownEqual(kFalse), fSourceStart(-1), fSourceEnd(-1),
+						fLiveStart(-1), fLiveEnd(-1) {}
+	KCMEqualSpan(int32 s, int32 e, int32 what = 0, int32 kind = 0, bool16 shownEqual = kTrue,
+					int32 sourceStart = -1, int32 sourceEnd = -1, int32 liveStart = -1, int32 liveEnd = -1)
+		: fStart(s), fEnd(e), fWhat(what), fKind(kind), fShownEqual(shownEqual),
+		  fSourceStart(sourceStart), fSourceEnd(sourceEnd), fLiveStart(liveStart), fLiveEnd(liveEnd) {}
+	/** The span as its live change would stand. */
+	KCMEqualSpan AsLive() const
+	{
+		KCMEqualSpan s = *this;
+		if (fLiveStart >= 0)
+		{
+			s.fStart = fLiveStart;
+			s.fEnd = fLiveEnd;
+		}
+		return s;
+	}
+};
+
+/** Whether a record and a live change are the SAME change: what, kind and Target range - and the Source's range when
+	both carry one (KCMEqualSpan says why it has to be asked). */
+inline bool16 KCMEqualSameChange(const KCMEqualSpan& a, const KCMEqualSpan& b)
+{
+	if (a.fWhat != b.fWhat || a.fKind != b.fKind || a.fStart != b.fStart || a.fEnd != b.fEnd)
+		return kFalse;
+	if (a.fSourceStart < 0 || b.fSourceStart < 0)
+		return kTrue;
+	return (a.fSourceStart == b.fSourceStart && a.fSourceEnd == b.fSourceEnd) ? kTrue : kFalse;
+}
+
+/** Where a new record whose live words began at writeAt goes among the records (their starts in list order):
+	after every record standing AT OR BEFORE writeAt, before the rest. ★THE RULE IS WHAT TELLS TOP-DOWN FROM
+	BOTTOM-UP: two adjacent paragraphs written in either order come out in the order they stood, because the
+	one written second either begins where the first now stands (top-down: after it) or has slid the first's
+	record past its own start (bottom-up: before it). */
+inline size_t KCMEqualSlotFor(const std::vector<int32>& starts, int32 writeAt)
+{
+	size_t slot = 0;
+	while (slot < starts.size() && starts[slot] <= writeAt)
+		++slot;
+	return slot;
+}
+
+/** Slide the records from `slot` on by what a write at writeAt removed and put in - by the two lengths, not by
+	one delta, so that a caret standing where the removed words began is not pushed under writeAt. */
+inline void KCMShiftEqualFrom(std::vector<KCMEqualSpan>& spans, size_t slot, int32 writeAt, int32 removed, int32 inserted)
+{
+	for (size_t i = slot; i < spans.size(); ++i)
+	{
+		const int32 len = spans[i].fEnd - spans[i].fStart;
+		int32 s = spans[i].fStart;
+		if (s >= writeAt + removed)
+			s = s - removed + inserted;
+		else if (s > writeAt)
+			s = writeAt + inserted;
+		spans[i].fStart = s;
+		spans[i].fEnd = s + len;
+	}
+}
+
+/** ★WHERE A RECORD'S SOURCE PLACE STANDS IN THE TARGET NOW (2026-10-26, the import tidy S10 - the "=" records follow edits
+	made outside KCM): the Target positions Source position `sourceAt` maps to through a row's LIVE changes (`lives` - Target
+	fStart/fEnd, Source fSourceStart/fSourceEnd, as a fresh comparison found them). Between two changes the two stories read
+	the same, so a place moves by what the changes before it put in and took out: t = sourceAt - c.fSourceEnd + c.fEnd for
+	the last change c ending at or before `sourceAt` (sourceAt itself when there is none). ★An INSERTION standing at
+	`sourceAt` (an empty Source range there) leaves the place either before the words it put in or past them, and only the
+	document can say which - so the place past them is the second candidate. The caller reads each place against the
+	Source's and takes the first that agrees.
+	★WHY THE SOURCE: a record's Source range never moves (the import's copy has no window; a Source document is the older
+	 version), while its Target place moves with every hand edit before it - which KCM never hears of.
+	@return the candidates in the order to try them - EMPTY when it cannot be said: a live change without its Source range,
+	  or `sourceAt` strictly inside one's Source range (the record's place is part of a difference now). */
+inline std::vector<int32> KCMSourceToTargetCandidates(const std::vector<KCMEqualSpan>& lives, int32 sourceAt)
+{
+	std::vector<int32> out;
+	const KCMEqualSpan* last = nil;
+	int32 pastInsertions = -1;
+	for (size_t i = 0; i < lives.size(); ++i)
+	{
+		const KCMEqualSpan& c = lives[i];
+		if (c.fSourceStart < 0 || c.fSourceEnd < c.fSourceStart)
+			return std::vector<int32>();						// a change whose Source range is not known
+		if (c.fSourceStart < sourceAt && sourceAt < c.fSourceEnd)
+			return std::vector<int32>();						// the place is inside a difference
+		if (c.fSourceStart == sourceAt && c.fSourceEnd == sourceAt)
+		{
+			if (c.fEnd > pastInsertions)
+				pastInsertions = c.fEnd;						// an insertion AT the place: the far side of it
+			continue;
+		}
+		if (c.fSourceEnd <= sourceAt && (last == nil || c.fSourceEnd >= last->fSourceEnd))
+			last = &c;
+	}
+	const int32 t = (last != nil) ? (sourceAt - last->fSourceEnd + last->fEnd) : sourceAt;
+	out.push_back(t);
+	if (pastInsertions > t)
+		out.push_back(pastInsertions);
+	return out;
+}
+
+/** One entry of the merged list: a live change (fIsRecord kFalse, an index into the live list) or a record. */
+struct KCMMergedRef
+{
+	bool16	fIsRecord;
+	int32	fIndex;
+	KCMMergedRef(bool16 r, int32 i) : fIsRecord(r), fIndex(i) {}
+};
+
+/** The live changes and the records as ONE list in text order: by start, a record before a live change at the
+	same start. ★A live change that is the TWIN of a record shown LIVE (the same what, kind, start and end) is
+	HIDDEN - the record stands for it, so that a change live again (an Undo of KCM's write, or Restore from Copy) is
+	not shown twice, and the record keeps the place a later write or put-back acts from.
+	★★AND THE TWIN OF A RECORD SHOWN "=" TOO (2026-09-25): a "=" is read as the Source's words at its place, so a live
+	change that is its twin cannot stand in the document - it is the list's own copy from before an undo (the list
+	is not compared again on a Ctrl+Z). Shown, it pushed every row after it one index down against the panel's tree,
+	which is not rebuilt on an undo either: the reader's right-click on a "=" row landed on that stale row (measured -
+	an empty menu, where the retired "Redo from Word" was expected). */
+inline void KCMMergeEqual(const std::vector<KCMEqualSpan>& live, const std::vector<KCMEqualSpan>& records,
+							 std::vector<KCMMergedRef>& out)
+{
+	out.clear();
+	size_t i = 0, r = 0;
+	while (i < live.size() || r < records.size())
+	{
+		if (r < records.size() && (i >= live.size() || records[r].fStart <= live[i].fStart))
+		{
+			out.push_back(KCMMergedRef(kTrue, static_cast<int32>(r)));
+			++r;
+			continue;
+		}
+		bool16 hidden = kFalse;
+		for (size_t k = 0; k < records.size() && !hidden; ++k)
+			hidden = KCMEqualSameChange(records[k].AsLive(), live[i]);
+		if (!hidden)
+			out.push_back(KCMMergedRef(kFalse, static_cast<int32>(i)));
+		++i;
+	}
+}
+
+#endif // __KCMEqualOrder_h__
+
+// End, KCMEqualOrder.h.

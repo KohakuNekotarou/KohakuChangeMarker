@@ -82,9 +82,12 @@ DollyXs が生成した雛形は**そのままではビルドもロードもで�
   `DVPublicUtilities.h` を include しており、**プリプロセッサは include 文を見た時点でファイルを
   探しに行く**(インクルードガードは見つかった後にしか効かない)。⇒ パスを通すしかない。
   ★**KBS が同じ理由で同じ1行を持っている**(`KohakuFindChangeCPP.rsp`)＝社内で同じ問いの答えは1つ。
-  ⚠★**`.rsp` はこのリポジトリに控えが無い**(実体は `build/win/prj/` だけ)。
-  **クリーン環境へ復元したらこの1行を手で足すこと**——足さないと
+  ★**2026-10-24 から CPP の `.rsp` 2本の控えがこのフォルダーにある**(`KohakuChangeMarkerCPP.rsp`・
+  `KohakuChangeMarkerUICPP.rsp`・実体は `build/win/prj/`)。足さないと
   `error C1083: 'DVPublicUtilities.h'` で `KCMStoryCellView.cpp` だけが落ちる。
+- ★**model の `KohakuChangeMarkerCPP.rsp` に `/I "..\..\..\source\open\interfaces\layout"`**(2026-10-24):
+  Apply This Change が写しを取る前に、語がハイパーリンク・相互参照に触れていないかを `IHyperlinkUtils.h`
+  (`source/open/interfaces/layout`)で聞くため(`KCMFacades.cpp` の `TouchesLink`)。
 
 ## ⚠★★KCMUI で実際に踏んだ罠 — `KCMUIID.h` は **UTF-8 BOM 必須**
 
@@ -94,7 +97,7 @@ DollyXs 生成後に日本語コメント(prefix の由来)を書き足したが
 (＝**コンパイラの行番号が実ファイルとずれていたら、行が食われている**)。
 ⇒ **非 ASCII を1文字でも書いたら BOM を付ける**([[cpp-japanese-needs-bom]])。
 直しはバイト先頭に `EF BB BF` を足すだけ(中身は触らない)。
-★ 現状 `ui/` で非 ASCII を持つのは `KCMUIID.h` だけ(474 バイト)。**他の9本は 0 なので BOM 不要。**
+★ 2026-10-24 に数え直した＝`ui/` の 105本中 97本が非 ASCII を持ち、C++ はほぼ BOM 付き。⚠**BOM が無いのに非 ASCII を持つ C++ ヘッダーが2本**(`KCMPathDisplay.h`・`KCMStoryTree.h`＝今は通っているが、上の罠の形)＝整理整頓で BOM を付ける。`.fr` 2本(`KCMUI.fr`・`KCMUI_enUS.fr`)は ODFRC が読むので別。(⛔「非 ASCII は `KCMUIID.h` だけ」は 08 月の数え＝古い。)
 
 ## 復元方法
 1. このフォルダーの**4ファイル**を、ビルドツリーへ上書きコピーする:
@@ -109,8 +112,13 @@ cp buildproj/KohakuChangeMarkerUI.vcxproj.filters            <SDK>/build/win/prj
 ⚠ **`SDKSamples.sln` への KCMUI の登録は控えていない**(sln は SDK 共有物のため)。
 復元時は上の「`ProjectGuid` と sln 登録」を手で入れ直すこと。
 
-⚠ **応答ファイル(`.rsp`)も控えていない。** `build/win/prj/KohakuChangeMarkerUICPP.rsp` に
-`/I "..\..\..\source\open\includes\widgets"` を手で足すこと(理由は上の KCMUI の節)。
+★ **CPP の応答ファイル(`.rsp`)2本も上書きコピーする**(2026-10-24 から控えあり・理由は上の KCMUI の節と model の節)。
+ODFRC の `.rsp` は控えていない。
+
+```
+cp buildproj/KohakuChangeMarkerCPP.rsp                       <SDK>/build/win/prj/
+cp buildproj/KohakuChangeMarkerUICPP.rsp                     <SDK>/build/win/prj/
+```
 
 2. プラグインのソース(このリポジトリの `source/` フォルダー — `.cpp` / `.h` / `.fr` / `.rc` / `.png`)を
    `source/sdksamples/KCM/source/` へ置く。**SDK 側のフォルダー名は短い `KCM` のまま**で、

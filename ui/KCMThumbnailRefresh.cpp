@@ -51,6 +51,8 @@
 #include "IWorkspace.h"
 #include "IImageCacheMgr.h"
 #include "IUIDListControlData.h"	// the selection UID list the Pages panel itself keeps (how [None] is told apart)
+#include "ILayoutUIUtils.h"		// GetSelectedPages - the official way to read the Pages panel's selection (2026-10-26: read here, not in the model)
+#include "UIDList.h"
 
 #include "PagesPanelID.h"		// kPagesPanelWidgetID / kLayoutPagesSubPanelWidgetID / kMasterPagesSubPanelWidgetID
 #include "ImageID.h"			// IID_IIMAGECACHEMGR
@@ -61,6 +63,7 @@
 
 #include "KCMThumbnailRefresh.h"
 #include "IKCMMarkData.h"			// GetAllPageUIDs / GetMasterPageUIDs / GetMarkablePageUIDs
+#include "IKCMCompareFacade.h"		// GetActiveDocDB - the document the Pages panel shows (KCMReadSelectedPages, 2026-10-26)
 
 // Redraw one sub-panel (the Layout one or the Master one).
 static void KCMForceRedrawSubPanel(IPanelControlData* pcd, const WidgetID& subPanelWID)
@@ -145,6 +148,25 @@ bool16 KCMPagesPanelSelectionHasNoRealPage()
 			return kFalse;	// one real page is enough: let the action apply to that one
 	}
 	return kTrue;			// every entry is kInvalidUID: only [None] rows are selected
+}
+
+// The Pages panel's selected pages, read here (declared in KCMThumbnailRefresh.h - the import tidy S7, 2026-10-26).
+bool16 KCMReadSelectedPages(UIDList& out, bool16 includeMasters)
+{
+	Utils<IKCMCompareFacade> compare;
+	IDataBase* const db = compare ? compare->GetActiveDocDB() : nil;
+	out = UIDList(db);
+	// ★The [None] guard first: GetSelectedPages would answer the current page for it (the declaration says what that did).
+	if (db == nil || KCMPagesPanelSelectionHasNoRealPage())
+		return kFalse;
+	// What the Pages panel shows is the active document, and the contract is that its database is handed over inside the
+	// UIDList ("UIDList must be set up with proper database" - ILayoutUIUtils.h) - the official example reaches it the same
+	// way (codesnippets/SnpModifyLayoutGrid.cpp).
+	Utils<ILayoutUIUtils> layoutUtils;
+	if (!layoutUtils)
+		return kFalse;
+	layoutUtils->GetSelectedPages(out, includeMasters, kTrue /*currentPageOnly*/, kTrue /*pagesOnly*/);
+	return out.IsEmpty() ? kFalse : kTrue;
 }
 
 // Redraw the Pages panel where it is showing, so the purged thumbnails are rebuilt on the spot.

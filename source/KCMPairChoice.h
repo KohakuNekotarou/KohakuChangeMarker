@@ -19,6 +19,9 @@
 //                               it is read.
 //     KCMRealisePairEnd         turns a file end into a database, by finding the document already
 //                               open on it or opening it. ★**ONLY Start CALLS THIS.**
+//                               (★And "Compare with Tracked Changes..." since 2026-10-05 - KCMTrackOriginal.cpp: it
+//                               opens its copy itself, because every change has to be rejected in it before the
+//                               comparison reads it. A PRESS, like Start - never a grey-state question.)
 //
 //  ★**ALL THE SLOTS IN ONE FILE** (moved out of KCMComparisonRun on 2026-09-21): they answer one
 //  question - "which two has the reader chosen" - and split across two files there would be two
@@ -76,12 +79,20 @@ bool16 KCMResolveComparisonPair(KCMPairEnd& outTarget, KCMPairEnd& outSource);
 /** Turn a file end into a database: the document already open on that file when there is one,
     otherwise the file opened in a window. A database end is handed straight back.
 
-    ★**ONLY Start CALLS THIS** - see the two stages at the top of this file.
-    ⚠**Identity is asked of IDataBase::GetSysFile, never of the path string**: one file can be
-     spelled two ways, and a closed document's address gets re-used ([[uidref-reuse-after-close]]).
+    ★**ONLY Start CALLS THIS** - see the two stages at the top of this file. (And "Compare with Tracked
+     Changes...", 2026-10-05: also a press, opening the copy it is about to reject every change in.)
+    ⚠**Identity is asked of the file (IDocumentList::FindDoc takes the IDFile), never of the path
+     string or a remembered pointer**: one file can be spelled two ways, and a closed document's
+     address gets re-used ([[uidref-reuse-after-close]]).
     @param why the reason, for the status line, when this answers kFalse.
     @return kFalse when the end is empty, the file is gone, or it could not be opened. */
 bool16 KCMRealisePairEnd(const KCMPairEnd& end, IDataBase*& outDB, PMString& why);
+
+/** The open document whose file is `file`, or nil when no open document has it (IDocumentList::FindDoc, its answer
+    checked against the file - KCMPairChoice.cpp says why).
+    ★THE ONE PLACE this plug-in asks "is this file open": KCMRealisePairEnd, and since 2026-10-05 the two copy roads,
+     which never write a copy over a file that is open (KCMAskWhereToSaveCopy, KCMTakeTrackOriginalCopy). */
+IDataBase* KCMOpenDocOnFile(const IDFile& file);
 
 //----------------------------------------------------------------------------------------
 // The chosen pair ("Set as Target" / "Set as Source" on the flyout, and a Task Start)

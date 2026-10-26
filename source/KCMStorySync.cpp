@@ -565,7 +565,12 @@ int32 MapThrough(const std::vector<Change>& ch, int32 pos)
 	reference standing at `pos` may have gone. ★**A REFERENCE AT THE START OF A CHANGE CAN LAND ON
 	EITHER SIDE OF IT** (measured by the harness 2026-09-23: "X" typed where a reference stood came
 	out before the reference in Word, after it in MapThrough), and the text alone cannot say which.
-	-1 when no change starts at `pos`. */
+	★★**AN INSERTION ONLY** (2026-09-25, the Word round trip re-check, item 1). The writer puts an insertion on either
+	  side of the markers standing at its place, as the plan says (KCMParaText::InsertBeforeObject); a REPLACEMENT it
+	  writes after them, always - its words take the place of characters that stand after the markers. So a
+	  reference Word put after a replacement's words is not "kept" any more: it goes and comes again at Word's place,
+	  the way any reference the words moved does. (Until this day it was kept, and landed in front of the new words.)
+	-1 when no insertion starts at `pos`. */
 int32 MapPastChangeAt(const std::vector<Change>& ch, int32 pos)
 {
 	int32 delta = 0;
@@ -574,7 +579,7 @@ int32 MapPastChangeAt(const std::vector<Change>& ch, int32 pos)
 		if (pos < ch[i].aStart)
 			return -1;
 		if (pos == ch[i].aStart)
-			return pos + delta + ch[i].bCount;
+			return (ch[i].aCount == 0) ? pos + delta + ch[i].bCount : -1;
 		delta += ch[i].bCount - ch[i].aCount;
 	}
 	return -1;
@@ -804,9 +809,19 @@ void ComparePara(Run& run, const Where& where, int32 nIndex, int32 result,
 		//   the live matrix: A15, A16, H46-48 went in before the rebuild and were held by this guard.)
 	}
 
+	// ★AN ENDNOTE'S MARK AT THE START OF AN INSERTION MAY STAND ON EITHER SIDE OF IT - the footnotes' rule, PlanRefs
+	//   (2026-09-25, the Word round trip re-check, item 1: words typed right in front of the mark in Word were read as
+	//   the mark moving, and the paragraph was held - its words never went in).
 	std::vector<int32> ends;
 	for (size_t e = 0; e < n.fEndnoteAt.size(); ++e)
-		ends.push_back(MapThrough(ch, n.fEndnoteAt[e]));
+	{
+		int32 m = MapThrough(ch, n.fEndnoteAt[e]);
+		const int32 past = MapPastChangeAt(ch, n.fEndnoteAt[e]);
+		if (past >= 0 && std::find(w.fEndnoteAt.begin(), w.fEndnoteAt.end(), m) == w.fEndnoteAt.end()
+			&& std::find(w.fEndnoteAt.begin(), w.fEndnoteAt.end(), past) != w.fEndnoteAt.end())
+			m = past;
+		ends.push_back(m);
+	}
 	if (ends != w.fEndnoteAt)
 	{
 		Hold(run, where, nIndex, "Para", "an endnote's mark would move, go or come - endnotes are not carried");
@@ -1228,6 +1243,12 @@ bool16 Normalize(const KCMStoryShape::Story& now, const KCMStoryShape::Story& wo
 void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, Plan& out,
 			 bool16 reshapeTables)
 {
+	Compare(now, word, out, std::vector<bool16>(now.fTables.size(), reshapeTables));
+}
+
+void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, Plan& out,
+			 const std::vector<bool16>& mayReshape)
+{
 	out = Plan();
 	KCMStoryShape::Story n;
 	KCMStoryShape::Story w;
@@ -1290,13 +1311,15 @@ void Compare(const KCMStoryShape::Story& now, const KCMStoryShape::Story& word, 
 		std::vector<Step> steps;
 		std::string tableWhy;
 		const int32 stage = PlanShape(n, w, t, steps, tableWhy);
-		if (stage > 0 && reshapeTables)
+		// ★TABLE BY TABLE (2026-09-25): a table past the end of the vector may not be reshaped
+		const bool16 reshapeThis = (t < mayReshape.size()) ? mayReshape[t] : kFalse;
+		if (stage > 0 && reshapeThis)
 		{
 			byStage[stage].insert(byStage[stage].end(), steps.begin(), steps.end());
 			continue;
 		}
-		// ★★WITHOUT reshapeTables A SHAPE THAT COULD BE MADE IS HELD TOO: the caller reshapes nothing (the
-		//   redo of one paragraph, KCMRedoFromWord), and pairing the words of two tables that do not have
+		// ★★A TABLE THAT MAY NOT BE RESHAPED IS HELD EVEN WHEN ITS SHAPE COULD BE MADE: the caller reshapes nothing
+		//   there (writing one paragraph, and writing ANOTHER table - KCMApplyFromImport), and pairing the words of two tables that do not have
 		//   the same cells is exactly what the shape rounds are there to avoid - so the whole table is
 		//   held, its words included. (The import passed kFalse for one day, 2026-09-24 - design 11-1
 		//   item 5, "the change history cannot record that" - and passes kTrue again since that evening,
@@ -1828,7 +1851,8 @@ void RenumberNotesByThread(KCMStoryShape::Story& s)
    FINISHED story, which every insert and delete before it moves - so it is found by the full plan's numbering and
    given the narrowed plan's, where only the kept insert (if any) stands before the paragraph.
 */
-void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& where, int32 para, Plan& out)
+void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& where, int32 para, NarrowScope scope,
+			Plan& out)
 {
 	out = Plan();
 
@@ -1851,10 +1875,17 @@ void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& wher
 			deletedBefore += s.fCount;
 	}
 	const int32 fullFinished = para + insertedBefore - deletedBefore;	// where N's `para` stands once the whole plan is done
+	// ★THE INSERT IS KEPT ONLY FOR AN INSERTED ROW (2026-09-25): for the others it is not part of the narrowed plan, so it
+	//   moves nothing there and its paragraphs hold no note of theirs
+	if (scope != kNarrowInserted)
+		keptInsert = -1;
 	const int32 keptCount = (keptInsert >= 0)
 		? static_cast<int32>(plan.fSteps[static_cast<size_t>(keptInsert)].fParas.size()) : 0;
-	const int32 keptFinished = para;		// where it stands once only the kept steps are done: the kept insert is
-											// BEFORE it and moves nothing that N numbers, and nothing else is kept
+	// where N's `para` stands once only the kept steps are done: after the kept insert's paragraphs, which go in right
+	// before it. ★(re-check 2026-09-25) It said `para` - true of N's numbering, which a kSetPara / kDeleteParas speaks,
+	// but a kAddNote speaks the FINISHED story's: a note Word put in a paragraph it added was sent keptCount paragraphs
+	// back, into one of the document's own.
+	const int32 keptFinished = para + keptCount;
 
 	for (size_t i = 0; i < plan.fSteps.size(); ++i)
 	{
@@ -1864,11 +1895,11 @@ void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& wher
 		{
 			case Step::kSetPara:
 			case Step::kHeld:
-				if (!(s.fWhere == where) || s.fPara != para)
+				if (scope != kNarrowOwn || !(s.fWhere == where) || s.fPara != para)
 					continue;
 				break;
 			case Step::kDeleteParas:
-				if (!(s.fWhere == where) || para < s.fPara || para >= s.fPara + s.fCount)
+				if (scope != kNarrowRemoved || !(s.fWhere == where) || para < s.fPara || para >= s.fPara + s.fCount)
 					continue;
 				kept.fPara = para;
 				kept.fCount = 1;
@@ -1879,17 +1910,20 @@ void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& wher
 				break;
 			case Step::kAddNote:
 			{
-				if (!(s.fWhere == where))
+				if (scope == kNarrowRemoved || !(s.fWhere == where))
 					continue;
-				// in the kept paragraphs: the inserted ones [fullFinished - keptCount, fullFinished), and N's own at fullFinished
+				// in the kept paragraphs: the inserted ones [fullFinished - keptCount, fullFinished) for an inserted row,
+				// N's own at fullFinished for its own
 				const int32 low = fullFinished - keptCount;
-				if (s.fPara < low || s.fPara > fullFinished)
+				if (scope == kNarrowInserted ? (s.fPara < low || s.fPara >= fullFinished) : (s.fPara != fullFinished))
 					continue;
 				kept.fPara = keptFinished - keptCount + (s.fPara - low);	// the same paragraph, in the narrowed plan's numbering
 				break;
 			}
 			case Step::kDeleteNote:
 			{
+				if (scope == kNarrowInserted)
+					continue;		// a paragraph put back holds no note of the document's
 				bool16 here = kFalse;
 				const std::vector<KCMStoryShape::Para>* paras = nil;
 				if (where.fKind == Where::kBody)
@@ -1928,7 +1962,7 @@ void Narrow(const KCMStoryShape::Story& now, const Plan& plan, const Where& wher
 				break;
 			}
 			default:
-				continue;		// the shape steps: the import's own rounds, never a redo's
+				continue;		// the shape steps: the import's own rounds, never one row's write
 		}
 		out.fSteps.push_back(kept);
 	}

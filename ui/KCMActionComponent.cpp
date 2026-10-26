@@ -64,7 +64,7 @@
 // (⛔KCMResourceEdit.h stood here for the two "Edit..." items and went with them on 2026-09-21, as
 //  KCMStoryCopy.h had gone earlier that day with the CHANGE row's restore items. This file reads
 //  neither now: a definition row's menu is "Show as XML" alone, and a change row raises no menu.)
-#include "KCMStoryJump.h"			// KCMBringArmedTargetToFront - the Target is what the reader looks at once a comparison runs
+#include "KCMStoryJump.h"			// KCMBringArmedTargetToFront - the Target is what the reader looks at once a comparison runs; KCMBringDocumentToFront - the report puts back what was in front
 #include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / Set / Apply (the "Translucent Panel" flyout item)
 #include "KCMStoryPressMarks.h"	// KCMStoryMarksRefresh (rebuild the always-on marks of Story mode)
 // (★`IActiveContext.h` / `IDocument.h` / `PersistUtils.h` were removed: **none of them was ever
@@ -153,6 +153,16 @@ static void KCMSayTranslucency(const char* what, bool16 on, bool16 applied, cons
 	KCMSetStatus(msg);
 }
 
+/* Whether the chosen Source is a Task Start kept in memory (2026-10-13) - asked BEFORE an item that replaces it, so
+   that the status line can say it went. The lent Source answers through GetExternalSourceLabel, and the Task Start
+   kept in memory is the one lent Source this plug-in makes itself (KCMExternalSource.h). */
+static bool16 KCMSourceIsKeptInMemory(IKCMCompareFacade* compare)
+{
+	IDataBase* const db = (compare != nil) ? compare->GetChosenSourceDB() : nil;
+	PMString label;
+	return (db != nil && compare->GetExternalSourceLabel(db, label)) ? kTrue : kFalse;
+}
+
 /* KCMApplyCompareMode - switches the compare mode and, while Started, recompares on the spot.
 
    ★**It is a function so that the entrances all take the same steps.** Choosing Pixel, Story or
@@ -178,6 +188,7 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 	{
 		case kKCMModeStory:		modeWord = "story";		break;
 		case kKCMModeResources:	modeWord = "resources";	break;
+		case kKCMModeTrack:		modeWord = "track";		break;
 		default:				modeWord = "pixel";		break;
 	}
 	PMString msg("Compare mode: ");
@@ -196,7 +207,29 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 	//   (the user saw it: "モードをかえたとき、うまくいってないきがする", 2026-09-12). That branch
 	//   refreshed instead, rehydrating a Source. **Both ends are ordinary documents now**, so the
 	//   marked pair answers for a Task Start exactly as it does for any other comparison.
-	if (markedDB != nil && markedSrcDB != nil)
+	if (markedDB != nil && markedSrcDB != nil && mode != kKCMModePixel
+		&& (compare->IsPdfDoc(markedDB) || compare->IsPdfDoc(markedSrcDB)))
+	{
+		// ★A PDF PAIR IS COMPARED IN THE PIXEL MODE ONLY (2026-10-14, design 3.2): switched away from it, the comparison
+		//   stops - in Start's own words - rather than running in a mode that cannot read the PDFs.
+		compare->StopComparison();
+		msg.Append(" (stopped - ");
+		msg.Append(kKCMPdfPixelOnly);
+		msg.Append(")");
+	}
+	else if (markedDB != nil && markedSrcDB != nil && mode != kKCMModeStory
+			 && Utils<IKCMStoryEditsFacade>()->IsImportSource())
+	{
+		// ★AN IMPORT'S COPY IS COMPARED IN THE STORY MODE ONLY (2026-10-24, the import-as-Source road - found on the
+		//   re-check the same day): Start refuses the other modes (KCMToggleStartStop), but a switch while Started
+		//   recompares right here without passing that test - and a Pixel or Resources comparison against the copy would
+		//   show what the files WOULD change as changes made. So it stops, in Start's own words, as a PDF pair does above.
+		compare->StopComparison();
+		msg.Append(" (stopped - ");
+		msg.Append(kKCMImportSourceModeRefusal);
+		msg.Append(")");
+	}
+	else if (markedDB != nil && markedSrcDB != nil)
 	{
 		PMString report;
 		// ★allowIncremental is not passed ＝ every page is compared again. An incremental comparison is
@@ -281,12 +314,53 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 
 		case kKCMPopupSetSourceActionID:
-			if (Utils<IKCMCompareFacade>()->SetChosenSourceToActive())
+		{
+			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+			const bool16 letGo = KCMSourceIsKeptInMemory(compare);
+			if (compare->SetChosenSourceToActive())
 			{
 				KCMRefreshPanel();
-				KCMSetStatus("Source set.");
+				KCMSetStatus(letGo ? "Source set. The Task Start kept in memory was let go." : "Source set.");
 			}
 			break;
+		}
+
+		// ★"Set PDF as Target..." / "Set PDF as Source..." (2026-10-14, the PDF comparison): a PDF the reader picks becomes that
+		//   end - a FILE choice, as a Task Start (Save)... makes one; Start makes a document of each PDF (KCMPdfDoc.h). The
+		//   dialog is the import's (IOpenFileDialog - Adobe's own callers build it so: SelectFileObserver.cpp) for ONE file,
+		//   PDFs shown, no default extension pinned on. ⚠A cancel says nothing: nothing was changed.
+		case kKCMPopupSetPdfTargetActionID:
+		case kKCMPopupSetPdfSourceActionID:
+		{
+			const bool16 asTarget = (actionID == kKCMPopupSetPdfTargetActionID) ? kTrue : kFalse;
+			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+			InterfacePtr<IOpenFileDialog> dialog((IOpenFileDialog*)::CreateObject(kOpenFileDialogBoss, IID_IOPENFILEDIALOG));
+			if (compare == nil || dialog == nil)
+				break;
+			PMString family("PDF (*.pdf)");
+			family.SetTranslatable(kFalse);
+			PMString extension("pdf");
+			extension.SetTranslatable(kFalse);
+			dialog->AddExtension(&family, &extension);
+			dialog->SetDefaultFilter(family);
+			PMString title(asTarget ? "Set PDF as Target - the newer PDF" : "Set PDF as Source - the older PDF");
+			title.SetTranslatable(kFalse);
+			SysFileList chosen;
+			if (!dialog->DoDialog(nil, chosen, kFalse /*one file*/, &title) || chosen.GetFileCount() < 1 || chosen.GetNthFile(0) == nil)
+				break;
+			// What to SAY is read before the call, as for "Set as Source": afterwards the kept-in-memory Task Start is gone.
+			const bool16 letGo = !asTarget && KCMSourceIsKeptInMemory(compare);
+			PMString msg;
+			if (compare->ChoosePdfEnd(asTarget, *chosen.GetNthFile(0), msg))
+			{
+				KCMRefreshPanel();
+				if (letGo)
+					msg.Append(" The Task Start kept in memory was let go.");
+			}
+			msg.SetTranslatable(kFalse);
+			KCMSetStatus(msg);
+			break;
+		}
 
 		// Flyout "Print comparison marks": the print-marks toggle (it used to be a checkbox on the
 		// panel).
@@ -708,6 +782,9 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		case kKCMPopupModeResourcesActionID:
 			KCMApplyCompareMode(kKCMModeResources);
 			break;
+		case kKCMPopupModeTrackActionID:
+			KCMApplyCompareMode(kKCMModeTrack);	// the fourth mode (2026-10-05)
+			break;
 
 		// Flyout "Save Panel Settings": write the current settings toggles to a private JSON file and
 		// show where it went **in the panel’s status line** (the work is KCMSavePanelState in
@@ -723,31 +800,40 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// ⚠★★With only the `[none]` row selected it does nothing -- the same reason as the guard in
 		//   UpdateActionStates: **the menu does not offer it, but a shortcut is another way in**, so
 		//   the executing side needs the guard too.
+		//   ★(2026-10-26, the import tidy S7) The selection is read HERE and handed over - the model does not read the Pages
+		//   panel any more - and the [None] guard is the reader's own (KCMReadSelectedPages).
 		case kKCMPageMapToggleActionID:
-			if (KCMPagesPanelSelectionHasNoRealPage())
+		{
+			UIDList pages;
+			if (!KCMReadSelectedPages(pages, kFalse /*no masters - KCMPageMap.h*/))
 				break;
-			Utils<IKCMPageFlagsFacade>()->ToggleRegisterForSelection();
+			Utils<IKCMPageFlagsFacade>()->ToggleRegisterForSelection(pages);
 			break;
+		}
 
 		// The "Check" toggle on the Pages panel page context menu: put a tick on the selected pages or
 		// take it off (the work is in KCMPageCheck.cpp; the tick is drawn by the isThumb branch of
 		// KCMDrawEventHandler).
 		case kKCMPageCheckToggleActionID:
-			if (KCMPagesPanelSelectionHasNoRealPage())
+		{
+			UIDList pages;
+			if (!KCMReadSelectedPages(pages, kTrue /*masters in - KCMPageMap.h*/))
 				break;		// ⚠the same reason as above
-			Utils<IKCMPageFlagsFacade>()->ToggleCheckForSelection();
+			Utils<IKCMPageFlagsFacade>()->ToggleCheckForSelection(pages);
 			break;
+		}
 
 		// "Refresh Page Comparison" on the Pages panel page context menu (a plain command): recompare
 		// the selected pages and update their frames and thumbnails. The work is in KCMPeek.cpp, and the
 		// outcome is reported briefly in the status line.
 		case kKCMPageRefreshCompareActionID:
 		{
-			if (KCMPagesPanelSelectionHasNoRealPage())
+			UIDList pages;
+			if (!KCMReadSelectedPages(pages, kTrue /*masters in - KCMPageMap.h*/))
 				break;		// ⚠do not run with only the `[none]` row selected (the same reason as the two above)
 			int32 nPages = 0, nChanged = 0, nFailed = 0;
 			bool16 wasCancelled = kFalse;
-			if (Utils<IKCMCompareFacade>()->RefreshSelectedPages(&nPages, &nChanged, &wasCancelled, &nFailed))
+			if (Utils<IKCMCompareFacade>()->RefreshSelectedPages(pages, &nPages, &nChanged, &wasCancelled, &nFailed))
 			{
 				PMString msg("refreshed ");
 				msg.SetTranslatable(kFalse);
@@ -803,7 +889,32 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			Utils<IKCMPageFlagsFacade>()->ClearPawsInDoc(Utils<IKCMCompareFacade>()->GetActiveDocDB());
 			break;
 
-		// Flyout "Task Start" (2026-09-21, remade): a COPY OF THE DOCUMENT IS SAVED to a file the
+		// Flyout "Task Start" (2026-10-13): the document's state KEPT IN MEMORY and chosen as the Source - no dialog, no
+		// file, nothing started (KCMTaskStartClone.h). The panel refresh and the status line are done here, as for
+		// "Task Start (Save)..." below.
+		case kKCMPopupTaskStartCloneActionID:
+		{
+			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+			const bool16 wasArmed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+			PMString whyNot;
+			if (compare->TakeTaskStartClone(whyNot))
+			{
+				KCMRefreshPanel();
+				KCMSetStatus(wasArmed
+					? "Stopped, and Task Start taken (kept in memory) and chosen as the Source. Edit, then Start to compare against it."
+					: "Task Start taken (kept in memory) and chosen as the Source. Edit, then Start to compare against it.");
+			}
+			else
+			{
+				PMString msg("Task Start not taken: ");
+				msg.SetTranslatable(kFalse);
+				msg.Append(whyNot);
+				KCMSetStatus(msg);
+			}
+			break;
+		}
+
+		// Flyout "Task Start (Save)..." (2026-09-21, remade; named "Task Start" until 2026-10-13): a COPY OF THE DOCUMENT IS SAVED to a file the
 		// reader picks, and that file is chosen as the Source. No comparison runs - Start does
 		// that, and Start is also what opens the copy. The panel refresh and the status line are
 		// done here, as with the two "Set as" items ([[one-question-one-place]]: the facade
@@ -817,14 +928,18 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			//   and a reader who pressed this by accident needs the status line to say that one did.
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 wasArmed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+			const bool16 letGo = KCMSourceIsKeptInMemory(compare);
 			PMString whyNot;
 			if (compare->TakeTaskStartCopy(whyNot))
 			{
 				KCMRefreshPanel();
-				if (wasArmed)
-					KCMSetStatus("Stopped, and the Task Start copy saved and chosen as the Source. Edit, then Start to compare against it.");
-				else
-					KCMSetStatus("Task Start copy saved and chosen as the Source. Edit, then Start to compare against it.");
+				PMString said(wasArmed
+					? "Stopped, and the Task Start copy saved and chosen as the Source. Edit, then Start to compare against it."
+					: "Task Start copy saved and chosen as the Source. Edit, then Start to compare against it.");
+				if (letGo)
+					said.Append(" The Task Start kept in memory was let go.");
+				said.SetTranslatable(kFalse);
+				KCMSetStatus(said);
 			}
 			else if (whyNot.CharCount() > 0)
 			{
@@ -859,6 +974,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		{
 			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 			const bool16 wasArmed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+			const bool16 letGo = KCMSourceIsKeptInMemory(compare);
 			if (wasArmed)
 				compare->StopComparison();
 			compare->ClearChosenDocs();
@@ -867,7 +983,11 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			//   own and the line below replaces it, so without naming the stop there would be nothing on
 			//   screen to tell "I cleared two choices" from "I ended a comparison" -- the same reasoning
 			//   as the cancelled Refresh (KCMComparisonRun.cpp).
-			KCMSetStatus(wasArmed ? "Stopped, and Target and Source cleared." : "Target and Source cleared.");
+			PMString said(wasArmed ? "Stopped, and Target and Source cleared." : "Target and Source cleared.");
+			if (letGo)
+				said.Append(" The Task Start kept in memory was let go.");
+			said.SetTranslatable(kFalse);
+			KCMSetStatus(said);
 			break;
 		}
 
@@ -877,13 +997,16 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// way the words go to the status line.
 		case kKCMPopupExportReportActionID:
 			{
+				// ★The document in front when the item was pressed goes back in front afterwards (2026-10-11): the
+				//   report may open a Task Start copy in a window to read it, as Start does, and it leaves nothing
+				//   started - so there is no armed Target for KCMBringArmedTargetToFront to bring forward, which is
+				//   what this ended with while the report still started a comparison of its own.
+				IDataBase* const frontDB = Utils<IKCMCompareFacade>()->GetActiveDocDB();
 				PMString reportMsg;
 				Utils<IKCMCompareFacade>()->ExportBeforeAfterReport(reportMsg);
 				if (reportMsg.CharCount() > 0)
 					KCMSetStatus(reportMsg);
-				// ★This one may have STARTED a comparison to have something to report (it stays armed), so
-				//   it ends the same way. When one was already running nothing moves: the Target is in front.
-				KCMBringArmedTargetToFront();
+				KCMBringDocumentToFront(frontDB);
 			}
 			break;
 
@@ -898,8 +1021,8 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		//   ⚠**Showing the two books before anything is pressed** has not changed as an aim -- what
 		//     changed is where they are shown (from two lines of the dialog to the body of the alert)
 		//     and that they are **full paths** rather than names, because so many books share a name.
-		// Flyout "Export Story Text...": the stories of the active document, one HTML file each,
-		// plus the one stylesheet they share, in a dated folder under the one the reader picks.
+		// Flyout "Export Story Text...": the stories of the Target (the chosen one, else the active document -
+		// 2026-09-25), one .docx each, in a dated folder under the one the reader picks.
 		// ★**This half only reads** - the model wraps the walk in SaveRestoreModifiedState, so the
 		// document is not even dirtied.
 		// ★★**A SELECTION NARROWS IT** (the user's decision, 2026-09-15): the frames or the text
@@ -915,12 +1038,24 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				//   keyboard focus and is a window in its own right; reading the selection first
 				//   cannot be wrong, while reading it after would depend on what a dialog does to
 				//   a selection - which is not a thing this code should have to know.
-				IDataBase* const db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
+				// ★★THE DOCUMENT EXPORTED IS THE TASK DOCUMENT (2026-09-25, the user's decision) - the chosen Target, else
+				//   the active one: the document the import will write the edited file back into. A selection counts
+				//   only when that document is the one in front; one made in another document is not this document's
+				//   stories (the export takes stories by their uid alone), so the whole Target is exported instead and
+				//   the status line says so.
+				IDataBase* const db = Utils<IKCMStoryEditsFacade>()->GetTaskDocumentDB();
 				if (db == nil)
 					break;			// the menu item is greyed without one; this is the belt
+				// ★Not a PDF document (2026-10-14, design 3.7) - said before the folder dialog; the model asks the same for a script.
+				if (Utils<IKCMCompareFacade>()->IsPdfDoc(db))
+				{
+					KCMSetStatus(kKCMPdfTargetRefusal);
+					break;
+				}
+				const bool16 inFront = (Utils<IKCMCompareFacade>()->GetActiveDocDB() == db) ? kTrue : kFalse;
 
 				UIDList stories(db);
-				const bool16 hasSelection = KCMCollectSelectedStories(db, stories);
+				const bool16 hasSelection = inFront ? KCMCollectSelectedStories(db, stories) : kFalse;
 
 				if (hasSelection && stories.IsEmpty())
 				{
@@ -961,6 +1096,10 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 							exportMsg.AppendNumber(stories.Length());
 							exportMsg.Append(" story(ies)]");
 						}
+						else if (!inFront)
+						{
+							exportMsg.Append(" [the Target, not the document in front -> the whole Target]");
+						}
 						else
 						{
 							exportMsg.Append(" [no selection -> the whole document]");
@@ -971,54 +1110,101 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			}
 			break;
 
-		// Flyout "Import Story Text...": the other half of the round trip. The chosen files (HTML or
-		// .docx) are read, a Task Start is taken, the edits go INTO THE DOCUMENT as one undo step,
-		// and the Story comparison starts against that Task Start (2026-09-19, the user's call - a
-		// trial; the design is docs/superpowers/specs/2026-09-19-kcm-import-direct-design.md).
-		// ★What could not go in is listed first, with a red "!". Ctrl+Z takes the whole import back.
-		//   ★★**AND SINCE 2026-09-24 ONE CHANGE CAN BE TAKEN BACK AGAIN** - not by KCM's own restore,
-		//   which went on 2026-09-21, but by InDesign's change history: the import writes under Track
-		//   Changes as "KohakuChangeMarker" (KCMImportTracking.h), and a rejected change brings back
-		//   what it took, footnotes and tables included (measured that day). Ruby, kenten,
-		//   tate-chu-yoko and warichu are not recorded by it; the Source document still has them.
+		// "Export Pages to Word..." (2026-10-25) - on the Pages panel's page menu and on the flyout: the pages selected in
+		// the Pages panel, each one .docx whose text boxes stand where the frames stand, in a dated folder under the one the
+		// reader picks (the work is KCMPageExport.cpp, through the facade). Import Story Text... reads the files back.
+		// ⚠The [None] guard first, as Register / Check / Refresh have it: that row has no page behind it, and the reader
+		//  falls back to the current page - a file nobody asked for.
+		// ★★AND IT SAYS SO (2026-10-26, the author on the report's minor ①: "put some message in the panel"): it broke off
+		//   silently; the item is no longer greyed for [None] alone either (UpdateActionStates), so the press is what tells.
+		// ★THE SELECTION IS READ BEFORE THE DIALOG OPENS - the story export's rule, through the one reader (KCMReadSelectedPages,
+		//   here since 2026-10-26 - the import tidy S7; the model decides on the list it is handed).
+		case kKCMPopupExportPagesActionID:
+			{
+				if (KCMPagesPanelSelectionHasNoRealPage())
+				{
+					PMString onlyNone("Export Pages to Word: only [None] is selected in the Pages panel - select the pages to export");
+					onlyNone.SetTranslatable(kFalse);
+					KCMSetStatus(onlyNone);
+					break;
+				}
+				IDataBase* const db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
+				if (db == nil)
+					break;			// the menu item is greyed without one; this is the belt
+				if (Utils<IKCMCompareFacade>()->IsPdfDoc(db))
+				{
+					KCMSetStatus(kKCMPdfTargetRefusal);
+					break;
+				}
+				UIDList pages(db);
+				if (!KCMReadSelectedPages(pages, kFalse /*no masters - a master's items are every page's*/) || pages.IsEmpty())
+				{
+					PMString none("Export Pages to Word: no page is selected in the Pages panel");
+					none.SetTranslatable(kFalse);
+					KCMSetStatus(none);
+					break;
+				}
+				SDKFolderChooser chooser;
+				PMString title("Export Pages to Word - where to put the folder");
+				title.SetTranslatable(kFalse);
+				chooser.SetTitle(title);
+				chooser.ShowDialog();
+				if (chooser.IsChosen())
+				{
+					PMString exportMsg;
+					Utils<IKCMStoryEditsFacade>()->ExportPagesAsWord(chooser.GetIDFile(), pages, exportMsg);
+					if (exportMsg.CharCount() > 0)
+						KCMSetStatus(exportMsg);
+				}
+			}
+			break;
+
+		// Flyout "Import Story Text...": the other half of the round trip. The chosen .docx files are read, a Task
+		// Start in memory of the task document is taken, the files' words go INTO THAT COPY, and the Story comparison
+		// starts against it: the rows say what the document would become, and Apply puts them in (2026-10-24, adopted
+		// 2026-10-25 - docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md). The document is not changed.
+		// ★What could not go in is listed first, with a red "!".
+		// ⛔From 2026-09-19 to 2026-10-25 the edits went INTO THE DOCUMENT as one undo step, tracked and signed
+		//   "KohakuChangeMarker", against a Task Start saved to a file - with "Reject This Import Change" and "Redo
+		//   from Word" on the rows. That road went with the tidy.
 		// ★★**FILES, AND AS MANY AS THEY LIKE** (the user's decision, 2026-09-15). A folder was
-		//   what this asked for until now, which meant handing over everything that happened to be
+		//   what this asked for until then, which meant handing over everything that happened to be
 		//   in one.
 		case kKCMPopupImportStoryTextActionID:
 			{
 				// ★NO DIALOG BEFORE THE FILES (2026-09-19, the user's call). Until then this asked the
 				//   reader to take a Task Start just before the import (kKCMImportTaskStartAdviceKey,
 				//   2026-09-17), because the import moved theirs aside and compared against it after.
-				//   The import takes a Task Start of ITS OWN now, replacing any the reader had - so there
+				//   The import takes a Task Start of ITS OWN, replacing any the reader had - so there
 				//   is nothing to advise, and How to Use says so instead.
 
 				// ⚠**SDKFileOpenChooser CANNOT DO THIS.** It holds one IDFile and has no way to
 				//  answer for several, so the dialog is built the way Adobe's own callers build it
 				//  (source/open/.../importdata/SelectFileObserver.cpp:147).
+				// ★Not into a PDF document (2026-10-14, design 3.7) - said before the dialog, so no file is picked for nothing.
+				//   The model asks the same (KCMImportStoryTextAsSource) for a script.
+				if (Utils<IKCMCompareFacade>()->IsPdfDoc(Utils<IKCMStoryEditsFacade>()->GetTaskDocumentDB()))
+				{
+					KCMSetStatus(kKCMPdfTargetRefusal);
+					break;
+				}
 				InterfacePtr<IOpenFileDialog> dialog(
 					(IOpenFileDialog*)::CreateObject(kOpenFileDialogBoss, IID_IOPENFILEDIALOG));
 				if (dialog == nil)
 					break;
 
-				PMString family("Story text (*.html)");
-				family.SetTranslatable(kFalse);
-				PMString extension("html");
-				extension.SetTranslatable(kFalse);
-				dialog->AddExtension(&family, &extension);
-				// ★**AND THE OTHER SPELLING** (2026-09-19): a .docx written by Export Story Text as
-				//   Word..., edited in Word with its revision tracking on. The model half tells the
-				//   two apart by the extension; both may be chosen at once.
+				// ★★WORD'S FILES ONLY (2026-09-25, the user: "make the file type Word - it is 'all' now - and the HTML
+				//   one is not needed", then "Word only is fine"). The HTML road went on 2026-09-21 (Word format
+				//   only); its "Story text (*.html)" filter outlived it here until today, and "All Files" - which
+				//   the dialog showed first - went with it. SetDefaultFilter is Windows-only (IOpenFileDialog.h),
+				//   which is all KCM ships for.
 				PMString wordFamily("Word document (*.docx)");
 				wordFamily.SetTranslatable(kFalse);
 				PMString wordExtension("docx");
 				wordExtension.SetTranslatable(kFalse);
 				dialog->AddExtension(&wordFamily, &wordExtension);
-				// ★**AND "All Files" UNDERNEATH THEM**, so that a reader whose folder shows nothing
-				//   can see what is actually in there rather than an empty dialog.
-				// ⚠**IT DOES NOT WIDEN WHAT GOES IN.** The model takes "<decimal>.html" and a .docx
-				//  by its tag, and nothing else, so a file shown by this last filter and then chosen
-				//  is counted as "not named after a story" - seen, said, and not imported.
-				dialog->AppendAllFilesToFilterList();
+				dialog->SetDefaultFilter(wordFamily);
+				dialog->SetDefaultExtension(wordExtension);
 
 				PMString title("Import Story Text - the edited story files");
 				title.SetTranslatable(kFalse);
@@ -1028,39 +1214,46 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 					&& chosen.GetFileCount() > 0)
 				{
 					PMString importMsg;
-					const bool16 imported = Utils<IKCMStoryEditsFacade>()->ImportStoryText(chosen, importMsg);
-					// ★★WHEN SOMETHING WENT IN (or has a "!" row), THE PANEL SAYS ONLY THAT, AND A DIALOG SAYS
-					//   THE REST (2026-09-24, the user's rule: the panel "Imported", the dialog that the change
-					//   history was applied). The dialog carries the model's whole sentence under that line,
-					//   so nothing the status line used to say is lost. ⚠A cancel, a failure, or an import
-					//   that changed nothing still answers in the status line alone, as before - there is no
-					//   change history to announce. (app.kcmImportStoryText returns the whole sentence and
-					//   shows no dialog: the matrix reads it.)
-					if (imported)
-					{
-						KCMSetStatus(KCMLoc::Text(kKCMImportedStatusKey, KCMJa::kImported));
-						PMString body = KCMLoc::Text(kKCMImportTrackedKey, KCMJa::kImportTracked);
-						body.Append("\n\n");
-						body.Append(importMsg);
-						body.SetTranslatable(kFalse);
-						CAlert::InformationAlert(body);
-					}
-					else if (importMsg.CharCount() > 0)
-					{
+					// ★★THE FILES' WORDS GO INTO A TASK START IN MEMORY (2026-10-24, adopted 2026-10-25 - the user: "right now
+					//   the state before the change is the Source and the Target is what gets changed - I want that the other
+					//   way round"): it is the Source, and the rows say what the document would become; "Apply This Change"
+					//   puts them in. The document is not changed here.
+					Utils<IKCMStoryEditsFacade>()->ImportStoryTextAsSource(chosen, importMsg);
+					// ★★THE RESULT GOES TO THE PANEL'S STATUS LINE ONLY (2026-09-25, the user: "the dialog saying the
+					//   changes are tracked comes up after an import - stop it, and only show the result on the
+					//   panel"). The model's whole sentence - what is proposed, what cannot go in and why - is what the
+					//   line shows, the same sentence app.kcmImportToSource returns.
+					if (importMsg.CharCount() > 0)
 						KCMSetStatus(importMsg);
-					}
 					// (⛔**THE CALL TO KCMBringArmedTargetToFront WENT ON 2026-09-22.** The import starts a
-					//   comparison of its own and its Target - the document the edited words went into - is
-					//   what there is to look at; that has not changed. What changed is WHO says so. The
-					//   model's own import now sends kKCMTargetToFrontMessage at the one point BOTH of its
-					//   roads meet, so app.kcmImportStoryText ends the same way this item does, instead of
-					//   on the copy it had just saved. Saying it here as well would be a second answer to
-					//   one question ([[one-question-one-place]]).)
+					//   comparison of its own and its Target - the document - is what there is to look at. What
+					//   changed is WHO says so: the model's own import sends kKCMTargetToFrontMessage at the one point
+					//   both of its roads (this item and app.kcmImportToSource) meet. Saying it here as well would be
+					//   a second answer to one question ([[one-question-one-place]]).)
 				}
 			}
 			break;
 
+		// ★"Compare with Tracked Changes..." (2026-10-05): the model does the whole road - the save dialog, the copy,
+		//   the rejections, the pair, the mode and the start (KCMTrackOriginal.h); this says what came of it.
+		//   An empty message = the reader cancelled the dialog, and a cancel says nothing (RUN-67).
+		case kKCMCompareTrackedActionID:
+			{
+				PMString msg;
+				Utils<IKCMCompareFacade>()->TakeTrackOriginalCopy(msg);
+				KCMRefreshPanel();
+				if (msg.CharCount() > 0)
+					KCMSetStatus(msg);
+			}
+			break;
+
 		case kKCMPopupCompareBooksActionID:
+			// The menu greys it in the Track Changes mode; this is the same answer for a caller that invokes it anyway.
+			if (Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeTrack)
+			{
+				KCMSetStatus("Book comparison is not available in the Track Changes mode.");
+				break;
+			}
 			KCMRunBookComparison();
 			break;
 
@@ -1089,24 +1282,56 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMStoryRefreshMenuRow();
 			break;
 
-		// "Reject This Import Change" on a CHANGE row's menu (2026-09-24, stage 2 A): the import's tracked changes
-		// touching that change's range are rejected as one undo step, and the row is compared again.
-		// ★Which change it was is noted by KCMStorySetMenuChange at the right click.
-		case kKCMChangeRowRejectActionID:
-			KCMChangeRowReject();
-			break;
+		// (⛔"Reject This Import Change" and "Redo from Word" - kKCMChangeRowRejectActionID / kKCMChangeRowRedoActionID -
+		//  stood here until 2026-10-25; they went with the import that wrote into the document.)
 
-		// "Restore from Source" on an ATTRIBUTE change row's menu (2026-09-24, stage 2 B): the mark over those
-		// characters is made what the Source document has, as one undo step, and the row is compared again.
+		// "Restore from Source" on a change row's menu (2026-09-24, stage 2 B; a text row's too since 2026-10-24 night): the
+		// mark or the words over those characters are made what the Source document has, as one undo step, and the row is
+		// compared again. ★Which change it was is noted by KCMStorySetMenuChange at the right click.
 		case kKCMChangeRowRestoreAttrActionID:
 			KCMChangeRowRestoreAttr();
 			break;
 
-		// "Redo from Word" on a TAKEN-BACK change row's menu (2026-09-24, stage 2 C): the change's paragraph is made
-		// what Word shows again, as one undo step, and the row is compared again.
-		case kKCMChangeRowRedoActionID:
-			KCMChangeRowRedo();
+		// "Match the Source" on a TABLE row's menu (2026-09-25, design section 16): the table is reshaped and its cells
+		// copied from the Source document's table, as one abortable undo step - aborted unless the table then reads as
+		// the Source's - and the row is compared again.
+		case kKCMChangeRowMatchTableActionID:
+			KCMChangeRowMatchTable();
 			break;
+
+		// ★The three Apply items (2026-10-24): the change, the story, every story the import
+		//   filled - put into the document as one undo step each by the model (IKCMStoryEditsFacade), which compares the
+		//   rows again and says what went in.
+		case kKCMChangeRowApplyActionID:
+			KCMChangeRowApply();
+			break;
+		case kKCMStoryRowApplyActionID:
+			KCMStoryRowApply();
+			break;
+		case kKCMApplyAllActionID:
+			KCMHeadingApplyAll();
+			break;
+		// ★"Restore from Copy" on a "=" change row (2026-10-24 evening, design 11-3): the document's own words back from the
+		//   copy Apply This Change kept, as one undo step by the model, which compares the row again.
+		case kKCMChangeRowRestoreCopyActionID:
+			KCMChangeRowRestoreCopy();
+			break;
+		// ★"Restore All Changes in This Story" on a STORY row (2026-10-24 night, design 1-8): every text change of the story
+		//   made the Source's, by copy, as one undo step by the model.
+		case kKCMStoryRowRestoreAllActionID:
+			KCMStoryRowRestoreAll();
+			break;
+
+		// ★ACCEPT AND REJECT IN THE TRACK MODE (2026-10-25): the four scopes' pairs - each one undo step by the model, which
+		//   reads the Track list again (KCMStoryRefresh.cpp names the row, the author or the heading the menu was about).
+		case kKCMTrackAcceptChangeActionID:	KCMChangeRowResolveTrack(kTrue);	break;
+		case kKCMTrackRejectChangeActionID:	KCMChangeRowResolveTrack(kFalse);	break;
+		case kKCMTrackAcceptStoryActionID:	KCMStoryRowResolveTrack(kTrue);		break;
+		case kKCMTrackRejectStoryActionID:	KCMStoryRowResolveTrack(kFalse);	break;
+		case kKCMTrackAcceptAuthorActionID:	KCMAuthorRowResolveTrack(kTrue);	break;
+		case kKCMTrackRejectAuthorActionID:	KCMAuthorRowResolveTrack(kFalse);	break;
+		case kKCMTrackAcceptAllActionID:	KCMHeadingResolveTrack(kTrue);		break;
+		case kKCMTrackRejectAllActionID:	KCMHeadingResolveTrack(kFalse);		break;
 
 		// "Show as XML" on a DEFINITION row's context menu (2026-09-09). Shows the element the row
 		// names, from both documents, in a modal alert. ★Which row it was is noted the same way as
@@ -1181,6 +1406,9 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		//     shortcut, so there is a way in that does not pass through the menu. ([[one-question-one-place]]
 		//     is kept by **having one test function**; it is called from two places because there are two
 		//     entrances.)
+		// (⛔Export Pages to Word stood here from 2026-10-25 to 10-26: greyed, it told the reader nothing - the author asked for
+		//  a message, and the press now says it, DoAction. Nothing lands on a page nobody chose: the press reads the
+		//  selection itself and stops.)
 		if ((action == kKCMPageMapToggleActionID ||
 		     action == kKCMPageCheckToggleActionID ||
 		     action == kKCMPageRefreshCompareActionID) &&
@@ -1195,459 +1423,585 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 		//  puts its words into the document and shows them in the STORY mode, where nothing needs to
 		//  be greyed because nothing is being held.)
 
-		if (action == kKCMPopupStartStopActionID)
+		switch (action.Get())
 		{
-			// The menu name follows the armed state (armed = Stop, not armed = Start).
-			// (kSelectedAction is not raised: this switches the name itself rather than showing a check.)
-			// ★The facade is asked several times, so it is taken once into an InterfacePtr (`Utils.h:74-80`),
-			//   which is what the other branches of this file already do.
-			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-			const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
-			// (⛔It read "Finish Import" while the fourth mode was up - that mode went on 2026-09-20.)
-			PMString name(!armed ? kKCMStartMenuText : kKCMStopMenuText);
-			name.SetTranslatable(kFalse);
-			listToUpdate->SetNthActionName(i, name);
-			// ★Stop is always live: clearing the marks and ending a peek must work even with no document
-			//   open (the clearing branch of KCMToggleStartStop keeps its own record of the documents the
-			//   marks were actually drawn in).
-			//   Start needs two documents, Target and Source, so it is greyed until they are there (user’s
-			//   instruction). The test goes through the same CanStartComparison() the executing side uses,
-			//   so what the menu looks like and what pressing it does cannot part company.
-			listToUpdate->SetNthActionState(i,
-				(armed || compare->CanStartComparison()) ? kEnabledAction : kDisabled_Unselected);
-		}
-		// ★"Set as Target" / "Set as Source". The two share a branch because they are enabled by the
-		//   same two conditions, and writing the pair twice is how the two would come to differ.
-		//   ★**Live only while nothing is being compared** (user's instruction): the pair a running
-		//     comparison was started on is what its marks were made from, so letting the choice move
-		//     underneath it would put a name on the panel that the marks on screen do not come from.
-		//     Choose, then Start ＝ the order the items sit in on the flyout.
-		//   ★**And only with an active document to name**, since that is what these set. The
-		//     executing side asks the same question by taking the setter's kFalse, so the grey item
-		//     and the refusal cannot part company.
-		//   ⚠**Not greyed when the same document is already chosen for the other one.** Choosing one
-		//     document for both is allowed, and the panel showing the same name twice is the reader
-		//     seeing what they asked for; what refuses is the Start, with a message naming both ways
-		//     out of it (KCMToggleStartStop). ★**Both, because setting is not the only way in**: the
-		//     commoner one is choosing a Source alone and pressing Start without switching documents,
-		//     since the unchosen Target then resolves to that very document -- and the way out of
-		//     that one is to bring the other document to the front.
-		else if (action == kKCMPopupTaskStartActionID)
-		{
-			// The one place (KCMCanTakeTaskStartCopy): a document to copy - the chosen Target, or
-			// the active document. Nothing else: a comparison running is stopped by the press
-			// itself, not refused here.
-			listToUpdate->SetNthActionState(i,
-				Utils<IKCMCompareFacade>()->CanTakeTaskStartCopy() ? kEnabledAction : kDisabled_Unselected);
-		}
-		else if (action == kKCMPopupSetTargetActionID || action == kKCMPopupSetSourceActionID)
-		{
-			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-			const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
-			// ⚠**A TASK START NO LONGER GREYS THESE** (2026-09-21, the reader's decision). While the
-			//   Task Start was an origin held in memory both items were greyed so that neither could
-			//   throw it away - "Set as Source" would have replaced the only copy of those words
-			//   silently, and there was nowhere else to get them. **The copy is a file on disk now**,
-			//   so replacing the choice loses nothing: the file stays where it was saved and can be
-			//   chosen again. ⇒ The origin test that stood here is gone - and it could no longer be
-			//   true either, nothing having taken an origin since Task Start began saving to a file.
-			listToUpdate->SetNthActionState(i,
-				(!armed && compare->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
-		}
-		else if (action == kKCMPopupPrintMarksActionID)
-		{
-			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetPrintMarks());
-		}
-		else if (action == kKCMPopupOpacity25ActionID)
-		{
-			// Radio-like: this item carries the check while 25% is in force (exclusive with 75%).
-			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetMarkOpacity25());
-		}
-		else if (action == kKCMPopupOpacity75ActionID)
-		{
-			// Radio-like: this item carries the check while 75% (= not 25%) is in force.
-			KCMSetCheckState(listToUpdate, i, !Utils<IKCMCompareFacade>()->GetMarkOpacity25());
-		}
-		// ★The two "Mark colour" items. Radio-like, as Marks opacity above ＝ the one in force carries
-		//   the check. **Both are always live**: they can be chosen with nothing being compared, and
-		//   they apply to the next Start.
-		else if (action == kKCMPopupColorRedActionID)
-		{
-			KCMSetCheckState(listToUpdate, i, !Utils<IKCMCompareFacade>()->GetMarkColorCyan());	// red (the default) puts the check here
-		}
-		else if (action == kKCMPopupColorCyanActionID)
-		{
-			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetMarkColorCyan());
-		}
-		// ★The "Compare mode" items. Radio-like, as Marks opacity above ＝ the one in force carries
-		//   the check. **All of them are always live**: they can be chosen with nothing being
-		//   compared, and they apply to the next Start.
-		// ★★Each item asks for ITS OWN mode by name rather than sharing a test, which is what let a
-		//   third one be added here without touching the other two.
-		//   ⚠It read "The two items" until 2026-09-09. **A written count goes stale the moment the
-		//     thing it counts grows** - the number is not repeated now, the list below is the list.
-		else if (action == kKCMPopupModePixelActionID)
-		{
-			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModePixel);
-		}
-		else if (action == kKCMPopupModeStoryActionID)
-		{
-			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeStory);
-		}
-		else if (action == kKCMPopupModeResourcesActionID)
-		{
-			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeResources);
-		}
-		else if (action == kKCMPopupHideUnchangedActionID)
-		{
-			// ★Greyed unless Started (armed), by the user’s instruction. This feature picks "the spreads
-			//   with no change" from the comparison marks (sEntries), so with nothing Started there is
-			//   nothing to pick (the work has a guard at its head for the same reason). It uses the same
-			//   kDisabled_Unselected as the other plain commands (Refresh Overset; "Export Changed
-			//   Pages" was one of them until it was removed on 2026-09-14).
-			// ★There is no way to end up "ON and greyed and unable to get back": a Stop
-			//   (**KCMDoClearMarks**) always calls ResetHideUnchanged(kTrue), which shows the hidden
-			//   spreads again and turns the toggle off. So do a recomparison (**KCMDoMarkChangesDoc**) and
-			//   a document closing (**KCMHandleDocsClosed**).
-			//   ⚠Line numbers were dropped from those three references: all three had gone stale, and one
-			//     pointed more than a thousand lines past the end of its file. ★**A name does not move.**
-			// ★★**Greyed in Story mode as well.** What this hides is "a spread with not one page carrying a
-			//   comparison mark (sEntries)", and a story diff creates no entry at all ---- ∴ pressing it in
-			//   Story mode would mean "hide everything except the spreads with a registration or an
-			//   overflow".
-			//   ⚠**The safety net on the executing side does not stop it**: KCMHideUnchangedToggle only
-			//     refuses when sEntries, the registrations and the overflows are **all** empty, or when
-			//     every visible spread would be hidden; with one registration or one overflow it goes
-			//     through and hides them. ⇒ It is refused here.
-			//   ★"ON and greyed and stuck" cannot happen here either: switching mode (KCMApplyCompareMode)
-			//     always recompares everything while Started, and the entry to that, KCMDoMarkChangesDoc,
-			//     calls KCMResetHideUnchanged(kTrue). Not Started, IsArmed is false and it was already
-			//     greyed.
-			// ★The facade is asked several times, so it is taken once into an InterfacePtr (Utils.h:74-80,
-			//   the same shape as the Start/Stop branch above).
-			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-			int16 actionState;
-			// ⚠**`!= kKCMModePixel`, not `== kKCMModeStory`** (2026-09-09). Hide Unchanged hides the
-			//   spreads the PIXEL comparison found equal, and no other mode produces that verdict -
-			//   so it is greyed in every mode but Pixel. Asked the old way it came back enabled in
-			//   the Resources mode, where pressing it would have hidden spreads on the strength of a
-			//   comparison that never ran.
-			if (!compare->IsArmed() || compare->GetCompareMode() != kKCMModePixel)
-				actionState = kDisabled_Unselected;
-			else
-				actionState = compare->GetHideUnchangedOn() ? (kEnabledAction | kSelectedAction) : kEnabledAction;
-			listToUpdate->SetNthActionState(i, actionState);
-		}
-		else if (action == kKCMPopupShowOldNumsActionID)
-		{
-			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowOldPageNumbers());
-		}
-		else if (action == kKCMPopupShowStoryIdsActionID)
-		{
-			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowStoryIds());
-		}
-		else if (action == kKCMPopupAlignViewsActionID)
-		{
-			// ★**Greyed while fewer than two documents are open** (the user's instruction, 2026-09-14).
-			//   With one document there is nowhere to line anything up, and the item used to be
-			//   pressable and then say "Aligned other views to the active view." having done nothing --
-			//   measured, the same wording for one document as for two.
-			// ⚠The number of open documents is the ONLY thing asked here. KCMOpenDocumentCount's header
-			//   says why this deliberately does NOT look ahead at the engine's three-way answer: a
-			//   hand-copied look-ahead of exactly that kind lived in KCMViewSync.cpp, drifted out of
-			//   step with the engine and was removed. ⇒ The item can still be enabled and align
-			//   nothing (a third document in front while armed); it can no longer be enabled with
-			//   nowhere to align to.
-			// ★No check mark - this is a plain command, not a toggle.
-			listToUpdate->SetNthActionState(i, (KCMOpenDocumentCount() >= 2) ? kEnabledAction
-																			: kDisabled_Unselected);
-		}
-		else if (action == kKCMPopupSyncViewsActionID)
-		{
-			// ⛔**The origin's branch went on 2026-09-21.** It greyed this item because an armed origin
-			//   had no Source WINDOW to sync with - the copy existed only as bytes. Start opens the
-			//   Task Start copy now, so there is always a window on the other side.
-			KCMSetCheckState(listToUpdate, i, KCMGetLayoutSync());
-		}
-		else if (action == kKCMPopupTranslucentPanelActionID)
-		{
-			// ★It can be chosen while docked (it is not greyed) -- the user’s instruction. The case where
-			// pressing it has no visible result is explained by the status wording in DoAction.
-			KCMSetCheckState(listToUpdate, i, KCMGetPanelTranslucent());
-		}
-		else if (action == kKCMPopupTranslucentPagesActionID)
-		{
-			// ★Same policy as above: it can be chosen with the Pages panel docked or closed.
-			// (Greying it by "is it floating right now" would make the setting impossible to undo the
-			//  moment the panel goes into a dock.)
-			KCMSetCheckState(listToUpdate, i, KCMGetPagesPanelTranslucent());
-		}
-		else if (action == kKCMPopupTranslucentBookDialogActionID)
-		{
-			// ★Same policy as the two above: it can be chosen while the dialog is not open. A setting made
-			// while it is closed takes effect the next time it opens (KCMBookDialog.cpp applies it on every
-			// open).
-			KCMSetCheckState(listToUpdate, i, KCMGetBookDialogTranslucent());
-		}
-		else if (action == kKCMPopupShowSrcMarksActionID)
-		{
-			// ⛔The origin's branch went on 2026-09-21, with the same reasoning as Sync Layout Views
-			//   above: there is a Source window to show marks on now, always.
-			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowSourceMarks());
-		}
-		else if (action == kKCMPopupShowTgtMarksActionID)
-		{
-			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowTargetMarks());
-		}
-		else if (action == kKCMPopupIgnorePageNumActionID)
-		{
-			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetIgnorePageNumberMarker());
-		}
-		else if (action == kKCMPopupPairByUidActionID)
-		{
-			KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetPairPagesByUid());
-		}
-		else if (action == kKCMPageMapToggleActionID)
-		{
-			// The registration toggle on the Pages panel context menu: enabling (is anything selected),
-			// the check (all registered = tick, some = intermediate) and the label (Target = Added,
-			// Source = Removed). ★**The model counts; this side writes.**
-			// ★★The model **only answers**; writing into the menu and holding the label strings is this
-			//   side’s job. The shape of the answer is KCMPageToggleState in KCMPageMap.h.
-			const KCMPageToggleState st = Utils<IKCMPageFlagsFacade>()->GetRegisterToggleState();
-			if (!st.fEnabled)
+			case kKCMPopupStartStopActionID:
 			{
-				listToUpdate->SetNthActionState(i, kDisabled_Unselected);
-			}
-			else
-			{
-				int16 actionState = kEnabledAction;
-				if (st.fTick == kKCMPageTickAll)
-					actionState |= kSelectedAction;			// all of them registered = a check
-				else if (st.fTick == kKCMPageTickSome)
-					actionState |= kMultiSelectedAction;	// only some registered = an intermediate check
-				listToUpdate->SetNthActionState(i, actionState);
-
-				// The dynamic label (English, as the rest of the panel UI). This is exactly what
-				// IActionStateList.h:78 describes -- changing a menu name by state -- and it needs none of the
-				// dynamic-menu machinery.
-				// ⚠While disabled the name is left alone (the .fr default stands), as before.
-				PMString name(st.fRole == kKCMPageRoleSource ? "Register as Removed Pages"
-															   : "Register as Added Pages");
+				// The menu name follows the armed state (armed = Stop, not armed = Start).
+				// (kSelectedAction is not raised: this switches the name itself rather than showing a check.)
+				// ★The facade is asked several times, so it is taken once into an InterfacePtr (`Utils.h:74-80`),
+				//   which is what the other branches of this file already do.
+				InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+				const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+				// (⛔It read "Finish Import" while the fourth mode was up - that mode went on 2026-09-20.)
+				PMString name(!armed ? kKCMStartMenuText : kKCMStopMenuText);
 				name.SetTranslatable(kFalse);
 				listToUpdate->SetNthActionName(i, name);
+				// ★Stop is always live: clearing the marks and ending a peek must work even with no document
+				//   open (the clearing branch of KCMToggleStartStop keeps its own record of the documents the
+				//   marks were actually drawn in).
+				//   Start needs two documents, Target and Source, so it is greyed until they are there (user’s
+				//   instruction). The test goes through the same CanStartComparison() the executing side uses,
+				//   so what the menu looks like and what pressing it does cannot part company.
+				listToUpdate->SetNthActionState(i,
+					(armed || compare->CanStartComparison()) ? kEnabledAction : kDisabled_Unselected);
+				break;
 			}
-		}
-		else if (action == kKCMPageCheckToggleActionID)
-		{
-			// The "Check" toggle on the Pages panel context menu: enabling (Started, on the Target or
-			// Source, with a selection) and the check (all ticked / some = intermediate). ★As with the
-			// registration toggle, the model counts and this side writes.
-			// ★Check has a fixed label, so fRole is not read.
-			const KCMPageToggleState st = Utils<IKCMPageFlagsFacade>()->GetCheckToggleState();
-			if (!st.fEnabled)
+			case kKCMPopupTaskStartCloneActionID:
 			{
-				listToUpdate->SetNthActionState(i, kDisabled_Unselected);
+				// The question "Task Start (Save)..." asks: a document to take (KCMCanTakeTaskStartClone).
+				listToUpdate->SetNthActionState(i,
+					Utils<IKCMCompareFacade>()->CanTakeTaskStartClone() ? kEnabledAction : kDisabled_Unselected);
+				break;
 			}
-			else
+			case kKCMPopupTaskStartActionID:
 			{
-				int16 actionState = kEnabledAction;
-				if (st.fTick == kKCMPageTickAll)
-					actionState |= kSelectedAction;			// every selected page in scope is ticked (★what is in scope depends on the mode; the model’s KCMCollectCheckablePageUIDs)
-				else if (st.fTick == kKCMPageTickSome)
-					actionState |= kMultiSelectedAction;	// only some ticked = an intermediate check
+				// The one place (KCMCanTakeTaskStartCopy): a document to copy - the chosen Target, or
+				// the active document. Nothing else: a comparison running is stopped by the press
+				// itself, not refused here.
+				listToUpdate->SetNthActionState(i,
+					Utils<IKCMCompareFacade>()->CanTakeTaskStartCopy() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			// ★"Set as Target" / "Set as Source". The two share a branch because they are enabled by the
+			//   same two conditions, and writing the pair twice is how the two would come to differ.
+			//   ★**Live only while nothing is being compared** (user's instruction): the pair a running
+			//     comparison was started on is what its marks were made from, so letting the choice move
+			//     underneath it would put a name on the panel that the marks on screen do not come from.
+			//     Choose, then Start ＝ the order the items sit in on the flyout.
+			//   ★**And only with an active document to name**, since that is what these set. The
+			//     executing side asks the same question by taking the setter's kFalse, so the grey item
+			//     and the refusal cannot part company.
+			//   ⚠**Not greyed when the same document is already chosen for the other one.** Choosing one
+			//     document for both is allowed, and the panel showing the same name twice is the reader
+			//     seeing what they asked for; what refuses is the Start, with a message naming both ways
+			//     out of it (KCMToggleStartStop). ★**Both, because setting is not the only way in**: the
+			//     commoner one is choosing a Source alone and pressing Start without switching documents,
+			//     since the unchosen Target then resolves to that very document -- and the way out of
+			//     that one is to bring the other document to the front.
+			case kKCMPopupSetTargetActionID:
+			case kKCMPopupSetSourceActionID:
+			{
+				InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+				const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+				// ⚠**A TASK START NO LONGER GREYS THESE** (2026-09-21, the reader's decision). While the
+				//   Task Start was an origin held in memory both items were greyed so that neither could
+				//   throw it away - "Set as Source" would have replaced the only copy of those words
+				//   silently, and there was nowhere else to get them. **The copy is a file on disk now**,
+				//   so replacing the choice loses nothing: the file stays where it was saved and can be
+				//   chosen again. ⇒ The origin test that stood here is gone - and it could no longer be
+				//   true either, nothing having taken an origin since Task Start began saving to a file.
+				listToUpdate->SetNthActionState(i,
+					(!armed && compare->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			// ★"Set PDF as Target..." / "Set PDF as Source..." (2026-10-14): live while nothing is compared - the "Set as"
+			//   pair's rule - but WITHOUT needing an active document: what they set is a file the dialog picks.
+			case kKCMPopupSetPdfTargetActionID:
+			case kKCMPopupSetPdfSourceActionID:
+			{
+				InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+				const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+				listToUpdate->SetNthActionState(i, !armed ? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			case kKCMPopupPrintMarksActionID:
+			{
+				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetPrintMarks());
+				break;
+			}
+			case kKCMPopupOpacity25ActionID:
+			{
+				// Radio-like: this item carries the check while 25% is in force (exclusive with 75%).
+				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetMarkOpacity25());
+				break;
+			}
+			case kKCMPopupOpacity75ActionID:
+			{
+				// Radio-like: this item carries the check while 75% (= not 25%) is in force.
+				KCMSetCheckState(listToUpdate, i, !Utils<IKCMCompareFacade>()->GetMarkOpacity25());
+				break;
+			}
+			// ★The two "Mark colour" items. Radio-like, as Marks opacity above ＝ the one in force carries
+			//   the check. **Both are always live**: they can be chosen with nothing being compared, and
+			//   they apply to the next Start.
+			case kKCMPopupColorRedActionID:
+			{
+				KCMSetCheckState(listToUpdate, i, !Utils<IKCMCompareFacade>()->GetMarkColorCyan());	// red (the default) puts the check here
+				break;
+			}
+			case kKCMPopupColorCyanActionID:
+			{
+				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetMarkColorCyan());
+				break;
+			}
+			// ★The "Compare mode" items. Radio-like, as Marks opacity above ＝ the one in force carries
+			//   the check. **All of them are always live**: they can be chosen with nothing being
+			//   compared, and they apply to the next Start.
+			// ★★Each item asks for ITS OWN mode by name rather than sharing a test, which is what let a
+			//   third one be added here without touching the other two.
+			//   ⚠It read "The two items" until 2026-09-09. **A written count goes stale the moment the
+			//     thing it counts grows** - the number is not repeated now, the list below is the list.
+			case kKCMPopupModePixelActionID:
+			{
+				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModePixel);
+				break;
+			}
+			case kKCMPopupModeStoryActionID:
+			{
+				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeStory);
+				break;
+			}
+			case kKCMPopupModeResourcesActionID:
+			{
+				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeResources);
+				break;
+			}
+			case kKCMPopupModeTrackActionID:
+			{
+				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeTrack);
+				break;
+			}
+			case kKCMPopupHideUnchangedActionID:
+			{
+				// ★Greyed unless Started (armed), by the user’s instruction. This feature picks "the spreads
+				//   with no change" from the comparison marks (sEntries), so with nothing Started there is
+				//   nothing to pick (the work has a guard at its head for the same reason). It uses the same
+				//   kDisabled_Unselected as the other plain commands (Refresh Overset; "Export Changed
+				//   Pages" was one of them until it was removed on 2026-09-14).
+				// ★There is no way to end up "ON and greyed and unable to get back": a Stop
+				//   (**KCMDoClearMarks**) always calls ResetHideUnchanged(kTrue), which shows the hidden
+				//   spreads again and turns the toggle off. So do a recomparison (**KCMDoMarkChangesDoc**) and
+				//   a document closing (**KCMHandleDocsClosed**).
+				//   ⚠Line numbers were dropped from those three references: all three had gone stale, and one
+				//     pointed more than a thousand lines past the end of its file. ★**A name does not move.**
+				// ★★**Greyed in Story mode as well.** What this hides is "a spread with not one page carrying a
+				//   comparison mark (sEntries)", and a story diff creates no entry at all ---- ∴ pressing it in
+				//   Story mode would mean "hide everything except the spreads with a registration or an
+				//   overflow".
+				//   ⚠**The safety net on the executing side does not stop it**: KCMHideUnchangedToggle only
+				//     refuses when sEntries, the registrations and the overflows are **all** empty, or when
+				//     every visible spread would be hidden; with one registration or one overflow it goes
+				//     through and hides them. ⇒ It is refused here.
+				//   ★"ON and greyed and stuck" cannot happen here either: switching mode (KCMApplyCompareMode)
+				//     always recompares everything while Started, and the entry to that, KCMDoMarkChangesDoc,
+				//     calls KCMResetHideUnchanged(kTrue). Not Started, IsArmed is false and it was already
+				//     greyed.
+				// ★The facade is asked several times, so it is taken once into an InterfacePtr (Utils.h:74-80,
+				//   the same shape as the Start/Stop branch above).
+				InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+				int16 actionState;
+				// ⚠**`!= kKCMModePixel`, not `== kKCMModeStory`** (2026-09-09). Hide Unchanged hides the
+				//   spreads the PIXEL comparison found equal, and no other mode produces that verdict -
+				//   so it is greyed in every mode but Pixel. Asked the old way it came back enabled in
+				//   the Resources mode, where pressing it would have hidden spreads on the strength of a
+				//   comparison that never ran.
+				if (!compare->IsArmed() || compare->GetCompareMode() != kKCMModePixel)
+					actionState = kDisabled_Unselected;
+				else
+					actionState = compare->GetHideUnchangedOn() ? (kEnabledAction | kSelectedAction) : kEnabledAction;
 				listToUpdate->SetNthActionState(i, actionState);
+				break;
+			}
+			case kKCMPopupShowOldNumsActionID:
+			{
+				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowOldPageNumbers());
+				break;
+			}
+			case kKCMPopupShowStoryIdsActionID:
+			{
+				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowStoryIds());
+				break;
+			}
+			case kKCMPopupAlignViewsActionID:
+			{
+				// ★**Greyed while fewer than two documents are open** (the user's instruction, 2026-09-14).
+				//   With one document there is nowhere to line anything up, and the item used to be
+				//   pressable and then say "Aligned other views to the active view." having done nothing --
+				//   measured, the same wording for one document as for two.
+				// ⚠The number of open documents is the ONLY thing asked here. KCMOpenDocumentCount's header
+				//   says why this deliberately does NOT look ahead at the engine's three-way answer: a
+				//   hand-copied look-ahead of exactly that kind lived in KCMViewSync.cpp, drifted out of
+				//   step with the engine and was removed. ⇒ The item can still be enabled and align
+				//   nothing (a third document in front while armed); it can no longer be enabled with
+				//   nowhere to align to.
+				// ★No check mark - this is a plain command, not a toggle.
+				listToUpdate->SetNthActionState(i, (KCMOpenDocumentCount() >= 2) ? kEnabledAction
+																				: kDisabled_Unselected);
+				break;
+			}
+			case kKCMPopupSyncViewsActionID:
+			{
+				// ⛔**The origin's branch went on 2026-09-21.** It greyed this item because an armed origin
+				//   had no Source WINDOW to sync with - the copy existed only as bytes. Start opens the
+				//   Task Start copy now, so there is always a window on the other side.
+				KCMSetCheckState(listToUpdate, i, KCMGetLayoutSync());
+				break;
+			}
+			case kKCMPopupTranslucentPanelActionID:
+			{
+				// ★It can be chosen while docked (it is not greyed) -- the user’s instruction. The case where
+				// pressing it has no visible result is explained by the status wording in DoAction.
+				KCMSetCheckState(listToUpdate, i, KCMGetPanelTranslucent());
+				break;
+			}
+			case kKCMPopupTranslucentPagesActionID:
+			{
+				// ★Same policy as above: it can be chosen with the Pages panel docked or closed.
+				// (Greying it by "is it floating right now" would make the setting impossible to undo the
+				//  moment the panel goes into a dock.)
+				KCMSetCheckState(listToUpdate, i, KCMGetPagesPanelTranslucent());
+				break;
+			}
+			case kKCMPopupTranslucentBookDialogActionID:
+			{
+				// ★Same policy as the two above: it can be chosen while the dialog is not open. A setting made
+				// while it is closed takes effect the next time it opens (KCMBookDialog.cpp applies it on every
+				// open).
+				KCMSetCheckState(listToUpdate, i, KCMGetBookDialogTranslucent());
+				break;
+			}
+			case kKCMPopupShowSrcMarksActionID:
+			{
+				// ⛔The origin's branch went on 2026-09-21, with the same reasoning as Sync Layout Views
+				//   above: there is a Source window to show marks on now, always.
+				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowSourceMarks());
+				break;
+			}
+			case kKCMPopupShowTgtMarksActionID:
+			{
+				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetShowTargetMarks());
+				break;
+			}
+			case kKCMPopupIgnorePageNumActionID:
+			{
+				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetIgnorePageNumberMarker());
+				break;
+			}
+			case kKCMPopupPairByUidActionID:
+			{
+				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetPairPagesByUid());
+				break;
+			}
+			case kKCMPageMapToggleActionID:
+			{
+				// The registration toggle on the Pages panel context menu: enabling (is anything selected),
+				// the check (all registered = tick, some = intermediate) and the label (Target = Added,
+				// Source = Removed). ★**The model counts; this side writes.**
+				// ★★The model **only answers**; writing into the menu and holding the label strings is this
+				//   side’s job. The shape of the answer is KCMPageToggleState in KCMPageMap.h.
+				// (2026-10-26) the selection read here, as the command reads it (KCMReadSelectedPages - masters left out)
+				UIDList pages;
+				KCMReadSelectedPages(pages, kFalse);
+				const KCMPageToggleState st = Utils<IKCMPageFlagsFacade>()->GetRegisterToggleState(pages);
+				if (!st.fEnabled)
+				{
+					listToUpdate->SetNthActionState(i, kDisabled_Unselected);
+				}
+				else
+				{
+					int16 actionState = kEnabledAction;
+					if (st.fTick == kKCMPageTickAll)
+						actionState |= kSelectedAction;			// all of them registered = a check
+					else if (st.fTick == kKCMPageTickSome)
+						actionState |= kMultiSelectedAction;	// only some registered = an intermediate check
+					listToUpdate->SetNthActionState(i, actionState);
+
+					// The dynamic label (English, as the rest of the panel UI). This is exactly what
+					// IActionStateList.h:78 describes -- changing a menu name by state -- and it needs none of the
+					// dynamic-menu machinery.
+					// ⚠While disabled the name is left alone (the .fr default stands), as before.
+					PMString name(st.fRole == kKCMPageRoleSource ? "Register as Removed Pages"
+																   : "Register as Added Pages");
+					name.SetTranslatable(kFalse);
+					listToUpdate->SetNthActionName(i, name);
+				}
+				break;
+			}
+			case kKCMPageCheckToggleActionID:
+			{
+				// The "Check" toggle on the Pages panel context menu: enabling (Started, on the Target or
+				// Source, with a selection) and the check (all ticked / some = intermediate). ★As with the
+				// registration toggle, the model counts and this side writes.
+				// ★Check has a fixed label, so fRole is not read.
+				// (2026-10-26) the selection read here, as the command reads it (KCMReadSelectedPages - masters in)
+				UIDList pages;
+				KCMReadSelectedPages(pages, kTrue);
+				const KCMPageToggleState st = Utils<IKCMPageFlagsFacade>()->GetCheckToggleState(pages);
+				if (!st.fEnabled)
+				{
+					listToUpdate->SetNthActionState(i, kDisabled_Unselected);
+				}
+				else
+				{
+					int16 actionState = kEnabledAction;
+					if (st.fTick == kKCMPageTickAll)
+						actionState |= kSelectedAction;			// every selected page in scope is ticked (★what is in scope depends on the mode; the model’s KCMCollectCheckablePageUIDs)
+					else if (st.fTick == kKCMPageTickSome)
+						actionState |= kMultiSelectedAction;	// only some ticked = an intermediate check
+					listToUpdate->SetNthActionState(i, actionState);
+				}
+				break;
+			}
+			case kKCMPageRefreshCompareActionID:
+			{
+				// "Refresh Page Comparison" on the Pages panel context menu (a plain command, not a toggle):
+				// live only while Started (armed) and with the Target or Source in front; greyed otherwise.
+				listToUpdate->SetNthActionState(i, Utils<IKCMCompareFacade>()->RefreshComparisonAvailable() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			// (The Find Overset and Refresh Overset branches stood here and went with the feature on
+			//  2026-09-08.)
+			case kKCMPopupRefreshCompareActionID:
+			{
+				// Live only while a comparison is armed AND both its documents are still open ＝ exactly
+				//   when there is something to compare again. Greyed before a Start and after a Stop.
+				// ★**THE SAME TWO QUESTIONS THE COMMAND ASKS** (KCMRefreshComparison), in the same order,
+				//   so the grey and the command cannot end up disagreeing ([[one-question-one-place]]).
+				//   ⚠ArmedDocsAlive is asked SECOND on purpose: it reads the armed state, which is only
+				//   meaningful once IsArmed has said there is one.
+				listToUpdate->SetNthActionState(i,
+					(Utils<IKCMCompareFacade>()->IsArmed() && Utils<IKCMCompareFacade>()->ArmedDocsAlive())
+						? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			case kKCMPopupImportStoryTextActionID:
+			{
+				// ★A DOCUMENT TO TAKE THE COPY OF - the Task Start's (the chosen Target, else the active one) - AND NOTHING
+				//   ELSE: the question the press itself asks, since the import takes a Task Start in memory (KCMTakeImportClone -
+				//   asked here by its own name since 2026-10-25; it was CanTakeTaskStartCopy, the same answer, from the days the
+				//   import saved a copy to a file).
+				// ★★LIVE WHILE A COMPARISON RUNS (2026-09-25, the user's decision). It waited for Stop until then, on the
+				//   grounds that it "replaced the origin" underneath a running comparison - the origin went on 2026-09-21,
+				//   and the import's own Task Start stops the comparison before anything is written, exactly as the flyout's
+				//   Task Start does. The one visible effect was that after an import - which ends by starting a comparison -
+				//   the item stayed grey until the reader pressed Stop.
+				InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+				const bool16 live = (compare != nil && compare->CanTakeTaskStartClone()) ? kTrue : kFalse;
+				listToUpdate->SetNthActionState(i, live ? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			case kKCMCompareTrackedActionID:
+			{
+				// A document to copy - the chosen Target, else the active one - and nothing else, as Import (2026-10-05).
+				InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+				const bool16 live = (compare != nil && compare->CanTakeTrackOriginalCopy()) ? kTrue : kFalse;
+				listToUpdate->SetNthActionState(i, live ? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			case kKCMPopupExportStoryTextActionID:
+			{
+				// ★THE TASK DOCUMENT IS THE WHOLE CONDITION (2026-09-25): the one the export reads - the chosen Target, else
+				//   the active one - asked of the same facade call the command itself asks, so the grey and the command
+				//   cannot disagree. This item reads and never compares, so it needs no Source and no comparison.
+				//   (It asked for the active document alone until that day, while the import wrote into the Target.)
+				listToUpdate->SetNthActionState(i,
+					(Utils<IKCMStoryEditsFacade>()->GetTaskDocumentDB() != nil) ? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			case kKCMPopupExportPagesActionID:
+			{
+				// (2026-10-25) A document in front. It reads and never compares, so nothing else is asked. (A [None] row alone is
+				//   no longer greyed here - since 2026-10-26 the press says what to select, DoAction.)
+				listToUpdate->SetNthActionState(i,
+					(Utils<IKCMCompareFacade>()->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			case kKCMPopupExportReportActionID:
+			{
+				// ★★★**LIVE ONLY WHILE NOTHING IS STARTED, AND A PAIR IS THERE** (2026-10-11, the user's
+				//   decision: "grey the menu while it is started"). The report compares for itself, in every
+				//   mode (the Track mode too - with nothing started there is no Track list to take apart), and
+				//   leaves nothing started (KCMReport.cpp).
+				// ★The two questions are the model's own: "started" is asked the way KCMExportBeforeAfterReport
+				//   refuses it (IsArmed with an armed Target), and "a pair is there" through CanStartComparison,
+				//   which KCMComparisonRun.h promises goes through THE SAME RESOLVER as the report's
+				//   KCMOpenComparisonPair - so the grey and the press cannot disagree ([[one-question-one-place]]).
+				// ⛔Until that day it was live while comparing as well (a marked Target, 2026-09-14) and greyed
+				//   in the Track mode (2026-10-05, design 2-3).
+				InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+				const bool16 started = (compare != nil && compare->IsArmed() && compare->GetArmedTargetDB() != nil) ? kTrue : kFalse;
+				listToUpdate->SetNthActionState(i, (compare != nil && !started && compare->CanStartComparison())
+													? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			case kKCMClearChecksActionID:
+			{
+				// ★**The same resolver the command uses** (GetActiveDocDB), so the grey and the command
+				//   cannot end up meaning two different documents ([[one-question-one-place]]).
+				//   Greyed where the active document holds no tick -- which, now that a tick outlives
+				//   Stop, is the only thing worth asking: whether a comparison is running says nothing
+				//   about whether there is anything to clear.
+				IDataBase* db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
+				listToUpdate->SetNthActionState(i,
+					Utils<IKCMPageFlagsFacade>()->PageCheckHasAny(db) ? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			case kKCMClearChosenActionID:
+			{
+				// ★**Live whenever the panel's two lines have something to clear**: either a comparison
+				//   is running (the lines name the armed pair) or at least one END is chosen (they
+				//   name the choice). With neither, they are bare labels already and there is nothing to
+				//   undo.
+				// ⚠**The "not while armed" gate the two "Set as" items carry is deliberately absent**
+				//   (user's instruction, 2026-09-07). This item does not move a choice underneath a running
+				//   comparison -- it stops the comparison first and clears both together (DoAction).
+				//   Asked through the same facade the command uses, so the grey and the command cannot
+				//   come to mean different things ([[one-question-one-place]]).
+				// ★★★**AND A CHOSEN END MAY BE A FILE** (2026-09-21). A Task Start saves a copy and chooses
+				//   THAT FILE as the Source with no document behind it, and a closing document does NOT take
+				//   a file choice down with it (KCMPairChoice.h says why it must not). So every database
+				//   question could answer nil while the panel still named a file on the Source line, and
+				//   this item sat grey over a line the reader could see and could not clear.
+				//   ⚠**The origin was the third thing asked here and covered that case by accident** - it
+				//    went the same day, and the hole it left is what this reads instead.
+				// ★**THE SAME FOUR DOORS THE PANEL'S LINES ARE BUILT FROM** (KCMPanelObserver.cpp), which is
+				//   what keeps "has something to clear" and "shows something" ONE question.
+				InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+				const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
+				PMString chosenTargetFile, chosenSourceFile;
+				compare->GetChosenTargetFileLabel(chosenTargetFile);
+				compare->GetChosenSourceFileLabel(chosenSourceFile);
+				const bool16 anyChosen = (compare->GetChosenTargetDB() != nil) ||
+				                         (compare->GetChosenSourceDB() != nil) ||
+				                         (chosenTargetFile.CharCount() > 0) ||
+				                         (chosenSourceFile.CharCount() > 0);
+				listToUpdate->SetNthActionState(i,
+					(armed || anyChosen) ? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			case kKCMClearPawsActionID:
+			{
+				// The same, asked of the paws. A paw never depended on a comparison at all.
+				IDataBase* db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
+				listToUpdate->SetNthActionState(i,
+					(Utils<IKCMPageFlagsFacade>()->PawStampCount(db) > 0) ? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			case kKCMPopupCompareBooksActionID:
+			{
+				// ★It goes through the same resolver as the execution, so what the menu looks like and what
+				//   pressing it does cannot part company. It is live only when "the Book panel has a front tab
+				//   and another book is open as well".
+				//   ⚠This runs every time the menu is opened and walks the whole panel inside. It is called only
+				//     as often as the flyout is opened, which is why that is accepted (KBS walks the same way in
+				//     the same place).
+				//   ★★Observing the front tab is **on this side (the UI)**: walking the panels needs
+				//     PaletteRefUtils / IBookUIUtils / IPanelMgr, none of which a model plug-in can touch (the
+				//     linker named them the moment WidgetBin.lib came off).
+				//     ⚠**The decision itself did not change** ＝ if the observation fails, the facade is not
+				//       called, which is the same outcome as the model-side ResolveBookPair returning kFalse
+				//       from inside, as it used to.
+				IBook* target = nil;
+				IBook* source = nil;
+				IDFile panelBookFile;
+				// ★And never in the Track Changes mode: it reads one document's own records (2026-10-05, design 2-3).
+				//   Asked first - it is one read, and it spares the panel walk.
+				const bool16 canCompareBooks =
+					Utils<IKCMCompareFacade>()->GetCompareMode() != kKCMModeTrack
+					&& KCMGetPanelBookFile(panelBookFile)
+					&& Utils<IKCMBookFacade>()->ResolveBookPair(panelBookFile, target, source);
+				listToUpdate->SetNthActionState(i,
+					canCompareBooks ? kEnabledAction : kDisabled_Unselected);
+				break;
+			}
+			case kKCMBookRowStartActionID:
+			{
+				// ★It goes through the same test as the execution (KCMBookRowCanStart), so the menu and the
+				//   result cannot part company. It is live **only on a row judged Changed** (user’s
+				//   instruction) that has both a Target file and a Source file. ∴ greyed covers not only the
+				//   chapters that exist on one side (ChapterAdded / ChapterDeleted) and those naming no file,
+				//   but **NoChange / Failed / NotCompared as well**.
+				//   ⚠This is the only item on that row menu, so when it is greyed **the menu does not appear at
+				//     all** (InDesign’s behaviour). That is the specification -- do not "improve" it into
+				//     something that shows an empty menu.
+				listToUpdate->SetNthActionState(i, KCMBookRowCanStart(KCMBookMenuRow()) ? kEnabledAction
+				                                                                            : kDisabled_Unselected);
+				break;
+			}
+			case kKCMStoryRowRefreshActionID:
+			{
+				// ★It goes through the same test as the execution (KCMStoryRowCanRefresh), so the menu and the
+				//   result cannot part company. It is live only **in Story mode, while comparing, on a row
+				//   whose story has a counterpart** (user’s instruction, "only in the story mode").
+				//   ⚠**It shares its row menu with "Show as XML" since 2026-09-09**, and the two are live in
+				//     OPPOSITE modes - so each mode's menu still shows exactly one command, and in the Pixel
+				//     mode both are greyed and the menu does not appear at all. The older note here said
+				//     "the only item on its row menu"; that is what changed, and the behaviour it described
+				//     did not.
+				listToUpdate->SetNthActionState(i, KCMStoryRowCanRefresh() ? kEnabledAction
+				                                                            : kDisabled_Unselected);
+				break;
+			}
+			case kKCMChangeRowRestoreAttrActionID:
+			{
+				// ★The same test as the execution (KCMChangeRowCanRestoreAttr) - the row's kind and the two documents,
+				//   so a text row, a note row and a closed Source all grey it (design 14-2, 2026-09-24).
+				listToUpdate->SetNthActionState(i, KCMChangeRowCanRestoreAttr() ? kEnabledAction
+				                                                                 : kDisabled_Unselected);
+				break;
+			}
+			case kKCMChangeRowMatchTableActionID:
+			{
+				// ★The same test as the execution (KCMChangeRowCanMatchTable) - a Table ≠ row on a paired story with both
+				//   documents open (design 16-2, 2026-09-25).
+				listToUpdate->SetNthActionState(i, KCMChangeRowCanMatchTable() ? kEnabledAction
+				                                                                : kDisabled_Unselected);
+				break;
+			}
+			// ★The three Apply items (2026-10-24, the import-as-Source road) - each the same test as its execution.
+			case kKCMChangeRowApplyActionID:
+				listToUpdate->SetNthActionState(i, KCMChangeRowCanApply() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			case kKCMStoryRowApplyActionID:
+				listToUpdate->SetNthActionState(i, KCMStoryRowCanApply() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			case kKCMApplyAllActionID:
+				listToUpdate->SetNthActionState(i, KCMHeadingCanApplyAll() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			// ★"Restore from Copy" (2026-10-24 evening) - the same test as its execution: a "=" row of Apply's holding a copy.
+			case kKCMChangeRowRestoreCopyActionID:
+				listToUpdate->SetNthActionState(i, KCMChangeRowCanRestoreCopy() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			// ★"Restore All Changes in This Story" (2026-10-24 night) - the same test as its execution.
+			case kKCMStoryRowRestoreAllActionID:
+				listToUpdate->SetNthActionState(i, KCMStoryRowCanRestoreAll() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			// ★Accept / Reject in the Track mode (2026-10-25) - each pair the same test as its execution.
+			case kKCMTrackAcceptChangeActionID:
+			case kKCMTrackRejectChangeActionID:
+				listToUpdate->SetNthActionState(i, KCMChangeRowCanResolveTrack() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			case kKCMTrackAcceptStoryActionID:
+			case kKCMTrackRejectStoryActionID:
+				listToUpdate->SetNthActionState(i, KCMStoryRowCanResolveTrack() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			case kKCMTrackAcceptAuthorActionID:
+			case kKCMTrackRejectAuthorActionID:
+				listToUpdate->SetNthActionState(i, KCMAuthorRowCanResolveTrack() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			case kKCMTrackAcceptAllActionID:
+			case kKCMTrackRejectAllActionID:
+				listToUpdate->SetNthActionState(i, KCMHeadingCanResolveTrack() ? kEnabledAction : kDisabled_Unselected);
+				break;
+			case kKCMResourceRowXmlActionID:
+			{
+				// ★The same test the action runs before it does anything (KCMResourceRowHasXml), so the
+				//   menu and the result cannot part company. Live only **in the Resources mode, while
+				//   comparing, on a definition the list still holds**.
+				listToUpdate->SetNthActionState(i, KCMResourceRowHasXml() ? kEnabledAction
+				                                                          : kDisabled_Unselected);
+				break;
+			}
+			// (⛔The two "Edit..." branches stood here from 2026-09-13 and went on 2026-09-21 with the
+			//  items themselves. Each asked exactly what its action asked - may this definition be edited,
+			//  and for the attribute one, is the page of the editor that holds it known - so that the menu
+			//  and the result could never part company. Neither question has anything left to ask.)
+			default:
+			{
+				break;
 			}
 		}
-		else if (action == kKCMPageRefreshCompareActionID)
-		{
-			// "Refresh Page Comparison" on the Pages panel context menu (a plain command, not a toggle):
-			// live only while Started (armed) and with the Target or Source in front; greyed otherwise.
-			listToUpdate->SetNthActionState(i, Utils<IKCMCompareFacade>()->RefreshComparisonAvailable() ? kEnabledAction : kDisabled_Unselected);
-		}
-		// (The Find Overset and Refresh Overset branches stood here and went with the feature on
-		//  2026-09-08.)
-		else if (action == kKCMPopupRefreshCompareActionID)
-		{
-			// Live only while a comparison is armed AND both its documents are still open ＝ exactly
-			//   when there is something to compare again. Greyed before a Start and after a Stop.
-			// ★**THE SAME TWO QUESTIONS THE COMMAND ASKS** (KCMRefreshComparison), in the same order,
-			//   so the grey and the command cannot end up disagreeing ([[one-question-one-place]]).
-			//   ⚠ArmedDocsAlive is asked SECOND on purpose: it reads the armed state, which is only
-			//   meaningful once IsArmed has said there is one.
-			listToUpdate->SetNthActionState(i,
-				(Utils<IKCMCompareFacade>()->IsArmed() && Utils<IKCMCompareFacade>()->ArmedDocsAlive())
-					? kEnabledAction : kDisabled_Unselected);
-		}
-		else if (action == kKCMPopupImportStoryTextActionID)
-		{
-			// ★AN ACTIVE DOCUMENT, AND NO COMPARISON RUNNING. ⚠Unlike Task Start - which was
-			//   deliberately made pressable at any time, stopping a comparison and taking over -
-			//   an import WAITS: it replaces the origin, and doing that underneath a running
-			//   comparison would change what the panel is showing while it is showing it.
-			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-			const bool16 live = (compare != nil && compare->CanTakeTaskStartCopy()
-								 && !compare->IsArmed()) ? kTrue : kFalse;
-			listToUpdate->SetNthActionState(i, live ? kEnabledAction : kDisabled_Unselected);
-		}
-		else if (action == kKCMPopupExportStoryTextActionID)
-		{
-			// ★AN ACTIVE DOCUMENT IS THE WHOLE CONDITION. This item reads and never compares, so it
-			//   needs no Target, no Source and no comparison.
-			//   ⚠**It used to borrow CanTakeTaskStart for this question, and that stopped being the
-			//    same question on 2026-09-21**: Task Start now copies the chosen Target when there
-			//    is one, so it can be live with no active document at all. Asked directly instead.
-			listToUpdate->SetNthActionState(i,
-				(Utils<IKCMCompareFacade>()->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
-		}
-		else if (action == kKCMPopupExportReportActionID)
-		{
-			// ★★**Live while comparing OR while a comparison could be started** (2026-09-14, the
-			//   user's instruction: "let it be pressed whenever a Target and a Source are there, and
-			//   run whatever comparison it needs"). It used to be the first half alone - a marked
-			//   Target document - so the item was greyed until the reader had pressed Start.
-			// ⚠The second half is asked through CanStartComparison, which KCMComparisonRun.h promises
-			//   goes through THE SAME RESOLVER as the toggle's start branch. Counting open documents
-			//   here instead would be a second copy of that decision, and it would drift.
-			// ★The model runs the start itself (KCMReport.cpp); this branch only decides the grey.
-			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-			const bool16 haveMarks = (Utils<IKCMMarkData>()->GetMarkedTargetDB() != nil);
-			listToUpdate->SetNthActionState(i, (haveMarks || compare->CanStartComparison())
-												? kEnabledAction : kDisabled_Unselected);
-		}
-		else if (action == kKCMClearChecksActionID)
-		{
-			// ★**The same resolver the command uses** (GetActiveDocDB), so the grey and the command
-			//   cannot end up meaning two different documents ([[one-question-one-place]]).
-			//   Greyed where the active document holds no tick -- which, now that a tick outlives
-			//   Stop, is the only thing worth asking: whether a comparison is running says nothing
-			//   about whether there is anything to clear.
-			IDataBase* db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
-			listToUpdate->SetNthActionState(i,
-				Utils<IKCMPageFlagsFacade>()->PageCheckHasAny(db) ? kEnabledAction : kDisabled_Unselected);
-		}
-		else if (action == kKCMClearChosenActionID)
-		{
-			// ★**Live whenever the panel's two lines have something to clear**: either a comparison
-			//   is running (the lines name the armed pair) or at least one END is chosen (they
-			//   name the choice). With neither, they are bare labels already and there is nothing to
-			//   undo.
-			// ⚠**The "not while armed" gate the two "Set as" items carry is deliberately absent**
-			//   (user's instruction, 2026-09-07). This item does not move a choice underneath a running
-			//   comparison -- it stops the comparison first and clears both together (DoAction).
-			//   Asked through the same facade the command uses, so the grey and the command cannot
-			//   come to mean different things ([[one-question-one-place]]).
-			// ★★★**AND A CHOSEN END MAY BE A FILE** (2026-09-21). A Task Start saves a copy and chooses
-			//   THAT FILE as the Source with no document behind it, and a closing document does NOT take
-			//   a file choice down with it (KCMPairChoice.h says why it must not). So every database
-			//   question could answer nil while the panel still named a file on the Source line, and
-			//   this item sat grey over a line the reader could see and could not clear.
-			//   ⚠**The origin was the third thing asked here and covered that case by accident** - it
-			//    went the same day, and the hole it left is what this reads instead.
-			// ★**THE SAME FOUR DOORS THE PANEL'S LINES ARE BUILT FROM** (KCMPanelObserver.cpp), which is
-			//   what keeps "has something to clear" and "shows something" ONE question.
-			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-			const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
-			PMString chosenTargetFile, chosenSourceFile;
-			compare->GetChosenTargetFileLabel(chosenTargetFile);
-			compare->GetChosenSourceFileLabel(chosenSourceFile);
-			const bool16 anyChosen = (compare->GetChosenTargetDB() != nil) ||
-			                         (compare->GetChosenSourceDB() != nil) ||
-			                         (chosenTargetFile.CharCount() > 0) ||
-			                         (chosenSourceFile.CharCount() > 0);
-			listToUpdate->SetNthActionState(i,
-				(armed || anyChosen) ? kEnabledAction : kDisabled_Unselected);
-		}
-		else if (action == kKCMClearPawsActionID)
-		{
-			// The same, asked of the paws. A paw never depended on a comparison at all.
-			IDataBase* db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
-			listToUpdate->SetNthActionState(i,
-				(Utils<IKCMPageFlagsFacade>()->PawStampCount(db) > 0) ? kEnabledAction : kDisabled_Unselected);
-		}
-		else if (action == kKCMPopupCompareBooksActionID)
-		{
-			// ★It goes through the same resolver as the execution, so what the menu looks like and what
-			//   pressing it does cannot part company. It is live only when "the Book panel has a front tab
-			//   and another book is open as well".
-			//   ⚠This runs every time the menu is opened and walks the whole panel inside. It is called only
-			//     as often as the flyout is opened, which is why that is accepted (KBS walks the same way in
-			//     the same place).
-			//   ★★Observing the front tab is **on this side (the UI)**: walking the panels needs
-			//     PaletteRefUtils / IBookUIUtils / IPanelMgr, none of which a model plug-in can touch (the
-			//     linker named them the moment WidgetBin.lib came off).
-			//     ⚠**The decision itself did not change** ＝ if the observation fails, the facade is not
-			//       called, which is the same outcome as the model-side ResolveBookPair returning kFalse
-			//       from inside, as it used to.
-			IBook* target = nil;
-			IBook* source = nil;
-			IDFile panelBookFile;
-			const bool16 canCompareBooks =
-				KCMGetPanelBookFile(panelBookFile)
-				&& Utils<IKCMBookFacade>()->ResolveBookPair(panelBookFile, target, source);
-			listToUpdate->SetNthActionState(i,
-				canCompareBooks ? kEnabledAction : kDisabled_Unselected);
-		}
-		else if (action == kKCMBookRowStartActionID)
-		{
-			// ★It goes through the same test as the execution (KCMBookRowCanStart), so the menu and the
-			//   result cannot part company. It is live **only on a row judged Changed** (user’s
-			//   instruction) that has both a Target file and a Source file. ∴ greyed covers not only the
-			//   chapters that exist on one side (ChapterAdded / ChapterDeleted) and those naming no file,
-			//   but **NoChange / Failed / NotCompared as well**.
-			//   ⚠This is the only item on that row menu, so when it is greyed **the menu does not appear at
-			//     all** (InDesign’s behaviour). That is the specification -- do not "improve" it into
-			//     something that shows an empty menu.
-			listToUpdate->SetNthActionState(i, KCMBookRowCanStart(KCMBookMenuRow()) ? kEnabledAction
-			                                                                            : kDisabled_Unselected);
-		}
-		else if (action == kKCMStoryRowRefreshActionID)
-		{
-			// ★It goes through the same test as the execution (KCMStoryRowCanRefresh), so the menu and the
-			//   result cannot part company. It is live only **in Story mode, while comparing, on a row
-			//   whose story has a counterpart** (user’s instruction, "only in the story mode").
-			//   ⚠**It shares its row menu with "Show as XML" since 2026-09-09**, and the two are live in
-			//     OPPOSITE modes - so each mode's menu still shows exactly one command, and in the Pixel
-			//     mode both are greyed and the menu does not appear at all. The older note here said
-			//     "the only item on its row menu"; that is what changed, and the behaviour it described
-			//     did not.
-			listToUpdate->SetNthActionState(i, KCMStoryRowCanRefresh() ? kEnabledAction
-			                                                            : kDisabled_Unselected);
-		}
-		else if (action == kKCMChangeRowRejectActionID)
-		{
-			// ★The same test as the execution (KCMChangeRowCanReject) - asked of the change's range, so a plain
-			//   comparison, a ruby-only row and a document opened again all answer from what the story holds now
-			//   (design 13-1 item 3, 2026-09-24).
-			listToUpdate->SetNthActionState(i, KCMChangeRowCanReject() ? kEnabledAction
-			                                                            : kDisabled_Unselected);
-		}
-		else if (action == kKCMChangeRowRestoreAttrActionID)
-		{
-			// ★The same test as the execution (KCMChangeRowCanRestoreAttr) - the row's kind and the two documents,
-			//   so a text row, a note row and a closed Source all grey it (design 14-2, 2026-09-24).
-			listToUpdate->SetNthActionState(i, KCMChangeRowCanRestoreAttr() ? kEnabledAction
-			                                                                 : kDisabled_Unselected);
-		}
-		else if (action == kKCMChangeRowRedoActionID)
-		{
-			// ★The same test as the execution (KCMChangeRowCanRedo) - a change the reader took back and still standing
-			//   so, read off the story's counter (design 15-1-3, 2026-09-24).
-			listToUpdate->SetNthActionState(i, KCMChangeRowCanRedo() ? kEnabledAction
-			                                                          : kDisabled_Unselected);
-		}
-		else if (action == kKCMResourceRowXmlActionID)
-		{
-			// ★The same test the action runs before it does anything (KCMResourceRowHasXml), so the
-			//   menu and the result cannot part company. Live only **in the Resources mode, while
-			//   comparing, on a definition the list still holds**.
-			listToUpdate->SetNthActionState(i, KCMResourceRowHasXml() ? kEnabledAction
-			                                                          : kDisabled_Unselected);
-		}
-		// (⛔The two "Edit..." branches stood here from 2026-09-13 and went on 2026-09-21 with the
-		//  items themselves. Each asked exactly what its action asked - may this definition be edited,
-		//  and for the attribute one, is the page of the editor that holds it known - so that the menu
-		//  and the result could never part company. Neither question has anything left to ask.)
 	}
 }
 
@@ -1694,6 +2048,12 @@ void KCMActionComponent::DoUsage()
 	//   Japanese side it sits inside kHint2 at the same seam (after Story IDs, before the books), so
 	//   the Japanese literal for this key is empty too and the order comes out the same.
 	usage.Append(KCMLoc::Text(kKCMHint4Key, u""));
+	// ★The Track Changes mode (2026-10-05) is a FIFTH English key, read after the fourth; on the Japanese side it sits
+	//   inside kHint2 right after the round trip, so its Japanese literal is empty too.
+	usage.Append(KCMLoc::Text(kKCMHint5Key, u""));
+	// ★Comparing PDFs (2026-10-14) is a SIXTH English key, read after the fifth; on the Japanese side it sits inside kHint2
+	//   right after Track Changes, so its Japanese literal is empty too.
+	usage.Append(KCMLoc::Text(kKCMHint6Key, u""));
 	usage.Append(KCMLoc::Text(kKCMHint2Key, KCMJa::kHint2));
 	usage.SetTranslatable(kFalse);
 

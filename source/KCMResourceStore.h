@@ -33,7 +33,6 @@
 #include "KCMResourceKinds.h"	// KCMResourceChangeKind
 
 class IDataBase;	// only ever passed through, so a forward declaration is the whole dependency
-class KCMResourceBytes;	// likewise - the origin's bytes, handed on to the parser
 #include "KCMResourceDiff.h"	// KCMResourceDiffStats. ⚠A MODEL-SIDE header, which is fine here:
 								// this file is model-internal and the UI never sees it - the UI
 								// sees IKCMResourcesFacade, which includes the types-only header.
@@ -58,18 +57,13 @@ namespace KCMResourceStore
 	    @return kTrue when a result is being held afterwards. */
 	bool16	Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMString& whyNot);
 
-	/** Task Start (2026-09-12): the same as Rebuild, with the OLDER side supplied as the origin's
-	    own XML rather than exported from a document. A rehydrated copy is born with the app's
-	    defaults - fonts, TypographersQuotes, an object style - which are not changes; the bytes
-	    the origin holds are the document as it stood, so they are what is compared.
-	    @param sourceXml the origin's export. Empty refuses. */
-	bool16	RebuildWithSourceBytes(IDataBase* targetDB, const KCMResourceBytes& sourceXml, PMString& whyNot);
-
-	/** Rebuild for a pair whose OLDER side may be the Task Start origin: the origin's own XML when
-	    an origin stands as the older side (a run in progress on its copy, or an armed origin
-	    pair), otherwise an export of sourceDB. ★ONE PLACE for that choice (2026-09-13): it stood
-	    in KCMCore.cpp (the comparison run) and KCMResourceDiff.cpp (app.kcmResourceDiff) as two
-	    copies of the same `if`, and the PDF report would have been the third. */
+	/** The rebuild the comparison run, app.kcmResourceDiff and the PDF report call. ⛔**Since
+	    2026-09-21 it is exactly Rebuild**: until then an armed Task Start ORIGIN had no Source
+	    database, and this is where its own held XML was taken as the older side instead
+	    (RebuildWithSourceBytes, removed 2026-09-27 with no caller left). A Task Start is a file
+	    now and opens as the Source, so there is no choice left to make here.
+	    ★Kept as the one name the three callers use (the choice was one place from 2026-09-13), so
+	    a pair that ever needs telling apart again is told apart here and nowhere else. */
 	bool16	RebuildForPair(IDataBase* targetDB, IDataBase* sourceDB, PMString& whyNot);
 
 	/** Throws the held result away. Idempotent. Called when the comparison stops. */

@@ -30,6 +30,7 @@
 
 class IDataBase;
 class IControlView;
+class UIDList;			// KCMReadSelectedPages - the Pages panel's selection (2026-10-26)
 
 // The IControlView of the Pages panel (kPagesPanelWidgetID) if it is showing; nil when it is
 // hidden or cannot be obtained. One copy of the IPanelMgr -> GetVisiblePanel idiom, shared by the
@@ -56,6 +57,19 @@ IControlView* KCMGetVisiblePagesPanel();
 // Selecting [None] together with a real page gives kFalse, so the real page still gets the
 // action and is not caught up in this.
 bool16 KCMPagesPanelSelectionHasNoRealPage();
+
+// ★THE PAGES PANEL'S SELECTED PAGES, READ ON THE UI SIDE (2026-10-26, the import tidy S7 - the one call
+// from the model to a UI part, Utils<ILayoutUIUtils>()->GetSelectedPages in KCMPageMap.cpp, moved here:
+// the UI reads, the model decides on the list - KCMPageMapPagesOf). `out` is made a list of the active
+// document (the facade's GetActiveDocDB = IActiveContext::GetContextDocument, the document the panel
+// shows) and filled by GetSelectedPages: bPagesOnly kTrue (a selected spread is its pages),
+// bCurrentPageOnly kTrue (the documented fallback for the panel not shown). includeMasters: Check and
+// Refresh kTrue, Register and Export Pages to Word kFalse (KCMPageMap.h says why they differ).
+// ★THE [None] GUARD IS INSIDE (KCMPagesPanelSelectionHasNoRealPage, above): with only [None] rows
+//   selected GetSelectedPages falls back on the current page, which no list can tell from a chosen one
+//   - so the answer is kFalse with an empty list, and no route reaches the model with that page.
+// @return kFalse with an empty list for no active document, [None] alone, or nothing selected.
+bool16 KCMReadSelectedPages(UIDList& out, bool16 includeMasters);
 
 // Try to rebuild this db's Pages panel thumbnails. The image cache purge is attempted even when
 // the panel is hidden. Safe to call any number of times.

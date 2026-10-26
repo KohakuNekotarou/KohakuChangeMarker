@@ -136,8 +136,9 @@ int32 KCMGetNumItemsWithXP(IDataBase* db);
 // While ON, every page item that carries a story - an ordinary text frame, a path with text on
 // it, an anchored frame - has "StoryID:<its story's UID>" written ABOVE its box, at the left (the
 // number the script DOM's story.id answers, and the number in the Story Edits list's ID column). **Found from the story side**, not from the item's kind (the user's instruction): the
-// document's stories -> each story's frame columns -> two steps up the hierarchy -> the item
-// (text on a path: one more link, to the main spline). The drawing is the same adornment that
+// document's stories -> each story's frame columns -> the item holding each column, in the SDK's
+// own two steps (ITOPFrameData for text on a path, else ITextUtils::QuerySplineFromTextFrame -
+// SDKLayoutHelper::GetGraphicFrameRef). The drawing is the same adornment that
 // draws the marks (KCMRingAdornmentShape::DrawAdornment, the non-spread branch); the table of
 // holders is one per database, rebuilt on every draw of a spread, built on the spot by the first
 // item drawn without one, and dropped when documents close (KCMStoryHolders in the .cpp).

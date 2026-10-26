@@ -23,23 +23,22 @@ namespace
 
 /** A span's place in THE DOCUMENT'S count: where it starts, and how long it is there.
 
-	★**THE CROSSING IS ModelOffsetInParagraph's, never an addition of our own** - the same rule
-	  ApplyParagraph keeps. A table standing inside this paragraph makes the text's count and the
+	★**THE CROSSING IS KCMParaText's, never an addition of our own** - the same rule ApplyParagraph
+	  keeps. A table or a note's marker standing inside this paragraph makes the text's count and the
 	  document's part company from there on (KCMParaText.h).
-	⚠**A RANGE ENDING EXACTLY WHERE A TABLE STANDS COMES BACK ONE POSITION WIDE**, because that
-	 function answers for a START (its own header says so, and says the widening was chosen
-	 deliberately). What that costs HERE is an attribute also landing on the table's own character
-	 - which draws nothing, is taken back out by KCMTextRead when the story is read again, and
-	 happens in the COPY, never in the reader's document. Measured cost: none visible. It is
-	 written down rather than guarded because a guard would refuse a paragraph nobody can see a
-	 fault in. */
+	★★**THE END IS JUST PAST THE SPAN'S LAST CHARACTER** (2026-09-25, the Word round trip re-check, item 3 -
+	  KCMParaText::ModelRangeInParagraph). Until this day the end was asked of ModelOffsetInParagraph, which
+	  answers for a START, so a span ending right before a table's anchor or a NOTE'S MARKER took it in: a
+	  kenten put on the two characters in front of a footnote reference fell on the reference as well. This
+	  note said it happened "in the COPY, never in the reader's document" and only at a table - both stopped
+	  being true on 2026-09-19, when the import began writing into the reader's own document, and the marker
+	  was never considered at all. */
 void ModelRangeOf(const KCMParaAttrs& attrs, const KCMAttrSpan& span, TextIndex paraStart,
 				  TextIndex& outAt, int32& outLen)
 {
-	const int32 from = KCMParaText::ModelOffsetInParagraph(attrs, span.fStart);
-	const int32 to = KCMParaText::ModelOffsetInParagraph(attrs, span.fStart + span.fLen);
+	int32 from = 0;
+	KCMParaText::ModelRangeInParagraph(attrs, span.fStart, span.fLen, from, outLen);
 	outAt = paraStart + from;
-	outLen = to - from;
 }
 
 /** kTrue when `applies` holds a span standing on exactly the same characters.

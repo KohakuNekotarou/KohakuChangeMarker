@@ -29,7 +29,6 @@
 #include "ISpread.h"
 #include "ISpreadList.h"
 #include "ITableModel.h"
-#include "ITableModelList.h"		// the table the story holds
 #include "ITableCommands.h"		// ResizeCols / MergeCells / ApplyCellOverrides
 #include "ITableAttrRealNumber.h"	// the cell insets
 #include "AttributeBossList.h"
@@ -301,8 +300,10 @@ UID FrameOfRow(ITableModel* table, int32 row)
 bool16 MergeLabelRunsByPage(const UIDRef& story, const std::vector<KCMReportRow>& rows, PMString& why)
 {
 	InterfacePtr<ITextModel> model(story, UseDefaultIID());
-	InterfacePtr<ITableModelList> tables(model, UseDefaultIID());
-	InterfacePtr<ITableModel> table(tables != nil && tables->GetModelCount() > 0 ? tables->QueryNthModel(0) : nil);
+	// The table the section put at 0 - taken the way it was put in (the note in the section builder).
+	Utils<ITableUtils> tableUtils;
+	InterfacePtr<ITableModel> table((model != nil && tableUtils) ? tableUtils->GetTableModel(model, 0) : UIDRef::gNull,
+									UseDefaultIID());
 	InterfacePtr<ITableCommands> cmds(table, UseDefaultIID());
 	if (model == nil || table == nil || cmds == nil)
 	{
@@ -527,8 +528,11 @@ bool16 KCMReportWriteTable(IDataBase* reportDB, int32 firstPage, const PMString&
 		tableUtils->InsertTable(model, 0, 0, bodyRows + 1, kColumns, 1 /*header rows*/, 0 /*footer rows*/,
 								kKCMReportBodyPt * 1.6, bounds.Width() / kColumns,
 								kTextContentType, ITableUtils::eNoSelection);
-		InterfacePtr<ITableModelList> tables(model, UseDefaultIID());
-		InterfacePtr<ITableModel> table(tables != nil && tables->GetModelCount() > 0 ? tables->QueryNthModel(0) : nil);
+		// ★THE TABLE IS TAKEN AS InsertTable's OWN POSTCONDITION NAMES IT (ITableUtils.h:138 -
+		//   GetTableModel(textModel, index) != gNull), the way SnpXMLSampleHelper.cpp:344-355 takes the
+		//   table it put at 0. (ITableModelList stood here until 2026-09-27: the SDK calls it deprecated
+		//   twice, SnpIterTableStories.cpp - re-audit M21.)
+		InterfacePtr<ITableModel> table(tableUtils->GetTableModel(model, 0), UseDefaultIID());
 		InterfacePtr<ITableCommands> tableCmds(table, UseDefaultIID());
 		if (table == nil || tableCmds == nil)
 		{
