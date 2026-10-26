@@ -28,6 +28,7 @@
 #include "IDOMElement.h"
 #include "IINXManager.h"
 #include "IPMStream.h"
+#include "IApplication.h"			// QueryDocumentList - the open documents (ISession's is for internal use only)
 #include "ISession.h"
 #include "IStyleGroupHierarchy.h"
 #include "IStyleGroupManager.h"	// GetRootHierarchy - as SnpManipulateTableStyle.cpp does it
@@ -861,7 +862,8 @@ bool16 KCMExportStoryInx(IDataBase* db, UID storyUID, KCMMemXferBytes& out, bool
 	if (db == nil || storyUID == kInvalidUID)
 		return kFalse;
 	ISession* const session = GetExecutionContextSession();
-	InterfacePtr<IDocumentList> docList(session != nil ? session->QueryDocumentList() : nil);
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
+	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
 	// ★★★THE DATABASE HAS TO BE ONE THE SESSION KNOWS ABOUT - the guard KCMTakeResourceSnapshot
 	//   (KCMResourceSnapshot.cpp) states at length: handed a cloned database, ExportINX does not fail and does not return nil,
 	//   THE PROCESS IS GONE. There is nothing to nil-check afterwards; the only defence is to refuse

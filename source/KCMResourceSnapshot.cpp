@@ -17,6 +17,7 @@
 #include "IDOMElement.h"
 #include "IINXManager.h"
 #include "IPMStream.h"
+#include "IApplication.h"			// QueryDocumentList - the open documents (ISession's is for internal use only)
 #include "ISession.h"
 
 // General includes:
@@ -80,7 +81,8 @@ bool16 KCMTakeResourceSnapshot(IDocument* doc, KCMResourceBytes& out, PMString& 
 	//   vocabulary would not protect the next caller. A document opened WITHOUT A WINDOW is in
 	//   the list and passes, which is the intended answer - that route is untested but not
 	//   excluded by this guard.
-	InterfacePtr<IDocumentList> docList(session->QueryDocumentList());
+	InterfacePtr<IApplication> app(session->QueryApplication());
+	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
 	if (docList == nil)
 	{
 		whyNot = "no document list";

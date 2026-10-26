@@ -31,6 +31,7 @@
 #include "IDocumentUtils.h"
 #include "IScript.h"				// a story's scripting facet IS an IScriptLabel (KCMPageMarksDoc.cpp)
 #include "IScriptLabel.h"
+#include "IApplication.h"			// QueryDocumentList - the open documents (ISession's is for internal use only)
 #include "ISession.h"
 
 // General includes:
@@ -49,7 +50,8 @@ namespace
 IDocument* DocOf(IDataBase* db)
 {
 	ISession* const session = GetExecutionContextSession();
-	InterfacePtr<IDocumentList> docList(session != nil ? session->QueryDocumentList() : nil);
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
+	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
 	return (docList != nil && db != nil) ? docList->FindDocByDataBase(db) : nil;
 }
 

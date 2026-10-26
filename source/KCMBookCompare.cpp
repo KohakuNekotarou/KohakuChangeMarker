@@ -22,6 +22,7 @@
 #include "IGlobalRecompose.h"	// ForceRecompositionToComplete - see RecomposeChapter
 #include "IOpenFileCmdData.h"	// kOpenDefault / kUseLockFile
 #include "IShape.h"				// kPreviewMode - the draw mode the comparison rasterises in
+#include "IApplication.h"			// QueryDocumentList - the open documents (ISession's is for internal use only)
 #include "ISession.h"
 
 // General includes:
@@ -117,7 +118,8 @@ bool16 OpenChapter(const IDFile& file, UIDRef& outDocRef, bool16& outWeOpened, P
 	// ordinary case, and the open below handles it.
 	{
 		ISession* session = GetExecutionContextSession();
-		InterfacePtr<IDocumentList> docList(session != nil ? session->QueryDocumentList() : nil);
+		InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
+		InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
 		if (docList != nil)
 		{
 			IDocument* openDoc = docList->FindDoc(file);
