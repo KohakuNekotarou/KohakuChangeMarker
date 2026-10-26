@@ -74,7 +74,8 @@ namespace KCMStoryDocx
 	    placeholder has nowhere to go - and dropping the character is the one thing not done);
 	  - a footnote reference standing inside a ruby's base text, for the same reason;
 	  - a kenten value KCMStoryShape::KentenClassOf cannot name. */
-bool16 WriteParagraphContent(const KCMStoryShape::Para& p, std::string& out, std::string& whyNot);
+bool16 WriteParagraphContent(const KCMStoryShape::Para& p, std::string& out, std::string& whyNot,
+							 bool16 noteMarks = kFalse);	// kTrue: a reference as a box's mark (WriteBoxBlocks)
 
 /** A run of paragraphs with the tables standing among them: the body, or one cell - written IN THE
 	SPLIT SHAPE (SplitAtTables, on a copy): every table alone in an empty paragraph of its own, the
@@ -209,6 +210,27 @@ bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml,
 	@return kFalse with a reason: ReadSide's refusals, from however deep. */
 bool16 ReadBlocksIn(const KCMXmlTree& document, int32 container, const std::string& stylesXml,
 					KCMStoryShape::Story& out, std::string& whyNot);
+
+/** ★A BOX'S SPELLING (2026-10-26 - the page format, KCMPageDocx, carries tables and footnotes). Word cannot hold a
+	footnote inside a text box, so a box writes each footnote reference as the page format's MARK: "⟦NOTE n⟧" (n = the
+	reference's fNote + 1) in a content control tagged kNoteMarkTagPrefix + n that can be deleted but not edited
+	(contentLocked - measured in Word 2007: typed words land outside it, two Backspaces delete it; the placeholders'
+	sdtContentLocked cannot be deleted at all - docs/ai-notes/kcm-page-tables-notes-word-2026-10-26.md). */
+extern const char* const kNoteMarkTagPrefix;		// "kcm-note-"
+
+/** A box's blocks: the body as WriteBlocks(s, -1, 0, 0, ...) writes it, but every footnote reference as the mark, and
+	every table fitted to `widthTwips` - a nested one to its cell, less Word's cell margins (Word 2007 shrinks the story
+	format's own 9000-twip grid into a box by itself, and rewrites it when it saves; fitted, it is left as written). 0
+	keeps the story format's own widths. ★No reference and a width of 0 are the story format's own bytes.
+	@return kFalse with a reason: WriteBlocks' refusals. */
+bool16 WriteBoxBlocks(const KCMStoryShape::Story& s, int32 widthTwips, std::string& out, std::string& whyNot);
+
+/** A box's blocks read back: ReadBlocksIn's reading, but a mark is a footnote reference at its place whose fNote is the
+	mark's number less one AS WRITTEN - not resolved, and fNotes left empty: the page format pairs each with its note's
+	own box. A <w:footnoteReference> is refused: Word makes none inside a text box.
+	@return kFalse with a reason: ReadBlocksIn's refusals. */
+bool16 ReadBoxBlocks(const KCMXmlTree& document, int32 container, const std::string& stylesXml,
+					 KCMStoryShape::Story& out, std::string& whyNot);
 
 /** What one package holds, once read. */
 struct ReadResult

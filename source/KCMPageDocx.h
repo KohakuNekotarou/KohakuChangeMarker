@@ -32,6 +32,15 @@
 //    which story   customXml/item1.xml - the page tag, format 2: per box its frame, its story, the range it came from
 //                  and a fingerprint of what stood there then. ★NOT A WORD OF THE STORY (the author's rule of
 //                  2026-09-19 for the story tag: a file is handed on, and words nobody can see must not go with it).
+//  ★★TABLES AND FOOTNOTES (2026-10-26 - measured in Word 2007 first, docs/ai-notes/kcm-page-tables-notes-word-2026-10-26.md):
+//    a table       a Word table in the box's text, fitted to the box's inner width (KCMStoryDocx::WriteBoxBlocks)
+//    a reference   the MARK "⟦NOTE n⟧" where it stands: a content control tagged "kcm-note-<n>" that can be deleted but
+//                  not edited - Word cannot hold a footnote in a text box. ★Deleting the mark deletes the note.
+//    a note        its words in a box of its own, "kcmnote<box>_<n>", on the file's SECOND page: an INLINE text box, so
+//                  that a note growing pushes the next ones down (a floating one landed above its label), each under a
+//                  label "Box b ⟦NOTE n⟧" in a content control nobody can change or delete ("kcm-label", read as nothing)
+//    how many      the tag's notes="k" per box: a mark the file did not write is not read as one
+//    ⛔not written  a VERTICAL box holding a table: Word 2007 cannot lay one out (no position, no PDF)
 //
 //========================================================================================
 #ifndef __KCMPageDocx_h__
@@ -66,17 +75,22 @@ struct Box
 	bool16		fVertical;
 	double		fPointSize;		// the first character's size; 0 = none written
 	std::string	fFontName;		// UTF-8, the name Word knows the font by; empty = none written
-	KCMStoryShape::Story fContent;	// the body only - no tables, no notes
+	/** The box's words: its whole story since 2026-10-26 - the body, the tables standing in it and its footnotes (the
+		references as places, the notes' words in fNotes); a box of 2026-10-25 holds a part of the body only. */
+	KCMStoryShape::Story fContent;
 	/** ★THE BOX IS ITS WHOLE STORY (2026-10-26, the author: a page file is for catalogue pages - a threaded story goes out
 		with Export Story Text): the export writes no threaded and no overset frame since, and marks each box so (the tag's
 		whole="1"). What lets the import compare a box whose frame was edited in InDesign after the export - it then stands
 		for the whole story, so nothing has to be found to put it back. kFalse = said nothing (a file of 2026-10-25): the
 		import only takes it where its fingerprint still matches. */
 	bool16		fWhole;
+	/** READ SIDE (2026-10-26): the tag's notes= - how many footnotes the box's story had when written, so which marks the
+		file wrote (1..fNoteCount). 0 = none, or a file of before 2026-10-26. The writer counts fContent.fNotes itself. */
+	int32		fNoteCount;
 
 	Box() : fN(0), fFrame(0), fStory(0), fStart(0), fEnd(0), fPrintBytes(0), fPrintCrc(0),
 			fX(0), fY(0), fW(0), fH(0), fInsetL(0), fInsetT(0), fInsetR(0), fInsetB(0),
-			fVertical(kFalse), fPointSize(0), fWhole(kFalse) {}
+			fVertical(kFalse), fPointSize(0), fWhole(kFalse), fNoteCount(0) {}
 };
 
 /** One page: its UID and name, its size, and its boxes in the order they are written (top to bottom, then left to
@@ -97,14 +111,17 @@ struct Page
 };
 
 /** Every part of the page's package, in the order they are zipped - the story format's names, footnotes.xml never.
-	★The same page is the same bytes (the story format's rule; the export's self-check and the tests rely on it).
-	@return kFalse with a reason: a box's words cannot be written (KCMStoryDocx::WriteBlocks' refusals), or two boxes
-	  share a number. */
+	★The same page is the same bytes (the story format's rule; the export's self-check and the tests rely on it), and a
+	page with no table and no note is the bytes it was before 2026-10-26.
+	@return kFalse with a reason: a box's words cannot be written (KCMStoryDocx::WriteBlocks' refusals), two boxes
+	  share a number, a vertical box holds a table, a footnote's words hold a footnote reference. */
 bool16 WriteParts(const Page& page, std::vector<KCMZipStore::Entry>& outParts, std::string& whyNot);
 
 /** One box as the file holds it: the tag's facts in fBox - its place and size are not read back, the import needs
-	none - and in fBox.fContent the words Word holds. ★fWhyNot non-empty: THIS box cannot go in, and says why (gone
-	from the file, there twice, words this reader refuses); the page's other boxes still can. */
+	none - and in fBox.fContent the words Word holds, its notes read from their boxes (a note whose mark is gone is
+	not there: deleting the mark deleted it). ★fWhyNot non-empty: THIS box cannot go in, and says why (gone from the
+	file, there twice, words this reader refuses; a mark there twice or not written, a mark's note box gone or there
+	twice, a note box holding a table or a mark); the page's other boxes still can. */
 struct ReadBox
 {
 	Box			fBox;

@@ -34,6 +34,7 @@
 #include "KCMModelNotify.h"			// KCMSayStatus
 #include "KCMPdfDoc.h"				// KCMIsPdfDoc - a PDF document is refused here (2026-10-14)
 #include "IKCMCompareFacade.h"		// the refusal's words, which the UI says too
+#include "KCMStoryTextImport.h"		// KCMClearImportRefusals - the import's "!" rows go with its copy
 
 namespace {
 
@@ -87,6 +88,12 @@ void Forget(IDataBase* clone)
 	gDefs.clear();
 	gHaveDefs = kFalse;
 	gDefsWhyNot.Clear();
+	// ★THE IMPORT'S "!" ROWS GO WITH ITS COPY (2026-10-26 evening - the full test's run 1026d): their material lives as long
+	//   as the import's origin does (KCMStoryList::Build reads it on every build) and was kept past it - a Story comparison
+	//   of two other documents started later listed the last import's refusal first (place-pair after page-tables-notes;
+	//   page-tables-notes PT8). ⚠Harmless inside an import: it empties them BEFORE it takes its copy, and notes them after.
+	if (gForImport)
+		KCMClearImportRefusals();
 	gForImport = kFalse;
 	gImportStories = std::vector<UID>();	// a fresh vector releases the storage (the shutdown rule)
 	KCMForgetChosenSourceIfDB(clone);

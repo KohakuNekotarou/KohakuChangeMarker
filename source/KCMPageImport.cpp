@@ -34,6 +34,9 @@ struct Matched
 	KCMPageSplice::Place	fTo;
 	int32					fStart;
 	int32					fEnd;
+	bool16					fWhole;		// the box is its whole story (2026-10-26): it IS the story, nothing is spliced
+
+	Matched() : fBox(0), fStart(0), fEnd(0), fWhole(kFalse) {}
 };
 
 void Refuse(const KCMPageBoxEdit& box, const PMString& why, std::vector<KCMImportRefusal>& out)
@@ -87,9 +90,10 @@ bool16 MatchAt(ITextModel* model, const KCMPageStoryFacts& facts, int32 start, i
 	return kTrue;
 }
 
-/** The story's whole body as a box's part (2026-10-26 - a box that is its whole story, the header's B): from its start to
-	its last paragraph's return, holding no table and no note (asked of the model, as MatchAt asks) - and no fingerprint:
-	what InDesign changed since the export is what the comparison is to show. kFalse when the body cannot be placed. */
+/** The story's whole body as a box's place (2026-10-26 - a box that is its whole story, the header's B): from its start to
+	its last paragraph's return - and no fingerprint: what InDesign changed since the export is what the comparison is to
+	show. ★Its tables and footnotes go with it (2026-10-26 evening); an endnote's marker does not (asked of the model, as
+	MatchAt asks). kFalse when the body cannot be placed or holds an endnote's marker. */
 bool16 WholeStoryAt(ITextModel* model, const KCMPageStoryFacts& facts, size_t which, Matched& out)
 {
 	if (facts.fParas.empty())
@@ -99,7 +103,7 @@ bool16 WholeStoryAt(ITextModel* model, const KCMPageStoryFacts& facts, size_t wh
 													static_cast<int32>(facts.fParas.size()) - 1);
 	if (end < start || end > model->TotalLength())
 		return kFalse;
-	if (KCMPagePartHoldsTableOrNote(model, start, end - start))
+	if (KCMPagePartHoldsEndnote(model, start, end - start))
 		return kFalse;
 	KCMPageSplice::Place from;
 	KCMPageSplice::Place to;
@@ -111,6 +115,7 @@ bool16 WholeStoryAt(ITextModel* model, const KCMPageStoryFacts& facts, size_t wh
 	out.fTo = to;
 	out.fStart = start;
 	out.fEnd = end;
+	out.fWhole = kTrue;
 	return kTrue;
 }
 
@@ -198,7 +203,6 @@ void KCMSpliceBoxesIntoSet(IDataBase* copyDB, IDataBase* documentDB, KCMStoryTex
 		{
 			const KCMPageBoxEdit& box = boxes[live[i]];
 			Matched m;
-			bool16 found = MatchAt(model, facts, box.fStart, box.fEnd, box, live[i], m);
 			InterfacePtr<IMultiColumnTextFrame> mc;
 			if (box.fFrame != kInvalidUID && copyDB->IsValidUID(box.fFrame))
 			{
@@ -207,25 +211,34 @@ void KCMSpliceBoxesIntoSet(IDataBase* copyDB, IDataBase* documentDB, KCMStoryTex
 				if (mine != nil && mine->GetTextModelUID() == storyUID)
 					mc = mine;
 			}
-			if (!found && mc != nil)
-			{
-				const int32 start = static_cast<int32>(mc->TextStart());
-				const int32 end = start + mc->TextSpan();
-				if (start != box.fStart || end != box.fEnd)
-					found = MatchAt(model, facts, start, end, box, live[i], m);
-			}
-			// ★★AN EDITED BOX THAT IS ITS WHOLE STORY IS COMPARED, NOT REFUSED (2026-10-26, the author's B - the header): over
-			//   the story's whole body, while its frame is still the story's only one. Threaded since the export, the box is
-			//   no longer the whole story, and putting it back over the story would wipe the other frames' words.
+			bool16 found = kFalse;
 			const char* why = "the text of this frame changed after the export - export the page again";
-			if (!found && box.fWhole)
+			if (box.fWhole)
 			{
+				// ★★A BOX THAT IS ITS WHOLE STORY IS PUT BACK OVER IT, EDITED OR NOT (2026-10-26, the author's B - the
+				//   header): over the story's whole body, while its frame is still the story's only one. Threaded since the
+				//   export, the box is no longer the whole story, and putting it back over the story would wipe the other
+				//   frames' words. ★Its tables and footnotes go with it (2026-10-26 evening) - so the part's fingerprint,
+				//   which a part of a story needs, is not asked: the whole story replaces the story.
 				if (mc == nil)
 					why = "the box's frame is not this story's any more - export the page again";
 				else if (!mc->GetIsOnlyMCF())
 					why = "the frame was threaded after the export - export its story with Export Story Text...";
 				else if (!(found = WholeStoryAt(model, facts, live[i], m)))
-					why = "the story holds a table or a note now - export it with Export Story Text...";
+					why = "the story holds an endnote now - export it with Export Story Text...";
+			}
+			else
+			{
+				// A box of 2026-10-25 - a part of its story: where its part still is what was exported, first at the
+				// range it came from, then at the range its frame holds now.
+				found = MatchAt(model, facts, box.fStart, box.fEnd, box, live[i], m);
+				if (!found && mc != nil)
+				{
+					const int32 start = static_cast<int32>(mc->TextStart());
+					const int32 end = start + mc->TextSpan();
+					if (start != box.fStart || end != box.fEnd)
+						found = MatchAt(model, facts, start, end, box, live[i], m);
+				}
 			}
 			if (found)
 				matched.push_back(m);
@@ -263,7 +276,20 @@ void KCMSpliceBoxesIntoSet(IDataBase* copyDB, IDataBase* documentDB, KCMStoryTex
 		KCMStoryShape::Story whole = facts.fShape;
 		int32 in = 0;
 		PMString fileName;
-		for (size_t i = 0; i < going.size(); ++i)
+		// ★A WHOLE BOX IS THE STORY (2026-10-26 evening): its body, its tables and its footnotes as Word holds them - the
+		//   direction the document's (a box carries none). Alone by now: it overlaps any other box of its story. ⚠Every
+		//   other box is a PART and they ALL go in (a threaded story's frames): the first version stopped that loop after
+		//   one part (tests-tr.ps1 PG11 - a file of 2026-10-25 with two parts of one story put back six boxes of seven).
+		const bool16 asWhole = (going.size() == 1 && going[0].fWhole) ? kTrue : kFalse;
+		if (asWhole)
+		{
+			const KCMPageBoxEdit& box = boxes[going[0].fBox];
+			whole = box.fContent;
+			whole.fVertical = facts.fShape.fVertical;
+			in = 1;
+			fileName = box.fFileName;
+		}
+		for (size_t i = 0; !asWhole && i < going.size(); ++i)
 		{
 			const KCMPageBoxEdit& box = boxes[going[i].fBox];
 			std::string why;
