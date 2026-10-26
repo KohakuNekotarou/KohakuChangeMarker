@@ -7,6 +7,7 @@
 #include "VCPlugInHeaders.h"
 
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -29,6 +30,8 @@ const char* const kVmlNamespaces = "xmlns:v=\"urn:schemas-microsoft-com:vml\" "
 								   "xmlns:o=\"urn:schemas-microsoft-com:office:office\" "
 								   "xmlns:w10=\"urn:schemas-microsoft-com:office:word\"";
 const char* const kBoxShapePrefix = "kcmbox";		// a box's shape: v:shape@id, and wp:docPr@name once Word made it DrawingML
+const char* const kNoteShapePrefix = "kcmnote";		// a note's box (2026-10-26): "kcmnote<box>_<n>", named the same way
+const char* const kLabelTag = "kcm-label";			// the heading over a note's box - a control of ours, never words
 const char* const kBoxStylePrefix = "KCMBox";
 const char* const kPageFormat = "2";		// the story tag is format 1
 
@@ -110,9 +113,9 @@ int32 LookIndex(std::vector<BoxLook>& looks, const Box& box)
 	return static_cast<int32>(looks.size());
 }
 
-/** Every paragraph of `blocks` put in style `styleId`. ★Safe because a box's blocks are paragraphs only - no table, no
-	note (the caller has refused those) - and WriteBlocks opens a paragraph as "<w:p>" or "<w:p/>" and in no other way;
-	text in a run is escaped, so "<w:p>" cannot stand in it. */
+/** Every paragraph of `blocks` put in style `styleId` - a table's cells' too (2026-10-26), so a cell's words look like the
+	box's. ★Safe because WriteBoxBlocks writes no paragraph properties of its own and opens a paragraph as "<w:p>" or
+	"<w:p/>" and in no other way; text in a run is escaped, so "<w:p>" cannot stand in it. */
 std::string StyleParagraphs(const std::string& blocks, const std::string& styleId)
 {
 	const std::string pPr = "<w:pPr><w:pStyle w:val=\"" + styleId + "\"/></w:pPr>";
@@ -241,6 +244,58 @@ void AppendBox(const Box& box, const std::string& styledBlocks, bool16 first, st
 		   "<w10:wrap type=\"none\" anchorx=\"page\" anchory=\"page\"/></v:shape></w:pict></w:r>";
 }
 
+/** The twips a box's table is fitted to: the box's width less its insets (0 when there is no room - the story format's
+	own widths then). */
+int32 InnerTwips(const Box& box)
+{
+	const int32 twips = Twips(box.fW - box.fInsetL - box.fInsetR);
+	return (twips > 0) ? twips : 0;
+}
+
+/** The notes' page's left edge, and how much narrower than the page its boxes are: 56.7pt (1134 twips) on each side. */
+const char* const kNotesIndent = "1134";
+const double kNotesMargins = 113.4;
+const double kNarrowestNoteBox = 100;
+
+/** The heading over note `n` of box `box` (2026-10-26): "Box b ⟦NOTE n⟧" in a content control nobody can change or
+	delete - the reader passes over it. The first one starts the notes' page. */
+void AppendNoteLabel(int32 box, int32 n, bool16 first, std::string& out)
+{
+	out += "<w:p><w:pPr>";
+	if (first)
+		out += "<w:pageBreakBefore/>";
+	out += "<w:spacing w:before=\"240\" w:after=\"60\"/><w:ind w:left=\"";
+	out += kNotesIndent;
+	out += "\"/></w:pPr><w:sdt><w:sdtPr><w:tag w:val=\"";
+	out += kLabelTag;
+	out += "\"/><w:lock w:val=\"sdtContentLocked\"/></w:sdtPr><w:sdtContent><w:r><w:rPr><w:b/></w:rPr>"
+		   "<w:t xml:space=\"preserve\">Box ";
+	AppendInt(box, out);
+	out += " \xE2\x9F\xA6NOTE ";
+	AppendInt(n, out);
+	out += "\xE2\x9F\xA7</w:t></w:r></w:sdtContent></w:sdt></w:p>";
+}
+
+/** Note `n` of box `box` (2026-10-26): its words in an INLINE text box of its own paragraph, named "kcmnote<box>_<n>" -
+	★inline, so that a note growing in Word pushes the next ones down (measured in Word 2007: a floating box anchored to
+	the paragraph after its label went ABOVE the label). It grows with its words, as a horizontal box does. */
+void AppendNoteBox(int32 box, int32 n, double width, const std::string& styledBlocks, std::string& out)
+{
+	out += "<w:p><w:pPr><w:ind w:left=\"";
+	out += kNotesIndent;
+	out += "\"/></w:pPr><w:r><w:pict><v:shape id=\"";
+	out += kNoteShapePrefix;
+	AppendInt(box, out);
+	out += "_";
+	AppendInt(n, out);
+	out += "\" type=\"#_x0000_t202\" style=\"width:";
+	AppendPoints(width, out);
+	out += ";height:20pt\" filled=\"f\" strokecolor=\"#BFBFBF\" strokeweight=\".5pt\">"
+		   "<v:textbox inset=\"4.5pt,4.5pt,4.5pt,4.5pt\" style=\"mso-fit-shape-to-text:t\"><w:txbxContent>";
+	out += styledBlocks;
+	out += "</w:txbxContent></v:textbox></v:shape></w:pict></w:r></w:p>";
+}
+
 }	// anonymous namespace
 
 bool16 WriteParts(const Page& page, std::vector<KCMZipStore::Entry>& outParts, std::string& whyNot)
@@ -251,26 +306,56 @@ bool16 WriteParts(const Page& page, std::vector<KCMZipStore::Entry>& outParts, s
 	// ---- everything that can refuse, before any part is made -------------------------------------
 	for (size_t i = 0; i < page.fBoxes.size(); ++i)
 	{
+		const Box& box = page.fBoxes[i];
 		for (size_t j = 0; j < i; ++j)
 		{
-			if (page.fBoxes[i].fN == page.fBoxes[j].fN)
+			if (box.fN == page.fBoxes[j].fN)
 			{
 				whyNot = "two boxes share the number ";
-				AppendInt(page.fBoxes[i].fN, whyNot);
+				AppendInt(box.fN, whyNot);
 				return kFalse;
+			}
+		}
+		// ⛔A VERTICAL BOX CANNOT HOLD A TABLE (2026-10-26, measured in Word 2007: the box is not laid out - no position,
+		//   no PDF); the export leaves such a frame out by name before it gets here.
+		if (box.fVertical && !box.fContent.fTables.empty())
+		{
+			whyNot = "box ";
+			AppendInt(box.fN, whyNot);
+			whyNot += ": a vertical text box cannot hold a table in Word (Word 2007 cannot lay it out)";
+			return kFalse;
+		}
+		// A note's own box holds words only: a reference there would be a mark the reader refuses.
+		for (size_t k = 0; k < box.fContent.fNotes.size(); ++k)
+		{
+			for (size_t p = 0; p < box.fContent.fNotes[k].size(); ++p)
+			{
+				if (!box.fContent.fNotes[k][p].fNoteRefs.empty())
+				{
+					whyNot = "box ";
+					AppendInt(box.fN, whyNot);
+					whyNot += ": footnote ";
+					AppendInt(static_cast<long long>(k) + 1, whyNot);
+					whyNot += " holds a footnote reference";
+					return kFalse;
+				}
 			}
 		}
 	}
 
 	std::vector<BoxLook> looks;
 	std::string boxes;
+	std::string notes;					// the notes' page (2026-10-26): a label and a box per footnote, box by box
+	const double noteWidth = (page.fWidth - kNotesMargins > kNarrowestNoteBox) ? page.fWidth - kNotesMargins : kNarrowestNoteBox;
 	KCMStoryShape::Story every;			// every box's paragraphs - only for the kenten marks styles.xml has to name
 	for (size_t i = 0; i < page.fBoxes.size(); ++i)
 	{
 		const Box& box = page.fBoxes[i];
 		std::string blocks;
 		std::string why;
-		if (!KCMStoryDocx::WriteBlocks(box.fContent, -1, 0, 0, blocks, why))
+		// ★A REFERENCE IS THE MARK, A TABLE IS FITTED TO THE BOX (2026-10-26 - KCMStoryDocx::WriteBoxBlocks): a box with
+		//   neither is the bytes WriteBlocks writes.
+		if (!KCMStoryDocx::WriteBoxBlocks(box.fContent, InnerTwips(box), blocks, why))
 		{
 			whyNot = "box ";
 			AppendInt(box.fN, whyNot);
@@ -284,6 +369,30 @@ bool16 WriteParts(const Page& page, std::vector<KCMZipStore::Entry>& outParts, s
 		AppendInt(LookIndex(looks, box), styleId);
 		AppendBox(box, StyleParagraphs(blocks, styleId), (i == 0) ? kTrue : kFalse, boxes);
 		every.fBody.insert(every.fBody.end(), box.fContent.fBody.begin(), box.fContent.fBody.end());
+		every.fTables.insert(every.fTables.end(), box.fContent.fTables.begin(), box.fContent.fTables.end());
+		every.fNotes.insert(every.fNotes.end(), box.fContent.fNotes.begin(), box.fContent.fNotes.end());
+
+		// ---- its notes, each in a box of its own on the notes' page, in the box's look ----------------------------
+		for (size_t k = 0; k < box.fContent.fNotes.size(); ++k)
+		{
+			KCMStoryShape::Story note;
+			note.fBody = box.fContent.fNotes[k];
+			std::string noteBlocks;
+			if (!KCMStoryDocx::WriteBoxBlocks(note, Twips(noteWidth - 9.0), noteBlocks, why))
+			{
+				whyNot = "box ";
+				AppendInt(box.fN, whyNot);
+				whyNot += ", footnote ";
+				AppendInt(static_cast<long long>(k) + 1, whyNot);
+				whyNot += ": " + why;
+				return kFalse;
+			}
+			if (noteBlocks.empty())
+				noteBlocks = "<w:p/>";
+			const int32 n = static_cast<int32>(k) + 1;
+			AppendNoteLabel(box.fN, n, notes.empty() ? kTrue : kFalse, notes);
+			AppendNoteBox(box.fN, n, noteWidth, StyleParagraphs(noteBlocks, styleId), notes);
+		}
 	}
 
 	std::string styles;
@@ -301,6 +410,7 @@ bool16 WriteParts(const Page& page, std::vector<KCMZipStore::Entry>& outParts, s
 	styles += stylesEnd;
 
 	// ---- the document: one paragraph anchoring every box, the page's own size --------------------------
+	//      (then the notes' page, when a box has notes - 2026-10-26)
 	std::string document = kXmlDeclaration;
 	document += "<w:document ";
 	document += kWordNamespace;
@@ -308,7 +418,9 @@ bool16 WriteParts(const Page& page, std::vector<KCMZipStore::Entry>& outParts, s
 	document += kVmlNamespaces;
 	document += "><w:body><w:p>";
 	document += boxes;
-	document += "</w:p><w:sectPr><w:pgSz w:w=\"";
+	document += "</w:p>";
+	document += notes;
+	document += "<w:sectPr><w:pgSz w:w=\"";
 	AppendInt(Twips(page.fWidth), document);
 	document += "\" w:h=\"";
 	AppendInt(Twips(page.fHeight), document);
@@ -398,6 +510,11 @@ bool16 WriteParts(const Page& page, std::vector<KCMZipStore::Entry>& outParts, s
 		AppendInt(static_cast<long long>(box.fPrintCrc), tag);
 		if (box.fWhole)
 			tag += "\" whole=\"1";		// the box is its whole story (Box::fWhole)
+		if (!box.fContent.fNotes.empty())
+		{
+			tag += "\" notes=\"";		// the marks the file writes, 1..notes (Box::fNoteCount)
+			AppendInt(static_cast<long long>(box.fContent.fNotes.size()), tag);
+		}
 		tag += "\"/>";
 	}
 	tag += "</kcm:page>";
@@ -479,19 +596,59 @@ bool16 BoxNumberOfName(const std::string* name, int32& out)
 	return ParseInt32(&digits, out);
 }
 
-/** One box's text met in the document: the w:txbxContent of a shape named for a box. */
+/** "kcmnote<b>_<n>" -> b, n (2026-10-26: note n of box b). kFalse for any other name. */
+bool16 NoteBoxOfName(const std::string* name, int32& outBox, int32& outN)
+{
+	const std::string prefix = kNoteShapePrefix;
+	if (name == nil || name->size() <= prefix.size() || name->compare(0, prefix.size(), prefix) != 0)
+		return kFalse;
+	const size_t bar = name->find('_', prefix.size());
+	if (bar == std::string::npos)
+		return kFalse;
+	const std::string b = name->substr(prefix.size(), bar - prefix.size());
+	const std::string n = name->substr(bar + 1);
+	return (ParseInt32(&b, outBox) && ParseInt32(&n, outN) && outBox > 0 && outN > 0) ? kTrue : kFalse;
+}
+
+/** Which box - or which note of which box - a shape's name says it is: (n, 0) for "kcmbox<n>", (b, n) for
+	"kcmnote<b>_<n>", (0, 0) for a shape of somebody else's. */
+void ShapeOfName(const std::string* name, int32& outBox, int32& outNote)
+{
+	outBox = 0;
+	outNote = 0;
+	int32 b = 0;
+	int32 n = 0;
+	if (BoxNumberOfName(name, b))
+		outBox = b;
+	else if (NoteBoxOfName(name, b, n))
+	{
+		outBox = b;
+		outNote = n;
+	}
+}
+
+/** The w:tag of a content control, or nil. */
+const std::string* ControlTag(const KCMXmlTree& t, int32 sdt)
+{
+	const int32 pr = t.Child(sdt, kW, "sdtPr");
+	const int32 tag = (pr >= 0) ? t.Child(pr, kW, "tag") : -1;
+	return (tag >= 0) ? t.Attr(tag, "val") : nil;
+}
+
+/** One box's text met in the document: the w:txbxContent of a shape named for a box, or for one of its notes. */
 struct Seen
 {
 	int32	fN;
+	int32	fNote;			// 0: the box's own text; n: the box of its note n (2026-10-26)
 	int32	fContent;		// the w:txbxContent
 	bool16	fInFallback;	// inside mc:Fallback - the VML copy Word 2010 and later keep beside the DrawingML one
 };
 
-/** The walk over the document: every box's text, and whether words stand outside every box. `box` is the number of the
-	box whose shape the walk is inside (0: none). ★A TEXT BOX OF NO BOX'S SHAPE - one copied in Word, say - holds words that
-	will not be read, so they count as outside. */
-void Walk(const KCMXmlTree& t, int32 node, bool16 inFallback, int32 box, bool16 inBoxText, std::vector<Seen>& seen,
-		  bool16& outsideText)
+/** The walk over the document: every box's text and every note's box, and whether words stand outside them all. `box`
+	and `note` say whose shape the walk is inside (0: none). ★A TEXT BOX OF NO BOX'S SHAPE - one copied in Word, say -
+	holds words that will not be read, so they count as outside; ★A LABEL OVER A NOTE'S BOX is ours, and is not. */
+void Walk(const KCMXmlTree& t, int32 node, bool16 inFallback, int32 box, int32 note, bool16 inBoxText,
+		  std::vector<Seen>& seen, bool16& outsideText)
 {
 	const KCMXmlNode& n = t.At(node);
 	if (n.IsText())
@@ -502,19 +659,24 @@ void Walk(const KCMXmlTree& t, int32 node, bool16 inFallback, int32 box, bool16 
 	//   DrawingML - the name on its anchor's wp:docPr.
 	if (n.fNs == kVml && n.fName == "shape")
 	{
-		int32 number = 0;
-		box = BoxNumberOfName(t.Attr(node, "id"), number) ? number : 0;
+		ShapeOfName(t.Attr(node, "id"), box, note);
 	}
 	else if (n.fNs == kWp && (n.fName == "anchor" || n.fName == "inline"))
 	{
 		const int32 docPr = t.Child(node, kWp, "docPr");
-		int32 number = 0;
-		box = (docPr >= 0 && BoxNumberOfName(t.Attr(docPr, "name"), number)) ? number : 0;
+		ShapeOfName((docPr >= 0) ? t.Attr(docPr, "name") : nil, box, note);
+	}
+	if (n.fNs == kW && n.fName == "sdt" && !inBoxText)
+	{
+		const std::string* tag = ControlTag(t, node);
+		if (tag != nil && *tag == kLabelTag)
+			return;
 	}
 	if (n.fNs == kW && n.fName == "txbxContent" && box > 0)
 	{
 		Seen s;
 		s.fN = box;
+		s.fNote = note;
 		s.fContent = node;
 		s.fInFallback = inFallback;
 		seen.push_back(s);
@@ -534,7 +696,138 @@ void Walk(const KCMXmlTree& t, int32 node, bool16 inFallback, int32 box, bool16 
 		}
 	}
 	for (size_t k = 0; k < n.fChildren.size(); ++k)
-		Walk(t, n.fChildren[k], inFallback, box, inBoxText, seen, outsideText);
+		Walk(t, n.fChildren[k], inFallback, box, note, inBoxText, seen, outsideText);
+}
+
+/** Where the text of box `box` (`note` 0) or of its note `note` stands: ★THE ONE OUTSIDE mc:Fallback COUNTS; the
+	Fallback's only when there is no other - Word 2010 and later keep a VML copy of every DrawingML box there, holding the
+	same words. @return how many there are (0: gone, 1: `outContent`, more: copied in Word). */
+int32 FindText(const std::vector<Seen>& seen, int32 box, int32 note, int32& outContent)
+{
+	int32 outside = 0;
+	int32 inFallback = 0;
+	int32 contentOutside = -1;
+	int32 contentFallback = -1;
+	for (size_t s = 0; s < seen.size(); ++s)
+	{
+		if (seen[s].fN != box || seen[s].fNote != note)
+			continue;
+		if (seen[s].fInFallback)
+		{
+			++inFallback;
+			contentFallback = seen[s].fContent;
+		}
+		else
+		{
+			++outside;
+			contentOutside = seen[s].fContent;
+		}
+	}
+	outContent = (outside > 0) ? contentOutside : contentFallback;
+	return (outside > 0) ? outside : inFallback;
+}
+
+std::string MarkWords(int32 n)
+{
+	std::string s = "\xE2\x9F\xA6NOTE ";
+	AppendInt(n, s);
+	s += "\xE2\x9F\xA7";
+	return s;
+}
+
+/** A box's footnotes, from their own boxes (2026-10-26): every mark in the box's text (KCMStoryDocx::ReadBoxBlocks
+	read them as references numbered as written) checked against the tag's count and paired with its note's box; the
+	notes ranked by their marks' numbers - the story format ranks its footnotes by Word's ids the same way - and each
+	reference renumbered to its note's rank. ★A NOTE WHOSE MARK IS GONE IS NOT READ: deleting the mark deleted it.
+	@return kFalse with the reason the box cannot go in. */
+bool16 ReadBoxNotes(const KCMXmlTree& document, const std::vector<Seen>& seen, const std::string& styles, Box& box,
+					std::string& whyNot)
+{
+	KCMStoryShape::Story& s = box.fContent;
+	std::vector< std::vector<KCMStoryShape::Para>* > runs;		// the body and every cell - where a reference stands
+	KCMStoryShape::ParaRuns(s, kFalse, runs);
+	std::vector<int32> marks;									// the numbers as written, ascending, each once
+	for (size_t r = 0; r < runs.size(); ++r)
+	{
+		for (size_t p = 0; p < runs[r]->size(); ++p)
+		{
+			const std::vector<KCMStoryShape::NoteRef>& refs = (*runs[r])[p].fNoteRefs;
+			for (size_t k = 0; k < refs.size(); ++k)
+			{
+				const int32 n = refs[k].fNote + 1;
+				if (n < 1 || n > box.fNoteCount)
+				{
+					whyNot = "a note mark " + MarkWords(n) + " the file did not write for this box (copied from another?)";
+					return kFalse;
+				}
+				size_t at = 0;
+				while (at < marks.size() && marks[at] < n)
+					++at;
+				if (at < marks.size() && marks[at] == n)
+				{
+					whyNot = "the note mark " + MarkWords(n) + " stands twice (copied in Word?)";
+					return kFalse;
+				}
+				marks.insert(marks.begin() + static_cast<std::ptrdiff_t>(at), n);
+			}
+		}
+	}
+	s.fNotes.clear();
+	for (size_t m = 0; m < marks.size(); ++m)
+	{
+		std::string name = kNoteShapePrefix;
+		AppendInt(box.fN, name);
+		name += "_";
+		AppendInt(marks[m], name);
+		int32 content = -1;
+		const int32 count = FindText(seen, box.fN, marks[m], content);
+		if (count == 0)
+		{
+			whyNot = "the note box for " + MarkWords(marks[m]) + " (" + name + ") is not in the file";
+			return kFalse;
+		}
+		if (count > 1)
+		{
+			whyNot = "the note box for " + MarkWords(marks[m]) + " (" + name + ") is in the file twice (copied in Word?)";
+			return kFalse;
+		}
+		KCMStoryShape::Story note;
+		std::string why;
+		if (!KCMStoryDocx::ReadBoxBlocks(document, content, styles, note, why))
+		{
+			whyNot = "the note box for " + MarkWords(marks[m]) + " cannot be read: " + why;
+			return kFalse;
+		}
+		if (!note.fTables.empty())
+		{
+			whyNot = "the note box for " + MarkWords(marks[m]) + " holds a table, which a footnote cannot";
+			return kFalse;
+		}
+		for (size_t p = 0; p < note.fBody.size(); ++p)
+		{
+			if (!note.fBody[p].fNoteRefs.empty())
+			{
+				whyNot = "the note box for " + MarkWords(marks[m]) + " holds a note mark";
+				return kFalse;
+			}
+		}
+		s.fNotes.push_back(note.fBody);
+	}
+	for (size_t r = 0; r < runs.size(); ++r)
+	{
+		for (size_t p = 0; p < runs[r]->size(); ++p)
+		{
+			std::vector<KCMStoryShape::NoteRef>& refs = (*runs[r])[p].fNoteRefs;
+			for (size_t k = 0; k < refs.size(); ++k)
+			{
+				int32 rank = 0;
+				while (static_cast<size_t>(rank) < marks.size() && marks[static_cast<size_t>(rank)] != refs[k].fNote + 1)
+					++rank;
+				refs[k].fNote = rank;
+			}
+		}
+	}
+	return kTrue;
 }
 
 const std::string* FindPartBytes(const std::vector<KCMZipStore::Entry>& parts, const char* name)
@@ -613,6 +906,13 @@ bool16 ReadParts(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, 
 		}
 		const std::string* whole = tag.Attr(c, "whole");
 		b.fWhole = (whole != nil && *whole == "1") ? kTrue : kFalse;
+		// (2026-10-26) how many marks the file wrote - absent: none
+		const std::string* notes = tag.Attr(c, "notes");
+		if (notes != nil && !ParseInt32(notes, b.fNoteCount))
+		{
+			whyNot = "a box of the page tag cannot be read";
+			return kFalse;
+		}
 		out.fBoxes.push_back(rb);
 	}
 
@@ -640,34 +940,13 @@ bool16 ReadParts(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, 
 	const std::string styles = (stylesXml != nil) ? *stylesXml : std::string();
 
 	std::vector<Seen> seen;
-	Walk(document, body, kFalse, 0, kFalse, seen, out.fTextOutsideBoxes);
+	Walk(document, body, kFalse, 0, 0, kFalse, seen, out.fTextOutsideBoxes);
 
 	for (size_t i = 0; i < out.fBoxes.size(); ++i)
 	{
 		ReadBox& rb = out.fBoxes[i];
-		// ★THE ONE OUTSIDE mc:Fallback COUNTS; the Fallback's only when there is no other - Word 2010 and later keep a
-		//   VML copy of every DrawingML box there, holding the same words.
-		int32 outside = 0;
-		int32 inFallback = 0;
-		int32 contentOutside = -1;
-		int32 contentFallback = -1;
-		for (size_t s = 0; s < seen.size(); ++s)
-		{
-			if (seen[s].fN != rb.fBox.fN)
-				continue;
-			if (seen[s].fInFallback)
-			{
-				++inFallback;
-				contentFallback = seen[s].fContent;
-			}
-			else
-			{
-				++outside;
-				contentOutside = seen[s].fContent;
-			}
-		}
-		const int32 count = (outside > 0) ? outside : inFallback;
-		const int32 content = (outside > 0) ? contentOutside : contentFallback;
+		int32 content = -1;
+		const int32 count = FindText(seen, rb.fBox.fN, 0, content);
 		if (count == 0)
 		{
 			rb.fWhyNot = "the box was not found in the file (deleted in Word?) - nothing of it goes in";
@@ -678,10 +957,13 @@ bool16 ReadParts(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, 
 			rb.fWhyNot = "the box is in the file twice (copied in Word?)";
 			continue;
 		}
-		// ★THE WHOLE TEXT BOX IS THE BOX'S WORDS - whatever Word did to the paragraphs inside it.
+		// ★THE WHOLE TEXT BOX IS THE BOX'S WORDS - whatever Word did to the paragraphs inside it - its tables too, and its
+		//   marks as the references they stand for (2026-10-26), paired with the notes' boxes.
 		std::string why;
-		if (!KCMStoryDocx::ReadBlocksIn(document, content, styles, rb.fBox.fContent, why))
+		if (!KCMStoryDocx::ReadBoxBlocks(document, content, styles, rb.fBox.fContent, why))
 			rb.fWhyNot = "the box's words cannot be read: " + why;
+		else if (!ReadBoxNotes(document, seen, styles, rb.fBox, why))
+			rb.fWhyNot = why;
 	}
 	return kTrue;
 }
