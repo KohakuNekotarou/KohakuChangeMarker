@@ -20,6 +20,8 @@
 namespace KCMStoryDocx
 {
 
+const char* const kNoteMarkTagPrefix = "kcm-note-";		// a box's footnote reference (the header)
+
 namespace
 {
 
@@ -248,8 +250,27 @@ void AppendEndnoteMark(const Look& look, std::string& out)
 	AppendPlaceholder(0x0005, look, out);
 }
 
-void AppendNoteReference(int32 note, std::string& out)
+/** A box's footnote reference (2026-10-26 - WriteBoxBlocks): the page format's mark for note `n` (1..), a content control
+	that can be deleted but not edited - its tag the truth, "⟦NOTE n⟧" what it shows (the header says why). */
+void AppendNoteMark(int32 n, std::string& out)
 {
+	out += "<w:sdt><w:sdtPr><w:alias w:val=\"NOTE ";
+	AppendNumber(n, out);
+	out += "\"/><w:tag w:val=\"";
+	out += kNoteMarkTagPrefix;
+	AppendNumber(n, out);
+	out += "\"/><w:lock w:val=\"contentLocked\"/></w:sdtPr><w:sdtContent><w:r><w:t>\xE2\x9F\xA6NOTE ";
+	AppendNumber(n, out);
+	out += "\xE2\x9F\xA7</w:t></w:r></w:sdtContent></w:sdt>";
+}
+
+void AppendNoteReference(int32 note, bool16 asMark, std::string& out)
+{
+	if (asMark)
+	{
+		AppendNoteMark(note + 1, out);
+		return;
+	}
 	out += "<w:r><w:rPr><w:vertAlign w:val=\"superscript\"/></w:rPr><w:footnoteReference w:id=\"";
 	AppendNumber(note + 1, out);		// ids -1 and 0 are Word's own separators; the notes start at 1
 	out += "\"/></w:r>";
@@ -363,7 +384,7 @@ void PaintSpans(const KCMAttrSpanList& spans, int32 n, std::vector<Look>& looks,
 
 }	// anonymous namespace
 
-bool16 WriteParagraphContent(const KCMStoryShape::Para& p, std::string& out, std::string& whyNot)
+bool16 WriteParagraphContent(const KCMStoryShape::Para& p, std::string& out, std::string& whyNot, bool16 noteMarks)
 {
 	std::vector<int32> cps;
 	std::vector<int32> byteAt;
@@ -441,7 +462,7 @@ bool16 WriteParagraphContent(const KCMStoryShape::Para& p, std::string& out, std
 	{
 		while (ref < refs.size() && refs[ref].fAt <= i)
 		{
-			AppendNoteReference(refs[ref].fNote, made);
+			AppendNoteReference(refs[ref].fNote, noteMarks, made);
 			++ref;
 		}
 		// ★**THE ENDNOTE MARKS GO IN ON THE SAME WALK** - see AppendEndnoteMark. They carry no
@@ -503,7 +524,7 @@ bool16 WriteParagraphContent(const KCMStoryShape::Para& p, std::string& out, std
 
 	// The references standing at the paragraph's end (and any whose place is past it).
 	for (; ref < refs.size(); ++ref)
-		AppendNoteReference(refs[ref].fNote, made);
+		AppendNoteReference(refs[ref].fNote, noteMarks, made);
 	for (; endMark < endMarks.size(); ++endMark)
 		AppendEndnoteMark(Look(), made);
 
@@ -539,6 +560,20 @@ namespace
 // later in Story::fTables than the one it stands in), so this only stops a malformed Story from
 // walking for ever.
 const int32 kDeepestNesting = 32;
+
+/** How a run of blocks is spelt: the story format's own way (the default), or a box's of the page format (2026-10-26 -
+	WriteBoxBlocks, the header says why). */
+struct Spelling
+{
+	bool16	fNoteMarks;		// a footnote reference as the page format's mark, not as <w:footnoteReference>
+	int32	fWidth;			// the twips a table here is fitted to; 0 = the story format's own widths
+
+	Spelling() : fNoteMarks(kFalse), fWidth(0) {}
+};
+
+const int32 kStoryTableWidth = 9000;	// twips: the story format's table, which Word re-fits - this is a start
+const int32 kCellMargins = 216;			// Word's default cell margins, 108 twips a side: a nested table fits inside them
+const int32 kNarrowestTable = 360;		// what a fitted table is given when its cell has less room than its margins
 
 /** The characters [from, to) of a paragraph, with every span that reaches into them, re-based.
 
@@ -605,10 +640,10 @@ KCMStoryShape::Para Slice(const KCMStoryShape::Para& p, const std::vector<int32>
 }
 
 /** One <w:p>. An empty one is <w:p/>. */
-bool16 AppendParagraph(const KCMStoryShape::Para& piece, std::string& out, std::string& whyNot)
+bool16 AppendParagraph(const KCMStoryShape::Para& piece, const Spelling& spelling, std::string& out, std::string& whyNot)
 {
 	std::string content;
-	if (!WriteParagraphContent(piece, content, whyNot))
+	if (!WriteParagraphContent(piece, content, whyNot, spelling.fNoteMarks))
 		return kFalse;
 
 	if (content.empty())
@@ -698,11 +733,11 @@ int32 LayRowOut(const KCMStoryShape::Row& row, std::vector<Carry>& carry, std::v
 }
 
 bool16 AppendBlocks(const KCMStoryShape::Story& s, const std::vector<KCMStoryShape::Para>& paras,
-					int32 inTable, int32 inRow, int32 inCell, int32 depth, std::string& out,
-					std::string& whyNot);
+					int32 inTable, int32 inRow, int32 inCell, int32 depth, const Spelling& spelling,
+					std::string& out, std::string& whyNot);
 
-bool16 AppendTable(const KCMStoryShape::Story& s, size_t index, int32 depth, std::string& out,
-				   std::string& whyNot)
+bool16 AppendTable(const KCMStoryShape::Story& s, size_t index, int32 depth, const Spelling& spelling,
+				   std::string& out, std::string& whyNot)
 {
 	const KCMStoryShape::Table& table = s.fTables[index];
 
@@ -718,9 +753,22 @@ bool16 AppendTable(const KCMStoryShape::Story& s, size_t index, int32 depth, std
 				columns = used;
 		}
 	}
-	const int32 columnWidth = 9000 / columns;		// twips; Word re-fits them, this is a start
+	// ★A BOX'S TABLE IS FITTED TO THE BOX (2026-10-26 - Spelling::fWidth), and says so in its own width; the story
+	//   format's is left to Word ("auto").
+	const int32 columnWidth = ((spelling.fWidth > 0) ? spelling.fWidth : kStoryTableWidth) / columns;
 
-	out += "<w:tbl><w:tblPr><w:tblW w:w=\"0\" w:type=\"auto\"/><w:tblBorders>"
+	out += "<w:tbl><w:tblPr>";
+	if (spelling.fWidth > 0)
+	{
+		out += "<w:tblW w:w=\"";
+		AppendNumber(columnWidth * columns, out);
+		out += "\" w:type=\"dxa\"/>";
+	}
+	else
+	{
+		out += "<w:tblW w:w=\"0\" w:type=\"auto\"/>";
+	}
+	out += "<w:tblBorders>"
 		   "<w:top w:val=\"single\" w:sz=\"4\"/><w:left w:val=\"single\" w:sz=\"4\"/>"
 		   "<w:bottom w:val=\"single\" w:sz=\"4\"/><w:right w:val=\"single\" w:sz=\"4\"/>"
 		   "<w:insideH w:val=\"single\" w:sz=\"4\"/><w:insideV w:val=\"single\" w:sz=\"4\"/>"
@@ -757,13 +805,20 @@ bool16 AppendTable(const KCMStoryShape::Story& s, size_t index, int32 depth, std
 				out += "<w:vMerge w:val=\"restart\"/>";
 			out += "</w:tcPr>";
 
+			// A table nested in this cell is fitted to the cell, inside Word's margins.
+			Spelling inCell = spelling;
+			if (spelling.fWidth > 0)
+			{
+				const int32 room = columnWidth * slot.fSpan - kCellMargins;
+				inCell.fWidth = (room > kNarrowestTable) ? room : kNarrowestTable;
+			}
 			if (slot.fCell < 0)
 			{
 				out += "<w:p/>";
 			}
 			else if (!AppendBlocks(s, table.fRows[r].fCells[static_cast<size_t>(slot.fCell)].fParas,
 								   static_cast<int32>(index), static_cast<int32>(r), slot.fCell,
-								   depth + 1, out, whyNot))
+								   depth + 1, inCell, out, whyNot))
 			{
 				return kFalse;
 			}
@@ -776,8 +831,8 @@ bool16 AppendTable(const KCMStoryShape::Story& s, size_t index, int32 depth, std
 }
 
 bool16 AppendBlocks(const KCMStoryShape::Story& s, const std::vector<KCMStoryShape::Para>& paras,
-					int32 inTable, int32 inRow, int32 inCell, int32 depth, std::string& out,
-					std::string& whyNot)
+					int32 inTable, int32 inRow, int32 inCell, int32 depth, const Spelling& spelling,
+					std::string& out, std::string& whyNot)
 {
 	if (depth > kDeepestNesting)
 	{
@@ -806,23 +861,44 @@ bool16 AppendBlocks(const KCMStoryShape::Story& s, const std::vector<KCMStorySha
 				continue;
 			if (inTable >= 0 && (table.fInRow != inRow || table.fInCell != inCell))
 				continue;
-			if (!AppendTable(s, t, depth, out, whyNot))
+			if (!AppendTable(s, t, depth, spelling, out, whyNot))
 				return kFalse;
 			wasTable = kTrue;
 			break;			// one table per paragraph in this shape; the split put it there
 		}
 		if (wasTable)
 			continue;
-		if (!AppendParagraph(paras[i], out, whyNot))
+		if (!AppendParagraph(paras[i], spelling, out, whyNot))
 			return kFalse;
 	}
 	return kTrue;
 }
 
+bool16 WriteRun(const KCMStoryShape::Story& s, int32 inTable, int32 inRow, int32 inCell, const Spelling& spelling,
+				std::string& out, std::string& whyNot);
+
 }	// anonymous namespace
 
 bool16 WriteBlocks(const KCMStoryShape::Story& s, int32 inTable, int32 inRow, int32 inCell,
 				   std::string& out, std::string& whyNot)
+{
+	return WriteRun(s, inTable, inRow, inCell, Spelling(), out, whyNot);
+}
+
+bool16 WriteBoxBlocks(const KCMStoryShape::Story& s, int32 widthTwips, std::string& out, std::string& whyNot)
+{
+	Spelling box;
+	box.fNoteMarks = kTrue;
+	box.fWidth = (widthTwips > 0) ? widthTwips : 0;
+	return WriteRun(s, -1, 0, 0, box, out, whyNot);
+}
+
+namespace
+{
+
+/** WriteBlocks, in either spelling. */
+bool16 WriteRun(const KCMStoryShape::Story& s, int32 inTable, int32 inRow, int32 inCell, const Spelling& spelling,
+				std::string& out, std::string& whyNot)
 {
 	// ★ON A COPY IN THE SPLIT SHAPE (SplitAtTables): the one shape this file writes, whatever shape the
 	//   story came in - see the note above AppendParagraph. inTable / inRow / inCell name WHICH run of
@@ -844,14 +920,11 @@ bool16 WriteBlocks(const KCMStoryShape::Story& s, int32 inTable, int32 inRow, in
 
 	// Into a string of its own: a refusal from deep inside a cell leaves `out` as it was found.
 	std::string made;
-	if (!AppendBlocks(split, *run, inTable, inRow, inCell, 0, made, whyNot))
+	if (!AppendBlocks(split, *run, inTable, inRow, inCell, 0, spelling, made, whyNot))
 		return kFalse;
 	out += made;
 	return kTrue;
 }
-
-namespace
-{
 
 const char* const kXmlDeclaration = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n";
 const char* const kWordNamespace = "xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"";
@@ -1409,8 +1482,11 @@ struct Reader
 	// ★THE MOVE-FROM RANGES OPEN RIGHT NOW, by their w:id (2026-09-25, the Word round trip re-check, item 5): a paragraph
 	//   that ENDS inside one has had its mark moved away - see WordlessMarker.
 	std::vector<std::string>	fMovedAway;
+	// ★A BOX OF THE PAGE FORMAT (2026-10-26 - ReadBoxBlocks): a mark is a footnote reference, a <w:footnoteReference> is
+	//   refused, and the notes are left to the page format.
+	bool16					fNoteMarks;
 
-	Reader() : fTree(nil), fStory(nil) {}
+	Reader() : fTree(nil), fStory(nil), fNoteMarks(kFalse) {}
 };
 
 bool16 Refuse(Reader& rd, const std::string& why)
@@ -1697,6 +1773,27 @@ void PutText(Building& b, const std::string& utf8, const RLook& look)
 }
 
 /** A <w:sdt> whose tag is "uXXXX": the invisible character it stands for. */
+/** The note a box's mark stands for (2026-10-26 - kNoteMarkTagPrefix): "kcm-note-<n>", n from 1 to 99999. */
+bool16 NoteMarkOf(const KCMXmlTree& t, int32 sdt, int32& outN)
+{
+	const std::string* v = SdtTag(t, sdt);
+	const std::string prefix = kNoteMarkTagPrefix;
+	if (v == nil || v->size() <= prefix.size() || v->size() > prefix.size() + 5 || v->compare(0, prefix.size(), prefix) != 0)
+		return kFalse;
+	int32 n = 0;
+	for (size_t i = prefix.size(); i < v->size(); ++i)
+	{
+		const char c = (*v)[i];
+		if (c < '0' || c > '9')
+			return kFalse;
+		n = n * 10 + (c - '0');
+	}
+	if (n <= 0)
+		return kFalse;
+	outN = n;
+	return kTrue;
+}
+
 bool16 PlaceholderOf(const KCMXmlTree& t, int32 sdt, int32& outCp)
 {
 	const int32 pr = t.Child(sdt, kW, "sdtPr");
@@ -1975,6 +2072,8 @@ bool16 ReadRunChildren(Reader& rd, int32 node, const RLook& look, Building& b)
 		}
 		else if (name == "footnoteReference")
 		{
+			if (rd.fNoteMarks)
+				return Refuse(rd, "a footnote reference inside a text box, where Word makes none");
 			const std::string* id = t.Attr(c, "id");
 			int32 value = 0;
 			if (id == nil || !ParseDecimal(*id, value))
@@ -2087,6 +2186,17 @@ bool16 ReadContent(Reader& rd, int32 node, Building& b)
 			// a control of ours from stage 3b (a table mark, the legend): passed over, never words
 			if (IsRetiredOwnControl(t, c))
 				continue;
+			// ★A BOX'S FOOTNOTE REFERENCE (2026-10-26 - ReadBoxBlocks): a place, not a character, numbered as written -
+			//   the page format pairs it with its note's box. ⚠Only in a box: in a story file it is somebody's words.
+			int32 mark = 0;
+			if (rd.fNoteMarks && NoteMarkOf(t, c, mark))
+			{
+				KCMStoryShape::NoteRef ref;
+				ref.fAt = b.fLen;
+				ref.fNote = mark - 1;
+				b.fNoteRefs.push_back(ref);
+				continue;
+			}
 			int32 cp = 0;
 			if (PlaceholderOf(t, c, cp))
 			{
@@ -2735,11 +2845,12 @@ void SettleParas(std::vector<KCMStoryShape::Para>& paras)
 	refused, by the note's number). ★ONE ROAD FOR TWO CALLERS (2026-10-25): ReadSide reads a document's body this way, and
 	ReadBlocksIn whatever container the page format names - a box's content control. ⚠`out` is not cleared here. */
 bool16 ReadBlocksWith(const KCMXmlTree& document, int32 container, const KCMXmlTree* notesTree,
-					  const std::string& stylesXml, KCMStoryShape::Story& out, std::string& whyNot)
+					  const std::string& stylesXml, bool16 noteMarks, KCMStoryShape::Story& out, std::string& whyNot)
 {
 	Reader rd;
 	rd.fTree = &document;
 	rd.fStory = &out;
+	rd.fNoteMarks = noteMarks;
 	if (!stylesXml.empty())
 	{
 		// An unreadable styles part is not fatal: the style ids then stand for themselves.
@@ -2748,7 +2859,8 @@ bool16 ReadBlocksWith(const KCMXmlTree& document, int32 container, const KCMXmlT
 		if (styles.Parse(stylesXml.data(), stylesXml.size(), ignored))
 			CollectStyleNames(styles, rd.fStyleNames);
 	}
-	if (!ReadBlocks(rd, container, kInBody, 0, 0, out.fBody) || !ResolveNotes(rd, notesTree))
+	// (a box's marks stay as written: the page format has the notes, each in a box of its own)
+	if (!ReadBlocks(rd, container, kInBody, 0, 0, out.fBody) || (!noteMarks && !ResolveNotes(rd, notesTree)))
 	{
 		whyNot = rd.fWhy;
 		return kFalse;
@@ -2799,7 +2911,7 @@ bool16 ReadSide(const std::string& documentXml, const std::string& footnotesXml,
 			out.fVertical = kTrue;
 	}
 
-	return ReadBlocksWith(document, body, hasNotes ? &notes : nil, stylesXml, out, whyNot);
+	return ReadBlocksWith(document, body, hasNotes ? &notes : nil, stylesXml, kFalse, out, whyNot);
 }
 
 bool16 ReadBlocksIn(const KCMXmlTree& document, int32 container, const std::string& stylesXml,
@@ -2812,7 +2924,20 @@ bool16 ReadBlocksIn(const KCMXmlTree& document, int32 container, const std::stri
 		whyNot = "there is nothing to read the box from";
 		return kFalse;
 	}
-	return ReadBlocksWith(document, container, nil, stylesXml, out, whyNot);
+	return ReadBlocksWith(document, container, nil, stylesXml, kFalse, out, whyNot);
+}
+
+bool16 ReadBoxBlocks(const KCMXmlTree& document, int32 container, const std::string& stylesXml,
+					 KCMStoryShape::Story& out, std::string& whyNot)
+{
+	out = KCMStoryShape::Story();
+	whyNot.clear();
+	if (container < 0 || container >= document.Count())
+	{
+		whyNot = "there is nothing to read the box from";
+		return kFalse;
+	}
+	return ReadBlocksWith(document, container, nil, stylesXml, kTrue, out, whyNot);
 }
 
 bool16 Read(const std::vector<KCMZipStore::Entry>& parts, ReadResult& out, std::string& whyNot)
