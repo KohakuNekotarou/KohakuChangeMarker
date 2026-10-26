@@ -120,8 +120,19 @@ static int32 KCMPawIndexAt(const std::vector<KCMPawStamp>& v, UID pageUID,
 	return -1;
 }
 
+bool16 KCMPawStampIsAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y, const PMReal& baseHalf)
+{
+	if (db == nil || pageUID == kInvalidUID)
+		return kFalse;
+
+	KCMMarkStateLock lock(KCMMarkStateMutex());
+	KCMPawMap::const_iterator entry = sPaws.find(db);	// by pointer: the tool's question about the document in front
+	return (entry != sPaws.end() && KCMPawIndexAt(entry->second, pageUID, x, y, baseHalf) >= 0) ? kTrue : kFalse;
+}
+
 bool16 KCMPawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-                          int32 colour, const PMReal& baseHalf, const PMString& text)
+                          int32 colour, const PMReal& baseHalf, const PMString& text,
+                          const PMReal& angle)
 {
 	if (db == nil || pageUID == kInvalidUID)
 		return kFalse;
@@ -154,7 +165,7 @@ bool16 KCMPawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMR
 	//   in it within minutes of first use: putting paws down in a row, the second press near the
 	//   first took the first one off. Placing and lifting are two intentions, so they are two
 	//   gestures -- plain press and Shift + press.
-	onPage.push_back(KCMPawStamp(pageUID, x, y, colour, text));
+	onPage.push_back(KCMPawStamp(pageUID, x, y, colour, text, angle));
 
 	// ★The paw goes into the DOCUMENT, and the store catches up when the notification arrives.
 	//  The page's tick has to be carried along: a write says what the whole page carries
@@ -197,6 +208,54 @@ bool16 KCMPawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMRe
 	wanted.push_back(KCMPageMarks(pageUID, KCMPageCheckIsChecked(db, pageUID)));
 	wanted.back().fPaws = onPage;		// empty is meaningful: it takes our paws label off the page
 	return (KCMMarksWrite(db, wanted, "Lift Cat Paw") == kSuccess) ? kTrue : kFalse;
+}
+
+//========================================================================================
+// The paw being placed (2026-10-27) -- drawn while the button is down, kept nowhere
+//========================================================================================
+
+// ★ONE SLOT, because one tool in one hand places one paw at a time. It is not a stamp in sPaws: those are the
+//   document's, written by a command and counted; this one is a picture of the press in progress.
+// ⚠Its database and view are compared and never dereferenced -- the press can outlive neither, but the drawing
+//   side reads this on every draw, and a comparison is all it needs.
+static bool16				sPreviewUp = kFalse;
+static IDataBase*			sPreviewDB = nil;
+static const IControlView*	sPreviewView = nil;
+static KCMPawStamp			sPreview;
+
+void KCMPawPreviewSet(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y, int32 colour,
+                      const PMReal& angle, const IControlView* view)
+{
+	KCMMarkStateLock lock(KCMMarkStateMutex());
+	sPreviewUp   = (db != nil && pageUID != kInvalidUID && view != nil) ? kTrue : kFalse;
+	sPreviewDB   = db;
+	sPreviewView = view;
+	sPreview     = KCMPawStamp(pageUID, x, y, colour, PMString(), angle);
+}
+
+void KCMPawPreviewClear()
+{
+	KCMMarkStateLock lock(KCMMarkStateMutex());
+	sPreviewUp   = kFalse;
+	sPreviewDB   = nil;
+	sPreviewView = nil;
+}
+
+bool16 KCMPawPreviewOn(IDataBase* db, UID pageUID, const IControlView* view, KCMPawStamp& out)
+{
+	KCMMarkStateLock lock(KCMMarkStateMutex());
+	// ★By POINTER, with no fall-back on file identity, unlike the readers below: the preview belongs to the screen
+	//   of the document being pressed, and a background thread's clone is exactly what must not draw it.
+	if (!sPreviewUp || db != sPreviewDB || view != sPreviewView || pageUID != sPreview.fPageUID)
+		return kFalse;
+	out = sPreview;
+	return kTrue;
+}
+
+bool16 KCMPawPreviewFor(IDataBase* db, const IControlView* view)
+{
+	KCMMarkStateLock lock(KCMMarkStateMutex());
+	return (sPreviewUp && db == sPreviewDB && view == sPreviewView) ? kTrue : kFalse;
 }
 
 //========================================================================================

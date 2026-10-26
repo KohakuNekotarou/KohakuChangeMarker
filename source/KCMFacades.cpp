@@ -623,7 +623,7 @@ public:
 	// on the UI side and the store on this one.
 	virtual bool16	PawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
 	                                int32 colour, const PMReal& baseHalf, const PMString& text)
-									{ return KCMPawStampPlaceAt(db, pageUID, x, y, colour, baseHalf, text); }
+									{ return KCMPawStampPlaceAt(db, pageUID, x, y, colour, baseHalf, text, PMReal(0.0)); }
 	virtual bool16	PawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
 	                               const PMReal& baseHalf)
 									{ return KCMPawStampLiftAt(db, pageUID, x, y, baseHalf); }
@@ -655,6 +655,19 @@ public:
 						KCMSayCleared("cleared paw", n);
 						return n;
 					}
+
+	// The paw that points where it was dragged (2026-10-27) -- appended to the interface, so appended here too.
+	virtual bool16	PawStampPlaceAtAngle(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                                     int32 colour, const PMReal& baseHalf, const PMString& text,
+	                                     const PMReal& angle)
+									{ return KCMPawStampPlaceAt(db, pageUID, x, y, colour, baseHalf, text, angle); }
+	virtual bool16	PawStampIsAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                             const PMReal& baseHalf)
+									{ return KCMPawStampIsAt(db, pageUID, x, y, baseHalf); }
+	virtual void	PawPreviewSet(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y, int32 colour,
+	                              const PMReal& angle, const IControlView* view)
+									{ KCMPawPreviewSet(db, pageUID, x, y, colour, angle, view); }
+	virtual void	PawPreviewClear()	{ KCMPawPreviewClear(); }
 };
 
 CREATE_PMINTERFACE(KCMPageFlagsFacade, kKCMPageFlagsFacadeImpl)

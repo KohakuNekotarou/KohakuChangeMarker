@@ -2,13 +2,18 @@
 //
 //  KCMPawTracker.cpp
 //
-//  The cat-paw stamp tool's tracker. A left press places one paw at the point pressed, and
-//  there is nothing to follow afterwards, so BeginTracking answers kFalse ＝ the single-shot
-//  shape of sdksamples/snapshot, whose tracker likewise does its whole job in BeginTracking.
+//  The cat-paw stamp tool's tracker. A left press places one paw at the point pressed -- and,
+//  since 2026-10-27, FOLLOWS THE DRAG before placing it: the paw points the way the button was
+//  dragged before it came up (the author: "turn the paw to the angle of where the mouse was
+//  released from where it was pressed"), and turns on screen while the button is down. A click
+//  (under kKCMPawDragPixels of travel) places it upright, as before. The other gestures still do
+//  their whole job in BeginTracking and answer kFalse ＝ the single-shot shape of
+//  sdksamples/snapshot, whose tracker likewise does its whole job there.
 //
 //  ★FIVE GESTURES (re-cut 2026-09-07; the first cut was 2026-09-04):
-//      plain press          place a paw in the colour the tool is HOLDING
-//      Alt + press          ask for a word, then place the paw carrying it
+//      plain press          place a paw in the colour the tool is HOLDING, pointing the way it
+//                           is dragged before the release (a click: upright)
+//      Alt + press          the same, then ask for a word and place the paw carrying it
 //      Shift + Alt + press  SWAP that colour (red <-> blue). ★PLACES NOTHING
 //      Shift + press        lift the paw under the point
 //      Shift + DOUBLE       clear every paw on that page
@@ -63,6 +68,10 @@
 #include "KCMPawWordDialog.h"		// the Alt gesture: ask for a word, then place -- NOT from in here
 #include "IKCMPageFlagsFacade.h"	// ★the ONLY way across to the store: place / lift / count / size
 #include "IKCMCompareFacade.h"		// InvalidateDB -- repaint the document that was pressed
+#include "ILayoutController.h"		// InvalidateContent -- repaint the square of the paw being placed
+#include "KCMDiag.h"				// KCM_DIAG_LOG - a placing press, release and abort, traced (test builds only)
+
+#include <cmath>					// std::atan2 / std::floor -- which way the drag went (2026-10-27)
 
 // The colour the tool is holding. Session state, main thread only, and deliberately NOT per
 // document: it is a property of the TOOL in the reader's hand, like a pen they have picked up, so
@@ -188,27 +197,184 @@ static bool16 KCMPawPointOnPage(IControlView* view, const PBPMPoint& pb,
 class KCMPawTracker : public CTracker
 {
 public:
-	KCMPawTracker(IPMUnknown* boss) : CTracker(boss) { fWantsToAutoScroll = kFalse; }
+	KCMPawTracker(IPMUnknown* boss)
+		: CTracker(boss), fPlacing(kFalse), fWithWord(kFalse), fColour(kKCMPawColourRed)
+	{
+		fWantsToAutoScroll = kFalse;
+	}
 	virtual ~KCMPawTracker() {}
 
-	/** Refuse every tracking timer. Nothing here is continuous -- the whole gesture is one
-		press -- so a repeating idle would only cost time. The same blanket kFalse as
-		KCMTracker::WantTimer, and for the same reason it is safe: mouse-up is delivered by the
-		event handler, never by a timer. */
+	/** Refuse every tracking timer. Nothing here needs one -- a drag is followed on the moves it makes --
+		so a repeating idle would only cost time. The same blanket kFalse as KCMTracker::WantTimer, and
+		for the same reason it is safe: mouse-up is delivered by the event handler, never by a timer. */
 	virtual bool16 WantTimer(ClassID /*trackerTimerBoss*/) { return kFalse; }
 
-	/** Mouse down. Reports which page was pressed and where on it.
-		★It answers kFalse ＝ "do not start tracking": the gesture is over the instant it began.
-		⚠That also means the base's BeginTracking is never called, so none of what it sets up
-		 (the modal cursor, the update suppression, the timers) is entered in the first place --
-		 which is why this file has nothing to undo and no EndTracking. */
+	/** Do NOT suppress the views' updates while following a drag (2026-10-27). The paw being placed is
+		drawn by a draw event, and the base's DisableUpdates is exactly what would keep it from showing
+		while the button is down -- the reason KCMTracker no-ops the same two, for its reveal. */
+	virtual void DisableUpdates() {}
+	virtual void EnableUpdates()  {}
+
+	/** The point as the hand put it. The base snaps and rounds every point it hands on (to guides, to
+		the ruler's increments); the direction a paw points must follow the mouse, not jump between
+		round numbers. */
+	virtual bool16 AdjustPoint(PBPMPoint& /*point*/) { return kFalse; }
+
+	/** Mouse down. The gestures that take or change something (Shift: lift; Shift+Alt: swap the colour;
+		Shift + double: clear the page) do it here and answer kFalse ＝ single shot, as the tool always did.
+		★A PRESS THAT PLACES IS FOLLOWED (2026-10-27): the paw goes where the button went down, and the
+		  drag decides which way it points -- so the base is asked to track, the paw is shown turning, and
+		  the release puts it down (EndTracking). */
 	virtual bool16 BeginTracking(IEvent* theEvent);
+
+	/** A move while placing: turn the paw being shown to the mouse. */
+	virtual void ContinueTracking(const PBPMPoint& where, bool16 mouseDidMove);
+
+	/** The release: the direction from where the button came up, then the paw is placed. */
+	virtual bool16 EndTracking(IEvent* theEvent);
+
+	/** Abandoned mid-drag (Escape, a switch to another application): nothing is placed, and the paw that
+		was being shown goes. */
+	virtual void AbortTracking(IEvent* theEvent);
+
+private:
+	// ---- the press being followed (valid while fPlacing) -------------------------------------------
+	bool16		fPlacing;
+	bool16		fWithWord;	// Alt: the word is asked for after the release
+	UIDRef		fPageRef;	// the page pressed on
+	PMReal		fX, fY;		// where on it, from its top-left in points (what is stored)
+	PBPMPoint	fPressPB;	// the same point in pasteboard coordinates (what the drag is measured from)
+	PMReal		fHalf;		// half a paw's size on that page
+	int32		fColour;	// the colour the tool was holding at the press
+	PMReal		fAngle;		// the direction shown now: degrees clockwise from straight up
+
+	PMReal	AngleTo(const PBPMPoint& to) const;
+	void	InvalidatePlacing() const;
+	void	ShowPlacing() const;
+	void	HidePlacing() const;
+	void	PlaceNow();
 };
 
 CREATE_PMINTERFACE(KCMPawTracker, kKCMPawTrackerImpl)
 
+// ★HOW FAR THE BUTTON MUST TRAVEL BEFORE IT IS A DRAG, in screen pixels (2026-10-27). Under it the press is a click
+//   and the paw stands upright, as every paw did before: a hand that clicks still moves a pixel or two, and a paw
+//   that swung to wherever that wobble pointed would be a fault, not a feature. In SCREEN pixels, so it feels the
+//   same at every zoom. ★Twice the 3 pixels the product's layout trackers take before a drag begins
+//   (CLayoutTracker's kMinDragDistance): a direction wants more travel than "it moved" does.
+static const double kKCMPawDragPixels = 6.0;
+
+// Which way from the press the point `to` lies, in degrees clockwise from straight up -- 0 when it lies within the
+// threshold. Whole degrees, as the label keeps them.
+// ★In PASTEBOARD coordinates, where the paw is also drawn (spread coordinates differ by a translation only --
+//   KCMPawPointOnPage). y runs DOWN here, which is what atan2(dx, -dy) is written for: straight up is (0, -1) -> 0,
+//   to the right (1, 0) -> 90, down -> 180, to the left -> 270 (measured 2026-10-27, the paw-rotate suite).
+//   ⚠A spread shown ROTATED in the view (View > Rotate Spread) should turn the drag and the paw alike, so that the
+//     paw still points where the hand went on screen -- reasoned from both living in the same space, NOT measured.
+PMReal KCMPawTracker::AngleTo(const PBPMPoint& to) const
+{
+	if (fControlView == nil)
+		return PMReal(0.0);
+
+	PMPoint a(fPressPB), b(to);
+	fControlView->ContentToWindowTransform(&a);
+	fControlView->ContentToWindowTransform(&b);
+	const double wx = ToDouble(b.X() - a.X()), wy = ToDouble(b.Y() - a.Y());
+	if (wx * wx + wy * wy < kKCMPawDragPixels * kKCMPawDragPixels)
+		return PMReal(0.0);
+
+	const double dx = ToDouble(to.X() - fPressPB.X()), dy = ToDouble(to.Y() - fPressPB.Y());
+	double deg = std::atan2(dx, -dy) * 180.0 / kPMPi;
+	deg = std::floor(deg + 0.5);
+	while (deg < 0.0)
+		deg += 360.0;
+	while (deg >= 360.0)
+		deg -= 360.0;
+	return PMReal(deg);
+}
+
+// Repaint the square the paw being placed can cover, whichever way it points: its outlines reach 0.49 of its size
+// from the centre and the white outline half its own width beyond (0.08), so 0.65 of the size plus two points for
+// the anti-aliasing covers every turn -- one rectangle for the whole drag.
+// ★The product's way to repaint part of a layout view: content coordinates to window ones, then the layout
+//   controller's InvalidateContent (spellpanel/PrivateSpellingUtils.cpp, the spelling squiggles).
+void KCMPawTracker::InvalidatePlacing() const
+{
+	if (fControlView == nil)
+		return;
+	const PMReal r = fHalf * PMReal(2.0) * PMReal(0.65) + PMReal(2.0);
+	PMRect rect(fPressPB.X() - r, fPressPB.Y() - r, fPressPB.X() + r, fPressPB.Y() + r);
+	fControlView->ContentToWindowTransform(&rect);
+	InterfacePtr<ILayoutController> controller(fControlView, UseDefaultIID());
+	if (controller != nil)
+		controller->InvalidateContent(&rect, kTrue);
+}
+
+void KCMPawTracker::ShowPlacing() const
+{
+	Utils<IKCMPageFlagsFacade> flags;
+	if (!flags)
+		return;
+	flags->PawPreviewSet(fPageRef.GetDataBase(), fPageRef.GetUID(), fX, fY, fColour, fAngle, fControlView);
+	this->InvalidatePlacing();
+}
+
+void KCMPawTracker::HidePlacing() const
+{
+	Utils<IKCMPageFlagsFacade> flags;
+	if (flags)
+		flags->PawPreviewClear();
+	this->InvalidatePlacing();
+}
+
+// Put the followed paw down, at the direction now held, and say so on the status line. Alt hands it to the word box
+// instead, which places it once the word is in (the same one-shot timer as before -- a modal is not opened from a
+// tracker -- now armed at the release rather than at the press).
+void KCMPawTracker::PlaceNow()
+{
+	IDataBase* const db = fPageRef.GetDataBase();
+	const UID pageUID = fPageRef.GetUID();
+	if (fWithWord)
+	{
+		KCMPawWordDialog::AskAndPlaceLater(db, pageUID, fX, fY, fColour, fHalf, fAngle);
+		return;			// the message and the redraw belong to the dialog
+	}
+
+	PMString msg;
+	InterfacePtr<IKCMPageFlagsFacade> flags(Utils<IKCMPageFlagsFacade>().QueryUtilInterface());
+	if (flags == nil)
+	{
+		msg = "Paw: the model side did not answer";
+	}
+	else
+	{
+		const bool16 placed = flags->PawStampPlaceAtAngle(db, pageUID, fX, fY, fColour, fHalf, PMString(), fAngle);
+		// ⚠Three outcomes, not two: a press that lands on a paw already there places nothing (it was asked at the
+		//   press, but a paw could have arrived since -- a script, another view), and saying "placed" then would be
+		//   a lie the count does not correct.
+		if (!placed)
+			msg = "Paw: one is already there (";
+		else if (fAngle != PMReal(0.0))
+		{
+			msg = "Paw placed, turned ";
+			msg.AppendNumber(ToInt32(fAngle));
+			msg += " degrees (";
+		}
+		else
+			msg = "Paw placed (";
+		msg.AppendNumber(flags->PawStampCount(db));
+		msg += " on this document)";
+	}
+	// (The flag comes down by hand -- the reason is at the end of BeginTracking.)
+	msg.SetTranslatable(kFalse);
+	KCMSetStatus(msg);
+	// ⚠No repaint from here for the paw itself: the model's marks observer repaints when the write lands, for
+	//   undo and redo as well (KCMMarksObserver.h). HidePlacing has already asked for the square it stood in.
+}
+
 bool16 KCMPawTracker::BeginTracking(IEvent* theEvent)
 {
+	fPlacing = kFalse;
 	if (theEvent == nil)
 		return kFalse;
 
@@ -290,6 +456,7 @@ bool16 KCMPawTracker::BeginTracking(IEvent* theEvent)
 		//   size is asked of the one place that owns it rather than worked out again here -- put
 		//   the ratio in two places and the picture and the target drift apart, and the drift
 		//   would only ever show as "sometimes the paw will not come off".
+		//   ★A turned paw keeps the same square: its outlines stay within it whichever way it points.
 		const PMReal half = flags->PawHalfSizeForPage(db, pageUID);
 		if (half <= PMReal(0.0))
 		{
@@ -299,10 +466,11 @@ bool16 KCMPawTracker::BeginTracking(IEvent* theEvent)
 		}
 		else
 		{
-			// ★★THE FOUR GESTURES (re-cut 2026-09-07 at the user's request; the colours were
-			//   pink / cyan / green until then):
-			//       plain press      place, in whichever colour the tool is holding
-			//       Alt              ask for a word, then place -- the word goes beside the paw
+			// ★★THE GESTURES (re-cut 2026-09-07 at the user's request; the colours were pink / cyan /
+			//   green until then; the drag added 2026-10-27):
+			//       plain press      place, in whichever colour the tool is holding -- pointing the way
+			//                        the button is dragged before it comes up (a click: upright)
+			//       Alt              the same, and the word is asked for after the release
 			//       Shift + Alt      SWAP the colour (red <-> blue). ★It places NOTHING
 			//       Shift            lift the paw under the point
 			//       Shift + DOUBLE   clear every paw on that page
@@ -354,27 +522,45 @@ bool16 KCMPawTracker::BeginTracking(IEvent* theEvent)
 				// Nothing was placed, so there is nothing to undo and nothing to redraw.
 				return kFalse;
 			}
-			else if (altDown)
+			else if (flags->PawStampIsAt(db, pageUID, x, y, half))
 			{
-				// ⚠★★★**NOTHING IS PLACED HERE.** The word is asked for in a modal dialog, and a
-				//   modal must not be opened from inside a tracker -- the mouse is still captured
-				//   and the dialog's loop would run under it (KCMPawWordDialog.h carries the
-				//   reason, and this plug-in's tool-button flyout already obeys it). So the press
-				//   is handed to a one-shot timer, and the placing, the count and the status line
-				//   all happen over there once the box has been answered.
-				KCMPawWordDialog::AskAndPlaceLater(db, pageUID, x, y, sPawColour, half);
-				return kFalse;			// the message and the redraw belong to the dialog
+				// ★★NO STACKING, ASKED AT THE PRESS (2026-10-27). The store refuses a paw on a paw (the
+				//   user's request of 2026-09-04: two on one spot look like one, and only the top comes
+				//   off), and the press is where to find out -- before a drag is followed and a paw is
+				//   shown turning over one that will never be placed.
+				msg = "Paw: one is already there (";
 			}
 			else
 			{
-				changed = flags->PawStampPlaceAt(db, pageUID, x, y, sPawColour, half, PMString());
-				// ⚠Three outcomes, not two: a press that lands on a paw already there places
-				//   nothing, and saying "placed" then would be a lie the count does not correct
-				//   (the count is unchanged, which is exactly what a slip looks like).
-				if (!changed)
-					msg = "Paw: one is already there (";
-				else
-					msg = "Paw placed (";
+				// ★★FOLLOW THE DRAG (2026-10-27, the author: "turn the paw to the angle of where the mouse
+				//   was released from where it was pressed"). The paw is shown at once, upright, and
+				//   turns as the mouse moves; the release puts it down (EndTracking).
+				// ⚠Alt no longer opens the word box from here: the direction is not known until the
+				//   release, so the box comes after it (PlaceNow -> KCMPawWordDialog, the same one-shot
+				//   timer -- a modal is still never opened from inside a tracker).
+				fPlacing  = kTrue;
+				fWithWord = altDown;
+				fPageRef  = pageRef;
+				fX        = x;
+				fY        = y;
+				fPressPB  = pb;
+				fHalf     = half;
+				fColour   = sPawColour;
+				fAngle    = 0.0;
+				this->ShowPlacing();
+				// (test builds: one run of the paw-rotate suite placed nothing for one press and showed no paw
+				//  while it was held -- the first run after a restart, 2026-10-27, not seen again in four. The
+				//  three lines below say which way such a press went the next time.)
+				KCM_DIAG_LOG("PAW-PRESS placing x=%d y=%d alt=%d", ToInt32(x), ToInt32(y), altDown ? 1 : 0);
+				if (CTracker::BeginTracking(theEvent))
+					return kTrue;
+				KCM_DIAG_LOG("PAW-PRESS the base would not track - placed upright at once");
+				// The base would not follow (it always does in a layout view; a refusal must not lose
+				// the press): the paw goes down now, upright, the way a click puts it.
+				this->HidePlacing();
+				fPlacing = kFalse;
+				this->PlaceNow();
+				return kFalse;
 			}
 			msg.AppendNumber(flags->PawStampCount(db));
 			msg += " on this document)";
@@ -408,6 +594,55 @@ bool16 KCMPawTracker::BeginTracking(IEvent* theEvent)
 	KCMSetStatus(msg);
 
 	return kFalse;			// single shot -- there is nothing to keep tracking
+}
+
+void KCMPawTracker::ContinueTracking(const PBPMPoint& where, bool16 mouseDidMove)
+{
+	CTracker::ContinueTracking(where, mouseDidMove);
+	if (!fPlacing || !mouseDidMove)
+		return;
+	const PMReal angle = this->AngleTo(where);
+	if (angle != fAngle)
+	{
+		fAngle = angle;
+		this->ShowPlacing();		// a turn only when the whole degree changed: no repaint for a move that did not
+	}
+}
+
+bool16 KCMPawTracker::EndTracking(IEvent* theEvent)
+{
+	const bool16 result = CTracker::EndTracking(theEvent);
+	if (fPlacing)
+	{
+		// The direction from where the button CAME UP, read the way the press was read -- the last move
+		// seen may lie a little short of it.
+		if (theEvent != nil)
+		{
+			PBPMPoint pb;
+			this->GlobalToPasteboard(theEvent->GlobalWhere(), pb);
+			fAngle = this->AngleTo(pb);
+		}
+		this->HidePlacing();
+		fPlacing = kFalse;
+		KCM_DIAG_LOG("PAW-RELEASE angle=%d word=%d", ToInt32(fAngle), fWithWord ? 1 : 0);
+		this->PlaceNow();
+	}
+	return result;
+}
+
+void KCMPawTracker::AbortTracking(IEvent* theEvent)
+{
+	CTracker::AbortTracking(theEvent);
+	if (fPlacing)
+	{
+		this->HidePlacing();
+		fPlacing = kFalse;
+		KCM_DIAG_LOG("PAW-ABORT the drag was interrupted - nothing placed");
+		PMString msg;
+		msg = "Paw: not placed (the drag was interrupted)";
+		msg.SetTranslatable(kFalse);
+		KCMSetStatus(msg);
+	}
 }
 
 // End, KCMPawTracker.cpp.
