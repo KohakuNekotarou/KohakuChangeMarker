@@ -893,6 +893,16 @@ public:
 
 	/** Every change the list holds - the whole Target document. */
 	virtual int32	ResolveTrackAll(bool16 accept, PMString& outMessage) = 0;
+
+	// ---- 2026-10-26 night: the story row's "=" asked once, of the model ----
+	//      ⚠Appended last ([[facade-vtable-slot-append-only]]) - rebuild both halves. ----
+
+	/** kTrue when every change under story row `nth` is a "=" that still stands (KCM wrote it as the Source's and the
+		document still reads so) and none is a "!" - the row's own sign then reads "=" (2026-10-26, the author: "when every
+		row of the Story is =, make the Story = as well"). kFalse for a row with no change, and in the Track mode (no "="
+		there). ★One call per row: until 2026-10-26 night the tree walked every change through GetChange - copying each one
+		out - on each update of a row whose changes are all "=" (KCMStoryList::EveryChangeEqual). */
+	virtual bool16	IsEveryChangeEqual(int32 nth) = 0;
 };
 
 #endif // __IKCMStoryEditsFacade_h__

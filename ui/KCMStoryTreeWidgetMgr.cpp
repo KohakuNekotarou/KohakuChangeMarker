@@ -672,15 +672,12 @@ public:
 			// ★★AND A ROW WHOSE EVERY CHANGE IS "=" READS "=" TOO (2026-10-26, the author: "after Apply, when every row of the
 			//   Story is =, make the Story = as well"): the document reads as the Source there - put in, matched or restored.
 			//   One "!" (what could not go in) or one live change keeps the row's own sign.
+			//   ★ASKED ONCE, OF THE MODEL (2026-10-26 night - IsEveryChangeEqual): until then every change was walked here
+			//   through GetChange, which copies each one out and merges the row's list twice in the model - a row of n "="
+			//   cost 2n + 1 merges on every update of the tree.
 			const int32 changeCount = Utils<IKCMStoryEditsFacade>()->GetChangeCount(nodeID->GetRow());
-			bool16 everyChangeEqual = (changeCount > 0) ? kTrue : kFalse;
-			for (int32 k = 0; k < changeCount && everyChangeEqual; ++k)
-			{
-				IKCMStoryEditsFacade::Change child;
-				if (!Utils<IKCMStoryEditsFacade>()->GetChange(nodeID->GetRow(), k, child)
-					|| child.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused || !child.fReplaced)
-					everyChangeEqual = kFalse;
-			}
+			const bool16 everyChangeEqual = (changeCount > 0)
+				? Utils<IKCMStoryEditsFacade>()->IsEveryChangeEqual(nodeID->GetRow()) : kFalse;
 			const bool16 sameKind = row.fTextCompared && (changeCount == 0 || everyChangeEqual);
 			// ★In the Track mode the Δ column says how many of this author's changes the story holds (2026-10-05).
 			if (nodeID->GetAuthor() >= 0)

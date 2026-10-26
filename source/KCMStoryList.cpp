@@ -1630,6 +1630,28 @@ KCMEqualState KCMStoryList::EqualStateOf(int32 nth, const KCMEqualRecord& record
 	return StateNow(gRows[nth], record, targetDB);
 }
 
+/* EveryChangeEqual
+*/
+bool16 KCMStoryList::EveryChangeEqual(int32 nth)
+{
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
+		return kFalse;
+	KCMStoryRow& row = gRows[nth];
+	if (!row.fRefusals.empty())
+		return kFalse;			// a "!" keeps the row's own sign
+	std::vector<KCMMergedRef> order;
+	MergedOrder(row, order);	// every record reconciled against the armed Target, as GetMergedChange reads them
+	if (order.empty())
+		return kFalse;
+	for (size_t k = 0; k < order.size(); ++k)
+	{
+		// a live change - or a record shown live (undone, put back): not "="
+		if (!order[k].fIsRecord || !row.fEqual[static_cast<size_t>(order[k].fIndex)].fPlacedForSource)
+			return kFalse;
+	}
+	return kTrue;
+}
+
 /* AddEqual
 */
 void KCMStoryList::AddEqual(int32 nth, const KCMStoryChange& live, TextIndex nowStart, TextIndex nowEnd,
@@ -2622,8 +2644,10 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 {
 	// ★`focus` after suid (2026-10-26 evening - KCMEqualRecord::fFocusId): a "=" row's focus - followed / lost / none - and
 	//  "-" for every other line. Last again, for suid's reason: a reader counting columns from the left reads what it read.
+	// ★`every` after focus (2026-10-26 night - EveryChangeEqual): a story row's "1" when it reads "=" itself - every change
+	//  under it a "=" that stands, no "!" - and "0" when not; "-" on every other line. Last, for the same reason.
 	std::string s = "row\tchange\tuid\tkinds\tflags\tattr\tkind\tset\tvalue\ttext"
-					"\tstate\twhole\tplace\ttstart\ttend\tsstart\tsend\tother\tsuid\tfocus\r\n";	// suid LAST (2026-10-26 - the header says why)
+					"\tstate\twhole\tplace\ttstart\ttend\tsstart\tsend\tother\tsuid\tfocus\tevery\r\n";	// suid LAST (2026-10-26 - the header says why)
 
 	// ★THE SHOWN RANGES COME THROUGH THE FACADE (2026-09-19 night), because that is the ONE place a whole
 	//   paragraph's break is cut off them (KCMFacades' GetChange, KCMShownSpan): what a test reads here is
@@ -2646,7 +2670,7 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 		   + "\t" + AttrWord(static_cast<int32>(row.fAttrKind))
 		   + "\t-\t-\t-\t" + Field(row.fText) + NoTrailing()
 		   + "\t" + ((row.fSourceStoryUID == kInvalidUID) ? std::string("-") : Num(static_cast<int32>(row.fSourceStoryUID.Get())))
-		   + "\t-\r\n";
+		   + "\t-\t" + (EveryChangeEqual(nth) ? "1" : "0") + "\r\n";
 
 		// ★One line per CHILD, IN THE PANEL'S OWN INDEX SPACE (2026-09-19 night): the refusals first, then
 		//   the live changes and the ones already taken in, merged in text order - exactly the numbers
@@ -2668,7 +2692,7 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 			if (c.fWhat == KCMStoryChange::kRefused)
 			{
 				s += Num(nth) + "\t" + Num(k)
-				   + "\t-\t-\t-\t-\trefused\t" + Field(c.fTextPre) + "\t-\t" + Field(c.fText) + NoTrailing() + "\t-\t-\r\n";
+				   + "\t-\t-\t-\t-\trefused\t" + Field(c.fTextPre) + "\t-\t" + Field(c.fText) + NoTrailing() + "\t-\t-\t-\r\n";
 				continue;
 			}
 
@@ -2698,7 +2722,7 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 			   + "\t" + (haveShown ? Num(shown.fTargetEnd) : std::string("-"))
 			   + "\t" + (haveShown ? Num(shown.fSourceStart) : std::string("-"))
 			   + "\t" + (haveShown ? Num(shown.fSourceEnd) : std::string("-"))
-			   + "\t" + Field(c.fOtherText) + "\t-\t" + focus + "\r\n";
+			   + "\t" + Field(c.fOtherText) + "\t-\t" + focus + "\t-\r\n";
 		}
 	}
 

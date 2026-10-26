@@ -2866,6 +2866,14 @@ public:
 		return this->ResolveTrack(items, named, accept, accept ? "Accept All Changes" : "Reject All Changes", outMessage);
 	}
 
+	virtual bool16	IsEveryChangeEqual(int32 nth)
+	{
+		// No "=" is recorded in the Track mode (GetChange hands its changes out with fReplaced kFalse).
+		if (KCMFacadeTrackMode())
+			return kFalse;
+		return KCMStoryList::EveryChangeEqual(nth);
+	}
+
 private:
 	/** The records change `which` of row `nth` was made of, onto `out`, with its story and its author's name.
 		@return kFalse when it is no Track change. */
