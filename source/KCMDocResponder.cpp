@@ -58,6 +58,7 @@
 #include "KCMThreadSafety.h"		// KCMIsMainThread
 #include "KCMTaskStartClone.h"		// KCMTaskStartCloneDocClosing - a Task Start kept in memory goes with its document
 #include "KCMCopyStore.h"			// DocumentClosing - the document's copy store goes with it (2026-10-24)
+#include "KCMRecordFoci.h"			// LetDocument - the "=" records' foci on it go before it closes (2026-10-26)
 #include "KCMMarksObserver.h"		// KCMMarksEnsureObserver -- so later writes reach the store
 #include "KCMPageMarksDoc.h"		// KCMMarksSyncFromDocument -- the marks the document carries
 #include "KCMModelNotify.h"		// KCMSayStatus -- the model owns the words, the UI shows them
@@ -245,6 +246,8 @@ void KCMAfterOpenDocResponder::Respond(ISignalMgr* signalMgr)
 	 it - the comparison and its records go with the document, so nothing can name them again. Here rather than at
 	 kAfterCloseDoc because a store is found by the document's database, compared while that database is certainly the
 	 document's.
+	★AND THE "=" RECORDS' FOCI (2026-10-26, KCMRecordFoci.h) for the same reason: letting one go reads its story's focus
+	 manager, which only a document that still stands can answer.
 */
 class KCMBeforeCloseDocResponder : public CResponder
 {
@@ -266,6 +269,9 @@ void KCMBeforeCloseDocResponder::Respond(ISignalMgr* signalMgr)
 		return;
 	KCMTaskStartCloneDocClosing(signalData->GetDocument().GetDataBase());
 	KCMCopyStore::DocumentClosing(signalData->GetDocument().GetDataBase());
+	// ★AND THE "=" RECORDS' FOCI ON IT (2026-10-26 - KCMRecordFoci.h): each let go while the document certainly stands - its
+	//  target database cleared, out of its story's manager, released. The list itself goes at kAfterCloseDoc (the sweep).
+	KCMRecordFoci::LetDocument(signalData->GetDocument().GetDataBase());
 }
 
 // End, KCMDocResponder.cpp.

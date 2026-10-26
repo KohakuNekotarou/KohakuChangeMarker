@@ -42,6 +42,9 @@
 //    place-pair-off  the Story rows are built WITHOUT pairing stories by their first frame's place (KCMStoryPairByPlace,
 //                2026-10-26): a test run with it on shows the Added and Removed rows the pairing exists to join, so a
 //                pass without it is known to have measured the pairing (tests-place.ps1 -Armed).
+//    focus-off   no "=" record gets a text focus (KCMRecordFoci::Make, 2026-10-26): the records are placed by their
+//                readings alone, as before foci - so the full test's equal-follow suite (E12) shows what the foci add.
+//                The trace's FOCUS lines (make / move / let / lost / follow / carry) say what the foci did.
 //    (none else in use - counted 2026-10-26: step-fail and batch-fail had been in use without a line here.
 //     ⛔track-describe-only / track-no-colour stood here on 2026-10-05 for one afternoon, to bisect an undo
 //     step a Refresh seemed to drop; the cause was InDesign cutting SCRIPT-made steps at the next real command - the

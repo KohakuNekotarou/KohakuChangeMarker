@@ -1246,6 +1246,9 @@ public:
 										  job, outMessage))
 			return -1;
 		IAbortableCmdSeq* sequence = this->BeginStep(stepName);	// (a part of the batch's step inside one)
+		// ★THE RECORD'S FOCUS, INSIDE THE STEP AND BEFORE THE WRITE (2026-10-26 - KCMStoryList's FocusBeforeWrite): on the
+		//   characters the marks go over, where it stays (a mark moves no character).
+		const int32 focusId = KCMStoryList::FocusBeforeWrite(nth, live, live.fTargetStart, live.fTargetEnd);
 		int32 done = KCMApplyRestoreAttr(target, job, outMessage);
 		// ★★★**ALL THE WAY BACK, OR NOT AT ALL** (2026-09-24 night, the user's rule) - the marks of this kind over
 		//   the change's characters have to read as the Source's, or the sequence is rolled back whole. ★Over the
@@ -1254,18 +1257,23 @@ public:
 		const bool16 same = (done >= 0)
 			? this->PlaceReadsAsSource(target, source.GetUID(), live.fTargetStart, live.fTargetEnd, live, live.fAttrKind)
 			: kFalse;
-		this->EndStep(sequence, same);
+		if (same)
+			KCMStoryList::FocusAfterWrite(focusId, live.fTargetStart, live.fTargetEnd);
+		const bool16 kept = this->EndStep(sequence, same);
 		if (done >= 0 && !same)
 		{
 			outMessage = "the Source's marks did not come all the way back, so the restore was cancelled - the document is as it was";
 			done = -1;
 		}
+		// (a focus the step does not keep is let go - one of a record's own stays with it, put back by the abort)
+		if (done < 0 || !kept)
+			KCMStoryList::LetWriteFocus(nth, focusId);
 		// ★★THE CHANGE STAYS ON THE ROW AS A RECORD (2026-09-24, stage 2 C): the "=" row over the same characters (a
 		//   mark changes no length), with the ATTRIBUTE counter the restore left the story at (the text counter cannot
 		//   see a mark - KCMStoryDiffRun::CountForKind says why).
 		if (done >= 0)
 			KCMStoryList::AddEqual(nth, live, live.fTargetStart, live.fTargetEnd,
-									  KCMStoryDiffRun::CountForKind(target, live.fAttrKind), live.fAttrKind);
+									  KCMStoryDiffRun::CountForKind(target, live.fAttrKind), live.fAttrKind, kept ? focusId : 0);
 		// ★THE ROW IS COMPARED AGAIN either way: a rolled-back write leaves the document as it was, but the list is
 		//   compared against what stands there, whatever that is.
 		this->RefreshRow(nth);
@@ -1326,6 +1334,9 @@ public:
 		//   with the error raised kept its write when the call came from a script (EndOrAbort says what was measured);
 		//   the abort takes the match back wherever it was called from.
 		IAbortableCmdSeq* sequence = this->BeginStep("Match the Source");
+		// ★THE RECORD'S FOCUS, INSIDE THE STEP AND BEFORE THE WRITE (2026-10-26 - KCMStoryList's FocusBeforeWrite): on the
+		//   table's anchor characters, then on as many as the Source's after the match.
+		const int32 focusId = KCMStoryList::FocusBeforeWrite(nth, live, live.fTargetStart, live.fTargetEnd);
 		KCMTableMatchBefore tableBefore;
 		int32 done = KCMMatchTableToSource(target, source, live.fTargetTableUID, live.fSourceTableUID, tableBefore, outMessage);
 		// ★★★**ALL THE WAY, OR NOT AT ALL** (the user's rule, and 2026-09-25: "put it back from the Source, check it with
@@ -1336,6 +1347,13 @@ public:
 		const bool16 same = (done >= 0)
 			? KCMTableReadsAsSource(target, source, live.fTargetTableUID, live.fSourceTableUID, tableBefore, why)
 			: kFalse;
+		if (same)
+		{
+			KCMStoryList::FocusAfterWrite(focusId, live.fTargetStart, live.fTargetStart + (live.fSourceEnd - live.fSourceStart));
+			// (the other records at its place where the list's order puts them - AddEqual's rule: PlaceFociAtWriteEdge)
+			KCMStoryList::PlaceFociAtWriteEdge(nth, std::vector<int32>(1, focusId), live, kFalse, live.fTargetStart,
+											   live.fTargetEnd - live.fTargetStart, live.fSourceEnd - live.fSourceStart);
+		}
 		const bool16 kept = this->EndStep(sequence, same);
 		if (done >= 0 && !same)
 		{
@@ -1360,7 +1378,9 @@ public:
 		if (done >= 0)
 			KCMStoryList::AddEqual(nth, live, live.fTargetStart,
 									  live.fTargetStart + (live.fSourceEnd - live.fSourceStart),
-									  KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone);
+									  KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone, focusId);
+		else
+			KCMStoryList::LetWriteFocus(nth, focusId);	// (not kept: one this match made goes; a record's own stays with it)
 		// ★THE ROW IS COMPARED AGAIN either way: matched, the live Table row goes (the same table on both sides, by
 		//   id) and the record stands "="; rolled back, the list is compared against what stands there.
 		this->RefreshRow(nth);
@@ -1684,9 +1704,11 @@ public:
 		Row row;
 		if (!this->HasRestorableCopy(nth, which, targetDB, row))
 			return kFalse;
-		// ★Greyed, too, where a caret's place no longer reads as the Source's by its surroundings (CaretReadsAsSource).
+		// ★Greyed, too, where a caret's place no longer reads as the Source's by its surroundings (CaretReadsAsSource) -
+		//   ★unless its focus follows (2026-10-26): the place is then the focus's, which an edit before it cannot have left
+		//   behind, and the surroundings' reading would refuse it beside a change not yet in.
 		const KCMEqualRecord* const rec = KCMStoryList::EqualAt(nth, which);
-		return (rec != nil && (rec->fNowEnd != rec->fNowStart
+		return (rec != nil && (rec->fNowEnd != rec->fNowStart || KCMStoryList::RecordFollowed(nth, *rec)
 							   || KCMStoryList::CaretReadsAsSource(targetDB, row.fStoryUID, row.fSourceStoryUID, rec->fNowStart, rec->fLive.fSourceStart)))
 			   ? kTrue : kFalse;
 	}
@@ -1738,8 +1760,9 @@ public:
 			return -1;
 		}
 		// ★A CARET'S PLACE HAS TO READ AS THE SOURCE'S BY ITS SURROUNDINGS (CaretReadsAsSource says why): otherwise the words
-		//   would go back where an edit has moved them from.
-		if (record.fNowEnd == record.fNowStart
+		//   would go back where an edit has moved them from. ★Not asked of a caret whose focus follows (2026-10-26): the
+		//   focus IS where an edit has moved it to.
+		if (record.fNowEnd == record.fNowStart && !KCMStoryList::RecordFollowed(nth, record)
 			&& !KCMStoryList::CaretReadsAsSource(targetDB, row.fStoryUID, row.fSourceStoryUID, record.fNowStart, record.fLive.fSourceStart))
 		{
 			outMessage = "the place it went in has moved since (an edit before it) - left as it is; Ctrl+Z takes it back";
@@ -1759,6 +1782,10 @@ public:
 			return -1;
 		}
 		IAbortableCmdSeq* sequence = this->BeginStep("Restore from Copy");	// (a part of the batch's step inside one)
+		// ★THE RECORD'S FOCUS, INSIDE THE STEP AND BEFORE THE PASTE (2026-10-26 - KCMStoryList's FocusBeforeWrite): its own,
+		//   on the Source's words the paste is about to take out - or one made there - and after it on the words put back,
+		//   so that Ctrl+Z of this puts it back on the Source's words and Ctrl+Y on the put-back ones.
+		const int32 focusId = KCMStoryList::FocusBeforeWrite(nth, record.fLive, record.fNowStart, record.fNowEnd, record.fFocusId);
 		bool16 ok = KCMCopyStore::PasteOver(record.fCopy.fCopy, target, record.fNowStart + shift, record.fNowEnd + shift);
 		InterfacePtr<ITextModel> model(target, UseDefaultIID());
 		if (ok && record.fCopy.fParaStyle != kInvalidUID)
@@ -1772,8 +1799,19 @@ public:
 				  && now == record.fLiveWords) ? kTrue : kFalse;
 		}
 		ok = (ok && ErrorUtils::PMGetGlobalErrorCode() == kSuccess) ? kTrue : kFalse;
-		this->EndStep(sequence, ok);
+		if (ok)
+		{
+			KCMStoryList::FocusAfterWrite(focusId, record.fNowStart,
+										  record.fNowStart + (record.fLive.fTargetEnd - record.fLive.fTargetStart));
+			// ★AND THE OTHER RECORDS AT ITS PLACE WHERE THE LIST'S ORDER PUTS THEM (KCMStoryList's PlaceFociAtWriteEdge) - the
+			//   reconcile's rule: the ones before it stay, the ones after it go past the words put back.
+			KCMStoryList::PlaceFociAtWriteEdge(nth, std::vector<int32>(1, focusId), record.fLive, kFalse, record.fNowStart,
+											   record.fNowEnd - record.fNowStart, record.fLive.fTargetEnd - record.fLive.fTargetStart);
+		}
+		const bool16 kept = this->EndStep(sequence, ok);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
+		if (!ok || !kept)
+			KCMStoryList::LetWriteFocus(nth, focusId);	// (one made for this goes; the record's own stays, put back by the abort)
 		if (!ok)
 		{
 			this->RefreshRow(nth);
@@ -1782,7 +1820,7 @@ public:
 		}
 		// ★THE RECORD STAYS, MARKED PUT BACK (the counters' way - KCMEqualRecord): it reads as the live change from
 		//   here, and as "=" again the moment the reader undoes this.
-		KCMStoryList::MarkPutBack(nth, record, KCMStoryDiffRun::CountForKind(target, record.fCounterKind));
+		KCMStoryList::MarkPutBack(nth, record, KCMStoryDiffRun::CountForKind(target, record.fCounterKind), kept ? focusId : 0);
 		this->RefreshRow(nth);
 		outMessage = "restored from the copy - Ctrl+Z takes it back";
 		return 1;
@@ -1941,6 +1979,9 @@ public:
 		copies[0].fShift = shift;
 
 		IAbortableCmdSeq* sequence = this->BeginStep("Restore from Source");	// (a part of the batch's step inside one)
+		// ★THE RECORD'S FOCUS, INSIDE THE STEP AND BEFORE THE WRITE (2026-10-26 - KCMStoryList's FocusBeforeWrite): on the
+		//   words the copy is about to take out, then on the Source's put in.
+		const int32 focusId = KCMStoryList::FocusBeforeWrite(nth, live, tFrom, tTo);
 		// An empty Source range is a deletion: its place on the Source side does not matter (CopyOver deletes).
 		const TextIndex fromStart = (sTo > sFrom) ? sFrom + shift : sFrom;
 		const TextIndex fromEnd = (sTo > sFrom) ? sTo + shift : sFrom;
@@ -1949,8 +1990,16 @@ public:
 		const bool16 same = (wrote && ErrorUtils::PMGetGlobalErrorCode() == kSuccess
 							 && this->PlaceReadsAsSource(target, source.GetUID(), tFrom, tFrom + (sTo - sFrom), live, kKCMStoryAttrNone))
 							? kTrue : kFalse;
-		this->EndStep(sequence, same);
+		if (same)
+		{
+			KCMStoryList::FocusAfterWrite(focusId, tFrom, tFrom + (sTo - sFrom));
+			// (the other records at its place where the list's order puts them - AddEqualGroup's rule: PlaceFociAtWriteEdge)
+			KCMStoryList::PlaceFociAtWriteEdge(nth, std::vector<int32>(1, focusId), live, kTrue, tFrom, tTo - tFrom, sTo - sFrom);
+		}
+		const bool16 kept = this->EndStep(sequence, same);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
+		if (!same || !kept)
+			KCMStoryList::LetWriteFocus(nth, focusId);	// (one made for this goes; a record's own stays, put back by the abort)
 		if (!same)
 		{
 			this->RefreshRow(nth);
@@ -1963,8 +2012,10 @@ public:
 		std::vector<KCMStoryChange> group(1, live);
 		std::vector<TextIndex> nowStarts(1, tFrom);
 		std::vector<WideString> wordsBefore(1, targetWords);
+		std::vector<int32> focusIds(1, kept ? focusId : 0);
 		KCMStoryList::AddEqualGroup(nth, group, nowStarts, wordsBefore,
-									   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone, &copies);
+									   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone, &copies,
+									   &focusIds);
 		this->RefreshRow(nth);
 		outMessage = "restored from the Source";
 		if (copies[0].fWhyNot == kKCMCopyKept)
@@ -2333,6 +2384,10 @@ private:
 		std::vector<KCMRecordCopy> copies(1, this->TakeApplyCopy(target, live.fTargetStart, live.fTargetEnd, liveWords));
 
 		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
+		// ★THE RECORD'S FOCUS, INSIDE THE STEP AND BEFORE THE WRITE (2026-10-26 - KCMStoryList's FocusBeforeWrite): on the
+		//   document's words the write is about to take out, then on the files' put in - the step's Undo puts it back on
+		//   the first, its Redo on the second.
+		const int32 focusId = KCMStoryList::FocusBeforeWrite(nth, live, live.fTargetStart, live.fTargetEnd);
 		ErrorCode wrote = kFailure;
 		{
 			InterfacePtr<ITextModel> tModel(target, UseDefaultIID());
@@ -2344,8 +2399,17 @@ private:
 		const bool16 same = (wrote == kSuccess && ErrorUtils::PMGetGlobalErrorCode() == kSuccess
 							 && this->PlaceReadsAsSource(target, row.fSourceStoryUID, live.fTargetStart, live.fTargetStart + sourceWords.CharCount(),
 														 live, kKCMStoryAttrNone)) ? kTrue : kFalse;
-		this->EndStep(sequence, same);
+		if (same)
+		{
+			KCMStoryList::FocusAfterWrite(focusId, live.fTargetStart, live.fTargetStart + sourceWords.CharCount());
+			// (the other records at its place where the list's order puts them - AddEqualGroup's rule: PlaceFociAtWriteEdge)
+			KCMStoryList::PlaceFociAtWriteEdge(nth, std::vector<int32>(1, focusId), live, kTrue, live.fTargetStart,
+											   live.fTargetEnd - live.fTargetStart, sourceWords.CharCount());
+		}
+		const bool16 kept = this->EndStep(sequence, same);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
+		if (!same || !kept)
+			KCMStoryList::LetWriteFocus(nth, focusId);	// (one made for this goes; a record's own stays, put back by the abort)
 		if (!same)
 		{
 			this->RefreshRow(nth);
@@ -2358,8 +2422,10 @@ private:
 		std::vector<KCMStoryChange> group(1, live);
 		std::vector<TextIndex> nowStarts(1, live.fTargetStart);
 		std::vector<WideString> wordsBefore(1, liveWords);
+		std::vector<int32> focusIds(1, kept ? focusId : 0);
 		KCMStoryList::AddEqualGroup(nth, group, nowStarts, wordsBefore,
-									   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone, &copies);
+									   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone, &copies,
+									   &focusIds);
 		this->RefreshRow(nth);
 		outMessage = "applied (1 write)";
 		if (copies[0].fWhyNot == kKCMCopyKept)
@@ -2496,31 +2562,56 @@ private:
 		}
 
 		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
+		// ★THE RECORDS' FOCI, INSIDE THE STEP AND BEFORE THE WRITE (2026-10-26 - KCMStoryList's FocusBeforeWrite): each row of
+		//   the group on its own words as they stand now; after the write, each on its own share of the Source's.
+		std::vector<int32> focusIds;
+		for (size_t i = 0; i < group.size(); ++i)
+			focusIds.push_back(KCMStoryList::FocusBeforeWrite(nth, group[i], group[i].fTargetStart, group[i].fTargetEnd));
 		// ★UNSIGNED AND UNTRACKED (design 11-2, the author 2026-10-24: "if it is tracked, change it without tracking").
 		const int32 done = KCMApplyParagraphPlan(target, now, plan, outMessage);
+		// ★THE "=" RECORDS, WHEN THE PLACE READS AS THE SOURCE'S. A record whose place does not would be Stale and shown as
+		//   nothing (KCMEqualRecord), so it is not made: the row then shows what still differs, which is the truth.
+		//   ★Read INSIDE the step since 2026-10-26 (it was read after it), so that the foci can be placed before it ends.
+		KCMStoryChange whole = live;
+		whole.fSourceStart = sLo;
+		whole.fSourceEnd = sHi;
+		const bool16 same = (done > 0)
+			? this->PlaceReadsAsSource(target, row.fSourceStoryUID, tLo, tLo + (sHi - sLo), whole, kKCMStoryAttrNone)
+			: kFalse;
+		std::vector<TextIndex> nowStarts;
+		for (size_t i = 0; i < group.size(); ++i)
+			nowStarts.push_back(tLo + (group[i].fSourceStart - sLo));
+		if (same)
+		{
+			for (size_t i = 0; i < group.size(); ++i)
+				KCMStoryList::FocusAfterWrite(focusIds[i], nowStarts[i], nowStarts[i] + (group[i].fSourceEnd - group[i].fSourceStart));
+			// (the other records at the group's place where the list's order puts them - AddEqualGroup's rule, the whole write
+			//  as one: PlaceFociAtWriteEdge)
+			TextIndex tHi = group[0].fTargetEnd;
+			for (size_t i = 1; i < group.size(); ++i)
+				tHi = std::max(tHi, group[i].fTargetEnd);
+			KCMStoryList::PlaceFociAtWriteEdge(nth, focusIds, live, kTrue, tLo, tHi - tLo, sHi - sLo);
+		}
 		// ★ALL OF IT OR NONE OF IT (every write's rule here): a write refused halfway is aborted whole.
-		this->EndStep(sequence, (done > 0) ? kTrue : kFalse);
+		const bool16 kept = this->EndStep(sequence, (done > 0) ? kTrue : kFalse);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
+		if (done <= 0 || !same || !kept)
+		{
+			// (no records made: the foci made for them go; a record's own stays with it)
+			for (size_t i = 0; i < focusIds.size(); ++i)
+				KCMStoryList::LetWriteFocus(nth, focusIds[i]);
+			if (!kept)
+				focusIds.assign(focusIds.size(), 0);
+		}
 		if (done <= 0)
 		{
 			this->RefreshRow(nth);
 			return -1;
 		}
-		// ★THE "=" RECORDS, WHEN THE PLACE READS AS THE SOURCE'S. A record whose place does not would be Stale and shown as
-		//   nothing (KCMEqualRecord), so it is not made: the row then shows what still differs, which is the truth.
-		KCMStoryChange whole = live;
-		whole.fSourceStart = sLo;
-		whole.fSourceEnd = sHi;
-		const bool16 same = this->PlaceReadsAsSource(target, row.fSourceStoryUID, tLo, tLo + (sHi - sLo), whole, kKCMStoryAttrNone);
 		if (same)
-		{
-			std::vector<TextIndex> nowStarts;
-			for (size_t i = 0; i < group.size(); ++i)
-				nowStarts.push_back(tLo + (group[i].fSourceStart - sLo));
 			KCMStoryList::AddEqualGroup(nth, group, nowStarts, liveWords,
 										   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone,
-										   &copies);
-		}
+										   &copies, &focusIds);
 		this->RefreshRow(nth);
 
 		outMessage = "applied (";
@@ -2576,13 +2667,25 @@ private:
 		}
 		const UIDRef target(targetDB, row.fStoryUID);
 		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
+		// ★THE RECORD'S FOCUS, INSIDE THE STEP AND BEFORE THE WRITE (2026-10-26 - KCMStoryList's FocusBeforeWrite): on the
+		//   table's anchor characters, then on as many as the files' after it (MatchTable's geometry).
+		const int32 focusId = KCMStoryList::FocusBeforeWrite(nth, live, live.fTargetStart, live.fTargetEnd);
 		const int32 done = KCMApplyTableFromImport(target, row.fSourceStoryUID, live.fTargetTableUID, outMessage);	// unsigned, untracked (design 11-2)
-		this->EndStep(sequence, (done > 0) ? kTrue : kFalse);
+		if (done > 0)
+		{
+			KCMStoryList::FocusAfterWrite(focusId, live.fTargetStart, live.fTargetStart + (live.fSourceEnd - live.fSourceStart));
+			// (the other records at its place where the list's order puts them - AddEqual's rule: PlaceFociAtWriteEdge)
+			KCMStoryList::PlaceFociAtWriteEdge(nth, std::vector<int32>(1, focusId), live, kFalse, live.fTargetStart,
+											   live.fTargetEnd - live.fTargetStart, live.fSourceEnd - live.fSourceStart);
+		}
+		const bool16 kept = this->EndStep(sequence, (done > 0) ? kTrue : kFalse);
 		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
+		if (done <= 0 || !kept)
+			KCMStoryList::LetWriteFocus(nth, focusId);	// (one made for this goes; a record's own stays, put back by the abort)
 		if (done > 0)
 			KCMStoryList::AddEqual(nth, live, live.fTargetStart,
 									  live.fTargetStart + (live.fSourceEnd - live.fSourceStart),
-									  KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone);
+									  KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone, kept ? focusId : 0);
 		this->RefreshRow(nth);
 		if (done <= 0)
 			return -1;

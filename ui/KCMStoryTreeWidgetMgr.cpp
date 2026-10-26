@@ -319,12 +319,14 @@ public:
 		const int32 lines = (isChange && !bang) ? LineCountOfNode(node) : 1;
 		// ★A TRACK AUTHOR ROW HAS A RESOURCE OF ITS OWN (2026-10-05): the story row with a colour square in the UID column.
 		const bool16 authorRow = (nodeID != nil && nodeID->IsAuthorRow()) ? kTrue : kFalse;
-		// ★A "=" ROW APPLY THIS CHANGE PUT IN has a resource of its own too (2026-10-24 evening): the change row with a red "=".
-		const bool16 applied = (isChange && !bang && this->IsAppliedNode(nodeID)) ? kTrue : kFalse;
+		// (⛔A "=" ROW APPLY THIS CHANGE PUT IN had a resource of its own from 2026-10-24 evening to 2026-10-26 - the change row
+		//  with its "=" drawn red, then amber (kKCMStoryAppliedRowRsrcID). The author took it back on 2026-10-26: "the '=' of
+		//  the Word import changes colour - put it back to the same colour as the others" - so a "=" row is the change row
+		//  like any other, its "=" in the theme's colour. The resource and its cell's boss are left registered, unused, for a
+		//  tidy of their own.)
 		const RsrcID rsrcID = authorRow   ? kKCMTrackAuthorRowRsrcID
 							  : bang        ? (bangChild ? kKCMStoryBangChangeRowRsrcID : kKCMStoryBangRowRsrcID)
 							  : !isChange   ? kKCMStoryRowRsrcID
-							  : applied     ? kKCMStoryAppliedRowRsrcID
 							  : (lines >= 3) ? kKCMStoryTallRowRsrcID
 							  : (lines == 2) ? kKCMStoryRubyRowRsrcID
 											 : kKCMStoryChangeRowRsrcID;
@@ -383,10 +385,7 @@ public:
 		if (nodeID == nil || !nodeID->IsChangeRow() || KCMListShowsResources())
 			return kKCMStoryRowWidgetID;
 
-		// ★The red-"=" row answers its own ID (2026-10-24 evening) - the "!" rows' reason: a plain change row handed its
-		//   widget would show a red "=", and the other way round.
-		if (this->IsAppliedNode(nodeID))
-			return kKCMStoryAppliedRowWidgetID;
+		// (⛔The red-"=" row answered its own ID from 2026-10-24 evening to 2026-10-26 - CreateWidgetForNode says why it went.)
 
 		const int32 lines = LineCountOfNode(node);
 		return (lines >= 3) ? kKCMStoryTallRowWidgetID
@@ -422,23 +421,8 @@ public:
 		return ((row.fKinds & kKCMStoryKindRefused) != 0) ? kTrue : kFalse;
 	}
 
-	/** Whether this node is a ONE-LINE "=" row Apply This Change put in (2026-10-24 evening, the import-as-Source road -
-		the author: "when a change goes in and shows =, make the = red"): the Source is an import's copy and the change
-		is a "=" record. ★One question for the resource to build and the widget type to recycle by, as IsBangNode is.
-		⚠One line only: a ruby / mark row of two or three lines keeps its own resource, and its "=" the stock colour.
-		⚠Never in the Resources mode (LineCountOfNode's guard). */
-	bool16 IsAppliedNode(const KCMStoryNodeID* nodeID) const
-	{
-		if (nodeID == nil || !nodeID->IsChangeRow() || KCMListShowsResources())
-			return kFalse;
-		Utils<IKCMStoryEditsFacade> edits;
-		if (!edits || !edits->IsImportSource())
-			return kFalse;
-		IKCMStoryEditsFacade::Change change;
-		if (!edits->GetChange(nodeID->GetRow(), nodeID->GetChange(), change) || !change.fReplaced)
-			return kFalse;
-		return (this->LineCountOfChange(nodeID->GetRow(), nodeID->GetChange()) == 1) ? kTrue : kFalse;
-	}
+	// (⛔IsAppliedNode - "a one-line '=' row Apply This Change put in, against an import's copy" - chose the red, then amber,
+	//  "=" row's resource from 2026-10-24 evening to 2026-10-26, when the author took the colour back: CreateWidgetForNode.)
 
 	// Answer both size questions rather than letting the base class build a widget and measure it.
 	// A row is as wide as the list, which has no columns to add up and no horizontal scroll bar.

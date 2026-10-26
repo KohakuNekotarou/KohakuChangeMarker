@@ -262,6 +262,8 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTaskStartSave.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTaskStartClone.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMCopyStore.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRecordFocus.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRecordFoci.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPlaceReach.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfInflate.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfObjects.cpp" />
@@ -383,6 +385,8 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTaskStartSave.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTaskStartClone.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMCopyStore.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMRecordFocus.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMRecordFoci.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPlaceReach.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfInflate.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfObjects.h" />

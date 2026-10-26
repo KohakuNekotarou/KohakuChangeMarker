@@ -2208,6 +2208,11 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 			//   there mute beside the rows that could not be compared at all.
 			MarkOverset(targetDB, row->fStoryUID, changes);
 			KCMStoryList::SetRowChanges(i, changes, kTrue);
+			// ★★THE "=" RECORDS CARRIED OVER FROM THE LIST BEFORE (2026-10-26 - KCMStoryList::Build, Refresh Comparison) are
+			//   placed from this comparison as RunOne places them (FollowRecords, then PruneEqual) - a row built fresh has
+			//   none, and both return at once for it.
+			KCMStoryList::FollowRecords(i, targetDB);
+			KCMStoryList::PruneEqual(i, targetDB);
 			KCMStoryList::SetRowTargetTextCount(i, KCMStoryDiffRun::TextCountOf(UIDRef(targetDB, row->fStoryUID)));
 			// the state it was compared at, for the list to follow an Undo / Redo (KCMStoryFollowObserver - 2026-09-25)
 			KCMStoryList::SetRowComparedAt(i, KCMStoryDiffRun::CountForKind(UIDRef(targetDB, row->fStoryUID), kKCMStoryAttrRuby));
@@ -2228,6 +2233,7 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 		}
 	}
 
+	KCMStoryList::LetStrayFoci();	// the sweep (2026-10-26 - KCMStoryList.h says why)
 	return total;
 }
 
@@ -2343,6 +2349,8 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	KCMStoryList::SetRowTargetTextCount(rowIndex, KCMStoryDiffRun::TextCountOf(UIDRef(targetDB, storyUID)));
 	// the state it was compared at, for the list to follow an Undo / Redo (KCMStoryFollowObserver - 2026-09-25)
 	KCMStoryList::SetRowComparedAt(rowIndex, KCMStoryDiffRun::CountForKind(UIDRef(targetDB, storyUID), kKCMStoryAttrRuby));
+	// ★THE SWEEP (2026-10-26 - KCMStoryList.h says why): a focus no record holds any more, let go.
+	KCMStoryList::LetStrayFoci();
 
 	return compared ? static_cast<int32>(changes.size()) : -1;
 }

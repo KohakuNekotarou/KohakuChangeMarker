@@ -339,6 +339,19 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// ***** A "=" RECORD'S TEXT FOCUS, OF KCM'S OWN CLASS (2026-10-26 - KCMRecordFocus.h). *****
+	// kTextFocusBoss with IID_ITEXTFOCUS replaced and nothing else - the shape of InDesign's own foci, which each replace
+	// that implementation of the parent's (and of KFC's kKFCRowFocusBoss, whose implementation this one copies). Made by
+	// ITextFocusManager::NewFocus(range, kKCMRecordFocusBoss) - KCMRecordFoci.cpp. Never persisted: a focus lives in memory.
+	Class
+	{
+		kKCMRecordFocusBoss,
+		kTextFocusBoss,
+		{
+			IID_ITEXTFOCUS, kKCMRecordFocusImpl,
+		}
+	},
+
 	// ***** THE COMMAND THAT WRITES THEM (2026-09-07). *****
 	// Every tick and every cat paw goes through this one boss, and nothing else may write the
 	// labels. It exists so the change is UNDOABLE: Do() writes, DoNotify() raises a ModelChange on
