@@ -8,70 +8,18 @@
 
 #include "VCPlugInHeaders.h"
 
-#include "IDTime.h"
 #include "Utils.h"
-#include "WideString.h"				// IDTime::DateToString
 
 #include "IKCMCompareFacade.h"		// GetMarkColorCyan - which of the two Mark colours the flyout chose
 #include "KCMConstants.h"			// kKCMRingR.. / kKCMRingAltR.. - the Mark colour's two values (KCMDrawEventHandler::SelectedMarkColor reads the same)
+#include "KCMTrackText.h"			// the words themselves, shared with the Before/After report since 2026-10-27
 #include "KCMTrackLabels.h"
 
-namespace
-{
-PMString FromUtf16(const char16_t* s, int32 n)
-{
-	PMString p;
-	p.SetXString(reinterpret_cast<const UTF16TextChar*>(s), n);
-	p.SetTranslatable(kFalse);
-	return p;
-}
-
-void AppendTwoDigits(PMString& s, int32 n)
-{
-	if (n < 10)
-		s.Append("0");
-	s.AppendNumber(n);
-}
-}	// namespace
-
-PMString KCMTrackKindSign(int32 kind)
-{
-	switch (kind)
-	{
-		case 1:  { PMString s("+"); s.SetTranslatable(kFalse); return s; }
-		case 2:  { PMString s("-"); s.SetTranslatable(kFalse); return s; }
-		case 3:  return FromUtf16(u"»", 1);	// »
-		default: return FromUtf16(u"≠", 1);	// ≠
-	}
-}
-
-PMString KCMTrackKindWord(int32 kind)
-{
-	PMString s((kind == 1) ? "Inserted" : (kind == 2) ? "Deleted" : (kind == 3) ? "Moved" : "Replaced");
-	s.SetTranslatable(kFalse);
-	return s;
-}
-
-PMString KCMTrackTimeLabel(uint64 t)
-{
-	// The shape of KFC's KFCShowChanges.cpp (RunLabel): the OS's short date, then H:MM:SS in local time.
-	const IDTime when(t);
-	WideString date;
-	int32 hour = 0, minute = 0, second = 0;
-	PMString label;
-	if (when.DateToString(date, true /*short*/) && when.GetTime(nil, nil, nil, &hour, &minute, &second))
-	{
-		label = PMString(date);
-		label.Append(" ");
-		label.AppendNumber(hour);
-		label.Append(":");
-		AppendTwoDigits(label, minute);
-		label.Append(":");
-		AppendTwoDigits(label, second);
-	}
-	label.SetTranslatable(kFalse);
-	return label;
-}
+// ★The sign, the word, the time and the author's name are KCMTrackText's (2026-10-27): the report's Tracked Changes table
+//   writes a change in the same words the panel shows it in, so they are spelt once, in a header both halves read.
+PMString KCMTrackKindSign(int32 kind)		{ return KCMTrackText::KindSign(kind); }
+PMString KCMTrackKindWord(int32 kind)		{ return KCMTrackText::KindWord(kind); }
+PMString KCMTrackTimeLabel(uint64 t)		{ return KCMTrackText::TimeLabel(t); }
 
 RealAGMColor KCMTrackColour(bool16 hasColour, uint8 r, uint8 g, uint8 b)
 {
@@ -85,21 +33,6 @@ RealAGMColor KCMTrackColour(bool16 hasColour, uint8 r, uint8 g, uint8 b)
 				: RealAGMColor(kKCMRingR / 255.0, kKCMRingG / 255.0, kKCMRingB / 255.0);
 }
 
-PMString KCMTrackAuthorName(const PMString& name)
-{
-	// ★A NAME OF SPACES ONLY IS NO NAME EITHER (2026-10-25, the author's answer to Review Focus 2): InDesign refuses an
-	//   empty user name but takes " ", and the author row drew as a colour square with nothing after it. Spaces, tabs,
-	//   no-break and ideographic spaces count as nothing; anything else is a name and is shown as written.
-	bool16 visible = kFalse;
-	const WideString w(name);
-	for (WideString::const_iterator it = w.begin(); it != w.end() && !visible; ++it)
-	{
-		const UniCodePoint c = *it;
-		visible = (c != 0x0020 && c != 0x0009 && c != 0x00A0 && c != 0x3000) ? kTrue : kFalse;
-	}
-	PMString s = visible ? name : PMString("(no name)");
-	s.SetTranslatable(kFalse);
-	return s;
-}
+PMString KCMTrackAuthorName(const PMString& name)	{ return KCMTrackText::AuthorName(name); }
 
 // End, KCMTrackLabels.cpp.

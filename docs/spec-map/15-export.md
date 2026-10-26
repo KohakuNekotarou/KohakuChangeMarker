@@ -92,7 +92,7 @@
 - **REP-14** ★**Resources の表**＝Story の後に、見出し `Resources Changes: <要約>` と同じ2列の表。定義ごとに見出し行 `<Kind>  <Key（%エスケープ復号）>  [added / removed / changed]`、差のある属性ごとに1行（左＝`名前: 旧値`／右＝`名前: 新値`・片側に無ければ `-`・値はパネルと同じ短縮 `KCMShortResourceValue`）。属性差 0 の Changed は `(the difference is inside a child element)`。
   - 訂正:
 
-- **REP-15** ★**どのモードでも表2つは出る**＝報告書が自分で作る。Story は **Story モードと同じ手順**（変更カウンター→本文の比較→体裁だけ動いた行を落とす＝`KCMBuildStoryRowsByDiff`）で行を作り、終わったら一覧を空に戻す（`StoryDetailLoan`）⇒ **Story の表はどのモードでも Story モードの一覧と同じ中身**（Track モードも＝変更履歴の行ではなく本文の比較）。Resources は `KCMResourceStore::RebuildForPair` で作り、終わったら `Clear`＋通知（`ResourceLoan`）。
+- **REP-15** ★**どのモードでも表2つは出る**（2026-10-27 から表3つ＝REP-24）＝報告書が自分で作る。Story は **Story モードと同じ手順**（変更カウンター→本文の比較→体裁だけ動いた行を落とす＝`KCMBuildStoryRowsByDiff`）で行を作り、終わったら一覧を空に戻す（`StoryDetailLoan`）⇒ **Story の表はどのモードでも Story モードの一覧と同じ中身**（Track モードも＝変更履歴の行ではなく本文の比較）。Resources は `KCMResourceStore::RebuildForPair` で作り、終わったら `Clear`＋通知（`ResourceLoan`）。
   ★止めているときに作る（REP-22）ので、モードが持っている一覧を借りることも壊すことも無い。
   - 訂正: ✅2026-10-11 **作者決定で変更**＝Pixel モードが Story の一覧をやめた（LIST-02）のに合わせて、報告書は Pixel・Resources とも Story モードと同じ手順で表を作る形にそろえた。旧「各行の子を借りて元に戻す」は撤去、旧⚠「Pixel モードではルビだけ・圏点だけのストーリーの行が無い（既知の限界）」は解消。／✅2026-10-11（同日2回目）作者決定で変更＝報告書は Start していないときだけ・3つとも自分で比べる（REP-22）。旧⚠「Pixel のページだけは借りられない＝Pixel モード以外では出さず1P目に書く」「Track モードでは Story の表が空になる見込み」は解消。
 
@@ -130,6 +130,11 @@
 - **REP-23** ★**Source がメモリに取った Task Start なら断る**（2026-10-13・作者「報告書はことわりましょう」）＝組が決まった直後・**保存ダイアログの前**に
   `The Source is a Task Start kept in memory, which cannot be printed for the Before side - take a Task Start (Save)... for a report.`（第2章 RUN-79）。
   ★理由＝複製を PDF 書き出しに渡しても失敗せず、**生きている文書の状態**を書く（2026-10-13 実測）＝Before が黙って After になる。Task Start (Save)... の写しは開いた文書なので、これまでどおり作れる。
+  - 訂正:
+
+- **REP-24** ★**Tracked Changes の表**（2026-10-27・作者決定 2026-10-11）＝Resources の後に、見出し `Tracked Changes: N author(s), M change(s)`（変更履歴が無ければ見出し `Tracked Changes` と `(none)`）と同じ4列の表（1列目の題は `ID / Time`）。**After（Target）の変更履歴だけ**。
+  作成者の見出し行（名前・空白だけの名前は `(no name)`）→ ストーリーの見出し行（ID・`≠`・`p.<番号>  <冒頭の語句>`）→ 変更1件ごとに1行＝1列目は**日時**（パネルと同じ書き方・非表示の条件の中なら ` (hidden)`）、Δ はパネルと同じ `+` `-` `»` `≠`、**左＝削除された文字・右＝挿入された文字**、前後の文脈は淡く、片側が空なら `|`。**作成者の色は付けない**。
+  どのモードでも出る＝Track モードと同じ読み手（`KCMTrackRead::Build`）で読み、終わったら一覧を空に戻す（`TrackLoan`）。読みの進捗バーで取り消すと見出し `Tracked Changes (cancelled)` と1行。400 行で打ち切り。記号・日時・作成者名の書き方はパネルと1か所（`KCMTrackText.h`）。試験＝束 `report-track`（RT1〜RT7）・`report-p16`（`(none)`）。
   - 訂正:
 
 ## 3. やっていないこと
