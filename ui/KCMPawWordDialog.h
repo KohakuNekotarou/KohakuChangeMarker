@@ -57,12 +57,15 @@ namespace KCMPawWordDialog
 		  it can be nothing else).
 		@param colour IN which colour the tool is holding.
 		@param baseHalf IN half a paw's size on that page -- the same value the placing takes.
+		@param angle IN which way the paw points, degrees clockwise from straight up -- the drag's
+		  direction, 0 for a click (2026-10-27). Asked for after the RELEASE now: the tool follows
+		  the drag first, and the word box comes once the direction is known.
 
 		⚠A second press arriving while one is still waiting REPLACES it. It cannot happen in
 		  practice (the wait is a millisecond and the box that follows is modal), and replacing is
 		  the safe answer to the impossible case: two dialogs would be worse than one. */
 	void AskAndPlaceLater(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-	                      int32 colour, const PMReal& baseHalf);
+	                      int32 colour, const PMReal& baseHalf, const PMReal& angle);
 
 	/** Drop the timer, forget the waiting press, and arm nothing further. Called from the UI
 		half's shutdown.

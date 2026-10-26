@@ -170,9 +170,25 @@ static bool16 KCMIsOurKey(const IScriptLabel::ScriptLabelKey& key)
 // The paws of one page, as text and back.
 //========================================================================================
 
+/* Which way a paw points, as the label keeps it: whole degrees, 0..359, clockwise from straight up.
+   ★WHOLE DEGREES, NOT THOUSANDTHS like the position: a direction a hand drags out is not finer than a degree, and
+    "a":90 is what a reader who opens the Script Label panel can understand. */
+static int32 KCMPawAngleToStored(const PMReal& angle)
+{
+	const double d = ToDouble(angle);
+	int32 a = (int32)(d < 0.0 ? d - 0.5 : d + 0.5);
+	a %= 360;
+	if (a < 0)
+		a += 360;
+	return a;
+}
+
 /* ★"t" IS WRITTEN ONLY WHEN THERE IS ONE. Most paws carry no word, and an empty `"t":""` on every
    one of them would make the label longer for nothing -- a reader who opens the Script Label panel
-   should see the short form when the short form is the truth. */
+   should see the short form when the short form is the truth.
+   ★"a" LIKEWISE (2026-10-27): only a paw that was dragged has a direction other than upright, so a click's paw is
+   written exactly as it always was -- and an older KCM, which reads an unknown member and drops it, shows the
+   paw upright rather than losing it. */
 static void KCMPawsToText(const std::vector<KCMPawStamp>& paws, std::string& out)
 {
 	out = "[";
@@ -183,6 +199,12 @@ static void KCMPawsToText(const std::vector<KCMPawStamp>& paws, std::string& out
 		out += "{\"x\":";  KCMAppendInt(out, KCMToThousandths(paws[i].fX));
 		out += ",\"y\":";  KCMAppendInt(out, KCMToThousandths(paws[i].fY));
 		out += ",\"c\":";  KCMAppendInt(out, paws[i].fColour);
+		const int32 angle = KCMPawAngleToStored(paws[i].fAngle);
+		if (angle != 0)
+		{
+			out += ",\"a\":";
+			KCMAppendInt(out, angle);
+		}
 		if (!paws[i].fText.IsEmpty())
 		{
 			std::string escaped;
@@ -216,7 +238,7 @@ static void KCMTextToPaws(const std::string& text, UID pageUID, std::vector<KCMP
 			return;						// no entry left: the ordinary end
 		pos = open + 1;
 
-		int32  x = 0, y = 0, c = 0;
+		int32  x = 0, y = 0, c = 0, a = 0;
 		bool16 haveX = kFalse, haveY = kFalse, haveC = kFalse, broken = kFalse;
 		std::string word;
 
@@ -256,6 +278,7 @@ static void KCMTextToPaws(const std::string& text, UID pageUID, std::vector<KCMP
 				if      (key == "x") { x = v; haveX = kTrue; }
 				else if (key == "y") { y = v; haveY = kTrue; }
 				else if (key == "c") { c = v; haveC = kTrue; }
+				else if (key == "a") { a = v; }		// the direction (2026-10-27); missing = upright
 				// an unknown key with a number is read and dropped, which is how a newer KCM's
 				// extra member would pass through an older one without breaking the entry
 			}
@@ -280,7 +303,8 @@ static void KCMTextToPaws(const std::string& text, UID pageUID, std::vector<KCMP
 		                          PMReal(x / kKCMLabelScale),
 		                          PMReal(y / kKCMLabelScale),
 		                          haveC ? KCMPawColourFromStored(c) : (int32)kKCMPawColourRed,
-		                          word16));
+		                          word16,
+		                          PMReal((double)KCMPawAngleToStored(PMReal((double)a)))));
 	}
 }
 
@@ -352,7 +376,8 @@ static bool16 KCMSamePaws(const std::vector<KCMPawStamp>& a, const std::vector<K
 		return kFalse;
 	for (size_t i = 0; i < a.size(); ++i)
 	{
-		if (a[i].fColour != b[i].fColour || a[i].fX != b[i].fX || a[i].fY != b[i].fY)
+		if (a[i].fColour != b[i].fColour || a[i].fX != b[i].fX || a[i].fY != b[i].fY ||
+		    a[i].fAngle != b[i].fAngle)
 			return kFalse;
 	}
 	return kTrue;

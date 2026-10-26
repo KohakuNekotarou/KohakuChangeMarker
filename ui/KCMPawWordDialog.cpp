@@ -53,6 +53,7 @@ PMReal			gX       = 0.0;
 PMReal			gY       = 0.0;
 int32			gColour  = 0;
 PMReal			gHalf    = 0.0;
+PMReal			gAngle   = 0.0;		// which way the paw points (2026-10-27): the drag's direction, 0 for a click
 ICallbackTimer*	gTimer   = nil;
 // ★Raised by Shutdown: from there on no press arms a timer. The plug-in's other two timers keep
 //   the same flag (KCMToolButtonEH's sShutdown, KCMPanelAlpha's sPanelAlphaShutdown), and this one
@@ -79,6 +80,7 @@ void Forget()
 	gDb     = nil;
 	gPage   = kInvalidUID;
 	gColour = 0;
+	gAngle  = 0.0;
 	gApply  = kFalse;
 	gText.Clear();
 }
@@ -103,7 +105,7 @@ void Place(const PMString& text)
 	if (!flags)
 		return;					// the model half is not there -- nothing to place into
 
-	const bool16 placed = flags->PawStampPlaceAt(gDb, gPage, gX, gY, gColour, gHalf, text);
+	const bool16 placed = flags->PawStampPlaceAtAngle(gDb, gPage, gX, gY, gColour, gHalf, text, gAngle);
 
 	PMString msg;
 	msg.SetTranslatable(kFalse);
@@ -191,7 +193,7 @@ uint32 TimerFired(void* /*refPtr*/)
 
 
 void KCMPawWordDialog::AskAndPlaceLater(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-                                        int32 colour, const PMReal& baseHalf)
+                                        int32 colour, const PMReal& baseHalf, const PMReal& angle)
 {
 	// ⚠**Nothing is armed once Shutdown has run.** The tracker can still deliver a release after
 	//   the UI's shutdown service has gone through, and a timer built then would hold a raw
@@ -207,6 +209,7 @@ void KCMPawWordDialog::AskAndPlaceLater(IDataBase* db, UID pageUID, const PMReal
 	gY      = y;
 	gColour = colour;
 	gHalf   = baseHalf;
+	gAngle  = angle;
 	gApply  = kFalse;
 	gText.Clear();
 
