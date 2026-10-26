@@ -1250,8 +1250,18 @@ void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChange
 			if (paragraphChanges[c].aCount == paragraphChanges[c].bCount)
 			{
 				for (int32 k = 0; k < paragraphChanges[c].aCount; ++k)
-					compareParagraphPair(paragraphChanges[c].aStart + k,
-										 paragraphChanges[c].bStart + k, kTrue);
+				{
+					// ★WHETHER THE WORDS DIFFERED IS ASKED OF THE PAIR (2026-10-26): since the paragraph diff compares
+					//   a table's place as well (ParagraphKey), a pair can be reported with the same words - a table
+					//   moved - and its marks then stand where they stood, which is the unchanged paragraph's case.
+					const int32 ai = paragraphChanges[c].aStart + k;
+					const int32 bi = paragraphChanges[c].bStart + k;
+					const bool16 wordsDiffer = (ai >= 0 && bi >= 0 && ai < static_cast<int32>(sourceParas.size())
+												&& bi < static_cast<int32>(targetParas.size())
+												&& sourceParas[static_cast<size_t>(ai)] == targetParas[static_cast<size_t>(bi)])
+											   ? kFalse : kTrue;
+					compareParagraphPair(ai, bi, wordsDiffer);
+				}
 			}
 
 			a = paragraphChanges[c].aStart + paragraphChanges[c].aCount;
@@ -1617,11 +1627,10 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 			// ★★★**A CHANGE IN A CELL THAT IS THE SAME CELL ON BOTH SIDES STAYS A ROW OF ITS OWN** (2026-09-25, the
 			//   user's rule: "the cells whose structure did not change - take those back with the change history;
 			//   the cells whose structure changed - with the new mechanism"). The same address and the same merge
-			//   on both sides (KCMTableCellSame): its words are a Cell Text row, acted on one by one (rejected then, applied
-		//   or restored now); only a change
-			//   in a cell the shape brought, took or re-merged is folded into the Table row - which is exactly
-			//   what "Match the Source" rewrites (KCMTableMatch.h). ⚠Both tables have to exist for a cell to be the
-			//   same on both sides; a Table + or − folds everything, as before.
+			//   on both sides (KCMTableCellSame): its words are a Cell Text row, acted on one by one (rejected then,
+			//   applied or restored now); only a change in a cell the shape brought, took or re-merged is folded into
+			//   the Table row - which is exactly what "Match the Source" rewrites (KCMTableMatch.h). ⚠Both tables have
+			//   to exist for a cell to be the same on both sides; a Table + or − folds everything, as before.
 			if (haveT && haveS)
 			{
 				const int32 cellPara = tHolds ? tPara : sPara;
@@ -1855,11 +1864,23 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory, boo
 
 	// **ONE TABLE FOR BOTH SEQUENCES.** Numbering them from separate tables would give equal
 	//   paragraphs different tokens, and every paragraph would look changed.
+	// ★★AND A PARAGRAPH IS ITS WORDS AND THE PLACES OF ITS TABLES (2026-10-26, the import matrix's X06/Y06 - the author:
+	//   "the table moved, so it changed: I want it as a change row"). Compared by its words alone, words moved across a
+	//   table left the paragraph "the same", and nothing came of it: the import had put the move into its copy (its
+	//   planner asks the same question - KCMStorySync's ComparePara) and the list showed nothing to Apply.
+	std::vector<std::string> sourceKeys;
+	std::vector<std::string> targetKeys;
+	for (size_t p = 0; p < sourceParas.size(); ++p)
+		sourceKeys.push_back(KCMParaText::ParagraphKey(sourceParas[p],
+													   KCMParaText::AttrsOfParagraph(sourceAttrs, static_cast<int32>(p))));
+	for (size_t p = 0; p < targetParas.size(); ++p)
+		targetKeys.push_back(KCMParaText::ParagraphKey(targetParas[p],
+													   KCMParaText::AttrsOfParagraph(targetAttrs, static_cast<int32>(p))));
 	std::vector<std::string> table;
 	std::vector<int32> sourceTokens;
 	std::vector<int32> targetTokens;
-	KCMTextDiff::Tokenize(sourceParas, table, sourceTokens);
-	KCMTextDiff::Tokenize(targetParas, table, targetTokens);
+	KCMTextDiff::Tokenize(sourceKeys, table, sourceTokens);
+	KCMTextDiff::Tokenize(targetKeys, table, targetTokens);
 
 	std::vector<KCMTextDiff::Change> paragraphChanges;
 	if (!KCMTextDiff::Diff(sourceTokens, targetTokens, paragraphChanges))
@@ -1934,7 +1955,8 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory, boo
 					piece.bCount = 1;
 					nextA = piece.aStart + 1;
 					nextB = piece.bStart + 1;
-					if (sourceParas[static_cast<size_t>(piece.aStart)] == targetParas[static_cast<size_t>(piece.bStart)])
+					// (the KEYS: the same words with a table moved are still a change - see the paragraph diff above)
+					if (sourceKeys[static_cast<size_t>(piece.aStart)] == targetKeys[static_cast<size_t>(piece.bStart)])
 						continue;
 				}
 				else if (step.fKind == KCMParaPairing::Step::kInsert)
@@ -2020,36 +2042,48 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory, boo
 
 		// The second pass: narrow the run down to the characters that actually differ, so that a
 		// one-word edit selects the word and not the paragraph it sits in.
+		// ★★BETWEEN THE RUN'S TABLES, WHEN THEY PAIR (2026-10-26, the import matrix's X06/Y06): one piece per stretch from
+		//   one table to the next, every step of the pass kept inside its piece (KCMTextDiff::DiffCharacters) - so words
+		//   that crossed a table come back as words put in on one side of it and taken out on the other, which is what
+		//   moved: a table's anchor cannot. A table that came or went (the counts differ) cuts nothing - the whole run, as
+		//   it always was, and the table's own row says what happened to it (FoldTableChanges).
+		std::vector<int32> sourceTables;
+		std::vector<int32> targetTables;
+		KCMParaText::RunTableAnchors(sourceParas, sourceAttrs, change.aStart, change.aCount, sourceTables);
+		KCMParaText::RunTableAnchors(targetParas, targetAttrs, change.bStart, change.bCount, targetTables);
+		const bool16 tablesPair = (sourceTables.size() == targetTables.size()) ? kTrue : kFalse;
+		// ★THE SAME WORDS WITH NO TABLE MOVED ARE NO CHANGE OF WORDS: a run the keys made of tables that only came or went.
+		//   "The whole run, as one change" below would be a row with nothing in it.
+		if (sourceCodePoints == targetCodePoints && (!tablesPair || sourceTables == targetTables))
+			continue;
+		const std::vector<int32> noMarks;
 		std::vector<KCMTextDiff::Change> fineChanges;
-		const bool16 narrowed = KCMTextDiff::Diff(sourceCodePoints, targetCodePoints, fineChanges)
-								&& !fineChanges.empty();
 
 		// **ONLY ON CHARACTERS.** Applied to the paragraph list this would report paragraphs nobody
 		//   touched as changed -- see KCMTextDiff.h. The same restriction covers the alignment
 		//   below, for a plainer reason: a paragraph token is a number, and asking which script it
 		//   is written in means nothing.
-		if (narrowed)
-		{
-			// ⚠**THE PARAGRAPH BREAK IS HANDED OVER AS SOMETHING NOT TO SWALLOW** (2026-09-16).
-			//   JoinParagraphs puts exactly one '\n' between two paragraphs of a run, so that
-			//   code point is what marks a break here - and a change that contains one writes
-			//   over it, which costs the following paragraphs their styles (KCMTextDiff.h has
-			//   the measurement).
-			KCMTextDiff::MergeNearbyChanges(fineChanges, &sourceCodePoints, static_cast<int32>('\n'));
-
-			// **THEN SLIDE EACH RUN TO THE POSITION A READER WOULD PUT IT.** Myers returns A
-			//   shortest edit script, not THE one a person would describe, and when the surrounding
-			//   text repeats a character the two differ visibly. Reported from the panel:
-			//   「旧版です」->「新版です・ここが違います」 came back quoting「す・ここが違いま」
-			//   -- starting and ending on す because the run had been rotated one step left, which
-			//   costs Myers nothing and costs the reader the whole sentence.
-			//   @warning AFTER the merge, not before: merging changes the shape of a run, and
-			//     aligning a run that is about to be swallowed would be work thrown away.
-			//   ★kTrue = widen a change to the whole Latin word (letters or digits) it sits in: the
-			//     marks are DRAWN, and a word drawn in two pieces shows a seam. KIDMCP, which shares
-			//     this engine and prints instead, passes kFalse (KCMTextDiff.h says why).
-			KCMTextDiff::AlignChangeBoundaries(sourceCodePoints, targetCodePoints, fineChanges, kTrue);
-		}
+		// The two steps after the diff, as DiffCharacters takes them (only where the diff found something):
+		// ⚠**THE PARAGRAPH BREAK IS HANDED OVER AS SOMETHING NOT TO SWALLOW** (2026-09-16).
+		//   JoinParagraphs puts exactly one '\n' between two paragraphs of a run, so that
+		//   code point is what marks a break here - and a change that contains one writes
+		//   over it, which costs the following paragraphs their styles (KCMTextDiff.h has
+		//   the measurement).
+		// **THEN SLIDE EACH RUN TO THE POSITION A READER WOULD PUT IT.** Myers returns A
+		//   shortest edit script, not THE one a person would describe, and when the surrounding
+		//   text repeats a character the two differ visibly. Reported from the panel:
+		//   「旧版です」->「新版です・ここが違います」 came back quoting「す・ここが違いま」
+		//   -- starting and ending on す because the run had been rotated one step left, which
+		//   costs Myers nothing and costs the reader the whole sentence.
+		//   @warning AFTER the merge, not before: merging changes the shape of a run, and
+		//     aligning a run that is about to be swallowed would be work thrown away.
+		//   ★kTrue = widen a change to the whole Latin word (letters or digits) it sits in: the
+		//     marks are DRAWN, and a word drawn in two pieces shows a seam. KIDMCP, which shares
+		//     this engine and prints instead, passes kFalse (KCMTextDiff.h says why).
+		const bool16 narrowed = KCMTextDiff::DiffCharacters(sourceCodePoints, tablesPair ? sourceTables : noMarks,
+															targetCodePoints, tablesPair ? targetTables : noMarks,
+															fineChanges, static_cast<int32>('\n'), kTrue)
+								&& !fineChanges.empty();
 
 		if (!narrowed)
 		{

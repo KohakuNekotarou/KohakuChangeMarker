@@ -789,7 +789,8 @@ void ClosePara(std::vector<std::string>& outParas,
 			   const KCMParaAttrs& place,
 			   TextIndex lineStart, TextIndex paraStart, TextIndex paraEnd,
 			   AttrWalk& walk,
-			   std::vector<TextIndex>& uncounted)
+			   std::vector<TextIndex>& uncounted,
+			   std::vector<TextIndex>& anchors, int32& leadingAnchors)
 {
 	outParas.push_back(text);
 	outStarts.push_back(static_cast<int32>(paraStart));
@@ -816,6 +817,19 @@ void ClosePara(std::vector<std::string>& outParas,
 		attrs.fUncountedAt.push_back(static_cast<int32>(uncounted[k] - paraStart) -
 									 static_cast<int32>(k));
 
+	// ★AND WHERE EACH TABLE STANDS, IN THE SAME COUNT (2026-10-26, the import matrix's X06 - KCMParaAttrs::fTableAnchorsAt):
+	//   the anchors alone. One the paragraph begins with stands at 0; one inside it is uncounted itself, so the positions
+	//   met before it come off exactly as they do for fUncountedAt.
+	for (int32 k = 0; k < leadingAnchors; ++k)
+		attrs.fTableAnchorsAt.push_back(0);
+	for (size_t k = 0; k < anchors.size(); ++k)
+	{
+		int32 before = 0;
+		while (before < static_cast<int32>(uncounted.size()) && uncounted[static_cast<size_t>(before)] < anchors[k])
+			++before;
+		attrs.fTableAnchorsAt.push_back(static_cast<int32>(anchors[k] - paraStart) - before);
+	}
+
 	// ⚠ONE CURSOR EACH - see AttrWalk, which is where they live now.
 	// ★**THE NOTE MARKERS GO THROUGH THE SAME DOOR** as ruby and kenten (2026-09-08), so a marker
 	//   inside a paragraph that also holds a table is shifted into the text's own count by the
@@ -837,6 +851,8 @@ void ClosePara(std::vector<std::string>& outParas,
 	// ⚠EMPTIED HERE, WHERE THE PARAGRAPH ENDS, so that the two places a paragraph can close cannot
 	//   disagree about it - the same reason this function exists at all.
 	uncounted.clear();
+	anchors.clear();
+	leadingAnchors = 0;
 }
 
 }	// anonymous namespace
@@ -993,6 +1009,10 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 		// Positions INSIDE the paragraph being built that the model counts and the text does not.
 		// ⚠It is cleared by ClosePara, not here, so that a paragraph ending either way clears it.
 		std::vector<TextIndex> uncounted;
+		// The TABLES' anchors among them, and how many the paragraph begins with (KCMParaAttrs::fTableAnchorsAt) - cleared
+		// by ClosePara with the rest.
+		std::vector<TextIndex> anchors;
+		int32 leadingAnchors = 0;
 
 		TextIterator iter(model, position);
 		for (TextIndex i = position; i < threadEnd; ++i, ++iter)
@@ -1017,10 +1037,19 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 			//       "stories changed=0 edits=0"), so nothing downstream has ever had to face one.
 			if (cp == kTextChar_Table || cp == kTextChar_TableContinued)
 			{
+				// ★The ANCHOR is the table's place (KCMParaAttrs::fTableAnchorsAt); a continuation is one more row of it.
 				if (!paraHasCharacters)
+				{
 					paraStart = i + 1;
+					if (cp == kTextChar_Table)
+						++leadingAnchors;
+				}
 				else
+				{
 					uncounted.push_back(i);
+					if (cp == kTextChar_Table)
+						anchors.push_back(i);
+				}
 				continue;
 			}
 
@@ -1047,7 +1076,7 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 			if (cp == kTextChar_CR)
 			{
 				ClosePara(outParas, outAttrs, outStarts, text, place, lineStart, paraStart, i,
-						  walk, uncounted);
+						  walk, uncounted, anchors, leadingAnchors);
 				text.clear();
 				lineStart = i + 1;
 				paraStart = i + 1;
@@ -1070,7 +1099,7 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 		// pushed, or every thread would end with a paragraph nobody wrote.
 		if (!text.empty())
 			ClosePara(outParas, outAttrs, outStarts, text, place, lineStart, paraStart, threadEnd,
-					  walk, uncounted);
+					  walk, uncounted, anchors, leadingAnchors);
 
 		position = threadEnd;
 	}

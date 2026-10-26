@@ -242,6 +242,17 @@ struct KCMParaAttrs
 		 on one side and none on the other, and could not be cut. */
 	int32				fLeadingUncounted;
 
+	/** Where each TABLE stands in this paragraph - its anchor (kTextChar_Table) alone, one per table, not the row
+		continuations - as offsets in the text's own count, ascending; a table the paragraph BEGINS with stands at 0
+		(2026-10-26, the import matrix's X06/Y06).
+		★★**A TABLE'S PLACE IS PART OF THE PARAGRAPH.** "表の前の文 [table] 表の後の文" and "表の前の文表の後の文 [table]" read
+		  the same words, and the paragraph diff took them for the same paragraph: words moved across a table came out
+		  as no change at all (ParagraphKey and RunTableAnchors are what read this - the import's own planner has asked
+		  the same question since 2026-09-24, KCMStorySync's ComparePara).
+		⚠**fUncountedAt cannot answer it**: it holds a note's marker as well as a table's characters, and a table's
+		 rows as well as its anchor - a row added would read as a table that moved. */
+	std::vector<int32>	fTableAnchorsAt;
+
 	KCMParaAttrs()
 		: fTableOrdinal(kNotACell), fCellRow(-1), fCellCol(-1),
 		  fFootnoteOrdinal(kNotAFootnote), fLeadingUncounted(0) {}
@@ -1229,6 +1240,45 @@ inline void RunObjectOffsets(const std::vector<std::string>& paragraphs,
 			out.push_back(joined + para.fUncountedAt[k]);
 		joined += CountCodePoints(paragraphs[which]) + 1;
 	}
+}
+
+/** The TABLES standing inside a RUN of paragraphs - every paragraph's fTableAnchorsAt - as offsets into JoinParagraphs'
+	answer, ascending (2026-10-26, the import matrix's X06/Y06): the marks the character pass cuts at
+	(KCMTextDiff::DiffCharacters), one per table. */
+inline void RunTableAnchors(const std::vector<std::string>& paragraphs, const std::vector<KCMParaAttrs>& attrs,
+							int32 start, int32 count, std::vector<int32>& out)
+{
+	out.clear();
+	int32 joined = 0;
+	for (int32 i = 0; i < count; ++i)
+	{
+		const int32 which = start + i;
+		if (which < 0 || which >= static_cast<int32>(paragraphs.size()))
+			break;
+		const KCMParaAttrs& para = AttrsOfParagraph(attrs, which);
+		for (size_t k = 0; k < para.fTableAnchorsAt.size(); ++k)
+			out.push_back(joined + para.fTableAnchorsAt[k]);
+		joined += CountCodePoints(paragraphs[which]) + 1;
+	}
+}
+
+/** What the paragraph diff compares a paragraph BY (2026-10-26, the import matrix's X06/Y06): its words - and, when a
+	table stands in it, where the tables stand (KCMParaAttrs::fTableAnchorsAt), so that the same words with a table moved
+	are another paragraph. A paragraph without a table is its words, exactly as before.
+	⚠The places follow a U+0000, which no paragraph's text holds: the words cannot run on into them. */
+inline std::string ParagraphKey(const std::string& text, const KCMParaAttrs& attrs)
+{
+	if (attrs.fTableAnchorsAt.empty())
+		return text;
+	std::string key = text;
+	key.push_back('\0');
+	for (size_t k = 0; k < attrs.fTableAnchorsAt.size(); ++k)
+	{
+		if (k > 0)
+			key.push_back(',');
+		key += std::to_string(attrs.fTableAnchorsAt[k]);
+	}
+	return key;
 }
 
 /** True when two spans lists differ -- the question "did only the ruby change?" is this one

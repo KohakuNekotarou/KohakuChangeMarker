@@ -114,6 +114,18 @@ namespace KCMTextDiff
 						const std::vector<int32>& b, const std::vector<int32>& bCuts,
 						std::vector<Change>& changes, int32 maxEdits = 0);
 
+	/** The Story comparison's character pass, in one place (2026-10-26, the import matrix's X06/Y06): Diff, then
+		MergeNearbyChanges (never swallowing `doNotSwallow`), then AlignChangeBoundaries (`widenWords`) - each of the three
+		inside one piece between fixed marks, the pieces cut the way DiffInPieces cuts them.
+		★★THE MARKS ARE THE TABLES STANDING IN THE RUN (KCMParaText::RunTableAnchors): a table's anchor cannot move, so
+		  "ab[T]cd" and "abcd[T]" differ by the words that crossed it - put in on one side of the table and taken out on
+		  the other. Merged or slid across a mark, the two would meet into one change holding the table.
+		aMarks and bMarks the same size, ascending, within their sequences; none is the whole sequence as one piece.
+		@return kFalse when the marks do not pair or a piece's Diff does not complete - and then changes is empty. */
+	bool16 DiffCharacters(const std::vector<int32>& a, const std::vector<int32>& aMarks,
+						  const std::vector<int32>& b, const std::vector<int32>& bMarks,
+						  std::vector<Change>& changes, int32 doNotSwallow, bool16 widenWords);
+
 	/** Merges neighbouring changes that are separated by only a short unchanged run.
 
 		Myers returns the shortest edit script, which is not the same thing as the edit a person
