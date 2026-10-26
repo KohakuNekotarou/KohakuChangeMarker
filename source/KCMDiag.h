@@ -49,6 +49,9 @@
 //                2026-10-26 night): the refusal a story read unlike the export would get - "cannot be read the way the
 //                export reads it", not "an endnote" (table-move-pages PG12).
 //    (none else in use - counted 2026-10-26: step-fail and batch-fail had been in use without a line here.
+//     ⛔cmyk-cursor-no-hide stood here on 2026-10-27 for one night: Alt + left's CMYK cursor put up without the
+//     ICursorMgr Hide/Show, to measure both on one build. Without it the checkmark went straight to the numbers and
+//     nothing else showed, so the Hide/Show went - and the switch with it (KCMTracker::BeginTracking).
 //     ⛔track-describe-only / track-no-colour stood here on 2026-10-05 for one afternoon, to bisect an undo
 //     step a Refresh seemed to drop; the cause was InDesign cutting SCRIPT-made steps at the next real command - the
 //     same in the Story mode and after a plain "Add Page" - so they went: memory command-history-and-undo-stack.)

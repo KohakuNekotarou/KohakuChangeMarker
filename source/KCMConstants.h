@@ -308,7 +308,8 @@ static const PMReal kKCMStoryIdReachRightPx = 260.0;
 // settle wait (kKCMCursorSettleMillis) lived in this header until 2026-08-30. The API re-audit of
 // M1 measured the readers: no file under source/ used any of the four, and each was read by
 // exactly one file under ui/. They now sit at the top of those files (KCMPanelAlpha.cpp and
-// KCMTracker.cpp), which is the shape the rest of the UI half already used for a file-local
+// KCMTracker.cpp - where the settle wait was removed on 2026-10-27, along with the cursor's
+// Hide/Show it followed), which is the shape the rest of the UI half already used for a file-local
 // tuning value (KCMScrollMap.cpp, KCMThumbIdleTask.cpp, KCMTrackerHud.cpp) and the shape the
 // product code uses (linksui/LinksUIUtils.cpp).
 // ⇒ **No file under ui/ includes this header any more.**

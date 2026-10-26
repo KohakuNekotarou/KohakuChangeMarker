@@ -43,61 +43,22 @@
 #include "AutoBusyCursor.h"	// keeps the command layer's busy cursor out of the pre-press sampling
 
 #include "CursorSpec.h"		// CursorSpec / GetPlugIn() (the custom cursor of Alt + left, CMYK)
-#include "ISession.h"		// GetExecutionContextSession, on the way to ICursorMgr
-#include "IApplication.h"	// QueryApplication, on the way to ICursorMgr
-#include "ICursorMgr.h"		// Hide/Show, to cover the one frame it takes to install a cursor
-							// (ClearCache is no longer called - see InstallCmykCursor)
+#include "IEventUtils.h"	// IsMouseButtonDown / IsMouseButtonReleased - a press let go during the sampling
+#include "Utils.h"			// Utils<IEventUtils>
+#include "KCMDiag.h"		// KCM_DIAG_LOG - an Alt + left press, timed (test builds only)
 
 #include "KCMUIID.h"
 #include "KCMPeekGesture.h"	// KCMClassifyGesture / KCMTrackerRevealBegin / KCMTrackerRevealEnd
 #include "KCMCmykCursor.h"	// the CMYK cursor entry points (HasPending / CursorProc / UpdateCmykDrag)
 #include "KCMTrackerHud.h"	// says Target/Source top-left while the button is held (drawn on the draw event)
 
-#include <chrono>			// milliseconds, for that settle wait
-#include <thread>			// std::this_thread::sleep_for, likewise (the same on Windows and Mac)
+#ifdef KCM_DIAG
+#include <chrono>			// steady_clock - the press, timed
+#endif
 
-// Settle time (ms) after installing the CMYK cursor: the cursor is installed while hidden with
-// ICursorMgr::Hide(), and Show() follows this delay. 0 = no wait.
-// Hiding alone is not enough - the hidden stretch has to contain real elapsed time, or one
-// stale frame reaches the screen, because the hardware cursor is composited by the OS
-// independently of the app. Only a blocking wait fixes it, which puts whatever is being waited
-// for on the OS / cursor manager side rather than in our own code.
-// Measured: 0 = garbage frames, 30 = clean, 60 = clean. This is the only knob for "how long the
-// cursor stays invisible after the press" - the expensive sampling happens outside the wait.
-// It is 0 today because the checkmark cursor became a PNG resource, which removed the source of
-// the extra frame. Put it back to 30 if garbage frames reappear.
-// ★It lived in the model half's KCMConstants.h until 2026-08-30, when the API re-audit of M1
-//   found this file was its only reader. Now it sits next to the scope guard that is that reader.
-static const int32 kKCMCursorSettleMillis = 0;
-
-/** Guarantees the ICursorMgr::Hide() -> Show() pair by scope.
-	The install of a cursor takes one frame in which rubbish can be seen, so it is bracketed by
-	Hide/Show (how that was pinned down is at kKCMCursorSettleMillis, just above).
-	★Miss the Show and the cursor stays invisible for good, so it is left to the scope rather than
-	written out.
-	With mgr == nil it does nothing - nothing needs covering (a gesture other than CMYK, or no value
-	sampled). */
-struct KCMCursorHideGuard
-{
-	explicit KCMCursorHideGuard(ICursorMgr* mgr) : fMgr(mgr)
-	{
-		if (fMgr != nil)
-			fMgr->Hide();
-	}
-	~KCMCursorHideGuard()
-	{
-		if (fMgr == nil)
-			return;
-		// The settle wait after the install. 0 = no wait, which is what it is set to; it stays here as
-		// the knob to turn if the rubbish frames come back.
-		if (kKCMCursorSettleMillis > 0)
-			std::this_thread::sleep_for(std::chrono::milliseconds(kKCMCursorSettleMillis));
-		fMgr->Show();
-	}
-
-private:
-	ICursorMgr* fMgr;	// borrowed - the caller's InterfacePtr holds it for the whole scope. Not AddRef'd
-};
+// ⚠NO Hide/Show AROUND THE CMYK CURSOR ANY MORE (2026-10-27). ICursorMgr::Hide/Show and a settle wait after it
+//   (kKCMCursorSettleMillis, 30ms and later 0) used to bracket the switch from the checkmark to the numbers; both went
+//   once the press was measured without them. Why at BeginTracking.
 
 //____________________________________________________________________________________
 //	Tracker event handler: forwards events (notably the button-up) to the tracker while
@@ -193,83 +154,90 @@ public:
 		const bool16 macCtrl   = theEvent->MacCtrlDown();
 		const bool16 cmykGesture =
 			(KCMClassifyGesture(shiftDown, altDown, cmdDown, macCtrl) == kKCMGestureCmyk);
+#ifdef KCM_DIAG
+		// An Alt + left press, timed (2026-10-27, test builds only). Each line's own time stamp (KCMDiag.h) lines it up with
+		// a recorder of the system cursor outside InDesign (work/note-scripts/2026-10-27-kcm-cmyk-cursor).
+		const std::chrono::steady_clock::time_point diagEntry = std::chrono::steady_clock::now();
+		if (cmykGesture)
+			KCM_DIAG_LOG("CMYK-PRESS enter");
+#endif
 
-		// ★The cure for the "one rubbish frame" on press. The point of it: get the expensive work OUT of
-		//   the hidden stretch, and wait after the install.
-		//   On an Alt-alone press (the colour compare) the cursor changes several times over: (1) the base
-		//   takes its modal cursor (the checkmark is set again) -> (2) the expensive CMYK sampling (the
-		//   page correspondence table is built and two tiny rasterizations are run) -> (3) the CMYK
-		//   information cursor is installed. A hardware cursor is composited by the OS independently of
-		//   what the application is doing, so whatever is in the buffer for the instant before the
-		//   finished picture is installed reaches the screen ---- intermittent rubbish (reported as: a
-		//   flash before the numbers appear, not on every press).
-		//   ★Measured: moving (2) out of the hidden stretch so that (1) -> (3) took about a millisecond,
-		//     WITHOUT Hide/Show, did not get rid of it. ＝ The cause is not "switching takes time" but
-		//     **the one frame the install itself owns**, and there is no means but covering it. Covering
-		//     (2) as well, the way it used to, spends nearly the whole hidden stretch on that computation
-		//     and the cursor visibly disappears (also reported).
-		//   -> As it stands: (2) is finished before anything is hidden (computed with the checkmark cursor
-		//     still up), and what is hidden is only (1) + (3) + the settle wait. The wait is
-		//     kKCMCursorSettleMillis (top of this file); raise it if rubbish is ever seen again.
-		//   ★AutoBusyCursor(kFalse) keeps the command layer's automatic busy cursor from cutting in
-		//     during the sampling ---- the same thing the base does in InitializeModalCursor, brought
-		//     forward. Leaving the scope puts it back.
+		// ★On an Alt-alone press (the colour compare) the value is sampled FIRST, with the checkmark cursor still up,
+		//   and the cursor goes from the checkmark straight to the numbers once they are known: (1) the CMYK sampling ->
+		//   (2) the base takes its modal cursor (the checkmark, set again) -> (3) the CMYK cursor is installed.
+		//   ★NOTHING COVERS THE SWITCH, AND NOTHING NEEDS TO (2026-10-27). In July rubbish flashed on press, and it was
+		//     covered with ICursorMgr::Hide/Show and a 30ms wait. Its source was the checkmark itself, a CALLBACK
+		//     cursor then: (2) installs the cursor showing over again, the callback drew it again, and an unfinished
+		//     frame reached the screen. The checkmark became a PNG resource (KCMUI.fr) and the source was gone ---- the
+		//     wait went to 0, but the Hide/Show stayed, a blink of 6 to 14ms on every press. Measured from outside
+		//     InDesign with a recorder of the system cursor that hashes every picture it shows (a page of 2 items and
+		//     one of 1,700, a dozen presses and three drags without the Hide/Show): the checkmark went straight to the
+		//     numbers, and no picture but the right ones ever stood. The account is in memory custom-bitmap-cursor.
+		//   ★Sampling before (2) still pays: the cursor shows the checkmark until the numbers either way, and a value
+		//     known before the base lets this press decide whether a CMYK cursor goes up at all (cmykCursorUp, below).
+		//   ★AutoBusyCursor(kFalse) keeps the command layer's automatic busy cursor from cutting in during the
+		//     sampling ---- the same thing the base does in InitializeModalCursor, brought forward. Leaving the scope
+		//     puts it back.
+		//   ⚠The sampling's cost grows with the items on the spread, not with the 2pt square it reads (at the Draw in
+		//     KCMColorSampler.cpp): about 1ms on a page of 2 items, 80 to 100ms on one of 1,700.
 		if (cmykGesture)
 		{
 			AutoBusyCursor noBusyCursorWhileSampling(kFalse);
 			KCMTrackerRevealBegin(shiftDown, altDown, cmdDown, macCtrl);
 		}
 
-		// session can be nil during shutdown, so only the direct QueryApplication call is guarded
-		// (InterfacePtr(p, iid) itself permits p == nil). The whole plug-in is written this way.
-		// ★Hiding happens only where a CMYK cursor is really going up ＝ where a value was sampled
-		//   (Pending). Hide without one and the cursor merely blinks with no CMYK cursor to show for it
-		//   (learnt the hard way; the single test is Pending).
-		ISession* session = GetExecutionContextSession();
-		InterfacePtr<IApplication> theApp(session != nil ? session->QueryApplication() : nil);
-		InterfacePtr<ICursorMgr> cursorMgr(theApp, UseDefaultIID());
-		const bool16 hideDuringSwitch =
-			(cmykGesture && cursorMgr != nil && KCMTrackerHasPendingCmykCursor());
-
-		bool16 result = kFalse;
+		// ★A PRESS ALREADY LET GO GETS NO CMYK CURSOR (2026-10-27, measured from outside InDesign with a recorder of the
+		//   system cursor): on a page of many items the sampling above takes a while - 80 to 100ms on 1,700 items, more
+		//   just after the document opened - and a press shorter than that is released while it runs. The button-up
+		//   waits in the queue; the CMYK cursor went up anyway and EndTracking put the checkmark back about 2 ms later
+		//   ---- a flash of the numbers' picture after the release, which reads as rubbish. The event layer is asked
+		//   (IEventUtils: the button's state now, and whether its release is pending - StillDown's counterpart): let
+		//   go means no CMYK cursor, and the press ends with the checkmark it began with. The value still went to the
+		//   status line, and the release clears it as before.
+		bool16 cmykCursorUp = (cmykGesture && KCMTrackerHasPendingCmykCursor()) ? kTrue : kFalse;
+		if (cmykCursorUp)
 		{
-			// ★The Hide/Show pair is left to KCMCursorHideGuard. The Show runs at the end of this block,
-			//   which is where the explicit one used to be, so nothing behaves differently ---- and an
-			//   early return added here later can no longer leave the cursor invisible.
-			KCMCursorHideGuard cursorHide(hideDuringSwitch ? (ICursorMgr*)cursorMgr : nil);
+			Utils<IEventUtils> eventUtils;
+			if (eventUtils && (eventUtils->IsMouseButtonReleased() || !eventUtils->IsMouseButtonDown()))
+				cmykCursorUp = kFalse;
+		}
 
-			result = CTracker::BeginTracking(theEvent);
-			if (result)
-			{
-				// ★Raise the flag that says "show the press-time HUD". ★It must be raised **before**
-				//   KCMTrackerRevealBegin: Begin asks for a repaint itself (KCMTrackerHudInvalidate), so
-				//   with the flag already up that single repaint carries the frames AND the HUD ＝ **they
-				//   appear together** (which is what the old sprite version, lagging behind the frames,
-				//   did not do).
-				//   ⚠This once said the HUD "rides on the InvalidateViews that reveal calls". That only
-				//     runs over the **Target** window (KCMTrackerRevealBegin in KCMPeekGesture.cpp returns
-				//     early when `KCMMouseIsOverTarget()` is false), so over the Source window, while
-				//     stopped, and over a third document the HUD was never drawn at all. It asks for its
-				//     own repaint now (the full reason is at the Invalidate in KCMTrackerHud.cpp).
-				//   What draws it is **KCMUIDrawEvent.cpp on the UI side**, on two routes (in front of the
-				//   band, and behind on the canvas).
-				KCMTrackerHudBegin(fControlView);
+		const bool16 result = CTracker::BeginTracking(theEvent);
+		if (result)
+		{
+			// ★Raise the flag that says "show the press-time HUD". ★It must be raised **before**
+			//   KCMTrackerRevealBegin: Begin asks for a repaint itself (KCMTrackerHudInvalidate), so
+			//   with the flag already up that single repaint carries the frames AND the HUD ＝ **they
+			//   appear together** (which is what the old sprite version, lagging behind the frames,
+			//   did not do).
+			//   ⚠This once said the HUD "rides on the InvalidateViews that reveal calls". That only
+			//     runs over the **Target** window (KCMTrackerRevealBegin in KCMPeekGesture.cpp returns
+			//     early when `KCMMouseIsOverTarget()` is false), so over the Source window, while
+			//     stopped, and over a third document the HUD was never drawn at all. It asks for its
+			//     own repaint now (the full reason is at the Invalidate in KCMTrackerHud.cpp).
+			//   What draws it is **KCMUIDrawEvent.cpp on the UI side**, on two routes (in front of the
+			//   band, and behind on the canvas).
+			KCMTrackerHudBegin(fControlView);
 
-				// Everything but CMYK (the reveal and the peeks) fires after the base, as it always has.
-				// CMYK was dealt with above.
-				if (!cmykGesture)
-					KCMTrackerRevealBegin(shiftDown, altDown, cmdDown, macCtrl);
+			// Everything but CMYK (the reveal and the peeks) fires after the base, as it always has.
+			// CMYK was dealt with above.
+			if (!cmykGesture)
+				KCMTrackerRevealBegin(shiftDown, altDown, cmdDown, macCtrl);
 
-				// Where Alt + left (the colour compare) sampled a value, the CMYK is drawn on the cursor
-				// itself: the modal cursor CTracker set up in BeginTracking is replaced with a custom
-				// bitmap cursor (CTracker puts the original back when tracking ends). A kTrue - dynamic -
-				// spec is NOT used, because the uninitialized buffer shows for an instant as it is set
-				// (see InstallCmykCursor). Updating the numbers during a drag is ContinueTracking's job:
-				// it re-installs through InstallCmykCursor when the value changes.
-				if (KCMTrackerHasPendingCmykCursor())
-					this->InstallCmykCursor();
-			}
-		}	// <- cursorHide's destructor Shows here (if it hid anything)
+			// Where Alt + left (the colour compare) sampled a value, the CMYK is drawn on the cursor
+			// itself: the modal cursor CTracker set up in BeginTracking is replaced with a custom
+			// bitmap cursor (CTracker puts the original back when tracking ends). A kTrue - dynamic -
+			// spec is NOT used, because the uninitialized buffer shows for an instant as it is set
+			// (see InstallCmykCursor). Updating the numbers during a drag is ContinueTracking's job:
+			// it re-installs through InstallCmykCursor when the value changes.
+			if (cmykCursorUp)
+				this->InstallCmykCursor();
+		}
+#ifdef KCM_DIAG
+		if (cmykGesture)
+			KCM_DIAG_LOG("CMYK-PRESS done +%lld up=%d", (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+			             std::chrono::steady_clock::now() - diagEntry).count(), cmykCursorUp ? 1 : 0);
+#endif
 
 		if (!result && cmykGesture)
 		{
