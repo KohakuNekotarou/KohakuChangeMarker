@@ -173,7 +173,7 @@ namespace KCMJa
 		u"・パスにもテキストが載っているフレームはラベルが2つ並びます\n\n"
 		// ★The story text round trip (2026-09-19) sits here, after Story IDs and before the books - the
 		//   same seam the English side puts kKCMHint4Key at (DoUsage reads hint / hint3 / hint4 / hint2).
-		u"【ストーリーの往復(Export Story Text / Import Story Text)】\n"
+		u"【ストーリーの往復(Export Story Text / Export Pages to Word / Import Story Text)】\n"
 		u"ストーリーを Word 文書に書き出し、InDesign の外で編集してもらい、その編集を文書へ1件ずつ入れます。\n"
 		u"・「Export Story Text...」は 1ストーリー＝1つの .docx を書き出します。フレームを選択していればそのストーリーだけ、何も選択していなければ全ストーリーを書き出します\n"
 		u"・「Import Story Text...」は文書を変えません。選んだファイルを、メモリに取った文書の写し(メモリに取る Task Start と同じ・ダイアログもファイルもありません)に読み込み、"
@@ -183,7 +183,7 @@ namespace KCMJa
 		u"・入れ方: 変更の行を右クリックして「Apply This Change」(行を選んで Return でも同じ。Shift+Return は入れてから次の行へ進みます)、"
 		u"ストーリーの行の右クリックで「Apply All Changes in This Story」、見出しの右クリックで「Apply All Changes」。一緒に選んだ行は1回で入ります。"
 		u"どれも Ctrl+Z 1回で戻り、一覧も戻ります。変更履歴も作者名も付けません(そのストーリーで自分で変更をトラックしていれば、InDesign がふつうの編集としてあなたの名前で記録します)\n"
-		u"・入れた変更は赤い「=」の行として残ります。右クリックの「Restore from Copy」で、入れる前にそこにあった語に戻せます(KCM が写しを取っています)。"
+		u"・入れた変更は赤い「=」の行として残ります(「Apply All Changes」「Apply All Changes in This Story」で入れた変更も同じです。ストーリーの行は、その下の変更が全部「=」になると「=」になります)。右クリックの「Restore from Copy」で、入れる前にそこにあった語に戻せます(KCM が写しを取っています)。"
 		u"戻すと物が作り直されるところ(表・脚注の参照・アンカー付きオブジェクト・ハイパーリンクの元)、表や印(ルビなど)の行、段落ごと一緒に入った変更、Apply All で入れた変更には出ません。"
 		u"「=」の前を後から直したときは、その行を比べ直す(右クリックの「Refresh Story Comparison」)と「=」が新しい位置に立ちます\n"
 		u"・ファイルが足す・消す表と、ファイルが足す脚注は、ストーリーごと(「Apply All Changes in This Story」)でだけ入ります\n"
@@ -191,7 +191,10 @@ namespace KCMJa
 		u"一覧の「先頭」に、Change 列に赤い「!」と、場所と理由を添えて並びます。書き出した後に InDesign で直した所は、それを上書きする提案として出ます\n"
 		u"・あふれはすぐ見えます。入れた編集がフレームに収まらなくなれば、他の Story 比較と同じく行に OV が出ます\n"
 		u"・段落の中の表: Word には無いので、ファイルでは「表の前の文字」「表」「表の後の文字」が別々のブロックになります。表の前後で段落がどこで切れるかは"
-		u"ファイルではなく今の文書が決めます。Word で表の隣に改行を足しても消しても何も変わりません。表の隣で段落を割る・つなぐのは InDesign で行ってください\n\n"
+		u"ファイルではなく今の文書が決めます。Word で表の隣に改行を足しても消しても何も変わりません。表の隣で段落を割る・つなぐのは InDesign で行ってください。語が表の向こう側へ動いたとき(Word で表の後ろの語を表の前のブロックの末尾へ移したときなど)は、表の片側に足す行と、もう片側から消す行の2行になります\n"
+		u"・「Export Pages to Word...」(ページパネルのページのメニュー、またはこのフライアウト)は、選んだページを1ページ=1つの .docx に書き出します。名前は「p<ページ>.docx」、フォルダーは「Pages <日時>」です。文字の枠は、枠と同じ位置のテキストボックスになり、そのストーリーが丸ごと入ります(枠の多いカタログのページ向けです)。"
+		u"連結した枠(連結したストーリーは「Export Story Text...」で丸ごと書き出してください)、あふれている枠、表・脚注の参照・文末脚注の印がある枠は書き出さず、ページと一緒にステータス欄に出します。"
+		u"直したファイルは、ストーリーのファイルと同じく「Import Story Text...」で取り込みます。書き出した後に InDesign で直した枠も比べ、直した所は「ファイルの語に戻す」提案の行として出ます。別の文書のファイル(文書の名前ではなく文書の ID で見分けます)、書き出した後に連結した枠、表や注が入ったストーリーは、赤い「!」の行になります\n\n"
 		// ★The Track Changes mode (2026-10-05) - the English side's kKCMHint5Key, at the same seam.
 		u"【変更履歴との比較(Compare with Tracked Changes...)】\n"
 		u"InDesign の変更履歴(変更をトラック)が文書に記録した変更を、作者を問わず1件1行で、変更の前の文書と並べて一覧します。\n"
