@@ -578,9 +578,9 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 
 	// The Story mode: the rows the text diff finds (built by the one function the Before/After report
 	// builds its Story table with, so the two cannot list different stories).
-	// A cancel leaves half a list. It is NOT cleared here -- the caller answers a cancel by going back
-	//   to Stop, and Stop's KCMDoClearMarks runs KCMStoryList::Clear() (the same argument the raster
-	//   cancel in KCMDoMarkChangesDoc makes).
+	// A cancel leaves half a list. It is NOT cleared here -- the cancel's one ending, in
+	//   KCMDoMarkChangesDoc, empties it (2026-10-27; until then that block counted on every caller going
+	//   back to Stop, which a cancelled Start does not).
 	if (!KCMBuildStoryRowsByDiff(targetDB, sourceDB))
 		return kFalse;
 
@@ -975,30 +975,20 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		KCMDrawEventHandler::DropAll();
 		changedCount = 0;
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// do not carry an error raised by the interruption
-		// **The Story Edits list does NOT need clearing here**, although reading this function alone
-		//   suggests it does (the marks all go, so a list left standing would show rows pointing into
-		//   two documents that are no longer being compared, and those rows can be clicked).
-		//   Opening every caller shows it cannot happen. When this returns kFailure (i.e. a cancel):
-		//   ⚠**Do not write the number here.** It said "all five" until 2026-09-07, when one of the
-		//     five (Load Check & Register) was removed with its feature and the count went stale in
-		//     the same commit. Count the bullets below instead.
-		//     - Start (KCMStartComparisonFor) ... does not arm. Before it, nothing was armed, so the
-		//       list is empty. (The book comparison's "Start Change Marker",
-		//       KCMBookStartComparisonForRow, likewise Stops before it starts.)
-		//     - the register toggle (KCMPageMapToggleSelectedPages) ... goes back to Stop through
-		//       KCMToggleStartStop()
-		//     - the Ignore toggle (the UI's KCMActionComponent) ... the same
-		//     - Refresh Comparison (KCMRefreshComparison) ... stops outright, being armed already
-		//   (Load Check & Register stood in this list and went with its feature on 2026-09-07.)
-		//   They all end at Stop, so KCMDoClearMarks's KCMStoryList::Clear() always runs -- and
-		//   that is also what empties the HALF-BUILT list a cancelled Story comparison leaves
-		//   (KCMRebuildStoryEdits, above).
-		//   Measured: cancelling a 30-page re-comparison at the progress bar takes the heading from
-		//   "Story Edits (3)" back to "Story Edits".
-		//   @warning callers are named rather than cited by line here **because line numbers go
-		//     quietly wrong**: three of the four citations that used to be here had drifted, one of
-		//     them by 38 lines onto a different function's entry, and one drifted the same day it
-		//     was verified because an edit landed in the file it pointed at.
+		// ★★AND THE LISTS GO WITH THE MARKS (2026-10-27 - the full test's story-cancel SC-4, the Story bar's Cancel measured
+		//   for the first time): a Story comparison cancelled at its bar had filled the rows up to the story it stopped at
+		//   (50 rows, 19 of them compared), the status said "comparison cancelled", and the half-built list stood - clickable,
+		//   into two documents nobody was comparing. Emptied here, the one ending a cancel has, as KCMDoClearMarks empties
+		//   them for Stop, and the panel told.
+		//   ⛔Until then this block said the list did NOT need clearing because every caller ends at Stop. Three do - the
+		//    register toggle and the Ignore toggle (back to Stop through KCMToggleStartStop) and Refresh Comparison (it
+		//    stops outright, being armed). **A cancelled Start does not** (KCMStartComparisonFor / KCMStartComparisonOn: it
+		//    does not arm, and that is all) - the argument held only while the list a Start fills was empty before it, which
+		//    a Story comparison's own rows are not. The Track mode had no half list to leave (KCMTrackRead::Build sets its
+		//    list only when it finishes - track-rf1 RF1-4), and an emptied one costs a Start that went back to Stop nothing.
+		KCMStoryList::Clear();
+		KCMTrackList::Clear();
+		KCMNotify(kKCMStoryEditsRebuiltMessage);
 	}
 	else
 	{

@@ -167,6 +167,11 @@ bool16 KCMImportCloneHasStory(UID story)
 	return (std::find(gImportStories.begin(), gImportStories.end(), story) != gImportStories.end()) ? kTrue : kFalse;
 }
 
+bool16 KCMIsImportPair(IDataBase* targetDB, IDataBase* sourceDB)
+{
+	return (KCMIsImportClone(sourceDB) && targetDB != nil && targetDB == gSource) ? kTrue : kFalse;
+}
+
 namespace {
 
 bool16 TakeClone(bool16 forImport, const PMString& importLabel, PMString& outWhyNot)

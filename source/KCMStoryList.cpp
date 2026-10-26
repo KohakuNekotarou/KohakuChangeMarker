@@ -54,6 +54,7 @@
 #include "KCMStoryList.h"
 #include "KCMStoryRowFilter.h"	// KCMStoryRowHasContentChange - which rows belong in the list
 #include "KCMStoryTextImport.h"	// KCMImportRefusals - what the last import could not put in, put back as rows on every Build
+#include "KCMTaskStartClone.h"	// KCMIsImportPair - ...of the import's own pair (2026-10-27)
 #include "KCMEqualOrder.h"	// the "=" records' slot, shift and merged order (stage 2 C, 2026-09-24)
 #include "KCMRestoreAttr.h"		// KCMAttrMarksSame - an attribute record's "=" is a comparison of the marks
 #include "KCMStoryDiffRun.h"	// CountForKind - the counter a record's state is read from
@@ -1044,6 +1045,11 @@ void KCMStoryList::Build(IDataBase* targetDB, IDataBase* sourceDB,
 	//   ⚠Refilled on EVERY build, because the list starts empty each time; the material lives with
 	//    the origin (KCMImportRefusals) and is not the list's own. Rows first, then the children, so
 	//    that a story refused twice gets one row and two children whatever the order they were noted.
+	//   ★★ONLY FOR THE IMPORT'S OWN PAIR (2026-10-27 - the pre-exchange plan's Review Focus 2): the refusals say what the
+	//    files could not put into the document the import's copy was taken from. With the copy kept as the Source and
+	//    another document chosen as the Target, both "!" rows of an import into matrix.indd were listed against that other
+	//    document (import-target-only IT-2). Asked, not cleared: choosing the import's document again brings them back.
+	if (KCMIsImportPair(targetDB, sourceDB))
 	{
 		const std::vector<KCMImportRefusal>& refusals = KCMImportRefusals();
 		std::vector<int32> rowOf(refusals.size(), -1);

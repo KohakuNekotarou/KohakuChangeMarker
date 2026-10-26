@@ -52,6 +52,8 @@
 //                (KCMTrackRead::Build, 2026-10-27), so its progress bar comes up and its Cancel can be pressed. Without
 //                it the bar is out of reach: 15,000 tracked changes were read in 0.2 s, and the bar waits three seconds
 //                (track-rf1 RF1-1..5).
+//    story-diff-slow  the same for the Story mode's comparison: each story of KCMStoryDiffRun::Run 200 ms longer
+//                (2026-10-27) - 50 changed stories were compared in 0.4 s (story-cancel SC-1..5).
 //    (none else in use - counted 2026-10-26: step-fail and batch-fail had been in use without a line here.
 //     ⛔cmyk-cursor-no-hide stood here on 2026-10-27 for one night: Alt + left's CMYK cursor put up without the
 //     ICursorMgr Hide/Show, to measure both on one build. Without it the checkmark went straight to the numbers and
