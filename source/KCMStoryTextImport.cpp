@@ -43,8 +43,6 @@
 #include "KCMModelNotify.h"			// KCMNotify - a cancelled import tells the panel the mode came back
 #include "KCMTextWords.h"			// PMStringOfUtf8 - a UTF-8 reason onto the status line without mojibake
 #include "KCMDiag.h"				// KCM_DIAG_LOG - a test build's trace of what one reading of the copy costs (2026-10-26)
-#include "KCMPdfDoc.h"				// KCMIsPdfDoc - a PDF document is refused here (2026-10-14)
-#include "IKCMCompareFacade.h"		// the refusal's words, which the UI says too
 
 namespace
 {
@@ -793,8 +791,9 @@ bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCM
 namespace
 {
 
-/** Nothing of the copy's own making left in any undo history (the pour wrote into it): KCMPdfDoc.cpp's DiscardHistory,
-	for the same reason - ICmdHistory::Discard, aimed at the copy's root, never at UIDRef::gNull (the application). */
+/** Nothing of the copy's own making left in any undo history (the pour wrote into it): the shape of the PDF comparison's
+	DiscardHistory (KCMPdfDoc.cpp, removed 2026-10-27), for the same reason - ICmdHistory::Discard, aimed at the copy's root,
+	never at UIDRef::gNull (the application). */
 void DiscardHistoryOf(IDataBase* db)
 {
 	if (db == nil)
@@ -838,14 +837,6 @@ bool16 KCMImportStoryTextAsSource(const SysFileList& files, PMString& outMessage
 {
 	outMessage.Clear();
 	outMessage.SetTranslatable(kFalse);
-
-	// ★NOT A PDF DOCUMENT - the import's own refusal, asked before a file is read.
-	if (KCMIsPdfDoc(KCMTaskDocumentDB()))
-	{
-		outMessage = kKCMPdfTargetRefusal;
-		outMessage.SetTranslatable(kFalse);
-		return kFalse;
-	}
 
 	// ★ONE BAR FOR ALL OF IT, the import's: the reading, the pour into the copy and the comparison step slices of it.
 	PMString barTitle("Importing story text...");

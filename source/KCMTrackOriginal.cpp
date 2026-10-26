@@ -37,8 +37,6 @@
 #include "KCMPairChoice.h"			// KCMRealisePairEnd / KCMChooseDBPair / KCMChosenTargetDB
 #include "KCMTaskStartSave.h"		// KCMAskWhereToSaveCopy / KCMSuggestedCopyName / KCMTaskDocumentDB
 #include "KCMTrackOriginal.h"
-#include "KCMPdfDoc.h"				// KCMIsPdfDoc - a PDF document is refused here (2026-10-14)
-#include "IKCMCompareFacade.h"		// the refusal's words, which the UI says too
 
 namespace
 {
@@ -156,13 +154,6 @@ bool16 KCMTakeTrackOriginalCopy(const IDFile* dest, PMString& outMessage)
 	if (docDB == nil)
 	{
 		outMessage = "Compare with Tracked Changes needs a document";
-		return kFalse;
-	}
-	// ★Not a PDF document (2026-10-14, design 3.7): it has no tracked changes of the reader's - KCM placed its pages.
-	if (KCMIsPdfDoc(docDB))
-	{
-		outMessage = kKCMPdfTargetRefusal;
-		outMessage.SetTranslatable(kFalse);
 		return kFalse;
 	}
 	const UIDRef docRef(docDB, docDB->GetRootUID());

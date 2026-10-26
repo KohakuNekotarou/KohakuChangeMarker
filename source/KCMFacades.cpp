@@ -81,7 +81,6 @@
 #include "KCMStoryMarker.h"		// the adornment that draws it - the flash and the shutdown
 #include "IKCMResourcesFacade.h"	// the Resources mode's boundary
 #include "KCMResourceStore.h"		// ...and the model side it forwards to
-#include "KCMPdfDoc.h"				// the PDF comparison (2026-10-14)
 // ★Apply change by change, and Restore from Copy (2026-10-24 evening - design section 11 of the import-as-Source design):
 #include "KCMCopyStore.h"			// the copies Apply takes and Restore from Copy pastes back
 #include "KCMStoryRestore.h"		// KCMCreateWordsWriteCmd - the import's one write command, for one change's words
@@ -452,9 +451,14 @@ public:
 	virtual bool16		CanTakeTaskStartClone()					{ return KCMCanTakeTaskStartClone(); }
 	virtual bool16		TakeTaskStartClone(PMString& outWhyNot)	{ return KCMTakeTaskStartClone(outWhyNot); }
 
-	// ★The PDF comparison (2026-10-14) - the whole road is the model's (KCMPdfDoc.h).
-	virtual bool16		ChoosePdfEnd(bool16 asTarget, const IDFile& pdf, PMString& outMessage)	{ return KCMChoosePdfEnd(asTarget, pdf, outMessage); }
-	virtual bool16		IsPdfDoc(IDataBase* db)		{ return KCMIsPdfDoc(db); }
+	// ⛔The PDF comparison was removed on 2026-10-27; its two virtuals stay for the vtable (IKCMCompareFacade.h) and refuse.
+	virtual bool16		ChoosePdfEnd(bool16 /*asTarget*/, const IDFile& /*pdf*/, PMString& outMessage)
+	{
+		outMessage = PMString("The PDF comparison has been removed from Kohaku Change Marker.");
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
+	virtual bool16		IsPdfDoc(IDataBase* /*db*/)		{ return kFalse; }
 
 	// ★(2026-10-25 - the author: "while tracking, show on the Source line that the Track is the Source") the panel's
 	//   Source line asks. Both asked for life first: the panel asks from its Update, which runs during teardown as well
@@ -2097,7 +2101,7 @@ public:
 
 private:
 	/** Change `which` of row `nth` as Restore from Source (text) takes it: the Story mode - not the Track mode, not an
-		import's copy as the Source, not a PDF at either end - both documents open, the story paired, a TEXT change that is
+		import's copy as the Source - both documents open, the story paired, a TEXT change that is
 		not a "=" record (a record shown live - undone, or put back from its copy - is restored again, its record updated in
 		place: AddEqualGroup's twin). Reads no document: whether the words can be copied is said on the press. */
 	bool16 SourceTextChange(int32 nth, int32 which, IDataBase*& outTargetDB, Row& outRow, Change& outChange)
@@ -2105,7 +2109,7 @@ private:
 		if (KCMFacadeTrackMode() || this->IsImportSource() || !this->PairedTargetRow(nth, outTargetDB, outRow))
 			return kFalse;
 		IDataBase* const sourceDB = KCMArmedSourceDB();
-		if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB) || KCMIsPdfDoc(sourceDB) || KCMIsPdfDoc(outTargetDB))
+		if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
 			return kFalse;
 		return (this->GetChange(nth, which, outChange) && !outChange.fReplaced && outChange.fWhat == Change::kWhatText)
 			   ? kTrue : kFalse;

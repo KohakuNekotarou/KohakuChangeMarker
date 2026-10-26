@@ -4,10 +4,10 @@
 //
 //  KohakuChangeMarker (KCM) - placing one page of a PDF, and giving the reader's PDF place settings back.
 //
-//  ★TWO CALLERS SINCE 2026-10-14, which is why this is a file: the Before/After report places its two side PDFs page by
-//   page (KCMReport.cpp, where these lived until then), and the PDF comparison places every page of the reader's PDFs
-//   (KCMPdfDoc.cpp). Both pick the page through the session's place preferences - the only door the place command
-//   reads - and both must hand the reader's settings back however they end.
+//  ★THE BEFORE/AFTER REPORT'S (KCMReport.cpp, where these lived until 2026-10-14): it places its two side PDFs page by
+//   page, picking the page through the session's place preferences - the only door the place command reads - and must
+//   hand the reader's settings back however it ends. (A file of its own since the PDF comparison placed pages too; that
+//   second caller went with the comparison on 2026-10-27.)
 //
 //  ⚠THE PAGE NUMBER IS 1-BASED HERE (IPDFPlacePrefs::SetPage); the same interface's SetPageRange list is 0-based
 //   (docs/ai-notes/hdr-reread-b04-2026-10-02.md 2-3).

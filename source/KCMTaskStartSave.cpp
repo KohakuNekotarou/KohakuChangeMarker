@@ -41,8 +41,6 @@
 #include "KCMPairChoice.h"		// the pair this chooses
 #include "KCMCore.h"				// KCMActiveDocDB / KCMIsArmed / KCMArmedTargetDB
 #include "KCMComparisonRun.h"	// KCMStopComparison
-#include "KCMPdfDoc.h"			// KCMIsPdfDoc - a PDF document is refused here (2026-10-14)
-#include "IKCMCompareFacade.h"	// the refusal's words, which the UI says too
 
 #include <time.h>
 
@@ -241,15 +239,6 @@ bool16 KCMTakeTaskStartCopy(PMString& outWhyNot)
 	if (docDB == nil)
 	{
 		outWhyNot = "Task Start needs a document to copy";
-		return kFalse;
-	}
-	// ★A PDF DOCUMENT IS NOT A DOCUMENT OF THE READER'S (2026-10-14, design 3.7): KCM made it to compare a PDF, and a Task
-	//   Start of it would compare KCM's placing against itself. A Target CHOSEN as a PDF file is not this case - the
-	//   document in front is taken then, as always (KCMTaskDocumentDB).
-	if (KCMIsPdfDoc(docDB))
-	{
-		outWhyNot = kKCMPdfTaskStartRefusal;
-		outWhyNot.SetTranslatable(kFalse);
 		return kFalse;
 	}
 	// ★A document's UIDRef is its database's root - the form KCM uses elsewhere (KCMCore.cpp).

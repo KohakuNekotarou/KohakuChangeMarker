@@ -34,8 +34,7 @@
 #include "KCMRingAdornment.h"		// KCMRevalidateItemXPList -- the transparency-list insurance, at Start and at Stop
 #include "KCMThreadSafety.h"		// KCMIsSameDoc -- the one place this plug-in asks whether two dbs are one document
 #include "KCMExternalSource.h"	// the lent Source: registered and chosen by KCMStartComparisonWithSourceDB, forgotten by the lender's Release
-#include "KCMPdfDoc.h"			// the PDF comparison: which end is a PDF, how its pages were paired (2026-10-14)
-#include "IKCMCompareFacade.h"	// kKCMPdfPixelOnly - the words both halves say
+#include "IKCMCompareFacade.h"	// kKCMImportSourceModeRefusal - the words both halves say
 #include "KCMTaskStartClone.h"	// KCMIsImportClone - an import's copy is compared in the Story mode only (2026-10-24)
 // ⛔KCMOrigin.h went on 2026-09-21. It was included for "the third kind of Source, chosen by
 //   KCMChooseOriginPair" - and that function had already gone with the origin, leaving an include
@@ -137,20 +136,6 @@ bool16 KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 	// arm and the strips out puts everything back the way it was before the press, rather than
 	// creating an armed state with no marks in it.
 	const bool16 compared = (KCMDoMarkChangesDoc(targetDB, sourceDB, report) == kSuccess) ? kTrue : kFalse;
-	// ★A PDF PAIR SAYS HOW ITS PAGES WERE PAIRED (2026-10-14, design 3.5) - by the InDesign page ids the PDFs carry, or
-	//   in order - at the head of the second line, so that "marks start" stays the first line as every Start says it.
-	if (compared)
-	{
-		PMString note;
-		KCMPdfPairingNote(targetDB, sourceDB, note);
-		if (!note.IsEmpty())
-		{
-			const CharCounter nl = report.IndexOfWChar(UTF32TextChar(0x0A));
-			note.Append(" ");
-			report.Insert(note, (nl >= 0) ? nl + 1 : 0);
-			report.SetTranslatable(kFalse);
-		}
-	}
 	if (compared)
 	{
 		KCMDoArmMousePeek(targetDB, sourceDB);
@@ -310,21 +295,6 @@ void KCMToggleStartStop()
 	// through the same resolver), so this normally cannot fail. It is the guard for the case
 	// where a document is closed while the menu stands open.
 
-	// ★PDFS ARE COMPARED IN THE PIXEL MODE ONLY (2026-10-14, design 3.2) - asked HERE and not in KCMOpenComparisonPair,
-	//   because the Before/After report goes through that one too and makes its pictures in every mode. Before anything
-	//   is opened or made: the resolver opens nothing.
-	if (KCMGetCompareMode() != kKCMModePixel)
-	{
-		KCMPairEnd pdfTarget, pdfSource;
-		KCMResolveComparisonPair(pdfTarget, pdfSource);
-		if (KCMPairEndIsPdf(pdfTarget) || KCMPairEndIsPdf(pdfSource))
-		{
-			KCMSayStatus(kKCMPdfPixelOnly);
-			KCMNotify(kKCMMarksRebuiltMessage);
-			return;
-		}
-	}
-
 	// ★AN IMPORT'S COPY IS COMPARED IN THE STORY MODE ONLY (2026-10-24, the import-as-Source road - design 2-10): it is
 	//   the document with the files' words poured in, so a Pixel or a Resources comparison would report what the files
 	//   would move as though it had happened, and the Track mode reads the Target's own records. Asked of the chosen
@@ -372,17 +342,6 @@ bool16 KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMStr
 		return kFalse;
 	}
 
-	// ★A DOCUMENT AGAINST ITS PDF IS THE EXPORT CHECK, THE PDF ON THE SOURCE SIDE (2026-10-14, design
-	//   2026-10-14-kcm-pdf-export-check 3.2 - it replaced the PDF comparison's D1). The other way round is refused BEFORE
-	//   either end is realised, so it makes nothing - and the Before/After report, which comes through here too, refuses in
-	//   the same words.
-	if (KCMPairEndIsPdf(targetEnd) && !KCMPairEndIsPdf(sourceEnd))
-	{
-		outWhy = PMString("For a PDF export check, set the PDF as the Source and the document as the Target.");
-		outWhy.SetTranslatable(kFalse);
-		return kFalse;
-	}
-
 	// ★★★**THE ONE PLACE A DOCUMENT IS OPENED FOR A COMPARISON** (2026-09-21). A chosen end may be
 	// a FILE - a Task Start saves a copy of the document and names that file without opening it -
 	// and here is where it becomes a database: the document already open on that file when there
@@ -394,10 +353,6 @@ bool16 KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMStr
 	IDataBase* targetDB = nil;
 	IDataBase* sourceDB = nil;
 	bool16 realised = KCMRealisePairEnd(targetEnd, targetDB, outWhy);
-	// ★THE EXPORT CHECK'S PDF MUST BE THIS DOCUMENT'S (2026-10-14, design 3.2) - asked once the Target is open (its ids are
-	//   read from it) and BEFORE the PDF document is made, so a refusal makes nothing.
-	if (realised && !KCMPairEndIsPdf(targetEnd) && KCMPairEndIsPdf(sourceEnd) && !KCMCheckExportPdf(targetDB, sourceEnd, outWhy))
-		return kFalse;
 	if (realised)
 		realised = KCMRealisePairEnd(sourceEnd, sourceDB, outWhy);
 	if (!realised)

@@ -38,7 +38,7 @@
 // General includes:
 #include "PMString.h"
 #include "PMReal.h"		// GetBaseScreenOpacity
-#include "IDFile.h"		// ChoosePdfEnd
+#include "IDFile.h"		// ChoosePdfEnd (retired 2026-10-27, kept for the vtable)
 // (UIDRef.h went on 2026-09-14 with the three virtuals that used it - RehydrateOriginRaw and its
 //  twin, removed with their menu items. Nothing in this header names the type any more; measured
 //  rather than assumed, by grepping this file for UIDRef and finding only the include itself.)
@@ -55,11 +55,9 @@ class IDataBase;
 class IDocument;
 class UIDList;		// RefreshSelectedPages - the Pages panel's selection, as the UI read it (2026-10-26)
 
-// ★THE WORDS BOTH HALVES SAY ABOUT THE PDF COMPARISON (2026-10-14) - here because both read this header: the model for
-//  the press and a script's road, the UI before a dialog it would otherwise open for nothing. English, as every status line.
-#define kKCMPdfPixelOnly			"PDFs are compared in the Pixel mode only. Switch the Compare mode to Pixel."
-#define kKCMPdfTaskStartRefusal		"The Target is a PDF. A Task Start takes a document."
-#define kKCMPdfTargetRefusal		"The Target is a PDF. This works on a document."
+// ★THE WORDS BOTH HALVES SAY - here because both read this header: the model for the press and a script's road, the UI
+//  before a dialog it would otherwise open for nothing. English, as every status line. (The PDF comparison's three went
+//  with it on 2026-10-27.)
 // ★(2026-10-24, the import-as-Source road) The Source is an import's copy: the files' words poured into a Task Start in
 //  memory. It is compared in the Story mode alone (design section 2-10).
 #define kKCMImportSourceModeRefusal	"The Source is the imported text - it is compared in the Story mode. Switch the Compare mode to Story."
@@ -709,13 +707,10 @@ public:
 	virtual bool16		CanTakeTaskStartClone() = 0;
 	virtual bool16		TakeTaskStartClone(PMString& outWhyNot) = 0;
 
-	/** ★★THE PDF COMPARISON (2026-10-14, docs/superpowers/specs/2026-10-14-kcm-pdf-compare-design.md). ChoosePdfEnd: the
-		PDF the reader picked in "Set PDF as Target..." / "Set PDF as Source..." becomes that end of the pair - a FILE choice,
-		as a Task Start (Save)... makes one; Start makes a document of each PDF (KCMPdfDoc.h). kFalse, with the reason and
-		nothing changed, when the file is not a PDF; outMessage says what to do next either way.
-		IsPdfDoc: whether a database is a document KCM made from a PDF - the UI asks before a dialog only a document can use,
-		and when the compare mode changes under a running PDF comparison.
-		⚠Appended at the END ([[facade-vtable-slot-append-only]]). */
+	/** ⛔RETIRED 2026-10-27 - the PDF comparison (2026-10-14) was removed (the author 10-24: "no more comparing PDFs with
+		each other", 10-25: "the PDF features are dropped", 10-26: "please remove them"). The two stay because a virtual is never removed from the
+		middle of this class ([[facade-vtable-slot-append-only]]): ChoosePdfEnd refuses (kFalse, the reason in outMessage,
+		nothing chosen) and IsPdfDoc answers kFalse. Nothing in KCM calls either any more. */
 	virtual bool16		ChoosePdfEnd(bool16 asTarget, const IDFile& pdf, PMString& outMessage) = 0;
 	virtual bool16		IsPdfDoc(IDataBase* db) = 0;
 

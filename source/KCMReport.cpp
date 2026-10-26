@@ -81,8 +81,7 @@
 #include "KCMBoundaryID.h"			// kKCMStoryEditsRebuiltMessage
 #include "KCMExternalSource.h"		// KCMExternalSourceLabel - a lent Source's name
 #include "KCMTaskStartClone.h"		// KCMIsTaskStartClone - the report's refusal names it
-#include "KCMPlacePdf.h"			// KCMSetPdfPlacePage / KCMPdfPlacePrefsRestorer - moved out on 2026-10-14 for the PDF documents
-#include "KCMPdfDoc.h"				// KCMIsPdfDoc - two PDFs have no tables (2026-10-14)
+#include "KCMPlacePdf.h"			// KCMSetPdfPlacePage / KCMPdfPlacePrefsRestorer - the report places its own PDF's pages
 
 namespace
 {
@@ -374,7 +373,7 @@ bool16 ExportPagesToPDF(IDataBase* db, const std::vector<UID>& pages, const IDFi
 }
 
 // (SetPlacePage and PlacePrefsRestorer stood here until 2026-10-14. They are KCMPlacePdf.h's now - KCMSetPdfPlacePage and
-//  KCMPdfPlacePrefsRestorer - because the PDF comparison places PDF pages too and must give the settings back the same way.)
+//  KCMPdfPlacePrefsRestorer - moved out when the PDF comparison (removed 2026-10-27) placed PDF pages too.)
 
 // ---- the Story detail, borrowed ------------------------------------------------------------------
 
@@ -1013,19 +1012,6 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	// (Both loans give back on leaving this block, before any document is exported or closed.)
 	std::vector<KCMReportRow> storyRows, resourceRows;
 	PMString storyHeading, resourceHeading;
-	if (KCMIsPdfDoc(targetDB) || KCMIsPdfDoc(sourceDB))
-	{
-		// ★A PDF HAS NO STORIES AND NO DEFINITIONS OF ITS OWN (2026-10-14, design 3.7 / export check 3.7): its document is KCM's, each
-		//   page a placed PDF. The pictures are the report; each table says in one row why it is empty.
-		KCMReportRow r;
-		r.fLeft.fMid = Ascii((KCMIsPdfDoc(targetDB) && KCMIsPdfDoc(sourceDB)) ? "Not compared - the two ends are PDFs."
-																			   : "Not compared - one end is a PDF.");
-		storyRows.push_back(r);
-		resourceRows.push_back(r);
-		storyHeading = Ascii("Story Changes");
-		resourceHeading = Ascii("Resources Changes");
-	}
-	else
 	{
 		// (Built in every mode since 2026-10-11 - nothing is started, so no mode is keeping a list that
 		//  the loan could take apart. Until then only the modes that keep none were built for; the Story

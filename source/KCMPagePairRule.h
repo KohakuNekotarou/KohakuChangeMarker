@@ -31,11 +31,11 @@
 //  guard is for a spread the table does not hold) is keyless, and is matched by order against
 //  the target pages that found no namesake. Nothing else is ever matched by order.
 //
-//  ★★THE TARGET ANSWERS TO KEYS OF ITS OWN TOO (2026-10-14, the PDF comparison): a document KCM made from a PDF has
-//  pages with new ids, each standing for the InDesign page its PDF page was exported from (KCMPdfDoc.h). Both ends are
-//  such documents, so the identity has to be read through keys on BOTH sides - the 9-argument form below. The rule is
-//  the same one: a target page whose key names a source key pairs with it; a target page whose key is `invalid`, or
-//  names nothing, waits with the others that found no namesake.
+//  ★★THE TARGET MAY ANSWER TO KEYS OF ITS OWN TOO (2026-10-14) - the 9-argument form below; the 8-argument form is it
+//  with the target's own pages as their keys. The rule is the same one: a target page whose key names a source key pairs
+//  with it; a target page whose key is `invalid`, or names nothing, waits with the others that found no namesake. (Its
+//  first caller, the PDF comparison - whose documents' pages stood for the InDesign pages their PDF pages were exported
+//  from - went on 2026-10-27. The form stays: it is the general one, and the offline test proves it.)
 //
 //  PURE. A template over the id type, so the offline test (work/kcm-pagepair-test) runs it on
 //  plain integers; the plug-in instantiates it on UID.
@@ -53,7 +53,7 @@
 
     @param targetPages / sourcePages  each side's pages, in document order (the registered ones already taken out).
     @param targetKeys   parallel to targetPages: the identity each target page answers to (its own id for an ordinary
-                        document; for a PDF document the InDesign page id its PDF page carries, or `invalid`).
+                        document - the 8-argument form below passes targetPages itself - or `invalid`).
     @param sourceKeys   parallel to sourcePages, the same for the Source. A key that names more than one source page
                         counts for the first of them only; the others are treated as keyless.
     @param invalid      the id value that means "no identity" (kInvalidUID in the plug-in).

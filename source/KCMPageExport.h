@@ -70,7 +70,7 @@ bool16 KCMPagePartHoldsTableOrNote(ITextModel* model, TextIndex start, int32 spa
 bool16 KCMPagePartHoldsEndnote(ITextModel* model, TextIndex start, int32 span);
 
 /** The document's xmpMM:DocumentID and OriginalDocumentID as UTF-8 (IAdobeMediaMgmtMetaData on kDocBoss - the road
-	IDataBase.h names "FOR EXTERNAL USE"; the PDF comparison read the same two). Empty when they cannot be read.
+	IDataBase.h names "FOR EXTERNAL USE"; the PDF comparison, removed 2026-10-27, read the same two). Empty when they cannot be read.
 	★What a page file names its document by (2026-10-26 - KCMPageDocx::Page::fDocumentId): a name can change after the export. */
 void KCMDocumentIds(IDataBase* db, std::string& outId, std::string& outOriginal);
 

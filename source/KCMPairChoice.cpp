@@ -34,7 +34,6 @@
 #include "KCMCore.h"				// KCMActiveDoc / KCMActiveDocDB / KCMArmedSourceDB
 #include "KCMExternalSource.h"	// the lent Source: KCMIsExternalSource / KCMForgetExternalSource / KCMIsDbAlive
 #include "KCMTaskStartClone.h"	// a Task Start kept in memory goes when the Source choice leaves it (2026-10-13)
-#include "KCMPdfDoc.h"			// a PDF end is made into a document, not opened (2026-10-14)
 
 //----------------------------------------------------------------------------------------
 // The slots
@@ -271,12 +270,6 @@ bool16 KCMRealisePairEnd(const KCMPairEnd& end, IDataBase*& outDB, PMString& why
 		why.Append(helper.GetPath());
 		return kFalse;
 	}
-
-	// ★A PDF IS NOT OPENED - A DOCUMENT IS MADE OF IT (2026-10-14, the PDF comparison: KCMPdfDoc.h). Asked of the file's
-	//   first bytes, never of its name. After the two tests above: no document is ever open ON a PDF's file (the one made
-	//   from it is unsaved), and a PDF that has gone is named in the words above.
-	if (KCMFileIsPdf(end.fFile))
-		return KCMRealisePdfEnd(end.fFile, outDB, why);
 
 	// ⚠An open that is allowed to fail must not poison the caller's next command.
 	GlobalErrorStatePreserver openErrorState;

@@ -47,8 +47,6 @@
 #include "KCMTextRead.h"			// ReadStory - where each paragraph begins
 #include "KCMTextWords.h"			// PMStringOfUtf8 - a UTF-8 reason onto the status line
 #include "KCMZipStore.h"
-#include "KCMPdfDoc.h"				// KCMIsPdfDoc - a PDF document has none of the reader's stories
-#include "IKCMCompareFacade.h"		// kKCMPdfTargetRefusal
 
 bool16 KCMReadPageStoryFacts(const UIDRef& story, KCMPageStoryFacts& out)
 {
@@ -461,12 +459,6 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 	if (db == nil)
 	{
 		outMessage = "Export Pages to Word: there is no document";
-		outMessage.SetTranslatable(kFalse);
-		return kFalse;
-	}
-	if (KCMIsPdfDoc(db))
-	{
-		outMessage = kKCMPdfTargetRefusal;
 		outMessage.SetTranslatable(kFalse);
 		return kFalse;
 	}

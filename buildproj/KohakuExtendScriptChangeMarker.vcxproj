@@ -265,16 +265,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRecordFocus.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRecordFoci.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPlaceReach.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfInflate.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfObjects.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfPages.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPlacePdf.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfDoc.cpp">
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"> $(id_sdk_dir)\external\bibxmp\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'"> $(id_sdk_dir)\external\bibxmp\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-    </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpreads.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPatchFilter.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTableShape.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMSkippedText.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMRestoreAttr.cpp" />
@@ -388,13 +379,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMRecordFocus.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMRecordFoci.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPlaceReach.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfInflate.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfObjects.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfPages.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPlacePdf.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfDoc.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPdfSpreads.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPatchFilter.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPagePairRule.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReport.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMReportTable.h" />
