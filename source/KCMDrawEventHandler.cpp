@@ -58,6 +58,7 @@
 #include "IFontInstance.h"		// MeasureWText (centring) / GetDescent
 
 #include <algorithm>	// std::min -- the page's short side (four places used to spell out the same ternary)
+#include <cmath>		// std::cos / std::sin -- a cat paw turned to the direction it was dragged (2026-10-27)
 #include <map>
 #include <set>
 #include <new>			// std::nothrow for the image buffers: MSVC's ordinary new throws rather than returning nil
@@ -72,8 +73,6 @@
 #include "KCMPageNumberMarker.h"   // KCMGetIgnorePageNumberMarker / KCMAppendPageNumberMarkerRects (the folio exclusion)
 #include "KCMThreadSafety.h"       // KCMIsSameDoc (the background thread's cloned db) / KCMIsMainThread / the mark-state lock
 #include "KCMExternalSource.h"     // KCMIsDbAlive -- a lent Source is not in IDocumentList and is still there
-#include "KCMPdfDoc.h"             // KCMIsPdfDoc - a PDF document is drawn at full resolution (2026-10-14)
-#include "KCMPatchFilter.h"        // the PDF export check keeps patches, not dots (2026-10-14)
 // The press-time HUD moved to the UI's own drawing service (KCMUIDrawEvent.cpp): whether a button
 // is held is the tool's state, which is the UI's and not visible from the model. **This file
 // includes no UI header.**
@@ -359,38 +358,22 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 	// kKCMResolution x kKCMHiResMul. Thin lines and sub-pixel shifts that averaging would erase
 	// are counted at full weight, so nothing is missed.
 	const PMReal hiRes = kKCMResolution * kKCMHiResMul;
-	// The comparison is four-channel CMYK, rasterised opaque (small CMYK differences are
-	// rounded away by a conversion to RGB) - ⚠except the PDF export check, which is RGB (exportCheck below). The
-	// displayed ring is composited separately as ARGB, so the comparison raster does not need an alpha channel
-	// (addTransparencyAlpha = kFalse).
+	// The comparison is always four-channel CMYK, rasterised opaque (small CMYK differences are
+	// rounded away by a conversion to RGB). The displayed ring is composited separately as ARGB,
+	// so the comparison raster does not need an alpha channel (addTransparencyAlpha = kFalse).
 	// @warning the declaration order of the four below (snapshot, then its accessor, twice) is what
 	//   keeps each accessor being destroyed before the snapshot it came from -- see the note where
 	//   KCMDropSnapshotPair used to be.
-	// ★FULL RESOLUTION FOR A PDF DOCUMENT, ON BOTH SIDES (2026-10-14, the PDF comparison): a placed PDF drawn from its
-	//   proxy comes out a little different every time it is placed (measured: 700-1,000 pixels on an unchanged page),
-	//   while drawn at full resolution two placings of one PDF page agree to the pixel. Both sides alike - the two are
-	//   always drawn the same way. The document is KCM's own, and the dirtying the note on the 2nd argument below speaks
-	//   of is put back by the comparison's SaveRestoreModifiedState (KCMDoMarkChangesDoc, and the page refresh's).
-	const bool32 fullRes = (KCMIsPdfDoc(targetRef.GetDataBase()) || KCMIsPdfDoc(sourceRef.GetDataBase())) ? kTrue : kFalse;
-	// ★THE PDF EXPORT CHECK (2026-10-14, KCMConstants.h kKCMExportThr): a document against its PDF is drawn RGB and
-	//   anti-aliased on both sides (fullRes above is already kTrue: one of the two is a PDF document), and counted coarsely
-	//   below. ⚠The document's side at full resolution may dirty it - put back by the comparison's SaveRestoreModifiedState;
-	//   the live test measures that it is (plan Task 9).
-	const bool16 exportCheck = KCMIsExportCheckPair(targetRef.GetDataBase(), sourceRef.GetDataBase());
-	const SnapshotUtilsEx::SSColorSpaceFamily cs = exportCheck ? SnapshotUtilsEx::kCsRGB : SnapshotUtilsEx::kCsCMYK;
-	const bool16 antiAlias = exportCheck;
-	K2::scoped_ptr<SnapshotUtilsEx> snapTH(new (std::nothrow) SnapshotUtilsEx(targetRef, 1.0, 1.0, hiRes, hiRes, 0.0, cs, kFalse));
+	K2::scoped_ptr<SnapshotUtilsEx> snapTH(new (std::nothrow) SnapshotUtilsEx(targetRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse));
 	if (snapTH.get() == nil)
 		return kFailure;
-	// Rasterise with ANTI-ALIASING OFF (4th argument enableAntiAliasing = antiAlias, kFalse but for the PDF export
-	//   check). It removes the grey halo at edges, and with it the banding that a sub-pixel shift would otherwise
-	//   register as a difference. **Target and source must always use the same AA setting** -- with one of
-	//   them anti-aliased, every edge in the document is a difference (which is why the export check turns it on for
-	//   both: a placed PDF is drawn anti-aliased whatever is asked).
+	// Rasterise with ANTI-ALIASING OFF (4th argument enableAntiAliasing = kFalse). It removes the
+	//   grey halo at edges, and with it the banding that a sub-pixel shift would otherwise register
+	//   as a difference. **Target and source must always use the same AA setting** -- with one of
+	//   them anti-aliased, every edge in the document is a difference.
 	// 2nd argument fullResolutionGraphics = kFalse (the default) is **deliberate**: kTrue triggers
 	//   generation of placed images at full resolution, and that DIRTIES THE DOCUMENT. KCM's design
-	//   rests on never modifying the model, so the comparison uses the proxies. ⚠Except for a PDF
-	//   document (fullRes above).
+	//   rests on never modifying the model, so the comparison uses the proxies.
 	// 3rd argument greekBelowPtSize = 0.0 (greeking disabled) is **deliberate**. Left at the
 	//   default, small text is drawn as a grey band with no letterforms; target and source are
 	//   greeked alike, so **a change in small text produces no difference at all**
@@ -421,19 +404,19 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 	ErrorCode drewTH;
 	{
 		KCMRasterizingGuard rg;	// a re-entrant draw during this Draw must not paint marks into our own raster
-		drewTH = snapTH->Draw(IShape::kPreviewMode, fullRes, 0.0, antiAlias,
+		drewTH = snapTH->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
 		                      SnapshotUtils::kXPHigh, nil, nil, kFalse);
 	}
 	K2::scoped_ptr<AGMImageAccessor> accTH((drewTH == kSuccess) ? snapTH->CreateAGMImageAccessor() : nil);
 
-	K2::scoped_ptr<SnapshotUtilsEx> snapSH(new (std::nothrow) SnapshotUtilsEx(sourceRef, 1.0, 1.0, hiRes, hiRes, 0.0, cs, kFalse));
+	K2::scoped_ptr<SnapshotUtilsEx> snapSH(new (std::nothrow) SnapshotUtilsEx(sourceRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse));
 	if (snapSH.get() == nil)
 		return kFailure;	// snapTH and accTH free themselves on the way out
 	ErrorCode drewSH;
 	{
 		KCMRasterizingGuard rg;
-		// As above: greeking off, AA off (on for the export check), non-printing objects not drawn -- both sides identical.
-		drewSH = snapSH->Draw(IShape::kPreviewMode, fullRes, 0.0, antiAlias,
+		// As above: greeking off, AA off, non-printing objects not drawn -- both sides identical.
+		drewSH = snapSH->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
 		                      SnapshotUtils::kXPHigh, nil, nil, kFalse);
 	}
 	K2::scoped_ptr<AGMImageAccessor> accSH((drewSH == kSuccess) ? snapSH->CreateAGMImageAccessor() : nil);
@@ -463,7 +446,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 
 		if (ptH != nil && psH != nil &&
 			wth == wsh && hth == hsh && rbTH == rbSH && rbTH > 0 &&
-			bppH >= (exportCheck ? 3 : 4) && wl > 0 && hl > 0)
+			bppH >= 4 && wl > 0 && hl > 0)
 		{
 			// **Every allocation in this function is new (std::nothrow)**: MSVC's ordinary new
 			//   throws instead of returning nil, so without nothrow the nil tests below would do
@@ -510,12 +493,11 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 				// Each high-resolution pixel is tested (the largest raw per-channel difference) and,
 				// if it changed, the counter of its low-resolution cell is incremented. The cell
 				// mapping is by dimension ratio, so the two resolutions need not be integer multiples.
-				// A pixel changed when the largest channel difference exceeds the threshold.
-				// CMYK: four channels from offset 0. The export check's RGB: three, after the alpha when the raster has one
-				// (ARGB, the peek's MakeOrigImage reads it the same way).
-				const int  nch       = exportCheck ? 3 : 4;
-				const int32 colorOffH = (exportCheck && bppH >= 4) ? 1 : 0;
-				const int  thr        = exportCheck ? kKCMExportThr : kKCMCmykThr;
+				// CMYK: four channels from offset 0. A pixel changed when the largest channel
+				// difference exceeds the threshold (kKCMCmykThr).
+				const int  nch       = 4;
+				const int32 colorOffH = 0;
+				const int  thr        = kKCMCmykThr;
 
 				// Stage 1 of the exclusion sieve: the union bbox of the rectangles. After this, a
 				// row outside its vertical range costs zero tests, and an x outside its horizontal
@@ -570,20 +552,11 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 				size_t diffCount = 0;
 				for (size_t i = 0; i < N; ++i)
 				{
-					uint8 m = (cntHi[i] >= (uint16)(exportCheck ? kKCMExportPoolMinCount : kKCMPoolMinCount)) ? 1 : 0;
+					uint8 m = (cntHi[i] >= (uint16)kKCMPoolMinCount) ? 1 : 0;
 					M[i] = m;
 					if (m) ++diffCount;
 				}
 				cntHi.reset();	// the pooling scratch is finished with -- hand the memory back now, not at the end of the scope
-				// ★THE EXPORT CHECK KEEPS PATCHES, NOT DOTS (2026-10-14, KCMConstants.h kKCMExportMinPatchCells): two painters
-				//   leave small groups of cells on a correct export; a real loss is a patch. The queue is nothrow like every
-				//   buffer here - without it the cells stay as counted (more marks, never fewer).
-				if (exportCheck && diffCount > 0)
-				{
-					K2::scoped_array<int32_t> queue(new (std::nothrow) int32_t[N]);	// int32_t: int32 is long on Windows
-					if (queue.get() != nil)
-						diffCount = KCMPatch::KeepPatches(M.get(), wl, hl, kKCMExportMinPatchCells, queue.get());
-				}
 
 				if (diffCount == 0)
 				{
@@ -732,8 +705,7 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 	ErrorCode drew;
 	{
 		KCMRasterizingGuard rg;	// a re-entrant draw during this Draw must not paint marks into our own raster
-		// a PDF document at full resolution, as the comparison draws it (MakeEntry says why)
-		drew = snap->Draw(IShape::kPreviewMode, KCMIsPdfDoc(sourceRef.GetDataBase()) ? kTrue : kFalse);
+		drew = snap->Draw(IShape::kPreviewMode);
 	}
 	K2::scoped_ptr<AGMImageAccessor> acc((drew == kSuccess) ? snap->CreateAGMImageAccessor() : nil);
 
@@ -1643,14 +1615,19 @@ void KCMPawColours(int32 colour,
 // Beziers -- the only curve a port speaks (IGraphicsPort has curveto / curvetov / rectpath, and no
 // arc or oval of its own). The tangent at a point is (next - previous)/6, the standard conversion.
 // ★This is why the table is 16 points and not 48: the control points are derived from it.
+// ★TURNED BY (cosA, sinA) ABOUT THE CENTRE (2026-10-27): the paw's direction, clockwise from straight up. In these
+//   coordinates y runs DOWN, so x' = x cos - y sin, y' = x sin + y cos turns clockwise on the page -- straight up
+//   (0,-1) goes to (sin, -cos), which for 90 degrees is (1, 0), to the right. Each point is turned before the
+//   control points are derived from it, which turns the whole curve: a turn is linear. (1, 0) leaves it upright.
 static void KCMPawShapePath(IGraphicsPort* gPort, const double outline[kKCMPawPoints][2],
-	const PMReal& cx, const PMReal& cy, const PMReal& s)
+	const PMReal& cx, const PMReal& cy, const PMReal& s, const PMReal& cosA, const PMReal& sinA)
 {
 	PMReal px[kKCMPawPoints], py[kKCMPawPoints];
 	for (int32 i = 0; i < kKCMPawPoints; ++i)
 	{
-		px[i] = cx + PMReal(outline[i][0]) * s;
-		py[i] = cy + PMReal(outline[i][1]) * s;
+		const PMReal ox(outline[i][0]), oy(outline[i][1]);
+		px[i] = cx + (ox * cosA - oy * sinA) * s;
+		py[i] = cy + (ox * sinA + oy * cosA) * s;
 	}
 
 	const PMReal kSixth = PMReal(1.0) / PMReal(6.0);
@@ -1695,7 +1672,7 @@ static void KCMPawShapePath(IGraphicsPort* gPort, const double outline[kKCMPawPo
 //    the same mark, so it must not choose either for itself.
 //========================================================================================
 static void KCMDrawPawWord(IGraphicsPort* gPort, const PMString& text,
-	const PMReal& cx, const PMReal& cy, const PMReal& s,
+	const PMReal& cx, const PMReal& cy, const PMReal& s, const PMReal& reach,
 	uint8 cr, uint8 cg, uint8 cb)
 {
 	IPMFont* const font = KCMQueryMarkFont();
@@ -1743,10 +1720,12 @@ static void KCMDrawPawWord(IGraphicsPort* gPort, const PMString& text,
 	if (lines.empty())
 		return;
 
-	// To the RIGHT of the paw, its middle on the paw's middle. 0.49 is the outlines' own half
-	// width (the outer toes reach +/-0.4861 -- kKCMPawOutlines), so the gap is measured from the
-	// picture rather than from a number chosen to look right at one size.
-	const PMReal x = cx + (s * PMReal(0.49)) + (s * kKCMPawTextGapRatio);
+	// To the RIGHT of the paw, its middle on the paw's middle. `reach` is how far right the paw's own
+	// outlines go, as a fraction of its size -- 0.49 for an upright paw (the outer toes reach +/-0.4861 --
+	// kKCMPawOutlines), more for a turned one (KCMPawReachRight) -- so the gap is measured from the
+	// picture rather than from a number chosen to look right at one size. The word itself is never turned:
+	// it is read, and a reader reads across.
+	const PMReal x = cx + (s * reach) + (s * kKCMPawTextGapRatio);
 	// A baseline sits UNDER the letters, so pushing it down by about a third of the size puts the
 	// body of the FIRST line on the paw's centre line rather than above it.
 	const PMReal y = cy + (kKCMPawTextPt * PMReal(0.34));
@@ -1813,22 +1792,110 @@ static void KCMDrawPawWord(IGraphicsPort* gPort, const PMString& text,
 }
 
 //========================================================================================
+// How far right of its centre a paw turned by (cosA, sinA) reaches, as a fraction of its size: the outlines'
+// furthest point to the right after the turn (2026-10-27). ★Never less than 0.49, where the word of an UPRIGHT
+// paw has always sat -- so a paw that was not dragged draws exactly as it did; a turned one can reach further
+// (a toe or the pad swings out), and the word moves out with it instead of sitting under it.
+//========================================================================================
+static PMReal KCMPawReachRight(const PMReal& cosA, const PMReal& sinA)
+{
+	PMReal reach = 0.49;
+	for (int32 blob = 0; blob < kKCMPawOutlineCount; ++blob)
+	{
+		for (int32 i = 0; i < kKCMPawPoints; ++i)
+		{
+			const PMReal x = PMReal(kKCMPawOutlines[blob][i][0]) * cosA - PMReal(kKCMPawOutlines[blob][i][1]) * sinA;
+			if (x > reach)
+				reach = x;
+		}
+	}
+	return reach;
+}
+
+//========================================================================================
+// One paw: the white outline, the fill, and the word beside it -- turned to the paw's direction.
+// ★ONE PLACE DRAWS A PAW, and both the paws on the page and the one being placed come through it (2026-10-27):
+//   the paw a drag shows is the paw the release puts down, because they are the same lines.
+//========================================================================================
+static void KCMDrawOnePaw(IGraphicsPort* gPort, const KCMPawStamp& paw, const PMRect& pr, const PMReal& s)
+{
+	// ★★THE COLOUR IS SET PER PAW, because it belongs to the stamp and not to the page: a red paw
+	//   and a blue one sit on one page at the same time, which is the whole reason for having two.
+	uint8 ir = 0, ig = 0, ib = 0, fr = 0, fg = 0, fb = 0;
+	KCMPawColours(paw.fColour, ir, ig, ib, fr, fg, fb);
+	// The SHAPE takes the softened shade; the word below takes the ink one.
+	gPort->setrgbcolor(fr / PMReal(255.0), fg / PMReal(255.0), fb / PMReal(255.0));
+
+	// ★A stamp is stored as an offset from the PAGE'S TOP-LEFT. That is what lets it survive a
+	//   page being added or removed, AND what makes this addition right in spread coordinates
+	//   even though the press was read in pasteboard ones -- measured 2026-09-04: the two
+	//   spaces differ by a whole spread from the second spread onwards, and subtracting the
+	//   page's own rectangle on each side is what cancels it.
+	const PMReal cx = pr.Left() + paw.fX;
+	const PMReal cy = pr.Top()  + paw.fY;
+
+	// Which way the toes point (KCMPawStamp::fAngle, clockwise from straight up). 0 gives (1, 0): upright.
+	const double radians = ToDouble(paw.fAngle) * kPMPi / 180.0;
+	const PMReal cosA(std::cos(radians)), sinA(std::sin(radians));
+
+	// ★All five outlines go into ONE path before the fill, so the pad and the toes merge where
+	//   they touch instead of showing a seam between them.
+	// ★★**THE WHITE OUTLINE FIRST, THE COLOUR OVER IT** (2026-09-07). The path is built twice
+	//   on purpose -- a stroke consumes it, and stroking and filling in one pass would leave the
+	//   white lines the pad and the toes make where they overlap showing INSIDE the paw, which
+	//   is the very seam the single merged path exists to hide. The fill covers them.
+	//   ⚠Round join and cap, for the reason the word's outline needs them: a mitre on a sharp
+	//     corner shoots off a spike far longer than the line is wide.
+	if (kKCMPawHaloRatio > PMReal(0.0))
+	{
+		gPort->newpath();
+		for (int32 blob = 0; blob < kKCMPawOutlineCount; ++blob)
+			KCMPawShapePath(gPort, kKCMPawOutlines[blob], cx, cy, s, cosA, sinA);
+		gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
+		gPort->setlinewidth(s * kKCMPawHaloRatio);
+		gPort->setlinejoin(kPMRoundJoin);
+		gPort->setlinecap(kPMRoundCap);
+		gPort->stroke();
+		gPort->setrgbcolor(fr / PMReal(255.0), fg / PMReal(255.0), fb / PMReal(255.0));
+	}
+
+	gPort->newpath();
+	for (int32 blob = 0; blob < kKCMPawOutlineCount; ++blob)
+		KCMPawShapePath(gPort, kKCMPawOutlines[blob], cx, cy, s, cosA, sinA);
+	gPort->fill();
+
+	// The word the reader typed when they placed it with Alt (2026-09-07).
+	// ⚠**In the INK shade, not the paw's.** The two were the same colour for an hour and are
+	//   deliberately not now: the paw is that colour softened with white, the word is the
+	//   colour itself (kKCMPawFillWhiteMix says why). Passing fr/fg/fb here would look like a
+	//   tidy-up and would undo the decision.
+	if (!paw.fText.IsEmpty())
+		KCMDrawPawWord(gPort, paw.fText, cx, cy, s, KCMPawReachRight(cosA, sinA), ir, ig, ib);
+}
+
+//========================================================================================
 // Every paw on one page. They are placed by the stamp tool (ui/KCMPawTracker.cpp) and held
 // outside the document (source/KCMPawStamp.cpp), so nothing here reads or writes the .indd.
 //   Screen      -- always, exactly like the "Check" tick: independent of the frame toggles and of
 //                  the tool's left button, because a paw is a mark the reader put there on purpose.
 //   Print / PDF -- only with "Print comparison marks" on, the rule every other mark follows.
 //   Opacity     -- the panel's 25%/75% choice, so screen and print agree.
+// ★AND THE PAW BEING PLACED (2026-10-27): while the stamp tool follows a drag, the paw it will put down is drawn
+//   here too, turning, over the ones already placed -- on screen in the pressed view only. `view` is that test's
+//   other half: the caller passes the view it draws in, and nil when printing.
 //========================================================================================
 static void KCMDrawPawStamps(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
-	int32 drawMode, const PMReal& screenOpacity)
+	int32 drawMode, const PMReal& screenOpacity, const IControlView* view)
 {
 	if (gPort == nil || db == nil)
 		return;
 
 	std::vector<KCMPawStamp> paws;
 	KCMPawStampsOnPage(db, pageUID, paws);
-	if (paws.empty())
+	KCMPawStamp placing;
+	const bool16 havePlacing = (view != nil && drawMode == kKCMDrawModeScreen &&
+		KCMPawPreviewOn(db, pageUID, view, placing)) ? kTrue : kFalse;
+	if (paws.empty() && !havePlacing)
 		return;
 
 	PMRect pr;
@@ -1850,7 +1917,6 @@ static void KCMDrawPawStamps(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	//   landmark. ⚠screenOpacity is still taken as a parameter (the caller has it to hand and the
 	//   signature is shared) and is deliberately unused here.
 	(void)screenOpacity;
-	(void)drawMode;
 
 	AutoGSave ag(gPort);
 	// The clip is what the Pages panel thumbnail route requires, and it is also the declaration
@@ -1859,57 +1925,11 @@ static void KCMDrawPawStamps(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	gPort->setopacity(PMReal(1.0), kFalse);	// constant opacity, not shape alpha -- as every other mark here
 
 	for (size_t i = 0; i < paws.size(); ++i)
-	{
-		// ★★THE COLOUR IS SET INSIDE THE LOOP, because it belongs to the stamp and not to the page:
-		//   a red paw and a blue one sit on one page at the same time, which is the whole reason
-		//   for having two. ⚠Hoisting this out of the loop would paint them all alike.
-		uint8 ir = 0, ig = 0, ib = 0, fr = 0, fg = 0, fb = 0;
-		KCMPawColours(paws[i].fColour, ir, ig, ib, fr, fg, fb);
-		// The SHAPE takes the softened shade; the word below takes the ink one.
-		gPort->setrgbcolor(fr / PMReal(255.0), fg / PMReal(255.0), fb / PMReal(255.0));
+		KCMDrawOnePaw(gPort, paws[i], pr, s);
 
-		// ★A stamp is stored as an offset from the PAGE'S TOP-LEFT. That is what lets it survive a
-		//   page being added or removed, AND what makes this addition right in spread coordinates
-		//   even though the press was read in pasteboard ones -- measured 2026-09-04: the two
-		//   spaces differ by a whole spread from the second spread onwards, and subtracting the
-		//   page's own rectangle on each side is what cancels it.
-		const PMReal cx = pr.Left() + paws[i].fX;
-		const PMReal cy = pr.Top()  + paws[i].fY;
-
-		// ★All five outlines go into ONE path before the fill, so the pad and the toes merge where
-		//   they touch instead of showing a seam between them.
-		// ★★**THE WHITE OUTLINE FIRST, THE COLOUR OVER IT** (2026-09-07). The path is built twice
-		//   on purpose -- a stroke consumes it, and stroking and filling in one pass would leave the
-		//   white lines the pad and the toes make where they overlap showing INSIDE the paw, which
-		//   is the very seam the single merged path exists to hide. The fill covers them.
-		//   ⚠Round join and cap, for the reason the word's outline needs them: a mitre on a sharp
-		//     corner shoots off a spike far longer than the line is wide.
-		if (kKCMPawHaloRatio > PMReal(0.0))
-		{
-			gPort->newpath();
-			for (int32 blob = 0; blob < 5; ++blob)
-				KCMPawShapePath(gPort, kKCMPawOutlines[blob], cx, cy, s);
-			gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
-			gPort->setlinewidth(s * kKCMPawHaloRatio);
-			gPort->setlinejoin(kPMRoundJoin);
-			gPort->setlinecap(kPMRoundCap);
-			gPort->stroke();
-			gPort->setrgbcolor(fr / PMReal(255.0), fg / PMReal(255.0), fb / PMReal(255.0));
-		}
-
-		gPort->newpath();
-		for (int32 blob = 0; blob < 5; ++blob)
-			KCMPawShapePath(gPort, kKCMPawOutlines[blob], cx, cy, s);
-		gPort->fill();
-
-		// The word the reader typed when they placed it with Alt (2026-09-07).
-		// ⚠**In the INK shade, not the paw's.** The two were the same colour for an hour and are
-		//   deliberately not now: the paw is that colour softened with white, the word is the
-		//   colour itself (kKCMPawFillWhiteMix says why). Passing fr/fg/fb here would look like a
-		//   tidy-up and would undo the decision.
-		if (!paws[i].fText.IsEmpty())
-			KCMDrawPawWord(gPort, paws[i].fText, cx, cy, s, ir, ig, ib);
-	}
+	// The one being placed goes on top: it is the newest, and that is where it lands on release.
+	if (havePlacing)
+		KCMDrawOnePaw(gPort, placing, pr, s);
 }
 
 
@@ -2140,8 +2160,11 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   answered before the early-out just below -- so the database is fetched here as well.
 	//   ::GetDataBase is a pointer walk, and asking twice costs nothing beside drawing.
 	//   KCMPawStampHasAny answers kFalse for nil, so nothing else needs guarding.
+	// ★OR THE PAW BEING PLACED (2026-10-27): while the stamp tool follows a drag, a document with no paw yet has
+	//   one to show, turning -- in the pressed view only (KCMPawPreviewFor compares the view; nil when printing).
 	const bool16 wantPaws = !isThumb && !oppHides && (!printing || sPrintMarks) &&
-		KCMPawStampHasAny(::GetDataBase(ded->changedBy));
+		(KCMPawStampHasAny(::GetDataBase(ded->changedBy)) ||
+		 (!printing && KCMPawPreviewFor(::GetDataBase(ded->changedBy), ded->gd->GetView())));
 	// (Find Overset's "+" was decided here and drawn further down. The feature went on 2026-09-08.)
 	// The original-page-number badge: the toggle on, and the frames visible (printing on, or the
 	// tool's left button held) -- the same visibility rule wantMarks uses. In a printing context
@@ -2384,11 +2407,12 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// ⚠★No KCMIsArmed() here. **The tick used to be the one that carried it and the paw the one
 	//   that did not**; since 2026-09-04 neither does, because both are the reader's own mark on a
 	//   document they are reading -- which may be a document nobody is comparing.
-	if (wantPaws && KCMPawStampHasAny(db))
+	if (wantPaws && (KCMPawStampHasAny(db) || (!printing && KCMPawPreviewFor(db, zview))))
 	{
 		const int32 npp = spread->GetNumPages();
 		for (int32 i = 0; i < npp; ++i)
-			KCMDrawPawStamps(gPort, db, spread->GetNthPageUID(i), drawMode, SelectedMarkOpacity());
+			KCMDrawPawStamps(gPort, db, spread->GetNthPageUID(i), drawMode, SelectedMarkOpacity(),
+			                 printing ? nil : zview);
 	}
 
 	// The original-page-number badge (Show Original Page Numbers). On a page whose "current page

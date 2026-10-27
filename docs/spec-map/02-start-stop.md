@@ -186,7 +186,10 @@
 - **RUN-27** ★**Start を Cancel すると、そこまでの結果を全部捨てて「比較していない」状態に戻る。**
   比較済みのページと未比較のページが混ざった画面 ―― 「変わっていない」と「まだ見ていない」の
   区別が付かない画面 ―― を作らないため。★Start はもともと比較していなかったので、押す前に戻るだけ。
-  - 訂正:
+  - 訂正: ★2026-10-27＝**Story の Start の Cancel は、途中まで比べた一覧を残していた**（50 ストーリーのうち 19 件まで比べた行が、
+    `comparison cancelled` の後も押せる形で残った＝全件試験の束 `story-cancel` SC-4・テスト用ビルドの遅くするスイッチ `story-diff-slow` で
+    バーを出して初めて測った）。⇒ Cancel の行き着く1か所で Story・Track の一覧も空にする（Stop と同じ）＝提出説明 (80)。
+    Track の Cancel は前から残さない（読み終わったときだけ一覧を置き換える＝`track-rf1` RF1-4）。
 
 - **RUN-28** ⚠**最後の1ページを終えた後には Cancel を見に行かない。** そこで押されたものを拾うと、
   すでに終わっている比較を丸ごと捨てることになるため。
@@ -480,6 +483,13 @@
   ⚠別の文書を前に出したまま取り込んで Target が前に来るところは、実機では未測（コードで確かめた）。
   - 訂正:
 
+- **RUN-71c** ★★**取り込みの「!」の行は、取り込みの対のときだけ出る**（2026-10-27・エクスチェンジ前の Review Focus 2）―― 「!」は
+  ファイルが**写しを取った文書**へ入れられなかったものの印なので、写しを Source に残したまま**別の文書を Target に**選んで比べても出ない。
+  取り込んだ文書を Target に戻すと、また出る（材料は写しを手放すまで残る＝(77)・RUN-71）。
+  ⚠取り込みの比較が走っている間は Set as Target が押せない（「アクションを使用できません」＝2026-10-27 実測）＝Target を替えるのは Stop の後。
+  ✅実機で確認(2026-10-27・全件試験の束 `import-target-only` IT-1〜3＝直す前は IT-2 で「!」が2つ出た)。
+  - 訂正:
+
 - **RUN-72** ⬜**未実装の要望** ★**ファイルから Target / Source を指定するメニュー項目**
   （ユーザー 2026-09-21「そのうち」）。**土台はこの回で入っている** ―― 指名はファイルも指せて、
   Start は両端を開ける ―― ので、足すのは**メニュー項目2つとファイル選択ダイアログだけ**。
@@ -511,16 +521,16 @@
   - 訂正:
 
 - **RUN-77** **手放す（捨てる）とき**＝Source の指名が変わったとき（Set as Source／Task Start (Save)...／
-  Import Story Text...／Compare with Tracked Changes...／Clear Target and Source／次の Task Start）と、
+  Import Story Text...／Clear Target and Source／次の Task Start）と、
   **取った文書を閉じた・復帰したとき**（閉じる直前＝kBeforeCloseDoc）。比較中なら先に止める（閉じるときも）。
   ステータス行で言う＝Set as Source・Clear・Task Start (Save)... は末尾に `The Task Start kept in memory was let go.`、
   閉じる・復帰は `The Task Start kept in memory went with its document.`。
   ★保存の確認で「キャンセル」した閉じ方では手放さない（確認が kBeforeCloseDoc より先に出る＝2026-10-13 実測）。
-  - 訂正:
+  - 訂正: ✅2026-10-27 一覧から「Compare with Tracked Changes...」を外した＝この項目は Source を選ばなくなった（第19章 TCM-03＝写しを作らない）。Track の一覧の間もメモリの Task Start は Source のまま残り、Stop の後の Start で比べられる（`track-only` TO-12 の逆向き＝Track の間に Task Start を押すと一覧が止まる）
 
-- **RUN-78** **手放さないとき**＝保存（上書き・別名・コピー）・Stop・Set as Target・モードの切り替え。
+- **RUN-78** **手放さないとき**＝保存（上書き・別名・コピー）・Stop・Set as Target・モードの切り替え・`Compare with Tracked Changes`（2026-10-27〜）。
   ★保存しても、持っている状態は取った時点のまま・ファイルも壊れない（2026-10-13 実測）。
-  - 訂正:
+  - 訂正: ✅2026-10-27 `Compare with Tracked Changes` を足した（RUN-77 の訂正と同じ理由）
 
 - **RUN-79** 機能ごとの扱い＝**Before/After PDF 報告書は断る**（保存ダイアログの前に
   `The Source is a Task Start kept in memory, which cannot be printed for the Before side - take a Task Start (Save)... for a report.`）／
@@ -560,7 +570,13 @@
 - **RUN-08 の「最も早く開かれた文書」は3文書で実測済み**（2026-08-31）。
   4つ以上開いた場合や、文書を閉じて開き直した後の並びは測っていない。
 - **RUN-32 の `failed=K`** が実際に出る状況（ページサイズの食い違い）を作って確かめてはいない。
-- ⚠★★**RUN-24（文書を dirty にしない）は実機で確かめられていない。**
+- ✅★★**RUN-24 は 2026-10-27 に測れた**（エクスチェンジ前の束4・`work/note-scripts/2026-10-27-kcm-task8/run24-by-hand.ps1`）＝
+  文書を**メニューで開き**（KIDMCP `invoke_action` の「ファイル > 開く」＋開くダイアログに道を打ち込む）、KCM は**メニューのコマンド**で動かし、
+  **メニューで閉じる**（「ファイル > 閉じる」）＝保存を聞かれたら dirty。対照＝何もしない文書は聞かれない・ページを足した文書は聞かれる。
+  本番＝Target と Source をメニューで名指しして Pixel と Story で Start／Stop＝**どちらも聞かれない**・ping は終始 `modified=no`（4/4）。
+  ⚠1回目は前の対照の文書が開いたままで、Start が Source にそれを選んでいた（RUN-08）＝対を名指しして測り直した。下の 09-07 の記録は当時のまま残す。
+- ✅**RUN-47 も 2026-10-27 に4つの場面で測った**（`run47-refresh.ps1`）＝比較していない→灰色・2文書で比較中→押せる・比較中に Source を閉じる→灰色（比較が止まる）・メモリの Task Start で比較中→押せる。DOM の `enabled` と KIDMCP `inspect_ui action=actions` が一致。
+- ⚠★★**RUN-24（文書を dirty にしない）は実機で確かめられていない。**（⚠2026-10-27 訂正＝上の行で測れた）
   2026-09-07 に測ろうとして分かったのは**計器の性質のほう**だった――
   **スクリプトで開いた文書は、比較の有無に関わらずしばらくすると `modified` が立つ**
   （比較を一度も走らせていない対照の2文書でも立った・作者の既知の現象）。

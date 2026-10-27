@@ -47,8 +47,6 @@
 #include "KCMTextRead.h"			// ReadStory - where each paragraph begins
 #include "KCMTextWords.h"			// PMStringOfUtf8 - a UTF-8 reason onto the status line
 #include "KCMZipStore.h"
-#include "KCMPdfDoc.h"				// KCMIsPdfDoc - a PDF document has none of the reader's stories
-#include "IKCMCompareFacade.h"		// kKCMPdfTargetRefusal
 
 bool16 KCMReadPageStoryFacts(const UIDRef& story, KCMPageStoryFacts& out)
 {
@@ -440,14 +438,18 @@ void KCMDocumentIds(IDataBase* db, std::string& outId, std::string& outOriginal)
 	outOriginal = mm->GetOrigDocumentID().GetUTF8String();
 }
 
-bool16 KCMDocumentIdsMatch(IDataBase* db, const std::string& id, const std::string& original)
+KCMIdsMatch KCMDocumentIdsMatch(IDataBase* db, const std::string& id, const std::string& original)
 {
 	if (id.empty() && original.empty())
-		return kTrue;
+		return kKCMIdsNone;
 	std::string mine;
 	std::string myOriginal;
 	KCMDocumentIds(db, mine, myOriginal);
-	return ((!id.empty() && id == mine) || (!original.empty() && original == myOriginal)) ? kTrue : kFalse;
+	if (!id.empty() && id == mine)
+		return kKCMIdsThis;
+	if (!original.empty() && original == myOriginal)
+		return kKCMIdsOriginal;
+	return kKCMIdsOther;
 }
 
 bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& parent, PMString& outMessage)
@@ -457,12 +459,6 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 	if (db == nil)
 	{
 		outMessage = "Export Pages to Word: there is no document";
-		outMessage.SetTranslatable(kFalse);
-		return kFalse;
-	}
-	if (KCMIsPdfDoc(db))
-	{
-		outMessage = kKCMPdfTargetRefusal;
 		outMessage.SetTranslatable(kFalse);
 		return kFalse;
 	}

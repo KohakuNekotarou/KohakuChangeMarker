@@ -70,13 +70,24 @@ bool16 KCMPagePartHoldsTableOrNote(ITextModel* model, TextIndex start, int32 spa
 bool16 KCMPagePartHoldsEndnote(ITextModel* model, TextIndex start, int32 span);
 
 /** The document's xmpMM:DocumentID and OriginalDocumentID as UTF-8 (IAdobeMediaMgmtMetaData on kDocBoss - the road
-	IDataBase.h names "FOR EXTERNAL USE"; the PDF comparison read the same two). Empty when they cannot be read.
+	IDataBase.h names "FOR EXTERNAL USE"; the PDF comparison, removed 2026-10-27, read the same two). Empty when they cannot be read.
 	★What a page file names its document by (2026-10-26 - KCMPageDocx::Page::fDocumentId): a name can change after the export. */
 void KCMDocumentIds(IDataBase* db, std::string& outId, std::string& outOriginal);
 
-/** Whether a file's two ids are this document's: the same DocumentID, or the same OriginalDocumentID (a copy saved from the
-	same original) - the rule the PDF comparison measured on 2026-10-14. Two empty ids (a file that names none) match. */
-bool16 KCMDocumentIdsMatch(IDataBase* db, const std::string& id, const std::string& original);
+/** How a file's two ids name this document: the same DocumentID, or only the same OriginalDocumentID - the rule the PDF
+	comparison measured on 2026-10-14. ★A Save As, a Save a Copy, a template and every document made from that template get a
+	NEW DocumentID and keep the original's OriginalDocumentID (measured 2026-10-26 night - memory
+	indesign-xmp-document-ids-on-save-as): so "only the original" lets in a file exported before a Save As - and a file of
+	ANOTHER document from the same original, whose stories and frames carry the same uids, so nothing else can tell it.
+	Since 2026-10-26 night (the author's choice 3) the import lets it in and says so (KCMSpliceBoxesIntoSet). */
+enum KCMIdsMatch
+{
+	kKCMIdsOther = 0,	// neither id is this document's: another document's file - refused
+	kKCMIdsNone,		// the file names no document (a page file of 2026-10-25) - let through as before
+	kKCMIdsThis,		// the same DocumentID: exported from this document
+	kKCMIdsOriginal		// only the same OriginalDocumentID: exported before a Save As, or from another document of that original
+};
+KCMIdsMatch KCMDocumentIdsMatch(IDataBase* db, const std::string& id, const std::string& original);
 
 /** Write each of `pages` as one .docx into a new folder "Pages YYYY-MM-DD HHMMSS" under `parent`: the file "p<page
 	name>.docx" (no document name since 2026-10-26 - the tag names the document by its ids), the page's size, a text box per

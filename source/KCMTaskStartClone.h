@@ -101,6 +101,13 @@ bool16	KCMIsImportClone(IDataBase* db);
 /** kTrue when the import's clone is held and the import filled `story`. */
 bool16	KCMImportCloneHasStory(UID story);
 
+/** kTrue when sourceDB is the import's clone held now AND targetDB is the document it was taken from - the one pair the
+	import's "!" rows describe (KCMImportRefusals: what the files could not put into THAT document). ★2026-10-27 (the
+	pre-exchange plan's Review Focus 2): with the copy kept as the Source and another document chosen as the Target, a
+	Story comparison listed the import's refusals against a document they were never about - KCMStoryList::Build asks
+	this before it lists them. Pointer comparisons only (the clone goes at its document's close). */
+bool16	KCMIsImportPair(IDataBase* targetDB, IDataBase* sourceDB);
+
 #endif // __KCMTaskStartClone_h__
 
 // End, KCMTaskStartClone.h.

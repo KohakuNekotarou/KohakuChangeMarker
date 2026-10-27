@@ -179,21 +179,32 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 	if (compare == nil || compare->GetCompareMode() == mode)
 		return;
 
+	// ★A MODE CHOSEN WHILE A TRACK LISTING IS UP ENDS THE LISTING FIRST (2026-10-27 - Track is not a mode any more: it is
+	//   "Compare with Tracked Changes"' listing, armed with the Target alone). There is no Source to compare again in the
+	//   chosen mode, so nothing starts - the Stop, then the setting, and the reader presses Start.
+	//   (GetCompareMode answers Track only while the listing is up, so this cannot take a running Pixel / Story / Resources
+	//   comparison - those recompare below.)
+	const bool16 trackStopped = (compare->IsArmed() && compare->GetCompareMode() == kKCMModeTrack) ? kTrue : kFalse;
+	if (trackStopped)
+		compare->StopComparison();
+
 	compare->SetCompareMode(mode);
 
 	// ⚠**A switch, not a ternary** (2026-09-09): as `== kKCMModeStory ? story : pixel` the status
-	//   line announced "pixel changes" while switching TO the Resources mode.
+	//   line announced "pixel changes" while switching TO the Resources mode. (No Track case since 2026-10-27: it is
+	//   never chosen here.)
 	const char* modeWord = "pixel";
 	switch (mode)
 	{
 		case kKCMModeStory:		modeWord = "story";		break;
 		case kKCMModeResources:	modeWord = "resources";	break;
-		case kKCMModeTrack:		modeWord = "track";		break;
 		default:				modeWord = "pixel";		break;
 	}
 	PMString msg("Compare mode: ");
 	msg.Append(modeWord);
 	msg.Append(" changes.");
+	if (trackStopped)
+		msg.Append(" (the Track listing stopped)");
 	msg.SetTranslatable(kFalse);
 
 	// ★While Started, everything is compared again in the new mode. When nothing is being compared
@@ -207,23 +218,13 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 	//   (the user saw it: "モードをかえたとき、うまくいってないきがする", 2026-09-12). That branch
 	//   refreshed instead, rehydrating a Source. **Both ends are ordinary documents now**, so the
 	//   marked pair answers for a Task Start exactly as it does for any other comparison.
-	if (markedDB != nil && markedSrcDB != nil && mode != kKCMModePixel
-		&& (compare->IsPdfDoc(markedDB) || compare->IsPdfDoc(markedSrcDB)))
-	{
-		// ★A PDF PAIR IS COMPARED IN THE PIXEL MODE ONLY (2026-10-14, design 3.2): switched away from it, the comparison
-		//   stops - in Start's own words - rather than running in a mode that cannot read the PDFs.
-		compare->StopComparison();
-		msg.Append(" (stopped - ");
-		msg.Append(kKCMPdfPixelOnly);
-		msg.Append(")");
-	}
-	else if (markedDB != nil && markedSrcDB != nil && mode != kKCMModeStory
-			 && Utils<IKCMStoryEditsFacade>()->IsImportSource())
+	if (markedDB != nil && markedSrcDB != nil && mode != kKCMModeStory
+		&& Utils<IKCMStoryEditsFacade>()->IsImportSource())
 	{
 		// ★AN IMPORT'S COPY IS COMPARED IN THE STORY MODE ONLY (2026-10-24, the import-as-Source road - found on the
 		//   re-check the same day): Start refuses the other modes (KCMToggleStartStop), but a switch while Started
 		//   recompares right here without passing that test - and a Pixel or Resources comparison against the copy would
-		//   show what the files WOULD change as changes made. So it stops, in Start's own words, as a PDF pair does above.
+		//   show what the files WOULD change as changes made. So it stops, in Start's own words.
 		compare->StopComparison();
 		msg.Append(" (stopped - ");
 		msg.Append(kKCMImportSourceModeRefusal);
@@ -325,42 +326,8 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			break;
 		}
 
-		// ★"Set PDF as Target..." / "Set PDF as Source..." (2026-10-14, the PDF comparison): a PDF the reader picks becomes that
-		//   end - a FILE choice, as a Task Start (Save)... makes one; Start makes a document of each PDF (KCMPdfDoc.h). The
-		//   dialog is the import's (IOpenFileDialog - Adobe's own callers build it so: SelectFileObserver.cpp) for ONE file,
-		//   PDFs shown, no default extension pinned on. ⚠A cancel says nothing: nothing was changed.
-		case kKCMPopupSetPdfTargetActionID:
-		case kKCMPopupSetPdfSourceActionID:
-		{
-			const bool16 asTarget = (actionID == kKCMPopupSetPdfTargetActionID) ? kTrue : kFalse;
-			InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-			InterfacePtr<IOpenFileDialog> dialog((IOpenFileDialog*)::CreateObject(kOpenFileDialogBoss, IID_IOPENFILEDIALOG));
-			if (compare == nil || dialog == nil)
-				break;
-			PMString family("PDF (*.pdf)");
-			family.SetTranslatable(kFalse);
-			PMString extension("pdf");
-			extension.SetTranslatable(kFalse);
-			dialog->AddExtension(&family, &extension);
-			dialog->SetDefaultFilter(family);
-			PMString title(asTarget ? "Set PDF as Target - the newer PDF" : "Set PDF as Source - the older PDF");
-			title.SetTranslatable(kFalse);
-			SysFileList chosen;
-			if (!dialog->DoDialog(nil, chosen, kFalse /*one file*/, &title) || chosen.GetFileCount() < 1 || chosen.GetNthFile(0) == nil)
-				break;
-			// What to SAY is read before the call, as for "Set as Source": afterwards the kept-in-memory Task Start is gone.
-			const bool16 letGo = !asTarget && KCMSourceIsKeptInMemory(compare);
-			PMString msg;
-			if (compare->ChoosePdfEnd(asTarget, *chosen.GetNthFile(0), msg))
-			{
-				KCMRefreshPanel();
-				if (letGo)
-					msg.Append(" The Task Start kept in memory was let go.");
-			}
-			msg.SetTranslatable(kFalse);
-			KCMSetStatus(msg);
-			break;
-		}
+		// (⛔"Set PDF as Target..." / "Set PDF as Source..." - the PDF comparison's two items, ActionIDs +89 / +90 - stood here
+		//   from 2026-10-14 until 2026-10-27, when the comparison was removed. The two IDs are graves: ui/KCMUIID.h.)
 
 		// Flyout "Print comparison marks": the print-marks toggle (it used to be a checkbox on the
 		// panel).
@@ -782,9 +749,8 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		case kKCMPopupModeResourcesActionID:
 			KCMApplyCompareMode(kKCMModeResources);
 			break;
-		case kKCMPopupModeTrackActionID:
-			KCMApplyCompareMode(kKCMModeTrack);	// the fourth mode (2026-10-05)
-			break;
+		// (⛔"Compare mode > Track Changes" - kKCMPopupModeTrackActionID, the fourth mode of 2026-10-05 - went on 2026-10-27:
+		//  the author, "not under Compare mode - Compare with Tracked Changes alone".)
 
 		// Flyout "Save Panel Settings": write the current settings toggles to a private JSON file and
 		// show where it went **in the panel’s status line** (the work is KCMSavePanelState in
@@ -1046,12 +1012,6 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				IDataBase* const db = Utils<IKCMStoryEditsFacade>()->GetTaskDocumentDB();
 				if (db == nil)
 					break;			// the menu item is greyed without one; this is the belt
-				// ★Not a PDF document (2026-10-14, design 3.7) - said before the folder dialog; the model asks the same for a script.
-				if (Utils<IKCMCompareFacade>()->IsPdfDoc(db))
-				{
-					KCMSetStatus(kKCMPdfTargetRefusal);
-					break;
-				}
 				const bool16 inFront = (Utils<IKCMCompareFacade>()->GetActiveDocDB() == db) ? kTrue : kFalse;
 
 				UIDList stories(db);
@@ -1131,11 +1091,6 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				IDataBase* const db = Utils<IKCMCompareFacade>()->GetActiveDocDB();
 				if (db == nil)
 					break;			// the menu item is greyed without one; this is the belt
-				if (Utils<IKCMCompareFacade>()->IsPdfDoc(db))
-				{
-					KCMSetStatus(kKCMPdfTargetRefusal);
-					break;
-				}
 				UIDList pages(db);
 				if (!KCMReadSelectedPages(pages, kFalse /*no masters - a master's items are every page's*/) || pages.IsEmpty())
 				{
@@ -1181,13 +1136,6 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				// ⚠**SDKFileOpenChooser CANNOT DO THIS.** It holds one IDFile and has no way to
 				//  answer for several, so the dialog is built the way Adobe's own callers build it
 				//  (source/open/.../importdata/SelectFileObserver.cpp:147).
-				// ★Not into a PDF document (2026-10-14, design 3.7) - said before the dialog, so no file is picked for nothing.
-				//   The model asks the same (KCMImportStoryTextAsSource) for a script.
-				if (Utils<IKCMCompareFacade>()->IsPdfDoc(Utils<IKCMStoryEditsFacade>()->GetTaskDocumentDB()))
-				{
-					KCMSetStatus(kKCMPdfTargetRefusal);
-					break;
-				}
 				InterfacePtr<IOpenFileDialog> dialog(
 					(IOpenFileDialog*)::CreateObject(kOpenFileDialogBoss, IID_IOPENFILEDIALOG));
 				if (dialog == nil)
@@ -1234,13 +1182,12 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			}
 			break;
 
-		// ★"Compare with Tracked Changes..." (2026-10-05): the model does the whole road - the save dialog, the copy,
-		//   the rejections, the pair, the mode and the start (KCMTrackOriginal.h); this says what came of it.
-		//   An empty message = the reader cancelled the dialog, and a cancel says nothing (RUN-67).
+		// ★"Compare with Tracked Changes" (2026-10-05; the Target's records alone, no copy, no dialog, since 2026-10-27): the
+		//   model does the whole road - the stop, the listing, the start (KCMTrackStart.h); this says what came of it.
 		case kKCMCompareTrackedActionID:
 			{
 				PMString msg;
-				Utils<IKCMCompareFacade>()->TakeTrackOriginalCopy(msg);
+				Utils<IKCMCompareFacade>()->StartTrackChanges(msg);
 				KCMRefreshPanel();
 				if (msg.CharCount() > 0)
 					KCMSetStatus(msg);
@@ -1495,16 +1442,6 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 					(!armed && compare->GetActiveDocDB() != nil) ? kEnabledAction : kDisabled_Unselected);
 				break;
 			}
-			// ★"Set PDF as Target..." / "Set PDF as Source..." (2026-10-14): live while nothing is compared - the "Set as"
-			//   pair's rule - but WITHOUT needing an active document: what they set is a file the dialog picks.
-			case kKCMPopupSetPdfTargetActionID:
-			case kKCMPopupSetPdfSourceActionID:
-			{
-				InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-				const bool16 armed = compare->IsArmed() && (compare->GetArmedTargetDB() != nil);
-				listToUpdate->SetNthActionState(i, !armed ? kEnabledAction : kDisabled_Unselected);
-				break;
-			}
 			case kKCMPopupPrintMarksActionID:
 			{
 				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetPrintMarks());
@@ -1557,11 +1494,9 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeResources);
 				break;
 			}
-			case kKCMPopupModeTrackActionID:
-			{
-				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeTrack);
-				break;
-			}
+			// (⛔The Track Changes item went on 2026-10-27. ★While a Track listing is up none of the three carries the
+			//  check: GetCompareMode answers Track then - the panel's tab says "Track" - and a Stop puts the check back on
+			//  the reader's mode, which the listing never changed.)
 			case kKCMPopupHideUnchangedActionID:
 			{
 				// ★Greyed unless Started (armed), by the user’s instruction. This feature picks "the spreads
@@ -1783,9 +1718,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			}
 			case kKCMCompareTrackedActionID:
 			{
-				// A document to copy - the chosen Target, else the active one - and nothing else, as Import (2026-10-05).
+				// A document to list - the chosen Target, else the active one - and nothing else, as Import (2026-10-05).
+				//   Live while comparing, too: the press stops the comparison first (KCMTrackStart.h).
 				InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-				const bool16 live = (compare != nil && compare->CanTakeTrackOriginalCopy()) ? kTrue : kFalse;
+				const bool16 live = (compare != nil && compare->CanStartTrackChanges()) ? kTrue : kFalse;
 				listToUpdate->SetNthActionState(i, live ? kEnabledAction : kDisabled_Unselected);
 				break;
 			}
@@ -2051,9 +1987,8 @@ void KCMActionComponent::DoUsage()
 	// ★The Track Changes mode (2026-10-05) is a FIFTH English key, read after the fourth; on the Japanese side it sits
 	//   inside kHint2 right after the round trip, so its Japanese literal is empty too.
 	usage.Append(KCMLoc::Text(kKCMHint5Key, u""));
-	// ★Comparing PDFs (2026-10-14) is a SIXTH English key, read after the fifth; on the Japanese side it sits inside kHint2
-	//   right after Track Changes, so its Japanese literal is empty too.
-	usage.Append(KCMLoc::Text(kKCMHint6Key, u""));
+	// (⛔A SIXTH English key, kKCMHint6Key - comparing PDFs - stood here from 2026-10-14 until 2026-10-27, when the PDF
+	//   comparison was removed; its Japanese side went from inside kHint2.)
 	usage.Append(KCMLoc::Text(kKCMHint2Key, KCMJa::kHint2));
 	usage.SetTranslatable(kFalse);
 

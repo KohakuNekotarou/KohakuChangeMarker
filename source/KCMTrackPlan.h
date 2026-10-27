@@ -11,7 +11,9 @@
 //  deletion that touches it, by the SAME author, are one replacement (a word typed over, KFC's replace);
 //  moved text is a row of its own and never pairs; kApply / kUnknown are left out and counted. And where
 //  each change stands in the ORIGINAL - the text with every record taken back, which is what the copy
-//  "Compare with Tracked Changes..." saves - so that the Source window can be taken to it.
+//  "Compare with Tracked Changes..." saved - so that the Source window could be taken to it.
+//  ⚠THAT LAST PART HAS NO READER SINCE 2026-10-27 (no copy is made - KCMTrackStart.h): fOrigFrom / fOrigTo are still
+//   computed and tested here, and left for the waste-removal pass (the author's rule: a feature's session stops there).
 //
 //  ★HEADER-ONLY AND FREE OF THE SDK EXCEPT FOR BaseType.h, WHICH IS WHAT MAKES IT TESTABLE: the test is
 //   work\kcm-track-test (a stub BaseType.h, and an oracle that REBUILDS the original text from the records

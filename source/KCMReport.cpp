@@ -8,12 +8,14 @@
 //  InterfacePtr still stands on it is a protective shutdown, not an error.
 //
 //  THE THREE SECTIONS (2026-09-13, the user's ask): the Pixel pages (pictures only), then the
-//  Story table, then the Resources table.
-//  ★★★MADE ONLY WHILE NOTHING IS STARTED, AND ALL THREE IN EVERY MODE (2026-10-11, the user's
+//  Story table, then the Resources table. ★A FOURTH TABLE, Tracked Changes, after Resources
+//  (2026-10-27 - the author's decision of 2026-10-11): the Target's own tracked changes.
+//  ★★★MADE ONLY WHILE NOTHING IS STARTED, AND ALL OF IT IN EVERY MODE (2026-10-11, the user's
 //  decision). The report compares for itself: every page's pixels whatever the compare mode
 //  (KCMRunReportComparison), the Story rows the Story mode's way (StoryDetailLoan), the Resources
-//  result (ResourceLoan) - and takes all of it down once it is written (KCMClearReportComparison),
-//  so the reader is left with nothing started and no mark, where they pressed it.
+//  result (ResourceLoan), the tracked changes the Track mode's way (TrackLoan) - and takes all of it
+//  down once it is written (KCMClearReportComparison), so the reader is left with nothing started
+//  and no mark, where they pressed it.
 //  ⛔While a comparison runs the item is grey. Until that day it was live then too, and outside the
 //  Pixel mode the report showed the added / removed pages alone: the pixels cannot be borrowed from
 //  a comparison the screen is showing - rasterising rewrites the rings, the pairing and the
@@ -81,8 +83,10 @@
 #include "KCMBoundaryID.h"			// kKCMStoryEditsRebuiltMessage
 #include "KCMExternalSource.h"		// KCMExternalSourceLabel - a lent Source's name
 #include "KCMTaskStartClone.h"		// KCMIsTaskStartClone - the report's refusal names it
-#include "KCMPlacePdf.h"			// KCMSetPdfPlacePage / KCMPdfPlacePrefsRestorer - moved out on 2026-10-14 for the PDF documents
-#include "KCMPdfDoc.h"				// KCMIsPdfDoc - two PDFs have no tables (2026-10-14)
+#include "KCMPlacePdf.h"			// KCMSetPdfPlacePage / KCMPdfPlacePrefsRestorer - the report places its own PDF's pages
+#include "KCMTrackRead.h"			// KCMTrackRead::Build - the Track mode's own reader, for the Tracked Changes table (2026-10-27)
+#include "KCMTrackList.h"			// what it read: authors -> stories -> changes
+#include "KCMTrackText.h"			// a change's sign, time and author in the words the panel shows them in
 
 namespace
 {
@@ -374,7 +378,7 @@ bool16 ExportPagesToPDF(IDataBase* db, const std::vector<UID>& pages, const IDFi
 }
 
 // (SetPlacePage and PlacePrefsRestorer stood here until 2026-10-14. They are KCMPlacePdf.h's now - KCMSetPdfPlacePage and
-//  KCMPdfPlacePrefsRestorer - because the PDF comparison places PDF pages too and must give the settings back the same way.)
+//  KCMPdfPlacePrefsRestorer - moved out when the PDF comparison (removed 2026-10-27) placed PDF pages too.)
 
 // ---- the Story detail, borrowed ------------------------------------------------------------------
 
@@ -447,6 +451,40 @@ private:
 	PMString	fWhyNot;
 	ResourceLoan(const ResourceLoan&);
 	ResourceLoan& operator=(const ResourceLoan&);
+};
+
+// ---- the Target's tracked changes, borrowed ------------------------------------------------------------
+
+/** Reads the Target's tracked changes for the fourth table - the Track mode's own reader, into its own list
+    (KCMTrackRead::Build) - and empties the list again on the way out (2026-10-27, the author's decision of 2026-10-11).
+    ★THE TABLE IS THE TARGET'S RECORDS ALONE: no Source is read (none is, by the reader, since the copy "Compare with
+      Tracked Changes..." made went - 2026-10-27).
+    ⚠EMPTIED, NOT PUT BACK - StoryDetailLoan's reason: nothing is started while the report is made, and Stop empties the
+      list (KCMTrackList::Clear, its counter history with it). The panel is not told, for the same reason as there. */
+class TrackLoan
+{
+public:
+	explicit TrackLoan(IDataBase* targetDB)
+		: fBuilt(kFalse), fCancelled(kFalse)
+	{
+		if (targetDB == nil)
+			return;
+		fBuilt = kTrue;
+		bool16 cancelled = kFalse;
+		KCMTrackRead::Build(targetDB, &cancelled);
+		fCancelled = cancelled;
+	}
+	~TrackLoan()
+	{
+		if (fBuilt)
+			KCMTrackList::Clear();
+	}
+	bool16 WasCancelled() const { return fCancelled; }
+private:
+	bool16	fBuilt;
+	bool16	fCancelled;
+	TrackLoan(const TrackLoan&);
+	TrackLoan& operator=(const TrackLoan&);
 };
 
 // ---- the report's own comparison ---------------------------------------------------------------------
@@ -734,9 +772,88 @@ void BuildResourceRows(IDataBase* targetDB, std::vector<KCMReportRow>& out)
 	}
 }
 
+/** The Target's tracked changes as table rows (2026-10-27, the author's decision of 2026-10-11): an author's row, under
+    it a row per story - its ID, its page and first words, as the Story table heads a story - and under that a row per
+    change: its date and time in the label column, its sign as the panel's, the deleted words on the Before side and the
+    inserted words on the After side, each in the three pieces the panel shows (the context pale). No author colour: the
+    colour is the screen's. outAuthors / outChanges count what the list holds, the rows past the cap included. */
+void BuildTrackRows(IDataBase* targetDB, std::vector<KCMReportRow>& out, int32& outAuthors, int32& outChanges)
+{
+	out.clear();
+	outAuthors = 0;
+	outChanges = KCMTrackList::GetTotalChangeCount();
+	bool16 capped = kFalse;
+	const int32 authors = KCMTrackList::GetAuthorCount();
+	for (int32 a = 0; a < authors; ++a)
+	{
+		const KCMTrackAuthor* author = KCMTrackList::GetAuthor(a);
+		if (author == nil || author->fRowCount <= 0)
+			continue;
+		++outAuthors;
+		if (capped)
+			continue;		// counted, not written
+		KCMReportRow who;
+		who.fHeading = kTrue;
+		who.fLeft.fMid = KCMTrackText::AuthorName(author->fName);
+		out.push_back(who);
+		for (int32 i = author->fFirstRow; i < author->fFirstRow + author->fRowCount && !capped; ++i)
+		{
+			const KCMTrackRow* row = KCMTrackList::GetRow(i);
+			if (row == nil)
+				continue;
+			KCMReportRow story;
+			story.fHeading = kTrue;
+			story.fLabel.AppendNumber(static_cast<int32>(row->fRow.fStoryUID.Get()));
+			story.fLabel.SetTranslatable(kFalse);
+			story.fSign = KCMReportSign::NotEqual();
+			PMString& h = story.fLeft.fMid;
+			h.SetTranslatable(kFalse);
+			h.Append("p.");
+			h.Append(PageLabel(targetDB, row->fRow.fPageUID));
+			h.Append("  ");
+			h.Append(KCMStoryList::RowTextForTypesetting(row->fRow.fText));
+			out.push_back(story);
+			for (size_t c = 0; c < row->fChanges.size(); ++c)
+			{
+				const KCMTrackChange& tc = row->fChanges[c];
+				const KCMStoryChange& ch = tc.fChange;
+				KCMReportRow r;
+				r.fLabel = KCMTrackText::TimeLabel(tc.fTime);
+				if (tc.fHidden)
+					r.fLabel.Append(" (hidden)");		// in hidden conditional text - the panel says "Hidden"
+				r.fLabel.SetTranslatable(kFalse);
+				r.fSign = KCMTrackText::KindSign(tc.fKind);
+				// fOtherText* is the text before the change (a deletion's words), fText* the text now (an insertion's).
+				r.fLeft.fPre   = ch.fOtherTextPre;
+				r.fLeft.fMid   = ch.fOtherText;
+				r.fLeft.fPost  = ch.fOtherTextPost;
+				r.fRight.fPre  = ch.fTextPre;
+				r.fRight.fMid  = ch.fText;
+				r.fRight.fPost = ch.fTextPost;
+				// An empty middle on one side is a PLACE - the words were typed in or taken out here - and a bar marks
+				// it, as the Story table does (BuildStoryRows) and the panel's caret does.
+				if (r.fLeft.fMid.IsEmpty() && !r.fRight.fMid.IsEmpty())  r.fLeft.fMid = Ascii("|");
+				if (r.fRight.fMid.IsEmpty() && !r.fLeft.fMid.IsEmpty()) r.fRight.fMid = Ascii("|");
+				out.push_back(r);
+				if (static_cast<int32>(out.size()) >= kMaxTableRows)
+				{
+					capped = kTrue;
+					break;
+				}
+			}
+		}
+	}
+	if (capped)
+	{
+		KCMReportRow more;
+		more.fLeft.fMid = Ascii("... (the table stops here)");
+		out.push_back(more);
+	}
+}
+
 // ---- the pages ---------------------------------------------------------------------------------
 
-/** Lay the report out: the first page, the picture pages, the Story table, the Resources table.
+/** Lay the report out: the first page, the picture pages, the Story table, the Resources table, the Tracked Changes table.
     Every interface on the report document is released when this returns; the caller then
     exports and closes it. */
 bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB,
@@ -744,6 +861,7 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 				   const PMReal& pageW, const PMReal& pageH, const PMString& sourceName,
 				   const std::vector<KCMReportRow>& storyRows, const PMString& storyHeading,
 				   const std::vector<KCMReportRow>& resourceRows, const PMString& resourceHeading,
+				   const std::vector<KCMReportRow>& trackRows, const PMString& trackHeading,
 				   KCMDeferredProgressBar& bar, int32& units, PMString& why)
 {
 	SDKLayoutHelper helper;
@@ -843,7 +961,7 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 		}
 	}
 
-	// ---- the Story table, then the Resources table ----------------------------------------------
+	// ---- the Story table, the Resources table, the Tracked Changes table ------------------------
 	int32 next = static_cast<int32>(pairs.size()) + 1;
 	// ⚠One unit per TABLE, not per row: a table is written in one call that flows its own pages, so
 	//   there is no safe point inside it to step or to ask about a cancel.
@@ -862,6 +980,16 @@ bool16 BuildReport(IDataBase* reportDB, IDataBase* targetDB, IDataBase* sourceDB
 		return kFalse;
 	}
 	if (!KCMReportWriteTable(reportDB, next, resourceHeading, Ascii("Kind"), resourceRows, next, why))
+		return kFalse;
+	// ★The fourth (2026-10-27): its label column holds a story's ID on a story row and a change's date and time on a
+	//   change row - the author's "the change row's label column = date-time" (2026-10-11) - so the column says both.
+	bar.Step(units++, Ascii("Tracked changes table"));
+	if (bar.WasCancelled())
+	{
+		why = Ascii("cancelled");
+		return kFalse;
+	}
+	if (!KCMReportWriteTable(reportDB, next, trackHeading, Ascii("ID / Time"), trackRows, next, why))
 		return kFalse;
 
 	return kTrue;		// the place preferences go back as restorePlace leaves scope
@@ -1009,23 +1137,10 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	std::vector<Pair> pairs;
 	CollectPairs(targetDB, sourceDB, pairs);
 
-	// ---- the two tables' rows, read while the borrowed results stand --------------------------
-	// (Both loans give back on leaving this block, before any document is exported or closed.)
-	std::vector<KCMReportRow> storyRows, resourceRows;
-	PMString storyHeading, resourceHeading;
-	if (KCMIsPdfDoc(targetDB) || KCMIsPdfDoc(sourceDB))
-	{
-		// ★A PDF HAS NO STORIES AND NO DEFINITIONS OF ITS OWN (2026-10-14, design 3.7 / export check 3.7): its document is KCM's, each
-		//   page a placed PDF. The pictures are the report; each table says in one row why it is empty.
-		KCMReportRow r;
-		r.fLeft.fMid = Ascii((KCMIsPdfDoc(targetDB) && KCMIsPdfDoc(sourceDB)) ? "Not compared - the two ends are PDFs."
-																			   : "Not compared - one end is a PDF.");
-		storyRows.push_back(r);
-		resourceRows.push_back(r);
-		storyHeading = Ascii("Story Changes");
-		resourceHeading = Ascii("Resources Changes");
-	}
-	else
+	// ---- the three tables' rows, read while the borrowed results stand ------------------------
+	// (The three loans give back on leaving this block, before any document is exported or closed.)
+	std::vector<KCMReportRow> storyRows, resourceRows, trackRows;
+	PMString storyHeading, resourceHeading, trackHeading;
 	{
 		// (Built in every mode since 2026-10-11 - nothing is started, so no mode is keeping a list that
 		//  the loan could take apart. Until then only the modes that keep none were built for; the Story
@@ -1055,6 +1170,29 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 			KCMResourceStore::GetSummary(summary);
 			resourceHeading.Append(summary);
 		}
+
+		// ★THE FOURTH TABLE (2026-10-27, the author's decision of 2026-10-11): the Target's tracked changes, in every mode;
+		//   "(none)" under a bare heading when there are none (KCMReportWriteTable writes it for empty rows).
+		TrackLoan trackLoan(targetDB);
+		if (trackLoan.WasCancelled())
+		{
+			KCMReportRow r;
+			r.fLeft.fMid = Ascii("(the reading of the tracked changes was cancelled)");
+			trackRows.push_back(r);
+			trackHeading = Ascii("Tracked Changes (cancelled)");
+		}
+		else
+		{
+			int32 authors = 0, changes = 0;
+			BuildTrackRows(targetDB, trackRows, authors, changes);
+			trackHeading = Ascii("Tracked Changes");
+			if (changes > 0)
+			{
+				trackHeading.Append(": ");
+				trackHeading.AppendNumber(authors); trackHeading.Append(authors == 1 ? " author, " : " authors, ");
+				trackHeading.AppendNumber(changes); trackHeading.Append(changes == 1 ? " change" : " changes");
+			}
+		}
 	}
 
 	// The export orders (and so the PDF page numbers): every pair's Source page, every pair's
@@ -1083,8 +1221,8 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	}
 
 	// ---- the progress bar, from here to the end ---------------------------------------------
-	// ★★**It covers the PDF work only, and that is the whole of the design.** The two loans above
-	//   raise a bar of their own (the Story comparison's), and **two KCMDeferredProgressBars must
+	// ★★**It covers the PDF work only, and that is the whole of the design.** The loans above
+	//   raise bars of their own (the Story comparison's, the tracked changes' reading), and **two KCMDeferredProgressBars must
 	//   not be alive at once**: the second one's bar is refused registration and, worse, the first
 	//   one's Cancel stops being readable (KCMProgressBar.h's warning, measured 2026-09-05). So this
 	//   one is created only after those loans have given back - the reader sees at most two bars in
@@ -1101,11 +1239,11 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	//     two PDFs and builds a document. It shows at once instead.
 	//   ⚠It will not MOVE during that first export - there is no safe point inside ExportPagesToPDF
 	//     to step from - but "something is running, and here is its name" is what was missing.
-	// Units: the Before export, the After export, the report document, one per report page, the two
+	// Units: the Before export, the After export, the report document, one per report page, the three
 	//   tables, and the final write.
 	PMString barTitle(Ascii("Export Before/After PDF Report"));
 	barTitle.SetTranslatable(kFalse);
-	KCMDeferredProgressBar bar(barTitle, static_cast<int32>(pairs.size()) + 5, 0 /*delayMs: show at once*/);
+	KCMDeferredProgressBar bar(barTitle, static_cast<int32>(pairs.size()) + 6, 0 /*delayMs: show at once*/);
 	int32 units = 0;
 
 	// ---- the two sides, into the report's own folder ------------------------------------------
@@ -1178,7 +1316,7 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	}
 	if (ok)
 		ok = BuildReport(reportDoc.GetDataBase(), targetDB, sourceDB, pairs, beforePDF, afterPDF, pageW, pageH, sourceName,
-						 storyRows, storyHeading, resourceRows, resourceHeading, bar, units, why);
+						 storyRows, storyHeading, resourceRows, resourceHeading, trackRows, trackHeading, bar, units, why);
 	int32 pageCount = 0;
 	if (ok)
 	{

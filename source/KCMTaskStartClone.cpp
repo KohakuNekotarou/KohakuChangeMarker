@@ -32,8 +32,6 @@
 #include "KCMResourceSnapshot.h"	// KCMReadResourceList - the definitions, read from the LIVE document
 #include "KCMStoryMarker.h"			// ForgetClosedDocs - the Story mode's marks let go of it before the delete
 #include "KCMModelNotify.h"			// KCMSayStatus
-#include "KCMPdfDoc.h"				// KCMIsPdfDoc - a PDF document is refused here (2026-10-14)
-#include "IKCMCompareFacade.h"		// the refusal's words, which the UI says too
 #include "KCMStoryTextImport.h"		// KCMClearImportRefusals - the import's "!" rows go with its copy
 
 namespace {
@@ -169,6 +167,11 @@ bool16 KCMImportCloneHasStory(UID story)
 	return (std::find(gImportStories.begin(), gImportStories.end(), story) != gImportStories.end()) ? kTrue : kFalse;
 }
 
+bool16 KCMIsImportPair(IDataBase* targetDB, IDataBase* sourceDB)
+{
+	return (KCMIsImportClone(sourceDB) && targetDB != nil && targetDB == gSource) ? kTrue : kFalse;
+}
+
 namespace {
 
 bool16 TakeClone(bool16 forImport, const PMString& importLabel, PMString& outWhyNot)
@@ -181,13 +184,6 @@ bool16 TakeClone(bool16 forImport, const PMString& importLabel, PMString& outWhy
 	if (docDB == nil)
 	{
 		outWhyNot = "Task Start needs a document to take";
-		return kFalse;
-	}
-	// ★A PDF document is refused, as Task Start (Save)... refuses it (KCMTaskStartSave.cpp says why).
-	if (KCMIsPdfDoc(docDB))
-	{
-		outWhyNot = kKCMPdfTaskStartRefusal;
-		outWhyNot.SetTranslatable(kFalse);
 		return kFalse;
 	}
 

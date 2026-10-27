@@ -970,6 +970,13 @@ namespace KCMStoryList
 		reading cannot be made, and the counters' answer stands. */
 	KCMEqualState EqualStateOf(int32 nth, const KCMEqualRecord& record, IDataBase* targetDB);
 
+	/** ★Whether story row `nth` reads "=" itself (2026-10-26 night - IKCMStoryEditsFacade::IsEveryChangeEqual): no refusal,
+		at least one entry, and every entry of the merged list a record placed for the Source - as ONE MergedOrder
+		reconciles them against the armed Target now (a stale record sits out of the list; a record shown live is undone
+		or put back). The same answer as asking GetChange of each child for fReplaced - ★which the tree did until then, and
+		each GetChange ran MergedOrder twice (GetMergedChange, EqualAt): 2n + 1 merges of a row of n "=" on every update. */
+	bool16 EveryChangeEqual(int32 nth);
+
 	/** Whether the record whose fLive is the twin of `live` (the same what, kind and live range) is on row `nth` and
 		Standing - the "=" the reader will see. kFalse when there is no such record any more (it read as not the
 		Source's and was dropped) or it is not Standing. ★Asked by Restore from Source of a mark right after it

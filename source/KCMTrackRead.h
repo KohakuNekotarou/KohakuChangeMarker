@@ -25,11 +25,12 @@ struct KCMTrackChange;
 
 namespace KCMTrackRead
 {
-	/** Read targetDB's tracked changes into KCMTrackList, replacing what it held. When sourceDB is the copy
-		"Compare with Tracked Changes..." made from targetDB (KCMIsTrackOriginalOf), each change's Source range
-		is computed and checked against that copy; otherwise it is (0,0) - the story's start. Main thread.
-		@return the number of changes; -1 when the progress bar's Cancel was pressed (*outCancelled kTrue). */
-	int32	Build(IDataBase* targetDB, IDataBase* sourceDB, bool16* outCancelled);
+	/** Read targetDB's tracked changes into KCMTrackList, replacing what it held - only when the reading finishes. Each
+		change's Source range is (0,0): there is no Source (2026-10-27 - until then a copy "Compare with Tracked Changes..."
+		saved with every change rejected, read here to place each change in the original). Main thread.
+		@return the number of changes; -1 when the progress bar's Cancel was pressed (*outCancelled kTrue) - the list is
+		then the one from before, and a caller with a listing up ends it (KCMStopForCancelledReread). */
+	int32	Build(IDataBase* targetDB, bool16* outCancelled);
 
 	/** Is the change still in the document: a record of the same author, kind and time in its story?
 		An accept, a reject or an undo since the read leaves none. */

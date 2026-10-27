@@ -18,6 +18,7 @@
 #include "UIDRef.h"
 
 #include "KCMPageImport.h"
+#include "KCMDiag.h"				// KCM_DIAG_FAULT("page-whole-unplaced") - WholeStoryAt's other refusals, measured (test builds only)
 #include "KCMPageExport.h"			// KCMReadPageStoryFacts / KCMPagePartHoldsTableOrNote - the export's own reading
 #include "KCMPageSplice.h"
 #include "KCMStoryDocx.h"			// SettleForThisFormat - the shape a story file reads back in
@@ -93,9 +94,13 @@ bool16 MatchAt(ITextModel* model, const KCMPageStoryFacts& facts, int32 start, i
 /** The story's whole body as a box's place (2026-10-26 - a box that is its whole story, the header's B): from its start to
 	its last paragraph's return - and no fingerprint: what InDesign changed since the export is what the comparison is to
 	show. ★Its tables and footnotes go with it (2026-10-26 evening); an endnote's marker does not (asked of the model, as
-	MatchAt asks). kFalse when the body cannot be placed or holds an endnote's marker. */
-bool16 WholeStoryAt(ITextModel* model, const KCMPageStoryFacts& facts, size_t which, Matched& out)
+	MatchAt asks). kFalse when the body cannot be placed or holds an endnote's marker - and `outWhy` says which (2026-10-26
+	night: the caller called every kFalse an endnote, the deferred minor of the 10-26 noon final review). */
+bool16 WholeStoryAt(ITextModel* model, const KCMPageStoryFacts& facts, size_t which, Matched& out, const char*& outWhy)
 {
+	// The story's reading and its text disagree (no paragraph, a return past the text, a place not found): the sentence of a
+	// story the reading itself refuses, as the caller says it a step before.
+	outWhy = "the story cannot be read the way the export reads it";
 	if (facts.fParas.empty())
 		return kFalse;
 	const int32 start = 0;
@@ -104,10 +109,16 @@ bool16 WholeStoryAt(ITextModel* model, const KCMPageStoryFacts& facts, size_t wh
 	if (end < start || end > model->TotalLength())
 		return kFalse;
 	if (KCMPagePartHoldsEndnote(model, start, end - start))
+	{
+		outWhy = "the story holds an endnote now - export it with Export Story Text...";
 		return kFalse;
+	}
 	KCMPageSplice::Place from;
 	KCMPageSplice::Place to;
-	if (!KCMPageSplice::PlaceOfIndex(facts.fParas, facts.fAttrs, facts.fStarts, start, from)
+	// (the fault switch page-whole-unplaced, a test build's - KCMDiag.h: no place found, as a reading unlike the export's
+	//  would give - table-move-pages PG12)
+	if (KCM_DIAG_FAULT("page-whole-unplaced")
+		|| !KCMPageSplice::PlaceOfIndex(facts.fParas, facts.fAttrs, facts.fStarts, start, from)
 		|| !KCMPageSplice::PlaceOfEnd(facts.fParas, facts.fAttrs, facts.fStarts, start, end, to))
 		return kFalse;
 	out.fBox = which;
@@ -122,12 +133,15 @@ bool16 WholeStoryAt(ITextModel* model, const KCMPageStoryFacts& facts, size_t wh
 }	// anonymous namespace
 
 void KCMSpliceBoxesIntoSet(IDataBase* copyDB, IDataBase* documentDB, KCMStoryTextSet& inOutSet,
-						   std::vector<KCMImportRefusal>& outRefusals, int32& outBoxesIn, int32& outStoriesIn)
+						   std::vector<KCMImportRefusal>& outRefusals, int32& outBoxesIn, int32& outStoriesIn,
+						   int32& outBoxesFromOriginal)
 {
 	outRefusals.clear();
 	outBoxesIn = 0;
 	outStoriesIn = 0;
+	outBoxesFromOriginal = 0;
 	const std::vector<KCMPageBoxEdit> boxes = inOutSet.fBoxes;
+	std::vector<bool16> fromOriginal(boxes.size(), kFalse);	// a box whose file names only this document's original
 	inOutSet.fBoxes.clear();
 	if (boxes.empty())
 		return;
@@ -173,10 +187,20 @@ void KCMSpliceBoxesIntoSet(IDataBase* copyDB, IDataBase* documentDB, KCMStoryTex
 				Refuse(boxes[mine[i]], boxes[mine[i]].fWhyNot, outRefusals);		// the file itself says so
 			// ★ANOTHER DOCUMENT'S FILE (2026-10-26 - the header): its uids can be this document's, and an edited box is
 			//   compared now (below), so the ids decide. A file of 2026-10-25 names no document and is let through as before.
-			else if (!KCMDocumentIdsMatch(documentDB, boxes[mine[i]].fDocumentId, boxes[mine[i]].fOriginalDocumentId))
-				Refuse(boxes[mine[i]], "this page file was exported from another document", outRefusals);
+			//   ★One that names only this document's ORIGINAL goes in, marked: the import says so (2026-10-26 night, the
+			//   author's choice 3 - a Save As keeps the original's id, and so does every other document of that original).
 			else
-				live.push_back(mine[i]);
+			{
+				const KCMIdsMatch ids = KCMDocumentIdsMatch(documentDB, boxes[mine[i]].fDocumentId,
+															boxes[mine[i]].fOriginalDocumentId);
+				if (ids == kKCMIdsOther)
+					Refuse(boxes[mine[i]], "this page file was exported from another document", outRefusals);
+				else
+				{
+					live.push_back(mine[i]);
+					fromOriginal[mine[i]] = (ids == kKCMIdsOriginal) ? kTrue : kFalse;
+				}
+			}
 		}
 		if (live.empty())
 			continue;
@@ -224,8 +248,8 @@ void KCMSpliceBoxesIntoSet(IDataBase* copyDB, IDataBase* documentDB, KCMStoryTex
 					why = "the box's frame is not this story's any more - export the page again";
 				else if (!mc->GetIsOnlyMCF())
 					why = "the frame was threaded after the export - export its story with Export Story Text...";
-				else if (!(found = WholeStoryAt(model, facts, live[i], m)))
-					why = "the story holds an endnote now - export it with Export Story Text...";
+				else
+					found = WholeStoryAt(model, facts, live[i], m, why);	// why: an endnote now, or the story unreadable
 			}
 			else
 			{
@@ -275,6 +299,7 @@ void KCMSpliceBoxesIntoSet(IDataBase* copyDB, IDataBase* documentDB, KCMStoryTex
 		}
 		KCMStoryShape::Story whole = facts.fShape;
 		int32 in = 0;
+		int32 inFromOriginal = 0;
 		PMString fileName;
 		// ★A WHOLE BOX IS THE STORY (2026-10-26 evening): its body, its tables and its footnotes as Word holds them - the
 		//   direction the document's (a box carries none). Alone by now: it overlaps any other box of its story. ⚠Every
@@ -287,6 +312,7 @@ void KCMSpliceBoxesIntoSet(IDataBase* copyDB, IDataBase* documentDB, KCMStoryTex
 			whole = box.fContent;
 			whole.fVertical = facts.fShape.fVertical;
 			in = 1;
+			inFromOriginal = fromOriginal[going[0].fBox] ? 1 : 0;
 			fileName = box.fFileName;
 		}
 		for (size_t i = 0; !asWhole && i < going.size(); ++i)
@@ -299,6 +325,8 @@ void KCMSpliceBoxesIntoSet(IDataBase* copyDB, IDataBase* documentDB, KCMStoryTex
 				continue;
 			}
 			++in;
+			if (fromOriginal[going[i].fBox])
+				++inFromOriginal;
 			fileName = box.fFileName;
 		}
 		if (in == 0)
@@ -310,6 +338,7 @@ void KCMSpliceBoxesIntoSet(IDataBase* copyDB, IDataBase* documentDB, KCMStoryTex
 		inOutSet.fStories.push_back(whole);
 		inOutSet.fFileNames.push_back(fileName);
 		outBoxesIn += in;
+		outBoxesFromOriginal += inFromOriginal;
 		++outStoriesIn;
 	}
 }

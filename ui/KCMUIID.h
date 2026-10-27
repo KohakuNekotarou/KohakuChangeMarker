@@ -474,7 +474,7 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupTaskStartActionID, kKCMUIPrefix + 59)	// �
 DECLARE_PMID(kActionIDSpace, kKCMPopupExportStoryTextActionID, kKCMUIPrefix + 70)	// ★"Export Story Text..." on the panel flyout (a plain command, 2026-09-15), directly under Task Start: every story of the active document is written as one **Word document (.docx)** in a dated folder under one the reader picks, for editing in Word and importing again. **It only reads** - nothing is written into the document, and the walk is wrapped in IDataBase::SaveRestoreModifiedState so it is not even dirtied. ★Live whenever there is an active document (facade GetActiveDocDB). ⚠It borrowed CanTakeTaskStart for this until 2026-09-21, when the two stopped being the same question - Task Start copies the chosen Target when there is one. ⚠**IT WROTE .html UNTIL 2026-09-21** and a second item (+79) wrote the .docx; the HTML road was retired on the user's word ("Word format only") and this item took the one spelling left. Facade ExportStoryText; the work is KCMStoryTextExport.cpp and the format is KCMStoryDocx.cpp on KCMStoryShape.cpp (pure functions, tested outside InDesign in work/kcm-storydocx-test)
 // ⛔**+80 IS RETIRED** (2026-09-21): it was "Open Task Start as IDML", and it went with the origin itself. By then it could not be pressed at all - its one condition was HasOrigin, which nothing had made true since Task Start began saving a copy to a file. **The number is never reused** (the rule ActionID +38 set: a reader's .indk stores a shortcut as a plain number).
 DECLARE_PMID(kActionIDSpace, kKCMPopupImportStoryTextActionID, kKCMUIPrefix + 71)	// ★"Import Story Text..." on the panel flyout (a plain command, 2026-09-15), under Export: the reader picks the edited story FILES (a .docx written by Export Story Text; the file dialog shows Word's files first, 2026-09-25), a Task Start in memory of the task document is taken (KCMTakeImportClone), the files' words go into THAT COPY, and the Story comparison starts against it - the rows say what the document would become, and Apply puts them in (2026-10-24, adopted 2026-10-25). The document is not changed. ★Live with a document to take the copy of (CanTakeTaskStartClone), a comparison running too (the take stops it first). Facade ImportStoryTextAsSource; the work is KCMStoryTextImport.cpp. ⛔From 2026-09-19 to 2026-10-25 the words went into the DOCUMENT against a Task Start saved to a file (facade ImportStoryText, KCMTakeTaskStartCopy) - retired with the tidy
-DECLARE_PMID(kActionIDSpace, kKCMCompareTrackedActionID, kKCMUIPrefix + 86)	// ★"Compare with Tracked Changes..." on the panel flyout (2026-10-05): the Word import's road for the Track mode - a save dialog, a copy with every change rejected as the Source, and the Track comparison started
+DECLARE_PMID(kActionIDSpace, kKCMCompareTrackedActionID, kKCMUIPrefix + 86)	// ★"Compare with Tracked Changes" on the panel flyout (2026-10-05): the Target's tracked changes listed. ★Since 2026-10-27 the only way into Track (the Compare mode item +87 went), and with no copy - it was the Word import's road until then: a save dialog, a copy with every change rejected as the Source, and the Track comparison started
 // ⛔**+82 IS RETIRED** (2026-10-25): "Reject This Import Change" on a Story Edits CHANGE row (2026-09-24, stage 2 A) - it rejected the
 //   import's tracked changes over the row, and went with the import that wrote them into the document. Never reused.
 DECLARE_PMID(kActionIDSpace, kKCMChangeRowRestoreAttrActionID, kKCMUIPrefix + 83)	// ★"Restore from Source" on a Story Edits CHANGE row that is a ruby / kenten / warichu / tate-chu-yoko change (2026-09-24, stage 2 B): the mark over those characters is made what the Source document has, read from the Source story itself. +83 was the lowest action slot never used, counted (the +82 note says how).
@@ -497,10 +497,14 @@ DECLARE_PMID(kActionIDSpace, kKCMChangeRowMatchTableActionID, kKCMUIPrefix + 85)
 // ⛔**+79 IS RETIRED** (2026-09-21): it was "Export Story Text as Word...", added 2026-09-19 beside "Export Story Text..." so that the same stories could be written in the OTHER spelling (.docx rather than .html). The HTML road went on the user's word ("Word format only"), so +70 - the item the public version already has, and the one a reader may have a shortcut on - is the one that stayed, and it writes the .docx. **Never reused.**
 
 DECLARE_PMID(kActionIDSpace, kKCMPopupModeResourcesActionID, kKCMUIPrefix + 57)	// ★"Compare mode > Resources Changes" on the flyout (2026-09-09). The third mode: export each document as XML and compare the DEFINITIONS - styles, swatches, layers - so that a change to something nobody has applied is reported. It moves no pixel and touches no word, which is why neither of the other two modes can see it. Exclusive with Pixel and Story, the selected one carrying the check (kCustomEnabling + kSelectedAction). KCMActionComponent.cpp
-DECLARE_PMID(kActionIDSpace, kKCMPopupModeTrackActionID, kKCMUIPrefix + 87)	// ★"Compare mode > Track Changes" on the flyout (2026-10-05): the Target's own tracked changes are the older version (design docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md). (+86 is "Compare with Tracked Changes...", Task 6 of the plan.)
+// ⛔**+87 IS RETIRED AND MUST NOT BE REUSED** (2026-10-27): it was "Compare mode > Track Changes" on the flyout (2026-10-05,
+//   docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md). The author: "not under Compare mode - Compare with
+//   Tracked Changes alone" (+86; docs/superpowers/specs/2026-10-27-kcm-track-records-only-design.md). A reader may have bound
+//   a key to it, and a reused number would answer that key with another item (the rule +38 set).
 DECLARE_PMID(kActionIDSpace, kKCMPopupTaskStartCloneActionID, kKCMUIPrefix + 88)	// ★"Task Start" on the panel flyout (2026-10-13): the document's state is kept IN MEMORY (a database clone - KCMTaskStartClone.h) and chosen as the Source - no dialog, no file, nothing started. Live whenever there is a document to take (facade CanTakeTaskStartClone - the question "Task Start (Save)..." asks); pressing it while comparing stops that comparison first. ⚠Every word the reader sees says "kept in memory", never "clone" (the user's decision). The item that saves a copy (+59) became "Task Start (Save)..." the same day.
-DECLARE_PMID(kActionIDSpace, kKCMPopupSetPdfTargetActionID, kKCMUIPrefix + 89)	// ★"Set PDF as Target..." on the panel flyout (2026-10-14, the PDF comparison): a PDF the reader picks becomes the Target - a FILE choice; Start makes a document of it (KCMPdfDoc.h). Live while nothing is compared, with or without a document open. +89 and +90 were the lowest action slots never used, counted on every branch that day.
-DECLARE_PMID(kActionIDSpace, kKCMPopupSetPdfSourceActionID, kKCMUIPrefix + 90)	// ★"Set PDF as Source..." - the same for the Source (the older PDF)
+// ⛔**+89 AND +90 ARE RETIRED AND MUST NOT BE REUSED** (2026-10-27): they were "Set PDF as Target..." and "Set PDF as
+//   Source..." on the panel flyout (2026-10-14, the PDF comparison - removed on the author's decision, 10-24 to 10-26). A
+//   reader may have bound a key to either, and a reused number would answer that key with another item.
 // ★(2026-10-24, the import-as-Source road - docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md) The three Apply
 //   items: live only while the Source is an import's copy (facade IsImportSource). +91..+93 were the lowest action slots never
 //   used, counted on every branch that day (the highest was +90).
@@ -788,15 +792,15 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// 
 #define kKCMCompareBooksMenuKey	kKCMStringPrefix "kKCMCompareBooksMenuKey"	// the menu name of "Compare Books" on the panel flyout (compare two books chapter by chapter)
 #define kKCMSetTargetMenuKey		kKCMStringPrefix "kKCMSetTargetMenuKey"	// ★the menu name of "Set as Target" on the panel flyout (the active document becomes the comparison's Target)
 #define kKCMSetSourceMenuKey		kKCMStringPrefix "kKCMSetSourceMenuKey"	// ★the menu name of "Set as Source" on the panel flyout (the active document becomes the older version)
-#define kKCMSetPdfTargetMenuKey	kKCMStringPrefix "kKCMSetPdfTargetMenuKey"	// ★the menu name of "Set PDF as Target..." (2026-10-14)
-#define kKCMSetPdfSourceMenuKey	kKCMStringPrefix "kKCMSetPdfSourceMenuKey"	// ★the menu name of "Set PDF as Source..." (2026-10-14)
+// (kKCMSetPdfTargetMenuKey / kKCMSetPdfSourceMenuKey - the names of "Set PDF as Target..." / "Set PDF as Source..." -
+//  went with the PDF comparison on 2026-10-27.)
 #define kKCMTaskStartMenuKey		kKCMStringPrefix "kKCMTaskStartMenuKey"	// ★the menu name of "Task Start (Save)..." on the panel flyout (a copy saved to a file becomes the Source; "Task Start" was its name until 2026-10-13)
 #define kKCMTaskStartCloneMenuKey	kKCMStringPrefix "kKCMTaskStartCloneMenuKey"	// ★the menu name of "Task Start" (kept in memory, 2026-10-13)
 // ⛔kKCMOpenOriginIdmlMenuKey went on 2026-09-21 with the item it named (ActionID +80).
 #define kKCMExportStoryTextMenuKey	kKCMStringPrefix "kKCMExportStoryTextMenuKey"	// the menu name of "Export Story Text..." on the panel flyout
 #define kKCMExportPagesMenuKey		kKCMStringPrefix "kKCMExportPagesMenuKey"	// (2026-10-25) "Export Pages to Word..." - one item on two menus. Length and character sum measured against every KCM key (work/note-scripts/2026-10-24-kcm-per-change/key_collisions_kcm.py): no other key
 #define kKCMImportStoryTextMenuKey	kKCMStringPrefix "kKCMImportStoryTextMenuKey"	// the menu name of "Import Story Text..." on the panel flyout
-#define kKCMCompareTrackedMenuKey	kKCMStringPrefix "kKCMCompareTrackedMenuKey"	// the menu name of "Compare with Tracked Changes..." (2026-10-05)
+#define kKCMCompareTrackedMenuKey	kKCMStringPrefix "kKCMCompareTrackedMenuKey"	// the menu name of "Compare with Tracked Changes" (2026-10-05; its "..." went on 2026-10-27 with the save dialog)
 #define kKCMClearChosenMenuKey	kKCMStringPrefix "kKCMClearChosenMenuKey"	// ★the menu name of "Clear Target and Source" on the panel flyout (drops both choices; the next Start falls back to the automatic rule)
 #define kKCMBookDialogTitleKey	kKCMStringPrefix "kKCMBookDialogTitleKey"	// the title of the book comparison dialog
 #define kKCMPawWordDialogTitleKey	kKCMStringPrefix "kKCMPawWordDialogTitleKey"	// the title of the paw word box
@@ -973,7 +977,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// 
 #define kKCMModePixelKey		kKCMStringPrefix "kKCMModePixelKey"	// the child item name inside "Compare mode" (= "Pixel Changes")
 #define kKCMModeStoryKey		kKCMStringPrefix "kKCMModeStoryKey"	// the child item name inside "Compare mode" (= "Story Changes")
 #define kKCMModeResourcesKey	kKCMStringPrefix "kKCMModeResourcesKey"	// the child item name inside "Compare mode" (= "Resources Changes")
-#define kKCMModeTrackKey	kKCMStringPrefix "kKCMModeTrackKey"	// the child item name inside "Compare mode" (= "Track Changes")
+// (⛔kKCMModeTrackKey - "Track Changes", the fourth child of "Compare mode" - went on 2026-10-27 with its item, ActionID +87.)
 #define kKCMTrackSectionLabelKey	kKCMStringPrefix "kKCMTrackSectionLabelKey"	// the section heading in the Track mode, "Tracked Changes" (the count is appended by C++) - 2026-10-05
 #define kKCMPrevChangeKey		kKCMStringPrefix "kKCMPrevChangeKey"	// the caption of the "< Prev" button on the panel (English everywhere)
 #define kKCMNextChangeKey		kKCMStringPrefix "kKCMNextChangeKey"	// the caption of the "Next >" button on the panel (English everywhere)
@@ -1001,14 +1005,12 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// 
 //   DoUsage reads hint / hint3 / hint4 / hint2; the Japanese side carries the section inside its
 //   kHint2 at the same seam (after Story IDs, before the books).
 #define kKCMHint4Key			kKCMStringPrefix "kKCMHint4Key"
-// ★**The fifth part (2026-10-05): the Track Changes mode** (Compare with Tracked Changes...). A key of its own for
+// ★**The fifth part (2026-10-05): the Track Changes listing** (Compare with Tracked Changes). A key of its own for
 //   the same reason as the third and fourth (each older key is near odfrc's cap). DoUsage reads hint / hint3 / hint4 /
 //   hint5 / hint2; the Japanese side carries the section inside kHint2 at the same seam (after the round trip).
 #define kKCMHint5Key			kKCMStringPrefix "kKCMHint5Key"
-// ★**The sixth part (2026-10-14): comparing PDFs** (Set PDF as Target... / Set PDF as Source...). A key of its own for the
-//   same reason as the third to fifth. DoUsage reads hint / hint3 / hint4 / hint5 / hint6 / hint2; the Japanese side carries
-//   the section inside kHint2 at the same seam (after Track Changes).
-#define kKCMHint6Key			kKCMStringPrefix "kKCMHint6Key"
+// (⛔The sixth part, kKCMHint6Key - comparing PDFs, 2026-10-14 - went with the PDF comparison on 2026-10-27. DoUsage reads
+//   hint / hint3 / hint4 / hint5 / hint2 again.)
 #define kKCMToolStringKey		kKCMStringPrefix "kKCMToolStringKey"	// the tool name in the toolbox (its tooltip). English in every locale
 #define kKCMPawToolStringKey	kKCMStringPrefix "kKCMPawToolStringKey"	// the cat-paw stamp tool's name in the flyout (its tooltip). ★English in every locale, as the line above: the jaJP string table was retired on 2026-08-05 and Japanese now comes from ui/KCMLoc.h at run time -- a tool name is not one of the strings that file carries
 
@@ -1266,7 +1268,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// 
 #define kKCMModePixelSubMenuItemPosition		1.0	// inside "Compare mode": Pixel Changes (checked when selected)
 #define kKCMModeStorySubMenuItemPosition		2.0	// inside "Compare mode": Story Changes (exclusive with Pixel)
 #define kKCMModeResourcesSubMenuItemPosition	3.0	// inside "Compare mode": Resources Changes (exclusive with the two above). ★Last of the three because it is the widest net: pixels answer "which page looks different", stories "which words changed", and this one "which definition changed" - which includes definitions nothing on any page uses
-#define kKCMModeTrackSubMenuItemPosition	4.0	// inside "Compare mode": Track Changes (exclusive with the three above). Last: it compares no second version at all - the Target's own records are the older one (2026-10-05)
+// (⛔kKCMModeTrackSubMenuItemPosition 4.0 - Track Changes inside "Compare mode", 2026-10-05 - went on 2026-10-27 with its item.)
 // -- the pair those verbs run on (2026-09-14: the user moved Task Start to the head of this group) --
 #define kKCMTaskStartCloneMenuItemPosition	9.019	// "Task Start" (kept in memory, 2026-10-13), directly above "Task Start (Save)...": the moment without a file first (the user's order)
 #define kKCMTaskStartMenuItemPosition	9.02	// "Task Start (Save)...": a copy saved to a file becomes the Source. Under "Task Start" (kept in memory) since 2026-10-13; the group that chooses the pair still begins with the two.
@@ -1275,11 +1277,10 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// 
 // ⛔**9.0215 IS FREE AGAIN** (2026-09-21): it held "Export Story Text as Word..." between the export and the import.
 #define kKCMExportPagesMenuItemPosition	9.0215	// (2026-10-25) "Export Pages to Word...", between Export Story Text... and Import Story Text...: the second way out, read back by the same Import
 #define kKCMImportStoryTextMenuItemPosition	9.022	// "Import Story Text...", directly under Export: the two halves of one round trip
-#define kKCMCompareTrackedMenuItemPosition	9.023	// "Compare with Tracked Changes...", directly under Import: the same road (a copy taken, then a comparison) - 2026-10-05
+#define kKCMCompareTrackedMenuItemPosition	9.023	// "Compare with Tracked Changes", directly under Import (2026-10-05 - then the same road, a copy taken and compared; the Target's records alone since 2026-10-27)
 #define kKCMSetTargetMenuItemPosition		9.03	// "Set as Target"
 #define kKCMSetSourceMenuItemPosition		9.04	// "Set as Source", right below its Target counterpart (the pair reads new-then-old, as the two "Always Show Marks on" toggles do)
-#define kKCMSetPdfTargetMenuItemPosition	9.041	// "Set PDF as Target..." (2026-10-14): under the two "Set as" items it stands beside - a file picked instead of the document in front
-#define kKCMSetPdfSourceMenuItemPosition	9.042	// "Set PDF as Source...", right below its Target counterpart (new-then-old, as the pair above)
+// ⛔9.041 and 9.042 went with "Set PDF as Target..." / "Set PDF as Source..." (2026-10-27). A position is not an identity, so the numbers may be used again.
 #define kKCMClearChosenMenuItemPosition	9.05	// "Clear Target and Source", directly below the items it undoes
 #define kKCMCompareBooksMenuItemPosition	9.06	// "Compare Books" (chapter by chapter), still above Sep1 so that everything which BEGINS a comparison reads as one group
 #define kKCMExportReportMenuItemPosition	9.07	// "Export Before/After PDF Report", last of the group because it writes out what the comparison found (2026-09-14: moved up from 9.535, out of the plain commands)

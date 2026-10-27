@@ -12,17 +12,21 @@
 //    3. the Story table - a two-column table, the older wording on the left and the newer on the
 //       right, context pale and the change dark, ruby and kenten set for real, note numbers as
 //       superscripts;
-//    4. the Resources table - the same two columns per differing attribute of each definition.
-//  ★Made only while nothing is started, and all three in every compare mode (2026-10-11, the
+//    4. the Resources table - the same two columns per differing attribute of each definition;
+//    5. the Tracked Changes table (2026-10-27 - the author's decision of 2026-10-11) - the Target's
+//       own tracked changes: author, story, then each change with its date and time, the deleted
+//       words on the left and the inserted words on the right; "(none)" when there are none.
+//  ★Made only while nothing is started, and all of it in every compare mode (2026-10-11, the
 //  user's decision): the report compares the pair a Start would, for itself - every page's pixels,
-//  the Story rows the Story mode's way, the Resources result - and takes it all down once it is
-//  written (KCMReport.cpp's ReportComparison / StoryDetailLoan / ResourceLoan). While a comparison
-//  runs it refuses, and the flyout greys its item.
+//  the Story rows the Story mode's way, the Resources result, the tracked changes the Track mode's
+//  way - and takes it all down once it is written (KCMReport.cpp's ReportComparison /
+//  StoryDetailLoan / ResourceLoan / TrackLoan). While a comparison runs it refuses, and the flyout
+//  greys its item.
 //
 //  HOW: both sides are exported to temporary PDFs (kPDFExportCmdBoss, the session's PDF
 //  preferences, no UI, no progress bar; the Before side with sPrintMarks forced on), a windowless
 //  report document is built (SDKLayoutHelper::CreateDocument), the PDF pages are placed side by
-//  side (kSetPDFPlacePrefsCmdBoss to pick the page, then PlaceFileInFrame), the two tables are
+//  side (kSetPDFPlacePrefsCmdBoss to pick the page, then PlaceFileInFrame), the three tables are
 //  laid out by KCMReportTable.cpp (pages appended as they overflow), the report is exported where
 //  the save dialog said, the report document is closed and the temporaries deleted. Designs:
 //  docs/superpowers/specs/2026-09-13-kcm-before-after-report-design.md and

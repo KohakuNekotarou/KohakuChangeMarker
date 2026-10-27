@@ -26,6 +26,7 @@
 #include "IDocumentUIUtils.h"	// FindPresentationForDocument - HAS this chapter a window at all?
 #include "IGlobalRecompose.h"	// ForceRecompositionToComplete - see ComposeChapter
 #include "IOpenLayoutCmdData.h"	// GetResultingPresentation - did the window actually appear?
+#include "IApplication.h"			// QueryDocumentList - the open documents (ISession's is for internal use only)
 #include "ISession.h"
 #include "IWindow.h"			// the window kOpenLayoutCmdBoss is supposed to have produced
 
@@ -277,7 +278,8 @@ bool16 OpenChapterWindowed(const IDFile& file, UIDRef& outDocRef, bool16* outWas
 
 	{
 		ISession* session = GetExecutionContextSession();
-		InterfacePtr<IDocumentList> docList(session != nil ? session->QueryDocumentList() : nil);
+		InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
+		InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
 		if (docList != nil)
 		{
 			IDocument* openDoc = docList->FindDoc(file);

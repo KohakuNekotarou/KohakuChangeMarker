@@ -41,8 +41,6 @@
 #include "KCMPairChoice.h"		// the pair this chooses
 #include "KCMCore.h"				// KCMActiveDocDB / KCMIsArmed / KCMArmedTargetDB
 #include "KCMComparisonRun.h"	// KCMStopComparison
-#include "KCMPdfDoc.h"			// KCMIsPdfDoc - a PDF document is refused here (2026-10-14)
-#include "IKCMCompareFacade.h"	// the refusal's words, which the UI says too
 
 #include <time.h>
 
@@ -109,8 +107,8 @@ void BareName(IDataBase* db, PMString& out)
 namespace {
 
 /*	The save dialog, opened ON THE DOCUMENT'S OWN FOLDER. kFalse when the reader cancelled.
-	★Shared by Task Start and "Compare with Tracked Changes..." (2026-10-05): each passes its own suggested
-	  name and title.
+	★Shared by Task Start and "Compare with Tracked Changes..." (2026-10-05 - the latter until 2026-10-27, when it
+	  stopped making a copy): each passes its own suggested name and title.
 
 	⚠★★★**NOT SDKFileSaveChooser, and the reason is one argument** (measured 2026-09-21). That
 	  helper fixes DoDialog's fourth argument, useSystemDefaultDir, at kTrue
@@ -208,7 +206,7 @@ void KCMSuggestedCopyName(IDataBase* docDB, const char* infix, PMString& out)
 	NowStamp(stamp);
 
 	out = stem;
-	out.Append(infix);			// "_TaskStart_" / "_TrackOriginal_"
+	out.Append(infix);			// "_TaskStart_" ("_TrackOriginal_" too, until 2026-10-27)
 	out.Append(stamp);
 	out.Append(".indd");
 	out.SetTranslatable(kFalse);
@@ -241,15 +239,6 @@ bool16 KCMTakeTaskStartCopy(PMString& outWhyNot)
 	if (docDB == nil)
 	{
 		outWhyNot = "Task Start needs a document to copy";
-		return kFalse;
-	}
-	// ★A PDF DOCUMENT IS NOT A DOCUMENT OF THE READER'S (2026-10-14, design 3.7): KCM made it to compare a PDF, and a Task
-	//   Start of it would compare KCM's placing against itself. A Target CHOSEN as a PDF file is not this case - the
-	//   document in front is taken then, as always (KCMTaskDocumentDB).
-	if (KCMIsPdfDoc(docDB))
-	{
-		outWhyNot = kKCMPdfTaskStartRefusal;
-		outWhyNot.SetTranslatable(kFalse);
 		return kFalse;
 	}
 	// ★A document's UIDRef is its database's root - the form KCM uses elsewhere (KCMCore.cpp).

@@ -59,6 +59,7 @@
 #include "KCMStoryStamp.h"	// kKCMStoryKindAdded - which rows have no partner to compare against
 #include "KCMTextDiff.h"
 #include "KCMOversetPoint.h"	// KCMIsTextIndexOverset - is this change's text composed anywhere
+#include "KCMDiag.h"			// KCM_DIAG_SLOW - test builds only (nothing in a shipping .pln)
 
 namespace
 {
@@ -2192,6 +2193,7 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 		item.AppendNumber(pairedCount);
 		item.SetTranslatable(kFalse);	// it holds numbers, so it is not a translatable string
 		progress.Step(done, item);		// `done` stories are read; this is also where the bar first appears, once the delay has passed
+		KCM_DIAG_SLOW("story-diff-slow", 200);	// test builds only: the bar and its Cancel within reach (KCMDiag.h)
 
 		std::vector<KCMStoryChange> changes;
 		// ⛔The uid translation went on 2026-09-21: a Task Start copy was rehydrated and its stories

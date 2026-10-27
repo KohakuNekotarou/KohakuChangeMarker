@@ -228,11 +228,13 @@ void KCMSavePanelState()
 	// ⚠**A switch, not a ternary** (2026-09-09). As `== kKCMModeStory ? "story" : "pixel"` a panel
 	//   left in the Resources mode was SAVED AS PIXEL - the setting silently changed itself the
 	//   moment it was written down.
-	switch (compare->GetCompareMode())
+	// ★THE SETTING, NOT THE RUNNING MODE (2026-10-27): saved while a Track listing is up, the file gets the mode a Stop goes
+	//   back to - Track is not a setting any more, and nothing could start it at start-up (it is "Compare with Tracked
+	//   Changes"' alone). Until that day "track" was written too.
+	switch (compare->GetCompareModeSetting())
 	{
 		case kKCMModeStory:		json += "story";		break;
 		case kKCMModeResources:	json += "resources";	break;
-		case kKCMModeTrack:		json += "track";		break;
 		default:				json += "pixel";		break;
 	}
 	json += "\"\n";
@@ -376,6 +378,9 @@ void KCMLoadPanelStateIfPresent()
 	//     Pixel".
 	//   ★**Every mode is spelled out, and none of them is the `else`.** The rule above - an unknown
 	//     spelling leaves the value alone - only holds while no branch quietly collects the leftovers.
+	//   ★"track" IS NOT READ SINCE 2026-10-27 - a file a 2.0.0 test build saved in the Track mode (the public 1.5.0 had no
+	//     Track) is left alone like any spelling this does not know: Track is "Compare with Tracked Changes"' listing, not
+	//     a setting (KCMCore.cpp).
 	const std::string mode = KCMJsonReadString(text, "compareMode");
 	if (mode == "story")
 		compare->SetCompareMode(kKCMModeStory);
@@ -383,8 +388,6 @@ void KCMLoadPanelStateIfPresent()
 		compare->SetCompareMode(kKCMModePixel);
 	else if (mode == "resources")
 		compare->SetCompareMode(kKCMModeResources);
-	else if (mode == "track")
-		compare->SetCompareMode(kKCMModeTrack);
 
 	// ★Bring the tab name into line with the restored state too. On the run called from startup
 	//   (KCMUIStartup::Startup) there is no panel yet, so it returns quietly inside and the name is

@@ -191,10 +191,13 @@ enum KCMCompareMode
 							// touch a word, so neither of the other two can report it.
 	kKCMModeTrack = 3		// ★TRACK CHANGES (2026-10-05): the Target's own tracked changes stand in for the older version -
 							// every author's records, one row each, under the author
-							// (docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md). The Source is the
-							// copy "Compare with Tracked Changes..." saved with every change rejected, there for the peek
-							// and the Source window. ⚠The VALUE 3 was Import's, retired 2026-09-20 - the note below says
-							// why it was free (the settings file never wrote it).
+							// (docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md). ★★SINCE 2026-10-27 NOT A
+							// SETTING (the author: out of the Compare mode menu, "Compare with Tracked Changes" alone, no
+							// Source document - docs/superpowers/specs/2026-10-27-kcm-track-records-only-design.md): it is
+							// what KCMGetCompareMode answers WHILE that item's listing is armed - with the Target alone -
+							// and a Stop leaves the setting as it was. (Until then the Source was a copy saved with every
+							// change rejected, for the peek and the Source window.) ⚠The VALUE 3 was Import's, retired
+							// 2026-09-20 - the note below says why it was free (the settings file never wrote it).
 
 	// ⛔**THERE WAS A FOURTH, `kKCMModeImport = 3`, AND IT IS GONE** (2026-09-20, with the
 	//   Import-mode code it belonged to). It did not answer "what is being compared" like these
@@ -237,6 +240,16 @@ inline bool16 KCMModeUsesStoryRows(KCMCompareMode mode)
 inline bool16 KCMModeDiffsStoryText(KCMCompareMode mode)
 {
 	return (mode == kKCMModeStory) ? kTrue : kFalse;
+}
+
+/** Does a comparison in this mode need a Source document? Every mode but the Track listing.
+	★2026-10-27 (the author: "Compare with Tracked Changes" alone, and no Source document made): the Track listing reads
+	the Target's own tracked-change records and nothing else, so it is armed with the Target alone. The places that refused
+	an armed pair without a Source - the Start, the Refresh, the comparison itself, the Story list's rebuild, the liveness
+	check and the Undo follower - ask THIS, and every other mode keeps the refusal. Each mode is named, as above. */
+inline bool16 KCMModeNeedsSource(KCMCompareMode mode)
+{
+	return (mode == kKCMModePixel || mode == kKCMModeStory || mode == kKCMModeResources) ? kTrue : kFalse;
 }
 
 #endif // __ODFRC__

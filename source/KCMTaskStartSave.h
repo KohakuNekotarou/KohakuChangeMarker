@@ -69,11 +69,12 @@ bool16 KCMTakeTaskStartCopy(PMString& outWhyNot);
     The document's own name without its extension, or "Untitled" when it has none to give. */
 void KCMSuggestedTaskStartName(IDataBase* docDB, PMString& out);
 
-/** The same name with another infix: "<document><infix><stamp>.indd" (2026-10-05 - "_TaskStart_", "_TrackOriginal_"). */
+/** The same name with another infix: "<document><infix><stamp>.indd" (2026-10-05 - "_TaskStart_"; "_TrackOriginal_" too
+    until 2026-10-27, when Compare with Tracked Changes stopped making a copy). */
 void KCMSuggestedCopyName(IDataBase* docDB, const char* infix, PMString& out);
 
 /** The save dialog Task Start opens - on the document's own folder, with suggestedName and title - for any copy of a
-    document (2026-10-05: "Compare with Tracked Changes..." too). kFalse when the reader cancelled.
+    document ("Compare with Tracked Changes..." opened it too, from 2026-10-05 to 2026-10-27). kFalse when the reader cancelled.
     ★Never answers with a file that is open (2026-10-05): on one it raises the dialog again, titled with the reason -
      KCMTaskStartSave.cpp says why it asks again rather than refuses. */
 bool16 KCMAskWhereToSaveCopy(IDataBase* docDB, const PMString& suggestedName, const PMString& title, IDFile& outFile);

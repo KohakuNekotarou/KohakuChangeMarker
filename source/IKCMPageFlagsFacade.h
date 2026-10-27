@@ -31,6 +31,7 @@
 							// could then see and could not link to.
 
 class UIDList;		// the Pages panel's selection, as the UI read it (2026-10-26)
+class IControlView;	// the view a paw is being placed in -- compared by the drawing side, never dereferenced (2026-10-27)
 
 class IKCMPageFlagsFacade : public IPMUnknown
 {
@@ -149,6 +150,29 @@ public:
 	//   Putting the marks back when a document opens still happens on its own, in the after-open
 	//   responder. The reasoning is in KCMPageMarksDoc.h and KCMPageMarksCmd.h.
 
+	// ---- the paw that points where it was dragged (2026-10-27) ------------------------------
+	// ⚠★★**APPENDED, AND ONLY HERE** ([[facade-vtable-slot-append-only]]): the UI half calls this facade through
+	//   its vtable, so a method put in among the ones above would move every slot after it. Both halves are
+	//   rebuilt together all the same.
+
+	/** PawStampPlaceAt with the paw's direction: degrees clockwise from straight up (0 = upright, what a click
+		places; a drag passes the way it went -- KCMPawStamp::fAngle). Everything else as PawStampPlaceAt. */
+	virtual bool16	PawStampPlaceAtAngle(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                                     int32 colour, const PMReal& baseHalf, const PMString& text,
+	                                     const PMReal& angle) = 0;
+
+	/** Is there a paw under (x, y) on that page -- what PawStampPlaceAt refuses on, asked without placing: the
+		tool asks it at the press, so a press on a paw is refused before any drag is followed. */
+	virtual bool16	PawStampIsAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                             const PMReal& baseHalf) = 0;
+
+	/** Show the paw being placed, turned to `angle`, while the button is down -- drawn on screen in `view`
+		alone and kept nowhere (KCMPawPreviewSet). Called again as the drag turns it. ⚠The caller repaints. */
+	virtual void	PawPreviewSet(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y, int32 colour,
+	                              const PMReal& angle, const IControlView* view) = 0;
+
+	/** Take the paw being placed away again (release, abort). ⚠The caller repaints. */
+	virtual void	PawPreviewClear() = 0;
 };
 
 #endif // __IKCMPageFlagsFacade_h__

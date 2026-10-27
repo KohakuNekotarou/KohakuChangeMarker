@@ -19,6 +19,7 @@
 #include "IMultiColumnTextFrame.h"	// GetTextModelUID - the text frame -> its story
 #include "INewDocCmdData.h"
 #include "IPMStream.h"
+#include "IApplication.h"			// QueryDocumentList - the open documents (ISession's is for internal use only)
 #include "ISession.h"
 #include "ISnippetImport.h"
 #include "ISpread.h"
@@ -77,7 +78,8 @@ KCMScratchDoc::~KCMScratchDoc()
 	KCMMarkRehydratedClean(db);		// ours, nothing in it to save: the close-all must not ask
 	KCMCloseRehydrated(fDoc);
 	ISession* const session = GetExecutionContextSession();
-	InterfacePtr<IDocumentList> docList(session != nil ? session->QueryDocumentList() : nil);
+	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
+	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
 	sLastClosed = (docList != nil && !KCMIsDbAlive(docList, db)) ? kTrue : kFalse;
 	fDoc = UIDRef::gNull;
 }

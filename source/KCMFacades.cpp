@@ -52,7 +52,7 @@
 #include "KCMStoryList.h"			// the Story Edits rows, and where a story begins in a document
 #include "KCMTrackList.h"			// the Track Changes mode's rows (2026-10-05) - read in that mode instead
 #include "KCMTrackRead.h"			// ...read again by a refresh, and asked whether a change is still recorded
-#include "KCMTrackOriginal.h"		// "Compare with Tracked Changes..." - the copy with every change rejected
+#include "KCMTrackStart.h"			// "Compare with Tracked Changes" - the Target's records listed, no copy (2026-10-27)
 #include "KCMTrackResolve.h"		// Accept / Reject in the Track mode (2026-10-25) - the records found again and processed
 #include "KCMStoryDiffRun.h"		// RunOne - re-comparing one row's story ("Refresh Story Comparison")
 #include "KCMOversetPoint.h"		// KCMFindOversetOutport - where the "+" of an overflow is
@@ -81,7 +81,6 @@
 #include "KCMStoryMarker.h"		// the adornment that draws it - the flash and the shutdown
 #include "IKCMResourcesFacade.h"	// the Resources mode's boundary
 #include "KCMResourceStore.h"		// ...and the model side it forwards to
-#include "KCMPdfDoc.h"				// the PDF comparison (2026-10-14)
 // ★Apply change by change, and Restore from Copy (2026-10-24 evening - design section 11 of the import-as-Source design):
 #include "KCMCopyStore.h"			// the copies Apply takes and Restore from Copy pastes back
 #include "KCMStoryRestore.h"		// KCMCreateWordsWriteCmd - the import's one write command, for one change's words
@@ -444,27 +443,27 @@ public:
 	virtual bool16		CanTakeTaskStartCopy()					{ return KCMCanTakeTaskStartCopy(); }
 	virtual bool16		TakeTaskStartCopy(PMString& outWhyNot)	{ return KCMTakeTaskStartCopy(outWhyNot); }
 
-	// ★"Compare with Tracked Changes..." (2026-10-05) - the whole road is the model's (KCMTrackOriginal.h).
-	virtual bool16	CanTakeTrackOriginalCopy()					{ return KCMCanTakeTrackOriginalCopy(); }
-	virtual bool16	TakeTrackOriginalCopy(PMString& outMessage)	{ return KCMTakeTrackOriginalCopy(nil, outMessage); }
+	// ★"Compare with Tracked Changes" (2026-10-05; the Target's records alone, no copy, since 2026-10-27) - the whole road
+	//   is the model's (KCMTrackStart.h).
+	virtual bool16	CanStartTrackChanges()						{ return KCMCanStartTrackChanges(); }
+	virtual bool16	StartTrackChanges(PMString& outMessage)		{ return KCMStartTrackChanges(outMessage); }
 
 	// ★Task Start kept in memory (2026-10-13) - the whole road is the model's (KCMTaskStartClone.h).
 	virtual bool16		CanTakeTaskStartClone()					{ return KCMCanTakeTaskStartClone(); }
 	virtual bool16		TakeTaskStartClone(PMString& outWhyNot)	{ return KCMTakeTaskStartClone(outWhyNot); }
 
-	// ★The PDF comparison (2026-10-14) - the whole road is the model's (KCMPdfDoc.h).
-	virtual bool16		ChoosePdfEnd(bool16 asTarget, const IDFile& pdf, PMString& outMessage)	{ return KCMChoosePdfEnd(asTarget, pdf, outMessage); }
-	virtual bool16		IsPdfDoc(IDataBase* db)		{ return KCMIsPdfDoc(db); }
-
-	// ★(2026-10-25 - the author: "while tracking, show on the Source line that the Track is the Source") the panel's
-	//   Source line asks. Both asked for life first: the panel asks from its Update, which runs during teardown as well
-	//   (KCMPanelObserver.cpp, KCMDocPathFromDB), and KCMIsTrackOriginalOf reads each database's file.
-	virtual bool16		IsTrackOriginalOf(IDataBase* sourceDB, IDataBase* targetDB)
+	// ⛔The PDF comparison was removed on 2026-10-27; its two virtuals stay for the vtable (IKCMCompareFacade.h) and refuse.
+	virtual bool16		ChoosePdfEnd(bool16 /*asTarget*/, const IDFile& /*pdf*/, PMString& outMessage)
 	{
-		if (sourceDB == nil || targetDB == nil || !KCMIsDocDBOpen(sourceDB) || !KCMIsDocDBOpen(targetDB))
-			return kFalse;
-		return KCMIsTrackOriginalOf(sourceDB, targetDB);
+		outMessage = PMString("The PDF comparison has been removed from Kohaku Change Marker.");
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
 	}
+	virtual bool16		IsPdfDoc(IDataBase* /*db*/)		{ return kFalse; }
+
+	// ★(2026-10-27) the mode Start compares in and Save Panel Settings writes - the one a Track listing goes back to.
+	//   (IsTrackOriginalOf stood in this last slot from 2026-10-25: the copy it named went today.)
+	virtual KCMCompareMode	GetCompareModeSetting()				{ return KCMGetCompareModeSetting(); }
 };
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)
@@ -623,7 +622,7 @@ public:
 	// on the UI side and the store on this one.
 	virtual bool16	PawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
 	                                int32 colour, const PMReal& baseHalf, const PMString& text)
-									{ return KCMPawStampPlaceAt(db, pageUID, x, y, colour, baseHalf, text); }
+									{ return KCMPawStampPlaceAt(db, pageUID, x, y, colour, baseHalf, text, PMReal(0.0)); }
 	virtual bool16	PawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
 	                               const PMReal& baseHalf)
 									{ return KCMPawStampLiftAt(db, pageUID, x, y, baseHalf); }
@@ -655,6 +654,19 @@ public:
 						KCMSayCleared("cleared paw", n);
 						return n;
 					}
+
+	// The paw that points where it was dragged (2026-10-27) -- appended to the interface, so appended here too.
+	virtual bool16	PawStampPlaceAtAngle(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                                     int32 colour, const PMReal& baseHalf, const PMString& text,
+	                                     const PMReal& angle)
+									{ return KCMPawStampPlaceAt(db, pageUID, x, y, colour, baseHalf, text, angle); }
+	virtual bool16	PawStampIsAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                             const PMReal& baseHalf)
+									{ return KCMPawStampIsAt(db, pageUID, x, y, baseHalf); }
+	virtual void	PawPreviewSet(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y, int32 colour,
+	                              const PMReal& angle, const IControlView* view)
+									{ KCMPawPreviewSet(db, pageUID, x, y, colour, angle, view); }
+	virtual void	PawPreviewClear()	{ KCMPawPreviewClear(); }
 };
 
 CREATE_PMINTERFACE(KCMPageFlagsFacade, kKCMPageFlagsFacadeImpl)
@@ -753,7 +765,9 @@ public:
 			out.fAttrKind	= 0;
 			out.fAttrKindCount = 0;
 			out.fHasTextChange = kTrue;
-			out.fSourceStoryUID = trackRow->fRow.fStoryUID;	// the Track original is a copy: the same uid (2026-10-26)
+			// No Source story: a Track listing has no Source (2026-10-27). (It was the row's own uid from 2026-10-26 - the
+			//  Track original was a copy of the Target.) kInvalidUID moves and lights nothing over there.
+			out.fSourceStoryUID = kInvalidUID;
 			return kTrue;
 		}
 		const KCMStoryRow* row = KCMStoryList::GetRow(nth);
@@ -889,7 +903,15 @@ public:
 #ifdef KCM_DIAG
 			KCMStoryFollowDiagReport(trackTargetDB, "track row refresh");	// test builds: is the Undo follower still there
 #endif
-			const int32 trackCount = KCMTrackRead::Build(trackTargetDB, KCMArmedSourceDB(), nil);
+			// ★A CANCELLED RE-READ STOPS THE LISTING (2026-10-27, the author's answer "Cancel -> Stop" - the list from before
+			//   stood until then): -1, and the status line says why (KCMStopForCancelledReread).
+			bool16 cancelled = kFalse;
+			const int32 trackCount = KCMTrackRead::Build(trackTargetDB, &cancelled);
+			if (cancelled)
+			{
+				KCMStopForCancelledReread();
+				return -1;
+			}
 			KCMNotify(kKCMStoryEditsRebuiltMessage);
 			return trackCount;
 		}
@@ -2084,7 +2106,7 @@ public:
 
 private:
 	/** Change `which` of row `nth` as Restore from Source (text) takes it: the Story mode - not the Track mode, not an
-		import's copy as the Source, not a PDF at either end - both documents open, the story paired, a TEXT change that is
+		import's copy as the Source - both documents open, the story paired, a TEXT change that is
 		not a "=" record (a record shown live - undone, or put back from its copy - is restored again, its record updated in
 		place: AddEqualGroup's twin). Reads no document: whether the words can be copied is said on the press. */
 	bool16 SourceTextChange(int32 nth, int32 which, IDataBase*& outTargetDB, Row& outRow, Change& outChange)
@@ -2092,7 +2114,7 @@ private:
 		if (KCMFacadeTrackMode() || this->IsImportSource() || !this->PairedTargetRow(nth, outTargetDB, outRow))
 			return kFalse;
 		IDataBase* const sourceDB = KCMArmedSourceDB();
-		if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB) || KCMIsPdfDoc(sourceDB) || KCMIsPdfDoc(outTargetDB))
+		if (sourceDB == nil || !KCMIsDocDBOpen(sourceDB))
 			return kFalse;
 		return (this->GetChange(nth, which, outChange) && !outChange.fReplaced && outChange.fWhat == Change::kWhatText)
 			   ? kTrue : kFalse;
@@ -2866,6 +2888,14 @@ public:
 		return this->ResolveTrack(items, named, accept, accept ? "Accept All Changes" : "Reject All Changes", outMessage);
 	}
 
+	virtual bool16	IsEveryChangeEqual(int32 nth)
+	{
+		// No "=" is recorded in the Track mode (GetChange hands its changes out with fReplaced kFalse).
+		if (KCMFacadeTrackMode())
+			return kFalse;
+		return KCMStoryList::EveryChangeEqual(nth);
+	}
+
 private:
 	/** The records change `which` of row `nth` was made of, onto `out`, with its story and its author's name.
 		@return kFalse when it is no Track change. */
@@ -2928,42 +2958,50 @@ private:
 		PMString why;
 		const int32 done = KCMTrackResolve::Run(targetDB, items, accept, gone, why);
 		const bool16 kept = this->EndStep(sequence, (done > 0) ? kTrue : kFalse);
-		KCMTrackRead::Build(targetDB, KCMArmedSourceDB(), nil);
-		KCMStoryFollowEnsureObservers(targetDB);
-		KCMNotify(kKCMStoryEditsRebuiltMessage);
+		// ★A CANCELLED RE-READ STOPS THE LISTING (2026-10-27 - RefreshRow's reason); what was done stays done, and the
+		//   sentence below says both.
+		bool16 rereadCancelled = kFalse;
+		KCMTrackRead::Build(targetDB, &rereadCancelled);
+		if (rereadCancelled)
+			KCMStopForCancelledReread();
+		else
+		{
+			KCMStoryFollowEnsureObservers(targetDB);
+			KCMNotify(kKCMStoryEditsRebuiltMessage);
+		}
+		int32 result = done;
 		if (done < 0)
 		{
 			outMessage = why;
 			outMessage.Append(" - the step was rolled back; nothing was changed");
-			outMessage.SetTranslatable(kFalse);
-			return -1;
+			result = -1;
 		}
-		if (done == 0)
-		{
+		else if (done == 0)
 			outMessage = "Nothing to do - these changes are no longer recorded (accepted, rejected or undone since the list "
 						 "was read).";
-			outMessage.SetTranslatable(kFalse);
-			return 0;
-		}
-		if (!kept)
+		else if (!kept)
 		{
 			outMessage = "The step was rolled back - nothing was changed.";
-			outMessage.SetTranslatable(kFalse);
-			return -1;
+			result = -1;
 		}
-		outMessage = accept ? "Accepted: " : "Rejected: ";
-		outMessage.AppendNumber(changes);
-		outMessage.Append((changes == 1) ? " change" : " changes");
-		if (gone > 0)
+		else
 		{
-			outMessage.Append(" (");
-			outMessage.AppendNumber(gone);
-			outMessage.Append((gone == 1) ? " record was" : " records were");
-			outMessage.Append(" no longer recorded)");
+			outMessage = accept ? "Accepted: " : "Rejected: ";
+			outMessage.AppendNumber(changes);
+			outMessage.Append((changes == 1) ? " change" : " changes");
+			if (gone > 0)
+			{
+				outMessage.Append(" (");
+				outMessage.AppendNumber(gone);
+				outMessage.Append((gone == 1) ? " record was" : " records were");
+				outMessage.Append(" no longer recorded)");
+			}
+			outMessage.Append(" - Ctrl+Z takes it back.");
 		}
-		outMessage.Append(" - Ctrl+Z takes it back.");
+		if (rereadCancelled)
+			outMessage.Append(" The list's re-read was cancelled - the Track listing stopped.");
 		outMessage.SetTranslatable(kFalse);
-		return done;
+		return result;
 	}
 };
 

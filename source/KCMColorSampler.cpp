@@ -32,7 +32,10 @@
 //   KCMColorSampler.h).
 #include "KCMPageMap.h"            // KCMMapTargetToSource / KCMBuildPairing (the exclusion pairing)
 #include "KCMColorSampler.h"
-#include "KCMPdfDoc.h"             // KCMIsPdfDoc - a PDF document is drawn at full resolution (2026-10-14)
+#include "KCMDiag.h"				// KCM_DIAG_LOG - a sample, timed (test builds only)
+#ifdef KCM_DIAG
+#include <chrono>					// steady_clock - the sample's time
+#endif
 
 #include <map>
 #include <new>						// std::nothrow (allocating the SnapshotUtilsEx)
@@ -122,6 +125,10 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 	const PMReal hp = kKCMSampleHalfPt;
 	PMRect clip(spreadPt.X() - hp, spreadPt.Y() - hp, spreadPt.X() + hp, spreadPt.Y() + hp);
 
+#ifdef KCM_DIAG
+	const std::chrono::steady_clock::time_point sampleStart = std::chrono::steady_clock::now();	// the sample, timed (test builds only)
+#endif
+
 	// Snapshot first, accessor second: scoped_ptrs go down in reverse declaration order, so the
 	// accessor is destroyed before the snapshot it came from.
 	K2::scoped_ptr<SnapshotUtilsEx> snap(new (std::nothrow) SnapshotUtilsEx(clip, PMMatrix(), pageRef, 1.0, 1.0,
@@ -154,11 +161,17 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 	//   passes kFalse: that one asks "did the printed result change", while this one answers "what
 	//   colour is the point the user clicked on", so anything visible on screen should be picked
 	//   up whether it prints or not.
+	// ⚠**What a sample costs grows with the items on the spread, not with this 2pt square** (measured
+	//   2026-10-27: about 1ms on a page of 2 items, 80 to 100ms on one of 1,700). Every item goes
+	//   through CShape::DrawHierarchy / ProcessDrawShape - fetched, a draw event dispatched - before
+	//   the clip turns it away (CShape.cpp). Draw's abortCheck, "called before each page item is
+	//   drawn" by its header, is never called on this route (counted: 0 calls for the 1,700), so a
+	//   sample cannot be cut short by it either. Drawing only the items under the point would mean
+	//   redoing the spread's own order of layers, masters and groups by hand - not done.
 	ErrorCode drew;
 	{
 		KCMRasterizingGuard rg;	// RAII: no marks are drawn into this Draw by re-entry
-		// fullRes for a PDF document only, as the comparison draws it (KCMDrawEventHandler.cpp, MakeEntry)
-		drew = snap->Draw(IShape::kPreviewMode, KCMIsPdfDoc(pageRef.GetDataBase()) ? kTrue : kFalse, 0.0 /*greek off*/, kFalse /*AA off*/);
+		drew = snap->Draw(IShape::kPreviewMode, kFalse /*fullRes*/, 0.0 /*greek off*/, kFalse /*AA off*/);
 	}
 	K2::scoped_ptr<AGMImageAccessor> acc((drew == kSuccess) ? snap->CreateAGMImageAccessor() : nil);
 
@@ -179,6 +192,11 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 		}
 	}
 	// (acc and snap are freed by their scoped_ptrs -- the accessor first.)
+#ifdef KCM_DIAG
+	KCM_DIAG_LOG("CMYK-SAMPLE ms=%lld ok=%d",
+	             (long long)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - sampleStart).count(),
+	             ok ? 1 : 0);
+#endif
 	return ok;
 }
 

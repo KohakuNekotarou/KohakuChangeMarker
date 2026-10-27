@@ -268,6 +268,13 @@ bool16		KCMGetMarkColorCyan();	// kFalse = red (the default), kTrue = cyan
 // mode" with "compare", and the start-up restore would then run a comparison too.
 KCMCompareMode	KCMGetCompareMode();
 void				KCMSetCompareMode(KCMCompareMode mode);
+// ★THE TRACK LISTING (2026-10-27 - "Compare with Tracked Changes" alone, no Source document): while it is up,
+//   KCMGetCompareMode answers kKCMModeTrack and KCMGetCompareModeSetting the reader's choice (Pixel, Story or Resources -
+//   what Start compares in, and what Save Panel Settings writes); KCMSetCompareMode(kKCMModeTrack) changes nothing. Raised
+//   by KCMStartTrackChanges (KCMTrackStart.h) alone, lowered wherever the armed state goes down (KCMCore.cpp says where).
+KCMCompareMode	KCMGetCompareModeSetting();
+void				KCMBeginTrackListing();
+void				KCMEndTrackListing();
 
 // Pages panel thumbnails are refreshed in KCMThumbnailRefresh.*: purge the changed pages' UIDs
 // through IImageCacheMgr::Purge, then ForceRedraw the Pages panel. Those two steps rebuild even

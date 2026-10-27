@@ -35,6 +35,7 @@
 #include <vector>
 
 class IDataBase;
+class IControlView;
 
 /** One cat-paw stamp.
 	@warning the position is measured from the PAGE'S TOP-LEFT in points, never in pasteboard
@@ -57,12 +58,19 @@ struct KCMPawStamp
 		kept in the page's script label with the rest of the stamp.
 		⚠Empty is the ordinary case -- a plain press has no word -- so nothing may assume one. */
 	PMString fText;
+	/** Which way the toes point, in degrees CLOCKWISE FROM STRAIGHT UP (2026-10-27, the author: "turn the paw to the
+		angle of where the mouse was let go"). The tool sets it from the drag; 0 is the upright paw a click places, as
+		every paw was before.
+		⚠Kept in the page's label as whole degrees and only when it is not 0 (KCMPageMarksDoc.cpp): a document from
+		  before carries none and reads as upright, and an older KCM reads the member and drops it. */
+	PMReal fAngle;
 
-	KCMPawStamp() : fPageUID(kInvalidUID), fColour(kKCMPawColourRed) {}
+	KCMPawStamp() : fPageUID(kInvalidUID), fColour(kKCMPawColourRed), fAngle(0.0) {}
 	KCMPawStamp(UID p, const PMReal& x, const PMReal& y, int32 colour)
-		: fPageUID(p), fX(x), fY(y), fColour(colour) {}
-	KCMPawStamp(UID p, const PMReal& x, const PMReal& y, int32 colour, const PMString& text)
-		: fPageUID(p), fX(x), fY(y), fColour(colour), fText(text) {}
+		: fPageUID(p), fX(x), fY(y), fColour(colour), fAngle(0.0) {}
+	KCMPawStamp(UID p, const PMReal& x, const PMReal& y, int32 colour, const PMString& text,
+	            const PMReal& angle = PMReal(0.0))
+		: fPageUID(p), fX(x), fY(y), fColour(colour), fText(text), fAngle(angle) {}
 };
 
 /** Turn a colour number READ FROM A DOCUMENT into one this build draws.
@@ -105,9 +113,31 @@ inline int32 KCMPawColourFromStored(int32 stored)
 	  file identity, because a write always happens on the main thread and means "add to the
 	  document I am looking at". Growing a clone's entry would be a wrong document, not a rescue. */
 /** @param text the word to put beside it, or empty for none (an Alt press asks the reader for one;
-	  every other press passes nothing). */
+	  every other press passes nothing).
+	@param angle which way the toes point, degrees clockwise from straight up (KCMPawStamp::fAngle) -- 0 for a
+	  click, the drag's direction for a drag (2026-10-27). */
 bool16 KCMPawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-                          int32 colour, const PMReal& baseHalf, const PMString& text);
+                          int32 colour, const PMReal& baseHalf, const PMString& text,
+                          const PMReal& angle);
+
+/** Is there a paw under (x, y) on that page -- the question the place's refusal and the lift both put, asked
+	without doing either (2026-10-27: the tool asks it at the press, before it follows the drag, so that a press on
+	a paw is refused at once and nothing is shown turning over it). */
+bool16 KCMPawStampIsAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y, const PMReal& baseHalf);
+
+/** THE PAW WHILE THE BUTTON IS STILL DOWN (2026-10-27). The stamp tool follows the drag to learn which way the paw
+	points, and shows it turning: one paw that is drawn and not kept -- in no label, no undo step, no count.
+	★On SCREEN only, and only in the VIEW that was pressed (the drawing side compares the view it draws in):
+	  a print, a PDF and another window of the same document never show it.
+	⚠The view and the database are compared, never dereferenced. Set and cleared on the main thread by the tool;
+	  read by the drawing side under the store's lock. */
+void   KCMPawPreviewSet(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y, int32 colour,
+                        const PMReal& angle, const IControlView* view);
+void   KCMPawPreviewClear();
+/** The paw being placed, when it is on this page and this is the view it is being placed in. */
+bool16 KCMPawPreviewOn(IDataBase* db, UID pageUID, const IControlView* view, KCMPawStamp& out);
+/** Is one being placed in this document, in this view -- the drawing side's early test, beside KCMPawStampHasAny. */
+bool16 KCMPawPreviewFor(IDataBase* db, const IControlView* view);
 
 /** Lift the paw under (x, y) -- Shift + press. baseHalf is half a paw's size on that page.
 	Where paws overlap, the one placed last comes off first.
