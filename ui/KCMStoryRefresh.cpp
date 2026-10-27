@@ -469,7 +469,9 @@ bool16 KCMStoryRefreshMenuRow()
 
 	// ★A TRACK LISTING'S RE-READ CANCELLED AT ITS BAR STOPPED THE LISTING (2026-10-27, the author's "Cancel -> Stop"), and
 	//   the model has said so on the status line (KCMStopForCancelledReread) - "could not compare this story" would put a
-	//   wrong reason over it. Nothing is armed after such a refresh, and nothing else ends one that way.
+	//   wrong reason over it. Nothing is armed after such a refresh. (The one other way to "-1 and nothing armed" - a
+	//   compared document closed between the right click and the press - is the close's, and the panel already names no
+	//   pair; it said "could not compare" until today.)
 	if (count < 0 && !Utils<IKCMCompareFacade>()->IsArmed())
 		return kFalse;
 
