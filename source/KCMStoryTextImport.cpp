@@ -505,6 +505,17 @@ bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCM
 	IAbortableCmdSeq* sequence = CmdUtils::BeginAbortableCmdSeq("KCMPourStoryTextWith");
 	if (sequence != nil)
 		sequence->SetName(options.fStepName);
+	// ★A STEP THAT DID NOT BEGIN WRITES NOTHING INTO A DOCUMENT (2026-10-27, the re-inspection's M18 - the shape M2 refused
+	//   at seven of the facade's writes, KCMFacades.cpp's StepNotBegun): BeginAbortableCmdSeq answers nil on error (CmdUtils.h),
+	//   and the pour went on - each write a step of its own, and a Cancel then said "nothing was put in" over what was. Into
+	//   the import's copy it goes on: the copy's history is discarded and a cancel lets the whole copy go
+	//   (KCMImportStoryTextAsSource), so neither needs the step.
+	if (sequence == nil && !KCMIsImportClone(db))
+	{
+		outMessage = "InDesign would not start an undoable step - nothing was changed";
+		outMessage.SetTranslatable(kFalse);
+		return kFalse;
+	}
 
 	// ★The import's bar when there is one (a slice of it), a bar of its own otherwise - the same
 	//   shape as the reading loop. Stepped per story; asked for a cancel BETWEEN two stories only,

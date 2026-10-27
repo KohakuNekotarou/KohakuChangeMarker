@@ -25,6 +25,7 @@
 #include "WideString.h"
 
 #include "KCMStoryNoteEdit.h"
+#include "KCMDiag.h"			// KCM_DIAG_FAULT("note-delete-fail") - a refused deletion, measured (test builds only)
 
 namespace
 {
@@ -174,6 +175,14 @@ ErrorCode KCMDeleteNoteAt(ITextModel* model, TextIndex markerAt, PMString& whyNo
 	InterfacePtr<ITextModelCmds> cmds(model, UseDefaultIID());
 	if (cmds == nil)
 		return kFailure;
+	// (Fault switch note-delete-fail, a test build's only - KCMDiag.h: the marker is not taken out, as when InDesign refuses
+	//  the DeleteCmd - the re-inspection's M18, note_delete_probe.ps1.)
+	if (KCM_DIAG_FAULT("note-delete-fail"))
+	{
+		whyNot = "the footnote's marker could not be taken out";
+		whyNot.SetTranslatable(kFalse);
+		return kFailure;
+	}
 	InterfacePtr<ICommand> del(cmds->DeleteCmd(markerAt, 1));
 	if (del == nil || CmdUtils::ProcessCommand(del) != kSuccess)
 	{

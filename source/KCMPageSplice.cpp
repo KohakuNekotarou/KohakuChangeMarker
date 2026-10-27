@@ -377,9 +377,13 @@ bool16 Splice(KCMStoryShape::Story& s, const Place& from, const Place& to, const
 			head.fEndnoteAt.push_back(s.fBody[pS].fEndnoteAt[i]);
 	}
 	KCMStoryShape::Para tail = Slice(s.fBody[pE], oE, lenE);
+	// ★A MARK THE HEAD HAS TAKEN IS NOT THE TAIL'S (2026-10-27, the re-inspection's M18): in an EMPTY range - an empty frame's -
+	//   the head's last place and the tail's first are one, and a mark standing there went into both, so the paragraph came out
+	//   holding it twice. In front of the range is the head's (Inside says so).
+	const bool16 oneGap = (pS == pE && oS == oE) ? kTrue : kFalse;
 	for (size_t i = 0; i < s.fBody[pE].fNoteRefs.size(); ++i)
 	{
-		if (s.fBody[pE].fNoteRefs[i].fAt >= oE)
+		if (s.fBody[pE].fNoteRefs[i].fAt >= oE && !(oneGap && s.fBody[pE].fNoteRefs[i].fAt == oE))
 		{
 			KCMStoryShape::NoteRef ref = s.fBody[pE].fNoteRefs[i];
 			ref.fAt -= oE;
@@ -388,7 +392,7 @@ bool16 Splice(KCMStoryShape::Story& s, const Place& from, const Place& to, const
 	}
 	for (size_t i = 0; i < s.fBody[pE].fEndnoteAt.size(); ++i)
 	{
-		if (s.fBody[pE].fEndnoteAt[i] >= oE)
+		if (s.fBody[pE].fEndnoteAt[i] >= oE && !(oneGap && s.fBody[pE].fEndnoteAt[i] == oE))
 			tail.fEndnoteAt.push_back(s.fBody[pE].fEndnoteAt[i] - oE);
 	}
 

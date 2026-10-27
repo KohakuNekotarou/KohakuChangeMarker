@@ -807,6 +807,11 @@ void KCMApplySyncPlan(const UIDRef& storyRef, const KCMStoryShape::Story& now,
 											 "(a footnote inside another?), so none was taken away"));
 				gone.clear();
 			}
+			// ★ONLY THE NOTES THAT WENT ARE GONE (2026-10-27, the re-inspection's M18 - measured with the test build's
+			//   note-delete-fail): the word pass below moves every note's number up past the ones taken out, and it counted
+			//   a note whose deletion had failed - so the next note's words went into that note, and the next note kept its
+			//   own old ones (note 1 refused, note 2 edited in Word: note 1 read note 2's new words).
+			std::vector<int32> taken;
 			for (size_t d = gone.size(); d > 0; --d)
 			{
 				const int32 n = gone[d - 1];
@@ -815,11 +820,14 @@ void KCMApplySyncPlan(const UIDRef& storyRef, const KCMStoryShape::Story& now,
 					&& KCMDeleteNoteAt(model, markers[static_cast<size_t>(n)], why) == kSuccess)
 				{
 					++out.fNoteEdits;
+					taken.push_back(n);
 					continue;
 				}
 				++out.fRefused;
 				Say(out, "Note", why.IsEmpty() ? PMString("a footnote could not be taken away") : why);
 			}
+			std::sort(taken.begin(), taken.end());
+			gone.swap(taken);
 		}
 	}
 

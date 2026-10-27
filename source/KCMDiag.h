@@ -54,6 +54,9 @@
 //                (track-rf1 RF1-1..5).
 //    story-diff-slow  the same for the Story mode's comparison: each story of KCMStoryDiffRun::Run 200 ms longer
 //                (2026-10-27) - 50 changed stories were compared in 0.4 s (story-cancel SC-1..5).
+//    note-delete-fail  KCMDeleteNoteAt takes no marker out (2026-10-27, the re-inspection's M18): a footnote Word took away
+//                stays, as when InDesign refuses the DeleteCmd - and the notes after it must keep their own words
+//                (work/note-scripts/2026-10-27-kcm-defect-m18/note_delete_probe.ps1).
 //    (none else in use - counted 2026-10-26: step-fail and batch-fail had been in use without a line here.
 //     ⛔cmyk-cursor-no-hide stood here on 2026-10-27 for one night: Alt + left's CMYK cursor put up without the
 //     ICursorMgr Hide/Show, to measure both on one build. Without it the checkmark went straight to the numbers and
