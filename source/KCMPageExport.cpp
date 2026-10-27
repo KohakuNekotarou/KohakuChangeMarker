@@ -134,8 +134,33 @@ const KCMPageStoryFacts& FactsOf(IDataBase* db, UID story, std::vector<StoryFact
 	return cache.back().fFacts;
 }
 
-/** The text frames among `item` and, for a group, its items - each once, the graphic frame's UID. */
-void CollectTextFrames(IDataBase* db, UID item, std::vector<UID>& out, std::set<UID>& seen)
+/** The text frames standing INSIDE `item` at any depth - a frame pasted into a shape, a button's or a multi-state object's
+	(2026-10-27, the re-inspection's M17 - measured: a text frame inside a rectangle was neither written nor said). Counted,
+	not written: a box is a frame of the page itself (KCMPageExport.h). A text frame's own children are its columns. */
+int32 CountNestedTextFrames(IDataBase* db, UID item, std::set<UID>& seen)
+{
+	InterfacePtr<IHierarchy> hier(db, item, UseDefaultIID());
+	const int32 n = (hier != nil) ? hier->GetChildCount() : 0;
+	int32 found = 0;
+	for (int32 i = 0; i < n; ++i)
+	{
+		const UID child = hier->GetChildUID(i);
+		if (child == kInvalidUID || seen.count(child) > 0)
+			continue;
+		seen.insert(child);
+		InterfacePtr<IGraphicFrameData> frame(db, child, UseDefaultIID());
+		InterfacePtr<IMultiColumnTextFrame> mc((frame != nil) ? frame->QueryMCTextFrame() : nil);
+		if (mc != nil)
+			++found;
+		else
+			found += CountNestedTextFrames(db, child, seen);
+	}
+	return found;
+}
+
+/** The text frames among `item` and, for a group, its items - each once, the graphic frame's UID. The ones standing inside
+	any other object onto `outNested` (CountNestedTextFrames). */
+void CollectTextFrames(IDataBase* db, UID item, std::vector<UID>& out, std::set<UID>& seen, int32& outNested)
 {
 	if (item == kInvalidUID || seen.count(item) > 0)
 		return;
@@ -151,11 +176,14 @@ void CollectTextFrames(IDataBase* db, UID item, std::vector<UID>& out, std::set<
 		}
 	}
 	if (db->GetClass(item) != kGroupItemBoss)
+	{
+		outNested += CountNestedTextFrames(db, item, seen);
 		return;
+	}
 	InterfacePtr<IHierarchy> hier(db, item, UseDefaultIID());
 	const int32 n = (hier != nil) ? hier->GetChildCount() : 0;
 	for (int32 i = 0; i < n; ++i)
-		CollectTextFrames(db, hier->GetChildUID(i), out, seen);
+		CollectTextFrames(db, hier->GetChildUID(i), out, seen, outNested);
 }
 
 std::wstring WideOf(const PMString& s)
@@ -201,13 +229,15 @@ struct Tally
 	int32		fThreaded;		// a frame that is not its story's only one (2026-10-26 - BoxOfFrame says why)
 	int32		fOverset;		// a frame whose words do not all show
 	int32		fVerticalTable;	// a vertical frame whose story holds a table (2026-10-26: Word cannot lay it out)
+	int32		fNested;		// a text frame inside another object - pasted into a shape, a button's... (2026-10-27)
 	PMString	fFirstRefusal;
 	std::vector<PMString>	fThreadedPages;	// where they are, each page once - the sentence names them (the author: "say it
 	std::vector<PMString>	fOversetPages;	//   in the panel")
 	std::vector<PMString>	fVerticalTablePages;
+	std::vector<PMString>	fNestedPages;
 
 	Tally() : fPages(0), fBoxes(0), fEndnote(0), fHidden(0), fEmpty(0), fRefused(0), fNotAPage(0), fNoFrame(0),
-			  fThreaded(0), fOverset(0), fVerticalTable(0)
+			  fThreaded(0), fOverset(0), fVerticalTable(0), fNested(0)
 	{
 		fFirstRefusal.SetTranslatable(kFalse);
 	}
@@ -532,24 +562,32 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 		const PMRect pageBounds = pageGeo->GetPathBoundingBox();
 		const PMPoint origin(pageBounds.Left(), pageBounds.Top());
 
+		PMString name;
+		pageList->GetPageString(pageUID, &name, kFalse, kFalse, kDefaultPageType, kTrue, kTrue);
+		name.SetTranslatable(kFalse);
+
 		UIDList items(db);
 		spread->GetItemsOnPage(pgPos, &items, kFalse /*not the page itself*/, kFalse /*no pasteboard*/,
 							   kFalse /*not the slug's*/);
 		std::vector<UID> frames;
 		std::set<UID> seen;
+		int32 nested = 0;
 		for (int32 k = 0; k < items.Length(); ++k)
-			CollectTextFrames(db, items[k], frames, seen);
+			CollectTextFrames(db, items[k], frames, seen, nested);
+		if (nested > 0)
+		{
+			tally.fNested += nested;
+			Tally::NotePage(tally.fNestedPages, name);
+		}
 		if (frames.empty())
 		{
-			++tally.fNoFrame;
+			if (nested == 0)
+				++tally.fNoFrame;		// (a page whose text frames all stand inside other objects is named with them)
 			continue;
 		}
 
 		KCMPageDocx::Page page;
 		page.fPageUid = static_cast<int32>(pageUID.Get());
-		PMString name;
-		pageList->GetPageString(pageUID, &name, kFalse, kFalse, kDefaultPageType, kTrue, kTrue);
-		name.SetTranslatable(kFalse);
 		page.fPageName = name.GetUTF8String();
 		page.fWidth = ::ToDouble(pageBounds.Width());
 		page.fHeight = ::ToDouble(pageBounds.Height());
@@ -672,6 +710,12 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 		AppendCount(outMessage, "; ", tally.fVerticalTable, " vertical frame(s) with a table not written (");
 		outMessage.Append(Tally::Pages(tally.fVerticalTablePages));
 		outMessage.Append(") - Word cannot lay a table out in a vertical text box: use Export Story Text...");
+	}
+	if (tally.fNested > 0)
+	{
+		AppendCount(outMessage, "; ", tally.fNested, " text frame(s) inside another object not written (");
+		outMessage.Append(Tally::Pages(tally.fNestedPages));
+		outMessage.Append(") - a frame pasted into a shape, a button's: their stories can go out whole with Export Story Text...");
 	}
 	if (tally.fNoFrame > 0)
 		AppendCount(outMessage, "; ", tally.fNoFrame, " page(s) with no text frame");

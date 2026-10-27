@@ -17,7 +17,9 @@
 //    story since 2026-10-26), a frame holding an endnote's marker (the note's words are another story's), a VERTICAL
 //    frame whose story holds a table (Word 2007 cannot lay one out in a vertical text box - measured 2026-10-26), a
 //    hidden one (layer or object), an empty one (a thread the text has not reached), one whose box does not survive the
-//    format's own round trip. ★A table and a footnote go in since 2026-10-26 (KCMPageDocx.h says how they are spelt).
+//    format's own round trip, ★one standing INSIDE another object - pasted into a shape, a button's (2026-10-27: until
+//    then it was neither written nor said - measured, the re-inspection's M17). ★A table and a footnote go in since
+//    2026-10-26 (KCMPageDocx.h says how they are spelt).
 //    Master pages' items are not the page's (ISpread::GetItemsOnPage does not return them).
 //  ★**EACH BOX CHECKS ITSELF BEFORE ITS FILE IS WRITTEN** - the story export's rule: written as a page, it reads back as
 //    written - its tables, its footnotes and where their references stand included.
