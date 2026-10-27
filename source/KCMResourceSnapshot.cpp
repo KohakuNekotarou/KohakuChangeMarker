@@ -36,6 +36,7 @@
 #include "KCMResourceBytes.h"
 #include "KCMResourceLog.h"		// the mode's step log, off by default - and why it is kept
 #include "KCMResourceParse.h"	// what the snapshot is for: the definitions inside it
+#include "KCMResourceQRCode.h"	// KCMResolveQRCodePlaces - a QR code's page, while its document is at hand (2026-10-27)
 
 /** Forward-declared in the SDK and nowhere defined, which is why it is only ever a pointer. */
 class IINXExportPolicy;
@@ -306,6 +307,10 @@ bool16 KCMReadResourceList(IDataBase* db, const char* which, KCMResourceList& ou
 		whyNot.Append(why);
 		return kFalse;
 	}
+
+	// ★(2026-10-27) A QR code's page, asked of the document it was read from while that document is at hand - the Task
+	//   Start in memory reads here too, from the live document at that moment (KCMTaskStartClone.cpp).
+	KCMResolveQRCodePlaces(db, out);
 
 	whyNot.Clear();
 	return kTrue;

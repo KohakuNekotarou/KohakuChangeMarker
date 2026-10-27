@@ -90,6 +90,15 @@ struct KCMResourceItem
 	    sieve; the answer - one way only - is at the head of KCMResourceAttrDiff.h, and the field
 	    went with the measurement. */
 	PMString	fBody;
+
+	/** ★(2026-10-27) The Self of the page item a QR CODE stands in - its frame (KCMResourceQRCode.h) - and empty for
+		every other item. What pairs a QR code when its frame has no name or label (KCMResourceKeyOf's route [D]): the
+		code's own Self and its EPS's change each time it is made anew, the frame's does not (measured). */
+	PMString	fFrameSelf;
+
+	/** ★(2026-10-27) Where a QR code's frame stands, for a reader - "p.3" or "pasteboard" (KCMResolveQRCodePlaces).
+		⚠Not compared and not in any key: a QR code moved to another page is the same QR code. */
+	PMString	fWhere;
 };
 
 typedef K2Vector<KCMResourceItem> KCMResourceList;

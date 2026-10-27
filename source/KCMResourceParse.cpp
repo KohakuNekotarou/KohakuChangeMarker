@@ -46,6 +46,7 @@
 #include "KCMResourceParse.h"
 #include "KCMResourceBytes.h"
 #include "KCMResourceLog.h"		// the mode's step log, off by default - and why it is kept
+#include "KCMResourceQRCode.h"	// KCMIsQRCodeElement - a QR code's content, taken out of a spread (2026-10-27)
 
 //========================================================================================
 // What a UID looks like
@@ -494,6 +495,20 @@ struct KCMOpenItem
 	}
 };
 
+/** ★(2026-10-27) One element with a Self that is open right now inside a spread - what a QR code needs to know about
+    the frame it stands in (KCMResourceSaxHandler::TakeQRCode): its element name, its Self, the Name a person gave it
+    ($ID/ left out) and its script label, written "key=value" as the page items' labels are. */
+struct KCMSpreadNode
+{
+	PMString	fElement;
+	PMString	fSelf;
+	PMString	fName;
+	PMString	fLabel;
+	int32		fDepth;
+
+	KCMSpreadNode() : fDepth(0) {}
+};
+
 /** Reads every element and keeps the ones the blacklist lets through, flattening each one back
     into text.
 
@@ -523,7 +538,7 @@ class KCMResourceSaxHandler : public CSAXContentHandler
 public:
 	KCMResourceSaxHandler(IPMUnknown* boss)
 		: CSAXContentHandler(boss), fSAXServices(nil), fDepth(0), fSkipDepth(0),
-		  fSpreadDepth(0), fList(nil), fSinkChecked(kFalse) {}
+		  fSpreadDepth(0), fList(nil), fSinkChecked(kFalse), fSpreadLabelDepth(0) {}
 	virtual ~KCMResourceSaxHandler();
 
 	// ----- the seven that do something; the rest are CSAXContentHandler's empty bodies
@@ -550,6 +565,16 @@ private:
 	    rule, not a special case of the same one - down here a Self is not enough to make an item
 	    and the body is built from a filter rather than from the whole tag. */
 	void				StartInSpread(const PMString& name, ISAXAttributes* attrs);
+
+	/** ★(2026-10-27) StartElement's other duty inside a spread, apart from StartInSpread's because it keeps a record of
+	    its own: the path of elements with a Self down to here (fSpreadPath, each with its name and script label), and a
+	    QR code's content taken as an item of its own the moment its element opens (TakeQRCode). */
+	void				NoteInSpread(const PMString& name, ISAXAttributes* attrs);
+
+	/** ★(2026-10-27) A QR code (KCMIsQRCodeElement) as one item: its kind the element's name, its body every attribute
+	    but the Self, paired by the frame it stands in - the innermost element of fSpreadPath that is not the EPS drawing
+	    it (KCMResourceQRCode.h says why the frame). */
+	void				TakeQRCode(const PMString& name, ISAXAttributes* attrs);
 
 	/** Tell the caller, through the sink, that what came back is not a whole reading. */
 	void				NoteMalformed();
@@ -579,6 +604,12 @@ private:
 
 	KCMResourceList*	fList;
 	bool16				fSinkChecked;
+
+	/** ★(2026-10-27) The elements with a Self open inside a spread, outermost first (NoteInSpread). ⚠Not fOpen: that
+	    holds the OUTERMOST page item alone, by the rule StartInSpread keeps, and a QR code's frame can stand inside a
+	    group. */
+	K2Vector<KCMSpreadNode>	fSpreadPath;
+	int32				fSpreadLabelDepth;	// >0 while inside a <Label> in a spread: the depth that <Label> opened at
 };
 
 CREATE_PMINTERFACE(KCMResourceSaxHandler, kKCMResourceSaxHandlerImpl)
@@ -634,6 +665,8 @@ void KCMResourceSaxHandler::StartDocument(ISAXServices* /*saxServices*/)
 	fDepth = 0;
 	fSkipDepth = 0;
 	fSpreadDepth = 0;
+	fSpreadPath.clear();
+	fSpreadLabelDepth = 0;
 	fOpen.clear();
 	fPendingText.Clear();
 	fPendingText.SetTranslatable(kFalse);
@@ -767,6 +800,126 @@ void KCMResourceSaxHandler::StartInSpread(const PMString& name, ISAXAttributes* 
 	}
 }
 
+void KCMResourceSaxHandler::NoteInSpread(const PMString& name, ISAXAttributes* attrs)
+{
+	// A script label belongs to the innermost element with a Self around it: a frame's <Properties><Label> comes before
+	// the frame's EPS, so by the time a QR code opens, its frame's label is known.
+	if (name == "Label")
+	{
+		if (fSpreadLabelDepth == 0)
+			fSpreadLabelDepth = fDepth;
+		return;
+	}
+	if (name == "KeyValuePair")
+	{
+		if (fSpreadLabelDepth > 0 && !fSpreadPath.empty() && fSpreadPath.back().fLabel.IsEmpty() && attrs != nil)
+		{
+			PMString label;
+			label.SetTranslatable(kFalse);
+			if (attrs->HasAttribute(PMString("Key")))
+				label = attrs->GetAttributeString(PMString("Key"));
+			label.Append("=");
+			if (attrs->HasAttribute(PMString("Value")))
+				label.Append(attrs->GetAttributeString(PMString("Value")));
+			fSpreadPath.back().fLabel = label;
+			fSpreadPath.back().fLabel.SetTranslatable(kFalse);	// (an assignment can carry the source's flag back in)
+		}
+		return;
+	}
+	if (attrs == nil || !attrs->HasAttribute(PMString("Self")))
+		return;
+
+	if (KCMIsQRCodeElement(name))
+		this->TakeQRCode(name, attrs);
+
+	KCMSpreadNode node;
+	node.fElement = name;
+	node.fSelf = attrs->GetAttributeString(PMString("Self"));
+	if (attrs->HasAttribute(PMString("Name")))
+	{
+		const PMString given = attrs->GetAttributeString(PMString("Name"));
+		if (!KCMIsUnnamedPageItemName(given))	// "$ID/" is the placeholder of an object nobody named
+			node.fName = given;
+	}
+	node.fDepth = fDepth;
+	node.fElement.SetTranslatable(kFalse);
+	node.fSelf.SetTranslatable(kFalse);
+	node.fName.SetTranslatable(kFalse);
+	try
+	{
+		fSpreadPath.push_back(node);
+	}
+	catch (...)
+	{
+		this->NoteMalformed();
+		KCMResourceLog("    !! the spread path could not grow");
+	}
+}
+
+void KCMResourceSaxHandler::TakeQRCode(const PMString& name, ISAXAttributes* attrs)
+{
+	// ★THE FRAME: the innermost element with a Self that is not the EPS drawing the code (Rectangle > EPS > the code,
+	//   measured - inside a group too). A code with no such element around it has nothing to be paired by.
+	int32 frame = -1;
+	for (int32 i = static_cast<int32>(fSpreadPath.size()) - 1; i >= 0; --i)
+	{
+		if (fSpreadPath[static_cast<size_t>(i)].fElement != "EPS")
+		{
+			frame = i;
+			break;
+		}
+	}
+	if (frame < 0)
+		return;
+	const KCMSpreadNode& around = fSpreadPath[static_cast<size_t>(frame)];
+
+	KCMOpenItem made;
+	made.Begin(name, fDepth, kTrue /*fromSpread*/);
+	made.fItem.fFrameSelf = around.fSelf;
+	made.fItem.fFrameSelf.SetTranslatable(kFalse);
+	made.fItem.fName = around.fName.IsEmpty() ? around.fLabel : around.fName;
+	made.fItem.fName.SetTranslatable(kFalse);
+
+	// ★THE BODY IS EVERY ATTRIBUTE BUT THE SELF, written the way the other items' bodies are and closed at once. The Self
+	//   changes each time the code is made anew, so it would make every code differ; the child <QrCodeSwatch> is the
+	//   code's colour, which the page shows - the Pixel mode's.
+	PMString& body = made.fItem.fBody;
+	body.Append("<");
+	body.Append(name);
+	const int32 count = attrs->GetLength();
+	for (int32 i = 0; i < count; ++i)
+	{
+		WideString qname;
+		WideString value;
+		if (!attrs->GetQName(static_cast<uint32>(i), qname) || !attrs->GetValue(static_cast<uint32>(i), value))
+			continue;
+		const PMString attrName(qname);
+		if (attrName == "Self")
+			continue;
+		body.Append(" ");
+		body.Append(attrName);
+		body.Append("=\"");
+		body.Append(PMString(value));
+		body.Append("\"");
+	}
+	body.Append("></");
+	body.Append(name);
+	body.Append(">");
+
+	KCMResourceList* const list = this->List();
+	if (list == nil)
+		return;
+	try
+	{
+		list->push_back(made.fItem);
+	}
+	catch (...)
+	{
+		this->NoteMalformed();
+		KCMResourceLog("    !! push_back threw for a QR code");
+	}
+}
+
 void KCMResourceSaxHandler::FlushPendingText()
 {
 	if (fPendingText.IsEmpty())
@@ -806,6 +959,7 @@ void KCMResourceSaxHandler::StartElement(const WideString& /*uri*/, const WideSt
 	if (fSpreadDepth > 0)
 	{
 		++fSpreadDepth;
+		this->NoteInSpread(name, attrs);	// ★(2026-10-27) the path a QR code's frame is found on, and the QR codes
 		this->StartInSpread(name, attrs);
 		return;
 	}
@@ -886,6 +1040,12 @@ void KCMResourceSaxHandler::EndElement(const WideString& /*uri*/, const WideStri
 	if (fSpreadDepth > 0)
 	{
 		const PMString endName(localname);
+
+		// ★(2026-10-27) The element closing now leaves NoteInSpread's path - and a <Label> its watch.
+		if (!fSpreadPath.empty() && fSpreadPath.back().fDepth == fDepth)
+			fSpreadPath.pop_back();
+		if (fSpreadLabelDepth == fDepth)
+			fSpreadLabelDepth = 0;
 
 		if (!fOpen.empty() && fOpen.back().fFromSpread)
 		{

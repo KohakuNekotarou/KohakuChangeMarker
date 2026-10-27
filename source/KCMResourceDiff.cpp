@@ -29,6 +29,7 @@
 #include "IDocument.h"
 
 // General includes:
+#include <map>					// RepeatedFrameKeys - how often a QR code's frame name occurs on a side (2026-10-27)
 #include <sstream>				// number formatting for the reading port, as KCMStoryList does
 #include <string>
 #include <windows.h>			// ::GetTickCount - how long the whole comparison took
@@ -37,6 +38,7 @@
 #include "KCMCore.h"			// KCMArmedTargetDB / KCMArmedSourceDB - the panel's own two documents
 #include "KCMResourceDiff.h"
 #include "KCMResourceLog.h"		// the mode's step log, off by default - and why it is kept
+#include "KCMResourceQRCode.h"	// KCMQRCodeDisplayKey - a QR code row's key as a reader sees it (2026-10-27)
 #include "KCMResourceStore.h"	// the reading port goes through the store, as the panel will
 
 /** How much of a body to show on each side of a difference in the reading port.
@@ -61,6 +63,27 @@ PMString KCMResourceKeyOf(const KCMResourceItem& item)
 {
 	PMString key;
 	key.SetTranslatable(kFalse);
+
+	// [D] ★A QR CODE (2026-10-27 - KCMResourceQRCode.h): paired by the FRAME it stands in, never by its own Self (which
+	// changes each time the code is made anew - measured). The frame's name or script label when a person gave it one;
+	// otherwise the frame's UID, which two versions of one document share (a Task Start, a copy saved from it) and two
+	// separately built documents do not - the Story mode's premise too. A name two frames share is told apart in
+	// KCMDiffResources (RepeatedFrameKeys), where both sides can be seen at once.
+	if (!item.fFrameSelf.IsEmpty())
+	{
+		key = item.fKind;
+		if (!item.fName.IsEmpty())
+		{
+			key.Append("#");
+			key.Append(item.fName);
+		}
+		else
+		{
+			key.Append("@");
+			key.Append(item.fFrameSelf);
+		}
+		return key;
+	}
 
 	// [A] There is nothing to identify it with but its own name -- and that is enough, because
 	// these kinds occur exactly once in a document (DocumentPreference, ViewPreference, ...).
@@ -103,6 +126,58 @@ PMString KCMResourceKeyOf(const KCMResourceItem& item)
 // The comparison
 //========================================================================================
 
+namespace
+{
+
+/** ★(2026-10-27) A QR code's key built from a frame NAME that two frames share - two frames copied with their script
+	label, say - would pair the first of them with whichever came first. Wherever such a key occurs more than once on
+	EITHER side, the frame's UID is added to it on BOTH sides, so that two versions of one document still meet frame by
+	frame (and two documents built apart, which share no UIDs, come out as added and removed rather than wrongly paired).
+	⚠Both sides at once, or not at all: a suffix added on one side only would part a pair that is plainly the same. */
+void RepeatedFrameKeys(const KCMResourceList& source, K2Vector<PMString>& sourceKeys,
+					   const KCMResourceList& target, K2Vector<PMString>& targetKeys)
+{
+	std::map<std::string, int32> seenSource;
+	std::map<std::string, int32> seenTarget;
+	for (size_t s = 0; s < source.size(); ++s)
+		if (!source[s].fFrameSelf.IsEmpty() && !source[s].fName.IsEmpty())
+			++seenSource[sourceKeys[s].GetUTF8String()];
+	for (size_t t = 0; t < target.size(); ++t)
+		if (!target[t].fFrameSelf.IsEmpty() && !target[t].fName.IsEmpty())
+			++seenTarget[targetKeys[t].GetUTF8String()];
+	for (size_t s = 0; s < source.size(); ++s)
+	{
+		if (source[s].fFrameSelf.IsEmpty() || source[s].fName.IsEmpty())
+			continue;
+		const std::string key = sourceKeys[s].GetUTF8String();
+		if (seenSource[key] > 1 || seenTarget[key] > 1)
+		{
+			sourceKeys[s].Append("@");
+			sourceKeys[s].Append(source[s].fFrameSelf);
+		}
+	}
+	for (size_t t = 0; t < target.size(); ++t)
+	{
+		if (target[t].fFrameSelf.IsEmpty() || target[t].fName.IsEmpty())
+			continue;
+		const std::string key = targetKeys[t].GetUTF8String();
+		if (seenSource[key] > 1 || seenTarget[key] > 1)
+		{
+			targetKeys[t].Append("@");
+			targetKeys[t].Append(target[t].fFrameSelf);
+		}
+	}
+}
+
+/** The key a change is SHOWN with: the pairing key, except for a QR code, whose pairing key ("HyperlinkQRCode@ufd")
+	means nothing to a reader - that one is its place and its frame (KCMQRCodeDisplayKey). */
+PMString ShownKey(const KCMResourceItem& item, const PMString& pairingKey)
+{
+	return item.fFrameSelf.IsEmpty() ? pairingKey : KCMQRCodeDisplayKey(item);
+}
+
+}	// namespace
+
 bool16 KCMDiffResources(const KCMResourceList& source, const KCMResourceList& target,
 						KCMResourceChangeList& out, KCMResourceDiffStats& stats)
 {
@@ -137,6 +212,9 @@ bool16 KCMDiffResources(const KCMResourceList& source, const KCMResourceList& ta
 			targetMatch.push_back(-1);
 		}
 
+		// ★(2026-10-27) A QR code's frame name that two frames share is told apart, on both sides at once.
+		RepeatedFrameKeys(source, sourceKeys, target, targetKeys);
+
 		// ***** WHO PAIRS WITH WHOM IS DECIDED FIRST, FOR EVERYTHING, AND ONLY THEN REPORTED. *****
 		// The report below then walks the target in order, so what the reader sees is still the
 		// newer document's own order however the pair was found.
@@ -168,7 +246,7 @@ bool16 KCMDiffResources(const KCMResourceList& source, const KCMResourceList& ta
 			{
 				KCMResourceChange added;
 				added.fKind = target[t].fKind;
-				added.fKey = targetKey;
+				added.fKey = ShownKey(target[t], targetKey);
 				added.fWhat = kKCMResourceAdded;
 				added.fTargetBody = target[t].fBody;
 				out.push_back(added);
@@ -183,7 +261,7 @@ bool16 KCMDiffResources(const KCMResourceList& source, const KCMResourceList& ta
 
 			KCMResourceChange changed;
 			changed.fKind = target[t].fKind;
-			changed.fKey = targetKey;
+			changed.fKey = ShownKey(target[t], targetKey);
 			changed.fWhat = kKCMResourceChanged;
 			changed.fSourceBody = source[match].fBody;
 			changed.fTargetBody = target[t].fBody;
@@ -199,7 +277,7 @@ bool16 KCMDiffResources(const KCMResourceList& source, const KCMResourceList& ta
 
 			KCMResourceChange removed;
 			removed.fKind = source[s].fKind;
-			removed.fKey = sourceKeys[s];
+			removed.fKey = ShownKey(source[s], sourceKeys[s]);
 			removed.fWhat = kKCMResourceRemoved;
 			removed.fSourceBody = source[s].fBody;
 			out.push_back(removed);
