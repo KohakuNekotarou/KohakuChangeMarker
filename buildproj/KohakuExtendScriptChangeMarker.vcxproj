@@ -438,6 +438,20 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTrackList.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMBookFacade.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMScriptingDefs.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMApplyFromImport.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMApplyPlace.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMAttrRestorePlan.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMEqualOrder.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMRestoreAttr.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMScratchDoc.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMSkippedText.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryFollowObserver.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStorySyncPlan.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTableMatch.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTableShape.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTableSnippet.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTableXmlCheck.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTextWords.h" />
   </ItemGroup>
   <ItemGroup>
     <!-- The factory list is #included INSIDE #ifdef __ODFRC__, which the C++ compiler that builds
