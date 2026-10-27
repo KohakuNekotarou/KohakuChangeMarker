@@ -467,6 +467,12 @@ bool16 KCMStoryRefreshMenuRow()
 
 	const int32 count = Utils<IKCMStoryEditsFacade>()->RefreshRow(gMenuRow);
 
+	// ★A TRACK LISTING'S RE-READ CANCELLED AT ITS BAR STOPPED THE LISTING (2026-10-27, the author's "Cancel -> Stop"), and
+	//   the model has said so on the status line (KCMStopForCancelledReread) - "could not compare this story" would put a
+	//   wrong reason over it. Nothing is armed after such a refresh, and nothing else ends one that way.
+	if (count < 0 && !Utils<IKCMCompareFacade>()->IsArmed())
+		return kFalse;
+
 	// ★IT SAYS SO EVEN WHEN IT FOUND NOTHING, and that case is the one worth spelling out: a reader
 	//   who has just finished repairing a story sees its children disappear, and "no differences
 	//   now" is the difference between "it worked" and "did anything happen at all?".

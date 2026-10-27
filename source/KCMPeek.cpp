@@ -631,15 +631,17 @@ bool16 KCMArmedDocsAlive()
 	if (!sPeekArmed || sPeekTargetDB == nil)
 		return kFalse;
 	// ⛔An armed ORIGIN pair had no Source database at all (its copy was closed after the
-	//   comparison), so only the Target was asked about. An armed pair with no Source is dead now.
-	if (sPeekSourceDB == nil)
+	//   comparison), so only the Target was asked about. An armed pair with no Source is dead now -
+	//   ★except a Track listing's (2026-10-27): it is armed with the Target alone (KCMModeNeedsSource),
+	//   and only the Target is asked about, as the origin's once was.
+	if (sPeekSourceDB == nil && KCMModeNeedsSource(KCMGetCompareMode()))
 		return kFalse;
 	ISession* session = GetExecutionContextSession();	// nil is possible during the shutdown sequence
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app ? app->QueryDocumentList() : nil);
 	if (docList == nil ||
 	    !KCMIsDbAlive(docList, sPeekTargetDB) ||
-	    !KCMIsDbAlive(docList, sPeekSourceDB))
+	    (sPeekSourceDB != nil && !KCMIsDbAlive(docList, sPeekSourceDB)))
 	{
 		KCMHandleDocsClosed();
 		return kFalse;
@@ -797,6 +799,7 @@ void KCMPeekStartup::Shutdown()
 	sPeekArmed = kFalse;
 	sPeekTargetDB = nil;
 	sPeekSourceDB = nil;
+	KCMEndTrackListing();	// (2026-10-27) a Track listing goes with the armed state it belongs to
 	// The chosen Target/Source ("Set as Target" / "Set as Source") go with them, for exactly the
 	// same reason: they are model-side statics that the same responder path reads
 	// (KCMForgetChosenDocsThatClosed). They live in KCMComparisonRun.cpp, so the clearing is
@@ -1040,6 +1043,9 @@ void KCMHandleDocsClosed()
 		sPeekArmed     = kFalse;
 		sPeekTargetDB  = nil;
 		sPeekSourceDB  = nil;
+		// ...and a Track listing ends with it, back to the mode before it (2026-10-27 - KCMStopComparison's own step;
+		//  a Target closed under the listing is this road, not Stop's).
+		KCMEndTrackListing();
 		// (Clearing the peek's gesture state is UI state, so the UI does it on the notification.)
 		KCMDrawEventHandler::sMarksTempHidden = kFalse;
 		KCMDrawEventHandler::sSrcMarksPressed = kFalse;

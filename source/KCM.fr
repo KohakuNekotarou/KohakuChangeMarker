@@ -803,18 +803,17 @@ resource VersionedScriptElementInfo(10)
 			{ /* void */ }
 		}
 
-		// (2026-10-05) "Compare with Tracked Changes..." without the save dialog - the Track mode's test door.
+		// (2026-10-05) "Compare with Tracked Changes" - the Track listing's test door. ★No argument since 2026-10-27: no
+		//  copy is saved (it took the file the copy went to, in place of the save dialog, until then).
 		Method
 		{
 			kKCMCompareTrackedMethodScriptElement,
 			e_KCMCompareTracked,
-			"kcm compare tracked",				// name -> app.kcmCompareTracked(file)
-			"Save the active (or chosen Target) document's original version - every tracked change rejected - to the file, choose it as the Source, and start the Track Changes comparison, as Compare with Tracked Changes does, without the dialog.",
+			"kcm compare tracked",				// name -> app.kcmCompareTracked()
+			"List the active (or chosen Target) document's tracked changes from its own records, as Compare with Tracked Changes does: a running comparison is stopped first, nothing is saved or opened, and a Stop goes back to the compare mode before.",
 			StringType,
 			"The sentence the status line shows"
-			{
-				keyAEFile, "file path", "Where the original version is saved (.indd)", FileType, kRequired
-			}
+			{ /* void */ }
 		}
 
 		// (2026-10-24, the import-as-Source road) "Import Story Text..." the other way round, and its Apply - test doors.

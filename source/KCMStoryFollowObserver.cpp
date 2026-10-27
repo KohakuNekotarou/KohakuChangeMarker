@@ -19,6 +19,7 @@
 // Project includes:
 #include "KCMID.h"				// IID_IKCMSTORYFOLLOWOBSERVER / kKCMStoryEditsRebuiltMessage
 #include "KCMCore.h"			// KCMIsArmed / KCMArmedTargetDB / KCMArmedSourceDB / KCMIsDocDBOpen / KCMGetCompareMode
+#include "KCMComparisonRun.h"	// KCMStopForCancelledReread - a Track re-read cancelled at its bar stops the listing (2026-10-27)
 #include "KCMDiag.h"			// KCM_DIAG_LOG - test builds only (nothing in a shipping .pln)
 #include "KCMModelNotify.h"		// KCMNotify - the panel is told, never called
 #include "KCMStoryDiffRun.h"	// RunOne - the row compared again
@@ -94,7 +95,10 @@ void KCMStoryFollowObserver::LazyUpdate(ISubject* theSubject, const PMIID& proto
 		return;
 	IDataBase* const targetDB = KCMArmedTargetDB();
 	IDataBase* const sourceDB = KCMArmedSourceDB();
-	if (targetDB == nil || sourceDB == nil || !KCMIsDocDBOpen(targetDB) || !KCMIsDocDBOpen(sourceDB))
+	if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
+		return;
+	// (A Track listing has no Source - 2026-10-27, KCMModeNeedsSource; every other mode compares against one.)
+	if (KCMModeNeedsSource(KCMGetCompareMode()) && (sourceDB == nil || !KCMIsDocDBOpen(sourceDB)))
 		return;
 	// The Target's document only: a document compared before keeps its attachment (KCMStoryFollowEnsureObservers - no
 	// detach) and ends here.
@@ -112,7 +116,15 @@ void KCMStoryFollowObserver::LazyUpdate(ISubject* theSubject, const PMIID& proto
 		KCM_DIAG_LOG("follow lazy: track counters=%d records=%d", (int)counters, (int)records);
 		if (!counters && !records)
 			return;
-		KCMTrackRead::Build(targetDB, sourceDB, nil);
+		// ★A CANCELLED RE-READ STOPS THE LISTING (2026-10-27, the author's answer "Cancel -> Stop"): the old list would
+		//   stand, stale, after the Undo it was reading for (KCMComparisonRun.h, KCMStopForCancelledReread).
+		bool16 cancelled = kFalse;
+		KCMTrackRead::Build(targetDB, &cancelled);
+		if (cancelled)
+		{
+			KCMStopForCancelledReread();
+			return;
+		}
 		KCMNotify(kKCMStoryEditsRebuiltMessage);
 		return;
 	}

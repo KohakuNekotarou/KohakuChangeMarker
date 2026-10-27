@@ -90,6 +90,13 @@ void	KCMClearReportComparison(IDataBase* targetDB, IDataBase* sourceDB);
 // line of defence rather than the first.
 void	KCMRefreshComparison();
 
+// ★A TRACK LISTING'S RE-READ CANCELLED AT ITS BAR STOPS IT (2026-10-27, the author's answer: "Cancel -> Stop"). The list is
+// read again after a row's Refresh, an accept or a reject, and an Undo (KCMFacades.cpp, KCMStoryFollowObserver.cpp); a
+// cancelled read leaves no list it could trust (KCMTrackRead::Build sets the list only when it finishes - the old one stood
+// and was clicked into), so the listing ends the way a cancelled Refresh Comparison ends it, in words of its own on the
+// status line. One place for the three callers ([[one-question-one-place]]).
+void	KCMStopForCancelledReread();
+
 // Start with the front document (or whichever the caller names) as the Target and a database
 // that is NOT an open document as the Source -- a task-start copy Kohaku InDesign MCP lends
 // (KCMExternalSource.h). `sourceLabel` is what the panel's Source: line shows for it.

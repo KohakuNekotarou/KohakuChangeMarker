@@ -544,12 +544,14 @@ static void KCMApplyPanelInfo(const InterfacePtr<IPanelControlData>& pcd)
 	{
 		source.Append(" ");
 		source.Append(KCMDocPathFromDB(sourceDB));
-		// ★(2026-10-25 - the author: "while tracking, show on the Source line that the Track is the Source") the copy
-		//   "Compare with Tracked Changes..." made - every tracked change rejected - says so AT THE END: the line is cut from
-		//   the front when it overflows (kEllipsizeBeginning in the .fr), so the end is the part always seen. (Asked of the
-		//   files by the model - IsTrackOriginalOf - a name chosen in the save dialog says nothing.)
-		if (targetDB != nil && compare->IsTrackOriginalOf(sourceDB, targetDB))
-			source.Append(" (Track original)");
+	}
+	else if (started && compare->GetCompareMode() == kKCMModeTrack)
+	{
+		// ★A TRACK LISTING'S SOURCE IS THE TARGET'S OWN RECORDS (2026-10-27 - no Source document is made; the author's
+		//   "while tracking, show on the Source line that the Track is the Source" of 2026-10-25, in the new form). Short:
+		//   the line is cut from the front when it overflows (kEllipsizeBeginning in the .fr). (Until today the copy saved
+		//   with every change rejected was named, with " (Track original)" at its end.)
+		source.Append(" (Tracked Changes)");
 	}
 	else
 	{

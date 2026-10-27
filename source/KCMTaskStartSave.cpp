@@ -107,8 +107,8 @@ void BareName(IDataBase* db, PMString& out)
 namespace {
 
 /*	The save dialog, opened ON THE DOCUMENT'S OWN FOLDER. kFalse when the reader cancelled.
-	★Shared by Task Start and "Compare with Tracked Changes..." (2026-10-05): each passes its own suggested
-	  name and title.
+	★Shared by Task Start and "Compare with Tracked Changes..." (2026-10-05 - the latter until 2026-10-27, when it
+	  stopped making a copy): each passes its own suggested name and title.
 
 	⚠★★★**NOT SDKFileSaveChooser, and the reason is one argument** (measured 2026-09-21). That
 	  helper fixes DoDialog's fourth argument, useSystemDefaultDir, at kTrue
@@ -206,7 +206,7 @@ void KCMSuggestedCopyName(IDataBase* docDB, const char* infix, PMString& out)
 	NowStamp(stamp);
 
 	out = stem;
-	out.Append(infix);			// "_TaskStart_" / "_TrackOriginal_"
+	out.Append(infix);			// "_TaskStart_" ("_TrackOriginal_" too, until 2026-10-27)
 	out.Append(stamp);
 	out.Append(".indd");
 	out.SetTranslatable(kFalse);

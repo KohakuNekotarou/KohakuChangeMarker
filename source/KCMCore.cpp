@@ -541,7 +541,8 @@ bool16 KCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KCMPageH
 */
 bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 {
-	if (targetDB == nil || sourceDB == nil)
+	// (No Source is a Track listing's own case - 2026-10-27, KCMModeNeedsSource.)
+	if (targetDB == nil || (sourceDB == nil && KCMModeNeedsSource(KCMGetCompareMode())))
 		return kTrue;
 
 	// ★★★THE PIXEL AND THE RESOURCES MODES KEEP NO STORY LIST (2026-10-11, the user: "the Pixel comparison is to
@@ -563,12 +564,12 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 
 	// ★★THE TRACK CHANGES MODE BUILDS ITS ROWS FROM THE TARGET'S RECORDS (2026-10-05), not from the two
 	//   documents' counters: KCMStoryList stays empty, and KCMTrackList holds the rows the facade hands out in
-	//   this mode (KCMFacades.cpp). The Source is only read to check the original ranges against the copy.
+	//   this mode (KCMFacades.cpp). ★Nothing else is read since 2026-10-27: there is no Source (KCMTrackStart.h).
 	if (KCMGetCompareMode() == kKCMModeTrack)
 	{
 		KCMStoryList::Clear();
 		bool16 trackCancelled = kFalse;
-		KCMTrackRead::Build(targetDB, sourceDB, &trackCancelled);
+		KCMTrackRead::Build(targetDB, &trackCancelled);
 		if (trackCancelled)
 			return kFalse;
 		KCMStoryFollowEnsureObservers(targetDB);
@@ -694,7 +695,11 @@ bool16 KCMBuildStoryRowsByDiff(IDataBase* targetDB, IDataBase* sourceDB)
 ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString& outReport, bool16 allowIncremental,
 							  bool16 pixelsOnly)
 {
-	if (targetDB == nil || sourceDB == nil)
+	// ★A TRACK LISTING HAS NO SOURCE (2026-10-27, KCMModeNeedsSource): it pairs no page and rasterises none (the pairing
+	//   comes back empty for a nil Source, and only the Pixel mode rasterises), and everything below this line that names
+	//   the Source takes a nil one - the dirty guard, the overflow cache, the redraw, the notification (the design's
+	//   section 4 lists them, read one by one).
+	if (targetDB == nil || (sourceDB == nil && KCMModeNeedsSource(KCMGetCompareMode())))
 		return kFailure;
 
 	// Rasterising every page can trigger the lazy recompose of a story that was never composed --
@@ -1114,16 +1119,12 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		// panel asks it: one comparison, one answer ([[one-question-one-place]]).
 		// ⚠"nothing differs" and "it could not be run" must not read alike, which is why the whole
 		//   line comes from GetSummary rather than being assembled from a count.
-		// The Track Changes mode's line (2026-10-05): what the list holds, and the two counts that say what it
-		//   does not - records the copy kept although every change was rejected, and records no row shows.
+		// The Track Changes mode's line (2026-10-05): what the list holds, and the count that says what it does not -
+		//   records no row shows. (" not rejected in the copy=" went on 2026-10-27 with the copy.)
 		if (reportMode == kKCMModeTrack)
 		{
 			report.Append("tracked changes="); report.AppendNumber(KCMTrackList::GetTotalChangeCount());
 			report.Append(" authors="); report.AppendNumber(KCMTrackList::GetAuthorCount());
-			if (KCMTrackList::GetNotRejectedInCopy() > 0)
-			{
-				report.Append(" not rejected in the copy="); report.AppendNumber(KCMTrackList::GetNotRejectedInCopy());
-			}
 			if (KCMTrackList::GetOtherRecordCount() > 0)
 			{
 				report.Append(" other records (not shown)="); report.AppendNumber(KCMTrackList::GetOtherRecordCount());
@@ -1405,12 +1406,41 @@ bool16 KCMGetMarkColorCyan()
 //   see the same mode.
 static KCMCompareMode sCompareMode = kKCMModePixel;
 
+// ★★THE TRACK LISTING IS A STATE, NOT A SETTING (2026-10-27, the author: "not under Compare mode", "Compare with Tracked
+//   Changes alone", "Stop goes back to the mode before"). While it is up the comparison running is the Track listing and
+//   KCMGetCompareMode answers kKCMModeTrack; sCompareMode - the reader's choice, what Start compares in - is not touched,
+//   so going back to the mode before is lowering this and nothing more (no mode to remember and put back). Raised by
+//   KCMStartTrackChanges alone (KCMTrackStart.h); lowered wherever the armed state goes down - KCMStopComparison,
+//   KCMHandleDocsClosed, the shutdown - and by a start that did not arm. Read by a background thread as the mode is (one
+//   bool, written on the main thread only).
+static bool16 sTrackListing = kFalse;
+
 KCMCompareMode KCMGetCompareMode()
+{
+	return sTrackListing ? kKCMModeTrack : sCompareMode;
+}
+
+KCMCompareMode KCMGetCompareModeSetting()
 {
 	return sCompareMode;
 }
 
 void KCMSetCompareMode(KCMCompareMode mode)
 {
+	// Track is not a setting (above): a caller asking for it - none is left - changes nothing. Any other mode set while the
+	// Track listing is up changes the SETTING, which a Stop then goes back to (the panel's start-up restore can be that
+	// caller; a Compare mode item stops the listing first - KCMActionComponent.cpp, KCMApplyCompareMode).
+	if (mode == kKCMModeTrack)
+		return;
 	sCompareMode = mode;
+}
+
+void KCMBeginTrackListing()
+{
+	sTrackListing = kTrue;
+}
+
+void KCMEndTrackListing()
+{
+	sTrackListing = kFalse;
 }

@@ -150,7 +150,7 @@
 								// armed documents, which is the reading the engine is checked by
 #include "KCMStoryList.h"	// KCMStoryList::RowsAsTsv - app.kcmStoryRows, the reading port
 #include "KCMTrackList.h"	// KCMTrackList::RowsAsTsv - the same port in the Track Changes mode (2026-10-05)
-#include "KCMTrackOriginal.h"	// KCMTakeTrackOriginalCopy - app.kcmCompareTracked (2026-10-05)
+#include "KCMTrackStart.h"		// KCMStartTrackChanges - app.kcmCompareTracked (2026-10-05; no argument since 2026-10-27)
 #include "KCMCore.h"		// KCMGetCompareMode - which of the two lists the port reads
 #include "KCMRingAdornment.h"	// KCMGetNumItemsWithXP - document.kcmTransparencyItemCount
 #include "SysFileList.h"			// app.kcmImportToSource hands its one file over as a list
@@ -615,6 +615,12 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 				KCMStopComparison();
 				KCMGetSessionStatus(message);
 			}
+			else if (id == e_KCMCompareTracked)
+			{
+				// "Compare with Tracked Changes" - the flyout item's road, the item's own call (KCMTrackStart.h). (It took
+				//  the file the copy was saved to until 2026-10-27, when the copy went.)
+				KCMStartTrackChanges(message);
+			}
 			else
 			{
 				ScriptData arg;
@@ -624,11 +630,6 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 				{
 					message = "the file argument could not be read";
 					message.SetTranslatable(kFalse);
-				}
-				else if (id == e_KCMCompareTracked)
-				{
-					// "Compare with Tracked Changes..." with the file given instead of asked (2026-10-05, KCMTrackOriginal.h).
-					KCMTakeTrackOriginalCopy(&file, message);
 				}
 				else if (id == e_KCMImportToSource)
 				{

@@ -24,7 +24,6 @@ namespace
 {
 std::vector<KCMTrackAuthor>	gAuthors;
 std::vector<KCMTrackRow>	gRows;
-int32						gNotRejectedInCopy = 0;
 int32						gOtherRecords = 0;
 
 struct CounterHistory
@@ -85,12 +84,10 @@ void AppendCell(PMString& out, const PMString& s)
 }
 }	// namespace
 
-void KCMTrackList::Set(const std::vector<KCMTrackAuthor>& authors, const std::vector<KCMTrackRow>& rows,
-					   int32 notRejectedInCopy, int32 otherRecords)
+void KCMTrackList::Set(const std::vector<KCMTrackAuthor>& authors, const std::vector<KCMTrackRow>& rows, int32 otherRecords)
 {
 	gAuthors = authors;
 	gRows = rows;
-	gNotRejectedInCopy = notRejectedInCopy;
 	gOtherRecords = otherRecords;
 }
 
@@ -98,7 +95,6 @@ void KCMTrackList::Clear()
 {
 	gAuthors.clear();
 	gRows.clear();
-	gNotRejectedInCopy = 0;
 	gOtherRecords = 0;
 	gHistory.clear();
 	gRecordsAtRead = -1;
@@ -106,7 +102,6 @@ void KCMTrackList::Clear()
 
 int32 KCMTrackList::GetRowCount()		{ return static_cast<int32>(gRows.size()); }
 int32 KCMTrackList::GetAuthorCount()	{ return static_cast<int32>(gAuthors.size()); }
-int32 KCMTrackList::GetNotRejectedInCopy()	{ return gNotRejectedInCopy; }
 int32 KCMTrackList::GetOtherRecordCount()	{ return gOtherRecords; }
 
 const KCMTrackRow* KCMTrackList::GetRow(int32 nth)
@@ -196,9 +191,8 @@ void KCMTrackList::RowsAsTsv(PMString& out)
 {
 	out.Clear();
 	out.SetTranslatable(kFalse);
-	out.Append("#track\tnotRejectedInCopy\t");
-	out.AppendNumber(gNotRejectedInCopy);
-	out.Append("\totherRecords\t");
+	// (The heading's notRejectedInCopy went on 2026-10-27 with the copy; its pairs are read by name.)
+	out.Append("#track\totherRecords\t");
 	out.AppendNumber(gOtherRecords);
 	out.Append("\n");
 	for (size_t a = 0; a < gAuthors.size(); ++a)
@@ -213,6 +207,7 @@ void KCMTrackList::RowsAsTsv(PMString& out)
 		out.Append("\n");
 	}
 	// change  author  row  change  kind  uid  tstart  tend  sstart  send  srcexact  colour  hidden  new  old
+	// (sstart send srcexact are 0 since 2026-10-27 - no copy - and stay, so that the columns the tests read do not move.)
 	for (size_t r = 0; r < gRows.size(); ++r)
 	{
 		const KCMTrackRow& row = gRows[r];

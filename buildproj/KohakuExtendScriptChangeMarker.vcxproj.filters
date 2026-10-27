@@ -138,7 +138,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTrackResolve.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTrackOriginal.cpp">
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTrackStart.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTrackRead.cpp">
@@ -224,7 +224,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTrackResolve.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTrackOriginal.h">
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTrackStart.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTrackRead.h">

@@ -299,7 +299,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryMarkBuild.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryPlace.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTrackResolve.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTrackOriginal.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTrackStart.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTrackRead.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTrackList.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageNumberMarker.cpp" />
@@ -433,7 +433,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryPlacePairRule.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryPlace.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTrackResolve.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTrackOriginal.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTrackStart.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTrackRead.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTrackList.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMBookFacade.h" />

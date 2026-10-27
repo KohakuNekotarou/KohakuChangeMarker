@@ -19,9 +19,9 @@
 //                               it is read.
 //     KCMRealisePairEnd         turns a file end into a database, by finding the document already
 //                               open on it or opening it. ★**ONLY Start CALLS THIS.**
-//                               (★And "Compare with Tracked Changes..." since 2026-10-05 - KCMTrackOriginal.cpp: it
-//                               opens its copy itself, because every change has to be rejected in it before the
-//                               comparison reads it. A PRESS, like Start - never a grey-state question.)
+//                               (★"Compare with Tracked Changes..." called it too from 2026-10-05 to 2026-10-27 - it
+//                               opened its copy itself, to reject every change in it before the comparison read it.
+//                               It makes no copy now - KCMTrackStart.h.)
 //
 //  ★**ALL THE SLOTS IN ONE FILE** (moved out of KCMComparisonRun on 2026-09-21): they answer one
 //  question - "which two has the reader chosen" - and split across two files there would be two
@@ -90,8 +90,9 @@ bool16 KCMRealisePairEnd(const KCMPairEnd& end, IDataBase*& outDB, PMString& why
 
 /** The open document whose file is `file`, or nil when no open document has it (IDocumentList::FindDoc, its answer
     checked against the file - KCMPairChoice.cpp says why).
-    ★THE ONE PLACE this plug-in asks "is this file open": KCMRealisePairEnd, and since 2026-10-05 the two copy roads,
-     which never write a copy over a file that is open (KCMAskWhereToSaveCopy, KCMTakeTrackOriginalCopy). */
+    ★THE ONE PLACE this plug-in asks "is this file open": KCMRealisePairEnd, and since 2026-10-05 the copy road, which
+     never writes a copy over a file that is open (KCMAskWhereToSaveCopy - Task Start (Save)...; the second copy road,
+     Compare with Tracked Changes', went on 2026-10-27). */
 IDataBase* KCMOpenDocOnFile(const IDFile& file);
 
 //----------------------------------------------------------------------------------------

@@ -457,21 +457,21 @@ private:
 
 /** Reads the Target's tracked changes for the fourth table - the Track mode's own reader, into its own list
     (KCMTrackRead::Build) - and empties the list again on the way out (2026-10-27, the author's decision of 2026-10-11).
-    ★THE SOURCE IS HANDED OVER AS A START HANDS IT: when it is the copy "Compare with Tracked Changes..." made, the reader
-      checks each change against it; any other Source is not read - the table is the Target's records alone.
+    ★THE TABLE IS THE TARGET'S RECORDS ALONE: no Source is read (none is, by the reader, since the copy "Compare with
+      Tracked Changes..." made went - 2026-10-27).
     ⚠EMPTIED, NOT PUT BACK - StoryDetailLoan's reason: nothing is started while the report is made, and Stop empties the
       list (KCMTrackList::Clear, its counter history with it). The panel is not told, for the same reason as there. */
 class TrackLoan
 {
 public:
-	TrackLoan(IDataBase* targetDB, IDataBase* sourceDB)
+	explicit TrackLoan(IDataBase* targetDB)
 		: fBuilt(kFalse), fCancelled(kFalse)
 	{
 		if (targetDB == nil)
 			return;
 		fBuilt = kTrue;
 		bool16 cancelled = kFalse;
-		KCMTrackRead::Build(targetDB, sourceDB, &cancelled);
+		KCMTrackRead::Build(targetDB, &cancelled);
 		fCancelled = cancelled;
 	}
 	~TrackLoan()
@@ -1173,7 +1173,7 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 
 		// ★THE FOURTH TABLE (2026-10-27, the author's decision of 2026-10-11): the Target's tracked changes, in every mode;
 		//   "(none)" under a bare heading when there are none (KCMReportWriteTable writes it for empty rows).
-		TrackLoan trackLoan(targetDB, sourceDB);
+		TrackLoan trackLoan(targetDB);
 		if (trackLoan.WasCancelled())
 		{
 			KCMReportRow r;

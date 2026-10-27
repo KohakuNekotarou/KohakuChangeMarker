@@ -26,9 +26,9 @@
 //  registered seven alone (app.kcmStatus, app.kcmBookResult, the four story counters, the tool's enumerator) - checked by
 //  work\kcm-regress\full\ship_check.py, which reads the build's resources for the doors' names and its .pln for "kcm-diag".
 //
-//  Why it exists: the Track Changes mode (2026-10-05) reads InDesign's tracked-change records, makes a copy
-//  with every change rejected and follows an Undo / Redo at idle - all of it out of sight. A trace of what
-//  was read and decided is the instrument when a live run disagrees with the list.
+//  Why it exists: the Track Changes mode (2026-10-05) reads InDesign's tracked-change records (and made a copy
+//  with every change rejected, until 2026-10-27) and follows an Undo / Redo at idle - all of it out of sight. A
+//  trace of what was read and decided is the instrument when a live run disagrees with the list.
 //
 //  AND FAULT SWITCHES. KCM_DIAG_FAULT("name") is true while the file %TEMP%\kcm-diag-fault-<name> exists - a
 //  test creates it and deletes it again - so a test build can reach a state the product only gets into after

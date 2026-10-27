@@ -205,6 +205,10 @@ static void KCMTrackerBeginPeek(PMReal opacity)
 	const bool16 overSource = overTarget ? kFalse : KCMMouseIsOverArmedSource();
 	if (!Utils<IKCMCompareFacade>()->ArmedDocsAlive() || (!overTarget && !overSource))
 		return;	// not started / a compared document has closed / not over either compared window
+	// ★NO OTHER VERSION TO LAY OVER IN A TRACK LISTING (2026-10-27 - it is armed with the Target alone, no Source document
+	//   is made): the press does nothing, and the marks stay as they are (the return is before they are switched off).
+	if (Utils<IKCMCompareFacade>()->GetArmedSourceDB() == nil)
+		return;
 	sPeekActive = kTrue;
 	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
 	compare->SetPeekOpacity(opacity);	// the overlay's opacity, read at draw time

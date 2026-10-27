@@ -919,8 +919,8 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMImportStoryTextMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Compare with Tracked Changes..." (2026-10-05): the import's road for the Track mode - a copy with every
-		// tracked change rejected becomes the Source, and the Track Changes comparison starts. Directly under Import.
+		// "Compare with Tracked Changes" (2026-10-05): the Target's tracked changes listed from its own records - since
+		// 2026-10-27 with no copy, no dialog (hence no "...") and no Source, the only way into Track. Directly under Import.
 		kKCMCompareTrackedActionID,
 		kKCMPopupMenuPath,
 		kKCMCompareTrackedMenuItemPosition,
@@ -1026,11 +1026,8 @@ resource MenuDef (kSDKDefMenuResourceID)
 		kKCMModeResourcesSubMenuItemPosition,
 		kSDKDefIsNotDynamicMenuFlag,
 
-		// "Compare mode > Track Changes" (2026-10-05): the Target's own tracked changes are the older version.
-		kKCMPopupModeTrackActionID,
-		kKCMCompareModeSubmenuPath,
-		kKCMModeTrackSubMenuItemPosition,
-		kSDKDefIsNotDynamicMenuFlag,
+		// (⛔"Compare mode > Track Changes" - 2026-10-05 - went on 2026-10-27: the author, "not under Compare mode - Compare
+		//  with Tracked Changes alone". Its ActionID +87 is a grave - KCMUIID.h.)
 
 		// "Always Show Marks on Source" on the panel flyout (popup) menu. Check-mark toggle:
 		// while ON, the same comparison rings are also drawn on the corresponding pages of the
@@ -1646,7 +1643,7 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		// "Compare with Tracked Changes..." (2026-10-05). Greyed with no document to copy (UpdateActionStates).
+		// "Compare with Tracked Changes" (2026-10-05). Greyed with no document to list (UpdateActionStates).
 		kKCMActionComponentBoss,
 		kKCMCompareTrackedActionID,
 		kKCMCompareTrackedMenuKey,
@@ -1742,14 +1739,8 @@ resource ActionDef (kSDKDefActionResourceID)
 		kInvalidInterfaceID,
 		kSDKDefInvisibleInKBSCEditorFlag,
 
-		kKCMActionComponentBoss,
-		kKCMPopupModeTrackActionID,
-		kKCMModeTrackKey,					// "Track Changes" (2026-10-05)
-		kOtherActionArea,
-		kNormalAction,
-		kCustomEnabling|kDisableIfLowMem,	// ⚠kCustomEnabling is what makes UpdateActionStates run at all -- without it the check mark can never appear, however correctly the state is set (ActionDefs.h:40)
-		kInvalidInterfaceID,
-		kSDKDefInvisibleInKBSCEditorFlag,
+		// (⛔The "Track Changes" mode item's action - kKCMPopupModeTrackActionID, 2026-10-05 - went on 2026-10-27 with its
+		//  menu entry above.)
 
 		kKCMActionComponentBoss,
 		kKCMPopupShowSrcMarksActionID,

@@ -70,8 +70,8 @@ static bool16 sSourceIsFile = kFalse;
 /*	★THE SOURCE CHOICE LEAVES A TASK START KEPT IN MEMORY (2026-10-13, the user: "throw the clone away properly -
 	when the Source changes"). Every setter of the Source slot is in this file, so the question is asked here, at
 	the head of each of them, and nowhere else ([[one-question-one-place]]). ⚠KCMChooseDBPair forgets no lent
-	registration of its own - "Compare with Tracked Changes..." goes through it - so without this the clone would
-	outlive its choice there.
+	registration of its own - "Compare with Tracked Changes..." went through it until 2026-10-27 - so without this the
+	clone would outlive its choice there.
 	⚠KCMForgetChosenSourceIfDB does not ask: KCMLetGoTaskStartClone itself calls it.
 	@param arriving what the slot is about to hold (nil for a file or for nothing).
 	@param stopIfDrawing kFalse only from KCMClearChosenDocs (the model's shutdown too). */

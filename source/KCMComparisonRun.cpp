@@ -72,6 +72,12 @@ void KCMStopComparison()
 			KCMRevalidateItemXPList(armedSource);
 	}
 
+	// ★A TRACK LISTING ENDS HERE, AND THE MODE IS THE ONE BEFORE IT (2026-10-27, the author: "Stop goes back to the mode
+	//   before"). Lowered FIRST, so that every notification this Stop sends - the Story list's emptying inside
+	//   KCMDoClearMarks, the two Cleared - redraws the panel in the mode the reader had chosen (the tab, the heading). No
+	//   step below asks the mode. A Stop with no listing up changes nothing here.
+	KCMEndTrackListing();
+
 	// The active document is only used for the redraw, and nil is fine: KCMDoClearMarks and
 	// KCMDoDisarmMousePeek each remember the document the marks were actually drawn on (sDB, the
 	// armed target) and redraw that, so clearing and disarming still work with no document open.
@@ -116,7 +122,8 @@ void KCMStopComparison()
 //   kFalse case leaves exactly the state they began in and there is nothing to undo.
 bool16 KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 {
-	if (targetDB == nil || sourceDB == nil)
+	// (A Track listing is started with no Source - KCMStartTrackChanges, 2026-10-27; every other mode needs one.)
+	if (targetDB == nil || (sourceDB == nil && KCMModeNeedsSource(KCMGetCompareMode())))
 		return kFalse;
 
 	// **The transparency-list insurance, on both documents, before anything is drawn**
@@ -173,8 +180,8 @@ void KCMRefreshComparison()
 
 	IDataBase* const targetDB = KCMArmedTargetDB();
 	IDataBase* const sourceDB = KCMArmedSourceDB();
-	if (targetDB == nil || sourceDB == nil)
-		return;					// nothing is armed - the menu item is greyed for this
+	if (targetDB == nil || (sourceDB == nil && KCMModeNeedsSource(KCMGetCompareMode())))
+		return;					// nothing is armed - the menu item is greyed for this (a Track listing has no Source - 2026-10-27)
 
 	// ⚠**ASKED, NOT ASSUMED.** A document that has been closed since the comparison started leaves
 	//   its IDataBase* behind in the armed state (that is the whole reason KCMArmedDocsAlive
@@ -201,6 +208,14 @@ void KCMRefreshComparison()
 	//   only visible difference between "I cancelled a refresh" and "I pressed Stop" is one the
 	//   panel does not show.
 	KCMSayStatus("refresh cancelled - comparison stopped");
+}
+
+// KCMStopForCancelledReread (declared in KCMComparisonRun.h) -- a Track listing's re-read was cancelled.
+void KCMStopForCancelledReread()
+{
+	KCMStopComparison();
+	// Said after the Stop, whose own "marks cleared" says nothing about WHY (KCMRefreshComparison's reason, above).
+	KCMSayStatus("re-read cancelled - the Track listing stopped");
 }
 
 // KCMStartComparisonFor (declared in KCMComparisonRun.h) -- the two-DOCUMENT entry. It only

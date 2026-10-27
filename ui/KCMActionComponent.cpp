@@ -179,21 +179,32 @@ static void KCMApplyCompareMode(KCMCompareMode mode)
 	if (compare == nil || compare->GetCompareMode() == mode)
 		return;
 
+	// ★A MODE CHOSEN WHILE A TRACK LISTING IS UP ENDS THE LISTING FIRST (2026-10-27 - Track is not a mode any more: it is
+	//   "Compare with Tracked Changes"' listing, armed with the Target alone). There is no Source to compare again in the
+	//   chosen mode, so nothing starts - the Stop, then the setting, and the reader presses Start.
+	//   (GetCompareMode answers Track only while the listing is up, so this cannot take a running Pixel / Story / Resources
+	//   comparison - those recompare below.)
+	const bool16 trackStopped = (compare->IsArmed() && compare->GetCompareMode() == kKCMModeTrack) ? kTrue : kFalse;
+	if (trackStopped)
+		compare->StopComparison();
+
 	compare->SetCompareMode(mode);
 
 	// ⚠**A switch, not a ternary** (2026-09-09): as `== kKCMModeStory ? story : pixel` the status
-	//   line announced "pixel changes" while switching TO the Resources mode.
+	//   line announced "pixel changes" while switching TO the Resources mode. (No Track case since 2026-10-27: it is
+	//   never chosen here.)
 	const char* modeWord = "pixel";
 	switch (mode)
 	{
 		case kKCMModeStory:		modeWord = "story";		break;
 		case kKCMModeResources:	modeWord = "resources";	break;
-		case kKCMModeTrack:		modeWord = "track";		break;
 		default:				modeWord = "pixel";		break;
 	}
 	PMString msg("Compare mode: ");
 	msg.Append(modeWord);
 	msg.Append(" changes.");
+	if (trackStopped)
+		msg.Append(" (the Track listing stopped)");
 	msg.SetTranslatable(kFalse);
 
 	// ★While Started, everything is compared again in the new mode. When nothing is being compared
@@ -738,9 +749,8 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		case kKCMPopupModeResourcesActionID:
 			KCMApplyCompareMode(kKCMModeResources);
 			break;
-		case kKCMPopupModeTrackActionID:
-			KCMApplyCompareMode(kKCMModeTrack);	// the fourth mode (2026-10-05)
-			break;
+		// (⛔"Compare mode > Track Changes" - kKCMPopupModeTrackActionID, the fourth mode of 2026-10-05 - went on 2026-10-27:
+		//  the author, "not under Compare mode - Compare with Tracked Changes alone".)
 
 		// Flyout "Save Panel Settings": write the current settings toggles to a private JSON file and
 		// show where it went **in the panel’s status line** (the work is KCMSavePanelState in
@@ -1172,13 +1182,12 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			}
 			break;
 
-		// ★"Compare with Tracked Changes..." (2026-10-05): the model does the whole road - the save dialog, the copy,
-		//   the rejections, the pair, the mode and the start (KCMTrackOriginal.h); this says what came of it.
-		//   An empty message = the reader cancelled the dialog, and a cancel says nothing (RUN-67).
+		// ★"Compare with Tracked Changes" (2026-10-05; the Target's records alone, no copy, no dialog, since 2026-10-27): the
+		//   model does the whole road - the stop, the listing, the start (KCMTrackStart.h); this says what came of it.
 		case kKCMCompareTrackedActionID:
 			{
 				PMString msg;
-				Utils<IKCMCompareFacade>()->TakeTrackOriginalCopy(msg);
+				Utils<IKCMCompareFacade>()->StartTrackChanges(msg);
 				KCMRefreshPanel();
 				if (msg.CharCount() > 0)
 					KCMSetStatus(msg);
@@ -1485,11 +1494,9 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeResources);
 				break;
 			}
-			case kKCMPopupModeTrackActionID:
-			{
-				KCMSetCheckState(listToUpdate, i, Utils<IKCMCompareFacade>()->GetCompareMode() == kKCMModeTrack);
-				break;
-			}
+			// (⛔The Track Changes item went on 2026-10-27. ★While a Track listing is up none of the three carries the
+			//  check: GetCompareMode answers Track then - the panel's tab says "Track" - and a Stop puts the check back on
+			//  the reader's mode, which the listing never changed.)
 			case kKCMPopupHideUnchangedActionID:
 			{
 				// ★Greyed unless Started (armed), by the user’s instruction. This feature picks "the spreads
@@ -1711,9 +1718,10 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 			}
 			case kKCMCompareTrackedActionID:
 			{
-				// A document to copy - the chosen Target, else the active one - and nothing else, as Import (2026-10-05).
+				// A document to list - the chosen Target, else the active one - and nothing else, as Import (2026-10-05).
+				//   Live while comparing, too: the press stops the comparison first (KCMTrackStart.h).
 				InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-				const bool16 live = (compare != nil && compare->CanTakeTrackOriginalCopy()) ? kTrue : kFalse;
+				const bool16 live = (compare != nil && compare->CanStartTrackChanges()) ? kTrue : kFalse;
 				listToUpdate->SetNthActionState(i, live ? kEnabledAction : kDisabled_Unselected);
 				break;
 			}

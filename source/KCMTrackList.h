@@ -48,7 +48,7 @@ struct KCMTrackChange
 	bool16			fHasColour;		// kFalse = InDesign draws this author on white: the Mark colour stands in
 	uint8			fR, fG, fB;
 	bool16			fHidden;		// in hidden conditional text
-	bool16			fSourceExact;	// fChange's Source range was checked against the copy (KCMTrackRead)
+	bool16			fSourceExact;	// fChange's Source range was checked against the copy (KCMTrackRead) - ⚠always kFalse since 2026-10-27 (no copy); its readers stay for the waste-removal pass
 	std::vector<KCMTrackRecordRef>	fRecords;	// the insertion and / or the deletion it was made of (2026-10-25)
 	KCMTrackChange() : fAuthor(-1), fKind(0), fTime(0), fHasColour(kFalse), fR(0), fG(0), fB(0),
 					   fHidden(kFalse), fSourceExact(kFalse) {}
@@ -76,9 +76,9 @@ struct KCMTrackAuthor
 namespace KCMTrackList
 {
 	/** Replace the list. The counter history (NeedsReadAgain) is KEPT: a re-read after an undo has to be able to
-		recognise the next one. notRejectedInCopy / otherRecords are the two numbers the report line says. */
-	void	Set(const std::vector<KCMTrackAuthor>& authors, const std::vector<KCMTrackRow>& rows,
-				int32 notRejectedInCopy, int32 otherRecords);
+		recognise the next one. otherRecords is the number the report line says. (A second number - the records a copy
+		kept although every change was rejected - went on 2026-10-27 with the copy.) */
+	void	Set(const std::vector<KCMTrackAuthor>& authors, const std::vector<KCMTrackRow>& rows, int32 otherRecords);
 	/** Empty the list AND the counter history (Stop, a closed document). */
 	void	Clear();
 	int32	GetRowCount();
@@ -86,7 +86,6 @@ namespace KCMTrackList
 	int32	GetAuthorCount();
 	const KCMTrackAuthor*	GetAuthor(int32 a);
 	int32	GetTotalChangeCount();
-	int32	GetNotRejectedInCopy();
 	int32	GetOtherRecordCount();
 	/** Every story the list names, once each. */
 	void	GetStoryUIDs(std::vector<UID>& out);

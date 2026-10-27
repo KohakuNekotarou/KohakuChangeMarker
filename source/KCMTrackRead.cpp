@@ -38,7 +38,6 @@
 #include "KCMStoryList.h"			// KCMStoryList::ReadRowForStory, KCMStoryFrameAt
 #include "KCMStoryKinds.h"
 #include "KCMTrackList.h"
-#include "KCMTrackOriginal.h"		// KCMIsTrackOriginalOf - is the Source the rejected copy
 #include "KCMTrackPlan.h"
 #include "KCMTrackRead.h"
 
@@ -175,16 +174,11 @@ std::u16string SortKey(const PMString& s)
 	return (b != nil) ? std::u16string(reinterpret_cast<const char16_t*>(b), static_cast<size_t>(n)) : std::u16string();
 }
 
-// Is copyDB's story at [from, to) these characters? (The check behind fSourceExact.)
-bool16 CopyReads(IDataBase* copyDB, UID story, TextIndex from, const WideString& want)
-{
-	InterfacePtr<ITextModel> model(copyDB, story, UseDefaultIID());
-	if (model == nil || from < 0 || from + want.CharCount() > model->TotalLength())
-		return kFalse;
-	return (ReadRaw(model, from, from + want.CharCount()) == want) ? kTrue : kFalse;
-}
+// (⛔CopyReads - "is the copy's story at [from, to) these characters", the check behind fSourceExact - went on 2026-10-27
+//  with the copy itself.)
 
-// The records the copy still holds - what "every change rejected" could not take back.
+// Every tracked-change record db holds, a note's too - the follower's count (RecordsMovedSinceRead). (It counted the
+// records a copy kept although every change was rejected, as well, until the copy went on 2026-10-27.)
 int32 CountRecords(IDataBase* db)
 {
 	if (db == nil)
@@ -213,26 +207,21 @@ int32 CountRecords(IDataBase* db)
 }
 }	// namespace
 
-int32 KCMTrackRead::Build(IDataBase* targetDB, IDataBase* sourceDB, bool16* outCancelled)
+int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 {
 	if (outCancelled != nil)
 		*outCancelled = kFalse;
 	std::vector<KCMTrackAuthor> authors;
 	std::vector<KCMTrackRow> rows;
-	// ★BOTH DOCUMENTS ASKED FOR AGAIN, NOT TRUSTED (re-check 2026-10-05): a caller hands over the armed pointers, and the
-	//   copy or the Target may have been closed since - a closed database is never dereferenced (KCMIsDocDBOpen compares
-	//   pointers only). A Source that is gone is read as "not the copy"; a Target that is gone leaves an empty list.
-	if (sourceDB != nil && !KCMIsDocDBOpen(sourceDB))
-		sourceDB = nil;
+	// ★THE TARGET ASKED FOR AGAIN, NOT TRUSTED (re-check 2026-10-05): a caller hands over the armed pointer, and the
+	//   Target may have been closed since - a closed database is never dereferenced (KCMIsDocDBOpen compares pointers
+	//   only). A Target that is gone leaves an empty list.
 	if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
 	{
-		KCMTrackList::Set(authors, rows, 0, 0);
+		KCMTrackList::Set(authors, rows, 0);
 		return 0;
 	}
 
-	// Is the Source the copy "Compare with Tracked Changes..." made from targetDB (asked of the files)? Only then are
-	// the Source ranges computed; any other Source leaves them at (0,0) - the story's start.
-	const bool16 sourceIsCopy = (sourceDB != nil && KCMIsTrackOriginalOf(sourceDB, targetDB)) ? kTrue : kFalse;
 	IDataBase::SaveRestoreModifiedState dirtyGuard(targetDB);	// KCMStoryFrameAt composes (the overset test)
 	Utils<ITrackChangeUtils> utils;
 	InterfacePtr<IStoryList> stories(targetDB, targetDB->GetRootUID(), UseDefaultIID());
@@ -430,30 +419,11 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, IDataBase* sourceDB, bool16* outC
 				sc.fOtherTextPost = sc.fTextPost;
 				// Overset: a change composed into no frame (the jump then goes to the "+").
 				sc.fOverset = (!p.fHidden && KCMStoryFrameAt(targetDB, storyRef.GetUID(), from, to <= from) == kInvalidUID) ? kTrue : kFalse;
-				// The original: exact only against the copy, and only when the copy reads as expected there.
+				// No place in an original: there is no Source (2026-10-27). ⛔Until then, against the copy "Compare with
+				//  Tracked Changes..." saved with every change rejected, the change's place there (p.fOrigFrom / fOrigTo) was
+				//  checked by its characters and, when they read as expected, handed out as the Source range with
+				//  fSourceExact - what lit the Source window. fSourceExact stays kFalse now.
 				sc.fSourceStart = sc.fSourceEnd = 0;
-				if (sourceIsCopy && !p.fHidden)
-				{
-					bool16 ok = kFalse;
-					if (p.fDelRec >= 0)
-						ok = CopyReads(sourceDB, storyRef.GetUID(), p.fOrigFrom, deleted[static_cast<size_t>(p.fDelRec)]);
-					else
-					{
-						const int32 k = (p.fFrom < 4) ? p.fFrom : 4;
-						ok = (k > 0 && p.fOrigFrom >= k)
-							? CopyReads(sourceDB, storyRef.GetUID(), p.fOrigFrom - k, ReadRaw(model, p.fFrom - k, p.fFrom))
-							: (p.fOrigFrom == 0 && p.fFrom == 0);
-					}
-					if (!ok)
-						KCM_DIAG_LOG("track read: story %u change at %d: the copy does not read as expected at %d - Source range left at the start",
-									 (unsigned)storyRef.GetUID().Get(), (int)p.fFrom, (int)p.fOrigFrom);
-					if (ok)
-					{
-						sc.fSourceStart = p.fOrigFrom;
-						sc.fSourceEnd = p.fOrigTo;
-						ch.fSourceExact = kTrue;
-					}
-				}
 				row.fChanges.push_back(ch);
 			}
 			if (row.fChanges.empty())
@@ -537,11 +507,11 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, IDataBase* sourceDB, bool16* outC
 			rows[r].fChanges[c].fAuthor = rows[r].fAuthor;
 	}
 
-	KCMTrackList::Set(kept, rows, sourceIsCopy ? CountRecords(sourceDB) : 0, otherRecords);
+	KCMTrackList::Set(kept, rows, otherRecords);
 	KCMTrackList::NoteStoryCounters(targetDB);
 	KCMTrackList::NoteRecordCount(targetRecords);
-	KCM_DIAG_LOG("track read: done changes=%d authors=%d rows=%d sourceIsCopy=%d other=%d records=%d", (int)total,
-				 (int)kept.size(), (int)rows.size(), (int)sourceIsCopy, (int)otherRecords, (int)targetRecords);
+	KCM_DIAG_LOG("track read: done changes=%d authors=%d rows=%d other=%d records=%d", (int)total,
+				 (int)kept.size(), (int)rows.size(), (int)otherRecords, (int)targetRecords);
 	return total;
 }
 

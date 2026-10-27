@@ -253,10 +253,10 @@ enum KCMScriptMethods
 	e_KCMExportStoryText = 'eKGe',	// e = export. app.kcmExportStoryText(folder) -> "exported N ... to <folder>"
 									// ⚠**IT WRITES .docx SINCE 2026-09-21** (it wrote .html until then).
 	e_KCMStopComparison = 'eKGq',	// q = quit.  app.kcmStopComparison()       -> the status line after it
-	// ★(2026-10-05) "Compare with Tracked Changes..." without the save dialog - the menu item's own model call,
-	//   so the Track mode can be tested from KIDMCP. ⚠'eKGl' was MEASURED free (0 hits in source/sdksamples,
-	//   2026-10-05). ⚠Not registered with Adobe.
-	e_KCMCompareTracked = 'eKGl',	// l = log (the change log). app.kcmCompareTracked(file) -> the status line's sentence
+	// ★(2026-10-05) "Compare with Tracked Changes" - the menu item's own model call (without its save dialog until
+	//   2026-10-27, when the dialog and the copy went), so the Track listing can be tested from KIDMCP. ⚠'eKGl' was
+	//   MEASURED free (0 hits in source/sdksamples, 2026-10-05). ⚠Not registered with Adobe.
+	e_KCMCompareTracked = 'eKGl',	// l = log (the change log). app.kcmCompareTracked() -> the status line's sentence (it took a file - the copy's - until 2026-10-27)
 	// ★(2026-10-24, adopted 2026-10-25) "Import Story Text..." and its Apply, without the dialog and the right click -
 	//   so they can be measured from KIDMCP. ⚠Every lowercase letter after 'eKG' is taken or avoided
 	//   (the note above and the tree), so these two are UPPERCASE - 'eKGI' / 'eKGA' MEASURED free: 0 hits in source/ and
