@@ -964,6 +964,14 @@ static void LetFociOf(KCMStoryRow& row)
 	position-pairing bit, its records), put on the new row of the same two stories - or on a row made for them when the
 	comparison made none (the story's counters agree, or no counter moved: KCM's own writes can bring a story back to
 	where its counters started). A story the document no longer reads has its records' foci let go.
+	★★A PAIR BY PLACE THAT DID NOT COME BACK KEEPS ITS PAIRING ON THE STORY'S OWN ROW (2026-10-27, the re-inspection's M8 -
+	  measured: a row paired by place with a "=" in it, its frame moved 1pt, Refresh Comparison - and the pasted story stood
+	  twice, as an Added row and as a row made here against its old Source story, with that story listed Removed besides).
+	  The design's own step (docs/superpowers/specs/2026-10-26-kcm-equal-follow-focus-design.md 7) puts the records back on
+	  the new row of the same story and makes one only when the story has none: so the Target story's Added row takes the
+	  pairing the records were made under, and the Source story's Removed row goes - the two KCMStoryPairByPlace makes into
+	  one. When the comparison pairs either story with another now (or a story paired by uid has lost its Source story -
+	  its row is an Added one), the records' pair is gone, and they are let go with their foci.
 	⚠BEFORE THE SORT: a row made here takes its place by its page like any other.
 */
 static void PutBackCarried(IDataBase* targetDB, std::vector<KCMStoryRow>& carried)
@@ -971,13 +979,42 @@ static void PutBackCarried(IDataBase* targetDB, std::vector<KCMStoryRow>& carrie
 	for (size_t c = 0; c < carried.size(); ++c)
 	{
 		KCMStoryRow& from = carried[c];
-		int32 at = -1;
-		for (size_t i = 0; i < gRows.size() && at < 0; ++i)
-			if (gRows[i].fStoryUID == from.fStoryUID && gRows[i].fSourceStoryUID == from.fSourceStoryUID
-				&& (gRows[i].fKinds & kKCMStoryKindRemoved) == 0)
-				at = static_cast<int32>(i);
+		const bool16 byPlace = ((from.fKinds & kKCMStoryKindByPosition) != 0) ? kTrue : kFalse;
+		int32 at = -1;					// the new row of the same two stories
+		int32 own = -1;					// else the Target story's own new row - an Added one, or paired with another story
+		bool16 sourceTaken = kFalse;	// the Source story stands for another Target story's row
+		for (size_t i = 0; i < gRows.size(); ++i)
+		{
+			const KCMStoryRow& r = gRows[i];
+			if ((r.fKinds & kKCMStoryKindRemoved) != 0)
+				continue;
+			if (r.fStoryUID == from.fStoryUID)
+			{
+				if (r.fSourceStoryUID == from.fSourceStoryUID)
+				{
+					if (at < 0)
+						at = static_cast<int32>(i);
+				}
+				else if (own < 0)
+					own = static_cast<int32>(i);
+			}
+			else if (r.fSourceStoryUID != kInvalidUID && r.fSourceStoryUID == from.fSourceStoryUID)
+				sourceTaken = kTrue;
+		}
 		bool16 made = kFalse;
-		if (at < 0)
+		if (at < 0 && byPlace && own >= 0 && gRows[static_cast<size_t>(own)].fSourceStoryUID == kInvalidUID && !sourceTaken)
+		{
+			KCMStoryRow& lone = gRows[static_cast<size_t>(own)];
+			lone.fSourceStoryUID = from.fSourceStoryUID;
+			lone.fKinds = kKCMStoryKindByPosition;		// as KCMStoryPairByPlace makes a pair: no counter bit
+			at = own;
+		}
+		else if (at < 0 && (own >= 0 || sourceTaken))
+		{
+			LetFociOf(from);	// the two stories stand in other rows now: the records' pair is gone
+			continue;
+		}
+		else if (at < 0)
 		{
 			KCMStoryRow row;
 			row.fKinds = kKCMStoryKindText | (from.fKinds & kKCMStoryKindByPosition);	// KCM wrote in it; the pairing it had
@@ -990,6 +1027,16 @@ static void PutBackCarried(IDataBase* targetDB, std::vector<KCMStoryRow>& carrie
 			gRows.push_back(row);
 			at = static_cast<int32>(gRows.size()) - 1;
 			made = kTrue;
+		}
+		// The Source story of a pair by place is the row's Source now, so its Removed row goes (the header above says why).
+		for (size_t i = 0; byPlace && i < gRows.size(); ++i)
+		{
+			if ((gRows[i].fKinds & kKCMStoryKindRemoved) == 0 || gRows[i].fStoryUID != from.fSourceStoryUID)
+				continue;
+			gRows.erase(gRows.begin() + static_cast<std::ptrdiff_t>(i));
+			if (static_cast<int32>(i) < at)
+				--at;
+			break;
 		}
 		KCM_DIAG_LOG("FOCUS carry story=%d records=%d%s", (int)from.fStoryUID.Get(), (int)from.fEqual.size(),
 					 made ? " (a row made for them)" : "");

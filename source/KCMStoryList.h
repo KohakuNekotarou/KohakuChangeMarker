@@ -799,6 +799,8 @@ namespace KCMStoryList
 		has records and no row gets one (the text diff then finds what still differs in it; DropRowsWithNoContentChange
 		keeps a row holding records). ⚠Built for another pair - a new Start, a new import's copy - nothing is carried: the
 		records are about the documents they were made in, and Stop has emptied the list before any of those anyway.
+		★A pair by place whose frames no longer stand at one place (2026-10-27) keeps its pairing on the Target story's own
+		row, the Source story's Removed row going - one row per story, as the pairing made it (KCMStoryList.cpp, PutBackCarried).
 
 		@param targetDB the newer document. nil clears the list.
 		@param sourceDB the older document -- where a Removed row's story, text and page are read
