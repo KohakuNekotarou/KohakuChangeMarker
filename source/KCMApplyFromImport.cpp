@@ -274,16 +274,47 @@ int32 OrdinalOfTable(const UIDRef& targetStory, UID tableUID)
 	return -1;
 }
 
+/** Whether a paragraph of a cell of table `ordinal` in `now` holds the reference of note `note` (N's numbering - the
+	plan's, and the document's: KCMStorySyncPlan.h). */
+bool16 CellsReferTo(const KCMStoryShape::Story& now, int32 ordinal, int32 note)
+{
+	if (ordinal < 0 || static_cast<size_t>(ordinal) >= now.fTables.size())
+		return kFalse;
+	const KCMStoryShape::Table& t = now.fTables[static_cast<size_t>(ordinal)];
+	for (size_t r = 0; r < t.fRows.size(); ++r)
+		for (size_t c = 0; c < t.fRows[r].fCells.size(); ++c)
+			for (size_t p = 0; p < t.fRows[r].fCells[c].fParas.size(); ++p)
+			{
+				const std::vector<KCMStoryShape::NoteRef>& refs = t.fRows[r].fCells[c].fParas[p].fNoteRefs;
+				for (size_t k = 0; k < refs.size(); ++k)
+					if (refs[k].fNote == note)
+						return kTrue;
+			}
+	return kFalse;
+}
+
 /** The steps of `plan` about table `ordinal` - its shape moves when `shape`, otherwise its cells' words, marks and
 	notes (a note step stands where its reference is: the cell). ★Every step of every cell of the table is kept, so
 	the numbering inside a cell is the whole plan's; only other places are left out, and a place is a thread of its
-	own. */
-void StepsOfTable(const KCMStorySync::Plan& plan, int32 ordinal, bool16 shape, KCMStorySync::Plan& out)
+	own.
+	★★A NOTE WORD TOOK AWAY NAMES NO PLACE (KCMStorySync's kDeleteNote carries the note alone), and is kept when `now`
+	  holds its reference in one of the table's cells (2026-10-27, the re-inspection's M19 - measured: until then a
+	  footnote taken out of a cell in Word stayed, while one Word ADDED in a cell - a step naming its cell - went in, and
+	  a Table row whose only difference was such a note answered "nothing was written" every time). Narrow keeps the one
+	  a paragraph holds the same way. */
+void StepsOfTable(const KCMStoryShape::Story& now, const KCMStorySync::Plan& plan, int32 ordinal, bool16 shape,
+				  KCMStorySync::Plan& out)
 {
 	out = KCMStorySync::Plan();
 	for (size_t i = 0; i < plan.fSteps.size(); ++i)
 	{
 		const KCMStorySync::Step& s = plan.fSteps[i];
+		if (s.fKind == KCMStorySync::Step::kDeleteNote)
+		{
+			if (!shape && CellsReferTo(now, ordinal, s.fNote))
+				out.fSteps.push_back(s);
+			continue;
+		}
 		if (s.fWhere.fKind != KCMStorySync::Where::kCell || s.fWhere.fTable != ordinal)
 			continue;
 		if ((s.IsShape() ? kTrue : kFalse) != shape)
@@ -359,7 +390,7 @@ int32 KCMApplyTableFromImport(const UIDRef& targetStory, UID wordStory, UID tabl
 		if (!whole.IsShapeRound())
 			break;
 		KCMStorySync::Plan mine;
-		StepsOfTable(whole, ordinal, kTrue, mine);
+		StepsOfTable(now, whole, ordinal, kTrue, mine);
 		if (mine.fSteps.empty())
 			break;			// this table's shape is Word's
 		KCMSyncResult shape;
@@ -398,7 +429,7 @@ int32 KCMApplyTableFromImport(const UIDRef& targetStory, UID wordStory, UID tabl
 		return -1;
 	}
 	KCMStorySync::Plan mine;
-	StepsOfTable(whole, ordinal, kFalse, mine);
+	StepsOfTable(now, whole, ordinal, kFalse, mine);
 	for (size_t i = 0; i < mine.fSteps.size(); ++i)
 	{
 		const KCMStorySync::Step& s = mine.fSteps[i];
