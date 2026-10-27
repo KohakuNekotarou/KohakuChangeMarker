@@ -521,16 +521,16 @@
   - 訂正:
 
 - **RUN-77** **手放す（捨てる）とき**＝Source の指名が変わったとき（Set as Source／Task Start (Save)...／
-  Import Story Text...／Compare with Tracked Changes...／Clear Target and Source／次の Task Start）と、
+  Import Story Text...／Clear Target and Source／次の Task Start）と、
   **取った文書を閉じた・復帰したとき**（閉じる直前＝kBeforeCloseDoc）。比較中なら先に止める（閉じるときも）。
   ステータス行で言う＝Set as Source・Clear・Task Start (Save)... は末尾に `The Task Start kept in memory was let go.`、
   閉じる・復帰は `The Task Start kept in memory went with its document.`。
   ★保存の確認で「キャンセル」した閉じ方では手放さない（確認が kBeforeCloseDoc より先に出る＝2026-10-13 実測）。
-  - 訂正:
+  - 訂正: ✅2026-10-27 一覧から「Compare with Tracked Changes...」を外した＝この項目は Source を選ばなくなった（第19章 TCM-03＝写しを作らない）。Track の一覧の間もメモリの Task Start は Source のまま残り、Stop の後の Start で比べられる（`track-only` TO-12 の逆向き＝Track の間に Task Start を押すと一覧が止まる）
 
-- **RUN-78** **手放さないとき**＝保存（上書き・別名・コピー）・Stop・Set as Target・モードの切り替え。
+- **RUN-78** **手放さないとき**＝保存（上書き・別名・コピー）・Stop・Set as Target・モードの切り替え・`Compare with Tracked Changes`（2026-10-27〜）。
   ★保存しても、持っている状態は取った時点のまま・ファイルも壊れない（2026-10-13 実測）。
-  - 訂正:
+  - 訂正: ✅2026-10-27 `Compare with Tracked Changes` を足した（RUN-77 の訂正と同じ理由）
 
 - **RUN-79** 機能ごとの扱い＝**Before/After PDF 報告書は断る**（保存ダイアログの前に
   `The Source is a Task Start kept in memory, which cannot be printed for the Before side - take a Task Start (Save)... for a report.`）／

@@ -1,35 +1,41 @@
 # 19. Track Changes モード ― 変更履歴そのものを「古い版」にする
 
 > コード地図での位置: model＝`source/KCMTrackPlan.h`（記録の組み方・元の位置＝SDK なしで試験）／`source/KCMTrackRead.*`（記録を読む）／
-> `source/KCMTrackList.*`（一覧の入れ物）／`source/KCMTrackOriginal.*`（全部却下した写し）。UI＝`ui/KCMTrackLabels.*`（記号・語・時刻・色）／
-> `ui/KCMTrackChipView.cpp`（作成者の色の四角）、ほかは Story の一覧の UI に Track の枝（第8章の各ファイル）。
-> 設計＝`docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md`（D1〜D11・§14 の P1〜P13）。
+> `source/KCMTrackList.*`（一覧の入れ物）／`source/KCMTrackStart.*`（Compare with Tracked Changes＝Target の記録だけで一覧・
+> 2026-10-27 まで `KCMTrackOriginal.*`＝全部却下した写し）・`source/KCMCore.cpp`（Track の一覧は状態＝`KCMBeginTrackListing`）。
+> UI＝`ui/KCMTrackLabels.*`（記号・語・時刻・色）／`ui/KCMTrackChipView.cpp`（作成者の色の四角）、ほかは Story の一覧の UI に Track の枝（第8章の各ファイル）。
+> 設計＝`docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md`（D1〜D11・§14 の P1〜P13）／★2026-10-27 の作り直し
+> （Compare mode から外す・写しを作らない）＝`docs/superpowers/specs/2026-10-27-kcm-track-records-only-design.md`。
 > ⚠★**2026-10-05 時点で、この章の規則は実装を読んで書いたもの＝実機ではまだ1つも確かめていない**（最後の「⬜この章で未確認」）。
 > 訂正の書き方は [00-index.md](00-index.md)。番号の頭字は **TCM-**（`TRK-` は KFC の地図が使っている）。
 
 ---
 
-## 1. 入口・モード・写し
+## 1. 入口・モード（2026-10-27 から写しは無い）
 
-- **TCM-01** ★比較のモードは4つ目＝**Track Changes**（フライアウトの Compare mode の一番下）。Pixel・Story・Resources と排他。タブは `Kohaku Change Marker - Track`、Save Panel Settings で保存され起動時に戻る。（2026-10-05 ユーザー決定「4つ目のモード」）
-  - 訂正:
-- **TCM-02** ★行は **Target の文書が持つ変更履歴の記録だけ**から作る。Source は「元の版」を見せるため（Peek・Source の窓）に使う。Start の扉は他のモードと同じ＝Target と Source が要る。
-  - 訂正:
-- **TCM-03** ★フライアウトの **`Compare with Tracked Changes...`**（Import Story Text の下）＝Task Start (Save)... と同じ道（2026-10-25 までは Word の取り込みもこの道だった＝今の取り込みはメモリの写し）: 保存ダイアログ → その文書の写しを保存 → 写しを**窓つきで開く** → 写しの中で**変更履歴を全部却下**して上書き保存 → 写しを Source に、元の文書を Target に選ぶ → Track モードで比較を始め、Target の窓を前へ。（ユーザー「ワードの取り込みと同じ感じ」「窓ありでいいです」）
-  - 訂正:
+- **TCM-01** ★**Track は比較モードではない**＝Compare mode は Pixel・Story・Resources の3つ。Track は `Compare with Tracked Changes`（TCM-03）の一覧が出ている間の状態で、その間はタブが `Kohaku Change Marker - Track`、Compare mode のどの項目にもチェックが付かない。Save Panel Settings は一覧の間でも戻る先のモードを書く（`"track"` は書かず、ファイルにあっても読まない）。
+  - 訂正: ✅2026-10-27 作者決定で変更＝旧「比較のモードは4つ目＝Track Changes（フライアウトの Compare mode の一番下）。Pixel・Story・Resources と排他。タブは `Kohaku Change Marker - Track`、Save Panel Settings で保存され起動時に戻る（2026-10-05 ユーザー決定「4つ目のモード」）」（作者「比較モードのところにTrackをいれないようにしましょうか」「Compare with Tracked Changes...だけで実行できるに」・問い「メニューから消すだけか、操作ごと廃止か」の答え＝操作ごと廃止＝ActionID +87 は墓）
+- **TCM-02** ★行は **Target の文書が持つ変更履歴の記録だけ**から作る。**Source は無い**（文書を作らない）＝Target だけで比較中になる。Peek・Source の窓・Source の窓の印は無い。
+  - 訂正: ✅2026-10-27 作者決定で変更＝旧「Source は「元の版」を見せるため（Peek・Source の窓）に使う。Start の扉は他のモードと同じ＝Target と Source が要る」（作者「単純にトラック情報だけでどこが変ったかを一覧にできないかな？」「つまり、ソースドキュメントをつくらない」）
+- **TCM-03** ★フライアウトの **`Compare with Tracked Changes`**（Import Story Text の下・名前に「...」は無い＝ダイアログが出ない）を押すと、**何も聞かず**、比較中ならそれを止め、Target の記録を読んで一覧を出し、Target の窓を前へ。ファイル・窓・Source は作らない。**Track に入る道はこれだけ**。
+  - 訂正: ✅2026-10-27 作者決定で変更＝旧「`Compare with Tracked Changes...`＝Task Start (Save)... と同じ道（2026-10-25 までは Word の取り込みもこの道だった）: 保存ダイアログ → その文書の写しを保存 → 写しを窓つきで開く → 写しの中で変更履歴を全部却下して上書き保存 → 写しを Source に、元の文書を Target に選ぶ → Track モードで比較を始め、Target の窓を前へ（ユーザー「ワードの取り込みと同じ感じ」「窓ありでいいです」）」
 - **TCM-04** 対象の文書＝Target の指名があればそれ、無ければアクティブな文書。最初に決めて最後まで使う（途中で前面が変わっても聞き直さない）。
   - 訂正:
-- **TCM-05** 保存ダイアログの既定＝その文書のフォルダ・名前 `<文書名>_TrackOriginal_<日時>.indd`。**キャンセルなら何も起きず、何も言わない。**
+- **TCM-05** （廃止）保存ダイアログは無い。
+  - 訂正: ✅2026-10-27 廃止＝旧「保存ダイアログの既定＝その文書のフォルダ・名前 `<文書名>_TrackOriginal_<日時>.indd`。キャンセルなら何も起きず、何も言わない」（写しが無くなった＝TCM-03）
+- **TCM-06** ★**押すだけでは Target に書き込まない**＝保存もしない・変更履歴も変えない・undo の段も増えない（書き込むのは右クリックの承認・却下だけ＝TCM-39）。
+  - 訂正: ✅2026-10-27「原本（Target）には一切書き込まない…（写しは SaveACopy）」の写しの部分を外した（写しが無い）・TCM-39（10-25）で書き込む道ができていたのを文に入れた
+- **TCM-07** （廃止）写しが無いので「却下しきれなかった記録」も無い。
+  - 訂正: ✅2026-10-27 廃止＝旧「写しで却下しきれなかった記録が残っても写しは使い、その数を報告の行に ` not rejected in the copy=K` と添える」
+- **TCM-08** 比較中に押すと、先に今の比較を止めてから一覧を出す。一覧の間にもう一度押すと、そのときの対象（TCM-04）で読み直す。Stop で戻るモードは最初の一覧の前のもの。
+  - 訂正: ✅2026-10-27 作者決定に合わせた＝旧「比較中に押すと、先に今の比較を止めてから写しを作る。2回目を押すと新しい写しが Source になり、前の写しは開いたまま残る」
+- **TCM-09** 範囲は Target の1文書だけ。**ブック比較は一覧の間は灰色**（押しても断る）。Before/After PDF Report は**比較していなければ作れる**（どのモードとも同じ＝第15章 REP-22。Story の表は本文の比較＝変更履歴の行ではない・Tracked Changes の表は同じ記録＝REP-24）。
+  - 訂正: ✅2026-10-11 作者決定で変更＝旧「Before/After PDF Report も Track モードでは灰色」（報告書が止めているときだけになり、壊す Track の一覧が無くなった）／✅2026-10-27 語だけ（「Track モードでは」→「一覧の間は」）
+- **TCM-10** 試験用のスクリプトの口 `app.kcmCompareTracked()`（引数なし）＝メニューの項目と同じ道（ScriptID `eKGl`・Adobe 未登録・テスト用ビルドだけ）。
+  - 訂正: ✅2026-10-27 変更＝旧「`app.kcmCompareTracked(file)`＝保存ダイアログの代わりにファイルを渡す同じ道」
+- **TCM-10b** ★**Stop で前の比較モードに戻る**＝一覧の間も比較モードの設定は変わらない（Track は状態）。Target を閉じたとき・終了も同じ。Start は戻ったモードで、選んである Target と Source を比べる。（2026-10-27 作者の答え「Stop で前のモードへ戻す」）
   - 訂正:
-- **TCM-06** ★**原本（Target）には一切書き込まない**＝保存もしない・変更履歴も変えない・undo の段も増えない（写しは SaveACopy）。
-  - 訂正:
-- **TCM-07** 写しで却下しきれなかった記録が残っても写しは使い、その数を報告の行に ` not rejected in the copy=K` と添える。
-  - 訂正:
-- **TCM-08** 比較中に押すと、先に今の比較を止めてから写しを作る。2回目を押すと新しい写しが Source になり、前の写しは開いたまま残る。
-  - 訂正:
-- **TCM-09** 範囲は Target の1文書だけ。**ブック比較は Track モードでは灰色**（押しても断る）。Before/After PDF Report は**比較していなければ作れる**（どのモードとも同じ＝第15章 REP-22。Story の表は本文の比較＝変更履歴の行ではない）。
-  - 訂正: ✅2026-10-11 作者決定で変更＝旧「Before/After PDF Report も Track モードでは灰色」（報告書が止めているときだけになり、壊す Track の一覧が無くなった）
-- **TCM-10** 試験用のスクリプトの口 `app.kcmCompareTracked(file)`＝保存ダイアログの代わりにファイルを渡す同じ道（ScriptID `eKGl`・Adobe 未登録）。
+- **TCM-10c** 一覧の間に Compare mode の項目を選ぶと、一覧を止めてそのモードにする（**比較は始めない**＝Source を選んでいないので）。ステータス `Compare mode: <mode> changes. (the Track listing stopped)`。
   - 訂正:
 
 ## 2. 記録の読み方
@@ -42,8 +48,8 @@
   - 訂正:
 - **TCM-14** 長い変更（300文字超）は「…」で切る。前後の文脈は Story の行と同じ14文字。
   - 訂正:
-- **TCM-15** 元の版での位置＝今の位置から、前にある挿入の長さを引き、前に錨のある削除の長さを足す。**Source がその Target から作った写しのときだけ**この位置を使い、写しの文字が期待どおりかを確かめてから「正確」と印を付ける。それ以外の Source では位置はストーリーの頭。
-  - 訂正:
+- **TCM-15** （使わない）元の版での位置は使わない（Source が無い）。`KCMTrackPlan.h` は位置の計算と試験を残している（読み手が無い＝無駄取りの回に）。
+  - 訂正: ✅2026-10-27 廃止＝旧「元の版での位置＝今の位置から、前にある挿入の長さを引き、前に錨のある削除の長さを足す。Source がその Target から作った写しのときだけこの位置を使い、写しの文字が期待どおりかを確かめてから「正確」と印を付ける。それ以外の Source では位置はストーリーの頭」（写しが無くなった＝TCM-03）
 - **TCM-16** 作成者の色＝**本体がストーリーエディターで塗る色**（`ITrackChangeUtils::GetTrackedChangeBGColor`）を、一覧を作るときに**メインスレッドで作成者ごとに1度**読む。**白なら KCM の Mark colour**（赤／シアン）で代わりに塗る。
   - 訂正:
 
@@ -60,15 +66,15 @@
   - 訂正:
 - **TCM-21** 見出し＝`Tracked Changes (N)`、N は**変更の件数**（行の数ではない）。記録が無いときは Story と同じく空の行が1つ（見出しが 0 と言う＝LIST-05 の 2026-09-10 の決定に合わせた）。
   - 訂正:
-- **TCM-22** 比較を終えたときの報告の行＝`tracked changes=N authors=M`（＋TCM-07・TCM-13 の添え書き）。`Compare with Tracked Changes...` の締めの文にもこの行が添えられる。
-  - 訂正:
-- **TCM-23** `app.kcmStoryRows` は Track モードでは Track の一覧を出す（頭に `#track notRejectedInCopy K otherRecords N`、`author` の行と `change` の行）。
-  - 訂正:
+- **TCM-22** 比較を終えたときの報告の行＝`tracked changes=N authors=M`（＋TCM-13 の添え書き）。`Compare with Tracked Changes` の締めの文は `Track: ` ＋この行（始まらなかったときは `The Track listing did not start (…)`）。
+  - 訂正: ✅2026-10-27 TCM-07 の添え書き（`not rejected in the copy=K`）が無くなった・締めの文の形を書いた
+- **TCM-23** `app.kcmStoryRows` は一覧の間は Track の一覧を出す（頭に `#track otherRecords N`、`author` の行と `change` の行。`change` の行の `sstart send srcexact` はいつも 0＝試験が列の位置で読むので列は残す）。
+  - 訂正: ✅2026-10-27 頭の `notRejectedInCopy K` が無くなった（写しが無い）
 
 ## 4. クリック・Prev/Next
 
-- **TCM-24** ★変更の行のクリック＝その場所へ飛び、**Target の文字を選ぶ**（Story モードと同じ着地の規則＝第8章 LIST-26・文字ツールになる）。**選べないとき（ロック）だけ** Target に作成者の色の一瞬の印。★**削除の記録の文字はレイアウトに無い**（本体はストーリーエディターにだけ出す）ので、削除の行はその場所にキャレットを置き、メッセージ欄の頭に `The deleted words show in the Story Editor only - the caret stands where they were.`。Source の窓も元の位置へ動き、**元の位置が正確なとき（TCM-15）だけ** Source に作成者の色の印。クリックは見るだけ＝承認・却下は右クリック（TCM-39）。（ユーザー「見る＋ジャンプ」）
-  - 訂正: ✅2026-10-25 作者決定で変更＝旧「作成者の色の一瞬の印（文字は選ばない）」（作者「TrackChangeでも行を選択で文字を選ぶようにで、おぼえておいてください」＝2026-10-24 の一覧の設計 Q2「Track は印のまま」を覆す）。`ui/KCMStoryJump.cpp` の KCMStoryJumpToChange。
+- **TCM-24** ★変更の行のクリック＝その場所へ飛び、**Target の文字を選ぶ**（Story モードと同じ着地の規則＝第8章 LIST-26・文字ツールになる）。**選べないとき（ロック）だけ** Target に作成者の色の一瞬の印。★**削除の記録の文字はレイアウトに無い**（本体はストーリーエディターにだけ出す）ので、削除の行はその場所にキャレットを置き、メッセージ欄の頭に `The deleted words show in the Story Editor only - the caret stands where they were.`。動くのは Target の窓だけ（Source が無い）。クリックは見るだけ＝承認・却下は右クリック（TCM-39）。（ユーザー「見る＋ジャンプ」）
+  - 訂正: ✅2026-10-25 作者決定で変更＝旧「作成者の色の一瞬の印（文字は選ばない）」（作者「TrackChangeでも行を選択で文字を選ぶようにで、おぼえておいてください」＝2026-10-24 の一覧の設計 Q2「Track は印のまま」を覆す）。`ui/KCMStoryJump.cpp` の KCMStoryJumpToChange。／✅2026-10-27 旧「Source の窓も元の位置へ動き、元の位置が正確なとき（TCM-15）だけ Source に作成者の色の印」を外した（Source が無い）
 - **TCM-25** クリックのたびに、その変更がまだ記録されているかを文書に聞く。無ければ（本体のパネルで承認・却下した・取り消した）`This change is no longer recorded - accepted, rejected or undone. Refresh to read again.` と出し、飛ばない。
   - 訂正:
 - **TCM-26** ステータス欄の見出し＝`<作成者> · <OS の短い日付> <時刻> · <Replaced／Inserted／Deleted／Moved>:`（非表示の条件なら ` (hidden condition)`）、本文は元の側の文字。
@@ -86,8 +92,8 @@
   - 訂正:
 - **TCM-40** 承認・却下は**取り消し1段**（取り消せる列＝途中で1件でも断られたら列ごと戻す）。効くのは**一覧に載っている記録だけ**（各行を作った記録＝挿入と削除を読み取りの時に控え、種類・時刻・作成者・位置で探し直して1件ずつ処理・ストーリーの後ろから前へ）。終わったら一覧を読み直す（行が消える）。もう記録に無い分は飛ばして文で言う。★**移動は一覧では2行（`»` と `-`）だが、どちらの行を押しても移動ごと**承認・却下する（片方だけ却下すると語が本文から消えたままになった＝実機）。
   - 訂正:
-- **TCM-41** パネル上部の Source の欄は、Source が `Compare with Tracked Changes...` の写しのとき末尾に ` (Track original)`（2026-10-25 作者「Trackしているときは、ソースのぶぶんに、トラックをソースにしていると表示して欲しい」・目印を末尾にしたのは作者の答え＝この欄は頭から省略される作り）。写しかどうかはファイルで聞く（保存ダイアログで付けた名前では判断しない）。
-  - 訂正:
+- **TCM-41** パネル上部の Source の欄は、一覧の間 `Source: (Tracked Changes)`（2026-10-25 作者「Trackしているときは、ソースのぶぶんに、トラックをソースにしていると表示して欲しい」を新しい形で＝この欄は頭から省略される作りなので短く）。
+  - 訂正: ✅2026-10-27 作者決定（写しを作らない）に合わせた＝旧「Source が `Compare with Tracked Changes...` の写しのとき末尾に ` (Track original)`（目印を末尾にしたのは作者の答え）。写しかどうかはファイルで聞く（保存ダイアログで付けた名前では判断しない）」
 
 ## 5. 印
 
@@ -95,32 +101,37 @@
   - 訂正:
 - **TCM-32** 違う色の範囲どうしは併合しない（後ろの範囲を前の範囲の終わりで切る）。同じ色どうしは今までどおり併合。
   - 訂正:
-- **TCM-33** Source の窓の留まる印は、元の位置が正確な変更だけ（TCM-15）。
-  - 訂正:
-- **TCM-34** 紙・PDF・Peek・時機（一瞬の印／留まる印／ツールの押下）は Story と同じ規則（第9章）。
+- **TCM-33** （廃止）Source の窓は無い。
+  - 訂正: ✅2026-10-27 廃止＝旧「Source の窓の留まる印は、元の位置が正確な変更だけ（TCM-15）」（Source が無い）
+- **TCM-34** 紙・PDF・時機（一瞬の印／留まる印／ツールの押下）は Story と同じ規則（第9章）。
+  - 訂正: ✅2026-10-27「Peek」を外した＝TCM-34b
+- **TCM-34b** Shift の押下（Peek）は何もしない（重ねる版が無い）・印も消さない。
   - 訂正:
 
 ## 6. 読み直し・追随
 
-- **TCM-35** Refresh（行の右クリック・Refresh Comparison）＝**一覧をまるごと読み直す**（行は作成者×ストーリーの組なので、1本の記録で複数の作成者の行が増減しうる）。写しには触らない。
+- **TCM-35** Refresh（行の右クリック・Refresh Comparison）＝**一覧をまるごと読み直す**（行は作成者×ストーリーの組なので、1本の記録で複数の作成者の行が増減しうる）。
+  - 訂正: ✅2026-10-27「写しには触らない」を外した（写しが無い）
+- **TCM-35b** ★**読み直しを進捗バーの Cancel で止めると一覧は終わる**（Stop と同じ・前のモード＝TCM-10b）＝行の Refresh・承認／却下の後・Undo の追随の読み直し（ステータス `re-read cancelled - the Track listing stopped`）／Refresh Comparison（`refresh cancelled - comparison stopped`）／最初の読み（`The Track listing did not start (comparison cancelled …)`）。（2026-10-27 作者の答え＝判断待ちの (2)「おすすめで」＝それまで、行の Refresh などの読み直しを止めると前の一覧が残っていた）
   - 訂正:
 - **TCM-36** Undo／Redo で一覧のストーリーが前に読んだ状態へ戻った・進んだときだけ読み直す。ふつうの打鍵では読み直さない（Story と同じ規則）。
   - ⚠**2026-10-25 実測＝追随が外れることがある**: 聞き手（ストーリーごとに実行時に付ける observer）は、InDesign がストーリーの実体を捨てて読み直すと黙って外れる。テスト用ビルドで、比較を始めた時に付けた6本が最初の試行の時点で6本とも別のアドレス・「付いていない」になり、Undo の知らせは1本も来なかった（`docs/ai-notes/kcm-track-mode-live-2026-10-25.md`）。付け直すのは比較のやり直し（Refresh Comparison・Start）と KCM 自身の書き込みの後だけ＝行の右クリックの Refresh は付け直さない。Story モードも同じ聞き手。
   - ✅**2026-10-25 夜に直した**（作者「おすすめの順で全部進めてください」）＝聞き手を**文書（kDocBoss）の subject** へ移した。本文の変更は文書に `IID_ITEXTMODELCHANGED` で届き、Undo・Redo でも届く（KT の探針で実測＝`docs/ai-notes/kt-docnotify-2026-10-25.md`）。承認・却下は `IID_ACCEPT…`／`IID_REJECT…REDLINE_DOCUMENT`。★**承認は数え（`GetChangeCount`）を動かさない**ので、承認・却下の知らせのときは**記録の数**でも見る。★一覧から消えたストーリー（全部却下）の数えも記録する＝その Undo で行が戻る。☆**本体の変更履歴パネルでの承認・却下にもついてくる**（それまでは古い行が残り、押すと「もう記録にない」＝その答えは追いつく前の守りとして残る）。試験＝`tests-track-ar.ps1` 34/34（Undo のたびに「読み直す前についてきたか」を判定）。
   - 訂正:
-- **TCM-37** 写しを作った後に Target で承認した・変更履歴を切って直したときは、元の版そのものが変わって写しとずれる。**自動では検出しない**（写しを作り直す＝もう一度 `Compare with Tracked Changes...`）。
-  - 訂正:
+- **TCM-37** （廃止）写しが無いので、写しと Target がずれることも無い。
+  - 訂正: ✅2026-10-27 廃止＝旧「写しを作った後に Target で承認した・変更履歴を切って直したときは、元の版そのものが変わって写しとずれる。自動では検出しない（写しを作り直す＝もう一度 `Compare with Tracked Changes...`）」
 
 ## 7. 試験用のビルド
 
-- **TCM-38** ★テスト用ビルド（`work/kcm-cycle.ps1 -Diag`）だけ、記録の読み取り・写しづくり・「まだ記録にあるか」を `%TEMP%\kcm-diag.txt` に1行ずつ書く。**出荷ビルド（Exchange）には何も入らない**。（2026-10-05 ユーザー「エクスチェンジに出すときは OFF に出来るように」）
-  - 訂正:
+- **TCM-38** ★テスト用ビルド（`work/kcm-cycle.ps1 -Diag`）だけ、記録の読み取り・一覧の始まり・「まだ記録にあるか」を `%TEMP%\kcm-diag.txt` に1行ずつ書く。**出荷ビルド（Exchange）には何も入らない**。（2026-10-05 ユーザー「エクスチェンジに出すときは OFF に出来るように」）
+  - 訂正: ✅2026-10-27「写しづくり」→「一覧の始まり」（写しが無い）
 
 ---
 
 ## この章の実機の確認（2026-10-05・10-11・10-25。記録＝`docs/ai-notes/kcm-track-mode-live-2026-10-25.md`）
 
 - ✅TCM-11＝`kApply` は資材で0件（10-05 の探査 U1）・移動は moved の挿入＋削除で残り `»` の行になる（U2・10-25 のパネルの画像でも `»`）。
+- ✅★**2026-10-27 の作り直し（Compare mode から外す・写しを作らない）**＝`track-only` 21/0（作る前のビルドで RED 6/15＝TO-1〜15：Track の項目が無い・ファイルも窓も増えない・Source の欄・Stop で前のモード〈Story・Pixel・Resources から〉・一覧の間にモードを選ぶ・保存した設定・Target を閉じる・Start・別の文書で押し直す・パネルを閉じて開く・Task Start・Pixel の比較中に押す・Shift の押下・ブック比較が灰色）・`track-click` 19/0・`track-ar` 34/0（AR-0＝Source の欄が `(Tracked Changes)`）・`track-rf1` 8/0（RF1-6＝Refresh Comparison の Cancel・RF1-7＝行の Refresh の Cancel＝止まって前のモード）。⚠下の写し・Peek の確認（TCM-07・TCM-15・Peek）は旧い作りのもの。
 - ✅TCM-07＝全部却下しても残る記録は資材で1件（`not rejected in the copy=1`）。
 - ✅TCM-16＝作成者ごとに違う色（佐藤 `#FF6600`・山田 `#4F99FF`）。白の場合は資材に出ていない。台本で名前だけ替えた作成者は `#000000`（TCM-18 の注）。
 - ✅TCM-15＝写しの実物と合う（`srcexact` が8件・t6-copy PASS）。
