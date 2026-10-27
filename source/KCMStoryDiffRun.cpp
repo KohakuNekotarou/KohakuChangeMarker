@@ -927,6 +927,38 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 	}
 }
 
+/* CompareParagraphObjects (2026-10-27)
+   The objects placed in one paragraph, paired by their ORDER in it - not by where they start, which is what
+   CompareParagraphAttr pairs marks by.
+   ★WHY THE ORDER: every object stands on the same character (U+FFFC), so an object that merely moved - words typed
+   before it - has nothing but its place to tell it from another, and its place is exactly what moved. Paired by start,
+   one object whose content changed in a paragraph whose words also changed came out as an object added AND one
+   taken away (the rule SpansWhoseTextSurvives keeps for marks, whose characters differ). The k-th object here and the
+   k-th over there are the same object between two versions of one document - the only pairs this is asked about
+   (KCMTextRead's withObjects is the Story mode's UID pairs alone).
+   ⚠A PARAGRAPH WHOSE OBJECTS ARE NOT AS MANY ON BOTH SIDES SAYS NOTHING HERE: an object added or taken away is its
+    anchor character added or taken away, and the text row already reports that; with the order broken, no pair can be
+    named with confidence.
+*/
+void CompareParagraphObjects(const KCMAttrSpanList& sourceSpans, const KCMAttrSpanList& targetSpans,
+							 ParaSide& source, ParaSide& target, std::vector<KCMStoryChange>& out)
+{
+	if (sourceSpans.size() != targetSpans.size())
+		return;
+	for (size_t k = 0; k < targetSpans.size(); ++k)
+	{
+		if (sourceSpans[k].fValue == targetSpans[k].fValue)
+			continue;
+		AddAttrChange(KCMStoryChange::kReplace, kKCMStoryAttrObject,
+					  targetSpans[k].fStart, targetSpans[k].fLen,
+					  sourceSpans[k].fStart, sourceSpans[k].fLen,
+					  target, source,
+					  targetSpans[k].fValue, sourceSpans[k].fValue,
+					  kFalse, kFalse,
+					  out);
+	}
+}
+
 /* SpanBaseText
    The characters one span covers, as UTF-8 -- and an EMPTY STRING when its position cannot be
    read, which is the caller's signal to keep the span rather than judge it.
@@ -1216,6 +1248,10 @@ void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChange
 		//   reports a change of the words inside it.
 		compareAttr(kKCMStoryAttrWarichu,  sourceAttrs[ai].fWarichu,  targetAttrs[bi].fWarichu);
 		compareAttr(kKCMStoryAttrTcy,      sourceAttrs[ai].fTcy,      targetAttrs[bi].fTcy);
+
+		// ★AN OBJECT PLACED IN THE TEXT (2026-10-27), by its own door: paired by order, not by start
+		//   (CompareParagraphObjects says why). Empty on both sides unless the reader was asked for them.
+		CompareParagraphObjects(sourceAttrs[ai].fObject, targetAttrs[bi].fObject, source, target, out);
 	};
 
 	// Walk the two paragraph lists side by side, stepping over each reported change. What is left
@@ -1821,7 +1857,11 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory, boo
 
 	// ⚠**THE FIRST OF THE TWO REMAINING WAYS TO DECLINE**, and it means one thing only: the story
 	//   could not be opened at all. **An empty story is not a failure** (KCMTextRead.h).
-	if (!KCMTextRead::ReadStory(targetStory, targetParas, targetAttrs, targetStarts))
+	// ★THE OBJECTS PLACED IN THE TEXT ARE READ TOO (2026-10-27 - KCMObjectPrint.h), on both sides - but not for a story
+	//   paired by place: its objects were made anew with new UIDs, and a fingerprint holds UIDs, so every object would
+	//   differ (the plan's call for 2.0.0: docs/superpowers/plans/2026-10-27-kcm-story-object-changes.md).
+	const bool16 withObjects = pairedByPlace ? kFalse : kTrue;
+	if (!KCMTextRead::ReadStory(targetStory, targetParas, targetAttrs, targetStarts, withObjects))
 		return kFalse;
 
 	// ★★★**THE SOURCE IS READ ONCE PER ORIGIN, NOT ONCE PER PRESS** (2026-09-16, the user: "it is
@@ -1833,7 +1873,7 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory, boo
 	//   That is the whole asymmetry, and it is why only one of the two reads above moved.
 	if (!KCMSourceCacheGet(targetStory.GetUID(), sourceParas, sourceAttrs, sourceStarts))
 	{
-		if (!KCMTextRead::ReadStory(sourceStory, sourceParas, sourceAttrs, sourceStarts))
+		if (!KCMTextRead::ReadStory(sourceStory, sourceParas, sourceAttrs, sourceStarts, withObjects))
 			return kFalse;
 
 		// ★**THE RAW TEXT IS TAKEN IN THE SAME BREATH**, from the same API the restore used

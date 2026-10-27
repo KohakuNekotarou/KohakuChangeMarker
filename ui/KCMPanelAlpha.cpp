@@ -114,7 +114,7 @@ enum
 // the shape the product code uses for a constant one file needs (linksui/LinksUIUtils.cpp).
 //----------------------------------------------------------------------------------------
 
-// Alpha of the translucent panel (flyout "Translucent Panel"). 0 = fully transparent,
+// Alpha of the translucent panel (flyout "Translucent Kohaku Change Marker Panel"). 0 = fully transparent,
 // 255 = opaque; 77 is about 30%. Rolling the pointer over the panel brings it back to opaque
 // (IMouseRollOver), which is what lets it be this faint while idle. There is no slider and no
 // step setting, so this one place is where the density is changed. Windows only.

@@ -68,6 +68,7 @@
 #include "KCMProgressBar.h"		// KCMDeferredProgressBar - the bar that appears only after three seconds
 #include "KCMReportTable.h"		// the page helpers and the table sections
 #include "KCMReportPaws.h"			// the cat's trail on the first page
+#include "KCMObjectPrint.h"		// KCMObjectPrintDescription - an Object row's word in the Story table (2026-10-27)
 #include "KCMCore.h"				// KCMIsArmed / KCMArmedTargetDB / KCMCollectPageUIDs / KCMBuildStoryRowsByDiff (the Story table)
 #include "KCMComparisonRun.h"		// KCMOpenComparisonPair / KCMRunReportComparison / KCMClearReportComparison - the report's own comparison
 #include "KCMDrawEventHandler.h"	// sEntries / sOverflowT / sPrintMarks - what "changed" means, and the rings
@@ -662,6 +663,18 @@ void BuildStoryRows(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KCMRep
 					if (cell.fMid.IsEmpty())
 						cell.fMid = bar;
 
+					// ★AN OBJECT PLACED IN THE TEXT (2026-10-27 - kKCMStoryAttrObject): its reader's word after the text
+					//   ("[QR: <its content>]", "[Group]"), never the value as a reading - the value ends in a fingerprint.
+					if (ch.fAttrKind == kKCMStoryAttrObject)
+					{
+						PMString word;
+						word.SetUTF8String(KCMObjectPrintDescription(value.GetUTF8String()));
+						cell.fNote = Ascii(" [");
+						cell.fNote.Append(word);
+						cell.fNote.Append("]");
+						cell.fNote.SetTranslatable(kFalse);
+						return;
+					}
 					if (ch.fAttrKind == kKCMStoryAttrFootnote || ch.fAttrKind == kKCMStoryAttrEndnote)
 					{
 						cell.fNote = value.IsEmpty() ? bar : value;		// the number the page prints

@@ -112,8 +112,15 @@ struct KCMStoryStamp
 	uint32	fAttrCount;
 	uint32	fOtherCount;
 
+	/** ★(2026-10-27) The prints of every object placed in the story, folded into one number - 0 when it holds none
+		(KCMObjectsPrintOfStory, KCMObjectPrint.h). ★THE SECOND TEST, ASKED ONLY WHEN THE COUNTERS AGREE: an edit to an
+		object itself - a MathML, a fill, a QR code made anew - does not move the story's counters (it changes the object,
+		not the text), so a story whose words stayed while an object in it changed had no row at all. Filled by
+		CollectStamps only - ReadStamp is the script properties' reading too, and they say nothing about objects. */
+	uint64	fObjectsPrint;
+
 	KCMStoryStamp()
-		: fStoryUID(kInvalidUID), fChangeCount(0), fTextCount(0), fAttrCount(0), fOtherCount(0) {}
+		: fStoryUID(kInvalidUID), fChangeCount(0), fTextCount(0), fAttrCount(0), fOtherCount(0), fObjectsPrint(0) {}
 };
 
 /** One row of the comparison: a story that differs between the two versions, and how.

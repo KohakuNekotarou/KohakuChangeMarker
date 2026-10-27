@@ -87,7 +87,7 @@
 - **REP-13** ★**Story の表**＝Pixel のページの後に、見出し `Story Changes: N stories, M edits` と**2列の表**（左＝Source、右＝Target）。ストーリーごとに見出し行 `p.<番号>  <冒頭の語句>  [text / attr / added story / removed story / text agrees]`、変更1件ごとに1行。
   セルは**パネルの3片**（前の文脈・変わった部分・後の文脈）で、**文脈は 40% tint・変わった部分は 100%**。挿入で左が空／削除で右が空の中央片は `|`（パネルのキャレットと同じ「場所」の印）。
   **ルビ**＝中央片に本物のルビ（`KCMApplyRuby`）、**圏点**＝本物の圏点（`KCMApplyKentenKind`。書けない種類は `[名前]` を上付きで）、**脚注／文末脚注**＝番号を上付きで中央片の直後に。アンカー付きオブジェクトは抜粋の ⚓ のまま。追加／削除ストーリーは1行（無い側に `(added story)`／`(removed story)`）。
-  - 訂正:
+  - 訂正: ★2026-10-27 夕＝**本文に入れた物の行（第7章 ST-29b）は、文の後ろに `[<何か>]`**（`[QR: https://…]`・`[SVG / MathML]`・`[Group]`）＝左が古い版の物・右が新しい版の物。値の指紋は出さない。✅同じ日に**実機で確認**（束 `report-objects` RO-1〜6＝Source は保存した写し・メモリの Task Start は REP-23 で断る）。
 
 - **REP-14** ★**Resources の表**＝Story の後に、見出し `Resources Changes: <要約>` と同じ2列の表。定義ごとに見出し行 `<Kind>  <Key（%エスケープ復号）>  [added / removed / changed]`、差のある属性ごとに1行（左＝`名前: 旧値`／右＝`名前: 新値`・片側に無ければ `-`・値はパネルと同じ短縮 `KCMShortResourceValue`）。属性差 0 の Changed は `(the difference is inside a child element)`。
   - 訂正:

@@ -161,6 +161,15 @@ struct KCMParaAttrs
 	KCMAttrSpanList	fWarichu;
 	KCMAttrSpanList	fTcy;
 
+	/** ★**AN OBJECT PLACED IN THE TEXT** (2026-10-27, the author: "can you show it? into 2.0 if you can"): a span of
+		one character on the object's anchor (U+FFFC, which the text counts), its value "<what it is>\t<fingerprint>"
+		(KCMObjectPrint.h). Two values that differ are a change of the object's CONTENT - a MathML, a fill, a QR code made
+		anew - while the anchor character, the same either way, says nothing.
+		⚠**FILLED ONLY WHEN THE READER IS ASKED TO** (KCMTextRead::ReadStory's `withObjects` - the Story mode's comparison
+		 of a pair that shares UIDs). Every other reader of a story leaves it empty: a fingerprint is a SaveAll of every
+		 object, and nothing else needs one. */
+	KCMAttrSpanList	fObject;
+
 	/** Which table cell this paragraph IS, if it is one at all.
 
 		**WHY IT EXISTS: A CELL IS A PLACE.** The text of a cell paragraph and of a body paragraph

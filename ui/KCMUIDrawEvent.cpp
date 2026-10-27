@@ -207,9 +207,11 @@ public:
 	virtual ServiceID GetServiceID() { return kDrawEventService; }
 	virtual bool16 IsDefaultServiceProvider() { return kFalse; }
 	virtual InstancePerX GetInstantiationPolicy() { return IK2ServiceProvider::kInstancePerSession; }
-	// An internal name, not translated, so SetCString. Same practice as the model side’s
-	// KCMDrawEventSrvc.
-	virtual void GetName(PMString* pName) { pName->SetCString("KCMUIDrawEventSrvc"); }
+	// An internal name, not a key, so SetCString with its encoding - the form PMString.h gives "strings that are not
+	// keys" (2026-10-27, KFC's block-16 audit). ⚠The one-argument SetCString stands in the header's "NOT RECOMMENDED -
+	// should not be used" section and sets a KEY. (The model side's KCMDrawEventSrvc this once copied went with the ring
+	// adornment - KCMRingAdornment.cpp says.)
+	virtual void GetName(PMString* pName) { pName->SetCString("KCMUIDrawEventSrvc", PMString::kEncodingASCII); }
 	// ★GetThreadingPolicy is **not written** (the reason is at the top of this file).
 };
 

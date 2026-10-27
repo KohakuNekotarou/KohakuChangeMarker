@@ -34,7 +34,6 @@
 
 #include "KCMUIID.h"
 #include "KCMPanelState.h"		// KCMLoadPanelStateIfPresent (restore the saved panel settings)
-#include "KCMPanelTitle.h"		// KCMPanelTitle::Restore (put the tab name back on the way out)
 #include "KCMPanelAlpha.h"		// subscribe / unsubscribe the translucency toggle, and its clean-up
 #include "KCMStoryTreeController.h"	// KCMStoryShutdownReturnFilter (the list's Return filter off the dispatcher)
 #include "KCMTrackerHud.h"		// KCMTrackerHudShutdown (return the on-press HUD’s font)
@@ -97,8 +96,9 @@ void KCMUIStartup::Startup()
 	KCMAttachDocsClosedObserver();
 
 	// Subscribe to panel visibility changes (kPaletteVisibilityChangedMessage). With "Translucent
-	// Panel" ON, the translucency survives reopening the panel and switching between docked and
-	// floating -- the OWL.Dock window it is applied to is rebuilt each time. KCMPanelAlpha.cpp.
+	// Kohaku Change Marker Panel" ON, the translucency survives reopening the panel and switching
+	// between docked and floating -- the OWL.Dock window it is applied to is rebuilt each time.
+	// KCMPanelAlpha.cpp.
 	KCMAttachPanelVisibilityObserver();
 
 	// ★Subscribe to the model’s notifications (kKCM*Message). With this not connected, the model’s
@@ -109,11 +109,9 @@ void KCMUIStartup::Startup()
 
 void KCMUIStartup::Shutdown()
 {
-	// ★★Put the tab name back. **First of all**, while the UI is still standing (KBS puts
-	//   KBSPanelTitle::Restore() at the head of its own Shutdown for the same reason).
-	//   ⚠Without it the palette label persists in the workspace, so **a name with "- Pixel" on it
-	//     stays there even after this plug-in is removed**.
-	KCMPanelTitle::Restore();
+	// (⛔The tab name is not put back here any more - KCMPanelTitle::Restore() stood first in this function until
+	//  2026-10-27, for a fear the measurement answered: a label set at run time is kept neither in the saved
+	//  workspace nor in SavedData. KCMPanelTitle.h says how it was measured.)
 
 	// release the deferred thumbnail idle task (RemoveTask first if one is queued)
 	KCMShutdownThumbIdleTask();

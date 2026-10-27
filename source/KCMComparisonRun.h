@@ -97,20 +97,8 @@ void	KCMRefreshComparison();
 // status line. One place for the three callers ([[one-question-one-place]]).
 void	KCMStopForCancelledReread();
 
-// Start with the front document (or whichever the caller names) as the Target and a database
-// that is NOT an open document as the Source -- a task-start copy Kohaku InDesign MCP lends
-// (KCMExternalSource.h). `sourceLabel` is what the panel's Source: line shows for it.
-// **Stops first** if a comparison is armed, unlike KCMStartComparisonFor, and **chooses both**
-// (Set as Target + Set as Source + Start in one): a Stop keeps the pair on the panel, and the
-// flyout's own Start compares against the same copy again until the lender releases it. nil
-// does nothing; a Source that IS the Target's own database is refused with a word on the status
-// line.
-void	KCMStartComparisonWithSourceDB(IDocument* target, IDataBase* sourceDB, const PMString& sourceLabel);
-
-// The lender is about to delete its database: stop the comparison if that database is the armed
-// Source, and say why on the status line. A database that is not the registered lent Source is
-// ignored, so the lender may call this for every database it frees.
-void	KCMReleaseExternalSource(IDataBase* sourceDB);
+// (⛔KCMStartComparisonWithSourceDB / KCMReleaseExternalSource - another plug-in's lent Source started and released -
+//  went on 2026-10-27 with their facade slots; KCMComparisonRun.cpp says why.)
 
 // Whether a comparison can be started at all: there is an active (front) document and at
 // least one other open document. Used to decide whether the flyout's Start may be enabled.

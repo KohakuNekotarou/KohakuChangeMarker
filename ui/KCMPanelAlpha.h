@@ -2,7 +2,7 @@
 //
 //  KCMPanelAlpha.h
 //
-//  The flyout toggles "Translucent Panel" / "Translucent Pages Panel", and what they do.
+//  The flyout toggles "Translucent Kohaku Change Marker Panel" / "Translucent Pages Panel", and what they do.
 //
 //  WINDOWS ONLY. The alpha is put on the panel's window with Win32's
 //    SetLayeredWindowAttributes. On the Mac the functions below still exist, but

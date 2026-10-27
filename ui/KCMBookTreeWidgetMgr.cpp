@@ -55,8 +55,10 @@
 class KCMBookTreeWidgetMgr : public CTreeViewWidgetMgr
 {
 public:
-	// kList, not kHierarchical: this list has no levels, and the flag is what tells the base class
-	// to leave the indent machinery alone (CTreeViewWidgetMgr.h:59-63).
+	// kList, not kHierarchical: this list has no levels - the base class then gives every row an indent of
+	// zero (CTreeViewWidgetMgr.cpp's GetIndentForNode), but its ApplyIndentToWidget still moves the cells
+	// (the ★★★ note at the empty override below says how). (Until 2026-10-27 this said the flag made the base
+	// "leave the indent machinery alone" - KFC's copy of the line was found to overstate it, block 19.)
 	KCMBookTreeWidgetMgr(IPMUnknown* boss) : CTreeViewWidgetMgr(boss, kList) {}
 	virtual ~KCMBookTreeWidgetMgr() {}
 

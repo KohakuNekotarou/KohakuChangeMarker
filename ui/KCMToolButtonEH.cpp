@@ -51,7 +51,7 @@
 #include "IWorkspace.h"			// the session workspace, where that preference lives
 
 // General includes:
-#include "CreateObject.h"		// ::CreateObject -- the timer is made, not queried
+#include "CreateObject.h"		// ::CreateObject2 -- the timer is made, not queried
 #include "PMString.h"
 #include <vector>				// the icon is composited by hand (KCMDrawFlyoutIcon)
 #include "ShuksanID.h"			// kCallbackTimerBoss / IID_ICALLBACKTIMER
@@ -70,7 +70,7 @@
 //  ★File statics rather than data members: the button's two faces are TWO WIDGETS sharing one
 //    rectangle, so a press that begins on one and ends on the other must still be one press. UI
 //    code is main-thread only, so nothing here is locked.
-//  ⚠sTimer is an owned reference (::CreateObject hands one over) and MUST be released -- a timer
+//  ⚠sTimer is an owned reference (::CreateObject2 hands one over) and MUST be released -- a timer
 //    left holding a raw function pointer into a plug-in that then unloads is a crash
 //    (ICallbackTimer.h says so, and [[plugin-teardown-robustness]] repeats it). Every exit from a
 //    press goes through KCMStopFlyoutTimer.
@@ -671,7 +671,7 @@ bool16 KCMToolButtonEH::LButtonDn(IEvent* e)
 	//   press does anyway. Only the held-down flyout is lost, and only after Shutdown.
 	if (!sShutdown)
 	{
-		sTimer = (ICallbackTimer*)::CreateObject(kCallbackTimerBoss, IID_ICALLBACKTIMER);
+		sTimer = ::CreateObject2<ICallbackTimer>(kCallbackTimerBoss, IID_ICALLBACKTIMER);	// typed, as KCMPanelAlpha.cpp says why
 		if (sTimer != nil)
 			sTimer->StartTimer(KCMToolFlyoutTimerFired, KCMToolFlyoutDelayMs(), this);
 	}

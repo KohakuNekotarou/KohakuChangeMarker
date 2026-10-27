@@ -16,6 +16,7 @@
 #include "ITextModel.h"
 
 // Project includes:
+#include "KCMObjectPrint.h"	// KCMObjectsPrintOfStory - the objects placed in a story, for the second test (2026-10-27)
 #include "KCMStoryStamp.h"
 
 #include <map>
@@ -55,8 +56,14 @@ void KCMStoryEdits::CollectStamps(IDataBase* db, std::vector<KCMStoryStamp>& out
 		// One reading, one place. The script properties go through the same call, so the panel
 		// and app.documents[0].stories[n].kcmChangeCount can never disagree about a story.
 		KCMStoryStamp stamp;
-		if (ReadStamp(storyList->GetNthUserAccessibleStoryUID(i), stamp))
+		const UIDRef storyRef = storyList->GetNthUserAccessibleStoryUID(i);
+		if (ReadStamp(storyRef, stamp))
+		{
+			// ★(2026-10-27) the objects placed in it, for the second test in Compare (KCMStoryStamp::fObjectsPrint)
+			InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
+			stamp.fObjectsPrint = KCMObjectsPrintOfStory(model);
 			out.push_back(stamp);	// a story that cannot be read contributes nothing to either side
+		}
 	}
 }
 
@@ -104,7 +111,14 @@ void KCMStoryEdits::Compare(const std::vector<KCMStoryStamp>& source,
 		//  COPY, so no counter of the document moved. An import puts its words into the document
 		//  now, and the counters answer for it like for any other edit.)
 		if (found->second.fChangeCount == it->fChangeCount)
+		{
+			// ★(2026-10-27) THE WORDS READ THE SAME - but an object placed in them may not: an edit to the object itself
+			//   moves no counter of the story (KCMStoryStamp::fObjectsPrint). Such a story is listed as an attribute
+			//   change; its rows are the Object rows the comparison finds (KCMStoryDiffRun's CompareParagraphObjects).
+			if (found->second.fObjectsPrint != it->fObjectsPrint)
+				AppendDiff(out, it->fStoryUID, kKCMStoryKindAttr, it->fStoryUID);
 			continue;	// text AND attributes AND everything else read the same
+		}
 
 		uint32 kinds = kKCMStoryKindNone;
 		if (found->second.fTextCount  != it->fTextCount)  kinds |= kKCMStoryKindText;

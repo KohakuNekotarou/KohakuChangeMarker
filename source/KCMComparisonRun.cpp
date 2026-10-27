@@ -33,7 +33,6 @@
 #include "KCMPeek.h"				// KCMArmedDocsAlive -- Refresh must not hand a closed document to the comparison
 #include "KCMRingAdornment.h"		// KCMRevalidateItemXPList -- the transparency-list insurance, at Start and at Stop
 #include "KCMThreadSafety.h"		// KCMIsSameDoc -- the one place this plug-in asks whether two dbs are one document
-#include "KCMExternalSource.h"	// the lent Source: registered and chosen by KCMStartComparisonWithSourceDB, forgotten by the lender's Release
 #include "IKCMCompareFacade.h"	// kKCMImportSourceModeRefusal - the words both halves say
 #include "KCMTaskStartClone.h"	// KCMIsImportClone - an import's copy is compared in the Story mode only (2026-10-24)
 // ⛔KCMOrigin.h went on 2026-09-21. It was included for "the third kind of Source, chosen by
@@ -108,12 +107,14 @@ void KCMStopComparison()
 //
 // **The resolver (which two) and the procedure (what to do) are kept apart.** There is no
 // document-choosing here at all; it starts on whatever it is handed. The reason is that there are
-// three callers:
-//   1. KCMToggleStartStop, which resolves active = Target and another open document = Source;
-//   2. "Start Change Marker" on a book comparison row, which opens that chapter's two files;
-//   3. KCMStartComparisonWithSourceDB, where the Source is a database another plug-in lent
-//      (2026-09-02) -- which is why this takes databases and KCMStartComparisonFor only unwraps.
-// Copying the procedure into each would let the three drift ([[one-question-one-place]]), and the
+// several callers:
+//   1. KCMToggleStartStop, which resolves active = Target and another open document = Source
+//      (the Task Start kept in memory among them - a database that is in no document list, which
+//      is why this takes databases and KCMStartComparisonFor only unwraps);
+//   2. "Start Change Marker" on a book comparison row, which opens that chapter's two files.
+//   (A third, KCMStartComparisonWithSourceDB - another plug-in's lent Source, 2026-09-02 - went on
+//    2026-10-27.)
+// Copying the procedure into each would let them drift ([[one-question-one-place]]), and the
 // procedure holds three decisions that all fail quietly when forgotten: do not arm on cancel, let
 // the strips go onto both windows, re-apply overset.
 // @return kTrue when the comparison ran and the pair is armed; kFalse when it did not (a CANCEL
@@ -227,69 +228,10 @@ void KCMStartComparisonFor(IDocument* target, IDocument* source)
 	KCMStartComparisonOn(::GetUIDRef(target).GetDataBase(), ::GetUIDRef(source).GetDataBase());
 }
 
-// KCMStartComparisonWithSourceDB (declared in KCMComparisonRun.h) -- the lent Source's entry.
-void KCMStartComparisonWithSourceDB(IDocument* target, IDataBase* sourceDB, const PMString& sourceLabel)
-{
-	if (target == nil || sourceDB == nil)
-		return;
-
-	IDataBase* const targetDB = ::GetUIDRef(target).GetDataBase();
-	// KCMIsSameDoc is deliberately NOT asked here: the lent database is a clone of this very
-	// document and names the same file, so by file the two ARE one document -- which is the
-	// whole point. Only the pointer can say "you handed me the Target itself".
-	if (targetDB == sourceDB)
-	{
-		KCMSayStatus("Target and Source are the same database.");
-		KCMNotify(kKCMMarksRebuiltMessage);
-		return;
-	}
-
-	// **Stop first**, through the ordinary Stop, so that the previous pair's marks and strips come
-	// off on the same path every other Stop takes before the new pair is chosen and drawn. (The
-	// registration is not touched by a Stop; it is REPLACED two lines below.)
-	if (KCMIsArmed() && KCMArmedTargetDB() != nil)
-		KCMStopComparison();
-
-	// Registered BEFORE the run: the rasteriser's liveness checks (KCMIsDbAlive) have to say
-	// "yes" about this database while its pages are being drawn.
-	KCMRegisterExternalSource(sourceDB, sourceLabel);
-
-	// ★★CHOSEN AS WELL AS STARTED (the user's ask, 2026-09-02: "keep Target and Source after a
-	//  Stop, as a chosen pair is kept"). This is "Set as Target" + "Set as Source" + Start in one:
-	//  the panel keeps naming both after a Stop, and the flyout's own Start compares against the
-	//  same copy again, until the lender releases it. A cancel inside the run leaves the choice
-	//  standing too -- the copy is still there, and Start is the way to try again.
-	//   The lent database replaces the origin as the Source, as a real document does in
-	//   KCMSetChosenSourceToActive - and the origin is released with the choice; left standing,
-	//   the resolver would have gone on preferring it over the pair chosen here. KCMChooseDBPair
-	//   is where all of that happens now (KCMPairChoice.h holds every slot).
-	KCMChooseDBPair(targetDB, sourceDB);
-
-	KCMStartComparisonOn(targetDB, sourceDB);
-}
-
-// KCMReleaseExternalSource (declared in KCMComparisonRun.h) -- the lender is deleting it.
-void KCMReleaseExternalSource(IDataBase* sourceDB)
-{
-	if (sourceDB == nil || !KCMIsExternalSource(sourceDB))
-		return;			// not ours to stop: the lender frees many databases and calls this for each
-
-	// The ordinary Stop when it is being drawn from: marks off, peek disarmed, strips removed by
-	// the UI on the notification. The database is still valid at this moment (the lender calls
-	// before its delete), so the redraws inside are safe.
-	const bool16 wasArmed = KCMIsArmed() && KCMArmedSourceDB() == sourceDB;
-	if (wasArmed)
-		KCMStopComparison();
-
-	// The choice goes with it -- the panel's Source: line must not go on naming a copy that no
-	// longer exists -- and so does the registration, here and nowhere else on the lender's side.
-	KCMForgetChosenSourceIfDB(sourceDB);
-	KCMForgetExternalSource();
-
-	KCMSayStatus(wasArmed ? "Stopped: the task-start copy used as Source was released."
-	                      : "The task-start copy chosen as Source was released.");
-	KCMNotify(kKCMMarksClearedMessage);
-}
+// (⛔KCMStartComparisonWithSourceDB and KCMReleaseExternalSource stood here - another plug-in's lent Source started and
+//  released, behind the facade's StartComparisonWithSourceDB / ReleaseExternalSourceDB. Their one caller, Kohaku
+//  InDesign MCP's bridge, went on 2026-10-12, and the two went on 2026-10-27 with their facade slots (the author:
+//  "remove them"). The Task Start kept in memory lends its clone through KCMTaskStartClone instead.)
 
 void KCMToggleStartStop()
 {

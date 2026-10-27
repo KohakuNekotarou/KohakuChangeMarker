@@ -163,6 +163,7 @@ PMString AttrKindIdLabel(int32 attrKind)
 		}
 		case kKCMStoryAttrFootnote:	label.Append("Footnote");	break;
 		case kKCMStoryAttrEndnote:	label.Append("Endnote");	break;
+		case kKCMStoryAttrObject:	label.Append("Object");		break;	// an object placed in the text (2026-10-27)
 		default:					break;
 	}
 	label.SetTranslatable(kFalse);
@@ -271,8 +272,11 @@ PMString KindLabel(uint32 kinds, bool16 sameKind, int32 /*attrKind*/, int32 /*at
 */
 PMString KCMChangeIdLabel(int32 attrKind, int32 place, bool16 wholeParagraph, int32 what, bool16 overset)
 {
-	if (KCMAttrKindHasMarkLine(attrKind))
-		return AttrKindIdLabel(attrKind);		// ルビ・圏点・割注・縦中横 / Footnote / Endnote
+	// ★AND AN OBJECT PLACED IN THE TEXT BY ITS OWN WORD TOO (2026-10-27 - kKCMStoryAttrObject): it draws no mark line,
+	//   so the first build of it fell through to the place's word and both the ID column and the message area said
+	//   "Text" for a changed object (measured: "Source: Text: Frame - its content changed").
+	if (KCMAttrKindHasMarkLine(attrKind) || attrKind == kKCMStoryAttrObject)
+		return AttrKindIdLabel(attrKind);		// ルビ・圏点・割注・縦中横 / Footnote / Endnote / Object
 
 	PMString words;
 	words.SetTranslatable(kFalse);

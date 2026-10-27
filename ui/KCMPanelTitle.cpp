@@ -35,8 +35,9 @@ namespace
 void SetTabLabel(const PMString& label)
 {
 	// ⚠**During teardown the session can already be gone** (KCMPanelAlpha.cpp receives the pointer
-	//   into a variable before using it for the same reason). Restore() is called from Shutdown ＝
-	//   this is the one entrance that passes through teardown, so the nil is simply tested for.
+	//   into a variable before using it for the same reason), so the nil is simply tested for. (The
+	//   entrance that passed through teardown - Restore() from Shutdown - went on 2026-10-27; the
+	//   header says why. The test stays: it costs nothing, and a caller may fire at any time.)
 	ISession* session = GetExecutionContextSession();
 	if (session == nil)
 		return;
@@ -113,14 +114,6 @@ void KCMPanelTitle::Update()
 	// ⚠A palette label is treated as **a candidate translation key** as well ＝ without clearing the
 	//   translatable flag, a string table that happens to hold the same key would swap it for
 	//   another word.
-	title.SetTranslatable(kFalse);
-
-	SetTabLabel(title);
-}
-
-void KCMPanelTitle::Restore()
-{
-	PMString title(kKCMDisplayName);
 	title.SetTranslatable(kFalse);
 
 	SetTabLabel(title);

@@ -158,7 +158,7 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 kKCMStorySectionLabelKey,		"Story Edits",
                 kKCMProposedSectionLabelKey,	"Proposed Edits",					// (2026-10-24 evening) the heading while the Source is an import's copy - the author's words
                 kKCMStoryNoEditsKey,			"No edits",
-                kKCMStoryPixelNoteKey,			"Pixel mode: stories are not compared",
+                kKCMStoryPixelNoteKey,			"Not compared in Pixel mode",
                 kKCMResourcesSectionLabelKey,	"Resources",
                 kKCMResourcesNoChangesKey,		"No differences",
                 kKCMResourcesColKindKey,		"Kind",

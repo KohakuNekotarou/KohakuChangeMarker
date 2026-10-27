@@ -32,7 +32,6 @@
 //       panel is shown there is nowhere to write, and the function below returns quietly on
 //       panelView==nil, which is what this call is for)
 //     - the saved settings were restored (KCMPanelState)
-//     - the plug-in is shutting down and the name goes back (KCMUIStartup)
 //    ⚠**Do not write a count here.** It said "three places" while there were four -- the
 //      settings restore arrived later and this line did not follow.
 //
@@ -47,8 +46,12 @@ namespace KCMPanelTitle
 	    call as often as you like). */
 	void Update();
 
-	/** Put the plain name back on the tab. Called from the shutdown path. */
-	void Restore();
+	// ★NOTHING PUTS THE TAB BACK AT SHUTDOWN (2026-10-27 - KFC's block-13 audit, kfc-block13-inspections-2026-10-20.md
+	//  §3). A label lives only in the running palette: the saved workspace names a panel by its resource KEY
+	//  (OWLPaletteLeaf name="0x1EA600kKFCPanelTitleKey" for KFC's) and the session's SavedData holds no label. Measured
+	//  with KT's palettelabel probe: a panel's label set at run time was in neither file after a quit, and the next
+	//  start showed the panel's own name. A Restore() did it until then, first thing in the UI half's shutdown - for
+	//  the fear that "a name with '- Pixel' on it stays in the workspace", which the measurement answered: it does not.
 }
 
 #endif // __KCMPanelTitle_h__

@@ -30,7 +30,7 @@
 //      tool active ＝ see the guard in KCMSyncOtherDocViewportsTo)
 //    - Ignore Page Number Marker         key "ignorePageNumberMarker"
 //    - Pair Pages by UID                 key "pairPagesByUid" (default ON; 2026-09-13)
-//    - Translucent Panel / Translucent Pages Panel / Translucent Book Dialog (★Windows only.
+//    - Translucent Kohaku Change Marker Panel / Translucent Pages Panel / Translucent Compare Books Dialog (★Windows only.
 //      The targets are, in order, our own panel / InDesign’s Pages panel / our book comparison
 //      dialog, under "translucentPanel" / "translucentPagesPanel" / "translucentBookDialog".)
 //      ★What is restored is the flag alone; applying it to a window is done by the panel’s
@@ -69,7 +69,7 @@
 //    restored but **missing from this list**; ② "Compare mode" was missing from it as well;
 //    ③ ★**"Mark colour" (Red/Cyan) was neither saved nor restored** ＝ a miss with real
 //    consequences: the choice went back to red on every restart. An earlier review had found
-//    one of the same kind (Translucent Book Dialog) ＝ **left alone, this list always drifts
+//    one of the same kind (Translucent Compare Books Dialog) ＝ **left alone, this list always drifts
 //    away from the code.**
 //    ⇒ How to check it: count the check-style and radio-style branches in `UpdateActionStates`
 //      (KCMActionComponent.cpp), decide for each whether it is a setting or a state of the work,

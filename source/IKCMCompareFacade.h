@@ -437,11 +437,10 @@ public:
 	// with edits, and JUMPS TO THE PLACE -- which this never did, stopping at "which page".
 	// ⚠**This vtable is an ABI shared with Kohaku InDesign MCP** (the rule at the head of this
 	//   file). The three that went were **in the middle**, so every slot below them moved.
-	//   That is safe here only because KIDMCP calls three methods that all sit at the END of this
-	//   interface (StartComparisonWithSourceDB / ReleaseExternalSourceDB / GetExternalSourceLabel
-	//   and ClearChosenDocs / RefreshComparison after them) -- **and because both products are
-	//   rebuilt from this same header**. ★If KIDMCP is ever shipped without rebuilding it against
-	//   this change, it calls the wrong slots silently.
+	//   That was safe only because KIDMCP called methods that all sat at the END of this interface
+	//   (the lent Source's two entrances - gone 2026-10-27 - GetExternalSourceLabel, and
+	//   ClearChosenDocs / RefreshComparison after them) -- **and because both products were rebuilt
+	//   from this same header**. (KIDMCP has called nothing here since 2026-10-12.)
 
 	// ---- Hide Unchanged Spreads --------------------------------------------------------
 	//
@@ -499,26 +498,14 @@ public:
 
 	// ---- a Source that is not an open document (2026-09-02) -------------------------------
 	//
-	// Kohaku InDesign MCP holds a task-start copy of a document (an IDataBase it made and owns),
-	// and lends it here so that "what changed since the task started" can be seen as marks.
-	// ★THE ONLY ENTRANCE THROUGH WHICH A DATABASE THAT IS NOT IN IDocumentList MAY BECOME THE
-	//  SOURCE. Everywhere else KCM asks "is it in the list", and a lent database is not.
-	// ⚠THE CONTRACT WITH THE LENDER: call ReleaseExternalSourceDB BEFORE deleting the database,
-	//  every time, on every path -- KCM holds the pointer for as long as the database is the
-	//  chosen or the armed Source (a Stop keeps the choice) and cannot find out on its own that
-	//  it has gone. See KCMExternalSource.h.
-
-	/** Start with `target` as the Target and `sourceDB` as the Source. Stops an armed comparison
-		first, and CHOOSES both (as Set as Target / Set as Source would): a Stop keeps the pair on
-		the panel, and the flyout's own Start compares against `sourceDB` again until it is
-		released. `sourceLabel` is shown on the panel's Source: line. nil does nothing. */
-	virtual void		StartComparisonWithSourceDB(IDocument* target, IDataBase* sourceDB,
-													const PMString& sourceLabel) = 0;
-
-	/** The lender is about to delete `sourceDB`: if it is the armed Source, the comparison is
-		stopped; if it is the chosen Source, the choice is dropped; either way the status line says
-		so. Any other database is ignored. */
-	virtual void		ReleaseExternalSourceDB(IDataBase* sourceDB) = 0;
+	// A database that is in no IDocumentList, chosen as the Source: since 2026-10-13 the Task Start
+	// kept in memory (KCMTaskStartClone.h - this plug-in lends its own clone; KCMExternalSource.h
+	// carries the contract). Everywhere else KCM asks "is it in the list", and a lent database is not.
+	// ⛔THE TWO ENTRANCES ANOTHER PLUG-IN LENT THROUGH WENT ON 2026-10-27 (the author: "remove them"):
+	//  StartComparisonWithSourceDB / ReleaseExternalSourceDB stood here for Kohaku InDesign MCP's
+	//  task-start copy (2026-09-02), and no one had called them since KIDMCP's bridge to KCM went on
+	//  2026-10-12. Taken out of the MIDDLE of this class - every slot below moved, so both halves of
+	//  KCM are built together (kKCMCompareFacadeAbi, bumped).
 
 	/** kTrue, and outLabel filled, when `db` is the lent Source (chosen or armed) -- the panel
 		asks this when FindDocByDataBase has no name for it. */
@@ -611,8 +598,8 @@ public:
 	// ⚠★★★**NEW VIRTUALS GO AT THE END OF THIS CLASS, NEVER IN THE MIDDLE - AND BUMP
 	//   kKCMCompareFacadeAbi (below the class) WHENEVER THIS CLASS CHANGES.** This interface is
 	//   called by vtable slot from OUTSIDE this plug-in: Kohaku InDesign MCP's KIDMCPKcmBridge
-	//   (ReleaseExternalSourceDB / StartComparisonWithSourceDB) is built against a copy of this
-	//   header. Measured 2026-09-13: these two were first put after SetIgnorePageNumberMarker,
+	//   (ReleaseExternalSourceDB / StartComparisonWithSourceDB - both gone 2026-10-27, the bridge on
+	//   2026-10-12) was built against a copy of this header. Measured 2026-09-13: these two were first put after SetIgnorePageNumberMarker,
 	//   KIDMCP was not rebuilt, and its ReleaseExternalSourceDB call landed two slots further on -
 	//   on ExportChangedPagesTSV - which opened the export dialog on every verify and then died in
 	//   UnicodeSavvyString::CopyFrom with the clone pointer read as a PMString&; the crash reporter
@@ -735,6 +722,6 @@ public:
 	compares it with the value ITS build saw in this header before it calls anything here
 	(KIDMCPKcmBridge::AbiState). Two binaries built from different versions of this class then
 	refuse each other instead of running the wrong method (2026-09-13: the header's warning). */
-const int32 kKCMCompareFacadeAbi = 2026102701;	// 2026-10-27: CanTakeTrackOriginalCopy / TakeTrackOriginalCopy renamed in place to CanStartTrackChanges / StartTrackChanges, and the last slot IsTrackOriginalOf re-typed as GetCompareModeSetting - Track from Compare with Tracked Changes alone, no copy (only KCM's two halves are rebuilt). Previously 2026102601 = 2026-10-26: RefreshSelectedPages re-typed in place - it takes the pages the UI read from the Pages panel (the import tidy S7; only KCM's two halves are rebuilt). Previously 2026102501 = 2026-10-25: IsTrackOriginalOf appended - the Source line's "(Track original)" (only KCM's two halves are rebuilt; KIDMCP names no KCM facade). Previously 2026101401 = 2026-10-14: ChoosePdfEnd / IsPdfDoc appended - the PDF comparison (KIDMCP has not called this facade since 2026-10-12: only KCM's two halves are rebuilt). Previously 2026101301 = 2026-10-13: CanTakeTaskStartClone / TakeTaskStartClone appended - Task Start kept in memory. Previously 2026100501 = 2026-10-05: CanTakeTrackOriginalCopy / TakeTrackOriginalCopy appended - Compare with Tracked Changes. ⚠KIDMCP must be rebuilt with it. Previously 2026092103 = 2026-09-21 (the third change of that day): CanTakeTaskStartCopy / TakeTaskStartCopy appended - Task Start saves a copy to a file instead of holding a snapshot. ⚠KIDMCP must be rebuilt with it. Previously 2026092102 = GetChosenSourceFileLabel / GetChosenTargetFileLabel appended - a chosen end may now be a FILE, which the panel names by its path. ⚠KIDMCP must be rebuilt with it. Previously 2026092101 = TakeStatusWarning appended (the model can now raise a red message: the round-trip check on the comparison's own copy). ⚠KIDMCP must be rebuilt with it. Previously 2026092001 = OpenOriginAsIdml appended (the menu item that shows the Task Start state as a document). ⚠KIDMCP must be rebuilt with it. Previously 2026091402 = the second change of 2026-09-14 (SaveOriginRawToDesktop removed: the script method app.kcmSaveOriginXml reaches KCMOriginSaveRaw from inside this plug-in, so the facade door had no caller left). 01 was the first change that day (ExportChangedPagesTSV, RehydrateOriginRaw, RehydrateOriginAsCompared, removed with the menu items that called them)
+const int32 kKCMCompareFacadeAbi = 2026102702;	// 2026-10-27 evening: StartComparisonWithSourceDB / ReleaseExternalSourceDB removed from the middle (the author: "remove them" - no caller since KIDMCP's bridge went on 2026-10-12; only KCM's two halves are rebuilt). Previously 2026102701 = 2026-10-27: CanTakeTrackOriginalCopy / TakeTrackOriginalCopy renamed in place to CanStartTrackChanges / StartTrackChanges, and the last slot IsTrackOriginalOf re-typed as GetCompareModeSetting - Track from Compare with Tracked Changes alone, no copy (only KCM's two halves are rebuilt). Previously 2026102601 = 2026-10-26: RefreshSelectedPages re-typed in place - it takes the pages the UI read from the Pages panel (the import tidy S7; only KCM's two halves are rebuilt). Previously 2026102501 = 2026-10-25: IsTrackOriginalOf appended - the Source line's "(Track original)" (only KCM's two halves are rebuilt; KIDMCP names no KCM facade). Previously 2026101401 = 2026-10-14: ChoosePdfEnd / IsPdfDoc appended - the PDF comparison (KIDMCP has not called this facade since 2026-10-12: only KCM's two halves are rebuilt). Previously 2026101301 = 2026-10-13: CanTakeTaskStartClone / TakeTaskStartClone appended - Task Start kept in memory. Previously 2026100501 = 2026-10-05: CanTakeTrackOriginalCopy / TakeTrackOriginalCopy appended - Compare with Tracked Changes. ⚠KIDMCP must be rebuilt with it. Previously 2026092103 = 2026-09-21 (the third change of that day): CanTakeTaskStartCopy / TakeTaskStartCopy appended - Task Start saves a copy to a file instead of holding a snapshot. ⚠KIDMCP must be rebuilt with it. Previously 2026092102 = GetChosenSourceFileLabel / GetChosenTargetFileLabel appended - a chosen end may now be a FILE, which the panel names by its path. ⚠KIDMCP must be rebuilt with it. Previously 2026092101 = TakeStatusWarning appended (the model can now raise a red message: the round-trip check on the comparison's own copy). ⚠KIDMCP must be rebuilt with it. Previously 2026092001 = OpenOriginAsIdml appended (the menu item that shows the Task Start state as a document). ⚠KIDMCP must be rebuilt with it. Previously 2026091402 = the second change of 2026-09-14 (SaveOriginRawToDesktop removed: the script method app.kcmSaveOriginXml reaches KCMOriginSaveRaw from inside this plug-in, so the facade door had no caller left). 01 was the first change that day (ExportChangedPagesTSV, RehydrateOriginRaw, RehydrateOriginAsCompared, removed with the menu items that called them)
 
 #endif // __IKCMCompareFacade_h__

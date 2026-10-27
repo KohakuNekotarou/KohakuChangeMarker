@@ -46,6 +46,7 @@
 #include <sstream>		// the kenten kind table's "unknown" spelling
 
 // Project includes:
+#include "KCMObjectPrint.h"		// KCMObjectPrintOf - an object placed in the text, its fingerprint (2026-10-27)
 #include "KCMSkippedText.h"
 #include "KCMTextRead.h"
 
@@ -664,6 +665,48 @@ void ScanNotes(ITextModel* model, const KCMSkippedText& skipped, std::vector<Att
 	}
 }
 
+/* ScanObjects (2026-10-27)
+   OBJECTS PLACED IN THE TEXT, as one-character spans on their anchors (U+FFFC - a character the text counts), each
+   valued with what it is and its fingerprint (KCMObjectPrint.h). The owned items come off the same walk the note
+   markers do (ScanNotes) - the whole story, cells and notes included - and the kInlineBoss ones are the objects, inline
+   and anchored alike.
+   ⚠ONLY WHEN ReadStory IS ASKED (`withObjects`): a fingerprint is a SaveAll of the object and everything in it.
+   ⚠An object whose bytes cannot be written becomes no span at all: nothing can be said about it either way.
+*/
+void ScanObjects(ITextModel* model, const KCMSkippedText& skipped, std::vector<AttrRun>& out)
+{
+	Utils<ITextUtils> textUtils;
+	if (textUtils == nil)
+		return;
+
+	const int32 wholeStory = model->TotalLength();
+	if (wholeStory <= 0)
+		return;
+
+	OwnedItemDataList owned;
+	textUtils->CollectOwnedItems(model, 0, wholeStory - 1, &owned);
+
+	IDataBase* const db = ::GetDataBase(model);
+	if (db == nil)
+		return;
+
+	for (int32 i = 0; i < static_cast<int32>(owned.size()); ++i)
+	{
+		if (owned[i].fClassID != kInlineBoss)
+			continue;			// a note's marker, a table - not an object placed in the text
+		if (skipped.Contains(owned[i].fAt))
+			continue;			// in text the page does not set (KCMSkippedText.h)
+		std::string value;
+		if (!KCMObjectPrintOf(db, owned[i].fUID, value))
+			continue;
+		AttrRun run;
+		run.fAt = owned[i].fAt;
+		run.fLen = 1;
+		run.fValue = value;
+		out.push_back(run);
+	}
+}
+
 /* CountUncounted
    How many of a paragraph's uncounted positions stand before `at` -- the whole of the difference
    between the model's count and the text's, at one point.
@@ -766,6 +809,7 @@ struct AttrWalk
 	const std::vector<AttrRun>&	fEndnote;
 	const std::vector<AttrRun>&	fWarichu;
 	const std::vector<AttrRun>&	fTcy;
+	const std::vector<AttrRun>&	fObject;	// ★(2026-10-27) objects placed in the text - empty unless ReadStory was asked
 
 	size_t	fRubyAt;
 	size_t	fKentenAt;
@@ -773,13 +817,15 @@ struct AttrWalk
 	size_t	fEndnoteAt;
 	size_t	fWarichuAt;
 	size_t	fTcyAt;
+	size_t	fObjectAt;
 
 	AttrWalk(const std::vector<AttrRun>& ruby, const std::vector<AttrRun>& kenten,
 			 const std::vector<AttrRun>& footnote, const std::vector<AttrRun>& endnote,
-			 const std::vector<AttrRun>& warichu, const std::vector<AttrRun>& tcy)
+			 const std::vector<AttrRun>& warichu, const std::vector<AttrRun>& tcy,
+			 const std::vector<AttrRun>& object)
 		: fRuby(ruby), fKenten(kenten), fFootnote(footnote), fEndnote(endnote),
-		  fWarichu(warichu), fTcy(tcy),
-		  fRubyAt(0), fKentenAt(0), fFootnoteAt(0), fEndnoteAt(0), fWarichuAt(0), fTcyAt(0) {}
+		  fWarichu(warichu), fTcy(tcy), fObject(object),
+		  fRubyAt(0), fKentenAt(0), fFootnoteAt(0), fEndnoteAt(0), fWarichuAt(0), fTcyAt(0), fObjectAt(0) {}
 };
 
 void ClosePara(std::vector<std::string>& outParas,
@@ -846,6 +892,10 @@ void ClosePara(std::vector<std::string>& outParas,
 	TakeAttrFor(walk.fTcy,      walk.fTcyAt,      paraStart, paraEnd, uncounted, attrs.fTcy);
 	KCMParaText::SetSpanValuesToText(attrs.fWarichu, text);
 	KCMParaText::SetSpanValuesToText(attrs.fTcy, text);
+
+	// ★(2026-10-27) The objects placed in the paragraph, through the same door - their anchors are characters the text
+	//   counts, so the crossing is the one every other span takes.
+	TakeAttrFor(walk.fObject,   walk.fObjectAt,   paraStart, paraEnd, uncounted, attrs.fObject);
 	outAttrs.push_back(attrs);
 
 	// ⚠EMPTIED HERE, WHERE THE PARAGRAPH ENDS, so that the two places a paragraph can close cannot
@@ -861,7 +911,8 @@ void ClosePara(std::vector<std::string>& outParas,
 bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 							  std::vector<std::string>& outParas,
 							  std::vector<KCMParaAttrs>& outAttrs,
-							  std::vector<int32>& outStarts)
+							  std::vector<int32>& outStarts,
+							  bool16 withObjects)
 {
 	// **EMPTIED FIRST, ALL THREE.** A caller may hand in vectors that already hold something (the
 	// migration's parallel run handed in the other route's answer), and a reader that appended
@@ -910,7 +961,12 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 	ScanBoolAttribute(model, kTAWarichuAttrBoss, warichu);
 	ScanBoolAttribute(model, kTATatechuyokoAttrBoss, tcy);
 
-	AttrWalk walk(ruby, kenten, footnotes, endnotes, warichu, tcy);
+	// ★AND THE OBJECTS PLACED IN THE TEXT (2026-10-27), off the same moment - but only when asked (the header says why).
+	std::vector<AttrRun> objects;
+	if (withObjects)
+		ScanObjects(model, skipped, objects);
+
+	AttrWalk walk(ruby, kenten, footnotes, endnotes, warichu, tcy, objects);
 
 	const TextIndex total = model->TotalLength();
 	size_t nextCell = 0;

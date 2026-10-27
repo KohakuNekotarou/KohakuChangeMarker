@@ -51,7 +51,7 @@
 #include "IKCMStoryEditsFacade.h"	// ExportStoryText - "Export Story Text..." on the flyout
 #include "SDKFileHelper.h"			// SDKFolderChooser - where the exported stories go
 #include "IOpenFileDialog.h"		// the several-files-at-once dialog SDKFileOpenChooser cannot be
-#include "CreateObject.h"			// ::CreateObject(kOpenFileDialogBoss, ...) - the official call
+#include "CreateObject.h"			// ::CreateObject2<IOpenFileDialog>(kOpenFileDialogBoss, ...)
 #include "SysFileList.h"			// what that dialog hands back
 #include "UIDList.h"				// the stories a selection resolved to
 #include "KCMStorySelection.h"		// KCMCollectSelectedStories - which stories the reader means
@@ -65,7 +65,7 @@
 //  KCMStoryCopy.h had gone earlier that day with the CHANGE row's restore items. This file reads
 //  neither now: a definition row's menu is "Show as XML" alone, and a change row raises no menu.)
 #include "KCMStoryJump.h"			// KCMBringArmedTargetToFront - the Target is what the reader looks at once a comparison runs; KCMBringDocumentToFront - the report puts back what was in front
-#include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / Set / Apply (the "Translucent Panel" flyout item)
+#include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / Set / Apply (the "Translucent Kohaku Change Marker Panel" flyout item)
 #include "KCMStoryPressMarks.h"	// KCMStoryMarksRefresh (rebuild the always-on marks of Story mode)
 // (★`IActiveContext.h` / `IDocument.h` / `PersistUtils.h` were removed: **none of them was ever
 //  used**. DoAction and UpdateActionStates are handed an `IActiveContext*`, but the parameter
@@ -576,7 +576,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		//  and it was rebuilt on the Draw Event route the next day (KCMTrackerHud.cpp, which says in the
 		//  top-left whether the window pressed is the Target or the Source).)
 
-		// The "Translucent Panel" toggle: whether this panel itself is translucent (the alpha is
+		// The "Translucent Kohaku Change Marker Panel" toggle: whether this panel itself is translucent (the alpha is
 		// kKCMPanelAlphaValue). ★Windows only, default OFF. It has effect in two states: floating, and
 		// expanded as a drawer from an icon. Expanded inside a dock it can be ticked but nothing looks
 		// different ＝ only the flag is set, and it takes effect on returning to either of those states
@@ -606,7 +606,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		}
 
 		// The "Translucent Pages Panel" toggle: whether **InDesign’s own Pages panel** is translucent.
-		// Same machinery and same limits as Translucent Panel above; only the target differs.
+		// Same machinery and same limits as Translucent Kohaku Change Marker Panel above; only the target differs.
 		// ★The window is found from a WidgetID (kPagesPanelWidgetID, a number). A window title changes
 		//   with the UI language ("Pages" / 「ページ」), so matching on the title could never reach a
 		//   built-in panel. The work is in KCMPanelAlpha.cpp.
@@ -620,7 +620,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			// ★The Pages panel is docked by default, so "no effect" is met more often here.
 			const bool16 applied = KCMApplyPagesPanelTranslucency();
 
-			// ★For the same reason as Translucent Panel above, the targets that are ON are re-applied only
+			// ★For the same reason as Translucent Kohaku Change Marker Panel above, the targets that are ON are re-applied only
 			//   when switching OFF (in one floating group, this 255 restore takes the other one with it).
 			if (!on)
 				KCMApplyAllPanelTranslucency();
@@ -633,7 +633,7 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		//  changing how InDesign’s own toolbox looks is not something KCM carries. ActionID +38 stays
 		//  vacant and is not reused, because .indk stores a shortcut by the numeric ActionID.)
 
-		// The "Translucent Book Dialog" toggle: whether **our own book comparison dialog** is
+		// The "Translucent Compare Books Dialog" toggle: whether **our own book comparison dialog** is
 		// translucent (user’s request, "let the dialog be translucent too"). The same implementation as
 		// the two above (KCMPanelAlpha.cpp) with a different target.
 		// ★Two things differ from those two:
@@ -1136,8 +1136,9 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 				// ⚠**SDKFileOpenChooser CANNOT DO THIS.** It holds one IDFile and has no way to
 				//  answer for several, so the dialog is built the way Adobe's own callers build it
 				//  (source/open/.../importdata/SelectFileObserver.cpp:147).
-				InterfacePtr<IOpenFileDialog> dialog(
-					(IOpenFileDialog*)::CreateObject(kOpenFileDialogBoss, IID_IOPENFILEDIALOG));
+				//  (Typed by CreateObject2's two-argument form since 2026-10-27, where the callers cast ::CreateObject's
+				//  answer by hand - the same boss and interface, KFC 3ef6a9e's move.)
+				InterfacePtr<IOpenFileDialog> dialog(::CreateObject2<IOpenFileDialog>(kOpenFileDialogBoss, IID_IOPENFILEDIALOG));
 				if (dialog == nil)
 					break;
 

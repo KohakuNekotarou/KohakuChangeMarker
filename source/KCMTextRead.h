@@ -94,6 +94,10 @@ namespace KCMTextRead
 		   counts agree", which is the right answer for every paragraph without a table inside it.
 	@param outStarts OUT the same length again: where each paragraph begins, as a TextIndex.
 		   ★NOT COUNTED - taken from the walk. That is the whole point of this file.
+	@param withObjects ★(2026-10-27) kTrue = fill KCMParaAttrs::fObject - one span per object placed in the text, its
+		   fingerprint for a value (KCMObjectPrint.h). ⚠ONLY the Story mode's comparison of a pair that shares UIDs asks
+		   (KCMStoryDiffRun.cpp): a fingerprint is a SaveAll of every object, and no other reader needs one - so every other
+		   caller leaves fObject empty by leaving this out.
 	@return kFalse only when the story cannot be opened at all. **An empty story is not a
 		   failure**: it answers kTrue with three empty vectors.
 
@@ -104,7 +108,8 @@ namespace KCMTextRead
 bool16 ReadStory(const UIDRef& storyRef,
 				 std::vector<std::string>& outParas,
 				 std::vector<KCMParaAttrs>& outAttrs,
-				 std::vector<int32>& outStarts);
+				 std::vector<int32>& outStarts,
+				 bool16 withObjects = kFalse);
 
 }	// namespace KCMTextRead
 

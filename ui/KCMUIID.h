@@ -376,7 +376,7 @@ DECLARE_PMID(kActionIDSpace, kKCMPageRefreshCompareActionID, kKCMUIPrefix + 30)	
 //  ★**That number is not reused** ＝ a shortcut assignment is stored in .indk by the NUMERIC
 //  ActionID, so handing the number to another feature makes an existing assignment fire that
 //  other feature.)
-DECLARE_PMID(kActionIDSpace, kKCMPopupTranslucentPanelActionID, kKCMUIPrefix + 36)	// "Translucent Panel" check toggle on the panel flyout (ON = this panel is translucent while floating. ★Windows only. ★While docked it can be ticked but does nothing - the flag is set and takes effect once the panel floats again. Default OFF. KCMPanelAlpha.cpp)
+DECLARE_PMID(kActionIDSpace, kKCMPopupTranslucentPanelActionID, kKCMUIPrefix + 36)	// "Translucent Kohaku Change Marker Panel" check toggle on the panel flyout (ON = this panel is translucent while floating. ★Windows only. ★While docked it can be ticked but does nothing - the flag is set and takes effect once the panel floats again. Default OFF. KCMPanelAlpha.cpp)
 DECLARE_PMID(kActionIDSpace, kKCMPopupTranslucentPagesActionID, kKCMUIPrefix + 37)	// "Translucent Pages Panel" check toggle on the panel flyout (ON = **InDesign's own Pages panel** is translucent while floating. The same machinery as +36 with a different target, found by WidgetID (kPagesPanelWidgetID). ★Windows only, ★no effect while docked. Default OFF. KCMPanelAlpha.cpp)
 // ★kKCMUIPrefix + 38 is where a "Translucent Toolbox" toggle stood; it was added and withdrawn
 //   the same day on the user's call.
@@ -897,7 +897,7 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// 
 //   ⇒ **KCMStoryRowEH pops no menu for a child row at all now** - what a right click there did
 //   before 2026-09-12. ⚠Unlike an ActionID a menu-root literal is nothing to reserve: it never
 //   reached the screen and nothing outside the plug-in stores it.
-#define kKCMTranslucentPanelMenuKey	kKCMStringPrefix "kKCMTranslucentPanelMenuKey"	// the menu name of the "Translucent Panel" toggle on the panel flyout
+#define kKCMTranslucentPanelMenuKey	kKCMStringPrefix "kKCMTranslucentPanelMenuKey"	// the menu name of the "Translucent Kohaku Change Marker Panel" toggle on the panel flyout
 #define kKCMTranslucentPagesPanelMenuKey	kKCMStringPrefix "kKCMTranslucentPagesPanelMenuKey"	// the menu name of the "Translucent Pages Panel" toggle on the panel flyout (its target is InDesign's own Pages panel)
 #define kKCMTranslucentBookDialogMenuKey	kKCMStringPrefix "kKCMTranslucentBookDialogMenuKey"	// the menu name of the "Translucent Dialog" toggle on the panel flyout (its target is the book comparison dialog)
 // (kKCMTranslucentToolboxMenuKey went with its feature. Unlike an ActionID a string key is not

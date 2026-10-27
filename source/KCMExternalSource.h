@@ -17,14 +17,15 @@
 //    liveness tests, the panel's Source line, the same-document test, the refusals of the Resources export and the
 //    report - takes it unchanged. KCMTaskStartClone is then the lender, and lets it go through KCMForgetExternalSource.
 //
+//  ⛔THE FIRST LENDER IS GONE: Kohaku InDesign MCP's road (KCMStartComparisonWithSourceDB / KCMReleaseExternalSource,
+//    behind the facade's StartComparisonWithSourceDB / ReleaseExternalSourceDB) had no caller after KIDMCP's bridge went
+//    on 2026-10-12, and went on 2026-10-27 (the author: "remove them"). The Task Start is the only lender now.
+//
 //  ★THE INVARIANT: **a database is registered here while it is the CHOSEN Source or the ARMED
 //    Source -- or until the lender takes it back, whichever is later.** Registration happens
-//    inside KCMStartComparisonWithSourceDB (KIDMCP's road) and KCMTakeTaskStartClone (Task Start kept
-//    in memory), and nowhere else; both CHOOSE it as well. KIDMCP's road also starts the comparison
-//    (Set as Target + Set as Source + Start in one, the user's ask of 2026-09-02: a Stop keeps the
-//    pair on the panel, and the flyout's own Start compares against the copy again); the Task Start
-//    only chooses. It is forgotten by the lender (KCMReleaseExternalSource for KIDMCP's copy, the
-//    let-go in KCMTaskStartClone for the Task Start's), by a real document or a file taking its
+//    inside KCMTakeTaskStartClone (Task Start kept in memory), and nowhere else; it CHOOSES it as
+//    well, and starts nothing. It is forgotten by the lender (the let-go in KCMTaskStartClone),
+//    by a real document or a file taking its
 //    place on the Source end (KCMSetChosenSourceToActive / KCMSetChosenSourceFile, when nothing is
 //    drawing from it), and by KCMClearChosenDocs -- which is BOTH the model's shutdown AND the
 //    flyout's "Clear Target and Source" (that item stops the comparison first, so the copy is
@@ -39,10 +40,10 @@
 //     the code against this paragraph would have found the paragraph wrong, which is worse than
 //     the state it describes.
 //
-//  ⚠THE LENDER OWNS THE DATABASE AND MUST CALL KCMReleaseExternalSource (through the facade's
-//    ReleaseExternalSourceDB) BEFORE DELETING IT. KCM never deletes it and never asks whether it
-//    is still there -- it cannot: DBUtils::IsValidDataBase answers "yes" about a clone whose
-//    source is gone (Kohaku InDesign MCP measured that, KIDMCPDbClone.h).
+//  ⚠THE LENDER OWNS THE DATABASE AND MUST LET IT GO HERE (KCMForgetExternalSource, after stopping
+//    a comparison that draws from it) BEFORE DELETING IT - KCMTaskStartClone does. Nothing else
+//    asks whether it is still there -- it cannot: DBUtils::IsValidDataBase answers "yes" about a
+//    clone whose source is gone (Kohaku InDesign MCP measured that, KIDMCPDbClone.h).
 //
 //  **The pointer is compared, never dereferenced, in every function here** -- the same rule the
 //  rest of this plug-in keeps for a database it holds ([[uidref-reuse-after-close]]).
@@ -65,7 +66,7 @@ class PMString;
 
 /** Registers db as the lent Source, with the words the panel shows for it ("task-start copy
 	(taken 20:41:07 from the menu)"). Replaces any earlier registration. nil is ignored.
-	@warning call ONLY from KCMStartComparisonWithSourceDB and KCMTakeTaskStartClone -- see the invariant above. */
+	@warning call ONLY from KCMTakeTaskStartClone -- see the invariant above. */
 void		KCMRegisterExternalSource(IDataBase* db, const PMString& label);
 
 /** Forgets the registration, whatever it was. Idempotent; assignment only, so it is safe at any

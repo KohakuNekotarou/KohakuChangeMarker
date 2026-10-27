@@ -27,9 +27,10 @@
 #include "IDocumentUtils.h"		// QueryDocFileHandler
 #include "ISaveFileDialog.h"
 #include "ISession.h"
+#include "CreateObject.h"			// ::CreateObject2 - the save dialog's boss
 #include "DocumentID.h"			// kSaveFileDialogBoss
 #include "ErrorUtils.h"
-#include "FileUtils.h"			// GetParentDirectory / GetDirectorySeparatorPMString
+#include "FileUtils.h"			// GetParentDirectory / GetDirectorySeparatorPMString / PMStringToSysFile
 #include "PMString.h"
 #include "PersistUtils.h"
 #include "SDKFileHelper.h"		// GetPath
@@ -122,8 +123,10 @@ namespace {
 */
 bool16 AskOnce(IDataBase* docDB, const PMString& suggestedName, const PMString& title, IDFile& outFile)
 {
-	InterfacePtr<ISaveFileDialog> dlg(
-		(ISaveFileDialog*)::CreateObject(kSaveFileDialogBoss, IID_ISAVEFILEDIALOG));
+	// kDefaultIID is missing on ISaveFileDialog, so the IID is named - CreateObject2's two-argument form (CreateObject.h),
+	// in place of a C cast over ::CreateObject's answer, the SDK chooser's old form (2026-10-27 - KFC's block-19 audit,
+	// 3ef6a9e).
+	InterfacePtr<ISaveFileDialog> dlg(::CreateObject2<ISaveFileDialog>(kSaveFileDialogBoss, IID_ISAVEFILEDIALOG));
 	if (dlg == nil)
 		return kFalse;
 
@@ -136,8 +139,10 @@ bool16 AskOnce(IDataBase* docDB, const PMString& suggestedName, const PMString& 
 
 	const PMString& suggested = suggestedName;
 
-	// ★**A FULL PATH INTO IDFile::SetString** is the Windows form SDKFileHelper uses for exactly
-	//   this (SDKFileHelper.cpp). KCM ships Windows-only, so there is no second branch here.
+	// ★**A FULL PATH MADE AN IDFile** - the Windows form SDKFileHelper uses for exactly this (SDKFileHelper.cpp), KCM
+	//   shipping Windows-only. Made by FileUtils::PMStringToSysFile since 2026-10-27 (KFC 3ef6a9e): the chooser's
+	//   IDFile::SetString stands under IDFile.h's "DEPRECATED Methods" ("New code should avoid using the following
+	//   methods").
 	IDFile defaultFile;
 	const IDFile* const docFile = (docDB != nil) ? docDB->GetSysFile() : nil;
 	IDFile parent;
@@ -148,13 +153,13 @@ bool16 AskOnce(IDataBase* docDB, const PMString& suggestedName, const PMString& 
 		path.Append(FileUtils::GetDirectorySeparatorPMString());
 		path.Append(suggested);
 		path.SetTranslatable(kFalse);
-		defaultFile.SetString(path);
+		defaultFile = FileUtils::PMStringToSysFile(path);
 	}
 	else
 	{
 		// A document never saved has no folder to offer, so the dialog picks one and the reader
 		// moves it if they like - the user's decision ("raise the dialog anyway").
-		defaultFile.SetString(suggested);
+		defaultFile = FileUtils::PMStringToSysFile(suggested);
 	}
 
 	PMString shownTitle(title);

@@ -101,7 +101,7 @@ public:
 		bool16		fTextCompared;
 
 		/** WHICH KIND OF ATTRIBUTE this row's children found a difference in, when they found one.
-			**0 = none; 1 = ruby; 2 = kenten; 3 = footnote; 4 = endnote; 5 = warichu; 6 = tate-chu-yoko.**
+			**0 = none; 1 = ruby; 2 = kenten; 3 = footnote; 4 = endnote; 5 = warichu; 6 = tate-chu-yoko; 7 = an object placed in the text (2026-10-27).**
 
 			A NUMBER RATHER THAN A FLAG, so that a second attribute costs one more value here and
 			one more label - not another field and another branch everywhere. Kenten is that second
@@ -372,7 +372,7 @@ public:
 	virtual bool16	GetChange(int32 nth, int32 which, Change& out) = 0;
 
 	/** WHICH ATTRIBUTE this difference is in - Change::fAttrKind, and nothing else (0 = none,
-		1 = ruby, 2 = kenten, 3 = footnote, 4 = endnote, 5 = warichu, 6 = tate-chu-yoko). 0 for a text change and for an index that
+		1 = ruby, 2 = kenten, 3 = footnote, 4 = endnote, 5 = warichu, 6 = tate-chu-yoko, 7 = an object placed in the text). 0 for a text change and for an index that
 		names no change.
 
 		WHY THE ONE FIELD HAS A CALL OF ITS OWN. The tree asks this of every row it lays out, to

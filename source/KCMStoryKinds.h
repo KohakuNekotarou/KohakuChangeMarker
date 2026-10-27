@@ -121,7 +121,7 @@ enum KCMStoryAttrKind
 								// ON/OFF alone: its line count, size and alignment are not compared
 								// (the Pixel mode sees those). ★ITS VALUE IS THE CHARACTERS IT COVERS.
 								// ★LAYERED: drawn as a line of its own over the text (KCMStoryLayers.h).
-	kKCMStoryAttrTcy = 6		// ★TATE-CHU-YOKO set on or taken off characters (2026-09-16, the same
+	kKCMStoryAttrTcy = 6,		// ★TATE-CHU-YOKO set on or taken off characters (2026-09-16, the same
 								// request), the manual one: kTATatechuyokoAttrBoss. Its X/Y offsets
 								// and the automatic tate-chu-yoko (a paragraph setting) are not
 								// compared. ★ITS VALUE IS THE CHARACTERS IT COVERS; LAYERED, over a
@@ -130,6 +130,15 @@ enum KCMStoryAttrKind
 								// shown for reading only (2026-09-16), with the Import mode as the one
 								// exception (2026-09-17); when that mode was retired the exception became
 								// the rule rather than going with it.
+	kKCMStoryAttrObject = 7		// ★(2026-10-27, the author: "can you show it? into 2.0 if you can") an OBJECT PLACED IN
+								// THE TEXT whose content changed - a MathML, a fill, a QR code made anew, a group's
+								// colours - while its anchor character stayed the same. Its value is "<what it is>\t
+								// <fingerprint>" (KCMObjectPrint.h); a reader is shown the part before the tab.
+								// ★READ ONLY: no Restore from Source, no Apply, no Restore from Copy (an object
+								// copied back would be made anew with a new UID - the author's rule). Nothing has to
+								// refuse it: the restore and apply roads take ruby, kenten, warichu and
+								// tate-chu-yoko by name (KCMRestoreAttr.cpp, KCMFacades.cpp), so a kind they do not
+								// name is not theirs.
 };
 
 /** Whether a change of this kind is drawn on TWO LINES - a value (or a mark) standing over the

@@ -60,9 +60,25 @@
 #include "KCMTrackLabels.h"		// the Track mode's heading: who, when, what (2026-10-05)
 #include "KCMTrackPlan.h"			// kKCMTrackDelete - a deletion's words are not in the layout (2026-10-25)
 #include "KCMResourceValue.h"		// KCMShowSelectedResource - what a Resources row does instead of jumping
+#include "KCMStoryKinds.h"			// kKCMStoryAttrObject - an Object row says what changed (2026-10-27)
+
+#include <string>
 
 namespace
 {
+
+/** ★(2026-10-27) An Object row's value as a reader's word: the part before the tab ("QR: <its content>", "Group"...) -
+	the model's KCMObjectPrintDescription, written again here because the UI plug-in cannot call into the model's code
+	(the value's shape is KCMObjectPrint.h's: "<what it is>\t<fingerprint>"). */
+PMString KCMObjectWord(const PMString& value)
+{
+	const std::string all = value.GetUTF8String();
+	const std::string::size_type tab = all.find('\t');
+	PMString word;
+	word.SetUTF8String((tab == std::string::npos) ? all : all.substr(0, tab));
+	word.SetTranslatable(kFalse);
+	return word;
+}
 
 /** Where the status line says the jump landed: "Page: 3", or the pasteboard when there is no page.
 
@@ -526,7 +542,7 @@ bool16 KCMStoryJumpToRow(int32 rowIndex)
 	//   clicked was a story on page 3 - a DIFFERENT SPREAD, so KCMEnsureSpreadInView really did
 	//   run kSetSpreadCmdBoss through CmdUtils::ProcessCommand. Both windows moved to page 3, the
 	//   status line said "Page: 3", and app.documents[i].modified was FALSE for target AND source
-	//   afterwards. Start itself, Next Change, Stop and the double click (gone 2026-10-25) were all measured the
+	//   afterwards. Start itself, the "Next >" button, Stop and the double click (gone 2026-10-25) were all measured the
 	//   same way and are all clean too.
 	// ⇒ Scrolling and switching the spread do not dirty a document; the guard below is for the
 	//   SELECTION, which is a different operation (see its own note).
@@ -927,6 +943,32 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	{
 		label.Append(" ");
 		label.Append(kindWord);
+	}
+
+	// ★AN OBJECT PLACED IN THE TEXT (2026-10-27 - KCMStoryKinds.h, kKCMStoryAttrObject): what it was and what it is now.
+	//   Its anchor is the same character on both sides, so the text below says nothing; the value's part before the tab
+	//   is the reader's word for it (KCMObjectPrint.h - "QR: <its content>", "SVG / MathML", "Group"...).
+	if (change.fAttrKind == kKCMStoryAttrObject)
+	{
+		const PMString before = KCMObjectWord(change.fOtherRuby);
+		const PMString after = KCMObjectWord(change.fRuby);
+		label.Append(": ");
+		if (before == after)
+		{
+			label.Append(after);
+			label.Append(" - its content changed");
+		}
+		else
+		{
+			const char16_t kArrow[] = u" → ";	// " → " as UTF-16 (a narrow literal goes through the code page)
+			PMString arrow;
+			arrow.SetXString(reinterpret_cast<const UTF16TextChar*>(kArrow), 3);
+			arrow.SetTranslatable(kFalse);
+			label.Append(before);
+			label.Append(arrow);
+			label.Append(after);
+		}
+		label.SetTranslatable(kFalse);
 	}
 
 	// ★AND A WORD WHEN THE WINDOW WENT TO THE "+" RATHER THAN TO THE TEXT. The row's ID column

@@ -412,10 +412,8 @@ public:
 	virtual bool16		OpenOriginAsIdml(PMString& outMessage)	{ outMessage.Clear(); return kFalse; }
 
 
-	// The lent Source (see the interface). Three one-line transfers; the rules are model-side.
-	virtual void		StartComparisonWithSourceDB(IDocument* target, IDataBase* sourceDB, const PMString& sourceLabel)
-													{ KCMStartComparisonWithSourceDB(target, sourceDB, sourceLabel); }
-	virtual void		ReleaseExternalSourceDB(IDataBase* sourceDB)	{ KCMReleaseExternalSource(sourceDB); }
+	// The lent Source's label (see the interface; the two entrances beside it went on 2026-10-27). The rules are
+	// model-side.
 	virtual bool16		GetExternalSourceLabel(IDataBase* db, PMString& outLabel)
 													{ return KCMExternalSourceLabel(db, outLabel); }
 
@@ -782,7 +780,7 @@ public:
 		out.fFrameUID	= row->fFrameUID;
 		out.fPageUID	= row->fPageUID;
 		out.fTextCompared = row->fTextCompared;
-		out.fAttrKind	= static_cast<int32>(row->fAttrKind);	// 0 = none, 1 = ruby, 2 = kenten, 3 = footnote, 4 = endnote, 5 = warichu, 6 = tate-chu-yoko
+		out.fAttrKind	= static_cast<int32>(row->fAttrKind);	// 0 = none, 1 = ruby, 2 = kenten, 3 = footnote, 4 = endnote, 5 = warichu, 6 = tate-chu-yoko, 7 = object
 		out.fAttrKindCount = row->fAttrKindCount;				// how many DIFFERENT kinds - "Ruby+" when > 1
 		out.fHasTextChange = row->fHasTextChange;				// what the DIFF found, not what the counters said
 		out.fSourceStoryUID = row->fSourceStoryUID;				// the Source story it compares against (2026-10-26)
@@ -2122,7 +2120,9 @@ public:
 
 	virtual int32	RestoreTextsFromSource(const int32* rows, const int32* changes, int32 count, PMString& outMessage)
 	{
-		return this->RunBatch(rows, changes, count, "Restore These from Source", &KCMStoryEditsFacade::RestoreTextFromSource,
+		// ★AND THE MARK ROWS SELECTED WITH THEM (2026-10-27, the re-inspection's U5 - the author: "the recommended way"):
+		//   each row goes to its own road (RestoreOneFromSource), all in the one step. The name stays the slot's.
+		return this->RunBatch(rows, changes, count, "Restore These from Source", &KCMStoryEditsFacade::RestoreOneFromSource,
 							  kFalse, outMessage);
 	}
 
@@ -2142,7 +2142,18 @@ private:
 			   ? kTrue : kFalse;
 	}
 
-	/** One change's command, as RunBatch drives it - ApplyChange, RestoreChangeFromCopy, RestoreTextFromSource. */
+	/** ★(2026-10-27, the re-inspection's U5) One row of Restore from Source, whichever kind it is: a mark - ruby, kenten,
+		warichu, tate-chu-yoko (RestoreAttrAs) - or words (RestoreTextFromSource). What lets rows of both kinds selected
+		together go back as ONE undo step (RestoreTextsFromSource): until then a right-clicked mark row went back alone and
+		the marks selected with it stayed without a word (kcm-blockU5-inspections-2026-10-27.md §3). */
+	int32 RestoreOneFromSource(int32 nth, int32 which, PMString& outMessage)
+	{
+		if (this->CanRestoreAttr(nth, which))
+			return this->RestoreAttrAs(nth, which, "Restore from Source", outMessage);
+		return this->RestoreTextFromSource(nth, which, outMessage);
+	}
+
+	/** One change's command, as RunBatch drives it - ApplyChange, RestoreChangeFromCopy, RestoreOneFromSource. */
 	typedef int32 (KCMStoryEditsFacade::*OneChange)(int32 nth, int32 which, PMString& outMessage);
 
 	/** ★SEVERAL CHANGES AS ONE UNDO STEP (2026-10-24 night - design 1-4/1-5/1-8, KFC's ReplaceRows): `one` over every

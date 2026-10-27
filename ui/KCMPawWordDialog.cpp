@@ -44,7 +44,7 @@ namespace
 {
 
 // The press waiting for its word. UI code is main-thread only, so nothing here is locked.
-// ⚠gTimer is an owned reference (::CreateObject hands one over) and MUST be released -- a timer
+// ⚠gTimer is an owned reference (::CreateObject2 hands one over) and MUST be released -- a timer
 //  left holding a raw function pointer into a plug-in that then unloads is a crash
 //  (ICallbackTimer.h).
 IDataBase*		gDb      = nil;
@@ -213,7 +213,7 @@ void KCMPawWordDialog::AskAndPlaceLater(IDataBase* db, UID pageUID, const PMReal
 	gApply  = kFalse;
 	gText.Clear();
 
-	gTimer = (ICallbackTimer*)::CreateObject(kCallbackTimerBoss, IID_ICALLBACKTIMER);
+	gTimer = ::CreateObject2<ICallbackTimer>(kCallbackTimerBoss, IID_ICALLBACKTIMER);	// typed, as KCMPanelAlpha.cpp says why
 	if (gTimer == nil)
 	{
 		Forget();

@@ -22,6 +22,8 @@
     （橋渡しを作者決定で撤去・KIDMCP のソースに `IKCMCompareFacade` の参照は0件）。facade の口
     （`StartComparisonWithSourceDB`）は残っているが呼び手0。貸し Source の道（第8節）を今使うのは
     **KCM 自身の Task Start（メモリ・RUN-73）だけ**で、それは比較を始めない（Source に指名するだけ）
+    ⛔2026-10-27 夕＝facade の口 `StartComparisonWithSourceDB`／`ReleaseExternalSourceDB` と model の2関数
+    （`KCMStartComparisonWithSourceDB`／`KCMReleaseExternalSource`）を外した（作者「外す」）＝この入口はもう無い。
 
 - **RUN-04** フライアウトの **Refresh Comparison** ―― いま比べている同じ2つを、もう一度比べ直す ―― 第7節。
   - 訂正:
@@ -354,21 +356,22 @@
 
 ★2026-10-13 から **KCM 自身の Task Start（メモリ）もこの道を使う**（RUN-73）＝KCM が2人目の貸し手になり、
 写しを登録して Source に指名する。KIDMCP の経路（RUN-51〜57）は 10-12 から呼ばれていない（RUN-03 の訂正）。
+⛔2026-10-27 夕にその入口を外した＝RUN-51・52・53・56 は廃止の記録（RUN-54・55・57 は Task Start の写しにもそのまま当てはまる）。
 
 - **RUN-51** Kohaku InDesign MCP が「タスク開始時の複製」を貸してくる。KCM はそれを**文書として開かないまま**
   Source にして比較できる。⇒ 比べる相手は「別の文書」でなくてよい（第1章 OV-01b）。
-  - 訂正:
+  - 訂正: ⛔2026-10-27 夕＝廃止（入口を外した・RUN-03）。今の貸し手は KCM 自身の Task Start（メモリ・RUN-73）だけ。
 
 - **RUN-52** この経路は **先に Stop してから始め、Target と Source の両方を同時に指名する**
   （Set as Target ＋ Set as Source ＋ Start を1回で行うのと同じ）。
   ⇒ Stop してもパネルは2つを名乗り続け、フライアウトの Start はもう一度同じ複製と比べる。
-  - 訂正:
+  - 訂正: ⛔2026-10-27 夕＝廃止（この経路は無い）。Task Start（メモリ）は Source に指名するだけで、比較は始めない（RUN-73）。
 
 - **RUN-53** ⚠**貸し手が複製ではなく Target 自身のデータベースを渡してきたら断る**
   （ステータス行 `Target and Source are the same database.`）。
   ★判定は「**同じファイルを指しているか**」ではなく「**同じデータベースか**」 ――
   複製は元と同じファイル名を名乗るので、ファイルで判定すると**正当な複製まで断ってしまう**。
-  - 訂正:
+  - 訂正: ⛔2026-10-27 夕＝廃止（断っていた関数ごと外した）。Task Start（メモリ）の写しは KCM 自身が作るので、Target 自身が渡ることは無い。
 
 - **RUN-54** 貸し Source の登録が続くのは、**指名されている間**か**比較中の間**か、
   **貸し手が返しに来るまで**の、いちばん遅いところまで。★**Stop では忘れない。**
@@ -381,7 +384,7 @@
 - **RUN-56** 貸し手が「これから消す」と告げてきたら、その複製で比較していれば止める。
   ステータス行は2通り ―― 比較していたなら `Stopped: the task-start copy used as Source was released.`、
   指名していただけなら `The task-start copy chosen as Source was released.`。
-  - 訂正:
+  - 訂正: ⛔2026-10-27 夕＝廃止（「これから消す」と告げる口を外した）。Task Start の写しは KCM 自身が手放す＝描いている比較を先に止めてから（`KCMLetGoTaskStartClone`・文書を閉じるとき `KCMTaskStartCloneDocClosing`）。
 
 - **RUN-57** ⚠**KCM は複製を消さないし、「まだ在るか」を尋ねもしない**（尋ねても正しい答えが返らない）。
   返しに来るのは貸し手の義務で、KCM 側はそれを前提に組んである。

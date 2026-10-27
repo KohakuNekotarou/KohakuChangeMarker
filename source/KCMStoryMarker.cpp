@@ -33,6 +33,7 @@
 #include "PMReal.h"		// the opacity, which is held in a static below. It reached this
 						//   file through KCMStoryMarker.h until now, whose own comment asked
 						//   for it to be moved to the .cpp that actually names one
+#include <atomic>		// gHasMark - read off the main thread without the lock (2026-10-27)
 #include <set>			// the documents to repaint when a mark moves between them
 #include "UIDRef.h"
 #include "Utils.h"
@@ -84,7 +85,10 @@ namespace
 KCMStoryMarkDocs gStandingDocs;			// the "Show Marks on ..." toggles and a held button
 KCMStoryMarkDocs gFlashDocs;				// what the newest jump asked to point at
 
-bool16             gHasMark   = kFalse;		// the fast path: !gMarkDocs.empty(), kept as a flag
+// the fast path: !gMarkDocs.empty(), kept as a flag. ★std::atomic SINCE 2026-10-27 (KFC's marker made the same change,
+//   9ba1621): it is read unlocked on the export's thread, and a plain bool16 read that way is a data race in the language
+//   - it worked only because MSVC on x64 happens to forgive it. What it does is unchanged.
+std::atomic<bool>  gHasMark(false);
 KCMStoryMarkDocs gMarkDocs;				// database -> story UID -> its ranges, each list merged.
 											// @warning **THE KEY CANNOT BE COMPARED WITH ==.** A
 											// background thread is handed a CLONED copy of the
@@ -154,8 +158,8 @@ void KCMStoryMarkerRepaint(IDataBase* db)
      3. which story does it belong to, and which of that story's ranges does the run overlap --
         a Query and a binary search (2 and 3 are KCMStoryMarkerRangesFor, KCMStoryMarkRanges.h)
 
-   @warning **gHasMark IS READ WITHOUT THE LOCK, WHICH IS WHY THIS STEP IS ITS OWN.** It is a
-    bool16 the main thread only ever sets to kTrue after the map is complete and to kFalse
+   @warning **gHasMark IS READ WITHOUT THE LOCK, WHICH IS WHY THIS STEP IS ITS OWN.** It is an
+    atomic flag the main thread only ever sets to true after the map is complete and to false
     before emptying it, so testing it unlocked costs a run nothing and refuses almost all of
     them outright. Everything after it reads state the main thread rewrites, so both callers
     take the lock the moment this returns.
@@ -297,8 +301,8 @@ bool16 KCMStoryMarkerRunIsMarked(const IWaxRun* waxRun)
 */
 void KCMStoryMarkerSetDocs(const KCMStoryMarkDocs& docs, const PMReal& opacity)
 {
-	gMarkDocs.clear();
-	gHasMark = kFalse;
+	gHasMark = false;		// before the map is emptied, as the flag's contract says (the order was the other way round
+	gMarkDocs.clear();		//   until 2026-10-27 - harmless under the lock the caller holds, but not what the note promised)
 	gMarkOpacity = opacity;
 	gMarkLowest = 0;
 	gMarkHighest = 0;
@@ -335,7 +339,7 @@ void KCMStoryMarkerSetDocs(const KCMStoryMarkDocs& docs, const PMReal& opacity)
 	}
 
 	if (!gMarkDocs.empty())
-		gHasMark = kTrue;
+		gHasMark = true;
 }
 
 /* MarkOpacityNow
@@ -962,7 +966,7 @@ void KCMStoryMarker::Shutdown()
 		//   lock exists to prevent (KCMThreadSafety.h).
 		KCMMarkStateLock lock(KCMMarkStateMutex());
 		gShutdown = kTrue;
-		gHasMark = kFalse;
+		gHasMark = false;
 		gMarkDocs.clear();
 		gStandingDocs.clear();
 		gFlashDocs.clear();

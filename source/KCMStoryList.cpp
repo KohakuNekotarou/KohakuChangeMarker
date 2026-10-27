@@ -2602,6 +2602,7 @@ std::string AttrWord(int32 attrKind)
 		case kKCMStoryAttrEndnote:	return "Endnote";
 		case kKCMStoryAttrWarichu:	return "Warichu";
 		case kKCMStoryAttrTcy:		return "TCY";		// the tagged-text name for it (TTImportExportAttrId.h)
+		case kKCMStoryAttrObject:	return "Object";	// an object placed in the text whose content changed (2026-10-27)
 		default:					return "Attr" + Num(attrKind);
 	}
 }

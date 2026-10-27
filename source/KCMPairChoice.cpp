@@ -184,8 +184,8 @@ bool16 KCMResolveComparisonPair(KCMPairEnd& outTarget, KCMPairEnd& outSource)
 	//
 	// ★**THE LENT SOURCE WINS while it is chosen**: that is what lets the flyout's own Start
 	//  compare against the task-start copy again after a Stop, exactly as it would against a
-	//  chosen document. It stops being chosen when the lender releases it
-	//  (KCMReleaseExternalSource) or when "Set as Source" names a real document instead.
+	//  chosen document. It stops being chosen when the lender lets it go (KCMTaskStartClone - the
+	//  one lender since 2026-10-27) or when "Set as Source" names a real document instead.
 	if (sSourceIsFile)
 	{
 		outSource.fFile = sChosenSourceFile;

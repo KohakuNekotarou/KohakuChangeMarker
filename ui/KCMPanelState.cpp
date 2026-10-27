@@ -26,7 +26,7 @@
 #include "IKCMCompareFacade.h"	// reading and writing the print-marks setting, across the boundary
 #include "KCMUIShared.h"	// panel / status line / nav readout / tool button (split from KCMCore.h on 2026-08-13)
 #include "KCMViewSync.h"			// KCMGetLayoutSync / KCMSetLayoutSync
-#include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / KCMSetPanelTranslucent (Translucent Panel)
+#include "KCMPanelAlpha.h"		// KCMGetPanelTranslucent / KCMSetPanelTranslucent (Translucent Kohaku Change Marker Panel)
 #include "KCMPanelTitle.h"		// KCMPanelTitle::Update (put the restored compare mode on the tab)
 
 // The file name, directly under Roaming. ★No subfolder (see KCMPanelStateFile below and the

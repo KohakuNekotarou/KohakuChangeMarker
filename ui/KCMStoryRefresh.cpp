@@ -154,6 +154,16 @@ void RowsOfMenuThatCan(Can can, std::vector<int32>& outRows, std::vector<int32>&
 			outChanges.push_back(rows[k].second);
 		}
 }
+
+/** ★(2026-10-27, the re-inspection's U5) A row Restore from Source can take - its words (a text row) or its mark (a
+	ruby, kenten, warichu or tate-chu-yoko row): the rows selected together that go back as one step. */
+bool CanRestoreFromSource(int32 r, int32 c)
+{
+	Utils<IKCMStoryEditsFacade> edits;
+	if (!edits)
+		return false;
+	return (edits->CanRestoreTextFromSource(r, c) != kFalse || edits->CanRestoreAttr(r, c) != kFalse);
+}
 }	// anonymous namespace
 
 bool16 KCMChangeRowCanApply()
@@ -303,8 +313,7 @@ bool16 KCMChangeRowCanRestoreAttr()
 	if (Utils<IKCMStoryEditsFacade>()->CanRestoreAttr(gMenuRow, gMenuChange))
 		return kTrue;
 	std::vector<int32> rows, changes;
-	RowsOfMenuThatCan([](int32 r, int32 c) { return Utils<IKCMStoryEditsFacade>()->CanRestoreTextFromSource(r, c) != kFalse; },
-					  rows, changes);
+	RowsOfMenuThatCan(CanRestoreFromSource, rows, changes);
 	return rows.empty() ? kFalse : kTrue;
 }
 
@@ -318,21 +327,28 @@ bool16 KCMChangeRowRestoreAttr()
 		return kFalse;
 	}
 	// ★A TEXT ROW (2026-10-24 night, design 1-8): the Source's words by copy - every text row selected with it, as ONE undo
-	//   step (RestoreTextsFromSource; one row alone is the single command). A mark row goes on below, as it always has.
-	if (!Utils<IKCMStoryEditsFacade>()->CanRestoreAttr(gMenuRow, gMenuChange))
+	//   step (RestoreTextsFromSource; one row alone is the single command).
+	// ★★AND THE MARK ROWS SELECTED WITH IT, IN THE SAME STEP (2026-10-27, the re-inspection's U5 - the author: "the
+	//   recommended way"): two or more rows Restore from Source can take - words or marks, whichever was right-clicked -
+	//   go back together (the facade sends each to its own road). Only a mark row ALONE goes on below, as it always has
+	//   - asked of the ONE row that can go, which need not be the row right-clicked (a Table row selected with a ruby).
+	std::vector<int32> rows, changes;
+	RowsOfMenuThatCan(CanRestoreFromSource, rows, changes);
+	if (rows.empty())
 	{
-		std::vector<int32> rows, changes;
-		RowsOfMenuThatCan([](int32 r, int32 c) { return Utils<IKCMStoryEditsFacade>()->CanRestoreTextFromSource(r, c) != kFalse; },
-						  rows, changes);
+		KCMSetStatus("restore: not a change of two open documents that can be put back from the Source.");
+		return kFalse;
+	}
+	if (rows.size() > 1 || !Utils<IKCMStoryEditsFacade>()->CanRestoreAttr(rows[0], changes[0]))
+	{
 		PMString textWhy;
-		const int32 restored = rows.empty() ? -1
-			: Utils<IKCMStoryEditsFacade>()->RestoreTextsFromSource(&rows[0], &changes[0], static_cast<int32>(rows.size()),
-																	textWhy);
+		const int32 restored = Utils<IKCMStoryEditsFacade>()->RestoreTextsFromSource(&rows[0], &changes[0],
+																					 static_cast<int32>(rows.size()), textWhy);
 		SayApplied("restore", restored, textWhy);
 		return (restored > 0) ? kTrue : kFalse;
 	}
 	PMString why;
-	const int32 done = Utils<IKCMStoryEditsFacade>()->RestoreAttr(gMenuRow, gMenuChange, why);
+	const int32 done = Utils<IKCMStoryEditsFacade>()->RestoreAttr(rows[0], changes[0], why);
 	PMString msg;
 	msg.SetTranslatable(kFalse);
 	if (done < 0)
