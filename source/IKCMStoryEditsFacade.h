@@ -831,12 +831,14 @@ public:
 		split, the last paragraph of a story with the break before it, a place not in one story thread, a locked story). */
 	virtual int32	RestoreTextFromSource(int32 nth, int32 which, PMString& outMessage) = 0;
 
-	/** Whether row `nth` holds a change CanRestoreTextFromSource offers itself for. */
+	/** Whether row `nth` holds a change CanRestoreTextFromSource or CanRestoreAttr offers itself for (a mark row since
+		2026-10-27 night - the author: "include the marks"). */
 	virtual bool16	CanRestoreStoryFromSource(int32 nth) = 0;
 
-	/** "Restore All Changes in This Story": every such change of row `nth` restored as RestoreTextFromSource does,
-		bottom-up, as ONE undo step; the ones that cannot be copied are left as they are and said. @return the changes
-		restored; -1 when nothing was written (outMessage). */
+	/** "Restore All Changes in This Story": every such change of row `nth` restored - a text row as RestoreTextFromSource
+		does, a mark row (ruby, kenten, warichu, tate-chu-yoko) as RestoreAttr does - bottom-up, as ONE undo step; the
+		ones that cannot be restored are left as they are and said. @return the changes restored; -1 when nothing was
+		written (outMessage). */
 	virtual int32	RestoreStoryFromSource(int32 nth, PMString& outMessage) = 0;
 
 	// ---- ★SEVERAL ROWS AT ONCE, ONE UNDO STEP (design 1-4 / 1-5 - KFC's "rows selected together go in as one step").

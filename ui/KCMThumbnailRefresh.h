@@ -54,6 +54,14 @@ IControlView* KCMGetVisiblePagesPanel();
 // 252. So the application does hold [None] as an invalid UID.
 // @warning the IUIDListControlData methods carry a `___` suffix, Adobe's mark for internal use.
 //   Read from them only.
+// ★★KEPT, AND WHY (2026-10-27 - the author: "fix it if you can"; hdr-reread-own-uirest-2026-10-09.md §1): there is no
+//   public road to the same fact. GetSelectedPages answers the current page for [None] (above); IPagesSubPanelController
+//   has no selection methods; IPrivatePagesPanelUtils has an IID and no header. And ADOBE'S OWN PUBLISHED COMPONENT
+//   READS THIS VERY LIST THE SAME WAY - source/open/components/dynamicdocumentsui/DynamicDocumentsUIUtils.cpp,
+//   ddui_utils::GetSelectedNonMasterSpreadsInPagesPanel: Length___ / GetUID___, with "kInvalidUID is the None Master,
+//   need to allow it here" - the fact this test stands on. Replacing the two calls would bring the 2026-08-24 bug back.
+//   (Adobe's copy first checks the list's GetDataBase___ against the document it was asked about; this one reads the
+//   panel of the front document, the one the callers act on, and has not needed that.)
 // Selecting [None] together with a real page gives kFalse, so the real page still gets the
 // action and is not caught up in this.
 bool16 KCMPagesPanelSelectionHasNoRealPage();

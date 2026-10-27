@@ -126,6 +126,9 @@ void KCMUIStartup::Shutdown()
 	//   notification ---- Update would run inside code that is going away. Only then take down the
 	//   tools it uses (a timer and a Win32 hook) on the line below.
 	//   ★Ported from the pair KBS introduced; KCM was the side that lacked it.
+	//   ★★THE BACKSTOP SINCE 2026-10-27: the detach that counts runs as the palette manager is about to close the
+	//    palettes (KCMPaletteMgrService.cpp) - by now the session answers nil for the application (KFC measured it on
+	//    the same observer), so this call finds nothing to take off; it stays for a path that never reached there.
 	KCMDetachPanelVisibilityObserver();
 	// the delayed re-apply timer of the panel translucency goes the same way (again, leave no raw
 	// function pointer behind)

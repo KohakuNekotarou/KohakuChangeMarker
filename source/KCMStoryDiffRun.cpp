@@ -51,6 +51,8 @@
 #include "KCMSourceCache.h"	// the Source side, read once per origin instead of once per press
 #include "KCMTableShape.h"	// KCMReadTableShapes / KCMTableShapesDiffer - the Table row (2026-09-19 night)
 #include "KCMTableSnippet.h"	// KCMReadTableIdsInStory / KCMExportStoryInx - the Source's tables, by their own ids
+#include "KCMTaskStartClone.h"	// KCMIsImportClone - a Source that is a clone of the Target pairs its tables by their uids (2026-10-27)
+#include "KCMExternalSource.h"	// KCMIsExternalSource - ...the Task Start kept in memory too
 #include "KCMMemXferBytes.h"	// ...and the buffer that export writes into
 // (⛔KCMStoryRestore.h and KCMStorySnapshot.h were included here for the restore, and went with it
 //  on 2026-09-21 - KCMStorySnapshot as a whole file, having had no other reader.)
@@ -1503,6 +1505,29 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 			//   is checked: an id that is missing, or one that appears twice, means the text was not
 			//   read the way this assumes - and the pairing falls back to the position rather than
 			//   naming the wrong table with great confidence.
+			byId = kTrue;
+			for (size_t i = 0; i < sIds.size() && byId; ++i)
+			{
+				if (sIds[i] == kInvalidUID)
+					byId = kFalse;
+				for (size_t j = i + 1; j < sIds.size() && byId; ++j)
+					if (sIds[i] == sIds[j])
+						byId = kFalse;
+			}
+		}
+		// ★★AND FROM THE COPY ITSELF WHEN ITS INX CANNOT BE HAD (2026-10-27 night - the per-row Apply of tables, design
+		//   docs/superpowers/specs/2026-10-27-kcm-apply-tables-notes-per-row-design.md §5-1): a database CLONE - an import's
+		//   copy, the Task Start kept in memory - cannot be exported to INX (KCMResourceSnapshot.cpp), so the road above
+		//   answered nothing for it and the tables paired by their POSITION: a table the files took away made the tables
+		//   after it pair with the wrong partners ("3×2 -> 2×2", measured on the import matrix's A55). A clone holds the
+		//   Target's own uids, and KCMReadTableShapes has read each table's dictionary uid from it already - the very id
+		//   the INX would have named. The same checks as above: a missing or repeated uid falls back to the position.
+		if (!byId && !pairedByPlace && sourceDB != nil && sourceDB != ::GetDataBase(targetModel)
+			&& (KCMIsImportClone(sourceDB) || KCMIsExternalSource(sourceDB)) && !sShapes.empty())
+		{
+			sIds.clear();
+			for (size_t j = 0; j < sShapes.size(); ++j)
+				sIds.push_back(sShapes[j].fDictUID);
 			byId = kTrue;
 			for (size_t i = 0; i < sIds.size() && byId; ++i)
 			{

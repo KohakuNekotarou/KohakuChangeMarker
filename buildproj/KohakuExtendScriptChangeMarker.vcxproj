@@ -337,6 +337,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceStore.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceQRCode.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMObjectPrint.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMUtf8.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\IKCMResourcesFacade.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceParse.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMXmlDeepCompare.h" />

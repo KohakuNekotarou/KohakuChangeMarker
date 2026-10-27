@@ -287,7 +287,7 @@ bool16 KCMStoryRowRestoreAll()
 {
 	if (!KCMStoryRowCanRestoreAll())
 	{
-		KCMSetStatus("restore: not a story with a text change of two open documents.");
+		KCMSetStatus("restore: not a story with a change of two open documents that can be put back from the Source.");
 		return kFalse;
 	}
 	PMString why;

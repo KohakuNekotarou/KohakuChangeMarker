@@ -54,8 +54,9 @@
 #include "KCMPanelAlpha.h"	// KCMSetBookDialogWindow / KCMApplyBookDialogTranslucency
 #include "KCMPathDisplay.h"	// KCMPathForDisplay - the "/" separators, shared with the panel
 
-// *windows.h goes AFTER the SDK headers, so its macros cannot collide with SDK names.
-//  (The same order KCMPanelAlpha.cpp uses.)
+// *windows.h is in already (the precompiled header brings it in ahead of every SDK header - KCMPanelAlpha.cpp says how
+//  that was measured); this line is the mark of a file that touches Win32. (Until 2026-10-27 this said its place after
+//  the SDK headers kept its macros from colliding - the order protects nothing.)
 #ifdef WINDOWS
 #include <windows.h>
 #endif

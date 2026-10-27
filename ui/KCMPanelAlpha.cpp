@@ -43,7 +43,8 @@
 #include "CObserver.h"
 #include "ISubject.h"			// AttachObserver / IsAttached
 #include "ISession.h"			// GetExecutionContextSession (can be nil during teardown)
-#include "IApplication.h"		// QueryPanelManager
+#include "IApplication.h"		// QueryPanelManager / GetApplicationState
+#include "KCMDiag.h"				// KCM_DIAG_LOG - the visibility observer's attach and detach, traced (test builds only)
 #include "IActiveContext.h"		// kActiveContextBoss, where the observer implementation lives
 #include "IPanelMgr.h"			// IID_IPANELMGR (the subject subscribed to)
 #include "AppUIID.h"			// kPaletteVisibilityChangedMessage (a public header)
@@ -74,7 +75,11 @@
 									//  called any of it. It was measured and then removed -- the
 									//  reason is on KCMQueryTranslucentTarget below.)
 
-// windows.h goes AFTER the SDK headers, so that its macros do not collide with SDK names.
+// windows.h is in already: the precompiled header (VCPlugInHeaders.h -> WShukHeaders.h) brings it in AHEAD of every
+// SDK header above, so this line adds nothing to the build and its place in the list keeps no macro away from an SDK
+// name (memory plugin-pch-brings-windows-h; KFC's probe, kfc-block14-inspections-2026-10-20.md). It stays as the mark
+// of a file that touches Win32. (Until 2026-10-27 this said it went after the SDK headers so that its macros would not
+// collide - the order protects nothing.)
 #ifdef WINDOWS
 #include <windows.h>
 #endif
@@ -807,10 +812,14 @@ static uint32 KCMReapplyTimerProc(void* refPtr);
 // THE "DO NOT STACK A BOOKING" GATE WAS TAKEN OUT (a self-review decision). Should the chain below
 //   ever break part-way, that flag would stay raised and NEVER COME DOWN, leaving this function a
 //   no-op for the rest of the session -- a failure mode where it can never be re-applied again.
-//   ICallbackTimer holds one booking per instance, so calling StartTimer over a live booking only
-//   replaces it. Re-arming unconditionally on every new notification works whatever the
-//   implementation does underneath (and since the count goes back to kKCMPanelAlphaReapplyTries
-//   each time, it debounces in effect).
+//   Re-arming unconditionally on every new notification works whatever the implementation does
+//   underneath (and since the count goes back to kKCMPanelAlphaReapplyTries each time, it debounces
+//   in effect).
+// ★A BOOKING STILL LIVE IS TAKEN OFF BEFORE THE NEW ONE IS STARTED (2026-10-27 - KFC's block-14 NK14-1):
+//   the official re-arm stops the running timer before it starts one (HTTPAssetLinkResourceHandler.cpp),
+//   and ICallbackTimer.h promises nothing for a StartTimer over a live booking. (This said "ICallbackTimer
+//   holds one booking per instance, so calling StartTimer over a live booking only replaces it" - nothing
+//   in the header says so.)
 static void KCMScheduleReapply()
 {
 	// NO RE-ARMING AFTER SHUTDOWN. A panel being destroyed during teardown sends the notification
@@ -837,6 +846,7 @@ static void KCMScheduleReapply()
 	if (sReapplyTimer == nil)
 		return;
 
+	sReapplyTimer->StopTimer();
 	sReapplyTimer->StartTimer(KCMReapplyTimerProc, kKCMPanelAlphaReapplyDelayMillis, nil);
 }
 
@@ -1359,18 +1369,43 @@ void KCMPanelVisibilityObserver::Update(const ClassID& theChange, ISubject* /*th
 //   @warning WHAT WENT ON AS kRegularAttachment HAS TO COME OFF AS kRegularAttachment.
 static void KCMSetPanelVisibilityObserverAttached(bool16 attach)
 {
+	const char* const how = attach ? "attach" : "detach";		// (test builds' trace)
+	(void)how;
 	ISession* session = GetExecutionContextSession();
 	IActiveContext* ctx = (session != nil) ? session->GetActiveContext() : nil;
 	if (ctx == nil)
+	{
+		KCM_DIAG_LOG("PANELVIS %s: no session or active context", how);
 		return;
+	}
 
 	InterfacePtr<IObserver> obs((IObserver*)ctx->QueryInterface(IID_IKCMPANELVISIBILITYOBSERVER));
 	if (obs == nil)
+	{
+		KCM_DIAG_LOG("PANELVIS %s: the observer cannot be had", how);
 		return;
+	}
 
 	InterfacePtr<IApplication> app(session->QueryApplication());
 	if (app == nil)
+	{
+		// (what KFC measured at the plug-in's own Shutdown - why the detach moved to the palette manager's moment)
+		KCM_DIAG_LOG("PANELVIS %s: the application cannot be had", how);
 		return;
+	}
+
+	// ★NEVER ATTACHED WHILE THE APPLICATION IS GOING DOWN (2026-10-27 - KFC's block-14 D14-1): nothing after the detach
+	//   (KCMPaletteMgrService.cpp, as the palettes are about to close) could take an attachment back off - the plug-in's
+	//   Shutdown can no longer have the application - so one made then would outlive the observer. Asking the application
+	//   covers the quit exactly (KFC measured the palette manager's close at kShuttingDown) and leaves the observer free to
+	//   come back if the palettes ever closed while the application ran on - a "detached for good" flag would not.
+	if (attach && app->GetApplicationState() >= IApplication::kQuitting)
+	{
+		KCM_DIAG_LOG("PANELVIS attach: refused - the application is going down (state %d)",
+					 static_cast<int>(app->GetApplicationState()));
+		return;
+	}
+	int32 changed = 0;		// (test builds: what this call actually added or took off)
 
 	// The panel manager comes up part-way through the application's own startup sequence (there is
 	// a kPanelMgrHasStartedMsg), so calling from a startup service can find it nil here -- and it
@@ -1390,9 +1425,15 @@ static void KCMSetPanelVisibilityObserverAttached(bool16 attach)
 		{
 			const bool16 attached = subject->IsAttached(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKCMPANELVISIBILITYOBSERVER);
 			if (attach && !attached)
+			{
 				subject->AttachObserver(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKCMPANELVISIBILITYOBSERVER);
+				++changed;
+			}
 			else if (!attach && attached)
+			{
 				subject->DetachObserver(ISubject::kRegularAttachment, obs, IID_IPANELMGR, IID_IKCMPANELVISIBILITYOBSERVER);
+				++changed;
+			}
 		}
 	}
 
@@ -1406,10 +1447,19 @@ static void KCMSetPanelVisibilityObserverAttached(bool16 attach)
 	{
 		const bool16 attached = appSubject->IsAttached(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKCMPANELVISIBILITYOBSERVER);
 		if (attach && !attached)
+		{
 			appSubject->AttachObserver(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKCMPANELVISIBILITYOBSERVER);
+			++changed;
+		}
 		else if (!attach && attached)
+		{
 			appSubject->DetachObserver(ISubject::kRegularAttachment, obs, IID_IAPPLICATION, IID_IKCMPANELVISIBILITYOBSERVER);
+			++changed;
+		}
 	}
+	KCM_DIAG_LOG("PANELVIS %s: %d %s (panel manager %s, application state %d)", how, static_cast<int>(changed),
+				 attach ? "attached" : "detached", panelMgr != nil ? "up" : "not up", static_cast<int>(app->GetApplicationState()));
+	(void)changed;
 }
 
 // Start listening. Who calls it, and why the second caller is not belt-and-braces, is on the

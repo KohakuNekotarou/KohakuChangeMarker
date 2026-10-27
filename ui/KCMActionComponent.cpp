@@ -1264,8 +1264,9 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		case kKCMChangeRowRestoreCopyActionID:
 			KCMChangeRowRestoreCopy();
 			break;
-		// ★"Restore All Changes in This Story" on a STORY row (2026-10-24 night, design 1-8): every text change of the story
-		//   made the Source's, by copy, as one undo step by the model.
+		// ★"Restore All Changes in This Story" on a STORY row (2026-10-24 night, design 1-8): every change of the story that
+		//   can be put back - its words by copy, and since 2026-10-27 night its marks too - made the Source's as one undo
+		//   step by the model.
 		case kKCMStoryRowRestoreAllActionID:
 			KCMStoryRowRestoreAll();
 			break;

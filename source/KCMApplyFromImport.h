@@ -73,6 +73,17 @@ bool16 KCMImportStoryNeedsTableRound(const UIDRef& targetStory, UID wordStory);
 	be done, and outWhy says why. */
 int32 KCMApplyTableFromImport(const UIDRef& targetStory, UID wordStory, UID tableUID, PMString& outWhy);
 
+/** ★Apply This Change on a "Table +" or "Table −" row (2026-10-27 night - docs/superpowers/specs/2026-10-27-kcm-apply-
+	tables-notes-per-row-design.md §5-2): a table only the document has is taken away, one only the files have is put in
+	- by the import's own first round (stage 0: kDeleteTable / kInsertTable), then each table it put in made the files'
+	(its shape and its cells' words - KCMApplyTableFromImport). ★The story's WHOLE round goes in (outTogether = how many
+	tables it adds and takes away): the import pairs what is left by position only once the numbers agree, so one table
+	of two cannot go in alone. `live` is the row's change (kInsert = Table +, its fTargetTableUID; kDelete = Table −, its
+	fSourceTableUID, the copy's). Refused when the import's round does not hold the row's own table (it pairs tables by
+	their words, the list by their uids). INSIDE the caller's command sequence; -1 = nothing to keep (outWhy). */
+int32 KCMApplyTablesAddedOrTakenAway(const UIDRef& targetStory, UID wordStory, const KCMStoryChange& live,
+								   int32& outTogether, PMString& outWhy);
+
 #endif // __KCMApplyFromImport_h__
 
 // End, KCMApplyFromImport.h.

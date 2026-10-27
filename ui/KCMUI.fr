@@ -34,6 +34,7 @@
 #include "ShuksanID.h"
 #include "ActionID.h"
 #include "WidgetID.h"
+#include "WorkspaceID.h"				// IID_IPALETTEMGRSERVICE - the palette manager's service boss (2026-10-27)
 // ★★**BuildNumber.h is NOT unused, and a search for its names says it is.** Not one of them
 //   appears below -- but ObjectModelTypes.fh:58 defines kTargetVersion, which the PluginVersion
 //   resource writes, as **RezLong(kBuildNumber) in a DEBUG build** (kReleaseVersion otherwise).
@@ -195,6 +196,20 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		{
 			IID_ISTARTUPSHUTDOWN,   kKCMUIStartupImpl,
 			IID_IK2SERVICEPROVIDER, kLazyStartupShutdownProviderImpl,
+		}
+	},
+
+	// The palette manager's start and shut-down (2026-10-27 - KFC's block-14 A14-1): PaletteMgrAboutToShutdown, "called as
+	// Palette manager is shutting down just before the palettes are closed" (IPaletteMgrService.h), is where the panel
+	// visibility observer is taken off - by the plug-in's own Shutdown the application it hangs off can no longer be had
+	// (KCMPaletteMgrService.cpp). No parent class: a service is found by the ServiceID its provider states.
+	Class
+	{
+		kKCMPaletteMgrServiceBoss,
+		kInvalidClass,
+		{
+			IID_IK2SERVICEPROVIDER, kKCMPaletteMgrServiceProviderImpl,
+			IID_IPALETTEMGRSERVICE, kKCMPaletteMgrServiceImpl,
 		}
 	},
 

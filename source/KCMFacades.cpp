@@ -1616,17 +1616,13 @@ public:
 			outMessage = "this row is not a change of the imported text that can be put in";
 			return -1;
 		}
-		// ★A STORY WHOSE TABLES THE FILES ADD OR TAKE AWAY (measured 2026-10-24, matrix A55) is put in whole: the import
-		//   pairs its paragraphs and tables only once its tables agree, so no single row of it can go in first.
-		if (KCMImportStoryNeedsTableRound(UIDRef(targetDB, row.fStoryUID), row.fSourceStoryUID))
-		{
-			outMessage = "the imported text adds or takes away a table in this story - put the story in with Apply All "
-						 "Changes in This Story (the tables go first)";
-			outMessage.SetTranslatable(kFalse);
-			return -1;
-		}
+		// (⛔A story whose tables the files add or take away was refused whole here until 2026-10-27 night - measured on
+		//  matrix A55 2026-10-24: the import pairs its paragraphs and tables only once its tables agree. Only the
+		//  paragraph road leans on that pairing, so the refusal stands there now (ApplyWords); a table row puts the
+		//  tables in itself, and a words-only row or a mark is written without the comparison.)
 		if (change.fWhat == Change::kWhatTable)
-			return this->ApplyTable(nth, which, targetDB, row, outMessage);
+			return (change.fKind == 0) ? this->ApplyTable(nth, which, targetDB, row, outMessage)
+									   : this->ApplyTablesAddedOrTakenAway(nth, which, targetDB, row, outMessage);
 		if (change.fWhat == Change::kWhatAttr && change.fAttrKind != kKCMStoryAttrFootnote)
 		{
 			const int32 done = this->RestoreAttrAs(nth, which, "Apply This Change", outMessage);
@@ -2072,11 +2068,14 @@ public:
 		return 1;
 	}
 
+	// ★★THE MARK ROWS TOO, SINCE 2026-10-27 NIGHT (the author: "include the marks"): rows selected together went back with
+	//   their marks (U5, RestoreTextsFromSource), so "All Changes" leaving the ruby, kenten, warichu and tate-chu-yoko rows
+	//   of the story as they were contradicted its own name. Each row goes to its own road (RestoreOneFromSource).
 	virtual bool16	CanRestoreStoryFromSource(int32 nth)
 	{
 		const int32 changes = this->GetChangeCount(nth);
 		for (int32 c = 0; c < changes; ++c)
-			if (this->CanRestoreTextFromSource(nth, c))
+			if (this->CanRestoreTextFromSource(nth, c) || this->CanRestoreAttr(nth, c))
 				return kTrue;
 		return kFalse;
 	}
@@ -2088,19 +2087,19 @@ public:
 		const int32 count = this->GetChangeCount(nth);
 		for (int32 c = 0; c < count; ++c)
 		{
-			if (!this->CanRestoreTextFromSource(nth, c))
+			if (!this->CanRestoreTextFromSource(nth, c) && !this->CanRestoreAttr(nth, c))
 				continue;
 			rows.push_back(nth);
 			changes.push_back(c);
 		}
 		if (changes.empty())
 		{
-			outMessage = "this story has no text change to restore from the Source";
+			outMessage = "this story has no change to restore from the Source";
 			outMessage.SetTranslatable(kFalse);
 			return -1;
 		}
 		return this->RunBatch(&rows[0], &changes[0], static_cast<int32>(changes.size()), "Restore All Changes in This Story",
-							  &KCMStoryEditsFacade::RestoreTextFromSource, kTrue, outMessage);
+							  &KCMStoryEditsFacade::RestoreOneFromSource, kTrue, outMessage);
 	}
 
 	// ---- ★SEVERAL ROWS AT ONCE, ONE UNDO STEP (design 1-4 / 1-5 - KFC's "rows selected together go in as one step") ----
@@ -2343,7 +2342,18 @@ private:
 						|| k == kKCMStoryAttrTcy || k == kKCMStoryAttrFootnote) ? kTrue : kFalse;
 			}
 			case Change::kWhatTable:
-				return (outChange.fKind == 0) ? kTrue : kFalse;
+			{
+				// ★TABLE + AND TABLE − TOO SINCE 2026-10-27 NIGHT (the author: "row by row, into 2.0" - design
+				//   2026-10-27-kcm-apply-tables-notes-per-row-design.md): a table only the document has is taken away, one only
+				//   the files have is put in (ApplyTablesAddedOrTakenAway) - each named by its uid on the row.
+				if (outChange.fKind == 0)
+					return kTrue;
+				const KCMStoryChange* const c = KCMStoryList::GetMergedChange(nth, which);
+				if (c == nil)
+					return kFalse;
+				return ((outChange.fKind == 1 && c->fTargetTableUID != kInvalidUID)
+						|| (outChange.fKind == 2 && c->fSourceTableUID != kInvalidUID)) ? kTrue : kFalse;
+			}
 			default:
 				return kFalse;
 		}
@@ -2528,6 +2538,18 @@ private:
 		const KCMStoryChange live = *modelChange;
 		const UIDRef target(targetDB, row.fStoryUID);
 
+		// ★A STORY WHOSE TABLES THE FILES ADD OR TAKE AWAY (measured 2026-10-24, matrix A55): the import pairs its
+		//   paragraphs only once its tables agree, so a paragraph cannot go in before the tables do. Asked here, on the
+		//   paragraph road alone, since 2026-10-27 night (it stood before every row until then) - and it names the rows
+		//   that go first.
+		if (KCMImportStoryNeedsTableRound(target, row.fSourceStoryUID))
+		{
+			outMessage = "the imported text adds or takes away a table in this story - put its Table + / Table - row in "
+						 "first (or the story with Apply All Changes in This Story)";
+			outMessage.SetTranslatable(kFalse);
+			return -1;
+		}
+
 		// ★PLANNED BEFORE THE SEQUENCE BEGINS: a refusal writes nothing and lands nothing on the undo stack.
 		KCMStoryShape::Story now;
 		KCMStorySync::Plan plan;
@@ -2544,6 +2566,9 @@ private:
 			KCMStoryList::LiveChanges(nth, lives);
 			const bool16 removing = (live.fWholeParagraph && live.fKind == KCMStoryChange::kInsert) ? kTrue : kFalse;
 			const bool16 inserting = (live.fWholeParagraph && live.fKind == KCMStoryChange::kDelete) ? kTrue : kFalse;
+			// ★A FOOTNOTE'S OWN PARAGRAPH (2026-10-27 night - KCMPlanApplyParagraph's PlanApplyNote): the plan writes the
+			//   paragraph its REFERENCE stands in (paraStart / paraEnd name it), so the changes standing there go in with it.
+			const bool16 noteRow = (live.fPlace == kKCMPlaceNote && live.fWholeParagraph) ? kTrue : kFalse;
 			bool16 pressedIn = kFalse;
 			for (size_t i = 0; i < lives.size(); ++i)
 			{
@@ -2551,7 +2576,15 @@ private:
 				if (c.fWhat == KCMStoryChange::kTable || c.fWhat == KCMStoryChange::kRefused)
 					continue;
 				bool16 inIt = kFalse;
-				if (removing)
+				if (noteRow)
+				{
+					TextIndex f = c.fTargetStart;
+					TextIndex t = c.fTargetEnd;
+					KCMShownSpan(c.fBreakAt, f, t);
+					inIt = (SameStoryChange(c, live)
+							|| (!c.fWholeParagraph && paraEnd > paraStart && f >= paraStart && t <= paraEnd)) ? kTrue : kFalse;
+				}
+				else if (removing)
 					inIt = SameStoryChange(c, live);
 				else if (inserting)
 					inIt = (c.fWholeParagraph && c.fKind == KCMStoryChange::kDelete && c.fTargetStart == live.fTargetStart)
@@ -2676,7 +2709,23 @@ private:
 		outMessage = "applied (";
 		outMessage.AppendNumber(done);
 		outMessage.Append(done == 1 ? " write)" : " writes)");
-		if (group.size() > 1)
+		// ★A FOOTNOTE'S OWN PARAGRAPH (2026-10-27 night): what went is said as what it is - the note with its reference -
+		//   and the rows of the reference's paragraph that went with it are counted as that paragraph's (the first run
+		//   said "the 3 paragraphs put in at this place" of a note taken out).
+		const bool16 noteRow = (live.fPlace == kKCMPlaceNote && live.fWholeParagraph) ? kTrue : kFalse;
+		if (noteRow)
+		{
+			outMessage.Append((live.fKind == KCMStoryChange::kInsert) ? " - the footnote taken out with its reference"
+																	  : " - the footnote put in with its reference");
+			if (group.size() > 1)
+			{
+				outMessage.Append(", and the ");
+				outMessage.AppendNumber(static_cast<int32>(group.size()) - 1);
+				outMessage.Append(group.size() == 2 ? " change of the reference's paragraph with it"
+													: " changes of the reference's paragraph with it");
+			}
+		}
+		else if (group.size() > 1)
 		{
 			outMessage.Append(live.fWholeParagraph ? " - the " : " - this paragraph's ");
 			outMessage.AppendNumber(static_cast<int32>(group.size()));
@@ -2753,6 +2802,69 @@ private:
 		outMessage = "applied the table (";
 		outMessage.AppendNumber(done);
 		outMessage.Append(done == 1 ? " move or write)" : " moves and writes)");
+		outMessage.Append(" - Ctrl+Z takes it back");
+		outMessage.SetTranslatable(kFalse);
+		return done;
+	}
+
+	/** ★A TABLE ONLY ONE SIDE HAS (Table + / Table −, 2026-10-27 night - the author: "row by row, into 2.0"): taken away
+		when only the document has it, put in - its shape and its cells' words - when only the files have it, by the
+		import's own first round (KCMApplyTablesAddedOrTakenAway), as ONE undo step, then a "=" record at its place (the
+		table row's geometry - ApplyTable's). With two tables or more added or taken away in the story, the round goes in
+		whole and the sentence says so. */
+	int32 ApplyTablesAddedOrTakenAway(int32 nth, int32 which, IDataBase* targetDB, const Row& row, PMString& outMessage)
+	{
+		Change before;
+		if (!this->GetChange(nth, which, before))
+		{
+			outMessage = "this change is not in the list any more";
+			return -1;
+		}
+		if (!this->SameChangeAfterRefresh(nth, which, before))
+		{
+			outMessage = "the list was out of date - it has been compared again; right-click the table row once more";
+			return -1;
+		}
+		const KCMStoryChange* const modelChange = KCMStoryList::GetMergedChange(nth, which);
+		if (modelChange == nil)
+		{
+			outMessage = "this change is not in the list any more";
+			return -1;
+		}
+		const KCMStoryChange live = *modelChange;
+		const UIDRef target(targetDB, row.fStoryUID);
+		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
+		if (this->StepNotBegun(sequence, outMessage))
+			return -1;
+		const int32 focusId = KCMStoryList::FocusBeforeWrite(nth, live, live.fTargetStart, live.fTargetEnd);
+		int32 together = 0;
+		const int32 done = KCMApplyTablesAddedOrTakenAway(target, row.fSourceStoryUID, live, together, outMessage);	// unsigned, untracked (design 11-2)
+		if (done > 0)
+		{
+			KCMStoryList::FocusAfterWrite(focusId, live.fTargetStart, live.fTargetStart + (live.fSourceEnd - live.fSourceStart));
+			KCMStoryList::PlaceFociAtWriteEdge(nth, std::vector<int32>(1, focusId), live, kFalse, live.fTargetStart,
+											   live.fTargetEnd - live.fTargetStart, live.fSourceEnd - live.fSourceStart);
+		}
+		const bool16 kept = this->EndStep(sequence, (done > 0) ? kTrue : kFalse);
+		KCMStoryFollowEnsureObservers(targetDB);	// the Undo follower, attached again (PourIntoTarget says why)
+		if (done <= 0 || !kept)
+			KCMStoryList::LetWriteFocus(nth, focusId);
+		if (done > 0)
+			KCMStoryList::AddEqual(nth, live, live.fTargetStart,
+									  live.fTargetStart + (live.fSourceEnd - live.fSourceStart),
+									  KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone, kept ? focusId : 0);
+		this->RefreshRow(nth);
+		if (done <= 0)
+			return -1;
+		outMessage = (live.fKind == KCMStoryChange::kInsert) ? "applied - the table taken away (" : "applied - the table put in (";
+		outMessage.AppendNumber(done);
+		outMessage.Append(done == 1 ? " move or write)" : " moves and writes)");
+		if (together > 1)
+		{
+			outMessage.Append(" - with the other tables the imported text adds or takes away in this story (");
+			outMessage.AppendNumber(together);
+			outMessage.Append(" in all): tables go in together");
+		}
 		outMessage.Append(" - Ctrl+Z takes it back");
 		outMessage.SetTranslatable(kFalse);
 		return done;

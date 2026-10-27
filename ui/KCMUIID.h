@@ -219,6 +219,7 @@ DECLARE_PMID(kClassIDSpace, kKCMToolButtonBoss, kKCMUIPrefix + 35)
 DECLARE_PMID(kClassIDSpace, kKCMTrackChipCellBoss, kKCMUIPrefix + 38)	// kGenericPanelWidgetBoss + IID_ICONTROLVIEW (kKCMTrackChipViewImpl) + IID_IKCMSTORYCELLDATA: the colour square of a Track AUTHOR row (2026-10-05)
 DECLARE_PMID(kClassIDSpace, kKCMStoryAppliedSignCellBoss, kKCMUIPrefix + 39)	// kGenericPanelWidgetBoss + IID_ICONTROLVIEW (kKCMStoryAppliedSignViewImpl): the Δ cell of a "=" row Apply This Change put in - an amber "=" drawn by hand, as the "!" row's is (KCMStoryBangView.cpp, 2026-10-24 evening - the author: "when a change goes in and shows =, make the = red"). ⚠+39 counted (the class space; +39 elsewhere in this file is another space's)
 DECLARE_PMID(kClassIDSpace, kKCMTopPaneBoss, kKCMUIPrefix + 40)	// kGenericPanelWidgetBoss + IID_IEVENTHANDLER (kKCMTopPaneEHImpl): the splitter's UPPER pane (kKCMTopPaneWidgetID), whose handler pops "Apply All Changes" for a right click on the section heading ("Proposed Edits (N)") - 2026-10-24 evening, the author: "Apply All Changes on a story row is odd; put it on the Proposed Edits heading". On the pane because the heading, a static text, is handed no mouse event (KCMStorySection.cpp); the product's Link Info section has the same shape (kLinkInfoPanelWidgetBoss). ⚠+40 counted (the class space)
+DECLARE_PMID(kClassIDSpace, kKCMPaletteMgrServiceBoss, kKCMUIPrefix + 42)	// kInvalidClass + IID_IK2SERVICEPROVIDER (kKCMPaletteMgrServiceProviderImpl) + IID_IPALETTEMGRSERVICE (kKCMPaletteMgrServiceImpl): the palette manager's start and shut-down (2026-10-27 - KFC's block-14 A14-1) - where the panel visibility observer is taken off, as the palettes are about to close (KCMPaletteMgrService.cpp). +42 was the lowest class slot never used, counted
 DECLARE_PMID(kClassIDSpace, kKCMReturnFilterBoss, kKCMUIPrefix + 41)	// kInvalidClass + IID_IEVENTHANDLER (kKCMReturnFilterEHImpl): the Return filter, made once and pushed on the application's IEventDispatcher while the Story Edits list holds the keyboard (2026-10-24 night - KFC's kKFCReturnFilterBoss). ⚠+41 counted (the class space)
 // InterfaceIDs:
 // ⚠★What is here are **the IIDs that appear only on UI-side bosses**. The ones that cross the
@@ -306,6 +307,8 @@ DECLARE_PMID(kImplementationIDSpace, kKCMPawCursorProviderImpl, kKCMUIPrefix + 4
 DECLARE_PMID(kImplementationIDSpace, kKCMTrackChipViewImpl, kKCMUIPrefix + 52)	// IControlView (DVControlView subclass, PERSIST): the author row's colour square (KCMTrackChipView.cpp, 2026-10-05)
 DECLARE_PMID(kImplementationIDSpace, kKCMStoryAppliedSignViewImpl, kKCMUIPrefix + 53)	// IControlView (DVControlView subclass, PERSIST): the amber "=" of a row Apply This Change put in (KCMStoryBangView.cpp, 2026-10-24)
 DECLARE_PMID(kImplementationIDSpace, kKCMStoryTreeControllerImpl, kKCMUIPrefix + 55)	// ITreeViewController (CTreeViewController subclass, PERSIST - the stock one it replaces is): the Story Edits list's selection - change rows selected together (KCMStoryTreeController.cpp, 2026-10-24 night - the list like KFC's). ⚠+55 counted (41 and 42 stay vacant)
+DECLARE_PMID(kImplementationIDSpace, kKCMPaletteMgrServiceProviderImpl, kKCMUIPrefix + 57)	// IK2ServiceProvider (CServiceProvider subclass): registers kKCMPaletteMgrServiceBoss for kPaletteMgrService (2026-10-27, KCMPaletteMgrService.cpp). +57 / +58 the next free implementation slots, counted: the highest was +56
+DECLARE_PMID(kImplementationIDSpace, kKCMPaletteMgrServiceImpl, kKCMUIPrefix + 58)	// IPaletteMgrService (CPMUnknown): PaletteMgrAboutToShutdown takes the panel visibility observer off (2026-10-27, KCMPaletteMgrService.cpp)
 DECLARE_PMID(kImplementationIDSpace, kKCMReturnFilterEHImpl, kKCMUIPrefix + 56)	// IEventHandler (CEventHandler subclass): the Return filter pushed on the application's IEventDispatcher while the list holds the keyboard - a Return on the change rows selected applies them before the widget layer can hand the keyboard back to the document (KCMStoryTreeEH.cpp; KFC's KFCReturnFilterEH). ⚠+56 counted
 DECLARE_PMID(kImplementationIDSpace, kKCMTopPaneEHImpl, kKCMUIPrefix + 54)	// IEventHandler (DVHostedWidgetEH subclass, as the product's LinkInfoPanelEH; not persistent - GenericPanelWidget's resource reads no event handler, Widgets.fh): the upper pane's - a right click on the section heading pops kKCMProposedHeadingMenuName while the Source is an import's copy (KCMStorySection.cpp, 2026-10-24 evening). ⚠+54 counted
 // ActionIDs:
@@ -511,7 +514,7 @@ DECLARE_PMID(kActionIDSpace, kKCMPopupTaskStartCloneActionID, kKCMUIPrefix + 88)
 DECLARE_PMID(kActionIDSpace, kKCMChangeRowApplyActionID, kKCMUIPrefix + 91)	// ★"Apply This Change" on a Story Edits CHANGE row: the change goes into the document by the import's own road (facade ApplyChange)
 DECLARE_PMID(kActionIDSpace, kKCMStoryRowApplyActionID, kKCMUIPrefix + 92)	// ★"Apply All Changes in This Story" on a Story Edits STORY row (facade ApplyStory)
 DECLARE_PMID(kActionIDSpace, kKCMApplyAllActionID, kKCMUIPrefix + 93)	// ★"Apply All Changes": every story the import filled (facade ApplyAll). ⚠On the SECTION HEADING's menu since 2026-10-24 evening (kKCMProposedHeadingMenuName - the author: on a story row it read as that story's), no longer a story row's - the ID keeps its first name
-DECLARE_PMID(kActionIDSpace, kKCMStoryRowRestoreAllActionID, kKCMUIPrefix + 95)	// ★"Restore All Changes in This Story" on a Story Edits STORY row in the Story mode (2026-10-24 night, design 1-8 - the author: "on the Story row too"): every text change of the story made the Source's by copy, one undo step (facade RestoreStoryFromSource). ⚠+95 the next after +94, counted
+DECLARE_PMID(kActionIDSpace, kKCMStoryRowRestoreAllActionID, kKCMUIPrefix + 95)	// ★"Restore All Changes in This Story" on a Story Edits STORY row in the Story mode (2026-10-24 night, design 1-8 - the author: "on the Story row too"): every change of the story made the Source's, one undo step (facade RestoreStoryFromSource) - words by copy, and since 2026-10-27 night the marks too (the author: "include the marks"). ⚠+95 the next after +94, counted
 DECLARE_PMID(kActionIDSpace, kKCMPopupExportPagesActionID, kKCMUIPrefix + 96)	// ★(2026-10-25) "Export Pages to Word..." - on the Pages panel's page menu (under Refresh Page Comparison) AND on the flyout (under Export Story Text...): the selected pages, each one .docx of text boxes (facade ExportPagesAsWord). +96 the next free slot - counted: the highest was +95
 DECLARE_PMID(kActionIDSpace, kKCMChangeRowRestoreCopyActionID, kKCMUIPrefix + 94)	// ★"Restore from Copy" on a "=" CHANGE row (2026-10-24 evening, design 11-3): the document's own words pasted back from the copy Apply This Change kept (facade RestoreChangeFromCopy). ⚠+94 the next after +93, never a grave
 // ★ACCEPT AND REJECT IN THE TRACK MODE (2026-10-25 - the author: "a right click that takes the change back", "and confirms it",
@@ -919,20 +922,25 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// 
 #define kKCMInternalPopupMenuNameKey	kKCMStringPrefix "kKCMInternalPopupMenuNameKey"
 #define kKCMPopupMenuPath				kKCMInternalPopupMenuNameKey
 
-// The "Marks opacity" submenu on the flyout (25% / 75% inside it). The name is an English
-// literal (KCM menu names are English in every locale); the children point at
+// The "Marks opacity" submenu on the flyout (25% / 75% inside it); the children point at
 // kKCMOpacitySubmenuPath as their parent menu path.
 // The parent node is declared in the MenuDef with actionID 0 and a path ending in the delimiter
 // (kSDKDefDelimitMenuPath) -- the same practice as Adobe's own
 // open/components/buttonui FormFieldUIMenu.fr and incopyexportui.
-#define kKCMOpacitySubmenuName		"Marks opacity"
-#define kKCMOpacitySubmenuPath		kKCMPopupMenuPath kSDKDefDelimitMenuPath kKCMOpacitySubmenuName
+// ★NAMED BY KCM'S OWN KEY (2026-10-27 - KFC's block-1 audit, febbb62): every SDK sample's menu path ends in a key of
+//   its own (basicmenu's kBscMnuPluginsMenuKey), and a plain word in a path is looked up as a key all the same - it
+//   shows as itself only while no key reads the same. The words are KCMUI_enUS.fr's row (every locale reads that
+//   table), so nothing a person sees changes. Each of the three keys was measured against every KCM key for the
+//   same length and character sum (work/note-scripts/2026-10-27-kcm-small-fixes/key_collisions.py - "CompareMode"
+//   read the same as kKCMRefreshCompareMenuKey, so that one says "CompareModes").
+#define kKCMOpacitySubmenuKey		kKCMStringPrefix "kKCMOpacitySubmenuKey"
+#define kKCMOpacitySubmenuPath		kKCMPopupMenuPath kSDKDefDelimitMenuPath kKCMOpacitySubmenuKey
 
 // The "Mark colour" submenu; its children (Red / Cyan) point at this path as their parent.
 // ★Built exactly like Marks opacity above: two mutually exclusive children, the selected one
 // carrying the check.
-#define kKCMColorSubmenuName			"Mark colour"
-#define kKCMColorSubmenuPath			kKCMPopupMenuPath kSDKDefDelimitMenuPath kKCMColorSubmenuName
+#define kKCMColorSubmenuKey			kKCMStringPrefix "kKCMColorSubmenuKey"
+#define kKCMColorSubmenuPath			kKCMPopupMenuPath kSDKDefDelimitMenuPath kKCMColorSubmenuKey
 
 // The "Compare mode" submenu on the flyout (Pixel Changes / Story Changes inside it).
 // ★Same shape as "Marks opacity" above (parent with actionID 0; mutually exclusive children,
@@ -940,8 +948,8 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// 
 // ★★**Why a submenu**: the flyout already holds more than a dozen items, and with the
 //   comparison settings and the display settings at the same level it stops being readable
 //   which of them says **what is compared** and which says **how it is shown**.
-#define kKCMCompareModeSubmenuName	"Compare mode"
-#define kKCMCompareModeSubmenuPath	kKCMPopupMenuPath kSDKDefDelimitMenuPath kKCMCompareModeSubmenuName
+#define kKCMCompareModesSubmenuKey	kKCMStringPrefix "kKCMCompareModesSubmenuKey"	// (by key - Marks opacity says why)
+#define kKCMCompareModeSubmenuPath	kKCMPopupMenuPath kSDKDefDelimitMenuPath kKCMCompareModesSubmenuKey
 
 // The panel's string keys. The values are in the StringTable of **KCMUI_enUS.fr**, and every
 // locale reads that one table (every row of the LocaleIndex points at index_enUS). The jaJP

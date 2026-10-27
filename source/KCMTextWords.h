@@ -20,6 +20,8 @@
 #include "TextIterator.h"
 #include "WideString.h"
 
+#include "KCMUtf8.h"			// KCMWellFormedUtf8 - what PMStringOfUtf8 hands SetUTF8String (2026-10-27)
+
 #include <string>
 
 namespace KCMTextWords
@@ -28,11 +30,15 @@ namespace KCMTextWords
 /** A UTF-8 string (the shape's, the file's) as a PMString, marked not translatable.
 	⚠THE VALUE IS UTF-8 AND PMString IS NOT: Append(c_str()) would put the bytes in as the platform's encoding,
 	 and a custom kenten's own character came out as mojibake that way once (KCMStoryAttrPour measured it on
-	 2026-09-22). SetUTF8String also marks the string non-translatable, which is what every caller wants. */
+	 2026-09-22). SetUTF8String also marks the string non-translatable, which is what every caller wants.
+	★MADE WELL-FORMED FIRST (2026-10-27 - KFC's block-19 audit, its third small item): SetUTF8String throws on some
+	 broken UTF-8 and reads a sequence cut short as another character, and some of these strings come from a Word file
+	 the reader imports. KCMWellFormedUtf8 (KCMUtf8.h) puts U+FFFD where a byte does not fit; well-formed bytes pass as
+	 they are. */
 inline PMString PMStringOfUtf8(const std::string& utf8)
 {
 	PMString s;
-	s.SetUTF8String(utf8);
+	s.SetUTF8String(KCMWellFormedUtf8(utf8));
 	return s;
 }
 

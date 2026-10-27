@@ -134,6 +134,9 @@ resource StringTable (kSDKDefStringsResourceID + index_enUS)
                 // comes out" true. The sentence used to mention only print and PDF, so the reader
                 // watched the screen change and was told nothing about why.
                 kKCMPrintMarksOnKey,			"Comparison marks will now appear in print and in exported PDF files, and stay visible on screen in both documents.",
+                kKCMOpacitySubmenuKey,			"Marks opacity",					// (2026-10-27) the three submenus' names, by key - KCMUIID.h says why
+                kKCMColorSubmenuKey,			"Mark colour",
+                kKCMCompareModesSubmenuKey,		"Compare mode",
                 kKCMOpacity25Key,				"25%",
                 kKCMOpacity75Key,				"75%",
                 kKCMColorRedKey,				"Red",

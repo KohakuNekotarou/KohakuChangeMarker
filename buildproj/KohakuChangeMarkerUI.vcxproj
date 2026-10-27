@@ -239,6 +239,7 @@
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMPanelObserver.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMUIStartup.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMUIDrawEvent.cpp"/>
+      <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMPaletteMgrService.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMModelChangeObserver.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMActionComponent.cpp"/>
       <ClCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMStoryTreeAdapter.cpp"/>

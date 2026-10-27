@@ -116,7 +116,7 @@
   1行だけなら、その行の取り消し単位（`Restore from Source`・`Apply This Change`）。
   ★**印の行（ルビ・圏点・割注・縦中横）も文字の行と一緒に戻る**（2026-10-27 夕・再検査 U5 の観察を作者が「おすすめで」）。
   ⚠それまでは右クリックした行が印の行だとその1つだけを戻し、一緒に選んだ印の行は戻らず何も言わなかった。
-  ⚠`Restore All Changes in This Story`（ストーリーの行）は今までどおり**文字の行だけ**。
+  ★★`Restore All Changes in This Story`（ストーリーの行）も**印の行を含めて**1段で戻す（2026-10-27 夜・作者「印も含めてください」＝それまでは文字の行だけで、名前の「All Changes」と食い違っていた）。
   - 訂正: ✅2026-10-27 夕 **実機で確認**（束 `restore-source` T-S8＝ルビの行と文字の行を一緒に → `Restore These from Source: 2 changes
     in one step`・両方「=」・Ctrl+Z 1回で両方戻る）。
 

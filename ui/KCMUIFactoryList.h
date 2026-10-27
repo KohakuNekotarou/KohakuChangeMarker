@@ -61,6 +61,8 @@ REGISTER_PMINTERFACE(KCMPanelView, kKCMPanelViewImpl)	// keeps the panel's minim
 REGISTER_PMINTERFACE(KCMUIStartup, kKCMUIStartupImpl)	// startup / shutdown of the UI half (KCMUIStartup.cpp). Its model-side counterpart is KCMPeekStartup
 REGISTER_PMINTERFACE(KCMModelChangeObserver, kKCMModelChangeObserverImpl)	// rebuilds the display on a notification from the model (KCMModelChangeObserver.cpp)
 REGISTER_PMINTERFACE(KCMDocsClosedObserver, kKCMDocsClosedObserverImpl)	// runs the postponed cleanup once, when a batch close finishes (KCMPeekGesture.cpp)
+REGISTER_PMINTERFACE(KCMPaletteMgrServiceProvider, kKCMPaletteMgrServiceProviderImpl)	// registers the palette manager service (KCMPaletteMgrService.cpp, 2026-10-27)
+REGISTER_PMINTERFACE(KCMPaletteMgrService, kKCMPaletteMgrServiceImpl)	// PaletteMgrAboutToShutdown: the panel visibility observer taken off (KCMPaletteMgrService.cpp)
 
 // The on-press HUD (★screen only -- it is not meant to reach an exported PDF, so this side is right for it)
 REGISTER_PMINTERFACE(KCMUIDrawEventSrvc, kKCMUIDrawEventSrvcImpl)		// the UI-only draw service (KCMUIDrawEvent.cpp)

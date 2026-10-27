@@ -115,8 +115,11 @@ void	KCMApplyAllPanelTranslucency();
 // the function itself.
 void	KCMAttachPanelVisibilityObserver();
 
-// Undo every subscription the above made. Called at plug-in shutdown (KCMUIStartup::Shutdown),
-// BEFORE KCMShutdownPanelAlpha: stop the notifications first, then fold up the timer and the hook.
+// Undo every subscription the above made. Called as the palette manager is about to close the palettes
+// (KCMPaletteMgrService.cpp, 2026-10-27 - by the plug-in's own Shutdown the application cannot be had, so that
+// call alone took nothing off: KFC measured it on the same observer), and again at plug-in shutdown
+// (KCMUIStartup::Shutdown) as the backstop, BEFORE KCMShutdownPanelAlpha: stop the notifications first, then
+// fold up the timer and the hook. The attach refuses while the application is going down.
 // WHY IT IS NEEDED: while the subscription stands, what the session holds is a pointer INTO THIS
 // .pln, and destroying a panel during shutdown really does send the notification -- so Update
 // would run in code that is on its way out. KBS added the same pair for the same reason; this is

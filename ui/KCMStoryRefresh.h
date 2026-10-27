@@ -150,9 +150,10 @@ bool16 KCMChangeRowCanRestoreCopy();
 bool16 KCMChangeRowRestoreCopy();
 
 /** ★"Restore All Changes in This Story" (2026-10-24 night, design 1-8): a STORY row of the Story mode holding a text
-	change of two open documents (facade CanRestoreStoryFromSource). */
+	or a mark change of two open documents (facade CanRestoreStoryFromSource - the mark rows since 2026-10-27 night). */
 bool16 KCMStoryRowCanRestoreAll();
-/** Every text change of that story made the Source's by copy (one undo step), and says what on the message line. */
+/** Every such change of that story made the Source's - words by copy, marks by the Source's own (one undo step) - and
+	says what on the message line. */
 bool16 KCMStoryRowRestoreAll();
 
 // ---- ★ACCEPT AND REJECT IN THE TRACK MODE (2026-10-25 - docs/superpowers/specs/2026-10-25-kcm-track-accept-reject-design.md)
