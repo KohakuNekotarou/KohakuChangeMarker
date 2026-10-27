@@ -16,7 +16,9 @@
 //       (IKCMStoryEditsFacade::ApplyChanges); SHIFT+RETURN applies and lands on the next row below that can be applied; a
 //       Return held down applies once (2026-10-24 night, design 1-4 - the author: "like KFC, change with Return"). ⚠The
 //       Story mode takes no Return (design 1-8: there it would be "put the Source back", and a stray press would take
-//       the reader's edit away). The Return is taken by a FILTER on the application's event dispatcher while the list
+//       the reader's edit away) - ★and since 2026-10-27 a Return that acts on nothing (that mode, a story row, nothing
+//       armed) is taken whole and does nothing, so the list keeps the keyboard (TakeReturn says what passing it on cost).
+//       The Return is taken by a FILTER on the application's event dispatcher while the list
 //       holds the keyboard (KCMReturnFilterEH, below) - a Return handled by the list's own KeyDown is followed by the
 //       widget layer handing the keyboard back to the document, and the next arrow then moves the page item selected in
 //       the layout (memory panel-return-gives-keyboard-to-document; KFC measured it, 2026-10-07).
@@ -174,8 +176,8 @@ bool GoOnToNextApplicableRow(ITreeViewController* controller, const NodeID& from
 // RETURN ON THE CHANGE ROWS SELECTED, one place for the two that take it: the Return filter and the list's own KeyDown.
 // Return or the keypad's Enter, no Ctrl / Alt, change rows selected, the Source an import's copy: they are applied (ONE
 // undo step for several - ApplyChanges), the list keeps the keyboard, and the key is taken whole. With Shift, the same,
-// and then - only when something went in - on to the next row below that can be applied. kFalse = not a Return this list
-// acts on: the caller passes it on.
+// and then - only when something went in - on to the next row below that can be applied. kFalse = not a Return, or one
+// with Ctrl / Alt: the caller passes it on. (A Return the list acts on nothing with is taken whole too - below.)
 //  - The KeyCmd a Return's character makes next is removed first - the official shape for a list that acts on Return
 //    (open/components/spellpanel/SpellListBoxEH.cpp, KeyDown), through IEventUtils.
 //  - A REPEAT (a Return held down) is taken and writes nothing (KFC's: one second of Shift+Return was a dozen rows).
@@ -185,12 +187,19 @@ bool16 TakeReturn(IEvent* e, ITreeViewController* controller)
 {
 	if (e == nil || controller == nil || !IsReturnKey(e->GetVirtualKey()) || e->OptionAltKeyDown() || e->CmdKeyDown())
 		return kFalse;
+	// ★★A RETURN THAT ACTS ON NOTHING IS TAKEN WHOLE ALL THE SAME (2026-10-27, the re-inspection's U5 - measured): the Story
+	//   mode takes no Return (design 1-8), nor does a list with nothing armed, nor a story row - and passed on, the Return
+	//   reached the widget layer, which handed the keyboard to the document, where the click had just selected the change's
+	//   words: the next letter typed replaced them (S-pc.indd, three characters made "x", an undo step "Typing"). The list
+	//   keeps the keyboard, as it does for the import's Return (design 1-4), and nothing is done.
 	Utils<IKCMStoryEditsFacade> edits;
-	if (!edits || !Utils<IKCMCompareFacade>()->IsArmed() || !edits->IsImportSource())
-		return kFalse;		// the Story mode takes no Return (design 1-8), nor does a list with nothing armed
 	std::vector<KCMStoryChangeRow> rows;
-	if (!KCMStoryGetSelectedChangeRows(rows))
-		return kFalse;
+	if (!edits || !Utils<IKCMCompareFacade>()->IsArmed() || !edits->IsImportSource() || !KCMStoryGetSelectedChangeRows(rows))
+	{
+		Utils<IEventUtils>()->RemoveNextKeyCmd(e);
+		HoldAfterReturn();
+		return kTrue;
+	}
 	const bool16 goOn = e->ShiftKeyDown();
 	const NodeID last(KCMStoryNodeID::CreateChange(rows.back().first, rows.back().second));
 	Utils<IEventUtils>()->RemoveNextKeyCmd(e);
