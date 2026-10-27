@@ -33,7 +33,7 @@ void KCMRegisterExternalSource(IDataBase* db, const PMString& label)
 void KCMForgetExternalSource()
 {
 	sExternalSourceDB = nil;
-	sExternalSourceLabel.Clear();
+	sExternalSourceLabel = PMString();	// a fresh value: Clear() keeps the buffer, and this is the shutdown's slot too (KCMClearChosenDocs)
 }
 
 IDataBase* KCMExternalSourceDB()

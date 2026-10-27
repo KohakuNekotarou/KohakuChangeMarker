@@ -303,11 +303,14 @@ void KCMClearSessionStatus()
 	// @warning **all five**. Leave one out and its heap stays allocated at shutdown -- a defect
 	// already found twice in this plug-in, both times a static added beside its fellows and not
 	// added here.
-	sStatusLabel.Clear();
-	sStatusPre.Clear();
-	sStatusMid.Clear();
-	sStatusPost.Clear();
-	sStatusRuby.Clear();
+	// ★FRESH VALUES, NOT Clear() (2026-10-27, the re-inspection's M2): PMString::Clear() keeps the buffer
+	//   ("Capacity stays the same" - UnicodeSavvyString.h), so the five held their heap to unload all the same
+	//   (memory plugin-teardown-robustness, corrected 2026-10-13).
+	sStatusLabel = PMString();
+	sStatusPre = PMString();
+	sStatusMid = PMString();
+	sStatusPost = PMString();
+	sStatusRuby = PMString();
 	sStatusAttrKind = 0;
 	// ⚠THE LINES' HEAP GOES TOO. Assigning an empty vector destroys the strings but may keep the
 	//   vector's own buffer, so the buffers are swapped out rather than assigned.

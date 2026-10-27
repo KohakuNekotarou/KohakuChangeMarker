@@ -1072,6 +1072,20 @@ private:
 		return sequence;
 	}
 
+	/** Whether BeginStep could not begin its step outside a batch - CmdUtils.h: BeginAbortableCmdSeq returns "nil on
+		error" (inside a batch nil is BeginStep's own answer: the batch's one sequence is open). Said, and the caller writes
+		nothing: a write made without its step could not be aborted when it did not read as the Source's, and the
+		sentence would still say "the document is as it was" over it (2026-10-27, the re-inspection's M2 - RunBatch and
+		ResolveTrack refuse the same way, and so does KFC's Change All). */
+	bool16 StepNotBegun(IAbortableCmdSeq* sequence, PMString& outMessage)
+	{
+		if (sequence != nil || fBatch)
+			return kFalse;
+		outMessage = "InDesign would not start an undoable step - nothing was changed";
+		outMessage.SetTranslatable(kFalse);
+		return kTrue;
+	}
+
 	/** Ends BeginStep's sequence - committed when `keep`, aborted when not (EndOrAbort). Inside a batch there is none to
 		end: a write that did not go in marks the batch failed, and RunBatch aborts ALL of it. @return whether the step
 		was KEPT - `keep`, unless the test build's step-fail switch turned it round, so that a caller that reads it says
@@ -1268,6 +1282,8 @@ public:
 										  job, outMessage))
 			return -1;
 		IAbortableCmdSeq* sequence = this->BeginStep(stepName);	// (a part of the batch's step inside one)
+		if (this->StepNotBegun(sequence, outMessage))
+			return -1;
 		// ★THE RECORD'S FOCUS, INSIDE THE STEP AND BEFORE THE WRITE (2026-10-26 - KCMStoryList's FocusBeforeWrite): on the
 		//   characters the marks go over, where it stays (a mark moves no character).
 		const int32 focusId = KCMStoryList::FocusBeforeWrite(nth, live, live.fTargetStart, live.fTargetEnd);
@@ -1356,6 +1372,8 @@ public:
 		//   with the error raised kept its write when the call came from a script (EndOrAbort says what was measured);
 		//   the abort takes the match back wherever it was called from.
 		IAbortableCmdSeq* sequence = this->BeginStep("Match the Source");
+		if (this->StepNotBegun(sequence, outMessage))
+			return -1;
 		// ★THE RECORD'S FOCUS, INSIDE THE STEP AND BEFORE THE WRITE (2026-10-26 - KCMStoryList's FocusBeforeWrite): on the
 		//   table's anchor characters, then on as many as the Source's after the match.
 		const int32 focusId = KCMStoryList::FocusBeforeWrite(nth, live, live.fTargetStart, live.fTargetEnd);
@@ -1804,6 +1822,8 @@ public:
 			return -1;
 		}
 		IAbortableCmdSeq* sequence = this->BeginStep("Restore from Copy");	// (a part of the batch's step inside one)
+		if (this->StepNotBegun(sequence, outMessage))
+			return -1;
 		// ★THE RECORD'S FOCUS, INSIDE THE STEP AND BEFORE THE PASTE (2026-10-26 - KCMStoryList's FocusBeforeWrite): its own,
 		//   on the Source's words the paste is about to take out - or one made there - and after it on the words put back,
 		//   so that Ctrl+Z of this puts it back on the Source's words and Ctrl+Y on the put-back ones.
@@ -2001,6 +2021,8 @@ public:
 		copies[0].fShift = shift;
 
 		IAbortableCmdSeq* sequence = this->BeginStep("Restore from Source");	// (a part of the batch's step inside one)
+		if (this->StepNotBegun(sequence, outMessage))
+			return -1;
 		// ★THE RECORD'S FOCUS, INSIDE THE STEP AND BEFORE THE WRITE (2026-10-26 - KCMStoryList's FocusBeforeWrite): on the
 		//   words the copy is about to take out, then on the Source's put in.
 		const int32 focusId = KCMStoryList::FocusBeforeWrite(nth, live, tFrom, tTo);
@@ -2406,6 +2428,8 @@ private:
 		std::vector<KCMRecordCopy> copies(1, this->TakeApplyCopy(target, live.fTargetStart, live.fTargetEnd, liveWords));
 
 		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
+		if (this->StepNotBegun(sequence, outMessage))
+			return -1;
 		// ★THE RECORD'S FOCUS, INSIDE THE STEP AND BEFORE THE WRITE (2026-10-26 - KCMStoryList's FocusBeforeWrite): on the
 		//   document's words the write is about to take out, then on the files' put in - the step's Undo puts it back on
 		//   the first, its Redo on the second.
@@ -2584,6 +2608,8 @@ private:
 		}
 
 		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
+		if (this->StepNotBegun(sequence, outMessage))
+			return -1;
 		// ★THE RECORDS' FOCI, INSIDE THE STEP AND BEFORE THE WRITE (2026-10-26 - KCMStoryList's FocusBeforeWrite): each row of
 		//   the group on its own words as they stand now; after the write, each on its own share of the Source's.
 		std::vector<int32> focusIds;
@@ -2689,6 +2715,8 @@ private:
 		}
 		const UIDRef target(targetDB, row.fStoryUID);
 		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
+		if (this->StepNotBegun(sequence, outMessage))
+			return -1;
 		// ★THE RECORD'S FOCUS, INSIDE THE STEP AND BEFORE THE WRITE (2026-10-26 - KCMStoryList's FocusBeforeWrite): on the
 		//   table's anchor characters, then on as many as the files' after it (MatchTable's geometry).
 		const int32 focusId = KCMStoryList::FocusBeforeWrite(nth, live, live.fTargetStart, live.fTargetEnd);
@@ -2819,11 +2847,19 @@ private:
 			outMessage.SetTranslatable(kFalse);
 			return -1;
 		}
+		// ★NOTHING WENT IN (2026-10-27, the re-inspection's M2): the pour's own sentence alone. There is nothing for Ctrl+Z
+		//   to take back, and "Ctrl+Z takes it back" would send the reader to undo their own edit before it.
+		if (!any)
+		{
+			outMessage = poured;
+			outMessage.SetTranslatable(kFalse);
+			return 0;
+		}
 		outMessage = "applied: ";
 		outMessage.Append(poured);
 		outMessage.Append(" - Ctrl+Z takes it back");
 		outMessage.SetTranslatable(kFalse);
-		return any ? 1 : 0;
+		return 1;
 	}
 
 	// ---- ★A BATCH'S STATE (2026-10-24 night - RunBatch). The facade is one object for the session; a batch lives inside

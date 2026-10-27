@@ -236,6 +236,11 @@ void KCMTrackList::RowsAsTsv(PMString& out)
 void KCMTrackList::ShutdownCleanup()
 {
 	KCMTrackList::Clear();
+	// ...and the vectors' storage with it (2026-10-27, the re-inspection's M2): clear() keeps a vector's capacity, so the
+	// rows held their buffer to unload (memory plugin-teardown-robustness, corrected 2026-10-13). (A map's clear() lets
+	// its nodes go.)
+	std::vector<KCMTrackAuthor>().swap(gAuthors);
+	std::vector<KCMTrackRow>().swap(gRows);
 }
 
 // End, KCMTrackList.cpp.

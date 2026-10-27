@@ -82,7 +82,7 @@ void Forget()
 	gColour = 0;
 	gAngle  = 0.0;
 	gApply  = kFalse;
-	gText.Clear();
+	gText   = PMString();	// a fresh value: Clear() keeps the buffer, and Shutdown forgets through here (2026-10-27)
 }
 
 /* Place

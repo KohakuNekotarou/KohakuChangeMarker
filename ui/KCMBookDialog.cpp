@@ -227,9 +227,11 @@ void KCMBookDialogShutdown()
 	//   (Noted 2026-08-19, bug recheck B-U5 third pass: the contract was written on the second
 	//   pass and this exception to it was not, so the two read as a contradiction.)
 	gDialogRows = std::vector<KCMChapterResult>();
-	gTargetPath.Clear();
-	gSourcePath.Clear();
-	gSummary.Clear();
+	// ★The three strings by fresh values too (2026-10-27, the re-inspection's M2): PMString::Clear() keeps the buffer
+	//   ("Capacity stays the same" - UnicodeSavvyString.h), the same reason the rows are assigned.
+	gTargetPath = PMString();
+	gSourcePath = PMString();
+	gSummary = PMString();
 }
 
 

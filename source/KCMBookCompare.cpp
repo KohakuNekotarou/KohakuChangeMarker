@@ -950,7 +950,7 @@ void KCMGetBookResultText(PMString& out)
 
 void KCMClearBookResultText()
 {
-	gBookResultText.Clear();
+	gBookResultText = PMString();	// a fresh value: Clear() keeps the buffer (KCMClearSessionStatus says why)
 }
 
 // End, KCMBookCompare.cpp.

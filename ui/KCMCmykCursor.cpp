@@ -621,7 +621,9 @@ void KCMCmykShutdown()
 	// ★Emptying the file-static PMString makes its static destructor a no-op when the plug-in is
 	// unloaded. Nothing has ever come of it on Windows, but the unload order differs on Mac and not
 	// carrying a heap buffer that far is the safer thing.
-	sCmykCursorText.Clear();
+	// ★A FRESH VALUE, NOT Clear() (2026-10-27, the re-inspection's M2): Clear() keeps the buffer ("Capacity stays the
+	//   same" - UnicodeSavvyString.h), so the string carried its heap to unload all the same.
+	sCmykCursorText = PMString();
 	sCmykCursorPending = kFalse;	// ★do not leave it raised where the application quit mid-press ---- the
 									//   same "nothing is held outside a press" that KCMCmykDropPressState
 									//   below applies to the font and the press-time pointers
