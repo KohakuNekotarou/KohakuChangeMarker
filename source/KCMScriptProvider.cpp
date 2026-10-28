@@ -149,6 +149,7 @@
 #include "KCMResourceDiff.h"	// KCMDescribeResourceDiff - the same mode's comparison of the two
 								// armed documents, which is the reading the engine is checked by
 #include "KCMStoryList.h"	// KCMStoryList::RowsAsTsv - app.kcmStoryRows, the reading port
+#include "KCMPixelPages.h"	// KCMDescribePixelPages - app.kcmPixelPages, the Pixel mode's port (2026-10-28)
 #include "KCMTrackList.h"	// KCMTrackList::RowsAsTsv - the same port in the Track Changes mode (2026-10-05)
 #include "KCMTrackStart.h"		// KCMStartTrackChanges - app.kcmCompareTracked (2026-10-05; no argument since 2026-10-27)
 #include "KCMCore.h"		// KCMGetCompareMode - which of the two lists the port reads
@@ -304,7 +305,7 @@ ErrorCode KCMScriptProvider::AccessProperty(ScriptID propID, IScriptRequestData*
 
 #ifdef KCM_DIAG
 	const bool16 isAppString = (id == p_KCMStatus || id == p_KCMBookResult || id == p_KCMStoryRows
-								|| id == p_KCMResourceSnapshot || id == p_KCMResourceDiff);
+								|| id == p_KCMResourceSnapshot || id == p_KCMResourceDiff || id == p_KCMPixelPages);
 #else
 	const bool16 isAppString = (id == p_KCMStatus || id == p_KCMBookResult);	// (the test doors: a test build's only)
 #endif
@@ -683,7 +684,7 @@ ErrorCode KCMScriptProvider::ReadAppString(int32 id, ScriptID propID, IScriptReq
 	if (id == p_KCMStatus)
 		KCMGetSessionStatus(value);		// the panel's status line
 #ifdef KCM_DIAG
-	// (the three test doors among the strings - a test build's only since 2026-10-26)
+	// (the four test doors among the strings - a test build's only since 2026-10-26; app.kcmPixelPages the fourth, 2026-10-28)
 	else if (id == p_KCMResourceSnapshot)
 		// The Resources mode's export, measured from outside while it has no panel of its own.
 		KCMDescribeResourceSnapshot(value);
@@ -702,6 +703,9 @@ ErrorCode KCMScriptProvider::ReadAppString(int32 id, ScriptID propID, IScriptReq
 		else
 			KCMStoryList::RowsAsTsv(value);
 	}
+	else if (id == p_KCMPixelPages)
+		// The Pixel mode's answer page by page (2026-10-28): what it decides is drawn, and a drawing cannot be read.
+		KCMDescribePixelPages(value);
 #endif // KCM_DIAG
 	else
 		KCMGetBookResultText(value);		// the last book comparison, one line per chapter

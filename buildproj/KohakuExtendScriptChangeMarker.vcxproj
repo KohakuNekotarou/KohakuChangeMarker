@@ -225,6 +225,7 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceAttrDiff.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceBytes.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceDiff.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPixelPages.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceStore.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMResourceQRCode.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMObjectPrint.cpp" />
@@ -332,6 +333,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceAttrDiff.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceBytes.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceDiff.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMPixelPages.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceKinds.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceLog.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMResourceStore.h" />

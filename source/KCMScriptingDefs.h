@@ -155,6 +155,14 @@ enum KCMScriptProperties
 								// 2026-09-03 - never registered with Adobe, never shipped, and the
 								// registry says the code is free (kes-scriptid-registry.md). That
 								// property was also the only READ-WRITE one KCM has ever had.
+	p_KCMPixelPages = 'pKGp',	// p = pages. app.kcmPixelPages (2026-10-28) - the Pixel mode's answer
+								// page by page as TSV (KCMPixelPages.h): which pages carry a ring,
+								// their cells, the "/" pages, the registered ones, the pairing. A
+								// test build's only. ⚠Checked against the code before use, the
+								// pattern validated first on a code that exists ('cflo': 2 files):
+								// 'pKGp' occurs nowhere in source/ (the SDK and the Kohaku plug-ins)
+								// nor in kes-scriptid-registry.md. Never to be registered - it ships
+								// in no build.
 };
 
 /** ⛔**THE METHOD THIS DESCRIBES WENT ON 2026-09-21** with the origin whose bytes it wrote, and its

@@ -756,6 +756,21 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
+		// app.kcmPixelPages (2026-10-28) - the Pixel mode's answer page by page as TSV (KCMPixelPages.h).
+		// ★The same argument once more: what the Pixel mode decides is DRAWN (the ring, the "/", the cells), so a test
+		// could read only the status line's count - and the count cannot say which page, nor that the control page
+		// is not among them.
+		Property
+		{
+			kKCMPixelPagesPropertyScriptElement,
+			p_KCMPixelPages,
+			"kcm pixel pages",					// name -> app.kcmPixelPages
+			"The Pixel mode's answer for the two documents being compared, page by page, as tab-separated text.",
+			StringType,
+			{}
+			kNoAttributeClass,
+		}
+
 		// ⛔**THE ORIGIN'S PROPERTY AND ITS THREE WRITERS WENT ON 2026-09-21** - app.kcmOriginStatus,
 		// app.kcmSaveOriginXml, app.kcmSaveOriginIdml and app.kcmSaveDocXml. All four read a Task
 		// Start that is a file on disk now, not bytes this plug-in holds. Their ScriptIDs are graves
@@ -936,6 +951,7 @@ resource VersionedScriptElementInfo(10)
 				Property{ kKCMStoryRowsPropertyScriptElement, kReadOnly },
 				Property{ kKCMResourceSnapshotPropertyScriptElement, kReadOnly },
 				Property{ kKCMResourceDiffPropertyScriptElement, kReadOnly },
+				Property{ kKCMPixelPagesPropertyScriptElement, kReadOnly },	// (2026-10-28) the Pixel mode's port
 				// A method's half of the same pair - and it has no access-right field, a method being a
 				// thing you call rather than a thing you read. Leave one of these lines out and the
 				// method is simply not there, exactly as described above for the properties: no build
