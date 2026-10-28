@@ -76,7 +76,8 @@
 #include "KCMRingAdornment.h"
 #include "KCMExternalSource.h"			// KCMIsExternalSource - a clone is never written
 #include "KCMDrawEventHandler.h"		// DrawSpreadMarks (the drawing) / the mark-state statics / KCMQueryMarkFont
-#include "KCMThreadSafety.h"			// KCMMarkStateMutex/Lock, taken to read sEntries and the story holder tables
+#include "KCMThreadSafety.h"			// KCMMarkStateMutex/Lock, taken to read sEntries and the story holder tables;
+										// KCMSetExportCloneOnThisThread
 
 //========================================================================================
 // Registration state
@@ -991,6 +992,9 @@ static IDThreading::ThreadLocal<IDataBase*> tl_ExportingDB(nil);
 //   that predicted it is at the head of KCMDrawRingForPrint.
 void KCMEndExportOnThisThread()
 {
+	// The clone KCMIsSameDoc may read on this thread goes first, whether or not the list was joined (2026-10-29).
+	KCMSetExportCloneOnThisThread(nil);
+
 	IDataBase* const db = tl_ExportingDB.Get();
 	if (db == nil)
 		return;
@@ -1013,6 +1017,10 @@ void KCMBeginExportOn(IDataBase* db)
 
 	if (db == nil)
 		return;
+	// ★THE CLONE THIS THREAD EXPORTS, FOR KCMIsSameDoc (2026-10-29): the one database a background thread may read a
+	//  document ID from (the external door instantiates the document's root - KCMThreadSafety.h). Set every time,
+	//  before the translucency gate below: the marks are drawn whether or not the list is joined.
+	KCMSetExportCloneOnThisThread(db);
 	// The story ID labels' table of this db, if one is lying about from an earlier export whose
 	// clone stood at the same address, is dropped here so the first page drawn does not read it
 	// (section 1.5, the warning on pointers). The first item drawn builds a fresh one.

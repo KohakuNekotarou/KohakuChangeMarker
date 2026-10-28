@@ -67,8 +67,8 @@ bool16 KCMIsMainThread();
 //   - same pointer -> true (main's ordinary path decides here, at no added cost)
 //   - different pointers are still true when GetSysFile() names the same file
 //     => **true for the background's clone DB as well**, which is the whole point
-//   - **when either side has no file, ask IDataBase::GetDocumentID() instead** (below)
-//   - false only when either side is nil, or an ID is empty
+//   - **when either side has no file, compare the documents' xmp.did instead** (below)
+//   - false only when either side is nil, or an ID is empty (or cannot be read on this thread)
 //
 //     **THE UNSAVED-DOCUMENT PATH.** Before it existed this returned false as soon as a file
 //       was missing, so **comparing two documents that had never been saved produced no marks
@@ -83,23 +83,37 @@ bool16 KCMIsMainThread();
 //       (3) **the BG clone DB matches main exactly** (different db pointer, same ID)
 //       (4) sDB on the BG thread is still the pointer main put there (statics are shared)
 //
-//     @warning **there were two doors, and the internal one was chosen** (the user's call).
-//       IDataBase::GetDocumentID says of itself "FOR INTERNAL USE ONLY / FOR EXTERNAL USE :
-//       Recommended to use IAdobeMediaMgmtMetaData::GetDocumentID". Reasons to take it anyway:
-//         - **Adobe's own linksui uses the same internal door** (ClosingDocumentsResponder),
-//           and **for the same purpose** -- an identity key for documents being closed; it
-//           joins the path and the ID
-//         - it is reachable straight from an IDataBase*, so **it can be called from inside a
-//           draw event**. The external one needs a Query through XMP, which adds nil paths,
-//           and this is a per-draw, per-page road.
-//       => to move to the external one, IAdobeMediaMgmtMetaData.h and SnpPerformXMPCommands.cpp
-//       are the entrances. Full record: docs/ai-notes/kescm-api-audit-b9-2026-08-16.md and
-//       kescm-bug-recheck-b9-2026-08-18.md
+//     **THE EXTERNAL DOOR (2026-10-29, the author's call "A").** Until then the ID came from
+//       IDataBase::GetDocumentID, which says of itself "FOR INTERNAL USE ONLY / FOR EXTERNAL
+//       USE : Recommended to use IAdobeMediaMgmtMetaData::GetDocumentID" - chosen on 2026-08-16
+//       because it is reachable straight from an IDataBase*, and kept against the rule of
+//       2026-09-02 (nothing marked internal in a plug-in that goes to Exchange). Now the
+//       external door reads it - which INSTANTIATES the document's root, so each thread reads
+//       only a database of its own: the main thread its documents (and keeps each unsaved one's
+//       ID, met in every screen draw and at Start), a background thread the clone it exports
+//       (KCMSetExportCloneOnThisThread) - and a main-thread document's ID there comes from what
+//       main kept. A document a background export compares against that main never met (one
+//       never drawn, never armed) answers "not the same": no marks, never a cross-thread read.
+//       Record: docs/ai-notes/hdr-reread-own-diff1029-2026-10-29.md section 2.
 //
 //     @warning **the cost only rises for unsaved documents**: a saved one still ends at the
-//       file comparison, and main's ordinary path decides on this function's first line.
+//       file comparison, and main's ordinary path decides on the pointer test - after a map
+//       lookup for an unsaved document, the price of keeping its ID for the background.
 //----------------------------------------------------------------------------------------
 bool16 KCMIsSameDoc(IDataBase* a, IDataBase* b);
+
+//----------------------------------------------------------------------------------------
+// The clone this execution context is exporting, for KCMIsSameDoc's background reading - set
+// by KCMBeginExportOn (a book's next document too) and cleared by KCMEndExportOnThisThread;
+// nil when nothing is being exported here.
+//----------------------------------------------------------------------------------------
+void KCMSetExportCloneOnThisThread(IDataBase* db);
+
+//----------------------------------------------------------------------------------------
+// A document is closing (main thread, kBeforeCloseDoc - KCMDocResponder.cpp): the ID kept for
+// it goes, so an address that comes back as another document is not taken for this one.
+//----------------------------------------------------------------------------------------
+void KCMForgetDocumentId(IDataBase* db);
 
 //----------------------------------------------------------------------------------------
 // The lock over KCM's shared state. What it covers:

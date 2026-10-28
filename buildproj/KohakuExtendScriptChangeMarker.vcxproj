@@ -289,7 +289,10 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMPageMarksCmd.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMMarksObserver.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDocUidSet.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMThreadSafety.cpp" />
+    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMThreadSafety.cpp">
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"> $(id_sdk_dir)\external\bibxmp\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'"> $(id_sdk_dir)\external\bibxmp\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryStamp.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryList.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMTextDiff.cpp" />

@@ -55,7 +55,7 @@
 #include "KCMCore.h"				// KCMHandleDocsClosed
 #include "KCMHideUnchanged.h"		// KCMResetHideUnchanged / the two hidden-side getters
 #include "KCMID.h"
-#include "KCMThreadSafety.h"		// KCMIsMainThread
+#include "KCMThreadSafety.h"		// KCMIsMainThread / KCMForgetDocumentId
 #include "KCMTaskStartClone.h"		// KCMTaskStartCloneDocClosing - a Task Start kept in memory goes with its document
 #include "KCMCopyStore.h"			// DocumentClosing - the document's copy store goes with it (2026-10-24)
 #include "KCMRecordFoci.h"			// LetDocument - the "=" records' foci on it go before it closes (2026-10-26)
@@ -272,6 +272,9 @@ void KCMBeforeCloseDocResponder::Respond(ISignalMgr* signalMgr)
 	// ★AND THE "=" RECORDS' FOCI ON IT (2026-10-26 - KCMRecordFoci.h): each let go while the document certainly stands - its
 	//  target database cleared, out of its story's manager, released. The list itself goes at kAfterCloseDoc (the sweep).
 	KCMRecordFoci::LetDocument(signalData->GetDocument().GetDataBase());
+	// ★AND THE DOCUMENT ID KEPT FOR IT (2026-10-29 - KCMThreadSafety.h): an address that comes back as another document
+	//  must not be taken for this one.
+	KCMForgetDocumentId(signalData->GetDocument().GetDataBase());
 }
 
 // End, KCMDocResponder.cpp.
