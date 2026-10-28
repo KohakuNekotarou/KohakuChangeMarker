@@ -126,10 +126,11 @@ static const PMReal kKCMScrollMapOverflowAlpha = 0.15;	// mixed well into the ba
 //     s0 + (L - t) x (value - min) / (T - page), with L = the range's length, s0 = its top, T = max - min.
 // So while the view shows less than about 25px worth of the bar, Drover stretches the thumb to 25px,
 // and the thumb's centre then travels a shorter range than the bar's - which is what the old 8px made
-// up for, in the one state it was tuned in (a long document). Drawn from this rule, a band sits within
-// 0.6px of the thumb in every state measured (12 and 60 pages; fit, 50%, 100% and 200%), where the 8px
-// was off by up to 7.9px. The record: docs/ai-notes/scrollbar-minimap.md section 7.13, relative to
-// the SDK root.
+// up for, in the one state it was tuned in (a long document). Placed by this rule, a page's band has its
+// centre within 0.6px of the thumb's centre in every state measured (12 and 60 pages; fit, 50%, 100%
+// and 200%; the rule's positions against the thumb Drover itself reported, with the page centred in
+// the view), where the 8px was off by up to 7.9px. The record: docs/ai-notes/scrollbar-minimap.md
+// section 7.13, relative to the SDK root.
 //
 // The thumb's minimum length, in the bar's own units. THE ONE NUMBER THE MAPPING TAKES FROM OUTSIDE:
 // it is Drover's (dvaui's V6ScrollBarSkin::GetMinThumbSize returns 25.0f whatever the size), the SDK
