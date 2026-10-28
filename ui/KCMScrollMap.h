@@ -54,4 +54,15 @@ void	KCMScrollMapInvalidateAll();
 // of KCM's hooks either -- exactly the same reason as the hidden flags, so it rides along here.
 void	KCMScrollMapNoticeDrawEvent();
 
+// Keeps the strips in step with the thumb's length. The caller is KCMUIDrawEventHandler::HandleDrawEvent
+// (KCMUIDrawEvent.cpp), once per redraw of a layout view (kAfterLastSpreadDrawMessage, with a view).
+//
+// A band is laid out by the scrollbar's own rule for its thumb (KCMScrollMap.cpp, on
+// kKCMScrollMapDroverMinThumb), and the thumb's length changes with a zoom, a taller or shorter window
+// or a longer document - none of which passes through KCM's hooks, but a zoom always redraws the view.
+// So each redraw folds what every strip draws from (its bar's frame and counter range and page size,
+// its pane's panorama extent) into one number, and invalidates the strips when it has changed. The
+// scroll position is not in the number: scrolling does not move a band.
+void	KCMScrollMapNoticeViewDrawn();
+
 #endif // __KCMScrollMap_h__

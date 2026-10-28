@@ -55,6 +55,7 @@
 //  nowhere.)
 #include "IMasterSpreadList.h"		// telling a master spread from an ordinary one (which pages go on the map)
 #include "IPanorama.h"				// GetBounds (the whole scrollable extent, which is what the scrollbar represents)
+#include "ICounterControlData.h"	// the bar's range and page size - what its thumb is laid out from
 #include "IGraphicsPort.h"
 #include "IGeometry.h"				// page rectangles (mapped into pasteboard coordinates)
 #include "IInterfaceColors.h"		// paint the background in the theme colour (kInterfacePaletteFill)
@@ -111,14 +112,31 @@ static const PMReal kKCMScrollMapOverflowAlpha = 0.15;	// mixed well into the ba
 // (kKCMScrollMapOversetAlpha stood here for the Find Overset band. That feature went on
 //  2026-09-08.)
 
-// How far the track is pulled in, in px, on top of the arrow buttons: the map is drawn inside a
-// range narrower than the inside of the buttons by this much at each end. The thumb's real range
-// of travel IS narrower than that (there is padding beyond the buttons at both ends of the bar),
-// and subtracting this is what lines the bands up with the thumb best. Tuned on a live build.
-// Set it to 0.0 to draw right up to the inside of the arrow buttons (what it did before this
-// existed). It takes effect in exactly one place, in the mapping inside Draw, where it applies to
-// trackTop and trackBottom alike -- so the pull-in is always symmetrical.
-static const PMReal kKCMScrollMapTrackInset = 8.0;
+// THE SCROLLBAR'S OWN RULE FOR ITS THUMB, which the map copies so that a band and the thumb line up.
+// The bar is Drover's (dvaui's dvaui::controls::UI_ScrollBar, which InDesign's document-window bar is
+// built on), and what follows was measured on 2026-10-28 by asking Drover itself (KohakuTest's "sbar"
+// probe - Drover's own calls have no header, so they are for that experiment only, never for KCM):
+//   - the range the thumb travels is EXACTLY the inside of the two arrow buttons, and the buttons are
+//     square - as long as the bar is wide (16 on the document window's vertical bar). There is no
+//     further padding. (Until 2026-10-28 this file pulled the range in by a further 8px, believing
+//     there was. There is not: the 8px was a stretched thumb - see below.)
+//   - the bar's ICounterControlData is the pane's whole panorama extent (IPanorama::GetBounds) laid out
+//     on min..max: value = the view's top edge, page size = the view's height.
+//   - the thumb is t = max(kKCMScrollMapDroverMinThumb, L x page / T) long, and its top sits at
+//     s0 + (L - t) x (value - min) / (T - page), with L = the range's length, s0 = its top, T = max - min.
+// So while the view shows less than about 25px worth of the bar, Drover stretches the thumb to 25px,
+// and the thumb's centre then travels a shorter range than the bar's - which is what the old 8px made
+// up for, in the one state it was tuned in (a long document). Drawn from this rule, a band sits within
+// 0.6px of the thumb in every state measured (12 and 60 pages; fit, 50%, 100% and 200%), where the 8px
+// was off by up to 7.9px. The record: docs/ai-notes/scrollbar-minimap.md section 7.13, relative to
+// the SDK root.
+//
+// The thumb's minimum length, in the bar's own units. THE ONE NUMBER THE MAPPING TAKES FROM OUTSIDE:
+// it is Drover's (dvaui's V6ScrollBarSkin::GetMinThumbSize returns 25.0f whatever the size), the SDK
+// gives no way to ask for it, and Windows' UI Automation does not show the thumb either. It is not a
+// tuning - it is the scrollbar's own number. Should a later InDesign change it, the bands drift only
+// while the thumb is stretched, by about half the difference at each end.
+static const PMReal kKCMScrollMapDroverMinThumb = 25.0;
 
 // ⚠(This paragraph used to describe a flag - "whether the scrollbar map is on" - fed by the
 //  "Show Scrollbar Map" flyout toggle. **Both went on 2026-09-14**, when the map became
@@ -143,22 +161,6 @@ public:
 
 CREATE_PERSIST_PMINTERFACE(KCMScrollMapView, kKCMScrollMapViewImpl)
 
-// Read, at run time and from the strip's own window, the measurements that align the mapping
-// with the scrollbar.
-//   outArrowH  = the height of the vertical scrollbar's arrow buttons. The buttons are square, so
-//                the bar's frame WIDTH is that height (captured on a live build: a 16px button
-//                area on a 15px-wide bar). Deriving it from the bar means it follows a change of
-//                UI scale; the public constant kCC2017SpectrumScrollBarWidth is fixed, so it is
-//                not used.
-//   outPanoTop / outPanoBottom = the whole scrollable extent of the panorama, in content
-//                coordinates. What the full length of the scrollbar stands for is THIS, not the
-//                extent of the pages (it includes the pasteboard margins above and below them).
-// Either can fail to come out (a window built differently from what is assumed, or another
-// coordinate system), so success is reported back and the caller falls back to the older mapping
-// for whichever it did not get -- never worse than before.
-// The strip is injected as a sibling of the scrollbar, so walking up to the parent finds both the
-// bar and the layout view (the layout view is the only one with an IPanorama). Nothing is cached:
-// every Draw looks them up again, which is what makes it safe when the window has gone.
 // The layout view of the PANE this strip sits in; nil when it cannot be found.
 //
 // THE ONE PLACE THAT ANSWERS "which pane is this strip in". The strip is injected as a sibling of
@@ -211,38 +213,62 @@ static IControlView* KCMStripLayoutView(IControlView* strip)
 	return nil;
 }
 
-static void KCMScrollMapProbeWindow(IControlView* strip, PMReal& outArrowH,
-									  PMReal& outPanoTop, PMReal& outPanoBottom, bool16& outHasPano)
+// Everything the bar beside a strip lays its thumb out from (the rule is on
+// kKCMScrollMapDroverMinThumb), read through the SDK's public interfaces only.
+struct KCMScrollMapBar
 {
-	outArrowH = 0;
-	outPanoTop = outPanoBottom = 0;
-	outHasPano = kFalse;
+	PMReal	top;		// the bar's frame, in the coordinates of its parent - which the strip's frame
+	PMReal	height;		//   is in too, since the strip is the bar's sibling
+	PMReal	width;		// = the arrow buttons' length (they are square)
+	int32	total;		// ICounterControlData: maximum - minimum
+	int32	page;		// ICounterControlData: page size (how much of total is in view)
+	PMReal	panoTop;	// IPanorama::GetBounds of the strip's pane, in content coordinates - the extent
+	PMReal	panoHeight;	//   the counter's range stands for
+};
 
+// Fills out from the bar and the pane beside this strip; kFalse when any of it cannot be read or makes
+// no sense (a window built differently from what is assumed), and the caller then falls back to a
+// mapping that needs none of it. The strip is injected as a sibling of the scrollbar, so walking up to
+// the parent finds the bar, and KCMStripLayoutView finds the pane. Nothing is cached: every call looks
+// them up again, which is what makes it safe when the window has gone.
+static bool16 KCMScrollMapReadBar(IControlView* strip, KCMScrollMapBar& out)
+{
 	InterfacePtr<IWidgetParent> wp(strip, IID_IWIDGETPARENT);
 	if (wp == nil)
-		return;
+		return kFalse;
 	InterfacePtr<IPanelControlData> parentPanel(wp->GetParent(), UseDefaultIID());
 	if (parentPanel == nil)
-		return;
-
-	IControlView* sbView = parentPanel->FindWidget(kVertScrollBarWidgetID);
-	if (sbView != nil)
-		outArrowH = sbView->GetFrame().Width();
+		return kFalse;
+	// The bar beside this strip. KCMScrollMapAttach added the strip to the bar's own parent, so the bar
+	// is one of the parent's own children: it is looked for there first, so that a widget of the same
+	// ID deeper in the window (a split window's other pane, should it carry one) can never answer
+	// instead - its counter would describe the other pane's view. The full search is only the fallback.
+	IControlView* sbView = parentPanel->FindWidget(kVertScrollBarWidgetID, IPanelControlData::kSearchLevel_SelfAndChildren);
+	if (sbView == nil)
+		sbView = parentPanel->FindWidget(kVertScrollBarWidgetID);
+	if (sbView == nil)
+		return kFalse;
+	InterfacePtr<ICounterControlData> counter(sbView, UseDefaultIID());
+	if (counter == nil)
+		return kFalse;
 
 	// Keep the IPanorama query and its nil test: what is wanted is a view WITH A PANORAMA, not a
 	// widget with a particular name -- being found by WidgetID says nothing about whether a
-	// panorama is on it. Bounds that make no sense are left to the older mapping.
+	// panorama is on it.
 	InterfacePtr<IPanorama> panorama(KCMStripLayoutView(strip), UseDefaultIID());	// nil is allowed here (InterfacePtr)
-	if (panorama != nil)
-	{
-		const PMRect bounds = panorama->GetBounds();
-		if (bounds.Bottom() > bounds.Top())
-		{
-			outPanoTop    = bounds.Top();
-			outPanoBottom = bounds.Bottom();
-			outHasPano    = kTrue;
-		}
-	}
+	if (panorama == nil)
+		return kFalse;
+
+	const PMRect sbFrame = sbView->GetFrame();
+	const PMRect bounds = panorama->GetBounds();
+	out.top        = sbFrame.Top();
+	out.height     = sbFrame.Height();
+	out.width      = sbFrame.Width();
+	out.total      = counter->GetMaximum() - counter->GetMinimum();
+	out.page       = counter->GetPageSize();
+	out.panoTop    = bounds.Top();
+	out.panoHeight = bounds.Height();
+	return (out.total > 0 && out.page >= 0 && out.width > 0 && out.height > 0 && out.panoHeight > 0);
 }
 
 // kTrue when spreadUID is one of this db's master spreads.
@@ -270,14 +296,14 @@ static bool16 KCMIsMasterSpread(IDataBase* db, UID spreadUID)
 //   - pages registered as Add/Remove (IKCMMarkData::GetRegisteredPages, backed on the model side
 //     by KCMPageMapCollectRegistered) are filled green
 //
-// THE MAPPING IS RELATIVE TO THE WHOLE DOCUMENT, the way VS does it, and it is aligned to the
-// real scrollbar: the vertical range is not the strip's full height but THE TRACK THE THUMB CAN
-// TRAVEL (inside the arrow buttons at both ends), and the Y denominator is not the extent of the
-// page rectangles but THE WHOLE SCROLLABLE EXTENT OF THE PANORAMA (IPanorama::GetBounds, which
-// includes the pasteboard margins). That puts a band and the thumb on the same scale; the mapping
-// section below has the detail. Each page's Y band becomes a mark (at least 3px tall).
-// Nothing here depends on the scroll position or the zoom, so a redraw is only needed when the
-// comparison result changes (KCMScrollMapInvalidateAll).
+// THE MAPPING IS RELATIVE TO THE WHOLE DOCUMENT, the way VS does it, and it follows the real
+// scrollbar's own rule for its thumb (on kKCMScrollMapDroverMinThumb): A BAND GOES WHERE THE THUMB'S
+// CENTRE IS WHEN THAT CONTENT SITS AT THE CENTRE OF THE VIEW. The mapping section below has the
+// detail. Each page's Y band becomes a mark (at least 3px tall).
+// The scroll position does not enter it, but THE THUMB'S LENGTH DOES - a zoom, a taller or shorter
+// window or a longer document changes it - so besides the comparison changing
+// (KCMScrollMapInvalidateAll), a redraw is due whenever the bar's range or page size changes:
+// KCMScrollMapNoticeViewDrawn catches that.
 // Spreads that are hidden (Hide Unchanged and the like) are left out when the pages are collected
 // -- see below -- so even while hiding is in use the normalisation uses only the coordinates of
 // the spreads on screen and the marks line up with what is displayed.
@@ -445,52 +471,67 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 	const PMReal grnG = ma * PMReal(0.70) + (PMReal(1.0) - ma) * bgG;
 	const PMReal grnB = ma * PMReal(0.25) + (PMReal(1.0) - ma) * bgB;
 
-	// ALIGN THE MAPPING WITH THE REAL SCROLLBAR. Mapping "the whole Y extent of the page
-	// rectangles" onto "the strip's full height" disagrees with the bar on two counts:
-	//   1. the thumb can only travel INSIDE the arrow buttons, while the strip was drawn over the
-	//      bar's full height -- a systematic drift of +buttonHeight at the top, zero in the middle
-	//      and -buttonHeight at the bottom. In the capture that showed it, the band for page 1 sat
-	//      level with the up arrow, where the thumb can never be.
-	//   2. the bar's full length stands for THE WHOLE SCROLLABLE EXTENT OF THE PANORAMA, not the
-	//      extent of the pages (it takes in the pasteboard margins above and below them).
-	// The first comes from the bar's frame width (its square buttons' height), the second from
-	// IPanorama::GetBounds(); both are read at run time.
-	PMReal arrowH(0), panoTop(0), panoBottom(0);
-	bool16 hasPano = kFalse;
-	KCMScrollMapProbeWindow(this, arrowH, panoTop, panoBottom, hasPano);
-
-	// The bar's frame is in the parent's coordinates while frame (GetInnerContentFrame) is in the
-	// strip's own. They are normally 1:1; converting through the ratio to the strip's outer height
-	// covers the case where the vertical scales differ.
-	const PMReal outerH = this->GetFrame().Height();
-	if (outerH > 0 && frame.Height() > 0)
-		arrowH = arrowH * frame.Height() / outerH;
-
-	// Pull the track in (the value is on the declaration). The thumb's range of travel is a little
-	// narrower still than the inside of the arrow buttons, so that much is taken off before the
-	// mapping.
-	arrowH = arrowH + kKCMScrollMapTrackInset;
-
-	PMReal trackTop    = frame.Top() + arrowH;		// where the thumb can travel = where the map should be drawn
-	PMReal trackBottom = frame.Bottom() - arrowH;
-	if (trackBottom - trackTop < PMReal(8.0))		// a very short window, or no bar: give up the correction and use the full height
+	// LAY THE BANDS OUT BY THE SCROLLBAR'S OWN RULE (on kKCMScrollMapDroverMinThumb): a page's band goes
+	// where the thumb's centre is when that page's content sits at the centre of the view. The mapping
+	// is linear in the pasteboard Y - bandY = mapOffset + mapScale x pageY, in the strip's own
+	// coordinates - and the cases below only choose those two numbers. The bands are kept to the range
+	// the thumb travels (trackTop..trackBottom), never level with an arrow button.
+	PMReal mapScale(0.0), mapOffset(0.0);
+	PMReal trackTop = frame.Top(), trackBottom = frame.Bottom();
+	const PMRect outer = this->GetFrame();
+	KCMScrollMapBar bar;
+	if (KCMScrollMapReadBar(this, bar) && outer.Height() > 0 && frame.Height() > 0 &&
+		bar.height > bar.width + bar.width)
 	{
-		trackTop    = frame.Top();
-		trackBottom = frame.Bottom();
-	}
+		// Worked in the bar's frame coordinates (its parent's, which the strip's frame is in too),
+		// then carried into the strip's own: the two frames have the same top and bottom (Attach
+		// sets them so, and they share a binding), so the carrying is normally the identity.
+		const PMReal s0 = bar.top + bar.width;					// the top of the range the thumb travels
+		const PMReal lb = bar.height - bar.width - bar.width;	// its length (inside the square buttons)
+		const PMReal total(bar.total), page(bar.page);
+		const PMReal toLocal = frame.Height() / outer.Height();
+		trackTop    = frame.Top() + (s0 - outer.Top()) * toLocal;
+		trackBottom = frame.Top() + (s0 + lb - outer.Top()) * toLocal;
 
-	// The denominator. Use the panorama's extent when it contains the extent of the pages; when it
-	// does not -- another coordinate system, or a disagreement caused by hidden spreads -- fall
-	// back to the extent of the page rectangles as before.
-	PMReal spanTop = minY, spanBottom = maxY;
-	if (hasPano && panoBottom > panoTop &&
-		panoTop <= minY + PMReal(1.0) && panoBottom >= maxY - PMReal(1.0))
+		PMReal barScale(0.0), barOffset(0.0);	// in the bar's coordinates: y = barOffset + barScale x pageY
+		if (bar.panoTop <= minY + PMReal(1.0) && bar.panoTop + bar.panoHeight >= maxY - PMReal(1.0))
+		{
+			// The counter's units: c = (pageY - panoTop) x total / panoHeight.
+			const PMReal perUnit = total / bar.panoHeight;
+			const PMReal tProp = lb * page / total;
+			const PMReal t = (tProp > kKCMScrollMapDroverMinThumb) ? tProp : kKCMScrollMapDroverMinThumb;
+			if (total - page > PMReal(0.0) && lb > t)
+			{
+				// The thumb's centre with the content at c in the middle of the view:
+				//   s0 + t/2 + (lb - t) x (c - page/2) / (total - page)
+				// While the thumb is not stretched (t = tProp) this is the plain proportion s0 + lb x c / total.
+				const PMReal k = (lb - t) / (total - page);
+				barScale  = k * perUnit;
+				barOffset = s0 + t / PMReal(2.0) - k * (bar.panoTop * perUnit + page / PMReal(2.0));
+			}
+			else
+			{
+				// Everything is in view, or the bar is too short to move its thumb: the plain proportion.
+				barScale  = lb / bar.panoHeight;
+				barOffset = s0 - bar.panoTop * barScale;
+			}
+		}
+		else
+		{
+			// The panorama does not hold the pages (another coordinate system, or a disagreement caused
+			// by hidden spreads): the pages' own extent, spread over the range the thumb travels.
+			barScale  = lb / (maxY - minY);
+			barOffset = s0 - minY * barScale;
+		}
+		mapScale  = barScale * toLocal;
+		mapOffset = frame.Top() + (barOffset - outer.Top()) * toLocal;
+	}
+	else
 	{
-		spanTop    = panoTop;
-		spanBottom = panoBottom;
+		// No bar to follow (or one too short to hold its two buttons): the pages' extent over the strip.
+		mapScale  = frame.Height() / (maxY - minY);
+		mapOffset = frame.Top() - minY * mapScale;
 	}
-
-	const PMReal scale = (trackBottom - trackTop) / (spanBottom - spanTop);
 
 	// Decide each page's colour class and band coordinates (y0/y1) first, and sort the indices into
 	// per-priority lists (byLevel). The two pages of a spread (4 and 5, say) share a pasteboard Y
@@ -530,8 +571,8 @@ void KCMScrollMapView::Draw(IViewPort* viewPort, SysRgn updateRgn)
 		if (c == 0)
 			continue;
 
-		PMReal y0 = trackTop + (tops[i]    - spanTop) * scale;
-		PMReal y1 = trackTop + (bottoms[i] - spanTop) * scale;
+		PMReal y0 = mapOffset + tops[i]    * mapScale;
+		PMReal y1 = mapOffset + bottoms[i] * mapScale;
 		if (y1 - y0 < PMReal(3.0))	// too thin to see: keep the centre and make it 3px
 		{
 			const PMReal cy = (y0 + y1) / PMReal(2.0);
@@ -751,7 +792,9 @@ void KCMScrollMapDetachAll()
 //   - KCMActionComponent     ... the map toggle going on, and Find Overset
 //   - KCMPeekGesture        ... a batch close finishing
 //   - this file itself       ... KCMScrollMapNoticeDrawEvent below, which catches the manual
-//     Hide/Show and the spread switch that none of the others can see
+//     Hide/Show and the spread switch that none of the others can see, and
+//     KCMScrollMapNoticeViewDrawn, which catches the thumb's length changing (a zoom, the window's
+//     height, the document's length) - not a comparison change, but it moves the bands all the same
 // Anything that becomes another such path has to call this as well.
 void KCMScrollMapInvalidateAll()
 {
@@ -864,6 +907,57 @@ void KCMScrollMapNoticeDrawEvent()
 	{
 		sHiddenFingerT = ft;
 		sHiddenFingerS = fs;
+		KCMScrollMapInvalidateAll();	// the first time (0 -> current) runs once for nothing, which is harmless
+	}
+}
+
+//========================================================================================
+// Following the thumb's length (riding the end of each layout view's redraw)
+//========================================================================================
+
+// What every strip draws from, folded into one number: for each strip, its bar's frame height and
+// width, the counter's range and page size, and its pane's panorama extent (KCMScrollMapReadBar).
+// The counter's VALUE - the scroll position - is deliberately not in it: scrolling does not move a
+// band, so it must not cost a redraw.
+static uint32 sViewFinger = 0;	// as last seen
+
+// KCMScrollMapNoticeViewDrawn (declared in KCMScrollMap.h) -- once per redraw of a layout view.
+// A band follows the thumb's length, and a zoom, a taller or shorter window or a longer document
+// changes it without passing through any of KCM's hooks; a zoom always redraws the view, so this
+// rides on that. It is not throttled the way KCMScrollMapNoticeDrawEvent is: it runs once per view
+// redraw rather than once per spread, and costs a few reads per window - a throttle could swallow
+// the last redraw of a quick run of zooms and leave the strip a step behind.
+void KCMScrollMapNoticeViewDrawn()
+{
+	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
+	if (compare->GetArmedTargetDB() == nil)
+		return;		// not armed means no strip
+
+	K2Vector<IPanelControlData*> panels;
+	KCMCollectPresentationPanels(nil, panels);	// db = nil gathers every layout view
+	uint32 h = 0;
+	for (int32 i = 0; i < (int32)panels.size(); ++i)
+	{
+		InterfacePtr<IPanelControlData> presPanel(panels[i]);	// takes ownership (this is what releases it)
+		IControlView* strip = presPanel->FindWidget(kKCMScrollMapWidgetID);
+		if (strip == nil)
+			continue;
+		KCMScrollMapBar bar;
+		if (!KCMScrollMapReadBar(strip, bar))
+		{
+			h = h * 131u + 1u;	// a strip with no bar to follow still counts, so losing its bar is a change
+			continue;
+		}
+		h = h * 131u + (uint32)bar.total;
+		h = h * 131u + (uint32)bar.page;
+		h = h * 131u + (uint32)::ToInt32(bar.height);
+		h = h * 131u + (uint32)::ToInt32(bar.width);
+		h = h * 131u + (uint32)::ToInt32(bar.panoTop);
+		h = h * 131u + (uint32)::ToInt32(bar.panoHeight);
+	}
+	if (h != sViewFinger)
+	{
+		sViewFinger = h;
 		KCMScrollMapInvalidateAll();	// the first time (0 -> current) runs once for nothing, which is harmless
 	}
 }

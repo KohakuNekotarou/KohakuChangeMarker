@@ -53,7 +53,8 @@
 
 #include "KCMUIID.h"
 #include "KCMTrackerHud.h"		// the on-press HUD (moved here from the model-side handler)
-#include "KCMScrollMap.h"			// KCMScrollMapNoticeDrawEvent (detects a manual Hide/Show Spread)
+#include "KCMScrollMap.h"			// KCMScrollMapNoticeDrawEvent (detects a manual Hide/Show Spread) and
+									// KCMScrollMapNoticeViewDrawn (follows the thumb's length)
 
 //========================================================================================
 // The offset from pasteboard coordinates to this spread’s coordinates (= pasteboard - spread).
@@ -161,6 +162,13 @@ bool16 KCMUIDrawEventHandler::HandleDrawEvent(ClassID eventID, void* eventData)
 	//     rasterising ⇒ effectively a no-op (and throttled to 250ms besides). ⚠It is a behavioural
 	//     difference all the same, so it is on the list of things to confirm in the application.
 	KCMScrollMapNoticeDrawEvent();
+
+	// Scrollbar map, the other check: the bands follow the thumb's length, which a zoom changes (a zoom
+	// always redraws the view, and passes through no hook of KCM's). Once per redraw of a layout view -
+	// the per-window event, and only with a view (a Pages panel thumbnail being drawn has none). It too
+	// must stand before the HUD test, for the same reason as the check above. KCMScrollMap.cpp.
+	if (eventID == ClassID(kAfterLastSpreadDrawMessage) && ded->gd->GetView() != nil)
+		KCMScrollMapNoticeViewDrawn();
 
 	// Do nothing unless a button is held AND this is the view of the window it was pressed in.
 	// ★Draws with a nil view (a Pages panel thumbnail being generated, for instance) are rejected by
