@@ -991,32 +991,28 @@ DECLARE_PMID(kWidgetIDSpace, kKCMStoryAppliedRowWidgetID, kKCMUIPrefix + 78)	// 
 #define kKCMPrevChangeKey		kKCMStringPrefix "kKCMPrevChangeKey"	// the caption of the "< Prev" button on the panel (English everywhere)
 #define kKCMNextChangeKey		kKCMStringPrefix "kKCMNextChangeKey"	// the caption of the "Next >" button on the panel (English everywhere)
 #define kKCMHintKey			kKCMStringPrefix "kKCMHintKey"
-// ★**The second part of the How to Use text.** DoUsage concatenates it after kKCMHintKey into
-//   one alert, so **the reader sees one piece of writing**. It holds everything from "comparing
-//   books" on (books -> overset -> the list of changed stories -> print/PDF -> the disclaimer).
+// ★**The last part of the How to Use text.** DoUsage reads hint / hint3 / hint4 / hint5 / hint2 into
+//   one alert, so **the reader sees one piece of writing**. Since 2026-10-28 the text is the AUTHOR'S
+//   (the Japanese file the author wrote, put into English - kHint / kHint2 in ui/KCMLoc.h say where it
+//   came from): hint = the disclaimer, the tool, the page pairing, Check, the page comparison's refresh;
+//   hint3 = Task Start, the Before/After PDF report, Story IDs; hint4 = the round trip; hint5 = tracked
+//   changes; this one = books, Story Edits, the cat paw.
 //   ⚠**Why it is split ＝ odfrc caps the length of one string in a StringTable**
-//     ([[odfrc-long-string-limit]]). The single text measured 3,904B against a single-line
-//     figure of 4,004B that had gone through, leaving about 100B -- not enough for the book
-//     section. **The cap is per string**, so splitting in two clears it.
-//   ★★**The seam was chosen as the place to put the book section** (user's instruction: before
-//     "finding overset").
-//     ⇒ Part one = the opening through refreshing a page comparison (2,708B); part two = from
-//     there to the end (2,113B). **Both have room; add to the shorter one.**
-//   ⚠**The Japanese side (kHint / kHint2 in ui/KCMLoc.h) is split at the same point. Do not
+//     ([[odfrc-long-string-limit]]); the longer texts before 10-28 needed five keys. The 10-28 text is
+//     far under the cap in every key, and the keys stay so that both languages keep their seams.
+//   ⚠**The Japanese side (kHint / kHint2 in ui/KCMLoc.h) is split at the same points. Do not
 //     move one without the other.**
 #define kKCMHint2Key			kKCMStringPrefix "kKCMHint2Key"
-// ★**The third part (2026-09-12): Task Start.** Both keys above sit at odfrc's per-string limit, so
-//   this section has a key of its own. DoUsage reads hint / hint3 / hint2, and the Japanese side
-//   (KCMLoc.h) carries the same section at the head of its kHint2 - the same seam, one text.
+// ★**The second part read (2026-09-12): Task Start** - and since 2026-10-28 the Before/After PDF report and Story IDs
+//   after it. It came as a key of its own when both older keys sat at odfrc's per-string limit; the Japanese side
+//   (KCMLoc.h) carries the same sections at the head of its kHint2 - the same seam, one text.
 #define kKCMHint3Key			kKCMStringPrefix "kKCMHint3Key"
-// ★**The fourth part (2026-09-19): the story text round trip** (Export / Import Story Text, the "!"
-//   rows, Restore / Undo the Restore, Ctrl+Z). A key of its own for the same reason as the third.
-//   DoUsage reads hint / hint3 / hint4 / hint2; the Japanese side carries the section inside its
-//   kHint2 at the same seam (after Story IDs, before the books).
+// ★**The third part read (2026-09-19): the story text round trip** (Export Story Text / Export Pages to Word / Import
+//   Story Text). The Japanese side carries the section inside its kHint2 at the same seam (after Story IDs, before the
+//   tracked changes).
 #define kKCMHint4Key			kKCMStringPrefix "kKCMHint4Key"
-// ★**The fifth part (2026-10-05): the Track Changes listing** (Compare with Tracked Changes). A key of its own for
-//   the same reason as the third and fourth (each older key is near odfrc's cap). DoUsage reads hint / hint3 / hint4 /
-//   hint5 / hint2; the Japanese side carries the section inside kHint2 at the same seam (after the round trip).
+// ★**The fourth part read (2026-10-05): the Track Changes listing** (Compare with Tracked Changes). The Japanese side
+//   carries the section inside kHint2 at the same seam (after the round trip, before the books).
 #define kKCMHint5Key			kKCMStringPrefix "kKCMHint5Key"
 // (⛔The sixth part, kKCMHint6Key - comparing PDFs, 2026-10-14 - went with the PDF comparison on 2026-10-27. DoUsage reads
 //   hint / hint3 / hint4 / hint5 / hint2 again.)

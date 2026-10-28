@@ -1967,12 +1967,13 @@ void KCMActionComponent::DoAbout()
    panel’s description text). */
 void KCMActionComponent::DoUsage()
 {
-	// ★The text is **kept in two parts and joined here**; the reader sees one piece of writing.
-	//   ⚠The split is for the English side: odfrc caps the length of one string in a StringTable,
-	//     and there was no room left in the enUS kKCMHintKey for the book section
-	//     ([[odfrc-long-string-limit]]). The cap is per string, so two parts clear it. **The seam is
-	//     where the book section had to go** (before "finding overset"), and the second part is
-	//     everything from there on, the disclaimer at its end included.
+	// ★The text is **kept in parts and joined here**; the reader sees one piece of writing. ★Since 2026-10-28 it is the
+	//   AUTHOR'S text (the disclaimer at its head - KCMLoc.h kHint2's note says where it came from).
+	//   ⚠The split is for the English side: odfrc caps the length of one string in a StringTable
+	//     ([[odfrc-long-string-limit]]), so the English came to five keys while the texts were longer. The cap is per
+	//     string, so parts clear it. The seams: hint = the disclaimer .. the page comparison's refresh, hint3 = Task
+	//     Start, the PDF report, Story IDs, hint4 = the round trip, hint5 = tracked changes, hint2 = books .. the cat paw;
+	//     the Japanese side is kHint + kHint2 split at the first of them.
 	//   ★**Each part must be translated BEFORE it is appended**: KCMLoc::Text returns **finished
 	//     text** (marked untranslatable) -- the Japanese literal on a Japanese UI, the enUS table’s
 	//     string otherwise -- so joining them cannot break a translation key. **Never join keys to
