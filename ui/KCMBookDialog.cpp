@@ -38,6 +38,7 @@
 #include "IPanelControlData.h"	// FindWidget - reaching the dialog's own widgets
 #include "ISession.h"
 #include "ITextControlData.h"	// SetString - the Target/Source lines and the status area
+#include "IWidgetParent.h"		// QueryParentFor - the window above the dialog's panel, as the dialog closes
 #include "IWindow.h"			// GetSysWindow - the platform window behind the dialog (minimize box)
 
 // General includes:
@@ -77,6 +78,15 @@ std::vector<KCMChapterResult> gDialogRows;
 PMString gTargetPath;
 PMString gSourcePath;
 PMString gSummary;
+
+#ifdef WINDOWS
+/** WHERE THE DIALOG STOOD AS IT CLOSED (2026-10-28, K8 - KFC's J19-2, 432617c): every open makes a NEW platform window
+    (measured 2026-08-17, three opens -> three HWNDs), so a dialog closed while minimized came back at the screen's top
+    left in KFC, which has the same make of dialog. The placement is kept at every close (KeepWhereItStood, from the
+    controller's ClosingDialog) and given back at the next open (KCMPrepareBookDialogWindow), once. */
+bool gReopenWhereKept = false;
+WINDOWPLACEMENT gReopenWhere = {};
+#endif
 
 /** Put text into one of the dialog's static text widgets. Does nothing if it is not there. */
 void SetLine(IPanelControlData* panelData, const WidgetID& widgetID, const PMString& text)
@@ -256,6 +266,8 @@ public:
 
 	virtual void InitializeDialogFields(IActiveContext* context);
 	virtual void ApplyDialogFields(IActiveContext* context, const WidgetID& widgetId);
+	// AS IT CLOSES - "an opportunity to do some special cleanup" (CDialogController.h): where it stood (K8).
+	virtual void ClosingDialog(IActiveContext* lastChanceToUseMyContext);
 };
 
 CREATE_PMINTERFACE(KCMBookDialogController, kKCMBookDialogControllerImpl)
@@ -278,6 +290,25 @@ void KCMBookDialogController::InitializeDialogFields(IActiveContext* context)
 void KCMBookDialogController::ApplyDialogFields(IActiveContext* context, const WidgetID& widgetId)
 {
 	CDialogController::ApplyDialogFields(context, widgetId);
+}
+
+void KCMBookDialogController::ClosingDialog(IActiveContext* lastChanceToUseMyContext)
+{
+	CDialogController::ClosingDialog(lastChanceToUseMyContext);
+#ifdef WINDOWS
+	// The placement - where it stands, or where the taskbar would bring it back to (rcNormalPosition) - from the window
+	// above the dialog's panel, the window CDialogController::GetName reads the title of (KFC's DialogWindowAbove).
+	gReopenWhereKept = false;
+	InterfacePtr<IWidgetParent> parent(this, UseDefaultIID());
+	InterfacePtr<IWindow> window(parent != nil ? static_cast<IWindow*>(parent->QueryParentFor(IID_IWINDOW)) : nil);
+	HWND hwnd = (window != nil) ? (HWND)window->GetSysWindow() : nullptr;
+	if (hwnd != nullptr && ::IsWindow(hwnd))
+	{
+		gReopenWhere = WINDOWPLACEMENT();
+		gReopenWhere.length = sizeof(gReopenWhere);
+		gReopenWhereKept = (::GetWindowPlacement(hwnd, &gReopenWhere) != FALSE);
+	}
+#endif
 }
 
 namespace
@@ -357,6 +388,30 @@ void KCMPrepareBookDialogWindow(IDialog* dialog)
 	//   (both measured the same day).
 	if (::IsIconic(hwnd))
 		::ShowWindow(hwnd, SW_RESTORE);
+
+	// ***** BACK WHERE IT STOOD AS IT LAST CLOSED (K8, 2026-10-28 - gReopenWhere above). ***** The placement
+	// GetWindowPlacement gave then, given back to SetWindowPlacement - workspace coordinates both ways, as Microsoft's
+	// WINDOWPLACEMENT remarks ask (not SetWindowPos's screen coordinates), and moved onto a screen when they would be off
+	// every one (SetWindowPlacement's remarks). The window keeps its own size; SW_SHOWNORMAL, as it stands now. Once:
+	// a dialog moved while it stays open is not pulled back by the next Compare Books (KFC's form, 432617c).
+	if (gReopenWhereKept)
+	{
+		gReopenWhereKept = false;
+		WINDOWPLACEMENT now = {};
+		now.length = sizeof(now);
+		if (::GetWindowPlacement(hwnd, &now))
+		{
+			const LONG width = now.rcNormalPosition.right - now.rcNormalPosition.left;
+			const LONG height = now.rcNormalPosition.bottom - now.rcNormalPosition.top;
+			now.rcNormalPosition.left = gReopenWhere.rcNormalPosition.left;
+			now.rcNormalPosition.top = gReopenWhere.rcNormalPosition.top;
+			now.rcNormalPosition.right = now.rcNormalPosition.left + width;
+			now.rcNormalPosition.bottom = now.rcNormalPosition.top + height;
+			now.flags = 0;
+			now.showCmd = SW_SHOWNORMAL;
+			(void)::SetWindowPlacement(hwnd, &now);
+		}
+	}
 
 	// ***** TELL THE TRANSLUCENCY CODE WHERE THIS WINDOW IS, THEN LET IT PAINT. ***** (User,
 	// 2026-08-13: "make it so the dialog can be translucent too".) The two panel toggles find their
