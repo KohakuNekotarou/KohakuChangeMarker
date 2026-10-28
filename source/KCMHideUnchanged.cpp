@@ -22,7 +22,6 @@
 #include "VCPlugInHeaders.h"
 
 // General includes:
-#include "CAlert.h"
 #include "PMString.h"
 
 // For Hide Unchanged Spreads (kHideSpreadCmdBoss):
@@ -46,6 +45,7 @@
 #include "KCMCore.h"		// KCMIsDocDBOpen / KCMArmedSourceDB
 #include "KCMExternalSource.h"	// KCMIsExternalSource - a Source that is not a document is not hidden
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it (Task 9)
+#include "IKCMUIServices.h"	// KCMQueryUIServices - the confirmation is shown by the UI half (2026-10-28)
 #include "KCMDrawEventHandler.h"	// sDB / sEntries / sOverflowT / sPrevPairTargetToSource -- what
 							//   "changed" is decided from. **All of it the "as compared" record,
 							//   i.e. the same thing the screen, the thumbnails and the map read**,
@@ -245,29 +245,25 @@ void KCMHideUnchangedToggle()
 	// The confirmation. kHideSpreadCmdBoss is a persistent edit: the document goes dirty and the
 	// hidden state reaches the saved file. The wording follows the UI language (enUS / jaJP);
 	// Windows only offers the standard Yes/No buttons.
-	// **This is the one alert the model half raises.** Why it stays:
-	//   - `CAlert` is a static class in Public.lib, **not a boss provided by a UI plug-in**, so it
-	//     is not the "returns nil on a background thread" case the guide describes (which is why
-	//     neither the linker nor a grep flags it).
-	//   - this function is only ever entered from a flyout action through the Facade, and **the
-	//     drawing paths that run on background threads never reach it** (checked by grepping every
-	//     call site).
-	// @warning it is still the model asking a human. **If a path is ever added that calls this
-	//   from a background thread, move the question to the UI and take the answer as an argument.**
-	//   A modal raised on a background thread has nobody to answer it and **stops that thread**.
-	const int16 clicked = CAlert::ModalAlert
-	(
-		// "This feature modifies the document file. Continue?" -- in Japanese on a Japanese UI
-		// (KCMLoc). This one is asked **before the document is changed**, so it is shown in the
-		// user's own language to remove any chance of misreading it.
-		KCMLoc::Text(kKCMHideConfirmKey, KCMJa::kHideConfirm),
-		kYesString,
-		kNoString,
-		kNullString,
-		1,							// Yes is the default button
-		CAlert::eWarningIcon
-	);
-	if (clicked != 1)
+	// ★★THE UI HALF SHOWS IT SINCE 2026-10-28 (IKCMUIServices.h). Until then this was "the one alert
+	//   the model half raises", kept here because CAlert is a static class in Public.lib rather than a
+	//   UI boss; the author's call of 2026-10-01 - the guide counts alerts among the UI's components,
+	//   follow it strictly - moved it. This function still decides THAT it is asked, WHEN (after the
+	//   spreads are classified, only when there is something to hide) and IN WHICH WORDS; the UI half
+	//   shows it and hands back the answer.
+	// ⚠NO UI HALF = NOBODY TO ASK = NOTHING HIDDEN (a background thread's session, InDesign Server; in a
+	//   test build the fault switch ui-services-off): the document is not changed without a Yes, and the
+	//   status line says so. (A modal raised where nobody can answer it would have stopped that thread.)
+	InterfacePtr<IKCMUIServices> ui(KCMQueryUIServices());
+	if (ui == nil)
+	{
+		KCMSayStatus("Hide Unchanged: no UI to ask - nothing hidden.");
+		return;
+	}
+	// "This feature modifies the document file. Continue?" -- in Japanese on a Japanese UI
+	// (KCMLoc). This one is asked **before the document is changed**, so it is shown in the
+	// user's own language to remove any chance of misreading it.
+	if (!ui->AskYesNo(KCMLoc::Text(kKCMHideConfirmKey, KCMJa::kHideConfirm)))
 		return;						// No: nothing happens, and the item is not ticked
 
 	// ---- Target and Source are issued as ONE sequence from here ----

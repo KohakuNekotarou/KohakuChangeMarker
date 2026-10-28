@@ -18,6 +18,14 @@
 //   below you will not display", ProgressBar.h) - and a RangeProgressBar is created with
 //   showImmediate=kTrue, positioned at the units already done.
 //
+//  ★★THE SUPPRESSOR AND THE BAR ARE THE UI HALF'S SINCE 2026-10-28 (IKCMUIServices.h - the author's
+//   call of 2026-10-01: the guide counts a modal bar among the UI's dialogs). This file still decides
+//   everything about them - when the bar comes, what it says, where Cancel is read - and asks the UI
+//   half to put them up. No UI half (a background thread, InDesign Server; the test build's fault
+//   switch ui-services-off) = no suppressor and no bar: Step shows nothing, WasCancelled is false,
+//   and the job runs to its end. The guard against a bar the manager refused (WasRegisterSuccessful)
+//   moved with the bar: ui/KCMUIServices.cpp.
+//
 //  @warning **TWO OF THESE MUST NOT BE ALIVE AT ONCE.** While one exists, its suppressor holds
 //   every other progress bar down - including a second KCMDeferredProgressBar, whose own bar is
 //   then refused registration (measured 2026-09-05: "the bar shows in the Pixel mode and not in
@@ -33,7 +41,7 @@
 #ifndef __KCMProgressBar_h__
 #define __KCMProgressBar_h__
 
-#include "ProgressBar.h"		// RangeProgressBar, SuppressProgressBarDisplay
+#include "IKCMUIServices.h"		// KCMQueryUIServices - the bar and the suppressor, put up by the UI half
 #include "K2SmartPtr.h"			// K2::scoped_ptr
 #include "PMString.h"
 #include "KCMConstants.h"		// kKCMProgressBarDelayMs
@@ -66,74 +74,109 @@ public:
 						   int32 delayMs = kKCMProgressBarDelayMs)
 		: fTitle(title), fTotal(total), fDelayMs(delayMs),
 		  fSince(std::chrono::steady_clock::now()),
-		  fSuppress(new (std::nothrow) SuppressProgressBarDisplay(kTrue)),
-		  fBarUp(kFalse)
+		  fSuppress(NewSuppressor()),
+		  fAsked(kFalse)
 	{}
 
 	/** Reports that `done` units are finished and names the one about to start. The bar
 		appears here, the first time the delay has passed; before that this returns at once. */
 	void Step(int32 done, const PMString& text)
 	{
-		if (fBar.get() == nil)
+		if (!fAsked)
 		{
 			const int64 elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(
 				std::chrono::steady_clock::now() - fSince).count();
 			if (elapsedMs < fDelayMs)
 				return;
+			// ASKED ONCE, past the delay: a UI half that is not there now is not there before the job
+			// ends (no UI = no bar, and every Step after this returns below).
+			fAsked = kTrue;
 			fSuppress.reset();		// before the bar: a bar created under the suppressor is suppressed too
-			fBar.reset(new (std::nothrow) RangeProgressBar(fTitle, 0, fTotal, kTrue /*showImmediate*/));
+			InterfacePtr<IKCMUIServices> ui(KCMQueryUIServices());
+			if (ui != nil)
+				fBar.reset(ui->NewProgressBar(fTitle, 0, fTotal, kTrue /*showImmediate*/, kTrue /*showCancel*/));
 			if (fBar.get() == nil)
 				return;
 			fBar->DisableChildProgressBars(kTrue);	// the rasterising internals must not subdivide it
-
-			// ***** AND NOW ASK WHETHER IT ACTUALLY WENT UP. *****
-			//
-			// ⚠**THE HEADER SAYS THIS IS "not usually necessary to call"** (ProgressBar.h:58) - and it
-			//  names the exact reason it is necessary here in the next sentence: "another progress bar
-			//  calling DisableChildProgressBars()", which is the call one line above, made by every
-			//  other KCMDeferredProgressBar and by KIDMCP's bar as well.
-			// ★THE REFUSAL IS NOT HYPOTHETICAL. It was measured on 2026-09-05 - "the bar shows in the
-			//  Pixel mode and not in the Story mode", the raster loop's object having outlived its
-			//  loop (see the warning at the head of this file).
-			// ⚠**AND IT DID NOT CRASH THAT DAY.** The symptom was a missing bar, nothing more. This
-			//  guard is prevention, not a repair: it was written the same day KIDMCP was found driving
-			//  a refused bar of its own, so that the two plug-ins answer the question the same way.
-			fBarUp = fBar->WasRegisterSuccessful();
+			// (A bar the manager refused - another bar's DisableChildProgressBars, measured 2026-09-05 - comes back
+			//  all the same and drives nothing, its WasCancelled false: that guard stands with the bar, in
+			//  ui/KCMUIServices.cpp, where it moved from here on 2026-10-28.)
 		}
-
-		// ⚠ONE RETURN FOR THREE CALLS - SetTaskText, SetPosition, and WasCancelled below. Driving a
-		//  bar that never registered pumps nothing and shows nothing, so what is given up by stopping
-		//  here is exactly nothing; what is avoided is calling into a window the manager does not know
-		//  about.
-		if (!fBarUp)
+		if (fBar.get() == nil)
 			return;
-
 		fBar->SetTaskText(text, kFalse /*forceRedraw*/);
 		fBar->SetPosition(done);
 	}
 
-	/** kTrue once the person has pressed Cancel. kFalse while no bar is up (nothing is pumped then).
-
-		⚠fBarUp, not just a nil test: a refused bar is an object that exists and cannot be pressed, so
-		 asking it whether it was cancelled can only ever answer no - and it is one of the three calls
-		 the guard in Step() exists to cover. */
+	/** kTrue once the person has pressed Cancel. kFalse while no bar is up (nothing is pumped then),
+		and for a bar the manager refused (the UI half answers no for it: nobody can have pressed it). */
 	bool16 WasCancelled()
 	{
-		return (fBarUp && fBar.get() != nil && fBar->WasCancelled(kFalse /*setGlobalErrorState*/))
-			   ? kTrue : kFalse;
+		return (fBar.get() != nil && fBar->WasCancelled(kFalse /*setGlobalErrorState*/)) ? kTrue : kFalse;
 	}
 
 private:
+	/** The suppressor the UI half holds through the wait, or nil when there is no UI half (and
+		nothing to suppress). */
+	static KCMProgressSuppressorUI* NewSuppressor()
+	{
+		InterfacePtr<IKCMUIServices> ui(KCMQueryUIServices());
+		return (ui != nil) ? ui->NewProgressBarSuppressor() : nil;
+	}
+
 	PMString									fTitle;
 	int32										fTotal;
 	int32										fDelayMs;
 	std::chrono::steady_clock::time_point		fSince;
-	K2::scoped_ptr<SuppressProgressBarDisplay>	fSuppress;	// declared before fBar: destroyed after it
-	K2::scoped_ptr<RangeProgressBar>			fBar;
+	K2::scoped_ptr<KCMProgressSuppressorUI>		fSuppress;	// declared before fBar: destroyed after it
+	K2::scoped_ptr<KCMProgressBarUI>			fBar;
+	bool16										fAsked;		// the delay has passed and the UI half was asked for the bar (once)
+};
 
-	/** Whether fBar is a bar the manager actually registered. ⚠Declared AFTER fBar so that the
-		initialiser list stays in declaration order; it is set in Step(), never here. */
-	bool16										fBarUp;
+/*	KCMProgressBar
+	A modal bar for a job that wants one at once and drives it itself - the book comparison
+	(KCMBookCompare.cpp). RangeProgressBar's calls, the bar the UI half's (IKCMUIServices.h): no UI
+	half = no bar, every call does nothing and WasCancelled answers false. KFC's KFCProgressBar,
+	the same shape.
+*/
+class KCMProgressBar
+{
+public:
+	/** RangeProgressBar's first five arguments (ProgressBar.h), with its default for showCancel. */
+	KCMProgressBar(const PMString& title, int32 startRange, int32 endRange, bool8 showImmediate,
+				   bool8 showCancel = kTrue)
+	{
+		InterfacePtr<IKCMUIServices> ui(KCMQueryUIServices());
+		if (ui != nil)
+			fBar.reset(ui->NewProgressBar(title, startRange, endRange, showImmediate, showCancel));
+	}
+
+	void SetTaskText(const PMString& text, bool16 forceRedraw = kTrue)
+	{
+		if (fBar.get() != nil)
+			fBar->SetTaskText(text, forceRedraw);
+	}
+	void SetPosition(int32 newPosition)
+	{
+		if (fBar.get() != nil)
+			fBar->SetPosition(newPosition);
+	}
+	/** False when there is no bar: nobody can have pressed a Cancel that is not there. */
+	bool16 WasCancelled(bool8 setGlobalErrorState = kTrue)
+	{
+		return (fBar.get() != nil) ? fBar->WasCancelled(setGlobalErrorState) : kFalse;
+	}
+	void DisableChildProgressBars(bool16 disable)
+	{
+		if (fBar.get() != nil)
+			fBar->DisableChildProgressBars(disable);
+	}
+
+private:
+	K2::scoped_ptr<KCMProgressBarUI>	fBar;	// the UI half's bar, or nil when there is no UI
+
+	KCMProgressBar(const KCMProgressBar&);
+	KCMProgressBar& operator=(const KCMProgressBar&);
 };
 
 //========================================================================================

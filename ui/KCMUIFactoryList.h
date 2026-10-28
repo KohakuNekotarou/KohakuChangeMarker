@@ -63,6 +63,7 @@ REGISTER_PMINTERFACE(KCMModelChangeObserver, kKCMModelChangeObserverImpl)	// reb
 REGISTER_PMINTERFACE(KCMDocsClosedObserver, kKCMDocsClosedObserverImpl)	// runs the postponed cleanup once, when a batch close finishes (KCMPeekGesture.cpp)
 REGISTER_PMINTERFACE(KCMPaletteMgrServiceProvider, kKCMPaletteMgrServiceProviderImpl)	// registers the palette manager service (KCMPaletteMgrService.cpp, 2026-10-27)
 REGISTER_PMINTERFACE(KCMPaletteMgrService, kKCMPaletteMgrServiceImpl)	// PaletteMgrAboutToShutdown: the panel visibility observer taken off (KCMPaletteMgrService.cpp)
+REGISTER_PMINTERFACE(KCMUIServices, kKCMUIServicesImpl)	// the progress bars and the Yes / No question the model half asks for, on kSessionBoss (KCMUIServices.cpp, 2026-10-28)
 
 // The on-press HUD (★screen only -- it is not meant to reach an exported PDF, so this side is right for it)
 REGISTER_PMINTERFACE(KCMUIDrawEventSrvc, kKCMUIDrawEventSrvcImpl)		// the UI-only draw service (KCMUIDrawEvent.cpp)

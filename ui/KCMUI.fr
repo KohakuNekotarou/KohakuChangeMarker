@@ -321,6 +321,20 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
+	// The UI services (2026-10-28, KCMUIServices.cpp / IKCMUIServices.h): the progress bars and the Yes / No question
+	// the model half asks for, since the guide counts them among the dialogs (the author's call, KFC's shape). On
+	// kSessionBoss, as KFC's: a background thread's session carries no UI plug-in, so the model half's Query comes back
+	// nil there and it does without - which is the guide's rule for model code (vol1-07). Our own implementation on our
+	// own IID, so nothing of anyone else's is added to the boss.
+	AddIn
+	{
+		kSessionBoss,
+		kInvalidClass,
+		{
+			IID_IKCMUISERVICES, kKCMUIServicesImpl,
+		}
+	},
+
 	// Subclass of the system rollover icon button, adding IID_ITIP so hovering it shows a tooltip
 	// (same pattern as kLinksUIButtonBoss in open/components/linksui).
 	// ★THREE widgets share this boss, and the tip is NOT the same on all three: the two halves of

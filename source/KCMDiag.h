@@ -57,6 +57,11 @@
 //    note-delete-fail  KCMDeleteNoteAt takes no marker out (2026-10-27, the re-inspection's M18): a footnote Word took away
 //                stays, as when InDesign refuses the DeleteCmd - and the notes after it must keep their own words
 //                (work/note-scripts/2026-10-27-kcm-defect-m18/note_delete_probe.ps1).
+//    ui-services-off  KCMQueryUIServices answers nil (IKCMUIServices.h, 2026-10-28): the model half does without the UI
+//                half's progress bars and question, as on a background thread or under InDesign Server - no bar, nothing
+//                to cancel, and Hide Unchanged asks nothing and hides nothing (ui-services US-5 / US-6).
+//    book-compare-slow  a SLOW switch: each chapter of the book comparison 1500 ms longer (KCMCompareBooks, 2026-10-28),
+//                so its bar's Cancel can be pressed before the last chapter (ui-services US-7 / US-8).
 //    (none else in use - counted 2026-10-26: step-fail and batch-fail had been in use without a line here.
 //     ⛔cmyk-cursor-no-hide stood here on 2026-10-27 for one night: Alt + left's CMYK cursor put up without the
 //     ICursorMgr Hide/Show, to measure both on one build. Without it the checkmark went straight to the numbers and

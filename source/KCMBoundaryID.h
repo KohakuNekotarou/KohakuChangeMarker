@@ -18,12 +18,14 @@
 //  UI. (The vtable rule that goes with this is at the top of IKCMCompareFacade.h.)
 //
 //  WHY A COPY EACH SIDE, AND WHY THE SAME VALUE. An ID is unique by its VALUE, not per plug-in.
-//  What lives here is the three kinds of thing one side writes and the other reads, and each of
+//  What lives here is the four kinds of thing one side writes and the other reads, and each of
 //  them **stops working silently the moment the two values disagree** (the build still passes):
 //
 //    - a facade's IID   ... the model AddIns it to kUtilsBoss, the UI asks for Utils<IKCMxxx>()
 //    - a protocol IID   ... the model passes it to ISubject::Change, the UI to AttachObserver
 //    - a notification's MessageID ... the model sends it, the UI switches on it in Update()
+//    - the UI services' IID (2026-10-28) ... the UI AddIns it to kSessionBoss, the model asks
+//      KCMQueryUIServices() for it (IKCMUIServices.h)
 //
 //  So **both copies keep the model's prefix, 0x1EA500**. If the UI copy renamed them into its own
 //  0x1EA580 the UI would stop receiving what the model sends.
@@ -120,9 +122,19 @@ DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYMARKFACADE, kKCMPrefix + 10)	// put
 DECLARE_PMID(kInterfaceIDSpace, IID_IKCMRESOURCESFACADE, kKCMPrefix + 14)	// READ which DEFINITIONS differ between the two documents (the Resources mode). ⚠+11..+13 and +15 are model-only IIDs declared in KCMID.h, and the IID space is shared with this file - counting only the facades here says +11 is free, and it is not.
 
 //----------------------------------------------------------------------------------------
+// The UI services' InterfaceID (2026-10-28) -- the one counter the other way round: the UI half
+// implements it and AddIns it to kSessionBoss, and the model half asks for it through
+// KCMQueryUIServices (IKCMUIServices.h) and does without when it is not there (a background
+// thread, InDesign Server). The progress bars and the Yes / No question live behind it.
+// +18: the next free, counted - +4..+17 are taken here and in KCMID.h.
+//----------------------------------------------------------------------------------------
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMUISERVICES, kKCMPrefix + 18)
+
+//----------------------------------------------------------------------------------------
 // The notification protocol IID.
 //
-// The only direction the model talks in. The model knows nothing about the UI: it throws a Change
+// How the model TELLS the UI (since 2026-10-28 it also ASKS - the UI services above, which it
+// does without when they are not there). The model knows nothing about the UI: it throws a Change
 // at the application's subject under a protocol IID of our own, and if nobody is listening
 // nothing happens (which is what makes it safe under InDesign Server). The UI AttachObservers
 // with this IID.

@@ -30,7 +30,8 @@
 #include "ErrorUtils.h"			// GlobalErrorStatePreserver - an open or a close that is allowed to
 								// fail must not poison the caller's next command
 #include "PersistUtils.h"		// ::GetUIDRef / ::GetDataBase
-#include "ProgressBar.h"		// RangeProgressBar - the progress and the cancel (see KCMCompareBooks)
+#include "KCMProgressBar.h"	// KCMProgressBar - the progress and the cancel (see KCMCompareBooks); the bar is the UI half's
+#include "KCMDiag.h"			// KCM_DIAG_SLOW - test builds only (book-compare-slow)
 #include "SDKFileHelper.h"		// GetPath - documents are compared by their path
 #include "SnapshotUtilsEx.h"	// the rasteriser, on the SAME terms the document comparison uses
 #include "K2SmartPtr.h"			// K2::scoped_ptr -- the snapshots and accessors below, freed on every exit
@@ -444,7 +445,7 @@ ErrorCode PageDiffers(const UIDRef& targetPage, const UIDRef& sourcePage, bool16
     honestly is, but a cancel must not reach the Change column as a '?' (2026-09-10 - the reasoning
     is at the call site, and outWhy is left empty for the same reason). */
 KCMBookModeVerdict ComparePixels(IDataBase* targetDB, IDataBase* sourceDB,
-                                 CProgressBar& progress, int32 baseTicks,
+                                 KCMProgressBar& progress, int32 baseTicks,
                                  bool16& outCancelled, PMString& outWhy)
 {
 	outCancelled = kFalse;
@@ -596,7 +597,8 @@ ErrorCode KCMCompareBooks(IBook* target, IBook* source,
 
 	int32 leftOpen = 0;
 
-	// **THE PROGRESS BAR.**
+	// **THE PROGRESS BAR.** (A RangeProgressBar the UI half puts up since 2026-10-28 - KCMProgressBar,
+	// IKCMUIServices.h; no UI half = no bar, nothing to cancel, and the walk runs to its end.)
 	// RangeProgressBar rather than the TaskProgressBar the document comparison uses, because this
 	// walk is not "N items, one step each": a chapter is a slice of the bar that the pages inside
 	// it move through. The SDK has both and they are chosen by use (linksui counts files with
@@ -611,7 +613,7 @@ ErrorCode KCMCompareBooks(IBook* target, IBook* source,
 	const int32 chapterCount = (int32)outChapters.size();
 	PMString barTitle(chapterCount == 1 ? "Comparing 1 chapter..." : "Comparing books...");
 	barTitle.SetTranslatable(kFalse);
-	RangeProgressBar progress(barTitle, 0, chapterCount * kKCMChapterProgressSpan, kTrue);
+	KCMProgressBar progress(barTitle, 0, chapterCount * kKCMChapterProgressSpan, kTrue);
 
 	// @warning **opening a chapter can raise a progress bar of its own.** Suppressing it has to
 	// happen HERE, before the loop -- KBS had this call after its chapters were already open and
@@ -639,6 +641,7 @@ ErrorCode KCMCompareBooks(IBook* target, IBook* source,
 		const int32 baseTicks = (int32)i * kKCMChapterProgressSpan;
 		progress.SetPosition(baseTicks);
 		progress.SetTaskText(chapter.fName);
+		KCM_DIAG_SLOW("book-compare-slow", 1500);	// test builds only: the bar and its Cancel within reach (KCMDiag.h)
 
 		// Already answered by the pairing: no counterpart on the other side, or no file to open.
 		if (chapter.fState != kKCMChapterUnknown)
