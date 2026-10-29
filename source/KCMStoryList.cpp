@@ -2253,8 +2253,22 @@ void KCMStoryList::RecordPour(int32 nth, const std::vector<KCMStoryChange>& live
 		row.fEqual[i].fComparedLiveEnd = -1;
 	}
 
-	// 2. one for each change the pour put in, where its Source words stand once the story reads as the Source - its live
-	//    range there too, the place its own words would come back to (AddEqualGroup's rule)
+	// 2. one for each change the pour put in (RecordAlongside, with no copy: the pour wrote the whole story)
+	RecordAlongside(nth, lives, liveWords, counters, counterKinds, kKCMCopyWholeStory);
+}
+
+/* RecordAlongside
+*/
+void KCMStoryList::RecordAlongside(int32 nth, const std::vector<KCMStoryChange>& lives,
+									  const std::vector<WideString>& liveWords, const std::vector<uint32>& counters,
+									  const std::vector<int32>& counterKinds, int32 copyWhyNot)
+{
+	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || lives.size() != liveWords.size()
+		|| lives.size() != counters.size() || lives.size() != counterKinds.size())
+		return;
+	KCMStoryRow& row = gRows[nth];
+	// One for each change, where its Source words stand once its place reads as the Source - its live range there too,
+	//   the place its own words would come back to (AddEqualGroup's rule).
 	for (size_t k = 0; k < lives.size(); ++k)
 	{
 		const KCMStoryChange& live = lives[k];
@@ -2271,12 +2285,13 @@ void KCMStoryList::RecordPour(int32 nth, const std::vector<KCMStoryChange>& live
 		rec.fPlacedForSource = kTrue;
 		rec.fLiveWords = liveWords[k];
 		rec.fHasLiveWords = kTrue;
-		rec.fCopy.fWhyNot = kKCMCopyWholeStory;
+		rec.fCopy.fWhyNot = copyWhyNot;
 		bool16 updated = kFalse;
 		for (size_t i = 0; i < row.fEqual.size() && !updated; ++i)
 		{
 			if (!IsTwin(row.fEqual[i], live))
 				continue;
+			TakeFocus(row, row.fEqual[i], 0);	// (a twin's own focus let go: it is placed again by its readings)
 			row.fEqual[i] = rec;
 			updated = kTrue;
 		}
@@ -2288,6 +2303,7 @@ void KCMStoryList::RecordPour(int32 nth, const std::vector<KCMStoryChange>& live
 		const size_t slot = KCMEqualSlotFor(starts, rec.fNowStart);
 		row.fEqual.insert(row.fEqual.begin() + static_cast<std::ptrdiff_t>(slot), rec);
 	}
+	row.fFociSynced = kFalse;
 }
 
 // ---- the foci of a write's records, placed inside its step (2026-10-26 - the header's section says why) ----------------

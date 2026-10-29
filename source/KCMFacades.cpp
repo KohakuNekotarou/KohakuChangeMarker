@@ -2623,11 +2623,40 @@ private:
 		return done;
 	}
 
-	/** A TABLE ONLY ONE SIDE HAS (Table + / Table −, 2026-10-27 night - the author: "row by row, into 2.0"): taken away
-		when only the document has it, put in - its shape and its cells' words - when only the files have it, by the
-		import's own first round (KCMApplyTablesAddedOrTakenAway), as ONE undo step, then a "=" record at its place (the
-		table row's geometry - ApplyTable's). With two tables or more added or taken away in the story, the round goes in
-		whole and the sentence says so. */
+	/** Row `nth`'s live Table + / Table − changes other than `pressed` (KCMStoryList::LiveChanges - the diff's, not the
+		records), with the Target's words at each - what an undone write reads, as RecordPour's liveWords. */
+	void OtherTableChanges(int32 nth, const KCMStoryChange& pressed, const UIDRef& target,
+						   std::vector<KCMStoryChange>& outLives, std::vector<WideString>& outWords)
+	{
+		outLives.clear();
+		outWords.clear();
+		std::vector<KCMStoryChange> lives;
+		KCMStoryList::LiveChanges(nth, lives);
+		IDataBase::SaveRestoreModifiedState guard(target.GetDataBase());	// reading composes; the document stays as clean as it was
+		InterfacePtr<ITextModel> model(target, UseDefaultIID());
+		for (size_t i = 0; i < lives.size(); ++i)
+		{
+			const KCMStoryChange& c = lives[i];
+			if (c.fWhat != KCMStoryChange::kTable
+				|| (c.fKind != KCMStoryChange::kInsert && c.fKind != KCMStoryChange::kDelete))
+				continue;
+			if (c.fKind == pressed.fKind && c.fTargetTableUID == pressed.fTargetTableUID
+				&& c.fSourceTableUID == pressed.fSourceTableUID && c.fTargetStart == pressed.fTargetStart)
+				continue;		// the pressed one: AddEqual records it, with its focus
+			WideString w;
+			if (model != nil && c.fTargetEnd > c.fTargetStart)
+				KCMTextWords::WordsAt(model, c.fTargetStart, c.fTargetEnd - c.fTargetStart, w);
+			outLives.push_back(c);
+			outWords.push_back(w);
+		}
+	}
+
+	/** A TABLE ONLY ONE SIDE HAS (Table + / Table −, the author: "row by row, into 2.0"): taken away when only the
+		document has it, put in - its shape and its cells' words - when only the files have it, by the import's own first
+		round (KCMApplyTablesAddedOrTakenAway), as ONE undo step, then a "=" record at its place (the table row's geometry
+		- ApplyTable's). With two tables or more added or taken away in the story, the round goes in whole and the
+		sentence says so - and the round's other Table + / Table − rows stay on the row as "=" too
+		(KCMStoryList::RecordAlongside: the author's "Apply on the Story row makes the rows go - keep them"). */
 	int32 ApplyTablesAddedOrTakenAway(int32 nth, int32 which, IDataBase* targetDB, const Row& row, PMString& outMessage)
 	{
 		Change before;
@@ -2641,6 +2670,10 @@ private:
 			return -1;
 		const KCMStoryChange live = *found;
 		const UIDRef target(targetDB, row.fStoryUID);
+		// The round's other tables, read before the write - the round puts them in with this one.
+		std::vector<KCMStoryChange> others;
+		std::vector<WideString> othersWords;
+		this->OtherTableChanges(nth, live, target, others, othersWords);
 		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
 		if (this->StepNotBegun(sequence, outMessage))
 			return -1;
@@ -2661,6 +2694,15 @@ private:
 			KCMStoryList::AddEqual(nth, live, live.fTargetStart,
 									  live.fTargetStart + (live.fSourceEnd - live.fSourceStart),
 									  KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone, kept ? focusId : 0);
+		// THE ROUND'S OTHER ROWS, "=" TOO - after AddEqual, which slides the records after its own: these stand at their
+		//   Source ranges and the compare below places them (RecordAlongside).
+		if (done > 0 && kept && !others.empty())
+		{
+			const uint32 counter = KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone);
+			KCMStoryList::RecordAlongside(nth, others, othersWords, std::vector<uint32>(others.size(), counter),
+										  std::vector<int32>(others.size(), static_cast<int32>(kKCMStoryAttrNone)),
+										  kKCMCopyNotTaken);
+		}
 		this->RefreshRow(nth);
 		if (done <= 0)
 			return -1;

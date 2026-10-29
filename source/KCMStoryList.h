@@ -1056,6 +1056,18 @@ namespace KCMStoryList
 	void RecordPour(int32 nth, const std::vector<KCMStoryChange>& lives, const std::vector<WideString>& liveWords,
 					const std::vector<uint32>& counters, const std::vector<int32>& counterKinds);
 
+	/** THE OTHER TABLES A TABLE ROUND PUT IN, AS "=" (the author: "Apply on the Story row makes the rows go - keep them" -
+		a Table + / Table − row's Apply puts the story's whole round of tables in, KCMApplyTablesAddedOrTakenAway says
+		why): one record for each of `lives` - row `nth`'s other live Table + / Table − changes, read before the write -
+		at its Source range, its live range there too, holding no copy (`copyWhyNot`) and no focus, and nothing slid.
+		The compare right after places each one by its readings (FollowRecords) and gives it a focus; one whose place
+		does not read as the Source's shows as what still differs. The row's other records - their copies and foci - are
+		not touched. A record that is one of them already (its twin) is updated in place. RecordPour adds its records
+		this same way, after letting the row's copies and foci go. `liveWords` / `counters` / `counterKinds` as
+		RecordPour's. */
+	void RecordAlongside(int32 nth, const std::vector<KCMStoryChange>& lives, const std::vector<WideString>& liveWords,
+						 const std::vector<uint32>& counters, const std::vector<int32>& counterKinds, int32 copyWhyNot);
+
 	/** The row of the Target's story `storyUID` (a row standing for a story only the Source has is not one), or -1. */
 	int32 RowOfTargetStory(UID storyUID);
 
