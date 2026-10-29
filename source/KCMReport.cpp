@@ -88,6 +88,7 @@
 #include "KCMTrackRead.h"			// KCMTrackRead::Build - the Track mode's own reader, for the Tracked Changes table (2026-10-27)
 #include "KCMTrackList.h"			// what it read: authors -> stories -> changes
 #include "KCMTrackText.h"			// a change's sign, time and author in the words the panel shows them in
+#include "KCMDiag.h"				// KCM_DIAG_FAULT("report-no-viewer") - the regression bundles open no viewer (test builds only)
 
 namespace
 {
@@ -1366,8 +1367,11 @@ bool16 KCMExportBeforeAfterReport(PMString& outMessage)
 	//  file. Taking it down first would mean scoping it away from the message above, which is where
 	//  the cancel is read.)
 
-	// The reader wants to see it now.
-	::ShellExecuteW(nil, L"open", WidePath(reportFile).c_str(), nil, nil, SW_SHOWNORMAL);
+	// The reader wants to see it now. (A test build's regression bundles turn this off with the fault switch
+	//  report-no-viewer - KCMDiag.h: each run opened its report in the PDF viewer, and a viewer that was already
+	//  running kept every one of them.)
+	if (!KCM_DIAG_FAULT("report-no-viewer"))
+		::ShellExecuteW(nil, L"open", WidePath(reportFile).c_str(), nil, nil, SW_SHOWNORMAL);
 
 	// ★The FOLDER is named, not the report file: three files were written and the reader should
 	//   know where all three are.
