@@ -975,6 +975,10 @@ private:
 		//  abort is measured - the single step's here, a batch's in RunBatch.)
 		if (keep && KCM_DIAG_FAULT("step-fail"))
 			keep = kFalse;
+		// (Fault switch step-error, a test build's only: the global error raised as a command that failed quietly inside
+		//  the step would leave it.)
+		if (keep && KCM_DIAG_FAULT("step-error"))
+			ErrorUtils::PMSetGlobalErrorCode(kFailure);
 		if (fBatch)
 		{
 			if (!keep)

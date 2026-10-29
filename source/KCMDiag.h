@@ -38,6 +38,9 @@
 //                Restore from Copy is greyed and its message says no copy was kept.
 //    step-fail   a write of the Story Edits facade that went in is taken as NOT gone in (EndStep, KCMFacades.cpp): the
 //                single step's abort is measured (tests-m T-M3).
+//    step-error  the global error is raised at the end of such a write's step, as a command inside it that failed
+//                without saying so would leave it (EndStep): what the step's end does with it is measured
+//                (apply-tables-notes TN-11).
 //    batch-fail  the same for a write after the first one of a batch (RunBatch, KCMFacades.cpp): the batch's roll-back.
 //    place-pair-off  the Story rows are built WITHOUT pairing stories by their first frame's place (KCMStoryPairByPlace):
 //                a test run with it on shows the Added and Removed rows the pairing exists to join, so a
