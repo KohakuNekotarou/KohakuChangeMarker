@@ -25,10 +25,6 @@
 //  Start, and the one-line summary is the model's own (KCMResourceStore::GetSummary, which KCMCore
 //  and KCMReport read).
 //
-//  ⚠**THE IID IS DECLARED IN TWO FILES** - source/KCMBoundaryID.h and ui/KCMBoundaryID.h - and
-//  they must hold the same value. Editing one builds cleanly, loads cleanly, and the UI simply
-//  gets nil at run time.
-//
 //========================================================================================
 
 #ifndef __IKCMResourcesFacade_h__

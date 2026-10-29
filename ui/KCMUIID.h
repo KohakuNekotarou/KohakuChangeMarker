@@ -27,11 +27,10 @@
 
 #include "SDKDef.h"
 
-// ★★**The IDs both halves have to know by the same value** -- the five facade IIDs, the
-//   notification protocol IID, the seven MessageIDs and the model half's prefix -- are in
-//   KCMBoundaryID.h. **This file reads the ui/ copy** (its counterpart is
-//   source/KCMBoundaryID.h).
-//   ⚠**Change one copy without the other and the two halves drift apart in silence.**
+// ★★**The IDs both halves have to know by the same value** -- the facade IIDs, the notification
+//   protocol IID, the MessageIDs and the model half's prefix -- are in KCMBoundaryID.h: the
+//   model's file (source/), which this half reaches through its include paths. One file, so the
+//   two halves cannot drift apart.
 //   ★The kKCMPrefix (0x1EA500) defined over there is **the model half's number**, a different
 //     thing from kKCMUIPrefix (0x1EA580) below. UI-only IDs are taken from kKCMUIPrefix here.
 #include "KCMBoundaryID.h"

@@ -47,7 +47,7 @@
 // value, not per plug-in.
 // The 256 slots are counted PER ID SPACE - widgets and actions have separate budgets.
 // The macros themselves (kKCMPrefixNumber / kKCMPrefix / kKCMStringPrefix) are in
-// KCMBoundaryID.h, so the UI half's copy cannot drift away from this one.
+// KCMBoundaryID.h, the one header both halves read.
 // The version number is defined in KCMBoundaryID.h so that both .pln files report the same one.
 // What stays here is the block below: the version history and the increment list for the next
 // submission. It is the master copy of the Adobe Exchange submission notes and is kept in
@@ -219,9 +219,9 @@
 														// ■全14ブロックの API 監査(2026-08-05〜08-07)とバグ特化の全コード再点検(08-06)を実施済み。全文=docs/ai-notes/kescm-file-map.md の各ブロックノート／kescm-bug-recheck-2026-08-06.md。
 // Plug-in prefix and the IDs that sit on the boundary:
 // kKCMPrefixNumber / kKCMPrefix / kKCMStringPrefix, together with every ID both halves must know
-// by the same value (the Facade IIDs, the notification protocol IID, the seven MessageIDs), are in
-// KCMBoundaryID.h. KCMUI carries a copy of that file with identical content: edit one and the
-// other drifts in silence. What remains here are the model-only IDs.
+// by the same value (the facade IIDs, the notification protocol IID, the MessageIDs), are in
+// KCMBoundaryID.h - one file, which the UI half reads through its include paths. What remains
+// here are the model-only IDs.
 #include "KCMBoundaryID.h"
 
 // Missing plug-in: (see ExtraPluginInfo resource)

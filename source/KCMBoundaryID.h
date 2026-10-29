@@ -5,11 +5,11 @@
 //  The IDs that model (KohakuExtendScriptChangeMarker) and UI (KohakuChangeMarkerUI) must both
 //  know **by the same value** -- and nothing else.
 //
-//  **THIS FILE EXISTS TWICE, WITH IDENTICAL CONTENT**, at
-//  source/sdksamples/KCM/{source|ui}/KCMBoundaryID.h.
-//  **Editing only one of them breaks the product silently. Always edit both.**
-//  (Adobe ships the same shape: customconditionaltext/CusCondTxtRezDefs.h and the file of the
-//  same name in customconditionaltextui, byte for byte identical.)
+//  **ONE FILE FOR BOTH HALVES.** The model includes it from here; the UI reaches this folder
+//  through its include paths - the C++ compiler's AdditionalIncludeDirectories, ODFRC's -i and
+//  rc.exe's AdditionalIncludeDirectories (build/win/prj/KohakuChangeMarkerUI.vcxproj) - so the two
+//  halves cannot read different values. (KFC keeps its boundary header the same way:
+//  KFC/model/KFCBoundaryID.h.)
 //
 //  SINCE 2026-09-02 A THIRD PLUG-IN READS THE MODEL COPY: Kohaku InDesign MCP includes
 //  IKCMCompareFacade.h - and through it this file - straight from source/sdksamples/KCM/source.
@@ -27,8 +27,8 @@
 //    - the UI services' IID ... the UI AddIns it to kSessionBoss, the model asks
 //      KCMQueryUIServices() for it (IKCMUIServices.h)
 //
-//  So **both copies keep the model's prefix, 0x1EA500**. If the UI copy renamed them into its own
-//  0x1EA580 the UI would stop receiving what the model sends.
+//  So **these use the model's prefix, 0x1EA500, on both sides**: the UI's own 0x1EA580 is for the
+//  IDs only the UI knows (KCMUIID.h).
 //
 //  What may live here: boundary IDs, and **types both sides must know by the same definition**
 //  (KCMCompareMode below is one: not an ID, but a value the UI writes and the model reads and acts
@@ -83,7 +83,7 @@
 //----------------------------------------------------------------------------------------
 // The model side's prefix.
 //
-// **Both copies carry this value** (the UI keeps its own kKCMUIPrefix in KCMUIID.h). Adobe issued
+// **Both halves read this value** (the UI keeps its own kKCMUIPrefix in KCMUIID.h). Adobe issued
 // the 256-slot range 0x1EA500 - 0x1EA5FF, split in half: model 0x1EA500, UI 0x1EA580. How the
 // range was obtained and how it is divided is written out in full in **KCMID.h**.
 //
@@ -222,7 +222,7 @@ enum KCMCompareMode
 	//   2026-10-05: reused by kKCMModeTrack.
 };
 
-// ⚠**EVERYTHING BELOW IS HIDDEN FROM ODFRC.** This header is included by KCM.fr, and the
+// ⚠**EVERYTHING BELOW IS HIDDEN FROM ODFRC.** This header is included by KCM.fr and KCMUI.fr, and the
 //   resource compiler reads C++ only as far as constants and enums - an inline function makes it
 //   stop with "Error looking for resource specification" (measured 2026-09-15, one build).
 #ifndef __ODFRC__

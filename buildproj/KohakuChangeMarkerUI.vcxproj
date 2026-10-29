@@ -309,7 +309,7 @@
    </ItemGroup>
    <ItemGroup>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMUIID.h"/>
-      <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMBoundaryID.h"/>
+      <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBoundaryID.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMLoc.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMUIFactoryList.h"/>
       <ClInclude Include="..\..\..\source\sdksamples\KCM\ui\KCMUIShared.h"/>
@@ -387,19 +387,19 @@
       <ResourceCompile Include="..\..\..\source\sdksamples\KCM\ui\KCMUI.rc">
          <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
          <Culture Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">0x0809</Culture>
-         <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\..\source\sdksamples\KCM\ui;..\..\..\source\sdksamples\KCM\ui;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
+         <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">..\..\..\source\sdksamples\KCM\ui;..\..\..\source\sdksamples\KCM\source;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
          <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
          <Culture Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">0x0809</Culture>
-         <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\..\source\sdksamples\KCM\ui;..\..\..\source\sdksamples\KCM\ui;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
+         <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\..\source\sdksamples\KCM\ui;..\..\..\source\sdksamples\KCM\source;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
          <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
          <Culture Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">0x0809</Culture>
-         <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\..\source\sdksamples\KCM\ui;..\..\..\source\sdksamples\KCM\ui;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
+         <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\..\source\sdksamples\KCM\ui;..\..\..\source\sdksamples\KCM\source;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
          <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">_CRT_SECURE_NO_DEPRECATE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
          <Culture Condition="'$(Configuration)|$(Platform)'=='Release|x64'">0x0809</Culture>
-         <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\..\source\sdksamples\KCM\ui;..\..\..\source\sdksamples\KCM\ui;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
+         <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\..\source\sdksamples\KCM\ui;..\..\..\source\sdksamples\KCM\source;$(ID_SDK_DIR)\source\precomp\msvc;$(ID_SDK_DIR)\source\public\includes;$(ID_SDK_DIR)\source\sdksamples\common;%(AdditionalIncludeDirectories)
       </AdditionalIncludeDirectories>
       </ResourceCompile>
    </ItemGroup>
