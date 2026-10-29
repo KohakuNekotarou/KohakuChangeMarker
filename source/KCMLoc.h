@@ -26,8 +26,6 @@
 #ifndef __KCMLoc_h__
 #define __KCMLoc_h__
 
-#include <string>
-
 #include "LocaleSetting.h"
 #include "PMLocaleIds.h"
 #include "PMString.h"
@@ -46,19 +44,13 @@ namespace KCMLoc
 	    The result is finished text, marked untranslatable. */
 	inline PMString Text(const char* englishKey, const char16_t* japanese)
 	{
-		PMString s;
+		// Not a key: the wchar_t constructor marks it untranslatable itself (publiclib's PMString.cpp),
+		// and wchar_t is UTF-16 on Windows, the one platform KCM is built for.
 		if (JapaneseUI())
-		{
-			s.SetXString(reinterpret_cast<const UTF16TextChar*>(japanese),
-				static_cast<int32>(std::char_traits<char16_t>::length(japanese)));
-		}
-		else
-		{
-			PMString k(englishKey);
-			k.Translate();
-			s = k;
-		}
-		s.SetTranslatable(kFalse);
+			return PMString(reinterpret_cast<const wchar_t*>(japanese));
+		PMString s(englishKey);
+		s.Translate();
+		s.SetTranslatable(kFalse);	// a translated key has no constructor that marks it
 		return s;
 	}
 }
