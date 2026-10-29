@@ -200,11 +200,11 @@ bool16 KCMTakeSessionStatusWarning()
 }
 
 // KCMSayStatus (declared in KCMModelNotify.h) -- the literal form of the above.
+// PMString's constructor for a string that is not a key marks it untranslatable as it is made (PMString.h; the
+// callers' words are ASCII literals) - SetTranslatable is in the header's DISCOURAGED section.
 void KCMSayStatus(const char* text, bool16 forceRedrawNow)
 {
-	PMString msg(text);
-	msg.SetTranslatable(kFalse);
-	KCMNotifyStatus(msg, forceRedrawNow);
+	KCMNotifyStatus(PMString(text, PMString::kEncodingASCII), forceRedrawNow);
 }
 
 // KCMStoreSessionStatus (declared in KCMModelNotify.h) -- remember, do not notify.
