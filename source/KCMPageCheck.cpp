@@ -49,6 +49,7 @@
 #include "KCMPageMap.h"		// KCMPageMapPagesOf - the Pages panel's selection (the UI reads it), shared with Register
 #include "KCMPawStamp.h"		// KCMPawStampsOnPage - a tick is written with the paws the page already carries
 #include "KCMPageMarksCmd.h"	// KCMPageMarks / KCMMarksWrite -- the only door to a change
+#include "KCMPageMarksDoc.h"	// KCMMarksSyncFromDocument -- what the document says, before counting or clearing
 #include "KCMDocUidSet.h"		// the shared "document -> page UID set" container (Register uses it too)
 // ⚠KCMID.h was included here for kKCMPageFlagsChangedMessage and is gone with it (2026-09-07):
 //   this file no longer notifies anybody. KCMMarksObserver does, because it is the only place that
@@ -123,6 +124,10 @@ void KCMPageCheckToggleSelectedPages(const UIDList& selection)
 	// What the press means: any eligible page still unticked ticks them all, otherwise they all
 	// come off. ★**Asked without changing anything.** The store is a cache now, so the change is
 	// made by writing the document and this only works out what to write.
+	// ⚠**The cache is brought back to what the document says before it is counted**
+	//   (KCMMarksSyncFromDocument): it goes on naming a ticked page after the page is deleted, and the
+	//   total on the status line counted that tick too (measured: "total 3" with two pages ticked).
+	KCMMarksSyncFromDocument(db, nil, nil);
 	const int32  wasChecked   = sChecked.CountIn(db, pages);
 	const int32  totalBefore  = sChecked.CountIn(db);		// ⚠**read BEFORE the write** -- see the status line below
 	const bool16 anyUnchecked = (wasChecked < (int32)pages.size()) ? kTrue : kFalse;
@@ -233,12 +238,19 @@ void KCMPageCheckClearAllDocs()
 //     write has to name the pages it clears, and once the ticks are gone nothing can say which
 //     pages carried one. (Refreshing the screen is no longer done here at all -- the observer
 //     works out what moved by comparing the store before with the store after.)
-//   @return how many ticks were dropped, for the status line.
+//   ⚠**AND THE STORE IS BROUGHT BACK TO WHAT THE DOCUMENT SAYS BEFORE THAT** (KCMMarksSyncFromDocument).
+//     It goes on naming a ticked page after the page is deleted, and the write fails as a whole on a
+//     page that is gone: the remaining ticks stayed and the status line said "cleared chk0"
+//     (measured).
+//   @return how many ticks were dropped (0 when there were none), or -1 when the write failed and
+//     none were - the caller says so.
 //========================================================================================
 int32 KCMPageCheckClearDoc(IDataBase* db)
 {
 	if (db == nil)
 		return 0;
+
+	KCMMarksSyncFromDocument(db, nil, nil);
 
 	std::set<UID> cleared;
 	sChecked.CollectInto(db, cleared);		// **before**, never after
@@ -256,7 +268,7 @@ int32 KCMPageCheckClearDoc(IDataBase* db)
 	}
 
 	if (KCMMarksWrite(db, wanted, "Clear Checks") != kSuccess)
-		return 0;
+		return -1;							// nothing came off (the sequence rolled it back)
 
 	return (int32)cleared.size();
 }

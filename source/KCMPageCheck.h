@@ -75,11 +75,13 @@ void KCMPageCheckSweepClosedDocs();
 void KCMPageCheckClearAllDocs();
 
 // Drop ONE document's ticks -- the flyout item "Clear Checks in This Document" (2026-09-04).
-// It notifies the pages it cleared, so the Pages panel's thumbnails follow, and invalidates the
-// document so the layout view does too.
+// The pictures follow through the marks observer, as for the toggle.
 // ⚠**The page set has to be read before the ticks go**, which is why this lives here rather than
-//   being spelled out by the caller: afterwards no one can say which pages carried a tick.
-// @return how many ticks were dropped (0 for a nil db, or for a document holding none).
+//   being spelled out by the caller: afterwards no one can say which pages carried a tick. It is
+//   read from the document (the store brought back to it first), so a page deleted since the last
+//   write is not handed to the write - which then fails as a whole.
+// @return how many ticks were dropped (0 for a nil db, or for a document holding none), or -1 when
+//   the write failed and none were.
 int32 KCMPageCheckClearDoc(IDataBase* db);
 
 // (KCMPageCheckPruneToMarked was declared here and REMOVED on 2026-09-04, together with its two

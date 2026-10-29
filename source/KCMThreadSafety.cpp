@@ -97,6 +97,11 @@ void KCMSetExportCloneOnThisThread(IDataBase* db)
 	tl_ExportCloneDB.Set(db);
 }
 
+bool16 KCMIsExportCloneOnThisThread(IDataBase* db)
+{
+	return (db != nil && db == tl_ExportCloneDB.Get()) ? kTrue : kFalse;
+}
+
 void KCMForgetDocumentId(IDataBase* db)
 {
 	boost::recursive_mutex::scoped_lock lock(KCMMarkStateMutex());

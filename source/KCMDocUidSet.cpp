@@ -32,10 +32,12 @@ KCMDocUidSet::Map::const_iterator KCMDocUidSet::FindDoc(IDataBase* db) const
 	Map::const_iterator it = fMap.find(db);
 	if (it != fMap.end())
 		return it;						// the main thread's ordinary route settles here, as it always did
+	if (!KCMIsExportCloneOnThisThread(db))
+		return fMap.end();				// not the clone this thread exports: a placed copy of the document, say
 	for (it = fMap.begin(); it != fMap.end(); ++it)
 	{
 		if (KCMIsSameDoc(it->first, db))
-			return it;					// a background thread's clone is caught here
+			return it;					// the export's clone is caught here
 	}
 	return fMap.end();
 }

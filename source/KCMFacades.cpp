@@ -536,14 +536,23 @@ CREATE_PMINTERFACE(KCMMarkData, kKCMMarkDataImpl)
 
 // "cleared chk3" / "cleared paw0" for the status line. The two clear items say the same thing
 // about different marks, so the lines that build it are written once.
+// ⚠**A write that failed (n < 0) says so** - the words the Check toggle uses (KCMPageCheck.cpp): a
+//   "cleared chk0" over ticks still standing was the line a failed write used to leave.
 // ⚠**The untranslatable mark (KCMSentence) is what keeps the reader from being shown the key itself** -- the
 //   reason every literal put on this line needs the mark is with KCMNotifyStatus in
 //   KCMModelNotify.h.
-static void KCMSayCleared(const char* what, int32 n)
+// @return how many went - 0 for a failed write.
+static int32 KCMSayCleared(const char* what, int32 n)
 {
+	if (n < 0)
+	{
+		KCMSayStatus("Could not write the marks into the document.", kTrue /*forceRedrawNow*/);
+		return 0;
+	}
 	PMString msg(KCMSentence(what));
 	msg.AppendNumber(n);
 	KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
+	return n;
 }
 
 class KCMPageFlagsFacade : public CPMUnknown<IKCMPageFlagsFacade>
@@ -582,21 +591,13 @@ public:
 	virtual bool16	PageCheckHasAny(IDataBase* db)	{ return KCMPageCheckHasAny(db); }
 	virtual int32	ClearChecksInDoc(IDataBase* db)
 					{
-						const int32 n = KCMPageCheckClearDoc(db);
-						KCMSayCleared("cleared chk", n);
-						return n;
+						return KCMSayCleared("cleared chk", KCMPageCheckClearDoc(db));
 					}
 	virtual int32	ClearPawsInDoc(IDataBase* db)
 					{
-						// The count is read FIRST: KCMPawStampClearDoc answers nothing, and once it
-						//   has run there is nothing left to count. (Its tick counterpart returns the
-						//   number itself, because it has to read the page set before clearing
-						//   anyway -- the write needs that set.)
-						const int32 n = KCMPawStampCount(db);
-						if (n > 0)
-							KCMPawStampClearDoc(db);	// writes the document; the observer redraws
-						KCMSayCleared("cleared paw", n);
-						return n;
+						// The count comes back from the clear, as the tick's does: it is read after the
+						//   store is brought back to the document, and a failed write answers -1.
+						return KCMSayCleared("cleared paw", KCMPawStampClearDoc(db));	// writes the document; the observer redraws
 					}
 
 	// The paw that points where it was dragged.

@@ -110,6 +110,17 @@ bool16 KCMIsSameDoc(IDataBase* a, IDataBase* b);
 void KCMSetExportCloneOnThisThread(IDataBase* db);
 
 //----------------------------------------------------------------------------------------
+// Is db the clone this execution context is exporting (set above)? The one database a store kept
+// by a document's pointer may still look up by identity when the pointer misses (KCMDocUidSet's
+// FindDoc, KCMPawStamp.cpp's KCMPawFindDoc). An export's clone names the same file as the
+// document it was made of - and so does a document PLACED into another one, which is opened from
+// that file and drawn into the other document's print and PDF. The stores answer for the clone
+// and only for it (measured: the ticks and the cat paws of a placed .indd printed in the host's
+// PDF, with Print comparison marks on).
+//----------------------------------------------------------------------------------------
+bool16 KCMIsExportCloneOnThisThread(IDataBase* db);
+
+//----------------------------------------------------------------------------------------
 // A document is closing (main thread, kBeforeCloseDoc - KCMDocResponder.cpp): the ID kept for
 // it goes, so an address that comes back as another document is not taken for this one.
 //----------------------------------------------------------------------------------------

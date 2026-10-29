@@ -40,6 +40,7 @@
 #include "KCMCore.h"			// KCMIsDocDBOpen (the liveness test, pointer comparison only)
 #include "KCMPageCheck.h"		// KCMPageCheckIsChecked -- a page's tick has to survive a paw write
 #include "KCMPageMarksCmd.h"	// KCMPageMarks / KCMMarksWrite -- the only door to a change
+#include "KCMPageMarksDoc.h"	// KCMMarksSyncFromDocument -- what the document says, before a clear
 #include "KCMThreadSafety.h"	// KCMIsSameDoc / KCMMarkStateLock / KCMMarkStateMutex
 
 #include <map>
@@ -76,10 +77,14 @@ static KCMPawMap::iterator KCMPawFindDoc(IDataBase* db)
 	if (it != sPaws.end())
 		return it;						// the main thread's ordinary route settles here
 
+	// Only the clone this thread exports is looked for by identity (KCMIsExportCloneOnThisThread says why: a placed
+	//   copy of the document names the same file, and its paws printed in the other document's PDF).
+	if (!KCMIsExportCloneOnThisThread(db))
+		return sPaws.end();
 	for (it = sPaws.begin(); it != sPaws.end(); ++it)
 	{
 		if (KCMIsSameDoc(it->first, db))
-			return it;					// a background thread's clone is caught here
+			return it;					// the export's clone is caught here
 	}
 	return sPaws.end();
 }
@@ -367,19 +372,26 @@ void KCMPawStampReplaceAll(IDataBase* db, const std::vector<KCMPawStamp>& in)
 // Forgetting
 //========================================================================================
 
-void KCMPawStampClearDoc(IDataBase* db)
+int32 KCMPawStampClearDoc(IDataBase* db)
 {
 	if (db == nil)
-		return;
+		return 0;
 
-	// Which pages carry a paw. ★By pointer, deliberately: "clear the document in front of me" is a
-	//   main-thread request about one document, the same reasoning as rule 3.
+	// ⚠THE STORE IS BROUGHT BACK TO WHAT THE DOCUMENT SAYS FIRST (KCMMarksSyncFromDocument). It goes on
+	//   naming a page after the page is deleted, and the write below fails as a whole on a page that is
+	//   gone - the paws stayed, and the status line said how many had come off (measured).
+	KCMMarksSyncFromDocument(db, nil, nil);
+
+	// Which pages carry a paw, and how many paws there are. ★By pointer, deliberately: "clear the
+	//   document in front of me" is a main-thread request about one document, the same reasoning as rule 3.
 	std::set<UID> pages;
+	int32 paws = 0;
 	{
 		KCMMarkStateLock lock(KCMMarkStateMutex());
 		KCMPawMap::const_iterator entry = sPaws.find(db);
 		if (entry == sPaws.end())
-			return;
+			return 0;
+		paws = (int32)entry->second.size();
 		for (size_t i = 0; i < entry->second.size(); ++i)
 			pages.insert(entry->second[i].fPageUID);
 	}
@@ -389,7 +401,7 @@ void KCMPawStampClearDoc(IDataBase* db)
 	for (std::set<UID>::const_iterator it = pages.begin(); it != pages.end(); ++it)
 		wanted.push_back(KCMPageMarks(*it, KCMPageCheckIsChecked(db, *it)));
 
-	KCMMarksWrite(db, wanted, "Clear Cat Paws");
+	return (KCMMarksWrite(db, wanted, "Clear Cat Paws") == kSuccess) ? paws : -1;
 }
 
 int32 KCMPawStampClearPage(IDataBase* db, UID pageUID)

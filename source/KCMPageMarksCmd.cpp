@@ -26,6 +26,7 @@
 #include "KCMMarksObserver.h"		// KCMMarksEnsureObserver -- the listener has to be there first
 #include "KCMPageMarksCmd.h"
 #include "KCMPageMarksDoc.h"		// KCMMarksWriteOnePage -- the label format lives over there
+#include "KCMDiag.h"				// KCM_DIAG_FAULT("marks-write-fail") - a failed write, measured (test builds only)
 
 //========================================================================================
 // The parameter interface.
@@ -109,6 +110,14 @@ void KCMPageMarksCmd::Do()
 
 	IDataBase* const db = fItemList.GetDataBase();
 	if (db == nil)
+	{
+		ErrorUtils::PMSetGlobalErrorCode(kFailure);
+		return;
+	}
+
+	// A test build can make the whole write fail here, as a page it cannot read makes it fail: what
+	// the callers say then is measured (KCMDiag.h, marks-write-fail).
+	if (KCM_DIAG_FAULT("marks-write-fail"))
 	{
 		ErrorUtils::PMSetGlobalErrorCode(kFailure);
 		return;

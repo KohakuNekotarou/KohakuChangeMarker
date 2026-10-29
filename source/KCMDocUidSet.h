@@ -103,7 +103,9 @@ private:
 	//   (the asynchronous PDF export) always misses**: it is handed a clone with a different
 	//   pointer, and the registered pages' green "/" and the ticks would be absent from the
 	//   export. When the pointer misses, the lookup falls back on **file identity
-	//   (KCMIsSameDoc)**.
+	//   (KCMIsSameDoc)** - **for the clone this thread exports and nothing else**
+	//   (KCMIsExportCloneOnThisThread): a document placed into another one names the same file too,
+	//   and with any database let through, its ticks printed in the other document's PDF (measured).
 	//   @warning only the readers (Contains / HasAny / CountIn / CollectInto) go through this.
 	//     **The writers must not**: writing always happens on the main thread and means "add to
 	//     this very db", so growing a clone's entry would be the wrong document, not a rescue.

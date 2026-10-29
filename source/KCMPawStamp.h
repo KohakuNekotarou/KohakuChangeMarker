@@ -180,8 +180,11 @@ void KCMPawStampGetForSave(IDataBase* db, std::vector<KCMPawStamp>& out);
 	  the entry, which keeps the "an entry that exists has something in it" promise. */
 void KCMPawStampReplaceAll(IDataBase* db, const std::vector<KCMPawStamp>& in);
 
-/** Drop every stamp of one document (the flyout's "clear"). */
-void KCMPawStampClearDoc(IDataBase* db);
+/** Drop every stamp of one document (the flyout's "clear"). The store is first brought back to what
+	the document says, so a page deleted since the last write is not handed to the write.
+	@return how many paws went (0 for a document carrying none), or -1 when the write failed and none
+	  did - the caller says so. */
+int32 KCMPawStampClearDoc(IDataBase* db);
 
 /** Drop every stamp on ONE page -- Shift + DOUBLE click (2026-09-07, the user's request).
 	The page's tick is left exactly as it was: this clears paws, and a write says what the whole
