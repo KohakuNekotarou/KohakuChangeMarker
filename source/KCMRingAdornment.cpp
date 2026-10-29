@@ -72,9 +72,11 @@
 #include "KCMConstants.h"				// kKCMStoryId* - the labels' sizes and reach
 #include "KCMRingAdornment.h"
 #include "KCMExternalSource.h"			// KCMIsExternalSource - a clone is never written
+#include "KCMCore.h"					// KCMIsDocDBOpen - is a synchronous export's document still open
 #include "KCMDrawEventHandler.h"		// DrawSpreadMarks (the drawing) / the mark-state statics / KCMQueryMarkFont
 #include "KCMThreadSafety.h"			// KCMMarkStateMutex/Lock, taken to read sEntries and the story holder tables;
 										// KCMSetExportCloneOnThisThread
+#include "KCMDiag.h"					// KCM_DIAG_LOG - the export's events, in a test build only
 
 //========================================================================================
 // Registration state
@@ -958,6 +960,10 @@ CREATE_PMINTERFACE(KCMRingAdornmentStartup, kKCMRingAdornmentStartupImpl)
 //     trap caught this code once already (the comment in Register).
 // One thread never exports two documents at once, the events being the straight line
 //   `BeginExport -> drawing -> EndExport`, so one of these is enough.
+//   @warning **the line can break off**: a cancelled export sends no EndExport (measured 2026-10-30, an
+//     asynchronous one: BeginExport, one page, the cancel, and nothing more), and the flag would stay up
+//     naming a clone that went with it. The next BeginExport on the thread forgets it without touching
+//     it (KCMForgetStaleExportOnThisThread).
 static IDThreading::ThreadLocal<IDataBase*> tl_ExportingDB(nil);
 
 
@@ -983,6 +989,25 @@ static void KCMEndExportOnThisThread()
 	//   point **the entry does not leave the list** (measured: it stayed at `xp 0->4`).
 	tl_ExportingDB.Set(nil);
 	KCMSetItemXPState(db, kKCMXPListRemove);
+}
+
+/** A new export (BeginExport) found this thread still flagged: an earlier export on it ended without
+	EndExport (a cancelled one sends none). On a background thread the flag names that export's clone,
+	gone with it - forgotten, never touched (taking it off the list would read a freed database). On the
+	main thread (a synchronous export) it names the document itself, which may still be open and then
+	still on the list: taken off only when it is open now (asked of the document list by pointer; a lent
+	Task Start clone is never written). */
+static void KCMForgetStaleExportOnThisThread()
+{
+	KCMSetExportCloneOnThisThread(nil);
+	IDataBase* const stale = tl_ExportingDB.Get();
+	if (stale == nil)
+		return;
+	tl_ExportingDB.Set(nil);		// before the notification, as in KCMEndExportOnThisThread
+	KCM_DIAG_LOG("PDF-EXPORT a flag left by an export that never ended: %p (%s)", (void*)stale,
+		KCMIsMainThread() ? "main" : "bg");
+	if (KCMIsMainThread() && !KCMIsExternalSource(stale) && KCMIsDocDBOpen(stale))
+		KCMSetItemXPState(stale, kKCMXPListRemove);
 }
 
 /** An export has begun, or a book export has moved to another document. Join the list, but only
@@ -1069,13 +1094,24 @@ bool16 KCMPDFExportSetup::PDFProcessEvent(PDFExportEvent* ev, int32 /*pageNum*/)
 {
 	if (ev != nil)
 	{
+		// Test build only: every event, with what this thread holds as "being exported" before it is handled -
+		// what tells whether an export stopped half-way (cancelled, failed) still sends EndExport, which the
+		// thread-local flag relies on (the threading header re-read's 22).
+		KCM_DIAG_LOG("PDF-EXPORT event=%d db=%p thread=%s exporting=%p", (int)ev->id, (void*)ev->db,
+			KCMIsMainThread() ? "main" : "bg", (void*)tl_ExportingDB.Get());
 		switch (ev->id)
 		{
-			// The second case is a book export moving on to another document (measured with a
-			// two-chapter book).
+			// A new export. Whatever this thread still holds is from an export that never reached
+			// EndExport (a cancelled one sends none), so it is forgotten first, untouched.
+			case kPDFExportEventBeginExport:
+				KCMForgetStaleExportOnThisThread();
+				KCMBeginExportOn(ev->db);
+				break;
+
+			// A book export moving on to another document (measured with a two-chapter book): the
+			// previous chapter's db is alive (the same export), and KCMBeginExportOn takes it off first.
 			// @warning without kPDFExportEventNewDocument, using only the db from BeginExport,
 			//   **every chapter from the second on works against the wrong document**.
-			case kPDFExportEventBeginExport:
 			case kPDFExportEventNewDocument:
 				KCMBeginExportOn(ev->db);
 				break;
