@@ -29,13 +29,8 @@ static const int32 kKCMThumbRingDivisor = 8;	// Ring radius = image width / this
 // The border and the slash need different divisors even though they want the same weight:
 // a border is spread over four edges and reads thinner than a single stroke.
 static const int32 kKCMThumbBorderDivisor = 6;	// Changed-page border: page short side / this (about 16.7%).
-static const int32 kKCMThumbDiagDivisor = 10;	// "/" slash (green = registered, red = overset): short side / this (10%).
+static const int32 kKCMThumbDiagDivisor = 10;	// "/" slash (green = registered, red = not compared): short side / this (10%).
 static const PMReal kKCMThumbMarkOpacity = 0.75;	// Border and "/" on thumbnails. Slightly see-through, same weight as the 75% radio.
-
-// ---- Find Overset "+" (Pages panel thumbnails only, never on the canvas) ----------------
-static const PMReal kKCMOversetCrossOpacity = 1.0;	// Opaque, so the red stroke and its white halo stay crisp. Denser than the border and "/" (0.75).
-static const PMReal kKCMOversetCrossHalfRatio = 0.20;	// Half-length of each arm = page short side * this. Both arms are the same length, so the horizontal one spans 40% of the width.
-static const int32 kKCMOversetCrossWidthDivisor = 8;	// Red stroke = short side / this, thicker than the "/" divisor. The white halo is drawn at 2.2x that width. KCMDrawEventHandler clamps the stroke at short side / 3, so lowering this past 3 has no further effect.
 
 static const uint8 kKCMRingAlpha = 255;	// Alpha of the ring pixels themselves (0..255). Always opaque; the visible density is applied afterwards with setopacity.
 // Ring opacity, picked by the panel radio "Marks opacity 25% / 75%". The choice applies
@@ -80,18 +75,17 @@ static const int32  kKCMProgressBarDelayMs = 3000;
 // by at least one tick".
 static const int32  kKCMChapterProgressSpan = 1000;
 
-// How one chapter's span is divided between the three judgements (2026-09-10). They must SUM to
-// kKCMChapterProgressSpan -- there is no code that checks it, so the sum is the thing to re-add
-// after changing any one of them.
+// How one chapter's span is divided between the three judgements (2026-09-10). Two numbers for
+// three: the resources judgement, the last, has the rest of kKCMChapterProgressSpan - the next
+// chapter's slice begins at the next span (KCMCompareBooks) - so there is no sum to keep.
 // ★THE SHARES ARE THE MEASURED COSTS, NOT EQUAL THIRDS. The pixels are the only phase that can
 //   report from inside itself (page by page), and they are most of the time on an unchanged
 //   chapter. The story judgement reads change counters, composes nothing and is over at once. The
 //   resources judgement is two whole-document XML exports, 200-2400ms. Equal thirds would leave
 //   the needle sitting still through the two phases that take the time and jumping through the one
 //   that does not, which is worse than no bar: it would say the work is elsewhere.
-static const int32  kKCMBookPixelPhaseTicks     = 700;
-static const int32  kKCMBookStoryPhaseTicks     = 50;
-static const int32  kKCMBookResourcesPhaseTicks = 250;
+static const int32  kKCMBookPixelPhaseTicks = 700;
+static const int32  kKCMBookStoryPhaseTicks = 50;
 
 // Ring color: red by default. Over pixels that are themselves reddish a translucent red ring
 // disappears into the page, so it switches to cyan per pixel. Cyan is the complement of red

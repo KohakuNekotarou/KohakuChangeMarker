@@ -115,14 +115,14 @@ PMReal KCMDrawEventHandler::sPeekOpacity = 1.0;	// default opaque (Shift peek). 
 // the shared line and draws a 1px line into the neighbouring (unchanged) page. Coming in about
 // 1pt prevents that.
 //
-// **The width passed to rectclip can never go negative.** The four functions that use this
-// (KCMDrawEntryOnPage / KCMDrawPageBorder / KCMDrawPageDiagonal / KCMDrawPageCrossOutlined) hand
+// **The width passed to rectclip can never go negative.** The functions that use this
+// (KCMDrawEntryOnPage / KCMDrawPageBorder / KCMDrawPageDiagonal / KCMDrawPageCheck) hand
 // `pr.Width() - kKCMClipInset * 2.0` straight to rectclip, so a page narrower than 2.0pt would
 // pass a negative width. Measured: **the minimum page width InDesign allows is 114.38-114.39pt**
 // (about 1.5888 inch, 40.4mm) -- anything smaller assigned to documentPreferences.pageWidth is
 // rejected with "the value is out of range" (30481), and zeroing the margins and columns does not
 // move that floor. (The maximum is 15,551.996pt = 216.000 inch = 5486.4mm.)
-// So even the smallest page is 57 times the inset, and **no guard is needed in those four
+// So even the smallest page is 57 times the inset, and **no guard is needed in those
 // functions** -- adding one only adds unreachable code.
 static const PMReal kKCMClipInset = 1.0;
 
@@ -1342,62 +1342,6 @@ static void KCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageUID
 
 
 //========================================================================================
-// A large "+" across the page, drawn as a red line with a white halo (Pages panel thumbnails
-// only). Used by the flyout's "Find Overset" to make the pages holding overset stand out in the
-// Pages panel. **It is never drawn on the canvas** (the reader's decision).
-//   The thick white line is stroked first and the slightly thinner red one over it, giving red with
-//   a white edge. Vector lines, so they survive a tiny thumbnail (the thickness is a fixed fraction
-//   of the page's short side, as the "/" is).
-//   Thumbnails are generated with no view (sxr = 0), which is why the thickness cannot come from
-//   the zoom.
-//========================================================================================
-static void KCMDrawPageCrossOutlined(IGraphicsPort* gPort, IDataBase* db, UID pageUID)
-{
-	PMRect pr;
-	if (!KCMQueryPageRect(db, pageUID, pr))
-		return;
-
-	// The red line's thickness is the page's short side over its own divisor (thicker than the "/").
-	// The white halo is stroked wider so it shows on both sides.
-	const PMReal minDim = std::min(pr.Width(), pr.Height());
-	PMReal redW = minDim / PMReal(kKCMOversetCrossWidthDivisor);
-	const PMReal maxW = minDim / PMReal(3.0);
-	if (redW > maxW) redW = maxW;
-	if (redW < PMReal(0.5))
-		return;
-	const PMReal whiteW = redW * PMReal(2.2);	// the halo, about 0.6 * redW proud on each side
-
-	const PMReal cx = (pr.Left() + pr.Right()) / PMReal(2.0);	// the page's centre X
-	const PMReal cy = (pr.Top()  + pr.Bottom()) / PMReal(2.0);	// and centre Y
-	// Both arms are the same length: half is the short side times kKCMOversetCrossHalfRatio, so the
-	// horizontal arm spans twice that -- 40% of the short side each way.
-	const PMReal half = minDim * PMReal(kKCMOversetCrossHalfRatio);
-
-	AutoGSave ag(gPort);
-	// Clipped about 1pt in, like the other marks, so nothing reaches the spine's shared line.
-	gPort->rectclip(pr.Left()   + kKCMClipInset, pr.Top()    + kKCMClipInset,
-	                pr.Width()  - kKCMClipInset * 2.0, pr.Height() - kKCMClipInset * 2.0);
-	gPort->setopacity(kKCMOversetCrossOpacity, kFalse);	// opaque, so it stays crisp
-
-	// 1) the white halo (the thick line) first.
-	gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
-	gPort->setlinewidth(whiteW);
-	gPort->newpath();
-	gPort->moveto(cx - half, cy);   gPort->lineto(cx + half, cy);	// horizontal, centred, 2*half long
-	gPort->moveto(cx, cy - half);   gPort->lineto(cx, cy + half);	// vertical, the same length
-	gPort->stroke();
-
-	// 2) the red body (the thinner line) over it.
-	gPort->setrgbcolor(kKCMRingR / PMReal(255.0), kKCMRingG / PMReal(255.0), kKCMRingB / PMReal(255.0));
-	gPort->setlinewidth(redW);
-	gPort->newpath();
-	gPort->moveto(cx - half, cy);   gPort->lineto(cx + half, cy);	// horizontal, centred, 2*half long
-	gPort->moveto(cx, cy - half);   gPort->lineto(cx, cy + half);	// vertical, the same length
-	gPort->stroke();
-}
-
-
-//========================================================================================
 // A tick drawn with vector lines at the centre of a page, in a given colour, for pages marked with
 // "Check". Two destinations, selected by layoutStyle:
 //   kFalse = the Pages panel's thumbnail: size = short side * 0.52, thickness = the same fixed
@@ -2326,15 +2270,6 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		}
 	}
 
-	// Find Overset's marks, thumbnail version. Only while generating the Pages panel thumbnails of
-	//   the document that was scanned (sOversetDB), the pages holding overset (sOversetPages) get
-	//   (a) the same red border a changed page gets (KCMDrawPageBorder) and (b) a red "+" with a
-	//   white halo at the centre.
-	//   The border was once removed in favour of the "+" alone and then brought back: the cross by
-	//   itself is hard to spot, and visibility beat distinguishability. **Nothing is drawn on the
-	//   canvas.** It is independent of the comparison and the ticks, so it appears while sOversetOn
-	//   even with nothing armed (an overset check has a result whether or not documents are being
-	//   compared).
 	// (The overset "+" was drawn into the Pages panel thumbnail here -- a red page border and
 	//  a red-with-white-halo cross. Find Overset went on 2026-09-08; the Preflight panel does
 	//  the job and can jump to the place.)
