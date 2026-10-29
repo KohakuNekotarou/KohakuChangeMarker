@@ -282,7 +282,7 @@ void				KCMEndTrackListing();
 // What does NOT work, and was tried: IPagesSubPanelController::InvalidatePageWidget /
 // InvalidateSpreadWidget, UpdatePagesPanel's bForcePurge, and the global thumbnail setting toggle.
 // ForceRedraw is load-bearing in the current implementation. The reasoning is at the head of
-// KCMThumbnailRefresh.cpp and in memory kescm-pages-panel-thumbnails.
+// KCMThumbnailRefresh.cpp and in memory pages-panel-thumbnail-refresh.
 
 // Call this just after a document is closed (the kAfterCloseDoc responder). It checks every
 // tracked database (marks, images of the older version, the peek arm) against IDocumentList and

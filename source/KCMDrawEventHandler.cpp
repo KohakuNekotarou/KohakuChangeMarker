@@ -83,7 +83,6 @@ bool16 KCMDrawEventHandler::sMarkColorCyan = kFalse;	// default red. kTrue = cya
 bool16 KCMDrawEventHandler::sShowOldNumbers = kFalse;	// default off (the flyout's "Show Original Page Numbers")
 bool16 KCMDrawEventHandler::sMarksTempHidden = kFalse;	// with "Always Show Marks on Target" on, kTrue only while the tool's left button is held over the Target window
 bool16 KCMDrawEventHandler::sRingFrameOff = kFalse;	// the report's switch (the header); off = the page frame is part of every ring image
-bool16 KCMDrawEventHandler::sMarksOnPage = kFalse;	// ★off, and it has to be: ordinary drawing draws the spread, so leaving it on would draw every mark twice (the header says why it exists)
 bool16 KCMDrawEventHandler::sReportExport = kFalse;	// the report's other switch (the header): its exports are running
 bool16 KCMDrawEventHandler::sSrcMarksPressed = kFalse;	// kTrue only while the button is held over the Source window. It records "pressed", not "hidden" -- the drawing XORs it with sSrcMarksOn (see the declaration)
 bool16 KCMDrawEventHandler::sSrcMarksOn = kFalse;	// default off (the flyout's "Always Show Marks on Source"). Start does not touch it: the setting is saved in the panel state and restored at start-up, so a Start that overwrote it would wipe the reader's choice
@@ -1640,7 +1639,10 @@ static void KCMDrawPawWord(IGraphicsPort* gPort, const PMString& text,
 			ln.SetTranslatable(kFalse);
 			if (!one.empty())
 				ln.SetUTF8String(one);
-			const int32 n = ln.NumUTF16TextChars();
+			// Counted in characters, the unit Truncate takes off the end. NumUTF16TextChars counts a
+			// character outside the BMP (an emoji, a rare kanji) twice, which cut a line holding
+			// such characters one character short for each of them.
+			const int32 n = ln.CharCount();
 			if (n > kKCMPawTextMaxChars)
 				ln.Truncate(n - kKCMPawTextMaxChars);
 			lines.push_back(ln);
@@ -1903,7 +1905,8 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   @warning what remains is that **the statics are shared but the db is not**: a background
 	//     thread is handed **a clone with a different pointer**, so a document's identity must never
 	//     be tested by pointer (KCMIsSameDoc, KCMThreadSafety.h).
-	//   To measure where a given draw is going, the probe is app.ktDrawProbe (KT/KTDrawProbe.cpp).
+	//   Where each kind of draw goes was measured with KT's app.ktDrawProbe, which went with the rest
+	//   of KT's tools on 2026-10-05; the flags it saw per destination are in memory draw-event-handler.
 	// Self-reference is handled by tl_Rasterizing above, so kPreviewMode is not consulted here.
 	const bool16 printing = (ded->flags & IShape::kPrinting) != 0;
 
@@ -1911,6 +1914,12 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// (the diagnostic log shows flags = 0x1800 = kPreviewMode | kDrawFrameEdge). In a thumbnail
 	// wantMarks below is forced on so that frames reach it as well (normally nothing is drawn with
 	// sPrintMarks and sMarksVisible off).
+	// ⚠**"Thumbnail" here means any view-less, non-printing kPreviewMode draw**, and the Pages panel
+	//   is not the only one: Kohaku InDesign MCP's `capture page:N` was measured carrying these
+	//   frames (2026-10-14, docs/ai-notes/kcm-pdf-export-check-live-2026-10-14.md section 3). The
+	//   screen never comes here -- every screen mode has a view, Preview and overprint preview
+	//   included (measured 2026-10-03) -- and KCM's own comparison rasters are turned back by
+	//   tl_Rasterizing above.
 	// In a thumbnail the loops below take their isThumb branch and call KCMDrawPageBorder (a frame)
 	// and KCMDrawPageDiagonal (a "/") instead of the difference ring image, at a fixed ratio
 	// thickness that survives the size. The opacity is kKCMThumbMarkOpacity (0.75).
@@ -2204,7 +2213,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	}
 
 	// The drawing mode (thumbnail generation returned earlier, so it cannot arrive here).
-	int32 drawMode = printing ? kKCMDrawModePrint : kKCMDrawModeScreen;
+	const int32 drawMode = printing ? kKCMDrawModePrint : kKCMDrawModeScreen;
 
 	// For print and PDF, fix the appearance at "100% display" (no zoom tracking). A printing port
 	// has no view, so sxr is 0; giving it an effective 1.0 (100%, device scale 1) makes the ring
@@ -2212,22 +2221,6 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// zoom-adaptive formula can be reused unchanged.
 	if (printing)
 		sxr = 1.0;
-
-	// ★★★THE REPORT'S IN-MEMORY PAGE EXPORT TAKES THE SCREEN ROUTE, and this is the one place
-	//   that decides it. kPDFExportItemsCmdBoss draws ITEMS: it never flattens a page, so the
-	//   print route's alpha server is never resolved and its fill comes out as A SOLID BLOCK -
-	//   the failure KCMDrawEntryOnPage's own comment describes, and the one the user saw as
-	//   "that looks like 75% when the panel says 25%" (2026-09-14). Declaring the transparency
-	//   does not help here: there is no flattener pass to resolve it in.
-	//   The screen route is an image() blit, which honours the pixels' alpha and the opacity set
-	//   on the port - no flattener needed - so it gives the panel's 25%/75% in the PDF.
-	// ⚠sxr has to be set too: it is the ring THICKNESS as well as the opacity gate
-	//   ((sxr <= 0) blits opaque, for thumbnails), and with no view it is 0.
-	if (sMarksOnPage)
-	{
-		drawMode = kKCMDrawModeScreen;
-		sxr = 1.0;					// the thickness 100% on screen gives, and past the thumbnail gate
-	}
 
 	// The "Check" tick, thumbnail version: a blue tick at the centre of a ticked page's thumbnail.
 	//   Completely independent of the other marks (the rings, the slashes, the Source toggle): this

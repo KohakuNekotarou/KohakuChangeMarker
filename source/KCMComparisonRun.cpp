@@ -343,9 +343,13 @@ bool16 KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMStr
 	// pointer for one document, which nothing here has established.
 	//   ★**Its background-thread half does not come into it here** (a clone db is a different
 	//   pointer naming the same file): this runs from a menu, so both sides are the main thread's
-	//   own databases and the answer is settled by the pointer test at its head. Going through it
-	//   anyway is what keeps the one question in one place -- and what stops the next reader from
-	//   having to work out whether this spot is the exception.
+	//   own databases. ⚠**Only "one pointer" is settled at its head**: two different documents go
+	//   on to the file and, when either has none, to the document ID (KCMThreadSafety.cpp) -- the
+	//   door where an older-version .indd, which opens converted and without a file of its own, is
+	//   suspected of being taken for the same document as a saved copy of it (2026-09-25, not
+	//   measured: docs/ai-notes/kcm-converted-chapter-proposal-2026-09-25.md section 3). Going
+	//   through it anyway is what keeps the one question in one place -- and what stops the next
+	//   reader from having to work out whether this spot is the exception.
 	//
 	// ⚠**The message names both ways out**, because this case is reached from two different
 	// mistakes and their remedies are not the same. Choosing one document for both is the obvious

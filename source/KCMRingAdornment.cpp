@@ -46,9 +46,8 @@
 #include "ITextFrameColumn.h"			// one column, asked which item holds it
 #include "ITextUtils.h"					// QuerySplineFromTextFrame - a column's item, the official way
 #include "ITOPFrameData.h"				// text on a path: the column names the main spline the reader sees
-#include "IHierarchy.h"					// the page route: a page's spread
+#include "IHierarchy.h"					// the item holding a story's column (QuerySplineFromTextFrame answers one)
 #include "IGeometry.h"					// the item's own box, the label's place
-#include "SpreadID.h"					// kPageBoss - telling a PAGE from any other page item (the page route)
 #include "IGraphicsPort.h"				// selectfont / show / the stroke settings of the outline
 #include "GraphicTypes.h"				// kPMRoundJoin / kPMRoundCap
 #include "IControlView.h"				// GetContentToWindowMatrix - the zoom, for a label of fixed pixel size
@@ -498,68 +497,6 @@ PMRect KCMRingAdornmentShape::GetPaintedAdornmentBounds(IShape* iShape, Adornmen
 	return widened;
 }
 
-/** ★★★THE PAGE ROUTE (2026-09-14), and the whole of it is a change of coordinates.
-
-	The marks are drawn once per SPREAD, so DrawAdornment below turns back whenever what it is
-	handed is not one. That is right for the screen and for an ordinary export - the spread IS
-	drawn there - and it is why nothing reached a PDF made by kPDFExportItemsCmdBoss, which draws
-	THE ITEMS IT IS HANDED and never draws the spread (measured 2026-09-14: byte-identical with
-	sPrintMarks on and off; handing it the spread instead brought them, +3,031 bytes).
-
-	Handing it the spread is not the answer for the Before/After report, though: the box then is
-	the whole spread, **two pages wide on a facing-pages document**, and what the report wants is
-	one changed PAGE (the user, the same day). So the marks have to come to the page.
-
-	★A PAGE IS A PAGE ITEM (kPageBoss), so the global adornment is handed to it already - what was
-	  missing was the willingness to draw. All that stands in the way is the coordinate system:
-	  the drawing is written in SPREAD coordinates (it takes a page's box in spread coordinates
-	  and draws it), while the port, drawing a page, is in that page's inner coordinates.
-	  InnerToSpreadMatrix(page) takes page-inner -> spread, so its INVERSE turns the drawing's
-	  coordinates into the port's. Wrapped in gsave/grestore so nothing after this sees it.
-
-	@warning **guarded by sMarksOnPage, which is off by default.** In ordinary drawing the spread
-	  is drawn too, so leaving this on would draw every mark twice. */
-static void KCMDrawMarksForPage(IShape* iShape, GraphicsData* gd, int32 flags)
-{
-	IDataBase* const db = ::GetDataBase(iShape);
-	if (db == nil)
-		return;
-	InterfacePtr<IHierarchy> pageHier(iShape, UseDefaultIID());
-	InterfacePtr<IGeometry> pageGeo(iShape, UseDefaultIID());
-	if (pageHier == nil || pageGeo == nil)
-		return;
-	const UID spreadUID = pageHier->GetSpreadUID();
-	if (spreadUID == kInvalidUID)
-		return;
-	// The drawing reads an ISpread and an IDataBase off changedBy and nothing else (the comment
-	// at the call site below), so the spread's own boss is what it is given - while the port,
-	// and therefore the actual drawing, stays on the page.
-	InterfacePtr<ISpread> spread(db, spreadUID, UseDefaultIID());
-	if (spread == nil)
-		return;
-	IGraphicsPort* const gPort = gd->GetGraphicsPort();
-	if (gPort == nil)
-		return;
-
-	const PMMatrix spreadToPage = ::InnerToSpreadMatrix(pageGeo).Inverse();
-	gPort->gsave();
-	gPort->concat(spreadToPage);
-	// ★★★kPrinting IS ADDED, and the marks come out at the wrong density without it (measured
-	//   2026-09-14: the report's marks were opaque where the file route's are the panel's 25%,
-	//   and the user saw it at once - "that looks like 75%, when the panel says 25%").
-	//   WHY: this export is kPDFExportItemsCmdBoss, and it does NOT set kPrinting the way
-	//   kPDFExportCmdBoss does. The drawing then reads the flags as "screen", and a screen draw
-	//   with no view gives sxr = 0 - at which point KCMDrawEntryOnPage takes the branch
-	//   `(sxr <= 0) ? 1.0 : screenOpacity` and blits the ring OPAQUE. Printing sets sxr = 1.0,
-	//   which is both the right ring thickness and the right opacity.
-	// ⚠It is a statement of fact rather than a trick: this drawing IS going into output. The one
-	//   other flag that reads it, suppressForPrint, wants sPrintMarks on - which is exactly the
-	//   condition under which anything gets here at all.
-	DrawEventData ded(spread, gd, flags | IShape::kPrinting);
-	KCMDrawEventHandler::DrawSpreadMarks(&ded);
-	gPort->grestore();
-}
-
 void KCMRingAdornmentShape::DrawAdornment(IShape* iShape, AdornmentDrawOrder drawOrder,
 											GraphicsData* gd, int32 flags)
 {
@@ -577,19 +514,12 @@ void KCMRingAdornmentShape::DrawAdornment(IShape* iShape, AdornmentDrawOrder dra
 	InterfacePtr<ISpread> spread(iShape, UseDefaultIID());
 	if (spread == nil)
 	{
-		// ★THE PAGE ROUTE (2026-09-14), off unless something asked for it. See
-		//   KCMDrawMarksForPage above: an export that draws items and never draws the spread
-		//   would otherwise carry no marks at all, and handing it the spread instead costs the
-		//   page-sized box the report is built on.
-		// ⚠Asked by ClassID rather than by querying an interface: there is no IPage.h in the SDK,
-		//   and a page's distinguishing interfaces (IMargins, IColumns, IMasterPage) are the kind
-		//   of thing another boss could carry. The class is the question being asked.
-		if (KCMDrawEventHandler::sMarksOnPage)
-		{
-			IDataBase* const shapeDB = ::GetDataBase(iShape);
-			if (shapeDB != nil && shapeDB->GetClass(::GetUID(iShape)) == kPageBoss)
-				KCMDrawMarksForPage(iShape, gd, flags);
-		}
+		// (Until 2026-10-30 a page handed alone could carry the marks too: the page route, for
+		//  kPDFExportItemsCmdBoss, which draws the items it is handed and never the spread, behind
+		//  the switch sMarksOnPage. Nothing had turned the switch on since the PDF spike went
+		//  (2026-10-02), and the report exports with kPDFExportCmdBoss, so both went. The route
+		//  and what it measured (the page's coordinates, kPrinting for the density):
+		//  git log -S KCMDrawMarksForPage.)
 		KCMDrawStoryIdLabel(iShape, gd, flags);
 		return;
 	}
@@ -987,14 +917,13 @@ static IDThreading::ThreadLocal<IDataBase*> tl_ExportingDB(nil);
 
 /** Leave the db being exported. Called from `EndExport`, and when a book export moves on to the
 	next document. */
-// ★NOT static since 2026-09-14: the report's in-memory page exports call these two directly.
-//   They do NOT go through kPDFExportSetupService - that service is driven by the PDF export
-//   COMMAND, and kPDFExportItemsCmdBoss does not raise it - so without this pair the document
-//   never joins the transparency list, the flattener never runs, and KCMDrawRingForPrint's
-//   alpha server is never resolved: the marks come out as SOLID BLOCKS at full opacity, which
-//   is exactly what the user saw ("that looks like 75% when the panel says 25%"). The warning
-//   that predicted it is at the head of KCMDrawRingForPrint.
-void KCMEndExportOnThisThread()
+// The export service below (KCMPDFExportSetup) is the pair's only caller. An export that raises
+//   no kPDFExportSetupService events -- kPDFExportItemsCmdBoss, which writes a PDF into a stream
+//   -- would have to call the pair itself, or its marks come out as solid blocks; and only a
+//   SYNCHRONOUS one may, the declaration going up and down inside one call so that no save can
+//   bake it into the .indd (the reasoning beside kPDFExportSetupService below). The report's
+//   in-memory page exports did exactly that for a day (2026-09-14, git log -S KCMReportPlace).
+static void KCMEndExportOnThisThread()
 {
 	// The clone KCMIsSameDoc may read on this thread goes first, whether or not the list was joined (2026-10-29).
 	KCMSetExportCloneOnThisThread(nil);
@@ -1012,7 +941,7 @@ void KCMEndExportOnThisThread()
 
 /** An export has begun, or a book export has moved to another document. Join the list, but only
 	where transparency is going to arise. */
-void KCMBeginExportOn(IDataBase* db)
+static void KCMBeginExportOn(IDataBase* db)
 {
 	// A book's `NewDocument` comes here, so leave the previous chapter's db first.
 	// @warning forget this and every chapter from the second on **leaves the previous chapter's db on

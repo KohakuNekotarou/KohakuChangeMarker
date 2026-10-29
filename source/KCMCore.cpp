@@ -283,9 +283,16 @@ bool16 KCMIsPageOnHiddenSpread(IDataBase* db, UID pageUID)
 // be kPageBoss before being returned -- GetOwnerPageUID's contract says outright that it
 // **returns the spread's UID when the item is not on a page** (ILayoutUtils.h:102-107), and
 // without the check that spread UID is mistaken for a page.
+// ⚠**GetPageUIDRef counts a page's BLEED as the page** (KFC measured it, 2026-10-18): a frame
+//   standing in the bleed off page 1 comes back as page 1, where GetOwnerPageUID -- like the
+//   DOM's parentPage and the Pages panel -- says pasteboard. With the main route first, such a
+//   frame is named by the page it bleeds off. KFC asks GetOwnerPageUID first for that reason (its
+//   text rows have to say what its object rows say); whether KCM should too is an open question
+//   (docs/ai-notes/kcm-blockM3-inspections-2026-10-29.md, section 2), not a settled choice.
 //
-// KBS deliberately does NOT verify in the same place (KBSSearchEngine.cpp), because it wants to
-// spell a hit on the pasteboard as "PB". KCM only needs "a real page or nothing", so it verifies.
+// KFC deliberately does NOT verify in the same place (GetFramePageString in
+// model/KFCPageItemFacts.cpp, whose comment names this function back), because it wants to spell
+// a hit on the pasteboard as "PB". KCM only needs "a real page or nothing", so it verifies.
 // **The two differ because their purposes differ; do not "fix" one to match the other.**
 //========================================================================================
 UID KCMFramePageUID(IDataBase* db, UID frameUID)
@@ -329,9 +336,10 @@ IDataBase* KCMActiveDocDB()
 // -- and only one of the two copies carried the warning that follows.
 //
 // Getting a page's rectangle in pasteboard coordinates is the Facade's job; the worked example
-// snapshot/SnapTracker.cpp:610-616 does exactly this **for a page**, and :616-617 does the
-// containment test with the same official pair, **PMRect::Normalize()** (PMRect.h:622) and
-// **PMRect::PointIn()** (:814-816, a closed interval compared with PMReal's epsilon).
+// snapshot/SnapTracker.cpp:610-616 does exactly this **for a page**, and :617 tests the point with
+// **PMRect::PointIn()** (PMRect.h:814-816, a closed interval compared with PMReal's epsilon).
+// ⚠**The sample does not call Normalize()** -- its box goes from GetItemBounds straight to
+//   PointIn. **PMRect::Normalize()** (PMRect.h:622) is KCM's own step, for the reason below.
 // @warning the nil test and the Normalize both stay: the Facade guarantees neither that the item
 //   has geometry nor that the rectangle comes back normalised.
 // @warning **do not drop the Normalize.** PointIn is a plain comparison that assumes
