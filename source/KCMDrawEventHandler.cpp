@@ -36,6 +36,7 @@
 #include "IXPManager.h"				// GetDocumentBlendingSpace / ReleaseBlendingSpace (the PDF export's transparency group)
 #include "IViewPortAttributes.h"		// asking the port for kPDFExportVPAttr / kPDFIsFlattenerTargetVPAttr
 #include "OutPrvID.h"					// kSepPrvOPPEnabledVPAttr -- is overprint preview on
+#include "EPSID.h"						// kBuildingDLforPlacedINDDVPAttr -- is this a page placed from another .indd
 #include "PDFID.h"					// those two ViewPortAttr IDs (PDFID.h:1543-1544)
 #include "K2SmartPtr.h"				// K2::scoped_array / K2::scoped_ptr -- the SDK's own scoped ownership, so that
 									//   every exit from a function frees what it allocated. Worked examples in the
@@ -855,6 +856,13 @@ bool16 KCMIsOverprintPreview(GraphicsData* gd)
 {
 	IViewPortAttributes* const vpa = (gd != nil) ? gd->GetViewPortAttributes() : nil;
 	return (vpa != nil && vpa->GetAttr(kSepPrvOPPEnabledVPAttr, 0) != 0) ? kTrue : kFalse;
+}
+
+// KCMIsPlacedINDDDraw (declared in KCMDrawEventHandler.h, where the reasoning is).
+bool16 KCMIsPlacedINDDDraw(GraphicsData* gd)
+{
+	IViewPortAttributes* const vpa = (gd != nil) ? gd->GetViewPortAttributes() : nil;
+	return (vpa != nil && vpa->GetAttr(kBuildingDLforPlacedINDDVPAttr, 0) != 0) ? kTrue : kFalse;
 }
 
 

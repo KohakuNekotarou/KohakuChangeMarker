@@ -559,6 +559,16 @@ void KCMSetOutputColor(IGraphicsPort* gPort, uint8 r, uint8 g, uint8 b, bool16 u
 // (KCMRingAdornment.cpp) both ask it here. nil answers kFalse.
 bool16 KCMIsOverprintPreview(GraphicsData* gd);
 
+// Is this draw building the display list of a page PLACED from another .indd? Read off the
+// viewport's attribute (kBuildingDLforPlacedINDDVPAttr, EPSID.h - declared there, no caller in the
+// SDK; measured to be set). The page belongs to a copy of its document that InDesign opens without
+// a window, and what is drawn here goes into the HOST document's picture - its print and PDF.
+// KCM's marks belong to the document a reader works in, so nothing of KCM's is drawn into it
+// (measured: a placed page's tick and cat paw printed in the host's PDF, the copy carrying them in
+// its labels). The adornment's one entry asks it (KCMRingAdornmentShape::DrawAdornment). nil
+// answers kFalse.
+bool16 KCMIsPlacedINDDDraw(GraphicsData* gd);
+
 class IPMFont;
 
 // The application's default font, fetched once (on the main thread) and kept until Shutdown

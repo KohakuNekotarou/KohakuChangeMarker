@@ -556,6 +556,17 @@ void KCMRingAdornmentShape::DrawAdornment(IShape* iShape, AdornmentDrawOrder dra
 	if (drawOrder != kAfterShape || iShape == nil || gd == nil)
 		return;
 
+	// **Nothing of KCM's goes into a page placed from another .indd** (KCMIsPlacedINDDDraw): that page
+	//   is a copy of its document drawn into the HOST document's picture, and every mark below - the
+	//   rings, the slashes, the reader's ticks and paws, the story ID labels - belongs to the document
+	//   a reader works in, not to a picture of it in another one.
+	if (KCMIsPlacedINDDDraw(gd))
+	{
+		KCM_DIAG_LOG("PLACED-INDD a placed page's draw: no marks (db %p, %s)", (void*)::GetDataBase(iShape),
+			KCMIsMainThread() ? "main" : "bg");
+		return;
+	}
+
 	// **Being on the global list, this is reached once for every single page item on the spread.**
 	//   The marks are drawn once per spread, so everything that is not a spread is dropped here -
 	//   after the one thing that IS drawn per item, the story ID label (section 1.5; it answers
