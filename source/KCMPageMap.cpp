@@ -55,7 +55,7 @@
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 #include "KCMComparisonRun.h"	// KCMStopComparison
 #include "KCMPageMap.h"
-#include "KCMPagePairRule.h"	// KCMPairPagesByIdentity - THE pairing rule (pure; proved in work/kcm-pagepair-test)
+#include "KCMPagePairRule.h"	// KCMPairPagesByIdentity / KCMPartnerOf - THE pairing rule and the lookup in it (pure; proved in work/kcm-pagepair-test)
 #include "KCMRehydrate.h"		// KCMReadOriginUidLabel - a task-start copy's page names the origin's page
 #include "KCMDocUidSet.h"		// the shared "document -> page UID set" container (the tick uses it too)
 #include "KCMID.h"				// kKCMPageFlagsChangedMessage (the notification's ID)
@@ -127,16 +127,18 @@ bool16 KCMPageMapPagesOf(const UIDList& selection, bool16 includeMasters, IDataB
 	return kTrue;
 }
 
-// What to call the pages of this document in the status line: "added" on the Target, "removed"
-// on the Source, and the generic "added/removed" when no comparison is running or the document
-// is an unrelated one.
-static const char* KCMPageMapRoleWord(IDataBase* db)
+// Which side of the running comparison db is. Asked only past KCMIsComparedDoc, where db can only be
+// the Target or the Source, so there is no third answer. The menu's label (KCMPageMapGetToggleState)
+// and the status line's word (below) are both picked from this one answer.
+static KCMPageRole KCMPageMapRoleOf(IDataBase* db)
 {
-	if (db != nil && db == KCMArmedTargetDB())
-		return "added";
-	if (db != nil && db == KCMArmedSourceDB())
-		return "removed";
-	return "added/removed";
+	return (db == KCMArmedTargetDB()) ? kKCMPageRoleTarget : kKCMPageRoleSource;
+}
+
+// What to call a side's pages in the status line: "added" on the Target, "removed" on the Source.
+static const char* KCMPageMapRoleWord(KCMPageRole role)
+{
+	return (role == kKCMPageRoleTarget) ? "added" : "removed";
 }
 
 //========================================================================================
@@ -176,7 +178,7 @@ void KCMPageMapToggleSelectedPages(const UIDList& selection)
 	msg.Append(anyUnregistered ? "+" : "-");
 	msg.AppendNumber((int32)pages.size());
 	msg.Append(" ");
-	msg.Append(KCMPageMapRoleWord(db));
+	msg.Append(KCMPageMapRoleWord(KCMPageMapRoleOf(db)));
 
 	// The total is counted after the change (Erase has already dropped the document's entry when
 	// unregistering emptied it, so 0 comes back).
@@ -285,10 +287,9 @@ KCMPageToggleState KCMPageMapGetToggleState(const UIDList& selection)
 	else if (regCount > 0)
 		st.fTick = kKCMPageTickSome;		// only some = the mixed tick
 
-	// What the label is picked from. Past the guard above, db can only be the Target or the
-	//   Source, so there is no third, generic ("Added/Removed") label here -- that branch was
-	//   unreachable. kKCMPageRoleNone survives only as the default while fEnabled is kFalse.
-	st.fRole = (db == KCMArmedTargetDB()) ? kKCMPageRoleTarget : kKCMPageRoleSource;
+	// What the label is picked from (KCMPageMapRoleOf - past the guard above there are only the two
+	//   sides). kKCMPageRoleNone survives only as the default while fEnabled is kFalse.
+	st.fRole = KCMPageMapRoleOf(db);
 	return st;
 }
 
@@ -357,6 +358,9 @@ void KCMPageMapCollectRegistered(IDataBase* db, std::set<UID>& out)
 // decision, "UID only"); the flyout's "Pair Pages by UID" check toggle turns it off, which brings
 // the rule that stood until then back: by position. Session state, saved with the panel settings
 // by the UI (ui/KCMPanelState.cpp), like the folio exclusion.
+// Read and written on the main thread only: its one reader is KCMBuildPairing, which says why that
+// never runs on a background thread. A plain bool16 is enough for that; a background reader would
+// need std::atomic.
 //========================================================================================
 static bool16 sPairPagesByUid = kTrue;
 
@@ -385,8 +389,8 @@ void KCMSetPairPagesByUid(bool16 on)
 //   ordinary pages are probed for the label (two rather than one, so that a first page the
 //   write-back could not name does not hide a copy), and only when one of them carries it are the
 //   labels read for every page.
-// ⚠A page's label is a script label (IScript::GetTag), read here on the main thread only:
-//   KCMBuildPairing already refuses to run off it (RebuildOverflowCache).
+// ⚠A page's label is a script label (IScript::GetTag), read here on the main thread only - the
+//   one thread KCMBuildPairing runs on (it says why).
 //========================================================================================
 static void KCMSourcePageKeys(IDataBase* sourceDB, const std::vector<UID>& sourcePages, std::vector<UID>& outKeys)
 {
@@ -424,6 +428,11 @@ static void KCMSourcePageKeys(IDataBase* sourceDB, const std::vector<UID>& sourc
 //   being the overflow. It is kept for two documents that share no history (made separately,
 //   or one of them through IDML, which renumbers), whose UIDs mean nothing - they coincide by
 //   chance, so the identity rule would pair unrelated pages (KCMPagePairRule.h).
+//
+//   MAIN THREAD ONLY. Every caller runs on it, and the drawing's one road in from a background
+//   thread (the asynchronous PDF export) does not reach here: EnsureOverflowCache in
+//   KCMDrawEventHandler.cpp returns before rebuilding off the main thread. The pairing switch
+//   (sPairPagesByUid) and the label reads (KCMSourcePageKeys) lean on that.
 //========================================================================================
 void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages,
@@ -548,8 +557,10 @@ void KCMBuildMasterPairing(IDataBase* targetDB, IDataBase* sourceDB,
 //========================================================================================
 // KCMMapTargetToSource / KCMMapSourceToTarget (declared in KCMPageMap.h)
 //   Translate one page to its counterpart. The pairing is built by KCMBuildPairing and then
-//   searched linearly. Rebuilding it every time is cheap enough: a document holds a few hundred
-//   pages at most, and the callers only ask at the granularity of one spread, a handful of pages.
+//   searched linearly (KCMPartnerOf, KCMPagePairRule.h - the two directions and the two tables
+//   are one lookup, tested where Alt + hover, the one caller, cannot be). Rebuilding it every
+//   time is cheap enough: a document holds a few hundred pages at most, and the callers only ask
+//   at the granularity of one spread, a handful of pages.
 //
 // **Master spread pages resolve too** (they used to not, which showed up as the CMYK readout
 //   going blank on a master page). The master pairing (KCMBuildMasterPairing, by name) is
@@ -566,26 +577,12 @@ bool16 KCMMapTargetToSource(IDataBase* targetDB, IDataBase* sourceDB,
 	outSourcePageUID = kInvalidUID;
 	std::vector<UID> tPages, sPages;
 	KCMBuildPairing(targetDB, sourceDB, tPages, sPages);
-	for (size_t i = 0; i < tPages.size(); ++i)
-	{
-		if (tPages[i] == targetPageUID)
-		{
-			outSourcePageUID = sPages[i];
-			return kTrue;
-		}
-	}
+	if (KCMPartnerOf(tPages, sPages, targetPageUID, outSourcePageUID))
+		return kTrue;
 	// Master spread pages (paired by name), built only because the ordinary table missed.
 	std::vector<UID> mT, mS;
 	KCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
-	for (size_t k = 0; k < mT.size(); ++k)
-	{
-		if (mT[k] == targetPageUID)
-		{
-			outSourcePageUID = mS[k];
-			return kTrue;
-		}
-	}
-	return kFalse;
+	return KCMPartnerOf(mT, mS, targetPageUID, outSourcePageUID);
 }
 
 bool16 KCMMapSourceToTarget(IDataBase* targetDB, IDataBase* sourceDB,
@@ -594,26 +591,12 @@ bool16 KCMMapSourceToTarget(IDataBase* targetDB, IDataBase* sourceDB,
 	outTargetPageUID = kInvalidUID;
 	std::vector<UID> tPages, sPages;
 	KCMBuildPairing(targetDB, sourceDB, tPages, sPages);
-	for (size_t i = 0; i < sPages.size(); ++i)
-	{
-		if (sPages[i] == sourcePageUID)
-		{
-			outTargetPageUID = tPages[i];
-			return kTrue;
-		}
-	}
+	if (KCMPartnerOf(sPages, tPages, sourcePageUID, outTargetPageUID))
+		return kTrue;
 	// Master spread pages (the mirror of the above).
 	std::vector<UID> mT, mS;
 	KCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
-	for (size_t k = 0; k < mS.size(); ++k)
-	{
-		if (mS[k] == sourcePageUID)
-		{
-			outTargetPageUID = mT[k];
-			return kTrue;
-		}
-	}
-	return kFalse;
+	return KCMPartnerOf(mS, mT, sourcePageUID, outTargetPageUID);
 }
 
 // End of KCMPageMap.cpp

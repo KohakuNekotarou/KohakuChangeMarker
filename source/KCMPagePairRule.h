@@ -36,7 +36,10 @@
 //  the target pages that found no namesake. Nothing else is ever matched by order.
 //
 //  PURE. A template over the id type, so the offline test (work/kcm-pagepair-test) runs it on
-//  plain integers; the plug-in instantiates it on UID.
+//  plain integers; the plug-in instantiates it on UID. The lookup in a pairing once it is built
+//  (KCMPartnerOf, at the end) is here for the same reason: what KCMMapTargetToSource and
+//  KCMMapSourceToTarget answer is tested where nothing else can reach it (their one caller is the
+//  CMYK sampler's Alt + hover).
 //
 //========================================================================================
 #ifndef __KCMPagePairRule_h__
@@ -45,6 +48,7 @@
 #include "BaseType.h"		// bool16 / kTrue / kFalse
 #include <vector>
 #include <map>
+#include <utility>			// std::make_pair
 
 /** Pair targetPages with sourcePages by identity: a target page answers to its own id, a source page to its key.
 
@@ -73,15 +77,15 @@ void KCMPairPagesByIdentity(const std::vector<Id>& targetPages,
 	if (outOverflowTarget) outOverflowTarget->clear();
 	if (outOverflowSource) outOverflowSource->clear();
 
-	// key -> index of the FIRST source page that answers to it
+	// key -> index of the FIRST source page that answers to it. That page OWNS the key (ownsKey), decided here once:
+	// a keyless page, and a later page naming a key already owned, own nothing.
 	std::map<Id, size_t> byKey;
 	const size_t ns = sourcePages.size();
+	std::vector<bool> ownsKey(ns, false);
 	for (size_t i = 0; i < ns && i < sourceKeys.size(); ++i)
 	{
-		if (sourceKeys[i] == invalid)
-			continue;
-		if (byKey.find(sourceKeys[i]) == byKey.end())
-			byKey[sourceKeys[i]] = i;
+		if (sourceKeys[i] != invalid && byKey.insert(std::make_pair(sourceKeys[i], i)).second)
+			ownsKey[i] = true;
 	}
 
 	// the Target in order: a namesake pairs, the rest wait
@@ -101,17 +105,14 @@ void KCMPairPagesByIdentity(const std::vector<Id>& targetPages,
 			leftoverTarget.push_back(targetPages[i]);
 	}
 
-	// the keyless source pages (a copy's unlabelled page; a duplicate key's later holders) take
-	// the leftover target pages in order; the keyed ones nobody named are removed pages
+	// the source pages that own no key (a copy's unlabelled page; a duplicate key's later holders)
+	// take the leftover target pages in order; the key owners nobody named are removed pages
 	size_t nextLeftover = 0;
 	for (size_t i = 0; i < ns; ++i)
 	{
 		if (used[i])
 			continue;
-		const bool16 keyed = (i < sourceKeys.size() && sourceKeys[i] != invalid
-							  && byKey.find(sourceKeys[i]) != byKey.end()
-							  && byKey.find(sourceKeys[i])->second == i) ? kTrue : kFalse;
-		if (!keyed && nextLeftover < leftoverTarget.size())
+		if (!ownsKey[i] && nextLeftover < leftoverTarget.size())
 		{
 			outTarget.push_back(leftoverTarget[nextLeftover++]);
 			outSource.push_back(sourcePages[i]);
@@ -124,6 +125,25 @@ void KCMPairPagesByIdentity(const std::vector<Id>& targetPages,
 	if (outOverflowTarget)
 		for (size_t i = nextLeftover; i < leftoverTarget.size(); ++i)
 			outOverflowTarget->push_back(leftoverTarget[i]);
+}
+
+/** A page's partner in a pairing that was built - two parallel lists, the i-th of each one pair (outTarget / outSource
+	above, or the master pairing's). `page` is looked for in `from`, and the same index of `to` answers.
+
+    @return kFalse when `page` is in no pair - or stands past the end of the shorter list, which a pairing never
+            produces: the lists are checked here rather than trusted - and outPartner is then left as it was. */
+template <class Id>
+bool16 KCMPartnerOf(const std::vector<Id>& from, const std::vector<Id>& to, Id page, Id& outPartner)
+{
+	for (size_t i = 0; i < from.size() && i < to.size(); ++i)
+	{
+		if (from[i] == page)
+		{
+			outPartner = to[i];
+			return kTrue;
+		}
+	}
+	return kFalse;
 }
 
 #endif // __KCMPagePairRule_h__
