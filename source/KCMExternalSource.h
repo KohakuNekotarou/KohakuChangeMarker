@@ -73,9 +73,6 @@ void		KCMRegisterExternalSource(IDataBase* db, const PMString& label);
 	point of the shutdown sequence. */
 void		KCMForgetExternalSource();
 
-/** The registered database, or nil. Compared, never dereferenced, by callers too. */
-IDataBase*	KCMExternalSourceDB();
-
 /** kTrue when db is the registered database. A pointer comparison; nil answers kFalse. */
 bool16		KCMIsExternalSource(IDataBase* db);
 

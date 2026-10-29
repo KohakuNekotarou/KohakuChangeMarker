@@ -36,11 +36,6 @@ void KCMForgetExternalSource()
 	sExternalSourceLabel = PMString();	// a fresh value: Clear() keeps the buffer, and this is the shutdown's slot too (KCMClearChosenDocs)
 }
 
-IDataBase* KCMExternalSourceDB()
-{
-	return sExternalSourceDB;
-}
-
 bool16 KCMIsExternalSource(IDataBase* db)
 {
 	return (db != nil && db == sExternalSourceDB) ? kTrue : kFalse;

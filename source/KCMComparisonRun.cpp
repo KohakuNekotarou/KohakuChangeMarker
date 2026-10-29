@@ -15,10 +15,7 @@
 #include "VCPlugInHeaders.h"
 
 // Interface includes:
-#include "ISession.h"				// GetExecutionContextSession -- can be nil during shutdown, so the type is spelled out
-#include "IApplication.h"			// QueryApplication
 #include "IDocument.h"
-#include "IDocumentList.h"
 #include "IDataBase.h"
 #include "PersistUtils.h"			// ::GetUIDRef
 #include "PMString.h"
@@ -30,7 +27,6 @@
 #include "KCMCore.h"				// arm/disarm, running the comparison, the print-mark settings
 #include "KCMID.h"				// kKCMMarksRebuiltMessage / kKCMMarksClearedMessage
 #include "KCMModelNotify.h"	// KCMNotifyStatus / KCMNotify - the model tells the UI, it never calls it
-#include "KCMDrawEventHandler.h"	// sSrcMarksOn / sOversetOn / sOversetDB
 #include "KCMPeek.h"				// KCMArmedDocsAlive -- Refresh must not hand a closed document to the comparison
 #include "KCMRingAdornment.h"		// KCMRevalidateItemXPList -- the transparency-list insurance, at Start and at Stop
 #include "KCMThreadSafety.h"		// KCMIsSameDoc -- the one place this plug-in asks whether two dbs are one document

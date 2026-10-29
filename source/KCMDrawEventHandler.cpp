@@ -19,15 +19,10 @@
 #include "ISpread.h"
 #include "IShape.h"
 #include "IDrwEvtHandler.h"
-#include "IDrwEvtDispatcher.h"
-#include "CServiceProvider.h"
-#include "DocumentContextID.h"
-#include "GraphicsID.h"
 #include "GraphicsData.h"
 #include "IGraphicsPort.h"
 #include "AutoGSave.h"
 #include "IControlView.h"
-#include "IPanorama.h"
 #include "ISession.h"
 #include "PMMatrix.h"
 #include "PMReal.h"
@@ -103,7 +98,6 @@ IDataBase* KCMDrawEventHandler::sOverflowCacheSrcDB = nil;			// and the sSrcDB
 // Thread-local. The initial value kFalse means "kFalse the first time any thread reads it".
 // What breaks if this is a plain static is written at the declaration (KCMDrawEventHandler.h).
 IDThreading::ThreadLocal<bool16> KCMDrawEventHandler::tl_Rasterizing(kFalse);	// kTrue only while WE are rasterising (re-entrancy guard)
-bool16 KCMDrawEventHandler::sThumbExperiment = kTrue;	// kFalse restores the earlier behaviour (nothing drawn into thumbnails)
 std::map<UID, KCMOrigImage*> KCMDrawEventHandler::sOrigImages;
 IDataBase* KCMDrawEventHandler::sOrigDB = nil;
 bool16 KCMDrawEventHandler::sShowOriginal = kFalse;	// default hidden
@@ -115,16 +109,22 @@ PMReal KCMDrawEventHandler::sPeekOpacity = 1.0;	// default opaque (Shift peek). 
 // the shared line and draws a 1px line into the neighbouring (unchanged) page. Coming in about
 // 1pt prevents that.
 //
-// **The width passed to rectclip can never go negative.** The functions that use this
-// (KCMDrawEntryOnPage / KCMDrawPageBorder / KCMDrawPageDiagonal / KCMDrawPageCheck) hand
+// **The width passed to rectclip can never go negative.** KCMClipInsidePage below hands
 // `pr.Width() - kKCMClipInset * 2.0` straight to rectclip, so a page narrower than 2.0pt would
 // pass a negative width. Measured: **the minimum page width InDesign allows is 114.38-114.39pt**
 // (about 1.5888 inch, 40.4mm) -- anything smaller assigned to documentPreferences.pageWidth is
 // rejected with "the value is out of range" (30481), and zeroing the margins and columns does not
 // move that floor. (The maximum is 15,551.996pt = 216.000 inch = 5486.4mm.)
-// So even the smallest page is 57 times the inset, and **no guard is needed in those
-// functions** -- adding one only adds unreachable code.
+// So even the smallest page is 57 times the inset, and **no guard is needed there** -- adding one
+// only adds unreachable code.
 static const PMReal kKCMClipInset = 1.0;
+
+// The clip kKCMClipInset inside page rectangle `pr` - the one way a mark here clips to its page.
+static void KCMClipInsidePage(IGraphicsPort* gPort, const PMRect& pr)
+{
+	gPort->rectclip(pr.Left()  + kKCMClipInset, pr.Top()    + kKCMClipInset,
+	                pr.Width() - kKCMClipInset * 2.0, pr.Height() - kKCMClipInset * 2.0);
+}
 
 //========================================================================================
 // The font cache for the original-page-number badge. The default font at a fixed size never
@@ -1132,14 +1132,9 @@ static void KCMDrawEntryOnPage(IGraphicsPort* gPort, IViewPortAttributes* vpAttr
 	// Blit the ring image. The translate and scale live inside this gsave only.
 	{
 		AutoGSave ag(gPort);
-		// Confine the drawing to just inside this page's rectangle (clipping in spread
-		// coordinates). Facing pages meet at the spine with no gap, so the page rectangle's edge IS
-		// the neighbour's edge; clipping at pr exactly puts the frame's outermost pixel on that
-		// shared line and draws a 1px line into the neighbouring (unchanged) page. Coming in about
-		// 1pt keeps the frame off it (the frame then sits 1px inside the page edge, which looks the
-		// same).
-		gPort->rectclip(pr.Left()   + kKCMClipInset, pr.Top()    + kKCMClipInset,
-		                pr.Width()  - kKCMClipInset * 2.0, pr.Height() - kKCMClipInset * 2.0);
+		// Confine the drawing to just inside this page's rectangle, in spread coordinates (kKCMClipInset
+		// says why inside: the frame then sits 1px inside the page edge, which looks the same).
+		KCMClipInsidePage(gPort, pr);
 		gPort->translate(pr.Left(), pr.Top());				// to the page's top left
 		gPort->scale(pr.Width() / iw, pr.Height() / ih);	// image pixels -> fitted to the page rectangle
 		// **Print and PDF export go through the same path** (KCMDrawRingForPrint: an alpha server
@@ -1241,8 +1236,7 @@ static void KCMDrawPageBorder(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	// without it no border appears at all).
 	// Clipped about 1pt in, so nothing reaches the spine's shared line (the same inset as L/R/T/B).
 	// The filled bars are inside that, so nothing is cut off.
-	gPort->rectclip(pr.Left()   + kKCMClipInset, pr.Top()    + kKCMClipInset,
-	                pr.Width()  - kKCMClipInset * 2.0, pr.Height() - kKCMClipInset * 2.0);
+	KCMClipInsidePage(gPort, pr);
 	gPort->setopacity(opacity, kFalse);
 	// RGB always: **generating a thumbnail is neither printing nor exporting**, so CMYK is not
 	//   needed here (why CMYK is needed at all is at the head of KCMSetOutputColor).
@@ -1328,8 +1322,7 @@ static void KCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageUID
 
 	AutoGSave ag(gPort);
 	// Clipped about 1pt in, like the other marks, so nothing reaches the spine's shared line.
-	gPort->rectclip(pr.Left()   + kKCMClipInset, pr.Top()    + kKCMClipInset,
-	                pr.Width()  - kKCMClipInset * 2.0, pr.Height() - kKCMClipInset * 2.0);
+	KCMClipInsidePage(gPort, pr);
 	gPort->setopacity(opacity, kFalse);
 	// Print and PDF are painted in CMYK (PDF/X-1a does not allow RGB -- see KCMSetOutputColor).
 	KCMSetOutputColor(gPort, cr, cg, cb, (drawMode == kKCMDrawModePrint) ? kTrue : kFalse);
@@ -1413,8 +1406,7 @@ static void KCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	//     side, so clipping would cut its ends off. It is not clipped, and it has always appeared
 	//     correctly.
 	if (!layoutStyle)
-		gPort->rectclip(pr.Left()   + kKCMClipInset, pr.Top()    + kKCMClipInset,
-		                pr.Width()  - kKCMClipInset * 2.0, pr.Height() - kKCMClipInset * 2.0);
+		KCMClipInsidePage(gPort, pr);
 	gPort->setopacity(opacity, kFalse);
 	// Print and PDF are painted in CMYK (PDF/X-1a does not allow RGB -- see KCMSetOutputColor).
 	KCMSetOutputColor(gPort, cr, cg, cb, (drawMode == kKCMDrawModePrint) ? kTrue : kFalse);
@@ -1823,13 +1815,13 @@ static void KCMDrawOnePaw(IGraphicsPort* gPort, const KCMPawStamp& paw, const PM
 //   Screen      -- always, exactly like the "Check" tick: independent of the frame toggles and of
 //                  the tool's left button, because a paw is a mark the reader put there on purpose.
 //   Print / PDF -- only with "Print comparison marks" on, the rule every other mark follows.
-//   Opacity     -- the panel's 25%/75% choice, so screen and print agree.
+//   Opacity     -- none: a paw is opaque (the reason is in the body).
 // ★AND THE PAW BEING PLACED (2026-10-27): while the stamp tool follows a drag, the paw it will put down is drawn
 //   here too, turning, over the ones already placed -- on screen in the pressed view only. `view` is that test's
 //   other half: the caller passes the view it draws in, and nil when printing.
 //========================================================================================
 static void KCMDrawPawStamps(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
-	int32 drawMode, const PMReal& screenOpacity, const IControlView* view)
+	int32 drawMode, const IControlView* view)
 {
 	if (gPort == nil || db == nil)
 		return;
@@ -1858,9 +1850,7 @@ static void KCMDrawPawStamps(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	//   wrong for this one: **that choice is about the COMPARISON marks**, which lie over the page
 	//   and have to be seen through. A paw is not laid over the reader's work to be read past -- it
 	//   IS the reader's work, put there on purpose, and a landmark you have to squint at is not a
-	//   landmark. ⚠screenOpacity is still taken as a parameter (the caller has it to hand and the
-	//   signature is shared) and is deliberately unused here.
-	(void)screenOpacity;
+	//   landmark. (So it takes no opacity: one it was handed and never read went, as KCMDrawPageBorder's did.)
 
 	AutoGSave ag(gPort);
 	// The clip is what the Pages panel thumbnail route requires, and it is also the declaration
@@ -1918,13 +1908,13 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	const bool16 printing = (ded->flags & IShape::kPrinting) != 0;
 
 	// Detect the Pages panel's thumbnail generation: no view, kPreviewMode, not printing
-	// (the diagnostic log shows flags = 0x1800 = kPreviewMode | kDrawFrameEdge). While
-	// sThumbExperiment is on, wantMarks below is forced on so that frames reach thumbnails as well
-	// (normally nothing is drawn with sPrintMarks and sMarksVisible off).
+	// (the diagnostic log shows flags = 0x1800 = kPreviewMode | kDrawFrameEdge). In a thumbnail
+	// wantMarks below is forced on so that frames reach it as well (normally nothing is drawn with
+	// sPrintMarks and sMarksVisible off).
 	// In a thumbnail the loops below take their isThumb branch and call KCMDrawPageBorder (a frame)
 	// and KCMDrawPageDiagonal (a "/") instead of the difference ring image, at a fixed ratio
 	// thickness that survives the size. The opacity is kKCMThumbMarkOpacity (0.75).
-	const bool16 isThumb = sThumbExperiment && !printing &&
+	const bool16 isThumb = !printing &&
 		ded->gd->GetView() == nil && (ded->flags & IShape::kPreviewMode) != 0;	// gd was nil-checked at the top of the function
 
 	// ★★**OVERPRINT PREVIEW SHOWS WHAT WILL BE PRINTED, SO ONLY WHAT WOULD BE PRINTED IS SHOWN**
@@ -2137,17 +2127,6 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//     can be passed straight through.
 	IViewPortAttributes* vpAttr = gd->GetViewPortAttributes();
 
-	// The Pages panel's thumbnail generation (an offscreen draw with no view, in kPreviewMode).
-	// Nothing was drawn there originally, because a thumbnail already on screen could not be
-	// regenerated and some would be left showing an old frame while others showed a new one.
-	// With sThumbExperiment off (so isThumb is false) this branch restores that behaviour exactly.
-	if (!printing && gd->GetView() == nil && (ded->flags & IShape::kPreviewMode) != 0)
-	{
-		if (!isThumb)
-			return kFalse;	// experiment off: draw nothing into thumbnails
-		// Experiment on: carry on and draw the frames into the thumbnail.
-	}
-
 	// changedBy is the spread being drawn.
 	InterfacePtr<ISpread> spread(ded->changedBy, UseDefaultIID());
 	if (spread == nil)
@@ -2346,8 +2325,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	{
 		const int32 npp = spread->GetNumPages();
 		for (int32 i = 0; i < npp; ++i)
-			KCMDrawPawStamps(gPort, db, spread->GetNthPageUID(i), drawMode, SelectedMarkOpacity(),
-			                 printing ? nil : zview);
+			KCMDrawPawStamps(gPort, db, spread->GetNthPageUID(i), drawMode, printing ? nil : zview);
 	}
 
 	// The original-page-number badge (Show Original Page Numbers). On a page whose "current page

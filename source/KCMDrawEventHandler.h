@@ -19,7 +19,6 @@
 #include <set>
 #include <vector>
 #include "KCMConstants.h"
-#include "CPMUnknown.h"
 #include "IDrwEvtHandler.h"
 #include "GraphicsExternal.h"   // AGMImageRecord (a struct member below)
 #include "K2SmartPtr.h"         // K2::scoped_array -- the two structs below own their pixel buffers with it
@@ -328,16 +327,6 @@ public:
 	// Printing always shows the Source frames, so this does not affect it (the drawing side gates
 	// on !printing).
 	static bool16 sSrcMarksPressed;
-
-	// While kTrue, the frames are drawn into the Pages panel's thumbnails as well (which are
-	// generated with no view, in kPreviewMode: normally nothing is drawn there when sPrintMarks
-	// and sMarksVisible are off, but a thumbnail forces it on through isThumb, with a thicker
-	// fixed-ratio radius at full opacity). It also makes a comparison try to regenerate the
-	// thumbnails already on screen, through KCMTryRefreshPagesPanelThumbnails.
-	// Setting this one flag back to kFalse restores the earlier behaviour completely (nothing
-	// drawn into thumbnails at all), which is the escape route if the refresh misbehaves.
-	// Related: memory kescm-pages-panel-thumbnails.
-	static bool16 sThumbExperiment;
 
 	// The chosen frame opacity (0.25 / 0.75). The single supplier for every route that draws a
 	// frame.

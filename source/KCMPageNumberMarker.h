@@ -22,7 +22,6 @@
 #define __KCMPageNumberMarker_h__
 
 #include "BaseType.h"		// bool16
-#include "PMReal.h"
 #include "PMRect.h"			// PMRect
 #include "UIDRef.h"			// UIDRef
 #include <vector>

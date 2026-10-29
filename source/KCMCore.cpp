@@ -47,7 +47,6 @@
 #include "KCMThreadSafety.h"       // needed to walk the entries when the mark colour changes and their cached ring images must be dropped
 #include "KCMPeek.h"               // KCMBaseScreenOpacity
 #include "KCMPageMap.h"            // KCMBuildPairing (the exclusion pairing) / KCMPageMapCollectRegistered
-#include "KCMPageCheck.h"          // ⚠**nothing here calls into it any more** (2026-09-04): Stop stopped clearing the ticks and the prune was removed. Left in place because dropping an include is a change a build has to prove, not a comment
 #include "KCMStoryStamp.h"         // the stories' change counters -- whether text was edited, which pixels cannot say
 #include "KCMStoryList.h"          // the list of changed stories (the model the Story Edits section reads)
 #include "KCMTrackList.h"          // the Track Changes mode's list (2026-10-05)

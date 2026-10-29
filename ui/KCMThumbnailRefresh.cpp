@@ -35,7 +35,7 @@
 //  ---------------------------------------------------------------------------------------------
 //
 //  Note that drawing the frame INTO a thumbnail is the drawing engine's job
-//  (KCMDrawEventHandler::sThumbExperiment, on by default). Everything here only triggers the
+//  (KCMDrawEventHandler::DrawSpreadMarks, its isThumb). Everything here only triggers the
 //  rebuild of what is already on screen, and is safe to call any number of times.
 //
 //========================================================================================
