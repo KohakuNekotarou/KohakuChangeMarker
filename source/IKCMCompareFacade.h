@@ -50,8 +50,7 @@ class IDocument;
 class UIDList;		// RefreshSelectedPages - the Pages panel's selection, as the UI read it
 
 // THE WORDS BOTH HALVES SAY - here because both read this header: the model for the press and a script's road, the UI
-//  before a dialog it would otherwise open for nothing. English, as every status line. (The PDF comparison's three went
-//  with it on 2026-10-27.)
+//  before a dialog it would otherwise open for nothing. English, as every status line.
 // (the import-as-Source road) The Source is an import's copy: the files' words poured into a Task Start in
 //  memory. It is compared in the Story mode alone (design section 2-10).
 #define kKCMImportSourceModeRefusal	"The Source is the imported text - it is compared in the Story mode. Switch the Compare mode to Story."
@@ -201,16 +200,14 @@ public:
 	/** "Always Show Marks on Source": the Source document carries the same rings at all times.
 
 		**THE TWO DISPLAY TOGGLES ARE ABOUT THE SCREEN, AND ONLY THE SCREEN** (the
-		user, settling it in one sentence: "with Print ON they are printable and permanently shown;
+		author, settling it in one sentence: "with Print ON they are printable and permanently shown;
 		Always Show only ever shows"). What reaches paper, a PDF or the print preview is decided by
 		**"Print comparison marks" alone, for BOTH documents** - and because that switch also puts
 		the marks up on screen, turning it on means "what you see is what will come out".
 		⇒ These two never grant output, and never withhold it.
-		⚠**THIS PARAGRAPH IS THE ONE OTHER FILES CITE.** It said the opposite for the Source side
-		 until today ("ON SCREEN ONLY, where the Source one also prints"), and that sentence was
-		 copied into KCMStoryMarkBuild as the specification - so when the Pixel side changed on
-		 2026-09-07, the Story side kept the retracted rule. **A citation does not follow its
-		 source.** If this changes again, grep for GetShowSourceMarks before believing anything. */
+		⚠**THIS PARAGRAPH IS THE ONE OTHER FILES CITE** (KCMStoryMarkBuild takes it as the
+		 specification): if it changes, grep for GetShowSourceMarks and change the citations with it -
+		 **a citation does not follow its source.** */
 	virtual bool16		GetShowSourceMarks() = 0;
 	virtual void		SetShowSourceMarks(bool16 on) = 0;
 
@@ -223,13 +220,8 @@ public:
 		KCMStoryMarkBuild.
 		@warning **ON SCREEN ONLY.** What reaches paper or a PDF is decided by "Print comparison
 		 marks", for BOTH documents, and neither of these two switches may quietly override it.
-		⚠**THIS PARAGRAPH SAID THE OPPOSITE UNTIL 2026-09-08** ("where the Source one also
-		 prints"), and it was cited as the specification by KCMStoryMarkBuild - so when the Pixel
-		 side made the two symmetrical on 2026-09-07 (spec map MK-14), the Story side went on
-		 printing a Source document's marks with the print toggle off. It also called the Story
-		 mark "inverted characters", which it stopped being when the inversion was replaced by a
-		 wash (spec map SMK-07). **A sentence quoted as a specification has to be edited when the
-		 thing it describes changes - nothing warns you.** */
+		⚠**KCMStoryMarkBuild cites this paragraph as the specification** (spec map MK-14): if it
+		 changes, change the citation with it - nothing warns you. */
 	virtual bool16		GetShowTargetMarks() = 0;
 	virtual void		SetShowTargetMarks(bool16 on) = 0;
 
@@ -567,7 +559,7 @@ public:
 	virtual void		GetChosenSourceFileLabel(PMString& outLabel) = 0;
 	virtual void		GetChosenTargetFileLabel(PMString& outLabel) = 0;
 
-	/** **TASK START, THE FILE WAY** (the user's design). Saves a copy of the document
+	/** **TASK START, THE FILE WAY** (the author's design). Saves a copy of the document
 		to a file the reader picks and chooses that file as the Source. **It opens nothing and
 		starts nothing** - what comes back is the ordinary "a Source has been chosen" state.
 		Which document: the chosen Target, else the active one. The Target is then that same

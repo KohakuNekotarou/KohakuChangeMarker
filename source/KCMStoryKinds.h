@@ -46,7 +46,7 @@ enum KCMStoryChangeKind
 									// **THE ROW THEN LIVES IN THE SOURCE DOCUMENT**, and it is the only
 									// kind for which that is true -- see KCMStoryDiff::fStoryUID
 	kKCMStoryKindRefused	= 32,	// a story an IMPORT could not put words into, wholly or in part
-									// (the user's ask: "what could not be imported - a red !
+									// (the author's ask: "what could not be imported - a red !
 									// in the Δ column, at the top of the list"). Not a counter and not a
 									// pairing: the import notes it (KCMStoryTextImport's refusals) and
 									// KCMStoryList::Build sets it, so it goes with the origin. The row's
@@ -72,9 +72,8 @@ enum KCMStoryChangeKind
 
 	**THE ORDER MEANS NOTHING** -- these are names, not ranks. Ruby came first because a Japanese
 	document uses it constantly, and because a ruby-only edit is precisely the case the reader
-	found being reported as "None". **TEXT, RUBY AND KENTEN ARE WHAT IS REPORTED** (kenten added in
-	August, withdrawn the next day, and back since 2026-09-01) -- and the two attributes are
-	different mechanisms: ruby is a STRAND (IRubyAttrStrand, run-based, written in the snippet
+	found being reported as "None". **THE TEXT AND EVERY KIND BELOW ARE WHAT IS REPORTED** -- and
+	the first two attributes are different mechanisms: ruby is a STRAND (IRubyAttrStrand, run-based, written in the snippet
 	as RubyFlag 1/2 over one CharacterStyleRange per character) while kenten is a set of CHARACTER
 	ATTRIBUTES (the twenty kTAKenten*Boss on kCharAttrStrandBoss, its kind in kTAKentenKindBoss
 	with Kenten_None for off). What the panel cared about is the one thing they share: the text did
@@ -83,28 +82,27 @@ enum KCMStoryChangeKind
 	@warning carried across the model/UI boundary as a plain int32 (IKCMStoryEditsFacade's
 	  Row::fAttrKind), the same way KCMStoryChange::What is. **ADDING A VALUE MEANS TOUCHING BOTH
 	  SIDES**, and a value must never be renumbered once it has shipped. The boundary header lists
-	  the values it carries, and kenten's 2 is not among them -- which is that contract working.
+	  the values it carries (IKCMStoryEditsFacade.h, Row::fAttrKind and GetChangeAttrKind).
 */
 enum KCMStoryAttrKind
 {
 	kKCMStoryAttrNone = 0,	// the children are text changes, or there are none
 	kKCMStoryAttrRuby = 1,	// a reading over characters that did not themselves change
 	kKCMStoryAttrKenten = 2,	// emphasis marks (kenten), over characters that did not themselves
-								// change. Reported from 2026-09-01 (user: "if it can be found, I
-								// want to find it"), after a day in August and a long pause. The
-								// pause is why the number is worth reading twice: **the value was
-								// held reserved throughout it**, so turning the feature back on
-								// renumbered nothing and invalidated no saved state.
+								// change. Reported on the author's word ("if it can be found, I
+								// want to find it"). **The value was held reserved while it was
+								// not reported**, so turning it back on renumbered nothing and
+								// invalidated no saved state.
 								// ⚠ITS VALUE IS A KIND, NOT A READING ("BlackCircle"), and the
 								// panel draws it as the MARK rather than writing it out
 								// (ui/KCMKentenMark). Anything that shows it must ask fAttrKind
 								// first - the string cannot say which it is.
-	kKCMStoryAttrFootnote = 3,	// a FOOTNOTE hanging off one character (user's
+	kKCMStoryAttrFootnote = 3,	// a FOOTNOTE hanging off one character (the author's
 								// request: "the page shows a 1 above the character - show it in the
 								// row the way ruby is shown"). ITS VALUE IS THE NUMBER AS THE PAGE
 								// PRINTS IT ("1"), asked of InDesign rather than counted here, so a
 								// document that restarts its numbering still agrees with the row.
-								// ⚠**THE MARKER IS A CHARACTER AND THE OTHER TWO ARE NOT.** Ruby and
+								// ⚠**THE MARKER IS A CHARACTER; RUBY AND KENTEN ARE NOT.** Ruby and
 								// kenten are attributes over text that stays; a footnote reference is
 								// U+0004 standing IN the text. It travels as an attribute all the
 								// same, because what the reader needs of it is identical - a value
@@ -112,12 +110,12 @@ enum KCMStoryAttrKind
 								// of one invisible character) is what the panel used to show: a "□"
 								// nobody could read.
 	kKCMStoryAttrEndnote = 4,	// the same for an ENDNOTE (U+0005). ⚠**ITS TEXT LIVES IN ANOTHER
-								// STORY** (kEndnoteStoryBoss - measured 2026-09-08: adding one makes
+								// STORY** (kEndnoteStoryBoss - measured: adding one makes
 								// app.documents[0].stories go from 1 to 2), so only the marker is
 								// reported here; the note's own words arrive as a story row of their
 								// own, exactly as they did before.
-	kKCMStoryAttrWarichu = 5,	// WARICHU set on or taken off characters (user's request -
-								// reversing 2026-09-09's "leave warichu out"). kTAWarichuAttrBoss, the
+	kKCMStoryAttrWarichu = 5,	// WARICHU set on or taken off characters (the author's request,
+								// reversing an earlier "leave warichu out"). kTAWarichuAttrBoss, the
 								// ON/OFF alone: its line count, size and alignment are not compared
 								// (the Pixel mode sees those). ITS VALUE IS THE CHARACTERS IT COVERS.
 								// LAYERED: drawn as a line of its own over the text (KCMStoryLayers.h).
@@ -126,10 +124,7 @@ enum KCMStoryAttrKind
 								// and the automatic tate-chu-yoko (a paragraph setting) are not
 								// compared. ITS VALUE IS THE CHARACTERS IT COVERS; LAYERED, over a
 								// warichu when it stands inside one.
-								// **BOTH ARE WRITTEN BACK** (the user's decision). They were
-								// shown for reading only, with the Import mode as the one
-								// exception; when that mode was retired the exception became
-								// the rule rather than going with it.
+								// **BOTH ARE WRITTEN BACK** (the author's decision).
 	kKCMStoryAttrObject = 7		// (the author: "can you show it? into 2.0 if you can") an OBJECT PLACED IN
 								// THE TEXT whose content changed - a MathML, a fill, a QR code made anew, a group's
 								// colours - while its anchor character stayed the same. Its value is "<what it is>\t
@@ -144,12 +139,11 @@ enum KCMStoryAttrKind
 /** Whether a change of this kind is drawn on TWO LINES - a value (or a mark) standing over the
 	characters it belongs to.
 
-	**ALWAYS, WHETHER OR NOT THIS SIDE HAS A VALUE** (the user's rule: "when a ruby is
+	**ALWAYS, WHETHER OR NOT THIS SIDE HAS A VALUE** (the author's rule: "when a ruby is
 	  removed, two lines - a bar over the kanji; kenten the same", and footnotes and endnotes with
 	  them). The side that has no ruby, no kenten or no note draws a BAR on the upper line, over where
-	  it would stand. **This reverses 2026-09-01** ("when the ruby or the kenten is gone, make it one
-	  line"), which kept the height and the drawing in step by asking whether the value was empty;
-	  now nothing asks that, and the two stay in step because both ask THIS.
+	  it would stand. **Not one line when the value is gone** - the author reversed that rule - so the
+	  height and the drawing stay in step because both ask THIS.
 	ONE QUESTION IN ONE PLACE for everything that lays such a change out: the change row's height
 	  and drawing (KCMStoryTreeWidgetMgr, KCMStoryCellView), the message area (KCMStatusTextView,
 	  reached through KCMStoryJump) and the PDF report (KCMReport). A kind added above is two lines
@@ -173,7 +167,7 @@ inline bool16 KCMAttrKindHasMarkLine(int32 attrKind)
 /** Whether a change of this kind is drawn in LAYERS - the text below, a warichu over the place it
 	stands, a tate-chu-yoko over the place IT stands - rather than as a value over its characters.
 
-	WARICHU AND TATE-CHU-YOKO (the user's drawing: "77" over "わりちゅう｜のぶん" over
+	WARICHU AND TATE-CHU-YOKO (the author's drawing: "77" over "わりちゅう｜のぶん" over
 	  "琥珀｜猫太郎"). The two are pieces of text set apart from the line they stand in, and one can
 	  stand inside the other, so each is lifted onto a line of its own and leaves a bar where it was.
 	  The model works out the lines (KCMParaText::PlanLayers) and carries them as strings
@@ -189,7 +183,7 @@ inline bool16 KCMAttrKindIsLayered(int32 attrKind)
 	agree on everything that follows from having nobody to compare against: no text diff is run for
 	them, they cannot be refreshed, and their label stands alone with no '+' after it. Everything
 	that wants that answer asks this rather than testing kKCMStoryKindAdded on its own
-	([[one-question-one-place]]).
+	(memory one-question-one-place).
 
 	@warning **the jump is the exception, and it must NOT use this:** which window moves is exactly
 	 the thing the two kinds disagree about. It tests kKCMStoryKindRemoved by itself
@@ -197,14 +191,10 @@ inline bool16 KCMAttrKindIsLayered(int32 attrKind)
 */
 const uint32 kKCMStoryKindUnpaired = kKCMStoryKindAdded | kKCMStoryKindRemoved;
 
-// (⛔**KCMStoryWriteBlock WENT ON 2026-09-21** with the restore, which was the only thing that could
-//  be blocked. It named, once per change, why a TEXT change could not be written back into the
-//  reader's document: a table cell or a footnote whose place is not on the other side (measured - a
-//  deleted table's cell "restored" into a position nothing could see); a range holding a character
-//  InDesign hangs an object on (measured - an anchored rectangle came back as U+FFFC alone); a table
-//  the two sides could not name to each other; and a row with nothing to write back at all.
-//  The values were a contract across the model/UI boundary and are listed in
-//  docs/ai-notes/kcm-restore-retired-2026-09-21.md, in case anything is ever written back again.)
+// (No write-block kinds: KCMStoryWriteBlock went with the first restore. The hazards it named - a
+//  cell or a footnote whose place is not on the other side, a character InDesign hangs an object on
+//  (measured: an anchored rectangle came back as U+FFFC alone), a table the two sides could not name to
+//  each other - and its values are in docs/ai-notes/kcm-restore-retired-2026-09-21.md.)
 
 #endif // __KCMStoryKinds_h__
 

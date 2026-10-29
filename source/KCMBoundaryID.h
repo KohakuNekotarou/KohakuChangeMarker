@@ -11,13 +11,10 @@
 //  halves cannot read different values. (KFC keeps its boundary header the same way:
 //  KFC/model/KFCBoundaryID.h.)
 //
-//  SINCE 2026-09-02 A THIRD PLUG-IN READS THE MODEL COPY: Kohaku InDesign MCP includes
-//  IKCMCompareFacade.h - and through it this file - straight from source/sdksamples/KCM/source.
-//  There is no third copy to keep in step, but the values here are now promised to a product
-//  that ships on its own schedule: renumbering one breaks it as silently as it would break the
-//  UI. (The vtable rule that goes with this is at the top of IKCMCompareFacade.h.)
+//  Nothing outside KCM includes it. (The vtable rule that goes with the boundary is at the head of
+//  IKCMCompareFacade.h.)
 //
-//  WHY A COPY EACH SIDE, AND WHY THE SAME VALUE. An ID is unique by its VALUE, not per plug-in.
+//  WHY THE SAME VALUE ON BOTH SIDES. An ID is unique by its VALUE, not per plug-in.
 //  What lives here is the four kinds of thing one side writes and the other reads, and each of
 //  them **stops working silently the moment the two values disagree** (the build still passes):
 //
@@ -44,7 +41,7 @@
 
 //----------------------------------------------------------------------------------------
 // The DISPLAY STRINGS both sides must spell the same way. Not IDs, but if they disagree the
-// product looks like two products ([[one-question-one-place]]: a version number and a display
+// product looks like two products (memory one-question-one-place: a version number and a display
 // name are one fact about one product, and holding them separately guarantees they drift).
 //
 // Users: both .rc files (FileDescription / FileVersion), both .fr files (PluginVersion,
@@ -59,7 +56,7 @@
 //----------------------------------------------------------------------------------------
 #define kKCMCompanyKey	"KohakuNekotarou"	// Company name used internally for menu paths and the like. Must be globally unique, only A-Z, 0-9, space and "_".
 #define kKCMCompanyValue	"KohakuNekotarou"	// Company name displayed externally.
-#define kKCMDisplayName	"Kohaku Change Marker"	// Shown in the About menu item, the About box, and as the panel and tool name. Words separated by spaces, matching KBS's "Kohaku Search Panel".
+#define kKCMDisplayName	"Kohaku Change Marker"	// Shown in the About menu item, the About box, and as the panel and tool name. Words separated by spaces, as KFC's "Kohaku Find/Change".
 #define kKCMVersion		"2.0.0"				// The product version, and it MUST be the same on both sides. It appears in the About box, in both .rc files as FileVersion, and in both PluginVersion resources. The history and the increments still to be submitted are kept in KCMID.h's long comment, which is the master copy.
 
 // The modifier key as the USER sees it named. The implementation does not branch: the SDK's
@@ -133,7 +130,7 @@ DECLARE_PMID(kInterfaceIDSpace, IID_IKCMUISERVICES, kKCMPrefix + 18)
 //----------------------------------------------------------------------------------------
 // The notification protocol IID.
 //
-// How the model TELLS the UI (since 2026-10-28 it also ASKS - the UI services above, which it
+// How the model TELLS the UI (it also ASKS - the UI services above, which it
 // does without when they are not there). The model knows nothing about the UI: it throws a Change
 // at the application's subject under a protocol IID of our own, and if nobody is listening
 // nothing happens (which is what makes it safe under InDesign Server). The UI AttachObservers
@@ -161,10 +158,10 @@ DECLARE_PMID(kMessageIDSpace, kKCMComparisonDocsClosedMessage, kKCMPrefix + 6)	/
 																					// The payload carries up to three databases of documents that are STILL ALIVE (target, older
 																					// version, source-side frames). Never pass a closed one: the listener dereferences it.
 
-// **WHY A MESSAGE AND NOT A CALL** (the user: a script import must leave the Target in
+// **WHY A MESSAGE AND NOT A CALL** (the author: a script import must leave the Target in
 //   front too): making a document active goes through IDocumentPresentation, which is the UI's world
 //   and which no model-side code may reach - the guide names that shape "crashes or corrupt
-//   documents", and this family of plug-ins has paid for it six times. The import's two roads (the
+//   documents", and this family of plug-ins has paid for it (memory model-plugin-must-not-drive-ui). The import's two roads (the
 //   flyout item and app.kcmImportToSource) meet in the MODEL, so the model says this and the UI does
 //   the work. Nobody listening means nothing happens, which is exactly right when only the model half
 //   is loaded. No payload, and no command: MakeActive changes nothing in the document and raises no
@@ -183,11 +180,11 @@ DECLARE_PMID(kMessageIDSpace, kKCMTargetToFrontMessage,     kKCMPrefix + 7)	// a
 // including its partner's.
 //
 // **NO TWO RESULTS ARE HELD AT ONCE.** Changing the mode re-runs the comparison. Keeping more than
-// one would create several answers to "what is on screen right now" ([[one-question-one-place]]).
+// one would create several answers to "what is on screen right now" (memory one-question-one-place).
 //
-// ⚠**READ THIS BEFORE WRITING `!= kKCMModeStory`.** Until 2026-09-09 there were two modes, so
-//   code could say "Story or not" and mean "Story or Pixel". A third mode makes every such test
-//   hand ITS behaviour to Pixel by default - which is how the Resources mode would have run a pixel
+// ⚠**READ THIS BEFORE WRITING `!= kKCMModeStory`.** With two modes, code could say "Story or
+//   not" and mean "Story or Pixel"; every mode more makes such a test hand ITS behaviour to Pixel
+//   by default - which is how the Resources mode would have run a pixel
 //   comparison and drawn real rings. **Ask for the mode you mean by name.** Every site was
 //   classified one at a time; the table is in section 7-1 of
 //   docs/superpowers/specs/2026-09-09-kcm-resources-compare-mode-design.md, including the four
@@ -202,13 +199,12 @@ enum KCMCompareMode
 							// touch a word, so neither of the other two can report it.
 	kKCMModeTrack = 3		// TRACK CHANGES: the Target's own tracked changes stand in for the older version -
 							// every author's records, one row each, under the author
-							// (docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md). SINCE 2026-10-27 NOT A
+							// (docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md). NOT A
 							// SETTING (the author: out of the Compare mode menu, "Compare with Tracked Changes" alone, no
 							// Source document - docs/superpowers/specs/2026-10-27-kcm-track-records-only-design.md): it is
 							// what KCMGetCompareMode answers WHILE that item's listing is armed - with the Target alone -
-							// and a Stop leaves the setting as it was. (Until then the Source was a copy saved with every
-							// change rejected, for the peek and the Source window.) ⚠The VALUE 3 was Import's, retired
-							// 2026-09-20 - the note below says why it was free (the settings file never wrote it).
+							// and a Stop leaves the setting as it was. ⚠The VALUE 3 was Import's - the note below
+							// says why it was free (the settings file never wrote it).
 
 	// ⛔**THERE WAS A FOURTH, `kKCMModeImport = 3`, AND IT IS GONE** (with the
 	//   Import-mode code it belonged to). It did not answer "what is being compared" like these
@@ -219,18 +215,18 @@ enum KCMCompareMode
 	//   ⚠The VALUE 3 is free again as far as anything saved goes: the settings file never wrote
 	//    this mode (KCMPanelState spells out the three it knows and treats anything else as "leave
 	//    it alone"), which was measured before the removal.
-	//   2026-10-05: reused by kKCMModeTrack.
+	//   Reused by kKCMModeTrack.
 };
 
 // ⚠**EVERYTHING BELOW IS HIDDEN FROM ODFRC.** This header is included by KCM.fr and KCMUI.fr, and the
 //   resource compiler reads C++ only as far as constants and enums - an inline function makes it
-//   stop with "Error looking for resource specification" (measured 2026-09-15, one build).
+//   stop with "Error looking for resource specification" (measured).
 #ifndef __ODFRC__
 
 /** Does this mode show the Story Edits rows - the paragraph and character comparison?
 
-	**ONE QUESTION, ONE PLACE** - and it stays a function; Story and Track answer yes
-. ⚠When a fourth mode shared this answer (the Import mode), TWELVE places
+	**ONE QUESTION, ONE PLACE** - and it stays a function; Story and Track answer yes. ⚠When another
+	mode shared this answer (the Import mode, since taken out), TWELVE places
 	asked `== kKCMModeStory` by hand and five of them decided real behaviour; the first import
 	reported nothing at all because ONE of those five - the line that runs the text diff - had not
 	been taught the new mode. **A question spelled out at each call site is a question that will be
@@ -254,7 +250,7 @@ inline bool16 KCMModeDiffsStoryText(KCMCompareMode mode)
 }
 
 /** Does a comparison in this mode need a Source document? Every mode but the Track listing.
-	2026-10-27 (the author: "Compare with Tracked Changes" alone, and no Source document made): the Track listing reads
+	The Track listing (the author: "Compare with Tracked Changes" alone, and no Source document made) reads
 	the Target's own tracked-change records and nothing else, so it is armed with the Target alone. The places that refused
 	an armed pair without a Source - the Start, the Refresh, the comparison itself, the Story list's rebuild, the liveness
 	check and the Undo follower - ask THIS, and every other mode keeps the refusal. Each mode is named, as above. */

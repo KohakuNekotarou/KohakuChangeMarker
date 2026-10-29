@@ -20,17 +20,16 @@
 //  equivalent for page item adornments, which is why kKCMRingAdornmentStartupBoss exists and why
 //  nothing like it is needed here (KCM.fr states the contrast in full).
 //
-//  SIX PARAMETERS RATHER THAN THE MARKER'S OWN TYPE, BECAUSE THE UI DOES NOT BUILD RANGES. The
+//  PLAIN NUMBERS RATHER THAN THE MARKER'S OWN TYPE, BECAUSE THE UI DOES NOT BUILD RANGES. The
 //  marker's vocabulary is a nested std::map (database -> story -> ranges); handing that across
 //  would put the UI in charge of WHAT IS LIT, which is the one thing the rule below reserves for
-//  the model. A jump names only TWO ranges (the same story seen in each of the two documents), so
-//  six numbers say all of it and nothing variable-length has to travel.
-//  @warning THIS IS NOT AN ABI RULE, whatever this header said until 2026-08-30 ("must not cross
-//  a DLL edge"). Containers cross this very boundary in eleven places already - IKCMMarkData passes
-//  std::vector / std::set in eight methods, IKCMBookFacade::CompareBooks in one, and
-//  KCMNotifyPayload carries two const std::set<UID>* - and they are safe because both halves are
-//  built here, against one RuntimeLibrary=MultiThreadedDLL (build/win/prj/Release.props), so they
-//  share a heap. Adobe crosses it the same way: K2Vector IS std::vector in this SDK (K2Vector.h:35,
+//  the model. A jump names only TWO ranges (the change in each of the two documents), so a story
+//  and a range on each side say all of it and nothing variable-length has to travel.
+//  @warning THIS IS NOT AN ABI RULE: a container may cross. Containers cross this very boundary
+//  already - IKCMMarkData passes std::vector / std::set (the page lists and the pairings),
+//  IKCMBookFacade::CompareBooks a std::vector, and KCMNotifyPayload carries const std::set<UID>* -
+//  and they are safe because both halves are built here, against one
+//  RuntimeLibrary=MultiThreadedDLL (build/win/prj/Release.props), so they share a heap. Adobe crosses it the same way: K2Vector IS std::vector in this SDK (K2Vector.h:35,
 //  reached because Base.props defines K2_BE_GONE=1), and pure virtuals in public/interfaces take a
 //  K2Vector<UID> in fifteen places. IKCMStoryEditsFacade hands out one flat Row at a time for a
 //  DIFFERENT reason again - OWNERSHIP, not ABI: the model's row is a pointer into a list it may
@@ -42,7 +41,7 @@
 //  the database with `removedRow ? GetArmedSourceDB() : GetArmedTargetDB()`). That is a fact about
 //  the row, which is the UI's to know. Whether the OTHER window is open, and which database it is,
 //  is a fact about the comparison - the model's - so it is not passed in and must not be
-//  ([[one-question-one-place]]).
+//  (memory one-question-one-place).
 //  @warning an interface that took no database at all, and assumed the row was always the
 //  target's, would put a Removed story's flash in the wrong window.
 //
@@ -123,8 +122,7 @@ public:
 			(IKCMStoryEditsFacade::Row::fSourceStoryUID): the same uid as storyUID for every row paired by UID (the
 			Story mode rests on that - the diff pairs stories by uid and the click selects by uid), the Source's own
 			story for a row paired by the place of its first frame. kInvalidUID lights nothing over there (an Added row
-			has no Source story). ⚠Until 2026-10-26 the one storyUID was used on both sides; reshaped in place - both
-			halves are built together and no other plug-in reaches this facade ([[facade-vtable-slot-append-only]]).
+			has no Source story).
 		@param from first character to light in `db`.
 		@param to one past the last. from == to is the caret case.
 		@param sourceFrom first character to light in the OLDER document, which is pointed at as
@@ -136,11 +134,7 @@ public:
 								  TextIndex from, TextIndex to,
 								  UID sourceStoryUID, TextIndex sourceFrom, TextIndex sourceTo) = 0;
 
-	// (⛔ClearJumpFlash() - take a jump's pointer down now, leaving the standing marks alone - stood here until
-	//  2026-10-25. Its one caller was the double click's selection (KCMStorySelectChange), which went with the double
-	//  click; the flash still takes itself down (KCMStoryMarker::ClearFlash, from its expiry timer). Taken out of the
-	//  MIDDLE of the vtable, so ShowJumpFlashColoured moved up one slot: both halves are built together
-	//  ([[facade-vtable-slot-append-only]]) and no other plug-in reaches this facade.)
+	// NO ClearJumpFlash() HERE: the flash takes itself down (KCMStoryMarker::ClearFlash, from its expiry timer).
 
 	// NO ShutdownMarks() HERE, AND THE ABSENCE IS DELIBERATE. Teardown happens entirely on the
 	// model side (kKCMPeekStartupBoss's Shutdown calls KCMStoryMarker::Shutdown directly, which it

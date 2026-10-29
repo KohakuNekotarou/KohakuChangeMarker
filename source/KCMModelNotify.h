@@ -129,8 +129,8 @@ void	KCMNotifyStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 // **Every message KCM raises is fixed English** (there is no jaJP string table; the few strings
 // that have a Japanese form are switched at run time in KCMLoc.h), so every one of them has to be
 // marked untranslatable. @warning **forgetting that mark is silent**: the string goes through the
-// translation table and the reader is shown the key itself. Thirteen call sites wrote out the same
-// three lines, which is thirteen chances to leave the mark off the fourteenth.
+// translation table and the reader is shown the key itself - and every call site that wrote out the
+// same lines was one more chance to leave it off. The words are ASCII (KCMSentence.h).
 // forceRedrawNow is KCMNotifyStatus's and defaults the same way.
 void	KCMSayStatus(const char* text, bool16 forceRedrawNow = kFalse);
 

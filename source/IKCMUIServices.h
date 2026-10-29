@@ -2,12 +2,12 @@
 //
 //  IKCMUIServices.h
 //
-//  WHAT THE MODEL HALF ASKS THE UI HALF FOR, AND DOES WITHOUT WHEN IT IS NOT THERE (the author's call of
-//  2026-10-01, "follow the guide strictly: the alerts and the progress bars are the UI's too", made for KCM:
+//  WHAT THE MODEL HALF ASKS THE UI HALF FOR, AND DOES WITHOUT WHEN IT IS NOT THERE (the author's call,
+//  "follow the guide strictly: the alerts and the progress bars are the UI's too", made for KCM:
 //  docs/superpowers/specs/2026-10-28-kcm-ui-services-design.md).
 //
 //  NOT A LINK MATTER. RangeProgressBar, SuppressProgressBarDisplay and CAlert are PUBLIC_DECL, in the library every
-//  plug-in links (ProgressBar.h, CAlert.h), and the model half called them until today. They moved because the guide
+//  plug-in links (ProgressBar.h, CAlert.h), so the model half could call them. They are the UI's because the guide
 //  lists DIALOGS among the user-interface components (vol1-06, "UI component content") and a modal progress bar and a
 //  Yes / No alert are read as dialogs - KFC's reading and KFC's shape (KFC/model/IKFCUIServices.h), copied. So the model
 //  asks THIS interface - pure virtual, declared here on the model's side - and the UI half implements it
