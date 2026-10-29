@@ -67,24 +67,16 @@ static bool16 sStatusWarning = kFalse;
 	⚠Holds PMStrings in vectors, so it is in the Clear list for the heap reason. */
 static KCMStoryLayers sStatusLayers;
 
-// Get at the application's subject. During shutdown the session and the application cannot be
-// resolved, so nil comes back and the caller gives up quietly (KCM's rule everywhere: do not touch
-// what has closed or gone).
-static ISubject* KCMQueryAppSubject()
-{
-	ISession* session = GetExecutionContextSession();
-	if (session == nil)
-		return nil;
-	InterfacePtr<IApplication> app(session->QueryApplication());
-	if (app == nil)
-		return nil;
-	return (ISubject*)app->QueryInterface(IID_ISUBJECT);
-}
-
 // KCMNotify (declared in KCMModelNotify.h)
+// The application's subject, asked the way Adobe's own code asks it (InterfacePtr<ISubject> subject(app,
+// IID_ISUBJECT)). During shutdown the session or the application cannot be resolved; InterfacePtr then asks a
+// nil boss for nothing (InterfacePtr.h, QueryInterface_) and this gives up quietly (KCM's rule everywhere: do not
+// touch what has closed or gone).
 void KCMNotify(ClassID theChange, const KCMNotifyPayload* payload)
 {
-	InterfacePtr<ISubject> subject(KCMQueryAppSubject());
+	ISession* const session = GetExecutionContextSession();
+	InterfacePtr<IApplication> app((session != nil) ? session->QueryApplication() : nil);
+	InterfacePtr<ISubject> subject(app, IID_ISUBJECT);
 	if (subject == nil)
 		return;		// shutting down, say. The same as nobody listening: doing nothing is correct.
 
