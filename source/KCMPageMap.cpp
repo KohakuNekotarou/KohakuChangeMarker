@@ -422,7 +422,8 @@ static void KCMSourcePageKeys(IDataBase* sourceDB, const std::vector<UID>& sourc
 //   With the "Pair Pages by UID" toggle OFF the rule that stood until 2026-09-13 is used
 //   instead: pair what is left in order, the pages that fall off the longer document's end
 //   being the overflow. It is kept for two documents that share no history (made separately,
-//   or one of them through IDML, which renumbers), where identity has nothing to say.
+//   or one of them through IDML, which renumbers), whose UIDs mean nothing - they coincide by
+//   chance, so the identity rule would pair unrelated pages (KCMPagePairRule.h).
 //========================================================================================
 void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages,

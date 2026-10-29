@@ -15,9 +15,13 @@
 //
 //  ★UID ONLY. There is no fall-back to position when the two documents share no ids, and no
 //    threshold deciding between the two (the user's decision, 2026-09-13: "UID のみ", the same
-//    rule the Story mode has always had). Two documents made separately therefore pair nothing,
-//    and every page of both carries the "/" - that is visible, whereas the wall of false
-//    "changed" rings the positional rule produced was not.
+//    rule the Story mode has always had).
+//    @warning **two documents made separately do not "share no ids"**: page UIDs are small numbers
+//      each document hands out in the same order, so they coincide by chance (measured: two new
+//      3-page documents both numbered their pages 243, 258, 259; one made with 1 page and 2 added
+//      at the front numbered them 264, 258, 243). Such a pair is paired by those numbers - unrelated
+//      pages compared, not the "/" on every page. For them the "Pair Pages by UID" toggle goes off
+//      (KCMPageMap.h).
 //
 //  ⛔**THE ONE EXCEPTION STOPPED BEING NEEDED ON 2026-09-21**, and it was inside the rule rather
 //  than beside it: a REHYDRATED task-start copy was a new document whose pages had new ids, so each

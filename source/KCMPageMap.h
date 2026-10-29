@@ -19,7 +19,7 @@
 //  Everything downstream -- the comparison, peek's picture of the older version, a single
 //  spread's re-comparison, the CMYK sampler, the view sync -- goes through KCMBuildPairing /
 //  KCMMapTargetToSource / KCMMapSourceToTarget; nothing zips the raw page lists together
-//  (background: memory kescm-page-offset-idea).
+//  (background: docs/ai-notes/kcm-page-pairing-by-uid-2026-09-13.md).
 //
 //========================================================================================
 #ifndef __KCMPageMap_h__
