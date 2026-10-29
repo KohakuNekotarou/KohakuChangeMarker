@@ -2,9 +2,9 @@
 //
 //  KCMComparisonRun.cpp
 //
-//  Starting and clearing a comparison, plus the two display settings that come with it: the
-//  resolver (which two documents), the procedure that starts on those two, the Start/Stop
-//  toggle, and the print-marks and opacity switches.
+//  Starting and clearing a comparison, plus the mark-display settings that come with it: which
+//  two documents, opened (the resolver itself is KCMPairChoice's), the procedure that starts on
+//  those two, the Start/Stop toggle, and the print-marks, opacity and colour switches.
 //
 //  MODEL side: this drives the comparison itself. The callers (the flyout items, the
 //  right-click on a book comparison row) stay in the UI, and everything here says what
@@ -32,9 +32,6 @@
 #include "KCMThreadSafety.h"		// KCMIsSameDoc -- the one place this plug-in asks whether two dbs are one document
 #include "IKCMCompareFacade.h"	// kKCMImportSourceModeRefusal - the words both halves say
 #include "KCMTaskStartClone.h"	// KCMIsImportClone - an import's copy is compared in the Story mode only
-// ⛔KCMOrigin.h went on 2026-09-21. It was included for "the third kind of Source, chosen by
-//   KCMChooseOriginPair" - and that function had already gone with the origin, leaving an include
-//   this file reads nothing from and a comment naming something that no longer exists.
 
 // KCMCanStartComparison (declared in KCMComparisonRun.h) -- whether the flyout's Start may be
 // enabled. Goes through the same resolver as the command, so the two cannot disagree.
@@ -83,20 +80,15 @@ void KCMStopComparison()
 	KCMDoDisarmMousePeek(db);
 	// Scrollbar map: the strips come off every window (Target and Source alike), and that is done
 	// by the UI when it receives the kKCMMarksClearedMessage the KCMDoClearMarks above emits.
-	// If Find Overset is on by itself, re-apply it to the overset document (sOversetDB) so the
-	// Source window is not left with a comparison strip, AND so the overset set itself is scanned
-	// (Stop used to re-apply the Find Overset scan here. That feature went on 2026-09-08.)
 	KCMSayStatus("marks cleared");
 
 	// **Cleared is emitted a second time, on purpose.** When KCMDoClearMarks emitted it, the
-	// disarm three lines above had not run yet, so the armed state was still up and the panel
-	// would have been rebuilt looking like a comparison in progress. Emitting again here rebuilds
-	// the Target/Source names, the icon and the Prev/Next enabling from the state AFTER the stop.
+	// disarm above had not run yet, so the armed state was still up and the panel would have been
+	// rebuilt looking like a comparison in progress. Emitting again here rebuilds the Target/Source
+	// names, the icon and the Prev/Next enabling from the state AFTER the stop.
 	// No document travels with it (docA/docB are nil), and that is the SIGN that this notification
 	// only asks for a redraw: the listener (KCMModelChangeObserver) uses it to skip both the
-	// thumbnail purge and the removal of the scrollbar map's strips.
-	// @warning skipping the strip removal matters here -- without it this notification tears off
-	// the Find Overset strip that KCMApplyOversetForDoc has just put back, three lines above.
+	// thumbnail purge and the removal of the scrollbar map's strips (they went with the first one).
 	KCMNotify(kKCMMarksClearedMessage);
 }
 
@@ -105,28 +97,30 @@ void KCMStopComparison()
 // **The resolver (which two) and the procedure (what to do) are kept apart.** There is no
 // document-choosing here at all; it starts on whatever it is handed. The reason is that there are
 // several callers:
-//   1. KCMToggleStartStop, which resolves active = Target and another open document = Source
-//      (the Task Start kept in memory among them - a database that is in no document list, which
-//      is why this takes databases and KCMStartComparisonFor only unwraps);
-//   2. "Start Change Marker" on a book comparison row, which opens that chapter's two files.
-//   (A third, KCMStartComparisonWithSourceDB - another plug-in's lent Source, 2026-09-02 - went on
-//    2026-10-27.)
+//   - KCMToggleStartStop, which asks KCMOpenComparisonPair which two (the Task Start kept in
+//     memory among them - a database that is in no document list, which is why this takes
+//     databases and KCMStartComparisonFor only unwraps);
+//   - KCMStartComparisonFor - "Start Change Marker" on a book comparison row, which opens that
+//     chapter's two files;
+//   - KCMRefreshComparison - the armed pair again;
+//   - KCMStartTrackChanges (KCMTrackStart.cpp) - a Track listing, on the Target alone.
 // Copying the procedure into each would let them drift ([[one-question-one-place]]), and the
-// procedure holds three decisions that all fail quietly when forgotten: do not arm on cancel, let
-// the strips go onto both windows, re-apply overset.
+// procedure holds decisions that fail quietly when forgotten: the transparency-list insurance
+// before anything is drawn, no arm on a cancel, and Rebuilt emitted again after the arm.
 // @return kTrue when the comparison ran and the pair is armed; kFalse when it did not (a CANCEL
-//   from the progress bar, or a failure). **THE ANSWER MATTERS ONLY TO A CALLER THAT WAS ALREADY
-//   ARMED** - KCMRefreshComparison. For the other two, "not armed" is where they started, so the
-//   kFalse case leaves exactly the state they began in and there is nothing to undo.
+//   from the progress bar, or a failure). **THE ANSWER MATTERS TO A CALLER WITH SOMETHING TO TAKE
+//   BACK** - KCMRefreshComparison (it was armed) and KCMStartTrackChanges (it raised the listing).
+//   For the toggle and a book row, "not armed" is where they started, so the kFalse case leaves
+//   exactly the state they began in and there is nothing to undo.
 bool16 KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 {
-	// (A Track listing is started with no Source - KCMStartTrackChanges, 2026-10-27; every other mode needs one.)
+	// (A Track listing is started with no Source - KCMStartTrackChanges; every other mode needs one.)
 	if (targetDB == nil || (sourceDB == nil && KCMModeNeedsSource(KCMGetCompareMode())))
 		return kFalse;
 
 	// **The transparency-list insurance, on both documents, before anything is drawn**
-	//   (KCMRingAdornment.h says what it is for). Both are live here -- the resolvers above only
-	//   hand over open documents or the lent Source -- so no liveness test is needed.
+	//   (KCMRingAdornment.h says what it is for). Both are live here -- the callers only hand over
+	//   open documents or the lent Source -- so no liveness test is needed.
 	KCMRevalidateItemXPList(targetDB);
 	KCMRevalidateItemXPList(sourceDB);
 
@@ -136,7 +130,7 @@ bool16 KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 	// KCMUIStartup::Startup): a Start that overwrites them means the saved choice is wiped by
 	// every comparison, and saving it stops meaning anything. The default is the static initial
 	// value (off); from there the reader's choice stands.
-	// If the user CANCELS the comparison (the progress bar carries a Cancel on longer runs), do
+	// If the reader CANCELS the comparison (the progress bar carries a Cancel on longer runs), do
 	// not start: the marks have already been discarded inside KCMDoMarkChangesDoc, so leaving the
 	// arm and the strips out puts everything back the way it was before the press, rather than
 	// creating an armed state with no marks in it.
@@ -147,12 +141,6 @@ bool16 KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 		// The scrollbar map's strips are injected by the UI when it receives the
 		// kKCMMarksRebuiltMessage that KCMDoMarkChangesDoc emitted -- into BOTH windows (the strip
 		// looks at each window's document and switches its source accordingly).
-		// If Find Overset is still on, re-scan the comparison Target so overset is re-applied.
-		// That does two things: (a) Prev/Next can walk "changes then overset" within one Target
-		// document -- otherwise an overset set belonging to a different document (sOversetDB != sDB)
-		// drops out of the walk silently; (b) overset that edits have added or removed since the
-		// last scan is picked up, which a same-document Start would otherwise miss.
-		// (Start used to re-bind the Find Overset scan to the Target here -- gone 2026-09-08.)
 	}
 	KCMNotifyStatus(report);
 
@@ -168,14 +156,11 @@ bool16 KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
 
 // KCMRefreshComparison (declared in KCMComparisonRun.h) -- compare the SAME pair again.
 //
-// It is three lines because the procedure is KCMStartComparisonOn's and this only supplies the
+// It is short because the procedure is KCMStartComparisonOn's and this only supplies the
 // documents. See the header for why nothing is stopped first, and why the comparison is the full
 // one rather than the incremental one.
 void KCMRefreshComparison()
 {
-	// ⛔The origin's own Refresh stood here until 2026-09-21: an armed origin pair had no Source
-	//   database, so refreshing meant rehydrating one. Both ends are documents now.
-
 	IDataBase* const targetDB = KCMArmedTargetDB();
 	IDataBase* const sourceDB = KCMArmedSourceDB();
 	if (targetDB == nil || (sourceDB == nil && KCMModeNeedsSource(KCMGetCompareMode())))
@@ -225,11 +210,6 @@ void KCMStartComparisonFor(IDocument* target, IDocument* source)
 	KCMStartComparisonOn(::GetUIDRef(target).GetDataBase(), ::GetUIDRef(source).GetDataBase());
 }
 
-// (⛔KCMStartComparisonWithSourceDB and KCMReleaseExternalSource stood here - another plug-in's lent Source started and
-//  released, behind the facade's StartComparisonWithSourceDB / ReleaseExternalSourceDB. Their one caller, Kohaku
-//  InDesign MCP's bridge, went on 2026-10-12, and the two went on 2026-10-27 with their facade slots (the author:
-//  "remove them"). The Task Start kept in memory lends its clone through KCMTaskStartClone instead.)
-
 void KCMToggleStartStop()
 {
 	const bool16 armed = KCMIsArmed() && (KCMArmedTargetDB() != nil);
@@ -239,17 +219,15 @@ void KCMToggleStartStop()
 		return;
 	}
 
-	// ⛔The origin's own Start stood here until 2026-09-21, because the chosen Source could be a
-	//   thing that was not a database at all. A Task Start chooses a FILE now, and the resolver
-	//   opens it like any other end.
+	// Start: the chosen pair, with the automatic rule for an end nobody chose (active document = Target,
+	// another open document = Source) - which two, opened, is KCMOpenComparisonPair's (below), which the
+	// Before/After report asks as well.
+	// The flyout's Start is grey unless the resolver finds a pair (KCMCanStartComparison asks the same
+	// resolver); KCMOpenComparisonPair still refuses a file that will not open, one document chosen for
+	// both ends, and a document closed while the menu stood open - each with its words for the status line.
 
-	// Start: active (front) document = Target, another open document = Source - which two, opened, is
-	// KCMOpenComparisonPair's (below), which the Before/After report asks as well.
-	// The flyout's Start is grey unless two documents are there (KCMCanStartComparison goes
-	// through the same resolver), so this normally cannot fail. It is the guard for the case
-	// where a document is closed while the menu stands open.
-
-	// AN IMPORT'S COPY IS COMPARED IN THE STORY MODE ONLY (the import-as-Source road - design 2-10): it is
+	// AN IMPORT'S COPY IS COMPARED IN THE STORY MODE ONLY (the import-as-Source road - section 2, item 10 of
+	//   docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md): it is
 	//   the document with the files' words poured in, so a Pixel or a Resources comparison would report what the files
 	//   would move as though it had happened, and the Track mode reads the Target's own records. Asked of the chosen
 	//   Source (the clone is a lent database: nothing is opened to ask).
@@ -277,7 +255,7 @@ void KCMToggleStartStop()
 }
 
 // KCMOpenComparisonPair (declared in KCMComparisonRun.h) -- which two, opened: Start's steps before it
-// compares, moved out of the toggle on 2026-10-11 when the Before/After report began to compare for itself.
+// compares, shared by the toggle and the Before/After report, which compares for itself.
 bool16 KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMString& outWhy)
 {
 	outTarget = nil;
@@ -330,7 +308,7 @@ bool16 KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMStr
 	// @warning **this is not folded into KCMCanStartComparison**, which would grey the Start out
 	// instead. A greyed item says "not now" and names no reason; the reader who has just chosen
 	// the same document twice needs to be told which of the two to change. So the item stays live
-	// and pressing it answers (user's instruction: "rejected at the start, with a message on the
+	// and pressing it answers (the author's instruction: "rejected at the start, with a message on the
 	// panel"). The automatic rule cannot produce this case -- KCMFirstOtherDoc excludes the
 	// Target -- so it only ever arises from a choice, and the message can say so.
 	//
@@ -359,7 +337,7 @@ bool16 KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMStr
 	//   **And a lent Source is never "the same document"** (KCMIsSameDoc answers by pointer for
 	//   it): the copy IS a copy of the Target, and comparing the two is the whole request.
 	//   (The Before/After report's item is live on the same grounds, and its press answers with the
-	//   same words, 2026-10-11.)
+	//   same words.)
 	if (KCMIsSameDoc(targetDB, sourceDB))
 	{
 		outWhy = KCMSentence("Target and Source are the same document. Bring another document to the front, or set one of them to another document.");
@@ -407,15 +385,9 @@ void KCMClearReportComparison(IDataBase* targetDB, IDataBase* sourceDB)
 }
 
 // Put the state of the two mark settings on the status line. Both callers below change one of the
-// pair and keep the other, so both have to say the same sentence.
-// **Written out twice, the two copies drifted**: when the plug-in was renamed the
-// prefix here was left at the old "kescm:" in every copy, and the reader saw a name that no longer
-// exists on three of the flyout's toggles. Saying it in one place is also what makes it possible
-// to change what is said.
-// **THE PREFIX IS GONE** (the user's call: take "KCM:" off the panel's messages).
-//   It said whose message it was, and the box it is drawn in belongs to this panel already -- the
-//   reader is looking at Kohaku Change Marker while they read it. This finishes the removal begun
-//   on 2026-08-25, when the same prefix came off the Pages panel's context items (KCMID.h).
+// pair and keep the other, so both have to say the same sentence - written once, so it cannot drift.
+// **No "KCM:" prefix** (the author's call): the box it is drawn in belongs to this panel already --
+//   the reader is looking at Kohaku Change Marker while they read it.
 static void KCMReportMarkSettings(bool16 printFlag, bool16 op25)
 {
 	PMString report;
@@ -441,17 +413,16 @@ void KCMSetMarkOpacity25(bool16 op25)
 // KCMSetMarkColor (declared in KCMComparisonRun.h) -- set the mark colour to red or cyan, from
 // the flyout's kKCMPopupColorRedActionID / kKCMPopupColorCyanActionID. The tick on the chosen item
 // is applied by UpdateActionStates reading KCMGetMarkColorCyan, the same way the opacity pair works.
-// This replaced an automatic choice that switched to cyan over reddish ground, decided per pixel
-// off the comparison raster. It went because the reader could not tell why a mark was the colour
-// it was, and because **the Story mode cannot read the ground at all**, so the two modes would
-// have disagreed about how the colour is chosen.
+// ⚠**The colour is the reader's choice, never picked from the ground** (cyan over reddish ground,
+// per pixel off the comparison raster, was tried): the reader could not tell why a mark was the
+// colour it was, and **the Story mode cannot read the ground at all**, so the two modes would
+// disagree about how the colour is chosen.
 void KCMSetMarkColor(bool16 cyan)
 {
 	KCMDoSetMarkColor(cyan, KCMActiveDocDB());
 
 	// Not KCMReportMarkSettings: this one reports the colour, which is not part of the print /
-	// opacity pair. ⚠**They used to share a prefix, and that was all they shared** -- the prefix
-	// came off both on 2026-09-10, so what is left in common is only the shape of the sentence.
+	// opacity pair; only the shape of the sentence is shared.
 	PMString report;
 	report.SetTranslatable(kFalse);
 	report.Append(cyan ? "Mark colour cyan" : "Mark colour red");

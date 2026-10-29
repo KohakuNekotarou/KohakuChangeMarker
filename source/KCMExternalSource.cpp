@@ -17,7 +17,7 @@
 #include "KCMExternalSource.h"
 
 // **File-scope statics, never dereferenced.** One registration at a time: the comparison is one
-// pair, so a second lent Source can only arrive through a second Start, which forgets the first.
+// pair, and KCMRegisterExternalSource replaces any earlier registration.
 static IDataBase*	sExternalSourceDB = nil;
 static PMString		sExternalSourceLabel;
 

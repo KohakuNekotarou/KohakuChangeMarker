@@ -11,6 +11,7 @@
 //      AppendMasterPageItems, whose header says it returns the items "drawn on the given spread
 //      and page bounds"). Items overridden on the page itself are therefore expected not to
 //      appear -- that is the implication of "drawn", not something the header states outright.
+//      Items on a locked layer are collected, items on a hidden one are not (the flags, below).
 //   3. For each item, get the text model through IMultiColumnTextFrame and scan its range
 //      (TextStart .. TextStart+TextSpan) character by character for kTextChar_PageNumber (0x18).
 //      A folio is stored as that character code; see KCMTextRangeHasPageNumberMarker below.
@@ -114,11 +115,11 @@ static bool16 KCMTextRangeHasPageNumberMarker(ITextModel* textModel, TextIndex s
 
 // Does itemUID's text frame contain a folio marker (0x18)? If so, hand back the text model and where
 // the frame's range starts, which is what the ink calculation needs (it reads the first line from
-// there). (The span was handed back as well until 2026-10-30; neither caller read it.)
+// there).
 // What the item actually is depends on where it came from:
 //   (a) a graphic frame (the spline that is a text frame's parent). **Master items arrive this
-//       way**: AppendMasterPageItems defaults to kSkipChildren, so it returns the parent frame and
-//       not the child that holds the text. IGraphicFrameData::QueryMCTextFrame() descends to the
+//       way**: AppendMasterPageItems is called with kSkipChildren, so it returns the parent frame
+//       and not the child that holds the text. IGraphicFrameData::QueryMCTextFrame() descends to the
 //       child MC text frame and its text model.
 //   (b) the item implements IMultiColumnTextFrame or ITextFrameColumn itself (read directly).
 // If a text model comes out of either, it is scanned; if none does, kFalse.
@@ -199,7 +200,7 @@ static PMRect KCMRealNumberInkInSpread(ITextModel* masterTextModel, TextIndex st
 	// that does not change the wax and does not Apply", drawing among it -- and the product code
 	// uses it (spellpanel/PrivateSpellingUtils.cpp:371,579).
 	// The sample (SnpEstimateTextDepth.cpp:208) uses the ordinary one instead; where the two
-	// disagree, follow the product (KBSGlyphScanEngine.cpp does the same).
+	// disagree, follow the product.
 	K2::scoped_ptr<const IWaxIterator> waxIter(waxStrand->NewReadOnlyWaxIterator());
 	if (waxIter == nil)
 		return result;
@@ -270,9 +271,9 @@ static PMRect KCMRealNumberInkInSpread(ITextModel* masterTextModel, TextIndex st
 	//           spreads (hide the first spread and the second page prints "1"; confirmed on screen).
 	//     **kFalse is the right one here** because this function measures the ink of the digits
 	//     that are really printed, so it has to count the way the real folio counts.
-	//     @warning the TSV export, Prev/Next and Story Edits all use kTrue instead. Those NAME a
-	//       page to a person and so must spell it the way the Pages panel does. **The asymmetry is
-	//       deliberate: do not "make them consistent".**
+	//     @warning the places that NAME a page to a person (Prev/Next, the Story Edits labels, the
+	//       exports) use kTrue instead, and must spell it the way the Pages panel does. **The
+	//       asymmetry is deliberate: do not "make them consistent".**
 	pageList->GetPageString(pageUID, &numStr, kFalse, kFalse, kDefaultPageType, kTrue, kFalse);
 	const int32 nch = numStr.NumUTF16TextChars();
 	if (nch <= 0)
@@ -394,11 +395,11 @@ void KCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>& 
 		UIDList masterItems(db);
 		UIDList itemPages(db);
 		PMMatrixCollection offsets;
-		// THE FLAGS ARE SPELLED OUT (M3's defect round, *88): the default skips HIDDEN AND LOCKED layers
-		//   (IShape::kSkipHiddenAndLockedLayers, IMasterSpreadUtils.h), and a locked layer is still drawn and printed - a
-		//   folio on a master layer locked to keep it from being moved, which is common, was never found, so with "Ignore
-		//   Page Number Marker" on every page after an added one still read changed (measured: work/note-scripts/
-		//   2026-10-30-kcm-m3-defect/folio_opp.ps1, case L). A hidden layer is not drawn, so it stays skipped.
+		// THE FLAGS ARE SPELLED OUT: the default skips HIDDEN AND LOCKED layers (IShape::kSkipHiddenAndLockedLayers,
+		//   IMasterSpreadUtils.h), and a locked layer is still drawn and printed - a folio on a master layer locked to keep
+		//   it from being moved, which is common, would never be found, and with "Ignore Page Number Marker" on every page
+		//   after an added one would still read changed (measured: work/kcm-regress/suites/folio-opp.ps1, case L). A
+		//   hidden layer is not drawn, so it stays skipped.
 		Utils<IMasterSpreadUtils>()->AppendMasterPageItems(db, spreadUID, onThesePages, pageBoundsList,
 			masterItems, itemPages, offsets, nil, IShape::kSkipChildren + IShape::kSkipHiddenLayers);
 
@@ -441,8 +442,8 @@ void KCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>& 
 //========================================================================================
 // The cache of excluded rectangles (declared in KCMPageNumberMarker.h)
 //   Measuring one page means enumerating every item on it, scanning every character of every text
-//   frame, collecting the master page's items, walking the wax and taking glyph bboxes. That was
-//   being done for every page on every draw event (to paint the green wash), so the result is
+//   frame, collecting the master page's items, walking the wax and taking glyph bboxes. Done for
+//   every page on every draw event (to paint the green wash) that is too much, so the result is
 //   remembered under (db, page UID) and looked up instead.
 //   The db pointer is for comparison only and is never dereferenced. A closed db's entries are
 //   dropped by Invalidate.
@@ -467,11 +468,9 @@ void KCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>& 
 //   DropAllOrig (whose reasoning is in KCMDrawEventHandler.h).
 //   **What breaks that assumption**: painting the green wash into print or PDF. Do that and BOTH
 //   KCMGetPageNumberMarkerRects and KCMInvalidatePageNumberMarkerRects need KCMMarkStateLock --
-//   guarding only the discarding side is worthless, and is a mistake this plug-in has already made.
-//   @warning the count of callers above is worth re-deriving with grep rather than trusting: it
-//   once said "three callers" and had missed the book comparison. The conclusion (all main) did not
-//   change, but **reading "all three are main" while one is uncounted is how a fourth caller on
-//   another thread gets missed.**
+//   guarding only the discarding side is worthless.
+//   @warning re-derive the callers with grep rather than trusting the list above: **a caller left
+//   out of it is how one on another thread gets missed.**
 //========================================================================================
 typedef std::pair<IDataBase*, UID>              KCMMarkerRectKey;
 typedef std::map<KCMMarkerRectKey, std::vector<PMRect> > KCMMarkerRectMap;

@@ -12,10 +12,10 @@
 //  A folio normally sits on the MASTER page and is not overridden on the page itself, so finding
 //  it means looking at the applied master spread's items as well as the local ones.
 //
-//  How it is used: just before the CMYK comparison loop in KCMDrawEventHandler::MakeEntry, the
-//  folio frames' rectangles are collected for the target page and for its partner (in page inner
-//  coordinates), converted to the comparison resolution's pixel coordinates, and the pixels
-//  inside them are left out of the difference test.
+//  How it is used: just before the CMYK comparison loop in KCMDrawEventHandler::MakeEntry (and in
+//  the book comparison, KCMBookCompare.cpp), the folio frames' rectangles are collected for the
+//  target page and for its partner (in page inner coordinates), converted to the comparison
+//  resolution's pixel coordinates, and the pixels inside them are left out of the difference test.
 //
 //========================================================================================
 #ifndef __KCMPageNumberMarker_h__
@@ -49,8 +49,8 @@ void	KCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>& 
 //   refresh=kFalse ... return the cache if there is one, otherwise measure once and remember
 // **Not only for speed.** What the green wash shows is "the area this COMPARISON excluded", so
 // drawing the rectangles the comparison settled on is also the correct meaning: measuring afresh
-// on every draw meant that moving a folio frame after a comparison moved the green while the
-// marks stayed where the comparison had put them.
+// on every draw would move the green with a folio frame moved after a comparison, while the marks
+// stay where the comparison put them.
 // The return is a reference into the cache. std::map is node-based, so adding other pages does
 // not invalidate it; it stays valid until the same page is re-fetched with refresh=kTrue or the
 // Invalidate below is called.

@@ -60,8 +60,7 @@ struct KCMOverlayEntry
 		rec.baseAddr = nil; rec.decodeArray = nil;
 		rec.colorTab.numColors = 0; rec.colorTab.theColors = nil;
 	}
-	// (No destructor. buf and dist are scoped_arrays: they start nil and delete[] themselves, which
-	//  is what the two lines here used to do.)
+	// (No destructor: buf and dist are scoped_arrays - they start nil and delete[] themselves.)
 };
 
 
@@ -103,8 +102,8 @@ struct KCMOrigImage
 //       ("provides a separate execution context (a cloned copy of the database) for each thread").
 //       So the db handed to the drawing is ALWAYS a different pointer from sDB.
 //       Handled by asking KCMIsSameDoc() (KCMThreadSafety.h), which asks the FILE rather than the
-//       pointer. That also disposed of [[uidref-reuse-after-close]] -- a closed document's pointer
-//       matching a different document because the address was reused.
+//       pointer. That also guards against [[uidref-reuse-after-close]] -- a closed document's
+//       pointer matching a different document because the address was reused.
 //       @warning **sOverflowCacheDB / sOverflowCacheSrcDB are still compared as raw pointers, and
 //       that is correct** -- what they compare is one static against another (sOverflowCacheDB
 //       against sDB), which gives the same answer on every thread (the reasoning is at
@@ -121,27 +120,17 @@ struct KCMOrigImage
 //       RebuildOverflowCache's swap. The "am I rasterising" flag is THREAD-LOCAL (tl_Rasterizing).
 //       @warning the condition to protect is **"the main thread writes it and the background
 //       thread reads it while drawing"**. Count that condition for every new piece of shared
-//       state: the writers of sSrcPageToTarget and of the overflow cache were both missed once,
-//       leaving only the discarding side protected.
+//       state, its writers included -- protecting only the discarding side is not enough.
 //
 //   The measurements are in KCMThreadSafety.h; the full record is in
 //   docs/ai-notes/kescm-task12-pdf-export-marks-2026-08-15.md and
 //   kescm-bg-clone-db-probe-2026-08-15.md.
 //========================================================================================
-/** **THIS CLASS IS NO LONGER AN IDrwEvtHandler IMPLEMENTATION.**
+/** **THIS CLASS IS NOT AN IDrwEvtHandler IMPLEMENTATION**, whatever its name says.
 
-	Drawing the marks was consolidated into the **global page item adornment**
-	(KCMRingAdornment.cpp), and the draw-event entry points (`HandleDrawEvent` / `Register` /
-	`UnRegister`) together with `kKCMDrawEventServiceBoss` and `KCMDrawEventSrvc` were removed.
-
-	They had been kept only as a fallback for the adornment failing to register, and carried no
-	function of their own -- the deleted `HandleDrawEvent` was two lines: return if the adornment
-	is alive, otherwise call `DrawSpreadMarks`. **Not one drawn thing was lost**: the ticks, the
-	slashes, the crosses, the folio wash and Find Overset's "+" are all inside `DrawSpreadMarks`.
-
-	What is left here is the drawing itself (`DrawSpreadMarks`) and the statics that hold the mark
-	state. **No instance of this class is ever created** -- all the mutable state was static
-	already, so that works unchanged.
+	The marks are drawn by the **global page item adornment** (KCMRingAdornment.cpp), which calls
+	the drawing held here (`DrawSpreadMarks`); this class also holds the statics that keep the
+	mark state. **No instance of it is ever created** -- all the mutable state is static.
 	@warning the class name and the file name are historical. It does not inherit IDrwEvtHandler
 	and it goes on no boss.
 	`DrawEventData` is still used, as a convenient carrier for "the spread being drawn +
@@ -172,20 +161,16 @@ public:
 	// the tool's left button is held and back to kFalse on release, and nothing is drawn while it
 	// is kFalse. The peek at the older version (sShowOriginal) is not affected by it -- that is
 	// driven separately, by **Shift + left (opaque) and Shift+Alt + left (50%)**, held rather than
-	// clicked, and it works from either window (KCMPeekGesture.cpp).
-	// ⚠**This line used to say "by a double click"**, and there is no double click anywhere in the
-	//   peek (measured: zero occurrences). Corrected 2026-09-07 after the author caught the same
-	//   claim in the spec map (MK-13).
+	// clicked, and it works from either window (KCMPeekGesture.cpp). There is no double click
+	// anywhere in the peek.
 	static bool16 sMarksVisible;
 	// The EFFECTIVE opacity applied to the on-screen marks (the rings). Default 1.0.
 	//   - while the tool's left button is held = SelectedMarkOpacity() (the panel's 25%/75%)
 	//   - while shown permanently             = KCMBaseScreenOpacity() ⇒ **the selected 25%/75%
 	//       whenever EITHER "Print comparison marks" OR "Always Show Marks on Target" is on**, and
 	//       1.0 only when both are off.
-	//       ⚠**This line used to name printing alone**, which reads as "always show = opaque" and is
-	//         wrong: that is the very toggle that puts the marks up permanently. Corrected
-	//         2026-09-07 after the author caught it in the spec map (MK-10). The one function that
-	//         decides is KCMBaseScreenOpacity in KCMPeek.cpp -- ask it rather than restating it.
+	//       The one function that decides is KCMBaseScreenOpacity in KCMPeek.cpp -- ask it rather
+	//       than restating it.
 	static PMReal sMarkScreenOpacity;
 	// Whether the change marks (rings) also go into print and PDF (KCMDoSetPrintMarks).
 	// Default kFalse (screen only). While it is on they are also shown on screen at all times,
@@ -193,13 +178,13 @@ public:
 	static bool16 sPrintMarks;
 	// While kTrue, BuildRing leaves out the band along the page edge (the "page frame") and draws
 	// only the rings around the changed cells. Off by default; the Before/After report turns it on
-	// for the length of its Before export (the user's ask, 2026-09-13: the PDF without the frame
-	// around the page) and off again. Whoever flips it calls InvalidateRingCache() on both sides,
+	// for the length of its Before export (the author's ask: the PDF without the frame around the
+	// page) and off again. Whoever flips it calls InvalidateRingCache() on both sides,
 	// because the ring images are cached per entry and rebuilt only when the radius changes.
 	static bool16 sRingFrameOff;
 	// kTrue for the length of the Before/After report's two page exports (KCMReport.cpp), Before
 	// and After alike. Read by the story ID labels (KCMRingAdornment.cpp section 1.5): with their
-	// toggle on they go into the report's After side (the user's call, 2026-09-13; the Before side
+	// toggle on they go into the report's After side (the author's call; the Before side
 	// - sRingFrameOff up - is a copy with renumbered UIDs and gets none), while an ordinary print
 	// or PDF takes them only with sPrintMarks. And by the ring itself (drawRings in
 	// DrawSpreadMarks): the report compares the pixels in every compare mode, so its
@@ -216,24 +201,23 @@ public:
 	static bool16 sMarkOpacity25;
 	// The mark colour chosen by the flyout ("Mark colour: Red / Cyan"). kFalse = red (the
 	// default), kTrue = cyan.
-	// This replaced an automatic choice that read the comparison raster per pixel and turned the
-	// mark cyan over reddish ground (kKCMRedBgDom). It went for two reasons: **the Story mode's
-	// wash cannot read the ground at all**, so the two modes would have decided colour
-	// differently; and an automatic change cannot be explained to the reader looking at it.
-	// The reader picks instead -- if a red mark is lost against red ground, choose cyan.
+	// ⚠Never picked automatically from the ground (turning the mark cyan over reddish ground, read
+	// per pixel off the comparison raster, was tried): **the Story mode's wash cannot read the
+	// ground at all**, so the two modes would decide colour differently, and an automatic change
+	// cannot be explained to the reader looking at it. The reader picks -- if a red mark is lost
+	// against red ground, choose cyan.
 	static bool16 sMarkColorCyan;
 	// "Always Show Marks on Source": the Source (older) document carries the same rings at all
 	// times, regardless of the tool's left button. Default kFalse.
 	// **Start does not touch it.** The setting is saved in the panel state and restored at
 	// start-up, so a Start that overwrote it would wipe the reader's saved choice on every
-	// comparison. (KCMStartComparisonFor used to set it kTrue.)
+	// comparison.
 	// The opacity follows the panel's 25%/75% choice (SelectedMarkOpacity), and it is not hidden by
 	// overprint preview.
 	// **WHAT REACHES PRINT AND PDF IS DECIDED BY "Print comparison marks", exactly as on the
-	//   Target side** (the author's decision through the spec map's MK-14).
-	//   ⚠**It used to go into print and PDF on this toggle alone**, ignoring sPrintMarks -- so
-	//   "Print comparison marks: off" did not mean what it said for a Source document. One
-	//   setting, one meaning: this toggle now decides the SCREEN only.
+	//   Target side** (the author's decision through the spec map's MK-14). One setting, one
+	//   meaning: this toggle decides the SCREEN only -- were it to reach the output too, "Print
+	//   comparison marks: off" would not mean what it says for a Source document.
 	static bool16 sSrcMarksOn;
 	// "Always Show Marks on Target": the Target document's marks are shown **on screen** at all
 	// times, regardless of the tool's left button. The pair of the Source one above.
@@ -283,12 +267,11 @@ public:
 	// have shifted (with nothing hidden the old number equals the current one and nothing is drawn).
 	static bool16 sShowOldNumbers;
 
-	// The "Hold to Hide Marks" toggle (sAlwaysShowMarks) was removed: its first half -- show the
-	// frames permanently -- was exactly "Always Show Marks on Target", and its own half -- hide
-	// them while the button is held -- became the standard behaviour of a toggle that is ON, in
-	// sMarksTempHidden below. The rule is now one sentence: **while the button is held, everything
-	// is the other way round** -- off shows while held, on hides while held.
-	// @warning ActionID +19 stays vacant and must not be reused.
+	// THE RULE, in one sentence: **while the button is held, everything is the other way round** --
+	// a toggle that is off shows while held, one that is on hides while held (sMarksTempHidden and
+	// sSrcMarksPressed, below).
+	// @warning ActionID +19 (a "Hold to Hide Marks" toggle, folded into this rule) stays vacant and
+	// must not be reused.
 
 	// While "Always Show Marks on Target" is on, kTrue only while the tool's left button is held
 	// down over the Target window (the permanent frames step aside); kFalse on release.
@@ -304,9 +287,8 @@ public:
 	//   side, which **XORs** it with sSrcMarksOn. So **pressing in a Source window whose toggle is
 	//   off shows the frames, and pressing in one whose toggle is on hides them** -- the rule
 	//   "while the button is held, everything is the other way round" costs one expression here.
-	//   (A flag that is only raised while the toggle is ON means **pressing with the toggle off
-	//   does nothing at all**, which contradicts the rule as three other places in this plug-in
-	//   state it.)
+	//   (A flag raised only while the toggle is ON would make **a press with the toggle off do
+	//   nothing at all**, against the rule.)
 	// The Target side keeps two flags (sMarksVisible to show, sMarksTempHidden to hide) because
 	//   its sMarksVisible is also raised by other routes, the peek among them. **Only the Source
 	//   side can be one flag.**
@@ -355,13 +337,9 @@ public:
 	static PMReal sPeekOpacity;							// the peek's opacity: Shift+left = 1.0 (opaque),
 														// Shift+Alt+left = 0.5. Read by the drawing block
 
-	// (The Find Overset state stood here -- sOversetOn, sOversetDB, sOversetPages, sOversetLocs
-	//  and DropOverset() -- and went with the feature on 2026-09-08. InDesign's own Preflight
-	//  panel finds overset text, keeps up with edits, and jumps to the place.)
-
-	// (The transient toast mechanism was removed; messages go to the panel's status line
-	//  (KCMSetStatus). The mechanism itself may be worth reusing in another plug-in:
-	//  docs/ai-notes/kescm-toast-mechanism.md and git 509e830.)
+	// (Messages go to the panel's status line (KCMSetStatus); there is no toast. The removed toast
+	//  mechanism may be worth reusing in another plug-in: docs/ai-notes/kescm-toast-mechanism.md and
+	//  git 509e830.)
 
 	// Paint the ring (0 < dist <= radius) into buf (ARGB) in one pass, using the distance
 	// transform -- no dilation needed. Every ring pixel takes the panel's chosen colour
@@ -389,7 +367,7 @@ public:
 
 	// Rebuild the overflow cache (sOverflowT / sOverflowS) from the current sDB / sSrcDB, with one
 	// call to KCMBuildPairing. Called from the comparison (KCMDoMarkChangesDoc), so it is up to
-	// date after a Start, a register Add and an Ignore toggle.
+	// date after every comparison.
 	static void RebuildOverflowCache();
 	// Rebuild only when the (sDB, sSrcDB) the cache was built for differs from the current pair --
 	// the guard for a document switch, or a re-comparison having moved to another document. When
@@ -462,22 +440,17 @@ public:
 // Raises tl_Rasterizing and puts it back, exception-safe: if SnapshotUtilsEx::Draw throws (a
 // bad_alloc from inside AGM, say) the flag must not stay raised, which would suppress every mark
 // from then on.
-// Making the flag thread-local changed not one caller -- the RAII wrapper is what kept that change
-// inside this class.
-// The callers are found by grepping for `KCMRasterizingGuard` (four today: two in
-// KCMDrawEventHandler.cpp -- the comparison's rasterisation, which both of MakeEntry's pages go
-// through, and MakeOrigImage -- one in KCMColorSampler.cpp, one in KCMBookCompare.cpp; it was five
-// until 2026-10-30, when MakeEntry's two became one function). **The count can be re-derived; line
-// numbers cannot -- they go quietly wrong.**
+// The callers are found by grepping for `KCMRasterizingGuard` (the comparison's rasterisation,
+// which both of MakeEntry's pages go through, and MakeOrigImage in KCMDrawEventHandler.cpp; the
+// colour sampler; the book comparison).
 //
 // **It nests safely** (the previous value is saved and restored). A destructor that wrote kFalse
 // unconditionally would mean a guard inside a guard **ends the outer protection when the inner one
 // finishes** -- and rasterising after that point paints **our own marks into the comparison
 // raster**, which makes the result quietly wrong with no crash and no warning.
-// @warning today each of the four wraps its Draw in the smallest possible scope (the book
-//   comparison's wraps its pair's two Draws in one) and none of them nests, but the book comparison
-//   has only recently started using this guard, and the day that route calls MakeEntry it nests
-//   immediately.
+// @warning today none of them nests (each wraps its Draw in the smallest possible scope; the book
+//   comparison's wraps its pair's two Draws in one), but the day the book comparison calls
+//   MakeEntry it nests immediately.
 // Two lines suffice because ThreadLocal::Get() is guaranteed to return the initial value (kFalse)
 // when nothing has been set (IDThreading.h:107 = PublicThreadLocalStorageGet(fKey, fInitialVal)),
 // so fPrev is not garbage on a background thread's first pass.
@@ -494,9 +467,6 @@ private:
 	bool16 fPrev;
 };
 
-// (KCMQueryPanorama moved to KCMViewLookup.h: it returns an IPanorama, which is a question about a
-//  window, so the UI half owns it. Callers include "KCMViewLookup.h".)
-
 // Release the font cache used by the original-page-number badge (called from
 // KCMPeekStartup::Shutdown). The implementation is in KCMDrawEventHandler.cpp, beside the cache.
 void KCMReleaseOldNumFontCache();
@@ -505,8 +475,8 @@ void KCMReleaseOldNumFontCache();
 // because the two are the same page size and therefore the same (x, y) space -- a folio area on
 // either side is skipped on both.
 // This and the bbox below are here for the same reason as the per-row test that follows them:
-// the three steps are the ONE sieve, they ran in two .cpp files, and only the third had been
-// pulled out -- so two thirds of it was still a copy waiting to be edited on one side only.
+// the three steps are ONE sieve, used by two .cpp files, and a copy in each would be edited on one
+// side only.
 // @warning **the caller decides WHETHER to exclude anything.** The document comparison asks the
 //   "Ignore page numbers" toggle; the book comparison always excludes, because inserting one
 //   chapter shifts every folio after it. This only converts what it is handed.
@@ -558,9 +528,9 @@ inline void KCMFolioExcludeBBox(const std::vector<Int32Rect>& rects,
 
 // The folio-exclusion test, per row: is x inside any of the rectangles that reach this row?
 // The document comparison (MakeEntry in KCMDrawEventHandler.cpp) and the book comparison
-// (ComparePages in KCMBookCompare.cpp) use the same test. It is one function because the same
-// four lines used to be copied into both .cpp files, with a comment asking whoever edited one to
-// edit the other -- a promise that splits silently the first time it is forgotten.
+// (ComparePages in KCMBookCompare.cpp) use the same test. It is one function because a copy in
+// each .cpp file, with a comment asking whoever edits one to edit the other, is a promise that
+// splits silently the first time it is forgotten.
 // It is inline in the header because it is called from the **innermost (per pixel)** loop of the
 // comparison: an extern definition would remove the duplication but leave the book comparison
 // paying for a real function call.
@@ -578,7 +548,7 @@ class IGraphicsPort;
 
 // Set the mark colour on a gPort. **Screen is RGB, print and export are CMYK.**
 // The full reasoning is in the implementation (KCMDrawEventHandler.cpp): KCM does its **comparison
-// in CMYK**, so drawing the marks in RGB was the inconsistency this removed. The conversion is the
+// in CMYK**, and a mark drawn for paper through this goes out in CMYK. The conversion is the
 // standard formula.
 // It is not static, and is declared here, because the Story mode's marker (KCMStoryMarker.cpp)
 // reaches paper too and needs the same screen-RGB / print-CMYK decision. Written in two places it
@@ -589,8 +559,8 @@ class IPMFont;
 
 // The application's default font, fetched once (on the main thread) and kept until Shutdown
 // (KCMReleaseOldNumFontCache). It is what the old-folio badge and the paw's note are written in.
-// Not static since 2026-09-13: the story UID labels (KCMRingAdornment.cpp) write in the same
-// font, and a second cache of the same font would be a second place to release it.
+// Not static: the story UID labels (KCMRingAdornment.cpp) write in the same font, and a second
+// cache of the same font would be a second place to release it.
 // @warning nil on a background thread that arrives before the main thread has fetched it (the
 //   fetch is main-thread only; the reason is at the definition). Callers skip their text then.
 IPMFont* KCMQueryMarkFont();

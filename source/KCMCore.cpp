@@ -57,9 +57,8 @@
 #include "KCMExternalSource.h"     // KCMIsDbAlive -- "still there" includes the lent Source
 #include "KCMTaskStartClone.h"     // KCMIsImportClone / KCMImportCloneHasStory -- an import's copy lists the stories it filled
 #include "KCMStoryPlace.h"         // KCMStoryPairByPlace -- the stories the UIDs could not pair, paired by their first frame's place
-// **No UI header is included here.** Everything this file used to do to the screen is now a
-// KCMNotify*() call, so the comparison engine says only WHAT CHANGED and has zero dependency on
-// the UI.
+// **No UI header is included here.** Everything this file does to the screen is a KCMNotify*()
+// call, so the comparison engine says only WHAT CHANGED and has zero dependency on the UI.
 #include "KCMCore.h"
 #include "KCMID.h"			// kKCM*Message, the notification IDs
 #include "KCMModelNotify.h"	// KCMNotifyStatus / KCMNotifyDocs - the model tells the UI, it never calls it
@@ -86,10 +85,8 @@ static void KCMInvalidateDocs(IDataBase* first, IDataBase* second, IDataBase* th
 // by Hide Unchanged**: `[pl=4 walk=4 SAME-ORDER]` -- hidden pages included, and in exactly the same
 // order. Full record: docs/ai-notes/kescm-api-audit-b3-2026-08-16.md
 //
-// @warning it still does not include master pages (`:81` states that as the contract). Three
-// callers -- the comparison below, the TSV export and Prev/Next -- say "masters are appended
-// separately" and depend on that; the dependency survives the switch, its justification simply
-// moved from ISpreadList's behaviour to IPageList's contract.
+// @warning it does not include master pages (`:81` states that as the contract), and the callers
+// that append the masters separately (KCMCollectMasterPageUIDs) depend on that.
 // @warning out is NOT cleared: callers append the masters after the ordinary pages.
 //========================================================================================
 void KCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out)
@@ -112,23 +109,18 @@ void KCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out)
 //   If db is one of the documents being compared (sDB/sSrcDB), append every page that could be
 //   carrying a mark right now (the change ring, the overflow "/", the registered "/") to outPages
 //   and answer kTrue. Otherwise touch nothing and answer kFalse.
-//   **"What counts as marked" is defined here and nowhere else.** Add a kind of mark here and both
-//   the comparison and the UI's thumbnail purge follow automatically.
+//   **"What counts as marked" is defined here and nowhere else.** Add a kind of mark here and the
+//   UI's thumbnail purge follows automatically.
 //
 //   It looks like a UI question and is not: it reads sEntries, the overflow cache and the
-//   registered pages, and touches no widget and no view. Living in a UI-side file is what made
-//   three model-side files include a UI header just to call it.
+//   registered pages, and touches no widget and no view - so it lives on the model side.
 //
 // **WHY THIS MAY WALK THE SHARED STATE WITHOUT TAKING THE LOCK.** KCMThreadSafety.h's contract is
 //   "guard it because the main thread writes and **the background thread (asynchronous PDF export)
-//   reads while drawing**" -- and this function is not on that background side. Count the callers
-//   and they are all **main thread**:
-//     - KCMCollectCheckablePageUIDs, just below, which passes straight through in the Pixel mode.
-//       Its own callers are in KCMPageCheck.cpp (the toggle, the menu state, the pruning) and the
-//       Load restore; **the pruning one already holds the lock** (KCMPageCheckPruneToMarked).
-//     - IKCMMarkData::GetMarkablePageUIDs in KCMFacades.cpp, i.e. from the UI.
-//   The writers are main-thread only too, so within one thread nothing changes underneath the
-//   walk. Hence no lock.
+//   reads while drawing**" -- and this function is not on that background side. Its one caller is
+//   **main thread**: IKCMMarkData::GetMarkablePageUIDs in KCMFacades.cpp, i.e. the UI's thumbnail
+//   purge. The writers are main-thread only too, so within one thread nothing changes underneath
+//   the walk. Hence no lock.
 //   **That is a property of today's callers, not of the structure.** Add one route that calls this
 //   from a background thread and it becomes a **read of freed memory** at that moment (sEntries is
 //   a map of raw pointers and DropAll deletes them). **Decide which thread a new caller runs on
@@ -171,8 +163,7 @@ bool16 KCMCollectChangedPageUIDs(IDataBase* db, std::set<UID>& outPages)
 // KCMCollectCheckablePageUIDs (declared in KCMCore.h, where the reasoning is)
 //   It sits directly below KCMCollectChangedPageUIDs **because the two questions are confusingly
 //   close**: whoever edits one should have the other in view.
-//   No lock, for the same reason as above (every caller is on the main thread). The Story branch
-//   reads two pointers and one enum, so it does not even walk anything.
+//   No lock: it reads nothing.
 //========================================================================================
 bool16 KCMCollectCheckablePageUIDs(IDataBase* db, KCMCheckablePages& out)
 {
@@ -182,37 +173,18 @@ bool16 KCMCollectCheckablePageUIDs(IDataBase* db, KCMCheckablePages& out)
 	if (db == nil)
 		return kFalse;
 
-	// NOT ONE OF THE COMPARED DOCUMENTS = EVERY PAGE MAY BE TICKED (user decision).
-	//   A tick is the reader's own marker and no longer waits on a comparison: it can be put on a
-	//   document nobody is comparing, and it survives Stop.
-	//   **This one test covers two cases**, and they are the same case seen twice: nothing started
-	//   at all (both pointers nil), and a third document open beside a running comparison. Writing
-	//   it as "nothing is armed" would have answered the first and left the second refusing ticks.
-	//   ⚠**This answers "may a tick be PUT here", and nothing else.** "May a tick STAY here" was a
-	//   second question the same function used to answer, through the prune -- and answering both
-	//   with one rule is what made a tick die when a comparison started on the document carrying
-	//   it. The prune is gone (KCMPageCheck.h says where and why); a tick stays until someone
-	//   clears it.
-	// (The test that stood here -- "is db one of the two documents being compared" -- went on
-	//  2026-09-07. Both of its branches now answer the same thing, for the reason just below, and a
-	//  test whose two answers are equal is only a place for them to drift apart.)
-
-	// **AND EVERY PAGE OF A COMPARED DOCUMENT TOO, IN EITHER MODE** (the author's
-	//   decision through the spec map's FLG-12: "どのページにも付けれるようにしましょうか").
-	//   The Pixel mode used to allow a tick only on a page carrying a mark (plus every master, an
-	//   exception added because the Story mode allowed all of them and switching mode took it away
-	//   again). That restriction was the last piece of "a tick belongs to the comparison", and the
-	//   rest of that idea went on 2026-09-04: a tick is the reader's own note that they have looked
-	//   at a page, and **a page can be worth marking as looked-at precisely because nothing changed
-	//   on it**.
-	//   ⇒ There is now ONE answer for every document and every mode, so nothing below branches.
+	// EVERY PAGE OF EVERY OPEN DOCUMENT MAY BE TICKED - compared or not, Pixel or Story, ordinary page
+	//   or master (the author's decision, spec map FLG-12: "let us make it possible to tick any page").
+	//   A tick is the reader's own note that they have looked at a page, and **a page can be worth
+	//   marking as looked-at precisely because nothing changed on it**; it can go on a document nobody
+	//   is comparing, and it survives Stop.
+	//   ⚠**This answers "may a tick be PUT here", and nothing else.** "May a tick STAY here" is not asked
+	//   at all - a tick stays until someone clears it (KCMPageCheck.h). Answering both with one rule
+	//   made a tick die when a comparison started on the document carrying it.
 	//   ⚠**Do not widen "could this page be carrying a mark" (KCMCollectChangedPageUIDs) to match.**
 	//     That one drives the thumbnail purge and is a different question; letting it name every
 	//     page would rebuild every thumbnail in the document on every comparison. The two functions
 	//     sit next to each other for exactly this reason.
-
-	// Story mode = every page. That db is one of the two being compared was settled at the top, so
-	// there is nothing left to test here.
 	out.fAllPages = kTrue;
 	return kTrue;
 }
@@ -249,14 +221,13 @@ void KCMCollectMasterPageUIDs(IDataBase* db, std::vector<UID>& out)
 // KCM's other hidden-spread tests all ask while walking an ISpreadList; asking **from a page UID**
 // is this one's job.
 // Page -> spread is IHierarchy::GetSpreadUID, whose contract is "the spread of this hierarchy
-// node" and is not page-specific. The TSV export's MasterPageDisplay, KCMPeek and KCMChangeNav all
-// ask the same way.
+// node" and is not page-specific.
 // A master page answers kFalse, so callers need no special case: **InDesign has no way to hide a
 // master spread**, and IID_IHIDESPREADBOOLDATA is about ordinary spreads on kSpreadBoss. Whether
 // the Query comes back nil or comes back kFalse, the answer is the same.
 // Master pages DO reach this function -- Prev/Next walks them (KCMBuildStops adds master spread
-// pages as stops, for overset and for change frames alike, and the page UID travels on to KCMGoto
-// and KCMStopLabel), and a Story Edits row on a master's frame reaches it from KCMStoryJump.
+// pages as stops, and the page UID travels on to KCMGoto and KCMStopLabel), and a Story Edits row
+// on a master's frame reaches it from KCMStoryJump.
 //========================================================================================
 bool16 KCMIsPageOnHiddenSpread(IDataBase* db, UID pageUID)
 {
@@ -332,8 +303,8 @@ IDataBase* KCMActiveDocDB()
 }
 
 // Is pt (pasteboard coordinates) inside this page's own box? Asked of ordinary pages and of
-// master pages by the two loops in KCMFindPageUnderMouse below, which used to spell it out twice
-// -- and only one of the two copies carried the warning that follows.
+// master pages by the two loops in KCMFindPageUnderMouse below - one place, so the warning that
+// follows covers both.
 //
 // Getting a page's rectangle in pasteboard coordinates is the Facade's job; the worked example
 // snapshot/SnapTracker.cpp:610-616 does exactly this **for a page**, and :617 tests the point with
@@ -372,18 +343,17 @@ bool16 KCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KCMPageH
 
 	// **The restriction is by KIND (master / ordinary) and by nothing finer.**
 	// **Only master and ordinary overlap** in pasteboard coordinates (measured; see KCMCore.h).
-	// **Two ordinary spreads never do** -- the evidence being that this walk covered every ordinary
-	// spread for its whole life before any restriction existed and never once picked the wrong one.
+	// **Two ordinary spreads never do** -- the evidence: the unrestricted walk over every ordinary
+	// spread never picked the wrong one.
 	// So: viewing a master means "no ordinary spreads, and only that master"; viewing an ordinary
 	// spread means "no masters, and **all** the ordinary ones". kInvalidUID walks everything.
 	// @warning restricting to "the pages of that one spread" instead throws away
 	//   ordinary-to-ordinary hits, and then **CMYK reads `---` and Shift+ peek does nothing on any
 	//   page except the one being viewed**, even with several spreads on screen.
-	// This costs **one extra Query**: the master list must now be fetched to decide the kind, where
-	//   before it was only fetched if the ordinary loop missed. It is one Query on the same db's
-	//   root UID, against the ISpreadList, the per-spread ISpread and the per-page IGeometry this
-	//   already does -- and deciding the unit of restriction in one place is worth it
-	//   ([[one-question-one-place]]).
+	// This costs **one Query**: the master list is fetched to decide the kind even when an ordinary
+	//   page is hit. It is one Query on the same db's root UID, against the ISpreadList, the
+	//   per-spread ISpread and the per-page IGeometry this already does -- and deciding the unit of
+	//   restriction in one place is worth it ([[one-question-one-place]]).
 	// The test is shaped after KCMScrollMap.cpp's KCMIsMasterSpread (which likewise avoids
 	//   IMasterSpreadList::GetMasterSpreadIndex, whose header does not say what it returns for a
 	//   UID that is not a master).
@@ -441,8 +411,7 @@ bool16 KCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KCMPageH
 		// @warning globalIndex must be added here too (the flattened page number cannot depend on
 		//   what was skipped, or the correspondence with the older document's page list breaks).
 		// @warning the question is "is it on a PAGE", so it is **GetPagesBounds**. The wider
-		//   GetPagesAndItemsBounds, which includes items on the pasteboard, is what KBS's overset
-		//   marker wants and is too wide here.
+		//   GetPagesAndItemsBounds includes items on the pasteboard and is too wide here.
 		PMRect spreadBounds = spread->GetPagesBounds(Transform::PasteboardCoordinates());
 		spreadBounds.Normalize();
 		if (!spreadBounds.PointIn(pt))
@@ -469,16 +438,16 @@ bool16 KCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KCMPageH
 		globalIndex += np;
 	}
 
-	// **Master spreads are hit-tested too.** The comparison itself has handled masters (paired by
-	// name, KCMBuildMasterPairing) since well before this function did, and while it did not, peek
-	// and CMYK produced nothing on a master page even though the difference frames were drawn there.
+	// **Master spreads are hit-tested too.** The comparison pairs masters by name
+	// (KCMBuildMasterPairing); without this, peek and CMYK would produce nothing on a master page
+	// even though the difference frames are drawn there.
 	//
 	// @warning **the order is not what makes this correct.** The two sets of rectangles OVERLAP
 	//   (measured: with a master spread on screen and no restriction, the walk hits an ordinary
 	//   page), so whichever kind is examined first, the other is misread while it is being viewed.
 	//   What makes it correct is the onlySpreadUID restriction (the full reasoning is in KCMCore.h).
-	//   Examining the ordinary spreads first only means a caller that passes kInvalidUID gets the
-	//   same answer it always did.
+	//   Examining the ordinary spreads first only decides what a caller that passes kInvalidUID
+	//   gets where the two overlap: the ordinary page.
 	//
 	// @warning no hidden-spread test here -- InDesign cannot hide a master spread, and
 	//   IID_IHIDESPREADBOOLDATA is about ordinary spreads on kSpreadBoss.
@@ -526,8 +495,8 @@ bool16 KCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KCMPageH
 //========================================================================================
 // The shared core operations (declared in KCMCore.h).
 //
-// These were once written inline inside the script methods. They are plain (non-static) functions
-// so that the panel's widget observer drives exactly the same behaviour. Keeping them in this
+// They are plain (non-static) functions so that a script method and the panel's widget observer
+// drive exactly the same behaviour. Keeping them in this
 // translation unit is deliberate: it gives them direct access to the drawing engine
 // (KCMDrawEventHandler) and to the file-local peek state.
 //========================================================================================
@@ -537,25 +506,21 @@ bool16 KCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KCMPageH
 	text diff's rows in the Story mode, the tracked changes in the Track mode, and NO list in the
 	Pixel and the Resources modes.
 
-	ONE CALLER SINCE 2026-10-11: the full comparison below. "Refresh Page Comparison" (KCMPeek.cpp)
-	called it as well while the Pixel mode kept a list of its own - that item exists in the Pixel
-	mode alone, so once the mode stopped reading stories there was nothing left for it to rebuild.
+	Called by the full comparison below. "Refresh Page Comparison" (KCMPeek.cpp) does not call it:
+	that item exists in the Pixel mode alone, which keeps no list.
 
 	The list is rebuilt whole rather than patched, because stories do not divide up by page: one
 	story can run across the pages that were refreshed and the pages that were not.
 */
 bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 {
-	// (No Source is a Track listing's own case - 2026-10-27, KCMModeNeedsSource.)
+	// (No Source is a Track listing's own case - KCMModeNeedsSource.)
 	if (targetDB == nil || (sourceDB == nil && KCMModeNeedsSource(KCMGetCompareMode())))
 		return kTrue;
 
-	// THE PIXEL AND THE RESOURCES MODES KEEP NO STORY LIST (the user: "the Pixel comparison is to
-	//   compare pixels and nothing else"). Until then every mode read both documents' story counters here and
-	//   listed the stories they disagreed on - in the Pixel mode as the panel's one-level list, in the Resources
-	//   mode as a list nobody saw, kept for the Before/After report's Story table. The report builds that table
-	//   for itself now, the way the Story mode builds its list (KCMBuildStoryRowsByDiff, below), so neither
-	//   mode reads a story at all.
+	// THE PIXEL AND THE RESOURCES MODES KEEP NO STORY LIST (the author: "the Pixel comparison is to
+	//   compare pixels and nothing else"). Neither mode reads a story at all; the Before/After report builds
+	//   its Story table for itself, the way the Story mode builds its list (KCMBuildStoryRowsByDiff, below).
 	//   ⚠EMPTIED, NOT LEFT ALONE: a switch out of the Story mode while comparing comes through here
 	//    (KCMApplyCompareMode recompares), and the Story rows would otherwise stand under a Pixel heading.
 	//   ⚠Asked as "does this mode use story rows" - the question every reader of the list asks
@@ -569,7 +534,7 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 
 	// THE TRACK CHANGES MODE BUILDS ITS ROWS FROM THE TARGET'S RECORDS, not from the two
 	//   documents' counters: KCMStoryList stays empty, and KCMTrackList holds the rows the facade hands out in
-	//   this mode (KCMFacades.cpp). Nothing else is read since 2026-10-27: there is no Source (KCMTrackStart.h).
+	//   this mode (KCMFacades.cpp). Nothing else is read: there is no Source (KCMTrackStart.h).
 	if (KCMGetCompareMode() == kKCMModeTrack)
 	{
 		KCMStoryList::Clear();
@@ -585,18 +550,14 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	// The Story mode: the rows the text diff finds (built by the one function the Before/After report
 	// builds its Story table with, so the two cannot list different stories).
 	// A cancel leaves half a list. It is NOT cleared here -- the cancel's one ending, in
-	//   KCMDoMarkChangesDoc, empties it (until then that block counted on every caller going
-	//   back to Stop, which a cancelled Start does not).
+	//   KCMDoMarkChangesDoc, empties it (a cancelled Start does not go back to Stop).
 	if (!KCMBuildStoryRowsByDiff(targetDB, sourceDB))
 		return kFalse;
 
-	// AND FROM NOW ON THE LIST FOLLOWS AN UNDO AND A REDO (the user: "after Ctrl+Z the list is out of
-	//   date"). An observer on the Target document (on each listed story until 2026-10-25 - KCMStoryFollowObserver.h says
-	//   why it moved) compares a row again when its story comes back to a state
-	//   the row was compared at (KCMStoryFollowObserver.h). ⚠AFTER the drop: a dropped row has nothing to follow.
-	//   (⛔An observer stood here from 2026-09-15 to 2026-09-21 - KCMStoryUndoObserver, a redraw only - and went with
-	//    the restore, on the grounds that nothing a row drew depended on the live document any more. That stopped
-	//    being true on 2026-09-24: a taken-back record's "=" is read from the document every time it is drawn.)
+	// AND FROM NOW ON THE LIST FOLLOWS AN UNDO AND A REDO (the author: "after Ctrl+Z the list is out of
+	//   date"). An observer on the Target document compares a row again when its story comes back to a state
+	//   the row was compared at (KCMStoryFollowObserver.h says why it watches the document and not each story).
+	//   ⚠AFTER the drop: a dropped row has nothing to follow.
 	KCMStoryFollowEnsureObservers(targetDB);
 
 	// Once the model is built, say so. It is safe to do with the panel closed or the section
@@ -615,11 +576,11 @@ bool16 KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB)
 	UIDs could not pair are paired by their first frame's place (KCMStoryPairByPlace), the text
 	diff says what changed inside each of them, and the rows where only formatting moved are dropped.
 
-	TWO CALLERS, ONE ORDER: KCMRebuildStoryEdits in the Story mode, and the Before/After
-	report in the modes that keep no list (KCMReport.cpp, StoryDetailLoan) - so the report's Story
-	table lists exactly what the Story mode's panel lists ([[one-question-one-place]]). ⚠Until then
-	the report ran the diff over the rows the Pixel or the Resources mode had ALREADY filtered by their
-	counters, and a story whose only change was a ruby never reached it.
+	SHARED, ONE ORDER: KCMRebuildStoryEdits in the Story mode, and the Before/After report in the
+	modes that keep no list (KCMReport.cpp, StoryDetailLoan) - so the report's Story table lists
+	exactly what the Story mode's panel lists ([[one-question-one-place]]). ⚠A report that ran the
+	diff over rows another mode had already filtered by their counters would miss a story whose only
+	change was a ruby.
 
 	Neither the panel nor the Undo follower is told here; what the rows are for is the caller's to say.
 	Reading the counters composes nothing; the diff reads the text, and its own progress bar can be
@@ -635,9 +596,6 @@ bool16 KCMBuildStoryRowsByDiff(IDataBase* targetDB, IDataBase* sourceDB)
 	std::vector<KCMStoryStamp> targetStamps;
 	std::vector<KCMStoryStamp> sourceStamps;
 	KCMStoryEdits::CollectStamps(targetDB, targetStamps);
-	// ⛔The origin's stamps stood here until 2026-09-21. A Task Start copy was REHYDRATED then, so
-	//   its change counters said nothing and the stamps taken at Task Start stood in for them. The
-	//   copy is a saved document now, and its counters are the ones it was saved with.
 	KCMStoryEdits::CollectStamps(sourceDB, sourceStamps);
 
 	// @warning the argument order is (source, target). Reversed, "added" and "removed" swap: a
@@ -652,8 +610,8 @@ bool16 KCMBuildStoryRowsByDiff(IDataBase* targetDB, IDataBase* sourceDB)
 	//   this function - and before the import's filter below, which asks the row's Source story.
 	KCMStoryPairByPlace(targetDB, sourceDB, storyDiffs);
 
-	// AGAINST AN IMPORT'S COPY, ONLY THE STORIES THE FILES FILLED (the import-as-Source road - design
-	//   section 2-7): the copy is the document as it stood at the import with the files' words poured in, so every
+	// AGAINST AN IMPORT'S COPY, ONLY THE STORIES THE FILES FILLED (the import-as-Source road - section 2,
+	//   item 7 of docs/superpowers/specs/2026-10-24-kcm-import-as-source-design.md): the copy is the document as it stood at the import with the files' words poured in, so every
 	//   other story differs only by what the reader has done since - and those differences are not the files'.
 	//   Asked by the row's SOURCE story: the filled ones are the copy's, and a row paired by place
 	//    compares a Target story of another uid against one of them (KCMStoryDiff::fSourceStoryUID).
@@ -686,9 +644,9 @@ bool16 KCMBuildStoryRowsByDiff(IDataBase* targetDB, IDataBase* sourceDB)
 	// **Drop the rows where only formatting moved** (the reader asked for attribute changes to be
 	// ignored). The counters answer "not identical", so changing a font, a colour, a style or a
 	// table's rules puts a story in the list as well, up to this point.
-	// **What survives is text changes, ruby and kenten.** (Kenten was reported briefly in August,
-	// withdrawn, and reported again from 2026-09-01 -- so a story where only the emphasis marks
-	// moved now stays, where a font-only one still drops.)
+	// **What survives is a row whose diff found anything** - what the diff looks for (the words,
+	// the ruby, the kenten ...) is KCMStoryDiffRun's, and a font-only story drops. Do not list the
+	// kinds here (KCMStoryRowFilter.h says why).
 	// @warning it must be **after Build and after Run**. Earlier, a Story-mode row whose ruby alone
 	//   changed still looks like an attribute-only row and is dropped just before the diff would
 	//   have found that ruby.
@@ -702,27 +660,22 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 {
 	// A TRACK LISTING HAS NO SOURCE (KCMModeNeedsSource): it pairs no page and rasterises none (the pairing
 	//   comes back empty for a nil Source, and only the Pixel mode rasterises), and everything below this line that names
-	//   the Source takes a nil one - the dirty guard, the overflow cache, the redraw, the notification (the design's
-	//   section 4 lists them, read one by one).
+	//   the Source takes a nil one - the dirty guard, the overflow cache, the redraw, the notification (section 4 of
+	//   docs/superpowers/specs/2026-10-27-kcm-track-records-only-design.md lists them, read one by one).
 	if (targetDB == nil || (sourceDB == nil && KCMModeNeedsSource(KCMGetCompareMode())))
 		return kFailure;
 
 	// Rasterising every page can trigger the lazy recompose of a story that was never composed --
 	// "asking composes it, and composing dirties the document". KCM's design rests on never
 	// modifying the model and never dirtying it, so if it was clean going in it is clean coming out.
-	// ⚠**WHAT THESE TWO DO HAS NOT BEEN MEASURED FROM OUTSIDE, AND ONE ATTEMPT FAILED**
-	//   (at the author's request through the spec map's CMP-29). They were commented
-	//   out, the plug-in rebuilt, and two documents saved to disk (both `modified=false`) compared:
-	//   both came back `modified=true`. **That looked like proof and was not.** Put back, the same
-	//   run gave the same answer -- and then, with **no comparison run at all**, the two documents
-	//   reached `modified=true` on their own within a couple of calls.
-	//   ⇒ **What moved was the instrument, not the guard**: a document opened by a script is marked
-	//     as modified by itself. The spec map (RUN-24) had already recorded that this route cannot
-	//     measure it, which is exactly the note that was not heeded.
-	//   **Measuring it needs a document opened BY HAND**, with only KCM's operations on it, and
-	//     the question asked when it is closed ("save?").
-	//   ⚠**Do not remove them on the strength of a measurement that was never made.** They stand on
-	//     the SDK's contract and on KCM's design rule of never modifying the model.
+	// ⚠**WHAT THESE TWO DO HAS NOT BEEN MEASURED FROM OUTSIDE, AND A SCRIPT CANNOT MEASURE IT**: a
+	//   document opened by a script marks itself modified within a couple of calls with no comparison
+	//   run at all (spec map RUN-24), so comparing two saved documents from a script and reading
+	//   `modified` measures the instrument, not these guards (commenting them out gave the same answer
+	//   as leaving them in). **Measuring it needs a document opened BY HAND**, with only KCM's
+	//   operations on it, and the question asked when it is closed ("save?").
+	//   ⚠**Do not remove them on the strength of such a measurement.** They stand on the SDK's
+	//     contract and on KCM's design rule of never modifying the model.
 	IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
 	IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
 
@@ -738,8 +691,8 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	// means saving it here first, which is not done.
 	// Contrast the PARTIAL re-comparison (KCMRefreshComparisonCore), which DOES send its sets: it
 	// decides which pages it will touch before it starts, so it has them from the outset.
-	// @warning IKCMMarkData now exists, so this could be narrowed again by saving the old set here
-	//   and sending it with the notification. Still to do.
+	// (Narrowing this one means saving the old set here first - KCMCollectChangedPageUIDs answers
+	// it - and sending it with the notification.)
 
 	// Whether a differential re-comparison is possible: only for the register toggle
 	// (allowIncremental=kTrue), and only when the document pair is the one the last comparison used
@@ -764,15 +717,14 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	KCMBuildPairing(targetDB, sourceDB, tPages, sPages);
 
 	// Append the master spreads' pages. Without this masters are never compared at all
-	// (KCMCollectPageUIDs excludes them, `IPageList.h:81`), and the only frame ever seen on a master
-	// was the overset "+".
+	// (KCMCollectPageUIDs excludes them, `IPageList.h:81`).
 	// **Appending is all that is needed**: the comparison loop, the progress bar's total, the
 	// differential cache (sPrevPairTargetToSource) and the Source-side mapping (sSrcPageToTarget)
 	// all work off tPages/sPages indices, and MakeEntry sees only a page's UIDRef -- it does not
 	// care whether that page is an ordinary one or a master.
 	// It is NOT appended inside KCMBuildPairing: that function's contract is "the exclusion pairing
-	// for ordinary pages" and it has other callers, the TSV export among them. Appending is the
-	// caller's job.
+	// for ordinary pages" and it has other callers (the peek, the colour sampler, the report ...).
+	// Appending is the caller's job.
 	{
 		std::vector<UID> tMaster, sMaster;
 		KCMBuildMasterPairing(targetDB, sourceDB, tMaster, sMaster);
@@ -844,8 +796,7 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 			toRaster.push_back(i);
 	}
 
-	// **ONLY THE PIXEL MODE RASTERISES.** (It read "the Story mode rasterises no page" until
-	//   2026-09-09, when a third mode arrived and "not Story" stopped meaning "Pixel".)
+	// **ONLY THE PIXEL MODE RASTERISES.**
 	//
 	//   Everything up to here is shared by both modes, and has to be -- none of it can be skipped:
 	//     - the page pairing (tPages/sPages) ... peek and the original-folio badge ride on it
@@ -872,11 +823,10 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	// A heavy comparison gets a progress bar with a Cancel. The total is "the pages about to be
 	// rasterised" (for a differential run, only the ones being recomputed). The title is fixed
 	// English like KCM's other strings, hence KCMSentence (a string that is not a key).
-	// **The bar appears on TIME, not on a page count** (the user's call: Pixel and
-	// Story alike, kKCMProgressBarDelayMs). It used to be "10 pages or more" because the SDK's
-	// showImmediate=kFalse means "never appear", not "appear once this takes a while";
-	// KCMDeferredProgressBar supplies the waiting the SDK does not, and keeps the rasterising
-	// internals from raising bars of their own meanwhile.
+	// **The bar appears on TIME, not on a page count** (the author's call: Pixel and
+	// Story alike, kKCMProgressBarDelayMs). The SDK's own showImmediate=kFalse brought no bar up at
+	// all on a 100-page comparison here, so KCMDeferredProgressBar supplies the waiting the SDK does
+	// not, and keeps the rasterising internals from raising bars of their own meanwhile.
 	const int32 rasterCount = (int32)toRaster.size();
 	PMString barTitle = KCMSentence(rasterCount == 1 ? "Comparing 1 page..." : "Comparing pages...");
 	bool16 cancelled = kFalse;
@@ -885,10 +835,10 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	// ⚠**THE BAR'S LIFETIME IS THE LOOP'S, AND THAT IS NOT TIDINESS.** While a
 	//   KCMDeferredProgressBar exists it holds every OTHER progress bar down (its suppressor,
 	//   KCMProgressBar.h), so one left alive here would sit on top of the Story comparison's own
-	//   bar further down (KCMRebuildStoryEdits -> KCMStoryDiffRun::Run). Measured 2026-09-05:
-	//   "the bar shows in the Pixel mode and not in the Story mode" -- in the Story mode this loop
-	//   runs zero times, the object stayed alive with nothing to do, and the Story bar was refused
-	//   registration (sup=1 regDis=1 reg=0) for as long as it lived.
+	//   bar further down (KCMRebuildStoryEdits -> KCMBuildStoryRowsByDiff -> KCMStoryDiffRun::Run).
+	//   Measured: in the Story mode this loop runs zero times, and an object kept alive with nothing
+	//   to do had the Story bar refused registration (sup=1 regDis=1 reg=0) for as long as it lived -
+	//   "the bar shows in the Pixel mode and not in the Story mode".
 	{
 	// A stepper, not a bar of its own: an import covers this loop with ITS bar (KCMProgressBar.h).
 	KCMProgressStepper progress(barTitle, rasterCount);
@@ -921,13 +871,12 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		// Test for a cancel at the safe point, having finished one page: WasCancelled pumps events,
 		// so it must not be asked in the middle of a rasterisation. It never raises the global error
 		// state (KCMDeferredProgressBar passes kFalse) -- raised, it drags subsequent commands down with it.
-		// **Do not test after the LAST page.** A cancel on this route means "discard every mark and
-		// go back to Stop", so catching a press that lands just after the final page **throws away
-		// a comparison that is already complete** (after 100 pages, all of it). With nothing left to
-		// do there is nothing to interrupt, so the test has no meaning there.
-		// (The Refresh route in KCMPeek.cpp is designed to KEEP what it has already refreshed, so a
-		//  press at its end costs nothing -- the status line just says "- cancelled". That one is
-		//  right as it stands.)
+		// **Do not test after the LAST page.** A cancel on this route discards every mark, so
+		// catching a press that lands just after the final page **throws away a comparison that is
+		// already complete** (after 100 pages, all of it). With nothing left to do there is nothing to
+		// interrupt, so the test has no meaning there.
+		// (The Refresh Page Comparison route in KCMPeek.cpp KEEPS what it has already refreshed, so a
+		//  press at its end costs nothing -- the status line just says "- cancelled".)
 		if (k + 1 < toRaster.size() && progress.WasCancelled())
 		{
 			cancelled = kTrue;
@@ -943,19 +892,17 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	// **The Story Edits list is rebuilt HERE, before the cancel is settled.** In the Story mode this
 	//   is the work that takes the time (the raster loop above ran zero times), and its progress
 	//   bar's Cancel has to end exactly as the raster loop's does -- one ending, the block below,
-	//   rather than a second copy of it ([[one-question-one-place]]). It stood after the report
-	//   until 2026-09-05; the report only reads the counts the list holds, so it reads them the same.
-	//   (In the Pixel and the Resources modes it only empties the list - those modes keep none since
-	//   2026-10-11.)
+	//   rather than a second copy of it ([[one-question-one-place]]). The report further down only
+	//   reads the counts the list holds. (In the Pixel and the Resources modes it only empties the
+	//   list - those modes keep none.)
 	// NOT FOR THE REPORT'S OWN RUN (pixelsOnly): the report builds its Story table itself, the Story
 	//   mode's way (KCMReport.cpp, StoryDetailLoan), and keeps no list once it is written.
 	if (!cancelled && !pixelsOnly && !KCMRebuildStoryEdits(targetDB, sourceDB))
 		cancelled = kTrue;
 
 	// **The Resources comparison runs HERE, and ONLY in its own mode** -- as the Story Edits list
-	//   above is built only in the modes that show it (until 2026-10-11 that list was built in every
-	//   mode). This one costs two whole-document exports (200-2400ms), so it is not paid for by a
-	//   reader who is comparing pixels.
+	//   above is built only in the modes that show it. This one costs two whole-document exports
+	//   (200-2400ms), so it is not paid for by a reader who is comparing pixels.
 	// ⚠It CANNOT be cancelled: the exports are single calls into the SDK with no progress of their
 	//   own, so there is nothing to poll. That is why it is placed after the cancel-bearing work
 	//   rather than among it.
@@ -968,8 +915,7 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		// **The two documents this run is about, not the armed pair** -- they are not armed yet at
 		//   this point in the run, which is exactly what the store's own note describes.
 		PMString whyNot;
-		// The one rebuild every caller makes (KCMResourceStore::RebuildForPair). Until 2026-09-21 it
-		// also chose a Task Start origin's held XML as the older side; a Task Start is a file now.
+		// The one rebuild every caller makes (KCMResourceStore::RebuildForPair).
 		KCMResourceStore::RebuildForPair(targetDB, sourceDB, whyNot);
 	}
 
@@ -983,17 +929,16 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		KCMDrawEventHandler::DropAll();
 		changedCount = 0;
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// do not carry an error raised by the interruption
-		// AND THE LISTS GO WITH THE MARKS (the full test's story-cancel SC-4, the Story bar's Cancel measured
-		//   for the first time): a Story comparison cancelled at its bar had filled the rows up to the story it stopped at
-		//   (50 rows, 19 of them compared), the status said "comparison cancelled", and the half-built list stood - clickable,
-		//   into two documents nobody was comparing. Emptied here, the one ending a cancel has, as KCMDoClearMarks empties
-		//   them for Stop, and the panel told.
-		//   ⛔Until then this block said the list did NOT need clearing because every caller ends at Stop. Three do - the
-		//    register toggle and the Ignore toggle (back to Stop through KCMToggleStartStop) and Refresh Comparison (it
-		//    stops outright, being armed). **A cancelled Start does not** (KCMStartComparisonFor / KCMStartComparisonOn: it
-		//    does not arm, and that is all) - the argument held only while the list a Start fills was empty before it, which
-		//    a Story comparison's own rows are not. The Track mode had no half list to leave (KCMTrackRead::Build sets its
-		//    list only when it finishes - track-rf1 RF1-4), and an emptied one costs a Start that went back to Stop nothing.
+		// AND THE LISTS GO WITH THE MARKS: a Story comparison cancelled at its bar has filled the rows up to the story it
+		//   stopped at, and a half-built list would stand - clickable, into two documents nobody is comparing (measured: the
+		//   full test's story-cancel SC-4). Emptied here, the one ending a cancel has, as KCMDoClearMarks empties them for
+		//   Stop, and the panel told.
+		//   ⚠**Not left to the callers: a cancelled Start goes through no Stop** (KCMStartComparisonOn does not arm, and
+		//    that is all), so nothing after this would empty it. Every caller that was armed - a re-comparison from the
+		//    register toggle (KCMPageMap.cpp) or from a flyout toggle (the mode, Ignore Page Number Marker, the pairing -
+		//    the UI's actions), and Refresh Comparison - calls KCMStopComparison itself on a cancel, where the lists are
+		//    emptied again at no cost. The Track list has no half to leave (KCMTrackRead::Build sets it only when it
+		//    finishes); it is emptied with the other for one ending.
 		KCMStoryList::Clear();
 		KCMTrackList::Clear();
 		KCMNotify(kKCMStoryEditsRebuiltMessage);
@@ -1011,13 +956,12 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		//   beside it (a std::map, whose insert walks the tree); sSrcDB merely shares the scope.
 		//   Assigning one pointer is safe whichever value the reader (the drawing) sees -- the old
 		//   one means the Source frames do not appear, the new one means they do, and nothing else.
-		//   Without this note the spot has already been misdiagnosed once as a missing lock.
+		//   Do not read this spot as a missing lock.
 		KCMDrawEventHandler::sSrcDB = sourceDB;
 	}
 
 	// A page that failed to rasterise must not leave an error standing either -- the same treatment
-	// as the cancel above (they were once treated differently, which is one question with two
-	// answers).
+	// as the cancel above (one question, one answer).
 	// The failures are reported to the reader as failed=N, so **there is no need to report them
 	// through the error state as well**; left raised, the caller's next command is dragged down with
 	// it (CmdUtils.h:72-77 -- a protective shutdown, or a whole sequence rolled back).
@@ -1031,19 +975,16 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	if (failedCount > 0)
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 
-	// Rebuild the overflow ("/") cache from the current pairing. This is the one re-comparison route
-	// that Start, register add/clear and the Ignore toggle all pass through, so afterwards the
-	// drawing has the current overflow (and EnsureOverflowCache keeps a full walk out of each draw).
+	// Rebuild the overflow ("/") cache from the current pairing. Every comparison passes through
+	// here, so afterwards the drawing has the current overflow (and EnsureOverflowCache keeps a full
+	// walk out of each draw).
 	KCMDrawEventHandler::RebuildOverflowCache();
 
-	// **THE TICKS ARE NOT TOUCHED**. A page losing its mark in this re-comparison
-	//   used to lose its tick with it -- "the frame is gone, and the memory of having checked it
-	//   goes with it". That reading died with the tick's own meaning: it marks "I have looked at
-	//   this page", and looking at a page is not undone by the page turning out to be unchanged.
-	//   ⚠**Two things went with the prune**: switching Story -> Pixel no longer unticks anything,
-	//   and a tick made before any comparison survives the Start that follows it (which is what
-	//   the removal was actually for -- without it, ticking a document and then comparing it threw
-	//   the ticks away at the moment the comparison began).
+	// **THE TICKS ARE NOT TOUCHED**: a tick marks "I have looked at this page", and looking at a page
+	//   is not undone by the page turning out to be unchanged - so a page losing its mark here keeps
+	//   its tick, switching Story -> Pixel unticks nothing, and a tick made before any comparison
+	//   survives the Start that follows it. ⚠Do not prune the ticks to the marked pages here
+	//   (KCMPageCheck.h).
 
 	// The report's own run draws nothing on screen (pixelsOnly): its marks are for the report's Before export,
 	//   and leaving the views alone keeps them off the reader's windows while it runs.
@@ -1068,8 +1009,8 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		// Report only what was actually counted. "pages compared=100 changed=0" is not false in a
 		// mode that rasterised nothing, but it READS as "100 pages were compared and did not
 		// differ" - so the modes that compare no pages say something else instead.
-		// ⚠**THE TEST IS `== kKCMModePixel`.** As `!storyMode` it claimed a page count for every
-		//   mode that was not Story, which the Resources mode is.
+		// ⚠**THE TEST IS `== kKCMModePixel`**, not `!storyMode` - that would claim a page count for
+		//   every mode that is not Story, the Resources mode among them.
 		const KCMCompareMode reportMode = KCMGetCompareMode();
 		const bool16 storyMode = KCMModeDiffsStoryText(reportMode);	// the Track mode says its own line, below
 		if (reportMode == kKCMModePixel)
@@ -1111,8 +1052,8 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 
 			// **"Zero differences" and "could not locate them" are different things.** Counters that
 			// moved with no textual difference found means formatting only, or a story that could
-			// not be compared (no partner, too different, a failed length check). Printing a bare 0
-			// reads as "the text did not change".
+			// not be compared (no partner, or a story that could not be read - KCMStoryRowFilter.h).
+			// Printing a bare 0 reads as "the text did not change".
 			if (storyCount > 0 && editCount == 0)
 				report.Append(" (no text differences located)");
 		}
@@ -1123,7 +1064,7 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		// ⚠"nothing differs" and "it could not be run" must not read alike, which is why the whole
 		//   line comes from GetSummary rather than being assembled from a count.
 		// The Track Changes mode's line: what the list holds, and the count that says what it does not -
-		//   records no row shows. (" not rejected in the copy=" went on 2026-10-27 with the copy.)
+		//   records no row shows.
 		if (reportMode == kKCMModeTrack)
 		{
 			report.Append("tracked changes="); report.AppendNumber(KCMTrackList::GetTotalChangeCount());
@@ -1149,35 +1090,33 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	// (KCMModelChangeObserver).
 	//
 	// @warning navReset is `!doIncremental`. The Prev/Next position is rebuilt from the settled set
-	//   of changed pages every time (Start, a differential re-comparison, register add/remove and
-	//   Check all pass through here, so the walk follows the set without the reader pressing
-	//   anything), but **only a full re-comparison also discards the cursor** and returns to an
-	//   unvisited "1/N". Discarding it on a differential run would send the walk back to the start
-	//   every time a page is registered.
+	//   of changed pages every time (every comparison passes through here, so the walk follows the
+	//   set without the reader pressing anything), but **only a full re-comparison also discards the
+	//   cursor** and returns to an unvisited "1/N". Discarding it on a differential run would send
+	//   the walk back to the start every time a page is registered.
 	// @warning it is emitted after a cancel too -- both the marks that were built and the marks that
 	//   went have to reach the screen (this function does the same clean-up either way).
 	//
 	// @warning **"cancelled AND differential" is the one case where navReset is kFalse** even though
 	//   DropAll removed every mark, so read here alone it looks as though Prev/Next would start from
-	//   a page that no longer exists. It cannot: all five callers go back to Stop afterwards
-	//   (this returns kFailure), and Stop emits Cleared with navReset=kTrue, which discards the
-	//   cursor there. Changing this expression to `!doIncremental && !cancelled` would put the same
-	//   clean-up in two places, and one of them would eventually be fixed alone
-	//   ([[one-question-one-place]]).
+	//   a page that no longer exists. It cannot: only the register toggle asks for a differential
+	//   run (allowIncremental), and on a cancel it calls KCMStopComparison (KCMPageMap.cpp), whose
+	//   Cleared carries navReset=kTrue and discards the cursor there. Changing this expression to
+	//   `!doIncremental && !cancelled` would put the same clean-up in two places, and one of them
+	//   would eventually be fixed alone ([[one-question-one-place]]).
 	// NOT FOR THE REPORT'S OWN RUN (pixelsOnly): told "rebuilt", the UI would put the
 	//   scrollbar strips into both windows and rebuild the thumbnails from marks nobody started - and
 	//   take them all off again a minute later. The report's clean-up (KCMClearReportComparison ->
 	//   KCMDoClearMarks) sends the Cleared this pairs with, so the screen ends where it began.
 	if (!pixelsOnly)
 		KCMNotifyDocs(kKCMMarksRebuiltMessage, targetDB, sourceDB, !doIncremental);
-	// (A notification telling the transparency manager to re-examine the item used to be emitted
-	//  here, and was removed.
+	// (No notification to the transparency manager here.
 	//  @warning **that list is document data and PERSISTS in the .indd** (measured: compare, save,
-	//    re-open, and it is still there, and opening does not re-validate it). Kept on for the whole
-	//    duration of a comparison, it is **baked in the moment the reader saves** -- and it stays
+	//    re-open, and it is still there, and opening does not re-validate it). Declared for the whole
+	//    duration of a comparison, it would be **baked in the moment the reader saves** -- and stay
 	//    there for someone who does not have KCM at all.
-	//  So it is now declared **only for the duration of an export or a print**; see section 5) of
-	//  KCMRingAdornment.cpp. The flattener is only needed for those two outputs -- neither the screen
+	//  So it is declared **only for the duration of an export or a print** (section 5 of
+	//  KCMRingAdornment.cpp). The flattener is only needed for those two outputs -- neither the screen
 	//  nor the thumbnails need the declaration.)
 	// A cancel returns kFailure. The Start route reads that return value to decide whether to arm,
 	// so always returning kSuccess would leave it "armed after a cancel", with the menu stuck on Stop.
@@ -1185,10 +1124,11 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 }
 
 // Is this database still an open document's (declared in KCMCore.h)? A closed one must never be
-// dereferenced, so this is a pointer comparison against IDocumentList -- and, since 2026-09-02,
-// against the one lent Source (KCMExternalSource.h) -- and nothing more.
-// **The nil guard on the session is required**: this is called from KCMScrollMapView::Draw and from
-// the deferred thumbnail idle task, both of which can fire during the application's teardown. On a
+// dereferenced, so this is a pointer comparison against IDocumentList -- and against the one lent
+// Source (KCMExternalSource.h) -- and nothing more.
+// **The nil guard on the session is required**: the UI asks this (through the facade) from the
+// scrollbar map's drawing and from the deferred thumbnail idle task, both of which can fire during
+// the application's teardown. On a
 // platform whose session is already dismantled (the Mac's Cocoa teardown order in particular) an
 // unguarded dereference is a crash on quit. Not being able to resolve it means teardown is under
 // way, and answering "not open" is the safe side.
@@ -1245,9 +1185,9 @@ void KCMInvalidateDB(IDataBase* db)
 //
 // **The order matters and is not the argument order by accident**: the first is redrawn first, and
 // it is meant to be the document the marks are actually on, so its appearance updates even when
-// the caller's own document is a different one. Four call sites wrote this out, each with its own
-// spelling of "have I already done this one", which is where a document gets redrawn twice or
-// missed. nil is fine anywhere -- KCMInvalidateDB above returns at once for it.
+// the caller's own document is a different one. One place says "have I already done this one" -
+// a spelling per call site is where a document gets redrawn twice or missed. nil is fine
+// anywhere -- KCMInvalidateDB above returns at once for it.
 static void KCMInvalidateDocs(IDataBase* first, IDataBase* second, IDataBase* third)
 {
 	KCMInvalidateDB(first);
@@ -1277,10 +1217,10 @@ void KCMDoClearMarks(IDataBase* db)
 	// restarted with a different pair.
 	KCMPageMapClearAllDocs();
 
-	// THE TICKS ARE **NOT** FORGOTTEN AT STOP (user decision). A tick is the reader's
+	// THE TICKS ARE **NOT** FORGOTTEN AT STOP (the author's decision). A tick is the reader's
 	//   own marker rather than a by-product of the comparison: it can be put on any open document,
 	//   it is saved and restored on its own, and dropping it here would throw away work nobody
-	//   asked to discard. What clears ticks now is the flyout's "Clear Checks in This Document"
+	//   asked to discard. What clears ticks is the flyout's "Clear Checks in This Document"
 	//   (one document), closing a document (the sweep), and shutdown.
 	//   ⚠**The registrations just above are a different matter and are still cleared**: they are an
 	//   INPUT to the comparison, so an old Added/Removed left standing would creep into the pairing
@@ -1304,14 +1244,12 @@ void KCMDoClearMarks(IDataBase* db)
 	//   about after the fact.**
 	// navReset=kTrue: Stop does not carry the walk's cursor over to the next comparison.
 	KCMNotifyDocs(kKCMMarksClearedMessage, markedDB, srcDB, kTrue /*navReset*/);
-	// (The matching "take it down" notification to the transparency manager was removed from here
-	//  too, for the reason given at the re-comparison above.
-	//  @warning **it had never actually worked**: both the raising and the lowering sent the same
-	//    `kXPC_MayHaveAddedSomeXP`, and **that kind only ever adds** (measured A/B on one document:
-	//    `MayHaveAdded` 1 -> 1, `kXPC_RemovedSomeXP` 1 -> 0). The old comment correctly said "call
-	//    it symmetrically" and the calls WERE symmetric -- **the meaning was not**. One function
-	//    usable for both directions is what took the direction out of the argument list; today
-	//    KCMSetItemXPState() takes it as a parameter.)
+	// (No "take it down" notification to the transparency manager here either, for the reason given
+	//  at the re-comparison above.
+	//  @warning **the direction is in the notification's kind**: `kXPC_MayHaveAddedSomeXP` only ever
+	//    adds, and lowering is `kXPC_RemovedSomeXP` (measured A/B on one document: `MayHaveAdded`
+	//    1 -> 1, `kXPC_RemovedSomeXP` 1 -> 0) -- which is why KCMSetItemXPState() takes the
+	//    direction as a parameter.)
 
 	// The Story Edits list is forgotten as well. Left until the next comparison, it would list rows
 	// pointing into two documents that are no longer being compared -- **and those rows can be
@@ -1340,16 +1278,14 @@ void KCMDoSetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db)
 
 	// The document the marks are actually on (sDB) goes FIRST, so that its appearance updates even
 	// when the caller's db -- the active document -- is not it (the Source, or an unrelated third
-	// document, being in front). Before a Start (sDB == nil) only db is redrawn, as before.
+	// document, being in front). Before a Start (sDB == nil) only db is redrawn.
 	// The Source's always-on frames follow the 25%/75% choice, so the Source is redrawn too.
 	KCMInvalidateDocs(KCMDrawEventHandler::sDB, db, KCMDrawEventHandler::sSrcDB);
 
-	// (Three notifications to the transparency manager stood here too and were removed, for the
-	//  reason given above: the declaration is now made **only for the duration of an export or a
-	//  print**, in section 5) of KCMRingAdornment.cpp.
-	//  This toggle changes whether marks reach the output, so it does change **the answer** that
-	//  declaration gives -- but the only thing that asks for that answer is an output, so there is
-	//  nothing to update in advance.)
+	// (Nothing to tell the transparency manager: the declaration is made **only for the duration of
+	//  an export or a print** (section 5 of KCMRingAdornment.cpp). This toggle changes whether marks
+	//  reach the output, so it does change **the answer** that declaration gives -- but the only
+	//  thing that asks for that answer is an output, so there is nothing to update in advance.)
 }
 
 // The current print-mark settings, used to restore the panel's controls when it is re-shown.
@@ -1379,8 +1315,7 @@ void KCMDoSetMarkColor(bool16 cyan, IDataBase* db)
 	//   enough. **The same setting needs different clean-up on the side that caches and the side
 	//   that does not.**
 	// Asked of InvalidateRingCache, the engine's one way to say it -- the report asks the same when it turns
-	//   the page frame off. This walked sEntries itself, under the lock, a line-for-line copy of that function written
-	//   before it existed: a third cached property would have been added to one of the two.
+	//   the page frame off. A copy of its walk here is where a third cached property would be added to one of the two.
 	KCMDrawEventHandler::InvalidateRingCache();
 
 	// The redraw covers the same three documents as KCMDoSetPrintMarks (marked, active, Source).
@@ -1427,7 +1362,7 @@ KCMCompareMode KCMGetCompareModeSetting()
 
 void KCMSetCompareMode(KCMCompareMode mode)
 {
-	// Track is not a setting (above): a caller asking for it - none is left - changes nothing. Any other mode set while the
+	// Track is not a setting (above): asking for it changes nothing. Any other mode set while the
 	// Track listing is up changes the SETTING, which a Stop then goes back to (the panel's start-up restore can be that
 	// caller; a Compare mode item stops the listing first - KCMActionComponent.cpp, KCMApplyCompareMode).
 	if (mode == kKCMModeTrack)

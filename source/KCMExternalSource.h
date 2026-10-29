@@ -2,24 +2,17 @@
 //
 //  KCMExternalSource.h
 //
-//  A Source that is NOT an open document: a database another plug-in lends to the comparison.
+//  A Source that is NOT an open document: a database clone lent to the comparison. The one lender is
+//  this plug-in's "Task Start" kept in memory (KCMTaskStartClone.h), which takes the clone, registers it
+//  here, and lets it go through KCMForgetExternalSource.
 //
-//  WHY IT EXISTS. Kohaku InDesign MCP holds a task-start copy of a document -- an
-//  IDataBase::Clone() taken when a task began -- and the user asked to see "what changed since
-//  the task started" as KCM's marks. The comparison engine already takes two databases
-//  (KCMDoMarkChangesDoc), so drawing was never the problem. What refused was everything around
-//  it: KCM's rule that "alive" means "in IDocumentList", asked at some thirty places, and a clone
-//  is in no list. The first draw would have run KCMHandleDocsClosed and cleared the marks -- the
-//  same shape the background thread's clone produced during asynchronous PDF export.
-//
-//  A SECOND LENDER: this plug-in itself. "Task Start" keeps the document's state in memory as a database
-//    clone (KCMTaskStartClone.h) and registers it here, so everything that already understood a lent Source - the
-//    liveness tests, the panel's Source line, the same-document test, the refusals of the Resources export and the
-//    report - takes it unchanged. KCMTaskStartClone is then the lender, and lets it go through KCMForgetExternalSource.
-//
-//  ⛔THE FIRST LENDER IS GONE: Kohaku InDesign MCP's road (KCMStartComparisonWithSourceDB / KCMReleaseExternalSource,
-//    behind the facade's StartComparisonWithSourceDB / ReleaseExternalSourceDB) had no caller after KIDMCP's bridge went
-//    on 2026-10-12, and went on 2026-10-27 (the author: "remove them"). The Task Start is the only lender now.
+//  WHY IT EXISTS. The comparison engine takes two databases (KCMDoMarkChangesDoc), so drawing from
+//  a clone is no problem. What refuses is everything around it: KCM's rule that "alive" means "in
+//  IDocumentList", asked in many places, and a clone is in no list. The first draw would run
+//  KCMHandleDocsClosed and clear the marks -- the same shape the background thread's clone produces
+//  during asynchronous PDF export. Registered here, the clone passes every test that understands a
+//  lent Source - the liveness tests, the panel's Source line, the same-document test, the refusals
+//  of the Resources export and the report.
 //
 //  THE INVARIANT: **a database is registered here while it is the CHOSEN Source or the ARMED
 //    Source -- or until the lender takes it back, whichever is later.** Registration happens
@@ -31,27 +24,26 @@
 //    flyout's "Clear Target and Source" (that item stops the comparison first, so the copy is
 //    never forgotten while it is being drawn from). A Stop does NOT forget it,
 //    deliberately.
-//    ⚠**THE "whichever is later" IS NOT SLACK IN THE WORDING** -- it is a state the code really
-//     reaches, and this line said "and at no other time" until 2026-09-04. Choose a real document
-//     as Source WHILE THE COMPARISON IS ARMED and KCMSetChosenSourceToActive declines to forget
-//     the registration (something is drawing from it); Stop then leaves a database registered
-//     that is neither chosen nor armed, until the lender releases it. **No harm follows** --
-//     KCMIsDbAlive answers kTrue about a database nothing draws from -- but a reader checking
-//     the code against this paragraph would have found the paragraph wrong, which is worse than
-//     the state it describes.
+//    ⚠**THE "whichever is later" IS A STATE THE CODE REALLY REACHES**: choose a real document as
+//     Source WHILE THE COMPARISON IS ARMED and KCMSetChosenSourceToActive declines to forget the
+//     registration (something is drawing from it); Stop then leaves a database registered that is
+//     neither chosen nor armed, until the lender lets it go. **No harm follows** -- KCMIsDbAlive
+//     answers kTrue about a database nothing draws from. Do not "tighten" the invariant to
+//     "and at no other time".
 //
 //  ⚠THE LENDER OWNS THE DATABASE AND MUST LET IT GO HERE (KCMForgetExternalSource, after stopping
 //    a comparison that draws from it) BEFORE DELETING IT - KCMTaskStartClone does. Nothing else
 //    asks whether it is still there -- it cannot: DBUtils::IsValidDataBase answers "yes" about a
-//    clone whose source is gone (Kohaku InDesign MCP measured that, KIDMCPDbClone.h).
+//    clone whose source is gone (measured: memory second-database-and-db-cloning).
 //
 //  **The pointer is compared, never dereferenced, in every function here** -- the same rule the
-//  rest of this plug-in keeps for a database it holds ([[uidref-reuse-after-close]]).
+//  rest of this plug-in keeps for a database it holds (memory uidref-reuse-after-close).
 //
 //  THREADS. The pointer is written on the main thread only (Start / Stop / close) and read from
 //  the drawing, which the asynchronous export runs on a background thread. A single pointer
 //  assignment needs no lock, exactly as KCMDrawEventHandler::sSrcDB is treated (its comment at
-//  the assignment says why). The label is read on the main thread only (panel, TSV export).
+//  the assignment says why). The label is read on the main thread only (the panel, the status
+//  line, the report's names).
 //
 //========================================================================================
 
@@ -64,8 +56,8 @@ class IDataBase;
 class IDocumentList;
 class PMString;
 
-/** Registers db as the lent Source, with the words the panel shows for it ("task-start copy
-	(taken 20:41:07 from the menu)"). Replaces any earlier registration. nil is ignored.
+/** Registers db as the lent Source, with the words the panel shows for it ("Task Start (in memory)
+	- Report.indd - 20:41:07"). Replaces any earlier registration. nil is ignored.
 	@warning call ONLY from KCMTakeTaskStartClone -- see the invariant above. */
 void		KCMRegisterExternalSource(IDataBase* db, const PMString& label);
 

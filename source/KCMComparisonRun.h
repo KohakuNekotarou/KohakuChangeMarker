@@ -2,7 +2,7 @@
 //
 //  KCMComparisonRun.h
 //
-//  Starting and stopping a comparison, and the two mark-display settings that go with it.
+//  Starting and stopping a comparison, and the mark-display settings that go with it.
 //
 //  MODEL side: these run the comparison itself. The flyout items that call them stay on the
 //  UI side, and what these do to the screen is emit a notification -- they never reach into
@@ -22,7 +22,7 @@ class PMString;
 
 // The Start/Stop toggle. When armed, clears (marks removed, peek disarmed); when not armed,
 // starts (the chosen Target and Source, and for whichever of the two has not been chosen the
-// old automatic rule: active document = Target, another open document = Source).
+// automatic rule: active document = Target, another open document = Source).
 void	KCMToggleStartStop();
 
 // The two halves of the toggle, so callers that already know which documents they want do
@@ -33,10 +33,9 @@ void	KCMToggleStartStop();
 void	KCMStopComparison();
 void	KCMStartComparisonFor(IDocument* target, IDocument* source);
 
-// The procedure itself, on two DATABASES. ⛔It was made public on 2026-09-12 for ONE more caller -
-// KCMOriginCompare (Task Start), which handed it a rehydrated copy as the Source - and that caller
-// went on 2026-09-21 with the origin. It resolves nothing and arms on success; see the body for
-// the three decisions it holds.
+// The procedure itself, on two DATABASES - public for the Track listing's start (KCMTrackStart.cpp,
+// which hands it no Source). It resolves nothing and arms on success; see the body for its callers
+// and the decisions it holds.
 // @return kTrue when the comparison ran and the pair is armed; kFalse on a cancel or a failure.
 bool16	KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB);
 
@@ -49,7 +48,7 @@ bool16	KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB);
 // @return kTrue with both databases set; kFalse with both nil.
 bool16	KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMString& outWhy);
 
-// THE BEFORE/AFTER REPORT'S OWN COMPARISON (the user's decision: the report is made while nothing is
+// THE BEFORE/AFTER REPORT'S OWN COMPARISON (the author's decision: the report is made while nothing is
 // started, and it holds every page's pictures whatever the compare mode). The pixels of every page go into the mark
 // state a Start fills - nothing is armed, no story list or Resources result is built (the report builds its two
 // tables itself), and the screen is neither redrawn nor told (KCMDoMarkChangesDoc's pixelsOnly).
@@ -64,8 +63,8 @@ void	KCMClearReportComparison(IDataBase* targetDB, IDataBase* sourceDB);
 // Compare THE SAME TWO DOCUMENTS AGAIN - the flyout's "Refresh Comparison", directly under Start.
 //
 // WHAT IT IS FOR: the reader edits one of the two documents and wants the marks to say what is
-// true NOW. Until this existed the only way was Stop then Start, which is two presses and takes
-// the marks off the screen in between.
+// true NOW - without Stop then Start, which is two presses and takes the marks off the screen in
+// between.
 //
 // **IT IS THE START PROCEDURE, NOT A SECOND ONE.** It runs KCMStartComparisonOn with the ARMED
 // pair, so a refresh and a start cannot come to disagree about what starting means
@@ -92,29 +91,19 @@ void	KCMRefreshComparison();
 
 // A TRACK LISTING'S RE-READ CANCELLED AT ITS BAR STOPS IT (the author's answer: "Cancel -> Stop"). The list is
 // read again after a row's Refresh, an accept or a reject, and an Undo (KCMFacades.cpp, KCMStoryFollowObserver.cpp); a
-// cancelled read leaves no list it could trust (KCMTrackRead::Build sets the list only when it finishes - the old one stood
-// and was clicked into), so the listing ends the way a cancelled Refresh Comparison ends it, in words of its own on the
-// status line. One place for the three callers ([[one-question-one-place]]).
+// cancelled read leaves no list it could trust (KCMTrackRead::Build sets the list only when it finishes, so the old one
+// would stand and be clicked into), so the listing ends the way a cancelled Refresh Comparison ends it, in words of its
+// own on the status line. One place for its callers ([[one-question-one-place]]).
 void	KCMStopForCancelledReread();
 
-// (⛔KCMStartComparisonWithSourceDB / KCMReleaseExternalSource - another plug-in's lent Source started and released -
-//  went on 2026-10-27 with their facade slots; KCMComparisonRun.cpp says why.)
-
-// Whether a comparison can be started at all: there is an active (front) document and at
-// least one other open document. Used to decide whether the flyout's Start may be enabled.
-// Goes through the same resolver as the start branch of KCMToggleStartStop, so what the
+// Whether a comparison can be started at all: whether the resolver finds a pair (the chosen ends,
+// and the automatic rule for an end nobody chose). Used to decide whether the flyout's Start may be
+// enabled. Goes through the same resolver as the start branch of KCMToggleStartStop, so what the
 // menu shows and what pressing it does cannot disagree.
 bool16	KCMCanStartComparison();
 
-//----------------------------------------------------------------------------------------
-// **THE CHOSEN PAIR MOVED TO KCMPairChoice.h**, and the resolver that reads it
-// went with it. A chosen end may now be a FILE as well as a document - a Task Start saves a copy
-// and names it - so "which two has the reader chosen" grew a second kind of answer. It is still
-// ONE question, so it lives in one file ([[one-question-one-place]]).
-//   Moved: KCMSetChosenTargetToActive / KCMSetChosenSourceToActive / KCMChosenTargetDB /
-//   KCMChosenSourceDB / KCMForgetChosenDocsThatClosed / KCMClearChosenDocs, and the origin's
-//   KCMChosenSourceIsOrigin / KCMChooseOriginPair.
-//----------------------------------------------------------------------------------------
+// (The chosen pair and the resolver that reads it are KCMPairChoice.h's: a chosen end may be a
+//  FILE as well as a document - a Task Start saves a copy and names it.)
 
 // The print-marks toggle: flips the current print flag and keeps the current opacity choice.
 void	KCMTogglePrintMarks();

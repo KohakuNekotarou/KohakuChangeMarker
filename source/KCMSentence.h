@@ -18,6 +18,9 @@
 	@warning WHY NOT `x = "..."` AND SetTranslatable(kFalse): every `=` hands over the right side's mark with the
 	words (PMString's swap and SetString), and `"..."` makes a key, so a mark set before the next `=` is gone after
 	it. A PMString handed back by another function keeps its own mark - mark it where it is taken in.
+	@warning clear() / Clear() put the mark back to "translate" as well, so a string emptied and filled again is
+	marked again after the clear; Append, AppendNumber and Insert keep the mark the string has (measured: memory
+	pmstring-untranslatable-mark-lifecycle).
 	@warning ASCII ONLY. kEncodingASCII reads the bytes as code page 1252, and the compiler writes a narrow
 	literal's other characters in the system's code page (932 on this machine - the build has no /utf-8), so a
 	multiplication sign would come out as two wrong characters. A sentence that holds one stays a PMString made

@@ -34,16 +34,16 @@ void		KCMCollectPageUIDs(IDataBase* db, std::vector<UID>& out);
 // The master spreads' page UIDs, in master-spread order then page order, APPENDED to out.
 // A different question from KCMCollectPageUIDs above, which returns the document's ordinary pages
 // flattened -- excluding masters is that interface's contract (IPageList.h:81, "does not include
-// master pages") -- and which the page pairing, Prev/Next, the TSV export, the view sync and Hide
-// Unchanged all share. Mixing masters into it would change **what gets compared**, so masters are
-// always collected separately and appended by the caller (the same shape overset uses).
+// master pages") -- and which the page pairing, the report and the panel's page walks share.
+// Mixing masters into it would change **what gets compared**, so masters are always collected
+// separately and appended by the caller.
 // out is not cleared because the intended use is to append to the list of ordinary pages.
 void		KCMCollectMasterPageUIDs(IDataBase* db, std::vector<UID>& out);
 
 // Whether the spread this page sits on is hidden -- by Hide Unchanged Spreads or by the Pages
 // panel's Hide Spread, it does not distinguish. Master pages cannot be hidden, so always kFalse.
 // KCM has several hidden-spread tests, but they all ask it while walking an ISpreadList; asking
-// **from a page UID** is this one's job, and it exists so that a sixth copy is not written inline
+// **from a page UID** is this one's job, and it exists so that another copy is not written inline
 // ([[one-question-one-place]]).
 // Used because a hidden page appears neither on screen nor in a PDF, so it is left out of output
 // that names pages (Export Changed Pages). The test reads an IBoolData on kSpreadBoss
@@ -53,55 +53,37 @@ bool16		KCMIsPageOnHiddenSpread(IDataBase* db, UID pageUID);
 // If db is one of the documents currently being compared (sDB/sSrcDB), APPEND to outPages every
 // page that could be carrying a mark right now (the changed ring, the overflow "/", the
 // registered "/") and answer kTrue. For any other document it touches nothing and answers kFalse.
-// **"What counts as marked" is defined here and nowhere else.** Add a kind of mark here and both
-// the pre-comparison save (KCMDoMarkChangesDoc) and the UI's thumbnail purge follow automatically.
+// **"What counts as marked" is defined here and nowhere else.** Add a kind of mark here and the UI's
+// thumbnail purge follows automatically.
 // The UI (KCMThumbnailRefresh.cpp) calls this; UI -> model is the allowed direction.
 bool16		KCMCollectChangedPageUIDs(IDataBase* db, std::set<UID>& outPages);
 
-// The answer to "may this page be given a tick (Check)".
+// The answer to "may this page be given a tick (Check)": **every page of every open document** -
+// compared or not, Pixel or Story, ordinary page or master (the reasoning is in the implementation).
 //
-// **A DIFFERENT QUESTION FROM "could this page be carrying a mark" above.** They agreed for a long
-// time: in the Pixel mode a tick may only go on a page that has a ring or a "/", which is the same
-// set word for word, so one function answered both. **The Story mode is where they parted**: it
-// rasterises no page at all, so sEntries is empty, the tick's candidates shrink to the registered
-// and overflow pages, and **"Check" disappears from the menu** (a disabled item is not shown in a
-// context menu).
-// So **in the Story mode every page of the Target and the Source may be ticked**.
-// @warning do NOT widen "could be carrying a mark" to match. That one drives the thumbnail purge
-// and the pre-comparison save, so letting it name every page rebuilds every thumbnail in the
-// document on every comparison.
+// **A DIFFERENT QUESTION FROM "could this page be carrying a mark" above.**
+// @warning do NOT widen "could be carrying a mark" to match. That one drives the thumbnail purge,
+// so letting it name every page rebuilds every thumbnail in the document on every comparison.
 //
-// The Story mode's answer is "all of them" rather than a set, so it is given **without counting a
-// single page** (fAllPages): a 1000-page document does not get walked on every right click.
+// The answer is "all of them" rather than a set, so it is given **without counting a single page**
+// (fAllPages): a 1000-page document does not get walked on every right click.
 struct KCMCheckablePages
 {
-	bool16			fAllPages;	// Story mode = any page of this document (fPages stays empty)
-	std::set<UID>	fPages;		// Pixel mode = the pages carrying a mark, **plus every master page**
-								// (a master may be ticked even with no difference on it; the
-								// reason is in the implementation)
+	bool16			fAllPages;	// any page of this document (fPages stays empty)
+	std::set<UID>	fPages;		// never filled: every answer is fAllPages
 
 	KCMCheckablePages() : fAllPages(kFalse) {}
 	bool16 Includes(UID page) const { return (fAllPages || fPages.count(page) > 0) ? kTrue : kFalse; }
 };
 
-// Fill out with the pages of db that may carry a "Check" tick. **kFalse comes back only when there
-// is no document at all (db == nil)** -- it does not mean "nothing may be ticked".
-// A TICK DEPENDS ON NOTHING (then 2026-09-07: the last piece went with FLG-12).
-//   **Every page of every open document may be ticked** -- compared or not, Pixel or Story,
-//   ordinary page or master. fAllPages comes back kTrue and fPages stays empty.
-//   The Pixel mode used to allow it only on pages carrying a mark; the author removed that, on the
-//   ground that **a page can be worth marking as looked-at precisely because nothing changed on
-//   it**. ⇒ The function keeps its shape (and fPages) because the answer is still given through
-//   KCMCheckablePages, but there is no longer a case that fills fPages.
-// ⚠**The old contract was the opposite** -- kFalse for anything but the compared pair -- so a
-//   caller written against it reads as "refuse" where it should now read "there is no document".
-// @warning the "is it being compared" test uses **the same two pointers** (sDB/sSrcDB) as
-// KCMCollectChangedPageUIDs above. If the mode decided WHICH DOCUMENTS count as well, switching
-// mode would change which document can be ticked; all that may change is which of its pages.
+// Fill out with the pages of db that may carry a "Check" tick: fAllPages kTrue for any open
+// document. **kFalse comes back only when there is no document at all (db == nil)** -- it does not
+// mean "nothing may be ticked", and a caller must not read it as "refuse".
 bool16		KCMCollectCheckablePageUIDs(IDataBase* db, KCMCheckablePages& out);
 
-// A page item's UID -> the page UID it sits on (kInvalidUID when it sits on no page). The overset
-// report (KCMOversetScan) and the Story Edits list ask the same question, so they share one.
+// A page item's UID -> the page UID it sits on (kInvalidUID when it sits on no page). The Story
+// Edits list, the Resources rows and the panel (through the facade) ask the same question, so they
+// share one.
 // The answer is always a real page (kPageBoss); a spread's UID never comes back. The reason is in
 // the implementation.
 UID			KCMFramePageUID(IDataBase* db, UID frameUID);
@@ -145,9 +127,8 @@ struct KCMPageHit
 	bool16 isMaster;
 
 	// "Nothing hit". The values live HERE: KCMFindPageUnderMouse starts by assigning a fresh one, so a
-	//   field added later is reset with the rest -- the function used to set the seven by hand, and a field missing from
-	//   that list would have carried the previous hit into a miss. (A caller's `KCMPageHit hit;` no longer starts out
-	//   uninitialised either.)
+	//   field added later is reset with the rest - a hand-written reset that missed a field would carry the previous hit
+	//   into a miss. (A caller's `KCMPageHit hit;` starts out as "nothing hit" too.)
 	KCMPageHit() : spreadIndex(-1), spreadUID(kInvalidUID), numPages(0), globalPageBase(0),
 		hitPageIndex(-1), hitPageUID(kInvalidUID), isMaster(kFalse) {}
 };
@@ -158,7 +139,7 @@ struct KCMPageHit
 //
 // **onlySpreadUID restricts the walk to pages OF THE SAME KIND as the spread on screen**: if the
 // view is showing a master, only that master; if it is showing an ordinary spread, all ordinary
-// spreads (and no master). kInvalidUID walks everything, as before.
+// spreads (and no master). kInvalidUID walks everything.
 //
 // **WHY IT IS NEEDED (measured): a master spread and the ordinary spreads OVERLAP in pasteboard
 // coordinates.** With a master spread on screen the mouse's content point still lands on an
@@ -174,9 +155,8 @@ struct KCMPageHit
 // @warning the unit of restriction is the KIND, not the spread. Restricting to "the pages of that
 // one spread" also throws away ordinary-to-ordinary hits, so with several spreads visible the
 // CMYK reads `---` and Shift+ peek does not appear on any page but the one being "viewed".
-// **Only master and ordinary overlap; two ordinary spreads never do** -- the evidence being that
-// this walk covered all ordinary spreads for its whole life before the restriction existed, and
-// never once picked the wrong one.
+// **Only master and ordinary overlap; two ordinary spreads never do** -- the evidence: the
+// unrestricted walk over all ordinary spreads never picked the wrong one.
 // @warning what to pass is **the spread that view is currently showing** --
 // ILayoutControlData::GetSpreadRef(), whose header says "the spread this view is currently
 // viewing". The UI observes it and hands it in.
@@ -228,16 +208,15 @@ bool16		KCMIsArmed();
 // Rebuild the Story Edits list from what these two documents hold **now**, and reflect it in the
 // tree and the heading. The Pixel and the Resources modes keep NO list: there it
 // only empties it.
-// One caller: the whole-document comparison (KCMDoMarkChangesDoc). ("Refresh Page Comparison" was
-// the second until the Pixel mode - the only mode it works in - stopped keeping a list.) nil is
-// ignored silently.
+// Called by the whole-document comparison (KCMDoMarkChangesDoc); "Refresh Page Comparison" works in
+// the Pixel mode alone, which keeps no list, and does not call it. nil is ignored silently.
 // @return kFalse when the Story comparison inside it was CANCELLED at its progress bar (the list
-//   is then half built; the caller goes back to Stop, which clears it). kTrue otherwise, and
+//   is then half built; KCMDoMarkChangesDoc's cancel ending empties it). kTrue otherwise, and
 //   always in the Pixel and the Resources modes, which read no story.
 bool16		KCMRebuildStoryEdits(IDataBase* targetDB, IDataBase* sourceDB);
 // Build the Story mode's rows into the Story Edits list - counters, then the text diff, then the
 // rows where only formatting moved dropped - WITHOUT telling the panel or the Undo follower.
-// Two callers, so the two lists cannot differ: KCMRebuildStoryEdits in the Story mode, and the
+// Shared, so the two lists cannot differ: KCMRebuildStoryEdits in the Story mode, and the
 // Before/After report, which builds its Story table this way in the modes that keep no list.
 // @return kFalse when the diff was CANCELLED at its progress bar (the list is then half built and
 //   the caller empties it).
@@ -246,16 +225,13 @@ bool16		KCMBuildStoryRowsByDiff(IDataBase* targetDB, IDataBase* sourceDB);
 IDataBase*	KCMArmedTargetDB();
 IDataBase*	KCMArmedSourceDB();
 
-// (KCMDetachArmedSource - a rehydrated Task Start copy leaving the armed state - went on
-//  2026-09-27, dead since the rehydration went on 2026-09-21. KCMPeek.cpp keeps its one lesson.)
-
 // kTrue when a comparison is running AND db is one of the two documents in it.
 //
-// **The per-page flags both refuse to work anywhere else** -- registering a page or ticking it
-// only means something inside a comparison -- and each of the four places that enforce it wrote
-// the same expression out. The menu's kCustomEnabling has usually greyed the item out before any
-// of them is reached; this is the belt to that pair of braces, which is why it is enforced in the
-// command as well as asked by the menu.
+// **Registering a page (Added / Removed) refuses to work anywhere else** -- a registration is an
+// input to the comparison and means nothing outside one -- and the register commands ask this one
+// function (KCMPageMap.cpp). The menu's kCustomEnabling has usually greyed the item out before
+// they are reached; this is the belt to those braces, which is why it is enforced in the command
+// as well as asked by the menu. (A tick asks nothing of the kind: KCMCollectCheckablePageUIDs.)
 bool16		KCMIsComparedDoc(IDataBase* db);
 
 // The current print-mark settings, used to restore the check box and the radio to the real state
@@ -263,8 +239,9 @@ bool16		KCMIsComparedDoc(IDataBase* db);
 bool16		KCMGetPrintMarks();		// print marks on/off
 bool16		KCMGetMarkOpacity25();	// frame opacity: kTrue = 25%, kFalse = 75%
 
-// The mark colour. This replaced an automatic choice (cyan over reddish ground) and applies to
-// the Pixel mode's rings and the Story mode's wash alike -- both go through SelectedMarkColor.
+// The mark colour - the reader's choice, never picked from the ground (KCMComparisonRun.cpp's
+// KCMSetMarkColor says why). It applies to the Pixel mode's rings and the Story mode's wash alike
+// -- both go through SelectedMarkColor.
 void		KCMDoSetMarkColor(bool16 cyan, IDataBase* db);
 bool16		KCMGetMarkColorCyan();	// kFalse = red (the default), kTrue = cyan
 
@@ -301,29 +278,20 @@ void				KCMEndTrackListing();
 void		KCMHandleDocsClosed();
 
 //----------------------------------------------------------------------------------------
-// Where the rest went
+// What is NOT here
 //
-// Everything below was declared here once and now lives elsewhere. The list is kept because the
-// **rule** it encodes still binds: **a model-side file that includes KCMUIShared.h is reverse
-// flow** -- the model must not reach into the UI. (UI -> model is fine.)
+// The **rule** this list encodes: **a model-side file that includes a UI header (KCMUIShared.h,
+// KCMViewLookup.h, KCMViewSync.h - all in ui/) is reverse flow** -- the model must not reach into
+// the UI. (UI -> model is fine.)
 //
-//   asking a view          -> KCMViewLookup.h    (KCMQueryMouseContentPoint / KCMQueryViewUnderMouse /
-//                                                 KCMFindDocDbForView / KCMQuerySpreadUIDForView /
-//                                                 KCMQueryPanorama)
-//   touching a widget      -> KCMUIShared.h      (KCMGetVisibleOwnPanel / KCMFindPanelWidget /
-//                                                 KCMRefreshPanel / KCMSetStatus /
-//                                                 KCMSetNavPosition / KCMSetToolButtonSelected /
-//                                                 KCMActivateOwnTool / KCMIsOwnToolActive /
-//                                                 KCMOpenAboutURL)
-//   start/stop a comparison-> KCMComparisonRun.h (the six: toggle, stop, start-for, can-start,
-//                                                 print marks, opacity)
+//   asking a view          -> ui/KCMViewLookup.h
+//   touching a widget      -> ui/KCMUIShared.h
+//   Sync Layout Views      -> ui/KCMViewSync.h
+//   start/stop a comparison-> KCMComparisonRun.h
 //   the status string      -> KCMModelNotify.h   (held by the MODEL, displayed by the UI:
 //                                                 app.kcmStatus answers with the panel closed,
 //                                                 so the memory has to be model-side)
-//   Find Overset apply     -> KCMOversetApply.h  (KCMApplyOversetForDoc / KCMOversetScanTargetDB)
-//   Hide Unchanged Spreads -> KCMHideUnchanged.h (the toggle and its three reset/getter functions)
-//   Sync Layout Views      -> KCMViewSync.h      (KCMGetLayoutSync / KCMSetLayoutSync /
-//                                                 KCMAlignOtherViewsToActiveNow)
+//   Hide Unchanged Spreads -> KCMHideUnchanged.h
 //
 // Split Target on Start (KCMGetSplitOnStart / KCMDoSplitTarget) was removed rather than moved.
 // To bring it back: docs/ai-notes/kescm-split-target-mechanism.md and git 69c4b07.
