@@ -320,7 +320,7 @@ public:
 
 		WHY THE SPLIT CROSSES THE BOUNDARY INSTEAD OF BEING MADE IN THE PANEL. It cannot be made
 		there: the boundary between context and change is a code point index into text that has
-		already been cut at both ends, and PMString counts UTF-16. The model made the split
+		already been cut at both ends, and the joined text carries no mark of it. The model made the split
 		(KCMStoryDiffRun's Slice) and this is the same journey the change ROW's three pieces
 		already make on IKCMStoryEditsFacade::Change.
 
@@ -356,7 +356,7 @@ public:
 	// third argument, void* changedBy (ISubject.h:150), which reaches the listener as
 	// IObserver::Update's fourth. The struct is KCMNotifyPayload (KCMModelNotify.h), and the
 	// listener casts changedBy back to it -- the shape Adobe's own linksui uses
-	// (EditOriginalResumeObserver.cpp:127).
+	// (LinksUIPanelTreeObserver.cpp:213).
 	//
 	// @warning do not add "what was that notification about" getters here. They would be statics
 	// in a model plug-in read back after the fact; see the payload struct's comment for why that

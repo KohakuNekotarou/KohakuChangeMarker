@@ -31,8 +31,9 @@ class IDataBase;
 // ISubject::Change takes a third argument, `void* changedBy` (ISubject.h:150), and it reaches the
 // listener as IObserver::Update's fourth. Adobe's own product code uses it for plain data rather
 // than for the "object that caused the change" its wording suggests:
-// open/components/linksui/EditOriginalResumeObserver.cpp:127 reads it back as
-// `const PMIID& what = *((const PMIID*)changedBy);`
+// open/components/linksui/LinksUIPanelTreeObserver.cpp:213 reads it back as
+// `IActiveContext::ContextInfo* info = (IActiveContext::ContextInfo*)changedBy;` (the line above it keeps
+// the older `(const PMIID*)` reading, which IActiveContext.h:67-75 asks all code to move off).
 //
 // WHY A PAYLOAD AND NOT STATICS, beyond this being the documented route. Change() is synchronous,
 // so a struct on the emitting stack outlives the whole delivery -- which makes the payload

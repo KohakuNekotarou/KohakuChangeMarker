@@ -218,8 +218,8 @@ public:
 		// The words to show, in three pieces: context, the changed characters, context. ALWAYS THE
 		// TARGET (newer) side, so a DELETION has an empty middle (2026-09-01; see KCMStoryList.h).
 		// Concatenated they are one string; the boundary between them cannot be recovered on this
-		//   side once it is gone (it is a code point index, and PMString counts UTF-16), which is
-		//   why it is carried across rather than worked out here.
+		//   side once it is gone (it is a code point index the diff worked out, and the joined string
+		//   carries no mark of it), which is why it is carried across rather than worked out here.
 		PMString	fTextPre;
 		PMString	fText;
 		PMString	fTextPost;

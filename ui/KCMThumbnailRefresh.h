@@ -112,7 +112,7 @@ void KCMTryRefreshPagesPanelThumbnails(IDataBase* db, bool16 redrawNow = kTrue);
 //
 // @warning an earlier version of this note said the reason was that "a notification can carry
 //   nothing but a ClassID". That is untrue: ISubject::Change carries it in the third argument,
-//   changedBy (the shipping linksui/EditOriginalResumeObserver.cpp does exactly that). The page
+//   changedBy (the shipping linksui/LinksUIPanelTreeObserver.cpp does exactly that). The page
 //   flag path (Register / check mark) went back to per-UID once that was understood: the model
 //   puts the toggled page set on KCMNotifyPages and KCMModelChangeObserver hands it to
 //   KCMRefreshThumbnailsForPages below. Two more paths went back to per-UID with it -- the

@@ -23,7 +23,7 @@
 //  ★WHERE THE THREE PIECES COME FROM: the model splits them (KCMStoryDiffRun's Slice) and hands
 //  them across the boundary on IKCMStoryEditsFacade::Change. The split cannot be made here - the
 //  boundary between context and change is a code point index into text that has already been cut
-//  at both ends, and PMString counts UTF-16.
+//  at both ends, and the joined text carries no mark of it.
 //
 //  ★ONLY THE CHANGE ROWS USE THIS. A story row keeps its stock cells: its text is the story's
 //  opening words, none of which is a change, so there is nothing there to tell apart (user's call,

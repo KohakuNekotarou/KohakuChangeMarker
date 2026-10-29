@@ -2985,8 +2985,9 @@ private:
 		return 1;
 	}
 
-	// ---- ★A BATCH'S STATE (2026-10-24 night - RunBatch). The facade is one object for the session; a batch lives inside
-	// one call on the main thread, so these are up only while it runs.
+	// ---- ★A BATCH'S STATE (2026-10-24 night - RunBatch). The facade is one object ("the single kUtilsBoss object" -
+	// Utils.h:44; one per thread or one per process, the header does not say), and every reader and writer of these runs
+	// on the main thread - the writes, RunBatch and RefreshRow - so they are up only while a batch runs.
 	bool16	fBatch;			// the batch's one sequence is open: BeginStep opens none of its own, RefreshRow tells nobody
 	bool16	fBatchFailed;	// ... and a write inside it did not go in (EndStep) - the whole step is rolled back
 	bool16	fStale;			// SameChangeAfterRefresh found the list out of date since this was last cleared

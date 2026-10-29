@@ -74,7 +74,7 @@ void KCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theSub
 
 	// ★★The payload of the notification. What the model put in the third argument of
 	//   ISubject::Change arrives as the fourth argument of Update (ISubject.h:150; InDesign’s own
-	//   example is linksui's EditOriginalResumeObserver.cpp:127). It used to be kept in a model-side
+	//   example is linksui's LinksUIPanelTreeObserver.cpp:213). It used to be kept in a model-side
 	//   static and fetched back through the five facades, on the **mistaken premise that a
 	//   notification can carry nothing but a ClassID**.
 	// ⚠**It can be nil** (a notification with nothing attached). One empty value is prepared and the

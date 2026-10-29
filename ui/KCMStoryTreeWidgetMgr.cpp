@@ -1100,7 +1100,7 @@ private:
 			//   the colour changes - the model decided all three (KCMStoryList.h). Nothing is
 			//   chosen here, and in particular the split is not made here: the boundary between the
 			//   context and the change is a code point index into text that has been cut at both
-			//   ends, and PMString counts UTF-16.
+			//   ends, and the joined text carries no mark of it.
 			textPre = change.fTextPre;
 			textMid = change.fText;
 			textPost = change.fTextPost;

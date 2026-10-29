@@ -160,8 +160,8 @@ std::string MarkUpBreaks(const std::string& utf8)
    split has to be made HERE: by the time the row is drawn, the only thing that knows which
    characters were the change is this function -- the boundary between the context and the
    change is a code point index into a string that has already been cut at both ends and had its
-   break characters replaced. Handing over one string plus an offset would ask the panel to count
-   code points in a PMString, whose own index is UTF-16.
+   break characters replaced. Three pieces leave the panel nothing to count (a PMString itself is
+   cut in code points - Truncate / Remove / GetUTF32TextChar, UnicodeSavvyString.h).
 
    @param from/count name the CHANGE, in code points, within text.
    @param context how many code points to keep on each side. 0 = the change alone.

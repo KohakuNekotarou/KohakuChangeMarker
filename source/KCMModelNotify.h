@@ -167,8 +167,8 @@ void	KCMStoreSessionStatus(const PMString& s);
 // re-show, so a split kept there would be lost and the message would come back in one colour --
 // the same sentence looking different depending on the route it took. And the split cannot be
 // re-derived by the panel: the boundary is a code point index into text already cut at both ends,
-// and PMString counts UTF-16. One place answers "what does the message area say", and it is the
-// place that already answered it ([[one-question-one-place]]).
+// and the joined text carries no mark of it. One place answers "what does the message area say",
+// and it is the place that already answered it ([[one-question-one-place]]).
 //
 // The fifth piece, `ruby`, is the READING drawn above the changed characters when the edit is a
 // ruby one. It is stored here for exactly the reason the other four are: a reading kept anywhere

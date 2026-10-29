@@ -896,8 +896,8 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	//   hand now (KCMStatusTextView.cpp), so it can do here what the ROW already does: draw the
 	//   characters that differ at the theme's text colour and fade the words around them. The split
 	//   is not made here and could not be - the boundary between context and change is a code point
-	//   index into text that has been cut at both ends, and PMString counts UTF-16. The model made
-	//   it (KCMStoryDiffRun's Slice) and it travels on the Change.
+	//   index into text that has been cut at both ends, and the joined text carries no mark of it.
+	//   The model made it (KCMStoryDiffRun's Slice) and it travels on the Change.
 	//   ★The label is its own argument rather than the head of the first piece: when the message
 	//     does not fit, the CONTEXT gives way from its outer ends, and a label living in the context
 	//     would be the first thing cut. It is the one piece that has to survive.
