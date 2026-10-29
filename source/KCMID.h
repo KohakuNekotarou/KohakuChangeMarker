@@ -76,7 +76,7 @@
 														//     ⚠★★★**2026-08-20 訂正＝⑪だけでは半分しか直っていなかった。** 上の実測は「**透明を含まないページ**」で採ったが、その**文書には別のページに透明があった**。**文書全体で透明が1つも無い**と、⑪を入れても全面ベタのまま出る(手でも再現)。⇒ 下の⑫で解消。**「ページに透明が無い」と「文書に透明が無い」を測り分けていなかったのが誤りの正体。**
 														//   ⑫★★★**透明を1つも含まない文書でも PDF 1.3 で半透明になった**(2026-08-20。⑪の残り半分)。**入稿用の文書はむしろ透明を1つも使わないのが普通**なので、実務ではここまで揃って初めて効く。
 														//     原因: フラットナ(透明の平坦化)は「文書に透明がある」ときしか動かず、その判定は **`IXPManager` の「透明を持つページアイテムの一覧」** だけで決まる。KCM のアドーンメントは**セッションに登録するだけでどのアイテムにも属さない**ので、その一覧に自力では入れなかった ⇒ 申告口(⑪)を持っていても**誰も聞きに来ない**。
-														//     直し: 公式サンプル `transparencyeffect` と同じ通知(`ItemXPChanged`)を、**文書を1バイトも変えずに**出す(`IDataBase::SaveRestoreModifiedState` で dirty も戻す)。★**利用者から見た操作は何も変わらない**。
+														//     直し: 公式サンプル `transparencyeffect` と同じ変化の種類(`kXPC_AddedSomeXP`)を、サンプルが使うコマンド(`kXPItemXPPrePostCmdBoss`)ではなく `IXPManager::ItemXPChanged` で、**文書を1バイトも変えずに**出す(`IDataBase::SaveRestoreModifiedState` で dirty も戻す)。★**利用者から見た操作は何も変わらない**。
 														//     ★実測＝`red 400,404 画素(全面ベタ) → 0 画素・淡赤 30,155 画素`。害の対照も測った＝**一度も比較していない書き出しと Stop 後の書き出しが4ページとも差分0画素・PNG の SHA256 も一致**(申告を上げっぱなしにして誌面の色を変える逆方向の事故は無い)。
 														//     ⚠残る制限＝**ページアイテムが1つも無いスプレッド**(一覧に載せる代表が取れない)。
 														//     ⇒ ★**How to Use の「互換性は Acrobat 5(PDF 1.4)以上に」という但し書きは撤去した**(日英とも)。⑪⑫の後は 1.3 でも正しく出るため。
@@ -275,7 +275,7 @@ DECLARE_PMID(kClassIDSpace, kKCMResourceSaxHandlerBoss, kKCMPrefix + 36)	// ISAX
 DECLARE_PMID(kClassIDSpace, kKCMBeforeCloseResponderServiceBoss, kKCMPrefix + 39)	// IResponder for kBeforeCloseDoc (KCMDocResponder.cpp, 2026-10-13): a Task Start kept in memory goes with the document it was taken from, while that document is still alive. (+37 and +38 are the UI half's kKCMStoryBangCellBoss / kKCMTrackChipCellBoss - the offsets are kept apart across the two files.)
 DECLARE_PMID(kClassIDSpace, kKCMCopyStoreBoss, kKCMPrefix + 40)	// IDataExchangeController (KCMCopyStore.cpp, 2026-10-24, the import-as-Source road): KCM's own copy store, one per document - Apply This Change copies the words it writes over into it, Restore from Copy pastes them back (KFC's KFCCopyStore, copied). Made with CreateObject, never registered with the clipboard or a drag.
 DECLARE_PMID(kClassIDSpace, kKCMRecordFocusBoss, kKCMPrefix + 41)	// kTextFocusBoss + IID_ITEXTFOCUS (KCMRecordFocus.cpp, 2026-10-26): a "=" record's text focus of KCM's own class - its range a snapshot view interface, so the user's Undo and Redo put it back (KFC's kKFCRowFocusBoss, copied). Never persisted: a focus lives in memory only.
-										// Next new boss: +42. WARNING: this line went stale the moment +34 was taken and was still saying +34 on 2026-09-07. COUNT, do not read: grep "DECLARE_PMID(kClassIDSpace" in this file and take the largest, then check the retirement notes above and below it. (2026-10-13: +37/+38 were taken by the UI half, +39 by the before-close responder; 2026-10-24: +40 by the copy store; 2026-10-26: +41 by the record focus - counted in both files.)
+										// Next new boss: COUNT, do not read a number here - one written here went stale twice (it said +34 after +34 was taken, and +42 after the UI half took +42 on 2026-10-27). grep "DECLARE_PMID(kClassIDSpace" in this file AND in ui/KCMUIID.h, take one past the largest of the two, then check the retirement notes above and below. (+41 is in both halves - this half's kKCMRecordFocusBoss and the UI half's kKCMReturnFilterBoss, taken two days apart; the values differ by prefix, so nothing collides.)
 
 // InterfaceIDs:
 // +0..+3 (three observer attachment IDs and the Story Edits section height) moved to
@@ -285,8 +285,7 @@ DECLARE_PMID(kClassIDSpace, kKCMRecordFocusBoss, kKCMPrefix + 41)	// kTextFocusB
 //   so all of +0..+9 are in use and none of them may be reused here.
 // +10 is NOT free: IID_IKCMSTORYMARKFACADE took it in KCMBoundaryID.h (this line said "+10..+25
 //   are free" until 2026-09-07, which would have handed out a colliding number).
-// +14 is spoken for: IID_IKCMRESOURCESFACADE takes it in KCMBoundaryID.h when the Resources
-//   mode's facade lands (Task 4 of docs/superpowers/plans/2026-09-09-kcm-resources-engine.md).
+// +14 is IID_IKCMRESOURCESFACADE in KCMBoundaryID.h (the Resources mode's facade).
 // +19..+25 are free (+16 retired, +17 IID_IKCMSTORYFOLLOWOBSERVER - 2026-09-25, +18 IID_IKCMUISERVICES in KCMBoundaryID.h - 2026-10-28). COUNT before taking one: the facade IIDs live in KCMBoundaryID.h, not here,
 //   so the largest number in THIS file is not the largest number in use.
 //

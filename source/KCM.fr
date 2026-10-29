@@ -1,4 +1,4 @@
-//========================================================================================
+﻿//========================================================================================
 //  
 //  $File: $
 //  
@@ -409,8 +409,8 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// 8,407/7,379 without). Neither case turns solid, so the difference is density only, which is
 	// a different failure from the solid block PDF 1.3 produces. It was left out because print
 	// does not need that precision - what goes to the printer is the PDF. To match the density
-	// again, restore the implementation from bd44eec; the A/B conditions are in section 5 of
-	// KCMRingAdornment.cpp.
+	// again, follow section 5 of KCMRingAdornment.cpp: the implementation is in bd44eec, and that
+	// section has the A/B conditions and what the restored code has to take differently.
 	//
 	// PDF export: added in BeginExport, removed in EndExport. An asynchronous export hands this
 	// the CLONE db it exports from, which is what makes it possible to change the output without

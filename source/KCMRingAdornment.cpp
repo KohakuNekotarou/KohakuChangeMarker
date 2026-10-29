@@ -941,6 +941,10 @@ CREATE_PMINTERFACE(KCMRingAdornmentStartup, kKCMRingAdornmentStartupImpl)
 //      the export side only. To match the density in print as well, bring
 //      `KCMPrintXPSetupProvider` back from `bd44eec` (together with `kKCMPrintXPSetupProviderBoss`
 //      and `kKCMPrintXPSetupProviderImpl`).
+//      @warning **not as it stood there**: it took the printed document from the active context,
+//      saying a print provider is not handed one - it is: StartPrintPub gets it as `iDoc`
+//      (IPrintSetupProvider.h). EndPrint gets nothing, which is why that code remembered the
+//      database it joined.
 //
 //  WHY NOT AROUND THE SAVE
 //    `kBeforeSaveDocSignalResponderService` would serve the same purpose, but **failing there costs
