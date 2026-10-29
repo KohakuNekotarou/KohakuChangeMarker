@@ -2,15 +2,15 @@
 //
 //  KCMConstants.h
 //
-//  Tuning constants for ChangeMarker (KCM). Read by the drawing engine, peek, the book
-//  comparison and the color sampler - ALL OF THEM ON THE MODEL SIDE. Nothing under ui/ includes
-//  this header (2026-08-30; the four constants that were read only from over there moved to the
-//  files that read them - see the note at the end).
+//  Tuning constants for ChangeMarker (KCM), read by BOTH halves: on the model side the drawing
+//  engine, peek, the book comparison, the colour sampler, the progress bars and the paws; on the UI
+//  side the paw tool (ui/KCMPawTracker.cpp - KCMPawColour) and the tracked-change labels
+//  (ui/KCMTrackLabels.cpp - the ring colours). So a change here is built into both .pln files -
+//  build both. A value only the UI half reads does not belong here (see the note at the end).
 //
 //  Namespace-scope const has internal linkage in C++ whether or not `static` is written, so each
 //  TU gets its own copy and there is no ODR issue either way. The `static` below is redundant,
-//  not load-bearing; it is kept because removing it from thirty declarations would change
-//  nothing. (This header used to credit `static` with that property, which was wrong.)
+//  not load-bearing; it is kept because removing it would change nothing.
 //
 //========================================================================================
 #ifndef __KCMConstants_h__
@@ -55,15 +55,14 @@ static const PMReal kKCMResolution = 36.0;
 static const PMReal kKCMHiResMul    = 4.0;
 static const int32  kKCMPoolMinCount = 1;	// Pooling: a stored cell counts as changed when this many high-res pixels inside it changed. 1 = most sensitive (picks up edge noise); higher survives noise better, at a slightly higher risk of missing a change.
 // (The PDF export check's own raster and counting - RGB, anti-aliased, 160 / 6 and patches of 8 - went with the PDF
-//  comparison on 2026-10-27. Measured values and why: docs/ai-notes/kcm-pdf-export-check-live-2026-10-14.md.)
+//  comparison. Measured values and why: docs/ai-notes/kcm-pdf-export-check-live-2026-10-14.md.)
 
-// How long a comparison runs before its progress bar (with Cancel) appears, in milliseconds.
-// Pixel and Story alike (2026-09-05, the user's call: three seconds). It used to be a PAGE
-// COUNT (10 or more to be rasterised), which the Story mode - rasterising nothing - could never
-// reach; and the SDK's own showImmediate = kFalse does not wait, it means "never appear" (a 100
-// page comparison showed no bar at all). The waiting is done by KCMDeferredProgressBar
-// (KCMProgressBar.h). Callers: the full comparison (KCMCore.cpp), Refresh for the pages
-// selected in the Pages panel (KCMPeek.cpp), and the Story comparison (KCMStoryDiffRun.cpp).
+// How long a job runs before its progress bar (with Cancel) appears, in milliseconds - every
+// mode alike (the author's call: three seconds). A page count cannot decide it (the Story mode
+// rasterises nothing), and the SDK's own showImmediate = kFalse brought no bar up on a 100-page
+// comparison (KCMProgressBar.h says how far that measurement goes). The waiting is done by
+// KCMDeferredProgressBar (KCMProgressBar.h), whose default this is: every deferred bar but the
+// Before/After report's, which passes 0. The book comparison's bar is a KCMProgressBar, up at once.
 static const int32  kKCMProgressBarDelayMs = 3000;
 
 // Ticks handed to one chapter on the book-comparison progress bar (KCMBookCompare.cpp).
@@ -71,16 +70,16 @@ static const int32  kKCMProgressBarDelayMs = 3000;
 // page chapter and Cancel does not take effect until that chapter ends. Giving each chapter a
 // span lets the bar advance inside a chapter, which also makes Cancel feel immediate.
 // The value itself carries no meaning - the denominator is chapters * span, so only the ratio
-// matters. 1000 means "as long as a chapter stays under 1000 pages, every page moves the bar
-// by at least one tick".
+// matters. With the pixel judgement's share below (kKCMBookPixelPhaseTicks of it), every page of a
+// chapter of up to that many pages moves the bar by at least one tick.
 static const int32  kKCMChapterProgressSpan = 1000;
 
-// How one chapter's span is divided between the three judgements (2026-09-10). Two numbers for
+// How one chapter's span is divided between the three judgements. Two numbers for
 // three: the resources judgement, the last, has the rest of kKCMChapterProgressSpan - the next
 // chapter's slice begins at the next span (KCMCompareBooks). So the one sum to keep is that the two
 // leave it some: past the span the needle would run into the next chapter's slice and go back when
 // that chapter starts (the static_assert below).
-// ★THE SHARES ARE THE MEASURED COSTS, NOT EQUAL THIRDS. The pixels are the only phase that can
+// THE SHARES ARE THE MEASURED COSTS, NOT EQUAL THIRDS. The pixels are the only phase that can
 //   report from inside itself (page by page), and they are most of the time on an unchanged
 //   chapter. The story judgement reads change counters, composes nothing and is over at once. The
 //   resources judgement is two whole-document XML exports, 200-2400ms. Equal thirds would leave
@@ -105,7 +104,7 @@ static const uint8 kKCMAddedBorderR = 0, kKCMAddedBorderG = 200, kKCMAddedBorder
 
 // Color of the checkmark drawn on pages marked with "Check", the same blue in the Pages panel
 // thumbnail and in the middle of the page in the layout view. Blue keeps it distinct from the
-// green "/" (registered) and the red "/" (overset).
+// green "/" (registered) and the red "/" (not compared).
 // The mark is two strokes (moveto/lineto/stroke), not a font glyph, so it does not depend on
 // the font, the OS or the locale.
 static const uint8 kKCMCheckR = 30, kKCMCheckG = 110, kKCMCheckB = 235;
@@ -119,24 +118,23 @@ static const PMReal kKCMCheckLayoutStrokeRatio = 0.12;	// stroke width, as a fra
 // The cat-paw stamp: the reader's own "I have looked at this spot" mark, placed by the stamp tool
 // at a point on the page. Sized the same way as the tick above -- a fraction of the page's short
 // side -- so it stays similar under zoom and in print, and small, because a page may carry many.
-// ★★THE HIT BOX FOR LIFTING A PAW IS DERIVED FROM THIS ONE VALUE (KCMPawHalfSizeForPage), so
+// THE HIT BOX FOR LIFTING A PAW IS DERIVED FROM THIS ONE VALUE (KCMPawHalfSizeForPage), so
 //   what the reader can see is exactly what they can lift. Writing the size in two places would
 //   let the picture and the target drift apart, and the drift would only show as "sometimes the
-//   paw will not come off" ([[one-question-one-place]]).
+//   paw will not come off" (memory one-question-one-place).
 // ⚠The colour lives here too rather than in the drawing file, for the same reason the tick's does.
 static const PMReal kKCMPawSizeRatio = 0.05;	// paw size, as a fraction of the page short side
 
-// ★★TWO COLOURS, ONE SIZE (2026-09-07, the user's decision -- it was three until that day).
-//   ⚠It was the SIZE that the modifier keys changed for an hour on 2026-09-04 -- 1.6x, then 10x,
-//   then 5x -- and the user replaced the whole idea after putting a big one on a real page:
-//   **a bigger paw is the same mark drawn larger, while a different colour is a different KIND of
-//   mark.** Every paw is the ordinary size, and Shift+Alt swaps between:
+// TWO COLOURS, ONE SIZE (the author's decision).
+//   ⚠The modifier keys once changed the SIZE, and the author replaced the whole idea after putting
+//   a big one on a real page: **a bigger paw is the same mark drawn larger, while a different colour
+//   is a different KIND of mark.** Every paw is the ordinary size, and Shift+Alt swaps between:
 //       red    the default, what a plain press puts down until the colour is swapped
 //       blue
 //
-//  ★★★**BOTH COLOURS ARE BORROWED FROM KOHAKU INDESIGN MCP, AND THAT IS THE POINT** (the user,
-//    2026-09-07). The two plug-ins are twins that mark the same documents for the same reader
-//    ([[kcm-kidmcp-story-diff-twins]]), and over there the two hands are told apart by colour
+//  **BOTH COLOURS ARE BORROWED FROM KOHAKU INDESIGN MCP, AND THAT IS THE POINT** (the author).
+//    The two plug-ins are twins that mark the same documents for the same reader
+//    (memory kcm-kidmcp-story-diff-twins), and over there the two hands are told apart by colour
 //    alone: **Claude's own marks are red, the person's blue pencil is blue.** A paw carries the
 //    same reading here, so the shades are the same numbers and not merely similar ones:
 //      red  = KIDMCPMarkDraw.cpp's kClaudeRed  (255, 59, 48)  = #FF3B30
@@ -146,7 +144,7 @@ static const PMReal kKCMPawSizeRatio = 0.05;	// paw size, as a fraction of the p
 static const uint8 kKCMPawRedR  = 255, kKCMPawRedG  =  59, kKCMPawRedB  =  48;	// the default
 static const uint8 kKCMPawBlueR =  30, kKCMPawBlueG =  91, kKCMPawBlueB = 255;
 
-// ★★**THE SHAPE AND THE WORD ARE NOT THE SAME SHADE** (the user, 2026-09-07: "the paw part only,
+// **THE SHAPE AND THE WORD ARE NOT THE SAME SHADE** (the author: "the paw part only,
 //   pink -- and the blue one a blue with white mixed in; the text stays as it is").
 //   The paw is a big solid blob and the word is a few thin strokes, so one colour cannot serve
 //   both: at full strength the blob shouts over the page, and softened, the word stops being
@@ -161,7 +159,7 @@ static const uint8 kKCMPawBlueR =  30, kKCMPawBlueG =  91, kKCMPawBlueB = 255;
 //   grows. There is no number here that trades one against the other.
 static const PMReal kKCMPawFillWhiteMix = 0.65;
 
-// ★**AND THE PAW GETS A WHITE OUTLINE TOO** (the user, 2026-09-07, after seeing the note's:
+// **AND THE PAW GETS A WHITE OUTLINE TOO** (the author, after seeing the note's:
 //   "can the cat paw illustration have a white edge as well?"). Same reason as the word's -- a
 //   softened pink over a dark photograph is a smudge until something separates it from the
 //   background -- and the same trick: stroke white first, fill over it.
@@ -179,12 +177,12 @@ static const PMReal kKCMPawFillWhiteMix = 0.65;
 static const PMReal kKCMPawHaloRatio = 0.16;	// the outline's width, as a fraction of the paw's size
 
 // Which of the two a stamp was placed in.
-// ★An enum rather than a stored colour: the shades themselves live above, in one place, so
-//   changing one never means going near the saved data ([[one-question-one-place]]).
+// An enum rather than a stored colour: the shades themselves live above, in one place, so
+//   changing one never means going near the saved data (memory one-question-one-place).
 //
-// ⚠★★★**0, 1 AND 2 ARE RETIRED AND MUST NOT BE REUSED.** They were pink, cyan and green, and they
-//   are IN THE READER'S DOCUMENTS -- in script labels and in KCM's own JSON. Giving a new colour
-//   an old number would silently repaint every paw saved before today, and nothing would report
+// ⚠**0, 1 AND 2 ARE RETIRED AND MUST NOT BE REUSED.** They were pink, cyan and green, and they
+//   are IN THE READER'S DOCUMENTS -- in the pages' script labels. Giving a new colour an old
+//   number would silently repaint every paw saved with the old three, and nothing would report
 //   it. The new values therefore start at 3, and KCMPawColourFromStored (KCMPawStamp.h) is the one
 //   place that turns an old number into a new one.
 enum KCMPawColour
@@ -193,9 +191,9 @@ enum KCMPawColour
 	kKCMPawColourRed	= 4
 };
 
-// The word an Alt press puts beside a paw (2026-09-07, the user's request).
+// The word an Alt press puts beside a paw (the author's request).
 //
-// ★**18pt, and BOLD THE WAY KOHAKU INDESIGN MCP IS BOLD** -- which is not a bold FACE but a faux
+// **18pt, and BOLD THE WAY KOHAKU INDESIGN MCP IS BOLD** -- which is not a bold FACE but a faux
 //   bold: the glyphs are filled and then stroked at this fraction of the point size, so it does
 //   not depend on the substitute font having a bold face at all (KIDMCPMarkDraw.cpp's kBoldStroke,
 //   the same 0.04). KCM asks the font manager for the default font exactly as the original page
@@ -204,10 +202,10 @@ enum KCMPawColour
 //   page numbers are the other kind, fixed on screen; a caption belongs to the page, not the view.)
 static const PMReal kKCMPawTextPt         = 18.0;
 static const PMReal kKCMPawTextBoldStroke = 0.0;	// line width as a fraction of the size; 0 = no faux bold
-// ⚠★**0 ON PURPOSE** (the user, 2026-09-07: "try taking the weight off the text once"). It was
-//   0.04 -- Kohaku InDesign MCP's own faux bold -- and the note came out heavier than the page it
-//   sits on. Putting the weight back is this one number; the drawing skips the stroke pass while
-//   it is zero, so nothing else has to change either way.
+// ⚠**0 ON PURPOSE** (the author: "try taking the weight off the text once"). At 0.04 -- Kohaku
+//   InDesign MCP's own faux bold -- the note came out heavier than the page it sits on. Putting the
+//   weight back is this one number; the drawing skips the stroke pass while it is zero, so nothing
+//   else has to change either way.
 static const PMReal kKCMPawTextGapRatio   = 0.35;	// gap between the paw's edge and the word, as a fraction of the paw's size
 // What is DRAWN. ⚠**The label always keeps the whole string** -- these two cut the picture, never
 // the note, so a reader who typed more than fits still has all of it in the document and in the
@@ -216,31 +214,28 @@ static const int32  kKCMPawTextMaxChars   = 60;		// per line
 static const int32  kKCMPawTextMaxLines   = 6;		// the box takes about four; a few more are drawn
 static const PMReal kKCMPawTextLineRatio  = 1.25;	// line spacing, as a multiple of the point size
 
-// ★★**A WHITE OUTLINE ROUND THE LETTERS, NOT A BOX BEHIND THEM** (the user, 2026-09-07, replacing
+// **A WHITE OUTLINE ROUND THE LETTERS, NOT A BOX BEHIND THEM** (the author, replacing
 //   the ground: "drop the white background -- red letters with a white edge, the edge opaque, draw
 //   the edge and then the letters over it").
 //   A caption goes wherever the reader pressed, which is over the page's own text as often as not,
 //   and coloured letters on top of black letters are neither. **A box hid the page as well as the
 //   words** -- and what is under the note is the thing the note is ABOUT. An outline lifts the
 //   letters off whatever is behind them while hiding almost none of it.
-//   ★This is the trick the original-page-number badge already uses on this page, which is why it
+//   This is the trick the original-page-number badge already uses on this page, which is why it
 //     is a known quantity here rather than an experiment.
 //   ⚠**Order is the whole of it**: every outline is stroked FIRST, and the letters are filled over
 //     the lot. Drawing one line's outline after another line's letters would eat into them.
-//   ⚠A retired pair used to stand here -- kKCMPawTextPadRatio and kKCMPawTextGroundOpacity, the
-//     box's margin and its half transparency. They went with the box.
 static const PMReal kKCMPawTextHaloRatio  = 0.16;	// the outline's width, as a fraction of the point size
 
-// (The Pages panel thumbnail carried a paw for one afternoon on 2026-09-07 --
-//  kKCMPawThumbSizeMul and kKCMPawThumbDropRatio lived here -- and the user dropped the
-//  idea. KCMDrawEventHandler.cpp keeps the note on what it cost and what it taught.)
+// (No paw on the Pages panel thumbnail - the author dropped the idea after trying it.
+//  KCMDrawEventHandler.cpp keeps the note on what it cost and what it taught.)
 
 // Fill that shows which areas are excluded from the comparison as page-number regions. While
 // the exclusion toggle is on, every excluded rectangle is painted in translucent green so the
 // excluded area can be seen, thin enough that the page number underneath still shows through.
 // It is a vector rectangle plus setopacity, so it composites correctly on screen and in print.
 static const uint8  kKCMExcludeFillR = 0, kKCMExcludeFillG = 200, kKCMExcludeFillB = 0;
-static const PMReal kKCMExcludeFillOpacity = 0.25;	// opacity of the excluded-area fill (0..1). 0.35 until 2026-09-07, lowered at the author's request (spec map MK-19): it sits over the design, so it has to be readable through.
+static const PMReal kKCMExcludeFillOpacity = 0.25;	// opacity of the excluded-area fill (0..1). Lowered from 0.35 at the author's request (spec map MK-19): it sits over the design, so it has to be readable through.
 
 // Click-point CMYK sampling. Only a tiny area around the click is rasterized, at high dpi and
 // in CMYK, and the raw value (0..255) of the center pixel is read from the new and the old
@@ -265,9 +260,9 @@ static const PMReal kKCMOldNumR = 0.0, kKCMOldNumG = 0.0, kKCMOldNumB = 0.0;
 static const PMReal kKCMOldNumHaloEm = 0.06;	// halo thickness (em)
 static const PMReal kKCMOldNumPadEm  = 0.20;	// padding of the transparency group bbox (em), wide enough for the halo to fit
 
-// Story ID labels (flyout "Show Story IDs", 2026-09-13). "StoryID:<the story's UID>", written ABOVE
+// Story ID labels (flyout "Show Story IDs"). "StoryID:<the story's UID>", written ABOVE
 // every page item that carries a story - outside the item, sitting on its top edge at the left (the
-// user's asks, in order: the number only, outside the frame so it never lies over the text; twice
+// author's asks, in order: the number only, outside the frame so it never lies over the text; twice
 // the size; then three quarters of that, with "StoryID:" in front). Two stories on one item (a frame
 // whose path carries text as well) are two such labels on the one line. The same default font as
 // the badge above, black with a white outline (the paw's note's method: stroke pass first, fill
@@ -275,8 +270,8 @@ static const PMReal kKCMOldNumPadEm  = 0.20;	// padding of the transparency grou
 // points is this / the view's scale, the way the rings pick their radius); in print and PDF, where
 // there is no view, it is a fixed size in points. Opaque - no transparency group, so nothing here
 // touches the flattener.
-static const char* const kKCMStoryIdPrefix = "StoryID:";	// in front of every number (the user's ask)
-static const PMReal kKCMStoryIdFontPx    = 16.5;	// on screen, in screen pixels (11 -> 22 -> 75% of 22, the user's asks)
+static const char* const kKCMStoryIdPrefix = "StoryID:";	// in front of every number (the author's ask)
+static const PMReal kKCMStoryIdFontPx    = 16.5;	// on screen, in screen pixels (11 -> 22 -> 75% of 22, the author's asks)
 static const PMReal kKCMStoryIdPrintPt   = 10.5;	// in print and PDF, in points (the same steps)
 static const PMReal kKCMStoryIdPadRatio  = 0.25;	// the gap between the item's top edge and the bottom of the digits, as a fraction of the size
 static const PMReal kKCMStoryIdHaloRatio = 0.14;	// the white outline's stroke width, as a fraction of the size
@@ -287,15 +282,11 @@ static const PMReal kKCMStoryIdHaloRatio = 0.14;	// the white outline's stroke w
 static const PMReal kKCMStoryIdBandAbovePx = 26.0;	// kKCMStoryIdFontPx * (1 + pad) with room for the halo
 static const PMReal kKCMStoryIdReachRightPx = 260.0;
 
-// ⚠ THE UI HALF'S TUNING CONSTANTS ARE NOT HERE. The translucent panel's alpha and its delayed
-// re-apply (kKCMPanelAlphaValue / ...ReapplyTries / ...ReapplyDelayMillis) and the CMYK cursor's
-// settle wait (kKCMCursorSettleMillis) lived in this header until 2026-08-30. The API re-audit of
-// M1 measured the readers: no file under source/ used any of the four, and each was read by
-// exactly one file under ui/. They now sit at the top of those files (KCMPanelAlpha.cpp and
-// KCMTracker.cpp - where the settle wait was removed on 2026-10-27, along with the cursor's
-// Hide/Show it followed), which is the shape the rest of the UI half already used for a file-local
-// tuning value (KCMScrollMap.cpp, KCMThumbIdleTask.cpp, KCMTrackerHud.cpp) and the shape the
-// product code uses (linksui/LinksUIUtils.cpp).
-// ⇒ **No file under ui/ includes this header any more.**
+// ⚠ THE UI HALF'S OWN TUNING CONSTANTS ARE NOT HERE. A value only the UI half reads sits at the top
+// of the file that reads it - the translucent panel's alpha and its delayed re-apply
+// (kKCMPanelAlphaValue / ...ReapplyTries / ...ReapplyDelayMillis) in ui/KCMPanelAlpha.cpp, as
+// KCMScrollMap.cpp, KCMThumbIdleTask.cpp and KCMTrackerHud.cpp keep theirs - the shape the product
+// code uses (linksui/LinksUIUtils.cpp). What stays here is read by the model half, and the head of
+// this file says which of it the UI half reads too.
 
 #endif // __KCMConstants_h__

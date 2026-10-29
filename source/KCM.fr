@@ -41,18 +41,16 @@
 // the toolbox tool's ScriptID registration, which is what first needed it, now lives in KCMUI.fr
 // with the tool.
 #include "ScriptInfoTypes.fh"	// VersionedScriptElementInfo / Property / Provider
-// DocumentID.h: the close-document responder boss names the API's OWN service provider
-// implementation instead of carrying a hand-written one (see that Class below).
 #include "CommandID.h"	// IID_ICOMMAND (CommandID.h:89) - the marks command's own interface. ⚠ShuksanID.h does NOT carry it, which odfrc reports as "Identifier 'IID_ICOMMAND' does not name a numeric value" rather than as a missing include
 #include "DocumentID.h"	// kAfterCloseDocSignalRespServiceImpl / kDocBoss (DocumentID.h:38) - the boss the marks observer is AddIn'd to
 #include "DocFrameworkID.h"	// kDocumentObjectScriptElement (the object document.kcmTransparencyItemCount hangs off)
 #include "PDFID.h"	// kPDFExportSetupServiceImpl / IID_IPDFEXPORTSETUPPROVIDER (declares the transparency
 					// only while an export runs - see the boss below). Without this include ODFRC fails with
 					// "R32725: Identifier 'kPDFExportSetupServiceImpl' does not name a numeric value."
-// GraphicsID.h is NOT included here any more (2026-09-03). It was kept for IID_IDRWEVTHANDLER, the
-// draw event service that painted the marks; that boss left this half on 2026-08-13/15 (the UI
-// keeps its own, KCMUI.fr) and the marks are painted by the adornment below. Nothing else in
-// this file comes from GraphicsID.h - measured against every identifier the resources use.
+// GraphicsID.h is NOT included here: it was kept for IID_IDRWEVTHANDLER, the draw event service
+// that painted the marks, and that boss lives in the UI half (KCMUI.fr) - the marks are painted by the
+// adornment below. Nothing else in this file comes from GraphicsID.h (measured against every
+// identifier the resources use).
 #include "GenericID.h"	// IID_IADORNMENTSHAPE (GenericID.h:279) - the adornment route for the same marks
 #include "XPID.h"	// IID_IADORNMENTFLATTENERUSAGE (XPID.h:513) - how the adornment declares its
 					// transparency to the flattener. This is the whole reason the adornment route exists:
@@ -63,12 +61,12 @@
 #include "TextID.h"	// kGlobalTextAdornmentServiceImpl / IID_IGLOBALTEXTADORNMENT - the Story mode's
 					// marks (IID_IIDLETASK for their timer is already in ShuksanID.h above)
 
-#include "XMLParserID.h"	// IID_ISAXCONTENTHANDLER (XMLParserID.h:68) - the Resources mode's XML reader. ⚠It is NOT in XMLID.h, and odfrc reports the miss as "does not name a numeric value" rather than as a missing include, the same way IID_ICOMMAND did below
+#include "XMLParserID.h"	// IID_ISAXCONTENTHANDLER (XMLParserID.h:68) - the Resources mode's XML reader. ⚠It is NOT in XMLID.h, and odfrc reports the miss as "does not name a numeric value" rather than as a missing include, the same way IID_ICOMMAND's did (above)
 #include "INXCoreID.h"	// kINXScriptManagerBoss (INXCoreID.h:58) - the Contexts of the INX-only
 						// resource at the end of this file, which keeps the story counters out of IDML
 #include "TextScriptID.h"	// kStoryObjectScriptElement (TextScriptID.h:49) - the story object the
 							// four change-counter properties are added to
-#include "DragDropID.h"	// IID_IDATAEXCHANGECONTROLLER - the copy store's controller (KCMCopyStore.cpp, 2026-10-24)
+#include "DragDropID.h"	// IID_IDATAEXCHANGECONTROLLER - the copy store's controller (KCMCopyStore.cpp)
 
 // Project includes:
 #include "KCMID.h"
@@ -134,7 +132,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		the only place it asks is IID_IADORNMENTFLATTENERUSAGE - which lives on adornment
 		bosses, never on a draw event service boss. Hence this boss.
 
-		⚠ Being asked is a second, separate condition, and it took until 2026-08-20 to find:
+		⚠ Being asked is a second, separate condition:
 		the flattener only runs at all when the document is on IXPManager's list of page items
 		that have transparency, and a session-global adornment is on no item, so it can never
 		join that list by itself. transparencyeffect gets this for free because it attaches its
@@ -169,19 +167,17 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		WHY NOT FOLD IT INTO kKCMPeekStartupBoss: that one is deliberately pinned to the main
 		thread (kCMainThreadStartupShutdownProviderImpl) because its Shutdown() throws away the
 		entire comparison state - run it on every background thread teardown and the marks vanish
-		on every PDF export, which is a bug that was found and fixed in 2026-08-15. This service
+		on every PDF export (a bug found and fixed). This service
 		only adds and removes a registration, so it is safe - and useless - unless it runs on
 		every thread. Hence a separate boss with the plain (not main-thread-only) provider.
 
-		★ kCStartupShutdownProviderImpl, NOT kLazyStartupShutdownProviderImpl - a departure from the
+		kCStartupShutdownProviderImpl, NOT kLazyStartupShutdownProviderImpl - a departure from the
 		documented preference, though not from the practice. IStartupShutdownService.h:44-47 says to
 		prefer Lazy ("you should use kLazyStartupShutdownProviderImpl to avoid slowing down launch
 		time"); Adobe's own .fr files go the other way, C 4 to Lazy 3 (C: customactionfilter,
-		customdatalink, paneltreeview, snippetrunner. Lazy: layerpanel, csxsdemo, scriptingcomms.
-		Counted across source/ on 2026-08-30. The "Lazy 6 to 4, Lazy in the majority" that stood
-		here until then was counting this project's own plug-ins in with Adobe's.) Lazy does not
-		work here at all, and the difference was measured rather than reasoned about (2026-08-19,
-		PDF 1.3, same document):
+		customdatalink, paneltreeview, snippetrunner. Lazy: layerpanel, csxsdemo, scriptingcomms -
+		counted across source/.) Lazy does not work here at all, and the difference was measured rather
+		than reasoned about (PDF 1.3, same document):
 
 		    provider                              main thread     background thread
 		    kCStartupShutdownProviderImpl         74,503 px       74,503 px      (translucent)
@@ -200,10 +196,8 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// Startup/shutdown service. The middle-button watcher was removed (2026-07-13); this now only
-	// tears down held resources at app shutdown (see KCMPeekStartup in KCMPeek.cpp).
-	//
-	// ***** SETTLED 2026-08-15 (Stage 2, Task 11B). The TODO that stood here is answered. *****
+	// Startup/shutdown service: it tears down held resources at app shutdown (KCMPeekStartup in
+	// KCMPeek.cpp).
 	//
 	// THE DANGER: guide vol1-07 "Threading and startup/shutdown services" says a startup/shutdown boss
 	// living in a MODEL plug-in is called on background thread startup and shutdown TOO. And
@@ -216,7 +210,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// inside Shutdown() would risk skipping the REAL shutdown as well; the threading policy is what
 	// the guide gives us to say this properly.
 	//
-	// ★kCMainThreadStartupShutdownProviderImpl - and this is not a guess. Adobe's own DiagnosticLog
+	// kCMainThreadStartupShutdownProviderImpl - and this is not a guess. Adobe's own DiagnosticLog
 	//   is a kModelPlugIn (DiagLogClass.fr:59) that names exactly this implementation for exactly this
 	//   reason, and says so (DiagLogClass.fr:93-100):
 	//       "This is a model plug-in, but we only want the startup shutdown service to run in main thread."
@@ -226,8 +220,8 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// ⚠WHAT DID CHANGE IS THE TIMING, and the guide does not discuss it. kLazyStartupShutdownProviderImpl
 	//   runs through kAppLazyStartupShutdownService - an idle task AFTER startup completes (gs-06) -
 	//   while this one does not, so Startup() now runs EARLIER. That is safe here for a plain reason:
-	//   ★KCMPeekStartup::Startup() IS EMPTY. Stage 1 Task 8 moved all three startup jobs to the UI
-	//   half (panel state restore / batch-close subscription / translucency subscription), so there is
+	//   KCMPeekStartup::Startup() IS EMPTY: its startup jobs are the UI half's (panel state restore /
+	//   batch-close subscription / translucency subscription), so there is
 	//   nothing left that could depend on "after startup". If work ever comes back to Startup(), check
 	//   this assumption again before adding it.
 	Class
@@ -249,8 +243,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// CServiceProvider + HasMultipleIDs is only for a boss that answers several signals at once,
 	// the shape linksui/ClosingDocumentsResponder.cpp needs for its three.
 	// Same shape as spellpanel/SpellPanelClass.fr:830, transparencyeffect/TranFx.fr:280
-	// ("Provided by API.") and KBS.fr:384. KCM carried a hand-written KCMDocServiceProvider
-	// until 2026-08-06 - it did exactly what the API's implementation does.
+	// ("Provided by API.") and KFC's model/KFC.fr.
 	Class
 	{
 		kKCMDocResponderServiceBoss,
@@ -261,28 +254,26 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// ***** THE OTHER HALF: undo our edit to the USER'S document before it reaches the file. *****
+	// THE OTHER HALF: undo our edit to the USER'S document before it reaches the file.
 	// The responder above answers AfterClose, which is right for DROPPING our own tracked state.
 	// It is wrong for RESTORING something in the user's document, and so is BeforeClose - MEASURED,
-	// not assumed (2026-08-19): a diagnostic build reported IDataBase::IsModified() == 0 on
+	// not assumed: a diagnostic build reported IDataBase::IsModified() == 0 on
 	// kBeforeCloseDoc, i.e. THE SAVE HAS ALREADY HAPPENED by then. Restoring there put the spreads
 	// back on screen and left the document dirty again, but the file on disk still had them hidden.
 	//
 	// So the hook has to sit on the SAVE, not on the close. kBeforeSaveDoc covers both ways a
 	// document reaches the disk: File > Save, and the save that a close performs.
-	// ★★★ Save As and Save a Copy are DELIBERATELY NOT ANSWERED, and that is the feature, not a
+	// Save As and Save a Copy are DELIBERATELY NOT ANSWERED, and that is the feature, not a
 	// gap. They raise their own signals (kBeforeSaveAsDoc / kBeforeSaveACopyDoc,
 	// DocumentID.h:318,321) and this boss names none of them, so those two paths write the
-	// document with its spreads STILL HIDDEN. The division the user asked for:
+	// document with its spreads STILL HIDDEN. The division the author asked for:
 	//     Save / closing save  -> spreads restored, the original file stays honest
 	//     Save As / Save a Copy -> spreads kept hidden, for when that copy is what you want
 	// ⚠ THE REASON AND THE MEASUREMENT LIVE IN ONE PLACE ONLY - the header comment of
 	// KCMDocResponder.cpp, above KCMBeforeSaveDocResponder. Read it before touching this block.
-	// This line used to stop at "are NOT covered here", which reads as an oversight; the API
-	// re-audit of 2026-08-30 duly reported it as one, having read this file and not that one.
 	// ⚠ Adding a signal here destroys the division. Say so before doing it.
 	//
-	// ★Still the "one signal, one boss, no ServiceProvider of its own" shape as above - the
+	// Still the "one signal, one boss, no ServiceProvider of its own" shape as above - the
 	// CServiceProvider + HasMultipleIDs shape is only needed by a boss answering several signals,
 	// which linksui/ClosingDocumentsResponder.cpp does and this does not.
 	Class
@@ -295,11 +286,11 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// ***** PUT BACK THE MARKS THE DOCUMENT ITSELF CARRIES (2026-09-07). *****
+	// PUT BACK THE MARKS THE DOCUMENT ITSELF CARRIES.
 	// The reader's ticks and cat paws live in the document as script labels (KCMPageMarksDoc.h).
 	// READING IS FREE, so it happens on its own the moment a document opens -- the only point at
 	// which the pages are there to be read and nothing of ours is in the session for them yet.
-	// ★Restoring changes NOTHING in the document: it fills this plug-in's own stores from labels that
+	// Restoring changes NOTHING in the document: it fills this plug-in's own stores from labels that
 	//   are already there, so a document opened and closed again is untouched.
 	// Same "one signal, one boss, no ServiceProvider of its own" shape as the two above.
 	Class
@@ -312,7 +303,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// ***** A TASK START KEPT IN MEMORY GOES WITH ITS DOCUMENT (2026-10-13). *****
+	// A TASK START KEPT IN MEMORY GOES WITH ITS DOCUMENT.
 	// kBeforeCloseDoc, because it is the last moment the document is certainly alive - a clone deleted after its
 	// document has gone kills InDesign (KCMTaskStartClone.h). Same "one signal, one boss, no ServiceProvider of its
 	// own" shape as the three above.
@@ -326,7 +317,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// ***** KCM'S OWN COPY STORE (2026-10-24, the import-as-Source road). *****
+	// KCM'S OWN COPY STORE (the import-as-Source road).
 	// A data exchange controller whose scrap database holds the words Apply This Change wrote over, for Restore from
 	// Copy (KCMCopyStore.h). The shape of KFC's kKFCCopyStoreBoss: made with CreateObject, never registered with the
 	// clipboard or a drag, so the user's clipboard is never touched.
@@ -339,7 +330,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// ***** A "=" RECORD'S TEXT FOCUS, OF KCM'S OWN CLASS (2026-10-26 - KCMRecordFocus.h). *****
+	// A "=" RECORD'S TEXT FOCUS, OF KCM'S OWN CLASS (KCMRecordFocus.h).
 	// kTextFocusBoss with IID_ITEXTFOCUS replaced and nothing else - the shape of InDesign's own foci, which each replace
 	// that implementation of the parent's (and of KFC's kKFCRowFocusBoss, whose implementation this one copies). Made by
 	// ITextFocusManager::NewFocus(range, kKCMRecordFocusBoss) - KCMRecordFoci.cpp. Never persisted: a focus lives in memory.
@@ -352,7 +343,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// ***** THE COMMAND THAT WRITES THEM (2026-09-07). *****
+	// THE COMMAND THAT WRITES THEM.
 	// Every tick and every cat paw goes through this one boss, and nothing else may write the
 	// labels. It exists so the change is UNDOABLE: Do() writes, DoNotify() raises a ModelChange on
 	// the document's subject, and the runtimes replay that notification on undo and on redo.
@@ -368,7 +359,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// ***** THE RESOURCES MODE'S XML READER (2026-09-09). *****
+	// THE RESOURCES MODE'S XML READER.
 	// It reads the XML that KCMResourceSnapshot exported and keeps one item per definition.
 	//
 	// The parent is kInvalidClass because nothing creates this except our own ::CreateObject2 --
@@ -431,22 +422,20 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	},
 
 	// The Story mode's marks: a coloured wash under the changed characters themselves.
-	// ★★A GLOBAL TEXT ADORNMENT - it is drawn ON the characters by the text engine, which hands it
+	// A GLOBAL TEXT ADORNMENT - it is drawn ON the characters by the text engine, which hands it
 	//   the wax run, so it follows vertical text and rotated frames for free and touches no document
 	//   data at all (nothing is attached, nothing is saved, no recomposition). Implementation:
 	//   KCMStoryMarker.cpp; what it should be lighting up: KCMStoryMarkBuild.cpp.
-	// ★Two interfaces, and only one of them is ours: the API already ships the provider for this
+	// Two interfaces, and only one of them is ours: the API already ships the provider for this
 	//   service (kGlobalTextAdornmentServiceImpl, TextID.h, service kGlobalTextAdornmentService).
 	//   The same pair as the product's dynamic spelling squiggle (SpellPanelClass.fr:768-776).
 	// ⚠kInvalidClass as the parent: this boss is not a widget or a page item, it exists only to be
-	//   found in the service registry - same as every other service boss in this file (the
-	//   draw-event service boss this line used to name moved to the UI half on 2026-08-13/15).
+	//   found in the service registry - same as every other service boss in this file.
 	//
-	// ★★★MOVED HERE FROM THE UI PLUG-IN ON 2026-08-23 (it was kKCMUIPrefix + 30), so that the marks
-	//   can be printed and exported. **The UI's File > Export > PDF runs in the background and a
-	//   kUIPlugIn is never handed the drawing** (2026-08-12, measured, no warning), so no guard on
-	//   the UI side could have got them into an exported PDF.
-	// ★★AND IT NEEDS NO STARTUP SERVICE OF ITS OWN, unlike the page item adornment above: a service
+	// ON THE MODEL SIDE so that the marks can be printed and exported. **The UI's File > Export > PDF
+	//   runs in the background and a kUIPlugIn is never handed the drawing** (measured, no warning), so
+	//   no guard on the UI side could get them into an exported PDF.
+	// AND IT NEEDS NO STARTUP SERVICE OF ITS OWN, unlike the page item adornment above: a service
 	//   is resolved by the registry separately in every execution context, background threads
 	//   included. That is exactly the contrast kKCMRingAdornmentStartupBoss is documented against.
 	Class
@@ -461,9 +450,9 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 
 	// The one-shot timer that takes the JUMP's flash away again about a second later (the standing
 	// marks have no clock - a toggle or the button takes those down).
-	// ★An idle task rather than a callback timer - the reason is in KCMStoryMarkerExpiry.h.
-	// ★Moved here with the marker above (it was kKCMUIPrefix + 31): the marker starts and stops this
-	//   timer, so leaving it on the UI side would have made the model depend on the UI.
+	// An idle task rather than a callback timer - the reason is in KCMStoryMarkerExpiry.h.
+	// On this side with the marker above: the marker starts and stops this timer, so on the UI side it
+	//   would make the model depend on the UI.
 	Class
 	{
 		kKCMStoryMarkerExpiryBoss,
@@ -473,20 +462,7 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// The boundary the UI goes through to reach the comparison engine (2026-08-13, Stage 1 Task 11).
-	//
-	// Once the model and the UI are separate plug-ins, a free function declared in a shared header
-	// cannot be linked - its body lives in the other .pln - so every call that crosses the boundary
-	// has to go through an interface on a boss. Putting it on kUtilsBoss is what the SDK's own
-	// model/UI pair does: customconditionaltext publishes ICusCondTxtFacade here (CusCondTxt.fr:159-169,
-	// "Puts our command facade onto the Utils boss to let client code use it") and its UI half calls
-	// Utils<ICusCondTxtFacade>() and nothing else.
-	//
-	// WARNING: the implementation named here must be OUR OWN. Adding somebody else's stock
-	// implementation to an existing boss is how you collide with another vendor's plug-in and fail to
-	// load, and the unit of collision is the ImplementationID, not the IID.
-	//
-	// ***** THE LISTENER THAT KEEPS THE SESSION STORES IN STEP (2026-09-07). *****
+	// THE LISTENER THAT KEEPS THE SESSION STORES IN STEP.
 	//
 	// One observer per document, riding on kDocBoss itself. It hears the notification the command
 	// above raises and refills this plug-in's caches of ticks and paws from the document's labels
@@ -500,10 +476,10 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 	// It is ATTACHED at run time and never persistently (KCMMarksObserver.cpp): an attachment
 	// written into the .indd would be a change made to the reader's file by merely opening it.
 	//
-	// ***** AND THE STORY EDITS LIST'S UNDO FOLLOWER, ON THE SAME BOSS (2026-10-25). *****
-	// It sat on kTextStoryBoss until 2026-10-25 (the block below says what it was). It is on the DOCUMENT now: a test
-	// build saw InDesign build the listed stories again right after Start - new subjects, nothing attached - and a
-	// document is not purged while it is open. It hears what a story's change repeats on its document's subject
+	// AND THE STORY EDITS LIST'S UNDO FOLLOWER, ON THE SAME BOSS.
+	// On the DOCUMENT, not on each story: a test build saw InDesign build the listed stories again right after
+	// Start - new subjects, nothing attached - and a document is not purged while it is open. It hears what a
+	// story's change repeats on its document's subject
 	// (KCMStoryFollowObserver.cpp, measured with KT's docnotify probe), attached at run time and never persistently,
 	// under an IID of our own for the reason above.
 	AddIn
@@ -518,16 +494,22 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 		}
 	},
 
-	// (⛔**AN ADDIN ON kTextStoryBoss STOOD HERE** (2026-09-15) - one observer per COMPARED story,
-	//  attached at run time and never persistently, so that Ctrl+Z after a restore redrew the list.
-	//  It listened under the SDK's own IID_ITEXTMODEL, because the change was InDesign's and not a
-	//  KCM command's, and LAZILY, because lazy is the only notification broadcast on undo and redo
-	//  (ISubject.h:78-82). It went with the restore on 2026-09-21.
-	//  It came back under new numbers on 2026-09-25 - the Story Edits list following an Undo / Redo, the row
-	//  compared AGAIN - and moved to kDocBoss above on 2026-10-25, with the same IID and implementation: the story
-	//  it hung on could be built again and leave it behind.)
+	// (No AddIn on kTextStoryBoss: an observer on each story is left behind when InDesign builds the story
+	//  again - hence kDocBoss above. Both observers there are LAZY, because lazy is the only notification
+	//  broadcast on undo and redo (ISubject.h:78-82).)
 
-	// Tasks 12-15 add their four interfaces to THIS block - they do not open a second AddIn.
+	// The boundary the UI goes through to reach the comparison engine.
+	//
+	// Once the model and the UI are separate plug-ins, a free function declared in a shared header
+	// cannot be linked - its body lives in the other .pln - so every call that crosses the boundary
+	// has to go through an interface on a boss. Putting it on kUtilsBoss is what the SDK's own
+	// model/UI pair does: customconditionaltext publishes ICusCondTxtFacade here (CusCondTxt.fr:159-169,
+	// "Puts our command facade onto the Utils boss to let client code use it") and its UI half calls
+	// Utils<ICusCondTxtFacade>() and nothing else.
+	//
+	// WARNING: the implementation named here must be OUR OWN. Adding somebody else's stock
+	// implementation to an existing boss is how you collide with another vendor's plug-in and fail to
+	// load, and the unit of collision is the ImplementationID, not the IID.
 	AddIn
 	{
 		kUtilsBoss,
@@ -539,7 +521,6 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 			IID_IKCMPAGEFLAGSFACADE, kKCMPageFlagsFacadeImpl,
 			IID_IKCMSTORYEDITSFACADE, kKCMStoryEditsFacadeImpl,
 			IID_IKCMBOOKFACADE, kKCMBookFacadeImpl,
-			// ★The sixth, added 2026-08-23 when the Story mode's marks moved to this side.
 			IID_IKCMSTORYMARKFACADE, kKCMStoryMarkFacadeImpl,
 			IID_IKCMRESOURCESFACADE, kKCMResourcesFacadeImpl,
 		}
@@ -547,26 +528,23 @@ resource ClassDescriptionTable(kSDKDefClassDescriptionTableResourceID)
 
 	/*
 	 * Scripting provider: serves EVERYTHING this plug-in publishes - the properties on the
-	 * application, the story and the document objects. The Provider blocks at the end of this
-	 * file ARE the list; this comment does not repeat it, because every copy of that list in this
-	 * half had gone stale by 2026-09-03 (two properties were added without any copy being
-	 * re-counted). Derives from kBaseScriptProviderBoss, which brings the machinery that dispatches
-	 * script requests; all this boss adds is our own handler. The properties themselves are declared
-	 * in the VersionedScriptElementInfo resource at the end of this file. Same shape as KBS
-	 * (KBS.fr:406-413), which follows the official scripting sample BPI.fr.
+	 * application, the story and the document objects, and a test build's methods on the
+	 * application. The Provider blocks at the end of this file ARE the list; this comment does not
+	 * repeat it (a copy of that list goes stale). Derives from kBaseScriptProviderBoss, which brings
+	 * the machinery that dispatches script requests; all this boss adds is our own handler. The
+	 * elements themselves are declared in the VersionedScriptElementInfo resource at the end of this
+	 * file. Same shape as the official scripting sample BPI.fr.
 	 *
-	 * ONE boss for both objects. There used to be a SECOND boss here for the story
-	 * counters, on the belief that one boss could not keep two objects apart. That was wrong, and
-	 * the guide says why: a Property is "added to the script object referenced by the PRECEDING
-	 * Object field" (vol1-11:1302), and a provider element "can be defined (used) in multiple
-	 * places" (vol1-11:1237). So properties follow the Object that stands before them, and one boss
-	 * may own several Provider blocks. basicshape does exactly that with Adobe's own
-	 * kPageItemScriptProviderBoss - three blocks inside one VersionedScriptElementInfo whose
-	 * Contexts list has a single entry (BscShp.fr:370-404, :317).
+	 * ONE boss for every object, and the guide says why that works: a Property is "added to the
+	 * script object referenced by the PRECEDING Object field" (vol1-11:1302), and a provider element
+	 * "can be defined (used) in multiple places" (vol1-11:1237). So properties follow the Object that
+	 * stands before them, and one boss may own several Provider blocks. basicshape does exactly that
+	 * with Adobe's own kPageItemScriptProviderBoss - three blocks inside one VersionedScriptElementInfo
+	 * whose Contexts list has a single entry (BscShp.fr:370-404, :317).
 	 *
 	 * Verified on device: `'kcmChangeCount' in app` and `'kcmStatus' in story` are both false -
 	 * neither object grows the other's members - while each reads and updates on its own side.
-	 * See the two Provider blocks at the end of this file and the header of KCMScriptProvider.cpp.
+	 * See the Provider blocks at the end of this file and the header of KCMScriptProvider.cpp.
 	 */
 	Class
 	{
@@ -590,17 +568,16 @@ resource FactoryList (kSDKDefFactoryListResourceID)
 };
 
 /*
- * String LocaleIndex (2026-08-15, split stage 2 task 6B-2).
+ * String LocaleIndex.
  *
- * ★The model half owns exactly ONE string: kKCMHideConfirmKey, the alert shown before
+ * The model half owns exactly ONE string: kKCMHideConfirmKey, the alert shown before
  * "Hide Unchanged Spreads" changes the document. Everything else - menus, the panel, the
- * dialog, How to Use - moved to KCMUI with the widgets that show it.
+ * dialog, How to Use - is in KCMUI with the widgets that show it.
  *
- * Only k_Wild is listed, and that is not a shortcut. The thirteen locales KCM used to
- * enumerate ALL pointed at index_enUS anyway (the jaJP table was retired 2026-08-05; Japanese
- * is switched at run time in KCMLoc.h), so with one table the wildcard row says the same
- * thing in one line. ⚠Without a k_Wild row, locales outside the list get no table at all and
- * the raw key is displayed - measured 2026-08-05.
+ * Only k_Wild is listed, and that is not a shortcut: every locale reads the one enUS table
+ * (there is no jaJP table; Japanese is switched at run time in KCMLoc.h), so the wildcard row
+ * says it in one line. ⚠Without a k_Wild row, locales outside the list get no table at all and
+ * the raw key is displayed (measured).
  */
 resource LocaleIndex ( kSDKDefStringsResourceID)
 {
@@ -611,52 +588,39 @@ resource LocaleIndex ( kSDKDefStringsResourceID)
 };
 
 /*
- * What KCM adds to the object model: properties only - the Property and Provider entries below
- * are the list (on app, story and document). No methods.
+ * What KCM adds to the object model: the Property and Method entries below, put on app, story
+ * and document by the Provider blocks after them - that is the list. A shipping build publishes
+ * properties only; the methods are a test build's doors (the #ifdef KCM_DIAG below).
  *
- * ⚠2026-08-15 (split stage 2 task 6B-2): THE TOOL'S ENUMERATOR ENTRY LEFT THIS RESOURCE.
- * It registers the toolbox tool's ScriptID, and the tool is a UI boss, so it now lives in
- * KCMUI.fr's own VersionedScriptElementInfo. What stays here is what the model half answers,
- * served by kKCMScriptProviderBoss.
- * ★The paragraph below is kept because it is the record of WHY the tool has a ScriptID at all;
- * the same text is in KCMUI.fr next to the entry itself.
+ * ⚠THE TOOL'S ENUMERATOR ENTRY IS NOT HERE. It registers the toolbox tool's ScriptID, and the
+ * tool is a UI boss, so it lives in KCMUI.fr's own VersionedScriptElementInfo, with the record of
+ * WHY the tool has a ScriptID at all (scripts select it as UITools.KOHAKU_CHANGE_MARKER_TOOL).
+ * What stays here is what the model half answers, served by kKCMScriptProviderBoss.
  *
- * The tool entry is what ITool.h:192-223 spells out (its worked example is "the pumpkin tool"):
- * define a ScriptID (KCMScriptingDefs.h), add it to kToolBoxEnumScriptElement here, and return
- * it from ITool::GetScriptID (KCMTool.cpp). The second string is the name scripts see:
- * "kohaku change marker tool" surfaces as UITools.KOHAKU_CHANGE_MARKER_TOOL, so a script can both
- * read app.toolBoxTools.currentTool and assign to it to select this tool - neither was possible
- * while GetScriptID returned en_None (measured 2026-08-06, audit block 7).
- * Same shape as the official samples: snapshot (Snap.fr:2085-2101) / wavetool (WavTl.fr:319-336).
- *
- * app.kcmStatus (added 2026-08-06 at the user's request) is the panel's status line, read-only.
- * It is the same idea as KBS's app.kfcStatus (KBS.fr:1273-1313) and exists for the same reason:
- * the status line is the plug-in's account of what it just did, and until now reading it meant
- * looking at the screen, which cannot be automated.
- * ⚠**"KCM still publishes NO methods" ended this paragraph until 2026-09-14**, when
- * app.kcmSaveOriginXml was added below. What that sentence was about - a scripting API that DRIVES
- * the product from outside, as kescmToast and its neighbours did - is still true; the one method
- * writes out a thing no menu item reaches any more. KCMScriptingDefs.h holds the full distinction.
+ * app.kcmStatus is the panel's status line, read-only (the author's request): the status line is
+ * the plug-in's account of what it just did, and without it reading that meant looking at the
+ * screen, which cannot be automated. A shipping build publishes no scripting API that DRIVES the
+ * product from outside (as kescmToast and its neighbours did) - the test doors that do are cut
+ * out of it; KCMScriptingDefs.h holds the full distinction.
  */
 resource VersionedScriptElementInfo(10)
 {
 	//Contexts
 	{
-		// The three values on the next line are inherited, not chosen for what this resource now
-		// holds: the tool enumerator moved out to KCMUI.fr and only Properties are left here (on
-		// app, story and document). They are kept anyway, and each has its own measured reason.
+		// The three values on the next line are inherited from when this resource held the tool's
+		// enumerator (now in KCMUI.fr). They are kept anyway, and each has its own measured reason.
 		//
 		// script version (kCS5) is the one that really narrows who can see these properties.
 		// Measured by varying app.scriptPreferences.version:
 		//     7.0 (= kCS5) -> visible / 6.0 -> invisible / 5.0 -> invisible / 21.0 -> visible
 		// It stays at kCS5 because nothing needs to read them from a script that pins an older DOM -
-		// every verification harness runs on the current one. Lowering it would be a decision to
-		// match KBS (kCS2), not a fix.
+		// every verification harness runs on the current one. Lowering it would be a decision, not
+		// a fix.
 		// feature set (kInDesignAllLanguagesFS) changes nothing here: this plug-in's PluginVersion
 		// targets { kInDesignProduct } alone, so it never loads into InCopy or InDesign Server and
 		// kWildFS would select exactly the same cases.
 		// The resource ID (10) likewise came from the tool example; resources that hold Properties
-		// only conventionally use 1 (KBS.fr:1326, BPI.fr:526, CusCondTxt.fr:271).
+		// only conventionally use 1 (BPI.fr:526, CusCondTxt.fr:271).
 		//
 		// The INX-only resource at the end of this file deliberately declares a different version:
 		// "keep these out of IDML" has to cover every version the properties could appear in, so it
@@ -677,11 +641,7 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,					// attribute class ID
 		}
 
-		// app.kcmStoryReadCompare - the direct-read migration's parallel run, and the only
-		// read-write property this file ever declared - stood here from 2026-08-31 to 2026-09-03.
-		// It went with the old reading route (plan Task 7). Every property below is read-only.
-
-		// app.kcmBookResult (2026-08-11) - the last book comparison, one line per chapter,
+		// app.kcmBookResult - the last book comparison, one line per chapter,
 		// "name<TAB>state". Same shape and same purpose as the property above: the status line
 		// holds one line, so the per-chapter answers need their own way out to be checkable
 		// without looking at the screen.
@@ -696,18 +656,16 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
-		// ★★★THE TEST DOORS - EVERY PROPERTY AND METHOD FROM HERE TO THE MATCHING #endif - ARE A TEST BUILD'S ONLY (2026-10-26,
-		//   the author: "cut them out when it goes to the Exchange" - the KCM full test, docs/superpowers/specs/2026-10-26-kcm-full-test-design.md
+		// THE TEST DOORS - EVERY PROPERTY AND METHOD FROM HERE TO THE MATCHING #endif - ARE A TEST BUILD'S ONLY (the
+		//   author: "cut them out when it goes to the Exchange" - the KCM full test, docs/superpowers/specs/2026-10-26-kcm-full-test-design.md
 		//   section 4). None was in the published 1.5.0 (it held the registered two above and the story four below); each was
 		//   added since so that a test could drive or read KCM from KIDMCP. ODFRC is given -d KCM_DIAG by a test build
 		//   (KCMOdfrcDefines in the vcxproj, from KCMExtraDefines), and KCMScriptProvider.cpp serves them inside the same
 		//   #ifdef. Checked from outside: work\kcm-regress\full\ship_check.py reads the shipping build's resources for them.
 #ifdef KCM_DIAG
 		// app.kcmResourceSnapshot - the Resources comparison mode's export of the ACTIVE document,
-		// measured: "376004 bytes, 78 ms", or "FAILED: <the step that failed>". The mode has no
-		// panel yet, so this is the only way to see whether its engine works; it stays afterwards
-		// for the reason app.kcmStoryRows exists, that a number nobody outside can read is a
-		// number nobody can check.
+		// measured: "376004 bytes, 78 ms", or "FAILED: <the step that failed>" - for the reason
+		// app.kcmStoryRows exists: a number nobody outside can read is a number nobody can check.
 		Property
 		{
 			kKCMResourceSnapshotPropertyScriptElement,
@@ -722,7 +680,7 @@ resource VersionedScriptElementInfo(10)
 		// app.kcmResourceDiff - the Resources mode's answer for the two ARMED documents: a summary
 		// line, a header line, and one tab-separated line per definition that differs.
 		//
-		// ★It reads the panel's own Target and Source rather than, say, the first two open
+		// It reads the panel's own Target and Source rather than, say, the first two open
 		// documents, which is what makes a reading here a statement about the product: the pair is
 		// chosen by the same Set as Target / Set as Source the user presses, and the answer moves
 		// when that choice moves.
@@ -737,14 +695,13 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
-		// app.kcmStoryRows (2026-09-08) - the whole Story Edits list as TSV.
+		// app.kcmStoryRows - the whole Story Edits list as TSV.
 		//
-		// ★★★WHY, and it is the same argument the property above makes one size down: the list's
+		// WHY, and it is the same argument the property above makes one size down: the list's
 		// cells are DRAWN BY HAND (ui/KCMStoryCellView), so nothing outside the plug-in can read
-		// the reading over a ruby row, the "Mono"/"Group" word, or a footnote's number. Checking
-		// the footnote work on 2026-09-08 meant photographing the panel and reading the picture,
-		// every time. KBS reached this answer first (app.kfcResults) and wrote down the reason:
-		// **a count proves nothing.** A row's own words do.
+		// the reading over a ruby row, the "Mono"/"Group" word, or a footnote's number - without it,
+		// checking them meant photographing the panel and reading the picture. **A count proves
+		// nothing.** A row's own words do.
 		Property
 		{
 			kKCMStoryRowsPropertyScriptElement,
@@ -756,8 +713,8 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
-		// app.kcmPixelPages (2026-10-28) - the Pixel mode's answer page by page as TSV (KCMPixelPages.h).
-		// ★The same argument once more: what the Pixel mode decides is DRAWN (the ring, the "/", the cells), so a test
+		// app.kcmPixelPages - the Pixel mode's answer page by page as TSV (KCMPixelPages.h).
+		// The same argument once more: what the Pixel mode decides is DRAWN (the ring, the "/", the cells), so a test
 		// could read only the status line's count - and the count cannot say which page, nor that the control page
 		// is not among them.
 		Property
@@ -771,29 +728,24 @@ resource VersionedScriptElementInfo(10)
 			kNoAttributeClass,
 		}
 
-		// ⛔**THE ORIGIN'S PROPERTY AND ITS THREE WRITERS WENT ON 2026-09-21** - app.kcmOriginStatus,
-		// app.kcmSaveOriginXml, app.kcmSaveOriginIdml and app.kcmSaveDocXml. All four read a Task
-		// Start that is a file on disk now, not bytes this plug-in holds. Their ScriptIDs are graves
-		// (KCMScriptingDefs.h) and their ScriptElements are too (KCMID.h).
+		// ⛔**THE ORIGIN'S PROPERTY AND ITS THREE WRITERS WENT** with the Task Start origin they read -
+		// app.kcmOriginStatus, app.kcmSaveOriginXml, app.kcmSaveOriginIdml and app.kcmSaveDocXml. Their
+		// ScriptIDs are graves (KCMScriptingDefs.h) and their ScriptElements are too (KCMID.h).
 
-		// ⛔**"kcm probe pdf route" WENT ON 2026-10-02** with the PDF spike it ran (KCMPdfSpike.cpp),
-		// before shipping, as it was always meant to. Its ScriptID ('eKGv') and its ScriptElement
-		// (+25) are graves (KCMScriptingDefs.h, KCMID.h). ⚠Both halves of the pair went: this Method
-		// block and its Method{} line on app below.
-		// ★A method with NO arguments is written with empty braces - { /* void */ } - the shape of
-		// snippetrunner's "get snip log" (SnipRun.fr:1465-1474), should one be needed again.
+		// ⛔**"kcm probe pdf route" WENT** with the PDF spike it ran (KCMPdfSpike.cpp), before shipping.
+		// Its ScriptID ('eKGv') and its ScriptElement (+25) are graves (KCMScriptingDefs.h, KCMID.h).
+		// A method with NO arguments is written with empty braces - { /* void */ } - the shape of
+		// snippetrunner's "get snip log" (SnipRun.fr:1465-1474).
 
-		// ★★THE STORY TEXT ROUND TRIP WITHOUT A DIALOG (2026-09-17). The menu items' own model calls,
-		// with the file dialog and the confirmation left out, so that a test can run dozens of cases:
-		// an import of "tags kept, contents emptied" crashed InDesign that morning, and the user asked
-		// for every case - hand-mangled HTML included - to be imported and taken in. KCMScriptingDefs.h
-		// has the codes and why they were free.
+		// THE STORY TEXT ROUND TRIP WITHOUT A DIALOG. The menu items' own model calls, with the file
+		// dialog and the confirmation left out, so that a test can run dozens of cases - an import that
+		// crashed InDesign is why the author asked for every case to be run. KCMScriptingDefs.h has the
+		// codes and why they were free.
 		// ⚠Each answers with the sentence the status line would show (StringType) - the outcome is
-		//   words, and "0 changes taken in, 2 skipped (...)" is exactly what a test has to read.
-		// ⛔**"kcm import story text" WENT ON 2026-10-25** with the import that wrote into the document (the tidy - its
-		//   road, Reject This Import Change and Redo from Word went together). Its ScriptID ('eKGn') and its
-		//   ScriptElement (+27) are graves (KCMScriptingDefs.h, KCMID.h); both halves of the pair went - this Method
-		//   block and its Method{} line on app below. app.kcmImportToSource is the import's door.
+		//   words, and the sentence is exactly what a test has to read.
+		// ⛔**"kcm import story text" WENT** with the import that wrote into the document. Its ScriptID
+		//   ('eKGn') and its ScriptElement (+27) are graves (KCMScriptingDefs.h, KCMID.h).
+		//   app.kcmImportToSource is the import's door.
 		Method
 		{
 			kKCMExportStoryTextMethodScriptElement,
@@ -818,8 +770,7 @@ resource VersionedScriptElementInfo(10)
 			{ /* void */ }
 		}
 
-		// (2026-10-05) "Compare with Tracked Changes" - the Track listing's test door. ★No argument since 2026-10-27: no
-		//  copy is saved (it took the file the copy went to, in place of the save dialog, until then).
+		// "Compare with Tracked Changes" - the Track listing's test door. No argument: no copy is saved.
 		Method
 		{
 			kKCMCompareTrackedMethodScriptElement,
@@ -831,7 +782,7 @@ resource VersionedScriptElementInfo(10)
 			{ /* void */ }
 		}
 
-		// (2026-10-24, the import-as-Source road) "Import Story Text..." the other way round, and its Apply - test doors.
+		// (the import-as-Source road) "Import Story Text..." the other way round, and its Apply - test doors.
 		Method
 		{
 			kKCMImportToSourceMethodScriptElement,
@@ -858,8 +809,8 @@ resource VersionedScriptElementInfo(10)
 			}
 		}
 
-		// (2026-10-24 evening, the import-as-Source road's second try-out - design section 11-3) the "=" row's Restore from Copy, without
-		// the right click - so that it can be measured from KIDMCP. ⚠Not registered with Adobe.
+		// (the import-as-Source road) the "=" row's Restore from Copy, without the right click - so that it can be
+		// measured from KIDMCP. ⚠Not registered with Adobe.
 		Method
 		{
 			kKCMRestoreFromCopyMethodScriptElement,
@@ -873,7 +824,7 @@ resource VersionedScriptElementInfo(10)
 			}
 		}
 
-		// (2026-10-24 night, the list like KFC's - docs/superpowers/specs/2026-10-24-kcm-list-like-kfc-design.md) how far a
+		// (the list like KFC's - docs/superpowers/specs/2026-10-24-kcm-list-like-kfc-design.md) how far a
 		// row's selection reaches its place in the Target, read without a click - so that the landing rules (locked, hidden)
 		// can be measured from KIDMCP. ⚠Not registered with Adobe.
 		Method
@@ -889,7 +840,7 @@ resource VersionedScriptElementInfo(10)
 			}
 		}
 
-		// (2026-10-24 night, design 1-8) Story mode's Restore from Source by copy, without the right click. ⚠Not registered.
+		// Story mode's Restore from Source by copy, without the right click. ⚠Not registered.
 		Method
 		{
 			kKCMRestoreFromSourceMethodScriptElement,
@@ -903,7 +854,7 @@ resource VersionedScriptElementInfo(10)
 			}
 		}
 
-		// (2026-10-25) Export Pages to Word, without the folder dialog and the Pages panel - so it can be measured from
+		// Export Pages to Word, without the folder dialog and the Pages panel - so it can be measured from
 		// KIDMCP. ⚠Not registered.
 		Method
 		{
@@ -920,20 +871,16 @@ resource VersionedScriptElementInfo(10)
 		}
 #endif // KCM_DIAG - the test doors' declarations
 
-		// (⛔**TWO METHODS STOOD HERE AND WENT ON 2026-09-21** with the restore they drove:
-		//  "kcm take in change" (app.kcmTakeInChange, e_KCMTakeInChange) and "kcm undo restore"
-		//  (app.kcmUndoRestore, e_KCMUndoRestoreChange). Each named a change by WORDS it holds, so that
-		//  a test could take changes in and put them back in any order without a right click per press.
-		//  ★Neither ScriptID was ever registered with Adobe, so nothing outside this repo can miss them.)
-
-		// ⛔The table copy spike's door went on 2026-09-21 with the origin it measured against.
+		// (⛔**TWO METHODS STOOD HERE AND WENT** with the restore they drove: "kcm take in change"
+		//  (app.kcmTakeInChange) and "kcm undo restore" (app.kcmUndoRestore). Neither ScriptID was ever
+		//  registered with Adobe, so nothing outside this repo can miss them. The table copy spike's door
+		//  went with the origin it measured against.)
 
 		// Puts the property ON the application object.
 		//
 		// Object{}, not Parent{}: Object names an EXISTING scripting object to add members to,
 		// while Parent hangs a NEW object underneath one. BPI.fr:603-612 is the form followed here
-		// (and KBS.fr:1364-1372, which learned it the hard way - with Parent the property never
-		// appeared on app at all).
+		// (measured: with Parent the property never appeared on app at all).
 		Provider
 		{
 			kKCMScriptProviderBoss,
@@ -943,7 +890,7 @@ resource VersionedScriptElementInfo(10)
 				Property{ kKCMBookResultPropertyScriptElement, kReadOnly },
 #ifdef KCM_DIAG
 				// (the test doors' halves - a test build's only, as their declarations above)
-				// ⚠★★★THIS LINE IS HALF OF A PAIR. The Property{} block above DEFINES the property;
+				// ⚠THIS LINE IS HALF OF A PAIR. The Property{} block above DEFINES the property;
 				//   this one PUTS IT ON app. Writing only the definition builds cleanly, loads
 				//   cleanly, warns about nothing - and the property simply is not there, which
 				//   shows up as ERR:55 the first time a script touches it (memory
@@ -951,41 +898,35 @@ resource VersionedScriptElementInfo(10)
 				Property{ kKCMStoryRowsPropertyScriptElement, kReadOnly },
 				Property{ kKCMResourceSnapshotPropertyScriptElement, kReadOnly },
 				Property{ kKCMResourceDiffPropertyScriptElement, kReadOnly },
-				Property{ kKCMPixelPagesPropertyScriptElement, kReadOnly },	// (2026-10-28) the Pixel mode's port
+				Property{ kKCMPixelPagesPropertyScriptElement, kReadOnly },	// the Pixel mode's port
 				// A method's half of the same pair - and it has no access-right field, a method being a
 				// thing you call rather than a thing you read. Leave one of these lines out and the
 				// method is simply not there, exactly as described above for the properties: no build
 				// error, no warning, ERR:55 at the first touch.
-				// The round trip's four (2026-09-17) - the other half of each Method block above.
-				// (⛔"kcm probe pdf route"'s line stood first here until 2026-10-02, and "kcm import story text"'s
-				//  next until 2026-10-25.)
+				// The test doors' methods - the other half of each Method block above.
 				Method{ kKCMExportStoryTextMethodScriptElement },
 				Method{ kKCMStopComparisonMethodScriptElement },
-				Method{ kKCMCompareTrackedMethodScriptElement },	// (2026-10-05) the Track mode's test door
-				Method{ kKCMImportToSourceMethodScriptElement },	// (2026-10-24) the import's two doors - into the copy, and Apply
+				Method{ kKCMCompareTrackedMethodScriptElement },	// the Track listing's test door
+				Method{ kKCMImportToSourceMethodScriptElement },	// the import's two doors - into the copy, and Apply
 				Method{ kKCMApplyChangeMethodScriptElement },
-				Method{ kKCMRestoreFromCopyMethodScriptElement },	// (2026-10-24 evening) the "=" row's Restore from Copy
-				Method{ kKCMChangeReachMethodScriptElement },		// (2026-10-24 night) the list like KFC's - a row's reach
-				Method{ kKCMRestoreFromSourceMethodScriptElement },	// (the same night) Story mode's Restore from Source by copy
-				Method{ kKCMExportPagesMethodScriptElement },		// (2026-10-25) Export Pages to Word
-				// ...and the export's .docx road (2026-09-19).
-				// (⛔The two halves of "kcm take in change" and "kcm undo restore" went on 2026-09-21.)
+				Method{ kKCMRestoreFromCopyMethodScriptElement },	// the "=" row's Restore from Copy
+				Method{ kKCMChangeReachMethodScriptElement },		// the list like KFC's - a row's reach
+				Method{ kKCMRestoreFromSourceMethodScriptElement },	// Story mode's Restore from Source by copy
+				Method{ kKCMExportPagesMethodScriptElement },		// Export Pages to Word
 #endif // KCM_DIAG - the test doors on app
 			}
 		}
 
 		/*
-		 * The four ITextModel change counters, on the STORY object (2026-08-15, at the user's
-		 * request):  app.documents[0].stories[2].kcmChangeCount
+		 * The four ITextModel change counters, on the STORY object (the author's request):
+		 * app.documents[0].stories[2].kcmChangeCount
 		 *
-		 * ★The aggregate is the number that DECIDES whether a story shows up in the panel's Story
+		 * The aggregate is the number that DECIDES whether a story shows up in the panel's Story
 		 * Edits list (KCMStoryStamp.cpp compares the two documents' readings and skips the story
-		 * when they match). Until now it could not be read from outside, and that cost a whole
-		 * investigation on the day this was added: a list came back empty for two documents whose
-		 * text plainly differed, and nothing short of reading the source could tell "broken" from
-		 * "the two files genuinely read the same". They read the same - both had been built by the
-		 * same script with the same number of edits, and a counter is a version number for the
-		 * story's state rather than a count of edits.
+		 * when they match). Without it, nothing short of reading the source could tell "broken" from
+		 * "the two files genuinely read the same" when a list comes back empty - and they can read the
+		 * same: a counter is a version number for the story's state rather than a count of edits (two
+		 * documents built by the same script with the same number of edits read alike).
 		 *
 		 * Int32Type rather than a string: a test wants to compare these with == and <, not parse.
 		 */
@@ -1034,9 +975,9 @@ resource VersionedScriptElementInfo(10)
 		}
 
 #ifdef KCM_DIAG
-		// (document.kcmTransparencyItemCount is a test door too - a test build's only since 2026-10-26, as the doors above;
+		// (document.kcmTransparencyItemCount is a test door too - a test build's only, as the doors above;
 		//  its Provider block on document and its INX block at the end of this file go with it)
-		// ★★2026-08-20: the document property. ⚠**A Property has to be DECLARED here before a
+		// The document property. ⚠**A Property has to be DECLARED here before a
 		//   Provider block can list it** - listing it in the Provider alone leaves it out of the DOM
 		//   entirely, with no build error and no warning ('kcmTransparencyItemCount' in doc -> false).
 		//   That is how this was first written, and it took comparing against hostadapter/IDHA.fr:527
@@ -1074,7 +1015,7 @@ resource VersionedScriptElementInfo(10)
 				Property{ kKCMOtherChangeCountPropertyScriptElement, kReadOnly },
 			}
 		}
-		// (⚠No comma after the block above since 2026-10-26: what follows is a test build's only, and the items of this list
+		// (⚠No comma after the block above: what follows is a test build's only, and the items of this list
 		//  need none between them - the app Provider block above is followed by a Property with none.)
 #ifdef KCM_DIAG
 		// One property on document, in a Provider block of its own for the same reason as app and
@@ -1101,7 +1042,7 @@ resource VersionedScriptElementInfo(10)
 };
 
 /*
- * ★★★KEEPS THE FOUR STORY COUNTERS OUT OF THE USER'S IDML (2026-08-18, bug recheck B11).
+ * KEEPS THE FOUR STORY COUNTERS OUT OF THE USER'S IDML.
  *
  * THE PROBLEM. IDML is a mapping of the scripting DOM - "scripting objects become elements,
  * scripting PROPERTIES become ATTRIBUTES" (idml-01:159) - so the four properties declared above
@@ -1126,7 +1067,7 @@ resource VersionedScriptElementInfo(10)
  * kNotSupported in place of a provider boss removes the elements from THAT DOM only.
  * BscShp.fr:425-431 calls this "the preferred approach going forward".
  *
- * ★★MEASURED, because the SDK never does this to a Property. All three uses in the SDK
+ * MEASURED, because the SDK never does this to a Property. All three uses in the SDK
  * (BscShp.fr:432, CdlChart.fr:567, CusDtLnk.fr:735) list Parent / RepresentObject / Method /
  * CollectionMethod entries. Two builds were made that differed in this resource and nothing else:
  *
@@ -1161,7 +1102,7 @@ resource VersionedScriptElementInfo(2)
 			}
 		}
 #ifdef KCM_DIAG
-		// (a test build's only since 2026-10-26, with the property itself - no comma before it, as in the resource above)
+		// (a test build's only, with the property itself - no comma before it, as in the resource above)
 		// The document property is kept out for the same reason, and with a stronger case than the
 		// four story counters: the count is the application's state at this instant, and it goes up
 		// only while an export runs - volatile session state in the purest form. Written into a

@@ -5,11 +5,10 @@
 //  that is over before then.
 //
 //  WHY THIS EXISTS. The SDK's TaskProgressBar / RangeProgressBar decide "shown or not" at
-//   construction: showImmediate=kFalse means the bar never appears (measured on a 100-page
-//   comparison, KCMCore.cpp), not "appears once this takes a while". Until 2026-09-05 the
-//   comparison guessed from a page count (10 or more) whether a bar was worth it, and the
-//   Story mode - which rasterises no page - had no bar however many stories it read. The
-//   user's call: Pixel and Story alike, on TIME, three seconds.
+//   construction, and showImmediate=kFalse brought no bar up at all on a 100-page comparison
+//   (measured, KCMCore.cpp) - though IProgressBarManager.h:59 says "put it up after a short
+//   delay", and how that run was started is not recorded. A page count cannot decide it either:
+//   the Story mode rasterises no page. The author's call: every mode alike, on TIME, three seconds.
 //
 //  HOW. A SuppressProgressBarDisplay is held from construction so that the rasterising
 //   internals raise no bar of their own during the wait (the old code did that with
@@ -18,22 +17,22 @@
 //   below you will not display", ProgressBar.h) - and a RangeProgressBar is created with
 //   showImmediate=kTrue, positioned at the units already done.
 //
-//  ★★THE SUPPRESSOR AND THE BAR ARE THE UI HALF'S SINCE 2026-10-28 (IKCMUIServices.h - the author's
-//   call of 2026-10-01: the guide counts a modal bar among the UI's dialogs). This file still decides
-//   everything about them - when the bar comes, what it says, where Cancel is read - and asks the UI
-//   half to put them up. No UI half (a background thread, InDesign Server; the test build's fault
+//  THE SUPPRESSOR AND THE BAR ARE THE UI HALF'S (IKCMUIServices.h - the author's call: the guide
+//   counts a modal bar among the UI's dialogs). This file decides everything about them - when the
+//   bar comes, what it says, where Cancel is read - and asks the UI half to put them up. No UI half (a background thread, InDesign Server; the test build's fault
 //   switch ui-services-off) = no suppressor and no bar: Step shows nothing, WasCancelled is false,
 //   and the job runs to its end. The guard against a bar the manager refused (WasRegisterSuccessful)
 //   moved with the bar: ui/KCMUIServices.cpp.
 //
 //  @warning **TWO OF THESE MUST NOT BE ALIVE AT ONCE.** While one exists, its suppressor holds
 //   every other progress bar down - including a second KCMDeferredProgressBar, whose own bar is
-//   then refused registration (measured 2026-09-05: "the bar shows in the Pixel mode and not in
-//   the Story mode" - the raster loop's object outlived its loop and sat on top of the Story
-//   comparison's). Scope each one to the loop it reports on; KCMCore.cpp shows the shape.
+//   then refused registration (measured: "the bar shows in the Pixel mode and not in the Story
+//   mode" - the raster loop's object outlived its loop and sat on top of the Story comparison's).
+//   Scope each one to the loop it reports on; KCMCore.cpp shows the shape.
 //
-//  @warning WasCancelled pumps events, so call it only at a safe point (a page or a story fully
-//   compared), never in the middle of a rasterisation. It never raises the global error state.
+//  @warning WasCancelled is taken to pump events (the SDK does not say, and it has not been
+//   measured), so call it only at a safe point (a page or a story fully compared), never in the
+//   middle of a rasterisation. It never raises the global error state.
 //   Whether a cancel throws the work away or keeps it is the CALLER's rule, not this class's:
 //   KCMCore.cpp and KCMStoryDiffRun.cpp discard (the caller goes back to Stop), KCMPeek.cpp keeps.
 //========================================================================================
@@ -56,12 +55,12 @@ public:
 		@param total how many units the job has; the bar's range is 0..total.
 		@param delayMs how long the job may run before a bar is worth showing.
 
-		★★THE DELAY IS A PARAMETER, AND THE THREE COMPARISON MODES ALL PASS THE SAME VALUE
-		(2026-09-09). It became one when the Resources comparison wanted a bar with no wait at all,
-		and it stayed one when the user - having seen that bar - asked for the three seconds back,
-		"like the others". ⇒ **Three modes, one rule.**
-		⚠★★**The Before/After report passes 0, and that is not a second rule for the same case - it
-		  is a different case** (2026-09-14, measured with the user on a 60-page pair). The delay is
+		THE DELAY IS A PARAMETER, AND THE COMPARISON MODES ALL PASS THE SAME VALUE. It became one
+		when the Resources comparison wanted a bar with no wait at all, and it stayed one when the
+		author - having seen that bar - asked for the three seconds back, "like the others".
+		**Every mode, one rule.**
+		⚠**The Before/After report passes 0, and that is not a second rule for the same case - it
+		  is a different case** (measured with the user on a 60-page pair). The delay is
 		  judged INSIDE Step and nowhere else, so a bar appears only when the NEXT Step comes round.
 		  The report's first Step is at 0 ms and its heaviest single act - exporting the Before pages
 		  - runs immediately after it with no safe point to step from, so the bar stayed invisible
@@ -98,9 +97,9 @@ public:
 			if (fBar.get() == nil)
 				return;
 			fBar->DisableChildProgressBars(kTrue);	// the rasterising internals must not subdivide it
-			// (A bar the manager refused - another bar's DisableChildProgressBars, measured 2026-09-05 - comes back
-			//  all the same and drives nothing, its WasCancelled false: that guard stands with the bar, in
-			//  ui/KCMUIServices.cpp, where it moved from here on 2026-10-28.)
+			// (A bar the manager refused - another bar's DisableChildProgressBars, measured - comes back all
+			//  the same and drives nothing, its WasCancelled false: that guard stands with the bar, in
+			//  ui/KCMUIServices.cpp.)
 		}
 		if (fBar.get() == nil)
 			return;
@@ -180,10 +179,10 @@ private:
 };
 
 //========================================================================================
-//  ONE BAR FOR A LONGER JOB (2026-09-17, the user: the Import mode is covered by one bar from
-//  reading the files to comparing the stories).
+//  ONE BAR FOR A LONGER JOB (the author's call: an import is covered by one bar from reading the
+//  files to comparing the stories - KCMImportStoryTextAsSource).
 //
-//  ★★**WHY A SLOT AND NOT A PARAMETER.** The comparison an import runs is reached through the
+//  **WHY A SLOT AND NOT A PARAMETER.** The comparison an import runs is reached through the
 //    ordinary Start (KCMToggleStartStop -> ... -> KCMStoryDiffRun::Run, and the raster loop in
 //    KCMCore.cpp on the way), and those loops make their OWN bar. Two alive at once is the one thing
 //    this class must never allow (the warning above), so the loops ask the slot first: while a
@@ -238,7 +237,7 @@ private:
 	What a loop that reports progress holds: a KCMDeferredProgressBar of its OWN, or - while a longer
 	job has registered one (KCMOuterProgressScope) - a slice of that one. The same two calls either way.
 
-	★**THE OWN BAR IS NOT EVEN CONSTRUCTED WHEN THERE IS AN OUTER ONE**: its constructor alone raises a
+	**THE OWN BAR IS NOT EVEN CONSTRUCTED WHEN THERE IS AN OUTER ONE**: its constructor alone raises a
 	  suppressor, and a suppressor is what refuses the outer bar its registration.
 */
 class KCMProgressStepper

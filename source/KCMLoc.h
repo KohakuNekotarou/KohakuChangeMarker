@@ -14,12 +14,12 @@
 //  ui/KCMLoc.h, next to the code that uses them. Read that file instead of counting them
 //  again here.
 //
-//  Which strings get a Japanese version is decided by the user asking for it, not by the
-//  nature of the text: the Compare Books confirmation is deliberately English even though it
-//  is a confirmation too.
+//  Which strings get a Japanese version is the author's call, string by string, not the nature
+//  of the text: the Compare Books confirmation is deliberately English even though it is a
+//  confirmation too.
 //
-//  ***** This file is UTF-8 with BOM ***** so that the u"..." literals stay readable as
-//  Japanese. (Without the BOM, MSVC reads them as CP932.)
+//  This file is UTF-8 with BOM so that the u"..." literals stay readable as Japanese. (Without
+//  the BOM, MSVC reads them as CP932.)
 //
 //========================================================================================
 

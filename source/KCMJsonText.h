@@ -4,30 +4,25 @@
 //
 //  Escaping and unescaping ONE JSON string literal, in UTF-8.
 //
-//  ***** WHY THIS IS A FILE AND NOT TWO COPIES *****
+//  WHY THIS IS A FILE AND NOT TWO COPIES
 //
-//  KCM writes JSON in two unrelated places and they have to agree on this to the character:
-//    - KCMPageCheck.cpp   -- KCM's own preferences file (KCMPageChecks.json), which holds a
-//                            document's path as a key;
-//    - KCMPageMarksDoc.cpp -- the cat paws inside a page's SCRIPT LABEL, which since 2026-09-07
-//                            carry the word the reader typed beside them.
-//  Both were about to hold arbitrary text the reader chose, and text the reader chose is exactly
-//  the text that contains a quote. Two copies of an escape rule are two rules the day one is
-//  fixed ([[one-question-one-place]]), and the failure would be silent in the worst way: a
-//  document that saves and then reads back as something else.
-//  ⛔**ONLY THE SECOND IS LEFT** (2026-09-27): KCMPageChecks.json's writer and reader went with the
-//   private store (the removal was begun on 2026-09-07 and finished by re-audit M5 round 3, see the
-//   end of KCMPageCheck.cpp). The header stays a header of its own - the paws' label format is
-//   still two helpers the tests and the label code share - but "two places" is now one.
+//  Two writers of JSON once had to agree on this to the character - KCM's own preferences file
+//  (KCMPageChecks.json, a document's path as a key) and the cat paws inside a page's SCRIPT LABEL,
+//  which carry the word the reader typed beside them. Text the reader chose is exactly the text
+//  that contains a quote, and two copies of an escape rule are two rules the day one is fixed
+//  (memory one-question-one-place) - silent in the worst way: a document that saves and then reads
+//  back as something else. Only the paws are left (KCMPageMarksDoc.cpp; KCMPageChecks.json went
+//  with the private store - the end of KCMPageCheck.cpp). The header stays a file of its own so
+//  that the next writer of reader-typed text takes this rule rather than a copy of it.
 //
-//  Inline in a header rather than a .cpp because these are eight lines each and have no state --
-//  and because a .cpp has to be registered in TWO vcxproj files, of which the one that matters is
-//  outside the repository ([[vcxproj-registration-not-build-dependency]]).
+//  Inline in a header rather than a .cpp because these have no state -- and because a .cpp has to
+//  be registered in TWO vcxproj files, of which the one that matters is outside the repository
+//  (memory vcxproj-registration-not-build-dependency).
 //
 //  ⚠**These are deliberately NOT a JSON parser.** They handle one string literal. What reads the
-//    structure around it is the caller, in both files, and both are lenient on purpose: a broken
-//    entry is skipped and the rest is kept, because giving up on the whole file would silently
-//    discard everything the reader saved.
+//    structure around it is the caller - KCMTextToPaws (KCMPageMarksDoc.cpp), lenient on purpose:
+//    the first entry that does not parse ends the read and the paws read before it are kept,
+//    because giving up on the whole label would discard everything the reader saved.
 //
 //========================================================================================
 
@@ -37,9 +32,13 @@
 #include "BaseType.h"		// bool16
 #include <string>
 
-/** Escape a UTF-8 string for a JSON string literal (backslash, quote, control characters).
-	★A UTF-8 continuation byte is never 0x5C or 0x22, so walking it byte by byte is safe -- which
-	 is why this needs no notion of characters at all. */
+/** Escape a UTF-8 string for a JSON string literal: backslash, quote, and \n \r \t.
+	A UTF-8 continuation byte is never 0x5C or 0x22, so walking it byte by byte is safe -- which
+	 is why this needs no notion of characters at all.
+	⚠The other control characters go out as they are. KCMJsonReadString takes them back as they are,
+	 so KCM's own round trip holds, but a strict JSON reader would refuse the label. Writing them as
+	 \u00XX means teaching KCMJsonReadString to read \u in the same change - it keeps an escape it does
+	 not know, so an older KCM would show "u0001" in the word. */
 inline void KCMJsonEscape(const std::string& in, std::string& out)
 {
 	out.clear();

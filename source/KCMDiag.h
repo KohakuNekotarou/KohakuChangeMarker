@@ -4,9 +4,9 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  TEST-BUILD TRACING, BOTH HALVES (2026-10-05, the user: "KFC has debug code; put it into KCM too if it is
-//  needed - so that it can be turned OFF for the Exchange"). The same shape as KFC's model/KFCDiag.h. One line
-//  per event to %TEMP%\kcm-diag.txt, each led by the time in milliseconds.
+//  TEST-BUILD TRACING, BOTH HALVES (the author: "KFC has debug code; put it into KCM too if it is needed - so that
+//  it can be turned OFF for the Exchange"). The same shape as KFC's model/KFCDiag.h. One line per event to
+//  %TEMP%\kcm-diag.txt, each led by the time in milliseconds.
 //
 //  OFF unless the build defines KCM_DIAG:
 //      msbuild build\win\prj\KohakuExtendScriptChangeMarker.vcxproj /p:Configuration=Release /p:Platform=x64
@@ -19,56 +19,51 @@
 //  state to print it) goes inside #ifdef KCM_DIAG with it.
 //  Tested outside InDesign: work\kcm-diag-test (builds the same test both ways).
 //
-//  AND THE SCRIPT TEST DOORS (2026-10-26, the author: "cut them out when it goes to the Exchange" - the KCM full test,
-//  work\kcm-regress): the 13 script properties and methods added since the published 1.5.0 (app.kcmStoryRows,
+//  AND THE SCRIPT TEST DOORS (the author: "cut them out when it goes to the Exchange" - the KCM full test,
+//  work\kcm-regress): the script properties and methods added since the published 1.5.0 (app.kcmStoryRows,
 //  app.kcmApplyChange and the rest) are declared in KCM.fr and served in KCMScriptProvider.cpp inside #ifdef KCM_DIAG -
 //  ODFRC is given -d KCM_DIAG by the same test build (KCMOdfrcDefines in the vcxproj). A shipping build publishes the
-//  registered seven alone (app.kcmStatus, app.kcmBookResult, the four story counters, the tool's enumerator) - checked by
+//  registered ones alone (app.kcmStatus, app.kcmBookResult, the four story counters, the tool's enumerator) - checked by
 //  work\kcm-regress\full\ship_check.py, which reads the build's resources for the doors' names and its .pln for "kcm-diag".
 //
-//  Why it exists: the Track Changes mode (2026-10-05) reads InDesign's tracked-change records (and made a copy
-//  with every change rejected, until 2026-10-27) and follows an Undo / Redo at idle - all of it out of sight. A
-//  trace of what was read and decided is the instrument when a live run disagrees with the list.
+//  Why it exists: what Compare with Tracked Changes reads and decides - InDesign's tracked-change records, an Undo /
+//  Redo followed at idle - happens out of sight. A trace of it is the instrument when a live run disagrees with the
+//  list.
 //
 //  AND FAULT SWITCHES. KCM_DIAG_FAULT("name") is true while the file %TEMP%\kcm-diag-fault-<name> exists - a
 //  test creates it and deletes it again - so a test build can reach a state the product only gets into after
 //  something ELSE has failed. Asked at each call, so the switch takes effect at once. In a build without
 //  KCM_DIAG it is the constant false. The switches in use (add one line here for each one added):
-//    copy-fail   KCMCopyStore::Take keeps no copy (2026-10-24): Apply This Change still goes in, and the "=" row's
+//    copy-fail   KCMCopyStore::Take keeps no copy: Apply This Change still goes in, and the "=" row's
 //                Restore from Copy is greyed and its message says no copy was kept.
 //    step-fail   a write of the Story Edits facade that went in is taken as NOT gone in (EndStep, KCMFacades.cpp): the
-//                single step's abort is measured (2026-10-25, tests-m T-M3).
+//                single step's abort is measured (tests-m T-M3).
 //    batch-fail  the same for a write after the first one of a batch (RunBatch, KCMFacades.cpp): the batch's roll-back.
-//    place-pair-off  the Story rows are built WITHOUT pairing stories by their first frame's place (KCMStoryPairByPlace,
-//                2026-10-26): a test run with it on shows the Added and Removed rows the pairing exists to join, so a
+//    place-pair-off  the Story rows are built WITHOUT pairing stories by their first frame's place (KCMStoryPairByPlace):
+//                a test run with it on shows the Added and Removed rows the pairing exists to join, so a
 //                pass without it is known to have measured the pairing (tests-place.ps1 -Armed).
-//    focus-off   no "=" record gets a text focus (KCMRecordFoci::Make, 2026-10-26): the records are placed by their
+//    focus-off   no "=" record gets a text focus (KCMRecordFoci::Make): the records are placed by their
 //                readings alone, as before foci - so the full test's equal-follow suite (E12) shows what the foci add.
 //                The trace's FOCUS lines (make / move / let / lost / follow / carry) say what the foci did.
-//    page-whole-unplaced  a page file's WHOLE box finds no place for its story's body (WholeStoryAt, KCMPageImport.cpp,
-//                2026-10-26 night): the refusal a story read unlike the export would get - "cannot be read the way the
+//    page-whole-unplaced  a page file's WHOLE box finds no place for its story's body (WholeStoryAt, KCMPageImport.cpp):
+//                the refusal a story read unlike the export would get - "cannot be read the way the
 //                export reads it", not "an endnote" (table-move-pages PG12).
-//    track-read-slow  a SLOW switch (KCM_DIAG_SLOW): each story of the Track mode's reading takes 200 ms longer
-//                (KCMTrackRead::Build, 2026-10-27), so its progress bar comes up and its Cancel can be pressed. Without
+//    track-read-slow  a SLOW switch (KCM_DIAG_SLOW): each story of the tracked-changes reading takes 200 ms longer
+//                (KCMTrackRead::Build), so its progress bar comes up and its Cancel can be pressed. Without
 //                it the bar is out of reach: 15,000 tracked changes were read in 0.2 s, and the bar waits three seconds
 //                (track-rf1 RF1-1..5).
 //    story-diff-slow  the same for the Story mode's comparison: each story of KCMStoryDiffRun::Run 200 ms longer
-//                (2026-10-27) - 50 changed stories were compared in 0.4 s (story-cancel SC-1..5).
-//    note-delete-fail  KCMDeleteNoteAt takes no marker out (2026-10-27, the re-inspection's M18): a footnote Word took away
+//                - 50 changed stories were compared in 0.4 s (story-cancel SC-1..5).
+//    note-delete-fail  KCMDeleteNoteAt takes no marker out: a footnote Word took away
 //                stays, as when InDesign refuses the DeleteCmd - and the notes after it must keep their own words
 //                (work/note-scripts/2026-10-27-kcm-defect-m18/note_delete_probe.ps1).
-//    ui-services-off  KCMQueryUIServices answers nil (IKCMUIServices.h, 2026-10-28): the model half does without the UI
+//    ui-services-off  KCMQueryUIServices answers nil (IKCMUIServices.h): the model half does without the UI
 //                half's progress bars and question, as on a background thread or under InDesign Server - no bar, nothing
 //                to cancel, and Hide Unchanged asks nothing and hides nothing (ui-services US-5 / US-6).
-//    book-compare-slow  a SLOW switch: each chapter of the book comparison 1500 ms longer (KCMCompareBooks, 2026-10-28),
+//    book-compare-slow  a SLOW switch: each chapter of the book comparison 1500 ms longer (KCMCompareBooks),
 //                so its bar's Cancel can be pressed before the last chapter (ui-services US-7 / US-8).
-//    (none else in use - counted 2026-10-26: step-fail and batch-fail had been in use without a line here.
-//     ⛔cmyk-cursor-no-hide stood here on 2026-10-27 for one night: Alt + left's CMYK cursor put up without the
-//     ICursorMgr Hide/Show, to measure both on one build. Without it the checkmark went straight to the numbers and
-//     nothing else showed, so the Hide/Show went - and the switch with it (KCMTracker::BeginTracking).
-//     ⛔track-describe-only / track-no-colour stood here on 2026-10-05 for one afternoon, to bisect an undo
-//     step a Refresh seemed to drop; the cause was InDesign cutting SCRIPT-made steps at the next real command - the
-//     same in the Story mode and after a plain "Add Page" - so they went: memory command-history-and-undo-stack.)
+//    (No switch bisects the undo steps: a Refresh that seemed to drop one was InDesign cutting SCRIPT-made steps at the
+//     next real command - the same in the Story mode and after a plain "Add Page" - memory command-history-and-undo-stack.)
 //
 //========================================================================================
 
@@ -88,11 +83,11 @@
 // Appends one line: "<ms since the epoch> <the formatted text>". Opened and closed per line, so a crash
 // right after it still leaves the line on disk.
 //
-// ONE WRITER AT A TIME (KFC's KFCDiagLog, the same lock and retry). fopen_s opens a file it writes for this caller
-// alone (UCRT's _SH_SECURE shares nothing for a write), so a second append while the file is open is refused, and its
-// line was lost without a word. The model half's code runs on background threads too (draw events reach an
-// export's - KCMThreadSafety.h): the lock puts a half's threads in a queue. Each half writes the same file from its
-// own copy of this function, under its own lock, so a refused open is tried again a few times before the line goes.
+// ONE WRITER AT A TIME. fopen_s opens a file it writes for this caller alone (UCRT's _SH_SECURE shares nothing for a
+// write), so a second append while the file is open is refused, and its line would be lost without a word. The model
+// half's code runs on background threads too (draw events reach an export's - KCMThreadSafety.h): the lock puts a
+// half's threads in a queue. Each half writes the same file from its own copy of this function, under its own lock,
+// so a refused open is tried again a few times before the line goes (work\kcm-diag-test, held-log).
 inline void KCMDiagLog(const char* fmt, ...)
 {
 	static std::mutex writer;
@@ -128,9 +123,9 @@ inline void KCMDiagLog(const char* fmt, ...)
 #define KCM_DIAG_LOG(...) KCMDiagLog(__VA_ARGS__)
 
 // Is the fault switch <name> on - does %TEMP%\kcm-diag-fault-<name> exist? (See the header.) Asked of the file's
-// attributes, not by opening it (KFC's KFCDiagFault, the same question): fopen_s shares a file it reads for reading
-// only (_SH_SECURE again), so for that moment a test deleting or writing the switch would be refused, and a switch
-// the test is still writing would read as off.
+// attributes, not by opening it: fopen_s shares a file it reads for reading only (_SH_SECURE again), so for that
+// moment a test deleting or writing the switch would be refused, and a switch the test is still writing would read
+// as off (work\kcm-diag-test, held-switch).
 inline bool KCMDiagFault(const char* name)
 {
 	char* temp = nullptr;

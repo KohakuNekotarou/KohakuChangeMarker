@@ -235,24 +235,22 @@
 // Offsets +7, +8, +9 and +11..+28 are NOT free. They belong to the UI half's bosses, which kept
 // their numbers when they moved to ui/KCMUIID.h - the same offset, read against kKCMUIPrefix. The
 // values cannot collide (model is 0x1EA50x, UI is 0x1EA58x); keeping the numbers aligned is what
-// makes an offset readable across the two files. New model bosses start at +34.
+// makes an offset readable across the two files. (Where the next new model boss goes: the COUNT line
+// after the last ClassID below.)
 // Reusing a retired ClassID slot is safe here - this half writes no persistent data into a
 // document - and +11 was in fact taken over below. The space where reuse is NOT safe is the
 // ActionID space, because an .indk stores action IDs as plain numbers.
 // What lives on this side is the work that stands up without a window: drawing the comparison
 // marks, startup and shutdown, document close, and the ScriptProvider.
-DECLARE_PMID(kClassIDSpace, kKCMScriptProviderBoss, kKCMPrefix + 3)	// The only ScriptProvider this plug-in has. It serves every property this half publishes - on the application, the story and the document objects: the .fr gives this same boss one Provider block per object (the last blocks of KCM.fr), and that is the list; do not repeat it here. There are no methods. All are read-only except app.kcmStoryReadCompare, a temporary read-write one (see the ScriptInfoIDs below).
+DECLARE_PMID(kClassIDSpace, kKCMScriptProviderBoss, kKCMPrefix + 3)	// The only ScriptProvider this plug-in has. It serves every property this half publishes - on the application, the story and the document objects: the .fr gives this same boss one Provider block per object (the last blocks of KCM.fr), and that is the list; do not repeat it here. A test build adds methods (KCM.fr, inside #ifdef KCM_DIAG); every property is read-only.
 // +4 retired: kKCMDrawEventServiceBoss, when mark drawing was unified on kKCMRingAdornmentBoss.
 // +5 retired: kKCMPeekWatcherBoss, when the middle-button watcher was dropped.
-DECLARE_PMID(kClassIDSpace, kKCMPeekStartupBoss, kKCMPrefix + 6)	// IStartupShutdown: starts the peek watcher when the application starts.
+DECLARE_PMID(kClassIDSpace, kKCMPeekStartupBoss, kKCMPrefix + 6)	// IStartupShutdown, main thread only: drops the comparison state at application shutdown (KCMPeekStartup in KCMPeek.cpp; its Startup is empty).
 DECLARE_PMID(kClassIDSpace, kKCMDocResponderServiceBoss, kKCMPrefix + 10)	// IK2ServiceProvider + IResponder: watches for a document actually closing, to clean up the tracking state that referred to it.
 DECLARE_PMID(kClassIDSpace, kKCMBeforeSaveResponderServiceBoss, kKCMPrefix + 11)	// IK2ServiceProvider + IResponder: watches BEFORE a save and puts back the spreads Hide Unchanged hid, so they never reach the file. kBeforeCloseDoc is too late - measured, the save happens first (KCMDocResponder.cpp says why). This offset previously held kKCMStoryScriptProviderBoss.
-// kKCMStoryScriptProviderBoss also stood at +11 until the story counters were folded into the one
-// ScriptProvider above. It existed on the belief that a single boss could not keep app and story
-// properties apart, which was wrong: a Property attaches to the PRECEDING Object (vol1-11:1302)
-// and a provider "can be defined (used) in multiple places" (vol1-11:1237). basicshape does
-// exactly that with Adobe's own kPageItemScriptProviderBoss (BscShp.fr:370-404, one Contexts entry
-// at :317). Verified on device: 'kcmChangeCount' in app and 'kcmStatus' in story are both false.
+// (+11 held kKCMStoryScriptProviderBoss before: a second provider for the story counters, on the belief
+// that one boss could not keep app and story properties apart. It can - a Property attaches to the
+// PRECEDING Object; KCM.fr says why, at the ScriptProvider.)
 DECLARE_PMID(kClassIDSpace, kKCMRingAdornmentBoss, kKCMPrefix + 29)	// IAdornmentShape + IAdornmentFlattenerUsage: draws the comparison marks as an adornment (KCMRingAdornment.cpp). It is registered on the session's GLOBAL page item adornment list (IID_IGLOBALPAGEITEMADORNMENTLIST), so it is attached to nothing in the document and the .indd is never touched.
 DECLARE_PMID(kClassIDSpace, kKCMRingAdornmentStartupBoss, kKCMPrefix + 30)	// IStartupShutdown: registers and unregisters the adornment above, once per execution context. It has to be separate from kKCMPeekStartupBoss: that one drops comparison state on shutdown and is therefore main-thread only (kCMainThreadStartupShutdownProviderImpl), while this one is pointless unless it also runs on background threads.
 // The next two bosses declare the adornment's transparency, but only while an export runs.
@@ -268,14 +266,14 @@ DECLARE_PMID(kClassIDSpace, kKCMRingAdornmentStartupBoss, kKCMPrefix + 30)	// IS
 DECLARE_PMID(kClassIDSpace, kKCMPDFExportSetupBoss, kKCMPrefix + 31)	// IK2ServiceProvider (Adobe's kPDFExportSetupServiceImpl) + IPDFExportSetupProvider: joins the transparency list in BeginExport and leaves it in EndExport. An asynchronous export hands this the CLONE db it exports from, which is what makes it possible to change the output without touching the original document. It replaces kKCMExportXPResponderServiceBoss, which used the kBeforeExport / kAfterExport / kFailedExport signals against the ORIGINAL db and therefore baked the list into the .indd if the user saved mid-export.
 DECLARE_PMID(kClassIDSpace, kKCMStoryMarkerBoss, kKCMPrefix + 32)	// IK2ServiceProvider (the API's own kGlobalTextAdornmentServiceImpl) + IID_IGLOBALTEXTADORNMENT: the global text adornment that lays a colored ground under changed characters in Story mode (KCMStoryMarker.cpp). It lives on the model side because File > Export > PDF runs on a background thread and a kUIPlugIn is never handed a single draw there. Unlike the page item adornment at +29 it needs no manual per-context registration: it is a service, so the registry resolves it for background threads too.
 DECLARE_PMID(kClassIDSpace, kKCMStoryMarkerExpiryBoss, kKCMPrefix + 33)	// IIdleTask: withdraws just the jump flash of the marker above after about a second (KCMStoryMarkerExpiry.cpp). It is on this side because the adornment starts and stops it; leaving it in the UI would invert the dependency.
-DECLARE_PMID(kClassIDSpace, kKCMAfterOpenResponderServiceBoss, kKCMPrefix + 34)	// IResponder for kAfterOpenDoc: puts back the ticks and paws the document carries as script labels (KCMDocResponder.cpp / KCMPageMarksDoc.h, 2026-09-07)
-DECLARE_PMID(kClassIDSpace, kKCMSetPageMarksCmdBoss, kKCMPrefix + 35)	// ICommand (Command) + IKCMPageMarksCmdData: the ONE way a tick or a cat paw is written (KCMPageMarksCmd.cpp, 2026-09-07). It writes the pages script labels through IScriptUtils and then notifies on the DOCUMENTS subject, which is what makes the change undoable AND what puts the session store back on undo and redo. Nothing else may write those labels.
+DECLARE_PMID(kClassIDSpace, kKCMAfterOpenResponderServiceBoss, kKCMPrefix + 34)	// IResponder for kAfterOpenDoc: puts back the ticks and paws the document carries as script labels (KCMDocResponder.cpp / KCMPageMarksDoc.h)
+DECLARE_PMID(kClassIDSpace, kKCMSetPageMarksCmdBoss, kKCMPrefix + 35)	// ICommand (Command) + IKCMPageMarksCmdData: the ONE way a tick or a cat paw is written (KCMPageMarksCmd.cpp). It writes the pages script labels through IScriptUtils and then notifies on the DOCUMENTS subject, which is what makes the change undoable AND what puts the session store back on undo and redo. Nothing else may write those labels.
 										// There is no print-side counterpart (kPrintSetupService + IPrintSetupProvider). Not because it would not work: with it the marks come out denser in print too (measured 16,076 against 8,407 colored pixels, and neither case turns solid). It was left out because print does not need that precision - what goes to the printer is the PDF. The A/B and the way back are in section 5 of KCMRingAdornment.cpp.
-DECLARE_PMID(kClassIDSpace, kKCMResourceSaxHandlerBoss, kKCMPrefix + 36)	// ISAXContentHandler + IID_IKCMRESOURCESINK: reads the XML that KCMResourceSnapshot produced and hands back one item per definition (KCMResourceParse.cpp, Resources mode). ★The parent is kInvalidClass because nothing creates this except our own ::CreateObject2 -- the same shape as the SDK's only worked example, xmlcataloghandler/XCatHnd.fr:87-98. It carries a SECOND interface of our own so that the parse result can be fetched off the same boss afterwards: ISAXServices hands the handler nothing to write into, and ParseStream's `importer` argument is nil on this route.
-DECLARE_PMID(kClassIDSpace, kKCMBeforeCloseResponderServiceBoss, kKCMPrefix + 39)	// IResponder for kBeforeCloseDoc (KCMDocResponder.cpp, 2026-10-13): a Task Start kept in memory goes with the document it was taken from, while that document is still alive. (+37 and +38 are the UI half's kKCMStoryBangCellBoss / kKCMTrackChipCellBoss - the offsets are kept apart across the two files.)
-DECLARE_PMID(kClassIDSpace, kKCMCopyStoreBoss, kKCMPrefix + 40)	// IDataExchangeController (KCMCopyStore.cpp, 2026-10-24, the import-as-Source road): KCM's own copy store, one per document - Apply This Change copies the words it writes over into it, Restore from Copy pastes them back (KFC's KFCCopyStore, copied). Made with CreateObject, never registered with the clipboard or a drag.
-DECLARE_PMID(kClassIDSpace, kKCMRecordFocusBoss, kKCMPrefix + 41)	// kTextFocusBoss + IID_ITEXTFOCUS (KCMRecordFocus.cpp, 2026-10-26): a "=" record's text focus of KCM's own class - its range a snapshot view interface, so the user's Undo and Redo put it back (KFC's kKFCRowFocusBoss, copied). Never persisted: a focus lives in memory only.
-										// Next new boss: COUNT, do not read a number here - one written here went stale twice (it said +34 after +34 was taken, and +42 after the UI half took +42 on 2026-10-27). grep "DECLARE_PMID(kClassIDSpace" in this file AND in ui/KCMUIID.h, take one past the largest of the two, then check the retirement notes above and below. (+41 is in both halves - this half's kKCMRecordFocusBoss and the UI half's kKCMReturnFilterBoss, taken two days apart; the values differ by prefix, so nothing collides.)
+DECLARE_PMID(kClassIDSpace, kKCMResourceSaxHandlerBoss, kKCMPrefix + 36)	// ISAXContentHandler + IID_IKCMRESOURCESINK: reads the XML that KCMResourceSnapshot produced and hands back one item per definition (KCMResourceParse.cpp, Resources mode). The parent is kInvalidClass because nothing creates this except our own ::CreateObject2 -- the same shape as the SDK's only worked example, xmlcataloghandler/XCatHnd.fr:87-98. It carries a SECOND interface of our own so that the parse result can be fetched off the same boss afterwards: ISAXServices hands the handler nothing to write into, and ParseStream's `importer` argument is nil on this route.
+DECLARE_PMID(kClassIDSpace, kKCMBeforeCloseResponderServiceBoss, kKCMPrefix + 39)	// IResponder for kBeforeCloseDoc (KCMDocResponder.cpp): a Task Start kept in memory goes with the document it was taken from, while that document is still alive. (+37 and +38 are the UI half's kKCMStoryBangCellBoss / kKCMTrackChipCellBoss - the offsets are kept apart across the two files.)
+DECLARE_PMID(kClassIDSpace, kKCMCopyStoreBoss, kKCMPrefix + 40)	// IDataExchangeController (KCMCopyStore.cpp, the import-as-Source road): KCM's own copy store, one per document - Apply This Change copies the words it writes over into it, Restore from Copy pastes them back (KFC's KFCCopyStore, copied). Made with CreateObject, never registered with the clipboard or a drag.
+DECLARE_PMID(kClassIDSpace, kKCMRecordFocusBoss, kKCMPrefix + 41)	// kTextFocusBoss + IID_ITEXTFOCUS (KCMRecordFocus.cpp): a "=" record's text focus of KCM's own class - its range a snapshot view interface, so the user's Undo and Redo put it back (KFC's kKFCRowFocusBoss, copied). Never persisted: a focus lives in memory only.
+										// Next new boss: COUNT, do not read a number here (one written here went stale twice). grep "DECLARE_PMID(kClassIDSpace" in this file AND in ui/KCMUIID.h, take one past the largest of the two, then check the retirement notes above and below. (+41 is in both halves - this half's kKCMRecordFocusBoss and the UI half's kKCMReturnFilterBoss; the values differ by prefix, so nothing collides.)
 
 // InterfaceIDs:
 // +0..+3 (three observer attachment IDs and the Story Edits section height) moved to
@@ -283,10 +281,9 @@ DECLARE_PMID(kClassIDSpace, kKCMRecordFocusBoss, kKCMPrefix + 41)	// kTextFocusB
 // +4..+9 (the Facade IIDs and the notification protocol IID) moved to KCMBoundaryID.h, because
 //   they mean nothing unless the UI half sees the same value. The offsets did not change either,
 //   so all of +0..+9 are in use and none of them may be reused here.
-// +10 is NOT free: IID_IKCMSTORYMARKFACADE took it in KCMBoundaryID.h (this line said "+10..+25
-//   are free" until 2026-09-07, which would have handed out a colliding number).
+// +10 is NOT free: IID_IKCMSTORYMARKFACADE took it in KCMBoundaryID.h.
 // +14 is IID_IKCMRESOURCESFACADE in KCMBoundaryID.h (the Resources mode's facade).
-// +19..+25 are free (+16 retired, +17 IID_IKCMSTORYFOLLOWOBSERVER - 2026-09-25, +18 IID_IKCMUISERVICES in KCMBoundaryID.h - 2026-10-28). COUNT before taking one: the facade IIDs live in KCMBoundaryID.h, not here,
+// +19..+25 are free (+16 retired, +17 IID_IKCMSTORYFOLLOWOBSERVER, +18 IID_IKCMUISERVICES in KCMBoundaryID.h). COUNT before taking one: the facade IIDs live in KCMBoundaryID.h, not here,
 //   so the largest number in THIS file is not the largest number in use.
 //
 // The three below are MODEL-ONLY, which is why they are here and not in KCMBoundaryID.h: the UI
@@ -295,10 +292,9 @@ DECLARE_PMID(kClassIDSpace, kKCMRecordFocusBoss, kKCMPrefix + 41)	// kTextFocusB
 DECLARE_PMID(kInterfaceIDSpace, IID_IKCMPAGEMARKSCMDDATA, kKCMPrefix + 11)	// what kKCMSetPageMarksCmdBoss is told to write (KCMPageMarksCmd.h). Non-persistent: it is a parameter, not document data.
 DECLARE_PMID(kInterfaceIDSpace, IID_IKCMPAGEMARKS, kKCMPrefix + 12)	// the PROTOCOL of the notification the command raises on the documents subject. It names no interface -- a protocol IID is a filter, and this one means "the ticks or the paws of this document changed".
 DECLARE_PMID(kInterfaceIDSpace, IID_IKCMMARKSOBSERVER, kKCMPrefix + 13)	// the observer that listens for it, AddIn on kDocBoss (KCMMarksObserver.cpp). It has an IID of its own because kDocBoss already carries somebody elses IID_IOBSERVER.
-// ⛔**+16 IS RETIRED** (2026-09-21): IID_IKCMSTORYUNDOOBSERVER, the observer AddIn'd on kTextStoryBoss
-//   so that the panel followed an undo of a restore. Never reused. The old note said:
-// DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYUNDOOBSERVER, kKCMPrefix + 16)	// ★the observer AddIn'd on kTextStoryBoss (KCMStoryUndoObserver.cpp, 2026-09-15): it hears the story's own text change - including on UNDO and REDO, which is the whole reason it exists - and tells the panel to redraw. An IID of its own because kTextStoryBoss already carries other people's IID_IOBSERVER. ⚠The PROTOCOL it listens under is the SDK's IID_ITEXTMODEL, not one of ours: the notification is InDesign's, not a KCM command's. (+14 is a gap, not a slot: nothing was ever declared there.)
-DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYFOLLOWOBSERVER, kKCMPrefix + 17)	// ★(2026-10-25: MOVED TO kDocBoss, the same number - the story it hung on could be built again and leave it behind; it hears the document's IID_ITEXTMODELCHANGED and the six IID_..REDLINE_DOCUMENT now, KCMStoryFollowObserver.h) ★(2026-09-25) the lazy observer AddIn'd on kTextStoryBoss again (KCMStoryFollowObserver.cpp) - a NEW number, +16 stays retired: the Story Edits list follows an Undo / Redo of a compared story (the user: "after Ctrl+Z the list is out of date"). Unlike +16 it compares the row AGAIN, and only when the story came back to a state it was compared at, or a taken-back record changed state - never on plain typing. The protocol is the SDK's IID_ITEXTMODEL. Free after this: +18..+25 (then +19..+25: +18 IID_IKCMUISERVICES, 2026-10-28).
+// ⛔**+16 IS RETIRED**: IID_IKCMSTORYUNDOOBSERVER, the observer AddIn'd on kTextStoryBoss so that the
+//   panel followed an undo of a restore. Never reused.
+DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYFOLLOWOBSERVER, kKCMPrefix + 17)	// the lazy observer AddIn'd on kDocBoss (KCMStoryFollowObserver.cpp) - not on each story: a story can be built again and leave what hung on it behind. It hears the document's IID_ITEXTMODELCHANGED and the six IID_..REDLINE_DOCUMENT (KCMStoryFollowObserver.h): the Story Edits list follows an Undo / Redo of a compared story (the user's report: "after Ctrl+Z the list is out of date") - the row compared AGAIN, and only when the story came back to a state it was compared at, or a taken-back record changed state, never on plain typing. A new number: +16 stays retired.
 DECLARE_PMID(kInterfaceIDSpace, IID_IKCMRESOURCESINK, kKCMPrefix + 15)	// how the SAX handler is given somewhere to put what it reads, and how the caller asks afterwards whether anything went wrong (KCMResourceParse.cpp). It sits on kKCMResourceSaxHandlerBoss beside IID_ISAXCONTENTHANDLER, both served by one implementation. ⚠It exists because the SAX route hands a handler NOTHING to write into: ParseStream takes only a stream and a handler, and the `importer` argument that ISAXContentHandler::Register would receive is nil here (it is the XML importer, and this is not an import).
 
 
@@ -308,7 +304,7 @@ DECLARE_PMID(kInterfaceIDSpace, IID_IKCMRESOURCESINK, kKCMPrefix + 15)	// how th
 DECLARE_PMID(kImplementationIDSpace, kKCMScriptProviderImpl, kKCMPrefix + 0)	// CScriptProvider implementation (KCMScriptProvider.cpp). This one implementation serves every published property, on app, story and document alike (the list is KCM.fr's Provider blocks).
 // +1 / +2 retired: kKCMDrawEventSrvcImpl / kKCMDrawEventHandlerImpl, with the draw event route.
 // +3 retired: kKCMPeekWatcherImpl, with the middle-button watcher.
-DECLARE_PMID(kImplementationIDSpace, kKCMPeekStartupImpl, kKCMPrefix + 4)	// IStartupShutdown implementation (starts the peek watcher).
+DECLARE_PMID(kImplementationIDSpace, kKCMPeekStartupImpl, kKCMPrefix + 4)	// IStartupShutdown implementation (KCMPeekStartup, KCMPeek.cpp): drops the comparison state at application shutdown.
 // +8 retired: kKCMDocServiceProviderImpl, a hand-written ServiceProvider. A responder that handles
 //   a single signal does not need one - naming the API's kAfterCloseDocSignalRespServiceImpl
 //   (DocumentID.h) in the .fr registers it (see kKCMDocResponderServiceBoss in KCM.fr).
@@ -316,7 +312,7 @@ DECLARE_PMID(kImplementationIDSpace, kKCMDocResponderImpl, kKCMPrefix + 9)	// IR
 DECLARE_PMID(kImplementationIDSpace, kKCMCompareFacadeImpl, kKCMPrefix + 39)	// IKCMCompareFacade implementation (KCMFacades.cpp). AddIn on kUtilsBoss, which is why it MUST be our own implementation: adding an SDK-supplied implementation to an existing boss collides with other vendors and the collision is per ImplementationID, not per IID.
 DECLARE_PMID(kImplementationIDSpace, kKCMMarkDataImpl, kKCMPrefix + 40)	// IKCMMarkData implementation (KCMFacades.cpp). Same AddIn on kUtilsBoss; this one is read-only.
 DECLARE_PMID(kImplementationIDSpace, kKCMPageFlagsFacadeImpl, kKCMPrefix + 41)	// IKCMPageFlagsFacade implementation (KCMFacades.cpp). Same AddIn.
-DECLARE_PMID(kImplementationIDSpace, kKCMStoryEditsFacadeImpl, kKCMPrefix + 42)	// IKCMStoryEditsFacade implementation (KCMFacades.cpp). Same AddIn; read-only apart from RefreshRow.
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryEditsFacadeImpl, kKCMPrefix + 42)	// IKCMStoryEditsFacade implementation (KCMFacades.cpp). Same AddIn.
 DECLARE_PMID(kImplementationIDSpace, kKCMBookFacadeImpl, kKCMPrefix + 43)	// IKCMBookFacade implementation (KCMFacades.cpp). Same AddIn.
 DECLARE_PMID(kImplementationIDSpace, kKCMBeforeSaveResponderImpl, kKCMPrefix + 44)	// IResponder implementation (puts back the spreads Hide Unchanged hid, before the save. KCMDocResponder.cpp). This offset previously held kKCMStoryScriptProviderImpl, which was folded into kKCMScriptProviderImpl.
 DECLARE_PMID(kImplementationIDSpace, kKCMRingAdornmentImpl, kKCMPrefix + 45)	// IAdornmentShape implementation (KCMRingAdornment.cpp). It holds no drawing code: for a spread it calls KCMDrawEventHandler::DrawSpreadMarks(), so there is exactly one place that paints the marks.
@@ -336,28 +332,23 @@ DECLARE_PMID(kImplementationIDSpace, kKCMMarksObserverImpl, kKCMPrefix + 56)	// 
 DECLARE_PMID(kImplementationIDSpace, kKCMResourceSaxHandlerImpl, kKCMPrefix + 57)	// the ISAXContentHandler itself (KCMResourceParse.cpp).
 DECLARE_PMID(kImplementationIDSpace, kKCMResourcesFacadeImpl, kKCMPrefix + 59)	// IKCMResourcesFacade on kUtilsBoss (KCMFacades.cpp): the panel's only way to read which DEFINITIONS differ. ⚠The implementation AddIn'd to a shared boss must be our own -- the unit of collision between vendors is the ImplementationID, not the IID.
 DECLARE_PMID(kImplementationIDSpace, kKCMResourceSinkImpl, kKCMPrefix + 58)	// IKCMResourceSink on the SAME boss (same file): where the handler puts what it reads. ⚠It has to be a SECOND implementation rather than the same one under two IIDs, because a boss builds ONE OBJECT PER IID -- registering kKCMResourceSaxHandlerImpl twice would produce two unrelated instances and the handler would fill in a list nobody could read.
-// ⛔**+60 IS RETIRED** (2026-09-21): kKCMStoryUndoObserverImpl, with the observer itself. The old note said:
-// DECLARE_PMID(kImplementationIDSpace, kKCMStoryUndoObserverImpl, kKCMPrefix + 60)	// ★the lazy observer AddIn on kTextStoryBoss (KCMStoryUndoObserver.cpp, 2026-09-15): one KCMNotify when a compared story's text changes, so that the panel follows an undo. The marks live in the counters already, so it writes nothing.
-DECLARE_PMID(kImplementationIDSpace, kKCMStoryFollowObserverImpl, kKCMPrefix + 61)	// ★(on kDocBoss since 2026-10-25 - the Target document's subject, not each story's) ★(2026-09-25) the lazy observer on kTextStoryBoss (KCMStoryFollowObserver.cpp): the Story Edits list follows an Undo / Redo - the row compared again (RunOne) when the story is back at a state it was compared at or a taken-back record changed state, then the panel told. +60 stays retired.
-DECLARE_PMID(kImplementationIDSpace, kKCMBeforeCloseResponderImpl, kKCMPrefix + 62)	// IResponder implementation (KCMDocResponder.cpp, 2026-10-13): kBeforeCloseDoc lets a Task Start kept in memory go.
-DECLARE_PMID(kImplementationIDSpace, kKCMCopyStoreImpl, kKCMPrefix + 63)	// the copy store's data exchange controller (KCMCopyStore.cpp, 2026-10-24, the import-as-Source road).
-DECLARE_PMID(kImplementationIDSpace, kKCMRecordFocusImpl, kKCMPrefix + 64)	// the record focus's IID_ITEXTFOCUS (KCMRecordFocus.cpp, 2026-10-26) - a CViewInterface, CREATE_VIEW_PMINTERFACE.
-										// Next new implementation: +65. ⚠**Read this line rather than the last DECLARE** - the retirement notes are BELOW them, so deciding from the last line alone picks a slot already spoken for. ⚠And this line itself rots: it said +59 while +59 was already kKCMResourcesFacadeImpl (found 2026-09-15). **Check the number against the declarations before trusting it.**
+// ⛔**+60 IS RETIRED**: kKCMStoryUndoObserverImpl, with the observer itself. Never reused.
+DECLARE_PMID(kImplementationIDSpace, kKCMStoryFollowObserverImpl, kKCMPrefix + 61)	// the lazy observer on kDocBoss - the Target document's subject, not each story's (KCMStoryFollowObserver.cpp): the Story Edits list follows an Undo / Redo - the row compared again (RunOne) when the story is back at a state it was compared at or a taken-back record changed state, then the panel told. +60 stays retired.
+DECLARE_PMID(kImplementationIDSpace, kKCMBeforeCloseResponderImpl, kKCMPrefix + 62)	// IResponder implementation (KCMDocResponder.cpp): kBeforeCloseDoc lets a Task Start kept in memory go.
+DECLARE_PMID(kImplementationIDSpace, kKCMCopyStoreImpl, kKCMPrefix + 63)	// the copy store's data exchange controller (KCMCopyStore.cpp, the import-as-Source road).
+DECLARE_PMID(kImplementationIDSpace, kKCMRecordFocusImpl, kKCMPrefix + 64)	// the record focus's IID_ITEXTFOCUS (KCMRecordFocus.cpp) - a CViewInterface, CREATE_VIEW_PMINTERFACE.
+										// Next new implementation: COUNT, do not read a number here - one past the largest kImplementationIDSpace offset in this file, then check the retirement notes, which stand BELOW the declarations (so the last DECLARE alone can pick a slot already spoken for).
 
-// MessageIDs: how the model tells the UI what changed. All seven moved to KCMBoundaryID.h - sender
-//   and receiver must see the same value, or the build succeeds and nothing happens at run time.
-//   The offsets are unchanged (+0..+6) and must not be reused here:
-//     +0 kKCMMarksRebuiltMessage / +1 kKCMMarksClearedMessage / +2 kKCMPageFlagsChangedMessage /
-//     +3 kKCMStoryEditsRebuiltMessage / +4 kKCMStatusTextMessage / +5 kKCMOversetRescannedMessage /
-//     +6 kKCMComparisonDocsClosedMessage
-//   Why +6 is separate from Stop, and what it carries, is documented where it now lives.
+// MessageIDs: how the model tells the UI what changed. They are all in KCMBoundaryID.h - sender and
+//   receiver must see the same value, or the build succeeds and nothing happens at run time - and none
+//   may be declared here: the list, and why each one is separate, is that header's.
 
 // Script element IDs. The live ones are the DECLAREs below, +13 onwards; what object each hangs
-// off and whether it is read-only is in KCM.fr's Provider blocks - count them THERE. (This line
-// used to say "six, all read-only", and was wrong on both counts by 2026-08-31: a document
-// property came on 2026-08-20 and a read-write application property on 2026-08-31, and neither
-// author re-counted here.) +1..+12 are the graves of the old scripting METHODS, which were removed
-// wholesale; new properties are taken from +13 so that nothing is confused with a retired method.
+// off and whether it is read-only is in KCM.fr's Provider blocks - count them THERE. +1..+12 are
+// the graves of the old scripting METHODS, which were removed wholesale; a new element is taken from
+// +13 upwards and NEVER from them, because a reused element ID would make an old note about
+// kescmToast read as if it described the new thing. Next new element: COUNT - one past the largest
+// offset declared here (the graves below stand among the live ones).
 DECLARE_PMID(kScriptInfoIDSpace, kKCMStatusPropertyScriptElement, kKCMPrefix + 13)	// app.kcmStatus (read-only; the last line shown in the panel's status area)
 DECLARE_PMID(kScriptInfoIDSpace, kKCMBookResultPropertyScriptElement, kKCMPrefix + 14)	// app.kcmBookResult (read-only; the last book comparison as one TSV line per chapter, "name<TAB>state"). The status line can only show one line, so this is what makes a chapter-by-chapter result checkable without a human reading it.
 // The four story change counters, read straight off the story - app.documents[0].stories[2].kcmChangeCount.
@@ -377,52 +368,43 @@ DECLARE_PMID(kScriptInfoIDSpace, kKCMTextChangeCountPropertyScriptElement, kKCMP
 DECLARE_PMID(kScriptInfoIDSpace, kKCMAttrChangeCountPropertyScriptElement, kKCMPrefix + 17)	// stories[n].kcmAttrChangeCount (formatting; GetAttrChangeCount)
 DECLARE_PMID(kScriptInfoIDSpace, kKCMOtherChangeCountPropertyScriptElement, kKCMPrefix + 18)	// stories[n].kcmOtherChangeCount (everything else; GetOtherChangeCount)
 // Same rule as the four above: this ID is repeated in KCM.fr's second VersionedScriptElementInfo.
-DECLARE_PMID(kScriptInfoIDSpace, kKCMStoryRowsPropertyScriptElement, kKCMPrefix + 20)	// ★app.kcmStoryRows (read-only; the whole Story Edits list as TSV - a line per parent row and a line per change under it). ★★★It exists because THE LIST'S CELLS ARE DRAWN BY HAND (KCMStoryCellView), so no reader outside the plug-in can see the reading, the Mono/Group word or a footnote's number - checking the 2026-09-08 footnote work meant PHOTOGRAPHING the panel and reading the picture, which was the single biggest cost of that day. Same answer KBS reached with app.kfcResults, for the reason it wrote down: **a count proves nothing** -- the row's own words do.
-DECLARE_PMID(kScriptInfoIDSpace, kKCMResourceSnapshotPropertyScriptElement, kKCMPrefix + 22)	// app.kcmResourceSnapshot (read-only; "<bytes> bytes, <ms> ms" for the ACTIVE document, or "FAILED: <which step>"). The Resources mode's engine has no panel yet, so this is how it is measured from outside -- and it stays afterwards for the same reason app.kcmStoryRows does: a count nobody can read from outside is a count nobody can check.
-DECLARE_PMID(kScriptInfoIDSpace, kKCMResourceDiffPropertyScriptElement, kKCMPrefix + 23)	// app.kcmResourceDiff (read-only; a summary line, a header line, then one tab-separated line per definition that differs between the two ARMED documents - or "FAILED: <which step>"). ★It reads the same Target/Source pair the panel does, so a reading says something about the product rather than about the test. It is how the Resources mode's engine is checked until the mode has a panel of its own.
+DECLARE_PMID(kScriptInfoIDSpace, kKCMStoryRowsPropertyScriptElement, kKCMPrefix + 20)	// app.kcmStoryRows (read-only; the whole Story Edits list as TSV - a line per parent row and a line per change under it). It exists because THE LIST'S CELLS ARE DRAWN BY HAND (KCMStoryCellView), so no reader outside the plug-in can see the reading, the Mono/Group word or a footnote's number - without it, checking them means photographing the panel. **A count proves nothing** -- the row's own words do.
+DECLARE_PMID(kScriptInfoIDSpace, kKCMResourceSnapshotPropertyScriptElement, kKCMPrefix + 22)	// app.kcmResourceSnapshot (read-only; "<bytes> bytes, <ms> ms" for the ACTIVE document, or "FAILED: <which step>"). It is how the Resources mode's engine is measured from outside, for the reason app.kcmStoryRows exists: a count nobody can read from outside is a count nobody can check.
+DECLARE_PMID(kScriptInfoIDSpace, kKCMResourceDiffPropertyScriptElement, kKCMPrefix + 23)	// app.kcmResourceDiff (read-only; a summary line, a header line, then one tab-separated line per definition that differs between the two ARMED documents - or "FAILED: <which step>"). It reads the same Target/Source pair the panel does, so a reading says something about the product rather than about the test.
 DECLARE_PMID(kScriptInfoIDSpace, kKCMTransparencyItemCountPropertyScriptElement, kKCMPrefix + 19)	// document.kcmTransparencyItemCount (read-only; the size of IXPManager's list of page items that have transparency). It is how we check from outside that nothing was left on the list and saved: the list persists into the .indd, so save, close, reopen and read.
-// (The line above lost this comment on 2026-08-31, when +20 was inserted and the two trailing
-//  comments ended up on one line. Put back by the API re-audit of 2026-09-03.)
-// +20 retired: kKCMStoryReadComparePropertyScriptElement (app.kcmStoryReadCompare, the direct-read
-//   migration's parallel run, READ-WRITE and temporary; 2026-08-31 to 2026-09-03). Never shipped,
-//   so the slot could be reused - it is left empty anyway, the way +1..+12 are.
-// ⛔**kKCMPrefix + 21 IS A GRAVE** (2026-09-21): it was kKCMOriginStatusPropertyScriptElement, app.kcmOriginStatus. The origin it reported went with Task Start becoming a file on disk, so the one line it read out (held=yes/no, the document, when it was taken, the byte count, the shape, the stamp count, the peek spread) has nothing left to report. ★**+21 had itself taken over the throwaway INX probe's slot** (app.kcmInxProbe, 2026-09-08 to 09-09, never shipped; its findings live in memory document-snapshot-without-a-file), and that was allowed BECAUSE the probe never shipped. This one did - so +21 is not reused again.
-// ⛔**THE METHOD THIS PARAGRAPH WAS WRITTEN FOR WENT ON 2026-09-21** - app.kcmSaveOriginXml, the
-//   first one taken after the old ones were buried (2026-09-14). ★**THE RULE IT STATES STILL HOLDS
-//   for whatever is declared next**: a new element is taken from +13 upwards and NEVER from the
-//   graves at +1..+12, because those are retired scripting methods and a reused element ID would
-//   make an old note about kescmToast read as if it described the new thing.
-//   ⚠Unlike a property, a method needs NO line in KCM.fr's second (INX-only) resource: methods are
-//   not serialised into IDML, so there was nothing to take back out when this one went.
-// ⛔**kKCMPrefix + 24 IS A GRAVE** (2026-09-21): it was kKCMSaveOriginXmlMethodScriptElement - app.kcmSaveOriginXml(file), which wrote the held Task Start origin's XML where the caller said and answered with a status number (0 written / 1 no origin held / 2 could not create / 3 could not write / 4 bad argument). It went with the origin itself.
-// ⛔**kKCMPrefix + 36 IS A GRAVE** (2026-09-21): it was kKCMSaveDocXmlMethodScriptElement - app.kcmSaveDocXml(file), the ACTIVE document's own designmap written out (0 written / 1 nothing could be photographed / 2 could not create / 3 could not write / 4 bad argument), so that a rehydrated copy could be checked against it as XML element by element instead of by the four numbers of its shape (2026-09-20, the user's ask: "can the internal IDML of THAT document be made too? then they can be compared"). Its implementation KCMSaveActiveDocXml went with KCMOriginIdml.cpp, and ScriptID 'eKGg' is retired with it. ★The other graves in THIS space are +28 and +32 (kcmTakeInAllStories and kcmTakeInStory, gone with Restore All); +36 joins them and none of the three is reused. ⚠+32/+36 also appear in this file under kClassIDSpace - a DIFFERENT ID space, so there is no clash
-// ⛔**kKCMPrefix + 26 IS A GRAVE** (2026-09-21): it was kKCMSaveOriginIdmlMethodScriptElement - app.kcmSaveOriginIdml(file), which wrote the held origin as a REAL IDML package and answered with THE SAME STATUS NUMBERS as +24 (2026-09-15). ★**What it measured outlives it**: three entries, because a package whose designmap was never cut is one InDesign opens AND one this plug-in can read back, while a cut one carries <idPkg:* src> references and handing those to ImportINX crashes inside JBX.APLN. ⚠+25 was the spike's measuring door and is a grave since 2026-10-02 (next line).
-// ⛔**kKCMPrefix + 25 IS A GRAVE** (2026-10-02, the user: "take it out before shipping"): it was
+// (+20, app.kcmStoryRows above, was kKCMStoryReadComparePropertyScriptElement - app.kcmStoryReadCompare,
+//  the direct-read migration's parallel run, read-write and temporary. It never shipped, so the slot was
+//  reused.)
+// ⛔**kKCMPrefix + 21 IS A GRAVE**: it was kKCMOriginStatusPropertyScriptElement, app.kcmOriginStatus - the Task Start origin it reported went, and the property with it. Not reused. (+21 had itself taken over the never-shipped INX probe's slot, app.kcmInxProbe; its findings live in memory document-snapshot-without-a-file.)
+// ⚠Unlike a property, a method needs NO line in KCM.fr's second (INX-only) resource: methods are not
+//   serialised into IDML.
+// ⛔**kKCMPrefix + 24 IS A GRAVE**: it was kKCMSaveOriginXmlMethodScriptElement - app.kcmSaveOriginXml(file), which wrote the held Task Start origin's XML where the caller said. It went with the origin itself. Not reused.
+// ⛔**kKCMPrefix + 36 IS A GRAVE**: it was kKCMSaveDocXmlMethodScriptElement - app.kcmSaveDocXml(file), the active document's own designmap written out to check a rehydrated copy against. Its implementation went with KCMOriginIdml.cpp, and ScriptID 'eKGg' is retired with it. Not reused. (+32 and +36 also appear under kClassIDSpace - a DIFFERENT ID space, so there is no clash.)
+// ⛔**kKCMPrefix + 26 IS A GRAVE**: it was kKCMSaveOriginIdmlMethodScriptElement - app.kcmSaveOriginIdml(file), which wrote the held origin as a REAL IDML package. What it measured outlives it: a package whose designmap was never cut is one InDesign opens AND one this plug-in can read back, while a cut one carries <idPkg:* src> references, and handing those to ImportINX crashes inside JBX.APLN. Not reused.
+// ⛔**kKCMPrefix + 25 IS A GRAVE** (the author: "take it out before shipping"): it was
 //   kKCMProbePdfRouteMethodScriptElement - app.kcmProbePdfRoute(), which ran the PDF spike
-//   (KCMPdfSpike.cpp, 2026-09-14) on the active document's first page and answered with the reading,
-//   a line per step: could the Before/After report stop writing temporary PDFs to disk and stay
-//   VECTOR. The spike went with it (its code is in git at 5720208); ScriptID 'eKGv' is retired too.
-//   NOT reused - the rule the method IDs +1..+12 are under.
-// ★The story text round trip without a dialog (2026-09-17) - KCMScriptingDefs.h says why. +27..+30 were
-//  the next free slots in this ID space (+13..+26 in use).
-// ⛔**+27 IS RETIRED** (2026-10-25): app.kcmImportStoryText, with the import that wrote into the document (the tidy).
+//   (KCMPdfSpike.cpp) on the active document's first page and answered with the reading, a line per
+//   step: could the Before/After report stop writing temporary PDFs to disk and stay VECTOR. The
+//   spike went with it (its code is in git at 5720208); ScriptID 'eKGv' is retired too. Not reused.
+// The story text round trip without a dialog - KCMScriptingDefs.h says why.
+// ⛔**+27 IS RETIRED**: app.kcmImportStoryText, with the import that wrote into the document.
 //   Never reused - app.kcmImportToSource (+38) is the import's door.
-// ⛔**+28 IS RETIRED** (2026-09-20): app.kcmTakeInAllStories, with "Restore All Stories" itself. Never reused.
+// ⛔**+28 IS RETIRED**: app.kcmTakeInAllStories, with "Restore All Stories" itself. Never reused.
 DECLARE_PMID(kScriptInfoIDSpace, kKCMExportStoryTextMethodScriptElement, kKCMPrefix + 29)	// app.kcmExportStoryText(folder) -> the export's sentence, with the dated folder in it
 DECLARE_PMID(kScriptInfoIDSpace, kKCMStopComparisonMethodScriptElement, kKCMPrefix + 30)	// app.kcmStopComparison() -> the status line afterwards
-// ⛔**+31 IS RETIRED** (2026-09-21): app.kcmTakeInChange, with "Restore Source Text" itself. Never reused.
-// ⛔**+32 IS RETIRED** (2026-09-20): app.kcmTakeInStory, with "Restore All in This Story" itself. Never reused.
-// ⛔**+33 IS RETIRED** (2026-09-21): app.kcmExportStoryDocx, added 2026-09-19 as the .docx road beside the .html one. The HTML road went on the user's word ("Word format only"), so app.kcmExportStoryText (+24) writes the .docx and there is nothing to choose. Never reused.
-// ⛔**+34 IS RETIRED** (2026-09-21): app.kcmUndoRestore, with "Undo the Restore" itself. Never reused.
-DECLARE_PMID(kScriptInfoIDSpace, kKCMCompareTrackedMethodScriptElement, kKCMPrefix + 37)	// app.kcmCompareTracked() -> the sentence (2026-10-05; no argument since 2026-10-27 - it took the copy's file until then; +37 was the next free slot - +28/+31..+36 are graves)
-DECLARE_PMID(kScriptInfoIDSpace, kKCMImportToSourceMethodScriptElement, kKCMPrefix + 38)	// app.kcmImportToSource(file) -> the sentence (2026-10-24, the import-as-Source road; +38/+39 the next free slots)
+// ⛔**+31 IS RETIRED**: app.kcmTakeInChange, with "Restore Source Text" itself. Never reused.
+// ⛔**+32 IS RETIRED**: app.kcmTakeInStory, with "Restore All in This Story" itself. Never reused.
+// ⛔**+33 IS RETIRED**: app.kcmExportStoryDocx, the .docx road beside the .html one. The HTML road went on the author's word ("Word format only"), so app.kcmExportStoryText (+29) writes the .docx and there is nothing to choose. Never reused.
+// ⛔**+34 IS RETIRED**: app.kcmUndoRestore, with "Undo the Restore" itself. Never reused.
+DECLARE_PMID(kScriptInfoIDSpace, kKCMCompareTrackedMethodScriptElement, kKCMPrefix + 37)	// app.kcmCompareTracked() -> the sentence (no argument: no copy is saved)
+DECLARE_PMID(kScriptInfoIDSpace, kKCMImportToSourceMethodScriptElement, kKCMPrefix + 38)	// app.kcmImportToSource(file) -> the sentence (the import-as-Source road)
 DECLARE_PMID(kScriptInfoIDSpace, kKCMApplyChangeMethodScriptElement, kKCMPrefix + 39)	// app.kcmApplyChange(what) -> the sentence (the same road)
-DECLARE_PMID(kScriptInfoIDSpace, kKCMChangeReachMethodScriptElement, kKCMPrefix + 41)	// app.kcmChangeReach(what) -> the place's locks / hidden (2026-10-24 night, the list like KFC's; +41 counted - the ScriptInfo space's highest was +40)
-DECLARE_PMID(kScriptInfoIDSpace, kKCMRestoreFromSourceMethodScriptElement, kKCMPrefix + 42)	// app.kcmRestoreFromSource(what) -> the sentence (the same night - Story mode's Restore from Source by copy)
-DECLARE_PMID(kScriptInfoIDSpace, kKCMRestoreFromCopyMethodScriptElement, kKCMPrefix + 40)	// app.kcmRestoreFromCopy(what) -> the sentence (2026-10-24 evening, the same road's Restore from Copy; +40 the next free slot - counted)
-DECLARE_PMID(kScriptInfoIDSpace, kKCMExportPagesMethodScriptElement, kKCMPrefix + 43)	// app.kcmExportPages(folder, pages) -> the sentence (2026-10-25, Export Pages to Word; +43 the next free slot - counted: the highest was +42)
-DECLARE_PMID(kScriptInfoIDSpace, kKCMPixelPagesPropertyScriptElement, kKCMPrefix + 44)	// app.kcmPixelPages (read-only; the Pixel mode's answer page by page as TSV - KCMPixelPages.h; 2026-10-28, the full test's review; +44 the next free slot - counted in this ID space: the highest was +43. kImplementationIDSpace's +44 is another space)
-// ⛔**kKCMPrefix + 35 IS A GRAVE** (2026-09-21): it was app.kcmProbeTableCopy(...), the spike.	// ⚠A SPIKE (2026-09-19 night, KCMTableCopySpike.h): app.kcmProbeTableCopy(storyRow, tableOrdinal) -> one line per step. Retire it with the file, as +25 is to be; never reuse the number
+DECLARE_PMID(kScriptInfoIDSpace, kKCMChangeReachMethodScriptElement, kKCMPrefix + 41)	// app.kcmChangeReach(what) -> the place's locks / hidden (the list like KFC's)
+DECLARE_PMID(kScriptInfoIDSpace, kKCMRestoreFromSourceMethodScriptElement, kKCMPrefix + 42)	// app.kcmRestoreFromSource(what) -> the sentence (Story mode's Restore from Source by copy)
+DECLARE_PMID(kScriptInfoIDSpace, kKCMRestoreFromCopyMethodScriptElement, kKCMPrefix + 40)	// app.kcmRestoreFromCopy(what) -> the sentence (the import road's Restore from Copy)
+DECLARE_PMID(kScriptInfoIDSpace, kKCMExportPagesMethodScriptElement, kKCMPrefix + 43)	// app.kcmExportPages(folder, pages) -> the sentence (Export Pages to Word)
+DECLARE_PMID(kScriptInfoIDSpace, kKCMPixelPagesPropertyScriptElement, kKCMPrefix + 44)	// app.kcmPixelPages (read-only; the Pixel mode's answer page by page as TSV - KCMPixelPages.h)
+// ⛔**kKCMPrefix + 35 IS A GRAVE**: it was app.kcmProbeTableCopy(storyRow, tableOrdinal), the table copy spike (KCMTableCopySpike.h). Never reused.
 // (The tool's enumerator goes on the application's own kToolBoxEnumScriptElement, so this side
 //  needs no ID for it.)
 
