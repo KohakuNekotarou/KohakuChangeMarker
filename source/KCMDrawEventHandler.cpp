@@ -36,7 +36,7 @@
 #include "IXPUtils.h"
 #include "IXPManager.h"				// GetDocumentBlendingSpace / ReleaseBlendingSpace (the PDF export's transparency group)
 #include "IViewPortAttributes.h"		// asking the port for kPDFExportVPAttr / kPDFIsFlattenerTargetVPAttr
-#include "OutPrvID.h"					// kSepPrvOPPEnabledVPAttr -- is overprint preview on (2026-09-07)
+#include "OutPrvID.h"					// kSepPrvOPPEnabledVPAttr -- is overprint preview on
 #include "PDFID.h"					// those two ViewPortAttr IDs (PDFID.h:1543-1544)
 #include "K2SmartPtr.h"				// K2::scoped_array / K2::scoped_ptr -- the SDK's own scoped ownership, so that
 									//   every exit from a function frees what it allocated. Worked examples in the
@@ -53,7 +53,7 @@
 #include "IFontInstance.h"		// MeasureWText (centring) / GetDescent
 
 #include <algorithm>	// std::min -- the page's short side (four places used to spell out the same ternary)
-#include <cmath>		// std::cos / std::sin -- a cat paw turned to the direction it was dragged (2026-10-27)
+#include <cmath>		// std::cos / std::sin -- a cat paw turned to the direction it was dragged
 #include <map>
 #include <set>
 #include <new>			// std::nothrow for the image buffers: MSVC's ordinary new throws rather than returning nil
@@ -256,7 +256,7 @@ void KCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt, i
 			// same radius as the ring, which is recomputed at every zoom -- so it stays a constant
 			// number of screen pixels. Colour and alpha are the ring's (the density is applied by
 			// the blit's opacity).
-			// ★Unless sRingFrameOff (the Before/After report's PDF wants the rings alone).
+			// Unless sRingFrameOff (the Before/After report's PDF wants the rings alone).
 			const bool16 frame = frameOn &&
 			                     (x < radius || (wt - 1 - x) < radius ||
 			                      y < radius || (ht - 1 - y) < radius);
@@ -339,7 +339,7 @@ static void KCMDistTransform(const uint8* mask, int32 wt, int32 ht, uint8* out)
 //========================================================================================
 // One page rasterised: the snapshot and the accessor that reads its pixels.
 //
-// ★**THE ORDER OF THE TWO MEMBERS IS THE POINT.** An accessor has to be destroyed before the
+// **THE ORDER OF THE TWO MEMBERS IS THE POINT.** An accessor has to be destroyed before the
 //   snapshot it came from, and members go down in the reverse of their declaration order -- so
 //   declaring snap first is what puts acc down first, at every exit of every function holding one.
 //   (Until 2026-10-30 the same order was a rule about four local declarations in MakeEntry --
@@ -663,7 +663,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 						KCMMarkStateLock lock(KCMMarkStateMutex());
 						std::map<UID, KCMOverlayEntry*>::iterator old = sEntries.find(key);
 						if (old != sEntries.end()) { delete old->second; sEntries.erase(old); }
-						sEntries[key] = e.release();	// ★the hand-over: the map owns the entry from here on
+						sEntries[key] = e.release();	// the hand-over: the map owns the entry from here on
 
 						// The Source-side mapping ("Always Show Marks on Source") is recorded here,
 						// in the same place the entry is registered, so any route that reaches
@@ -800,7 +800,7 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 			UID key = targetRef.GetUID();
 			std::map<UID, KCMOrigImage*>::iterator old = sOrigImages.find(key);
 			if (old != sOrigImages.end()) { delete old->second; sOrigImages.erase(old); }
-			sOrigImages[key] = o.release();	// ★the hand-over: the map owns the picture from here on
+			sOrigImages[key] = o.release();	// the hand-over: the map owns the picture from here on
 			status = kSuccess;
 		}
 	}
@@ -1052,7 +1052,7 @@ static void KCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpAtt
 //   (There is no separate mode for the Pages panel's thumbnails: those are generated with no view,
 //   in kPreviewMode, and the thumbnail branches of the loops below draw a border and a "/" instead
 //   of the ring image.)
-// ★A NAMED TYPE (2026-10-30). It was an unnamed enum carried in an int32, so anything that converts
+// A NAMED TYPE. It was an unnamed enum carried in an int32, so anything that converts
 //   to an integer passed for it -- a bool16 such as `printing` among them, which would even have
 //   meant the right thing, kTrue being 1. The four functions that take it now say what they take.
 enum KCMDrawMode { kKCMDrawModeScreen = 0, kKCMDrawModePrint = 1 };
@@ -1448,19 +1448,19 @@ static void KCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 //========================================================================================
 // The cat-paw stamps
 //
-//  ★THE SHAPE IS A TABLE, NOT CODE. Five outlines -- a pad and four toes -- of 16 points each, in
+//  THE SHAPE IS A TABLE, NOT CODE. Five outlines -- a pad and four toes -- of 16 points each, in
 //    units of the paw's size s and measured from its centre. They were taken off the reference
 //    picture the user supplied (a ray cast from each blob's centroid every 22.5 degrees, noting
 //    where the ink ends) and then made left-right symmetric at their request.
-//  ★ALL FOUR TOES WERE SMOOTHED afterwards (2026-09-04), the user having seen a lump on each of
+//  ALL FOUR TOES WERE SMOOTHED afterwards, the user having seen a lump on each of
 //    them in the first build -- the inner pair first, then the outer pair "like the middle ones".
 //    The points sit at equal angles, so the shape IS the sequence of radii, and a lump is one
 //    radius out of line with its neighbours: measured, the inner toes ran 0.154, 0.156, 0.113,
 //    0.132, 0.111 where the other side of the same toe fell away evenly. Each radius was replaced
 //    by (previous + 2*this + next) / 4, the angles untouched: worst deviation 28% -> 5.3% on the
-//    inner pair, 14.5% -> 5.9% on the outer. ★THE PAD IS THE MEASURED NUMBERS STILL -- its worst
+//    inner pair, 14.5% -> 5.9% on the outer. THE PAD IS THE MEASURED NUMBERS STILL -- its worst
 //    is 15.3%, at the shoulder, and the user has not asked for it.
-//  ⚠★★THE SAME TABLE DRAWS THE TOOLBOX ICON AND THE CURSOR, and it lives in
+//  ⚠THE SAME TABLE DRAWS THE TOOLBOX ICON AND THE CURSOR, and it lives in
 //    work/kcm-make-paw-icons.ps1, which prints this block with -EmitCpp. **Change the numbers
 //    there and paste them here, never the other way round** -- edited on one side alone, the tool
 //    stamps one paw while its own icon shows a different one ([[one-question-one-place]]).
@@ -1505,7 +1505,7 @@ const double kKCMPawOutlines[kKCMPawOutlineCount][kKCMPawPoints][2] =
 // The font every piece of text this file draws is set in: the system's default, fetched once per
 // session.
 //
-//  ★★**ONE PLACE FETCHES IT.** Two of them now want it -- the original-page-number badge and the
+//  **ONE PLACE FETCHES IT.** Two of them now want it -- the original-page-number badge and the
 //    word beside a cat paw -- and the fetch writes three shared statics
 //    (sOldNumFontTried / sOldNumFont / sOldNumFontInst). Written twice, two threads could issue
 //    QueryFont twice and lose one of the pointers, which is a leak that nothing reports.
@@ -1513,7 +1513,7 @@ const double kKCMPawOutlines[kKCMPawOutlineCount][kKCMPawPoints][2] =
 //    yet this answers nil and the caller simply draws no text. That is the deliberate shape: the
 //    marks that must reach a PDF are the drawn ones, and text is decoration on top of them. It does
 //    mean "the word is missing from the PDF only" is possible if the page was never on screen.
-//  ★The cached font INSTANCE is at the badge's own fixed size, so only the badge may use it; the
+//  The cached font INSTANCE is at the badge's own fixed size, so only the badge may use it; the
 //    paw's word is a different size and asks selectfont for it directly.
 //========================================================================================
 // Not static: the story UID labels (KCMRingAdornment.cpp) share it (declared in KCMDrawEventHandler.h).
@@ -1546,8 +1546,8 @@ IPMFont* KCMQueryMarkFont()
 //========================================================================================
 // The two shades one paw is drawn in.
 //
-//  ★**ink** is the mark's own colour: what the WORD beside the paw is written in.
-//  ★**fill** is that colour mixed with white: what the PAW ITSELF is filled with.
+//  **ink** is the mark's own colour: what the WORD beside the paw is written in.
+//  **fill** is that colour mixed with white: what the PAW ITSELF is filled with.
 //    The reasoning is at kKCMPawFillWhiteMix -- a solid blob and a few thin strokes cannot share
 //    a shade and both be right.
 //  ⚠ONE PLACE ANSWERS "what colour is this paw", so the layout and the thumbnail cannot drift.
@@ -1576,8 +1576,8 @@ void KCMPawColours(int32 colour,
 // One outline, drawn as a CLOSED CATMULL-ROM SPLINE through its points, span by span as cubic
 // Beziers -- the only curve a port speaks (IGraphicsPort has curveto / curvetov / rectpath, and no
 // arc or oval of its own). The tangent at a point is (next - previous)/6, the standard conversion.
-// ★This is why the table is 16 points and not 48: the control points are derived from it.
-// ★TURNED BY (cosA, sinA) ABOUT THE CENTRE (2026-10-27): the paw's direction, clockwise from straight up. In these
+// This is why the table is 16 points and not 48: the control points are derived from it.
+// TURNED BY (cosA, sinA) ABOUT THE CENTRE: the paw's direction, clockwise from straight up. In these
 //   coordinates y runs DOWN, so x' = x cos - y sin, y' = x sin + y cos turns clockwise on the page -- straight up
 //   (0,-1) goes to (sin, -cos), which for 90 degrees is (1, 0), to the right. Each point is turned before the
 //   control points are derived from it, which turns the whole curve: a turn is linear. (1, 0) leaves it upright.
@@ -1613,20 +1613,20 @@ static void KCMPawShapePath(IGraphicsPort* gPort, const double outline[kKCMPawPo
 //  It drew ONE red paw at the centre of a page's thumbnail, under the tick. What it cost was
 //  four passes over its size in one afternoon -- 0.72 of the page's short side, then the paw's
 //  own size, then five times that, then ten -- because a thumbnail is a tenth of the page's
-//  width and nothing sized for the page survives there. ★The lesson worth keeping is the one
+//  width and nothing sized for the page survives there. The lesson worth keeping is the one
 //  the tick already knew: a thumbnail mark is a DIFFERENT PICTURE of the same idea, not the
 //  same picture at another zoom. ⚠If a paw is ever wanted there again, that is the starting
 //  point -- not the paw outline scaled down.
 //========================================================================================
 
 //========================================================================================
-// The word beside one paw (2026-09-07, the user's request: "Alt lets you type, like the blue
+// The word beside one paw (the user's request: "Alt lets you type, like the blue
 // pencil").
 //
-//  ★**18pt ON THE PAGE, so it follows the zoom** -- the same as the paw itself. (The original page
+//  **18pt ON THE PAGE, so it follows the zoom** -- the same as the paw itself. (The original page
 //    numbers are the other kind, a fixed size on screen; a caption belongs to the page, not to the
 //    view, so shrinking the view has to shrink it.)
-//  ★**BOLD THE WAY KOHAKU INDESIGN MCP IS BOLD**: not a bold FACE but fill-then-stroke, so it does
+//  **BOLD THE WAY KOHAKU INDESIGN MCP IS BOLD**: not a bold FACE but fill-then-stroke, so it does
 //    not depend on the default font having one. ⚠**TWO show CALLS, NOT ONE WITH THE FLAGS COMBINED**
 //    -- measured over there on 2026-09-06, `kFillText | kStrokeText` drew the outline only and the
 //    letters came out hollow. The fill goes first and the stroke over it.
@@ -1641,13 +1641,13 @@ static void KCMDrawPawWord(IGraphicsPort* gPort, const PMString& text,
 	if (gPort == nil || font == nil || text.IsEmpty())
 		return;
 
-	// ***** THE NOTE IS SPLIT INTO LINES FIRST (2026-09-07, when the box became multiline). *****
+	// ***** THE NOTE IS SPLIT INTO LINES FIRST (when the box became multiline). *****
 	//  ⚠**A newline handed straight to show() is not a newline** -- it is one more glyph to draw,
 	//    and the substitute font draws it as a box or as nothing. The splitting has to happen here,
 	//    on this side of the port.
-	//  ★Both endings are cut: the edit box gives CR LF on Windows, and a lone CR left on the end of
+	//  Both endings are cut: the edit box gives CR LF on Windows, and a lone CR left on the end of
 	//    a line would be that same stray glyph.
-	//  ★What is DRAWN is cut; **the label always keeps the whole note**. A caption on the page is a
+	//  What is DRAWN is cut; **the label always keeps the whole note**. A caption on the page is a
 	//    reminder of the note, not the note.
 	std::vector<PMString> lines;
 	{
@@ -1699,11 +1699,11 @@ static void KCMDrawPawWord(IGraphicsPort* gPort, const PMString& text,
 	gPort->selectfont(font, kKCMPawTextPt);
 
 	// ***** PASS ONE: THE WHITE OUTLINE, EVERY LINE OF IT. *****
-	//  ★★**ALL the outlines before ANY of the letters**, and that is not tidiness: an outline is a
+	//  **ALL the outlines before ANY of the letters**, and that is not tidiness: an outline is a
 	//    stroke half of which falls OUTSIDE the glyph, so an outline drawn after a neighbouring
 	//    line's letters would bite into them. Two passes over the lines is the price of never
 	//    having to think about which line is next to which.
-	//  ★Opaque, at the caller's own opacity (KCMDrawPawStamps set 1.0 for the whole paw) -- the
+	//  Opaque, at the caller's own opacity (KCMDrawPawStamps set 1.0 for the whole paw) -- the
 	//    user asked for the edge to be opaque, and it already is; nothing is changed here.
 	//  ⚠A stroke of width 0 is not "no stroke" to a port, it is the thinnest line it can draw, so
 	//    the whole pass is skipped rather than drawn at zero.
@@ -1712,10 +1712,10 @@ static void KCMDrawPawWord(IGraphicsPort* gPort, const PMString& text,
 	{
 		gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
 		gPort->setlinewidth(kKCMPawTextPt * kKCMPawTextHaloRatio);
-		// ⚠★★**ROUND JOINS, OR THE OUTLINE GROWS HORNS.** A port joins two stroke segments with a
+		// ⚠**ROUND JOINS, OR THE OUTLINE GROWS HORNS.** A port joins two stroke segments with a
 		//   MITRE by default, and a mitre at a sharp angle runs out to a point -- on a glyph, which
 		//   is nothing but sharp angles, that point can be several times the stroke's own width.
-		//   The user photographed one on a Japanese "to" (work/キャプチャ.PNG, 2026-09-07): a spike
+		//   The user photographed one on a Japanese "to" (work/キャプチャ.PNG): a spike
 		//   standing off the top right of the character, longer than the outline is thick.
 		//   ⇒ Round join, and round cap for the open ends of a stroke, so the outline follows the
 		//     letter instead of shooting off it. **This is a property of stroking TEXT, not of this
@@ -1758,7 +1758,7 @@ static void KCMDrawPawWord(IGraphicsPort* gPort, const PMString& text,
 
 //========================================================================================
 // How far right of its centre a paw turned by (cosA, sinA) reaches, as a fraction of its size: the outlines'
-// furthest point to the right after the turn (2026-10-27). ★Never less than 0.49, where the word of an UPRIGHT
+// furthest point to the right after the turn. Never less than 0.49, where the word of an UPRIGHT
 // paw has always sat -- so a paw that was not dragged draws exactly as it did; a turned one can reach further
 // (a toe or the pad swings out), and the word moves out with it instead of sitting under it.
 //========================================================================================
@@ -1779,19 +1779,19 @@ static PMReal KCMPawReachRight(const PMReal& cosA, const PMReal& sinA)
 
 //========================================================================================
 // One paw: the white outline, the fill, and the word beside it -- turned to the paw's direction.
-// ★ONE PLACE DRAWS A PAW, and both the paws on the page and the one being placed come through it (2026-10-27):
+// ONE PLACE DRAWS A PAW, and both the paws on the page and the one being placed come through it:
 //   the paw a drag shows is the paw the release puts down, because they are the same lines.
 //========================================================================================
 static void KCMDrawOnePaw(IGraphicsPort* gPort, const KCMPawStamp& paw, const PMRect& pr, const PMReal& s)
 {
-	// ★★THE COLOUR IS SET PER PAW, because it belongs to the stamp and not to the page: a red paw
+	// THE COLOUR IS SET PER PAW, because it belongs to the stamp and not to the page: a red paw
 	//   and a blue one sit on one page at the same time, which is the whole reason for having two.
 	uint8 ir = 0, ig = 0, ib = 0, fr = 0, fg = 0, fb = 0;
 	KCMPawColours(paw.fColour, ir, ig, ib, fr, fg, fb);
 	// The SHAPE takes the softened shade; the word below takes the ink one.
 	gPort->setrgbcolor(fr / PMReal(255.0), fg / PMReal(255.0), fb / PMReal(255.0));
 
-	// ★A stamp is stored as an offset from the PAGE'S TOP-LEFT. That is what lets it survive a
+	// A stamp is stored as an offset from the PAGE'S TOP-LEFT. That is what lets it survive a
 	//   page being added or removed, AND what makes this addition right in spread coordinates
 	//   even though the press was read in pasteboard ones -- measured 2026-09-04: the two
 	//   spaces differ by a whole spread from the second spread onwards, and subtracting the
@@ -1803,9 +1803,9 @@ static void KCMDrawOnePaw(IGraphicsPort* gPort, const KCMPawStamp& paw, const PM
 	const double radians = ToDouble(paw.fAngle) * kPMPi / 180.0;
 	const PMReal cosA(std::cos(radians)), sinA(std::sin(radians));
 
-	// ★All five outlines go into ONE path before the fill, so the pad and the toes merge where
+	// All five outlines go into ONE path before the fill, so the pad and the toes merge where
 	//   they touch instead of showing a seam between them.
-	// ★★**THE WHITE OUTLINE FIRST, THE COLOUR OVER IT** (2026-09-07). The path is built twice
+	// **THE WHITE OUTLINE FIRST, THE COLOUR OVER IT**. The path is built twice
 	//   on purpose -- a stroke consumes it, and stroking and filling in one pass would leave the
 	//   white lines the pad and the toes make where they overlap showing INSIDE the paw, which
 	//   is the very seam the single merged path exists to hide. The fill covers them.
@@ -1829,7 +1829,7 @@ static void KCMDrawOnePaw(IGraphicsPort* gPort, const KCMPawStamp& paw, const PM
 		KCMPawShapePath(gPort, kKCMPawOutlines[blob], cx, cy, s, cosA, sinA);
 	gPort->fill();
 
-	// The word the reader typed when they placed it with Alt (2026-09-07).
+	// The word the reader typed when they placed it with Alt.
 	// ⚠**In the INK shade, not the paw's.** The two were the same colour for an hour and are
 	//   deliberately not now: the paw is that colour softened with white, the word is the
 	//   colour itself (kKCMPawFillWhiteMix says why). Passing fr/fg/fb here would look like a
@@ -1845,7 +1845,7 @@ static void KCMDrawOnePaw(IGraphicsPort* gPort, const KCMPawStamp& paw, const PM
 //                  the tool's left button, because a paw is a mark the reader put there on purpose.
 //   Print / PDF -- only with "Print comparison marks" on, the rule every other mark follows.
 //   Opacity     -- none: a paw is opaque (the reason is in the body).
-// ★AND THE PAW BEING PLACED (2026-10-27): while the stamp tool follows a drag, the paw it will put down is drawn
+// AND THE PAW BEING PLACED: while the stamp tool follows a drag, the paw it will put down is drawn
 //   here too, turning, over the ones already placed -- on screen in the pressed view only. `view` is that test's
 //   other half: the caller passes the view it draws in, and nil when printing.
 //========================================================================================
@@ -1867,14 +1867,14 @@ static void KCMDrawPawStamps(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	if (!KCMQueryPageRect(db, pageUID, pr))
 		return;
 
-	// ★The size is asked of the very function the tracker's hit box comes from, so what is drawn
+	// The size is asked of the very function the tracker's hit box comes from, so what is drawn
 	//   is exactly what can be lifted. That one answers the HALF size; a paw's own s is twice it.
-	//   ★Every paw is this size: the modifier keys choose the COLOUR, not the size.
+	//   Every paw is this size: the modifier keys choose the COLOUR, not the size.
 	const PMReal s = KCMPawHalfSizeForPage(db, pageUID) * PMReal(2.0);
 	if (s < PMReal(0.5))
 		return;
 
-	// ★★**A PAW IS OPAQUE** (the user, 2026-09-07: "let us make the colour opaque -- the stamp
+	// **A PAW IS OPAQUE** (the user, 2026-09-07: "let us make the colour opaque -- the stamp
 	//   too"). It used to follow the panel's 25%/75% choice like every other mark, and that was
 	//   wrong for this one: **that choice is about the COMPARISON marks**, which lie over the page
 	//   and have to be seen through. A paw is not laid over the reader's work to be read past -- it
@@ -1903,7 +1903,7 @@ static void KCMDrawPawStamps(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 // both, because the badge compares them: 3rd bIncludeSectionName = kFalse -- the number alone, with no
 // section prefix ("A:" and the like); 4th bUseIntegerStyle = kFalse -- the section's own style, so it
 // matches the real folio.
-// ★ONE FUNCTION FOR BOTH ASKERS (2026-10-30): the spread's probe and the per-page loop in
+// ONE FUNCTION FOR BOTH ASKERS: the spread's probe and the per-page loop in
 //   DrawSpreadMarks each wrote the pair out, and the probe has to answer exactly as the loop would --
 //   told "nothing shifted" by a probe asked differently, the loop never runs.
 //========================================================================================
@@ -1961,7 +1961,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// sPrintMarks and sMarksVisible off).
 	// ⚠**"Thumbnail" here means any view-less, non-printing kPreviewMode draw**, and the Pages panel
 	//   is not the only one: Kohaku InDesign MCP's `capture page:N` was measured carrying these
-	//   frames (2026-10-14, docs/ai-notes/kcm-pdf-export-check-live-2026-10-14.md section 3). The
+	//   frames (docs/ai-notes/kcm-pdf-export-check-live-2026-10-14.md section 3). The
 	//   screen never comes here -- every screen mode has a view, Preview and overprint preview
 	//   included (measured 2026-10-03) -- and KCM's own comparison rasters are turned back by
 	//   tl_Rasterizing above.
@@ -1971,14 +1971,14 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	const bool16 isThumb = !printing &&
 		ded->gd->GetView() == nil && (ded->flags & IShape::kPreviewMode) != 0;	// gd was nil-checked at the top of the function
 
-	// ★★**OVERPRINT PREVIEW SHOWS WHAT WILL BE PRINTED, SO ONLY WHAT WOULD BE PRINTED IS SHOWN**
-	//   (2026-09-07, the author's decision: "オーバープリントプレビュー中は、印刷がOnの物だけ表示される").
+	// **OVERPRINT PREVIEW SHOWS WHAT WILL BE PRINTED, SO ONLY WHAT WOULD BE PRINTED IS SHOWN**
+	//   (the author's decision: "オーバープリントプレビュー中は、印刷がOnの物だけ表示される").
 	//   While OPP is on, everything this plug-in draws is hidden unless "Print comparison marks"
 	//   is on -- the rings, the "/" marks, the ticks, the paws and the folio wash alike.
 	//   ⚠**THIS REVERSES A 2026-07-05 DECISION** that read the other way ("OPP is a working mode on
 	//     screen, so nothing is suppressed there"). The reader is looking at a simulation of the
 	//     printed sheet; anything on it that will not be printed is telling them something false.
-	//   ★**The peek (Shift / Shift+Alt) is deliberately NOT included**: it is a momentary look at
+	//   **The peek (Shift / Shift+Alt) is deliberately NOT included**: it is a momentary look at
 	//     the older version held under a button, not something claiming to be on the sheet.
 	//   ⚠**kPreviewMode cannot be used for this** -- it shares a bit with PDF export
 	//     (kPDFExportMode), so it would catch exports too. The viewport attribute below is exact.
@@ -1991,8 +1991,8 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// The one test the marks below share: in OPP, with printing of marks off, draw nothing.
 	const bool16 oppHides = (overprintPreview && !sPrintMarks) ? kTrue : kFalse;
 	// The Source-side frames ("Always Show Marks on Source") are shown at ALL times on screen while
-	// the toggle is on, and are not hidden by OPP. ★**Print and PDF follow "Print comparison
-	// marks", as on the Target side** (2026-09-07, spec map MK-14; they used to be printed on the
+	// the toggle is on, and are not hidden by OPP. **Print and PDF follow "Print comparison
+	// marks", as on the Target side** (spec map MK-14; they used to be printed on the
 	// Source toggle alone). Whether this draw really is a Source document's spread is decided once
 	// the db is known; here it is only "could it be drawn".
 	// Even with sEntries empty there may be registered ("Added"/"Removed") pages, or pages that
@@ -2019,7 +2019,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			(sDB    != nil && KCMPageMapHasAnyRegistered(sDB)) ||
 			(sSrcDB != nil && KCMPageMapHasAnyRegistered(sSrcDB)) ||
 			// The "Check" ticks (so a thumbnail redraw is triggered).
-			// ★ASKED OF THE DOCUMENT BEING DRAWN, not of sDB / sSrcDB (2026-09-04): a tick no
+			// ASKED OF THE DOCUMENT BEING DRAWN, not of sDB / sSrcDB: a tick no
 			//   longer needs a comparison to exist, so it can sit on a document nobody is
 			//   comparing -- the shape wantPaws uses below, and for the same reason. This gate
 			//   is what lets a thumbnail redraw reach a tick that is the page's only mark.
@@ -2055,7 +2055,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//     never exposed to it, thanks to isThumb).
 	// @warning it is written `(a != 0) != (b != 0)`: bool16 is an integer type, and a bare != gives
 	//   the wrong answer for a true value that is not kTrue.
-	// ★★★**PRINTING IS DECIDED BY "Print comparison marks" ALONE - ON BOTH SIDES** (2026-09-08,
+	// **PRINTING IS DECIDED BY "Print comparison marks" ALONE - ON BOTH SIDES** (2026-09-08,
 	//   the user, restating what spec map MK-14's rule already said: "with Print ON I want them in
 	//   the output; Always Show is only ever about the screen").
 	//   ⚠**THIS LINE HAS BEEN WRONG TWICE, IN OPPOSITE DIRECTIONS.** Until 2026-09-07 it read
@@ -2064,8 +2064,8 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//     the mirror fault: with Print ON and Always Show OFF the Source marks did NOT print,
 	//     although the reader had asked for marks in the output. **A display switch must not hold a
 	//     veto over the output.**
-	//   ★The rule MK-14 states has always been the right one; both faults were readings of it.
-	// ★★★**AND ON SCREEN, "Print comparison marks" SHOWS THEM TOO** (2026-09-08, the user's call:
+	//   The rule MK-14 states has always been the right one; both faults were readings of it.
+	// **AND ON SCREEN, "Print comparison marks" SHOWS THEM TOO** (the user's call:
 	//   "with Print ON they are printable AND permanently shown, including in the print preview").
 	//   The Target side has always read sPrintMarks on screen; the Source side did not, so turning
 	//   Print on lit one document and not the other.
@@ -2077,7 +2077,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	                                  : ((sPrintMarks || ((sSrcMarksOn != 0) != (srcPressed != 0))) ? kTrue : kFalse));
 	const bool16 wantSrcMarks = srcWanted && !oppHides && sSrcDB != nil && anyMarkableContent;
 	// When printing with "print the frames" off, none of the overlay is drawn -- Target or Source.
-	// ★Since 2026-09-07 the Source side reads sPrintMarks too (see srcWanted above), so this flag
+	// Since 2026-09-07 the Source side reads sPrintMarks too (see srcWanted above), so this flag
 	//   and that one now agree instead of pulling in opposite directions.
 	const bool16 suppressForPrint = printing && !sPrintMarks;
 	if (suppressForPrint && !wantSrcMarks)
@@ -2102,10 +2102,10 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//     - toggle off ... no frames, so they appear while held (sMarksVisible, the reveal)
 	//     - toggle on  ... frames, so they hide while held (the !sMarksTempHidden in this line)
 	// @warning it must not affect print or PDF -- hence the !printing gate. **Output is decided by
-	//   sPrintMarks alone, on BOTH sides** (2026-09-08; this sentence used to end "asymmetrically
+	//   sPrintMarks alone, on BOTH sides** (this sentence used to end "asymmetrically
 	//   with the Source side's sSrcMarksOn, and that asymmetry is deliberate" - the asymmetry is
 	//   gone, and the word "deliberate" is exactly what makes a stale note survive a review).
-	// ★AND sPrintMarks SHOWS THEM ON SCREEN TOO - it is the first term of wantMarks below, and the
+	// AND sPrintMarks SHOWS THEM ON SCREEN TOO - it is the first term of wantMarks below, and the
 	//   Source side now reads it the same way. Turning printing on means "what you see is what
 	//   comes out", which is why it needs no separate display switch.
 	const bool16 alwaysScreen = sTgtMarksOn && !sMarksTempHidden && !printing;
@@ -2124,7 +2124,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   arrived). The ring belongs to the pixel comparison; any other mode must stop here EXPLICITLY
 	//   rather than be caught by an empty sEntries, which is the very argument the paragraph above
 	//   makes. Written as "not Story", the Resources mode would have been handed Pixel's behaviour.
-	// ★**AND WHILE THE BEFORE/AFTER REPORT EXPORTS, IN EVERY MODE** (sReportExport, 2026-10-11): the
+	// **AND WHILE THE BEFORE/AFTER REPORT EXPORTS, IN EVERY MODE** (sReportExport): the
 	//   report is made with nothing started and compares the pixels itself whatever the mode
 	//   (KCMRunReportComparison), so its Before side has to carry the rings in the Story, the
 	//   Resources and the Track modes too. The flag stands only for the length of its two page
@@ -2134,21 +2134,21 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// The layout-view version of the "Check" tick. On screen it is shown **at all times**,
 	// completely independently of the frame toggles and the tool's left button. It reaches print and
 	// PDF only with sPrintMarks (Print comparison marks) on, for the Target and Source alike.
-	// ★A TICK NO LONGER DEPENDS ON A COMPARISON (2026-09-04). It can be put on any open document
+	// A TICK NO LONGER DEPENDS ON A COMPARISON. It can be put on any open document
 	//   and it survives Stop, so "does this one have any" is asked of **the document being drawn**
 	//   rather than of sDB / sSrcDB -- the same shape, and the same reasoning, as wantPaws below.
 	// Thumbnails (isThumb) are drawn by their own block below and are not included here.
 	const bool16 wantChecks = !isThumb && !oppHides && (!printing || sPrintMarks) &&
 		KCMPageCheckHasAny(::GetDataBase(ded->changedBy));
 	// The cat-paw stamps follow the tick's rules -- always on screen, in print only with
-	// sPrintMarks -- with ★ONE DIFFERENCE THAT DECIDES THE SHAPE OF THIS LINE: a paw is NOT tied
+	// sPrintMarks -- with ONE DIFFERENCE THAT DECIDES THE SHAPE OF THIS LINE: a paw is NOT tied
 	// to an armed comparison. It can be put on any open document, so "does this one have any" has
 	// to be asked of **the document being drawn**, not of sDB / sSrcDB.
 	// ⚠db itself is taken further down (after the thumbnail branch), and this question has to be
 	//   answered before the early-out just below -- so the database is fetched here as well.
 	//   ::GetDataBase is a pointer walk, and asking twice costs nothing beside drawing.
 	//   KCMPawStampHasAny answers kFalse for nil, so nothing else needs guarding.
-	// ★OR THE PAW BEING PLACED (2026-10-27): while the stamp tool follows a drag, a document with no paw yet has
+	// OR THE PAW BEING PLACED: while the stamp tool follows a drag, a document with no paw yet has
 	//   one to show, turning -- in the pressed view only (KCMPawPreviewFor compares the view; nil when printing).
 	const bool16 wantPaws = !isThumb && !oppHides && (!printing || sPrintMarks) &&
 		(KCMPawStampHasAny(::GetDataBase(ded->changedBy)) ||
@@ -2162,10 +2162,10 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	const bool16 wantOldNums = !suppressForPrint && sShowOldNumbers && (sPrintMarks || sMarksVisible || alwaysScreen);
 	// The folio wash: with "Ignore Page Number Marker" on, the area the comparison left out is painted green over the pages
 	// being compared (the two loops below). A SCREEN-ONLY diagnostic -- it covers the design underneath, so it never goes
-	// into print or PDF -- and ★hidden in overprint preview as well (2026-09-07, the author's decision: a preview of the
+	// into print or PDF -- and hidden in overprint preview as well (the author's decision: a preview of the
 	// printed sheet shows only what prints). Unlike the marks it does not consult sPrintMarks: no setting ever puts it into
 	// the output.
-	// ★DECIDED HERE, ONCE, FOR BOTH SIDES (2026-10-30, M3's defect round, D-2): each loop wrote its own, and only the Source's
+	// DECIDED HERE, ONCE, FOR BOTH SIDES (M3's defect round, D-2): each loop wrote its own, and only the Source's
 	//   had the overprint test -- with "Print comparison marks" on, overprint preview showed the wash on the Target (measured:
 	//   work/note-scripts/2026-10-30-kcm-m3-defect/folio_opp.ps1, case W).
 	// ⚠The `!printing` is also a thread boundary: the folio rectangles' cache takes no lock because only the main thread
@@ -2285,7 +2285,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   spread's db may be the Target or the Source, and if that db has ticks they are drawn. It
 	//   comes before the Target/Source loops below and is not subject to their gates. The layout
 	//   view and print version is the wantChecks block further down.
-	//   ★NO ARM TEST (2026-09-04). A tick survives Stop and can be put on a document nobody is
+	//   NO ARM TEST. A tick survives Stop and can be put on a document nobody is
 	//   comparing, so demanding a running comparison here would hide it in the Pages panel while
 	//   the layout view went on showing it -- one mark, two answers.
 	if (isThumb && KCMPageCheckHasAny(db))
@@ -2351,7 +2351,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   (SelectedMarkOpacity), the same on screen and in print.
 	//   It comes right after the peek so that the tick sits on top of the peek's opaque picture and
 	//   stays visible, and before the Source/Target loops because the Source loop ends in a return.
-	// ⚠★★**NO KCMIsArmed() HERE EITHER, since 2026-09-04.** A tick no longer waits on a comparison,
+	// ⚠**NO KCMIsArmed() HERE EITHER, since 2026-09-04.** A tick no longer waits on a comparison,
 	//   and this gate was the LAST of the four that still said it did -- **the other three were
 	//   changed in the same sitting and this one was missed**, which showed up in the running
 	//   application as a tick appearing in the Pages panel thumbnail and nowhere else. One mark,
@@ -2369,7 +2369,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	}
 
 	// The cat-paw stamps, on the same route as the tick above and with the same visibility rules.
-	// ⚠★No KCMIsArmed() here. **The tick used to be the one that carried it and the paw the one
+	// ⚠No KCMIsArmed() here. **The tick used to be the one that carried it and the paw the one
 	//   that did not**; since 2026-09-04 neither does, because both are the reader's own mark on a
 	//   document they are reading -- which may be a document nobody is comparing.
 	if (wantPaws && (KCMPawStampHasAny(db) || (!printing && KCMPawPreviewFor(db, zview))))

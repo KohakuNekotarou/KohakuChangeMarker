@@ -4,7 +4,7 @@
 //
 //  A Source that is NOT an open document: a database another plug-in lends to the comparison.
 //
-//  WHY IT EXISTS (2026-09-02). Kohaku InDesign MCP holds a task-start copy of a document -- an
+//  WHY IT EXISTS. Kohaku InDesign MCP holds a task-start copy of a document -- an
 //  IDataBase::Clone() taken when a task began -- and the user asked to see "what changed since
 //  the task started" as KCM's marks. The comparison engine already takes two databases
 //  (KCMDoMarkChangesDoc), so drawing was never the problem. What refused was everything around
@@ -12,7 +12,7 @@
 //  is in no list. The first draw would have run KCMHandleDocsClosed and cleared the marks -- the
 //  same shape the background thread's clone produced during asynchronous PDF export.
 //
-//  ★A SECOND LENDER (2026-10-13): this plug-in itself. "Task Start" keeps the document's state in memory as a database
+//  A SECOND LENDER: this plug-in itself. "Task Start" keeps the document's state in memory as a database
 //    clone (KCMTaskStartClone.h) and registers it here, so everything that already understood a lent Source - the
 //    liveness tests, the panel's Source line, the same-document test, the refusals of the Resources export and the
 //    report - takes it unchanged. KCMTaskStartClone is then the lender, and lets it go through KCMForgetExternalSource.
@@ -21,7 +21,7 @@
 //    behind the facade's StartComparisonWithSourceDB / ReleaseExternalSourceDB) had no caller after KIDMCP's bridge went
 //    on 2026-10-12, and went on 2026-10-27 (the author: "remove them"). The Task Start is the only lender now.
 //
-//  ★THE INVARIANT: **a database is registered here while it is the CHOSEN Source or the ARMED
+//  THE INVARIANT: **a database is registered here while it is the CHOSEN Source or the ARMED
 //    Source -- or until the lender takes it back, whichever is later.** Registration happens
 //    inside KCMTakeTaskStartClone (Task Start kept in memory), and nowhere else; it CHOOSES it as
 //    well, and starts nothing. It is forgotten by the lender (the let-go in KCMTaskStartClone),

@@ -86,7 +86,7 @@ struct KCMCheckablePages
 
 // Fill out with the pages of db that may carry a "Check" tick. **kFalse comes back only when there
 // is no document at all (db == nil)** -- it does not mean "nothing may be ticked".
-// ★★A TICK DEPENDS ON NOTHING (2026-09-04, then 2026-09-07: the last piece went with FLG-12).
+// A TICK DEPENDS ON NOTHING (then 2026-09-07: the last piece went with FLG-12).
 //   **Every page of every open document may be ticked** -- compared or not, Pixel or Story,
 //   ordinary page or master. fAllPages comes back kTrue and fPages stays empty.
 //   The Pixel mode used to allow it only on pages carrying a mark; the author removed that, on the
@@ -144,7 +144,7 @@ struct KCMPageHit
 	// both ordinary pages and masters (masters pair by name, KCMBuildMasterPairing).
 	bool16 isMaster;
 
-	// "Nothing hit". ★The values live HERE (2026-10-30): KCMFindPageUnderMouse starts by assigning a fresh one, so a
+	// "Nothing hit". The values live HERE: KCMFindPageUnderMouse starts by assigning a fresh one, so a
 	//   field added later is reset with the rest -- the function used to set the seven by hand, and a field missing from
 	//   that list would have carried the previous hit into a miss. (A caller's `KCMPageHit hit;` no longer starts out
 	//   uninitialised either.)
@@ -196,7 +196,7 @@ bool16		KCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KCMPage
 // Page Number Marker toggle). Inconsistent state (a different document pair, or no previous
 // pairing) falls back to a full comparison by itself.
 //
-// pixelsOnly=kTrue is the Before/After report's own run (2026-10-11, KCMRunReportComparison): the
+// pixelsOnly=kTrue is the Before/After report's own run (KCMRunReportComparison): the
 // pages are rasterised WHATEVER THE COMPARE MODE, the mode's own work (the Story list, the
 // Resources result) is left out - the report builds both tables for itself - and the screen is
 // neither redrawn nor told, since nothing is started and nothing is to be shown.
@@ -226,7 +226,7 @@ void		KCMDoDisarmMousePeek(IDataBase* db);
 // OFF.
 bool16		KCMIsArmed();
 // Rebuild the Story Edits list from what these two documents hold **now**, and reflect it in the
-// tree and the heading. ★The Pixel and the Resources modes keep NO list (2026-10-11): there it
+// tree and the heading. The Pixel and the Resources modes keep NO list: there it
 // only empties it.
 // One caller: the whole-document comparison (KCMDoMarkChangesDoc). ("Refresh Page Comparison" was
 // the second until the Pixel mode - the only mode it works in - stopped keeping a list.) nil is
@@ -275,7 +275,7 @@ bool16		KCMGetMarkColorCyan();	// kFalse = red (the default), kTrue = cyan
 // mode" with "compare", and the start-up restore would then run a comparison too.
 KCMCompareMode	KCMGetCompareMode();
 void				KCMSetCompareMode(KCMCompareMode mode);
-// ★THE TRACK LISTING (2026-10-27 - "Compare with Tracked Changes" alone, no Source document): while it is up,
+// THE TRACK LISTING ("Compare with Tracked Changes" alone, no Source document): while it is up,
 //   KCMGetCompareMode answers kKCMModeTrack and KCMGetCompareModeSetting the reader's choice (Pixel, Story or Resources -
 //   what Start compares in, and what Save Panel Settings writes); KCMSetCompareMode(kKCMModeTrack) changes nothing. Raised
 //   by KCMStartTrackChanges (KCMTrackStart.h) alone, lowered wherever the armed state goes down (KCMCore.cpp says where).

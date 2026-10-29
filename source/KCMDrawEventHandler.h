@@ -201,8 +201,8 @@ public:
 	// and After alike. Read by the story ID labels (KCMRingAdornment.cpp section 1.5): with their
 	// toggle on they go into the report's After side (the user's call, 2026-09-13; the Before side
 	// - sRingFrameOff up - is a copy with renumbered UIDs and gets none), while an ordinary print
-	// or PDF takes them only with sPrintMarks. ★And by the ring itself (drawRings in
-	// DrawSpreadMarks, 2026-10-11): the report compares the pixels in every compare mode, so its
+	// or PDF takes them only with sPrintMarks. And by the ring itself (drawRings in
+	// DrawSpreadMarks): the report compares the pixels in every compare mode, so its
 	// rings are drawn whatever mode is chosen.
 	static bool16 sReportExport;
 	// Force every entry's ring image to be rebuilt on its next draw (lastRadius = -1, under the
@@ -229,8 +229,8 @@ public:
 	// comparison. (KCMStartComparisonFor used to set it kTrue.)
 	// The opacity follows the panel's 25%/75% choice (SelectedMarkOpacity), and it is not hidden by
 	// overprint preview.
-	// ★**WHAT REACHES PRINT AND PDF IS DECIDED BY "Print comparison marks", exactly as on the
-	//   Target side** (2026-09-07, the author's decision through the spec map's MK-14).
+	// **WHAT REACHES PRINT AND PDF IS DECIDED BY "Print comparison marks", exactly as on the
+	//   Target side** (the author's decision through the spec map's MK-14).
 	//   ⚠**It used to go into print and PDF on this toggle alone**, ignoring sPrintMarks -- so
 	//   "Print comparison marks: off" did not mean what it said for a Source document. One
 	//   setting, one meaning: this toggle now decides the SCREEN only.
@@ -595,7 +595,7 @@ class IPMFont;
 //   fetch is main-thread only; the reason is at the definition). Callers skip their text then.
 IPMFont* KCMQueryMarkFont();
 
-// ---- the cat paw's shape and shades, shared with the PDF report (2026-09-13) -----------------
+// ---- the cat paw's shape and shades, shared with the PDF report -----------------
 // The paw is a TABLE of five closed outlines (a pad and four toes), sixteen points each, in units
 // of the paw's size and measured from its centre; the drawing turns each into a closed Catmull-Rom
 // spline. The table's story and its one source of truth (work/kcm-make-paw-icons.ps1) are at its

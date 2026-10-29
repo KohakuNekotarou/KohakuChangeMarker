@@ -31,7 +31,7 @@
 #include "KCMRingAdornment.h"		// KCMRevalidateItemXPList -- the transparency-list insurance, at Start and at Stop
 #include "KCMThreadSafety.h"		// KCMIsSameDoc -- the one place this plug-in asks whether two dbs are one document
 #include "IKCMCompareFacade.h"	// kKCMImportSourceModeRefusal - the words both halves say
-#include "KCMTaskStartClone.h"	// KCMIsImportClone - an import's copy is compared in the Story mode only (2026-10-24)
+#include "KCMTaskStartClone.h"	// KCMIsImportClone - an import's copy is compared in the Story mode only
 // ⛔KCMOrigin.h went on 2026-09-21. It was included for "the third kind of Source, chosen by
 //   KCMChooseOriginPair" - and that function had already gone with the origin, leaving an include
 //   this file reads nothing from and a comment naming something that no longer exists.
@@ -68,7 +68,7 @@ void KCMStopComparison()
 			KCMRevalidateItemXPList(armedSource);
 	}
 
-	// ★A TRACK LISTING ENDS HERE, AND THE MODE IS THE ONE BEFORE IT (2026-10-27, the author: "Stop goes back to the mode
+	// A TRACK LISTING ENDS HERE, AND THE MODE IS THE ONE BEFORE IT (the author: "Stop goes back to the mode
 	//   before"). Lowered FIRST, so that every notification this Stop sends - the Story list's emptying inside
 	//   KCMDoClearMarks, the two Cleared - redraws the panel in the mode the reader had chosen (the tab, the heading). No
 	//   step below asks the mode. A Stop with no listing up changes nothing here.
@@ -115,7 +115,7 @@ void KCMStopComparison()
 // procedure holds three decisions that all fail quietly when forgotten: do not arm on cancel, let
 // the strips go onto both windows, re-apply overset.
 // @return kTrue when the comparison ran and the pair is armed; kFalse when it did not (a CANCEL
-//   from the progress bar, or a failure). ★**THE ANSWER MATTERS ONLY TO A CALLER THAT WAS ALREADY
+//   from the progress bar, or a failure). **THE ANSWER MATTERS ONLY TO A CALLER THAT WAS ALREADY
 //   ARMED** - KCMRefreshComparison. For the other two, "not armed" is where they started, so the
 //   kFalse case leaves exactly the state they began in and there is nothing to undo.
 bool16 KCMStartComparisonOn(IDataBase* targetDB, IDataBase* sourceDB)
@@ -179,7 +179,7 @@ void KCMRefreshComparison()
 	IDataBase* const targetDB = KCMArmedTargetDB();
 	IDataBase* const sourceDB = KCMArmedSourceDB();
 	if (targetDB == nil || (sourceDB == nil && KCMModeNeedsSource(KCMGetCompareMode())))
-		return;					// nothing is armed - the menu item is greyed for this (a Track listing has no Source - 2026-10-27)
+		return;					// nothing is armed - the menu item is greyed for this (a Track listing has no Source)
 
 	// ⚠**ASKED, NOT ASSUMED.** A document that has been closed since the comparison started leaves
 	//   its IDataBase* behind in the armed state (that is the whole reason KCMArmedDocsAlive
@@ -190,7 +190,7 @@ void KCMRefreshComparison()
 	if (KCMStartComparisonOn(targetDB, sourceDB))
 		return;
 
-	// ⚠★★★**A CANCELLED REFRESH HAS TO STOP THE COMPARISON, AND THAT IS NOT TIDINESS.**
+	// ⚠**A CANCELLED REFRESH HAS TO STOP THE COMPARISON, AND THAT IS NOT TIDINESS.**
 	//   KCMDoMarkChangesDoc discards the marks BEFORE it can know it will be cancelled, and it
 	//   returns kFailure precisely so that the Start route does not arm - its own comment says
 	//   why: "always returning kSuccess would leave it armed after a cancel, with the menu stuck
@@ -244,12 +244,12 @@ void KCMToggleStartStop()
 	//   opens it like any other end.
 
 	// Start: active (front) document = Target, another open document = Source - which two, opened, is
-	// KCMOpenComparisonPair's (below), which the Before/After report asks as well (2026-10-11).
+	// KCMOpenComparisonPair's (below), which the Before/After report asks as well.
 	// The flyout's Start is grey unless two documents are there (KCMCanStartComparison goes
 	// through the same resolver), so this normally cannot fail. It is the guard for the case
 	// where a document is closed while the menu stands open.
 
-	// ★AN IMPORT'S COPY IS COMPARED IN THE STORY MODE ONLY (2026-10-24, the import-as-Source road - design 2-10): it is
+	// AN IMPORT'S COPY IS COMPARED IN THE STORY MODE ONLY (the import-as-Source road - design 2-10): it is
 	//   the document with the files' words poured in, so a Pixel or a Resources comparison would report what the files
 	//   would move as though it had happened, and the Track mode reads the Target's own records. Asked of the chosen
 	//   Source (the clone is a lent database: nothing is opened to ask).
@@ -295,7 +295,7 @@ bool16 KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMStr
 		return kFalse;
 	}
 
-	// ★★★**THE ONE PLACE A DOCUMENT IS OPENED FOR A COMPARISON** (2026-09-21). A chosen end may be
+	// **THE ONE PLACE A DOCUMENT IS OPENED FOR A COMPARISON**. A chosen end may be
 	// a FILE - a Task Start saves a copy of the document and names that file without opening it -
 	// and here is where it becomes a database: the document already open on that file when there
 	// is one, otherwise the file opened in a window.
@@ -334,18 +334,18 @@ bool16 KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMStr
 	// panel"). The automatic rule cannot produce this case -- KCMFirstOtherDoc excludes the
 	// Target -- so it only ever arises from a choice, and the message can say so.
 	//
-	// ★**Asked of KCMIsSameDoc, which is where this plug-in answers "are these two one document".**
+	// **Asked of KCMIsSameDoc, which is where this plug-in answers "are these two one document".**
 	// Everywhere else the question is put to it and never to `==` (the drawing side says so in as
 	// many words: "KCMIsSameDoc, NOT ==", KCMStoryMarkBuild.cpp). Comparing the IDocument* the
 	// resolver handed back would have been a second way of asking, and would have rested on the
 	// two routes into a document -- GetContextDocument and FindDocByDataBase -- giving out one
 	// pointer for one document, which nothing here has established.
-	//   ★**Its background-thread half does not come into it here** (a clone db is a different
+	//   **Its background-thread half does not come into it here** (a clone db is a different
 	//   pointer naming the same file): this runs from a menu, so both sides are the main thread's
 	//   own databases. ⚠**Only "one pointer" is settled at its head**: two different documents go
 	//   on to the file and, when either has none, to the document ID (KCMThreadSafety.cpp) -- the
 	//   door where an older-version .indd, which opens converted and without a file of its own, is
-	//   suspected of being taken for the same document as a saved copy of it (2026-09-25, not
+	//   suspected of being taken for the same document as a saved copy of it (not
 	//   measured: docs/ai-notes/kcm-converted-chapter-proposal-2026-09-25.md section 3). Going
 	//   through it anyway is what keeps the one question in one place -- and what stops the next
 	//   reader from having to work out whether this spot is the exception.
@@ -356,7 +356,7 @@ bool16 KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMStr
 	// documents**: "Set as Source" takes the ACTIVE document, so the Target, left unchosen,
 	// resolves to that very document. The way out of that one is to bring the other document to
 	// the front -- setting something is what the reader has already done.
-	//   ★**And a lent Source is never "the same document"** (KCMIsSameDoc answers by pointer for
+	//   **And a lent Source is never "the same document"** (KCMIsSameDoc answers by pointer for
 	//   it): the copy IS a copy of the Target, and comparing the two is the whole request.
 	//   (The Before/After report's item is live on the same grounds, and its press answers with the
 	//   same words, 2026-10-11.)
@@ -408,11 +408,11 @@ void KCMClearReportComparison(IDataBase* targetDB, IDataBase* sourceDB)
 
 // Put the state of the two mark settings on the status line. Both callers below change one of the
 // pair and keep the other, so both have to say the same sentence.
-// **Written out twice, the two copies drifted**: when the plug-in was renamed (2026-08-25) the
+// **Written out twice, the two copies drifted**: when the plug-in was renamed the
 // prefix here was left at the old "kescm:" in every copy, and the reader saw a name that no longer
 // exists on three of the flyout's toggles. Saying it in one place is also what makes it possible
 // to change what is said.
-// ★**THE PREFIX IS GONE** (2026-09-10, the user's call: take "KCM:" off the panel's messages).
+// **THE PREFIX IS GONE** (the user's call: take "KCM:" off the panel's messages).
 //   It said whose message it was, and the box it is drawn in belongs to this panel already -- the
 //   reader is looking at Kohaku Change Marker while they read it. This finishes the removal begun
 //   on 2026-08-25, when the same prefix came off the Pages panel's context items (KCMID.h).
