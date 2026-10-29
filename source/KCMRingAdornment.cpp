@@ -113,9 +113,10 @@ static bool16 KCMMarksDeclareTransparency();
 //  (ITOPFrameData), any other column is handed to ITextUtils::QuerySplineFromTextFrame. An
 //  anchored frame is answered with its own spline, not the frame that holds it. (The hierarchy
 //  underneath: kSplineItemBoss -> kMultiColumnItemBoss -> kFrameItemBoss for a frame,
-//  kTOPSplineItemBoss -> kMulticolumnItemBoss -> kTOPFrameItemBoss for text on a path -
-//  ITOPSplineData.h:51-52 - and the kTOPSplineItemBoss is NOT the item that is drawn; the main
-//  spline is. Details at KCMRebuildStoryHolders.)
+//  kTOPSplineItemBoss -> kMultiColumnItemBoss -> kTOPFrameItemBoss for text on a path -
+//  ITOPSplineData.h:51-52, which spells the middle one "kMulticolumnItemBoss" (the class is
+//  kMultiColumnItemBoss, TextID.h) - and the kTOPSplineItemBoss is NOT the item that is drawn;
+//  the main spline is. Details at KCMRebuildStoryHolders.)
 //
 //  The table (item UID -> story UIDs) is one per database, rebuilt on every draw of a spread and
 //  read on every draw of an item, so the labels follow a frame that was threaded or added a
