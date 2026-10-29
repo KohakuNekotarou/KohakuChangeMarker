@@ -131,7 +131,7 @@ void KCMRingAdornmentUnregister();
 // whether anything was written.
 int32 KCMGetNumItemsWithXP(IDataBase* db);
 
-// ---- the story ID labels ("Show Story IDs", 2026-09-13) ---------------------------------
+// ---- the story ID labels ("Show Story IDs") ---------------------------------
 //
 // While ON, every page item that carries a story - an ordinary text frame, a path with text on
 // it, an anchored frame - has "StoryID:<its story's UID>" written ABOVE its box, at the left (the
@@ -165,7 +165,7 @@ void KCMForgetStoryHolders(IDataBase* db);
 // the document's own list reads 0 before and after an export with the marks printing). So this
 // guards the cases nobody has measured: a synchronous route handing over the real document and
 // then never reaching EndExport (a crash mid-way), and documents that a development build
-// before that rule baked a declaration into. The user's call (2026-09-05): keep the insurance.
+// before that rule baked a declaration into. The user's call: keep the insurance.
 // **Called at Start (both documents) and at Stop (the armed pair)**, on the main thread only,
 // and **never while this thread is exporting** -- mid-export the declarations up are the right
 // ones and re-asking would take them down. Wrapped in SaveRestoreModifiedState: it changes

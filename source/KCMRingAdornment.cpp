@@ -102,7 +102,7 @@ static bool16 KCMMarksCouldBeTranslucent();
 static bool16 KCMMarksDeclareTransparency();
 
 //========================================================================================
-// 1.5) The story ID labels ("Show Story IDs", 2026-09-13)
+// 1.5) The story ID labels ("Show Story IDs")
 //
 //  "StoryID:<the story's UID>" ABOVE every page item that carries a story - outside the item, on
 //  its top edge at the left (the user's asks, after seeing a first version inside the frame: "the
@@ -134,7 +134,7 @@ static bool16 KCMMarksDeclareTransparency();
 //
 //  Screen: always while the toggle is on, at a fixed number of pixels whatever the zoom -
 //  except in overprint preview with the marks not printing, where nothing of KCM's is shown
-//  (2026-09-07, DrawSpreadMarks: the preview is a picture of the sheet).
+//  (DrawSpreadMarks: the preview is a picture of the sheet).
 //  Print and PDF: only with "Print comparison marks" on (the old-folio badge's rule), at a fixed
 //  size in points. The Before/After report takes them on its After side only, whenever the
 //  toggle is on (the user's call: the Before side of a Task Start comparison is a copy with
@@ -319,7 +319,7 @@ static void KCMDrawStoryIdLabel(IShape* iShape, GraphicsData* gd, int32 flags)
 	if (!printing && view == nil)
 		return;
 	// Overprint preview shows what will be printed, so only what would be printed is shown
-	// (2026-09-07, the user's decision, applied to every mark in DrawSpreadMarks): with the marks
+	// (the user's decision, applied to every mark in DrawSpreadMarks): with the marks
 	// not printing, no label either - asked the way DrawSpreadMarks asks it (KCMIsOverprintPreview).
 	if (!printing && KCMIsOverprintPreview(gd) && !KCMDrawEventHandler::sPrintMarks)
 		return;
@@ -566,7 +566,7 @@ void KCMRingAdornmentShape::DrawAdornment(IShape* iShape, AdornmentDrawOrder dra
 		// (Until 2026-10-30 a page handed alone could carry the marks too: the page route, for
 		//  kPDFExportItemsCmdBoss, which draws the items it is handed and never the spread, behind
 		//  the switch sMarksOnPage. Nothing had turned the switch on since the PDF spike went
-		//  (2026-10-02), and the report exports with kPDFExportCmdBoss, so both went. The route
+		//  and the report exports with kPDFExportCmdBoss, so both went. The route
 		//  and what it measured (the page's coordinates, kPrinting for the density):
 		//  git log -S KCMDrawMarksForPage.)
 		KCMDrawStoryIdLabel(iShape, gd, flags);
@@ -647,7 +647,7 @@ bool32 KCMRingFlattenerUsage::IsFlattenerRequired_(IPMUnknown* /*iThing*/,
 static bool16 KCMMarksCouldBeTranslucent()
 {
 	// If the marks are set not to go into print or export, no transparency arises in the output.
-	// ★**ONE SWITCH DECIDES IT: "Print comparison marks"** (sPrintMarks). Since 2026-09-07 the
+	// **ONE SWITCH DECIDES IT: "Print comparison marks"** (sPrintMarks). Since 2026-09-07 the
 	//   Source side follows it too (spec map MK-14), so the Source toggle no longer has to be
 	//   consulted here -- with sPrintMarks off, neither side reaches the output.
 	if (!KCMDrawEventHandler::sPrintMarks)
@@ -974,10 +974,10 @@ static IDThreading::ThreadLocal<IDataBase*> tl_ExportingDB(nil);
 //   -- would have to call the pair itself, or its marks come out as solid blocks; and only a
 //   SYNCHRONOUS one may, the declaration going up and down inside one call so that no save can
 //   bake it into the .indd (the reasoning beside kPDFExportSetupService below). The report's
-//   in-memory page exports did exactly that for a day (2026-09-14, git log -S KCMReportPlace).
+//   in-memory page exports did exactly that for a day (git log -S KCMReportPlace).
 static void KCMEndExportOnThisThread()
 {
-	// The clone KCMIsSameDoc may read on this thread goes first, whether or not the list was joined (2026-10-29).
+	// The clone KCMIsSameDoc may read on this thread goes first, whether or not the list was joined.
 	KCMSetExportCloneOnThisThread(nil);
 
 	IDataBase* const db = tl_ExportingDB.Get();
@@ -1021,7 +1021,7 @@ static void KCMBeginExportOn(IDataBase* db)
 
 	if (db == nil)
 		return;
-	// ★THE CLONE THIS THREAD EXPORTS, FOR KCMIsSameDoc (2026-10-29): the one database a background thread may read a
+	// THE CLONE THIS THREAD EXPORTS, FOR KCMIsSameDoc: the one database a background thread may read a
 	//  document ID from (the external door instantiates the document's root - KCMThreadSafety.h). Set every time,
 	//  before the translucency gate below: the marks are drawn whether or not the list is joined.
 	KCMSetExportCloneOnThisThread(db);
@@ -1159,7 +1159,7 @@ void KCMRevalidateItemXPList(IDataBase* db)
 {
 	if (db == nil || !KCMIsMainThread())
 		return;
-	// ★NOT ON A DATABASE THAT IS NOT A DOCUMENT (2026-10-13): a Task Start kept in memory is a clone, read and drawn
+	// NOT ON A DATABASE THAT IS NOT A DOCUMENT: a Task Start kept in memory is a clone, read and drawn
 	//   and never written - and it is never exported or printed, which is what the list is for.
 	if (KCMIsExternalSource(db))
 		return;
