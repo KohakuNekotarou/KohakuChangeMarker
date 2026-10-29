@@ -394,8 +394,13 @@ void KCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>& 
 		UIDList masterItems(db);
 		UIDList itemPages(db);
 		PMMatrixCollection offsets;
+		// ★THE FLAGS ARE SPELLED OUT (2026-10-30, M3's defect round, *88): the default skips HIDDEN AND LOCKED layers
+		//   (IShape::kSkipHiddenAndLockedLayers, IMasterSpreadUtils.h), and a locked layer is still drawn and printed - a
+		//   folio on a master layer locked to keep it from being moved, which is common, was never found, so with "Ignore
+		//   Page Number Marker" on every page after an added one still read changed (measured: work/note-scripts/
+		//   2026-10-30-kcm-m3-defect/folio_opp.ps1, case L). A hidden layer is not drawn, so it stays skipped.
 		Utils<IMasterSpreadUtils>()->AppendMasterPageItems(db, spreadUID, onThesePages, pageBoundsList,
-			masterItems, itemPages, offsets);
+			masterItems, itemPages, offsets, nil, IShape::kSkipChildren + IShape::kSkipHiddenLayers);
 
 		const int32 nMaster = masterItems.Length();
 		for (int32 i = 0; i < nMaster; ++i)

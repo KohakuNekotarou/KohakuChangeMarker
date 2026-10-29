@@ -2160,6 +2160,17 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// do. Whether a page's number has actually shifted is decided per page later (unshifted pages
 	// draw nothing).
 	const bool16 wantOldNums = !suppressForPrint && sShowOldNumbers && (sPrintMarks || sMarksVisible || alwaysScreen);
+	// The folio wash: with "Ignore Page Number Marker" on, the area the comparison left out is painted green over the pages
+	// being compared (the two loops below). A SCREEN-ONLY diagnostic -- it covers the design underneath, so it never goes
+	// into print or PDF -- and ★hidden in overprint preview as well (2026-09-07, the author's decision: a preview of the
+	// printed sheet shows only what prints). Unlike the marks it does not consult sPrintMarks: no setting ever puts it into
+	// the output.
+	// ★DECIDED HERE, ONCE, FOR BOTH SIDES (2026-10-30, M3's defect round, D-2): each loop wrote its own, and only the Source's
+	//   had the overprint test -- with "Print comparison marks" on, overprint preview showed the wash on the Target (measured:
+	//   work/note-scripts/2026-10-30-kcm-m3-defect/folio_opp.ps1, case W).
+	// ⚠The `!printing` is also a thread boundary: the folio rectangles' cache takes no lock because only the main thread
+	//   reads it (KCMPageNumberMarker.cpp, "WHY NO LOCK"), and a printing draw is the one a background export brings.
+	const bool16 fillExcluded = !printing && !overprintPreview && KCMGetIgnorePageNumberMarker();
 	// Registered pages (Added/Removed, the green "/") are drawn **only while a comparison is
 	// running**. There used to be a separate route that drew them without one, so registering from
 	// the right-click menu produced a green "/" with nothing started; it was removed (and
@@ -2514,16 +2525,9 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		// The lock is taken for the same reason as the Target loop below, and held until the return.
 		KCMMarkStateLock srcMarkLock(KCMMarkStateMutex());
 		const int32 nps = spread->GetNumPages();
-		// The green wash is a **screen-only diagnostic** showing what the comparison excluded, so it
-		//   never goes into print or PDF (!printing) -- unlike the rings, it covers the design
-		//   underneath.
-		//   The Source side alone used to be on the route that ignores sPrintMarks (its frames are
-		//   always printed), so the green appeared in a Source print even with "Print comparison
-		//   marks" off. Target and Source are both screen-only now.
-		// ★**Hidden in overprint preview as well** (2026-09-07): the wash never reaches print, so a
-		//   preview of the printed sheet must not carry it. Unlike the marks it does not consult
-		//   sPrintMarks -- there is no setting that would ever put it into the output.
-		const bool16 fillExcluded = !printing && !overprintPreview && KCMGetIgnorePageNumberMarker();	// the folio wash: toggle on, screen only
+		// The green wash (fillExcluded) is decided with the other marks above, for both sides. (The Source side alone used to
+		//   be on the route that ignores sPrintMarks - its frames were always printed - so the green appeared in a Source print
+		//   even with "Print comparison marks" off.)
 		for (int32 i = 0; i < nps; ++i)
 		{
 			const UID srcPageUID = spread->GetNthPageUID(i);
@@ -2618,8 +2622,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   a few milliseconds, so the wait is not a practical problem.
 	KCMMarkStateLock markLock(KCMMarkStateMutex());
 	const int32 np = spread->GetNumPages();
-	// The green wash is a **screen-only diagnostic** (see the Source loop above for the full reason).
-	const bool16 fillExcluded = !printing && KCMGetIgnorePageNumberMarker();	// the folio wash: toggle on, screen only
+	// The green wash (fillExcluded) is decided with the other marks above, for both sides.
 	for (int32 i = 0; i < np; ++i)
 	{
 		const UID pageUID = spread->GetNthPageUID(i);
