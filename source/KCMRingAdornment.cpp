@@ -146,7 +146,9 @@ static bool16 KCMMarksDeclareTransparency();
 //  spread-aligned box, the way the reader sees the frame.
 //  **The label lies outside the item's box, so the adornment widens the item's painted bounds**
 //  (GetPaintedAdornmentBounds): what InDesign repaints when the item moves or is redrawn is
-//  computed from those bounds, and a label outside them would be left behind on the screen.
+//  computed from those bounds, and a label outside them would be left behind on the screen. When
+//  it prints, the printed bounds take its band in as well (GetPrintedAdornmentBounds): an export of
+//  the item alone is cut to them.
 //  Opaque black with a white outline (the paw's note's two passes), so no transparency group and
 //  nothing for the flattener to be told.
 //========================================================================================
@@ -284,27 +286,31 @@ static void KCMStoriesHeldBy(IShape* iShape, bool16 buildIfMissing, std::vector<
 	(void)KCMLookUpStoryHolder(db, itemUID, outStoryUIDs);
 }
 
+/** Do the labels go into print and PDF now (the toggle aside)? Only with "Print comparison marks" on
+	(kPrinting is set for both: DrawSpreadMarks) - or when the export is the Before/After report's AFTER
+	side (the user's call, 2026-09-13: with the toggle on the report carries the numbers, **but on the
+	After side only** - the Before side of a Task Start comparison is a rehydrated copy whose UIDs are
+	renumbered, and two sets of numbers side by side only confuse). sReportExport is up for the length of
+	the report's two exports and sRingFrameOff for its Before export alone (KCMReport.cpp), and the Before
+	export raises sPrintMarks itself, which is why the Before side has to be excluded by name rather than
+	left to the print rule.
+	ONE QUESTION, TWO ASKERS: the drawing (a printing draw draws the label only when this says so) and the
+	printed bounds (they take the label's band in only then). */
+static bool16 KCMStoryIdLabelsPrint()
+{
+	if (KCMDrawEventHandler::sRingFrameOff)
+		return kFalse;		// the report's Before side
+	return (KCMDrawEventHandler::sPrintMarks || KCMDrawEventHandler::sReportExport) ? kTrue : kFalse;
+}
+
 /** The label of one item, if it holds a story. Called for every item the global list reaches. */
 static void KCMDrawStoryIdLabel(IShape* iShape, GraphicsData* gd, int32 flags)
 {
 	if (!sShowStoryIds)
 		return;
-	// Print and PDF only with "Print comparison marks" on (kPrinting is set for both:
-	// DrawSpreadMarks) - or when the export is the Before/After report's AFTER side (the user's
-	// call, 2026-09-13: with the toggle on the report carries the numbers, **but on the After
-	// side only** - the Before side of a Task Start comparison is a rehydrated copy whose UIDs
-	// are renumbered, and two sets of numbers side by side only confuse). sReportExport is up
-	// for the length of the report's two exports and sRingFrameOff for its Before export alone
-	// (KCMReport.cpp), and the Before export raises sPrintMarks itself, which is why the Before
-	// side has to be excluded by name rather than left to the print rule.
 	const bool16 printing = (flags & IShape::kPrinting) != 0;
-	if (printing)
-	{
-		if (KCMDrawEventHandler::sRingFrameOff)
-			return;		// the report's Before side
-		if (!KCMDrawEventHandler::sPrintMarks && !KCMDrawEventHandler::sReportExport)
-			return;
-	}
+	if (printing && !KCMStoryIdLabelsPrint())
+		return;
 	// Without a view and not printing this is a thumbnail, or some other viewless draw - nothing
 	// is readable at that size, and there is no zoom to size the text by.
 	IControlView* const view = gd->GetView();
@@ -418,10 +424,11 @@ public:
 	virtual PMRect GetPaintedAdornmentBounds(IShape* iShape, AdornmentDrawOrder /*drawOrder*/,
 											 const PMRect& itemBounds, const PMMatrix& /*innertoview*/);
 
-	/** The same contract. This one is only reached when WillPrint() is kTrue (CShape.cpp:93). */
-	virtual PMRect GetPrintedAdornmentBounds(IShape* /*iShape*/, AdornmentDrawOrder /*drawOrder*/,
-											 const PMRect& itemBounds, const PMMatrix& /*innertoview*/)
-		{ return itemBounds; }
+	/** The same contract, for what prints (CShape::GetPrintedBBox; only reached when WillPrint() is kTrue -
+		CShape.cpp:93). Here `itemBounds` is the item's stroke bounds already in the space the caller asked
+		for, and `innertoview` maps the item's inner coordinates into that space (CShape.cpp:304-311). */
+	virtual PMRect GetPrintedAdornmentBounds(IShape* iShape, AdornmentDrawOrder /*drawOrder*/,
+											 const PMRect& itemBounds, const PMMatrix& innertoview);
 
 	/** An empty implementation is the correct one. **The contract exempts it explicitly** -
 		IAdornmentShape.h:138-140: "This is only used by adornments for which the inking bounds are
@@ -496,6 +503,44 @@ PMRect KCMRingAdornmentShape::GetPaintedAdornmentBounds(IShape* iShape, Adornmen
 	widened.Top(widened.Top() - kKCMStoryIdBandAbovePx);
 	if (widened.Right() < widened.Left() + kKCMStoryIdReachRightPx)
 		widened.Right(widened.Left() + kKCMStoryIdReachRightPx);
+	return widened;
+}
+
+PMRect KCMRingAdornmentShape::GetPrintedAdornmentBounds(IShape* iShape, AdornmentDrawOrder /*drawOrder*/,
+														const PMRect& itemBounds, const PMMatrix& innertoview)
+{
+	// As on screen, the marks need nothing and **the story ID label is the exception**: when it prints
+	// (KCMStoryIdLabelsPrint) it is written ABOVE the item's box, so what prints of the item takes in the
+	// label's band. Without it an export of the item alone, cut to these bounds, keeps only the label's
+	// bottom edge (measured 2026-10-30: a text frame exported on its own as PNG, the labels printing,
+	// carried 24 of the label's 89 dark pixels and was no taller than the frame).
+	// The band is the screen's (kKCMStoryIdBandAbovePx / kKCMStoryIdReachRightPx, for a label of
+	// kKCMStoryIdFontPx) scaled to the print size, laid in spread coordinates where the label is
+	// written (KCMDrawStoryIdLabel), and carried into the caller's space through the item's inner
+	// coordinates. Asked at print and export time only, so a table not there yet is built here (an
+	// export's clone has none until it draws, and the drawing would build it a moment later).
+	if (!sShowStoryIds || !KCMStoryIdLabelsPrint() || iShape == nil)
+		return itemBounds;
+	std::vector<UID> storyUIDs;
+	KCMStoriesHeldBy(iShape, kTrue, storyUIDs);
+	if (storyUIDs.empty())
+		return itemBounds;
+	InterfacePtr<IGeometry> geometry(iShape, UseDefaultIID());
+	if (geometry == nil)
+		return itemBounds;
+	const PMMatrix innerToSpread = ::InnerToSpreadMatrix(geometry);
+	if (innerToSpread.IsSingular())
+		return itemBounds;
+	PMRect box = geometry->GetPathBoundingBox();
+	innerToSpread.Transform(&box);		// spread-aligned, as KCMDrawStoryIdLabel takes it
+	const PMReal toPrint = kKCMStoryIdPrintPt / kKCMStoryIdFontPx;		// the screen's pixels -> the print's points
+	PMRect band(box.Left(), box.Top() - kKCMStoryIdBandAbovePx * toPrint,
+				box.Left() + kKCMStoryIdReachRightPx * toPrint, box.Top());
+	PMMatrix spreadToCaller = innerToSpread.Inverse();
+	spreadToCaller.PostConcat(innertoview);		// spread -> inner, then inner -> the caller's space
+	spreadToCaller.Transform(&band);
+	PMRect widened = itemBounds;
+	widened.Union(band);
 	return widened;
 }
 
