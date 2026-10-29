@@ -85,8 +85,8 @@ public:
 	// Forget every document. Only empties the map; no pointer is touched (no dereference).
 	void ClearAllDocs();
 
-	// Replace db's set wholesale with uids (the setter Load uses). An empty uids drops the entry.
-	void Replace(IDataBase* db, const std::vector<UID>& uids);
+	// Replace db's set wholesale with uids (what a restore writes - KCMPageCheckReplaceAll). An
+	// empty uids drops the entry.
 	void Replace(IDataBase* db, const std::set<UID>& uids);
 
 	// Add db's set into out. **out is not cleared** -- this merges into an existing set.
@@ -97,26 +97,6 @@ public:
 	// FindDocByDataBase, nothing more). The close-up can arrive during the shutdown sequence as
 	// well, so session / app / docList are all nil-guarded.
 	void SweepClosedDocs();
-
-	// Is nothing held at all (used for early outs such as the prune).
-	// @warning **this one does not take the lock** (it is inline and reads fMap directly), so it
-	// is not an entry point a background thread may use. Its one caller is on the main thread.
-	bool16 IsEmpty() const { return fMap.empty() ? kTrue : kFalse; }
-
-	// The way in for work that has to modify the sets themselves, such as a bulk prune.
-	// ⚠★**NO CALLER AS OF 2026-09-04**, and neither has PruneEmptyDocs below: the one user of both
-	//   was KCMPageCheckPruneToMarked, which was removed when a tick stopped depending on the
-	//   comparison (KCMPageCheck.h says why). They are kept because the pair is the only way to
-	//   edit the sets in bulk, and the next feature that needs to will want them -- but **a reader
-	//   counting "who uses this" should measure rather than trust this line.**
-	// @warning this hands out the raw map, so **the caller takes the lock** itself
-	// (KCMMarkStateLock, KCMThreadSafety.h) -- the container's own methods cannot do it here.
-	// Call PruneEmptyDocs() afterwards to drop the entries that were emptied.
-	Map&       GetMap()       { return fMap; }
-	const Map& GetMap() const { return fMap; }
-
-	// Drop the entries whose set is now empty (the clean-up after modifying through GetMap()).
-	void PruneEmptyDocs();
 
 private:
 	// The one way an entry is looked up. fMap is keyed by IDataBase*, so **a background thread

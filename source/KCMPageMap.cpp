@@ -44,10 +44,10 @@
 #include "IMasterSpreadList.h"	// GetMasterSpreadCount / GetNthMasterSpreadUID / FindMasterByName
 #include "IMasterSpread.h"		// GetPrefix / GetBasename (pairing master spreads by name)
 #include "ISpread.h"			// GetNumPages / GetNthPageUID (the pages inside a master spread)
-#include "Utils.h"
 #include "UIDList.h"
 #include "PMString.h"
 
+#include <algorithm>			// std::find - a selected page once in outPages
 #include <set>
 #include <vector>
 
@@ -65,21 +65,6 @@
 // The registered "no counterpart" pages: document database -> set of page UIDs, session only.
 // An entry whose set became empty disappears at once (KCMDocUidSet's rule).
 static KCMDocUidSet sRegistered;
-
-// Helper: a linear contains over vector<UID>. **Its only job is to keep outPages free of
-// duplicates**, and outPages is at most as long as the selection, so linear is fine here.
-// @warning it is not what the document's whole page list is tested with -- that goes through a
-// set (see KCMPageMapPagesOf below). Scanning the page list linearly instead means
-// 1,000 pages x 100 selected pages = 100,000 comparisons, which is what this used to do.
-static bool16 KCMVecContains(const std::vector<UID>& v, UID u)
-{
-	for (size_t k = 0; k < v.size(); ++k)
-	{
-		if (v[k] == u)
-			return kTrue;
-	}
-	return kFalse;
-}
 
 //========================================================================================
 // KCMPageMapPagesOf (declared in KCMPageMap.h) -- the pages of a Pages panel selection the UI
@@ -120,8 +105,9 @@ bool16 KCMPageMapPagesOf(const UIDList& selection, bool16 includeMasters, IDataB
 	if (db == nil)
 		return kFalse;
 
-	// What is being searched is the document's whole page list, so it goes into a set (see the
-	// comment on KCMVecContains above).
+	// The document's whole page list is searched once per selected page, so it goes into a set (as
+	// a list, 1,000 pages x 100 selected pages = 100,000 comparisons). outPages is at most as long
+	// as the selection, so keeping it free of duplicates by a linear search is fine.
 	std::vector<UID> flat;
 	KCMCollectPageUIDs(db, flat);
 	if (includeMasters)
@@ -131,7 +117,7 @@ bool16 KCMPageMapPagesOf(const UIDList& selection, bool16 includeMasters, IDataB
 	for (int32 i = 0; i < n; ++i)
 	{
 		const UID u = selection[i];
-		if (flatSet.count(u) > 0 && !KCMVecContains(outPages, u))
+		if (flatSet.count(u) > 0 && std::find(outPages.begin(), outPages.end(), u) == outPages.end())
 			outPages.push_back(u);
 	}
 	if (outPages.empty())

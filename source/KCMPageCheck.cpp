@@ -43,16 +43,13 @@
 // (FileUtils.h, IDFile.h, <map>, <string>, <cstdio> and KCMJsonText.h went on 2026-09-27 with the
 //  private JSON store's last helpers - see the end of this file.)
 
-#include "KCMCore.h"			// KCMCollectPageUIDs / KCMCollectMasterPageUIDs / KCMActiveDocDB / KCMIsComparedDoc / KCMArmedTargetDB / KCMArmedSourceDB / KCMDoMarkChangesDoc
-								// ⚠KCMInvalidateDB is NOT among them any more (2026-09-07): redrawing moved to KCMMarksObserver, which is the only place that knows which pages moved
+#include "KCMCore.h"			// KCMCollectCheckablePageUIDs / KCMCheckablePages - which pages may take a tick
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
-#include "KCMComparisonRun.h"	// KCMStopComparison
 #include "KCMPageCheck.h"
 #include "KCMPageMap.h"		// KCMPageMapPagesOf - the Pages panel's selection (the UI reads it), shared with Register
 #include "KCMPawStamp.h"		// KCMPawStampsOnPage - a tick is written with the paws the page already carries
 #include "KCMPageMarksCmd.h"	// KCMPageMarks / KCMMarksWrite -- the only door to a change
 #include "KCMDocUidSet.h"		// the shared "document -> page UID set" container (Register uses it too)
-#include "KCMThreadSafety.h"	// the shared-state lock, for reaching inside the container through GetMap
 // ⚠KCMID.h was included here for kKCMPageFlagsChangedMessage and is gone with it (2026-09-07):
 //   this file no longer notifies anybody. KCMMarksObserver does, because it is the only place that
 //   can name the pages whose picture moved -- including the ones that LOST a mark.
@@ -79,34 +76,21 @@
 //   write instead. The toggle below carries the account of getting this wrong once.
 static KCMDocUidSet sChecked;
 
-// **Which pages may be ticked depends on the mode.** The answer is built in one place,
-//   KCMCollectCheckablePageUIDs in KCMCore.cpp, and this file only asks it (the reasoning is with
-//   the declaration in KCMCore.h). In short:
-//     - not being compared ... **every page** (a tick needs no comparison -- 2026-09-04)
-//     - Pixel mode ....... only pages carrying a mark (a frame, a registered "/", an overflow "/")
-//     - Story mode ....... **every page** of the Target and the Source
+// **Which pages may be ticked is answered in one place**, KCMCollectCheckablePageUIDs (KCMCore.h,
+//   with the reasoning): every page of any open document (spec map FLG-12). This file only asks it.
+//   (KCMCollectChangedPageUIDs - "could this page carry a mark" - is another question: KCMCore.h.)
 //   ★**TWO routes ask it, and both are about PUTTING a tick on**: the toggle and the toggle's
-//     state. Both go through KCMCollectCheckable / KCMFilterToCheckable below; calling
-//     KCMCollectChangedPageUIDs directly instead only ever gives the Pixel answer
-//     ([[one-question-one-place]]).
-//   ⚠**It used to be four**, and the two that went are the whole of 2026-09-04's bug: the prune
-//     and Load's restore asked this same question to decide **which ticks may STAY**, which is a
-//     different question and had a different right answer. Both now test only that the page
-//     exists. **If a third route ever needs this, check which of the two questions it is asking.**
-//
-// **Ask once and then use Includes() when judging several pages.** The Pixel branch walks the
-//   whole of sEntries each time, so asking per page costs O(pages x changes).
-static bool16 KCMCollectCheckable(IDataBase* db, KCMCheckablePages& outCheckable)
-{
-	return KCMCollectCheckablePageUIDs(db, outCheckable);
-}
-
-// Keep only the selected pages that may be ticked. The candidate set is built once (see above).
+//     state, both through KCMFilterToCheckable below ([[one-question-one-place]]).
+//   ⚠**"Which ticks may STAY" is a different question with a different answer** - asking this one
+//     instead throws ticks away. **If a third route ever needs this, check which of the two
+//     questions it is asking.**
+// Keep only the selected pages that may be ticked: the answer is asked once, and Includes()
+// judges each page.
 static void KCMFilterToCheckable(IDataBase* db, const std::vector<UID>& pages, std::vector<UID>& out)
 {
 	out.clear();
 	KCMCheckablePages checkable;
-	if (!KCMCollectCheckable(db, checkable))
+	if (!KCMCollectCheckablePageUIDs(db, checkable))
 		return;		// there is no document at all -- every real one answers kTrue now (KCMCore.h)
 	for (size_t i = 0; i < pages.size(); ++i)
 		if (checkable.Includes(pages[i]))
@@ -303,6 +287,11 @@ bool16 KCMPageCheckIsChecked(IDataBase* db, UID pageUID)
 //========================================================================================
 // KCMPageCheckHasAny (declared in KCMPageCheck.h)
 //========================================================================================
+bool16 KCMPageCheckHasAny(IDataBase* db)
+{
+	return sChecked.HasAny(db);
+}
+
 //========================================================================================
 // The doors KCMPageMarksDoc needs (2026-09-07): the same set the file-based save reads, reached
 // from outside this file. Both go straight to the container, which does its own locking.
@@ -318,11 +307,6 @@ void KCMPageCheckReplaceAll(IDataBase* db, const std::set<UID>& in)
 {
 	if (db != nil)
 		sChecked.Replace(db, in);
-}
-
-bool16 KCMPageCheckHasAny(IDataBase* db)
-{
-	return sChecked.HasAny(db);
 }
 
 //----------------------------------------------------------------------------------------

@@ -24,10 +24,6 @@
 //   pass** (the asynchronous PDF export), so **every method in this file**, reader and writer
 //   alike, takes the shared lock. The lock is recursive, so being called from a drawing loop
 //   that already holds it is safe. The reasoning in full is in KCMThreadSafety.h.
-//   @warning **two methods are exceptions, and both of them are in the header**: IsEmpty() is
-//     inline and takes no lock, and GetMap() hands out the raw map so its caller locks instead.
-//     Do not read "every method guards itself" here and then add a background-thread caller of
-//     those two.
 //========================================================================================
 
 // The entry for db (falling back on file identity when the pointer misses). The declaration says why.
@@ -174,22 +170,6 @@ void KCMDocUidSet::ClearAllDocs()
 	fMap.clear();
 }
 
-void KCMDocUidSet::Replace(IDataBase* db, const std::vector<UID>& uids)
-{
-	if (db == nil)
-		return;
-	KCMMarkStateLock lock(KCMMarkStateMutex());
-	if (uids.empty())
-	{
-		fMap.erase(db);
-		return;
-	}
-	std::set<UID>& s = fMap[db];
-	s.clear();
-	for (size_t i = 0; i < uids.size(); ++i)
-		s.insert(uids[i]);
-}
-
 void KCMDocUidSet::Replace(IDataBase* db, const std::set<UID>& uids)
 {
 	if (db == nil)
@@ -201,19 +181,6 @@ void KCMDocUidSet::Replace(IDataBase* db, const std::set<UID>& uids)
 		return;
 	}
 	fMap[db] = uids;
-}
-
-void KCMDocUidSet::PruneEmptyDocs()
-{
-	KCMMarkStateLock lock(KCMMarkStateMutex());
-	Map::iterator it = fMap.begin();
-	while (it != fMap.end())
-	{
-		if (it->second.empty())
-			fMap.erase(it++);
-		else
-			++it;
-	}
 }
 
 //========================================================================================

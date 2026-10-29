@@ -38,10 +38,9 @@
 
 #include "BaseType.h"		// int32, bool16
 #include "OMTypes.h"		// UID
-#include <map>				// ⚠**this header itself no longer needs it** -- it was the prune's "pages it unticked", per document, and the prune went on 2026-09-04. Kept until a build can show which includers were leaning on it
 #include <set>
 
-#include "KCMPageMap.h"	// KCMPageToggleState -- the answer shape shared with Register (the type only)
+#include "KCMPageFlagState.h"	// KCMPageToggleState -- the answer shape shared with Register (a header of types only)
 
 class IDataBase;
 class UIDList;			// the Pages panel's selection, as the UI read it (2026-10-26)
@@ -105,9 +104,7 @@ bool16 KCMPageCheckIsChecked(IDataBase* db, UID pageUID);
 // (anyMarkableContent in KCMDrawEventHandler::DrawSpreadMarks).
 bool16 KCMPageCheckHasAny(IDataBase* db);
 
-/** The ticked pages of one document -- what a save reads. out is cleared first.
-	★Added 2026-09-07 for KCMPageMarksDoc: the file-based save reaches the same set through the
-	 container's GetMap, which is inside this file; a caller outside it needs a door of its own. */
+/** The ticked pages of one document -- what a save reads (KCMPageMarksDoc). out is cleared first. */
 void KCMPageCheckCollect(IDataBase* db, std::set<UID>& out);
 
 /** Put one document's ticks back to exactly this set -- what a restore writes.
