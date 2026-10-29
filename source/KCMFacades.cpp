@@ -2566,18 +2566,18 @@ private:
 	}
 
 	/** THE TAIL BOTH TABLE ROADS SHARE, after their write (`done` - its moves and writes): the record's focus put on as
-		many characters as the Source's (MatchTable's geometry) when something went in, and the records at its place where
-		the list's order puts them (PlaceFociAtWriteEdge), the step ended (EndStep), the Undo follower attached again (the
-		measurement PourIntoTarget records), the write made true to the step (KeptOrNot) - then the "=" record over the
-		table's anchor characters, or the focus let go (one made for this goes; a record's own stays, put back by the
-		abort). @return done, or -1. */
+		many characters as the Source's from `nowStart` - where the table stands now (MatchTable's geometry) - when
+		something went in, and the records at its place where the list's order puts them (PlaceFociAtWriteEdge), the step
+		ended (EndStep), the Undo follower attached again (the measurement PourIntoTarget records), the write made true to
+		the step (KeptOrNot) - then the "=" record over the table's anchor characters, or the focus let go (one made for
+		this goes; a record's own stays, put back by the abort). @return done, or -1. */
 	int32 EndTableWrite(int32 nth, IAbortableCmdSeq* sequence, IDataBase* targetDB, const UIDRef& target,
-						const KCMStoryChange& live, int32 focusId, int32 done, PMString& outMessage)
+						const KCMStoryChange& live, int32 focusId, TextIndex nowStart, int32 done, PMString& outMessage)
 	{
-		const TextIndex nowEnd = live.fTargetStart + (live.fSourceEnd - live.fSourceStart);
+		const TextIndex nowEnd = nowStart + (live.fSourceEnd - live.fSourceStart);
 		if (done > 0)
 		{
-			KCMStoryList::FocusAfterWrite(focusId, live.fTargetStart, nowEnd);
+			KCMStoryList::FocusAfterWrite(focusId, nowStart, nowEnd);
 			KCMStoryList::PlaceFociAtWriteEdge(nth, std::vector<int32>(1, focusId), live, kFalse, live.fTargetStart,
 											   live.fTargetEnd - live.fTargetStart, live.fSourceEnd - live.fSourceStart);
 		}
@@ -2587,7 +2587,7 @@ private:
 		if (done <= 0)
 			KCMStoryList::LetWriteFocus(nth, focusId);
 		else
-			KCMStoryList::AddEqual(nth, live, live.fTargetStart, nowEnd,
+			KCMStoryList::AddEqual(nth, live, nowStart, nowEnd,
 									  KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone, focusId);
 		return done;
 	}
@@ -2619,7 +2619,8 @@ private:
 		//   table's anchor characters, then on as many as the files' after it (MatchTable's geometry).
 		const int32 focusId = KCMStoryList::FocusBeforeWrite(nth, live, live.fTargetStart, live.fTargetEnd);
 		const int32 wrote = KCMApplyTableFromImport(target, row.fSourceStoryUID, live.fTargetTableUID, outMessage);	// unsigned, untracked (design 11-2)
-		const int32 done = this->EndTableWrite(nth, sequence, targetDB, target, live, focusId, wrote, outMessage);
+		const int32 done = this->EndTableWrite(nth, sequence, targetDB, target, live, focusId, live.fTargetStart, wrote,
+											   outMessage);		// (the table stands where it stood: nothing before it is written)
 		this->RefreshRow(nth);
 		if (done <= 0)
 			return -1;
@@ -2631,16 +2632,12 @@ private:
 	}
 
 	/** Row `nth`'s live Table + / Table − changes other than `pressed` (KCMStoryList::LiveChanges - the diff's, not the
-		records), with the Target's words at each - what an undone write reads, as RecordPour's liveWords. */
-	void OtherTableChanges(int32 nth, const KCMStoryChange& pressed, const UIDRef& target,
-						   std::vector<KCMStoryChange>& outLives, std::vector<WideString>& outWords)
+		records). */
+	void OtherTableChanges(int32 nth, const KCMStoryChange& pressed, std::vector<KCMStoryChange>& outLives)
 	{
 		outLives.clear();
-		outWords.clear();
 		std::vector<KCMStoryChange> lives;
 		KCMStoryList::LiveChanges(nth, lives);
-		IDataBase::SaveRestoreModifiedState guard(target.GetDataBase());	// reading composes; the document stays as clean as it was
-		InterfacePtr<ITextModel> model(target, UseDefaultIID());
 		for (size_t i = 0; i < lives.size(); ++i)
 		{
 			const KCMStoryChange& c = lives[i];
@@ -2650,11 +2647,7 @@ private:
 			if (c.fKind == pressed.fKind && c.fTargetTableUID == pressed.fTargetTableUID
 				&& c.fSourceTableUID == pressed.fSourceTableUID && c.fTargetStart == pressed.fTargetStart)
 				continue;		// the pressed one: AddEqual records it, with its focus
-			WideString w;
-			if (model != nil && c.fTargetEnd > c.fTargetStart)
-				KCMTextWords::WordsAt(model, c.fTargetStart, c.fTargetEnd - c.fTargetStart, w);
 			outLives.push_back(c);
-			outWords.push_back(w);
 		}
 	}
 
@@ -2662,8 +2655,9 @@ private:
 		document has it, put in - its shape and its cells' words - when only the files have it, by the import's own first
 		round (KCMApplyTablesAddedOrTakenAway), as ONE undo step, then a "=" record at its place (the table row's geometry
 		- ApplyTable's). With two tables or more added or taken away in the story, the round goes in whole and the
-		sentence says so - and the round's other Table + / Table − rows stay on the row as "=" too
-		(KCMStoryList::RecordAlongside: the author's "Apply on the Story row makes the rows go - keep them"). */
+		sentence says so - and the round's other Table + / Table − rows stay on the row as "=" too (the author's "Apply on
+		the Story row makes the rows go - keep them"), each recorded the pressed one's way: its focus made before the
+		write and marked inside the step, so that a Ctrl+Z shows each one live again in its own place. */
 	int32 ApplyTablesAddedOrTakenAway(int32 nth, int32 which, IDataBase* targetDB, const Row& row, PMString& outMessage)
 	{
 		Change before;
@@ -2679,23 +2673,45 @@ private:
 		const UIDRef target(targetDB, row.fStoryUID);
 		// The round's other tables, read before the write - the round puts them in with this one.
 		std::vector<KCMStoryChange> others;
-		std::vector<WideString> othersWords;
-		this->OtherTableChanges(nth, live, target, others, othersWords);
+		this->OtherTableChanges(nth, live, others);
 		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
 		if (this->StepNotBegun(sequence, outMessage))
 			return -1;
 		const int32 focusId = KCMStoryList::FocusBeforeWrite(nth, live, live.fTargetStart, live.fTargetEnd);
+		// THE OTHER ROWS' FOCI TOO, BEFORE THE WRITE: a "=" record found again after a Ctrl+Z is one whose focus the
+		//   Undo put back on its live change (KCMMergeEqual hides the twin by its range) - a record placed after the step
+		//   by its Source range came back on another table's place (a Table + row has no Source range) and showed its
+		//   twin beside it (apply-tables-notes TN-9b).
+		std::vector<int32> otherFoci;
+		for (size_t i = 0; i < others.size(); ++i)
+			otherFoci.push_back(KCMStoryList::FocusBeforeWrite(nth, others[i], others[i].fTargetStart, others[i].fTargetEnd));
 		int32 together = 0;
 		const int32 wrote = KCMApplyTablesAddedOrTakenAway(target, row.fSourceStoryUID, live, together, outMessage);	// unsigned, untracked (design 11-2)
-		const int32 done = this->EndTableWrite(nth, sequence, targetDB, target, live, focusId, wrote, outMessage);
-		// THE ROUND'S OTHER ROWS, "=" TOO - after the pressed one's AddEqual, which slides the records after its own: these
-		//   stand at their Source ranges and the compare below places them (RecordAlongside).
-		if (done > 0 && !others.empty())
+		// Where the round left each one (InDesign moved its focus with the tables before it), marked inside the step on
+		//   as many characters as the Source's (the table row's geometry); one whose focus did not follow is not recorded.
+		//   The pressed one's too: when it is not the round's first table, its own place moved with the ones before it.
+		std::vector<TextIndex> otherStarts(others.size(), -1);
+		TextIndex pressedAt = live.fTargetStart;
+		if (wrote > 0)
 		{
-			const uint32 counter = KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone);
-			KCMStoryList::RecordAlongside(nth, others, othersWords, std::vector<uint32>(others.size(), counter),
-										  std::vector<int32>(others.size(), static_cast<int32>(kKCMStoryAttrNone)),
-										  kKCMCopyNotTaken);
+			for (size_t i = 0; i < others.size(); ++i)
+				KCMStoryList::FocusAfterWriteWhereMoved(nth, otherFoci[i], others[i].fSourceEnd - others[i].fSourceStart,
+														otherStarts[i]);
+			TextIndex at = -1;
+			if (KCMStoryList::FocusAfterWriteWhereMoved(nth, focusId, live.fSourceEnd - live.fSourceStart, at))
+				pressedAt = at;
+		}
+		const int32 done = this->EndTableWrite(nth, sequence, targetDB, target, live, focusId, pressedAt, wrote, outMessage);
+		// THE ROUND'S OTHER ROWS, "=" TOO - after the pressed one's AddEqual; their foci say where they stand.
+		const uint32 counter = KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone);
+		for (size_t i = 0; i < others.size(); ++i)
+		{
+			if (done > 0 && otherStarts[i] >= 0)
+				KCMStoryList::AddEqual(nth, others[i], otherStarts[i],
+										  otherStarts[i] + (others[i].fSourceEnd - others[i].fSourceStart), counter,
+										  kKCMStoryAttrNone, otherFoci[i]);
+			else
+				KCMStoryList::LetWriteFocus(nth, otherFoci[i]);
 		}
 		this->RefreshRow(nth);
 		if (done <= 0)

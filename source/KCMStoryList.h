@@ -931,6 +931,13 @@ namespace KCMStoryList
 		record's words stand now (KCMRecordFoci::MoveTo with inStep). Nothing for 0. */
 	void FocusAfterWrite(int32 focusId, TextIndex start, TextIndex end);
 
+	/** AFTER THE WRITE, inside its step, before it ends - for a record whose place the write moved where its caller cannot
+		reckon it (a table a round of tables took away together with others before it, or one inside another): focus
+		`focusId` marked and put on [s, s + length), s where InDesign moved it with the write - so its Undo puts it back
+		where the change stands live, as FocusAfterWrite's does. @return kTrue with `outStart` = s; kFalse when it did not
+		follow (0, lost, its text gone - left to LetWriteFocus). */
+	bool16 FocusAfterWriteWhereMoved(int32 nth, int32 focusId, TextIndex length, TextIndex& outStart);
+
 	/** A step that was not kept (aborted, a write refused, the step-fail switch): focus `focusId` let go when no record of
 		row `nth` holds it (one FocusBeforeWrite made for this write); a record's own is left to the record - the abort put
 		it back where the step found it. */
@@ -1055,18 +1062,6 @@ namespace KCMStoryList
 			tables, the mark's own for a mark). */
 	void RecordPour(int32 nth, const std::vector<KCMStoryChange>& lives, const std::vector<WideString>& liveWords,
 					const std::vector<uint32>& counters, const std::vector<int32>& counterKinds);
-
-	/** THE OTHER TABLES A TABLE ROUND PUT IN, AS "=" (the author: "Apply on the Story row makes the rows go - keep them" -
-		a Table + / Table − row's Apply puts the story's whole round of tables in, KCMApplyTablesAddedOrTakenAway says
-		why): one record for each of `lives` - row `nth`'s other live Table + / Table − changes, read before the write -
-		at its Source range, its live range there too, holding no copy (`copyWhyNot`) and no focus, and nothing slid.
-		The compare right after places each one by its readings (FollowRecords) and gives it a focus; one whose place
-		does not read as the Source's shows as what still differs. The row's other records - their copies and foci - are
-		not touched. A record that is one of them already (its twin) is updated in place. RecordPour adds its records
-		this same way, after letting the row's copies and foci go. `liveWords` / `counters` / `counterKinds` as
-		RecordPour's. */
-	void RecordAlongside(int32 nth, const std::vector<KCMStoryChange>& lives, const std::vector<WideString>& liveWords,
-						 const std::vector<uint32>& counters, const std::vector<int32>& counterKinds, int32 copyWhyNot);
 
 	/** The row of the Target's story `storyUID` (a row standing for a story only the Source has is not one), or -1. */
 	int32 RowOfTargetStory(UID storyUID);

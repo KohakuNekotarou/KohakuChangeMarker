@@ -2069,6 +2069,14 @@ static const KCMStoryChange* LiveTwinOf(const KCMStoryRow& row, const KCMEqualRe
 			|| c.fSourceStart != r.fLive.fSourceStart || c.fSourceEnd != r.fLive.fSourceEnd
 			|| c.fTargetEnd - c.fTargetStart != liveLen)
 			continue;
+		// A TABLE IS TOLD BY ITS UIDS TOO: a Table + change has no Source range (KCMStoryDiffRun sets that side only when
+		//   the Source has the table) and one top-level anchor is as long as the next, so two tables the files took away
+		//   read as one change - after a Ctrl+Z the second's record took the first for its twin and moved onto its place
+		//   (apply-tables-notes TN-9b / TN-9c). An Undo brings a table back as it was; none found, the record stays where
+		//   its focus is.
+		if (c.fWhat == KCMStoryChange::kTable
+			&& (c.fTargetTableUID != r.fLive.fTargetTableUID || c.fSourceTableUID != r.fLive.fSourceTableUID))
+			continue;
 		if (r.fHasLiveWords && liveLen > 0)
 		{
 			IDataBase::SaveRestoreModifiedState guard(targetDB);
@@ -2253,22 +2261,8 @@ void KCMStoryList::RecordPour(int32 nth, const std::vector<KCMStoryChange>& live
 		row.fEqual[i].fComparedLiveEnd = -1;
 	}
 
-	// 2. one for each change the pour put in (RecordAlongside, with no copy: the pour wrote the whole story)
-	RecordAlongside(nth, lives, liveWords, counters, counterKinds, kKCMCopyWholeStory);
-}
-
-/* RecordAlongside
-*/
-void KCMStoryList::RecordAlongside(int32 nth, const std::vector<KCMStoryChange>& lives,
-									  const std::vector<WideString>& liveWords, const std::vector<uint32>& counters,
-									  const std::vector<int32>& counterKinds, int32 copyWhyNot)
-{
-	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || lives.size() != liveWords.size()
-		|| lives.size() != counters.size() || lives.size() != counterKinds.size())
-		return;
-	KCMStoryRow& row = gRows[nth];
-	// One for each change, where its Source words stand once its place reads as the Source - its live range there too,
-	//   the place its own words would come back to (AddEqualGroup's rule).
+	// 2. one for each change the pour put in, where its Source words stand once the story reads as the Source - its live
+	//    range there too, the place its own words would come back to (AddEqualGroup's rule)
 	for (size_t k = 0; k < lives.size(); ++k)
 	{
 		const KCMStoryChange& live = lives[k];
@@ -2285,13 +2279,12 @@ void KCMStoryList::RecordAlongside(int32 nth, const std::vector<KCMStoryChange>&
 		rec.fPlacedForSource = kTrue;
 		rec.fLiveWords = liveWords[k];
 		rec.fHasLiveWords = kTrue;
-		rec.fCopy.fWhyNot = copyWhyNot;
+		rec.fCopy.fWhyNot = kKCMCopyWholeStory;
 		bool16 updated = kFalse;
 		for (size_t i = 0; i < row.fEqual.size() && !updated; ++i)
 		{
 			if (!IsTwin(row.fEqual[i], live))
 				continue;
-			TakeFocus(row, row.fEqual[i], 0);	// (a twin's own focus let go: it is placed again by its readings)
 			row.fEqual[i] = rec;
 			updated = kTrue;
 		}
@@ -2303,7 +2296,6 @@ void KCMStoryList::RecordAlongside(int32 nth, const std::vector<KCMStoryChange>&
 		const size_t slot = KCMEqualSlotFor(starts, rec.fNowStart);
 		row.fEqual.insert(row.fEqual.begin() + static_cast<std::ptrdiff_t>(slot), rec);
 	}
-	row.fFociSynced = kFalse;
 }
 
 // ---- the foci of a write's records, placed inside its step (2026-10-26 - the header's section says why) ----------------
@@ -2343,6 +2335,24 @@ void KCMStoryList::FocusAfterWrite(int32 focusId, TextIndex start, TextIndex end
 {
 	if (focusId != 0)
 		KCMRecordFoci::MoveTo(focusId, start, end, kTrue);
+}
+
+/* FocusAfterWriteWhereMoved
+*/
+bool16 KCMStoryList::FocusAfterWriteWhereMoved(int32 nth, int32 focusId, TextIndex length, TextIndex& outStart)
+{
+	outStart = -1;
+	if (focusId == 0 || nth < 0 || nth >= static_cast<int32>(gRows.size()))
+		return kFalse;
+	IDataBase* const db = KCMArmedTargetDB();
+	if (db == nil || !KCMIsDocDBOpen(db))
+		return kFalse;
+	TextIndex start = 0, end = 0;
+	if (KCMRecordFoci::Where(focusId, db, gRows[nth].fStoryUID, start, end) != KCMRecordFoci::kFollowed)
+		return kFalse;
+	KCMRecordFoci::MoveTo(focusId, start, start + length, kTrue);
+	outStart = start;
+	return kTrue;
 }
 
 /* LetWriteFocus
