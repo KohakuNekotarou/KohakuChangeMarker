@@ -112,8 +112,9 @@ static bool16 KCMTextRangeHasPageNumberMarker(ITextModel* textModel, TextIndex s
 	return std::find(iter, endIter, kTextChar_PageNumber) != endIter;
 }
 
-// Does itemUID's text frame contain a folio marker (0x18)? If so, hand back the text model and the
-// range as well, which is what the ink calculation needs.
+// Does itemUID's text frame contain a folio marker (0x18)? If so, hand back the text model and where
+// the frame's range starts, which is what the ink calculation needs (it reads the first line from
+// there). (The span was handed back as well until 2026-10-30; neither caller read it.)
 // What the item actually is depends on where it came from:
 //   (a) a graphic frame (the spline that is a text frame's parent). **Master items arrive this
 //       way**: AppendMasterPageItems defaults to kSkipChildren, so it returns the parent frame and
@@ -122,7 +123,7 @@ static bool16 KCMTextRangeHasPageNumberMarker(ITextModel* textModel, TextIndex s
 //   (b) the item implements IMultiColumnTextFrame or ITextFrameColumn itself (read directly).
 // If a text model comes out of either, it is scanned; if none does, kFalse.
 static bool16 KCMQueryMarkerText(IDataBase* db, UID itemUID,
-	InterfacePtr<ITextModel>& outModel, TextIndex& outStart, int32& outSpan)
+	InterfacePtr<ITextModel>& outModel, TextIndex& outStart)
 {
 	// (a) graphic frame -> child MC text frame
 	InterfacePtr<IGraphicFrameData> gfd(db, itemUID, UseDefaultIID());
@@ -134,7 +135,7 @@ static bool16 KCMQueryMarkerText(IDataBase* db, UID itemUID,
 			InterfacePtr<ITextModel> textModel(childMcf->QueryTextModel());
 			if (KCMTextRangeHasPageNumberMarker(textModel, childMcf->TextStart(), childMcf->TextSpan()))
 			{
-				outModel = textModel; outStart = childMcf->TextStart(); outSpan = childMcf->TextSpan();
+				outModel = textModel; outStart = childMcf->TextStart();
 				return kTrue;
 			}
 		}
@@ -146,7 +147,7 @@ static bool16 KCMQueryMarkerText(IDataBase* db, UID itemUID,
 		InterfacePtr<ITextModel> textModel(mcf->QueryTextModel());
 		if (KCMTextRangeHasPageNumberMarker(textModel, mcf->TextStart(), mcf->TextSpan()))
 		{
-			outModel = textModel; outStart = mcf->TextStart(); outSpan = mcf->TextSpan();
+			outModel = textModel; outStart = mcf->TextStart();
 			return kTrue;
 		}
 	}
@@ -157,7 +158,7 @@ static bool16 KCMQueryMarkerText(IDataBase* db, UID itemUID,
 		InterfacePtr<ITextModel> textModel(tfc->QueryTextModel());
 		if (KCMTextRangeHasPageNumberMarker(textModel, tfc->TextStart(), tfc->TextSpan()))
 		{
-			outModel = textModel; outStart = tfc->TextStart(); outSpan = tfc->TextSpan();
+			outModel = textModel; outStart = tfc->TextStart();
 			return kTrue;
 		}
 	}
@@ -356,8 +357,8 @@ void KCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>& 
 	{
 		const UID itemUID = localItems[i];
 		InterfacePtr<ITextModel> markerModel;
-		TextIndex mStart = 0; int32 mSpan = 0;
-		if (!KCMQueryMarkerText(db, itemUID, markerModel, mStart, mSpan))
+		TextIndex mStart = 0;
+		if (!KCMQueryMarkerText(db, itemUID, markerModel, mStart))
 			continue;
 		InterfacePtr<IGeometry> itemGeo(db, itemUID, UseDefaultIID());
 		if (itemGeo == nil)
@@ -374,8 +375,7 @@ void KCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>& 
 			spreadToPage.Transform(&ink);
 			r.Union(ink);
 		}
-		r.Left(r.Left() - origin.X());   r.Right(r.Right() - origin.X());
-		r.Top(r.Top() - origin.Y());     r.Bottom(r.Bottom() - origin.Y());
+		r.MoveRel(-origin.X(), -origin.Y());	// to the page's top left as the origin (PMRect.h: the four edges moved alike)
 		outRects.push_back(r);
 	}
 
@@ -402,8 +402,8 @@ void KCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>& 
 		{
 			const UID itemUID = masterItems[i];
 			InterfacePtr<ITextModel> markerModel;
-			TextIndex mStart = 0; int32 mSpan = 0;
-			if (!KCMQueryMarkerText(db, itemUID, markerModel, mStart, mSpan))
+			TextIndex mStart = 0;
+			if (!KCMQueryMarkerText(db, itemUID, markerModel, mStart))
 				continue;
 			InterfacePtr<IGeometry> itemGeo(db, itemUID, UseDefaultIID());
 			if (itemGeo == nil)
@@ -426,8 +426,7 @@ void KCMAppendPageNumberMarkerRects(const UIDRef& pageRef, std::vector<PMRect>& 
 				spreadToPage.Transform(&ink);
 				r.Union(ink);
 			}
-			r.Left(r.Left() - origin.X());   r.Right(r.Right() - origin.X());
-			r.Top(r.Top() - origin.Y());     r.Bottom(r.Bottom() - origin.Y());
+			r.MoveRel(-origin.X(), -origin.Y());	// to the page's top left, as for a local item
 			outRects.push_back(r);
 		}
 	}

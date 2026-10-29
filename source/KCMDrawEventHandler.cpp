@@ -227,6 +227,10 @@ void KCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt, i
 	// per-pixel question.
 	uint8 markR = 0, markG = 0, markB = 0;
 	KCMDrawEventHandler::SelectedMarkColor(markR, markG, markB);
+	// **And so is the page frame** (sRingFrameOff, the report's switch): one image, one answer. Asked inside the loop (until
+	//   2026-10-30) it was read again for every pixel -- a store through buf may alias the static, so the compiler cannot
+	//   keep it -- and a switch flipped while an image was being built could have framed some rows of it and not others.
+	const bool16 frameOn = !sRingFrameOff;
 	// Nothing special is needed where a change touches the page edge: the frame band below paints
 	// everything within radius of the edge unconditionally, so the edge is always filled and the
 	// border never thins out.
@@ -253,7 +257,7 @@ void KCMDrawEventHandler::BuildRing(uint8* buf, int32 rb, int32 bpp, int32 wt, i
 			// number of screen pixels. Colour and alpha are the ring's (the density is applied by
 			// the blit's opacity).
 			// ★Unless sRingFrameOff (the Before/After report's PDF wants the rings alone).
-			const bool16 frame = !sRingFrameOff &&
+			const bool16 frame = frameOn &&
 			                     (x < radius || (wt - 1 - x) < radius ||
 			                      y < radius || (ht - 1 - y) < radius);
 			if (ring || frame)
@@ -332,15 +336,85 @@ static void KCMDistTransform(const uint8* mask, int32 wt, int32 ht, uint8* out)
 // KCMDrawEventHandler.h because the book comparison (KCMBookCompare.cpp) needs the identical test
 // and used to hold a copy of the same four lines.
 
-// (KCMDropSnapshotPair lived here. It destroyed both snapshots and both accessors, because MakeEntry
-//  gives up on a page from three different places and every one of them had to release the same four
-//  **in one order: an accessor before the snapshot it came from**. It is gone because the four are
-//  now held by K2::scoped_ptr, which frees them at every exit including the ones written since.
-//  ★**THE ORDER IS STILL ENFORCED, BY THE DECLARATIONS.** A scoped_ptr is destroyed in the reverse
-//  of declaration order, and MakeEntry declares snapTH, accTH, snapSH, accSH -- so destruction runs
-//  accSH, snapSH, accTH, snapTH, which is each accessor before its own snapshot, exactly what the
-//  helper existed to guarantee. **Declare a new snapshot before its accessor and this keeps holding;
-//  swap them and it silently stops.**)
+//========================================================================================
+// One page rasterised: the snapshot and the accessor that reads its pixels.
+//
+// ★**THE ORDER OF THE TWO MEMBERS IS THE POINT.** An accessor has to be destroyed before the
+//   snapshot it came from, and members go down in the reverse of their declaration order -- so
+//   declaring snap first is what puts acc down first, at every exit of every function holding one.
+//   (Until 2026-10-30 the same order was a rule about four local declarations in MakeEntry --
+//   snapTH, accTH, snapSH, accSH -- kept by a note saying "swap them and it silently stops". Before
+//   that, a helper, KCMDropSnapshotPair, released the four by hand from each of MakeEntry's three
+//   give-up points.)
+//========================================================================================
+struct KCMPageRaster
+{
+	K2::scoped_ptr<SnapshotUtilsEx>  snap;
+	K2::scoped_ptr<AGMImageAccessor> acc;	// nil when the Draw failed
+};
+
+//========================================================================================
+// Rasterise one page for the COMPARISON. **Both pages of a pair come through here, and that is what
+// keeps them alike**: every argument below has to be the same for the Target and the Source, or
+// every edge in the document becomes a difference. (Until 2026-10-30 MakeEntry wrote the two calls
+// out, and asked its reader three times to keep them the same.)
+// ⚠The book comparison (KCMBookCompare.cpp) rasterises its pairs with these same arguments, written
+//   out there for itself -- the same promise in a second place.
+// kFalse only when the snapshot itself could not be allocated (nothrow: the page is given up, as
+// everywhere in this file). A Draw that fails leaves acc nil, and the caller tests it.
+//
+// The comparison is always four-channel CMYK, rasterised opaque (small CMYK differences are
+// rounded away by a conversion to RGB). The displayed ring is composited separately as ARGB,
+// so the comparison raster does not need an alpha channel (addTransparencyAlpha = kFalse).
+// Rasterise with ANTI-ALIASING OFF (4th argument enableAntiAliasing = kFalse). It removes the
+//   grey halo at edges, and with it the banding that a sub-pixel shift would otherwise register
+//   as a difference. **Target and source must always use the same AA setting** -- with one of
+//   them anti-aliased, every edge in the document is a difference.
+// 2nd argument fullResolutionGraphics = kFalse (the default) is **deliberate**: kTrue triggers
+//   generation of placed images at full resolution, and that DIRTIES THE DOCUMENT. KCM's design
+//   rests on never modifying the model, so the comparison uses the proxies.
+// 3rd argument greekBelowPtSize = 0.0 (greeking disabled) is **deliberate**. Left at the
+//   default, small text is drawn as a grey band with no letterforms; target and source are
+//   greeked alike, so **a change in small text produces no difference at all**
+//   (SnapshotUtilsEx.h:224-225 -- the threshold is "point size multiplied by the scaling", and
+//   the header does not say what that scaling is, so whether it kills everything under 7pt or
+//   only under 3.5pt cannot be settled; the 3.5 is 7.0 over this rasterisation's 144dpi / 72.
+//   The nearest the SDK comes to an answer is IDrawOptions.h:279, which calls the same setting
+//   "at what **effective** point size do we start greeking the text" -- the size as drawn
+//   rather than as typed -- but it still does not say what multiplies it here.
+//   **This is the one place that question is written out**: KCMColorSampler.cpp, which
+//   rasterises at 300dpi for the CMYK sample, points at this line instead of answering it
+//   again -- it did answer it once, and got both the multiplier and this file's dpi wrong).
+//   KCM compares pixels, so it passes 0.0 and always gets
+//   letterforms; the price is a slightly slower rasterisation on pages full of small text.
+//   The official sample (snapshot/SnapTracker.cpp:318) leaves the default, but its purpose is
+//   a visual snapshot. **Target and source must use the same value.**
+// 8th argument bDrawNonPrintingObjects = kFalse is **deliberate** (the default is kTrue). Left
+//   at the default, moving a page item marked non-printing -- a working note, an annotation, a
+//   memo beside the crop marks -- makes the page count as changed, so **a mark appears although
+//   the printed result is identical**. KCM's marks mean "the printed result changed"
+//   (SnapshotUtilsEx.h:241-242).
+//   @warning as that header states, it does NOT affect a LAYER's non-printing setting.
+//   @warning arguments 5-7 are the defaults spelled out, only because the 8th cannot be reached
+//     otherwise: transparencyQuality = kXPHigh (do not lower it, or changes to shadows, feathers
+//     and blends stop being detected), abortCheck = nil (cancelling is checked at page
+//     boundaries, in KCMCore.cpp), pVPAttrMap = nil.
+//   **Target and source must use the same value.**
+//========================================================================================
+static bool16 KCMRasteriseForComparison(const UIDRef& pageRef, const PMReal& hiRes, KCMPageRaster& out)
+{
+	out.snap.reset(new (std::nothrow) SnapshotUtilsEx(pageRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse));
+	if (out.snap.get() == nil)
+		return kFalse;
+	ErrorCode drew;
+	{
+		KCMRasterizingGuard rg;	// a re-entrant draw during this Draw must not paint marks into our own raster
+		drew = out.snap->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
+		                      SnapshotUtils::kXPHigh, nil, nil, kFalse);
+	}
+	out.acc.reset((drew == kSuccess) ? out.snap->CreateAGMImageAccessor() : nil);
+	return kTrue;
+}
 
 ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& sourceRef, bool16& changed)
 {
@@ -357,71 +431,19 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 	// kKCMResolution x kKCMHiResMul. Thin lines and sub-pixel shifts that averaging would erase
 	// are counted at full weight, so nothing is missed.
 	const PMReal hiRes = kKCMResolution * kKCMHiResMul;
-	// The comparison is always four-channel CMYK, rasterised opaque (small CMYK differences are
-	// rounded away by a conversion to RGB). The displayed ring is composited separately as ARGB,
-	// so the comparison raster does not need an alpha channel (addTransparencyAlpha = kFalse).
-	// @warning the declaration order of the four below (snapshot, then its accessor, twice) is what
-	//   keeps each accessor being destroyed before the snapshot it came from -- see the note where
-	//   KCMDropSnapshotPair used to be.
-	K2::scoped_ptr<SnapshotUtilsEx> snapTH(new (std::nothrow) SnapshotUtilsEx(targetRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse));
-	if (snapTH.get() == nil)
+	// Both pages through the ONE function above, so the two are rasterised alike by construction (the arguments and why
+	// each is what it is are written there). They go down in the reverse of these declarations -- source, then target --
+	// each accessor before its own snapshot (KCMPageRaster).
+	KCMPageRaster target, source;
+	if (!KCMRasteriseForComparison(targetRef, hiRes, target))
 		return kFailure;
-	// Rasterise with ANTI-ALIASING OFF (4th argument enableAntiAliasing = kFalse). It removes the
-	//   grey halo at edges, and with it the banding that a sub-pixel shift would otherwise register
-	//   as a difference. **Target and source must always use the same AA setting** -- with one of
-	//   them anti-aliased, every edge in the document is a difference.
-	// 2nd argument fullResolutionGraphics = kFalse (the default) is **deliberate**: kTrue triggers
-	//   generation of placed images at full resolution, and that DIRTIES THE DOCUMENT. KCM's design
-	//   rests on never modifying the model, so the comparison uses the proxies.
-	// 3rd argument greekBelowPtSize = 0.0 (greeking disabled) is **deliberate**. Left at the
-	//   default, small text is drawn as a grey band with no letterforms; target and source are
-	//   greeked alike, so **a change in small text produces no difference at all**
-	//   (SnapshotUtilsEx.h:224-225 -- the threshold is "point size multiplied by the scaling", and
-	//   the header does not say what that scaling is, so whether it kills everything under 7pt or
-	//   only under 3.5pt cannot be settled; the 3.5 is 7.0 over this rasterisation's 144dpi / 72.
-	//   The nearest the SDK comes to an answer is IDrawOptions.h:279, which calls the same setting
-	//   "at what **effective** point size do we start greeking the text" -- the size as drawn
-	//   rather than as typed -- but it still does not say what multiplies it here.
-	//   **This is the one place that question is written out**: KCMColorSampler.cpp, which
-	//   rasterises at 300dpi for the CMYK sample, points at this line instead of answering it
-	//   again -- it did answer it once, and got both the multiplier and this file's dpi wrong).
-	//   KCM compares pixels, so it passes 0.0 and always gets
-	//   letterforms; the price is a slightly slower rasterisation on pages full of small text.
-	//   The official sample (snapshot/SnapTracker.cpp:318) leaves the default, but its purpose is
-	//   a visual snapshot. **Target and source must use the same value.**
-	// 8th argument bDrawNonPrintingObjects = kFalse is **deliberate** (the default is kTrue). Left
-	//   at the default, moving a page item marked non-printing -- a working note, an annotation, a
-	//   memo beside the crop marks -- makes the page count as changed, so **a mark appears although
-	//   the printed result is identical**. KCM's marks mean "the printed result changed"
-	//   (SnapshotUtilsEx.h:241-242).
-	//   @warning as that header states, it does NOT affect a LAYER's non-printing setting.
-	//   @warning arguments 5-7 are the defaults spelled out, only because the 8th cannot be reached
-	//     otherwise: transparencyQuality = kXPHigh (do not lower it, or changes to shadows, feathers
-	//     and blends stop being detected), abortCheck = nil (cancelling is checked at page
-	//     boundaries, in KCMCore.cpp), pVPAttrMap = nil.
-	//   **Target and source must use the same value.**
-	ErrorCode drewTH;
-	{
-		KCMRasterizingGuard rg;	// a re-entrant draw during this Draw must not paint marks into our own raster
-		drewTH = snapTH->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
-		                      SnapshotUtils::kXPHigh, nil, nil, kFalse);
-	}
-	K2::scoped_ptr<AGMImageAccessor> accTH((drewTH == kSuccess) ? snapTH->CreateAGMImageAccessor() : nil);
-
-	K2::scoped_ptr<SnapshotUtilsEx> snapSH(new (std::nothrow) SnapshotUtilsEx(sourceRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse));
-	if (snapSH.get() == nil)
-		return kFailure;	// snapTH and accTH free themselves on the way out
-	ErrorCode drewSH;
-	{
-		KCMRasterizingGuard rg;
-		// As above: greeking off, AA off, non-printing objects not drawn -- both sides identical.
-		drewSH = snapSH->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
-		                      SnapshotUtils::kXPHigh, nil, nil, kFalse);
-	}
-	K2::scoped_ptr<AGMImageAccessor> accSH((drewSH == kSuccess) ? snapSH->CreateAGMImageAccessor() : nil);
+	if (!KCMRasteriseForComparison(sourceRef, hiRes, source))
+		return kFailure;	// target frees itself on the way out
+	AGMImageAccessor* const accTH = target.acc.get();	// nil when that page's Draw failed -- tested just below
+	AGMImageAccessor* const accSH = source.acc.get();
 
 	ErrorCode status = kFailure;
-	if (accTH.get() != nil && accSH.get() != nil)
+	if (accTH != nil && accSH != nil)
 	{
 		// The high-resolution (comparison) dimensions and buffers.
 		Int32Rect bth = accTH->GetBounds();
@@ -673,7 +695,7 @@ ErrorCode KCMDrawEventHandler::MakeEntry(const UIDRef& targetRef, const UIDRef& 
 		}
 	}
 
-	// (both snapshots and both accessors are freed by their scoped_ptrs, in the order noted above.)
+	// (both rasters are freed on the way out -- each accessor before its own snapshot, KCMPageRaster.)
 	return status;
 }
 
@@ -696,20 +718,22 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 	//   a reproduction of "how it was".
 	//   @warning so a non-printing object that moved can differ in the peek image while no mark
 	//     appears. The asymmetry is intended; matching them means setting both to kFalse.
-	// Snapshot before accessor, as in MakeEntry: scoped_ptrs are destroyed in the reverse of
-	// declaration order, so that order is what puts the accessor down before the snapshot it came from.
-	K2::scoped_ptr<SnapshotUtilsEx> snap(new (std::nothrow) SnapshotUtilsEx(sourceRef, 1.0, 1.0, resolution, resolution, 0.0, SnapshotUtilsEx::kCsRGB, kFalse));
-	if (snap.get() == nil)
+	// Held in a KCMPageRaster, as the comparison's pages are: its member order is what puts the accessor down before the
+	// snapshot it came from.
+	KCMPageRaster raster;
+	raster.snap.reset(new (std::nothrow) SnapshotUtilsEx(sourceRef, 1.0, 1.0, resolution, resolution, 0.0, SnapshotUtilsEx::kCsRGB, kFalse));
+	if (raster.snap.get() == nil)
 		return kFailure;	// nothrow: out of memory only costs this page its picture (as in MakeEntry)
 	ErrorCode drew;
 	{
 		KCMRasterizingGuard rg;	// a re-entrant draw during this Draw must not paint marks into our own raster
-		drew = snap->Draw(IShape::kPreviewMode);
+		drew = raster.snap->Draw(IShape::kPreviewMode);
 	}
-	K2::scoped_ptr<AGMImageAccessor> acc((drew == kSuccess) ? snap->CreateAGMImageAccessor() : nil);
+	raster.acc.reset((drew == kSuccess) ? raster.snap->CreateAGMImageAccessor() : nil);
+	AGMImageAccessor* const acc = raster.acc.get();	// nil when the Draw failed -- tested just below
 
 	ErrorCode status = kFailure;
-	if (acc.get() != nil)
+	if (acc != nil)
 	{
 		Int32Rect b = acc->GetBounds();
 		const int32 w = b.right - b.left, h = b.bottom - b.top;
@@ -781,7 +805,7 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 		}
 	}
 
-	// (acc and snap are freed by their scoped_ptrs -- the accessor first.)
+	// (the raster is freed on the way out -- the accessor first, KCMPageRaster.)
 	return status;
 }
 
@@ -1028,7 +1052,10 @@ static void KCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpAtt
 //   (There is no separate mode for the Pages panel's thumbnails: those are generated with no view,
 //   in kPreviewMode, and the thumbnail branches of the loops below draw a border and a "/" instead
 //   of the ring image.)
-enum { kKCMDrawModeScreen = 0, kKCMDrawModePrint = 1 };
+// ★A NAMED TYPE (2026-10-30). It was an unnamed enum carried in an int32, so anything that converts
+//   to an integer passed for it -- a bool16 such as `printing` among them, which would even have
+//   meant the right thing, kTrue being 1. The four functions that take it now say what they take.
+enum KCMDrawMode { kKCMDrawModeScreen = 0, kKCMDrawModePrint = 1 };
 
 //========================================================================================
 // A page's box in SPREAD coordinates. kFalse when the UID names nothing with geometry, and
@@ -1077,7 +1104,7 @@ static bool16 KCMQueryPageRect(IDataBase* db, UID pageUID, PMRect& outRect)
 //========================================================================================
 static void KCMDrawEntryOnPage(IGraphicsPort* gPort, IViewPortAttributes* vpAttr,
 	KCMOverlayEntry* e, IDataBase* db, UID pageUID,
-	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity)
+	const PMReal& sxr, KCMDrawMode drawMode, const PMReal& screenOpacity)
 {
 	if (e == nil || e->buf.get() == nil)
 		return;
@@ -1300,7 +1327,7 @@ static void KCMDrawPageNumberMarkerFill(IGraphicsPort* gPort, IDataBase* db, UID
 // fixed ratio and kKCMThumbMarkOpacity, slightly see-through).
 //========================================================================================
 static void KCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
-	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
+	const PMReal& sxr, KCMDrawMode drawMode, const PMReal& screenOpacity,
 	uint8 cr, uint8 cg, uint8 cb)
 {
 	PMRect pr;
@@ -1346,7 +1373,7 @@ static void KCMDrawPageDiagonal(IGraphicsPort* gPort, IDataBase* db, UID pageUID
 //   font: two strokes are drawn instead (left, down to the valley, up to the right).
 //========================================================================================
 static void KCMDrawPageCheck(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
-	const PMReal& sxr, int32 drawMode, const PMReal& screenOpacity,
+	const PMReal& sxr, KCMDrawMode drawMode, const PMReal& screenOpacity,
 	uint8 cr, uint8 cg, uint8 cb, bool16 layoutStyle = kFalse)
 {
 	PMRect pr;
@@ -1823,7 +1850,7 @@ static void KCMDrawOnePaw(IGraphicsPort* gPort, const KCMPawStamp& paw, const PM
 //   other half: the caller passes the view it draws in, and nil when printing.
 //========================================================================================
 static void KCMDrawPawStamps(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
-	int32 drawMode, const IControlView* view)
+	KCMDrawMode drawMode, const IControlView* view)
 {
 	if (gPort == nil || db == nil)
 		return;
@@ -1866,6 +1893,24 @@ static void KCMDrawPawStamps(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	// The one being placed goes on top: it is the newest, and that is where it lands on release.
 	if (havePlacing)
 		KCMDrawOnePaw(gPort, placing, pr, s);
+}
+
+
+//========================================================================================
+// The two numbers a page has while spreads are hidden -- the question the original-page-number badge
+// asks: the ORIGINAL, which counts the pages of hidden spreads, and the CURRENT, which skips them
+// (the last argument, bIncludePagesOfHiddenSpread, is all that differs). The rest is the same for
+// both, because the badge compares them: 3rd bIncludeSectionName = kFalse -- the number alone, with no
+// section prefix ("A:" and the like); 4th bUseIntegerStyle = kFalse -- the section's own style, so it
+// matches the real folio.
+// ★ONE FUNCTION FOR BOTH ASKERS (2026-10-30): the spread's probe and the per-page loop in
+//   DrawSpreadMarks each wrote the pair out, and the probe has to answer exactly as the loop would --
+//   told "nothing shifted" by a probe asked differently, the loop never runs.
+//========================================================================================
+static void KCMPageNumbersAroundHiding(IPageList* pageList, UID pageUID, PMString& outOriginal, PMString& outCurrent)
+{
+	pageList->GetPageString(pageUID, &outOriginal, kFalse, kFalse, kDefaultPageType, kTrue, kTrue);	// counting hidden pages
+	pageList->GetPageString(pageUID, &outCurrent,  kFalse, kFalse, kDefaultPageType, kTrue, kFalse);	// skipping them
 }
 
 
@@ -2212,8 +2257,10 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		sxr = abs(toWin.GetXScale());	// the scale can be negative (PMReal's abs, from PMReal.h)
 	}
 
-	// The drawing mode (thumbnail generation returned earlier, so it cannot arrive here).
-	const int32 drawMode = printing ? kKCMDrawModePrint : kKCMDrawModeScreen;
+	// The drawing mode. ⚠A thumbnail DOES arrive here, as Screen with sxr left at 0 -- the thumbnail tick just below is drawn
+	//   with it, and the drawing functions read sxr <= 0 as "a thumbnail" (this line said until 2026-10-30 that thumbnail
+	//   generation had returned earlier and could not arrive).
+	const KCMDrawMode drawMode = printing ? kKCMDrawModePrint : kKCMDrawModeScreen;
 
 	// For print and PDF, fix the appearance at "100% display" (no zoom tracking). A printing port
 	// has no view, so sxr is 0; giving it an effective 1.0 (100%, device scale 1) makes the ring
@@ -2372,10 +2419,8 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			bool16 spreadMayShift = kFalse;
 			if (npn > 0)
 			{
-				const UID probeUID = spread->GetNthPageUID(0);
 				PMString probeOrig, probeCur;
-				pageList->GetPageString(probeUID, &probeOrig, kFalse, kFalse, kDefaultPageType, kTrue, kTrue);
-				pageList->GetPageString(probeUID, &probeCur,  kFalse, kFalse, kDefaultPageType, kTrue, kFalse);
+				KCMPageNumbersAroundHiding(pageList, spread->GetNthPageUID(0), probeOrig, probeCur);
 				spreadMayShift = (probeOrig != probeCur);
 			}
 
@@ -2383,11 +2428,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			{
 				const UID pageUID = spread->GetNthPageUID(i);
 				PMString orig, cur;
-				// 3rd argument bIncludeSectionName = kFalse: the number alone, with no section
-				// prefix ("A:" and the like). Both numbers are fetched with the same settings, so
-				// the comparison is not thrown off.
-				pageList->GetPageString(pageUID, &orig, kFalse, kFalse, kDefaultPageType, kTrue, kTrue);	// the original (counting hidden pages)
-				pageList->GetPageString(pageUID, &cur,  kFalse, kFalse, kDefaultPageType, kTrue, kFalse);	// the current (skipping them)
+				KCMPageNumbersAroundHiding(pageList, pageUID, orig, cur);	// asked as the probe asked (the function says why)
 				if (orig == cur)
 					continue;	// not shifted: no hidden spread before this page
 

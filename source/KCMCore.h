@@ -143,6 +143,13 @@ struct KCMPageHit
 	// Finding the partner page is unchanged: KCMMapTargetToSource / KCMMapSourceToTarget handle
 	// both ordinary pages and masters (masters pair by name, KCMBuildMasterPairing).
 	bool16 isMaster;
+
+	// "Nothing hit". ★The values live HERE (2026-10-30): KCMFindPageUnderMouse starts by assigning a fresh one, so a
+	//   field added later is reset with the rest -- the function used to set the seven by hand, and a field missing from
+	//   that list would have carried the previous hit into a miss. (A caller's `KCMPageHit hit;` no longer starts out
+	//   uninitialised either.)
+	KCMPageHit() : spreadIndex(-1), spreadUID(kInvalidUID), numPages(0), globalPageBase(0),
+		hitPageIndex(-1), hitPageUID(kInvalidUID), isMaster(kFalse) {}
 };
 
 // Hit-test the mouse (in content / pasteboard coordinates) against every page of targetDB, in

@@ -44,7 +44,6 @@
 #include <map>						// the pairing maps in KCMDoMarkChangesDoc (explicit, not relied on indirectly)
 
 #include "KCMDrawEventHandler.h"   // the drawing engine and the shared statics
-#include "KCMThreadSafety.h"       // needed to walk the entries when the mark colour changes and their cached ring images must be dropped
 #include "KCMPeek.h"               // KCMBaseScreenOpacity
 #include "KCMPageMap.h"            // KCMBuildPairing (the exclusion pairing) / KCMPageMapCollectRegistered
 #include "KCMStoryStamp.h"         // the stories' change counters -- whether text was edited, which pixels cannot say
@@ -361,9 +360,7 @@ static bool16 KCMPageContainsPoint(IDataBase* db, UID pageUID, const PMPoint& pt
 bool16 KCMFindPageUnderMouse(IDataBase* targetDB, PMReal mx, PMReal my, KCMPageHit& out,
                                UID onlySpreadUID)
 {
-	out.spreadIndex = -1; out.spreadUID = kInvalidUID; out.numPages = 0;
-	out.globalPageBase = 0; out.hitPageIndex = -1; out.hitPageUID = kInvalidUID;
-	out.isMaster = kFalse;
+	out = KCMPageHit();	// "nothing hit" -- the values are the struct's (KCMCore.h)
 	if (targetDB == nil)
 		return kFalse;
 	InterfacePtr<ISpreadList> spreadList(targetDB, targetDB->GetRootUID(), UseDefaultIID());
@@ -1377,17 +1374,14 @@ void KCMDoSetMarkColor(bool16 cyan, IDataBase* db)
 
 	// @warning **the ring images are cached and are only rebuilt when the RADIUS changes** (the call
 	//   to BuildRing is guarded by `R != e->lastRadius`), so changing the colour alone would leave
-	//   **the old colour standing**. Marking them "not drawn" here makes the next draw rebuild them.
+	//   **the old colour standing**. Marking them "not drawn" makes the next draw rebuild them.
 	//   The Story wash needs no such treatment -- it reads the colour on every Draw, so a redraw is
 	//   enough. **The same setting needs different clean-up on the side that caches and the side
 	//   that does not.**
-	{
-		KCMMarkStateLock lock(KCMMarkStateMutex());
-		for (std::map<UID, KCMOverlayEntry*>::iterator it = KCMDrawEventHandler::sEntries.begin();
-		     it != KCMDrawEventHandler::sEntries.end(); ++it)
-			if (it->second != nil)
-				it->second->lastRadius = -1;	// -1 = not drawn (KCMOverlayEntry's own default)
-	}
+	// ★Asked of InvalidateRingCache, the engine's one way to say it (2026-10-30) -- the report asks the same when it turns
+	//   the page frame off. This walked sEntries itself, under the lock, a line-for-line copy of that function written
+	//   before it existed: a third cached property would have been added to one of the two.
+	KCMDrawEventHandler::InvalidateRingCache();
 
 	// The redraw covers the same three documents as KCMDoSetPrintMarks (marked, active, Source).
 	KCMInvalidateDocs(KCMDrawEventHandler::sDB, db, KCMDrawEventHandler::sSrcDB);

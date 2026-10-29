@@ -149,8 +149,9 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 	//     scaling is: at the 300dpi used here it is either 4.17x (300/72, so only text below about
 	//     1.68pt) or 1.0x (the snapshot's scale factor, so everything below 7pt).
 	//     **The question is written out in one place only** -- beside the 3rd argument of the
-	//     comparison rasterisation in KCMDrawEventHandler.cpp (MakeEntry) -- and 0.0 is the right
-	//     value to pass whichever way it is answered, so it is not answered again here.
+	//     comparison rasterisation in KCMDrawEventHandler.cpp (KCMRasteriseForComparison, which both
+	//     of MakeEntry's pages go through) -- and 0.0 is the right value to pass whichever way it is
+	//     answered, so it is not answered again here.
 	//     ⚠**that comparison rasterisation runs at 144dpi**, not at the 36dpi of kKCMResolution
 	//     (144 = kKCMResolution x kKCMHiResMul, KCMConstants.h:59). This comment used to read the
 	//     storage resolution as the comparison one, put the default at "everything below 14pt, the

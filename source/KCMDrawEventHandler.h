@@ -464,17 +464,20 @@ public:
 // from then on.
 // Making the flag thread-local changed not one caller -- the RAII wrapper is what kept that change
 // inside this class.
-// The callers are found by grepping for `KCMRasterizingGuard` (five today: three in
-// KCMDrawEventHandler.cpp, one in KCMColorSampler.cpp, one in KCMBookCompare.cpp). **The count can
-// be re-derived; line numbers cannot -- they go quietly wrong.**
+// The callers are found by grepping for `KCMRasterizingGuard` (four today: two in
+// KCMDrawEventHandler.cpp -- the comparison's rasterisation, which both of MakeEntry's pages go
+// through, and MakeOrigImage -- one in KCMColorSampler.cpp, one in KCMBookCompare.cpp; it was five
+// until 2026-10-30, when MakeEntry's two became one function). **The count can be re-derived; line
+// numbers cannot -- they go quietly wrong.**
 //
 // **It nests safely** (the previous value is saved and restored). A destructor that wrote kFalse
 // unconditionally would mean a guard inside a guard **ends the outer protection when the inner one
 // finishes** -- and rasterising after that point paints **our own marks into the comparison
 // raster**, which makes the result quietly wrong with no crash and no warning.
-// @warning today all five wrap a single Draw in the smallest possible scope and none of them
-//   nests, but the book comparison has only recently started using this guard, and the day that
-//   route calls MakeEntry it nests immediately.
+// @warning today each of the four wraps its Draw in the smallest possible scope (the book
+//   comparison's wraps its pair's two Draws in one) and none of them nests, but the book comparison
+//   has only recently started using this guard, and the day that route calls MakeEntry it nests
+//   immediately.
 // Two lines suffice because ThreadLocal::Get() is guaranteed to return the initial value (kFalse)
 // when nothing has been set (IDThreading.h:107 = PublicThreadLocalStorageGet(fKey, fInitialVal)),
 // so fPrev is not garbage on a background thread's first pass.
