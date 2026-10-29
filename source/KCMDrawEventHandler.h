@@ -19,7 +19,6 @@
 #include <set>
 #include <vector>
 #include "KCMConstants.h"
-#include "IDrwEvtHandler.h"
 #include "GraphicsExternal.h"   // AGMImageRecord (a struct member below)
 #include "K2SmartPtr.h"         // K2::scoped_array -- the two structs below own their pixel buffers with it
                                 //   rather than with a hand-written destructor.
@@ -33,7 +32,8 @@
 #include "KCMThreadSafety.h"  // KCMMarkStateMutex / KCMMarkStateLock, taken wherever sEntries is deleted
 
 class IDataBase;
-class IDrwEvtDispatcher;
+class IPMUnknown;
+class GraphicsData;
 class IControlView;
 class IPanorama;
 
@@ -132,18 +132,16 @@ struct KCMOrigImage
 	the drawing held here (`DrawSpreadMarks`); this class also holds the statics that keep the
 	mark state. **No instance of it is ever created** -- all the mutable state is static.
 	@warning the class name and the file name are historical. It does not inherit IDrwEvtHandler
-	and it goes on no boss.
-	`DrawEventData` is still used, as a convenient carrier for "the spread being drawn +
-	GraphicsData + flags" (the struct is defined by `IDrwEvtHandler.h`). */
+	and it goes on no boss. */
 class KCMDrawEventHandler
 {
 public:
-	// The drawing itself. **The only caller is the global page item adornment**
-	// (KCMRingAdornment.cpp), which builds a DrawEventData for the spread and calls this.
-	// @warning the changedBy it is handed is "the spread being drawn" -- this function reads
-	// changedBy as a spread and as nothing else.
-	// It is static because it uses no instance state (every mutable member of this class is).
-	static bool16 DrawSpreadMarks(DrawEventData* ded);
+	// The drawing itself, for one spread. **The only caller is the global page item adornment**
+	// (KCMRingAdornment.cpp), on a spread's draw: `spreadBoss` is the spread being drawn - its
+	// ISpread and its database are all that is read off it - `gd` that drawing's GraphicsData and
+	// `flags` its IShape flags. It is static because it uses no instance state (every mutable
+	// member of this class is).
+	static void DrawSpreadMarks(IPMUnknown* spreadBoss, GraphicsData* gd, int32 flags);
 
 	// Page UID -> overlay. Only pages that changed are in here.
 	// @warning raw pointers, deleted by DropAll(): touched from the background thread and the
@@ -554,8 +552,6 @@ class IGraphicsPort;
 // reaches paper too and needs the same screen-RGB / print-CMYK decision. Written in two places it
 // would drift.
 void KCMSetOutputColor(IGraphicsPort* gPort, uint8 r, uint8 g, uint8 b, bool16 useCMYK);
-
-class GraphicsData;
 
 // Is this draw an overprint preview? Read off the viewport's attribute (kSepPrvOPPEnabledVPAttr), which is exact.
 // ⚠Not kPreviewMode: it shares its bit with PDF export (kPDFExportMode), so it would catch exports too.

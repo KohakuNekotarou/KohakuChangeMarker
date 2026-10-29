@@ -21,8 +21,8 @@
 //    HUD that is the right answer.
 //    ⚠★★**The comparison marks, which DO have to reach an export, are on the model side -- and
 //      they are not drawn from a draw event at all.** They were consolidated into the **global
-//      page item adornment** (KCMRingAdornment.cpp), which builds a DrawEventData and calls
-//      KCMDrawEventHandler::DrawSpreadMarks. ★**The model half registers no draw-event handler
+//      page item adornment** (KCMRingAdornment.cpp), which hands the spread, its GraphicsData and
+//      its flags to KCMDrawEventHandler::DrawSpreadMarks. ★**The model half registers no draw-event handler
 //      of any kind**; KCMDrawEventHandler is no longer an IDrwEvtHandler implementation and says
 //      so at the top of its own header (the class name and the file name are historical).
 //

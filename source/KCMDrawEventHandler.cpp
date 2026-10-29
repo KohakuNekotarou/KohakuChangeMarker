@@ -18,7 +18,6 @@
 #include "IDocumentList.h"
 #include "ISpread.h"
 #include "IShape.h"
-#include "IDrwEvtHandler.h"
 #include "GraphicsData.h"
 #include "IGraphicsPort.h"
 #include "AutoGSave.h"
@@ -1893,10 +1892,10 @@ static void KCMPageNumbersAroundHiding(IPageList* pageList, UID pageUID, PMStrin
 }
 
 
-bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
+void KCMDrawEventHandler::DrawSpreadMarks(IPMUnknown* spreadBoss, GraphicsData* gd, int32 flags)
 {
-	if (ded == nil || ded->gd == nil)
-		return kFalse;
+	if (spreadBoss == nil || gd == nil)
+		return;
 	// Do not draw during OUR OWN rasterisation (MakeEntry's comparison snapshot, MakeOrigImage's
 	// picture of the older version): that would be self-reference, with the marks appearing in the
 	// snapshot. Not by the kPreviewMode bit, which PDF export sets too -- **the same bit, 4096** --
@@ -1914,7 +1913,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   plain static, the main thread's comparison rasterisation would also suppress the background
 	//   thread's PDF export.
 	if (KCMDrawEventHandler::tl_Rasterizing.Get())
-		return kFalse;
+		return;
 	// Is this a printing context (kPrinting = 512)? While printing, whether the marks appear is
 	// decided by sPrintMarks. It is never set for ordinary screen drawing.
 	// **kPrinting is set for printing OR PDF export** (the official sample
@@ -1932,7 +1931,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   Where each kind of draw goes was measured (with a KT probe since retired); the flags it saw
 	//   per destination are in memory draw-event-handler.
 	// Self-reference is handled by tl_Rasterizing above, so kPreviewMode is not consulted here.
-	const bool16 printing = (ded->flags & IShape::kPrinting) != 0;
+	const bool16 printing = (flags & IShape::kPrinting) != 0;
 
 	// Detect the Pages panel's thumbnail generation: no view, kPreviewMode, not printing
 	// (the diagnostic log shows flags = 0x1800 = kPreviewMode | kDrawFrameEdge). In a thumbnail
@@ -1948,7 +1947,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// and KCMDrawPageDiagonal (a "/") instead of the difference ring image, at a fixed ratio
 	// thickness that survives the size. The opacity is kKCMThumbMarkOpacity (0.75).
 	const bool16 isThumb = !printing &&
-		ded->gd->GetView() == nil && (ded->flags & IShape::kPreviewMode) != 0;	// gd was nil-checked at the top of the function
+		gd->GetView() == nil && (flags & IShape::kPreviewMode) != 0;	// gd was nil-checked at the top of the function
 
 	// **OVERPRINT PREVIEW SHOWS WHAT WILL BE PRINTED, SO ONLY WHAT WOULD BE PRINTED IS SHOWN**
 	//   (the author's decision: "in overprint preview, only what has printing on is shown").
@@ -1961,7 +1960,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   **The peek (Shift / Shift+Alt) is deliberately NOT included**: it is a momentary look at
 	//     the older version held under a button, not something claiming to be on the sheet.
 	//   ⚠**kPreviewMode cannot be used for this** (KCMIsOverprintPreview says why).
-	const bool16 overprintPreview = KCMIsOverprintPreview(ded->gd);
+	const bool16 overprintPreview = KCMIsOverprintPreview(gd);
 	// The one test the marks below share: in OPP, with printing of marks off, draw nothing.
 	const bool16 oppHides = (overprintPreview && !sPrintMarks) ? kTrue : kFalse;
 	// The Source-side frames ("Always Show Marks on Source") are shown at ALL times on screen while
@@ -1996,7 +1995,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			//   longer needs a comparison to exist, so it can sit on a document nobody is
 			//   comparing -- the shape wantPaws uses below, and for the same reason. This gate
 			//   is what lets a thumbnail redraw reach a tick that is the page's only mark.
-			KCMPageCheckHasAny(::GetDataBase(ded->changedBy)) ||
+			KCMPageCheckHasAny(::GetDataBase(spreadBoss)) ||
 			// (No paws in this gate. ⚠They belong here ONLY if something draws them into a
 			//  thumbnail, and nothing does: the layout and print routes reach the port through
 			//  wantPaws, which is tested on its own in the early-out below.)
@@ -2046,7 +2045,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// The Source side reads sPrintMarks too (srcWanted above), so this flag and that one agree.
 	const bool16 suppressForPrint = printing && !sPrintMarks;
 	if (suppressForPrint && !wantSrcMarks)
-		return kFalse;
+		return;
 	// Settle what this draw could possibly paint from the state flags alone, and return at once if
 	// the answer is nothing.
 	//   - the marks (rings and frames): only with printing on, or the display on while the tool's
@@ -2102,7 +2101,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   rather than of sDB / sSrcDB -- the same shape, and the same reasoning, as wantPaws below.
 	// Thumbnails (isThumb) are drawn by their own block below and are not included here.
 	const bool16 wantChecks = !isThumb && !oppHides && (!printing || sPrintMarks) &&
-		KCMPageCheckHasAny(::GetDataBase(ded->changedBy));
+		KCMPageCheckHasAny(::GetDataBase(spreadBoss));
 	// The cat-paw stamps follow the tick's rules -- always on screen, in print only with
 	// sPrintMarks -- with ONE DIFFERENCE THAT DECIDES THE SHAPE OF THIS LINE: a paw is NOT tied
 	// to an armed comparison. It can be put on any open document, so "does this one have any" has
@@ -2114,8 +2113,8 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// OR THE PAW BEING PLACED: while the stamp tool follows a drag, a document with no paw yet has
 	//   one to show, turning -- in the pressed view only (KCMPawPreviewFor compares the view; nil when printing).
 	const bool16 wantPaws = !isThumb && !oppHides && (!printing || sPrintMarks) &&
-		(KCMPawStampHasAny(::GetDataBase(ded->changedBy)) ||
-		 (!printing && KCMPawPreviewFor(::GetDataBase(ded->changedBy), ded->gd->GetView())));
+		(KCMPawStampHasAny(::GetDataBase(spreadBoss)) ||
+		 (!printing && KCMPawPreviewFor(::GetDataBase(spreadBoss), gd->GetView())));
 	// The original-page-number badge: the toggle on, and the frames visible (printing on, or the
 	// tool's left button held) -- the same visibility rule wantMarks uses. In a printing context
 	// suppressForPrint leaves it alive only with sPrintMarks on, so it prints only when the marks
@@ -2138,12 +2137,11 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	// comparison (and registering itself requires one: KCMIsComparedDoc).
 
 	if (!wantMarks && !wantOrig && !wantOldNums && !wantSrcMarks && !wantChecks && !wantPaws)
-		return kFalse;
+		return;
 
-	GraphicsData* gd = ded->gd;
 	IGraphicsPort* gPort = gd->GetGraphicsPort();
 	if (gPort == nil)
-		return kFalse;
+		return;
 	// The attributes to ask the port what kind of output this is, used to decide whether the extra
 	//   initialisation a PDF export needs (the transparency group) applies -- see the head of
 	//   KCMDrawRingForPrint.
@@ -2152,13 +2150,12 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//     can be passed straight through.
 	IViewPortAttributes* vpAttr = gd->GetViewPortAttributes();
 
-	// changedBy is the spread being drawn.
-	InterfacePtr<ISpread> spread(ded->changedBy, UseDefaultIID());
+	InterfacePtr<ISpread> spread(spreadBoss, UseDefaultIID());
 	if (spread == nil)
-		return kFalse;
-	IDataBase* db = ::GetDataBase(ded->changedBy);
+		return;
+	IDataBase* db = ::GetDataBase(spreadBoss);
 	if (db == nil)
-		return kFalse;
+		return;
 
 
 	// **Three answers measured here. Nobody needs to measure them again.**
@@ -2526,7 +2523,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 			if (!isThumb && fillExcluded && !isRegistered && !isOverflow)
 				KCMDrawPageNumberMarkerFill(gPort, db, srcPageUID);
 		}
-		return kFalse;	// a Source document carries no Target-side overlay: done
+		return;	// a Source document carries no Target-side overlay: done
 	}
 
 	// The change overlay (the rings), only when the marked document is this spread's db.
@@ -2540,7 +2537,7 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//   The loop below looks entries up **by page UID**, so once this line passes, the rest works on
 	//   a background thread unchanged (UIDs surviving the cloning was measured -- see above).
 	if (peekingThisSpread || !wantMarks || sDB == nil || !KCMIsSameDoc(db, sDB))
-		return kFalse;
+		return;
 
 	// The effective opacity of the on-screen marks. sMarkScreenOpacity always holds the effective
 	// value, set by:
@@ -2607,6 +2604,4 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 		if (!isThumb && fillExcluded && !isRegistered && !isOverflow)
 			KCMDrawPageNumberMarkerFill(gPort, db, pageUID);
 	}
-
-	return kFalse;	// let other handlers and the rest of the drawing continue
 }

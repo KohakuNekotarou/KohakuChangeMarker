@@ -28,7 +28,6 @@
 #include "ISession.h"					// GetExecutionContextSession()
 #include "ISpread.h"					// "is the thing being drawn a spread"
 #include "IShape.h"
-#include "IDrwEvtHandler.h"				// DrawEventData, the shape the drawing takes its input in
 #include "GraphicsData.h"				// GraphicsData - GetView / GetGraphicsPort (IGraphicsContext.h comes with IAdornmentShape.h)
 #include "IStartupShutdownService.h"	// per-execution-context registration (end of this file)
 #include "IXPUtils.h"					// QueryXPManager(db)
@@ -64,6 +63,7 @@
 #include "UIDList.h"
 #include "Utils.h"
 #include <algorithm>					// std::find - one story once per holder
+#include <atomic>					// sShowStoryIds, read unlocked on an export's thread
 #include <map>
 #include <vector>
 
@@ -151,7 +151,10 @@ static bool16 KCMMarksDeclareTransparency();
 //  nothing for the flattener to be told.
 //========================================================================================
 
-static bool16 sShowStoryIds = kFalse;	// default off (the flyout's "Show Story IDs")
+// Default off (the flyout's "Show Story IDs"). std::atomic: the toggle writes it on the main thread, and
+// every label and every painted-bounds question reads it unlocked - on an export's thread too, where a
+// plain bool16 read that way is a data race in the language (KCMStoryMarker's gHasMark made the same change).
+static std::atomic<bool> sShowStoryIds(false);
 
 /** item UID -> the UIDs of the stories it holds. */
 typedef std::map<UID, std::vector<UID> > KCMStoryHolderTable;
@@ -160,7 +163,7 @@ static std::map<IDataBase*, KCMStoryHolderTable> sStoryHolders;
 
 bool16 KCMGetShowStoryIds()
 {
-	return sShowStoryIds;
+	return sShowStoryIds ? kTrue : kFalse;
 }
 
 void KCMForgetStoryHolders(IDataBase* db)
@@ -174,7 +177,7 @@ void KCMForgetStoryHolders(IDataBase* db)
 
 void KCMSetShowStoryIds(bool16 on)
 {
-	sShowStoryIds = on;
+	sShowStoryIds = (on != kFalse);
 	if (!on)
 		KCMForgetStoryHolders(nil);	// nothing reads the tables while the toggle is off; drop them (the warning in the header)
 }
@@ -246,12 +249,24 @@ static void KCMRebuildStoryHolders(IDataBase* db)
 	sStoryHolders[db].swap(table);
 }
 
-/** The stories iShape's item holds, copied out from under the lock; empty when it holds none
-	(the ordinary answer for most items). With `buildIfMissing`, a database with no table yet (the
-	first item drawn before any spread was) gets one here - the mutex is recursive, so the
-	rebuild's own lock nests. The painted-bounds question passes kFalse: it is asked at
-	invalidation time, and a table missing there is only ever the one the next draw is about to
-	build. */
+/** db's table's answer for itemUID, copied out under the lock. kFalse when db has no table at all;
+	an item that holds no story is kTrue with outStoryUIDs left as it was (empty). */
+static bool16 KCMLookUpStoryHolder(IDataBase* db, UID itemUID, std::vector<UID>& outStoryUIDs)
+{
+	KCMMarkStateLock lock(KCMMarkStateMutex());
+	const std::map<IDataBase*, KCMStoryHolderTable>::const_iterator t = sStoryHolders.find(db);
+	if (t == sStoryHolders.end())
+		return kFalse;
+	const KCMStoryHolderTable::const_iterator h = t->second.find(itemUID);
+	if (h != t->second.end())
+		outStoryUIDs = h->second;
+	return kTrue;
+}
+
+/** The stories iShape's item holds; empty when it holds none (the ordinary answer for most items).
+	With `buildIfMissing`, a database with no table yet (the first item drawn before any spread was)
+	gets one here. The painted-bounds question passes kFalse: it is asked at invalidation time, and a
+	table missing there is only ever the one the next draw is about to build. */
 static void KCMStoriesHeldBy(IShape* iShape, bool16 buildIfMissing, std::vector<UID>& outStoryUIDs)
 {
 	outStoryUIDs.clear();
@@ -260,20 +275,13 @@ static void KCMStoriesHeldBy(IShape* iShape, bool16 buildIfMissing, std::vector<
 	if (db == nil || itemUID == kInvalidUID)
 		return;
 
-	KCMMarkStateLock lock(KCMMarkStateMutex());
-	std::map<IDataBase*, KCMStoryHolderTable>::const_iterator t = sStoryHolders.find(db);
-	if (t == sStoryHolders.end())
-	{
-		if (!buildIfMissing)
-			return;
-		KCMRebuildStoryHolders(db);
-		t = sStoryHolders.find(db);
-		if (t == sStoryHolders.end())
-			return;
-	}
-	KCMStoryHolderTable::const_iterator h = t->second.find(itemUID);
-	if (h != t->second.end())
-		outStoryUIDs = h->second;
+	if (KCMLookUpStoryHolder(db, itemUID, outStoryUIDs) || !buildIfMissing)
+		return;
+	// Built OUTSIDE the lock: the walk over every story can be long, and the other threads' drawing
+	// waits on this lock meanwhile (KCMThreadSafety.h: do not hold it through a long operation). The
+	// rebuild takes it only to swap the table in.
+	KCMRebuildStoryHolders(db);
+	(void)KCMLookUpStoryHolder(db, itemUID, outStoryUIDs);
 }
 
 /** The label of one item, if it holds a story. Called for every item the global list reaches. */
@@ -523,11 +531,8 @@ void KCMRingAdornmentShape::DrawAdornment(IShape* iShape, AdornmentDrawOrder dra
 	if (sShowStoryIds)
 		KCMRebuildStoryHolders(::GetDataBase(iShape));
 
-	// Build the shape the drawing takes its input in. changedBy is the iShape as it stands: the
-	// drawing reads an ISpread and an IDataBase off changedBy and nothing else, and both come off
-	// the same boss (iShape and spread are one boss).
-	DrawEventData ded(iShape, gd, flags);
-	KCMDrawEventHandler::DrawSpreadMarks(&ded);
+	// iShape and spread are one boss: the drawing reads the ISpread and the database off it.
+	KCMDrawEventHandler::DrawSpreadMarks(iShape, gd, flags);
 }
 
 //========================================================================================
