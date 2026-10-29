@@ -22,6 +22,7 @@
 #include "FileUtils.h"
 #include "SysFileList.h"			// what the open dialog hands back - several files at once
 
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMStoryTextImport.h"
 #include "KCMComparisonRun.h"		// KCMToggleStartStop - the start, through the one resolver
 #include "KCMCore.h"				// KCMSetCompareMode - the import shows its result in the Story mode
@@ -219,8 +220,7 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 	const int32 fileCount = files.GetFileCount();
 	if (fileCount <= 0)
 	{
-		whyNot = "no file was chosen";
-		whyNot.SetTranslatable(kFalse);
+		whyNot = KCMSentence("no file was chosen");
 		return kFalse;
 	}
 
@@ -246,8 +246,7 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 		if (i > 0 && progress.WasCancelled())
 		{
 			out = KCMStoryTextSet();
-			whyNot = "cancelled";
-			whyNot.SetTranslatable(kFalse);
+			whyNot = KCMSentence("cancelled");
 			if (outCancelled != nil)
 				*outCancelled = kTrue;
 			return kFalse;
@@ -409,7 +408,7 @@ bool16 KCMReadStoryTextFiles(const SysFileList& files, KCMStoryTextSet& out, PMS
 				++refused;
 				if (firstReason.IsEmpty())
 				{
-					firstReason = "story ";
+					firstReason = KCMSentence("story ");
 					firstReason.AppendNumber(static_cast<int32>(out.fUids[i].Get()));
 					firstReason.Append(" was chosen twice");
 					firstReason.SetTranslatable(kFalse);
@@ -512,8 +511,7 @@ bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCM
 	//   (KCMImportStoryTextAsSource), so neither needs the step.
 	if (sequence == nil && !KCMIsImportClone(db))
 	{
-		outMessage = "InDesign would not start an undoable step - nothing was changed";
-		outMessage.SetTranslatable(kFalse);
+		outMessage = KCMSentence("InDesign would not start an undoable step - nothing was changed");
 		return kFalse;
 	}
 
@@ -620,7 +618,7 @@ bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCM
 		{
 			PMString why;
 			if (round >= 5)
-				why = "a table's shape is still not Word's after five rounds of changes";
+				why = KCMSentence("a table's shape is still not Word's after five rounds of changes");
 			else
 			{
 				KCMSyncResult shape;
@@ -643,7 +641,7 @@ bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCM
 					KCMStorySync::Compare(now, set.fStories[which], plan, kReshapeTablesOnImport);
 					continue;
 				}
-				why = "a table's shape was changed, but the story does not read back as planned";
+				why = KCMSentence("a table's shape was changed, but the story does not read back as planned");
 				if (!layoutWhy.empty())
 				{
 					why.Append(" (");
@@ -734,8 +732,7 @@ bool16 KCMPourStoryTextWith(IDataBase* db, const KCMStoryTextSet& set, const KCM
 		// ⚠Only a pour that notes the "!" rows drops them: an Apply's cancel leaves the import's own rows standing.
 		if (options.fNoteRefusals)
 			KCMClearImportRefusals();
-		outMessage = "cancelled";
-		outMessage.SetTranslatable(kFalse);
+		outMessage = KCMSentence("cancelled");
 		return kFalse;
 	}
 
@@ -830,7 +827,7 @@ void ImportLabel(const KCMStoryTextSet& set, PMString& out)
 		if (std::find(names.begin(), names.end(), set.fBoxes[b].fFileName) == names.end())
 			names.push_back(set.fBoxes[b].fFileName);
 	}
-	out = "Imported: ";
+	out = KCMSentence("Imported: ");
 	if (!names.empty())
 		out.Append(names[0]);
 	if (names.size() > 1)
@@ -880,7 +877,7 @@ bool16 KCMImportStoryTextAsSource(const SysFileList& files, PMString& outMessage
 	PMString whyNot;
 	if (!KCMTakeImportClone(label, whyNot))
 	{
-		outMessage = "import: ";
+		outMessage = KCMSentence("import: ");
 		outMessage.Append(whyNot);
 		outMessage.SetTranslatable(kFalse);
 		return kFalse;
@@ -891,8 +888,7 @@ bool16 KCMImportStoryTextAsSource(const SysFileList& files, PMString& outMessage
 	{
 		// The take said it succeeded, so this cannot normally happen; a nil here would otherwise reach the pour.
 		KCMLetGoTaskStartClone(kTrue);
-		outMessage = "import: the copy of the document could not be chosen as the Source";
-		outMessage.SetTranslatable(kFalse);
+		outMessage = KCMSentence("import: the copy of the document could not be chosen as the Source");
 		return kFalse;
 	}
 	// 2b. ★THE PAGE FILES' BOXES BECOME STORIES (2026-10-25, "Export Pages to Word..." - KCMPageImport.h): each box put back
@@ -960,8 +956,7 @@ bool16 KCMImportStoryTextAsSource(const SysFileList& files, PMString& outMessage
 			++cannotGoIn;
 	}
 
-	outMessage = "import: ";
-	outMessage.SetTranslatable(kFalse);
+	outMessage = KCMSentence("import: ");
 	outMessage.Append(readMessage);
 	if (boxesIn > 0)
 	{
@@ -1052,7 +1047,7 @@ bool16 KCMImportSourceStory(UID story, KCMStoryShape::Story& out, PMString& outW
 	IDataBase* const copyDB = KCMArmedSourceDB();
 	if (copyDB == nil || !KCMIsImportClone(copyDB))
 	{
-		outWhyNot = "the imported text is no longer the Source - import again";
+		outWhyNot = KCMSentence("the imported text is no longer the Source - import again");
 		return kFalse;
 	}
 	// ★READ ONCE A PRESS (KCMImportSourceReadScope): the same copy, the same story - the same reading.
@@ -1081,7 +1076,7 @@ bool16 KCMImportSourceStory(UID story, KCMStoryShape::Story& out, PMString& outW
 	}
 	if (!readable)
 	{
-		outWhyNot = "the imported text's story could not be read - import again";
+		outWhyNot = KCMSentence("the imported text's story could not be read - import again");
 		return kFalse;
 	}
 	// ★THROUGH WORD'S FORMAT AND BACK: Word's side is what Read makes of the parts (fAfter - a table splits a paragraph
@@ -1092,7 +1087,7 @@ bool16 KCMImportSourceStory(UID story, KCMStoryShape::Story& out, PMString& outW
 	KCMStoryDocx::ReadResult back;
 	if (!KCMStoryDocx::WriteParts(read, static_cast<int32>(story.Get()), parts, why) || !KCMStoryDocx::Read(parts, back, why))
 	{
-		outWhyNot = "the imported text's story does not go through Word's format: ";
+		outWhyNot = KCMSentence("the imported text's story does not go through Word's format: ");
 		outWhyNot.Append(KCMTextWords::PMStringOfUtf8(why));
 		outWhyNot.SetTranslatable(kFalse);
 		return kFalse;

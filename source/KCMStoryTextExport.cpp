@@ -35,6 +35,7 @@
 #include "UIDRef.h"
 #include "WideString.h"
 
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMStoryTextExport.h"
 #include "KCMStoryShape.h"
 #include "KCMStoryDocx.h"		// the .docx road (2026-09-19)
@@ -647,8 +648,7 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 
 	if (db == nil)
 	{
-		outMessage = "there is no document to export";
-		outMessage.SetTranslatable(kFalse);
+		outMessage = KCMSentence("there is no document to export");
 		return kFalse;
 	}
 
@@ -656,8 +656,7 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 	FileUtils::IDFileToPMString(parent, parentPath);
 	if (parentPath.IsEmpty())
 	{
-		outMessage = "the chosen folder could not be read";
-		outMessage.SetTranslatable(kFalse);
+		outMessage = KCMSentence("the chosen folder could not be read");
 		return kFalse;
 	}
 
@@ -668,8 +667,7 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 	InterfacePtr<IStoryList> stories(db, db->GetRootUID(), UseDefaultIID());
 	if (stories == nil)
 	{
-		outMessage = "the document has no stories to export";
-		outMessage.SetTranslatable(kFalse);
+		outMessage = KCMSentence("the document has no stories to export");
 		return kFalse;
 	}
 
@@ -716,16 +714,14 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 
 	if (targets.empty())
 	{
-		outMessage = "there is no story to export";
-		outMessage.SetTranslatable(kFalse);
+		outMessage = KCMSentence("there is no story to export");
 		return kFalse;
 	}
 
 	IDFile folder;
 	if (!MakeDatedFolder(parent, DocumentStem(db), folder))
 	{
-		outMessage = "the export folder could not be created";
-		outMessage.SetTranslatable(kFalse);
+		outMessage = KCMSentence("the export folder could not be created");
 		return kFalse;
 	}
 
@@ -814,8 +810,7 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 	FileUtils::IDFileToPMString(folder, path);
 	path.SetTranslatable(kFalse);
 
-	outMessage = "exported ";
-	outMessage.SetTranslatable(kFalse);
+	outMessage = KCMSentence("exported ");
 	outMessage.AppendNumber(written);
 	// ★**"2 of 7" WHEN THE SELECTION DECIDED IT.** Without the second number "exported 2 story
 	//   file(s)" reads as a document with two stories in it, and the reader goes looking for the

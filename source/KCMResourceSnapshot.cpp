@@ -31,6 +31,7 @@
 #include <windows.h>			// ::GetTickCount - how long an export took
 
 // Project includes:
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMCore.h"			// KCMActiveDoc
 #include "KCMResourceSnapshot.h"
 #include "KCMResourceBytes.h"
@@ -49,7 +50,7 @@ bool16 KCMTakeResourceSnapshot(IDocument* doc, KCMResourceBytes& out, PMString& 
 
 	if (doc == nil)
 	{
-		whyNot = "no document";
+		whyNot = KCMSentence("no document");
 		return kFalse;
 	}
 
@@ -57,7 +58,7 @@ bool16 KCMTakeResourceSnapshot(IDocument* doc, KCMResourceBytes& out, PMString& 
 	InterfacePtr<IINXManager> inx(session != nil ? session->QueryINXManager() : nil);
 	if (inx == nil)
 	{
-		whyNot = "no INX manager";
+		whyNot = KCMSentence("no INX manager");
 		return kFalse;
 	}
 
@@ -86,19 +87,19 @@ bool16 KCMTakeResourceSnapshot(IDocument* doc, KCMResourceBytes& out, PMString& 
 	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
 	if (docList == nil)
 	{
-		whyNot = "no document list";
+		whyNot = KCMSentence("no document list");
 		return kFalse;
 	}
 	if (docList->FindDocByDataBase(::GetDataBase(doc)) == nil)
 	{
-		whyNot = "the document is not open in this session - a cloned database cannot be exported";
+		whyNot = KCMSentence("the document is not open in this session - a cloned database cannot be exported");
 		return kFalse;
 	}
 
 	InterfacePtr<IDOMElement> docElement(doc, UseDefaultIID());
 	if (docElement == nil)
 	{
-		whyNot = "the document has no IDOMElement";
+		whyNot = KCMSentence("the document has no IDOMElement");
 		return kFalse;
 	}
 
@@ -108,7 +109,7 @@ bool16 KCMTakeResourceSnapshot(IDocument* doc, KCMResourceBytes& out, PMString& 
 		(IPMUnknown*)::CreateObject(kActionExportPolicyBoss, IID_IINXEXPORTPOLICY));
 	if (holder == nil)
 	{
-		whyNot = "could not create the export policy";
+		whyNot = KCMSentence("could not create the export policy");
 		return kFalse;
 	}
 	IINXExportPolicy* const policy = (IINXExportPolicy*)holder.get();
@@ -124,7 +125,7 @@ bool16 KCMTakeResourceSnapshot(IDocument* doc, KCMResourceBytes& out, PMString& 
 	InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamWrite(&out, kFalse, kFalse));
 	if (stream == nil)
 	{
-		whyNot = "could not create the memory stream";
+		whyNot = KCMSentence("could not create the memory stream");
 		return kFalse;
 	}
 	KCMResourceLog("    snap: manager, IDOMElement, policy and stream are all there");
@@ -179,19 +180,19 @@ bool16 KCMTakeResourceSnapshot(IDocument* doc, KCMResourceBytes& out, PMString& 
 		// IINXManager.h:79 names two outcomes short of success: "kCancel if aborted by policy or
 		// user, or an error code". With kSuppressUI a user cannot cancel, so a kCancel here is the
 		// policy's doing, and a reader should not be told it "failed".
-		whyNot = (err == kCancel) ? "ExportINX was cancelled by the export policy" : "ExportINX failed";
+		whyNot = KCMSentence((err == kCancel) ? "ExportINX was cancelled by the export policy" : "ExportINX failed");
 		return kFalse;
 	}
 	if (!out.IsWhole())
 	{
 		// An allocation failed part way. The bytes that ARE there would parse and would look like
 		// a smaller document, so this has to be refused rather than returned.
-		whyNot = "ran out of memory while collecting the export";
+		whyNot = KCMSentence("ran out of memory while collecting the export");
 		return kFalse;
 	}
 	if (out.Size() == 0)
 	{
-		whyNot = "ExportINX produced no bytes";
+		whyNot = KCMSentence("ExportINX produced no bytes");
 		return kFalse;
 	}
 	return kTrue;
@@ -216,7 +217,7 @@ void KCMDescribeResourceSnapshot(PMString& out)
 
 	if (!ok)
 	{
-		out = "FAILED: ";
+		out = KCMSentence("FAILED: ");
 		out.Append(whyNot);
 		return;
 	}

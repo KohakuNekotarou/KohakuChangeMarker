@@ -23,6 +23,7 @@
 #include <vector>
 
 // Project includes:
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMTaskStartClone.h"
 #include "KCMTaskStartSave.h"		// KCMTaskDocumentDB / KCMCanTakeTaskStartCopy - which document: the one rule
 #include "KCMCore.h"				// KCMIsArmed / KCMArmedTargetDB / KCMArmedSourceDB / KCMIsDocDBOpen
@@ -61,7 +62,7 @@ void ClockNow(PMString& out)
 /* The open document's name ("ch01.indd"), or "Untitled" when the database names none. */
 void DocName(IDataBase* db, PMString& out)
 {
-	out = PMString("Untitled");
+	out = KCMSentence("Untitled");
 	ISession* const session = GetExecutionContextSession();
 	InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
 	InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
@@ -183,7 +184,7 @@ bool16 TakeClone(bool16 forImport, const PMString& importLabel, PMString& outWhy
 	IDataBase* const docDB = KCMTaskDocumentDB();
 	if (docDB == nil)
 	{
-		outWhyNot = "Task Start needs a document to take";
+		outWhyNot = KCMSentence("Task Start needs a document to take");
 		return kFalse;
 	}
 
@@ -199,7 +200,7 @@ bool16 TakeClone(bool16 forImport, const PMString& importLabel, PMString& outWhy
 	}
 	if (clone == nil)
 	{
-		outWhyNot = "InDesign could not keep the document's state in memory.";
+		outWhyNot = KCMSentence("InDesign could not keep the document's state in memory.");
 		return kFalse;
 	}
 
@@ -241,7 +242,7 @@ bool16 TakeClone(bool16 forImport, const PMString& importLabel, PMString& outWhy
 	}
 	else
 	{
-		label = "Task Start (in memory) - ";
+		label = KCMSentence("Task Start (in memory) - ");
 		PMString name;
 		DocName(docDB, name);
 		label.Append(name);
@@ -307,7 +308,7 @@ bool16 KCMTaskStartCloneResources(KCMResourceList& out, PMString& whyNot)
 	whyNot.SetTranslatable(kFalse);
 	if (gClone == nil)
 	{
-		whyNot = "source: no Task Start is kept in memory";
+		whyNot = KCMSentence("source: no Task Start is kept in memory");
 		return kFalse;
 	}
 	if (!gHaveDefs)

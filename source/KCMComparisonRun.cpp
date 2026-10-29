@@ -24,6 +24,7 @@
 #include "PMString.h"
 
 // Project includes:
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMComparisonRun.h"
 #include "KCMPairChoice.h"		// which two: the chosen pair, the resolver, and realising a file end
 #include "KCMCore.h"				// arm/disarm, running the comparison, the print-mark settings
@@ -320,8 +321,7 @@ bool16 KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMStr
 		//  less than nothing.
 		if (outWhy.CharCount() == 0)
 		{
-			outWhy = PMString("The documents to compare could not be opened.");
-			outWhy.SetTranslatable(kFalse);
+			outWhy = KCMSentence("The documents to compare could not be opened.");
 		}
 		return kFalse;
 	}
@@ -363,8 +363,7 @@ bool16 KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMStr
 	//   same words, 2026-10-11.)
 	if (KCMIsSameDoc(targetDB, sourceDB))
 	{
-		outWhy = PMString("Target and Source are the same document. Bring another document to the front, or set one of them to another document.");
-		outWhy.SetTranslatable(kFalse);
+		outWhy = KCMSentence("Target and Source are the same document. Bring another document to the front, or set one of them to another document.");
 		return kFalse;
 	}
 

@@ -12,6 +12,7 @@
 #include "Utils.h"
 #include "WideString.h"
 
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMDocxPackage.h"
 
 namespace
@@ -57,7 +58,7 @@ bool16 KCMReadDocxParts(const IDFile& file, std::vector<KCMZipStore::Entry>& out
 	Utils<IUCFPackageUtils> ucf;
 	if (!ucf)
 	{
-		whyNot = "IUCFPackageUtils is not available";
+		whyNot = KCMSentence("IUCFPackageUtils is not available");
 		return kFalse;
 	}
 
@@ -65,7 +66,7 @@ bool16 KCMReadDocxParts(const IDFile& file, std::vector<KCMZipStore::Entry>& out
 	IUCFPackageUtils::PackageRefPtr ref = ucf->OpenPackage(file, err);
 	if (ref == nil)
 	{
-		whyNot = "the file could not be opened as a package, UCFErrorCode ";
+		whyNot = KCMSentence("the file could not be opened as a package, UCFErrorCode ");
 		whyNot.AppendNumber(static_cast<int32>(err));
 		return kFalse;
 	}
@@ -92,7 +93,7 @@ bool16 KCMReadDocxParts(const IDFile& file, std::vector<KCMZipStore::Entry>& out
 	if (!hasDocument)
 	{
 		outParts.clear();
-		whyNot = "the package has no word/document.xml: not a Word document";
+		whyNot = KCMSentence("the package has no word/document.xml: not a Word document");
 		return kFalse;
 	}
 	return kTrue;

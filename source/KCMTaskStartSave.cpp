@@ -38,6 +38,7 @@
 #include "Utils.h"
 
 // Project includes:
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMTaskStartSave.h"
 #include "KCMPairChoice.h"		// the pair this chooses
 #include "KCMCore.h"				// KCMActiveDocDB / KCMIsArmed / KCMArmedTargetDB
@@ -204,8 +205,7 @@ void KCMSuggestedCopyName(IDataBase* docDB, const char* infix, PMString& out)
 	PMString stem;
 	BareName(docDB, stem);
 	if (stem.IsEmpty())
-		stem = PMString("Untitled");
-	stem.SetTranslatable(kFalse);
+		stem = KCMSentence("Untitled");
 
 	PMString stamp;
 	NowStamp(stamp);
@@ -243,7 +243,7 @@ bool16 KCMTakeTaskStartCopy(PMString& outWhyNot)
 	IDataBase* const docDB = DocumentToCopy();
 	if (docDB == nil)
 	{
-		outWhyNot = "Task Start needs a document to copy";
+		outWhyNot = KCMSentence("Task Start needs a document to copy");
 		return kFalse;
 	}
 	// ★A document's UIDRef is its database's root - the form KCM uses elsewhere (KCMCore.cpp).
@@ -255,7 +255,7 @@ bool16 KCMTakeTaskStartCopy(PMString& outWhyNot)
 	InterfacePtr<IDocFileHandler> handler(Utils<IDocumentUtils>()->QueryDocFileHandler(docRef));
 	if (handler == nil || !handler->CanSaveACopy(docRef))
 	{
-		outWhyNot = "This document cannot be copied right now.";
+		outWhyNot = KCMSentence("This document cannot be copied right now.");
 		return kFalse;
 	}
 
@@ -277,7 +277,7 @@ bool16 KCMTakeTaskStartCopy(PMString& outWhyNot)
 	if (saveErr != kSuccess)
 	{
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		outWhyNot = "The copy could not be saved (error ";
+		outWhyNot = KCMSentence("The copy could not be saved (error ");
 		outWhyNot.AppendNumber(saveErr);
 		outWhyNot.Append(").");
 		outWhyNot.SetTranslatable(kFalse);

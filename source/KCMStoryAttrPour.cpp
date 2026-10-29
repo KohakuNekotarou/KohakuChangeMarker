@@ -13,6 +13,7 @@
 #include "ITextModel.h"
 #include "ErrorUtils.h"
 
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMStoryAttrPour.h"
 #include "KCMParaText.h"		// PlanSpanChanges / ModelOffsetInParagraph - the pure half
 #include "KCMStoryRestore.h"	// the writers, shared with the restore and the PDF report
@@ -107,9 +108,8 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 	//   this is the enabling condition rather than a precaution).
 	if (docText != file.fText)
 	{
-		whyNot = "the words of this paragraph did not go in, so its ruby, kenten, tate-chu-yoko and "
-				 "warichu were left alone (the words go first)";
-		whyNot.SetTranslatable(kFalse);
+		whyNot = KCMSentence("the words of this paragraph did not go in, so its ruby, kenten, tate-chu-yoko and "
+				 "warichu were left alone (the words go first)");
 		outRefused = kTrue;
 		return 0;
 	}
@@ -143,8 +143,7 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 		//   Append(c_str()) put the bytes in as the platform's encoding, so a custom mark's own
 		//   character came out as mojibake - "Custom:窶ｻ" for "Custom:※" - in the one message whose
 		//   whole job is to name it.
-		whyNot = "a kenten mark in the file cannot be written back (\"";
-		whyNot.SetTranslatable(kFalse);
+		whyNot = KCMSentence("a kenten mark in the file cannot be written back (\"");
 		whyNot.Append(value);
 		whyNot.Append("\" - this build writes the ten built-in kinds, and a custom mark whose "
 					  "character is in the BMP below U+8000)");
@@ -167,7 +166,7 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 	const int32 keptTcy = KCMParaText::KeepTcyInsideWarichu(docAttrs.fWarichu, clearTcy);
 	if (keptTcy > 0)
 	{
-		outKept = "Word cannot carry a tate-chu-yoko inside a warichu, so ";
+		outKept = KCMSentence("Word cannot carry a tate-chu-yoko inside a warichu, so ");
 		outKept.AppendNumber(keptTcy);
 		outKept.Append(keptTcy == 1 ? " was kept as this document has it"
 									: " were kept as this document has them");
@@ -191,8 +190,7 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 		if (KCMClearRuby(model, at, len) != kSuccess)
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-			whyNot = "a ruby could not be taken off (a locked story or layer?)";
-			whyNot.SetTranslatable(kFalse);
+			whyNot = KCMSentence("a ruby could not be taken off (a locked story or layer?)");
 			outRefused = kTrue;
 			return written;
 		}
@@ -209,8 +207,7 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 		if (KCMApplyKentenKind(model, at, len, IKentenStyle::Kenten_None) != kSuccess)
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-			whyNot = "a kenten could not be taken off (a locked story or layer?)";
-			whyNot.SetTranslatable(kFalse);
+			whyNot = KCMSentence("a kenten could not be taken off (a locked story or layer?)");
 			outRefused = kTrue;
 			return written;
 		}
@@ -228,8 +225,7 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 		if (KCMApplyTcy(model, at, len, kFalse) != kSuccess)
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-			whyNot = "a tate-chu-yoko could not be taken off (a locked story or layer?)";
-			whyNot.SetTranslatable(kFalse);
+			whyNot = KCMSentence("a tate-chu-yoko could not be taken off (a locked story or layer?)");
 			outRefused = kTrue;
 			return written;
 		}
@@ -247,8 +243,7 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 		if (KCMApplyWarichu(model, at, len, kFalse) != kSuccess)
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-			whyNot = "a warichu could not be taken off (a locked story or layer?)";
-			whyNot.SetTranslatable(kFalse);
+			whyNot = KCMSentence("a warichu could not be taken off (a locked story or layer?)");
 			outRefused = kTrue;
 			return written;
 		}
@@ -264,8 +259,7 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 		if (KCMCreateRubyStrandIfNeeded(model) != kSuccess)
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-			whyNot = "this story cannot be given ruby (its ruby strand could not be made)";
-			whyNot.SetTranslatable(kFalse);
+			whyNot = KCMSentence("this story cannot be given ruby (its ruby strand could not be made)");
 			outRefused = kTrue;
 			return written;
 		}
@@ -282,8 +276,7 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 		if (KCMApplyRuby(model, at, len, PMStringOfUtf8(applyRuby[i].fValue), applyRuby[i].fGroup) != kSuccess)
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-			whyNot = "a ruby could not be written (a locked story or layer?)";
-			whyNot.SetTranslatable(kFalse);
+			whyNot = KCMSentence("a ruby could not be written (a locked story or layer?)");
 			outRefused = kTrue;
 			return written;
 		}
@@ -298,8 +291,7 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 		if (KCMApplyKentenKind(model, at, len, kentenKinds[i], kentenChars[i]) != kSuccess)
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-			whyNot = "a kenten could not be written (a locked story or layer?)";
-			whyNot.SetTranslatable(kFalse);
+			whyNot = KCMSentence("a kenten could not be written (a locked story or layer?)");
 			outRefused = kTrue;
 			return written;
 		}
@@ -314,8 +306,7 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 		if (KCMApplyTcy(model, at, len, kTrue) != kSuccess)
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-			whyNot = "a tate-chu-yoko could not be written (a locked story or layer?)";
-			whyNot.SetTranslatable(kFalse);
+			whyNot = KCMSentence("a tate-chu-yoko could not be written (a locked story or layer?)");
 			outRefused = kTrue;
 			return written;
 		}
@@ -330,8 +321,7 @@ int32 KCMPourParagraphAttributes(ITextModel* model, TextIndex paraStart,
 		if (KCMApplyWarichu(model, at, len, kTrue) != kSuccess)
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-			whyNot = "a warichu could not be written (a locked story or layer?)";
-			whyNot.SetTranslatable(kFalse);
+			whyNot = KCMSentence("a warichu could not be written (a locked story or layer?)");
 			outRefused = kTrue;
 			return written;
 		}

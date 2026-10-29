@@ -21,6 +21,7 @@
 #include "WideString.h"
 
 #include "KCMUtf8.h"			// KCMWellFormedUtf8 - what PMStringOfUtf8 hands SetUTF8String (2026-10-27)
+#include "KCMSentence.h"		// KCMSentence - Refuse's wording, never a key
 
 #include <string>
 
@@ -63,11 +64,11 @@ inline bool16 WordsAt(ITextModel* model, TextIndex at, int32 len, WideString& ou
 	return kTrue;
 }
 
-/** A refusal for the message line: the wording, marked not translatable. */
+/** A refusal for the message line: the wording, marked not translatable as it is made. `text` is ASCII
+	(KCMSentence.h says why). */
 inline void Refuse(PMString& why, const char* text)
 {
-	why = text;
-	why.SetTranslatable(kFalse);
+	why = KCMSentence(text);
 }
 
 }	// namespace KCMTextWords

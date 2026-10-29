@@ -30,6 +30,7 @@
 #include "ErrorUtils.h"			// GlobalErrorStatePreserver - an open or a close that is allowed to
 								// fail must not poison the caller's next command
 #include "PersistUtils.h"		// ::GetUIDRef / ::GetDataBase
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMProgressBar.h"	// KCMProgressBar - the progress and the cancel (see KCMCompareBooks); the bar is the UI half's
 #include "KCMDiag.h"			// KCM_DIAG_SLOW - test builds only (book-compare-slow)
 #include "SDKFileHelper.h"		// GetPath - documents are compared by their path
@@ -108,8 +109,7 @@ bool16 OpenChapter(const IDFile& file, UIDRef& outDocRef, bool16& outWeOpened, P
 		// the row's width saying what is already on it. What is left here is the part only this
 		// line knows. See KCMBookResult.h's fWhy for the rule and for what it costs when it is
 		// broken.
-		outWhy = PMString("no file");
-		outWhy.SetTranslatable(kFalse);
+		outWhy = KCMSentence("no file");
 		return kFalse;
 	}
 
@@ -164,8 +164,7 @@ bool16 OpenChapter(const IDFile& file, UIDRef& outDocRef, bool16& outWeOpened, P
 		// worth reading, and it says the open failed by implication. This sentence is what is left
 		// when the book answers nothing at all, and then it is all the row would otherwise have
 		// (the user's call: keep a word for the empty case rather than an empty reason).
-		outWhy = PMString("could not open");
-		outWhy.SetTranslatable(kFalse);
+		outWhy = KCMSentence("could not open");
 		return kFalse;
 	}
 
@@ -461,8 +460,7 @@ KCMBookModeVerdict ComparePixels(IDataBase* targetDB, IDataBase* sourceDB,
 		//   reason that does not say which one produced it sends the reader to the wrong half of
 		//   the comparison. It is still not the VERDICT repeated (see OpenChapter): "Failed" is on
 		//   the row already, "Pixel" is what only this line knows.
-		outWhy = PMString("Pixel: no pages");
-		outWhy.SetTranslatable(kFalse);
+		outWhy = KCMSentence("Pixel: no pages");
 		return kKCMBookVerdictUnjudged;
 	}
 
@@ -485,7 +483,7 @@ KCMBookModeVerdict ComparePixels(IDataBase* targetDB, IDataBase* sourceDB,
 			//   room: it carries a NUMBER, and a number that loses its middle to an ellipsis does not
 			//   look damaged -- it looks like a different number (memory
 			//   ellipsis-in-status-line-breaks-numbers).
-			outWhy = PMString("Pixel: page ");
+			outWhy = KCMSentence("Pixel: page ");
 			outWhy.AppendNumber(int32(i + 1));
 			outWhy.SetTranslatable(kFalse);
 			return kKCMBookVerdictUnjudged;

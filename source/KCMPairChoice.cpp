@@ -30,6 +30,7 @@
 #include "UIDRef.h"
 
 // Project includes:
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMPairChoice.h"
 #include "KCMCore.h"				// KCMActiveDoc / KCMActiveDocDB / KCMArmedSourceDB
 #include "KCMExternalSource.h"	// the lent Source: KCMIsExternalSource / KCMForgetExternalSource / KCMIsDbAlive
@@ -266,7 +267,7 @@ bool16 KCMRealisePairEnd(const KCMPairEnd& end, IDataBase*& outDB, PMString& why
 	if (!FileUtils::DoesFileExist(end.fFile))
 	{
 		SDKFileHelper helper(end.fFile);
-		why = "The chosen file is no longer there: ";
+		why = KCMSentence("The chosen file is no longer there: ");
 		why.Append(helper.GetPath());
 		return kFalse;
 	}
@@ -279,7 +280,7 @@ bool16 KCMRealisePairEnd(const KCMPairEnd& end, IDataBase*& outDB, PMString& why
 	const UIDRef docRef = helper.OpenDocument(end.fFile, kFullUI);
 	if (docRef.GetDataBase() == nil)
 	{
-		why = "The chosen file could not be opened.";
+		why = KCMSentence("The chosen file could not be opened.");
 		return kFalse;
 	}
 	// ★**IN A WINDOW, because the reader is meant to see it** (the user's decision, 2026-09-21:
@@ -288,7 +289,7 @@ bool16 KCMRealisePairEnd(const KCMPairEnd& end, IDataBase*& outDB, PMString& why
 	//   "there is a window" are two different statements (KCMBookOpen.cpp says the same).
 	if (helper.OpenLayoutWindow(docRef) != kSuccess)
 	{
-		why = "The chosen file opened without a window.";
+		why = KCMSentence("The chosen file opened without a window.");
 		return kFalse;
 	}
 

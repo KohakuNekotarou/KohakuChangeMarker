@@ -128,6 +128,7 @@
 #include "WideString.h"
 
 // Project includes:
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMID.h"
 #include "KCMScriptingDefs.h"
 #include "KCMModelNotify.h"	// KCMGetSessionStatus - the status line, kept on the model side (Task 9)
@@ -400,13 +401,13 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 			ScriptData arg;
 			PMString what;
 			if (data->ExtractRequestData(p_Name, arg) != kSuccess || arg.GetPMString(what) != kSuccess)
-				message = "the argument could not be read - \"<row> <change>\", \"<row>\" or \"all\"";
+				message = KCMSentence("the argument could not be read - \"<row> <change>\", \"<row>\" or \"all\"");
 			else
 			{
 				// ⚠Utils<> asked before it is used (memory utils-boss-facade-access: QueryUtilInterface has no nil guard).
 				Utils<IKCMStoryEditsFacade> edits;
 				if (!edits)
-					message = "the Story Edits facade is not there";
+					message = KCMSentence("the Story Edits facade is not there");
 				else if (what == PMString("all"))
 					edits->ApplyAll(message);
 				else
@@ -422,14 +423,14 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 						if (ReadChangePairs(what, rows, changes))
 							edits->ApplyChanges(&rows[0], &changes[0], static_cast<int32>(rows.size()), message);
 						else
-							message = "the argument does not read as \"<row> <change>;<row> <change>...\"";
+							message = KCMSentence("the argument does not read as \"<row> <change>;<row> <change>...\"");
 					}
 					else if (::sscanf_s(s.c_str(), "%d %d", &row, &change) == 2)
 						edits->ApplyChange(row, change, message);
 					else if (::sscanf_s(s.c_str(), "%d", &row) == 1)
 						edits->ApplyStory(row, message);
 					else
-						message = "the argument reads as neither \"<row> <change>\", \"<row>\" nor \"all\"";
+						message = KCMSentence("the argument reads as neither \"<row> <change>\", \"<row>\" nor \"all\"");
 				}
 			}
 			message.SetTranslatable(kFalse);
@@ -452,15 +453,15 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 			std::vector<int32> changes;
 			// ★(2026-10-24 night) "<row> <change>;<row> <change>..." too - several, as ONE undo step (RestoreChangesFromCopy).
 			if (data->ExtractRequestData(p_Name, arg) != kSuccess || arg.GetPMString(what) != kSuccess)
-				message = "the argument could not be read - \"<row> <change>\"";
+				message = KCMSentence("the argument could not be read - \"<row> <change>\"");
 			else if (!ReadChangePairs(what, rows, changes))
-				message = "the argument does not read as \"<row> <change>\" (or several, joined by \";\")";
+				message = KCMSentence("the argument does not read as \"<row> <change>\" (or several, joined by \";\")");
 			else
 			{
 				// ⚠Utils<> asked before it is used (memory utils-boss-facade-access: QueryUtilInterface has no nil guard).
 				Utils<IKCMStoryEditsFacade> edits;
 				if (!edits)
-					message = "the Story Edits facade is not there";
+					message = KCMSentence("the Story Edits facade is not there");
 				else if (rows.size() == 1)
 					edits->RestoreChangeFromCopy(rows[0], changes[0], message);
 				else
@@ -487,14 +488,14 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 			std::vector<int32> changes;
 			int32 row = -1;
 			if (data->ExtractRequestData(p_Name, arg) != kSuccess || arg.GetPMString(what) != kSuccess)
-				message = "the argument could not be read - \"<row> <change>\", \"<row>\" or several \"<row> <change>\" joined by \";\"";
+				message = KCMSentence("the argument could not be read - \"<row> <change>\", \"<row>\" or several \"<row> <change>\" joined by \";\"");
 			else
 			{
 				// ⚠Utils<> asked before it is used (memory utils-boss-facade-access: QueryUtilInterface has no nil guard).
 				Utils<IKCMStoryEditsFacade> edits;
 				const std::string s = what.GetUTF8String();
 				if (!edits)
-					message = "the Story Edits facade is not there";
+					message = KCMSentence("the Story Edits facade is not there");
 				else if (ReadChangePairs(what, rows, changes))
 				{
 					if (rows.size() == 1)
@@ -505,7 +506,7 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 				else if (s.find(';') == std::string::npos && ::sscanf_s(s.c_str(), "%d", &row) == 1)
 					edits->RestoreStoryFromSource(row, message);
 				else
-					message = "the argument reads as neither \"<row> <change>\", \"<row>\" nor several \"<row> <change>\" joined by \";\"";
+					message = KCMSentence("the argument reads as neither \"<row> <change>\", \"<row>\" nor several \"<row> <change>\" joined by \";\"");
 			}
 			message.SetTranslatable(kFalse);
 			if (message.CharCount() > 0)
@@ -527,15 +528,15 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 			int32 row = -1;
 			int32 change = -1;
 			if (data->ExtractRequestData(p_Name, arg) != kSuccess || arg.GetPMString(what) != kSuccess)
-				answer = "the argument could not be read - \"<row> <change>\"";
+				answer = KCMSentence("the argument could not be read - \"<row> <change>\"");
 			else if (::sscanf_s(what.GetUTF8String().c_str(), "%d %d", &row, &change) != 2)
-				answer = "the argument does not read as \"<row> <change>\"";
+				answer = KCMSentence("the argument does not read as \"<row> <change>\"");
 			else
 			{
 				// ⚠Utils<> asked before it is used (memory utils-boss-facade-access: QueryUtilInterface has no nil guard).
 				Utils<IKCMStoryEditsFacade> edits;
 				if (!edits)
-					answer = "the Story Edits facade is not there";
+					answer = KCMSentence("the Story Edits facade is not there");
 				else
 				{
 					const int32 reach = edits->GetChangePlaceReach(row, change);
@@ -546,7 +547,7 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 					if ((reach & IKCMStoryEditsFacade::kReachHiddenSpread) != 0)
 						answer.Append(answer.CharCount() > 0 ? ",hidden-spread" : "hidden-spread");
 					if (answer.CharCount() == 0)
-						answer = "none";
+						answer = KCMSentence("none");
 				}
 			}
 			answer.SetTranslatable(kFalse);
@@ -571,15 +572,15 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 			IDataBase* const db = KCMActiveDocDB();
 			if (data->ExtractRequestData(keyAEFile, fileArg) != kSuccess
 				|| fileArg.GetFile(&folder, data->GetRequestContext()) != kSuccess)
-				message = "the folder argument could not be read";
+				message = KCMSentence("the folder argument could not be read");
 			else if (data->ExtractRequestData(p_Name, pagesArg) != kSuccess || pagesArg.GetPMString(names) != kSuccess)
-				message = "the pages argument could not be read - name them as the Pages panel does: \"1,3\"";
+				message = KCMSentence("the pages argument could not be read - name them as the Pages panel does: \"1,3\"");
 			else if (!edits)
-				message = "the Story Edits facade is not there";
+				message = KCMSentence("the Story Edits facade is not there");
 			else if (db == nil)
-				message = "Export Pages to Word: there is no active document";
+				message = KCMSentence("Export Pages to Word: there is no active document");
 			else if (names.IsEmpty())
-				message = "Export Pages to Word: name the pages (\"1,3\") - a script does not read the Pages panel's selection";
+				message = KCMSentence("Export Pages to Word: name the pages (\"1,3\") - a script does not read the Pages panel's selection");
 			else
 			{
 				UIDList pages(db);
@@ -588,7 +589,7 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 					edits->ExportPagesAsWord(folder, pages, message);
 				else
 				{
-					message = "Export Pages to Word: no page is named ";
+					message = KCMSentence("Export Pages to Word: no page is named ");
 					message.Append(missing);
 				}
 			}
@@ -629,8 +630,7 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 				if (data->ExtractRequestData(keyAEFile, arg) != kSuccess
 					|| arg.GetFile(&file, data->GetRequestContext()) != kSuccess)
 				{
-					message = "the file argument could not be read";
-					message.SetTranslatable(kFalse);
+					message = KCMSentence("the file argument could not be read");
 				}
 				else if (id == e_KCMImportToSource)
 				{
@@ -648,8 +648,7 @@ ErrorCode KCMScriptProvider::HandleMethod(ScriptID methodID, IScriptRequestData*
 					IDataBase* const db = KCMTaskDocumentDB();
 					if (db == nil)
 					{
-						message = "there is no document to export (no Target and no active document)";
-						message.SetTranslatable(kFalse);
+						message = KCMSentence("there is no document to export (no Target and no active document)");
 					}
 					else
 					{

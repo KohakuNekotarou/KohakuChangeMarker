@@ -30,6 +30,7 @@
 #include "UIDList.h"
 #include "Utils.h"
 
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMScratchDoc.h"
 #include "KCMExternalSource.h"		// KCMIsDbAlive - the re-check after the close
 #include "KCMMemXferBytes.h"
@@ -90,14 +91,14 @@ bool16 KCMScratchDoc::Open(PMString& whyNot)
 	whyNot.SetTranslatable(kFalse);
 	if (fDoc != UIDRef::gNull)
 	{
-		whyNot = "already open";
+		whyNot = KCMSentence("already open");
 		return kFalse;
 	}
 	InterfacePtr<ICommand> newDocCmd(Utils<IDocumentCommands>()->CreateNewCommand(kSuppressUI));
 	InterfacePtr<INewDocCmdData> data(newDocCmd, UseDefaultIID());
 	if (newDocCmd == nil || data == nil)
 	{
-		whyNot = "could not make the new-document command";
+		whyNot = KCMSentence("could not make the new-document command");
 		return kFalse;
 	}
 	data->SetCreateBasicDocument(kFalse);	// the defaults, as the retired NewDocumentLike left them
@@ -109,13 +110,13 @@ bool16 KCMScratchDoc::Open(PMString& whyNot)
 	ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 	if (CmdUtils::ProcessCommand(newDocCmd) != kSuccess)
 	{
-		whyNot = "could not create a scratch document";
+		whyNot = KCMSentence("could not create a scratch document");
 		return kFalse;
 	}
 	const UIDList& made = newDocCmd->GetItemListReference();
 	if (made.Length() == 0 || made.GetRef(0) == UIDRef::gNull)
 	{
-		whyNot = "the new-document command made nothing";
+		whyNot = KCMSentence("the new-document command made nothing");
 		return kFalse;
 	}
 	fDoc = made.GetRef(0);
@@ -135,7 +136,7 @@ bool16 KCMScratchDoc::ImportSnippet(const std::string& snippet, std::vector<UIDR
 	IDataBase* const db = DB();
 	if (db == nil || snippet.empty())
 	{
-		whyNot = "no scratch document, or nothing to import";
+		whyNot = KCMSentence("no scratch document, or nothing to import");
 		return kFalse;
 	}
 
@@ -148,7 +149,7 @@ bool16 KCMScratchDoc::ImportSnippet(const std::string& snippet, std::vector<UIDR
 	Utils<ISnippetImport> importer;
 	if (spread == nil || frag == nil || !importer)
 	{
-		whyNot = "the scratch document's spread could not be opened";
+		whyNot = KCMSentence("the scratch document's spread could not be opened");
 		return kFalse;
 	}
 	std::set<uint32> before;
@@ -161,7 +162,7 @@ bool16 KCMScratchDoc::ImportSnippet(const std::string& snippet, std::vector<UIDR
 	InterfacePtr<IPMStream> read(StreamUtil::CreateMemoryStreamRead(&bytes, kFalse, kFalse));
 	if (read == nil)
 	{
-		whyNot = "no memory stream";
+		whyNot = KCMSentence("no memory stream");
 		return kFalse;
 	}
 	ErrorCode err = kFailure;
@@ -175,7 +176,7 @@ bool16 KCMScratchDoc::ImportSnippet(const std::string& snippet, std::vector<UIDR
 	}
 	if (err != kSuccess)
 	{
-		whyNot = "ImportFromStream refused the snippet";
+		whyNot = KCMSentence("ImportFromStream refused the snippet");
 		return kFalse;
 	}
 
@@ -208,7 +209,7 @@ bool16 KCMScratchDoc::ImportSnippet(const std::string& snippet, std::vector<UIDR
 	}
 	if (outStories.empty())
 	{
-		whyNot = "the import made no text frame";
+		whyNot = KCMSentence("the import made no text frame");
 		return kFalse;
 	}
 	return kTrue;

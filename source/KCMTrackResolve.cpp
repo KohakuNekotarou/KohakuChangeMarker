@@ -21,6 +21,7 @@
 #include <map>
 
 // Project includes:
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMCore.h"				// KCMIsDocDBOpen - the Target is asked, not trusted
 #include "KCMDiag.h"				// KCM_DIAG_LOG - test builds only (nothing in a shipping .pln)
 #include "KCMTrackResolve.h"
@@ -74,7 +75,7 @@ int32 KCMTrackResolve::Run(IDataBase* targetDB, const std::vector<KCMTrackResolv
 	outMessage.SetTranslatable(kFalse);
 	if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
 	{
-		outMessage = "the Target document is not open";
+		outMessage = KCMSentence("the Target document is not open");
 		return -1;
 	}
 
@@ -127,7 +128,7 @@ int32 KCMTrackResolve::Run(IDataBase* targetDB, const std::vector<KCMTrackResolv
 						 accept ? "accepted" : "rejected", (int)ok);
 			if (!ok)
 			{
-				outMessage = "InDesign would not ";
+				outMessage = KCMSentence("InDesign would not ");
 				outMessage.Append(accept ? "accept" : "reject");
 				outMessage.Append(" one of the records (story ");
 				outMessage.AppendNumber(static_cast<int32>(s->first.Get()));

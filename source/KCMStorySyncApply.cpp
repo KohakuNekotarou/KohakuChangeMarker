@@ -15,6 +15,7 @@
 //  this line.
 #include "VCPlugInHeaders.h"
 
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMStorySyncApply.h"
 
 #include <algorithm>
@@ -220,8 +221,7 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 	InterfacePtr<ITextModelCmds> cmds(model, UseDefaultIID());
 	if (cmds == nil)
 	{
-		whyNot = "the story cannot be edited";
-		whyNot.SetTranslatable(kFalse);
+		whyNot = KCMSentence("the story cannot be edited");
 		outRefused = kTrue;
 		return 0;
 	}
@@ -264,8 +264,7 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 		InterfacePtr<ITextStoryThread> thread(model->QueryStoryThread(paraStart, &threadStart, &threadSpan));
 		if (thread == nil)
 		{
-			whyNot = "the paragraph's story thread could not be found (nothing was written)";
-			whyNot.SetTranslatable(kFalse);
+			whyNot = KCMSentence("the paragraph's story thread could not be found (nothing was written)");
 			outRefused = kTrue;
 			return 0;
 		}
@@ -323,8 +322,7 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 						  : KCMTextDiff::Diff(a, b, changes);
 	if (!diffed)
 	{
-		whyNot = "the paragraph differs too much to place the changes";
-		whyNot.SetTranslatable(kFalse);
+		whyNot = KCMSentence("the paragraph differs too much to place the changes");
 		outRefused = kTrue;
 		return 0;
 	}
@@ -339,9 +337,8 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 		if (RangeTouchesObject(a, ch.aStart, ch.aStart + ch.aCount)
 			|| RangeTouchesObject(b, ch.bStart, ch.bStart + ch.bCount))
 		{
-			whyNot = "a change would add, move or delete a character InDesign hangs an object on "
-					 "(an anchored object, a note reference, a page number, an index marker)";
-			whyNot.SetTranslatable(kFalse);
+			whyNot = KCMSentence("a change would add, move or delete a character InDesign hangs an object on "
+					 "(an anchored object, a note reference, a page number, an index marker)");
 			outRefused = kTrue;
 			return 0;
 		}
@@ -372,9 +369,8 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 				int32 from = 0;
 				if (!InsertionPlace(model, paraStart, attrs, tables, part.fAStart, part.fObjectsBefore, notesBefore, from))
 				{
-					whyNot = "words put in where a table and a note reference stand together cannot be placed as the file "
-							 "has them (nothing of this paragraph was written)";
-					whyNot.SetTranslatable(kFalse);
+					whyNot = KCMSentence("words put in where a table and a note reference stand together cannot be placed as the file "
+							 "has them (nothing of this paragraph was written)");
 					outRefused = kTrue;
 					return 0;
 				}
@@ -403,9 +399,8 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 			}
 			if (!cuts.empty() && part.fBCount > 0)
 			{
-				whyNot = "a change replaces words on both sides of a table or a note reference standing inside "
-						 "the paragraph (which side the new words belong on cannot be told - edit the two sides apart)";
-				whyNot.SetTranslatable(kFalse);
+				whyNot = KCMSentence("a change replaces words on both sides of a table or a note reference standing inside "
+						 "the paragraph (which side the new words belong on cannot be told - edit the two sides apart)");
 				outRefused = kTrue;
 				return 0;
 			}
@@ -450,9 +445,8 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 		}
 		if (!inPlace)
 		{
-			whyNot = "the copy does not hold the words where they were read, so nothing of this paragraph "
-					 "was written (please report this - it is a fault of the plug-in, not of the file)";
-			whyNot.SetTranslatable(kFalse);
+			whyNot = KCMSentence("the copy does not hold the words where they were read, so nothing of this paragraph "
+					 "was written (please report this - it is a fault of the plug-in, not of the file)");
 			outRefused = kTrue;
 			return 0;
 		}
@@ -482,11 +476,10 @@ int32 ApplyParagraph(ITextModel* model, TextIndex paraStart, const KCMParaAttrs&
 		if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
 		{
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-			whyNot = (written > 0)
+			whyNot = KCMSentence((written > 0)
 					 ? "a write failed part way through a paragraph, which now holds neither the "
 					   "document's words nor the file's (a locked story or layer?)"
-					 : "the write failed (a locked story or layer?)";
-			whyNot.SetTranslatable(kFalse);
+					 : "the write failed (a locked story or layer?)");
 			outRefused = kTrue;
 			return written;
 		}
@@ -592,8 +585,7 @@ bool16 PourNoteWords(ITextModel* model, TextIndex from, TextIndex to,
 	if (CmdUtils::ProcessCommand(write) != kSuccess)
 	{
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		whyNot = "the new footnote's words could not be put in";
-		whyNot.SetTranslatable(kFalse);
+		whyNot = KCMSentence("the new footnote's words could not be put in");
 		return kFalse;
 	}
 	return kTrue;
@@ -613,9 +605,8 @@ int32 InsertParagraphs(ITextModel* model, TextIndex at, bool16 afterReturn,
 							&& (!afterReturn || CharAt(model, at) == kTextChar_CR)) ? kTrue : kFalse;
 	if (!inPlace || news.empty())
 	{
-		whyNot = "the copy does not hold the paragraphs where they were read, so no paragraph was added "
-				 "(please report this - it is a fault of the plug-in, not of the file)";
-		whyNot.SetTranslatable(kFalse);
+		whyNot = KCMSentence("the copy does not hold the paragraphs where they were read, so no paragraph was added "
+				 "(please report this - it is a fault of the plug-in, not of the file)");
 		outRefused = kTrue;
 		return 0;
 	}
@@ -635,8 +626,7 @@ int32 InsertParagraphs(ITextModel* model, TextIndex at, bool16 afterReturn,
 	if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
 	{
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		whyNot = "adding a paragraph failed (a locked story or layer?)";
-		whyNot.SetTranslatable(kFalse);
+		whyNot = KCMSentence("adding a paragraph failed (a locked story or layer?)");
 		outRefused = kTrue;
 		return 0;
 	}
@@ -674,9 +664,8 @@ int32 DeleteParagraphs(ITextModel* model, TextIndex from, TextIndex to, PMString
 	}
 	if (!inPlace)
 	{
-		whyNot = "the copy does not hold the paragraphs where they were read, so no paragraph was removed "
-				 "(please report this - it is a fault of the plug-in, not of the file)";
-		whyNot.SetTranslatable(kFalse);
+		whyNot = KCMSentence("the copy does not hold the paragraphs where they were read, so no paragraph was removed "
+				 "(please report this - it is a fault of the plug-in, not of the file)");
 		outRefused = kTrue;
 		return 0;
 	}
@@ -685,8 +674,7 @@ int32 DeleteParagraphs(ITextModel* model, TextIndex from, TextIndex to, PMString
 	if (write == nil || CmdUtils::ProcessCommand(write) != kSuccess)
 	{
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		whyNot = "removing a paragraph failed (a locked story or layer?)";
-		whyNot.SetTranslatable(kFalse);
+		whyNot = KCMSentence("removing a paragraph failed (a locked story or layer?)");
 		outRefused = kTrue;
 		return 0;
 	}

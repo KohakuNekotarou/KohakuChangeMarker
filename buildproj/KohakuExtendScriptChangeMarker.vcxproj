@@ -462,6 +462,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTableShape.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTableSnippet.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTableXmlCheck.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMSentence.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMTextWords.h" />
   </ItemGroup>
   <ItemGroup>

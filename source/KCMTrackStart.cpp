@@ -12,6 +12,7 @@
 #include "PMString.h"
 #include "WideString.h"
 
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMBoundaryID.h"			// kKCMMarksRebuiltMessage / kKCMTargetToFrontMessage
 #include "KCMComparisonRun.h"		// KCMStartComparisonOn / KCMStopComparison
 #include "KCMCore.h"				// KCMIsArmed / KCMArmedTargetDB / KCMBeginTrackListing / KCMEndTrackListing
@@ -58,7 +59,7 @@ bool16 KCMStartTrackChanges(PMString& outMessage)
 	IDataBase* const docDB = KCMTaskDocumentDB();
 	if (docDB == nil)
 	{
-		outMessage = "Compare with Tracked Changes needs a document";
+		outMessage = KCMSentence("Compare with Tracked Changes needs a document");
 		return kFalse;
 	}
 
@@ -82,7 +83,7 @@ bool16 KCMStartTrackChanges(PMString& outMessage)
 		KCMNotify(kKCMMarksRebuiltMessage);
 		PMString startSaid;
 		KCMGetSessionStatus(startSaid);
-		outMessage = "The Track listing did not start";
+		outMessage = KCMSentence("The Track listing did not start");
 		if (startSaid.CharCount() > 0)
 		{
 			outMessage.Append(" (");
@@ -96,7 +97,7 @@ bool16 KCMStartTrackChanges(PMString& outMessage)
 
 	// 4. The Target to the front (the import's message, KCMStoryTextImport.cpp), and the sentence.
 	KCMNotify(kKCMTargetToFrontMessage);
-	outMessage = "Track: ";
+	outMessage = KCMSentence("Track: ");
 	outMessage.Append(LastStatusLine());
 	outMessage.SetTranslatable(kFalse);
 	return kTrue;

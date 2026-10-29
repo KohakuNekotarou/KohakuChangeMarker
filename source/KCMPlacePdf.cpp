@@ -20,6 +20,7 @@
 #include "PDFID.h"				// kSetPDFPlacePrefsCmdBoss
 
 // Project includes:
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMPlacePdf.h"
 
 IPDFPlacePrefs* KCMQuerySessionPdfPlacePrefs()
@@ -36,8 +37,7 @@ bool16 KCMSetPdfPlacePage(int32 page1, int32 cropTo, IPDFPlacePrefs* current, PM
 	InterfacePtr<IPDFPlacePrefs> data(cmd, UseDefaultIID());
 	if (cmd == nil || data == nil)
 	{
-		why = "the PDF place preferences command could not be assembled";
-		why.SetTranslatable(kFalse);
+		why = KCMSentence("the PDF place preferences command could not be assembled");
 		return kFalse;
 	}
 	if (current != nil)
@@ -51,8 +51,7 @@ bool16 KCMSetPdfPlacePage(int32 page1, int32 cropTo, IPDFPlacePrefs* current, PM
 	if (CmdUtils::ProcessCommand(cmd) != kSuccess)
 	{
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);		// left standing it would drag the caller's next command down
-		why = "the PDF place preferences could not be set";
-		why.SetTranslatable(kFalse);
+		why = KCMSentence("the PDF place preferences could not be set");
 		return kFalse;
 	}
 	return kTrue;

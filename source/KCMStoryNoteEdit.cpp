@@ -24,6 +24,7 @@
 #include "UIDRef.h"
 #include "WideString.h"
 
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMStoryNoteEdit.h"
 #include "KCMDiag.h"			// KCM_DIAG_FAULT("note-delete-fail") - a refused deletion, measured (test builds only)
 
@@ -88,8 +89,7 @@ ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outWordsFr
 		return kFailure;
 	if (!KCMCanInsertNoteAt(model, at))
 	{
-		whyNot = "this place does not take a footnote";
-		whyNot.SetTranslatable(kFalse);
+		whyNot = KCMSentence("this place does not take a footnote");
 		return kFailure;
 	}
 	InterfacePtr<ITextModelCmds> cmds(model, UseDefaultIID());
@@ -105,8 +105,7 @@ ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outWordsFr
 		// ★THE ERROR CLEARED (2026-09-25, the Word round trip re-check, item 2): the caller names this and goes on to
 		//   its next note - a command - so the error must not be left standing (CmdUtils.h:74)
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		whyNot = "the footnote's marker could not be put in";
-		whyNot.SetTranslatable(kFalse);
+		whyNot = KCMSentence("the footnote's marker could not be put in");
 		return kFailure;
 	}
 
@@ -132,8 +131,7 @@ ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outWordsFr
 	if (!made)
 	{
 		TakeMarkerBack(cmds, at);
-		whyNot = "the footnote could not be created";
-		whyNot.SetTranslatable(kFalse);
+		whyNot = KCMSentence("the footnote could not be created");
 		return kFailure;
 	}
 
@@ -159,8 +157,7 @@ ErrorCode KCMInsertNoteAt(ITextModel* model, TextIndex at, TextIndex& outWordsFr
 		//   so leaving it would put an empty footnote in the document that nobody asked for and the
 		//   caller has already been told could not be made.
 		TakeMarkerBack(cmds, at);
-		whyNot = "the new footnote's own text could not be found";
-		whyNot.SetTranslatable(kFalse);
+		whyNot = KCMSentence("the new footnote's own text could not be found");
 		return kFailure;
 	}
 	outWordsFrom = threadStart + 1;		// past the number
@@ -179,8 +176,7 @@ ErrorCode KCMDeleteNoteAt(ITextModel* model, TextIndex markerAt, PMString& whyNo
 	//  the DeleteCmd - the re-inspection's M18, note_delete_probe.ps1.)
 	if (KCM_DIAG_FAULT("note-delete-fail"))
 	{
-		whyNot = "the footnote's marker could not be taken out";
-		whyNot.SetTranslatable(kFalse);
+		whyNot = KCMSentence("the footnote's marker could not be taken out");
 		return kFailure;
 	}
 	InterfacePtr<ICommand> del(cmds->DeleteCmd(markerAt, 1));
@@ -189,8 +185,7 @@ ErrorCode KCMDeleteNoteAt(ITextModel* model, TextIndex markerAt, PMString& whyNo
 		// ★THE ERROR CLEARED (2026-09-25, the Word round trip re-check, item 2): the import takes the next note away
 		//   right after this one - a command - and must not do it with this one's error standing (CmdUtils.h:74)
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
-		whyNot = "the footnote's marker could not be taken out";
-		whyNot.SetTranslatable(kFalse);
+		whyNot = KCMSentence("the footnote's marker could not be taken out");
 		return kFailure;
 	}
 	return kSuccess;

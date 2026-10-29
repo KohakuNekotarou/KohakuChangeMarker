@@ -28,6 +28,7 @@
 #include "CPMUnknown.h"
 
 // Project includes:
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMID.h"
 #include "IKCMCompareFacade.h"
 #include "IKCMMarkData.h"
@@ -100,18 +101,6 @@
 
 namespace
 {
-
-/** A sentence this facade says - fixed English, never a translation key - made with PMString's constructor for a
-	string that is not a key, so it is marked untranslatable as it is made (PMString.h: "Calling Translate on this
-	string will do nothing"; SetTranslatable is in the header's DISCOURAGED section).
-	⚠**Why not `out = "..."` and SetTranslatable(kFalse)**: every `=` hands over the right side's mark with the
-	words (PMString's swap and SetString), and `"..."` makes a key, so a mark set before the next `=` is gone after
-	it. A PMString handed back by another function keeps its own mark - mark it where it is taken in. Every
-	character this file says is ASCII. */
-PMString Sentence(const char* words)
-{
-	return PMString(words, PMString::kEncodingASCII);
-}
 
 /** The same change of the diff's: what, kind, and both ranges (a group written together has to say
 	whether the row pressed is among the rows it found). */
@@ -555,12 +544,12 @@ CREATE_PMINTERFACE(KCMMarkData, kKCMMarkDataImpl)
 
 // "cleared chk3" / "cleared paw0" for the status line. The two clear items say the same thing
 // about different marks, so the lines that build it are written once.
-// ⚠**The untranslatable mark (Sentence) is what keeps the reader from being shown the key itself** -- the
+// ⚠**The untranslatable mark (KCMSentence) is what keeps the reader from being shown the key itself** -- the
 //   reason every literal put on this line needs the mark is with KCMNotifyStatus in
 //   KCMModelNotify.h.
 static void KCMSayCleared(const char* what, int32 n)
 {
-	PMString msg(Sentence(what));
+	PMString msg(KCMSentence(what));
 	msg.AppendNumber(n);
 	KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);
 }
@@ -959,7 +948,7 @@ private:
 		fStepWasModified = (db != nil && KCMIsDocDBOpen(db) && db->IsModified()) ? kTrue : kFalse;
 		IAbortableCmdSeq* sequence = CmdUtils::BeginAbortableCmdSeq("KCMStoryEditsStep");
 		if (sequence != nil)
-			sequence->SetName(Sentence(name));
+			sequence->SetName(KCMSentence(name));
 		return sequence;
 	}
 
@@ -972,7 +961,7 @@ private:
 	{
 		if (sequence != nil || fBatch)
 			return kFalse;
-		outMessage = Sentence("InDesign would not start an undoable step - nothing was changed");
+		outMessage = KCMSentence("InDesign would not start an undoable step - nothing was changed");
 		return kTrue;
 	}
 
@@ -1131,14 +1120,14 @@ private:
 	{
 		if (!this->SameChangeAfterRefresh(nth, which, before))
 		{
-			outMessage = Sentence("the list was out of date - it has been compared again; right-click the ");
+			outMessage = KCMSentence("the list was out of date - it has been compared again; right-click the ");
 			outMessage.Append(pressed);
 			outMessage.Append(" once more");
 			return nil;
 		}
 		const KCMStoryChange* const modelChange = KCMStoryList::GetMergedChange(nth, which);
 		if (modelChange == nil)
-			outMessage = Sentence("this change is not in the list any more");
+			outMessage = KCMSentence("this change is not in the list any more");
 		return modelChange;
 	}
 
@@ -1162,12 +1151,12 @@ public:
 		(the import-as-Source road: the Source IS the files then). */
 	int32	RestoreAttrAs(int32 nth, int32 which, const char* stepName, PMString& outMessage)
 	{
-		outMessage = Sentence("");
+		outMessage = KCMSentence("");
 		UIDRef target, source;
 		Change before;
 		if (!this->AttrChangeInBoth(nth, which, target, source, before))
 		{
-			outMessage = Sentence("this change is not an attribute change of two documents that are open and compared");
+			outMessage = KCMSentence("this change is not an attribute change of two documents that are open and compared");
 			return -1;
 		}
 		// COMPARED AGAIN FIRST, AND IT HAS TO BE THE SAME CHANGE (StillTheChange) - and the change as it stands, for the
@@ -1202,7 +1191,7 @@ public:
 		const bool16 kept = this->EndStep(sequence, same);
 		if (done >= 0 && !same)
 		{
-			outMessage = Sentence("the Source's marks did not come all the way back, so the restore was cancelled - the document is as it was");
+			outMessage = KCMSentence("the Source's marks did not come all the way back, so the restore was cancelled - the document is as it was");
 			done = -1;
 		}
 		// (a focus the step does not keep is let go - one of a record's own stays with it, put back by the abort)
@@ -1219,7 +1208,7 @@ public:
 		this->RefreshRow(nth);
 		// AND THE "=" IS CHECKED ONCE MORE, AFTER THE REFRESH (KCMEqualRecord) - belt and braces.
 		if (done >= 0 && !KCMStoryList::EqualStanding(nth, live, target.GetDataBase()))
-			outMessage = Sentence("the marks do not read as the Source's after the restore - the row shows what differs");
+			outMessage = KCMSentence("the marks do not read as the Source's after the restore - the row shows what differs");
 		return done;
 	}
 
@@ -1234,12 +1223,12 @@ public:
 
 	virtual int32	MatchTable(int32 nth, int32 which, PMString& outMessage)
 	{
-		outMessage = Sentence("");
+		outMessage = KCMSentence("");
 		UIDRef target, source;
 		Change before;
 		if (!this->TableChangeInBoth(nth, which, target, source, before))
 		{
-			outMessage = Sentence("this row is not a table that differs between two documents that are open and compared");
+			outMessage = KCMSentence("this row is not a table that differs between two documents that are open and compared");
 			return -1;
 		}
 		// A TASK START KEPT IN MEMORY CANNOT BE MATCHED FROM: the match is checked afterwards against the
@@ -1247,7 +1236,7 @@ public:
 		//   be changed and then the whole match rolled back. Said before anything is touched.
 		if (KCMIsExternalSource(source.GetDataBase()))
 		{
-			outMessage = Sentence("the Source is a Task Start kept in memory, whose tables cannot be read back - take a Task Start (Save)... to match a table");
+			outMessage = KCMSentence("the Source is a Task Start kept in memory, whose tables cannot be read back - take a Task Start (Save)... to match a table");
 			return -1;
 		}
 		// COMPARED AGAIN FIRST, AND IT HAS TO BE THE SAME CHANGE (StillTheChange).
@@ -1258,7 +1247,7 @@ public:
 		// THE TWO TABLES BY THEIR OWN IDS, as the comparison paired them (KCMStoryChange::fTargetTableUID).
 		if (live.fTargetTableUID == kInvalidUID || live.fSourceTableUID == kInvalidUID)
 		{
-			outMessage = Sentence("the two tables could not be named on both sides (is the Source document open?)");
+			outMessage = KCMSentence("the two tables could not be named on both sides (is the Source document open?)");
 			return -1;
 		}
 		// ONE ABORTABLE STEP (the tidy's S11 - it was a plain sequence until then): a plain sequence ended
@@ -1290,7 +1279,7 @@ public:
 		const bool16 kept = this->EndStep(sequence, same);
 		if (done >= 0 && !same)
 		{
-			PMString msg(Sentence("the table did not come all the way to the Source's ("));
+			PMString msg(KCMSentence("the table did not come all the way to the Source's ("));
 			PMString reason;
 			reason.SetUTF8String(why);
 			msg.Append(reason);
@@ -1300,7 +1289,7 @@ public:
 		}
 		else if (done >= 0 && !kept)
 		{
-			outMessage = Sentence("the match did not go in, so it was cancelled - the document is as it was");
+			outMessage = KCMSentence("the match did not go in, so it was cancelled - the document is as it was");
 			done = -1;
 		}
 		// THE TABLE STAYS ON THE ROW AS A RECORD: the "=" row over the table's anchor characters - as
@@ -1362,7 +1351,7 @@ public:
 		IDataBase* const db = KCMTaskDocumentDB();
 		if (!onlyThese.IsEmpty() && onlyThese.GetDataBase() != db)
 		{
-			outMessage = Sentence("the selection is in another document than the one exported");
+			outMessage = KCMSentence("the selection is in another document than the one exported");
 			return kFalse;
 		}
 		return KCMExportStoryText(db, parent, onlyThese, outMessage);
@@ -1382,7 +1371,7 @@ public:
 		std::vector<UID> chosen;
 		if (!KCMPageMapPagesOf(pages, kFalse /*no masters*/, db, chosen))
 		{
-			outMessage = Sentence("Export Pages to Word: no page is named - select pages in the Pages panel, or name them (\"1,3\")");
+			outMessage = KCMSentence("Export Pages to Word: no page is named - select pages in the Pages panel, or name them (\"1,3\")");
 			return kFalse;
 		}
 		UIDList list(db);
@@ -1481,7 +1470,7 @@ public:
 
 	virtual int32	ApplyChange(int32 nth, int32 which, PMString& outMessage)
 	{
-		outMessage = Sentence("");
+		outMessage = KCMSentence("");
 		// THE COPY READ ONCE FOR THE WHOLE PRESS (KCMImportSourceReadScope): the table check below and the
 		//   paragraph's plan read the same story - and a batch's scope (ApplyChanges) covers every row of it.
 		KCMImportSourceReadScope oneReading;
@@ -1490,7 +1479,7 @@ public:
 		Change change;
 		if (!this->ApplicableChange(nth, which, targetDB, row, change))
 		{
-			outMessage = Sentence("this row is not a change of the imported text that can be put in");
+			outMessage = KCMSentence("this row is not a change of the imported text that can be put in");
 			return -1;
 		}
 		// (⛔A story whose tables the files add or take away was refused whole here until 2026-10-27 night - measured on
@@ -1507,7 +1496,7 @@ public:
 			// The restore says nothing when it succeeds (its menu item writes the sentence) - Apply says it here.
 			if (done >= 0 && outMessage.IsEmpty())
 			{
-				outMessage = Sentence("applied the mark");
+				outMessage = KCMSentence("applied the mark");
 				if (done > 0)
 				{
 					outMessage.Append(" (");
@@ -1540,13 +1529,13 @@ public:
 
 	virtual int32	ApplyStory(int32 nth, PMString& outMessage)
 	{
-		outMessage = Sentence("");
+		outMessage = KCMSentence("");
 		KCMImportSourceReadScope oneReading;		// (ApplyChange says why)
 		IDataBase* targetDB = nil;
 		Row row;
 		if (!this->CanApplyStory(nth) || !this->PairedTargetRow(nth, targetDB, row))
 		{
-			outMessage = Sentence("this row is not a story of the imported text with anything to put in");
+			outMessage = KCMSentence("this row is not a story of the imported text with anything to put in");
 			return -1;
 		}
 		KCMStoryTextSet set;
@@ -1558,7 +1547,7 @@ public:
 		if (!KCMImportSourceStory(row.fSourceStoryUID, word, whyNot))
 		{
 			outMessage = whyNot;
-			outMessage.SetTranslatable(kFalse);		// a sentence taken in keeps its own mark (Sentence says why)
+			outMessage.SetTranslatable(kFalse);		// a sentence taken in keeps its own mark (KCMSentence says why)
 			return -1;
 		}
 		set.fUids.push_back(row.fStoryUID);
@@ -1570,12 +1559,12 @@ public:
 
 	virtual int32	ApplyAll(PMString& outMessage)
 	{
-		outMessage = Sentence("");
+		outMessage = KCMSentence("");
 		KCMImportSourceReadScope oneReading;		// (ApplyChange says why)
 		IDataBase* const targetDB = KCMArmedTargetDB();
 		if (KCMFacadeTrackMode() || !this->IsImportSource() || targetDB == nil || !KCMIsDocDBOpen(targetDB))
 		{
-			outMessage = Sentence("no imported text is being compared");
+			outMessage = KCMSentence("no imported text is being compared");
 			return -1;
 		}
 		// Every row of the list with something left to put in - the stories the import filled (the list holds no other).
@@ -1598,7 +1587,7 @@ public:
 		}
 		if (set.fUids.empty())
 		{
-			outMessage = Sentence("nothing left to put in");
+			outMessage = KCMSentence("nothing left to put in");
 			return 0;
 		}
 		return this->PourIntoTarget(targetDB, set, std::vector<UID>(), "Apply All Changes", -1, outMessage);
@@ -1624,7 +1613,7 @@ public:
 
 	virtual int32	RestoreChangeFromCopy(int32 nth, int32 which, PMString& outMessage)
 	{
-		outMessage = Sentence("");
+		outMessage = KCMSentence("");
 		IDataBase* targetDB = nil;
 		Row row;
 		Change before;
@@ -1639,23 +1628,23 @@ public:
 			{
 				this->RefreshRow(nth);
 				fStale = kTrue;		// a batch leaves the rest of this row's indices (RunBatch)
-				outMessage = Sentence("the list was out of date - it has been compared again; right-click the row once more");
+				outMessage = KCMSentence("the list was out of date - it has been compared again; right-click the row once more");
 				return -1;
 			}
-			outMessage = Sentence("this row is not a change Apply This Change put in with a copy kept");
+			outMessage = KCMSentence("this row is not a change Apply This Change put in with a copy kept");
 			return -1;
 		}
 		// COMPARED AGAIN FIRST, AND IT HAS TO BE THE SAME ROW (SameChangeAfterRefresh says why - the list does not
 		//   follow every edit by itself).
 		if (!this->SameChangeAfterRefresh(nth, which, before))
 		{
-			outMessage = Sentence("the list was out of date - it has been compared again; right-click the row once more");
+			outMessage = KCMSentence("the list was out of date - it has been compared again; right-click the row once more");
 			return -1;
 		}
 		const KCMEqualRecord* const rec = KCMStoryList::EqualAt(nth, which);
 		if (rec == nil || rec->fCopy.fWhyNot != kKCMCopyKept)
 		{
-			outMessage = Sentence("this row no longer holds its copy - compare again");
+			outMessage = KCMSentence("this row no longer holds its copy - compare again");
 			return -1;
 		}
 		const KCMEqualRecord record = *rec;		// a copy: the list is rebuilt below
@@ -1664,7 +1653,7 @@ public:
 		//   reader's edit is not this command's to take away (KFC's "edited since").
 		if (KCMStoryList::EqualStateOf(nth, record, targetDB) != kKCMEqualStanding)
 		{
-			outMessage = Sentence("the words Apply put in have been edited since - left as they are");
+			outMessage = KCMSentence("the words Apply put in have been edited since - left as they are");
 			return -1;
 		}
 		// A CARET'S PLACE HAS TO READ AS THE SOURCE'S BY ITS SURROUNDINGS (CaretReadsAsSource says why): otherwise the words
@@ -1673,12 +1662,12 @@ public:
 		if (record.fNowEnd == record.fNowStart && !KCMStoryList::RecordFollowed(nth, record)
 			&& !KCMStoryList::CaretReadsAsSource(targetDB, row.fStoryUID, row.fSourceStoryUID, record.fNowStart, record.fLive.fSourceStart))
 		{
-			outMessage = Sentence("the place it went in has moved since (an edit before it) - left as it is; Ctrl+Z takes it back");
+			outMessage = KCMSentence("the place it went in has moved since (an edit before it) - left as it is; Ctrl+Z takes it back");
 			return -1;
 		}
 		if (record.fCopy.fParaStyle != kInvalidUID && !ParagraphStyleStands(targetDB, record.fCopy.fParaStyle))
 		{
-			outMessage = Sentence("the paragraph style of the paragraph before it has been deleted since - left as it is");
+			outMessage = KCMSentence("the paragraph style of the paragraph before it has been deleted since - left as it is");
 			return -1;
 		}
 		// A WHOLE PARAGRAPH RESTORED FROM THE SOURCE WITH ITS OWN RETURN (KCMRecordCopy::fShift) is put
@@ -1686,7 +1675,7 @@ public:
 		const int32 shift = record.fCopy.fShift;
 		if (shift != 0 && !ReturnAt(targetDB, row.fStoryUID, record.fNowEnd))
 		{
-			outMessage = Sentence("the paragraph break it was put in beside has gone since - left as it is");
+			outMessage = KCMSentence("the paragraph break it was put in beside has gone since - left as it is");
 			return -1;
 		}
 		IAbortableCmdSeq* sequence = this->BeginStep("Restore from Copy");	// (a part of the batch's step inside one)
@@ -1725,20 +1714,20 @@ public:
 		if (!ok)
 		{
 			this->RefreshRow(nth);
-			outMessage = Sentence("the copy could not be put back (a locked story or layer?) - nothing was changed");
+			outMessage = KCMSentence("the copy could not be put back (a locked story or layer?) - nothing was changed");
 			return -1;
 		}
 		// THE RECORD STAYS, MARKED PUT BACK (the counters' way - KCMEqualRecord): it reads as the live change from
 		//   here, and as "=" again the moment the reader undoes this.
 		KCMStoryList::MarkPutBack(nth, record, KCMStoryDiffRun::CountForKind(target, record.fCounterKind), kept ? focusId : 0);
 		this->RefreshRow(nth);
-		outMessage = Sentence("restored from the copy - Ctrl+Z takes it back");
+		outMessage = KCMSentence("restored from the copy - Ctrl+Z takes it back");
 		return 1;
 	}
 
 	virtual bool16	GetChangeCopyState(int32 nth, int32 which, PMString& outWhyNot)
 	{
-		outWhyNot = Sentence("");
+		outWhyNot = KCMSentence("");
 		const KCMEqualRecord* const rec = KCMStoryList::EqualAt(nth, which);
 		if (rec == nil)
 			return kFalse;
@@ -1749,7 +1738,7 @@ public:
 		if (why == kKCMCopyNotTaken)
 			why = (rec->fLive.fWhat == KCMStoryChange::kTable) ? kKCMCopyHoldsObject
 				: (rec->fCounterKind != kKCMStoryAttrNone) ? kKCMCopyMark : kKCMCopyNotTaken;
-		outWhyNot = Sentence(CopyWhyNotWords(why));
+		outWhyNot = KCMSentence(CopyWhyNotWords(why));
 		return kFalse;
 	}
 
@@ -1797,13 +1786,13 @@ public:
 
 	virtual int32	RestoreTextFromSource(int32 nth, int32 which, PMString& outMessage)
 	{
-		outMessage = Sentence("");
+		outMessage = KCMSentence("");
 		IDataBase* targetDB = nil;
 		Row row;
 		Change before;
 		if (!this->SourceTextChange(nth, which, targetDB, row, before))
 		{
-			outMessage = Sentence("this row is not a text change of two documents that are open and compared");
+			outMessage = KCMSentence("this row is not a text change of two documents that are open and compared");
 			return -1;
 		}
 		// COMPARED AGAIN FIRST, AND IT HAS TO BE THE SAME CHANGE (StillTheChange).
@@ -1866,7 +1855,7 @@ public:
 		}
 		if (whyNot != nil)
 		{
-			outMessage = Sentence(whyNot);
+			outMessage = KCMSentence(whyNot);
 			outMessage.Append(" - left as it is");
 			return -1;
 		}
@@ -1903,7 +1892,7 @@ public:
 		if (!same)
 		{
 			this->RefreshRow(nth);
-			outMessage = Sentence(wrote ? "the place did not read as the Source after the copy - nothing was changed"
+			outMessage = KCMSentence(wrote ? "the place did not read as the Source after the copy - nothing was changed"
 							   : "the copy could not be written (a locked story or layer?) - nothing was changed");
 			return -1;
 		}
@@ -1916,7 +1905,7 @@ public:
 									   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone, &copies,
 									   &focusIds);
 		this->RefreshRow(nth);
-		outMessage = Sentence("restored from the Source");
+		outMessage = KCMSentence("restored from the Source");
 		if (copies[0].fWhyNot == kKCMCopyKept)
 			outMessage.Append(" - right-click it: Restore from Copy, or Ctrl+Z");
 		else
@@ -1954,7 +1943,7 @@ public:
 		}
 		if (changes.empty())
 		{
-			outMessage = Sentence("this story has no change to restore from the Source");
+			outMessage = KCMSentence("this story has no change to restore from the Source");
 			return -1;
 		}
 		return this->RunBatch(&rows[0], &changes[0], static_cast<int32>(changes.size()), "Restore All Changes in This Story",
@@ -2025,17 +2014,17 @@ private:
 	int32 RunBatch(const int32* rows, const int32* changes, int32 count, const char* name, OneChange one, bool16 oneAsBatch,
 				   PMString& outMessage)
 	{
-		outMessage = Sentence("");
+		outMessage = KCMSentence("");
 		if (rows == nil || changes == nil || count <= 0)
 		{
-			outMessage = Sentence("no change was named");
+			outMessage = KCMSentence("no change was named");
 			return -1;
 		}
 		if (count == 1 && !oneAsBatch)
 			return (this->*one)(rows[0], changes[0], outMessage);
 		if (fBatch)
 		{
-			outMessage = Sentence("another batch is still running");
+			outMessage = KCMSentence("another batch is still running");
 			return -1;
 		}
 		std::vector<std::pair<int32, int32> > pairs;
@@ -2053,10 +2042,10 @@ private:
 		IAbortableCmdSeq* sequence = CmdUtils::BeginAbortableCmdSeq("KCMStoryEditsBatch");
 		if (sequence == nil)
 		{
-			outMessage = Sentence("InDesign would not start an undoable step - nothing was changed");
+			outMessage = KCMSentence("InDesign would not start an undoable step - nothing was changed");
 			return -1;
 		}
-		sequence->SetName(Sentence(name));
+		sequence->SetName(KCMSentence(name));
 		fBatch = kTrue;
 		fBatchFailed = kFalse;
 		int32 done = 0;
@@ -2116,7 +2105,7 @@ private:
 
 		if (failed)
 		{
-			outMessage = Sentence("a change could not be written");
+			outMessage = KCMSentence("a change could not be written");
 			if (!failure.IsEmpty())
 			{
 				outMessage.Append(" (");
@@ -2128,11 +2117,11 @@ private:
 		}
 		if (done == 0)
 		{
-			outMessage = Sentence("nothing was changed - ");
-			outMessage.Append(firstWhy.IsEmpty() ? Sentence("no change could be done") : firstWhy);
+			outMessage = KCMSentence("nothing was changed - ");
+			outMessage.Append(firstWhy.IsEmpty() ? KCMSentence("no change could be done") : firstWhy);
 			return -1;
 		}
-		outMessage = Sentence(name);
+		outMessage = KCMSentence(name);
 		outMessage.Append(": ");
 		outMessage.AppendNumber(done);
 		outMessage.Append(done == 1 ? " change" : " changes");
@@ -2248,7 +2237,7 @@ private:
 		Change before;
 		if (!this->GetChange(nth, which, before))
 		{
-			outMessage = Sentence("this change is not in the list any more");
+			outMessage = KCMSentence("this change is not in the list any more");
 			return -1;
 		}
 		// COMPARED AGAIN FIRST, AND IT HAS TO BE THE SAME CHANGE (StillTheChange).
@@ -2323,7 +2312,7 @@ private:
 		if (!same)
 		{
 			this->RefreshRow(nth);
-			outMessage = Sentence((wrote == kSuccess)
+			outMessage = KCMSentence((wrote == kSuccess)
 						 ? "the place did not read as the imported text after the write - nothing was put in"
 						 : "the write failed (a locked story or layer?) - nothing was put in");
 			return -1;
@@ -2337,7 +2326,7 @@ private:
 									   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone, &copies,
 									   &focusIds);
 		this->RefreshRow(nth);
-		outMessage = Sentence("applied (1 write)");
+		outMessage = KCMSentence("applied (1 write)");
 		if (copies[0].fWhyNot == kKCMCopyKept)
 			outMessage.Append(" - right-click it: Restore from Copy, or Ctrl+Z");
 		else
@@ -2362,7 +2351,7 @@ private:
 		Change before;
 		if (!this->GetChange(nth, which, before))
 		{
-			outMessage = Sentence("this change is not in the list any more");
+			outMessage = KCMSentence("this change is not in the list any more");
 			return -1;
 		}
 		// COMPARED AGAIN FIRST, AND IT HAS TO BE THE SAME CHANGE (StillTheChange).
@@ -2378,7 +2367,7 @@ private:
 		//   that go first.
 		if (KCMImportStoryNeedsTableRound(target, row.fSourceStoryUID))
 		{
-			outMessage = Sentence("the imported text adds or takes away a table in this story - put its Table + / Table - row in "
+			outMessage = KCMSentence("the imported text adds or takes away a table in this story - put its Table + / Table - row in "
 						 "first (or the story with Apply All Changes in This Story)");
 			return -1;
 		}
@@ -2539,7 +2528,7 @@ private:
 										   &copies, &focusIds);
 		this->RefreshRow(nth);
 
-		outMessage = Sentence("applied (");
+		outMessage = KCMSentence("applied (");
 		outMessage.AppendNumber(done);
 		outMessage.Append(done == 1 ? " write)" : " writes)");
 		// A FOOTNOTE'S OWN PARAGRAPH: what went is said as what it is - the note with its reference -
@@ -2585,7 +2574,7 @@ private:
 		Change before;
 		if (!this->GetChange(nth, which, before))
 		{
-			outMessage = Sentence("this change is not in the list any more");
+			outMessage = KCMSentence("this change is not in the list any more");
 			return -1;
 		}
 		const KCMStoryChange* const found = this->StillTheChange(nth, which, before, "table row", outMessage);
@@ -2594,7 +2583,7 @@ private:
 		const KCMStoryChange live = *found;
 		if (live.fTargetTableUID == kInvalidUID)
 		{
-			outMessage = Sentence("the table is not named on the row - compare again");
+			outMessage = KCMSentence("the table is not named on the row - compare again");
 			return -1;
 		}
 		const UIDRef target(targetDB, row.fStoryUID);
@@ -2623,7 +2612,7 @@ private:
 		this->RefreshRow(nth);
 		if (done <= 0)
 			return -1;
-		outMessage = Sentence("applied the table (");
+		outMessage = KCMSentence("applied the table (");
 		outMessage.AppendNumber(done);
 		outMessage.Append(done == 1 ? " move or write)" : " moves and writes)");
 		outMessage.Append(" - Ctrl+Z takes it back");
@@ -2640,7 +2629,7 @@ private:
 		Change before;
 		if (!this->GetChange(nth, which, before))
 		{
-			outMessage = Sentence("this change is not in the list any more");
+			outMessage = KCMSentence("this change is not in the list any more");
 			return -1;
 		}
 		const KCMStoryChange* const found = this->StillTheChange(nth, which, before, "table row", outMessage);
@@ -2671,7 +2660,7 @@ private:
 		this->RefreshRow(nth);
 		if (done <= 0)
 			return -1;
-		outMessage = Sentence((live.fKind == KCMStoryChange::kInsert) ? "applied - the table taken away (" : "applied - the table put in (");
+		outMessage = KCMSentence((live.fKind == KCMStoryChange::kInsert) ? "applied - the table taken away (" : "applied - the table put in (");
 		outMessage.AppendNumber(done);
 		outMessage.Append(done == 1 ? " move or write)" : " moves and writes)");
 		if (together > 1)
@@ -2734,7 +2723,7 @@ private:
 		KCMPourOptions options;
 		options.fNoteRefusals = kFalse;
 		options.fOnly = only;
-		options.fStepName = Sentence(stepName);
+		options.fStepName = KCMSentence(stepName);
 		PMString poured;
 		bool16 cancelled = kFalse;
 		const bool16 any = KCMPourStoryTextWith(targetDB, set, options, poured, cancelled);
@@ -2779,7 +2768,7 @@ private:
 		}
 		if (cancelled)
 		{
-			outMessage = Sentence("cancelled - nothing was put in");
+			outMessage = KCMSentence("cancelled - nothing was put in");
 			return -1;
 		}
 		// NOTHING WENT IN (the re-inspection's M2): the pour's own sentence alone. There is nothing for Ctrl+Z
@@ -2790,7 +2779,7 @@ private:
 			outMessage.SetTranslatable(kFalse);
 			return 0;
 		}
-		outMessage = Sentence("applied: ");
+		outMessage = KCMSentence("applied: ");
 		outMessage.Append(poured);
 		outMessage.Append(" - Ctrl+Z takes it back");
 		return 1;
@@ -2906,22 +2895,22 @@ private:
 	int32 ResolveTrack(const std::vector<KCMTrackResolveItem>& items, int32 changes, bool16 accept, const char* stepName,
 					   PMString& outMessage)
 	{
-		outMessage = Sentence("");
+		outMessage = KCMSentence("");
 		IDataBase* const targetDB = KCMArmedTargetDB();
 		if (!KCMFacadeTrackMode() || !KCMIsArmed() || targetDB == nil || !KCMIsDocDBOpen(targetDB))
 		{
-			outMessage = Sentence("the Track Changes comparison is not running");
+			outMessage = KCMSentence("the Track Changes comparison is not running");
 			return -1;
 		}
 		if (items.empty())
 		{
-			outMessage = Sentence("no tracked change was named");
+			outMessage = KCMSentence("no tracked change was named");
 			return -1;
 		}
 		IAbortableCmdSeq* sequence = this->BeginStep(stepName);
 		if (sequence == nil)
 		{
-			outMessage = Sentence("InDesign would not start an undoable step - nothing was changed");
+			outMessage = KCMSentence("InDesign would not start an undoable step - nothing was changed");
 			return -1;
 		}
 		int32 gone = 0;
@@ -2943,21 +2932,21 @@ private:
 		if (done < 0)
 		{
 			outMessage = why;
-			outMessage.SetTranslatable(kFalse);		// KCMTrackResolve's sentence, taken in (Sentence says why)
+			outMessage.SetTranslatable(kFalse);		// KCMTrackResolve's sentence, taken in (KCMSentence says why)
 			outMessage.Append(" - the step was rolled back; nothing was changed");
 			result = -1;
 		}
 		else if (done == 0)
-			outMessage = Sentence("Nothing to do - these changes are no longer recorded (accepted, rejected or undone since the list "
+			outMessage = KCMSentence("Nothing to do - these changes are no longer recorded (accepted, rejected or undone since the list "
 						 "was read).");
 		else if (!kept)
 		{
-			outMessage = Sentence("The step was rolled back - nothing was changed.");
+			outMessage = KCMSentence("The step was rolled back - nothing was changed.");
 			result = -1;
 		}
 		else
 		{
-			outMessage = Sentence(accept ? "Accepted: " : "Rejected: ");
+			outMessage = KCMSentence(accept ? "Accepted: " : "Rejected: ");
 			outMessage.AppendNumber(changes);
 			outMessage.Append((changes == 1) ? " change" : " changes");
 			if (gone > 0)

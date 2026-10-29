@@ -28,6 +28,7 @@
 #include <vector>
 
 // Project includes:
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMCore.h"				// KCMArmedTargetDB / KCMArmedSourceDB
 #include "KCMResourceParse.h"		// KCMResourceList
 #include "KCMTaskStartClone.h"	// a Task Start kept in memory carries its definitions (2026-10-13)
@@ -176,7 +177,7 @@ bool16 KCMResourceStore::Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 	//   ⇒ Callers that mean "the armed pair" say so at the call site.
 	if (targetDB == nil || sourceDB == nil)
 	{
-		whyNot = "no comparison is armed";
+		whyNot = KCMSentence("no comparison is armed");
 		gWhyNot = whyNot;
 		return kFalse;
 	}
@@ -218,7 +219,7 @@ bool16 KCMResourceStore::Rebuild(IDataBase* targetDB, IDataBase* sourceDB, PMStr
 
 	if (progress.WasCancelled())
 	{
-		whyNot = "cancelled";
+		whyNot = KCMSentence("cancelled");
 		gWhyNot = whyNot;
 		return kFalse;
 	}

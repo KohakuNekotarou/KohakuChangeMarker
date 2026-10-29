@@ -38,6 +38,7 @@
 #include "UIDList.h"
 #include "UIDRef.h"
 
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMPageExport.h"
 #include "KCMPageDocx.h"
 #include "KCMPageSplice.h"
@@ -488,16 +489,14 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 	outMessage.SetTranslatable(kFalse);
 	if (db == nil)
 	{
-		outMessage = "Export Pages to Word: there is no document";
-		outMessage.SetTranslatable(kFalse);
+		outMessage = KCMSentence("Export Pages to Word: there is no document");
 		return kFalse;
 	}
 	PMString parentPath;
 	FileUtils::IDFileToPMString(parent, parentPath);
 	if (parentPath.IsEmpty())
 	{
-		outMessage = "Export Pages to Word: the chosen folder could not be read";
-		outMessage.SetTranslatable(kFalse);
+		outMessage = KCMSentence("Export Pages to Word: the chosen folder could not be read");
 		return kFalse;
 	}
 
@@ -507,8 +506,7 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 	InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
 	if (pageList == nil)
 	{
-		outMessage = "Export Pages to Word: the document has no pages";
-		outMessage.SetTranslatable(kFalse);
+		outMessage = KCMSentence("Export Pages to Word: the document has no pages");
 		return kFalse;
 	}
 
@@ -666,7 +664,7 @@ bool16 KCMExportPagesAsWord(IDataBase* db, const UIDList& pages, const IDFile& p
 	}
 
 	// ---- one sentence --------------------------------------------------------------------------------------------
-	outMessage = "Export Pages to Word: ";
+	outMessage = KCMSentence("Export Pages to Word: ");
 	if (files.empty())
 		outMessage.Append("nothing to write");
 	else if (!folderMade)

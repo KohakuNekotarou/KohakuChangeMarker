@@ -11,6 +11,7 @@
 #include "IDataBase.h"
 #include "IPageList.h"			// GetPageString - the page as the Pages panel names it
 
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMCore.h"				// KCMFramePageUID - a real page or nothing
 #include "KCMResourceQRCode.h"
 
@@ -62,12 +63,11 @@ void KCMResolveQRCodePlaces(IDataBase* db, KCMResourceList& items)
 			// hidden spreads counted.
 			PMString name;
 			pageList->GetPageString(page, &name, kFalse, kFalse, kDefaultPageType, kTrue, kTrue);
-			where = "p.";
+			where = KCMSentence("p.");
 			where.Append(name);
 		}
 		else
-			where = "pasteboard";
-		where.SetTranslatable(kFalse);
+			where = KCMSentence("pasteboard");
 		item.fWhere = where;
 	}
 }

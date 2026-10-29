@@ -17,6 +17,7 @@
 
 #include "KCMID.h"
 #include "KCMModelNotify.h"
+#include "KCMSentence.h"		// KCMSentence - KCMSayStatus's words, never a key
 
 //----------------------------------------------------------------------------------------
 // The last status string raised this session.
@@ -169,12 +170,11 @@ void KCMNotifyStatus(const PMString& s, bool16 forceRedrawNow)
 	KCMNotify(kKCMStatusTextMessage, &payload);
 }
 
-// KCMSayStatus (declared in KCMModelNotify.h) -- the literal form of the above.
-// PMString's constructor for a string that is not a key marks it untranslatable as it is made (PMString.h; the
-// callers' words are ASCII literals) - SetTranslatable is in the header's DISCOURAGED section.
+// KCMSayStatus (declared in KCMModelNotify.h) -- the literal form of the above. KCMSentence marks the words
+// untranslatable as they are made (the callers' words are ASCII literals - KCMSentence.h says why they must be).
 void KCMSayStatus(const char* text, bool16 forceRedrawNow)
 {
-	KCMNotifyStatus(PMString(text, PMString::kEncodingASCII), forceRedrawNow);
+	KCMNotifyStatus(KCMSentence(text), forceRedrawNow);
 }
 
 // KCMStoreSessionStatus (declared in KCMModelNotify.h) -- remember, do not notify.

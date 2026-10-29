@@ -14,6 +14,7 @@
 #include "UIDRef.h"
 
 // Project includes:
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMParaText.h"		// ModelOffsetInParagraph / CountCodePoints - a paragraph's span in the text model
 #include "KCMStorySync.h"		// Compare / Narrow
 #include "KCMStorySyncApply.h"	// KCMApplySyncPlan / KCMSyncColumnsOfRow
@@ -120,7 +121,7 @@ bool16 PlanApplyAt(const UIDRef& targetStory, const KCMStoryShape::Story& word, 
 	//   (stage 0), and narrowing that to a paragraph found nothing (2026-09-25).
 	if (whole.Count(KCMStorySync::Step::kInsertTable) + whole.Count(KCMStorySync::Step::kDeleteTable) > 0)
 	{
-		outWhy = "a table Word added or took away is not in this story yet - ";
+		outWhy = KCMSentence("a table Word added or took away is not in this story yet - ");
 		outWhy.Append(again);
 		outWhy.SetTranslatable(kFalse);
 		return kFalse;
@@ -232,7 +233,7 @@ bool16 PlanApplyNote(const UIDRef& targetStory, const KCMStoryShape::Story& word
 	}
 	if (whole.Count(KCMStorySync::Step::kInsertTable) + whole.Count(KCMStorySync::Step::kDeleteTable) > 0)
 	{
-		outWhy = "a table Word added or took away is not in this story yet - ";
+		outWhy = KCMSentence("a table Word added or took away is not in this story yet - ");
 		outWhy.Append(again);
 		outWhy.SetTranslatable(kFalse);
 		return kFalse;
@@ -263,7 +264,7 @@ bool16 PlanApplyNote(const UIDRef& targetStory, const KCMStoryShape::Story& word
 		}
 		if (!ReferenceOf(outNow, note, where, para))
 		{
-			outWhy = "the footnote's reference could not be found - ";
+			outWhy = KCMSentence("the footnote's reference could not be found - ");
 			outWhy.Append(again);
 			outWhy.SetTranslatable(kFalse);
 			return kFalse;
@@ -293,7 +294,7 @@ bool16 PlanApplyNote(const UIDRef& targetStory, const KCMStoryShape::Story& word
 			add = only;
 		if (add == nil)
 		{
-			outWhy = "the footnote the imported text adds could not be told apart from its others - ";
+			outWhy = KCMSentence("the footnote the imported text adds could not be told apart from its others - ");
 			outWhy.Append(again);
 			outWhy.SetTranslatable(kFalse);
 			return kFalse;
@@ -306,7 +307,7 @@ bool16 PlanApplyNote(const UIDRef& targetStory, const KCMStoryShape::Story& word
 			if ((s.fKind == KCMStorySync::Step::kInsertParas || s.fKind == KCMStorySync::Step::kDeleteParas)
 				&& s.fWhere == add->fWhere && s.fPara < add->fPara)
 			{
-				outWhy = "the paragraph the footnote's reference stands in is put in or moved too - ";
+				outWhy = KCMSentence("the paragraph the footnote's reference stands in is put in or moved too - ");
 				outWhy.Append(again);
 				outWhy.SetTranslatable(kFalse);
 				return kFalse;
@@ -331,7 +332,7 @@ bool16 PlanApplyNote(const UIDRef& targetStory, const KCMStoryShape::Story& word
 	}
 	if (!noteIn)
 	{
-		outWhy = "the footnote could not be planned with its reference's paragraph - ";
+		outWhy = KCMSentence("the footnote could not be planned with its reference's paragraph - ");
 		outWhy.Append(again);
 		outWhy.SetTranslatable(kFalse);
 		return kFalse;
@@ -384,7 +385,7 @@ int32 KCMApplyParagraphPlan(const UIDRef& targetStory, const KCMStoryShape::Stor
 	//   all of it, or none of it). What was only HELD BACK on purpose (a note with fHeldBack) is not a failure.
 	if (wentIn == 0 || result.fRefused > 0)
 	{
-		outWhy = "nothing was written";
+		outWhy = KCMSentence("nothing was written");
 		for (size_t i = 0; i < result.fNotes.size(); ++i)
 			if (!result.fNotes[i].fHeldBack)
 			{
@@ -664,7 +665,7 @@ int32 KCMApplyTableFromImport(const UIDRef& targetStory, UID wordStory, UID tabl
 	// ★A CELL REFUSED HALFWAY FAILS THE WRITE TOO (2026-09-25 - the paragraph road's rule): the caller rolls it all back.
 	if (total == 0 || result.fRefused > 0)
 	{
-		outWhy = "nothing was written";
+		outWhy = KCMSentence("nothing was written");
 		for (size_t i = 0; i < result.fNotes.size(); ++i)
 			if (!result.fNotes[i].fHeldBack)
 			{

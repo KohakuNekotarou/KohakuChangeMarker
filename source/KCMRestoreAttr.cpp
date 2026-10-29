@@ -21,6 +21,7 @@
 #include "WideString.h"
 
 // Project includes:
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMParaText.h"		// ModelOffsetInParagraph - the one crossing from the text's count into the document's
 #include "KCMStoryKinds.h"		// KCMStoryAttrKind
 #include "KCMStoryRestore.h"	// the writers, shared with the import's pour and the PDF report
@@ -210,7 +211,7 @@ bool16 KCMPlanRestoreAttrFromSource(const UIDRef& targetStory, const UIDRef& sou
 			const PMString v = PMStringOfUtf8(plan.fWrites[i].fValue);
 			if (!KCMKentenKindOf(v, k) && !KCMKentenCustomCharOf(v, c))
 			{
-				outWhy = "a kenten mark of the Source cannot be written back (\"";
+				outWhy = KCMSentence("a kenten mark of the Source cannot be written back (\"");
 				outWhy.Append(v);
 				outWhy.Append("\")");
 				return kFalse;
