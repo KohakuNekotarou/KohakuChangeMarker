@@ -851,6 +851,13 @@ void KCMSetOutputColor(IGraphicsPort* gPort, uint8 r, uint8 g, uint8 b, bool16 u
 	gPort->setcmykcolor((mx - rf) / mx, (mx - gf) / mx, (mx - bf) / mx, PMReal(1.0) - mx);
 }
 
+// KCMIsOverprintPreview (declared in KCMDrawEventHandler.h, where the reasoning is).
+bool16 KCMIsOverprintPreview(GraphicsData* gd)
+{
+	IViewPortAttributes* const vpa = (gd != nil) ? gd->GetViewPortAttributes() : nil;
+	return (vpa != nil && vpa->GetAttr(kSepPrvOPPEnabledVPAttr, 0) != 0) ? kTrue : kFalse;
+}
+
 
 static void KCMDrawRingForPrint(IGraphicsPort* gPort, IViewPortAttributes* vpAttr, IDataBase* db,
 	KCMOverlayEntry* e)
@@ -1953,14 +1960,8 @@ bool16 KCMDrawEventHandler::DrawSpreadMarks(DrawEventData* ded)
 	//     that will not be printed is telling them something false.
 	//   **The peek (Shift / Shift+Alt) is deliberately NOT included**: it is a momentary look at
 	//     the older version held under a button, not something claiming to be on the sheet.
-	//   ⚠**kPreviewMode cannot be used for this** -- it shares a bit with PDF export
-	//     (kPDFExportMode), so it would catch exports too. The viewport attribute below is exact.
-	bool16 overprintPreview = kFalse;
-	{
-		IViewPortAttributes* const vpa = ded->gd->GetViewPortAttributes();	// gd was nil-checked at the top
-		if (vpa != nil)
-			overprintPreview = (vpa->GetAttr(kSepPrvOPPEnabledVPAttr, 0) != 0) ? kTrue : kFalse;
-	}
+	//   ⚠**kPreviewMode cannot be used for this** (KCMIsOverprintPreview says why).
+	const bool16 overprintPreview = KCMIsOverprintPreview(ded->gd);
 	// The one test the marks below share: in OPP, with printing of marks off, draw nothing.
 	const bool16 oppHides = (overprintPreview && !sPrintMarks) ? kTrue : kFalse;
 	// The Source-side frames ("Always Show Marks on Source") are shown at ALL times on screen while

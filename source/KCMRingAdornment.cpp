@@ -29,7 +29,7 @@
 #include "ISpread.h"					// "is the thing being drawn a spread"
 #include "IShape.h"
 #include "IDrwEvtHandler.h"				// DrawEventData, the shape the drawing takes its input in
-#include "IGraphicsContext.h"			// GraphicsData
+#include "GraphicsData.h"				// GraphicsData - GetView / GetGraphicsPort (IGraphicsContext.h comes with IAdornmentShape.h)
 #include "IStartupShutdownService.h"	// per-execution-context registration (end of this file)
 #include "IXPUtils.h"					// QueryXPManager(db)
 #include "IXPManager.h"					// ItemXPChanged - makes the item-has-transparency list be rebuilt
@@ -51,8 +51,6 @@
 #include "IGraphicsPort.h"				// selectfont / show / the stroke settings of the outline
 #include "GraphicTypes.h"				// kPMRoundJoin / kPMRoundCap
 #include "IControlView.h"				// GetContentToWindowMatrix - the zoom, for a label of fixed pixel size
-#include "IViewPortAttributes.h"		// is this draw an overprint preview (the label follows the marks' rule there)
-#include "OutPrvID.h"					// kSepPrvOPPEnabledVPAttr
 #include "IPMFont.h"
 #include "AutoGSave.h"
 #include "TransformUtils.h"				// ::InnerToSpreadMatrix - the label is written in spread coordinates, upright
@@ -305,14 +303,9 @@ static void KCMDrawStoryIdLabel(IShape* iShape, GraphicsData* gd, int32 flags)
 		return;
 	// Overprint preview shows what will be printed, so only what would be printed is shown
 	// (2026-09-07, the user's decision, applied to every mark in DrawSpreadMarks): with the marks
-	// not printing, no label either. The viewport attribute is exact; kPreviewMode is not (it
-	// shares its bit with PDF export).
-	if (!printing)
-	{
-		IViewPortAttributes* const vpa = gd->GetViewPortAttributes();
-		if (vpa != nil && vpa->GetAttr(kSepPrvOPPEnabledVPAttr, 0) != 0 && !KCMDrawEventHandler::sPrintMarks)
-			return;
-	}
+	// not printing, no label either - asked the way DrawSpreadMarks asks it (KCMIsOverprintPreview).
+	if (!printing && KCMIsOverprintPreview(gd) && !KCMDrawEventHandler::sPrintMarks)
+		return;
 
 	std::vector<UID> storyUIDs;
 	KCMStoriesHeldBy(iShape, kTrue, storyUIDs);
@@ -712,6 +705,25 @@ static IXPManager* KCMQueryXPManagerFor(IDataBase* db)
 	return xpUtils->QueryXPManager(db);
 }
 
+/** ItemXPChanged, the one way this file sends it: inside SaveRestoreModifiedState. An empty list sends nothing.
+	@warning **the call dirties the document** (measured with the guard removed: one press of the flyout was
+	  enough for `modified=true`). **The list is data on the document side**, which is also why the official
+	  route is a command: there the dirtying goes with a real change to the document and is correct. **KCM has
+	  changed nothing, so it puts it back** - clean going in, clean coming out (the same guard as in KCMCore.cpp,
+	  KCMPeek.cpp and others).
+	  @warning **the guard only stops the document asking to be saved; it does not stop it being saved.** The
+	    update to the list is in the database, so a save made for any other reason writes it into the .indd along
+	    with everything else (measured: **it is still there after a reopen, and is not re-validated**).
+	    **Which is why the joining is done only for the duration of an export** (section 5). */
+static void KCMSendItemXPChanged(IDataBase* db, IXPManager* xpManager, const UIDList& items,
+	IXPManager::XPChangeType kind)
+{
+	if (xpManager == nil || items.Length() == 0)
+		return;
+	IDataBase::SaveRestoreModifiedState dirtyGuard(db);
+	xpManager->ItemXPChanged(items, kind);
+}
+
 static void KCMSetItemXPState(IDataBase* db, KCMXPListAction action)
 {
 	InterfacePtr<IXPManager> xpManager(KCMQueryXPManagerFor(db));
@@ -748,8 +760,6 @@ static void KCMSetItemXPState(IDataBase* db, KCMXPListAction action)
 			}
 		}
 	}
-	if (items.Length() == 0)
-		return;
 
 	// **The kind is chosen by the direction** (IXPManager.h:95-105).
 	//   - joining = `kXPC_AddedSomeXP`    ... "some transparency was added". The same change type
@@ -777,24 +787,9 @@ static void KCMSetItemXPState(IDataBase* db, KCMXPListAction action)
 	//     of TranFxUtils::Inval. **What is taken from transparencyeffect is the change type and the
 	//     moment, not the call** - so this line is on the "no official road" side of the audit, and
 	//     the reasoning above is all there is to stand on.
-	//
-	// @warning **this call dirties the document** (measured with the guard removed: one press of the
-	//   flyout was enough for `modified=true`). **The list is data on the document side**, which is
-	//   also why the official route is a command: there the dirtying goes with a real change to the
-	//   document and is correct. **KCM has changed nothing, so it puts it back.**
-	//   KCM does that with `IDataBase::SaveRestoreModifiedState` - clean going in, clean coming out.
-	//   The same guard is in KCMCore.cpp, KCMPeek.cpp, KCMOversetScan.cpp and others.
-	//   @warning **the guard only stops the document asking to be saved; it does not stop it being
-	//     saved.** The update to the list is in the database, so a save made for any other reason
-	//     writes it into the .indd along with everything else (measured: **it is still there after a
-	//     reopen, and is not re-validated**).
-	//     **Which is why this function is called only for the duration of an export** (section 5).
-	{
-		IDataBase::SaveRestoreModifiedState dirtyGuard(db);
-		xpManager->ItemXPChanged(items,
-								 (action == kKCMXPListAdd) ? IXPManager::kXPC_AddedSomeXP
-															 : IXPManager::kXPC_RemovedSomeXP);
-	}
+	// Sent without leaving the document dirty, and not at all for an empty list (KCMSendItemXPChanged says why).
+	KCMSendItemXPChanged(db, xpManager, items,
+						 (action == kKCMXPListAdd) ? IXPManager::kXPC_AddedSomeXP : IXPManager::kXPC_RemovedSomeXP);
 }
 
 //========================================================================================
@@ -1102,13 +1097,7 @@ void KCMRevalidateItemXPList(IDataBase* db)
 		if (uid != kInvalidUID)
 			items.Append(uid);
 	}
-	if (items.Length() == 0)
-		return;
-
-	{
-		IDataBase::SaveRestoreModifiedState dirtyGuard(db);
-		xpManager->ItemXPChanged(items, IXPManager::kXPC_RemovedSomeXP);	// "ask again", not "take off"
-	}
+	KCMSendItemXPChanged(db, xpManager, items, IXPManager::kXPC_RemovedSomeXP);	// "ask again", not "take off"
 }
 
 // End, KCMRingAdornment.cpp.

@@ -555,6 +555,14 @@ class IGraphicsPort;
 // would drift.
 void KCMSetOutputColor(IGraphicsPort* gPort, uint8 r, uint8 g, uint8 b, bool16 useCMYK);
 
+class GraphicsData;
+
+// Is this draw an overprint preview? Read off the viewport's attribute (kSepPrvOPPEnabledVPAttr), which is exact.
+// ⚠Not kPreviewMode: it shares its bit with PDF export (kPDFExportMode), so it would catch exports too.
+// ONE QUESTION, ONE ANSWER: DrawSpreadMarks (the marks and the folio wash) and the story ID labels
+// (KCMRingAdornment.cpp) both ask it here. nil answers kFalse.
+bool16 KCMIsOverprintPreview(GraphicsData* gd);
+
 class IPMFont;
 
 // The application's default font, fetched once (on the main thread) and kept until Shutdown
