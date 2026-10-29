@@ -185,8 +185,8 @@ public:
 		enum { kWhatText = 0, kWhatAttr = 1,
 			   kWhatRefused = 2,	// 2: one thing an IMPORT could not put in. fTextPre is
 									//   the kind word for the ID column, fText the place and the reason;
-									//   no position, no other side, fWriteBlock set. The panel draws a
-									//   red "!" and offers no menu on it.
+									//   no position, no other side. The panel draws a red "!" and offers
+									//   no menu on it.
 			   kWhatTable = 3 };	// 3: a TABLE whose shape differs from Task Start's:
 									//   its cell changes folded into one row. fKind is +/-/≠ as for words,
 									//   fText opens with the shape word ("2×2→3×2"), the ranges are the
@@ -250,21 +250,8 @@ public:
 		//   snippet.
 		PMString	fRuby;
 		PMString	fOtherRuby;
-
-		// HOW the ruby above is set: kTrue = GROUP (one reading over several characters),
-		//   kFalse = MONO (one per character). Same pairing as the readings - fRubyGroup is the
-		//   side the row shows.
-		// ⚠**CARRIED, BUT NO LONGER JUDGED OR SHOWN** (the user's decision): a ruby
-		//   re-set from mono to group over the same reading is not reported as a change any more
-		//   (KCMStoryDiffRun's CompareParagraphAttr and KCMParaText's SpansDiffer stopped testing
-		//   it), and the "Mono" / "Group" cell the ruby row showed from 2026-09-08 is gone with it.
-		//   The fields stay so that the boundary's layout does not move; nothing on the UI side
-		//   reads them today.
-		// @warning KENTEN LEAVES BOTH kFalse and means nothing by it, and a side with NO ruby is
-		//   kFalse for want of anything else - what says "there is no ruby here" is the empty
-		//   reading, never this. The model's own KCMStoryChange says the same at more length.
-		bool16		fRubyGroup;
-		bool16		fOtherRubyGroup;
+		// (HOW the ruby is set - mono or group - does not cross: it is not judged or shown any more, the
+		//  author's decision. The model's KCMStoryChange still carries it, for the report.)
 
 		// WHICH attribute this is: 0 = none, 1 = ruby, 2 = kenten (reported again since
 		// 2026-09-01 - KCMStoryKinds.h).
@@ -278,29 +265,15 @@ public:
 		//   only kind reported; that is exactly the state in which a stand-in survives unnoticed.
 		int32		fAttrKind;
 
-		// ---- what a change the reader had TAKEN IN carried (retired 2026-09-21) -----
+		// ---- the "=" state, and what the panel draws beside the words -----------------------
 		//
-		// **Added at the END of the struct.** The UI reads Change BY VALUE, so both halves have
-		//   to be built together whenever it changes, and a field inserted in the middle lands
-		//   the other side's reads on the wrong bytes - the same accident as inserting a virtual
-		//   into a facade ([[facade-vtable-slot-append-only]]), wearing different clothes.
-		//   ⚠KIDMCP reads this struct too. Three plug-ins are rebuilt together or none is.
-		// ⛔**THE FOUR BELOW ARE RETIRED AND KEPT FOR THE LAYOUT** (with the restore):
-		//   a row has one face again, so fReplaced is always kFalse and the three pieces are empty.
-		//   Taking them OUT would move every field after them - the very accident the note above is
-		//   about - so they stay until something else has to move anyway.
+		// ⚠The UI reads Change BY VALUE: a field added, removed or moved changes the layout both
+		//   halves read, so both are built together (the rule at the head of IKCMCompareFacade.h).
 
-		/** ⛔Always kFalse since 2026-09-21. It said whether this change was being SHOWN as taken
-			in, which the model worked out by asking whether the story's text change counter still
-			stood where it stood when the write happened - so an undo took it back on its own and
-			the panel never had to know that undo exists. */
+		/** kTrue for a change KCM WROTE as the Source's and still standing so - the "=" row, the
+			Source's state - which is what its menu, its sign and the marks ask. Always kFalse in the
+			Track mode, where no "=" is recorded. */
 		bool16		fReplaced;
-
-		/** ⛔Always empty since 2026-09-21. The three pieces AS THEY STOOD BEFORE the write, which
-			the message area showed for a taken-in row in place of the source text. */
-		PMString	fBeforeTextPre;
-		PMString	fBeforeText;
-		PMString	fBeforeTextPost;
 
 		/** Whether this change's text is OVERSET - not composed into any frame (the
 			user's request after finding a jump that appeared to do nothing).
@@ -313,50 +286,33 @@ public:
 			(KCMStoryList.h says why). */
 		bool16		fOverset;
 
-		/** ⛔Always 0 since 2026-09-21, and kept for the layout. It said why this change must not be
-			written back into the reader's document (KCMStoryWriteBlock) - the user's rule of
-			2026-09-16: offer the restore only when the text holds no special character, and never for
-			a cell or a footnote whose place is gone. Nothing writes back now. */
-		int32		fWriteBlock;
-
 		/** The lines a WARICHU or TATE-CHU-YOKO change is drawn on - fLayers for the row
 			(Target), fOtherLayers for the message area (Source). fCount 0 for every other kind.
-			KCMStoryLayers.h says what each line holds. ⚠Appended at the END; the struct is read by
-			KCM's two halves only (KIDMCP does not include this facade - measured by grep). */
+			KCMStoryLayers.h says what each line holds. */
 		KCMStoryLayers	fLayers;
 		KCMStoryLayers	fOtherLayers;
 
-		/** A whole paragraph added or removed. (⛔fAfterNewParagraph said whether the paragraph before
-			it was one to take in as well - the second "+" of "+ +", which the panel asked about before
-			taking it in alone. It is always kFalse since the restore went on 2026-09-21.)
+		/** A whole paragraph added or removed.
 			**ITS RANGES HERE ARE THE PARAGRAPH'S WORDS ALONE**: the model's own record
 			holds the paragraph break as well, for the write, and GetChange cuts it off before handing
 			the ranges over - so a mark, a flash or a selection made from them never reaches the end of
-			the paragraph above. Nothing on this side needs to know the break exists.
-			⚠Appended at the END, for the reason stated above fReplaced. */
+			the paragraph above. Nothing on this side needs to know the break exists. */
 		bool16			fWholeParagraph;
-		bool16			fAfterNewParagraph;
 
 		/** Where the changed words stand: 0 = the body, 1 = a table cell, 2 = a footnote (KCMStoryList.h's
 			KCMStoryPlace). The panel's ID column says "Text", "Cell Text" or "Note Text" by it
-			(the user's request). ⚠Appended at the END, for the reason stated above fReplaced. */
+			(the author's request). */
 		int32			fPlace;
 
-		/** A whole CELL added or removed - a whole-paragraph change whose cell has no paragraph paired with
-			the other side (KCMStoryList.h's fWholeCell). The ID column says "Cell" for it,
-			where an ordinary whole paragraph says "Paragraph". Only meaningful with fWholeParagraph.
-			⚠Appended at the END, for the reason stated above fReplaced. */
-		bool16			fWholeCell;		// ⚠retired the night it was made: always kFalse; kept for the layout
-
 		/** How many cells a TABLE change (kWhatTable) marks - each one read with GetChangeMarkSpan.
-			0 for every other kind. ⚠Appended at the END, for the reason stated above fReplaced. */
+			0 for every other kind. */
 		int32			fMarkSpanCount;
 
 		Change()
 			: fKind(0), fWhat(0), fTargetStart(0), fTargetEnd(0),
-			  fSourceStart(0), fSourceEnd(0), fRubyGroup(kFalse), fOtherRubyGroup(kFalse),
-			  fAttrKind(0), fReplaced(kFalse), fOverset(kFalse), fWriteBlock(0),
-			  fWholeParagraph(kFalse), fAfterNewParagraph(kFalse), fPlace(0), fWholeCell(kFalse),
+			  fSourceStart(0), fSourceEnd(0),
+			  fAttrKind(0), fReplaced(kFalse), fOverset(kFalse),
+			  fWholeParagraph(kFalse), fPlace(0),
 			  fMarkSpanCount(0) {}
 	};
 
@@ -385,25 +341,6 @@ public:
 		was an attribute that is NOT drawn on two lines (its value is a name, not a reading). Ruby
 		is once again the only kind reported, which is precisely the state a stand-in survives in. */
 	virtual int32	GetChangeAttrKind(int32 nth, int32 which) = 0;
-
-	/** kTrue when this change has something to SHOW on an upper line - a reading, or a kind whose
-		mark can be drawn. kFalse for a text change, for an index that names no change, and for an
-		attribute that was REMOVED.
-
-		WHY IT IS SEPARATE FROM GetChangeAttrKind (user's call: "when the ruby or the
-		kenten is gone, make it one line"). The kind says which attribute differs; this says whether
-		the newer version still carries one. A removed ruby is still a ruby change - so the row must
-		still be able to name it - but there is nothing to put above the text, and a row laid out on
-		two lines with an empty upper one is a gap the reader has to interpret.
-		⚠**The row's height and the row's drawing must ask the same question**, which is why this
-		 is one call rather than each of them testing the string it happens to hold.
-		AS CHEAP AS GetChangeAttrKind: it reads one field off the change, no strings copied.
-		⚠**NOTHING IN KCM ASKS THIS ANY MORE.** The user reversed the one-line rule:
-		  a removed mark is two lines with a BAR on top, so the row's height depends on the kind (and
-		  a warichu / tate-chu-yoko's layers) alone - GetChangeLineCount answers it, and both the
-		  height and the drawing ask that. **Kept, not removed**, because removing a virtual shifts
-		  every slot after it ([[facade-vtable-slot-append-only]]). */
-	virtual bool16	GetChangeHasAttrValue(int32 nth, int32 which) = 0;
 
 	/** Compare row nth's story again against the older document, and replace its differences with
 		what stands there now - "Refresh Story Comparison" on the row's right-click menu.
@@ -492,21 +429,8 @@ public:
 			frame - callers keep the fallback frame they already had. */
 	virtual UID		GetStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index) = 0;
 
-	/** ⛔**RETIRED 2026-09-21 - ALWAYS kFalse, AND THE SLOT STAYS.** "Restore Source Text" wrote the
-		older side's words of one change over the newer side's range, in one undoable command, and then
-		diffed that story again.
-
-		**WHY IT WENT** (the user's word): "the Source document is in front of you, so if you want it
-		  back, take it from there". A Task Start became a copy saved to a file and opened by Start on
-		  2026-09-21, so EVERY comparison now has its older side open in a window - and KCM stopped
-		  writing into the reader's text altogether.
-		⚠**THE DECLARATION IS NOT DELETED, AND THAT IS THE POINT** - the reason RestoreAllStories gives
-		 below: KIDMCP calls this facade through its VTABLE ([[facade-vtable-slot-append-only]]). */
-	virtual bool16	RestoreChange(int32 nth, int32 which, PMString& outMessage) = 0;
-
 	/** "Export Story Text...": write stories of the ACTIVE document into a new folder
-		under `parent`, one HTML file per story plus the one stylesheet they all link to, for the
-		reader to edit outside InDesign.
+		under `parent`, one Word file per story (<uid>.docx), for the reader to edit outside InDesign.
 
 		Nothing in the document is changed - the walk composes, so the model half holds a
 		IDataBase::SaveRestoreModifiedState around it and gives the document back as clean as it
@@ -520,26 +444,9 @@ public:
 		@param parent the folder the reader chose. A dated folder is made inside it.
 		@param onlyThese the stories to write; empty means all of them.
 		@param outMessage the count and the place, or the step that failed.
-		@return kFalse when no story could be written.
-		⚠Appended at the END of the class - new virtuals go nowhere else, because KIDMCP calls
-		  this facade through its vtable and an insertion lands it on a different method
-		  ([[facade-vtable-slot-append-only]]). Adding one means rebuilding KIDMCP too. A
-		  SIGNATURE change is a different matter and was measured before it was made: KIDMCP
-		  reaches for IKCMCompareFacade and IKCMStoryMarkFacade, and for this one never. */
+		@return kFalse when no story could be written. */
 	virtual bool16	ExportStoryText(const IDFile& parent, const UIDList& onlyThese,
 									PMString& outMessage) = 0;
-
-	/*	⛔**ImportStoryText STOOD HERE UNTIL 2026-10-25** - "Import Story Text..." that poured the edited words into the
-		DOCUMENT, tracked and signed, against a Task Start saved to a file. It went with the tidy
-		(docs/superpowers/specs/2026-10-24-kcm-import-tidy-design.md): ImportStoryTextAsSource, further down, is the one
-		import. Taken out of the MIDDLE of the vtable on purpose - nothing outside KCM includes this facade (grep,
-		2026-10-25) and KCM's two halves are built and shipped together ([[facade-vtable-slot-append-only]]). */
-
-	/** ⛔**RETIRED 2026-09-20 - ALWAYS kFalse, AND THE SLOT STAYS.** It said whether the fourth mode
-		was up, which the UI asked in order to grey the other three modes and Task Start while it was.
-		The mode is gone; the slot stays because KIDMCP calls this facade through its vtable
-		([[facade-vtable-slot-append-only]]). */
-	virtual bool16	InImportMode() = 0;
 
 	/** Where InDesign draws the "+" for the overflow that swallowed `at`.
 
@@ -555,81 +462,30 @@ public:
 		@param outFrame the frame showing the "+".
 		@param outPb the "+" itself, in pasteboard coordinates.
 		@return kFalse when nothing of the thread, or of any table it sits in, is placed at all -
-			the caller then does what it did before (the story's first frame).
-		⚠Appended at the END, like the three above, and for the same reason. */
+			the caller then does what it did before (the story's first frame). */
 	virtual bool16	GetOversetPoint(IDataBase* db, UID storyUID, TextIndex at,
 									UID& outFrame, PBPMPoint& outPb) = 0;
-
-	/** ⛔**RETIRED 2026-09-21 - ALWAYS kFalse, AND THE SLOT STAYS.** "Restore All in This Story" put
-		every change of one row back in ONE press and ONE undo step, walking the row backwards.
-
-		It was retired on 2026-09-20, came back on the morning of 2026-09-21 (the user: one at a time
-		  AND by story), and went the same day with the whole restore. **The slot has been filled and
-		  emptied twice**, which is what a kept slot is for. */
-	virtual bool16	RestoreAllInStory(int32 nth, PMString& outMessage) = 0;
-
-	/** ⛔**RETIRED 2026-09-20 - ALWAYS kFalse, AND THE SLOT STAYS.** "Restore All Stories" did NOT
-		come back with the one-story item on 2026-09-21 - and that item went the same day, with every
-		other restore. **Since then no restore of any size exists.**
-
-		⚠**THE DECLARATION IS NOT DELETED, AND THAT IS THE POINT.** KIDMCP calls this facade through
-		 its VTABLE ([[facade-vtable-slot-append-only]]): taking a virtual OUT of the middle moves
-		 every slot after it, so a caller built against the old header would land on a different
-		 method entirely. A retired one keeps its slot and answers kFalse. */
-	virtual bool16	RestoreAllStories(PMString& outMessage) = 0;
-
-	/** ⛔**RETIRED 2026-09-21 - ALWAYS kFalse, AND THE SLOT STAYS.** "Undo the Restore" put one change
-		back the way it stood before a restore had written over it - a command of its own and one undo
-		step, not Edit > Undo. It went with the restore it undid. */
-	virtual bool16	UndoRestoreChange(int32 nth, int32 which, PMString& outMessage) = 0;
-
-	/** ⛔**RETIRED 2026-09-21 - ALWAYS kFalse, AND THE SLOT STAYS.** It said whether the comparison
-		standing now let anything be written back into the Target, and the UI hid every write item on
-		its answer. **Nothing writes into the Target from a menu any more**, so the answer is kFalse.
-		⚠The IMPORT still writes - but it never asked this: it is the reader choosing files, not an item
-		 offered on a change. */
-	virtual bool16	CanWriteToTarget() = 0;
 
 	/** How many LINES change `which` of row `nth` is drawn on in the list: 1 for a text change, 2 for
 		a ruby / kenten / note (always, since 2026-09-16 - a side without the mark draws a bar), and
 		2 or 3 for a warichu / tate-chu-yoko (its fLayers.fCount).
 		ONE ANSWER FOR THE ROW'S HEIGHT, ITS WIDGET TYPE AND ITS DRAWING (KCMStoryTreeWidgetMgr),
-		  and as cheap as GetChangeAttrKind: no strings are copied. 1 for an index out of range.
-		⚠Appended at the END, like every virtual added since the split. */
+		  and as cheap as GetChangeAttrKind: no strings are copied. 1 for an index out of range. */
 	virtual int32	GetChangeLineCount(int32 nth, int32 which) = 0;
 
 	/** The lines of the warichu / tate-chu-yoko message standing in the panel's message area,
 		remembered beside its pieces (IKCMCompareFacade's StoreSessionStatusSegments) so that
-		re-opening the panel draws it the same way.
-		ON THIS FACADE AND NOT THAT ONE, deliberately: IKCMCompareFacade is read by Kohaku InDesign
-		  MCP and carries an ABI stamp, and these two concern a Story Edits type nothing outside KCM
-		  reads.
-		⚠STORE AFTER THE SEGMENTS - storing the segments empties the lines (KCMModelNotify.h).
-		⚠Appended at the END. */
+		re-opening the panel draws it the same way. On this facade because the type is a Story
+		Edits one (KCMStoryLayers).
+		⚠STORE AFTER THE SEGMENTS - storing the segments empties the lines (KCMModelNotify.h). */
 	virtual void	StoreStatusLayers(const KCMStoryLayers& layers) = 0;
 	virtual void	GetStatusLayers(KCMStoryLayers& out) = 0;
-
-	/*	⛔**ExportStoryTextAs STOOD HERE UNTIL 2026-09-21.** It was ExportStoryText with a spelling to
-		choose - 0 for .html, 1 for .docx - added on 2026-09-19 as a NEW virtual rather than a fourth
-		argument, so that the old slot kept its shape. The HTML road was retired on the user's word
-		("Word format only") and there is nothing left to choose, so the argument went and with it
-		the second method: ExportStoryText, above, writes .docx.
-		**TAKING A VIRTUAL OUT OF THE MIDDLE MOVES EVERY SLOT BELOW IT** ([[facade-vtable-slot-append-only]]),
-		which is safe here and was measured before it was done: KIDMCP reaches for IKCMCompareFacade
-		and for this facade never, and KCM's own two halves are built and shipped together.
-	*/
 
 	/** One of the cells a TABLE change marks on the page (the user: "the changed cells
 		should be marked" / "jump to the top-left of them"): [outFrom, outTo) in Target coordinates, a
 		caret when they are equal. `i` runs 0..Change::fMarkSpanCount-1. kFalse out of range, or for a
-		change that is not a table.
-		⚠Appended at the END of the class ([[facade-vtable-slot-append-only]]). Nothing outside KCM
-		 includes this facade (measured by grep), so only KCM's two halves are rebuilt. */
+		change that is not a table. */
 	virtual bool16	GetChangeMarkSpan(int32 nth, int32 which, int32 i, TextIndex& outFrom, TextIndex& outTo) = 0;
-
-	/*	⛔**HasImportChange / RejectImportChange STOOD HERE UNTIL 2026-10-25** - "Reject This Import Change": the import's
-		tracked changes (signed "KohakuChangeMarker") over a change row, rejected as one step. They went with the import
-		that wrote them (ImportStoryText, above) - out of the middle of the vtable for the reason given there. */
 
 	/** (stage 2 B - "Restore from Source") Whether change `which` of row `nth` is one this acts on: an
 		attribute change (kWhatAttr) of a kind that is written back - ruby, kenten, warichu, tate-chu-yoko - on a

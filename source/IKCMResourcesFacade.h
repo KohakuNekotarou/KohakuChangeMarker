@@ -8,7 +8,7 @@
 //  WHAT THIS MODE ANSWERS THAT THE OTHER TWO CANNOT. Pixel says which pages LOOK different;
 //  Story says which words changed. Neither can see a definition whose contents were edited: a
 //  paragraph style nobody has applied can have its size changed and every page still renders to
-//  the same pixel. Measured 2026-09-09 - the pixels came back IDENTICAL and this mode reported
+//  the same pixel. Measured: the pixels came back IDENTICAL and this mode reported
 //  `ParagraphStyle/… PointSize 17.00787 -> 34.01574`.
 //
 //  THE RESULT IS HELD, NOT RECOMPUTED. Comparing costs two whole-document exports (200-2400ms),
@@ -18,12 +18,12 @@
 //  ⚠It goes STALE: nothing here notices an edit. Start or Refresh Comparison again to make it
 //    current. That is the same contract IKCMStoryEditsFacade has.
 //
-//  NO Clear(), NO Compare() AND NO HasResult() HERE, and that is deliberate. The list is filled
-//  and emptied by the model (KCMCore), which is where the other lists are filled and emptied too.
-//  **A method on a boundary that nobody calls is a promise nobody keeps** - the same sentence
-//  IKCMStoryEditsFacade uses to explain why it has no Build(). Compare() and HasResult() stood
-//  here from 2026-09-09 to 2026-09-12 and no UI file ever called either: the panel compares
-//  through Start, and "is a result held" is answered by GetSummary's wording.
+//  NO Clear(), NO Compare(), NO HasResult() AND NO GetSummary() HERE, and that is deliberate. The
+//  list is filled and emptied by the model (KCMCore), which is where the other lists are filled and
+//  emptied too. **A method on a boundary that nobody calls is a promise nobody keeps** - the same
+//  sentence IKCMStoryEditsFacade uses to explain why it has no Build(). The panel compares through
+//  Start, and the one-line summary is the model's own (KCMResourceStore::GetSummary, which KCMCore
+//  and KCMReport read).
 //
 //  ⚠**THE IID IS DECLARED IN TWO FILES** - source/KCMBoundaryID.h and ui/KCMBoundaryID.h - and
 //  they must hold the same value. Editing one builds cleanly, loads cleanly, and the UI simply
@@ -52,8 +52,8 @@ public:
 	enum { kDefaultIID = IID_IKCMRESOURCESFACADE };
 
 	/** How many definitions differ. 0 is a real answer when a result is held (the two documents
-	    define the same things) and also what an empty store answers; GetSummary tells the two
-	    apart in words. */
+	    define the same things) and also what an empty store answers; the model's summary
+	    (KCMResourceStore::GetSummary) tells the two apart in words. */
 	virtual int32	GetChangeCount() = 0;
 
 	/** One row of the list.
@@ -92,10 +92,6 @@ public:
 	    @return kFalse when n or i is out of range, leaving the outputs alone. */
 	virtual bool16	GetNthAttr(int32 n, int32 i, PMString& outName,
 							   PMString& outSource, PMString& outTarget) = 0;
-
-	/** One line for the status line. ⚠"not compared yet", "no changes" and a failure all read
-	    differently - an empty list and a failed comparison must never look alike. */
-	virtual void	GetSummary(PMString& out) = 0;
 };
 
 #endif // __IKCMResourcesFacade_h__

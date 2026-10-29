@@ -2,12 +2,12 @@
 //
 //  IKCMMarkData.h
 //
-//  Reading the comparison result: which pages carry marks, how much of each page changed,
-//  which pages overflow the pairing, and where the overset is.
+//  Reading the comparison result: which pages carry marks, how much of each page changed, and
+//  which pages overflow the pairing.
 //
 //  READ ONLY, on purpose. Marks are produced in exactly one place -- IKCMCompareFacade -- and if
 //  writing were possible here there would be two answers to "who builds the marks". The scrollbar
-//  map, Prev/Next, the Pages panel thumbnails, the TSV export and the press gesture are all
+//  map, Prev/Next, the Pages panel thumbnails, the press gesture and app.kcmPixelPages are all
 //  readers; none of them may write.
 //
 //  This interface replaces the UI reaching directly into KCMDrawEventHandler::sEntries and its
@@ -36,7 +36,6 @@
 // Project includes:
 #include "KCMBoundaryID.h"	// IID_IKCMMARKDATA. The boundary header rather than KCMID.h, which
 							// would drag the model's whole ID set through a header the UI includes.
-// (KCMOversetLoc.h was included here for the overset locations. Find Overset went on 2026-09-08.)
 
 class IDataBase;
 
@@ -95,13 +94,12 @@ public:
 		it paints, so that pressing the button over an untouched document does nothing. */
 	virtual bool16		HasAnyMarkableContent() = 0;
 
-	// ---- (the Find Overset readers stood here) -------------------------------------------
+	// ---- no overset readers -------------------------------------------------------------
 	//
-	// GetOversetOn / GetOversetDB / IsOversetPage / GetOversetPageCount / GetOversetPageUIDs /
-	// GetOversetLocations went with the feature on 2026-09-08. InDesign's own Preflight panel
-	// finds overset text, keeps up with edits, and jumps to the place -- which this never did.
-	// ⚠**This is a vtable and every slot below moved.** Both halves are rebuilt together, and
-	//   Kohaku InDesign MCP compiles IKCMCompareFacade, not this one (checked before removing).
+	// Find Overset was taken out with its readers: InDesign's own Preflight panel finds overset
+	// text, keeps up with edits, and jumps to the place -- which this never did.
+	// ⚠**This is a vtable: a slot added or taken out moves every slot below it**, so both halves
+	//   are rebuilt together.
 
 	// ---- the page flags, read side --------------------------------------------------------
 	//

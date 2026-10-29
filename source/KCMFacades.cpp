@@ -416,31 +416,10 @@ public:
 	virtual bool16		GetShowStoryIds()			{ return KCMGetShowStoryIds(); }
 	virtual void		SetShowStoryIds(bool16 on)	{ KCMSetShowStoryIds(on); }
 
-	// Appended 2026-09-20 (the ABI stamp went with it). Making the copy is the model's work - the
-	//   UI half could not reach ImportINX at all - so this is the usual one-liner.
-	// ⛔**HOLLOW SINCE 2026-09-21**: the origin went, and with it the only thing this could open.
-	//   The SLOT stays - KIDMCP calls this facade through its vtable, so removing a virtual moves
-	//   every one below it onto the wrong method ([[facade-vtable-slot-append-only]]).
-	virtual bool16		OpenOriginAsIdml(PMString& outMessage)	{ outMessage.Clear(); return kFalse; }
-
-
 	// The lent Source's label (see the interface; the two entrances beside it went on 2026-10-27). The rules are
 	// model-side.
 	virtual bool16		GetExternalSourceLabel(IDataBase* db, PMString& outLabel)
 													{ return KCMExternalSourceLabel(db, outLabel); }
-
-	// ⛔**THE OLD TASK START'S FIVE SLOTS, HOLLOW SINCE 2026-09-21.** Task Start saves a copy of
-	//   the document to a FILE and chooses that file as the Source (KCMTaskStartSave.h); nothing
-	//   holds an "origin" any more, so all five answer as though none were ever taken - which is
-	//   exactly what every caller then does with them.
-	//   ⚠**THE SLOTS STAY.** KIDMCP calls this facade through its vtable, so deleting a virtual
-	//   moves every one below it onto the wrong method ([[facade-vtable-slot-append-only]]).
-	//   The live pair is CanTakeTaskStartCopy / TakeTaskStartCopy, appended at the end.
-	virtual bool16		CanTakeTaskStart()					{ return kFalse; }
-	virtual bool16		TakeTaskStart(PMString& outWhyNot)	{ outWhyNot.Clear(); return kFalse; }
-	virtual bool16		HasOrigin()							{ return kFalse; }
-	virtual void		GetOriginLabel(PMString& outLabel)	{ outLabel.Clear(); }
-	virtual bool16		IsOriginArmed()						{ return kFalse; }
 
 	// The warning bit that rides with a status notification. Asking clears it.
 	virtual bool16		TakeStatusWarning()					{ return KCMTakeSessionStatusWarning(); }
@@ -462,29 +441,11 @@ public:
 	virtual bool16		CanTakeTaskStartClone()					{ return KCMCanTakeTaskStartClone(); }
 	virtual bool16		TakeTaskStartClone(PMString& outWhyNot)	{ return KCMTakeTaskStartClone(outWhyNot); }
 
-	// ⛔The PDF comparison was removed on 2026-10-27; its two virtuals stay for the vtable (IKCMCompareFacade.h) and refuse.
-	virtual bool16		ChoosePdfEnd(bool16 /*asTarget*/, const IDFile& /*pdf*/, PMString& outMessage)
-	{
-		outMessage = Sentence("The PDF comparison has been removed from Kohaku Change Marker.");
-		return kFalse;
-	}
-	virtual bool16		IsPdfDoc(IDataBase* /*db*/)		{ return kFalse; }
-
 	// the mode Start compares in and Save Panel Settings writes - the one a Track listing goes back to.
-	//   (IsTrackOriginalOf stood in this last slot from 2026-10-25: the copy it named went today.)
 	virtual KCMCompareMode	GetCompareModeSetting()				{ return KCMGetCompareModeSetting(); }
 };
 
 CREATE_PMINTERFACE(KCMCompareFacade, kKCMCompareFacadeImpl)
-
-/** The facade's ABI stamp, exported from the .pln by name so that another plug-in can check it
-	WITHOUT going through the facade's vtable (IKCMCompareFacade.h, kKCMCompareFacadeAbi says why
-	and who reads it). extern "C": no decoration, so GetProcAddress finds it under this very name. */
-extern "C" __declspec(dllexport) int32 KCMCompareFacadeAbi()
-{
-	return kKCMCompareFacadeAbi;
-}
-
 
 //========================================================================================
 // KCMMarkData -- IKCMMarkData
@@ -619,17 +580,15 @@ public:
 	virtual KCMPageToggleState	GetRegisterToggleState(const UIDList& pages)	{ return KCMPageMapGetToggleState(pages); }
 	virtual KCMPageToggleState	GetCheckToggleState(const UIDList& pages)		{ return KCMPageCheckGetToggleState(pages); }
 
-	// (SaveChecksAndRegister / LoadChecksAndRegister went on 2026-09-07 -- IKCMPageFlagsFacade.h
-	//  says why. Their model-side bodies went with them.)
-	// SaveMarksToDocument was removed on 2026-09-07. Writing is no longer something the reader
-	//   asks for separately: a tick or a paw goes into the document the moment it is made, and
-	//   comes back out again with Ctrl+Z. There is nothing left for a "save" to do.
+	// (No save and no load: a tick or a paw goes into the document the moment it is made, and comes
+	//  back out again with Ctrl+Z - IKCMPageFlagsFacade.h says why.)
 
 	// The cat-paw stamps. The crossing exists because model and UI are two DLLs: the tool lives
 	// on the UI side and the store on this one.
-	virtual bool16	PawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-	                                int32 colour, const PMReal& baseHalf, const PMString& text)
-									{ return KCMPawStampPlaceAt(db, pageUID, x, y, colour, baseHalf, text, PMReal(0.0)); }
+	virtual bool16	PawStampPlaceAtAngle(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
+	                                     int32 colour, const PMReal& baseHalf, const PMString& text,
+	                                     const PMReal& angle)
+									{ return KCMPawStampPlaceAt(db, pageUID, x, y, colour, baseHalf, text, angle); }
 	virtual bool16	PawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
 	                               const PMReal& baseHalf)
 									{ return KCMPawStampLiftAt(db, pageUID, x, y, baseHalf); }
@@ -662,11 +621,7 @@ public:
 						return n;
 					}
 
-	// The paw that points where it was dragged -- appended to the interface, so appended here too.
-	virtual bool16	PawStampPlaceAtAngle(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
-	                                     int32 colour, const PMReal& baseHalf, const PMString& text,
-	                                     const PMReal& angle)
-									{ return KCMPawStampPlaceAt(db, pageUID, x, y, colour, baseHalf, text, angle); }
+	// The paw that points where it was dragged.
 	virtual bool16	PawStampIsAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
 	                             const PMReal& baseHalf)
 									{ return KCMPawStampIsAt(db, pageUID, x, y, baseHalf); }
@@ -724,8 +679,6 @@ void KCMFillChangeOut(const KCMStoryChange& change, IKCMStoryEditsFacade::Change
 	out.fOtherTextPost	= change.fOtherTextPost;
 	out.fRuby			= change.fRuby;			// only meaningful when fWhat is kAttr
 	out.fOtherRuby		= change.fOtherRuby;
-	out.fRubyGroup		= change.fRubyGroup;	// how it is SET - the readings alone cannot say
-	out.fOtherRubyGroup	= change.fOtherRubyGroup;
 	out.fAttrKind		= static_cast<int32>(change.fAttrKind);
 	out.fLayers			= change.fLayers;		// a warichu / tate-chu-yoko change, line by line
 	out.fOtherLayers	= change.fOtherLayers;
@@ -734,10 +687,7 @@ void KCMFillChangeOut(const KCMStoryChange& change, IKCMStoryEditsFacade::Change
 	out.fOverset		= change.fOverset;		// decided by the diff (or the Track reader); see KCMStoryList.h
 	out.fWholeParagraph	= change.fWholeParagraph;	// a paragraph added or removed whole
 	out.fPlace			= change.fPlace;		// the body, a cell or a note - the ID column's word
-	out.fWholeCell		= kFalse;				// retired the night it was made: a table's cells fold into a Table row now; the field keeps the layout
 	out.fMarkSpanCount	= static_cast<int32>(change.fMarkSpans.size());	// the cells a Table change marks (GetChangeMarkSpan)
-	out.fWriteBlock		= 0;					// ⛔nothing writes from a row any more
-	out.fAfterNewParagraph	= kFalse;			// ⛔the same
 }
 
 }	// anonymous namespace
@@ -875,25 +825,6 @@ public:
 		return static_cast<int32>(found->fAttrKind);
 	}
 
-	virtual bool16	GetChangeHasAttrValue(int32 nth, int32 which)
-	{
-		// Same out-of-range rule as the kind above, and for the same caller: an unknown row gets
-		// the ordinary one-line height rather than an error.
-		if (KCMFacadeTrackMode())
-			return kFalse;
-		const KCMStoryChange* const found = KCMStoryList::GetMergedChange(nth, which);
-		if (found == nil)
-			return kFalse;
-
-		// ⚠THE SIDE THE ROW SHOWS, which is fRuby - not fOtherRuby. The list shows the newer
-		//   version, so an attribute that was removed leaves this empty and the row is drawn on one
-		//   line; the older side's value is still read, but it belongs to the message area.
-		// A REPLACED RUBY ROW IS STILL A TWO-LINE ROW: its reading is the one that went in, which
-		//   is the source's, and fRuby was copied from the change it was made out of. Asking the
-		//   same field of both states keeps the row from changing height when it is taken in.
-		return found->fRuby.IsEmpty() ? kFalse : kTrue;
-	}
-
 	virtual int32	RefreshRow(int32 nth)
 	{
 		// The two documents the comparison is holding. ASKED FOR AGAIN RATHER THAN REMEMBERED:
@@ -947,45 +878,6 @@ public:
 		}
 
 		return count;
-	}
-
-	// The one wording every retired restore slot answers with. It is NOT translatable, like every
-	// other sentence this facade puts on the status line.
-	bool16	RestoreIsGone(PMString& outMessage)
-	{
-		outMessage = Sentence("The restore was removed on 2026-09-21 - copy the older words from the "
-							  "Source document, which Start leaves open.");
-		return kFalse;
-	}
-
-	// ⛔**THE FOUR RETIRED RESTORE SLOTS**. They kept their places for the reason
-	//   RestoreAllStories below has kept its since 2026-09-20: KIDMCP calls this facade through its
-	//   VTABLE, so taking a virtual out of the middle would land its callers on another method
-	//   ([[facade-vtable-slot-append-only]]). The feature itself went on the user's word - "the
-	//   Source document is in front of you, so if you want it back, take it from there" - once a Task
-	//   Start had become a saved copy that Start opens in a window.
-	// ⚠**ONE WORDING, whichever slot is called**, so a caller built against the old header is told the
-	//   same thing wherever it lands.
-	virtual bool16	RestoreChange(int32 nth, int32 which, PMString& outMessage)
-	{
-		return this->RestoreIsGone(outMessage);
-	}
-
-	virtual bool16	RestoreAllInStory(int32 nth, PMString& outMessage)
-	{
-		return this->RestoreIsGone(outMessage);
-	}
-
-	virtual bool16	UndoRestoreChange(int32 nth, int32 which, PMString& outMessage)
-	{
-		return this->RestoreIsGone(outMessage);
-	}
-
-	// It answered "is there a Source the older words can be read out of". Nothing writes the Target
-	//   from a menu now, so there is one answer. (The IMPORT writes, and never asked this.)
-	virtual bool16	CanWriteToTarget()
-	{
-		return kFalse;
 	}
 
 	virtual int32	GetChangeLineCount(int32 nth, int32 which)
@@ -1429,13 +1321,6 @@ public:
 		return done;
 	}
 
-	// ⛔**RETIRED SINCE 2026-09-20**, and since 2026-09-21 no restore of any size is left to come back
-	//   to. The slot stays for the vtable reason given above.
-	virtual bool16	RestoreAllStories(PMString& outMessage)
-	{
-		return this->RestoreIsGone(outMessage);
-	}
-
 	virtual bool16	GetOversetPoint(IDataBase* db, UID storyUID, TextIndex at,
 									UID& outFrame, PBPMPoint& outPb)
 	{
@@ -1566,11 +1451,6 @@ public:
 		if (r == nil || c == nil || targetDB == nil || !KCMIsDocDBOpen(targetDB))
 			return kFalse;
 		return KCMTrackRead::StillRecorded(targetDB, r->fRow.fStoryUID, *c);
-	}
-
-	virtual bool16	InImportMode()		// ⛔retired with the fourth mode - the slot stays
-	{
-		return kFalse;
 	}
 
 	// ---- THE IMPORT THE OTHER WAY ROUND (adopted 2026-10-25) - IKCMStoryEditsFacade.h says what
@@ -3135,9 +3015,6 @@ public:
 	virtual bool16	GetNthAttr(int32 n, int32 i, PMString& outName,
 							   PMString& outSource, PMString& outTarget)
 					{ return KCMResourceStore::GetNthAttr(n, i, outName, outSource, outTarget); }
-
-	virtual void	GetSummary(PMString& out)
-					{ KCMResourceStore::GetSummary(out); }
 };
 
 CREATE_PMINTERFACE(KCMResourcesFacade, kKCMResourcesFacadeImpl)
