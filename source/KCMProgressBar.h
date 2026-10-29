@@ -214,10 +214,9 @@ public:
 	explicit KCMOuterProgressScope(KCMDeferredProgressBar& bar)
 		: fSaved(KCMOuterProgressSlot())
 	{
-		KCMOuterProgress& slot = KCMOuterProgressSlot();
-		slot.fBar = &bar;
-		slot.fFrom = 0;
-		slot.fTo = 0;
+		// The whole slot, as the destructor puts the whole one back: a member added to it starts empty here too.
+		const KCMOuterProgress mine = { &bar, 0, 0 };
+		KCMOuterProgressSlot() = mine;
 	}
 	~KCMOuterProgressScope() { KCMOuterProgressSlot() = fSaved; }
 

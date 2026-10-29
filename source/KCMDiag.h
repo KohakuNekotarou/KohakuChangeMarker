@@ -80,13 +80,23 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <io.h>			// _access_s - KCM_DIAG_FAULT
 #include <chrono>
-#include <thread>		// std::this_thread::sleep_for - KCM_DIAG_SLOW
+#include <mutex>		// one writer at a time - KCM_DIAG_LOG
+#include <thread>		// std::this_thread::sleep_for - KCM_DIAG_SLOW, and KCM_DIAG_LOG's retry
 
 // Appends one line: "<ms since the epoch> <the formatted text>". Opened and closed per line, so a crash
 // right after it still leaves the line on disk.
+//
+// ONE WRITER AT A TIME (KFC's KFCDiagLog, the same lock and retry). fopen_s opens a file it writes for this caller
+// alone (UCRT's _SH_SECURE shares nothing for a write), so a second append while the file is open is refused, and its
+// line was lost without a word. The model half's code runs on background threads too (draw events reach an
+// export's - KCMThreadSafety.h): the lock puts a half's threads in a queue. Each half writes the same file from its
+// own copy of this function, under its own lock, so a refused open is tried again a few times before the line goes.
 inline void KCMDiagLog(const char* fmt, ...)
 {
+	static std::mutex writer;
+	const std::lock_guard<std::mutex> lock(writer);
 	char* temp = nullptr;
 	size_t len = 0;
 	if (_dupenv_s(&temp, &len, "TEMP") != 0 || temp == nullptr)
@@ -95,7 +105,14 @@ inline void KCMDiagLog(const char* fmt, ...)
 	_snprintf_s(path, sizeof(path), _TRUNCATE, "%s\\kcm-diag.txt", temp);
 	free(temp);
 	FILE* f = nullptr;
-	if (fopen_s(&f, path, "a") != 0 || f == nullptr)
+	for (int attempt = 0; attempt < 20; ++attempt)
+	{
+		if (fopen_s(&f, path, "a") == 0 && f != nullptr)
+			break;
+		f = nullptr;
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	}
+	if (f == nullptr)
 		return;
 	const long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(
 		std::chrono::system_clock::now().time_since_epoch()).count();
@@ -110,7 +127,10 @@ inline void KCMDiagLog(const char* fmt, ...)
 
 #define KCM_DIAG_LOG(...) KCMDiagLog(__VA_ARGS__)
 
-// Is the fault switch <name> on - does %TEMP%\kcm-diag-fault-<name> exist? (See the header.)
+// Is the fault switch <name> on - does %TEMP%\kcm-diag-fault-<name> exist? (See the header.) Asked of the file's
+// attributes, not by opening it (KFC's KFCDiagFault, the same question): fopen_s shares a file it reads for reading
+// only (_SH_SECURE again), so for that moment a test deleting or writing the switch would be refused, and a switch
+// the test is still writing would read as off.
 inline bool KCMDiagFault(const char* name)
 {
 	char* temp = nullptr;
@@ -120,11 +140,7 @@ inline bool KCMDiagFault(const char* name)
 	char path[600] = { 0 };
 	_snprintf_s(path, sizeof(path), _TRUNCATE, "%s\\kcm-diag-fault-%s", temp, name);
 	free(temp);
-	FILE* f = nullptr;
-	if (fopen_s(&f, path, "r") != 0 || f == nullptr)
-		return false;
-	fclose(f);
-	return true;
+	return _access_s(path, 0) == 0;
 }
 
 #define KCM_DIAG_FAULT(name) KCMDiagFault(name)

@@ -77,7 +77,9 @@ static const int32  kKCMChapterProgressSpan = 1000;
 
 // How one chapter's span is divided between the three judgements (2026-09-10). Two numbers for
 // three: the resources judgement, the last, has the rest of kKCMChapterProgressSpan - the next
-// chapter's slice begins at the next span (KCMCompareBooks) - so there is no sum to keep.
+// chapter's slice begins at the next span (KCMCompareBooks). So the one sum to keep is that the two
+// leave it some: past the span the needle would run into the next chapter's slice and go back when
+// that chapter starts (the static_assert below).
 // ★THE SHARES ARE THE MEASURED COSTS, NOT EQUAL THIRDS. The pixels are the only phase that can
 //   report from inside itself (page by page), and they are most of the time on an unchanged
 //   chapter. The story judgement reads change counters, composes nothing and is over at once. The
@@ -86,6 +88,8 @@ static const int32  kKCMChapterProgressSpan = 1000;
 //   that does not, which is worse than no bar: it would say the work is elsewhere.
 static const int32  kKCMBookPixelPhaseTicks = 700;
 static const int32  kKCMBookStoryPhaseTicks = 50;
+static_assert(kKCMBookPixelPhaseTicks + kKCMBookStoryPhaseTicks < kKCMChapterProgressSpan,
+			  "the pixel and story shares leave the resources judgement some of a chapter's span");
 
 // Ring color: red by default. Over pixels that are themselves reddish a translucent red ring
 // disappears into the page, so it switches to cyan per pixel. Cyan is the complement of red
