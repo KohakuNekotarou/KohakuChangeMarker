@@ -13,7 +13,7 @@
 //  the other .pln. Every call that crosses the boundary has to go through an interface on a
 //  boss. That is the whole reason this file exists.
 //
-//  ★A THIRD READER SINCE 2026-09-02: Kohaku InDesign MCP includes this header
+//  A THIRD READER SINCE 2026-09-02: Kohaku InDesign MCP includes this header
 //  (KIDMCPKcmBridge.cpp - compiled straight against source/sdksamples/KCM/source, no copy) and
 //  calls the lent-Source methods at the end of this interface through Utils<IKCMCompareFacade>().
 //  It ships on its own schedule, so this interface's vtable is now an ABI between two PRODUCTS,
@@ -53,12 +53,12 @@
 
 class IDataBase;
 class IDocument;
-class UIDList;		// RefreshSelectedPages - the Pages panel's selection, as the UI read it (2026-10-26)
+class UIDList;		// RefreshSelectedPages - the Pages panel's selection, as the UI read it
 
-// ★THE WORDS BOTH HALVES SAY - here because both read this header: the model for the press and a script's road, the UI
+// THE WORDS BOTH HALVES SAY - here because both read this header: the model for the press and a script's road, the UI
 //  before a dialog it would otherwise open for nothing. English, as every status line. (The PDF comparison's three went
 //  with it on 2026-10-27.)
-// ★(2026-10-24, the import-as-Source road) The Source is an import's copy: the files' words poured into a Task Start in
+// (the import-as-Source road) The Source is an import's copy: the files' words poured into a Task Start in
 //  memory. It is compared in the Story mode alone (design section 2-10).
 #define kKCMImportSourceModeRefusal	"The Source is the imported text - it is compared in the Story mode. Switch the Compare mode to Story."
 
@@ -140,7 +140,7 @@ public:
 	/** Re-compare only the pages selected in the Pages panel. Returns kFalse when there was
 		nothing to do. Cancelling here KEEPS what was already refreshed -- this is a partial
 		update, so stopping half way leaves a narrower version of the same operation.
-		★`pages` IS THE SELECTION THE UI READ (2026-10-26, the import tidy S7 - KCMReadSelectedPages,
+		`pages` IS THE SELECTION THE UI READ (the import tidy S7 - KCMReadSelectedPages,
 		  masters in): the model does not read the Pages panel any more. Re-typed in place, and the
 		  stamp below bumped (only KCM's two halves are rebuilt: KIDMCP names no KCM facade). */
 	virtual bool16		RefreshSelectedPages(const UIDList& pages, int32* outPages, int32* outChanged,
@@ -190,7 +190,7 @@ public:
 		comparison that is already armed - the caller decides that, because the same setter is used
 		when the panel restores its saved state at start-up, where re-comparing would be wrong. The
 		flyout re-compares; start-up does not.
-		★(2026-10-27) WHILE A TRACK LISTING IS UP, GetCompareMode answers kKCMModeTrack - it is not a setting
+ WHILE A TRACK LISTING IS UP, GetCompareMode answers kKCMModeTrack - it is not a setting
 		(StartTrackChanges below raises it) - and SetCompareMode(kKCMModeTrack) changes nothing. The setting itself is
 		GetCompareModeSetting (the last slot). */
 	virtual KCMCompareMode	GetCompareMode() = 0;
@@ -207,7 +207,7 @@ public:
 
 	/** "Always Show Marks on Source": the Source document carries the same rings at all times.
 
-		★★★**THE TWO DISPLAY TOGGLES ARE ABOUT THE SCREEN, AND ONLY THE SCREEN** (2026-09-08, the
+		**THE TWO DISPLAY TOGGLES ARE ABOUT THE SCREEN, AND ONLY THE SCREEN** (the
 		user, settling it in one sentence: "with Print ON they are printable and permanently shown;
 		Always Show only ever shows"). What reaches paper, a PDF or the print preview is decided by
 		**"Print comparison marks" alone, for BOTH documents** - and because that switch also puts
@@ -233,7 +233,7 @@ public:
 		⚠**THIS PARAGRAPH SAID THE OPPOSITE UNTIL 2026-09-08** ("where the Source one also
 		 prints"), and it was cited as the specification by KCMStoryMarkBuild - so when the Pixel
 		 side made the two symmetrical on 2026-09-07 (spec map MK-14), the Story side went on
-		 printing a Source document's marks with the print toggle off. ★It also called the Story
+		 printing a Source document's marks with the print toggle off. It also called the Story
 		 mark "inverted characters", which it stopped being when the inversion was replaced by a
 		 wash (spec map SMK-07). **A sentence quoted as a specification has to be edited when the
 		 thing it describes changes - nothing warns you.** */
@@ -335,7 +335,7 @@ public:
 		outRuby is the READING drawn above the changed characters, and it comes back here for the
 		same reason the colours do: a re-shown panel that lost only the reading would be showing
 		the older version WITHOUT the very thing the row could not show.
-		★outAttrKind says WHICH attribute that upper line belongs to, so a kenten comes back as its
+		outAttrKind says WHICH attribute that upper line belongs to, so a kenten comes back as its
 		MARK rather than as the name of one - the same question every other reader of these two
 		fields has to ask (IKCMStoryEditsFacade.h). */
 	virtual void		GetSessionStatusSegments(PMString& outLabel, PMString& outPre,
@@ -496,14 +496,14 @@ public:
 	virtual bool16		GetIgnorePageNumberMarker() = 0;
 	virtual void		SetIgnorePageNumberMarker(bool16 on) = 0;
 
-	// ---- a Source that is not an open document (2026-09-02) -------------------------------
+	// ---- a Source that is not an open document -------------------------------
 	//
 	// A database that is in no IDocumentList, chosen as the Source: since 2026-10-13 the Task Start
 	// kept in memory (KCMTaskStartClone.h - this plug-in lends its own clone; KCMExternalSource.h
 	// carries the contract). Everywhere else KCM asks "is it in the list", and a lent database is not.
 	// ⛔THE TWO ENTRANCES ANOTHER PLUG-IN LENT THROUGH WENT ON 2026-10-27 (the author: "remove them"):
 	//  StartComparisonWithSourceDB / ReleaseExternalSourceDB stood here for Kohaku InDesign MCP's
-	//  task-start copy (2026-09-02), and no one had called them since KIDMCP's bridge to KCM went on
+	//  task-start copy, and no one had called them since KIDMCP's bridge to KCM went on
 	//  2026-10-12. Taken out of the MIDDLE of this class - every slot below moved, so both halves of
 	//  KCM are built together (kKCMCompareFacadeAbi, bumped).
 
@@ -511,7 +511,7 @@ public:
 		asks this when FindDocByDataBase has no name for it. */
 	virtual bool16		GetExternalSourceLabel(IDataBase* db, PMString& outLabel) = 0;
 
-	// ---- clearing the chosen pair (2026-09-05) --------------------------------------------
+	// ---- clearing the chosen pair --------------------------------------------
 
 	/** Drop both chosen documents, so that the next Start falls back to the automatic rule
 		(active document = Target, the earliest-opened other document = Source). The panel's
@@ -521,17 +521,17 @@ public:
 		nothing else, so clearing while a comparison is armed leaves that comparison drawing --
 		and the panel goes on naming the ARMED pair, so nothing appears to have happened until
 		the next Stop.
-		★**THE FLYOUT ITEM IS NOT THIS BARE METHOD** (2026-09-07): it stops first and then
+		**THE FLYOUT ITEM IS NOT THIS BARE METHOD**: it stops first and then
 		clears, and it is live WHILE a comparison is armed -- unlike the two "Set as" items it
 		undoes, which stay greyed (KCMActionComponent, DoAction and UpdateActionStates).
 		⇒ a caller that wants what the menu item does must call StopComparison() itself first.
 
-		★AT THE END OF THIS INTERFACE BECAUSE THE VTABLE IS AN ABI (see the head of this
+		AT THE END OF THIS INTERFACE BECAUSE THE VTABLE IS AN ABI (see the head of this
 		file): Kohaku InDesign MCP calls the three methods above through the same vtable, so a
 		method inserted anywhere but the end would move their slots and be called silently. */
 	virtual void		ClearChosenDocs() = 0;
 
-	// ---- refreshing a running comparison (2026-09-05) -------------------------------------
+	// ---- refreshing a running comparison -------------------------------------
 
 	/** Compare the SAME TWO DOCUMENTS again -- the flyout's "Refresh Comparison", under Start.
 
@@ -539,7 +539,7 @@ public:
 		true now. It was Stop-then-Start before this existed, which is two presses and takes the
 		marks off the screen in between.
 
-		★**IT RUNS THE START PROCEDURE**, with the armed pair, so a refresh and a start cannot
+		**IT RUNS THE START PROCEDURE**, with the armed pair, so a refresh and a start cannot
 		come to disagree about what starting means. Nothing is stopped first: arming is
 		idempotent, and re-comparing an armed pair is what the register toggle already does.
 		⚠It does nothing when nothing is armed, or when either document has gone -- ask
@@ -548,10 +548,10 @@ public:
 		⚠**NOT the two partial refreshes.** RefreshSelectedPages above re-does the pages chosen
 		in the Pages panel, and IKCMStoryEditsFacade::RefreshRow re-does one row; both leave the
 		rest alone. This one re-does everything, in whichever mode is current.
-		★If the comparison is CANCELLED (the progress bar's Cancel, on longer runs), the
+		If the comparison is CANCELLED (the progress bar's Cancel, on longer runs), the
 		comparison is STOPPED rather than left armed with no marks -- see KCMComparisonRun.h.
 
-		⚠★★★**IT STANDS HERE, AFTER ClearChosenDocs, AND THAT IS THE WHOLE POINT.** It was first
+		⚠**IT STANDS HERE, AFTER ClearChosenDocs, AND THAT IS THE WHOLE POINT.** It was first
 		written between StartComparisonFor and CanStartComparison on 2026-09-04, which moved the
 		slot of every method after it -- including the three Kohaku InDesign MCP calls. That does
 		not fail to load: the other product calls the wrong slot, silently, and only when the two
@@ -559,7 +559,7 @@ public:
 		advice.** */
 	virtual void		RefreshComparison() = 0;
 
-	// ---- ⛔The old Task Start's five slots (2026-09-12; HOLLOW SINCE 2026-09-21) -----------
+	// ---- ⛔The old Task Start's five slots (HOLLOW SINCE 2026-09-21) -----------
 	//
 	// The ORIGIN was the active document's INX, taken when Task Start was pressed and held in
 	// memory until "Clear Target and Source" or that document closed; Start and Refresh compared
@@ -568,9 +568,9 @@ public:
 	// nothing holds an origin and all five of these answer as though none had ever been taken.
 	// ⚠**THE SLOTS STAY, AND THEY STAY IN THIS ORDER.** KIDMCP calls this facade through its
 	//  vtable, so deleting a virtual moves every one below it onto a different method
-	//  ([[facade-vtable-slot-append-only]]). ★The live pair is CanTakeTaskStartCopy /
+	//  ([[facade-vtable-slot-append-only]]). The live pair is CanTakeTaskStartCopy /
 	//  TakeTaskStartCopy, appended at the end of this interface.
-	// ★★**AND NOT ONE CALLER IS LEFT ANYWHERE** (measured 2026-09-21, the re-check after the
+	// **AND NOT ONE CALLER IS LEFT ANYWHERE** (measured 2026-09-21, the re-check after the
 	//  removal). The UI half still held TEN calls to these - the removal had counted only the
 	//  thirteen branches on the model side - and every one of them had become a branch that could
 	//  not be taken. They went the same day, and nothing outside this plug-in pair ever called
@@ -595,7 +595,7 @@ public:
 	// two documents that share no history). A flyout check toggle flips it and the saved panel
 	// state reads and writes it, both UI-side; the rule is KCMPagePairRule.h.
 	//
-	// ⚠★★★**NEW VIRTUALS GO AT THE END OF THIS CLASS, NEVER IN THE MIDDLE - AND BUMP
+	// ⚠**NEW VIRTUALS GO AT THE END OF THIS CLASS, NEVER IN THE MIDDLE - AND BUMP
 	//   kKCMCompareFacadeAbi (below the class) WHENEVER THIS CLASS CHANGES.** This interface is
 	//   called by vtable slot from OUTSIDE this plug-in: Kohaku InDesign MCP's KIDMCPKcmBridge
 	//   (ReleaseExternalSourceDB / StartComparisonWithSourceDB - both gone 2026-10-27, the bridge on
@@ -606,7 +606,7 @@ public:
 	//   took the main thread and InDesign hung (work/hang-stacks/stacks-13032.txt). Appending
 	//   keeps every slot the older binary knows where it was; rebuild KIDMCP all the same.
 	//
-	// ⚠★★★**AND THE UI HALF IS THE OTHER CALLER. REBUILD KohakuChangeMarkerUI TOO.** This warning
+	// ⚠**AND THE UI HALF IS THE OTHER CALLER. REBUILD KohakuChangeMarkerUI TOO.** This warning
 	//   said "KIDMCP" and nothing else for a day, and on 2026-09-14 that omission cost a crash:
 	//   SaveOriginRawToDesktop was removed from the MIDDLE of this class, KIDMCP was rebuilt
 	//   because the paragraph above says to, and the UI was not. InDesign then died while the
@@ -616,10 +616,10 @@ public:
 	//         -> **KCMExportBeforeAfterReport** -> PMString::clear   (ACCESS_VIOLATION)
 	//
 	//   - the UI asked for one method and landed on the one that had moved up into its slot.
-	//   ★**The UI half has NO ABI stamp to catch this**: kKCMCompareFacadeAbi is checked by
+	//   **The UI half has NO ABI stamp to catch this**: kKCMCompareFacadeAbi is checked by
 	//   KIDMCP alone (KIDMCPKcmBridge::AbiState), because KIDMCP ships separately and the two
 	//   halves of KCM are simply assumed to be built together. Nothing verifies that assumption.
-	//   ⇒ ★★★**A CHANGE TO THIS CLASS MEANS THREE BUILDS: model, UI, KIDMCP.**
+	//   ⇒ **A CHANGE TO THIS CLASS MEANS THREE BUILDS: model, UI, KIDMCP.**
 	//   ⚠And removal is worse than addition: appending leaves every existing slot where it was,
 	//   while removing shifts everything after it - which is exactly what happened both times.
 
@@ -630,7 +630,7 @@ public:
 	//
 	// One PDF: a first page, then every changed page with the older version (rings printed) on
 	// the left and the newer on the right, then the Story and the Resources tables (KCMReport.h).
-	// ★Made only while NOTHING IS STARTED (2026-10-11): it compares the pair a Start would, for
+	// Made only while NOTHING IS STARTED: it compares the pair a Start would, for
 	// itself - the pixels in every compare mode - and leaves nothing started; while a comparison
 	// runs it refuses and says to Stop (the flyout greys its item then). kTrue when written;
 	// outMessage names the folder, or says why not. The flyout item calls it and shows the message.
@@ -648,7 +648,7 @@ public:
 	virtual void		SetShowStoryIds(bool16 on) = 0;
 
 	/** ⛔**HOLLOW SINCE 2026-09-21**: always kFalse, outMessage empty, no caller anywhere.
-		It opened the Task Start copy where it could be seen (2026-09-20, the user's request) - the
+		It opened the Task Start copy where it could be seen (the user's request) - the
 		copy the COMPARISON made, same internal IDML, same injection, same ImportINX, opened in a
 		window with **the sacrificial paragraphs left in**, so that what the import ate and what
 		survived could be read off the document itself. The flyout item that called it went with the
@@ -657,14 +657,14 @@ public:
 		 its vtable ([[facade-vtable-slot-append-only]]). */
 	virtual bool16		OpenOriginAsIdml(PMString& outMessage) = 0;
 
-	/** ★**WAS THE MESSAGE THE MODEL JUST RAISED BAD NEWS?** (2026-09-21) **Asking clears it.**
+	/** **WAS THE MESSAGE THE MODEL JUST RAISED BAD NEWS?** **Asking clears it.**
 		The model raises words plus one bit (KCMNotifyStatusWarning, KCMModelNotify.h); the colour is
 		the UI's to decide, and this is the one door the bit comes through. The single caller is
 		KCMModelChangeObserver, once per kKCMStatusTextMessage.
 		⚠Do not call it to "find out how things are": one message, one warning. */
 	virtual bool16		TakeStatusWarning() = 0;
 
-	/** ★**THE PATH SHOWN WHEN THAT END OF THE PAIR IS A FILE** (2026-09-21). A Task Start saves a
+	/** **THE PATH SHOWN WHEN THAT END OF THE PAIR IS A FILE**. A Task Start saves a
 		copy of the document and chooses THAT FILE as the Source without opening it, so the panel
 		has a path to show and no document to ask for a name. Empty when that end is a document,
 		the lent database, or nothing at all - which is how the caller tells the cases apart.
@@ -672,27 +672,27 @@ public:
 	virtual void		GetChosenSourceFileLabel(PMString& outLabel) = 0;
 	virtual void		GetChosenTargetFileLabel(PMString& outLabel) = 0;
 
-	/** ★★**TASK START, THE FILE WAY** (2026-09-21, the user's design). Saves a copy of the document
+	/** **TASK START, THE FILE WAY** (the user's design). Saves a copy of the document
 		to a file the reader picks and chooses that file as the Source. **It opens nothing and
 		starts nothing** - what comes back is the ordinary "a Source has been chosen" state.
 		Which document: the chosen Target, else the active one. The Target is then that same
 		document. KCMTaskStartSave.h carries the order of the steps and why each is where it is.
-		⚠★**kFalse WITH AN EMPTY outWhyNot MEANS THE READER CANCELLED THE SAVE DIALOG**, and the
+		⚠**kFalse WITH AN EMPTY outWhyNot MEANS THE READER CANCELLED THE SAVE DIALOG**, and the
 		 caller says nothing at all in that case. Anything else is a real failure. */
 	virtual bool16		CanTakeTaskStartCopy() = 0;
 	virtual bool16		TakeTaskStartCopy(PMString& outWhyNot) = 0;
 
-	/** ★★"COMPARE WITH TRACKED CHANGES" (2026-10-05; ★2026-10-27 the author's: "Compare with Tracked Changes alone", "do
+	/** "COMPARE WITH TRACKED CHANGES" (2026-10-27 the author's: "Compare with Tracked Changes alone", "do
 		not make a Source document"): the Target - the chosen one, else the active document - has its tracked changes
 		listed from its own records, and nothing else is made: no file, no window, no Source. A running comparison is
 		stopped first; a Stop ends the listing and the mode is the one before it (KCMTrackStart.h).
 		@return kTrue when the listing started; outMessage is the status line's sentence either way.
-		⚠THE SAME TWO SLOTS AS CanTakeTrackOriginalCopy / TakeTrackOriginalCopy (2026-10-05 - the copy's road), renamed in
+		⚠THE SAME TWO SLOTS AS CanTakeTrackOriginalCopy / TakeTrackOriginalCopy (the copy's road), renamed in
 		place on 2026-10-27 - both halves of KCM are built together ([[facade-vtable-slot-append-only]]). */
 	virtual bool16		CanStartTrackChanges() = 0;
 	virtual bool16		StartTrackChanges(PMString& outMessage) = 0;
 
-	/** ★★TASK START, KEPT IN MEMORY (2026-10-13, the user: "make a Task Start that is a clone, as a new menu" - the menu
+	/** TASK START, KEPT IN MEMORY (the user: "make a Task Start that is a clone, as a new menu" - the menu
 		says "Task Start", and the item that saves a copy became "Task Start (Save)..."). The document's state is cloned
 		and chosen as the Source - no dialog, no file, nothing started. KCMTaskStartClone.h carries the steps and when
 		the clone goes. kFalse with the reason when it was not taken (nothing was changed then).
@@ -700,28 +700,28 @@ public:
 	virtual bool16		CanTakeTaskStartClone() = 0;
 	virtual bool16		TakeTaskStartClone(PMString& outWhyNot) = 0;
 
-	/** ⛔RETIRED 2026-10-27 - the PDF comparison (2026-10-14) was removed (the author 10-24: "no more comparing PDFs with
+	/** ⛔RETIRED 2026-10-27 - the PDF comparison was removed (the author 10-24: "no more comparing PDFs with
 		each other", 10-25: "the PDF features are dropped", 10-26: "please remove them"). The two stay because a virtual is never removed from the
 		middle of this class ([[facade-vtable-slot-append-only]]): ChoosePdfEnd refuses (kFalse, the reason in outMessage,
 		nothing chosen) and IsPdfDoc answers kFalse. Nothing in KCM calls either any more. */
 	virtual bool16		ChoosePdfEnd(bool16 asTarget, const IDFile& pdf, PMString& outMessage) = 0;
 	virtual bool16		IsPdfDoc(IDataBase* db) = 0;
 
-	/** ★(2026-10-27) THE COMPARE MODE THE READER CHOSE - Pixel, Story or Resources: what Start compares in, and what Save
+	/** THE COMPARE MODE THE READER CHOSE - Pixel, Story or Resources: what Start compares in, and what Save
 		Panel Settings writes. It differs from GetCompareMode only while a Track listing is up (GetCompareMode answers
 		kKCMModeTrack then, and this the mode a Stop goes back to).
-		⚠THE LAST SLOT, WHERE IsTrackOriginalOf STOOD (2026-10-25 - "is the Source the copy Compare with Tracked Changes...
+		⚠THE LAST SLOT, WHERE IsTrackOriginalOf STOOD ("is the Source the copy Compare with Tracked Changes...
 		made", for the Source line's "(Track original)"; the copy went on 2026-10-27). Re-typed at the end, both halves
 		built together ([[facade-vtable-slot-append-only]]). */
 	virtual KCMCompareMode	GetCompareModeSetting() = 0;
 };
 
-/** THE ABI STAMP OF THE CLASS ABOVE. ★BUMP IT (the date, YYYYMMDD) EVERY TIME A VIRTUAL IS ADDED,
+/** THE ABI STAMP OF THE CLASS ABOVE. BUMP IT (the date, YYYYMMDD) EVERY TIME A VIRTUAL IS ADDED,
 	REMOVED, MOVED OR RE-TYPED. KohakuChangeMarker.pln exports it as a plain C function,
 	KCMCompareFacadeAbi() (KCMFacades.cpp), and Kohaku InDesign MCP reads that export by name and
 	compares it with the value ITS build saw in this header before it calls anything here
 	(KIDMCPKcmBridge::AbiState). Two binaries built from different versions of this class then
-	refuse each other instead of running the wrong method (2026-09-13: the header's warning). */
+	refuse each other instead of running the wrong method (the header's warning). */
 const int32 kKCMCompareFacadeAbi = 2026102702;	// 2026-10-27 evening: StartComparisonWithSourceDB / ReleaseExternalSourceDB removed from the middle (the author: "remove them" - no caller since KIDMCP's bridge went on 2026-10-12; only KCM's two halves are rebuilt). Previously 2026102701 = 2026-10-27: CanTakeTrackOriginalCopy / TakeTrackOriginalCopy renamed in place to CanStartTrackChanges / StartTrackChanges, and the last slot IsTrackOriginalOf re-typed as GetCompareModeSetting - Track from Compare with Tracked Changes alone, no copy (only KCM's two halves are rebuilt). Previously 2026102601 = 2026-10-26: RefreshSelectedPages re-typed in place - it takes the pages the UI read from the Pages panel (the import tidy S7; only KCM's two halves are rebuilt). Previously 2026102501 = 2026-10-25: IsTrackOriginalOf appended - the Source line's "(Track original)" (only KCM's two halves are rebuilt; KIDMCP names no KCM facade). Previously 2026101401 = 2026-10-14: ChoosePdfEnd / IsPdfDoc appended - the PDF comparison (KIDMCP has not called this facade since 2026-10-12: only KCM's two halves are rebuilt). Previously 2026101301 = 2026-10-13: CanTakeTaskStartClone / TakeTaskStartClone appended - Task Start kept in memory. Previously 2026100501 = 2026-10-05: CanTakeTrackOriginalCopy / TakeTrackOriginalCopy appended - Compare with Tracked Changes. ⚠KIDMCP must be rebuilt with it. Previously 2026092103 = 2026-09-21 (the third change of that day): CanTakeTaskStartCopy / TakeTaskStartCopy appended - Task Start saves a copy to a file instead of holding a snapshot. ⚠KIDMCP must be rebuilt with it. Previously 2026092102 = GetChosenSourceFileLabel / GetChosenTargetFileLabel appended - a chosen end may now be a FILE, which the panel names by its path. ⚠KIDMCP must be rebuilt with it. Previously 2026092101 = TakeStatusWarning appended (the model can now raise a red message: the round-trip check on the comparison's own copy). ⚠KIDMCP must be rebuilt with it. Previously 2026092001 = OpenOriginAsIdml appended (the menu item that shows the Task Start state as a document). ⚠KIDMCP must be rebuilt with it. Previously 2026091402 = the second change of 2026-09-14 (SaveOriginRawToDesktop removed: the script method app.kcmSaveOriginXml reaches KCMOriginSaveRaw from inside this plug-in, so the facade door had no caller left). 01 was the first change that day (ExportChangedPagesTSV, RehydrateOriginRaw, RehydrateOriginAsCompared, removed with the menu items that called them)
 
 #endif // __IKCMCompareFacade_h__

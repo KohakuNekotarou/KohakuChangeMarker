@@ -115,7 +115,7 @@ public:
 	// ---- the page pairing ----------------------------------------------------------------
 	//
 	// Which page of the Source document corresponds to which page of the Target. Registered
-	// pages are taken out first, then what is left is matched BY UID (2026-09-13; a page with
+	// pages are taken out first, then what is left is matched BY UID (a page with
 	// its namesake, wherever it now stands - or in order, with the flyout's "Pair Pages by UID"
 	// toggle off. The rule is KCMPagePairRule.h).
 	//

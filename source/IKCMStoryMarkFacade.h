@@ -119,7 +119,7 @@ public:
 		@param db the document the ROW was read out of - the older one for a Removed story, the
 			newer one otherwise. Not necessarily the target: see the note above this class.
 		@param storyUID the story in `db`.
-		@param sourceStoryUID ★the story lit in the OLDER document (2026-10-26) - the row's Source story
+		@param sourceStoryUID the story lit in the OLDER document - the row's Source story
 			(IKCMStoryEditsFacade::Row::fSourceStoryUID): the same uid as storyUID for every row paired by UID (the
 			Story mode rests on that - the diff pairs stories by uid and the click selects by uid), the Source's own
 			story for a row paired by the place of its first frame. kInvalidUID lights nothing over there (an Added row
@@ -148,7 +148,7 @@ public:
 	// **A method on a boundary that nobody calls is a promise nobody keeps** - the same rule
 	// IKCMStoryEditsFacade.h states about its own missing Build().
 
-	/** ShowJumpFlash in a colour of its own (2026-10-05, the Track mode: the author's tracked-change colour).
+	/** ShowJumpFlash in a colour of its own (the Track mode: the author's tracked-change colour).
 		sourceFrom < 0 = no flash in the Source window (the change's place in the copy is not known exactly).
 		⚠Appended at the END ([[facade-vtable-slot-append-only]]). */
 	virtual void	ShowJumpFlashColoured(IDataBase* db, UID storyUID,

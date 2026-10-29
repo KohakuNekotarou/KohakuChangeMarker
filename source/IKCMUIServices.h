@@ -2,7 +2,7 @@
 //
 //  IKCMUIServices.h
 //
-//  WHAT THE MODEL HALF ASKS THE UI HALF FOR, AND DOES WITHOUT WHEN IT IS NOT THERE (2026-10-28 - the author's call of
+//  WHAT THE MODEL HALF ASKS THE UI HALF FOR, AND DOES WITHOUT WHEN IT IS NOT THERE (the author's call of
 //  2026-10-01, "follow the guide strictly: the alerts and the progress bars are the UI's too", made for KCM:
 //  docs/superpowers/specs/2026-10-28-kcm-ui-services-design.md).
 //

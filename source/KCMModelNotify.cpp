@@ -49,13 +49,13 @@ static PMString sStatusPost;
 static PMString sStatusRuby;
 
 /** Which attribute sStatusRuby belongs to (KCMStoryAttrKind as a plain int32).
-	★A KENTEN'S VALUE IS A KIND, A RUBY'S IS A READING, and they share the field above - so the
+	A KENTEN'S VALUE IS A KIND, A RUBY'S IS A READING, and they share the field above - so the
 	panel cannot redraw a restored message correctly without this. ⚠Not a PMString, so it is not
 	in the Clear list for the heap reason; it is reset there anyway, because a stale kind beside
 	an empty string is a state nothing should be able to read. */
 static int32 sStatusAttrKind = 0;
 
-// ★**"THE MESSAGE NOW STORED IS BAD NEWS"** (2026-09-21). The red itself is the UI's
+// **"THE MESSAGE NOW STORED IS BAD NEWS"**. The red itself is the UI's
 // (KCMSetStatusWarning), and the model must not reach for it - so what crosses the line is this one
 // bit, set by KCMNotifyStatusWarning and taken by the observer that paints the message.
 // ⚠**IT IS TAKEN, NOT READ**: one message, one warning. Leaving it standing would colour the next
@@ -63,7 +63,7 @@ static int32 sStatusAttrKind = 0;
 // ⚠Every store below clears it, for the same reason: an ordinary message must not inherit it.
 static bool16 sStatusWarning = kFalse;
 
-/** The lines of a warichu / tate-chu-yoko message (2026-09-16) - part of the same one value.
+/** The lines of a warichu / tate-chu-yoko message - part of the same one value.
 	⚠Holds PMStrings in vectors, so it is in the Clear list for the heap reason. */
 static KCMStoryLayers sStatusLayers;
 
@@ -178,7 +178,7 @@ void KCMNotifyStatus(const PMString& s, bool16 forceRedrawNow)
 }
 
 // KCMNotifyStatusWarning (declared in KCMModelNotify.h)
-// ★THE ORDER MATTERS: store first, raise the bit second. KCMStoreSessionStatus clears the bit (an
+// THE ORDER MATTERS: store first, raise the bit second. KCMStoreSessionStatus clears the bit (an
 //   ordinary message must not inherit one), so setting it before the store would lose it.
 void KCMNotifyStatusWarning(const PMString& s, bool16 forceRedrawNow)
 {
@@ -295,7 +295,7 @@ void KCMClearSessionStatus()
 	// @warning **all five**. Leave one out and its heap stays allocated at shutdown -- a defect
 	// already found twice in this plug-in, both times a static added beside its fellows and not
 	// added here.
-	// ★FRESH VALUES, NOT Clear() (2026-10-27, the re-inspection's M2): PMString::Clear() keeps the buffer
+	// FRESH VALUES, NOT Clear() (the re-inspection's M2): PMString::Clear() keeps the buffer
 	//   ("Capacity stays the same" - UnicodeSavvyString.h), so the five held their heap to unload all the same
 	//   (memory plugin-teardown-robustness, corrected 2026-10-13).
 	sStatusLabel = PMString();

@@ -6,7 +6,7 @@
 //
 //  What happened to one definition, as a type and nothing else.
 //
-//  ★TYPES ONLY, AND THAT IS THE WHOLE POINT OF THE FILE. The UI half includes it through
+//  TYPES ONLY, AND THAT IS THE WHOLE POINT OF THE FILE. The UI half includes it through
 //  IKCMResourcesFacade.h, and a header the UI includes must declare no model-side free function:
 //  the UI would then be able to SEE it and unable to LINK to it, which shows up as a linker error
 //  in a file that looks correct. KCMStoryKinds.h exists for the same reason and says so - the

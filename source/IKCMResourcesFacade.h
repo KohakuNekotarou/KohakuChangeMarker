@@ -11,14 +11,14 @@
 //  the same pixel. Measured 2026-09-09 - the pixels came back IDENTICAL and this mode reported
 //  `ParagraphStyle/… PointSize 17.00787 -> 34.01574`.
 //
-//  ★THE RESULT IS HELD, NOT RECOMPUTED. Comparing costs two whole-document exports (200-2400ms),
+//  THE RESULT IS HELD, NOT RECOMPUTED. Comparing costs two whole-document exports (200-2400ms),
 //  so the comparison run fills the store once (KCMCore, in the Resources mode) and the rows are
 //  read from what it kept. Reading a row is free, which is what makes it safe to call from a
 //  panel's draw.
 //  ⚠It goes STALE: nothing here notices an edit. Start or Refresh Comparison again to make it
 //    current. That is the same contract IKCMStoryEditsFacade has.
 //
-//  ★NO Clear(), NO Compare() AND NO HasResult() HERE, and that is deliberate. The list is filled
+//  NO Clear(), NO Compare() AND NO HasResult() HERE, and that is deliberate. The list is filled
 //  and emptied by the model (KCMCore), which is where the other lists are filled and emptied too.
 //  **A method on a boundary that nobody calls is a promise nobody keeps** - the same sentence
 //  IKCMStoryEditsFacade uses to explain why it has no Build(). Compare() and HasResult() stood
@@ -42,7 +42,7 @@
 
 // Project includes:
 #include "KCMBoundaryID.h"		// IID_IKCMRESOURCESFACADE
-#include "KCMResourceKinds.h"	// KCMResourceChangeKind. ★A TYPES-ONLY header: a header the UI
+#include "KCMResourceKinds.h"	// KCMResourceChangeKind. A TYPES-ONLY header: a header the UI
 								// includes must declare no model-side free function, or the UI can
 								// see what it cannot link to.
 
@@ -68,15 +68,15 @@ public:
 
 	/** The two sides' text for one row, for the panel's upper pane.
 
-	    ★Asked for ONE ROW rather than carried in GetNthChange, because the bodies are the large
+	    Asked for ONE ROW rather than carried in GetNthChange, because the bodies are the large
 	    part of a result and only the selected row's are ever shown.
-	    ★The SOURCE side is the one worth showing: the Target's value can be read off the document
+	    The SOURCE side is the one worth showing: the Target's value can be read off the document
 	    in front of the user, and the Source's cannot be read anywhere else at all. */
 	virtual bool16	GetNthValues(int32 n, PMString& outSourceBody, PMString& outTargetBody) = 0;
 
 	/** How many ATTRIBUTES of row n differ.
 
-	    ★This is what the panel's upper pane shows: not the whole body, which is a wall of XML,
+	    This is what the panel's upper pane shows: not the whole body, which is a wall of XML,
 	    but the one line that moved. 0 is a real answer - the element changed somewhere this
 	    differ does not look, inside a child element. */
 	virtual int32	GetNthAttrCount(int32 n) = 0;

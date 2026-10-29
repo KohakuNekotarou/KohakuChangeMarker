@@ -120,11 +120,11 @@ void	KCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, IDataBas
 // does not (the text is session state that app.kcmStatus answers from at any time).
 void	KCMNotifyStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 
-/** ★★**THE SAME NOTIFICATION, MARKED AS BAD NEWS** (2026-09-21) - the panel paints it red.
+/** **THE SAME NOTIFICATION, MARKED AS BAD NEWS** - the panel paints it red.
     For the model's own "that did not come out right". ⛔The first one was the round-trip check on a
     task-start copy (KCMOriginCompare.cpp), which went on 2026-09-21 with the origin; the bit itself
     is unchanged and waiting for the next model-side thing that can go wrong.
-    ★**THE MODEL DOES NOT REACH FOR THE RED.** The colour is the UI's (KCMSetStatusWarning in
+    **THE MODEL DOES NOT REACH FOR THE RED.** The colour is the UI's (KCMSetStatusWarning in
       KCMUIShared.h); what crosses the line is one bit, which the observer takes with
       KCMTakeSessionStatusWarning below and turns into a colour. [[model-plugin-must-not-drive-ui]]
     ⚠**ONE MESSAGE, ONE WARNING**: the bit is TAKEN, and every store clears it, so the sentence
@@ -198,7 +198,7 @@ void	KCMGetSessionStatusSegments(PMString& outLabel, PMString& outPre,
 									  PMString& outMid, PMString& outPost, PMString& outRuby,
 									  int32& outAttrKind);
 
-// ★THE LINES OF A WARICHU / TATE-CHU-YOKO MESSAGE (2026-09-16), stored beside the pieces above for
+// THE LINES OF A WARICHU / TATE-CHU-YOKO MESSAGE, stored beside the pieces above for
 // the reason they are stored: re-opening the panel must bring the message back drawn the same way.
 // ⚠STORE THE PIECES FIRST. KCMStoreSessionStatus and KCMStoreSessionStatusSegments both EMPTY the
 //  lines - a message that is not a layered one has none, and a stale set standing beside a new

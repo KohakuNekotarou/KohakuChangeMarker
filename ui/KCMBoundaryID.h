@@ -11,7 +11,7 @@
 //  (Adobe ships the same shape: customconditionaltext/CusCondTxtRezDefs.h and the file of the
 //  same name in customconditionaltextui, byte for byte identical.)
 //
-//  ★SINCE 2026-09-02 A THIRD PLUG-IN READS THE MODEL COPY: Kohaku InDesign MCP includes
+//  SINCE 2026-09-02 A THIRD PLUG-IN READS THE MODEL COPY: Kohaku InDesign MCP includes
 //  IKCMCompareFacade.h - and through it this file - straight from source/sdksamples/KCM/source.
 //  There is no third copy to keep in step, but the values here are now promised to a product
 //  that ships on its own schedule: renumbering one breaks it as silently as it would break the
@@ -24,7 +24,7 @@
 //    - a facade's IID   ... the model AddIns it to kUtilsBoss, the UI asks for Utils<IKCMxxx>()
 //    - a protocol IID   ... the model passes it to ISubject::Change, the UI to AttachObserver
 //    - a notification's MessageID ... the model sends it, the UI switches on it in Update()
-//    - the UI services' IID (2026-10-28) ... the UI AddIns it to kSessionBoss, the model asks
+//    - the UI services' IID ... the UI AddIns it to kSessionBoss, the model asks
 //      KCMQueryUIServices() for it (IKCMUIServices.h)
 //
 //  So **both copies keep the model's prefix, 0x1EA500**. If the UI copy renamed them into its own
@@ -122,7 +122,7 @@ DECLARE_PMID(kInterfaceIDSpace, IID_IKCMSTORYMARKFACADE, kKCMPrefix + 10)	// put
 DECLARE_PMID(kInterfaceIDSpace, IID_IKCMRESOURCESFACADE, kKCMPrefix + 14)	// READ which DEFINITIONS differ between the two documents (the Resources mode). ⚠+11..+13 and +15 are model-only IIDs declared in KCMID.h, and the IID space is shared with this file - counting only the facades here says +11 is free, and it is not.
 
 //----------------------------------------------------------------------------------------
-// The UI services' InterfaceID (2026-10-28) -- the one counter the other way round: the UI half
+// The UI services' InterfaceID -- the one counter the other way round: the UI half
 // implements it and AddIns it to kSessionBoss, and the model half asks for it through
 // KCMQueryUIServices (IKCMUIServices.h) and does without when it is not there (a background
 // thread, InDesign Server). The progress bars and the Yes / No question live behind it.
@@ -162,7 +162,7 @@ DECLARE_PMID(kMessageIDSpace, kKCMComparisonDocsClosedMessage, kKCMPrefix + 6)	/
 																					// The payload carries up to three databases of documents that are STILL ALIVE (target, older
 																					// version, source-side frames). Never pass a closed one: the listener dereferences it.
 
-// ★**WHY A MESSAGE AND NOT A CALL** (2026-09-22, the user: a script import must leave the Target in
+// **WHY A MESSAGE AND NOT A CALL** (the user: a script import must leave the Target in
 //   front too): making a document active goes through IDocumentPresentation, which is the UI's world
 //   and which no model-side code may reach - the guide names that shape "crashes or corrupt
 //   documents", and this family of plug-ins has paid for it six times. The import's two roads (the
@@ -186,7 +186,7 @@ DECLARE_PMID(kMessageIDSpace, kKCMTargetToFrontMessage,     kKCMPrefix + 7)	// a
 // **NO TWO RESULTS ARE HELD AT ONCE.** Changing the mode re-runs the comparison. Keeping more than
 // one would create several answers to "what is on screen right now" ([[one-question-one-place]]).
 //
-// ⚠★★★**READ THIS BEFORE WRITING `!= kKCMModeStory`.** Until 2026-09-09 there were two modes, so
+// ⚠**READ THIS BEFORE WRITING `!= kKCMModeStory`.** Until 2026-09-09 there were two modes, so
 //   code could say "Story or not" and mean "Story or Pixel". A third mode makes every such test
 //   hand ITS behaviour to Pixel by default - which is how the Resources mode would have run a pixel
 //   comparison and drawn real rings. **Ask for the mode you mean by name.** Every site was
@@ -201,9 +201,9 @@ enum KCMCompareMode
 							// XML and pairing the definitions by name. It is the only mode that sees a change
 							// to something nobody has applied: such a change cannot move a pixel and does not
 							// touch a word, so neither of the other two can report it.
-	kKCMModeTrack = 3		// ★TRACK CHANGES (2026-10-05): the Target's own tracked changes stand in for the older version -
+	kKCMModeTrack = 3		// TRACK CHANGES: the Target's own tracked changes stand in for the older version -
 							// every author's records, one row each, under the author
-							// (docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md). ★★SINCE 2026-10-27 NOT A
+							// (docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md). SINCE 2026-10-27 NOT A
 							// SETTING (the author: out of the Compare mode menu, "Compare with Tracked Changes" alone, no
 							// Source document - docs/superpowers/specs/2026-10-27-kcm-track-records-only-design.md): it is
 							// what KCMGetCompareMode answers WHILE that item's listing is armed - with the Target alone -
@@ -211,32 +211,32 @@ enum KCMCompareMode
 							// change rejected, for the peek and the Source window.) ⚠The VALUE 3 was Import's, retired
 							// 2026-09-20 - the note below says why it was free (the settings file never wrote it).
 
-	// ⛔**THERE WAS A FOURTH, `kKCMModeImport = 3`, AND IT IS GONE** (2026-09-20, with the
+	// ⛔**THERE WAS A FOURTH, `kKCMModeImport = 3`, AND IT IS GONE** (with the
 	//   Import-mode code it belonged to). It did not answer "what is being compared" like these
 	//   three - it answered "where the change came from", a folder the reader had edited outside
 	//   InDesign, and it was MODAL: while it was up the other three and Task Start were greyed and
-	//   "Finish Import" was the way out. ★An import now puts its words into the document and shows
+	//   "Finish Import" was the way out. An import now puts its words into the document and shows
 	//   them in the STORY mode against the Task Start it took, so there is nothing to be modal about.
 	//   ⚠The VALUE 3 is free again as far as anything saved goes: the settings file never wrote
 	//    this mode (KCMPanelState spells out the three it knows and treats anything else as "leave
 	//    it alone"), which was measured before the removal.
-	//   ★2026-10-05: reused by kKCMModeTrack.
+	//   2026-10-05: reused by kKCMModeTrack.
 };
 
-// ⚠★★**EVERYTHING BELOW IS HIDDEN FROM ODFRC.** This header is included by KCMUI.fr, and the
+// ⚠**EVERYTHING BELOW IS HIDDEN FROM ODFRC.** This header is included by KCMUI.fr, and the
 //   resource compiler reads C++ only as far as constants and enums - an inline function makes it
 //   stop with "Error looking for resource specification" (measured 2026-09-15, one build).
 #ifndef __ODFRC__
 
 /** Does this mode show the Story Edits rows - the paragraph and character comparison?
 
-	★★★**ONE QUESTION, ONE PLACE** - and it stays a function; Story and Track answer yes
-	(2026-10-05). ⚠When a fourth mode shared this answer (the Import mode, 2026-09-15), TWELVE places
+	**ONE QUESTION, ONE PLACE** - and it stays a function; Story and Track answer yes
+. ⚠When a fourth mode shared this answer (the Import mode), TWELVE places
 	asked `== kKCMModeStory` by hand and five of them decided real behaviour; the first import
 	reported nothing at all because ONE of those five - the line that runs the text diff - had not
 	been taught the new mode. **A question spelled out at each call site is a question that will be
 	answered differently at one of them.**
-	★★AND IT DECIDES WHETHER A MODE KEEPS A STORY LIST AT ALL (2026-10-11): KCMRebuildStoryEdits empties the
+	AND IT DECIDES WHETHER A MODE KEEPS A STORY LIST AT ALL: KCMRebuildStoryEdits empties the
 	list in every mode that answers no, so the Pixel and the Resources modes read no story, and the
 	Before/After report builds its Story table for itself there (KCMReport.cpp, StoryDetailLoan). */
 inline bool16 KCMModeUsesStoryRows(KCMCompareMode mode)
@@ -245,7 +245,7 @@ inline bool16 KCMModeUsesStoryRows(KCMCompareMode mode)
 }
 
 /** Are the Story Edits rows built by the TEXT DIFF against the Source? Story only.
-	★THE OTHER HALF OF WHAT KCMModeUsesStoryRows USED TO ANSWER ALONE (2026-10-05): the Track mode shows
+	THE OTHER HALF OF WHAT KCMModeUsesStoryRows USED TO ANSWER ALONE: the Track mode shows
 	the same rows but builds them from the Target's tracked-change records. A caller that runs the diff, or
 	offers what only a diffed row can do (the change row's menu), asks THIS; one that walks, marks or
 	refreshes rows asks KCMModeUsesStoryRows. */
@@ -255,7 +255,7 @@ inline bool16 KCMModeDiffsStoryText(KCMCompareMode mode)
 }
 
 /** Does a comparison in this mode need a Source document? Every mode but the Track listing.
-	★2026-10-27 (the author: "Compare with Tracked Changes" alone, and no Source document made): the Track listing reads
+	2026-10-27 (the author: "Compare with Tracked Changes" alone, and no Source document made): the Track listing reads
 	the Target's own tracked-change records and nothing else, so it is armed with the Target alone. The places that refused
 	an armed pair without a Source - the Start, the Refresh, the comparison itself, the Story list's rebuild, the liveness
 	check and the Undo follower - ask THIS, and every other mode keeps the refusal. Each mode is named, as above. */

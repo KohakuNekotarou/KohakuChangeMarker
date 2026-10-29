@@ -30,8 +30,8 @@
 							// through KCMPageMap.h, whose 13 model-side free functions the UI
 							// could then see and could not link to.
 
-class UIDList;		// the Pages panel's selection, as the UI read it (2026-10-26)
-class IControlView;	// the view a paw is being placed in -- compared by the drawing side, never dereferenced (2026-10-27)
+class UIDList;		// the Pages panel's selection, as the UI read it
+class IControlView;	// the view a paw is being placed in -- compared by the drawing side, never dereferenced
 
 class IKCMPageFlagsFacade : public IPMUnknown
 {
@@ -42,7 +42,7 @@ public:
 
 	/** Toggle Register on the pages selected in the Pages panel. Re-pairs the two documents and
 		re-compares, then notifies.
-		★`pages` IS THE SELECTION THE UI READ (2026-10-26, the import tidy S7 - KCMReadSelectedPages,
+		`pages` IS THE SELECTION THE UI READ (the import tidy S7 - KCMReadSelectedPages,
 		  ui/KCMThumbnailRefresh.h, masters left out for Register): the model does not read the Pages
 		  panel any more - it was the one call from the model to a UI part. Reshaped in place: both
 		  halves are built together and nothing outside KCM includes this header. */
@@ -62,7 +62,7 @@ public:
 	// a model plug-in's boundary; the SDK's own model/UI pair does not do it either
 	// (ICusCondTxtFacade has no menu-state method at all). SetNthActionState, SetNthActionName and
 	// the label strings are UI text and live in ui/KCMActionComponent.cpp. The counting is here.
-	// `pages` = the selection the UI read for the item, as the toggles above take it (2026-10-26).
+	// `pages` = the selection the UI read for the item, as the toggles above take it.
 	virtual KCMPageToggleState	GetRegisterToggleState(const UIDList& pages) = 0;
 	virtual KCMPageToggleState	GetCheckToggleState(const UIDList& pages) = 0;
 
@@ -78,23 +78,23 @@ public:
 
 	// ---- the cat-paw stamps --------------------------------------------------------------
 	//
-	// ★They belong to this facade because they are the same KIND of thing as Register and Check:
+	// They belong to this facade because they are the same KIND of thing as Register and Check:
 	//   a mark **the reader puts there by hand**, held outside the document. What differs is only
 	//   the grain -- a paw sits at a point on a page rather than flagging the whole page.
-	// ★★★AND BECAUSE THE UI CANNOT REACH THE MODEL ANY OTHER WAY. model and UI are two DLLs, so
+	// AND BECAUSE THE UI CANNOT REACH THE MODEL ANY OTHER WAY. model and UI are two DLLs, so
 	//   ui/KCMPawTracker.cpp calling KCMPawStampToggleAt() directly does not link (measured
 	//   2026-09-04: LNK2019, three unresolved symbols). **Every crossing is a facade method.**
 
 	/** Place a paw at (x, y) on that page, in one of the two colours (a KCMPawColour: red or blue,
 		whichever the tool is holding -- Shift+Alt swaps it). baseHalf is half a paw's size on that
 		page, the same value the lift takes.
-		★x and y are measured from the PAGE'S TOP-LEFT in points, never in pasteboard coordinates
+		x and y are measured from the PAGE'S TOP-LEFT in points, never in pasteboard coordinates
 		  -- KCMPawStamp.h carries the measurement that makes that a requirement.
-		★★IT ONLY ADDS, AND IT WILL NOT STACK. Placing and lifting are two intentions and
+		IT ONLY ADDS, AND IT WILL NOT STACK. Placing and lifting are two intentions and
 		  therefore two gestures; and a press landing on a paw already there does nothing, both at
 		  the user's request on 2026-09-04.
 		@param text the word to put beside it, or empty. An Alt press asks the reader for one
-		  (2026-09-07); every other gesture passes nothing.
+; every other gesture passes nothing.
 		@return kTrue when one was placed, kFalse when a paw was already under that point. */
 	virtual bool16	PawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
 	                                int32 colour, const PMReal& baseHalf, const PMString& text) = 0;
@@ -110,18 +110,18 @@ public:
 		which is what tells "placed" and "lifted" apart while nothing is drawn yet. */
 	virtual int32	PawStampCount(IDataBase* db) = 0;
 
-	/** Drop every paw on ONE page -- what Shift + DOUBLE click asks for (2026-09-07). The page's
+	/** Drop every paw on ONE page -- what Shift + DOUBLE click asks for. The page's
 		tick is untouched.
 		@return how many went; 0 for a page carrying none, which is not a failure. */
 	virtual int32	PawStampClearPage(IDataBase* db, UID pageUID) = 0;
 
 	/** Half a paw's drawn size on that page, in points.
-		★★THE ONE PLACE THE SIZE COMES FROM: the tool asks for its hit box and the drawing side
+		THE ONE PLACE THE SIZE COMES FROM: the tool asks for its hit box and the drawing side
 		  asks for its picture, so what can be seen is exactly what can be lifted. Answers 0 when
 		  the page cannot be measured, which the caller reads as "do not stamp here". */
 	virtual PMReal	PawHalfSizeForPage(IDataBase* db, UID pageUID) = 0;
 
-	// ---- clearing one document's marks (the two flyout items, 2026-09-04) -------------------
+	// ---- clearing one document's marks (the two flyout items) -------------------
 	// ⚠**Which document is the caller's to name**, through IKCMCompareFacade::GetActiveDocDB --
 	//   the one place KCM asks what is in front ([[document-activation-is-presentation]]). These
 	//   take the answer rather than working it out again, so the greying and the command cannot
@@ -141,17 +141,17 @@ public:
 		@return how many paws went. */
 	virtual int32	ClearPawsInDoc(IDataBase* db) = 0;
 
-	// ---- the marks the DOCUMENT itself carries (2026-09-07) --------------------------------
+	// ---- the marks the DOCUMENT itself carries --------------------------------
 	//
-	// ★★**THERE IS NO "SAVE" ANY MORE, BECAUSE THERE IS NOTHING TO SAVE.** A tick or a paw goes
+	// **THERE IS NO "SAVE" ANY MORE, BECAUSE THERE IS NOTHING TO SAVE.** A tick or a paw goes
 	//   into the document at the moment it is made, and Ctrl+Z takes it out again; the labels ARE
 	//   the marks. `SaveMarksToDocument` was the door while writing was a separate act, and it went
 	//   with the act (the flyout item too -- ActionID kKCMUIPrefix + 55 stays retired).
 	//   Putting the marks back when a document opens still happens on its own, in the after-open
 	//   responder. The reasoning is in KCMPageMarksDoc.h and KCMPageMarksCmd.h.
 
-	// ---- the paw that points where it was dragged (2026-10-27) ------------------------------
-	// ⚠★★**APPENDED, AND ONLY HERE** ([[facade-vtable-slot-append-only]]): the UI half calls this facade through
+	// ---- the paw that points where it was dragged ------------------------------
+	// ⚠**APPENDED, AND ONLY HERE** ([[facade-vtable-slot-append-only]]): the UI half calls this facade through
 	//   its vtable, so a method put in among the ones above would move every slot after it. Both halves are
 	//   rebuilt together all the same.
 

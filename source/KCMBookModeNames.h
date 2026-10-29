@@ -15,7 +15,7 @@
 //       on its own and runs the table of cases, the same way KCMStoryRowFilter.h and
 //       KCMResourceAttrDiff.h are checked.
 //
-//  ★THE BIT VALUES ARE PERMANENT. They are what the Change column and app.kcmBookResult are built
+//  THE BIT VALUES ARE PERMANENT. They are what the Change column and app.kcmBookResult are built
 //  from, and a value that has shipped is a value a saved test script compares against. Add at the
 //  end; never renumber. (Same rule IKCMStoryEditsFacade states for Row::fAttrKind, where 2 has now
 //  shipped twice.)
@@ -37,7 +37,7 @@ enum KCMBookCompareMode
 
 /** The Change column's text: the modes that found something, in a FIXED order.
 
-    ★THE ORDER IS ALWAYS Pixel, Story, Resources -- the order they are run in, and the order the
+    THE ORDER IS ALWAYS Pixel, Story, Resources -- the order they are run in, and the order the
     user asked for. It does not follow the order the bits were set in, because a reader scanning a
     column of these has to be able to compare two rows at a glance.
 
