@@ -290,9 +290,8 @@ bool16 KCMOpenComparisonPair(IDataBase*& outTarget, IDataBase*& outSource, PMStr
 	if (!KCMResolveComparisonPair(targetEnd, sourceEnd))
 	{
 		// Name what is actually missing: if the target resolved, only the Source is absent.
-		outWhy = PMString(targetEnd.IsEmpty() ? "Target and source documents not found."
-		                                     : "Source document not found.");
-		outWhy.SetTranslatable(kFalse);
+		outWhy = KCMSentence(targetEnd.IsEmpty() ? "Target and source documents not found."
+		                                         : "Source document not found.");
 		return kFalse;
 	}
 

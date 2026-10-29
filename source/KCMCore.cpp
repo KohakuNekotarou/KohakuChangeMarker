@@ -64,6 +64,7 @@
 #include "KCMCore.h"
 #include "KCMID.h"			// kKCM*Message, the notification IDs
 #include "KCMModelNotify.h"	// KCMNotifyStatus / KCMNotifyDocs - the model tells the UI, it never calls it
+#include "KCMSentence.h"		// KCMSentence - the progress bar's fixed words, never a key
 
 // Declared here and defined next to KCMInvalidateDB, which it is built on: the comparison uses it
 // several hundred lines before that point.
@@ -873,15 +874,14 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 
 	// A heavy comparison gets a progress bar with a Cancel. The total is "the pages about to be
 	// rasterised" (for a differential run, only the ones being recomputed). The title is fixed
-	// English like KCM's other strings, hence SetTranslatable(kFalse).
+	// English like KCM's other strings, hence KCMSentence (a string that is not a key).
 	// **The bar appears on TIME, not on a page count** (2026-09-05, the user's call: Pixel and
 	// Story alike, kKCMProgressBarDelayMs). It used to be "10 pages or more" because the SDK's
 	// showImmediate=kFalse means "never appear", not "appear once this takes a while";
 	// KCMDeferredProgressBar supplies the waiting the SDK does not, and keeps the rasterising
 	// internals from raising bars of their own meanwhile.
 	const int32 rasterCount = (int32)toRaster.size();
-	PMString barTitle(rasterCount == 1 ? "Comparing 1 page..." : "Comparing pages...");
-	barTitle.SetTranslatable(kFalse);
+	PMString barTitle = KCMSentence(rasterCount == 1 ? "Comparing 1 page..." : "Comparing pages...");
 	bool16 cancelled = kFalse;
 	int32 changedCount = 0;
 	int32 failedCount = 0;
@@ -899,11 +899,10 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	{
 		const size_t i = toRaster[k];
 
-		PMString item("Page ");
+		PMString item = KCMSentence("Page ");	// not a key: it carries numbers (Append keeps the mark)
 		item.AppendNumber((int32)(k + 1));
 		item.Append(" / ");
 		item.AppendNumber(rasterCount);
-		item.SetTranslatable(kFalse);	// it contains numbers, so it is not for translation
 		progress.Step((int32)k, item);	// k pages are done; this is also where the bar first appears, once the delay has passed
 
 		bool16 changed = kFalse;
