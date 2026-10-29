@@ -2,20 +2,24 @@
 //
 //  KCMRingAdornment.cpp
 //
-//  Draws the comparison marks as a global page item adornment. What it is for and how it works
-//  is in KCMRingAdornment.h; this is the substance:
+//  Draws the comparison marks, and the story ID labels, as a global page item adornment. What it
+//  is for and how it works is in KCMRingAdornment.h; this is the substance:
 //
-//    1) KCMRingAdornmentShape  ... IAdornmentShape. Calls the drawing, and only for a spread
-//    2) KCMRingFlattenerUsage  ... IAdornmentFlattenerUsage. The point of the exercise: the
-//                                  declaration to the transparency manager
-//    3) register / unregister  ... putting it on and off the session's global list
+//    1)   KCMRingAdornmentShape  ... IAdornmentShape. The marks for a spread, a story ID label
+//                                    for an item
+//    1.5) the story ID labels    ... which item holds which story, and the label's drawing
+//    2)   KCMRingFlattenerUsage  ... IAdornmentFlattenerUsage. The point of the exercise: the
+//                                    declaration to the transparency manager
+//    3)   register / unregister  ... putting it on and off the session's global list
+//    3.5) ItemXPChanged          ... joining and leaving the item-has-transparency list
+//    4)   KCMRingAdornmentStartup ... registering once per execution context
+//    5)   KCMPDFExportSetup      ... joining that list for the duration of a PDF export
 //
-//  **This is the only route that draws the marks** - the draw-event receiver
-//  (kKCMDrawEventServiceBoss / KCMDrawEventSrvc / HandleDrawEvent) was removed.
-//  It holds not one line of the drawing itself: it calls KCMDrawEventHandler::DrawSpreadMarks()
-//  as it stands, which covers everything (rings, slashes, ticks, old-folio badges, the excluded
-//  wash, Find Overset's "+", and the alpha-server path used for print and PDF). All this route
-//  adds is who does the calling, and the transparency declaration.
+//  **This is the only route that draws the marks.** For them it holds no drawing of its own: it
+//  calls KCMDrawEventHandler::DrawSpreadMarks(), which covers everything (rings, slashes, ticks,
+//  old-folio badges, the excluded wash, and the alpha-server path used for print and PDF). What
+//  this file adds is who does the calling, the transparency declaration, and the story ID labels,
+//  which it does draw itself (KCMDrawStoryIdLabel).
 //
 //========================================================================================
 
@@ -29,17 +33,17 @@
 #include "ISpread.h"					// "is the thing being drawn a spread"
 #include "IShape.h"
 #include "GraphicsData.h"				// GraphicsData - GetView / GetGraphicsPort (IGraphicsContext.h comes with IAdornmentShape.h)
-#include "IStartupShutdownService.h"	// per-execution-context registration (end of this file)
+#include "IStartupShutdownService.h"	// per-execution-context registration (section 4)
 #include "IXPUtils.h"					// QueryXPManager(db)
 #include "IXPManager.h"					// ItemXPChanged - makes the item-has-transparency list be rebuilt
 #include "ISpreadList.h"				// walking the document's spreads
 #include "IDataBase.h"					// GetRootUID
 // The service that joins the transparency list for the duration of a PDF export - and joins the
-// CLONE rather than the document itself (end of this file).
+// CLONE rather than the document itself (section 5).
 #include "IPDFExportSetupProvider.h"	// PDFProcessEvent (pulls in IPDFExportController.h = PDFExportEvent)
 #include "IDThreading.h"				// IDThreading::ThreadLocal, holding the db being exported
 // The story ID labels ("Show Story IDs", section 1.5):
-#include "IStoryList.h"					// the document's stories - where the labels START (the user's instruction: from the story to its holder)
+#include "IStoryList.h"					// the document's stories - where the labels start (section 1.5: from the story to its holder)
 #include "ITextModel.h"					// QueryFrameList
 #include "IFrameList.h"					// the story's columns
 #include "ITextFrameColumn.h"			// one column, asked which item holds it
@@ -105,10 +109,10 @@ static bool16 KCMMarksDeclareTransparency();
 // 1.5) The story ID labels ("Show Story IDs")
 //
 //  "StoryID:<the story's UID>" ABOVE every page item that carries a story - outside the item, on
-//  its top edge at the left (the user's asks, after seeing a first version inside the frame: "the
+//  its top edge at the left (the author's asks, after seeing a first version inside the frame: "the
 //  story's number alone, outside, above, so it never lies over the text", then "StoryID:" in
 //  front of it). Two stories on one item are two such labels on the one line.
-//  **Found from the story, not from the item's kind** (the user's instruction: "trace from the
+//  **Found from the story, not from the item's kind** (the author's instruction: "trace from the
 //  story and put the story's ID on its parent"): the document's stories -> each story's frame
 //  columns -> the item that holds each column, asked the way the SDK asks it
 //  (SDKLayoutHelper::GetGraphicFrameRef): a text-on-path column names its main spline
@@ -137,7 +141,7 @@ static bool16 KCMMarksDeclareTransparency();
 //  (DrawSpreadMarks: the preview is a picture of the sheet).
 //  Print and PDF: only with "Print comparison marks" on (the old-folio badge's rule), at a fixed
 //  size in points. The Before/After report takes them on its After side only, whenever the
-//  toggle is on (the user's call: the Before side of a Task Start comparison is a copy with
+//  toggle is on (the author's call: the Before side of a Task Start comparison is a copy with
 //  renumbered UIDs, and two sets of numbers side by side confuse). The report signals its
 //  exports with sReportExport and its Before export with sRingFrameOff (KCMReport.cpp).
 //  Thumbnails (no view, not printing): nothing - unreadable at that size.
@@ -183,7 +187,7 @@ void KCMSetShowStoryIds(bool16 on)
 {
 	sShowStoryIds = (on != kFalse);
 	if (!on)
-		KCMForgetStoryHolders(nil);	// nothing reads the tables while the toggle is off; drop them (the warning in the header)
+		KCMForgetStoryHolders(nil);	// nothing reads the tables while the toggle is off; drop them (the warning in section 1.5)
 }
 
 /** Rebuild db's table from its stories. **From the story side** (the header of this section). */
@@ -220,12 +224,12 @@ static void KCMRebuildStoryHolders(IDataBase* db)
 				//   - a text-on-path column (kTOPFrameItemBoss) names its main spline itself
 				//     (ITOPFrameData.h:39-44). That spline is the item that IS drawn: two steps up
 				//     the hierarchy land on kTOPSplineItemBoss instead, whose adornments are never
-				//     drawn (measured 2026-09-13: the oval got no label).
+				//     drawn (measured: the oval got no label).
 				//   - any other column is asked of ITextUtils::QuerySplineFromTextFrame, "the spline
 				//     associated with the parent MultiColumnTextFrame" (ITextUtils.h:860-864) - an
 				//     anchored frame's own spline, not the frame that holds it.
-				// Until 2026-09-27 this walked IHierarchy two steps up by hand, which reached the same
-				// items but wrote the hierarchy's shape into this file (re-audit M4, round 3).
+				// (Walking IHierarchy two steps up by hand reaches the same items, but writes the
+				// hierarchy's shape into this file.)
 				InterfacePtr<ITextFrameColumn> column(frames->QueryNthFrame(f));
 				if (column == nil)
 					continue;
@@ -290,7 +294,7 @@ static void KCMStoriesHeldBy(IShape* iShape, bool16 buildIfMissing, std::vector<
 
 /** Do the labels go into print and PDF now (the toggle aside)? Only with "Print comparison marks" on
 	(kPrinting is set for both: DrawSpreadMarks) - or when the export is the Before/After report's AFTER
-	side (the user's call, 2026-09-13: with the toggle on the report carries the numbers, **but on the
+	side (the author's call: with the toggle on the report carries the numbers, **but on the
 	After side only** - the Before side of a Task Start comparison is a rehydrated copy whose UIDs are
 	renumbered, and two sets of numbers side by side only confuse). sReportExport is up for the length of
 	the report's two exports and sRingFrameOff for its Before export alone (KCMReport.cpp), and the Before
@@ -319,7 +323,7 @@ static void KCMDrawStoryIdLabel(IShape* iShape, GraphicsData* gd, int32 flags)
 	if (!printing && view == nil)
 		return;
 	// Overprint preview shows what will be printed, so only what would be printed is shown
-	// (the user's decision, applied to every mark in DrawSpreadMarks): with the marks
+	// (the author's decision, applied to every mark in DrawSpreadMarks): with the marks
 	// not printing, no label either - asked the way DrawSpreadMarks asks it (KCMIsOverprintPreview).
 	if (!printing && KCMIsOverprintPreview(gd) && !KCMDrawEventHandler::sPrintMarks)
 		return;
@@ -398,7 +402,7 @@ static void KCMDrawStoryIdLabel(IShape* iShape, GraphicsData* gd, int32 flags)
 // 1) The adornment itself
 //========================================================================================
 
-/** Calls the drawing of the comparison marks, and only for a spread. */
+/** The comparison marks for a spread (DrawSpreadMarks), and a story ID label for an item (section 1.5). */
 class KCMRingAdornmentShape : public CPMUnknown<IAdornmentShape>
 {
 public:
@@ -436,9 +440,9 @@ public:
 		IAdornmentShape.h:138-140: "This is only used by adornments for which the inking bounds are
 		based on **the content**. Adornments for which inking bboxes are based **solely on the
 		frame** do not need to implement this routine."
-		The marks are drawn against the box of a page or a spread (GetPaintedAdornmentBounds returns
-		itemBounds untouched), so they are frame-based, the exempt side. The SDK agrees: only
-		transparencyeffect, which bleeds outside the frame, implements it, while
+		The marks are drawn against the box of a page or a spread, and a story ID label against its
+		item's box - never against the content - so they are frame-based, the exempt side. The SDK
+		agrees: only transparencyeffect, which bleeds outside the frame, implements it, while
 		framelabel/FrmLblAdornment.cpp:160 is an empty `{}`. It is not a flattener interface either -
 		TranFxAdornment.cpp:483 comments it as **"used for resizing textframe etc."**
 
@@ -457,8 +461,8 @@ public:
 
 	virtual PMReal GetPriority() { return 0; }
 
-	/** Invalidation is done where it always was, by the mark side (KCMInvalidate...) across the
-		document's views, so there is nothing to do here. */
+	/** Invalidation is done by the mark side (KCMInvalidate...) across the document's views, so
+		there is nothing to do here. */
 	virtual void Inval(IShape* /*iShape*/, AdornmentDrawOrder /*drawOrder*/, GraphicsData* /*gd*/,
 					   ClassID /*reasonForInval*/, int32 /*flags*/) {}
 
@@ -467,8 +471,8 @@ public:
 		build an assert reads it, and nothing else - CShape.cpp:117-143), while
 		UnionPrintingPageItemAdornmentPaintedBBox does (CShape.cpp:93). kFalse drops the adornment
 		out of the drawing area computed for print and export.
-		Whether the marks go into print at all is still decided by the drawing itself, from
-		sPrintMarks. Not here. */
+		Whether the marks and the labels go into print at all is decided by the drawing itself
+		(sPrintMarks; for the labels, KCMStoryIdLabelsPrint). Not here. */
 	virtual bool16 WillPrint() { return kTrue; }
 
 	/** Whether to interrupt offscreen text drawing (for adornments that draw behind the text).
@@ -514,7 +518,7 @@ PMRect KCMRingAdornmentShape::GetPrintedAdornmentBounds(IShape* iShape, Adornmen
 	// As on screen, the marks need nothing and **the story ID label is the exception**: when it prints
 	// (KCMStoryIdLabelsPrint) it is written ABOVE the item's box, so what prints of the item takes in the
 	// label's band. Without it an export of the item alone, cut to these bounds, keeps only the label's
-	// bottom edge (measured 2026-10-30: a text frame exported on its own as PNG, the labels printing,
+	// bottom edge (measured: a text frame exported on its own as PNG, the labels printing,
 	// carried 24 of the label's 89 dark pixels and was no taller than the frame).
 	// The band is the screen's (kKCMStoryIdBandAbovePx / kKCMStoryIdReachRightPx, for a label of
 	// kKCMStoryIdFontPx) scaled to the print size, laid in spread coordinates where the label is
@@ -554,7 +558,7 @@ void KCMRingAdornmentShape::DrawAdornment(IShape* iShape, AdornmentDrawOrder dra
 
 	// **Being on the global list, this is reached once for every single page item on the spread.**
 	//   The marks are drawn once per spread, so everything that is not a spread is dropped here -
-	//   after the one thing that IS drawn per item, the story UID label (section 1.5; it answers
+	//   after the one thing that IS drawn per item, the story ID label (section 1.5; it answers
 	//   at once for an item that holds no story, which is most of them).
 	// @warning **the reason for taking the spread (kSpreadBoss) rather than the page (kPageBoss) is
 	//   the coordinate system**: the drawing is written to take a page's box in spread coordinates
@@ -563,12 +567,9 @@ void KCMRingAdornmentShape::DrawAdornment(IShape* iShape, AdornmentDrawOrder dra
 	InterfacePtr<ISpread> spread(iShape, UseDefaultIID());
 	if (spread == nil)
 	{
-		// (Until 2026-10-30 a page handed alone could carry the marks too: the page route, for
-		//  kPDFExportItemsCmdBoss, which draws the items it is handed and never the spread, behind
-		//  the switch sMarksOnPage. Nothing had turned the switch on since the PDF spike went
-		//  and the report exports with kPDFExportCmdBoss, so both went. The route
-		//  and what it measured (the page's coordinates, kPrinting for the density):
-		//  git log -S KCMDrawMarksForPage.)
+		// A page handed alone carries no marks: kPDFExportItemsCmdBoss draws the items it is handed
+		//  and never their spread. To give it marks, bring back the page route (the page's
+		//  coordinates, kPrinting for the density): git log -S KCMDrawMarksForPage.
 		KCMDrawStoryIdLabel(iShape, gd, flags);
 		return;
 	}
@@ -593,7 +594,7 @@ void KCMRingAdornmentShape::DrawAdornment(IShape* iShape, AdornmentDrawOrder dra
 	to anything translucent is through the flattener, and the flattener **gathers artwork and
 	then rasterises it** - so the only candidates are the ones that declared transparency while
 	being gathered. A draw event is called during the drawing that follows the gathering and so
-	never had a chance to declare anything, which is the whole reason this class was added.
+	never had a chance to declare anything, which is why this class exists.
 
 	@warning **there are two declarations and they are different interfaces** (different IIDs):
 	  - `IFlattenerUsage` (`IsFlattenerRequired`)           ... for **page items**. Not one
@@ -647,9 +648,9 @@ bool32 KCMRingFlattenerUsage::IsFlattenerRequired_(IPMUnknown* /*iThing*/,
 static bool16 KCMMarksCouldBeTranslucent()
 {
 	// If the marks are set not to go into print or export, no transparency arises in the output.
-	// **ONE SWITCH DECIDES IT: "Print comparison marks"** (sPrintMarks). Since 2026-09-07 the
-	//   Source side follows it too (spec map MK-14), so the Source toggle no longer has to be
-	//   consulted here -- with sPrintMarks off, neither side reaches the output.
+	// **ONE SWITCH DECIDES IT: "Print comparison marks"** (sPrintMarks). The Source side follows it
+	//   too (spec map MK-14), so the Source toggle is not consulted here -- with sPrintMarks off,
+	//   neither side reaches the output.
 	if (!KCMDrawEventHandler::sPrintMarks)
 		return kFalse;
 
@@ -690,23 +691,15 @@ void KCMRingAdornmentRegister()
 	//   the background threads walk straight past. Registering twice is prevented by HasAdornment
 	//   below, so that is the only guard needed.
 	//
-	// **Why a static is the wrong place for it.** One line of guide vol1-07 explains both halves -
-	//   "Threads do not share object-model instances. **They do share globals and statics**":
-	//     (1) **the first half**: what is registered is **an interface instance on the session**, so
-	//         what AddAdornment did on the main thread **is not visible from a background thread's
-	//         execution context**. Without registering again there, nothing calls DrawAdornment.
-	//     (2) **the second half**: remembering "it is registered" in a static makes it **read kTrue
-	//         on the background thread too**, and the draw-event route that existed then stood down,
-	//         believing the adornment would draw.
-	//   **So neither of them drew.** The symptom was "the PDF from the UI's File > Export, and only
-	//     that one, has no frames at all" (measured at PDF 1.4: synchronous 77,240 px,
-	//     **asynchronous 0**).
-	//   Generally: **an arrangement of "one of us takes this" held in a static turns into "neither of
-	//     us takes it" the moment it crosses a thread.** Ask the place where the arrangement actually
-	//     lives - here, the session.
-	//   The draw-event route has since been removed and **this is the only route that draws**, so the
-	//     standing down in (2) no longer exists. (1) is unchanged: **registration does not cross
-	//     threads.**
+	// **Why a static is the wrong place for it.** One line of guide vol1-07 covers both halves -
+	//   "Threads do not share object-model instances. **They do share globals and statics**": what
+	//   is registered is **an interface instance on the session**, so what AddAdornment did on the
+	//   main thread **is not visible from a background thread's execution context**, while a static
+	//   saying "it is registered" **reads kTrue there too**. **Registration does not cross
+	//   threads**: without registering again there, nothing calls DrawAdornment on that thread, and
+	//   the PDF from the UI's File > Export, and only that one, comes out with no marks at all
+	//   (measured at PDF 1.4: synchronous 77,240 px, **asynchronous 0**).
+	//   Ask the place where the state actually lives - here, the session (HasAdornment below).
 
 	InterfacePtr<IPageItemAdornmentList> globalList(KCMQueryGlobalAdornmentList());
 	if (globalList == nil)
@@ -732,22 +725,20 @@ void KCMRingAdornmentUnregister()
 // 3.5) Telling the transparency manager to ask again -- the other half of the PDF 1.3 fix
 //========================================================================================
 
-/** Join the list, or leave it. **The direction is a parameter.**
-	@warning it used to be one function serving both directions and **sending
-	  `kXPC_MayHaveAddedSomeXP` for both** - and as the name says, that kind only works in the
-	  direction of adding. So although the callers were told to "call these symmetrically" and did,
-	  **the leaving side never once took effect** (A/B on the same document: `MayHaveAdded` gives
-	  `1->1`, `RemovedSomeXP` gives `1->0`).
-	**If one function serves both directions, take the direction as a parameter.** Symmetry in the
-	calls does not guarantee symmetry in the meaning. */
+/** Join the list, or leave it. **The direction is a parameter, and each direction sends its own
+	change type.**
+	@warning **one type for both directions does not work**: `kXPC_MayHaveAddedSomeXP`, as the
+	  name says, only works in the direction of adding - sent to leave, the item stays (A/B on the
+	  same document: `MayHaveAdded` gives `1->1`, `RemovedSomeXP` gives `1->0`; the types are set
+	  out in KCMSetItemXPState). Symmetry in the calls does not guarantee symmetry in the meaning. */
 enum KCMXPListAction
 {
 	kKCMXPListAdd,		///< transparency arises in the output - join the list (kXPC_AddedSomeXP)
 	kKCMXPListRemove		///< it does not - leave the list (kXPC_RemovedSomeXP)
 };
 
-/** db's transparency manager, or nil. The two callers want different things when it cannot be had
-	(one returns, one answers -1), so the nil is handed back rather than acted on here. */
+/** db's transparency manager, or nil. Its callers want different things when it cannot be had
+	(KCMGetNumItemsWithXP answers -1, the others return), so the nil is handed back rather than acted on here. */
 static IXPManager* KCMQueryXPManagerFor(IDataBase* db)
 {
 	if (db == nil)
@@ -790,10 +781,13 @@ static void KCMSetItemXPState(IDataBase* db, KCMXPListAction action)
 	// **One item per spread is enough.** The list is the material for answering "are there items with
 	//   transparency on this spread", and location plays no part in it (IXPManager.h:114-116: "Info
 	//   is maintained solely on the presence of transparent items on spread, **not based on
-	//   location**").
-	// @warning **a spread holding no items at all cannot be put on the list**, so this does nothing
-	//   for a document of empty pages: the adornment draws frames on an empty page, but the only
-	//   thing that can answer for transparency is an item.
+	//   location**"). Nor does every spread need one: a spread with no item on its pages gets no
+	//   representative and still comes out translucent when another spread has one (measured at
+	//   PDF/X-1a: a spread whose only item was deleted, and one whose only item was moved to the
+	//   pasteboard).
+	// @warning **a document with no item on any page cannot be put on the list**, so this does
+	//   nothing for it: the adornment draws frames on an empty page, but the only thing that can
+	//   answer for transparency is an item.
 	UIDList items(db);
 	const int32 spreadCount = spreadList->GetSpreadCount();
 	for (int32 i = 0; i < spreadCount; ++i)
@@ -835,7 +829,7 @@ static void KCMSetItemXPState(IDataBase* db, KCMXPListAction action)
 	//   there would break what Ctrl+Z means.
 	//   @warning **which leaves this call without a precedent in the SDK.** `ItemXPChanged` is
 	//     declared at IXPManager.h:106-107 and **called from nowhere in the shipped source**;
-	//     `ProcessItemXPChangedCmd` (:110) is called from nowhere either (counted 2026-08-30 across
+	//     `ProcessItemXPChangedCmd` (IXPManager.h:110) is called from nowhere either (counted across
 	//     source/: declarations and comments only). Every official path is the command boss, by way
 	//     of TranFxUtils::Inval. **What is taken from transparencyeffect is the change type and the
 	//     moment, not the call** - so this line is on the "no official road" side of the audit, and
@@ -867,7 +861,7 @@ static void KCMSetItemXPState(IDataBase* db, KCMXPListAction action)
 	@warning **it must not be folded into KCMPeekStartup.** That one is deliberately pinned to the
 	  main thread in the .fr (kCMainThreadStartupShutdownProviderImpl), because its Shutdown()
 	  throws away the whole comparison state: called on every background thread teardown, **the
-	  marks vanish on every PDF export** (a bug that was hit and fixed). This one only registers
+	  marks vanish on every PDF export** (seen). This one only registers
 	  and unregisters, so it is safe on every thread - and **useless unless it runs on them**.
 	  Hence a boss of its own. */
 class KCMRingAdornmentStartup : public CPMUnknown<IStartupShutdownService>
@@ -930,19 +924,13 @@ CREATE_PMINTERFACE(KCMRingAdornmentStartup, kKCMRingAdornmentStartupImpl)
 //    only costs them the export. **Put it where failing is allowed.**
 //
 //  WHY THE CLONE, AND NOT THE EXPORT SIGNALS
-//    The earlier implementation used `kBeforeExport`/`kAfterExport`/`kFailedExport` and joined the
-//    list on **the original document**. @warning **that had a hole**: the signals arrive **on the
-//    main thread carrying the original db**, so there is a stretch of time in which the original is
-//    on the list, and **a save made during an asynchronous (background) export bakes the list into
-//    the .indd** (measured: save() during an export, and the reopened document reports
-//    `document.kcmTransparencyItemCount` = **4**, where the normal path gives 0).
-//    `kPDFExportSetupService`'s `BeginExport` is handed **the clone db the export draws from**, so
-//    **the output can be changed without the original being touched once**. The details and the
-//    measurements are in the implementation below and in
-//    docs/ai-notes/pdf-export-setup-service-and-clone-db-2026-08-20.md.
-//    What the earlier implementation established is still true and worth keeping:
-//      - the export signals fire on **both** the synchronous and the asynchronous route, but
-//        **both of them on the main thread, with the original `IDataBase`**
+//    The export signals (`kBeforeExport`/`kAfterExport`/`kFailedExport`) would join the list on
+//    **the original document**, and a save made during an asynchronous export would bake it into
+//    the .indd. `kPDFExportSetupService`'s `BeginExport` is handed **the clone db the export draws
+//    from** instead - the reasoning and the measurements are above KCMPDFExportSetup, below.
+//    For anyone going back to the signals:
+//      - they fire on **both** the synchronous and the asynchronous route, but **both of them on
+//        the main thread, with the original `IDataBase`**
 //      - @warning **the format name differs between the routes**: synchronous `Adobe PDF`,
 //        asynchronous `Adobe PDF (Print)`. (That is why the sample lists three of them; look at
 //        one and you miss the other route.)
@@ -956,11 +944,11 @@ CREATE_PMINTERFACE(KCMRingAdornmentStartup, kKCMRingAdornmentStartupImpl)
 //   synchronous - **so no mutex is needed**.
 //   @warning **it must not be a static.** Guide vol1-07's "Threads do not share object-model
 //     instances. **They do share globals and statics**" applies to it directly: a background
-//     export would make the drawing on the main thread answer "an output is being made". The same
-//     trap caught this code once already (the comment in Register).
+//     export would make the drawing on the main thread answer "an output is being made" (the same
+//     trap as the static the comment in Register warns against).
 // One thread never exports two documents at once, the events being the straight line
 //   `BeginExport -> drawing -> EndExport`, so one of these is enough.
-//   @warning **the line can break off**: a cancelled export sends no EndExport (measured 2026-10-30, an
+//   @warning **the line can break off**: a cancelled export sends no EndExport (measured on an
 //     asynchronous one: BeginExport, one page, the cancel, and nothing more), and the flag would stay up
 //     naming a clone that went with it. The next BeginExport on the thread forgets it without touching
 //     it (KCMForgetStaleExportOnThisThread).
@@ -971,10 +959,11 @@ static IDThreading::ThreadLocal<IDataBase*> tl_ExportingDB(nil);
 	next document. */
 // The export service below (KCMPDFExportSetup) is the pair's only caller. An export that raises
 //   no kPDFExportSetupService events -- kPDFExportItemsCmdBoss, which writes a PDF into a stream
-//   -- would have to call the pair itself, or its marks come out as solid blocks; and only a
-//   SYNCHRONOUS one may, the declaration going up and down inside one call so that no save can
-//   bake it into the .indd (the reasoning beside kPDFExportSetupService below). The report's
-//   in-memory page exports did exactly that for a day (git log -S KCMReportPlace).
+//   -- carries no marks (DrawAdornment draws them for a spread only). Given marks, it would have to
+//   call the pair itself or they come out as solid blocks; and only a SYNCHRONOUS one may, the
+//   declaration going up and down inside one call so that no save can bake it into the .indd (the
+//   reasoning beside kPDFExportSetupService below). The report's in-memory page exports once did
+//   exactly that: git log -S KCMReportPlace.
 static void KCMEndExportOnThisThread()
 {
 	// The clone KCMIsSameDoc may read on this thread goes first, whether or not the list was joined.
@@ -1095,8 +1084,8 @@ bool16 KCMPDFExportSetup::PDFProcessEvent(PDFExportEvent* ev, int32 /*pageNum*/)
 	if (ev != nil)
 	{
 		// Test build only: every event, with what this thread holds as "being exported" before it is handled -
-		// what tells whether an export stopped half-way (cancelled, failed) still sends EndExport, which the
-		// thread-local flag relies on (the threading header re-read's 22).
+		// the record that showed a cancelled export sends no EndExport (tl_ExportingDB's warning). A failed
+		// one has not been measured.
 		KCM_DIAG_LOG("PDF-EXPORT event=%d db=%p thread=%s exporting=%p", (int)ev->id, (void*)ev->db,
 			KCMIsMainThread() ? "main" : "bg", (void*)tl_ExportingDB.Get());
 		switch (ev->id)

@@ -3,10 +3,10 @@
 //  KCMRingAdornment.h
 //
 //  Draws the comparison marks (rings, slashes, ticks, old-folio badges) as a **global page
-//  item adornment**. It carries no drawing code of its own: given a spread it calls
-//  KCMDrawEventHandler::DrawSpreadMarks(), so **the picture is the single implementation**
-//  that the removed draw-event route also called. What this route adds is who does the
-//  calling, and the transparency declaration.
+//  item adornment**, and the story ID labels with them. For the marks it carries no drawing
+//  code of its own: given a spread it calls KCMDrawEventHandler::DrawSpreadMarks(), **the
+//  single implementation of the picture**. What this route adds is who does the calling, the
+//  transparency declaration, and the labels (drawn in the .cpp, section 1.5).
 //
 //  WHY IT EXISTS -- THE SOLID BLOCK AT PDF 1.3
 //  --------------------------------------------------------------------------------------
@@ -64,9 +64,10 @@
 //      runs once per execution context** (kKCMRingAdornmentStartupBoss), which is what puts the
 //      marks into the UI's (background) PDF export.
 //   2. **On the session means on every document.** Which document the marks belong to is
-//      decided where it always was, in DrawSpreadMarks (KCMIsSameDoc); nothing here filters.
+//      decided in DrawSpreadMarks (KCMIsSameDoc); nothing here filters (the story ID labels go
+//      on every open document).
 //   3. **Closing a document does not remove the registration** -- Shutdown has to
-//      (KCMRingAdornmentStartup::Shutdown, at the end of the .cpp).
+//      (KCMRingAdornmentStartup::Shutdown, section 4 of the .cpp).
 //   4. **Nothing can be drawn outside the pasteboard** (a real clip). The marks are inside the
 //      page, so it does not bite.
 //
@@ -81,9 +82,8 @@ class IDataBase;
 // Adds the adornment to the session's global page item adornment list.
 // **Call it once per execution context**, background threads included; the reasoning is at the
 // definition.
-// @warning **if this fails, not one mark is drawn.** The draw-event route that used to draw
-// them when registration failed was removed and this is the only route left (the decision was
-// "if the registration fails it is acceptable for no marks to appear").
+// @warning **if this fails, not one mark is drawn** (nor a story ID label): there is no other
+// route (the decision: "if the registration fails it is acceptable for no marks to appear").
 void KCMRingAdornmentRegister();
 
 // Takes it off again (application shutdown). @warning it lives on the session, so it stays
@@ -105,8 +105,9 @@ void KCMRingAdornmentUnregister();
 //     list itself is the problem, not a stale cache.
 //
 //   **The list is held only for the duration of an export.** The only caller is the PDF export
-//     service at the end of the .cpp; starting, stopping and toggling a comparison never touch
-//     it. The reason is that **the list persists into the .indd** (measured: it survives a save
+//     service (section 5 of the .cpp); starting, stopping and toggling a comparison never add to
+//     it (Start and Stop only ask it again: KCMRevalidateItemXPList below). The reason is that
+//     **the list persists into the .indd** (measured: it survives a save
 //     and is not re-validated on reopen), so holding it for the length of a comparison means
 //     that the moment the reader saves, **a record with nothing behind it is baked into their
 //     document**. Details and IDs are with kKCMPDFExportSetupBoss in KCMID.h.
@@ -135,24 +136,26 @@ int32 KCMGetNumItemsWithXP(IDataBase* db);
 //
 // While ON, every page item that carries a story - an ordinary text frame, a path with text on
 // it, an anchored frame - has "StoryID:<its story's UID>" written ABOVE its box, at the left (the
-// number the script DOM's story.id answers, and the number in the Story Edits list's ID column). **Found from the story side**, not from the item's kind (the user's instruction): the
+// number the script DOM's story.id answers, and the number in the Story Edits list's ID column).
+// **Found from the story side**, not from the item's kind (the author's instruction): the
 // document's stories -> each story's frame columns -> the item holding each column, in the SDK's
 // own two steps (ITOPFrameData for text on a path, else ITextUtils::QuerySplineFromTextFrame -
 // SDKLayoutHelper::GetGraphicFrameRef). The drawing is the same adornment that
 // draws the marks (KCMRingAdornmentShape::DrawAdornment, the non-spread branch); the table of
 // holders is one per database, rebuilt on every draw of a spread, built on the spot by the first
-// item drawn without one, and dropped when documents close (KCMStoryHolders in the .cpp).
+// item drawn without one, and dropped when documents close (sStoryHolders, section 1.5 of the .cpp).
 // Screen always (not in overprint preview with the marks not printing); print and PDF only with
 // "Print comparison marks" on (the badge's rule), and into the Before/After report on its After
 // side only (KCMDrawEventHandler::sReportExport / sRingFrameOff). Every open document, since the
-// adornment is the session's. Default OFF; saved with the panel settings ("showStoryIds"). The flyout toggle
-// flips it through IKCMCompareFacade::SetShowStoryIds and repaints.
+// adornment is the session's. Default OFF; saved with the panel settings ("showStoryIds"). The
+// flyout toggle flips it through IKCMCompareFacade::SetShowStoryIds and repaints.
 bool16 KCMGetShowStoryIds();
 void KCMSetShowStoryIds(bool16 on);
 
 // Drop the story holder table of db, or of every database when db is nil. Called when documents
-// close (KCMHandleDocsClosed) and when an export begins on a clone, so a table is never read
-// through a pointer that has since been given to another database; the next draw rebuilds it.
+// close (KCMHandleDocsClosed), when an export begins (KCMBeginExportOn: an asynchronous export's
+// clone may stand where an earlier one stood) and when the toggle goes off, so a table is never
+// read through a pointer that has since been given to another database; the next draw rebuilds it.
 void KCMForgetStoryHolders(IDataBase* db);
 
 // **The insurance: put the item-has-transparency list back to what the document itself says.**
@@ -161,11 +164,14 @@ void KCMForgetStoryHolders(IDataBase* db);
 // shadow, an opacity under 100) answers "still transparent" and stays; a declaration KCM left
 // behind has nothing behind it and goes.
 // **When it can matter**: the declarations above are made only during an export and only on
-// the database the export hands over (a clone, for an asynchronous PDF -- measured 2026-09-05:
-// the document's own list reads 0 before and after an export with the marks printing). So this
+// the database the export hands over (a clone, for an asynchronous PDF -- measured: the
+// document's own list reads 0 before and after an export with the marks printing). So this
 // guards the cases nobody has measured: a synchronous route handing over the real document and
-// then never reaching EndExport (a crash mid-way), and documents that a development build
-// before that rule baked a declaration into. The user's call: keep the insurance.
+// then never reaching EndExport (cancelled or crashed mid-way; after a cancel the next export
+// begun on the main thread takes the declaration off - KCMForgetStaleExportOnThisThread - and
+// until then this stands down, reading the flag left up as "mid-export"), and documents that a
+// development build before that rule baked a declaration into. The author's call: keep the
+// insurance.
 // **Called at Start (both documents) and at Stop (the armed pair)**, on the main thread only,
 // and **never while this thread is exporting** -- mid-export the declarations up are the right
 // ones and re-asking would take them down. Wrapped in SaveRestoreModifiedState: it changes
