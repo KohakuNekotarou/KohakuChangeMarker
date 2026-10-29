@@ -41,7 +41,7 @@
 // **Whatever holds the split must be whatever holds the string** -- held apart, re-opening the
 // panel can bring back the sentence with the colouring or the reading missing.
 // An ordinary message fills sStatusMid only: **one string is the special case of this shape.**
-// @warning every one of the five must appear in KCMClearSessionStatus() at the bottom.
+// @warning every static here must appear in KCMClearSessionStatus() at the bottom.
 static PMString sStatusLabel;
 static PMString sStatusPre;
 static PMString sStatusMid;
@@ -54,14 +54,6 @@ static PMString sStatusRuby;
 	in the Clear list for the heap reason; it is reset there anyway, because a stale kind beside
 	an empty string is a state nothing should be able to read. */
 static int32 sStatusAttrKind = 0;
-
-// **"THE MESSAGE NOW STORED IS BAD NEWS"**. The red itself is the UI's
-// (KCMSetStatusWarning), and the model must not reach for it - so what crosses the line is this one
-// bit, set by KCMNotifyStatusWarning and taken by the observer that paints the message.
-// ⚠**IT IS TAKEN, NOT READ**: one message, one warning. Leaving it standing would colour the next
-//  sentence too, which is the one shape this cannot be allowed to have.
-// ⚠Every store below clears it, for the same reason: an ordinary message must not inherit it.
-static bool16 sStatusWarning = kFalse;
 
 /** The lines of a warichu / tate-chu-yoko message - part of the same one value.
 	⚠Holds PMStrings in vectors, so it is in the Clear list for the heap reason. */
@@ -177,28 +169,6 @@ void KCMNotifyStatus(const PMString& s, bool16 forceRedrawNow)
 	KCMNotify(kKCMStatusTextMessage, &payload);
 }
 
-// KCMNotifyStatusWarning (declared in KCMModelNotify.h)
-// THE ORDER MATTERS: store first, raise the bit second. KCMStoreSessionStatus clears the bit (an
-//   ordinary message must not inherit one), so setting it before the store would lose it.
-void KCMNotifyStatusWarning(const PMString& s, bool16 forceRedrawNow)
-{
-	KCMStoreSessionStatus(s);
-	sStatusWarning = kTrue;
-
-	KCMNotifyPayload payload;
-	payload.fStatusForceRedraw = forceRedrawNow;
-
-	KCMNotify(kKCMStatusTextMessage, &payload);
-}
-
-// KCMTakeSessionStatusWarning (declared in KCMModelNotify.h) -- read AND clear.
-bool16 KCMTakeSessionStatusWarning()
-{
-	const bool16 was = sStatusWarning;
-	sStatusWarning = kFalse;
-	return was;
-}
-
 // KCMSayStatus (declared in KCMModelNotify.h) -- the literal form of the above.
 // PMString's constructor for a string that is not a key marks it untranslatable as it is made (PMString.h; the
 // callers' words are ASCII literals) - SetTranslatable is in the header's DISCOURAGED section.
@@ -226,7 +196,6 @@ void KCMStoreSessionStatus(const PMString& s)
 	sStatusRuby.Clear();
 	sStatusAttrKind = 0;
 	sStatusLayers = KCMStoryLayers();
-	sStatusWarning = kFalse;		// an ordinary message inherits no warning (see the static)
 }
 
 // KCMStoreSessionStatusSegments (declared in KCMModelNotify.h) -- remember the split, do not notify.
@@ -243,7 +212,6 @@ void KCMStoreSessionStatusSegments(const PMString& label, const PMString& pre,
 	sStatusRuby  = ruby;
 	sStatusAttrKind = attrKind;
 	sStatusLayers = KCMStoryLayers();		// a layered message stores its lines after this (see the header)
-	sStatusWarning = kFalse;				// and it carries no warning of its own
 }
 
 // KCMStoreSessionStatusLayers / KCMGetSessionStatusLayers (declared in KCMModelNotify.h)
@@ -292,26 +260,22 @@ void KCMGetSessionStatusSegments(PMString& outLabel, PMString& outPre,
 // KCMClearSessionStatus (declared in KCMModelNotify.h)
 void KCMClearSessionStatus()
 {
-	// @warning **all five**. Leave one out and its heap stays allocated at shutdown -- a defect
-	// already found twice in this plug-in, both times a static added beside its fellows and not
-	// added here.
-	// FRESH VALUES, NOT Clear() (the re-inspection's M2): PMString::Clear() keeps the buffer
-	//   ("Capacity stays the same" - UnicodeSavvyString.h), so the five held their heap to unload all the same
-	//   (memory plugin-teardown-robustness, corrected 2026-10-13).
+	// @warning **every static above**. Leave one out and its heap stays allocated at shutdown -- a
+	// defect already found twice in this plug-in, both times a static added beside its fellows and
+	// not added here.
+	// FRESH VALUES, NOT Clear(): PMString::Clear() keeps the buffer ("Capacity stays the same" -
+	//   UnicodeSavvyString.h), so the strings held their heap to unload all the same (memory
+	//   plugin-teardown-robustness). A fresh value is MOVE-assigned, and PMString's move swaps its
+	//   buffer into the temporary (PMString.h), which takes it away at the semicolon.
 	sStatusLabel = PMString();
 	sStatusPre = PMString();
 	sStatusMid = PMString();
 	sStatusPost = PMString();
 	sStatusRuby = PMString();
 	sStatusAttrKind = 0;
-	// ⚠THE LINES' HEAP GOES TOO. Assigning an empty vector destroys the strings but may keep the
-	//   vector's own buffer, so the buffers are swapped out rather than assigned.
-	sStatusLayers.fBottomPre.Clear();
-	sStatusLayers.fBottomPost.Clear();
-	std::vector<PMString>().swap(sStatusLayers.fMiddleParts);
-	std::vector<PMString>().swap(sStatusLayers.fUpperPieces);
+	// The lines' heap the same way: KCMStoryLayers declares no copy and no destructor, so this is its
+	//   implicit move - each PMString swaps, each std::vector gives its own buffer up.
 	sStatusLayers = KCMStoryLayers();
-	sStatusWarning = kFalse;
 }
 
 // End of KCMModelNotify.cpp.

@@ -573,8 +573,7 @@ public:
 		bool16		fHasColour;
 		uint8		fR, fG, fB;
 		bool16		fHidden;		// in hidden conditional text
-		bool16		fSourceExact;	// GetChange's Source range is the change's place in the copy
-		TrackChange() : fAuthor(-1), fKind(0), fTime(0), fHasColour(kFalse), fR(0), fG(0), fB(0), fHidden(kFalse), fSourceExact(kFalse) {}
+		TrackChange() : fAuthor(-1), fKind(0), fTime(0), fHasColour(kFalse), fR(0), fG(0), fB(0), fHidden(kFalse) {}
 	};
 
 	virtual int32	GetTrackAuthorCount() = 0;

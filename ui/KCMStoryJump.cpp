@@ -851,11 +851,9 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	const bool16 targetFlash = (!selected && (reach & IKCMStoryEditsFacade::kReachHiddenSpread) == 0) ? kTrue : kFalse;
 	if (isTrack)
 	{
-		// ★In the author's colour (2026-10-05); in the Source window only where the change's place in the copy is
-		//   known exactly - otherwise its Source range is the story's start, and a flash there would point at nothing.
+		// In the author's colour, and in the Target alone: a Track listing has no Source window.
 		Utils<IKCMStoryMarkFacade>()->ShowJumpFlashColoured(targetFlash ? db : nil, row.fStoryUID,
 			targetFlash ? from : 0, targetFlash ? to : 0,
-			track.fSourceExact ? change.fSourceStart : -1, track.fSourceExact ? change.fSourceEnd : -1,
 			track.fHasColour, track.fR, track.fG, track.fB);
 	}
 	else

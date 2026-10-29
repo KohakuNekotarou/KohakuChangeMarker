@@ -207,7 +207,8 @@ void KCMTrackList::RowsAsTsv(PMString& out)
 		out.Append("\n");
 	}
 	// change  author  row  change  kind  uid  tstart  tend  sstart  send  srcexact  colour  hidden  new  old
-	// (sstart send srcexact are 0 since 2026-10-27 - no copy - and stay, so that the columns the tests read do not move.)
+	// (sstart send srcexact are always 0 - a Track listing has no Source - and stay, so that the columns the tests read
+	//  do not move.)
 	for (size_t r = 0; r < gRows.size(); ++r)
 	{
 		const KCMTrackRow& row = gRows[r];
@@ -223,7 +224,7 @@ void KCMTrackList::RowsAsTsv(PMString& out)
 			out.Append("\t"); out.AppendNumber(ch.fChange.fTargetEnd);
 			out.Append("\t"); out.AppendNumber(ch.fChange.fSourceStart);
 			out.Append("\t"); out.AppendNumber(ch.fChange.fSourceEnd);
-			out.Append("\t"); out.AppendNumber(ch.fSourceExact ? 1 : 0);
+			out.Append("\t0");		// srcexact
 			out.Append("\t"); AppendColour(out, ch.fHasColour, ch.fR, ch.fG, ch.fB);
 			out.Append("\t"); out.AppendNumber(ch.fHidden ? 1 : 0);
 			out.Append("\t"); AppendCell(out, ch.fChange.fText);

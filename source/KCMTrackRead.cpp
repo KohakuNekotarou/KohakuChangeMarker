@@ -174,9 +174,6 @@ std::u16string SortKey(const PMString& s)
 	return (b != nil) ? std::u16string(reinterpret_cast<const char16_t*>(b), static_cast<size_t>(n)) : std::u16string();
 }
 
-// (⛔CopyReads - "is the copy's story at [from, to) these characters", the check behind fSourceExact - went on 2026-10-27
-//  with the copy itself.)
-
 // Every tracked-change record db holds, a note's too - the follower's count (RecordsMovedSinceRead). (It counted the
 // records a copy kept although every change was rejected, as well, until the copy went on 2026-10-27.)
 int32 CountRecords(IDataBase* db)
@@ -419,10 +416,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 				sc.fOtherTextPost = sc.fTextPost;
 				// Overset: a change composed into no frame (the jump then goes to the "+").
 				sc.fOverset = (!p.fHidden && KCMStoryFrameAt(targetDB, storyRef.GetUID(), from, to <= from) == kInvalidUID) ? kTrue : kFalse;
-				// No place in an original: there is no Source (2026-10-27). ⛔Until then, against the copy "Compare with
-				//  Tracked Changes..." saved with every change rejected, the change's place there (p.fOrigFrom / fOrigTo) was
-				//  checked by its characters and, when they read as expected, handed out as the Source range with
-				//  fSourceExact - what lit the Source window. fSourceExact stays kFalse now.
+				// No place in an original: a Track listing has no Source.
 				sc.fSourceStart = sc.fSourceEnd = 0;
 				row.fChanges.push_back(ch);
 			}

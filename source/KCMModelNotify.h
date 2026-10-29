@@ -120,20 +120,9 @@ void	KCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, IDataBas
 // does not (the text is session state that app.kcmStatus answers from at any time).
 void	KCMNotifyStatus(const PMString& s, bool16 forceRedrawNow = kFalse);
 
-/** **THE SAME NOTIFICATION, MARKED AS BAD NEWS** - the panel paints it red.
-    For the model's own "that did not come out right". ⛔The first one was the round-trip check on a
-    task-start copy (KCMOriginCompare.cpp), which went on 2026-09-21 with the origin; the bit itself
-    is unchanged and waiting for the next model-side thing that can go wrong.
-    **THE MODEL DOES NOT REACH FOR THE RED.** The colour is the UI's (KCMSetStatusWarning in
-      KCMUIShared.h); what crosses the line is one bit, which the observer takes with
-      KCMTakeSessionStatusWarning below and turns into a colour. [[model-plugin-must-not-drive-ui]]
-    ⚠**ONE MESSAGE, ONE WARNING**: the bit is TAKEN, and every store clears it, so the sentence
-     after this one comes back in the ordinary colour. Red says "this just happened". */
-void	KCMNotifyStatusWarning(const PMString& s, bool16 forceRedrawNow = kFalse);
-
-/** Was the message now stored raised as a warning? **Reading it clears it** - the caller is the
-    one observer that paints the message area, and it asks once per notification. */
-bool16	KCMTakeSessionStatusWarning();
+// (No red message: the one that used it - the round-trip check on a task-start copy - went with the
+//  origin, and the road went after it, the author's call. A model that ever needs one again sends
+//  one bit beside the words and lets the UI choose the colour: memory model-plugin-must-not-drive-ui.)
 
 // The same, for a message that is a plain literal -- which is what almost every one of them is.
 //

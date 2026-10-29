@@ -203,12 +203,12 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 			IKCMStoryEditsFacade::Change change;
 			if (!edits->GetChange(n, i, change))
 				continue;
-			// ★THE SOURCE SIDE OF A TRACK CHANGE IS MARKED ONLY WHERE ITS PLACE IN THE COPY IS KNOWN (2026-10-05):
-			//   otherwise its Source range is (0,0), the story's start, and a bar there would point at nothing.
+			// A TRACK CHANGE IS NOT MARKED ON THE SOURCE SIDE: a Track listing has no Source document, and its
+			//   Source range is (0,0), the story's start - a bar there would point at nothing.
 			if (useSourceDocument)
 			{
-				IKCMStoryEditsFacade::TrackChange exact;
-				if (edits->GetTrackChange(n, i, exact) && !exact.fSourceExact)
+				IKCMStoryEditsFacade::TrackChange track;
+				if (edits->GetTrackChange(n, i, track))
 					continue;
 			}
 

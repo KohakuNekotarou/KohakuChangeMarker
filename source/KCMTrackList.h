@@ -48,10 +48,9 @@ struct KCMTrackChange
 	bool16			fHasColour;		// kFalse = InDesign draws this author on white: the Mark colour stands in
 	uint8			fR, fG, fB;
 	bool16			fHidden;		// in hidden conditional text
-	bool16			fSourceExact;	// fChange's Source range was checked against the copy (KCMTrackRead) - ⚠always kFalse since 2026-10-27 (no copy); its readers stay for the waste-removal pass
 	std::vector<KCMTrackRecordRef>	fRecords;	// the insertion and / or the deletion it was made of (2026-10-25)
 	KCMTrackChange() : fAuthor(-1), fKind(0), fTime(0), fHasColour(kFalse), fR(0), fG(0), fB(0),
-					   fHidden(kFalse), fSourceExact(kFalse) {}
+					   fHidden(kFalse) {}
 };
 
 struct KCMTrackRow

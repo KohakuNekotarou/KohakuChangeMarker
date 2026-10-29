@@ -421,9 +421,6 @@ public:
 	virtual bool16		GetExternalSourceLabel(IDataBase* db, PMString& outLabel)
 													{ return KCMExternalSourceLabel(db, outLabel); }
 
-	// The warning bit that rides with a status notification. Asking clears it.
-	virtual bool16		TakeStatusWarning()					{ return KCMTakeSessionStatusWarning(); }
-
 	// A file choice's path, for the panel's Target:/Source: lines. Transfers.
 	virtual void		GetChosenSourceFileLabel(PMString& outLabel)	{ KCMChosenSourceFileLabel(outLabel); }
 	virtual void		GetChosenTargetFileLabel(PMString& outLabel)	{ KCMChosenTargetFileLabel(outLabel); }
@@ -1435,7 +1432,6 @@ public:
 		out.fHasColour = c->fHasColour;
 		out.fR = c->fR; out.fG = c->fG; out.fB = c->fB;
 		out.fHidden = c->fHidden;
-		out.fSourceExact = c->fSourceExact;
 		return kTrue;
 	}
 
@@ -3078,7 +3074,6 @@ public:
 
 	virtual void	ShowJumpFlashColoured(IDataBase* db, UID storyUID,
 										  TextIndex from, TextIndex to,
-										  TextIndex sourceFrom, TextIndex sourceTo,
 										  bool16 hasColour, uint8 r, uint8 g, uint8 b);
 	// No ShutdownMarks: teardown is model-side only and KCMPeek.cpp calls the marker directly
 	// (IKCMStoryMarkFacade.h says why a boundary method with no caller is worse than none).
@@ -3116,19 +3111,13 @@ void KCMStoryMarkFacade::ShowJumpFlash(IDataBase* db, UID storyUID,
 	KCMStoryMarker::ShowFlash(flash);
 }
 
-/* ShowJumpFlash in the Track mode's author colour. The Source window is lit only when the change's
-   place in the copy is known (sourceFrom >= 0) - otherwise its range is the story's start, and a flash there
-   would point at nothing. */
+/* ShowJumpFlash in the Track mode's author colour, in the Target alone: a Track listing has no Source. */
 void KCMStoryMarkFacade::ShowJumpFlashColoured(IDataBase* db, UID storyUID,
 												TextIndex from, TextIndex to,
-												TextIndex sourceFrom, TextIndex sourceTo,
 												bool16 hasColour, uint8 r, uint8 g, uint8 b)
 {
 	KCMStoryMarkDocs flash;
 	KCMStoryMarker::AddFlashRange(flash, db, storyUID, from, to, hasColour, r, g, b);
-	IDataBase* const flashSourceDB = KCMArmedSourceDB();
-	if (sourceFrom >= 0 && flashSourceDB != nil && flashSourceDB != db && KCMIsDocDBOpen(flashSourceDB))
-		KCMStoryMarker::AddFlashRange(flash, flashSourceDB, storyUID, sourceFrom, sourceTo, hasColour, r, g, b);
 	KCMStoryMarker::ShowFlash(flash);
 }
 

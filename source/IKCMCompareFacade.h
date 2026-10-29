@@ -559,13 +559,6 @@ public:
 	virtual bool16		GetShowStoryIds() = 0;
 	virtual void		SetShowStoryIds(bool16 on) = 0;
 
-	/** **WAS THE MESSAGE THE MODEL JUST RAISED BAD NEWS?** **Asking clears it.**
-		The model raises words plus one bit (KCMNotifyStatusWarning, KCMModelNotify.h); the colour is
-		the UI's to decide, and this is the one door the bit comes through. The single caller is
-		KCMModelChangeObserver, once per kKCMStatusTextMessage.
-		⚠Do not call it to "find out how things are": one message, one warning. */
-	virtual bool16		TakeStatusWarning() = 0;
-
 	/** **THE PATH SHOWN WHEN THAT END OF THE PAIR IS A FILE**. A Task Start saves a
 		copy of the document and chooses THAT FILE as the Source without opening it, so the panel
 		has a path to show and no document to ask for a name. Empty when that end is a document,

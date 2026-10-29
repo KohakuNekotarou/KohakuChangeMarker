@@ -9,9 +9,8 @@
 //  ★It lives on kActiveContextBoss, the same proven arrangement as the three observers already
 //    there (layout sync / batch close / panel visibility). **No new mechanism was introduced.**
 //
-//  ★**All seven notifications are connected.**
-//    ⚠**Seven kinds, six branches** ＝ Marks Rebuilt and Marks Cleared share one branch (the
-//      kKCM*Message in KCMBoundaryID.h number seven). Do not mix the two counts.
+//  ★**Every notification KCMBoundaryID.h declares is connected** - Marks Rebuilt and Marks Cleared
+//    share one branch.
 //
 //========================================================================================
 
@@ -37,7 +36,6 @@
 // ★Everything below is **a UI-side header**. This observer exists to turn a notification back
 //   into UI work, so calling the UI is its job -- not reverse flow. Reading the model through
 //   KCMCore.h is the permitted direction as well (UI -> model).
-#include "IKCMMarkData.h"			// GetOversetOn (is Find Overset on by itself? = reading the model’s state)
 #include "KCMPeekGesture.h"		// KCMResetPeekGestureState / KCMBatchCloseInProgress / KCMDeferCloseUi
 #include "KCMThumbIdleTask.h"		// KCMScheduleThumbRefresh (defer the post-close rebuild to the next idle)
 #include "KCMThumbnailRefresh.h"	// KCMPurgeAllPageThumbs / KCMRefreshThumbnailsForPages /
@@ -90,14 +88,7 @@ void KCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theSub
 		//   one notification, so it comes from the payload.
 		PMString s;
 		Utils<IKCMCompareFacade>()->GetSessionStatus(s);
-		// ★**AND WHETHER IT IS BAD NEWS** (2026-09-21): the model raises the words and one bit
-		//   (KCMNotifyStatusWarning), and the colour is decided here, on the UI side, which is the
-		//   only side allowed to know what red means. ⚠The bit is TAKEN, so the next message is
-		//   ordinary again unless it says otherwise.
-		if (Utils<IKCMCompareFacade>()->TakeStatusWarning())
-			KCMSetStatusWarning(s, n.fStatusForceRedraw);
-		else
-			KCMSetStatus(s, n.fStatusForceRedraw);
+		KCMSetStatus(s, n.fStatusForceRedraw);
 		return;
 	}
 
@@ -135,18 +126,10 @@ void KCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theSub
 		else if (docA != nil || docB != nil)
 		{
 			// Stop: take the strip out of every window.
-			// ⚠★★**Do nothing on a Cleared that carries no document.** The sender (the tail of
-			//   KCMStopComparison) posts docA/docB as nil to rebuild nothing but the panel’s appearance
-			//   after disarming. The order of a Stop is:
-			//     ① the Cleared that KCMDoClearMarks posts (with documents) ...... strips removed here
-			//     ② KCMApplyOversetForDoc ...... if Find Overset is on by itself, it **puts one back** on
-			//        the scanned document
-			//     ③ this second Cleared (without documents)
-			//   Without the test, ③ tears off what ② had just restored ---- everything was already
-			//   removed at ①, so **the only effect ③ could have had was to undo ②** (not redundant work
-			//   but a fault in itself).
-			//   ★The test has the same shape as the Attach side above (the nil checks on docA/docB).
-			//     **Attach was filtered by document and Detach was not** -- that was the whole fault.
+			// ⚠**Do nothing on a Cleared that carries no document.** The tail of KCMStopComparison posts
+			//   one with docA/docB nil to rebuild nothing but the panel’s appearance after disarming; the
+			//   strips went with the first Cleared, the one KCMDoClearMarks posts with the documents. The
+			//   test has the same shape as the Attach side above (the nil checks on docA/docB).
 			KCMScrollMapDetachAll();
 		}
 
@@ -267,40 +250,6 @@ void KCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theSub
 		return;
 	}
 
-	if (theChange == kKCMOversetRescannedMessage)
-	{
-		// The overset scan produced a new result. ⚠It is a feature independent of the comparison, so
-		//   the subject may be one document or two (right after the scan moves, the "+" of **the
-		//   previous document** has to go ＝ docB).
-		IDataBase* const docA = n.fDocA;	// the document now being scanned
-		IDataBase* const docB = n.fDocB;	// the one scanned before (only when it moved; nil otherwise)
-		// ★★The sender attaches "the pages whose + may have changed", so the purge is per UID. For a
-		//   rescan of the same document fPagesA is **new ∪ old**; when the scan moved to another
-		//   document, fPagesB is the previous one’s old set (KCMOversetApply.cpp). ⚠A notification
-		//   with no set still means every page.
-		if (n.fPagesA != nil && n.fPagesB != nil)
-		{
-			if (docA != nil) KCMRefreshThumbnailsForPages(docA, *n.fPagesA, kFalse /*redrawNow*/);
-			if (docB != nil && docB != docA)
-				KCMRefreshThumbnailsForPages(docB, *n.fPagesB, kFalse /*redrawNow*/);
-		}
-		else
-		{
-			if (docA != nil)                 KCMPurgeAllPageThumbs(docA);
-			if (docB != nil && docB != docA) KCMPurgeAllPageThumbs(docB);
-		}
-		KCMForceRedrawPagesPanelNow();
-
-		if (docA != nil)
-			KCMScrollMapAttach(docA);	// the map is shown even without a comparison (the standalone check)
-		KCMScrollMapInvalidateAll();
-
-		if (n.fNavReset)
-			KCMResetNav();
-		KCMRefreshNavPosition();		// rebuild how many things Prev/Next walks (changes plus overset)
-		return;
-	}
-
 	if (theChange == kKCMComparisonDocsClosedMessage)
 	{
 		// ★★**This branch alone decides WHEN to act.** Cleaning up after a closed document must not
@@ -342,7 +291,6 @@ void KCMModelChangeObserver::Update(const ClassID& theChange, ISubject* /*theSub
 
 		if (comparisonEnded)
 		{
-			// (Find Overset could keep the strip alive on its own; that feature went 2026-09-08.)
 			KCMScrollMapDetachAll();
 
 			// ★The thumbnails are **not rebuilt here but deferred to the next idle**. When the Target is
@@ -403,9 +351,8 @@ void KCMAttachModelChangeObserver()
 // ★★**Why this one needs a detach and KCMDocsClosedObserver does not** (two observers of the
 //   same construction follow two different policies, and the difference was written down
 //   nowhere):
-//   **Update above has six branches, and only the kKCMComparisonDocsClosedMessage branch carries
-//   an IsAppQuitting guard** ---- the other five would touch widgets if they ran during
-//   teardown.
+//   **Of the branches of Update above, only the kKCMComparisonDocsClosedMessage one carries an
+//   IsAppQuitting guard** ---- the others would touch widgets if they ran during teardown.
 //   ⇒ **What cannot be guarded at the entrance is stopped at the source.**
 //   The other one has a single-bodied Update whose entrance is guarded twice (see the comment on
 //   KCMAttachDocsClosedObserver in KCMPeekGesture.cpp). **The difference is not the host boss or

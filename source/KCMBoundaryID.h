@@ -152,13 +152,12 @@ DECLARE_PMID(kMessageIDSpace, kKCMMarksClearedMessage,      kKCMPrefix + 1)	// S
 DECLARE_PMID(kMessageIDSpace, kKCMPageFlagsChangedMessage,  kKCMPrefix + 2)	// Register (Added/Removed) or Check changed
 DECLARE_PMID(kMessageIDSpace, kKCMStoryEditsRebuiltMessage, kKCMPrefix + 3)	// the Story Edits model was rebuilt
 DECLARE_PMID(kMessageIDSpace, kKCMStatusTextMessage,        kKCMPrefix + 4)	// the status line changed (the string itself is read back through the facade's GetSessionStatus)
-DECLARE_PMID(kMessageIDSpace, kKCMOversetRescannedMessage,  kKCMPrefix + 5)	// the overset scan produced a new result
+// +5 was the overset scan's (Find Overset, taken out); free.
 DECLARE_PMID(kMessageIDSpace, kKCMComparisonDocsClosedMessage, kKCMPrefix + 6)	// a document being compared was closed and the Stop-equivalent clean-up has finished.
-																					// Kept SEPARATE from Stop (kKCMMarksClearedMessage) because the UI's clean-up differs in three ways:
+																					// Kept SEPARATE from Stop (kKCMMarksClearedMessage) because the UI's clean-up differs:
 																					//   1. rebuilding the thumbnails is deferred to the next idle (during the switch of the front
 																					//      document ForceRedraw does not take, and the frames stay on screen -- measured);
-																					//   2. during a close-all it is HELD until every document is gone, then run once;
-																					//   3. if Find Overset is on by itself the strip STAYS -- only the red band is redrawn.
+																					//   2. during a close-all it is HELD until every document is gone, then run once.
 																					// The payload carries up to three databases of documents that are STILL ALIVE (target, older
 																					// version, source-side frames). Never pass a closed one: the listener dereferences it.
 
