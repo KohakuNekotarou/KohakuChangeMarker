@@ -60,6 +60,7 @@
 #include "KCMComparisonRun.h"	// KCMStopComparison
 #include "KCMPageMap.h"
 #include "KCMPagePairRule.h"	// KCMPairPagesByIdentity / KCMPartnerOf - THE pairing rule and the lookup in it (pure; proved in work/kcm-pagepair-test)
+#include "KCMPageExport.h"		// KCMDocumentIds - the XMP ids KCMPageMapMadeSeparately compares
 #include "KCMDocUidSet.h"		// the shared "document -> page UID set" container (the tick uses it too)
 #include "KCMID.h"				// kKCMPageFlagsChangedMessage (the notification's ID)
 // This file deliberately does not include the UI's KCMThumbnailRefresh.h: rebuilding a thumbnail
@@ -386,6 +387,17 @@ void KCMSetPairPagesByUid(bool16 on)
 	sPairPagesByUid = on;
 }
 
+//========================================================================================
+// KCMPageMapMadeSeparately (declared in KCMPageMap.h, where the reasoning is)
+//========================================================================================
+bool16 KCMPageMapMadeSeparately(IDataBase* targetDB, IDataBase* sourceDB)
+{
+	std::string tId, tOriginal, sId, sOriginal;
+	KCMDocumentIds(targetDB, tId, tOriginal);
+	KCMDocumentIds(sourceDB, sId, sOriginal);
+	return (!tOriginal.empty() && !sOriginal.empty() && tOriginal != sOriginal) ? kTrue : kFalse;
+}
+
 // (KCMSourcePageKeys went on 2026-10-30 with the author's yes - proposal P-1 of the M5 waste
 //  round: it probed a Source's pages for the KcmOriginUid labels a rehydrated task-start copy
 //  carried, and no page has carried one since 2026-09-21. git log -S KCMSourcePageKeys.)
@@ -403,8 +415,10 @@ void KCMSetPairPagesByUid(bool16 on)
 //   With the "Pair Pages by UID" toggle OFF the rule that stood until 2026-09-13 is used
 //   instead: pair what is left in order, the pages that fall off the longer document's end
 //   being the overflow. It is kept for two documents that share no history (made separately,
-//   or one of them through IDML, which renumbers), whose UIDs mean nothing - they coincide by
-//   chance, so the identity rule would pair unrelated pages (KCMPagePairRule.h).
+//   or one of them through IDML, which renumbers), whose UIDs mean nothing. ★Two made separately
+//   are found out (their OriginalDocumentID differs - KCMPageMapMadeSeparately, 2026-10-30) and
+//   get the "/" on every page with the report saying why; an IDML one keeps its original's id, so
+//   it goes through the rule and finds no namesakes - the same "/", without the word.
 //
 //   MAIN THREAD ONLY. Every caller runs on it, and the drawing's one road in from a background
 //   thread (the asynchronous PDF export) does not reach here: EnsureOverflowCache in
@@ -438,6 +452,15 @@ void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 
 	if (sPairPagesByUid)
 	{
+		// ★Two documents made separately share no page, whatever their numbers say
+		//   (KCMPageMapMadeSeparately): every page is an added / removed one - the "/" - and the
+		//   report says why. Pairing them in order is the toggle's job, the reader's choice.
+		if (KCMPageMapMadeSeparately(targetDB, sourceDB))
+		{
+			if (outOverflowTargetPages) *outOverflowTargetPages = tFiltered;
+			if (outOverflowSourcePages) *outOverflowSourcePages = sFiltered;
+			return;
+		}
 		KCMPairPagesByIdentity<UID>(tFiltered, sFiltered,
 			outTargetPages, outSourcePages, outOverflowTargetPages, outOverflowSourcePages);
 		return;

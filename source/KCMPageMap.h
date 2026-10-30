@@ -114,6 +114,19 @@ void KCMPageMapCollectRegistered(IDataBase* db, std::set<UID>& out);
 bool16 KCMGetPairPagesByUid();
 void KCMSetPairPagesByUid(bool16 on);
 
+// Were the two documents MADE SEPARATELY - is their XMP OriginalDocumentID different (P2 of the
+// M5 round, the author's yes, 2026-10-30)? Then the page UIDs they share are a coincidence: each
+// document numbers its pages in the same order from the same start (two new 3-page documents both
+// numbered theirs 243, 263, 264, measured), so pairing them by UID compared unrelated pages.
+// KCMBuildPairing pairs no ordinary page of such a pair by UID, and the comparison's report says why.
+// ★A Save As, a Save a Copy and a copy of the file keep the original's OriginalDocumentID (measured
+//   2026-10-26), an IDML round trip too and a Task Start in memory (2026-10-30), so they still pair
+//   by UID - the IDML one finds no namesakes (its UIDs are renumbered), as before.
+//   ⚠Two documents made from the SAME TEMPLATE keep the template's original id too: this cannot
+//   tell them apart (memory indesign-xmp-document-ids-on-save-as).
+// kFalse when either id cannot be read: nothing is decided on a missing id.
+bool16 KCMPageMapMadeSeparately(IDataBase* targetDB, IDataBase* sourceDB);
+
 // The exclusion pairing: take each document's flat page list (KCMCollectPageUIDs), drop the
 // registered ("no counterpart") pages, and pair what is left - by identity (the default: a page
 // with the page of the same UID), or in order when the toggle above is off. outTargetPages[i] and outSourcePages[i] are

@@ -1021,6 +1021,10 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 			const int32 removedCount = static_cast<int32>(KCMDrawEventHandler::sOverflowS.size());
 			if (addedCount > 0)   { report.Append(" added=");   report.AppendNumber(addedCount); }
 			if (removedCount > 0) { report.Append(" removed="); report.AppendNumber(removedCount); }
+			// Two documents made separately are not paired by UID (KCMPageMapMadeSeparately - P2, 2026-10-30): every
+			// ordinary page above is added or removed, and the reader is told why, and what turns it round.
+			if (KCMGetPairPagesByUid() && KCMPageMapMadeSeparately(targetDB, sourceDB))
+				report.Append(" (made separately - to pair the pages in order, turn Pair Pages by UID off)");
 		}
 
 		// The Story mode's report reads the counts the Story Edits list holds (rebuilt above, before

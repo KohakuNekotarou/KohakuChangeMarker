@@ -19,9 +19,11 @@
 //    @warning **two documents made separately do not "share no ids"**: page UIDs are small numbers
 //      each document hands out in the same order, so they coincide by chance (measured: two new
 //      3-page documents both numbered their pages 243, 258, 259; one made with 1 page and 2 added
-//      at the front numbered them 264, 258, 243). Such a pair is paired by those numbers - unrelated
-//      pages compared, not the "/" on every page. For them the "Pair Pages by UID" toggle goes off
-//      (KCMPageMap.h).
+//      at the front numbered them 264, 258, 243). Such a pair WAS paired by those numbers - unrelated
+//      pages compared. ★Since 2026-10-30 (P2, the author's yes) KCMBuildPairing asks first whether
+//      the two were made separately (their XMP OriginalDocumentID differs - KCMPageMapMadeSeparately)
+//      and pairs none of their pages then: the "/" on every page, and the report says why. Pairing
+//      them in order is the "Pair Pages by UID" toggle's (KCMPageMap.h). This rule is not asked.
 //
 //  (The one exception went with the author's yes to taking it out, 2026-10-30: a rehydrated
 //  task-start copy's pages answered to the origin's ids through labels, handed in as keys, and a
