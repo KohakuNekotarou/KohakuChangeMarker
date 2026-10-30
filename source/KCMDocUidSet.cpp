@@ -3,7 +3,7 @@
 //  KCMDocUidSet.cpp
 //
 //  The shared implementation of "document database -> set of page UIDs" (see KCMDocUidSet.h).
-//  Registered (Added/Removed) and checked (the tick) had the same container and the same routine
+//  Registered (Added/Removed) and checked (the tick) have the same container and the same routine
 //  operations, so only those live here; the two sets themselves stay with their callers.
 //
 //========================================================================================
@@ -31,7 +31,7 @@ KCMDocUidSet::Map::const_iterator KCMDocUidSet::FindDoc(IDataBase* db) const
 {
 	Map::const_iterator it = fMap.find(db);
 	if (it != fMap.end())
-		return it;						// the main thread's ordinary route settles here, as it always did
+		return it;						// the main thread's ordinary route settles here
 	if (!KCMIsExportCloneOnThisThread(db))
 		return fMap.end();				// not the clone this thread exports: a placed copy of the document, say
 	for (it = fMap.begin(); it != fMap.end(); ++it)
@@ -148,7 +148,7 @@ bool16 KCMDocUidSet::ToggleAll(IDataBase* db, const std::vector<UID>& uids)
 		return kFalse;
 
 	// The lock is held across the decision and the change alike. **KCMMarkStateLock is recursive**
-	// (the discipline is in KCMThreadSafety.h), so the three calls below take it again harmlessly
+	// (the discipline is in KCMThreadSafety.h), so the calls below take it again harmlessly
 	// -- and going through them is the point: the rule that an entry which became empty is dropped
 	// at once lives in Erase, and writing the loop here again would be a second copy of it.
 	KCMMarkStateLock lock(KCMMarkStateMutex());
@@ -162,9 +162,6 @@ bool16 KCMDocUidSet::ToggleAll(IDataBase* db, const std::vector<UID>& uids)
 	}
 	return anyNotIn;
 }
-
-// (ClearDoc was removed: its only caller KCMPageMapClearAll had no caller of its own. When one
-//  document's set has to be dropped, Replace(db, empty) does exactly that -- entry and all.)
 
 void KCMDocUidSet::ClearAllDocs()
 {
@@ -191,14 +188,14 @@ void KCMDocUidSet::Replace(IDataBase* db, const std::set<UID>& uids)
 //   documents, state only. **A closed database is never dereferenced** -- pointer comparison
 //   against FindDocByDataBase and nothing else, the same way as KCM's other close-up work.
 //   Dropping them promptly also leaves the least room to confuse a closed document with a new
-//   one that reused its address ([[uidref-reuse-after-close]]).
+//   one that reused its address (memory uidref-reuse-after-close).
 //========================================================================================
 void KCMDocUidSet::SweepClosedDocs()
 {
 	// @warning this reasons "not in the document list, therefore closed", which **does not hold
 	//   on a background thread** (it looks at a different database). The caller,
 	//   KCMHandleDocsClosed, tests IDThreading::IsMainThreadDomain() at its single entry, so a
-	//   background thread never reaches here. The test is not repeated ([[one-question-one-place]]).
+	//   background thread never reaches here. The test is not repeated (memory one-question-one-place).
 	KCMMarkStateLock lock(KCMMarkStateMutex());
 	if (fMap.empty())
 		return;

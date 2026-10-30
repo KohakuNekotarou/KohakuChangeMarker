@@ -7,30 +7,39 @@
 //  tick in the middle of its Pages panel thumbnail, drawn as vector strokes so no font is involved.
 //
 //  - Completely separate from the registrations (KCMPageMap's Added/Removed): this set is the
-//    user's own marker, for whatever they want to keep track of.
-//  - ⚠**NO COMPARISON IS NEEDED, AND NO PAGE IS REFUSED** (2026-09-04, then 2026-09-07). Any page
-//    of any open document may be ticked. The two restrictions that used to stand here went in that
-//    order: first "only while a comparison is running, and only on the Target or the Source", then
-//    "in the Pixel mode, only pages carrying a mark" (spec map FLG-12 -- **a page can be worth
-//    marking as looked-at precisely because nothing changed on it**).
-//    The answer is still built in one place, KCMCollectCheckablePageUIDs in KCMCore.h, and every
-//    function here asks it -- it simply has one answer now.
+//    reader's own marker, for whatever they want to keep track of.
+//  - ⚠**NO COMPARISON IS NEEDED, AND NO PAGE IS REFUSED** (spec map FLG-11, FLG-12 -- **a page can
+//    be worth marking as looked-at precisely because nothing changed on it**). Any page of any
+//    open document may be ticked, in any mode. The answer is built in one place,
+//    KCMCollectCheckablePageUIDs in KCMCore.h, and the toggle and its state ask it.
 //    @warning **"could a mark appear on this page" is a DIFFERENT question** and must not be
 //    widened to match: it drives the Pages panel thumbnail purge.
-//  - ⚠**NO LONGER SESSION ONLY** (2026-09-07). The tick and the cat paw are written INTO the
-//    document as script labels on the page (KCMPageMarksDoc.h), through a command, so they are
-//    undoable and travel with the file. **This set is now a CACHE of those labels**, kept because
-//    the drawing side has to answer "is this page ticked" once per page per draw, on a background
-//    thread as well. The registrations (Added/Removed) are still session-only.
-//    ⚠★**Stop does NOT forget it** (2026-09-04). A tick outlives the comparison it was made
-//    during, and can be made without one at all. It goes when the reader clears it (the flyout's
-//    "Clear Checks in This Document"), when the document closes, or at shutdown -- and **what makes
-//    it survive a restart is the document itself**, since it is saved with the file.
-//    ⚠The private JSON store that used to answer that went on 2026-09-07 (spec map FLG-24).
+//  - ⚠**NOT SESSION ONLY.** The tick and the cat paw are written INTO the document as script
+//    labels on the page (KCMPageMarksDoc.h), through a command, so they are undoable and travel
+//    with the file. **This set is a CACHE of those labels**, kept because the drawing side has to
+//    answer "is this page ticked" once per page per draw, on a background thread as well. The
+//    registrations (Added/Removed) are session-only.
+//    ⚠**Stop does NOT forget it** (spec map FLG-13). A tick outlives the comparison it was made
+//    during, and can be made without one at all. It goes when the reader takes it off (the toggle,
+//    the flyout's "Clear Checks in This Document"); closing the document or shutting down only
+//    empties this cache, and **what makes it survive a restart is the document itself**, since it
+//    is saved with the file.
+//  - ⚠**A RE-COMPARISON DOES NOT TOUCH IT**: a tick says "I have looked at this page", and looking
+//    at a page is not undone by the page turning out to be unchanged. Narrowing the ticks to the
+//    marked pages threw away, silently, the ticks of a document the moment a comparison started
+//    on it. Nothing needs to replace that: a tick on a deleted page is never drawn (the drawing
+//    walks the spread's real pages), and the cache forgets it when it is next brought back to the
+//    document.
+//  - ⚠**NO PRIVATE FILE** (spec map FLG-24, the author's request): a tick or a paw goes into the
+//    document as it is made, so a file beside it was a second copy of the same thing, keyed by a
+//    path that broke whenever the document was moved, and a registration is an input to one
+//    comparison. git log -S KCMPageCheckSaveToFile has that store (JSON v3).
 //  - The tick is drawn in two places, both in KCMDrawEventHandler: the Pages panel thumbnail (the
-//    isThumb branch) and the middle of the page in the layout view (a much larger tick). On
-//    screen it is always visible on both the Target and the Source; in print and PDF only while
-//    "Print comparison marks" is on. Its opacity follows the panel's 25%/75% choice.
+//    isThumb branch) and the middle of the page in the layout view (a much larger tick). It shows
+//    on screen on any document, Target, Source or neither (the layout view's only with "Print
+//    comparison marks" on in Overprint Preview), and in print and PDF only while "Print comparison
+//    marks" is on. The layout view's and print's opacity follows the panel's 25%/75% choice; the
+//    thumbnail's is fixed (kKCMThumbMarkOpacity).
 //
 //========================================================================================
 #ifndef __KCMPageCheck_h__
@@ -43,21 +52,19 @@
 #include "KCMPageFlagState.h"	// KCMPageToggleState -- the answer shape shared with Register (a header of types only)
 
 class IDataBase;
-class UIDList;			// the Pages panel's selection, as the UI read it (2026-10-26)
+class UIDList;			// the Pages panel's selection, as the UI read it
 
 // Runs the Pages panel context-menu toggle "Check": ticks or unticks the selected pages (any
 // unticked one ticks them all, all ticked unticks them all). The outcome goes to the panel's
-// status line, and the toggled pages' thumbnails are refreshed at once so the tick shows.
+// status line; the write goes to the document, and the pictures follow through the marks observer.
 // `selection` is the Pages panel's, as the UI read it (masters in - KCMPageMap.h). The body is in KCMPageCheck.cpp.
 void KCMPageCheckToggleSelectedPages(const UIDList& selection);
 
 // How that toggle (kCustomEnabling) should look right now. fEnabled is grey when nothing is
 // selected, or when the selection holds no page that may be ticked; fTick is All when every
 // eligible page is ticked and Some when only part of them are.
-// ⚠★**No comparison is required, and no mode rule is left** (2026-09-04, then 2026-09-07). The old
-//   "grey when no comparison is running, or when this is some third document" went first, and the
-//   Pixel mode's "only pages carrying a mark" went second (spec map FLG-12). Any page of any open
-//   document may be ticked, and KCMCollectCheckablePageUIDs says so in one line.
+// ⚠**No comparison is required, and no mode rule applies** (spec map FLG-11, FLG-12). Any page of any
+//   open document may be ticked, and KCMCollectCheckablePageUIDs says so in one line.
 // @warning **fRole is not used** -- Check's label never changes. The menu itself is not touched
 // here, exactly as on the Register side.
 KCMPageToggleState KCMPageCheckGetToggleState(const UIDList& selection);
@@ -68,13 +75,13 @@ KCMPageToggleState KCMPageCheckGetToggleState(const UIDList& selection);
 void KCMPageCheckSweepClosedDocs();
 
 // Forget every document's ticks.
-// ⚠★**Stop no longer calls this** (2026-09-04): a tick outlives the comparison it was made during.
-//   The one caller left is shutdown. To clear ONE document -- what the flyout's "Clear Checks in
+// ⚠**Stop does not call this**: a tick outlives the comparison it was made during.
+//   The one caller is shutdown. To clear ONE document -- what the flyout's "Clear Checks in
 //   This Document" does -- call KCMPageCheckClearDoc below.
 // Only empties the map; no pointer is touched.
 void KCMPageCheckClearAllDocs();
 
-// Drop ONE document's ticks -- the flyout item "Clear Checks in This Document" (2026-09-04).
+// Drop ONE document's ticks -- the flyout item "Clear Checks in This Document".
 // The pictures follow through the marks observer, as for the toggle.
 // ⚠**The page set has to be read before the ticks go**, which is why this lives here rather than
 //   being spelled out by the caller: afterwards no one can say which pages carried a tick. It is
@@ -84,38 +91,20 @@ void KCMPageCheckClearAllDocs();
 //   the write failed and none were (said on the status line by KCMMarksWriteForReader).
 int32 KCMPageCheckClearDoc(IDataBase* db);
 
-// (KCMPageCheckPruneToMarked was declared here and REMOVED on 2026-09-04, together with its two
-//  call sites -- the end of KCMDoMarkChangesDoc and the partial re-comparison in KCMPeek.cpp.)
-//  It unticked the pages that had stopped carrying a mark, so that "the frame is gone, and the
-//  memory of having checked it goes with it".
-//  ★**That reading died with the tick's own meaning**: a tick says "I have looked at this page",
-//    and looking at a page is not undone by the page turning out to be unchanged.
-//  ⚠**By the end it was destroying work**: ticking a document nobody was comparing and then
-//    comparing THAT document threw the ticks away the moment the comparison began, and loading a
-//    saved set into a compared document lost the same ticks in the same way -- both silently.
-//  Nothing replaced it, and nothing needs to: a tick on a deleted page is never drawn (the drawing
-//    walks the spread's real pages), never loaded back (Load walks them too), and goes with its
-//    document at close.
-//  The `outUnchecked` parameter went with it -- there are no unticked pages to report any more.
-
 // Is pageUID (in db) ticked? kFalse when db is nil or that document has no ticks. The drawing
-// side (KCMDrawEventHandler's isThumb branch) decides whether to draw the tick with it.
+// side (KCMDrawEventHandler's thumbnail and layout-view ticks) decides whether to draw the tick with it.
 bool16 KCMPageCheckIsChecked(IDataBase* db, UID pageUID);
 
 // Does db hold any ticked page at all -- existence only. The drawing side's early out uses it
 // (anyMarkableContent in KCMDrawEventHandler::DrawSpreadMarks).
 bool16 KCMPageCheckHasAny(IDataBase* db);
 
-/** The ticked pages of one document -- what a save reads (KCMPageMarksDoc). out is cleared first. */
+/** The ticked pages of one document as the store holds them -- what KCMMarksSyncFromDocument compares
+	the document against, to name the pages that changed. out is cleared first. */
 void KCMPageCheckCollect(IDataBase* db, std::set<UID>& out);
 
-/** Put one document's ticks back to exactly this set -- what a restore writes.
-	★REPLACES rather than merges, for the reason KCMPawStampReplaceAll gives. */
+/** Put one document's ticks back to exactly this set -- what KCMMarksSyncFromDocument writes.
+	REPLACES rather than merges: the document is the answer, so a tick it no longer carries has to go. */
 void KCMPageCheckReplaceAll(IDataBase* db, const std::set<UID>& in);
-
-// (The declarations of KCMPageCheckSaveToFile and KCMPageCheckLoadFromFile stood here.
-//  Both went on 2026-09-07 with the two flyout items -- the .cpp says why at the same place, and
-//  the spec map records the decision as FLG-24. Nothing writes a private file any more: a tick or
-//  a paw goes into the document as it is made, and comes back when the document is opened.)
 
 #endif // __KCMPageCheck_h__

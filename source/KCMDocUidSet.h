@@ -2,20 +2,21 @@
 //
 //  KCMDocUidSet.h
 //
-//  A session-only container holding "document database -> set of page UIDs".
+//  A container, in memory only, holding "document database -> set of page UIDs".
 //
 //  KCM keeps two states of exactly this shape:
 //    - registered pages (Added/Removed = pages with no counterpart) ... sRegistered, KCMPageMap.cpp
 //    - checked pages (the tick)                                     ... sChecked, KCMPageCheck.cpp
 //  They mean different things, so the two sets stay separate; but the container itself and the
 //  routine operations on it (liveness sweep / clear all / membership / count / bulk replace)
-//  were identical line for line, so only that shared part lives here.
+//  are the same, so only that shared part lives here.
 //
 //  Rules:
-//    - Nothing is ever written to the document file (the document is never dirtied).
-//      Stop forgets all of it.
+//    - This container writes nothing to the document file (it never dirties the document).
+//      What goes when is up to the file that owns each set: Stop forgets the registrations and
+//      never the ticks (sChecked is a cache of labels the document itself holds - KCMPageCheck.cpp).
 //    - **A closed database is never dereferenced.** The liveness sweep decides purely by pointer
-//      comparison against IDocumentList::FindDocByDataBase ([[uidref-reuse-after-close]]).
+//      comparison against IDocumentList::FindDocByDataBase (memory uidref-reuse-after-close).
 //    - An entry whose set became empty is dropped at once, which keeps both the sweep and the
 //      "does this document have any" test cheap. Insert and Replace(non-empty) create an entry,
 //      Erase and Replace(empty) drop one, ClearAllDocs drops them all.
@@ -46,9 +47,8 @@ public:
 	// How many are in db's set (0 when there is no entry).
 	int32 CountIn(IDataBase* db) const;
 
-	// The two questions asked about a selection. Register (PageMap) and Check (PageCheck) both
-	//   needed "how many of the selected pages are in the set" and "is any one of them not in
-	//   the set", in the same loop line for line, so both answers are built here.
+	// The questions asked about a selection (Register and Check count with the first; ToggleAll
+	//   decides with the second).
 	//   Unlike calling Contains once per page, **the lock and the FindDoc happen once**: taking
 	//   the lock again for every page lets the set change midway, and the All/Some answer would
 	//   then be settled from two different states of it.
@@ -69,24 +69,18 @@ public:
 	/** Put all of `uids` in, or take all of them out -- whichever the set is not already full of.
 		Returns kTrue when they went IN, which is what the caller words its message from.
 
-		**The rule is "any missing means add them all"**, so a partly ticked selection ticks the
-		rest rather than clearing what is there. Both per-page flags (Register and Check) work that
-		way and each wrote the loop out for itself.
-		@warning the decision and the change are under ONE lock here. Written out at the call
-		  sites they were in two, which only a second thread could tell apart -- but the answer is
-		  what decides the direction, so they belong in one. */
+		**The rule is "any missing means add them all"**, so a partly registered selection registers
+		the rest rather than clearing what is there. (Register's toggle. Check keeps the same rule
+		but writes the document, so it works out the same answer itself - KCMPageCheck.cpp.)
+		@warning the decision and the change are under ONE lock: the answer is what decides the
+		  direction, so they belong in one. */
 	bool16 ToggleAll(IDataBase* db, const std::vector<UID>& uids);
-
-	// (ClearDoc(db), which dropped one document's set, was removed: its only caller
-	//  KCMPageMapClearAll had no caller of its own. Replace(db, empty) does the same thing today.
-	//  Should "forget just this document" be wanted back, bring it in together with its caller --
-	//  an entry point nobody calls is a promise nobody keeps.)
 
 	// Forget every document. Only empties the map; no pointer is touched (no dereference).
 	void ClearAllDocs();
 
-	// Replace db's set wholesale with uids (what a restore writes - KCMPageCheckReplaceAll). An
-	// empty uids drops the entry.
+	// Replace db's set wholesale with uids (what the sync from the document writes -
+	// KCMPageCheckReplaceAll). An empty uids drops the entry.
 	void Replace(IDataBase* db, const std::set<UID>& uids);
 
 	// Add db's set into out. **out is not cleared** -- this merges into an existing set.

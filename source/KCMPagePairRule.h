@@ -5,30 +5,23 @@
 //  THE RULE that says which page of the Target is compared against which page of the Source:
 //  a page is paired with the page of the same identity, and with nothing else.
 //
-//  Until 2026-09-13 ordinary pages paired BY POSITION (the first with the first, and so on, the
-//  registered pages taken out first). That is what made a page inserted in the middle shift every
-//  pair after it, and what the Register toggle existed to repair by hand. Page UIDs survive
-//  Save As, Save a Copy and the database clone (measured 2026-08-31 / 2026-09-10,
+//  Pairing BY POSITION (the first with the first, and so on, the registered pages taken out first)
+//  makes a page inserted in the middle shift every pair after it, and leaves the Register toggle to
+//  repair that by hand. Page UIDs survive Save As, Save a Copy and the database clone (measured,
 //  docs/ai-notes/kcm-page-pairing-by-uid-proposal-2026-08-31.md), so the identity is there to be
 //  read: a page that exists on both sides is the same page wherever it now stands, a page that
 //  exists on one side only was added (Target) or removed (Source).
 //
-//  ★UID ONLY. There is no fall-back to position when the two documents share no ids, and no
-//    threshold deciding between the two (the user's decision, 2026-09-13: "UID のみ", the same
-//    rule the Story mode has always had).
+//  UID ONLY. There is no fall-back to position when the two documents share no ids, and no
+//    threshold deciding between the two (the author's decision: "UID only").
 //    @warning **two documents made separately do not "share no ids"**: page UIDs are small numbers
 //      each document hands out in the same order, so they coincide by chance (measured: two new
 //      3-page documents both numbered their pages 243, 258, 259; one made with 1 page and 2 added
-//      at the front numbered them 264, 258, 243). Such a pair WAS paired by those numbers - unrelated
-//      pages compared. ★Since 2026-10-30 (P2, the author's yes) KCMBuildPairing asks first whether
+//      at the front numbered them 264, 258, 243), and this rule would pair such a pair by those
+//      numbers - unrelated pages compared. So KCMBuildPairing asks first whether
 //      the two were made separately (their XMP OriginalDocumentID differs - KCMPageMapMadeSeparately)
 //      and pairs none of their pages then: the "/" on every page, and the report says why. Pairing
 //      them in order is the "Pair Pages by UID" toggle's (KCMPageMap.h). This rule is not asked.
-//
-//  (The one exception went with the author's yes to taking it out, 2026-10-30: a rehydrated
-//  task-start copy's pages answered to the origin's ids through labels, handed in as keys, and a
-//  page with no label was matched by order. No page has carried one since the rehydration went on
-//  2026-09-21 - a copy saved to a FILE carries the original's own numbers. git log -S sourceKeys.)
 //
 //  PURE. A template over the id type, so the offline test (work/kcm-pagepair-test) runs it on
 //  plain integers; the plug-in instantiates it on UID. The lookup in a pairing once it is built

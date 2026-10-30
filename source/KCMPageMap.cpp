@@ -7,7 +7,7 @@
 //  counterpart. On the Target they read as "added" and on the Source as "removed", but the two
 //  mean the same thing -- excluded from the pairing -- so a single UID set per document holds them.
 //
-//  - Reading the selection: the UI half reads it (2026-10-26, the import tidy S7 - KCMReadSelectedPages,
+//  - Reading the selection: the UI half reads it (KCMReadSelectedPages,
 //    ui/KCMThumbnailRefresh.h) with Utils<ILayoutUIUtils>()->GetSelectedPages (the official API,
 //    ILayoutUIUtils.h:183) and hands the list to the facade; this file decides on it
 //    (KCMPageMapPagesOf). bPagesOnly=kTrue expands a selected spread into its page UIDs; the
@@ -40,7 +40,6 @@
 #include "VCPlugInHeaders.h"
 
 #include "IDataBase.h"
-// (⛔ILayoutUIUtils.h went on 2026-10-26 - the import tidy S7: the UI half reads the Pages panel's selection now.)
 #include "ILayoutUtils.h"		// IsAMaster - a selected page that is a master's (KCMPageMapPagesOf)
 #include "IMasterSpreadList.h"	// GetMasterSpreadCount / GetNthMasterSpreadUID / FindMasterByName
 #include "IMasterSpread.h"		// GetPrefix / GetBasename (pairing master spreads by name)
@@ -55,7 +54,7 @@
 #include <set>
 #include <vector>
 
-#include "KCMCore.h"			// KCMCollectPageUIDs / KCMCollectMasterPageUIDs / KCMArmedTargetDB / KCMArmedSourceDB
+#include "KCMCore.h"			// KCMCollectPageUIDs / KCMDoMarkChangesDoc / KCMIsComparedDoc / the armed pair
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 #include "KCMComparisonRun.h"	// KCMStopComparison
 #include "KCMPageMap.h"
@@ -72,7 +71,7 @@ static KCMDocUidSet sRegistered;
 
 //========================================================================================
 // KCMPageMapPagesOf (declared in KCMPageMap.h) -- the pages of a Pages panel selection the UI
-// read (2026-10-26, the import tidy S7). outDB is the selection's database - the active
+// read. outDB is the selection's database - the active
 // document's, which is the one the Pages panel shows and the one the UI reads it for
 // (KCMReadSelectedPages, ui/KCMThumbnailRefresh.h) - and outPages the selected page UIDs that
 // really exist in that document's page list, duplicates dropped. kTrue when at least one page is
@@ -80,13 +79,11 @@ static KCMDocUidSet sRegistered;
 // **All the page-directed features share this**: Register (this file), Check (KCMPageCheck.cpp),
 // Refresh (KCMPeek.cpp) and Export Pages to Word (KCMFacades.cpp).
 //
-// ★WHY THE UI READS AND THIS ONLY DECIDES. Until 2026-10-26 this was KCMPageMapReadSelection, and
-//   it read the panel itself through Utils<ILayoutUIUtils>()->GetSelectedPages - a UI plug-in's
-//   Utils, from the model plug-in, which the guide (vol1-07) says comes back nil on a background
-//   thread. It was measured never to be reached from one, and its own note settled the shape to
-//   move to - "the UI observes, the model decides": the UI reads the selection and the model
-//   receives a UIDList as a parameter. That is this.
-//   ⚠★THE [None] ROW'S GUARD MOVED WITH THE READING: selecting only [None] (the "no master" row)
+// WHY THE UI READS AND THIS ONLY DECIDES. Utils<ILayoutUIUtils> is a UI plug-in's Utils, which the
+//   guide (vol1-07) says comes back nil on a background thread, and this is the model plug-in -
+//   "the UI observes, the model decides": the UI reads the selection and the model receives a
+//   UIDList as a parameter.
+//   ⚠THE [None] ROW'S GUARD IS THE READER'S: selecting only [None] (the "no master" row)
 //   makes GetSelectedPages fall back on the current page (measured - a tick landed on page 1 that
 //   nobody chose), and this list cannot tell that page from a chosen one. The UI's reader refuses
 //   such a selection itself (KCMPagesPanelSelectionHasNoRealPage, inside KCMReadSelectedPages), so
@@ -98,16 +95,15 @@ static KCMDocUidSet sRegistered;
 //   says so. Changing only one of the two still drops every master, so **both have to move
 //   together with includeMasters**.
 //
-// ★EACH SELECTED PAGE IS ASKED, NOT LOOKED UP IN A LIST (A-1 of the M5 round, the author's yes,
-//   2026-10-30). This used to flatten the document's whole page list (and every master spread's
-//   pages) into a set for each call - a 1,000-page document walked once to check a selection of
-//   one. Now: is it a page at all (its class - a deleted UID answers kInvalidClass, and a master
-//   SPREAD answers IsAMaster too, so the class goes first, the test KCMFramePageUID uses), and then
-//   **in the page list** (IPageList::GetPageIndex >= 0 - a master page is not in it, the reading
-//   KCMPageExport.cpp and KCMChangeNav.cpp already rest on) or **a master**
-//   (ILayoutUtils::IsAMaster - "a page in a master spread"). The same set as the old lists: the
-//   page list includes the pages of hidden spreads, in GetNthPageUID's order (KCMStoryList.cpp says
-//   it measured that), and GetPageIndex's default counts them too.
+// EACH SELECTED PAGE IS ASKED, NOT LOOKED UP IN A LIST: flattening the document's whole page list
+//   (and every master spread's pages) into a set for each call would walk a 1,000-page document to
+//   check a selection of one. Is it a page at all (its class - a deleted UID answers kInvalidClass,
+//   and a master SPREAD answers IsAMaster too, so the class goes first, the test KCMFramePageUID
+//   uses), and then **in the page list** (IPageList::GetPageIndex >= 0 - a master page is not in
+//   it, the reading KCMPageExport.cpp and KCMChangeNav.cpp also rest on) or **a master**
+//   (ILayoutUtils::IsAMaster - "a page in a master spread"). The page list includes the pages of
+//   hidden spreads (measured - KCMCollectPageUIDs, KCMCore.h), and GetPageIndex's default counts
+//   them too.
 //========================================================================================
 bool16 KCMPageMapPagesOf(const UIDList& selection, bool16 includeMasters, IDataBase*& outDB, std::vector<UID>& outPages)
 {
@@ -181,11 +177,11 @@ void KCMPageMapToggleSelectedPages(const UIDList& selection)
 	// @warning **do not copy its size into this comment.** The one source of truth is the Frame
 	//   of kKCMStatusTextWidgetID in ui/KCMUI.fr -- measure it there. The size was written out in
 	//   several files at once and went stale in all of them, each holding a different old number
-	//   ([[one-question-one-place]]).
+	//   (memory one-question-one-place).
 	// @warning the area belongs to the UI, and the model can only reach it through a
 	//   notification. **The length is still decided here**: the sender is the only one who can
 	//   shorten it, since the receiver has nothing to do but cut, and a number cut in half reads
-	//   as a different number ([[ellipsis-in-status-line-breaks-numbers]]).
+	//   as a different number (memory ellipsis-in-status-line-breaks-numbers).
 	PMString msg;
 	msg.SetTranslatable(kFalse);
 	msg.Append(anyUnregistered ? "+" : "-");
@@ -205,27 +201,23 @@ void KCMPageMapToggleSelectedPages(const UIDList& selection)
 	// The report string is deliberately dropped in favour of a short suffix: the status area is
 	// small and appending the report overflows it.
 	bool16 recompared = kFalse;
-	// ⛔The origin's branch went on 2026-09-21: an armed origin pair had NO Source database and no
-	//   earlier rasterisation of the copy to reuse, so its own Refresh rehydrated and compared
-	//   everything again. Both ends are ordinary documents now.
 	if (KCMIsArmed() && KCMArmedTargetDB() != nil && KCMArmedSourceDB() != nil)
 	{
 		// An incremental re-comparison (allowIncremental=kTrue). Registering and unregistering
 		// changes no page's content, only the pairing, so pages whose partner is unchanged reuse
 		// the previous result and are not rasterised again; only pages that gained, lost or
 		// changed a partner are recomputed. The larger the document, the more this saves.
-		// **Always look at the return value.** A registration change shifts the partner of every
-		//   page after it, so even an incremental run can rasterise enough pages for the progress
-		//   bar to offer Cancel. On cancellation KCMDoMarkChangesDoc has already thrown every
-		//   mark away (kFailure); carrying on regardless would leave a running comparison with
-		//   no frames at all while reporting "(recompared)", which is a lie.
-		//   The answer is the same as for a cancelled Load Check & Register (KCMPageCheck.cpp):
-		//   go all the way back to Stop. The registration change made here is thrown away with
-		//   it, which is exactly what Stop is specified to do.
+		// **Always look at the return value.** Even an incremental run can rasterise enough pages
+		//   for the progress bar to offer Cancel (by position - the toggle off - a registration
+		//   shifts the partner of every page after it). On cancellation KCMDoMarkChangesDoc has
+		//   already thrown every mark away (kFailure); carrying on regardless would leave a running
+		//   comparison with no frames at all while reporting "(recompared)", which is a lie.
+		//   So a cancel goes all the way back to Stop. The registration change made here is thrown
+		//   away with it, which is exactly what Stop is specified to do.
 		PMString report;
 		if (KCMDoMarkChangesDoc(KCMArmedTargetDB(), KCMArmedSourceDB(), report, kTrue /*allowIncremental*/) != kSuccess)
 		{
-			KCMStopComparison();		// marks, registrations and ticks dropped, disarmed, panel updated
+			KCMStopComparison();		// marks and registrations dropped (the ticks stay), disarmed, panel updated
 			KCMSayStatus("Recompare cancelled - comparison stopped", kTrue /*forceRedrawNow*/);
 			return;
 		}
@@ -240,18 +232,17 @@ void KCMPageMapToggleSelectedPages(const UIDList& selection)
 	//     sEntries nor the overflow sets (while it was registered the pairing left it out
 	//     altogether), so **it is in none of the sets the current state can produce**. This is
 	//     the only place it can be caught.
-	//   Registering with a re-comparison behind it is skipped on purpose: the toggled pages are
-	//   in sRegistered by then, and the re-comparison's own KCMCollectChangedPageUIDs (which
-	//   includes the registered pages) has already purged and redrawn them. Sending it again
-	//   only rasterises the same pages twice and makes the panel flicker.
-	// @warning today the unregister route IS that double: a full re-comparison sends **no page
-	//   set at all**, so the UI purges **every page** of the document (the branch in
-	//   ui/KCMModelChangeObserver.cpp taken when fPagesA is nil). The picture is right; the cost
-	//   is a second rasterisation and a flicker.
-	//   **The notification stays anyway**: KCMDoMarkChangesDoc still has "take the snapshot again
-	//   and send it with the notification" outstanding, and the moment that lands, per-UID purging
-	//   comes back and **this is the only route that can catch an unregistered page**. (Delete
-	//   this block only together with that change, never on its own.)
+	//   Registering with a re-comparison behind it is skipped on purpose: the re-comparison has
+	//   already purged and redrawn the toggled pages (they are in sRegistered by then, which
+	//   KCMCollectChangedPageUIDs includes). Sending it again only rasterises the same pages twice
+	//   and makes the panel flicker.
+	// @warning today the unregister route IS that double: a re-comparison, this incremental one
+	//   too, sends **no page set at all** (KCMNotifyDocs, KCMModelNotify.h says why), so the UI
+	//   purges **every page** of the document (the branch in ui/KCMModelChangeObserver.cpp taken
+	//   when fPagesA is nil). The picture is right; the cost is a second rasterisation and a flicker.
+	//   **The notification stays anyway**: the day a re-comparison carries its page set, per-UID
+	//   purging comes back and **this is the only route that can catch an unregistered page**.
+	//   (Do not delete this block because of today's double.)
 	// The page set travels on the notification itself -- ISubject::Change's third parameter,
 	//   changedBy, carries it (see KCMModelNotify.h). Whether the set can miss a page whose
 	//   picture changed is answered by the two cases above.
@@ -272,10 +263,9 @@ void KCMPageMapToggleSelectedPages(const UIDList& selection)
 //   - fRole says whether the active document is the Target or the Source, which is what the
 //     caller picks the label from
 //
-//   **This no longer takes an IActionStateList.** Writing to the menu (SetNthActionState /
-//   SetNthActionName) and the label strings belong to ui/KCMActionComponent.cpp, because the
-//   menu is the UI's job (the reasoning is with KCMPageToggleState in KCMPageMap.h). What is
-//   left here is the counting.
+//   Writing to the menu (SetNthActionState / SetNthActionName) and the label strings belong to
+//   ui/KCMActionComponent.cpp, because the menu is the UI's job (the reasoning is with
+//   KCMPageToggleState in KCMPageFlagState.h). What is left here is the counting.
 //========================================================================================
 KCMPageToggleState KCMPageMapGetToggleState(const UIDList& selection)
 {
@@ -301,7 +291,7 @@ KCMPageToggleState KCMPageMapGetToggleState(const UIDList& selection)
 		st.fTick = kKCMPageTickSome;		// only some = the mixed tick
 
 	// What the label is picked from (KCMPageMapRoleOf - past the guard above there are only the two
-	//   sides). kKCMPageRoleNone survives only as the default while fEnabled is kFalse.
+	//   sides). kKCMPageRoleNone is only the default while fEnabled is kFalse.
 	st.fRole = KCMPageMapRoleOf(db);
 	return st;
 }
@@ -320,14 +310,12 @@ void KCMPageMapSweepClosedDocs()
 									// no-dereference rule (KCMDocUidSet.cpp)
 }
 
-// (KCMPageMapClearAll was removed: it had no caller, and this file declared one that did not
-//  exist -- "called from Stop". What Stop calls is KCMPageMapClearAllDocs below.)
-
 //========================================================================================
 // KCMPageMapClearAllDocs (declared in KCMPageMap.h)
 //   Forget every document's registrations. Stop (KCMDoClearMarks) calls it so that clearing a
-//   comparison leaves no Added/Removed registrations behind either. Only empties the map; no
-//   pointer is touched, so nothing can be dereferenced.
+//   comparison leaves no Added/Removed registrations behind either, and so do a compared
+//   document's close and shutdown (KCMPeek.cpp). Only empties the map; no pointer is touched, so
+//   nothing can be dereferenced.
 //========================================================================================
 void KCMPageMapClearAllDocs()
 {
@@ -362,18 +350,13 @@ void KCMPageMapCollectRegistered(IDataBase* db, std::set<UID>& out)
 	sRegistered.CollectInto(db, out);	// out is not cleared (the container's contract)
 }
 
-// (KCMPageMapReplaceRegistered - the setter "Load Check & Register" used - went on 2026-09-27; its
-//  one caller went with Load on 2026-09-07 - re-audit, the uncalled functions of the origin and the
-//  JSON store; work/kcm-dead-scan.py lists the rest.)
-
 //========================================================================================
-// The pairing rule switch (declared in KCMPageMap.h). Default = by UID (2026-09-13, the user's
-// decision, "UID only"); the flyout's "Pair Pages by UID" check toggle turns it off, which brings
-// the rule that stood until then back: by position. Session state, saved with the panel settings
-// by the UI (ui/KCMPanelState.cpp), like the folio exclusion.
-// Read and written on the main thread only: its one reader is KCMBuildPairing, which says why that
-// never runs on a background thread. A plain bool16 is enough for that; a background reader would
-// need std::atomic.
+// The pairing rule switch (declared in KCMPageMap.h). Default = by UID (the author's decision,
+// "UID only"); the flyout's "Pair Pages by UID" check toggle turns it off: by position. Session
+// state, saved with the panel settings by the UI (ui/KCMPanelState.cpp), like the folio exclusion.
+// Read and written on the main thread only: KCMBuildPairing reads it (and says why that never runs
+// on a background thread), and the comparison's report and the UI read it through the getter. A
+// plain bool16 is enough for that; a background reader would need std::atomic.
 //========================================================================================
 static bool16 sPairPagesByUid = kTrue;
 
@@ -398,27 +381,23 @@ bool16 KCMPageMapMadeSeparately(IDataBase* targetDB, IDataBase* sourceDB)
 	return (!tOriginal.empty() && !sOriginal.empty() && tOriginal != sOriginal) ? kTrue : kFalse;
 }
 
-// (KCMSourcePageKeys went on 2026-10-30 with the author's yes - proposal P-1 of the M5 waste
-//  round: it probed a Source's pages for the KcmOriginUid labels a rehydrated task-start copy
-//  carried, and no page has carried one since 2026-09-21. git log -S KCMSourcePageKeys.)
-
 //========================================================================================
 // KCMBuildPairing (declared in KCMPageMap.h)
 //   Take each document's flat page list (KCMCollectPageUIDs), drop the registered pages -- the
-//   ones the user declared to have no counterpart -- and pair what is left BY IDENTITY: a page
+//   ones the reader declared to have no counterpart -- and pair what is left BY IDENTITY: a page
 //   with the page of the same UID on the other side (KCMPagePairRule.h holds the rule and the
 //   reasons; work/kcm-pagepair-test holds its proof). A Target page nobody answers to is an added
 //   page and a Source page nobody names a removed one; both go into outOverflowTargetPages /
 //   outOverflowSourcePages when those are supplied, and the drawing puts the red "/" on them.
 //   Reordered pages pair with their namesakes wherever they now stand.
 //
-//   With the "Pair Pages by UID" toggle OFF the rule that stood until 2026-09-13 is used
-//   instead: pair what is left in order, the pages that fall off the longer document's end
-//   being the overflow. It is kept for two documents that share no history (made separately,
-//   or one of them through IDML, which renumbers), whose UIDs mean nothing. ★Two made separately
-//   are found out (their OriginalDocumentID differs - KCMPageMapMadeSeparately, 2026-10-30) and
-//   get the "/" on every page with the report saying why; an IDML one keeps its original's id, so
-//   it goes through the rule and finds no namesakes - the same "/", without the word.
+//   With the "Pair Pages by UID" toggle OFF what is left is paired in order instead, the pages
+//   that fall off the longer document's end being the overflow. It is kept for two documents that
+//   share no history (made separately, or one of them through IDML, which renumbers), whose UIDs
+//   mean nothing. Two made separately are found out (their OriginalDocumentID differs -
+//   KCMPageMapMadeSeparately) and get the "/" on every page with the report saying why; an IDML
+//   one keeps its original's id, so it goes through the rule and finds no namesakes - the same
+//   "/", without the word.
 //
 //   MAIN THREAD ONLY. Every caller runs on it, and the drawing's one road in from a background
 //   thread (the asynchronous PDF export) does not reach here: EnsureOverflowCache in
@@ -452,7 +431,7 @@ void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 
 	if (sPairPagesByUid)
 	{
-		// ★Two documents made separately share no page, whatever their numbers say
+		// Two documents made separately share no page, whatever their numbers say
 		//   (KCMPageMapMadeSeparately): every page is an added / removed one - the "/" - and the
 		//   report says why. Pairing them in order is the toggle's job, the reader's choice.
 		if (KCMPageMapMadeSeparately(targetDB, sourceDB))
@@ -479,16 +458,16 @@ void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 //========================================================================================
 // KCMBuildMasterPairing (declared in KCMPageMap.h)
 //   Pairs master spreads by name and lays out the pages of the pairs that matched, in order.
-//   **The rule differs from KCMBuildPairing above** (position there, name here), which is why
-//   this is a separate function; the reasoning is with the declaration in the header.
+//   **The rule differs from KCMBuildPairing above** (UID - or position, with the toggle off -
+//   there, name here), which is why this is a separate function; the reasoning is with the
+//   declaration in the header.
 //   Registered pages are deliberately not excluded here: registrations are made from the Pages
-//   panel selection, and Register is the one feature that reads it
-//   (KCMReadSelectedPages, then KCMPageMapPagesOf) with includeMasters=kFalse, so no master page can be in the
-//   registered set to begin with.
+//   panel selection, and Register reads it (KCMReadSelectedPages, then KCMPageMapPagesOf) with
+//   includeMasters=kFalse, so no master page can be in the registered set to begin with.
 //   @warning **that assumption is what makes this function correct.** It never looks at the
 //   registrations, so the day Register starts accepting masters, registering one would silently
-//   fail to exclude it from the comparison. (When Check and Refresh were opened up to masters,
-//   Register was left at kFalse for exactly this reason.)
+//   fail to exclude it from the comparison. (This is why Register stays at kFalse while Check and
+//   Refresh take masters.)
 //
 //   The Source side is looked up with the official IMasterSpreadList::FindMasterByName(prefix,
 //   basename). Walking every master and comparing names by hand would work too, but an official
@@ -561,24 +540,21 @@ void KCMBuildFullPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	outSourcePages.insert(outSourcePages.end(), mS.begin(), mS.end());
 }
 
-// (KCMPageMapHasOverflow was removed: nothing had called it since the drawing side moved to the
-//  sOverflowT / sOverflowS caches, and its body walked every page -- worth removing before
-//  someone called it from a hot path by mistake.)
-
 //========================================================================================
 // KCMMapTargetToSource / KCMMapSourceToTarget (declared in KCMPageMap.h)
 //   Translate one page to its counterpart. The pairing is built by KCMBuildPairing and then
 //   searched linearly (KCMPartnerOf, KCMPagePairRule.h - the two directions and the two tables
-//   are one lookup, tested where Alt + hover, the one caller, cannot be). Rebuilding it every
-//   time is cheap enough: a document holds a few hundred pages at most, and the callers only ask
-//   at the granularity of one spread, a handful of pages.
+//   are one lookup, tested where Alt + hover, the one caller, cannot be). It is rebuilt on every
+//   ask, which that caller's one-off sample outside a press can take (a press caches the pairing -
+//   KCMColorSampler.cpp). @warning asking in a loop rebuilds it each time: take KCMBuildFullPairing
+//   into a table of your own, as the comparison and the peek do.
 //
-// **Master spread pages resolve too** (they used to not, which showed up as the CMYK readout
-//   going blank on a master page). The master pairing (KCMBuildMasterPairing, by name) is
-//   consulted only when the ordinary pairing did not find the page.
+// **Master spread pages resolve too** (without them the CMYK readout goes blank on a master page).
+//   The master pairing (KCMBuildMasterPairing, by name) is consulted only when the ordinary pairing
+//   did not find the page.
 //   Mixing the two tables is safe because **page UIDs are unique within a document**, so the same
 //     UID cannot appear in both. The comparison's own table (KCMCore.cpp) and the partial
-//     re-comparison (KCMPeek.cpp) already do the same thing, holding ordinary pages and masters
+//     re-comparison (KCMPeek.cpp) do the same thing, holding ordinary pages and masters
 //     in one std::map.
 //   **The ordinary table is searched first**, so the common route never builds the master one.
 //========================================================================================
