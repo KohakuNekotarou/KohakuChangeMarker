@@ -6,6 +6,12 @@
 //  mouse is over (hover) and on its counterpart (other), and builds the two lines of text that
 //  report it. Only a tiny area around the point is rasterised, at high dpi and in CMYK, and the
 //  centre pixel of that is read.
+//  @warning **"raw" means the raster's pixel, which on a placed image is NOT the image's own
+//    value.** Flat, untagged CMYK TIFFs measured (document profile Japan Color 2001 Coated):
+//    25/50/75/10 reads C0 M21 Y46 K27, 40/0/100/0 reads C13 M0 Y79 K20, 0/0/0/60 reads K46 and
+//    0/100/0/0 reads M89 Y40 K11, whichever the document's blending space. All four are within
+//    1% of the colour's sRGB display value put through K = 1 - max(R,G,B), C = 1 - R - K and so
+//    on. A frame's own fill of the same colours reads exactly.
 //
 //  The two sides are hover/other rather than a fixed target/source, because while a comparison is
 //  running the two lines have to appear over the **Source window** as well as the Target one. Which

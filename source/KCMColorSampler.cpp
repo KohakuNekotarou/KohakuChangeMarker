@@ -128,7 +128,7 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 		return kFalse;	// nothrow: out of memory costs one sample, nothing more (as in KCMDrawEventHandler)
 	// Proxy drawing (fullRes=kFalse), the same as the frame comparison uses, so no placed image is
 	// generated at full resolution. Dirtying is guarded separately, by the SaveRestoreModifiedState
-	// above.
+	// above. (What this reads on a placed image: KCMColorSampler.h.)
 	// **greek is 0.0, disabled.** At the default 7.0, text below that point size is drawn as a
 	//   grey bar with no glyph shapes in it (SnapshotUtilsEx.h:224-225), so clicking on small text
 	//   would read the colour of the bar rather than the colour of the text -- and since the same
