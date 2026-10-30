@@ -156,13 +156,7 @@ void KCMStoryPairByPlace(IDataBase* targetDB, IDataBase* sourceDB, std::vector<K
 	// the other, built here a single time instead of once per story. Page UIDs are unique within a document, so the
 	// two cannot collide.
 	std::map<UID, UID> toSource;
-	{
-		std::vector<UID> tPages;
-		std::vector<UID> sPages;
-		KCMBuildFullPairing(targetDB, sourceDB, tPages, sPages);
-		for (size_t i = 0; i < tPages.size() && i < sPages.size(); ++i)
-			toSource[tPages[i]] = sPages[i];
-	}
+	KCMBuildFullPairingMap(targetDB, sourceDB, toSource);
 
 	std::vector<UID> tIds, tPages, sIds, sPages;
 	std::vector<Place> tPlaces, sPlaces;

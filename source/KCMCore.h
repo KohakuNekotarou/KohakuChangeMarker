@@ -189,6 +189,9 @@ ErrorCode	KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 // same db twice is not redrawn twice).
 void		KCMInvalidateDB(IDataBase* db);
 
+// Redraw the documents a mark change reaches, skipping the repeats, the first one first (the body says why).
+void		KCMInvalidateDocs(IDataBase* first, IDataBase* second, IDataBase* third = nil);
+
 // Discard the whole overlay (and the cached images of the older version) and redraw db.
 void		KCMDoClearMarks(IDataBase* db);
 

@@ -64,10 +64,6 @@
 #include "KCMModelNotify.h"	// KCMNotifyStatus / KCMNotifyDocs - the model tells the UI, it never calls it
 #include "KCMSentence.h"		// KCMSentence - the progress bar's fixed words, never a key
 
-// Declared here and defined next to KCMInvalidateDB, which it is built on: the comparison uses it
-// several hundred lines before that point.
-static void KCMInvalidateDocs(IDataBase* first, IDataBase* second, IDataBase* third = nil);
-
 //========================================================================================
 // Helper: every page UID in the document, flattened in the document's page order.
 //
@@ -1182,7 +1178,7 @@ void KCMInvalidateDB(IDataBase* db)
 // the caller's own document is a different one. One place says "have I already done this one" -
 // a spelling per call site is where a document gets redrawn twice or missed. nil is fine
 // anywhere -- KCMInvalidateDB above returns at once for it.
-static void KCMInvalidateDocs(IDataBase* first, IDataBase* second, IDataBase* third)
+void KCMInvalidateDocs(IDataBase* first, IDataBase* second, IDataBase* third)
 {
 	KCMInvalidateDB(first);
 	if (second != first)

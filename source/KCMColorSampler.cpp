@@ -192,23 +192,16 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 	return ok;
 }
 
-// Append a value as exactly three digits, zero-padded (the callers pass CMYK percentages, 0..100).
-// This is what lines the Target's and the Source's C/M/Y/K up vertically. AppendNumber does not
-// zero-pad, hence the digit-by-digit output; anything out of range is clamped to 0..999.
-static void KCMAppend3(PMString& s, int32 v)
+// Append a CMYK raster's 8-bit value (0..255) as the percentage CMYK is really expressed in (0..100),
+// rounded: 255 -> 100, 0 -> 0, 128 -> 50 ((v*100+127)/255 does the rounding), in exactly three digits,
+// zero-padded. This is what lines the Target's and the Source's C/M/Y/K up vertically. AppendNumber
+// does not zero-pad, hence the digit-by-digit output.
+static void KCMAppendPct3(PMString& s, uint8 v)
 {
-	if (v < 0)   v = 0;
-	if (v > 999) v = 999;
-	s.AppendNumber(v / 100);
-	s.AppendNumber((v / 10) % 10);
-	s.AppendNumber(v % 10);
-}
-
-// Convert a CMYK raster's 8-bit value (0..255) to the percentage CMYK is really expressed in
-// (0..100), rounded: 255 -> 100, 0 -> 0, 128 -> 50. (v*100+127)/255 does the rounding.
-static int32 KCMByteToPct(uint8 v)
-{
-	return ((int32)v * 100 + 127) / 255;
+	const int32 pct = ((int32)v * 100 + 127) / 255;
+	s.AppendNumber(pct / 100);
+	s.AppendNumber((pct / 10) % 10);
+	s.AppendNumber(pct % 10);
 }
 
 // Append "C000 M000 Y000 K000" (three zero-padded digits each, 0..100%). For the cursor, where the
@@ -216,10 +209,10 @@ static int32 KCMByteToPct(uint8 v)
 // text narrow.
 static void KCMAppendCmyk(PMString& s, const uint8 c[4])
 {
-	KCMAppend3(s, KCMByteToPct(c[0]));
-	s.Append(" "); KCMAppend3(s, KCMByteToPct(c[1]));
-	s.Append(" "); KCMAppend3(s, KCMByteToPct(c[2]));
-	s.Append(" "); KCMAppend3(s, KCMByteToPct(c[3]));
+	KCMAppendPct3(s, c[0]);
+	s.Append(" "); KCMAppendPct3(s, c[1]);
+	s.Append(" "); KCMAppendPct3(s, c[2]);
+	s.Append(" "); KCMAppendPct3(s, c[3]);
 }
 
 // Append "C 000 M 000 Y 000 K 000", with the heading letter attached to each value. For the panel.
@@ -229,10 +222,10 @@ static void KCMAppendCmyk(PMString& s, const uint8 c[4])
 // does (KCMDrawColumns), each value carries its own letter, which removes the need to align at all.
 static void KCMAppendCmykLabeled(PMString& s, const uint8 c[4])
 {
-	s.Append("C"); KCMAppend3(s, KCMByteToPct(c[0]));
-	s.Append(" M"); KCMAppend3(s, KCMByteToPct(c[1]));
-	s.Append(" Y"); KCMAppend3(s, KCMByteToPct(c[2]));
-	s.Append(" K"); KCMAppend3(s, KCMByteToPct(c[3]));
+	s.Append("C"); KCMAppendPct3(s, c[0]);
+	s.Append(" M"); KCMAppendPct3(s, c[1]);
+	s.Append(" Y"); KCMAppendPct3(s, c[2]);
+	s.Append(" K"); KCMAppendPct3(s, c[3]);
 }
 
 // Alt + left click with the tool: sample the raw CMYK at **the given point** on the hovered

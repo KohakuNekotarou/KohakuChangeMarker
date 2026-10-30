@@ -540,6 +540,14 @@ void KCMBuildFullPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	outSourcePages.insert(outSourcePages.end(), mS.begin(), mS.end());
 }
 
+void KCMBuildFullPairingMap(IDataBase* targetDB, IDataBase* sourceDB, std::map<UID, UID>& outTargetToSource)
+{
+	std::vector<UID> pairT, pairS;
+	KCMBuildFullPairing(targetDB, sourceDB, pairT, pairS);
+	for (size_t k = 0; k < pairT.size() && k < pairS.size(); ++k)
+		outTargetToSource[pairT[k]] = pairS[k];
+}
+
 //========================================================================================
 // KCMMapTargetToSource / KCMMapSourceToTarget (declared in KCMPageMap.h)
 //   Translate one page to its counterpart. The pairing is built by KCMBuildPairing and then

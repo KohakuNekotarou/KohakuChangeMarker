@@ -26,6 +26,7 @@
 
 #include "BaseType.h"		// int32, bool16
 #include "OMTypes.h"		// UID
+#include <map>
 #include <vector>
 #include <set>
 
@@ -157,6 +158,9 @@ void KCMBuildMasterPairing(IDataBase* targetDB, IDataBase* sourceDB,
 //   on a master found "no pages", the CMYK readout went blank on a master while dragging.
 void KCMBuildFullPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages);
+
+// The same pairing as one table, target page -> source page (added to outTargetToSource).
+void KCMBuildFullPairingMap(IDataBase* targetDB, IDataBase* sourceDB, std::map<UID, UID>& outTargetToSource);
 
 // Find the single sourceDB page that targetPageUID (in targetDB) is compared against, using
 // KCMBuildPairing internally. kFalse, with outSourcePageUID kInvalidUID, when targetPageUID is
