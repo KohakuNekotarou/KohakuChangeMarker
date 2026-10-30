@@ -38,9 +38,8 @@
 #include "KCMPawStamp.h"
 #include "KCMConstants.h"		// kKCMPawSizeRatio
 #include "KCMCore.h"			// KCMIsDocDBOpen (the liveness test, pointer comparison only)
-#include "KCMPageCheck.h"		// KCMPageCheckIsChecked -- a page's tick has to survive a paw write
-#include "KCMPageMarksCmd.h"	// KCMPageMarks / KCMMarksWrite -- the only door to a change
-#include "KCMPageMarksDoc.h"	// KCMMarksSyncFromDocument -- what the document says, before a clear
+#include "KCMPageMarksCmd.h"	// KCMPageMarks / KCMMarksWriteForReader -- the reader's door to a change
+#include "KCMPageMarksDoc.h"	// KCMMarksSyncFromDocument / KCMPageMarksNow -- what the document says (a page's tick comes along)
 #include "KCMThreadSafety.h"	// KCMIsSameDoc / KCMMarkStateLock / KCMMarkStateMutex
 
 #include <map>
@@ -173,12 +172,11 @@ bool16 KCMPawStampPlaceAt(IDataBase* db, UID pageUID, const PMReal& x, const PMR
 	onPage.push_back(KCMPawStamp(pageUID, x, y, colour, text, angle));
 
 	// ★The paw goes into the DOCUMENT, and the store catches up when the notification arrives.
-	//  The page's tick has to be carried along: a write says what the whole page carries
-	//  afterwards, so leaving it out would take the tick off as a side effect of stamping.
+	//  The page as it stands (KCMPageMarksNow - its tick comes along), with these paws.
 	std::vector<KCMPageMarks> wanted;
-	wanted.push_back(KCMPageMarks(pageUID, KCMPageCheckIsChecked(db, pageUID)));
+	wanted.push_back(KCMPageMarksNow(db, pageUID));
 	wanted.back().fPaws = onPage;
-	return (KCMMarksWrite(db, wanted, "Place Cat Paw") == kSuccess) ? kTrue : kFalse;
+	return (KCMMarksWriteForReader(db, wanted, "Place Cat Paw") == kSuccess) ? kTrue : kFalse;
 }
 
 bool16 KCMPawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
@@ -210,9 +208,9 @@ bool16 KCMPawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMRe
 	}
 
 	std::vector<KCMPageMarks> wanted;
-	wanted.push_back(KCMPageMarks(pageUID, KCMPageCheckIsChecked(db, pageUID)));
+	wanted.push_back(KCMPageMarksNow(db, pageUID));		// its tick comes along
 	wanted.back().fPaws = onPage;		// empty is meaningful: it takes our paws label off the page
-	return (KCMMarksWrite(db, wanted, "Lift Cat Paw") == kSuccess) ? kTrue : kFalse;
+	return (KCMMarksWriteForReader(db, wanted, "Lift Cat Paw") == kSuccess) ? kTrue : kFalse;
 }
 
 //========================================================================================
@@ -396,12 +394,16 @@ int32 KCMPawStampClearDoc(IDataBase* db)
 			pages.insert(entry->second[i].fPageUID);
 	}
 
-	// Each of those pages, keeping its tick and losing its paws. One command, so one undo step.
+	// Each of those pages as it stands (KCMPageMarksNow - its tick comes along), losing its paws.
+	//   One command, so one undo step.
 	std::vector<KCMPageMarks> wanted;
 	for (std::set<UID>::const_iterator it = pages.begin(); it != pages.end(); ++it)
-		wanted.push_back(KCMPageMarks(*it, KCMPageCheckIsChecked(db, *it)));
+	{
+		wanted.push_back(KCMPageMarksNow(db, *it));
+		wanted.back().fPaws.clear();
+	}
 
-	return (KCMMarksWrite(db, wanted, "Clear Cat Paws") == kSuccess) ? paws : -1;
+	return (KCMMarksWriteForReader(db, wanted, "Clear Cat Paws") == kSuccess) ? paws : -1;
 }
 
 int32 KCMPawStampClearPage(IDataBase* db, UID pageUID)
@@ -416,13 +418,14 @@ int32 KCMPawStampClearPage(IDataBase* db, UID pageUID)
 	if (onPage.empty())
 		return 0;						// nothing here, and that is not a failure
 
-	// ⚠The page's TICK travels with the write. A write says what the page carries afterwards, so a
-	//   list that mentions no tick takes the tick off -- which this gesture never means to do.
+	// The page as it stands (KCMPageMarksNow - its TICK comes along, which this gesture never means
+	//   to take off), with no paws.
 	std::vector<KCMPageMarks> wanted;
-	wanted.push_back(KCMPageMarks(pageUID, KCMPageCheckIsChecked(db, pageUID)));	// and no paws
+	wanted.push_back(KCMPageMarksNow(db, pageUID));
+	wanted.back().fPaws.clear();
 
-	if (KCMMarksWrite(db, wanted, "Clear Cat Paws on Page") != kSuccess)
-		return 0;
+	if (KCMMarksWriteForReader(db, wanted, "Clear Cat Paws on Page") != kSuccess)
+		return -1;						// none went (the sequence rolled it back); the door said so
 
 	return (int32)onPage.size();
 }

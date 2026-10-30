@@ -27,6 +27,7 @@
 #include "KCMPageMarksCmd.h"
 #include "KCMPageMarksDoc.h"		// KCMMarksWriteOnePage -- the label format lives over there
 #include "KCMDiag.h"				// KCM_DIAG_FAULT("marks-write-fail") - a failed write, measured (test builds only)
+#include "KCMModelNotify.h"			// KCMSayStatus - the reader's door says a failure
 
 //========================================================================================
 // The parameter interface.
@@ -49,25 +50,34 @@ public:
 													const PMString& undoName) = 0;
 	virtual const std::vector<KCMPageMarks>&	GetPages() const = 0;
 	virtual const PMString&						GetUndoName() const = 0;
+
+	/** Do()'s one answer back (2026-10-30): did it start writing before it stopped? kFalse until it does - a
+		failure before that changed nothing. KCMMarksWrite hands it to its caller. */
+	virtual void								SetWroteSome() = 0;
+	virtual bool16								WroteSome() const = 0;
 };
 
 class KCMPageMarksCmdData : public CPMUnknown<IKCMPageMarksCmdData>
 {
 public:
-	KCMPageMarksCmdData(IPMUnknown* boss) : CPMUnknown<IKCMPageMarksCmdData>(boss) {}
+	KCMPageMarksCmdData(IPMUnknown* boss) : CPMUnknown<IKCMPageMarksCmdData>(boss), fWroteSome(kFalse) {}
 	virtual ~KCMPageMarksCmdData() {}
 
 	virtual void Set(const std::vector<KCMPageMarks>& pages, const PMString& undoName)
 	{
 		fPages = pages;
 		fUndoName = undoName;
+		fWroteSome = kFalse;
 	}
 	virtual const std::vector<KCMPageMarks>&	GetPages() const	{ return fPages; }
 	virtual const PMString&						GetUndoName() const	{ return fUndoName; }
+	virtual void								SetWroteSome()		{ fWroteSome = kTrue; }
+	virtual bool16								WroteSome() const	{ return fWroteSome; }
 
 private:
 	std::vector<KCMPageMarks>	fPages;
 	PMString					fUndoName;
+	bool16						fWroteSome;
 };
 
 CREATE_PMINTERFACE(KCMPageMarksCmdData, kKCMPageMarksCmdDataImpl)
@@ -124,8 +134,30 @@ void KCMPageMarksCmd::Do()
 	}
 
 	const std::vector<KCMPageMarks>& pages = data->GetPages();
+
+	// ★EVERY PAGE IS ASKED BEFORE ANY IS WRITTEN (2026-10-30). A page the write cannot reach (deleted since the list
+	//   was made - M5-D1 handed the clear one) now stops it with the document untouched, instead of after the pages
+	//   before it were written - which only a rollback could take back, and only while the error stays set
+	//   (KCMMarksWriteForReader in the header says why that is not always so).
 	for (size_t i = 0; i < pages.size(); ++i)
 	{
+		if (!KCMMarksPageWritable(db, pages[i].fPage))
+		{
+			ErrorUtils::PMSetGlobalErrorCode(kFailure);
+			return;
+		}
+	}
+
+	for (size_t i = 0; i < pages.size(); ++i)
+	{
+		// A test build can make the write stop at its SECOND page, after the first went through (KCMDiag.h,
+		// marks-write-fail-second): the half-done write, measured.
+		if (i == 1 && KCM_DIAG_FAULT("marks-write-fail-second"))
+		{
+			ErrorUtils::PMSetGlobalErrorCode(kFailure);
+			return;
+		}
+		data->SetWroteSome();		// from here on the document may have changed
 		if (KCMMarksWriteOnePage(db, pages[i].fPage, pages[i].fCheck, pages[i].fPaws) != kSuccess)
 		{
 			// Stop at the first failure and let the sequence roll the whole thing back. Half of a
@@ -179,8 +211,11 @@ PMString* KCMPageMarksCmd::CreateName()
 //========================================================================================
 // The only door.
 //========================================================================================
-ErrorCode KCMMarksWrite(IDataBase* db, const std::vector<KCMPageMarks>& pages, const char* undoName)
+ErrorCode KCMMarksWrite(IDataBase* db, const std::vector<KCMPageMarks>& pages, const char* undoName,
+                        bool16* outWroteSome)
 {
+	if (outWroteSome != nil)
+		*outWroteSome = kFalse;
 	if (db == nil)
 		return kFailure;
 	if (pages.empty())
@@ -196,9 +231,14 @@ ErrorCode KCMMarksWrite(IDataBase* db, const std::vector<KCMPageMarks>& pages, c
 	name.SetTranslatable(kFalse);
 
 	// SequenceContext rather than SequencePtr: when the caller is already inside a sequence this
-	// JOINS it, which is what lets Load put back the ticks and the paws as ONE step instead of two.
+	// JOINS it, so the write is part of that sequence - a script's ENTIRE_SCRIPT step holds it, and a
+	// sequence outside that is aborted takes it back with everything else. A SequencePtr would close
+	// it on its own, and an abort outside could no longer reach it (KBS measured that;
+	// memory command-sequence-rollback-on-error). (Load, which put back the ticks and the paws as ONE
+	// step this way, went on 2026-09-07.)
 	// Its destructor rolls the database back if the global error code is set, and that is what
-	// turns the early return in Do() into "nothing happened".
+	// turns the early return in Do() into "nothing happened" - when it opened the sequence itself;
+	// joined, the rollback waits for the sequence outside (KCMMarksWriteForReader in the header).
 	CmdUtils::SequenceContext seq(&name);
 
 	InterfacePtr<ICommand> cmd(CmdUtils::CreateCommand(kKCMSetPageMarksCmdBoss));
@@ -219,7 +259,26 @@ ErrorCode KCMMarksWrite(IDataBase* db, const std::vector<KCMPageMarks>& pages, c
 	cmd->SetItemList(items);
 	data->Set(pages, name);
 
-	return CmdUtils::ProcessCommand(cmd);
+	const ErrorCode result = CmdUtils::ProcessCommand(cmd);
+	if (outWroteSome != nil)
+		*outWroteSome = data->WroteSome();
+	return result;
+}
+
+//========================================================================================
+// The door for the reader's writes (declared in KCMPageMarksCmd.h, where the reasoning is).
+//========================================================================================
+ErrorCode KCMMarksWriteForReader(IDataBase* db, const std::vector<KCMPageMarks>& pages, const char* undoName)
+{
+	bool16 wroteSome = kFalse;
+	const ErrorCode result = KCMMarksWrite(db, pages, undoName, &wroteSome);
+	if (result != kSuccess)
+	{
+		KCMSayStatus("Could not write the marks into the document.");
+		if (!wroteSome)
+			ErrorUtils::PMSetGlobalErrorCode(kSuccess);		// said, and nothing changed: nothing for any sequence to roll back
+	}
+	return result;
 }
 
 // End, KCMPageMarksCmd.cpp.

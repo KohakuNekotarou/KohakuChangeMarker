@@ -152,21 +152,16 @@ void KCMStoryPairByPlace(IDataBase* targetDB, IDataBase* sourceDB, std::vector<K
 	IDataBase::SaveRestoreModifiedState sourceGuard(sourceDB);
 
 	// The comparison's page pairing, ONCE: a Target page -> the Source page it is compared against. Ordinary pages
-	// first (KCMBuildPairing), then the masters by name (KCMBuildMasterPairing) - the two tables KCMMapTargetToSource
-	// consults one after the other, built here a single time instead of once per story. Page UIDs are unique within a
-	// document, so the two cannot collide.
+	// first, then the masters by name (KCMBuildFullPairing) - the two tables KCMMapTargetToSource consults one after
+	// the other, built here a single time instead of once per story. Page UIDs are unique within a document, so the
+	// two cannot collide.
 	std::map<UID, UID> toSource;
 	{
 		std::vector<UID> tPages;
 		std::vector<UID> sPages;
-		KCMBuildPairing(targetDB, sourceDB, tPages, sPages);
+		KCMBuildFullPairing(targetDB, sourceDB, tPages, sPages);
 		for (size_t i = 0; i < tPages.size() && i < sPages.size(); ++i)
 			toSource[tPages[i]] = sPages[i];
-		std::vector<UID> tMasters;
-		std::vector<UID> sMasters;
-		KCMBuildMasterPairing(targetDB, sourceDB, tMasters, sMasters);
-		for (size_t i = 0; i < tMasters.size() && i < sMasters.size(); ++i)
-			toSource[tMasters[i]] = sMasters[i];
 	}
 
 	std::vector<UID> tIds, tPages, sIds, sPages;

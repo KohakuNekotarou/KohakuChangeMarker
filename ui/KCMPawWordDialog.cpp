@@ -106,6 +106,10 @@ void Place(const PMString& text)
 		return;					// the model half is not there -- nothing to place into
 
 	const bool16 placed = flags->PawStampPlaceAtAngle(gDb, gPage, gX, gY, gColour, gHalf, text, gAngle);
+	// A failed WRITE has been said by the model already, and leaves no paw under the point - what tells it from
+	//   "one is already there" (the plain press, KCMPawTracker::PlaceNow, asks the same).
+	if (!placed && !flags->PawStampIsAt(gDb, gPage, gX, gY, gHalf))
+		return;
 
 	PMString msg;
 	msg.SetTranslatable(kFalse);

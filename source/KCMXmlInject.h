@@ -12,7 +12,8 @@
 //  docs/ai-notes/kcm-rehydration-retired-2026-09-21.md and one `git revert` away.
 //  ⚠★★★**AND SO FOUR OF THE FIVE FUNCTIONS BELOW HAVE NO CALLER LEFT** (measured 2026-09-21):
 //  KCMInjectForRehydration, KCMCollectSpreadPages, KCMCompareElementCounts and
-//  KCMReadDocumentPreference. What is still called is kKCMOriginUidLabelKey and KCMParseSelfUid.
+//  KCMReadDocumentPreference. kKCMOriginUidLabelKey and KCMParseSelfUid lost their last caller
+//  outside this file on 2026-10-30 (KCMReadOriginUidLabel, with the page pairing's probe).
 //  They are left standing rather than bundled into that removal - **this file is the whole of what
 //  is known about feeding InDesign an INX**, and the one plan that would need it again (build a
 //  diff outside InDesign and put it back) is undecided, not abandoned.

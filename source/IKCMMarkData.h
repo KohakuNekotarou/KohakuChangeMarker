@@ -164,6 +164,14 @@ public:
 	/** The page a page item sits on, or kInvalidUID when it sits on none. Always a real page
 		(kPageBoss) -- a spread's UID never comes back from this. */
 	virtual UID			GetFramePageUID(IDataBase* db, UID frameUID) = 0;
+
+	/** The full pairing: the normal-spread pairing and then the master-spread pairing appended
+		(KCMBuildFullPairing, KCMPageMap.h) - the one place the two are put together, so a caller
+		cannot leave the masters out. Same output shape as GetPagePairing.
+		★At the END of the interface, as every addition here has to be: the UI half calls through
+		the vtable, and a slot put in the middle lands its callers on another method. */
+	virtual void		GetFullPagePairing(IDataBase* targetDB, IDataBase* sourceDB,
+								std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages) = 0;
 };
 
 #endif // __IKCMMarkData_h__

@@ -47,6 +47,7 @@
 #include <vector>
 
 #include "KCMPawStamp.h"	// KCMPawStamp -- written and read by value
+#include "KCMPageMarksCmd.h"	// KCMPageMarks -- what KCMPageMarksNow answers
 
 class IDataBase;
 
@@ -73,6 +74,18 @@ ErrorCode	KCMMarksWriteOnePage(IDataBase* db, UID page, bool16 check,
 	Either count may be nil.
 	@return how many pages carried a label of ours, or -1 when the document could not be read. */
 int32	KCMMarksSyncFromDocument(IDataBase* db, int32* outChecks, int32* outPaws);
+
+/** The marks ONE page carries now, read off its labels: its tick and its paws.
+	★**A write starts from this and changes one of the two.** The write replaces a page's marks
+	  whole (KCMPageMarksCmd.h), so a writer that put the other one together by hand could drop it -
+	  the paws on a Check, the tick on a paw; six writers did it by hand, each with its own warning.
+	A page that cannot be read answers no marks. Main thread only (the writers' thread). */
+KCMPageMarks	KCMPageMarksNow(IDataBase* db, UID page);
+
+/** Can this page's marks be written - does it have the scripting facet its labels live on (a page deleted since
+	the list was made does not). The command asks it of EVERY page before it writes ANY (KCMPageMarksCmd.cpp), so
+	such a page stops the write with the document untouched. */
+bool16	KCMMarksPageWritable(IDataBase* db, UID page);
 
 #endif // __KCMPageMarksDoc_h__
 

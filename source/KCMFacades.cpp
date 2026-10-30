@@ -513,6 +513,12 @@ public:
 		KCMBuildMasterPairing(targetDB, sourceDB, outTargetPages, outSourcePages);
 	}
 
+	virtual void		GetFullPagePairing(IDataBase* targetDB, IDataBase* sourceDB,
+							std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages)
+	{
+		KCMBuildFullPairing(targetDB, sourceDB, outTargetPages, outSourcePages);
+	}
+
 	virtual void		GetAllPageUIDs(IDataBase* db, std::vector<UID>& out)
 													{ KCMCollectPageUIDs(db, out); }
 	virtual void		GetMasterPageUIDs(IDataBase* db, std::vector<UID>& out)
@@ -536,8 +542,9 @@ CREATE_PMINTERFACE(KCMMarkData, kKCMMarkDataImpl)
 
 // "cleared chk3" / "cleared paw0" for the status line. The two clear items say the same thing
 // about different marks, so the lines that build it are written once.
-// ⚠**A write that failed (n < 0) says so** - the words the Check toggle uses (KCMPageCheck.cpp): a
-//   "cleared chk0" over ticks still standing was the line a failed write used to leave.
+// ⚠**A write that failed (n < 0) has already been said** by the reader's door
+//   (KCMMarksWriteForReader), so nothing is written over it: a "cleared chk0" over ticks still
+//   standing was the line a failed write used to leave.
 // ⚠**The untranslatable mark (KCMSentence) is what keeps the reader from being shown the key itself** -- the
 //   reason every literal put on this line needs the mark is with KCMNotifyStatus in
 //   KCMModelNotify.h.
@@ -545,10 +552,7 @@ CREATE_PMINTERFACE(KCMMarkData, kKCMMarkDataImpl)
 static int32 KCMSayCleared(const char* what, int32 n)
 {
 	if (n < 0)
-	{
-		KCMSayStatus("Could not write the marks into the document.", kTrue /*forceRedrawNow*/);
 		return 0;
-	}
 	PMString msg(KCMSentence(what));
 	msg.AppendNumber(n);
 	KCMNotifyStatus(msg, kTrue /*forceRedrawNow*/);

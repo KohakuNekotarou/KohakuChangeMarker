@@ -108,7 +108,9 @@ inline int32 KCMPawColourFromStored(int32 stored)
 	  request, the same day): two paws on one spot look like one and only the top can be lifted, so
 	  the second press is far more likely to be a slip than an intention.
 	@return kTrue when one was placed, kFalse when a paw was already there (or the arguments were
-	  no good).
+	  no good) - or when the WRITE failed, which the reader's door has already said on the status
+	  line (KCMMarksWriteForReader). KCMPawStampIsAt tells that one from "already there": after a
+	  failed write no paw is under the point.
 	@warning writes go to THIS db and no other: unlike the readers below there is no fallback on
 	  file identity, because a write always happens on the main thread and means "add to the
 	  document I am looking at". Growing a clone's entry would be a wrong document, not a rescue. */
@@ -141,7 +143,9 @@ bool16 KCMPawPreviewFor(IDataBase* db, const IControlView* view);
 
 /** Lift the paw under (x, y) -- Shift + press. baseHalf is half a paw's size on that page.
 	Where paws overlap, the one placed last comes off first.
-	@return kTrue when one was lifted, kFalse when the press landed on none. */
+	@return kTrue when one was lifted, kFalse when the press landed on none - or when the WRITE
+	  failed (said by the reader's door, KCMMarksWriteForReader), which leaves the paw under the
+	  point: KCMPawStampIsAt tells the two apart. */
 bool16 KCMPawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
                          const PMReal& baseHalf);
 
@@ -183,13 +187,14 @@ void KCMPawStampReplaceAll(IDataBase* db, const std::vector<KCMPawStamp>& in);
 /** Drop every stamp of one document (the flyout's "clear"). The store is first brought back to what
 	the document says, so a page deleted since the last write is not handed to the write.
 	@return how many paws went (0 for a document carrying none), or -1 when the write failed and none
-	  did - the caller says so. */
+	  did - the reader's door (KCMMarksWriteForReader) has said so on the status line. */
 int32 KCMPawStampClearDoc(IDataBase* db);
 
 /** Drop every stamp on ONE page -- Shift + DOUBLE click (2026-09-07, the user's request).
 	The page's tick is left exactly as it was: this clears paws, and a write says what the whole
 	page carries afterwards, so the tick has to be carried along rather than merely not mentioned.
-	@return how many paws went (0 for a page carrying none, which is not a failure). */
+	@return how many paws went (0 for a page carrying none, which is not a failure), or -1 when the
+	  write failed and none did - the reader's door (KCMMarksWriteForReader) has said so. */
 int32 KCMPawStampClearPage(IDataBase* db, UID pageUID);
 
 /** The liveness sweep run after documents close: drops the entries of documents that have gone.

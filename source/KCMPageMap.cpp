@@ -41,11 +41,15 @@
 
 #include "IDataBase.h"
 // (⛔ILayoutUIUtils.h went on 2026-10-26 - the import tidy S7: the UI half reads the Pages panel's selection now.)
+#include "ILayoutUtils.h"		// IsAMaster - a selected page that is a master's (KCMPageMapPagesOf)
 #include "IMasterSpreadList.h"	// GetMasterSpreadCount / GetNthMasterSpreadUID / FindMasterByName
 #include "IMasterSpread.h"		// GetPrefix / GetBasename (pairing master spreads by name)
+#include "IPageList.h"			// GetPageIndex - a selected page that is in the page list (KCMPageMapPagesOf)
 #include "ISpread.h"			// GetNumPages / GetNthPageUID (the pages inside a master spread)
+#include "SpreadID.h"			// kPageBoss - a selected UID that is a page at all
 #include "UIDList.h"
 #include "PMString.h"
+#include "Utils.h"
 
 #include <algorithm>			// std::find - a selected page once in outPages
 #include <set>
@@ -56,7 +60,6 @@
 #include "KCMComparisonRun.h"	// KCMStopComparison
 #include "KCMPageMap.h"
 #include "KCMPagePairRule.h"	// KCMPairPagesByIdentity / KCMPartnerOf - THE pairing rule and the lookup in it (pure; proved in work/kcm-pagepair-test)
-#include "KCMRehydrate.h"		// KCMReadOriginUidLabel - a task-start copy's page names the origin's page
 #include "KCMDocUidSet.h"		// the shared "document -> page UID set" container (the tick uses it too)
 #include "KCMID.h"				// kKCMPageFlagsChangedMessage (the notification's ID)
 // This file deliberately does not include the UI's KCMThumbnailRefresh.h: rebuilding a thumbnail
@@ -90,11 +93,20 @@ static KCMDocUidSet sRegistered;
 //
 // includeMasters (KCMPageMap.h says what it means and which feature passes what).
 //   @warning **the exclusion has two stages**: besides GetSelectedPages' bIncludeMasters (the UI's
-//   call), the list it is checked against, KCMCollectPageUIDs, holds no master either (IPageList.h:81
-//   says in as many words that the page count "does not include master pages"). Changing only one
-//   of the two still drops every master, because it will not be in flatSet, so **both have to move
-//   together with includeMasters**. The master pages are appended by KCMCollectMasterPageUIDs,
-//   whose contract is that it does not clear its out parameter.
+//   call), the question asked of each page here lets a master through only when includeMasters
+//   says so. Changing only one of the two still drops every master, so **both have to move
+//   together with includeMasters**.
+//
+// ★EACH SELECTED PAGE IS ASKED, NOT LOOKED UP IN A LIST (A-1 of the M5 round, the author's yes,
+//   2026-10-30). This used to flatten the document's whole page list (and every master spread's
+//   pages) into a set for each call - a 1,000-page document walked once to check a selection of
+//   one. Now: is it a page at all (its class - a deleted UID answers kInvalidClass, and a master
+//   SPREAD answers IsAMaster too, so the class goes first, the test KCMFramePageUID uses), and then
+//   **in the page list** (IPageList::GetPageIndex >= 0 - a master page is not in it, the reading
+//   KCMPageExport.cpp and KCMChangeNav.cpp already rest on) or **a master**
+//   (ILayoutUtils::IsAMaster - "a page in a master spread"). The same set as the old lists: the
+//   page list includes the pages of hidden spreads, in GetNthPageUID's order (KCMStoryList.cpp says
+//   it measured that), and GetPageIndex's default counts them too.
 //========================================================================================
 bool16 KCMPageMapPagesOf(const UIDList& selection, bool16 includeMasters, IDataBase*& outDB, std::vector<UID>& outPages)
 {
@@ -105,19 +117,19 @@ bool16 KCMPageMapPagesOf(const UIDList& selection, bool16 includeMasters, IDataB
 	if (db == nil)
 		return kFalse;
 
-	// The document's whole page list is searched once per selected page, so it goes into a set (as
-	// a list, 1,000 pages x 100 selected pages = 100,000 comparisons). outPages is at most as long
-	// as the selection, so keeping it free of duplicates by a linear search is fine.
-	std::vector<UID> flat;
-	KCMCollectPageUIDs(db, flat);
-	if (includeMasters)
-		KCMCollectMasterPageUIDs(db, flat);	// masters are appended; the out list is not cleared
-	const std::set<UID> flatSet(flat.begin(), flat.end());
+	InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
+	Utils<ILayoutUtils> layout;		// guarded before use: QueryUtilInterface has no nil check of its own
+	// outPages is at most as long as the selection, so keeping it free of duplicates by a linear
+	// search is fine.
 	const int32 n = selection.Length();
 	for (int32 i = 0; i < n; ++i)
 	{
 		const UID u = selection[i];
-		if (flatSet.count(u) > 0 && std::find(outPages.begin(), outPages.end(), u) == outPages.end())
+		if (db->GetClass(u) != kPageBoss)
+			continue;
+		const bool16 ordinary = (pageList != nil && pageList->GetPageIndex(u) >= 0) ? kTrue : kFalse;
+		const bool16 master = (!ordinary && includeMasters && layout && layout->IsAMaster(u, db)) ? kTrue : kFalse;
+		if ((ordinary || master) && std::find(outPages.begin(), outPages.end(), u) == outPages.end())
 			outPages.push_back(u);
 	}
 	if (outPages.empty())
@@ -374,44 +386,9 @@ void KCMSetPairPagesByUid(bool16 on)
 	sPairPagesByUid = on;
 }
 
-//========================================================================================
-// The identity a Source page answers to. Its own UID for an ordinary document; for a page that
-// carries a KcmOriginUid label, the UID the label names (KCMXmlInject.h).
-// ⛔**NO PAGE CARRIES ONE ANY MORE, SINCE 2026-09-21** (re-audit M5 round 3, 2026-09-27): the labels
-//   were written into a REHYDRATED task-start copy, whose pages had new ids, and the writer went with
-//   the rehydration. A Task Start is a copy saved to a FILE now, which carries the original's own
-//   numbers (KCMPagePairRule.h, the paragraph on the one exception), and the "Open Task Start Copy"
-//   item this comment used to name is gone too. So the probe below always finds nothing and every
-//   page keys by its own UID. It is kept, as the rule header keeps its `sourceKeys` door: a
-//   document a development build labelled would still pair as it did, and it costs two label reads.
-//
-// WHETHER THE SOURCE IS SUCH A COPY IS ASKED OF THE PAGES, NOT OF WHO OPENED THEM: the first two
-//   ordinary pages are probed for the label (two rather than one, so that a first page the
-//   write-back could not name does not hide a copy), and only when one of them carries it are the
-//   labels read for every page.
-// ⚠A page's label is a script label (IScript::GetTag), read here on the main thread only - the
-//   one thread KCMBuildPairing runs on (it says why).
-//========================================================================================
-static void KCMSourcePageKeys(IDataBase* sourceDB, const std::vector<UID>& sourcePages, std::vector<UID>& outKeys)
-{
-	outKeys.assign(sourcePages.begin(), sourcePages.end());
-
-	bool16 isCopy = kFalse;
-	for (size_t i = 0; i < sourcePages.size() && i < 2 && !isCopy; ++i)
-	{
-		UID original = kInvalidUID;
-		if (KCMReadOriginUidLabel(sourceDB, sourcePages[i], original))
-			isCopy = kTrue;
-	}
-	if (!isCopy)
-		return;
-
-	for (size_t i = 0; i < sourcePages.size(); ++i)
-	{
-		UID original = kInvalidUID;
-		outKeys[i] = KCMReadOriginUidLabel(sourceDB, sourcePages[i], original) ? original : kInvalidUID;
-	}
-}
+// (KCMSourcePageKeys went on 2026-10-30 with the author's yes - proposal P-1 of the M5 waste
+//  round: it probed a Source's pages for the KcmOriginUid labels a rehydrated task-start copy
+//  carried, and no page has carried one since 2026-09-21. git log -S KCMSourcePageKeys.)
 
 //========================================================================================
 // KCMBuildPairing (declared in KCMPageMap.h)
@@ -432,7 +409,7 @@ static void KCMSourcePageKeys(IDataBase* sourceDB, const std::vector<UID>& sourc
 //   MAIN THREAD ONLY. Every caller runs on it, and the drawing's one road in from a background
 //   thread (the asynchronous PDF export) does not reach here: EnsureOverflowCache in
 //   KCMDrawEventHandler.cpp returns before rebuilding off the main thread. The pairing switch
-//   (sPairPagesByUid) and the label reads (KCMSourcePageKeys) lean on that.
+//   (sPairPagesByUid) leans on that.
 //========================================================================================
 void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages,
@@ -461,9 +438,7 @@ void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 
 	if (sPairPagesByUid)
 	{
-		std::vector<UID> sKeys;
-		KCMSourcePageKeys(sourceDB, sFiltered, sKeys);
-		KCMPairPagesByIdentity<UID>(tFiltered, sFiltered, sKeys, kInvalidUID,
+		KCMPairPagesByIdentity<UID>(tFiltered, sFiltered,
 			outTargetPages, outSourcePages, outOverflowTargetPages, outOverflowSourcePages);
 		return;
 	}
@@ -548,6 +523,19 @@ void KCMBuildMasterPairing(IDataBase* targetDB, IDataBase* sourceDB,
 			outSourcePages.push_back(ssp->GetNthPageUID(p));
 		}
 	}
+}
+
+//========================================================================================
+// KCMBuildFullPairing (declared in KCMPageMap.h, where the reasoning is)
+//========================================================================================
+void KCMBuildFullPairing(IDataBase* targetDB, IDataBase* sourceDB,
+	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages)
+{
+	KCMBuildPairing(targetDB, sourceDB, outTargetPages, outSourcePages);		// clears both
+	std::vector<UID> mT, mS;
+	KCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
+	outTargetPages.insert(outTargetPages.end(), mT.begin(), mT.end());
+	outSourcePages.insert(outSourcePages.end(), mS.begin(), mS.end());
 }
 
 // (KCMPageMapHasOverflow was removed: nothing had called it since the drawing side moved to the

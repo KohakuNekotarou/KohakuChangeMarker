@@ -349,26 +349,19 @@ static void KCMEnsureSyncPairing(IDataBase* targetDB, IDataBase* sourceDB)
 	if (targetDB == nil || sourceDB == nil)
 		return;
 	InterfacePtr<IKCMMarkData> marks(Utils<IKCMMarkData>().QueryUtilInterface());
+	if (marks == nil)
+		return;		// QueryUtilInterface has no nil guard of its own
+	// ★The master spreads' pairing comes in the same table (GetFullPagePairing: the ordinary pages,
+	//   then the masters by name - the two-part scheme the comparison uses, KCMCore.cpp). A page UID
+	//   is unique within a document, so the two share one map, and that is what lets a window
+	//   showing a master find the partner's master page = Sync Layout Views and Align Other Views
+	//   work on masters too.
 	std::vector<UID> pairT, pairS;
-	marks->GetPagePairing(targetDB, sourceDB, pairT, pairS);
-	for (size_t i = 0; i < pairT.size(); ++i)
+	marks->GetFullPagePairing(targetDB, sourceDB, pairT, pairS);
+	for (size_t i = 0; i < pairT.size() && i < pairS.size(); ++i)
 	{
 		sSyncPairT2S[pairT[i]] = pairS[i];
 		sSyncPairS2T[pairS[i]] = pairT[i];
-	}
-
-	// ★The master spreads' pairing goes into the same table. A page UID is unique within a document,
-	//   so it can share one map with the ordinary pages, and that is what lets a window showing a
-	//   master find the partner's master page ＝ Sync Layout Views and Align Other Views work on
-	//   masters too.
-	//   ★It goes through the same two-part scheme the comparison uses (KCMCore.cpp): ordinary pages
-	//   matched in order, masters matched by name.
-	std::vector<UID> mT, mS;
-	marks->GetMasterPagePairing(targetDB, sourceDB, mT, mS);
-	for (size_t i = 0; i < mT.size(); ++i)
-	{
-		sSyncPairT2S[mT[i]] = mS[i];
-		sSyncPairS2T[mS[i]] = mT[i];
 	}
 }
 

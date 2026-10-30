@@ -132,9 +132,7 @@ void KCMDescribePixelPages(PMString& out)
 	IKCMMarkData* const m = marks;		// valid while `marks` lives - to the end of this function
 	std::vector<UID> pairT, pairS;
 	std::map<UID, UID> targetToSource, sourceToTarget;
-	m->GetPagePairing(target, source, pairT, pairS);
-	AddPairs(pairT, pairS, targetToSource, sourceToTarget);
-	m->GetMasterPagePairing(target, source, pairT, pairS);		// clears both first (IKCMMarkData.h)
+	m->GetFullPagePairing(target, source, pairT, pairS);		// the ordinary pages, then the masters (IKCMMarkData.h)
 	AddPairs(pairT, pairS, targetToSource, sourceToTarget);
 
 	AppendSide(out, "T", target, kTrue, m, targetToSource);

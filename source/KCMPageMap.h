@@ -116,8 +116,7 @@ void KCMSetPairPagesByUid(bool16 on);
 
 // The exclusion pairing: take each document's flat page list (KCMCollectPageUIDs), drop the
 // registered ("no counterpart") pages, and pair what is left - by identity (the default: a page
-// with the page of the same UID; a task-start copy's page counts under the origin UID its label
-// names), or in order when the toggle above is off. outTargetPages[i] and outSourcePages[i] are
+// with the page of the same UID), or in order when the toggle above is off. outTargetPages[i] and outSourcePages[i] are
 // one pair; both arrays end up the same length. A nil targetDB or sourceDB empties both and returns.
 // outOverflowTargetPages / outOverflowSourcePages (optional, nil allowed) collect the pages that
 // were NOT registered and still found no partner: by identity, the Target pages nobody answers to
@@ -142,6 +141,16 @@ void KCMBuildPairing(IDataBase* targetDB, IDataBase* sourceDB,
 // whose spreads hold different numbers of pages is truncated to the shorter one.
 // The body is in KCMPageMap.cpp.
 void KCMBuildMasterPairing(IDataBase* targetDB, IDataBase* sourceDB,
+	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages);
+
+// The full pairing: the ordinary pages' (KCMBuildPairing) and then the master spreads' pages
+// (KCMBuildMasterPairing) appended - **the one place the two are put together**. Both vectors
+// come out the same length, the i-th of each one pair (both cleared on entry). Page UIDs are
+// unique within a document, so the two tables cannot collide.
+// ★Use this wherever a page of either kind needs its partner. Leaving the masters out was a bug
+//   three times, each looking like something else: the peek showed nothing on a master, Refresh
+//   on a master found "no pages", the CMYK readout went blank on a master while dragging.
+void KCMBuildFullPairing(IDataBase* targetDB, IDataBase* sourceDB,
 	std::vector<UID>& outTargetPages, std::vector<UID>& outSourcePages);
 
 // Find the single sourceDB page that targetPageUID (in targetDB) is compared against, using

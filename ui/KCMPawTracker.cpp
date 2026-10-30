@@ -349,6 +349,11 @@ void KCMPawTracker::PlaceNow()
 	else
 	{
 		const bool16 placed = flags->PawStampPlaceAtAngle(db, pageUID, fX, fY, fColour, fHalf, PMString(), fAngle);
+		// ⚠And a failed WRITE: the model has said so on the status line already ("Could not write the marks into
+		//   the document."), and no paw is under the point - which is what tells it from "one is already there".
+		//   Anything said here would bury the model's sentence under a wrong reason (it did until 2026-10-30).
+		if (!placed && !flags->PawStampIsAt(db, pageUID, fX, fY, fHalf))
+			return;
 		// ⚠Three outcomes, not two: a press that lands on a paw already there places nothing (it was asked at the
 		//   press, but a paw could have arrived since -- a script, another view), and saying "placed" then would be
 		//   a lie the count does not correct.
@@ -492,12 +497,18 @@ bool16 KCMPawTracker::BeginTracking(IEvent* theEvent)
 					//     an empty page -- in TWO undo steps rather than one, and Ctrl+Z twice puts it
 					//     all back. That is the honest cost of the gesture, not a defect to hunt.
 					const int32 gone = flags->PawStampClearPage(db, pageUID);
+					if (gone < 0)
+						return kFalse;	// the write failed, and the model has said so - "none left" would bury it
 					changed = (gone > 0) ? kTrue : kFalse;
 					msg = changed ? "Cat paws cleared from this page (" : "Paw: none left on this page (";
 				}
 				else
 				{
 					changed = flags->PawStampLiftAt(db, pageUID, x, y, half);
+					// A refused lift with the paw still under the point is a failed WRITE, which the model has
+					//   said - "none under that point" would bury it.
+					if (!changed && flags->PawStampIsAt(db, pageUID, x, y, half))
+						return kFalse;
 					msg = changed ? "Paw lifted (" : "Paw: none under that point (";
 				}
 			}

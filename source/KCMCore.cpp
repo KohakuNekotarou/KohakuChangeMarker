@@ -713,24 +713,14 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	// partner -- taken out, the rest matched by UID, or in order with the flyout toggle off;
 	// KCMPagePairRule.h). Used by both the differential and the full path, and recorded at the end
 	// as the next run's previous pairing.
-	std::vector<UID> tPages, sPages;
-	KCMBuildPairing(targetDB, sourceDB, tPages, sPages);
-
-	// Append the master spreads' pages. Without this masters are never compared at all
-	// (KCMCollectPageUIDs excludes them, `IPageList.h:81`).
+	// **With the master spreads' pages after the ordinary ones** (KCMBuildFullPairing). Without them
+	// masters are never compared at all (KCMCollectPageUIDs excludes them, `IPageList.h:81`).
 	// **Appending is all that is needed**: the comparison loop, the progress bar's total, the
 	// differential cache (sPrevPairTargetToSource) and the Source-side mapping (sSrcPageToTarget)
 	// all work off tPages/sPages indices, and MakeEntry sees only a page's UIDRef -- it does not
 	// care whether that page is an ordinary one or a master.
-	// It is NOT appended inside KCMBuildPairing: that function's contract is "the exclusion pairing
-	// for ordinary pages" and it has other callers (the peek, the colour sampler, the report ...).
-	// Appending is the caller's job.
-	{
-		std::vector<UID> tMaster, sMaster;
-		KCMBuildMasterPairing(targetDB, sourceDB, tMaster, sMaster);
-		tPages.insert(tPages.end(), tMaster.begin(), tMaster.end());
-		sPages.insert(sPages.end(), sMaster.begin(), sMaster.end());
-	}
+	std::vector<UID> tPages, sPages;
+	KCMBuildFullPairing(targetDB, sourceDB, tPages, sPages);
 
 	const size_t n = tPages.size();	// each Build function truncates to the shorter side, so both are the same length
 

@@ -68,6 +68,8 @@
 //    marks-write-fail  the reader's marks' one write (KCMPageMarksCmd::Do) fails as a whole and rolls back: what
 //                Clear Checks and Clear Cat Paws in This Document say then
 //                (work/note-scripts/2026-10-30-kcm-m5-defect/m5d_probe.ps1, F1 / F2).
+//    marks-write-fail-second  the same write stops at its SECOND page, after the first went through: the half-done
+//                write the sequence has to roll back - the reader's door leaves the error set for it (m5d_probe F4).
 //    report-no-viewer  the PDF report is written but not opened in the PDF viewer (KCMReport.cpp): the regression
 //                bundles' runner turns it on for every run (work/kcm-regress/run.ps1) - a viewer that was already
 //                running kept a tab of each run's report.

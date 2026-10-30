@@ -84,7 +84,10 @@ public:
 		  author's call.
 		@param text the word to put beside it, or empty. An Alt press asks the reader for one; every
 		  other gesture passes nothing.
-		@return kTrue when one was placed, kFalse when a paw was already under that point. */
+		@return kTrue when one was placed, kFalse when a paw was already under that point - or when
+		  the WRITE failed, which the model has already said on the status line ("Could not write
+		  the marks into the document."). PawStampIsAt tells the two apart: after a failed write no
+		  paw is under the point, so the caller says nothing over the model's sentence. */
 	virtual bool16	PawStampPlaceAtAngle(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
 	                                     int32 colour, const PMReal& baseHalf, const PMString& text,
 	                                     const PMReal& angle) = 0;
@@ -92,7 +95,9 @@ public:
 	/** Lift the paw under (x, y) -- Shift + press (without Alt, which asks for a word).
 		baseHalf is half a paw's size on that page (PawHalfSizeForPage); a paw is judged over a
 		SQUARE of that, so what can be seen is what can be lifted.
-		@return kTrue when one was lifted, kFalse when the press landed on none. */
+		@return kTrue when one was lifted, kFalse when the press landed on none - or when the WRITE
+		  failed (already said by the model, as above), which leaves the paw under the point:
+		  PawStampIsAt tells the two apart. */
 	virtual bool16	PawStampLiftAt(IDataBase* db, UID pageUID, const PMReal& x, const PMReal& y,
 	                               const PMReal& baseHalf) = 0;
 
@@ -102,7 +107,8 @@ public:
 
 	/** Drop every paw on ONE page -- what Shift + DOUBLE click asks for. The page's
 		tick is untouched.
-		@return how many went; 0 for a page carrying none, which is not a failure. */
+		@return how many went; 0 for a page carrying none, which is not a failure; -1 when the
+		  WRITE failed and none went (already said by the model, as above). */
 	virtual int32	PawStampClearPage(IDataBase* db, UID pageUID) = 0;
 
 	/** Half a paw's drawn size on that page, in points.
@@ -122,13 +128,14 @@ public:
 
 	/** "Clear Checks in This Document": drop that document's ticks, and refresh the Pages panel's
 		thumbnails and the layout view with them.
-		@return how many ticks went, for the status line. */
+		@return how many ticks went, for the status line (0 when the write failed - the model has
+		  said that one itself). */
 	virtual int32	ClearChecksInDoc(IDataBase* db) = 0;
 
 	/** "Clear Cat Paws in This Document": the same for the paws.
 		⚠Paws reach no thumbnail (the drawing side excludes them from the isThumb branch), so only
 		  the layout view is refreshed.
-		@return how many paws went. */
+		@return how many paws went (0 when the write failed, as above). */
 	virtual int32	ClearPawsInDoc(IDataBase* db) = 0;
 
 	// ---- the marks the DOCUMENT itself carries --------------------------------

@@ -107,8 +107,8 @@ PMReal KCMBaseScreenOpacity()
 // Every paired page of the two documents as target UID -> source UID, **masters included**.
 //
 // The two rules differ -- ordinary pages pair by UID (or by position, toggle off), master spreads
-// by name -- so they come from two separate functions, and both go into ONE map: page UIDs are
-// unique within a document.
+// by name -- and KCMBuildFullPairing puts the two tables together in one place; both go into ONE
+// map here: page UIDs are unique within a document.
 // (The view sync's KCMEnsureSyncPairing has the same shape.)
 //
 // @warning **leaving the masters out is a bug that hides.** Both callers below had it once, and
@@ -116,18 +116,13 @@ PMReal KCMBaseScreenOpacity()
 //   and selecting a master and choosing Refresh found nothing in the pairing and silently
 //   reported "no pages". **The comparison itself had learned to handle masters while the callers
 //   of this pairing had not, so the frames appeared but nothing else worked on them.**
-static void KCMBuildFullPairing(IDataBase* targetDB, IDataBase* sourceDB,
-                                std::map<UID, UID>& outTargetToSource)
+static void KCMBuildFullPairingMap(IDataBase* targetDB, IDataBase* sourceDB,
+                                   std::map<UID, UID>& outTargetToSource)
 {
 	std::vector<UID> pairT, pairS;
-	KCMBuildPairing(targetDB, sourceDB, pairT, pairS);
-	for (size_t k = 0; k < pairT.size(); ++k)
+	KCMBuildFullPairing(targetDB, sourceDB, pairT, pairS);
+	for (size_t k = 0; k < pairT.size() && k < pairS.size(); ++k)
 		outTargetToSource[pairT[k]] = pairS[k];
-
-	std::vector<UID> mT, mS;
-	KCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
-	for (size_t k = 0; k < mT.size(); ++k)
-		outTargetToSource[mT[k]] = mS[k];
 }
 
 
@@ -260,7 +255,7 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 		// The pairing is the same for every page of the spread, so it is built once before the loop.
 		// ⛔It was skipped in the Task Start mode, where a one-spread copy paired itself.
 		std::map<UID, UID> targetToSource;
-		KCMBuildFullPairing(targetDB, sourceDB, targetToSource);
+		KCMBuildFullPairingMap(targetDB, sourceDB, targetToSource);
 		for (int32 p = 0; p < np; ++p)
 		{
 			const UID tPageUID = spread->GetNthPageUID(p);
@@ -324,7 +319,7 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 
 	// Build the exclusion pairing once, so that target -> source can be looked up.
 	std::map<UID, UID> targetToSource;
-	KCMBuildFullPairing(targetDB, sourceDB, targetToSource);
+	KCMBuildFullPairingMap(targetDB, sourceDB, targetToSource);
 
 	// Re-compare the given pages and update their rings. The pages touched -- each target page and
 	// its counterpart -- are collected so the Pages panel thumbnails can be purged per UID

@@ -47,9 +47,8 @@
 #include "KCMModelNotify.h"	// KCMNotifyStatus - the model tells the UI, it never calls it
 #include "KCMPageCheck.h"
 #include "KCMPageMap.h"		// KCMPageMapPagesOf - the Pages panel's selection (the UI reads it), shared with Register
-#include "KCMPawStamp.h"		// KCMPawStampsOnPage - a tick is written with the paws the page already carries
-#include "KCMPageMarksCmd.h"	// KCMPageMarks / KCMMarksWrite -- the only door to a change
-#include "KCMPageMarksDoc.h"	// KCMMarksSyncFromDocument -- what the document says, before counting or clearing
+#include "KCMPageMarksCmd.h"	// KCMPageMarks / KCMMarksWriteForReader -- the reader's door to a change
+#include "KCMPageMarksDoc.h"	// KCMMarksSyncFromDocument / KCMPageMarksNow -- what the document says
 #include "KCMDocUidSet.h"		// the shared "document -> page UID set" container (Register uses it too)
 // ⚠KCMID.h was included here for kKCMPageFlagsChangedMessage and is gone with it (2026-09-07):
 //   this file no longer notifies anybody. KCMMarksObserver does, because it is the only place that
@@ -132,27 +131,21 @@ void KCMPageCheckToggleSelectedPages(const UIDList& selection)
 	const int32  totalBefore  = sChecked.CountIn(db);		// ⚠**read BEFORE the write** -- see the status line below
 	const bool16 anyUnchecked = (wasChecked < (int32)pages.size()) ? kTrue : kFalse;
 
-	// ⚠**Each page's paws travel with its tick.** A write says what the page carries AFTERWARDS,
-	//   so a page whose paws were left out of the list would lose them as a side effect of being
-	//   ticked.
+	// Each page as it stands (KCMPageMarksNow - its paws come along), with the tick changed.
 	std::vector<KCMPageMarks> wanted;
 	for (size_t i = 0; i < pages.size(); ++i)
 	{
-		KCMPageMarks m(pages[i], anyUnchecked);
-		KCMPawStampsOnPage(db, pages[i], m.fPaws);
+		KCMPageMarks m = KCMPageMarksNow(db, pages[i]);
+		m.fCheck = anyUnchecked;
 		wanted.push_back(m);
 	}
 
 	// One command for the whole selection, so five ticked pages are ONE Ctrl+Z and not five.
-	// ⚠**A failure has to SAY so.** The write is the whole of what this menu item does, so a silent
-	//   return leaves the reader looking at a menu item that did nothing and told them nothing --
-	//   and the sequence has already rolled the document back, so there is not even a half-result
-	//   on screen to hint at it.
-	if (KCMMarksWrite(db, wanted, anyUnchecked ? "Check Pages" : "Uncheck Pages") != kSuccess)
-	{
-		KCMSayStatus("Could not write the marks into the document.");
+	// ⚠**A failure has to SAY so** - the reader's door does (KCMMarksWriteForReader): the write is
+	//   the whole of what this menu item does, and the sequence has already rolled the document
+	//   back, so there is not even a half-result on screen to hint at it.
+	if (KCMMarksWriteForReader(db, wanted, anyUnchecked ? "Check Pages" : "Uncheck Pages") != kSuccess)
 		return;
-	}
 
 	PMString msg;
 	msg.SetTranslatable(kFalse);
@@ -243,7 +236,7 @@ void KCMPageCheckClearAllDocs()
 //     page that is gone: the remaining ticks stayed and the status line said "cleared chk0"
 //     (measured).
 //   @return how many ticks were dropped (0 when there were none), or -1 when the write failed and
-//     none were - the caller says so.
+//     none were - the reader's door (KCMMarksWriteForReader) has said so on the status line.
 //========================================================================================
 int32 KCMPageCheckClearDoc(IDataBase* db)
 {
@@ -257,18 +250,17 @@ int32 KCMPageCheckClearDoc(IDataBase* db)
 	if (cleared.empty())
 		return 0;							// nothing to do, and nothing to tell anyone about
 
-	// ⚠The paws of each of those pages are carried along untouched: this item clears TICKS, and a
-	//   write says what the page carries afterwards.
+	// Each of those pages as it stands (KCMPageMarksNow - its paws come along), with the tick off.
 	std::vector<KCMPageMarks> wanted;
 	for (std::set<UID>::const_iterator it = cleared.begin(); it != cleared.end(); ++it)
 	{
-		KCMPageMarks m(*it, kFalse);
-		KCMPawStampsOnPage(db, *it, m.fPaws);
+		KCMPageMarks m = KCMPageMarksNow(db, *it);
+		m.fCheck = kFalse;
 		wanted.push_back(m);
 	}
 
-	if (KCMMarksWrite(db, wanted, "Clear Checks") != kSuccess)
-		return -1;							// nothing came off (the sequence rolled it back)
+	if (KCMMarksWriteForReader(db, wanted, "Clear Checks") != kSuccess)
+		return -1;							// nothing came off (the sequence rolled it back); the door said so
 
 	return (int32)cleared.size();
 }

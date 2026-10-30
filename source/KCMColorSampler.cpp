@@ -63,29 +63,20 @@ void KCMSampleCmykBeginDrag(IDataBase* hoverDB, IDataBase* otherDB, bool16 hover
 	if (hoverDB == nil || otherDB == nil)
 		return;
 
-	// KCMBuildPairing takes its arguments in target/source order, so the two are sorted by which
+	// The pairing takes its arguments in target/source order, so the two are sorted by which
 	// side is hovered and the resulting pairs stored the hover -> other way round.
+	// **The master spread pairs go into the same cache** (KCMBuildFullPairing). @warning leave them
+	//   out and the master pages report their CMYK on a single click but stop reporting it as soon
+	//   as the button is held -- **behaviour that changes only while dragging**, because a live
+	//   cache never reaches KCMMapTargetToSource.
 	IDataBase* const targetDB = hoverIsTarget ? hoverDB : otherDB;
 	IDataBase* const sourceDB = hoverIsTarget ? otherDB : hoverDB;
 	std::vector<UID> pairT, pairS;
-	KCMBuildPairing(targetDB, sourceDB, pairT, pairS);
-	for (size_t k = 0; k < pairT.size(); ++k)
+	KCMBuildFullPairing(targetDB, sourceDB, pairT, pairS);
+	for (size_t k = 0; k < pairT.size() && k < pairS.size(); ++k)
 	{
 		if (hoverIsTarget) sDragCacheH2O[pairT[k]] = pairS[k];
 		else               sDragCacheH2O[pairS[k]] = pairT[k];
-	}
-	// **The master spread pairs go into the same cache.** @warning leave them out and the master
-	//   pages report their CMYK on a single click but stop reporting it as soon as the button is
-	//   held -- **behaviour that changes only while dragging**, because a live cache never reaches
-	//   KCMMapTargetToSource.
-	{
-		std::vector<UID> mT, mS;
-		KCMBuildMasterPairing(targetDB, sourceDB, mT, mS);
-		for (size_t k = 0; k < mT.size(); ++k)
-		{
-			if (hoverIsTarget) sDragCacheH2O[mT[k]] = mS[k];
-			else               sDragCacheH2O[mS[k]] = mT[k];
-		}
 	}
 	sDragCacheActive = kTrue;
 }

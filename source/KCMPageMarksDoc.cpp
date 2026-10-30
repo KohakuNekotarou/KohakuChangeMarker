@@ -31,7 +31,7 @@
 #include "KCMJsonText.h"				// KCMJsonEscape / KCMJsonReadString -- shared with KCMPageCheck.cpp
 #include "KCMModelNotify.h"				// KCMNotifyPages
 #include "KCMPageCheck.h"				// the tick's store (Collect / ReplaceAll)
-#include "KCMPageMarksCmd.h"			// KCMPageMarks / KCMMarksWrite -- Clear goes through the command
+#include "KCMPageMarksCmd.h"			// KCMPageMarks -- what KCMPageMarksNow answers
 #include "KCMPageMarksDoc.h"
 #include "KCMPawStamp.h"				// the paws' store
 
@@ -122,6 +122,15 @@ static void KCMCollectAllPages(IDataBase* db, std::vector<UID>& out)
 	out.clear();
 	KCMCollectPageUIDs(db, out);
 	KCMCollectMasterPageUIDs(db, out);	// appends; a tick may sit on a master (2026-08-24)
+}
+
+/** Can this page carry labels at all (KCMPageMarksDoc.h) - the question KCMReadPageLabels asks first. */
+bool16 KCMMarksPageWritable(IDataBase* db, UID pageUID)
+{
+	if (db == nil || pageUID == kInvalidUID)
+		return kFalse;
+	InterfacePtr<IScript> script(db, pageUID, UseDefaultIID());
+	return (script != nil) ? kTrue : kFalse;
 }
 
 /** This page's labels, ours included. kFalse when the page has no scripting facet at all. */
@@ -488,8 +497,27 @@ int32 KCMMarksSyncFromDocument(IDataBase* db, int32* outChecks, int32* outPaws)
 	return carrying;
 }
 
+// (KCMMarksClearFromDocument - "taking every mark off" - went in e658743 with the menu items that
+//  called it; its section header stayed behind until 2026-10-30.)
+
 //========================================================================================
-// Taking every mark off.
+// KCMPageMarksNow (declared in KCMPageMarksDoc.h, where the reasoning is) -- one page's marks as
+// its labels say them now.
 //========================================================================================
+KCMPageMarks KCMPageMarksNow(IDataBase* db, UID page)
+{
+	KCMPageMarks now(page, kFalse);
+	IScriptLabel::ScriptLabelKeyValueList had;
+	if (!KCMReadPageLabels(db, page, had))
+		return now;
+	for (int32 k = 0; k < (int32)had.size(); ++k)
+	{
+		if (had[k].Key() == PMString(kKCMCheckLabelKey))
+			now.fCheck = kTrue;
+		else if (had[k].Key() == PMString(kKCMPawsLabelKey))
+			KCMTextToPaws(had[k].Value().GetUTF8String(), page, now.fPaws);
+	}
+	return now;
+}
 
 // End, KCMPageMarksDoc.cpp.

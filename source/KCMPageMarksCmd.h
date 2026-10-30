@@ -75,8 +75,28 @@ struct KCMPageMarks
 	  store is put back by KCMMarksObserver when the notification arrives -- on the way in and on
 	  the way back out again. A caller that "helpfully" also updates the store re-creates the very
 	  two-copy defect this command exists to remove.
+	@param outWroteSome (optional) kTrue when the command had started writing before it stopped - a
+	  failure with kFalse here changed nothing. It checks every page before writing any (KCMMarksPageWritable),
+	  so a page it cannot reach is such a failure.
 	@see KCMMarksObserver.h */
-ErrorCode	KCMMarksWrite(IDataBase* db, const std::vector<KCMPageMarks>& pages, const char* undoName);
+ErrorCode	KCMMarksWrite(IDataBase* db, const std::vector<KCMPageMarks>& pages, const char* undoName,
+                      bool16* outWroteSome = nil);
+
+/** The door for a write the READER asked for - a menu item, a tool's press: KCMMarksWrite, and
+	when it fails the failure is SAID on the status line ("Could not write the marks into the
+	document.") - and the global error is put back to kSuccess WHEN THE FAILED WRITE CHANGED NOTHING.
+	Left set, a script's invoke() of the menu item threw (measured, 2026-10-30), and InDesign is to
+	say it again with its own alert when the event loop is reached (the guide, vol1 Commands - not
+	measured here). The same handling as the product's own menu items (linksui:
+	PMSetGlobalErrorCode(kSuccess), then its own alert).
+	⚠**NOT when it had started writing.** The write JOINS a sequence that is already open
+	  (SequenceContext - a script's ENTIRE_SCRIPT, say) and is rolled back only when THAT one ends with
+	  the error still set; put back to kSuccess here, the pages written before the stop would be kept.
+	  Whether a sequence is open is asked only in the internal part of ICommandProcessor, so the door
+	  asks the one thing it can: did anything change (the guide's rule - clear only what has been rolled
+	  back or changed nothing; memory command-sequence-rollback-on-error).
+	@return what KCMMarksWrite returned. */
+ErrorCode	KCMMarksWriteForReader(IDataBase* db, const std::vector<KCMPageMarks>& pages, const char* undoName);
 
 #endif // __KCMPageMarksCmd_h__
 

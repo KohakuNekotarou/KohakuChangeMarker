@@ -29,8 +29,6 @@
 #include "IDocument.h"
 #include "IDocumentList.h"
 #include "IDocumentUtils.h"
-#include "IScript.h"				// a story's scripting facet IS an IScriptLabel (KCMPageMarksDoc.cpp)
-#include "IScriptLabel.h"
 #include "IApplication.h"			// QueryDocumentList - the open documents (ISession's is for internal use only)
 #include "ISession.h"
 
@@ -38,11 +36,9 @@
 #include "ErrorUtils.h"				// GlobalErrorStatePreserver
 #include "Utils.h"
 
-#include <string>
-
 // Project includes:
 #include "KCMRehydrate.h"
-#include "KCMXmlInject.h"			// kKCMOriginUidLabelKey / KCMParseSelfUid
+// (KCMXmlInject.h, IScript.h, IScriptLabel.h and <string> went on 2026-10-30 with KCMReadOriginUidLabel.)
 
 namespace
 {
@@ -76,24 +72,6 @@ void KCMCloseRehydrated(const UIDRef& doc, bool16 deferred)
 	// kSchedule: the handler's default, for the caller inside a close responder (the header).
 	handler->Close(doc, kSuppressUI, kFalse /*allowCancel*/,
 				   deferred ? IDocFileHandler::kSchedule : IDocFileHandler::kProcess);
-}
-
-bool16 KCMReadOriginUidLabel(IDataBase* db, UID uid, UID& outOriginal)
-{
-	outOriginal = kInvalidUID;
-	if (db == nil || uid == kInvalidUID)
-		return kFalse;
-	InterfacePtr<IScript> script(db, uid, UseDefaultIID());
-	if (script == nil)
-		return kFalse;
-	const IScriptLabel::ScriptLabelValue value = script->GetTag(PMString(kKCMOriginUidLabelKey));
-	// A few bytes ("ufe"), so the temporary std::string is not the buffer rule's concern.
-	const std::string narrow = value.GetUTF8String();
-	uint32 parsed = 0;
-	if (!KCMParseSelfUid(narrow.c_str(), narrow.size(), parsed))
-		return kFalse;
-	outOriginal = UID(parsed);
-	return kTrue;
 }
 
 // End, KCMRehydrate.cpp.

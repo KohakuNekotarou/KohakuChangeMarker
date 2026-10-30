@@ -81,7 +81,7 @@ void KCMPageCheckClearAllDocs();
 //   read from the document (the store brought back to it first), so a page deleted since the last
 //   write is not handed to the write - which then fails as a whole.
 // @return how many ticks were dropped (0 for a nil db, or for a document holding none), or -1 when
-//   the write failed and none were.
+//   the write failed and none were (said on the status line by KCMMarksWriteForReader).
 int32 KCMPageCheckClearDoc(IDataBase* db);
 
 // (KCMPageCheckPruneToMarked was declared here and REMOVED on 2026-09-04, together with its two
