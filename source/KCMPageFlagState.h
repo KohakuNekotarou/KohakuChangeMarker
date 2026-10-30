@@ -5,7 +5,7 @@
 //  What a per-page toggle (Register / Check) should look like right now -- the type alone.
 //
 //  WHY IT IS A FILE OF ITS OWN. IKCMPageFlagsFacade returns this type, so the UI has to know it;
-//  it used to be reached by including KCMPageMap.h, which also declares thirteen model-side free
+//  it used to be reached by including KCMPageMap.h, which also declares the model-side free
 //  functions the UI can see and cannot link to. A header that crosses the boundary should carry
 //  the type and nothing else, the way KCMBookResult.h already does -- so what travels is a
 //  definition, not an invitation to call across the plug-in edge.

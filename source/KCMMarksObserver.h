@@ -2,7 +2,7 @@
 //
 //  KCMMarksObserver.h
 //
-//  The one thing that writes the session store of ticks and cat paws.
+//  What refills the session store of ticks and cat paws when the document changes.
 //
 //  ***** WHAT IT IS FOR *****
 //
@@ -13,12 +13,13 @@
 //  a label there would be neither fast nor safe.
 //
 //  A cache has to be refilled when the thing it caches changes. This observer is that refill.
-//  ★To be exact about it, since a claim like this is worth nothing if it is not: the refill itself
+//  To be exact about it, since a claim like this is worth nothing if it is not: the refill itself
 //    is KCMMarksSyncFromDocument, and it -- not this file -- is the only caller of
-//    KCMPageCheckReplaceAll and KCMPawStampReplaceAll. TWO things call it: this observer, and the
+//    KCMPageCheckReplaceAll and KCMPawStampReplaceAll. Its callers are this observer, the
 //    document-opened responder (a document that arrives already carrying labels has to be read
-//    once, and no notification announces that). Both are the same road in the same direction:
-//    document -> store, never the other way. The only other writers of either store are the
+//    once, and no notification announces that), and Check and the two Clears before they count
+//    what the store holds (it goes on naming a deleted page). All are the same road in the same
+//    direction: document -> store, never the other way. The only other writers of either store are the
 //    closed-document sweep and the shutdown clear, and neither is a change to any document.
 //
 //  ***** WHY LAZY ATTACHMENT, AND WHY THAT IS THE WHOLE TRICK *****

@@ -13,8 +13,8 @@
 > ⚠**facade の2つの口（`ChoosePdfEnd`・`IsPdfDoc`）は消していません**＝クラスの途中の仮想関数は消さない決まり。
 > `ChoosePdfEnd` は断り、`IsPdfDoc` は常に偽を返します（ABI の印は据え置き＝型は変えていない）。
 >
-> ★**残したもの**＝Before/After 報告書の PDF（**別の機能**）と、その PDF のページを置く部品 `KCMPlacePdf`／ページの組の規則の
-> 「Target 側も鍵で答える」9引数の形（`KCMPagePairRule.h`・一般の形で、オフラインの試験が証明している）。
+> ★**残したもの**＝Before/After 報告書の PDF（**別の機能**）と、その PDF のページを置く部品 `KCMPlacePdf`。
+> （ページの組の規則の「Target 側も鍵で答える」9引数の形もここに残していたが、呼び手が8引数の転送1つだけだったので 2026-10-30 に外した。）
 >
 > 項目（PDF-01〜PDF-30）の原文と実機の記録は git（`53d5b05` までのこの章）と
 > `docs/ai-notes/kcm-pdf-compare-live-2026-10-14.md`／`kcm-pdf-export-check-live-2026-10-14.md` にあります。

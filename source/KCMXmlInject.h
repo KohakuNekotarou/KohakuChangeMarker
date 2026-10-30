@@ -69,7 +69,7 @@
 //      too (2026-09-13), but ⚠**the import drops every page label** (measured: all in the bytes,
 //      none in the copy), so the copy's pages are named AFTER the import from the spread -> pages
 //      table below (KCMCollectSpreadPages; the writer is KCMRehydrate.cpp, LabelCopyPages). That
-//      is what lets a task-start copy pair by identity (KCMPagePairRule.h) like any other Source.
+//      was what let a task-start copy pair by identity like any other Source.
 //      ⚠The element the new document was born with is reused by the import and loses its label
 //      (measured on the first spread, 2026-09-12); the write-back matches that spread by position.
 //

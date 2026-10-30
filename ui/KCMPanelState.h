@@ -61,8 +61,8 @@
 //      it is written up in `source/KCMID.h`.
 //    - The armed state of Start/Stop, Hide Unchanged, Find Overset ...... "the state of the work
 //      at this moment" (above).
-//    - The per-page ticks (Check) and the map ...... **a different persistence** with a file of
-//      its own (KCMPageCheck.cpp).
+//    - The per-page ticks (Check) and the registrations ...... **a different persistence**: a tick
+//      lives in the document (KCMPageMarksDoc.h), a registration for the session (KCMPageMap.h).
 //
 //  ⚠★★**When a toggle is added, touch this list, the save and the restore in the same commit.**
 //    A review found **three misses at once**: ① "Always Show Marks on Target" was saved and

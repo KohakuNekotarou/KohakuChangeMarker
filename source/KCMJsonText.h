@@ -12,7 +12,7 @@
 //  that contains a quote, and two copies of an escape rule are two rules the day one is fixed
 //  (memory one-question-one-place) - silent in the worst way: a document that saves and then reads
 //  back as something else. Only the paws are left (KCMPageMarksDoc.cpp; KCMPageChecks.json went
-//  with the private store - the end of KCMPageCheck.cpp). The header stays a file of its own so
+//  with the private store - spec map FLG-24). The header stays a file of its own so
 //  that the next writer of reader-typed text takes this rule rather than a copy of it.
 //
 //  Inline in a header rather than a .cpp because these have no state -- and because a .cpp has to

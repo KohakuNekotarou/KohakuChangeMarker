@@ -27,7 +27,7 @@
 #include "PMReal.h"			// the paw's coordinates and its size
 #include "KCMPageFlagState.h"	// KCMPageToggleState. A header of TYPES ONLY, which is what a
 							// header the UI includes has to be: this used to reach the type
-							// through KCMPageMap.h, whose 13 model-side free functions the UI
+							// through KCMPageMap.h, whose model-side free functions the UI
 							// could then see and could not link to.
 
 class UIDList;		// the Pages panel's selection, as the UI read it

@@ -1626,7 +1626,7 @@ void KCMActionComponent::UpdateActionStates(IActiveContext* /*ac*/, IActionState
 				// the check (all registered = tick, some = intermediate) and the label (Target = Added,
 				// Source = Removed). ★**The model counts; this side writes.**
 				// ★★The model **only answers**; writing into the menu and holding the label strings is this
-				//   side’s job. The shape of the answer is KCMPageToggleState in KCMPageMap.h.
+				//   side’s job. The shape of the answer is KCMPageToggleState in KCMPageFlagState.h.
 				// (2026-10-26) the selection read here, as the command reads it (KCMReadSelectedPages - masters left out)
 				UIDList pages;
 				KCMReadSelectedPages(pages, kFalse);

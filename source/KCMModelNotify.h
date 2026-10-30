@@ -78,8 +78,8 @@ void	KCMNotifyDocs(ClassID theChange, IDataBase* docA, IDataBase* docB, bool16 n
 //                    and are read during delivery only.
 //
 // @warning each set must hold EVERY page of that document whose picture can change, including
-// pages that LOST something: a page whose ring disappeared, or whose tick was pruned away because
-// its ring went, is in no current-state set at all, so asking cannot recover it. That is the whole
+// pages that LOST something: a page whose ring disappeared is in no current-state set at all, so
+// asking cannot recover it. That is the whole
 // reason the sets travel. Miss one and its stale thumbnail stays on screen -- which is exactly
 // what the whole-document purge this replaces could not get wrong.
 void	KCMNotifyDocsPages(ClassID theChange,

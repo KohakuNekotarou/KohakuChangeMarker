@@ -28,7 +28,7 @@
 
 // Project includes:
 #include "KCMCore.h"					// KCMCollectPageUIDs / KCMCollectMasterPageUIDs / KCMInvalidateDB
-#include "KCMJsonText.h"				// KCMJsonEscape / KCMJsonReadString -- shared with KCMPageCheck.cpp
+#include "KCMJsonText.h"				// KCMJsonEscape / KCMJsonReadString
 #include "KCMModelNotify.h"				// KCMNotifyPages
 #include "KCMPageCheck.h"				// the tick's store (Collect / ReplaceAll)
 #include "KCMPageMarksCmd.h"			// KCMPageMarks -- what KCMPageMarksNow answers
@@ -456,7 +456,7 @@ int32 KCMMarksSyncFromDocument(IDataBase* db, int32* outChecks, int32* outPaws)
 		return -1;
 
 	// REPLACE, NOT MERGE: the document is the answer, and this is putting the cache back in step
-	// with it. The stores' own contracts say the same about their file-based Load.
+	// with it.
 	KCMPageCheckReplaceAll(db, checks);
 	KCMPawStampReplaceAll(db, paws);
 

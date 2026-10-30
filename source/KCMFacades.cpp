@@ -590,8 +590,8 @@ public:
 									{ return KCMPawHalfSizeForPage(db, pageUID); }
 
 	// Clearing one document's marks (the two flyout items). **The status line is written here**,
-	// on the model side, the way Save and Load write theirs -- the UI's action component has no
-	// call site of its own for the status line and should not grow one.
+	// on the model side -- the UI's action component has no call site of its own for the status
+	// line and should not grow one.
 	virtual bool16	PageCheckHasAny(IDataBase* db)	{ return KCMPageCheckHasAny(db); }
 	virtual int32	ClearChecksInDoc(IDataBase* db)
 					{

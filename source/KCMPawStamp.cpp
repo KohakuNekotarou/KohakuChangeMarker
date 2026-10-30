@@ -334,7 +334,7 @@ PMReal KCMPawHalfSizeForPage(IDataBase* db, UID pageUID)
 }
 
 //========================================================================================
-// Saving and restoring (KCMPageChecks.json, version 3)
+// The store as a whole, for KCMMarksSyncFromDocument (KCMPageMarksDoc.cpp)
 //========================================================================================
 
 void KCMPawStampGetForSave(IDataBase* db, std::vector<KCMPawStamp>& out)
@@ -358,8 +358,8 @@ void KCMPawStampReplaceAll(IDataBase* db, const std::vector<KCMPawStamp>& in)
 		return;
 
 	KCMMarkStateLock lock(KCMMarkStateMutex());
-	// ★REPLACE, not merge: loading means "restore what was saved", and merging would double
-	//   everything on a second load.
+	// REPLACE, not merge: the document is the answer, and merging would double every paw at the
+	//   next sync.
 	if (in.empty())
 		sPaws.erase(db);		// keeps the promise that an entry which exists is not empty
 	else

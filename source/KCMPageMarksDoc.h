@@ -63,8 +63,9 @@ ErrorCode	KCMMarksWriteOnePage(IDataBase* db, UID page, bool16 check,
 
 /** Read the whole document's labels and make the session store say exactly that.
 
-	This is the refill the marks observer runs, and the restore the document-opened responder runs;
-	they are one function because they are one question ([[one-question-one-place]]). It REPLACES
+	This is the refill the marks observer runs, the restore the document-opened responder runs, and
+	what Check and the two Clears run before they count what the store holds (it goes on naming a
+	deleted page); they are one function because they are one question (memory one-question-one-place). It REPLACES
 	rather than merges -- "put back what the document says", not "add to what is here" -- and it
 	notifies the pages whose picture changed, which it works out by comparing the store before with
 	the store after. **A page that LOST a mark is in no current-state set**, so nothing but that

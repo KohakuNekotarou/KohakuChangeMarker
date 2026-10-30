@@ -21,7 +21,7 @@
 //      grep -rn KCMPathForDisplay ui
 //
 //  ⚠NOT for paths the user is meant to USE. The status line reports where a file was saved
-//  (KCMPanelState.json, KCMPageChecks.json, the changed-pages TSV) and those stay as the
+//  (KCMPanelState.json, the changed-pages TSV) and those stay as the
 //  platform writes them, because they get pasted into Explorer. This function is for the two
 //  documents being compared, which are named to be READ, not copied.
 //
