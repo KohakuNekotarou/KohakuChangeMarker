@@ -231,7 +231,7 @@
 
 - **RUN-35** 比較中かどうかで変わるもの ―― フライアウト先頭の項目名（Start ⇄ Stop）／パネルのアイコン
   （ON / OFF）／パネルの `Target:` `Source:` に出る名前／Prev・Next ボタン／
-  Hide Unchanged Spreads（比較中の Pixel モードでだけ押せる）／Export Changed Pages（比較中だけ）／
+  Hide Unchanged Spreads（比較中の Pixel モードでだけ押せる）／
   Set as Target・Set as Source（比較中は灰色）／Refresh Comparison（比較中だけ）。
   ⚠**Clear Target and Source は比較中も押せる**（RUN-21）。
   ★**この一覧は 2026-09-07 に実機で丸ごと裏づけた**―― 比較中と停止後の2枚を
