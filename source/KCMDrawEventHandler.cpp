@@ -360,7 +360,7 @@ struct KCMPageRaster
 // The comparison is always four-channel CMYK, rasterised opaque (small CMYK differences are
 // rounded away by a conversion to RGB). The displayed ring is composited separately as ARGB,
 // so the comparison raster does not need an alpha channel (addTransparencyAlpha = kFalse).
-// ★**simulateOverprint and the attribute map are what make the numbers the same whatever else is on
+// **simulateOverprint and the attribute map are what make the numbers the same whatever else is on
 //   the spread** (KCMCmykRaster.h): without them, one drop shadow added to a page marked every placed
 //   image beside it as changed.
 // Rasterise with ANTI-ALIASING OFF (4th argument enableAntiAliasing = kFalse). It removes the

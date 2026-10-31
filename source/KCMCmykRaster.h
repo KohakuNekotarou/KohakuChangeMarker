@@ -7,7 +7,7 @@
 //  have to ask alike.
 //
 //  **Asked for plainly, what a pixel holds depends on whether the spread holds any transparency at
-//  all, anywhere on it** (measured 2026-10-31, with SnapshotUtilsEx's kCsCMYK and its defaults):
+//  all, anywhere on it** (measured, with SnapshotUtilsEx's kCsCMYK and its defaults):
 //
 //                          no transparency on the spread    transparency on the spread
 //    placed CMYK image     through sRGB: 25/50/75/10        its own values

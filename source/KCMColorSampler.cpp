@@ -27,11 +27,10 @@
 // This file deliberately does not include the UI's KCMViewLookup.h. Resolving which view the
 //   mouse is over belongs to the caller (the UI); all this .cpp answers is "what colour is the
 //   point I was given".
-//   @warning **the third of those lookups must not be dropped along the way**: comparing
-//   KCMFindDocDbForView(view) against hoverDB is what stops a different window's coordinates
-//   being read as hoverDB's page coordinates, and it now lives in the callers (see the note in
-//   KCMColorSampler.h).
-#include "KCMPageMap.h"            // KCMMapTargetToSource / KCMBuildPairing (the exclusion pairing)
+//   @warning comparing KCMFindDocDbForView(view) against hoverDB is what stops a different window's
+//   coordinates being read as hoverDB's page coordinates, and it lives in the callers (see the note
+//   in KCMColorSampler.h).
+#include "KCMPageMap.h"            // KCMMapTargetToSource / KCMBuildFullPairing (the exclusion pairing)
 #include "KCMColorSampler.h"
 #include "KCMCmykRaster.h"			// the two terms a raster whose numbers are read is asked for on
 #include "KCMDiag.h"				// KCM_DIAG_LOG - a sample, timed (test builds only)
@@ -44,9 +43,9 @@
 
 //----------------------------------------------------------------------------------------
 // The hover -> other page mapping cached while Alt + left is held down (see KCMColorSampler.h).
-// The page structure cannot change under a held button, so the whole-document KCMBuildPairing
+// The page structure cannot change under a held button, so the whole-document KCMBuildFullPairing
 // runs once instead of on every sample (up to 20 a second). Outside a press this is inactive and
-// a one-off sample builds the mapping as before.
+// a one-off sample builds the mapping for itself.
 // **The direction is fixed when the button goes down**: press in the Target window and it maps
 //   target -> source, press in the Source window and it maps source -> target. The reference
 //   window cannot change mid-press, because the hovered document is pinned at press time.
@@ -116,8 +115,8 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 	//   @warning **proxy drawing (fullRes=kFalse) does not make this unnecessary** -- that is a
 	//     different question. What fullRes suppresses is generating placed images at full
 	//     resolution; what dirties a document here is composition. Start, the partial
-	//     re-comparison, the book comparison and the overset scan all carry the same guard for
-	//     the same reason.
+	//     re-comparison, the peek and the book comparison all carry the same guard for the same
+	//     reason.
 	//   The cost is saving and restoring a flag, which is nothing even at 20 samples a second.
 	IDataBase::SaveRestoreModifiedState dirtyGuard(pageRef.GetDataBase());
 
@@ -144,7 +143,8 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 	//   would read the colour of the bar rather than the colour of the text -- and since the same
 	//   bar appears on both sides, the two values agree and the mistake is invisible. Reading
 	//   pixels therefore wants greeking off, the same judgement the comparison rasterisation
-	//   (MakeEntry) makes. It costs only a slightly slower rasterisation of a 2pt square.
+	//   (KCMRasteriseForComparison) makes. It costs only a slightly slower rasterisation of a 2pt
+	//   square.
 	//   @warning **how far the default would actually reach cannot be worked out here.** The header
 	//     says the threshold is "its point size multiplied by the scaling" but never says what that
 	//     scaling is: at the 300dpi used here it is either 4.17x (300/72, so only text below about
@@ -153,18 +153,13 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 	//     comparison rasterisation in KCMDrawEventHandler.cpp (KCMRasteriseForComparison, which both
 	//     of MakeEntry's pages go through) -- and 0.0 is the right value to pass whichever way it is
 	//     answered, so it is not answered again here.
-	//     ⚠**that comparison rasterisation runs at 144dpi**, not at the 36dpi of kKCMResolution
-	//     (144 = kKCMResolution x kKCMHiResMul, KCMConstants.h:59). This comment used to read the
-	//     storage resolution as the comparison one, put the default at "everything below 14pt, the
-	//     body text of most documents", and conclude from that the same 0.0 mattered far more
-	//     there than here: 4x out, and the conclusion rested on it.
 	// **Non-printing objects are left switched on** (the eighth argument, bDrawNonPrintingObjects,
 	//   defaults to kTrue). This deliberately differs from the comparison rasterisation, which
 	//   passes kFalse: that one asks "did the printed result change", while this one answers "what
 	//   colour is the point the user clicked on", so anything visible on screen should be picked
 	//   up whether it prints or not.
-	// ⚠**What a sample costs grows with the items on the spread, not with this 2pt square** (measured
-	//   2026-10-27: about 1ms on a page of 2 items, 80 to 100ms on one of 1,700). Every item goes
+	// ⚠**What a sample costs grows with the items on the spread, not with this 2pt square** (measured:
+	//   about 1ms on a page of 2 items, 80 to 100ms on one of 1,700). Every item goes
 	//   through CShape::DrawHierarchy / ProcessDrawShape - fetched, a draw event dispatched - before
 	//   the clip turns it away (CShape.cpp). Draw's abortCheck, "called before each page item is
 	//   drawn" by its header, is never called on this route (counted: 0 calls for the 1,700), so a
@@ -246,14 +241,13 @@ static void KCMAppendCmykLabeled(PMString& s, const uint8 c[4])
 //   into inner (page) coordinates, then forward into each document's spread coordinates, and a
 //   tiny area of each page is rasterised -- which assumes the two versions share their geometry.
 //
-// **This samples the point it is given, not "wherever the mouse is".** Three steps that used to
-//   live here -- find the view under the mouse, check that its document is hoverDB, read the
-//   mouse's content coordinates -- **belong to the caller (the UI)**: a question about windows has
-//   no answer without windows, and a UI plug-in's boss is invisible (nil) on a background thread.
-// @warning **the second of those, the window identity check, moved rather than disappeared.**
-//   Without it, dragging from the window that was pressed into another one reads that window's
-//   coordinates as hoverDB's page coordinates. Both callers in KCMCmykCursor.cpp apply it before
-//   arriving here.
+// **This samples the point it is given, not "wherever the mouse is".** Three steps -- find the view
+//   under the mouse, check that its document is hoverDB, read the mouse's content coordinates --
+//   **belong to the caller (the UI)**: a question about windows has no answer without windows, and a
+//   UI plug-in's boss is invisible (nil) on a background thread.
+// @warning **the second of those, the window identity check, is not optional.** Without it,
+//   dragging from the window that was pressed into another one reads that window's coordinates as
+//   hoverDB's page coordinates. Both callers in KCMCmykCursor.cpp apply it before arriving here.
 bool16 KCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget,
                          const PMReal& mx, const PMReal& my,
                          UID viewSpreadUID,
@@ -345,10 +339,8 @@ bool16 KCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTar
 	outCursor.AppendW(UTF32TextChar(kTextChar_LF));	// newline: on to the second line
 	KCMAppendCmyk(outCursor, cX); outCursor.Append(otherLabel);
 
-	// outPanel = each value with its own heading letter (KCMAppendCmykLabeled), plus the t/s.
-	// **A separate heading row was tried and abandoned**: the panel's status area uses a
-	// proportional font (kPaletteWindowFontId), so columns cannot be made to line up. Attaching the
-	// letter to each value cannot come apart, whatever the font's widths are.
+	// outPanel = each value with its own heading letter (KCMAppendCmykLabeled, which says why), plus
+	// the t/s.
 	outPanel.SetTranslatable(kFalse);
 	KCMAppendCmykLabeled(outPanel, cH); outPanel.Append(hoverLabel);
 	outPanel.AppendW(UTF32TextChar(kTextChar_LF));

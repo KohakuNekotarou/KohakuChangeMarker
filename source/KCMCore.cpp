@@ -706,7 +706,7 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 	// to do).
 	KCMResetHideUnchanged(kTrue);
 
-	// **The peek's pictures go stale with it**, on both paths (measured 2026-10-31, from both windows:
+	// **The peek's pictures go stale with it**, on both paths (measured, from both windows:
 	//   a document edited and Refresh Comparison pressed, and Shift still laid the old square over; a
 	//   page registered, and its neighbour still laid over the partner it no longer has). DropAll is
 	//   the marks' alone, so this is the one place every re-comparison passes. The next peek takes them

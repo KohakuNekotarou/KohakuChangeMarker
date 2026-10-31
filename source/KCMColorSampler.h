@@ -9,8 +9,7 @@
 //  **"Raw" means the raster's pixel, and that pixel is the printed number** on the terms in
 //    KCMCmykRaster.h: a placed CMYK image reads its own values (a flat, untagged TIFF of 25/50/75/10
 //    reads C25 M50 Y75 K10, measured), a placed RGB image or an RGB or Lab fill what the document
-//    converts it to, and an overprint the inks it leaves. Asked for plainly the first of those read
-//    C0 M21 Y46 K27 until 2026-10-31, on any spread with no transparency on it.
+//    converts it to, and an overprint the inks it leaves.
 //
 //  The two sides are hover/other rather than a fixed target/source, because while a comparison is
 //  running the two lines have to appear over the **Source window** as well as the Target one. Which
@@ -39,8 +38,7 @@ class IDataBase;
 // mx, my        = the point to sample, in hoverDB's **pasteboard (content) coordinates**.
 // outPanel  = for the panel's status line (compact, with the t/s abbreviations, because the area
 //             is narrow). @warning **do not copy its size into this comment**: the one source of
-//             truth is the Frame of kKCMStatusTextWidgetID in ui/KCMUI.fr. The size was written
-//             out in several files at once and went stale in all of them.
+//             truth is the Frame of kKCMStatusTextWidgetID in ui/KCMUI.fr.
 // outCursor = for drawing on the cursor itself (the label is the single letter t or s). The
 //             C/M/Y/K headings are drawn separately by the bitmap cursor in KCMCmykCursor.cpp, so
 //             only the rows of numbers belong in this string.
@@ -49,10 +47,10 @@ class IDataBase;
 //   the mouse is over and where inside it belongs to the caller (the UI): a question about windows
 //   has no answer without windows, and the model plug-in cannot ask it -- a UI plug-in's boss is
 //   invisible (nil) on a background thread.
-// @warning **the test for having left the window that was pressed moved to the caller with it.**
-//   This function used to compare KCMFindDocDbForView(view) against hoverDB and refuse. **Drop
-//   that test and a different window's coordinates get read as hoverDB's page coordinates.** Both
-//   callers in KCMCmykCursor.cpp apply it before arriving here.
+// @warning **the test for having left the window that was pressed is the caller's too**: compare
+//   KCMFindDocDbForView(view) against hoverDB and refuse. **Drop that test and a different window's
+//   coordinates get read as hoverDB's page coordinates.** Both callers in KCMCmykCursor.cpp apply it
+//   before arriving here.
 // viewSpreadUID = **the spread that view is currently showing**.
 //   @warning **it has to be observed, not guessed** -- a master spread and an ordinary spread
 //     occupy the same pasteboard coordinates, so without it a master being displayed has the
@@ -67,8 +65,7 @@ bool16 KCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTar
 // once, when the button goes down; End throws it away when it is released. In between,
 // KCMSampleCmykAt reads the cache instead of rebuilding the whole pairing on every sample (up to
 // 20 a second) -- the page structure cannot change while tracking. A one-off sample with no Begin
-// builds it each time, as before. Solo mode (otherDB == nil) does not call these: it needs no
-// pairing at all.
+// builds it each time. Solo mode (otherDB == nil) does not call these: it needs no pairing at all.
 void KCMSampleCmykBeginDrag(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget);
 void KCMSampleCmykEndDrag();
 
