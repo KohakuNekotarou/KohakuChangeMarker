@@ -33,11 +33,14 @@
 #ifndef __KCMOversetPoint_h__
 #define __KCMOversetPoint_h__
 
+#include "BaseType.h"	// TextIndex
+#include "OMTypes.h"	// UID
 #include "PMPoint.h"	// PBPMPoint - the "+" in pasteboard coordinates
-#include "UIDRef.h"		// UID
 
 class IDataBase;
+class IParcelList;
 class ITextModel;
+class ParcelKey;
 
 /** Is the text at `pos` OVERSET - not composed into any frame the reader can see?
 
@@ -69,6 +72,14 @@ bool16 KCMIsTextIndexOverset(ITextModel* textModel, TextIndex pos);
 		first frame). */
 bool16 KCMFindOversetOutport(ITextModel* textModel, IDataBase* db, TextIndex pos,
 							 UID& outFrame, PBPMPoint& outPb);
+
+/** Where one corner of a parcel stands on the pasteboard, and the frame the parcel is in - the step
+	the walk above and the walk to a story's start (KCMStoryStartPoint) both take.
+
+	@param outport kTrue for the parcel's outport corner (Right, Bottom), kFalse for its inport (Left, Top).
+	@return kFalse for a parcel that is not placed in a frame. */
+bool16 KCMParcelCornerOnPasteboard(IParcelList* pl, const ParcelKey& key, IDataBase* db, bool16 outport,
+								   UID& outFrame, PBPMPoint& outPb);
 
 #endif // __KCMOversetPoint_h__
 

@@ -31,67 +31,55 @@
 namespace
 {
 
-/* KCMQueryParcelList
-   The parcel list of the thread at pos, or nil.
-
-   **Two steps and two nil tests**, and both are needed: ITextParcelList is what the text model
-   hands out, IParcelList is the one that can be walked.
-*/
-IParcelList* KCMQueryParcelList(ITextModel* textModel, TextIndex pos)
-{
-	if (textModel == nil)
-		return nil;
-	InterfacePtr<ITextParcelList> tpl(textModel->QueryTextParcelList(pos));
-	if (tpl == nil)
-		return nil;
-	return (IParcelList*)tpl->QueryInterface(IParcelList::kDefaultIID);
-}
-
 /* LastPlacedOutport
-   The outport of the last placed parcel of this thread. Walking backwards from the end, the first
-   parcel with a valid frame has its corner transformed parcel -> frame inner -> pasteboard.
-
-   ⚠(Right, Bottom) is taken in PARCEL-LOCAL coordinates and is right for vertical text as well -
-   GetParcelToFrameMatrix carries the writing direction. The header says why a branch here breaks
-   what is currently correct.
+   The outport of the last placed parcel of this thread: walking backwards from the end, the first
+   parcel with a frame. ITextParcelList is what the text model hands out, IParcelList is the one
+   that can be walked (a nil one stays nil).
 */
 bool16 LastPlacedOutport(ITextModel* textModel, IDataBase* db, TextIndex pos,
 						 UID& outFrame, PBPMPoint& outPb)
 {
-	if (db == nil)
-		return kFalse;
-	InterfacePtr<IParcelList> pl(KCMQueryParcelList(textModel, pos));
+	InterfacePtr<ITextParcelList> tpl(textModel->QueryTextParcelList(pos));
+	InterfacePtr<IParcelList> pl(tpl, UseDefaultIID());
 	if (pl == nil)
 		return kFalse;
 
 	for (ParcelKey k = pl->GetLastParcelKey(); k.IsValid(); k = pl->GetPreviousParcelKey(k))
-	{
-		const UID frameUID = pl->GetParcelFrameUID(k);
-		if (frameUID == kInvalidUID)
-			continue;	// this piece is unplaced (overset); keep walking back towards a placed one
-
-		InterfacePtr<IGeometry> frameGeo(db, frameUID, UseDefaultIID());
-		if (frameGeo == nil)
-			continue;
-
-		const PMRect  parcelBounds  = pl->GetParcelBounds(k);				// parcel-local
-		const PMMatrix toFrame      = pl->GetParcelToFrameMatrix(k);		// parcel -> frame inner
-		const PMMatrix toPasteboard = ::InnerToPasteboardMatrix(frameGeo);	// frame inner -> pasteboard
-
-		PMPoint corner(parcelBounds.Right(), parcelBounds.Bottom());		// the outport corner
-		toFrame.Transform(&corner);
-		toPasteboard.Transform(&corner);
-
-		outFrame = frameUID;
-		outPb    = PBPMPoint(corner.X(), corner.Y());
-		return kTrue;
-	}
+		if (KCMParcelCornerOnPasteboard(pl, k, db, kTrue /*outport*/, outFrame, outPb))
+			return kTrue;
 	return kFalse;
 }
 
 }	// namespace
 
 //========================================================================================
+
+// ⚠The corner is taken in PARCEL-LOCAL coordinates and is right for vertical text as well -
+// GetParcelToFrameMatrix carries the writing direction. The header says why a branch here breaks
+// what is currently correct.
+bool16 KCMParcelCornerOnPasteboard(IParcelList* pl, const ParcelKey& key, IDataBase* db, bool16 outport,
+								   UID& outFrame, PBPMPoint& outPb)
+{
+	const UID frameUID = pl->GetParcelFrameUID(key);
+	if (frameUID == kInvalidUID)
+		return kFalse;	// this piece is not placed (overset)
+
+	InterfacePtr<IGeometry> frameGeo(db, frameUID, UseDefaultIID());
+	if (frameGeo == nil)
+		return kFalse;
+
+	const PMRect   parcelBounds = pl->GetParcelBounds(key);				// parcel-local
+	const PMMatrix toFrame      = pl->GetParcelToFrameMatrix(key);		// parcel -> frame inner
+	const PMMatrix toPasteboard = ::InnerToPasteboardMatrix(frameGeo);	// frame inner -> pasteboard
+
+	PMPoint corner = outport ? parcelBounds.RightBottom() : parcelBounds.LeftTop();
+	toFrame.Transform(&corner);
+	toPasteboard.Transform(&corner);
+
+	outFrame = frameUID;
+	outPb    = corner;
+	return kTrue;
+}
 
 bool16 KCMIsTextIndexOverset(ITextModel* textModel, TextIndex pos)
 {
@@ -111,7 +99,7 @@ bool16 KCMIsTextIndexOverset(ITextModel* textModel, TextIndex pos)
 	// ⚠AND THE SECOND WAY TO BE UNCOMPOSED: a parcel exists but is not in any frame. KESCL judges
 	//   a search hit's visibility by exactly this test, and a place that passes the first check
 	//   can still fail this one.
-	InterfacePtr<IParcelList> pl(KCMQueryParcelList(textModel, pos));
+	InterfacePtr<IParcelList> pl(tpl, UseDefaultIID());
 	if (pl == nil)
 		return kFalse;
 
@@ -121,6 +109,8 @@ bool16 KCMIsTextIndexOverset(ITextModel* textModel, TextIndex pos)
 bool16 KCMFindOversetOutport(ITextModel* textModel, IDataBase* db, TextIndex pos,
 							 UID& outFrame, PBPMPoint& outPb)
 {
+	if (textModel == nil || db == nil)
+		return kFalse;
 	if (LastPlacedOutport(textModel, db, pos, outFrame, outPb))
 		return kTrue;
 

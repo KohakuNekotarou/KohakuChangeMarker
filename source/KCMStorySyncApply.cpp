@@ -1052,7 +1052,7 @@ PMReal ColumnWidthAt(ITextModel* model, TextIndex pos, int32 cols)
 	if (tpl != nil)
 	{
 		const ParcelKey key = tpl->GetParcelContaining(pos);
-		InterfacePtr<IParcelList> pl(static_cast<IParcelList*>(tpl->QueryInterface(IParcelList::kDefaultIID)));
+		InterfacePtr<IParcelList> pl(tpl, UseDefaultIID());
 		if (key.IsValid() && pl != nil)
 		{
 			const PMRect bounds = pl->GetParcelBounds(key);

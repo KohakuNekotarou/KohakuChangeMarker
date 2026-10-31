@@ -15,10 +15,9 @@
 #include "IComposeScanner.h"
 #include "IFrameList.h"
 #include "IFrameListComposer.h"	// RecomposeThruLastFrame - the wax read below is a RESULT of composition
-#include "IGeometry.h"			// the frame's inner->pasteboard matrix, for where a story begins
 #include "IHierarchy.h"			// GetParentUID - a text column's frame is its parent (2026-08-22)
 #include "IPageList.h"
-#include "IParcelList.h"		// GetFirstParcelKey / GetNextParcelKey / GetParcelToFrameMatrix
+#include "IParcelList.h"		// GetFirstParcelKey / GetNextParcelKey / GetParcelFrameUID
 #include "ITextFrameColumn.h"	// what QueryFrameContaining hands back (2026-08-22)
 #include "ITextModel.h"
 #include "ITextParcelList.h"	// QueryTextParcelList - the parcels a story flows through
@@ -33,11 +32,9 @@
 // General includes:
 #include "K2SmartPtr.h"			// K2::scoped_ptr - what NewWaxIterator hands back has to be deleted
 #include "PMMatrix.h"
-#include "PMRect.h"				// GetParcelBounds - the leading corner comes off this
 #include "RangeData.h"			// Text::StoryRange - what GetAnchorTextRange answers with
 #include "TextChar.h"			// kTextChar_Space - the boundary the readability test draws its line at; kTextChar_Table / kTextChar_TableContinued - a table's own characters
 #include "TextIterator.h"		// the character under a caret - is it a table's own (2026-09-24)
-#include "TransformUtils.h"		// ::InnerToPasteboardMatrix
 #include "UnicodeClass.h"		// IsWhiteSpace
 #include "WideString.h"
 
@@ -51,6 +48,7 @@
 #include "IKCMStoryEditsFacade.h"	// RowsAsTsv reads the SHOWN ranges through the facade's GetChange - the one place that cuts a paragraph break off them
 #include "Utils.h"
 #include "KCMCore.h"			// KCMFramePageUID - shared with the overset scan since 2026-08-09
+#include "KCMOversetPoint.h"	// KCMParcelCornerOnPasteboard - a parcel's corner, for where a story begins
 #include "KCMStoryList.h"
 #include "KCMStoryRowFilter.h"	// KCMStoryRowHasContentChange - which rows belong in the list
 #include "KCMStoryTextImport.h"	// KCMImportRefusals - what the last import could not put in, put back as rows on every Build
@@ -383,9 +381,9 @@ UID KCMStoryFirstFrameUID(IDataBase* db, UID storyUID)
 
 /* KCMStoryStartPoint (declared in KCMStoryList.h)
 
-	The mirror image of the overset scan's KCMLastPlacedOutport: that one walks BACK from the last
-	parcel to find where the text stopped fitting; this walks FORWARD from the first to find where it
-	started. Same three coordinate spaces, same reason vertical text needs no branch.
+	The mirror image of the walk to the overflow's "+" (KCMOversetPoint.cpp): that one walks BACK from
+	the last parcel to find where the text stopped fitting; this walks FORWARD from the first to find
+	where it started. The same step, and the same reason vertical text needs no branch.
 */
 bool16 KCMStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoint& outPb)
 {
@@ -396,36 +394,15 @@ bool16 KCMStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoint&
 	if (textModel == nil)
 		return kFalse;
 
-	// Index 0 is the start of the story, so this is the thread the beginning is in.
+	// Index 0 is the start of the story, so this is the thread the beginning is in. (A nil one stays nil.)
 	InterfacePtr<ITextParcelList> tpl(textModel->QueryTextParcelList(0));
-	if (tpl == nil)
-		return kFalse;
 	InterfacePtr<IParcelList> pl(tpl, UseDefaultIID());
 	if (pl == nil)
 		return kFalse;
 
 	for (ParcelKey k = pl->GetFirstParcelKey(); k.IsValid(); k = pl->GetNextParcelKey(k))
-	{
-		const UID frameUID = pl->GetParcelFrameUID(k);
-		if (frameUID == kInvalidUID)
-			continue;	// this piece is not placed; keep going forward for one that is
-
-		InterfacePtr<IGeometry> frameGeo(db, frameUID, UseDefaultIID());
-		if (frameGeo == nil)
-			continue;
-
-		const PMRect   parcelBounds = pl->GetParcelBounds(k);				// parcel-local
-		const PMMatrix toFrame      = pl->GetParcelToFrameMatrix(k);			// parcel -> frame inner
-		const PMMatrix toPasteboard = ::InnerToPasteboardMatrix(frameGeo);	// frame inner -> pasteboard
-
-		PMPoint corner(parcelBounds.Left(), parcelBounds.Top());	// the inport corner, parcel-local
-		toFrame.Transform(&corner);
-		toPasteboard.Transform(&corner);
-
-		outFrame = frameUID;
-		outPb    = PBPMPoint(corner.X(), corner.Y());
-		return kTrue;
-	}
+		if (KCMParcelCornerOnPasteboard(pl, k, db, kFalse /*inport*/, outFrame, outPb))
+			return kTrue;
 	return kFalse;
 }
 
