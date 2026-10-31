@@ -147,7 +147,7 @@ bool IsSpreadOfHidden(IDataBase* db, UID frameUID)
 	InterfacePtr<ISpread> spread(Utils<IPasteboardUtils>()->QuerySpread(hier));
 	if (spread == nil)
 		return false;
-	InterfacePtr<IBoolData> hidden(db, ::GetUID(spread), IID_IHIDESPREADBOOLDATA);
+	InterfacePtr<IBoolData> hidden(spread, IID_IHIDESPREADBOOLDATA);
 	return hidden != nil && hidden->GetBool() != kFalse;
 }
 

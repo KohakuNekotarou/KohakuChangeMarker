@@ -53,6 +53,8 @@ struct SamePlace
 	bool operator()(const Place& a, const Place& b) const { return (a.fOnPath == b.fOnPath && a.fBox == b.fBox) ? true : false; }
 };
 
+typedef KCMStoryAtPlace<UID, UID, Place> StoryAtPlace;
+
 /** The frame the reader sees for a text column: the SDK's two steps (SDKLayoutHelper::GetGraphicFrameRef - the same
 	pair KCMRingAdornment's story labels and KFC's FrameOwner ask): a column of text on a path names the path itself
 	(outOnPath kTrue), any other column is handed to QuerySplineFromTextFrame. kInvalidUID when neither answers. */
@@ -80,18 +82,18 @@ UID HolderOf(ITextFrameColumn* column, bool16& outOnPath)
 	@param db the document that holds the story.
 	@param storyUID the story.
 	@param outPage [out] the page of the story's first text column (KCMFramePageUID - the page a Story row names).
-	@param outBox [out] the box of the item that holds that column - the frame the reader sees, found by the SDK's two
-		steps (ITOPFrameData::GetMainSplineItemUID for text on a path, else ITextUtils::QuerySplineFromTextFrame) - as its
+	@param outPlace [out] fBox: the box of the item that holds that column - the frame the reader sees, found by the SDK's
+		two steps (ITOPFrameData::GetMainSplineItemUID for text on a path, else ITextUtils::QuerySplineFromTextFrame) - as its
 		PATH bounds (no stroke - the script's geometricBounds) in the page's own coordinates, measured from the page's
 		top-left corner. Through one matrix (the item's inner to the pasteboard, then the pasteboard to the page's inner),
 		so a rotated frame is boxed tight, as the script boxes it.
-	@param outOnPath [out] kTrue for words on a path (the column is the path's - ITOPFrameData), kFalse for words inside a
+		fOnPath: kTrue for words on a path (the column is the path's - ITOPFrameData), kFalse for words inside a
 		frame. ★ONE FRAME CAN CARRY ONE STORY OF EACH (2026-10-26, the final review - tests-place.ps1 P20): both stand at
 		the frame's box, so with the box alone they were two equal places on the page and neither paired. The pairing tells
 		them apart by this: inside pairs with inside, on the path with on the path.
 	@return kFalse when the story is not there, sits in no frame, its first frame is on no page (the pasteboard), or the
 		geometry cannot be read. The outs are left alone then. */
-bool16 KCMStoryPlaceKey(IDataBase* db, UID storyUID, UID& outPage, PMRect& outBox, bool16& outOnPath)
+bool16 KCMStoryPlaceKey(IDataBase* db, UID storyUID, UID& outPage, Place& outPlace)
 {
 	if (db == nil || storyUID == kInvalidUID)
 		return kFalse;
@@ -134,15 +136,15 @@ bool16 KCMStoryPlaceKey(IDataBase* db, UID storyUID, UID& outPage, PMRect& outBo
 	box.MoveRel(-pageBox.Left(), -pageBox.Top());
 
 	outPage = page;
-	outBox = box;
-	outOnPath = onPath;
+	outPlace.fBox = box;
+	outPlace.fOnPath = onPath;
 	return kTrue;
 }
 
 /** KCMStoryPlaceKey with the trace line place-pair reads (`side` = target / source). */
 bool16 PlaceOf(IDataBase* db, UID story, const char* side, UID& outPage, Place& outPlace)
 {
-	if (!KCMStoryPlaceKey(db, story, outPage, outPlace.fBox, outPlace.fOnPath))
+	if (!KCMStoryPlaceKey(db, story, outPage, outPlace))
 		return kFalse;
 	KCM_DIAG_LOG("place key %s story=%u page=%u box=%.6f,%.6f,%.6f,%.6f path=%d", side, static_cast<unsigned>(story.Get()),
 				 static_cast<unsigned>(outPage.Get()), ::ToDouble(outPlace.fBox.Left()), ::ToDouble(outPlace.fBox.Top()),
@@ -185,8 +187,7 @@ void KCMStoryPairByPlace(IDataBase* targetDB, IDataBase* sourceDB, std::vector<K
 	std::map<UID, UID> toSource;
 	KCMBuildFullPairingMap(targetDB, sourceDB, toSource);
 
-	std::vector<UID> tIds, tPages, sIds, sPages;
-	std::vector<Place> tPlaces, sPlaces;
+	std::vector<StoryAtPlace> targets, sources;
 	for (size_t k = 0; k < added.size(); ++k)
 	{
 		const UID story = diffs[added[k]].fStoryUID;
@@ -197,9 +198,8 @@ void KCMStoryPairByPlace(IDataBase* targetDB, IDataBase* sourceDB, std::vector<K
 		const std::map<UID, UID>::const_iterator partner = toSource.find(page);
 		if (partner == toSource.end())
 			continue;							// its page is compared against nothing: no place to pair on
-		tIds.push_back(story);
-		tPages.push_back(partner->second);
-		tPlaces.push_back(place);
+		const StoryAtPlace here = { story, partner->second, place };
+		targets.push_back(here);
 	}
 	for (size_t k = 0; k < removed.size(); ++k)
 	{
@@ -208,13 +208,12 @@ void KCMStoryPairByPlace(IDataBase* targetDB, IDataBase* sourceDB, std::vector<K
 		Place place;
 		if (!PlaceOf(sourceDB, story, "source", page, place))
 			continue;
-		sIds.push_back(story);
-		sPages.push_back(page);
-		sPlaces.push_back(place);
+		const StoryAtPlace here = { story, page, place };
+		sources.push_back(here);
 	}
 
 	std::vector<std::pair<UID, UID> > pairs;
-	KCMPairStoriesByPlace<UID, UID, Place, SamePlace>(tIds, tPages, tPlaces, sIds, sPages, sPlaces, SamePlace(), pairs);
+	KCMPairStoriesByPlace(targets, sources, SamePlace(), pairs);
 	if (pairs.empty())
 		return;
 

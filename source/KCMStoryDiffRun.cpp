@@ -2284,7 +2284,7 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 			KCMStoryList::FollowRecords(i, targetDB);
 			KCMStoryList::PruneEqual(i, targetDB);
 			// the state it was compared at, for the list to follow an Undo / Redo (KCMStoryFollowObserver - 2026-09-25)
-			KCMStoryList::SetRowComparedAt(i, KCMStoryDiffRun::CountForKind(UIDRef(targetDB, row->fStoryUID), kKCMStoryAttrRuby));
+			KCMStoryList::SetRowComparedAt(i, KCMStoryDiffRun::CountAllChanges(UIDRef(targetDB, row->fStoryUID)));
 			total += static_cast<int32>(changes.size());
 		}
 		// (else: the row keeps its place and loses its detail)
@@ -2328,6 +2328,12 @@ uint32 KCMStoryDiffRun::CountForKind(const UIDRef& story, int32 kind)
 	if (model == nil)
 		return 0;
 	return static_cast<uint32>((kind == kKCMStoryAttrNone) ? model->GetTextChangeCount() : model->GetChangeCount());
+}
+
+uint32 KCMStoryDiffRun::CountAllChanges(const UIDRef& story)
+{
+	InterfacePtr<ITextModel> model(story, UseDefaultIID());
+	return (model != nil) ? model->GetChangeCount() : 0;
 }
 
 int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 rowIndex)
@@ -2409,7 +2415,7 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	//   that the change is not shown twice.
 	KCMStoryList::PruneEqual(rowIndex, targetDB);
 	// the state it was compared at, for the list to follow an Undo / Redo (KCMStoryFollowObserver - 2026-09-25)
-	KCMStoryList::SetRowComparedAt(rowIndex, KCMStoryDiffRun::CountForKind(UIDRef(targetDB, storyUID), kKCMStoryAttrRuby));
+	KCMStoryList::SetRowComparedAt(rowIndex, KCMStoryDiffRun::CountAllChanges(UIDRef(targetDB, storyUID)));
 	// ★THE SWEEP (2026-10-26 - KCMStoryList.h says why): a focus no record holds any more, let go.
 	KCMStoryList::LetStrayFoci();
 

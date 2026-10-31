@@ -36,52 +36,50 @@
 #include <utility>
 #include <vector>
 
+/** One story as the rule takes it. A story with no page (or whose page has no partner) is not handed in at all. */
+template <class Id, class Page, class Box>
+struct KCMStoryAtPlace
+{
+	Id		fId;
+	Page	fPage;	// a Target story: the SOURCE page its page is compared against. A Source story: its own page.
+	Box		fBox;	// its first frame's box on that page
+};
+
 /** Pair the Target's unpaired stories with the Source's, by the place of their first frames.
 
-    @param targetIds / targetPages / targetBoxes  parallel: each Target story, the SOURCE page its page is
-                        compared against, and its first frame's box on that page. A story with no page (or whose
-                        page has no partner) is not handed in at all.
-    @param sourceIds / sourcePages / sourceBoxes  parallel, the same for the Source's stories (their own pages).
     @param equal        equal(targetBox, sourceBox) - "exactly the same place and size".
     @param outPairs     cleared on entry; one (target id, source id) per pair, in Target order. A target pairs
                         when its page holds exactly one source whose box is equal to its own, and that source's
-                        page holds exactly one target whose box is equal to the source's. Arrays of unequal
-                        length on either side pair nothing (a caller's mistake is not guessed at). */
+                        page holds exactly one target whose box is equal to the source's. */
 template <class Id, class Page, class Box, class Equal>
-void KCMPairStoriesByPlace(const std::vector<Id>& targetIds, const std::vector<Page>& targetPages,
-						   const std::vector<Box>& targetBoxes,
-						   const std::vector<Id>& sourceIds, const std::vector<Page>& sourcePages,
-						   const std::vector<Box>& sourceBoxes,
+void KCMPairStoriesByPlace(const std::vector<KCMStoryAtPlace<Id, Page, Box> >& targets,
+						   const std::vector<KCMStoryAtPlace<Id, Page, Box> >& sources,
 						   Equal equal, std::vector<std::pair<Id, Id> >& outPairs)
 {
 	outPairs.clear();
-	const size_t nt = targetIds.size();
-	const size_t ns = sourceIds.size();
-	if (targetPages.size() != nt || targetBoxes.size() != nt || sourcePages.size() != ns || sourceBoxes.size() != ns)
-		return;
 
 	// Each side's stories by page: a story is only ever compared with the other side's on its own page.
 	typedef std::map<Page, std::vector<size_t> > ByPage;
 	ByPage sourcesOn;
-	for (size_t s = 0; s < ns; ++s)
-		sourcesOn[sourcePages[s]].push_back(s);
+	for (size_t s = 0; s < sources.size(); ++s)
+		sourcesOn[sources[s].fPage].push_back(s);
 	ByPage targetsOn;
-	for (size_t t = 0; t < nt; ++t)
-		targetsOn[targetPages[t]].push_back(t);
+	for (size_t t = 0; t < targets.size(); ++t)
+		targetsOn[targets[t].fPage].push_back(t);
 
-	for (size_t t = 0; t < nt; ++t)
+	for (size_t t = 0; t < targets.size(); ++t)
 	{
-		const typename ByPage::const_iterator here = sourcesOn.find(targetPages[t]);
+		const typename ByPage::const_iterator here = sourcesOn.find(targets[t].fPage);
 		if (here == sourcesOn.end())
 			continue;
 
 		// exactly one source on this page stands where this target stands ...
-		size_t found = ns;
+		size_t found = sources.size();
 		int32 equalSources = 0;
 		for (size_t k = 0; k < here->second.size(); ++k)
 		{
 			const size_t s = here->second[k];
-			if (equal(targetBoxes[t], sourceBoxes[s]))
+			if (equal(targets[t].fBox, sources[s].fBox))
 			{
 				found = s;
 				++equalSources;
@@ -91,15 +89,15 @@ void KCMPairStoriesByPlace(const std::vector<Id>& targetIds, const std::vector<P
 			continue;
 
 		// ... and no other target on the page stands there too
-		const std::vector<size_t>& rivals = targetsOn[targetPages[t]];
+		const std::vector<size_t>& rivals = targetsOn[targets[t].fPage];
 		int32 equalTargets = 0;
 		for (size_t k = 0; k < rivals.size(); ++k)
-			if (equal(targetBoxes[rivals[k]], sourceBoxes[found]))
+			if (equal(targets[rivals[k]].fBox, sources[found].fBox))
 				++equalTargets;
 		if (equalTargets != 1)
 			continue;
 
-		outPairs.push_back(std::make_pair(targetIds[t], sourceIds[found]));
+		outPairs.push_back(std::make_pair(targets[t].fId, sources[found].fId));
 	}
 }
 

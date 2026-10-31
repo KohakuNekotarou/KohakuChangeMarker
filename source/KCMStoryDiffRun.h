@@ -140,6 +140,10 @@ namespace KCMStoryDiffRun
 		@return 0 when the story cannot be opened. */
 	uint32 CountForKind(const UIDRef& story, int32 kind);
 
+	/** The aggregate counter (ITextModel::GetChangeCount), for a question about the story as a whole rather than about one
+		change: has it moved since it was compared, did it come back (KCMCounterHistory). 0 when the story cannot be opened. */
+	uint32 CountAllChanges(const UIDRef& story);
+
 	// (⛔**StillReplaced and DropUndoneReplaced went on 2026-09-21** with the restore. The first was
 	//  "is this change the reader took in still standing as taken in", asked in ONE place by
 	//  everything that drew a row and everything that wrote - the two had had separate answers once,

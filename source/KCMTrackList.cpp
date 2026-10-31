@@ -8,72 +8,37 @@
 
 #include "VCPlugInHeaders.h"
 
-#include "ITextModel.h"
 #ifdef KCM_DIAG
 #include "TextChar.h"			// kTextChar_Tab / _CR / _LF
 #include "WideString.h"
 #endif
 
-#include <algorithm>
 #include <map>
 
 #include "KCMDiag.h"			// KCM_DIAG_LOG - test builds only (nothing in a shipping .pln)
 #include "KCMTrackList.h"
+#include "KCMStoryDiffRun.h"	// CountAllChanges
 #ifdef KCM_DIAG
 #include "KCMTrackPlan.h"		// KCMTrackChangeKind - the kind words
 #endif
 
 namespace
 {
-std::vector<KCMTrackAuthor>	gAuthors;
-std::vector<KCMTrackRow>	gRows;
-int32						gOtherRecords = 0;
-
-struct CounterHistory
+/** The list and what is kept across its re-reads, as one value: Clear puts all of it back at once, and lets go of the storage
+	too (memory plugin-teardown-robustness - vector::clear keeps it). The main thread only: a comparison, the facade, the
+	report, the script's door and the Undo follower read it; nothing that draws does. */
+struct TrackListState
 {
-	uint32				fLast;
-	std::vector<uint32>	fSeen;
-	CounterHistory() : fLast(0) {}
+	std::vector<KCMTrackAuthor>			fAuthors;
+	std::vector<KCMTrackRow>			fRows;
+	int32								fOtherRecords;
+	std::map<UID, KCMCounterHistory>	fHistory;
+	// The Target's tracked-change records when the list was last read (KCMTrackRead::Build): what an accept or a reject is
+	// told by, since it may move no counter (2026-10-25 - NoteRecordCount). -1 = not read since Clear.
+	int32								fRecordsAtRead;
+	TrackListState() : fOtherRecords(0), fRecordsAtRead(-1) {}
 };
-std::map<UID, CounterHistory>	gHistory;
-// The Target's tracked-change records when the list was last read (KCMTrackRead::Build): what an accept or a reject is
-// told by, since it may move no counter (2026-10-25 - NoteRecordCount). -1 = not read since Clear.
-int32							gRecordsAtRead = -1;
-
-uint32 CounterOf(IDataBase* db, UID story)
-{
-	InterfacePtr<ITextModel> model(db, story, UseDefaultIID());
-	return (model != nil) ? model->GetChangeCount() : 0;
-}
-
-/** Every story the list names, once each. */
-void GetStoryUIDs(std::vector<UID>& out)
-{
-	out.clear();
-	for (size_t i = 0; i < gRows.size(); ++i)
-		if (std::find(out.begin(), out.end(), gRows[i].fRow.fStoryUID) == out.end())
-			out.push_back(gRows[i].fRow.fStoryUID);
-}
-
-/** The Undo / Redo rule of KCMStoryList::NeedsCompareAgain, for one story: its aggregate change counter
-	(ITextModel::GetChangeCount) went below the value it was read at, or came back to one it was read at.
-	Plain typing makes new values and answers kFalse. (The typing right after an Undo passes through values it was read at
-	and answers kTrue: one reading more - KCMStoryRow::fAllCount.) */
-bool16 NeedsReadAgain(UID storyUID, IDataBase* targetDB)
-{
-	std::map<UID, CounterHistory>::const_iterator it = gHistory.find(storyUID);
-	if (it == gHistory.end() || targetDB == nil)
-		return kFalse;
-	const uint32 now = CounterOf(targetDB, storyUID);
-	KCM_DIAG_LOG("track counters: story %u now %u last read at %u, %d value(s) read", (unsigned)storyUID.Get(), (unsigned)now,
-				 (unsigned)it->second.fLast, (int)it->second.fSeen.size());
-	if (now == it->second.fLast)
-		return kFalse;
-	if (now < it->second.fLast)
-		return kTrue;										// went back: an undo
-	return (std::find(it->second.fSeen.begin(), it->second.fSeen.end(), now) != it->second.fSeen.end())
-		? kTrue : kFalse;									// came back to a value read before: a redo
-}
+TrackListState gList;
 
 #ifdef KCM_DIAG
 const char* KindWord(int32 kind)
@@ -120,47 +85,50 @@ void AppendCell(PMString& out, const PMString& s)
 
 void KCMTrackList::Set(const std::vector<KCMTrackAuthor>& authors, const std::vector<KCMTrackRow>& rows, int32 otherRecords)
 {
-	gAuthors = authors;
-	gRows = rows;
-	gOtherRecords = otherRecords;
+	gList.fAuthors = authors;
+	gList.fRows = rows;
+	gList.fOtherRecords = otherRecords;
 }
 
 void KCMTrackList::Clear()
 {
-	gAuthors.clear();
-	gRows.clear();
-	gOtherRecords = 0;
-	gHistory.clear();
-	gRecordsAtRead = -1;
+	gList = TrackListState();
 }
 
-int32 KCMTrackList::GetRowCount()		{ return static_cast<int32>(gRows.size()); }
-int32 KCMTrackList::GetAuthorCount()	{ return static_cast<int32>(gAuthors.size()); }
-int32 KCMTrackList::GetOtherRecordCount()	{ return gOtherRecords; }
+int32 KCMTrackList::GetRowCount()		{ return static_cast<int32>(gList.fRows.size()); }
+int32 KCMTrackList::GetAuthorCount()	{ return static_cast<int32>(gList.fAuthors.size()); }
+int32 KCMTrackList::GetOtherRecordCount()	{ return gList.fOtherRecords; }
 
 const KCMTrackRow* KCMTrackList::GetRow(int32 nth)
 {
-	return (nth >= 0 && nth < static_cast<int32>(gRows.size())) ? &gRows[static_cast<size_t>(nth)] : nil;
+	return (nth >= 0 && nth < static_cast<int32>(gList.fRows.size())) ? &gList.fRows[static_cast<size_t>(nth)] : nil;
 }
 
 const KCMTrackAuthor* KCMTrackList::GetAuthor(int32 a)
 {
-	return (a >= 0 && a < static_cast<int32>(gAuthors.size())) ? &gAuthors[static_cast<size_t>(a)] : nil;
+	return (a >= 0 && a < static_cast<int32>(gList.fAuthors.size())) ? &gList.fAuthors[static_cast<size_t>(a)] : nil;
 }
 
 int32 KCMTrackList::GetTotalChangeCount()
 {
 	int32 n = 0;
-	for (size_t i = 0; i < gRows.size(); ++i)
-		n += static_cast<int32>(gRows[i].fChanges.size());
+	for (size_t i = 0; i < gList.fRows.size(); ++i)
+		n += static_cast<int32>(gList.fRows[i].fChanges.size());
 	return n;
 }
 
 bool16 KCMTrackList::AnyNeedsReadAgain(IDataBase* targetDB)
 {
-	for (std::map<UID, CounterHistory>::const_iterator it = gHistory.begin(); it != gHistory.end(); ++it)
-		if (NeedsReadAgain(it->first, targetDB))
+	if (targetDB == nil)
+		return kFalse;
+	for (std::map<UID, KCMCounterHistory>::const_iterator it = gList.fHistory.begin(); it != gList.fHistory.end(); ++it)
+	{
+		const uint32 now = KCMStoryDiffRun::CountAllChanges(UIDRef(targetDB, it->first));
+		KCM_DIAG_LOG("track counters: story %u now %u last read at %u, %d value(s) read", (unsigned)it->first.Get(), (unsigned)now,
+					 (unsigned)it->second.fLast, (int)it->second.fSeen.size());
+		if (it->second.CameBack(now))
 			return kTrue;
+	}
 	return kFalse;
 }
 
@@ -173,28 +141,20 @@ void KCMTrackList::NoteStoryCounters(IDataBase* targetDB)
 	// (until 2026-10-25), it stayed at the value from before the reject, and the reject's Undo, which takes the counter
 	// back to exactly that value, read as "nothing moved" (tests-track-ar.ps1 AR-8: Reject All Changes in Document, then
 	// Ctrl+Z - the list stayed empty).
-	std::vector<UID> stories;
-	GetStoryUIDs(stories);
-	for (std::map<UID, CounterHistory>::const_iterator it = gHistory.begin(); it != gHistory.end(); ++it)
-		if (std::find(stories.begin(), stories.end(), it->first) == stories.end())
-			stories.push_back(it->first);
-	for (size_t i = 0; i < stories.size(); ++i)
-	{
-		CounterHistory& h = gHistory[stories[i]];
-		h.fLast = CounterOf(targetDB, stories[i]);
-		if (std::find(h.fSeen.begin(), h.fSeen.end(), h.fLast) == h.fSeen.end())
-			h.fSeen.push_back(h.fLast);
-	}
+	for (size_t i = 0; i < gList.fRows.size(); ++i)
+		gList.fHistory[gList.fRows[i].fRow.fStoryUID];		// (a listed story new to the history gets its place)
+	for (std::map<UID, KCMCounterHistory>::iterator it = gList.fHistory.begin(); it != gList.fHistory.end(); ++it)
+		it->second.Note(KCMStoryDiffRun::CountAllChanges(UIDRef(targetDB, it->first)));
 }
 
 void KCMTrackList::NoteRecordCount(int32 records)
 {
-	gRecordsAtRead = records;
+	gList.fRecordsAtRead = records;
 }
 
 int32 KCMTrackList::GetRecordCountAtRead()
 {
-	return gRecordsAtRead;
+	return gList.fRecordsAtRead;
 }
 
 #ifdef KCM_DIAG
@@ -204,11 +164,11 @@ void KCMTrackList::RowsAsTsv(PMString& out)
 	out.SetTranslatable(kFalse);
 	// (The heading's notRejectedInCopy went on 2026-10-27 with the copy; its pairs are read by name.)
 	out.Append("#track\totherRecords\t");
-	out.AppendNumber(gOtherRecords);
+	out.AppendNumber(gList.fOtherRecords);
 	out.Append("\n");
-	for (size_t a = 0; a < gAuthors.size(); ++a)
+	for (size_t a = 0; a < gList.fAuthors.size(); ++a)
 	{
-		const KCMTrackAuthor& au = gAuthors[a];
+		const KCMTrackAuthor& au = gList.fAuthors[a];
 		out.Append("author\t");
 		AppendCell(out, au.fName);
 		out.Append("\t");
@@ -220,9 +180,9 @@ void KCMTrackList::RowsAsTsv(PMString& out)
 	// change  author  row  change  kind  uid  tstart  tend  sstart  send  srcexact  colour  hidden  new  old
 	// (sstart send srcexact are always 0 - a Track listing has no Source - and stay, so that the columns the tests read
 	//  do not move.)
-	for (size_t r = 0; r < gRows.size(); ++r)
+	for (size_t r = 0; r < gList.fRows.size(); ++r)
 	{
-		const KCMTrackRow& row = gRows[r];
+		const KCMTrackRow& row = gList.fRows[r];
 		for (size_t c = 0; c < row.fChanges.size(); ++c)
 		{
 			const KCMTrackChange& ch = row.fChanges[c];
@@ -249,11 +209,6 @@ void KCMTrackList::RowsAsTsv(PMString& out)
 void KCMTrackList::ShutdownCleanup()
 {
 	KCMTrackList::Clear();
-	// ...and the vectors' storage with it (2026-10-27, the re-inspection's M2): clear() keeps a vector's capacity, so the
-	// rows held their buffer to unload (memory plugin-teardown-robustness, corrected 2026-10-13). (A map's clear() lets
-	// its nodes go.)
-	std::vector<KCMTrackAuthor>().swap(gAuthors);
-	std::vector<KCMTrackRow>().swap(gRows);
 }
 
 // End, KCMTrackList.cpp.

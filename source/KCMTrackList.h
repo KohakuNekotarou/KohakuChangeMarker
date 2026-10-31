@@ -73,7 +73,7 @@ struct KCMTrackAuthor
 
 namespace KCMTrackList
 {
-	/** Replace the list. The counter history (NeedsReadAgain) is KEPT: a re-read after an undo has to be able to
+	/** Replace the list. The counter history (AnyNeedsReadAgain) is KEPT: a re-read after an undo has to be able to
 		recognise the next one. otherRecords is the number the report line says. (A second number - the records a copy
 		kept although every change was rejected - went on 2026-10-27 with the copy.) */
 	void	Set(const std::vector<KCMTrackAuthor>& authors, const std::vector<KCMTrackRow>& rows, int32 otherRecords);
@@ -85,9 +85,9 @@ namespace KCMTrackList
 	const KCMTrackAuthor*	GetAuthor(int32 a);
 	int32	GetTotalChangeCount();
 	int32	GetOtherRecordCount();
-	/** The Undo / Redo rule of KCMStoryList::NeedsCompareAgain (the counter below where it was read, or back at a value it was
-		read at - plain typing makes new values, but for the typing right after an Undo: KCMStoryRow::fAllCount) for every story in the counter history - the listed ones and those that have lost their rows
-		(2026-10-25: the Undo follower is told by the document now, which does not say which story). */
+	/** The Undo / Redo rule of KCMStoryList::NeedsCompareAgain (KCMCounterHistory) for every story in the counter history - the
+		listed ones and those that have lost their rows (2026-10-25: the Undo follower is told by the document now, which does
+		not say which story). */
 	bool16	AnyNeedsReadAgain(IDataBase* targetDB);
 	/** After a read: every listed story's counter goes into its history - and every story's already in it (2026-10-25:
 		a story whose rows all went must still recognise the Undo that brings them back). */

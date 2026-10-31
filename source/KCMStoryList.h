@@ -33,6 +33,7 @@
 // (⛔WideString.h was included for KCMStoryChange::fBeforeRaw - the characters themselves rather
 //  than a quote of them - which went with the restore on 2026-09-21.)
 
+#include <algorithm>	// std::find - KCMCounterHistory
 #include <vector>
 #include <boost/shared_ptr.hpp>	// KCMRecordCopy::fParaOverrides - the shape ITextModelCmds::ApplyCmd takes (2026-10-24)
 
@@ -487,6 +488,61 @@ inline KCMEqualState KCMEqualStateOf(const KCMEqualRecord& r, uint32 counterNow)
 	return (counterNow >= r.fWrittenAt) ? kKCMEqualStanding : kKCMEqualUndone;
 }
 
+/** One row of a write of KCM's, as KCMStoryList::AddEqualGroup records it. */
+struct KCMEqualWrite
+{
+	KCMStoryChange	fLive;		// the row as the diff made it
+	TextIndex		fNowStart;	// where its Source words now stand
+	WideString		fLiveWords;	// the words the write took out of it
+	KCMRecordCopy	fCopy;		// what Restore from Copy will paste back (kKCMCopyNotTaken: a road that keeps none)
+	int32			fFocusId;	// the focus FocusBeforeWrite gave it and FocusAfterWrite placed inside the write's step (0 = none)
+	KCMEqualWrite() : fNowStart(0), fFocusId(0) {}
+};
+
+/** One change a pour put in, as KCMStoryList::RecordPour records it. */
+struct KCMPouredChange
+{
+	KCMStoryChange	fLive;			// the row's live change, before the pour
+	WideString		fLiveWords;		// the Target's words at its live range before the pour (what an undone write reads)
+	uint32			fCounter;		// CountForKind after the pour
+	int32			fCounterKind;	// ... by this kind (kKCMStoryAttrNone for words and tables, the mark's own for a mark)
+	KCMPouredChange() : fCounter(0), fCounterKind(0) {}
+};
+
+/** The values a story's AGGREGATE change counter (ITextModel::GetChangeCount) was read at, and the last of them - what tells
+	an Undo or a Redo for the two lists that follow one: a Story row's comparison (KCMStoryList::NeedsCompareAgain) and the
+	Track listing's reading (KCMTrackList::AnyNeedsReadAgain). The counter goes back on an Undo and forward again on a Redo, to
+	exactly the values it had; plain typing makes new ones - except right after an Undo, when it goes on from the value the
+	Undo came back to, through values the undone edits had (KCMStoryStamp.h, "A VERSION NUMBER THAT IS NOT UNIQUE"). So "below
+	the last value, or back at one it was read at" is an Undo, a Redo or that typing: reading again says what stands now, so
+	the typing costs one reading more, never a wrong list. ⚠The aggregate and not the text counter: a ruby or a kenten does
+	not move the text counter (KCMStoryDiffRun::CountForKind says so, measured). */
+struct KCMCounterHistory
+{
+	uint32				fLast;
+	std::vector<uint32>	fSeen;
+	KCMCounterHistory() : fLast(0) {}
+
+	/** A reading. Kept short: an Undo that goes further back than the oldest kept is still told by the counter going DOWN. */
+	void Note(uint32 now)
+	{
+		fLast = now;
+		if (std::find(fSeen.begin(), fSeen.end(), now) != fSeen.end())
+			return;
+		if (fSeen.size() >= 256)
+			fSeen.erase(fSeen.begin());
+		fSeen.push_back(now);
+	}
+
+	/** kTrue when the counter is not where it was last read and went below it or came back to a value it was read at. */
+	bool16 CameBack(uint32 now) const
+	{
+		if (now == fLast)
+			return kFalse;
+		return (now < fLast || std::find(fSeen.begin(), fSeen.end(), now) != fSeen.end()) ? kTrue : kFalse;
+	}
+};
+
 /** One row of the Story Edits section. */
 struct KCMStoryRow
 {
@@ -531,17 +587,10 @@ struct KCMStoryRow
 		never disappear because the detail could not be worked out. */
 	std::vector<KCMStoryChange> fChanges;
 
-	/** ★The story's AGGREGATE change counter (ITextModel::GetChangeCount) when fChanges were built, and every value it
-		has had at a comparison of this row (2026-09-25). The counter goes back on an Undo and forward again on a Redo,
-		to exactly the values it had; plain typing makes new ones - except right after an Undo, when it goes on from the
-		value the Undo came back to, through values the undone edits had (KCMStoryStamp.h, "A VERSION NUMBER THAT IS NOT
-		UNIQUE"). So "the story is back at a value it was compared at, or below the last one" is an Undo, a Redo or that
-		typing, and that is when the row is compared again on its own (KCMStoryList::NeedsCompareAgain,
-		KCMStoryFollowObserver): a comparison says what stands now, so the typing costs one more, never a wrong list.
-		⚠The aggregate and not the text
-		counter: a ruby or a kenten does not move the text counter (KCMStoryDiffRun::CountForKind says so, measured). */
-	uint32				fAllCount;
-	std::vector<uint32>	fComparedAt;
+	/** ★The story's aggregate change counter when fChanges were built, and at every comparison of this row before (2026-09-25):
+		when it comes back, the row is compared again on its own (KCMStoryList::NeedsCompareAgain, KCMStoryFollowObserver).
+		Empty = never compared. */
+	KCMCounterHistory	fCompared;
 
 	/** Whether the two versions' TEXT was actually put side by side for this row.
 
@@ -631,7 +680,7 @@ struct KCMStoryRow
 	KCMStoryRow()
 		: fStoryUID(kInvalidUID), fSourceStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fFrameUID(kInvalidUID),
 		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32), fTextCompared(kFalse),
-		  fAttrKind(kKCMStoryAttrNone), fAttrKindCount(0), fHasTextChange(kFalse), fAllCount(0),
+		  fAttrKind(kKCMStoryAttrNone), fAttrKindCount(0), fHasTextChange(kFalse),
 		  fFociSyncedAt(0), fFociSynced(kFalse) {}
 };
 
@@ -847,7 +896,7 @@ namespace KCMStoryList
 	void SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& changes, bool16 textCompared);
 
 	/** Record the story's aggregate change counter for row nth at the moment its changes were attached
-		(KCMStoryRow::fAllCount / fComparedAt - 2026-09-25). Out-of-range nth is ignored. */
+		(KCMStoryRow::fCompared - 2026-09-25). Out-of-range nth is ignored. */
 	void SetRowComparedAt(int32 nth, uint32 allCount);
 
 	// (⛔**SEVEN DECLARATIONS WENT ON 2026-09-21** with the restore they served: AddReplacedChange,
@@ -869,21 +918,15 @@ namespace KCMStoryList
 
 	/** The same for EVERY ROW ONE WRITE MADE THE SOURCE'S - the words' roads: Apply This Change, Apply's paragraph road,
 		Restore from Source (2026-09-25 - first for a reject of one InDesign change that several rows stood for; two
-		paragraphs taken away one after the other are one deletion). `lives` are those rows as the diff made them,
-		`nowStarts` where each one's Source words now stand, `liveWords` the words the write took out of each.
+		paragraphs taken away one after the other are one deletion). `writes`: one per row (KCMEqualWrite).
 		★The other records slide ONCE, by the whole write, and the group's rows never slide one another: each is placed
 		at its own share, its live range where its change would stand with the rest of the group written - so putting
 		one row back, an undo of the whole, and the write again all find each row where it is (measured 2026-09-25 with
 		Reject and Redo from Word: slid row by row, the second paragraph's record lost its live twin after an undo and a
-		second record was made beside it). A record that is already one of the rows (its twin) is updated in place.
-		`copies` (2026-10-24): one per row of `lives`, what Restore from Copy will paste back - nil when the road keeps
-		none, whose records then hold none (kKCMCopyNotTaken).
-		`focusIds` (2026-10-26): one per row of `lives`, the focus FocusBeforeWrite gave it and FocusAfterWrite placed inside
-		the write's step - nil or 0 = none (AddEqual's rule for a twin's old one). A record holding that number already is
-		its twin, whatever its ranges say. */
-	void AddEqualGroup(int32 nth, const std::vector<KCMStoryChange>& lives, const std::vector<TextIndex>& nowStarts,
-						  const std::vector<WideString>& liveWords, uint32 counter, int32 counterKind,
-						  const std::vector<KCMRecordCopy>* copies = nil, const std::vector<int32>* focusIds = nil);
+		second record was made beside it). A record that is already one of the rows (its twin) is updated in place:
+		a focus of 0 lets a twin's old one go too (AddEqual's rule), and a record holding the row's focus already is its
+		twin, whatever its ranges say. */
+	void AddEqualGroup(int32 nth, const std::vector<KCMEqualWrite>& writes, uint32 counter, int32 counterKind);
 
 	// ---- ★THE FOCI OF A WRITE'S RECORDS, PLACED INSIDE ITS STEP (2026-10-26 - KCMRecordFoci.h; the spec's 3-4) ---------------
 	//   A record's focus follows an Undo and a Redo of a step only if the step holds a snapshot of it, so the facade's
@@ -1020,7 +1063,7 @@ namespace KCMStoryList
 	/** ★★AFTER A POUR THE ROWS STAY, AS "=" (2026-10-26, the author: "Apply on the Story row makes the rows go - keep them",
 		and the same for Apply All Changes on the heading) - the import's pour calls this where it let them all go: row
 		`nth`'s records are KEPT, each letting its copy go (kKCMCopyWholeStory - the pour wrote the story over, so where a
-		copy would paste is not known), and one record is added for each of `lives` - the row's live changes the pour was
+		copy would paste is not known), and one record is added for each of `changes` - the row's live changes the pour was
 		asked to put in - at its Source range. ★WHAT MAKES IT SAFE SINCE DropRecords' MEASUREMENT (above): the compare after a
 		pour places every record again from its Source range (FollowRecords, the import tidy S10), and one whose place does
 		not read as the Source shows as what still differs. Nothing slides here. A record that is one of them already (its
@@ -1028,21 +1071,15 @@ namespace KCMStoryList
 		★THE ROW'S FOCI ARE LET GO HERE (2026-10-26): the pour wrote the story over, so where a focus was moved to says
 		nothing - and the pour's step is its own (KCMPourStoryTextWith). The compare right after places every record by its
 		readings and gives each a focus; an Undo or a Redo of the pour finds those lost (made after it) and the comparison
-		that follows looks again - the road every record took before foci.
-		@param liveWords per change, the Target's words at its live range before the pour (what an undone write reads).
-		@param counters / counterKinds per change, CountForKind after the pour, and its kind (kKCMStoryAttrNone for words and
-			tables, the mark's own for a mark). */
-	void RecordPour(int32 nth, const std::vector<KCMStoryChange>& lives, const std::vector<WideString>& liveWords,
-					const std::vector<uint32>& counters, const std::vector<int32>& counterKinds);
+		that follows looks again - the road every record took before foci. */
+	void RecordPour(int32 nth, const std::vector<KCMPouredChange>& changes);
 
 	/** ★Whether row `nth` has to be compared again because an Undo or a Redo moved its story (2026-09-25 - the list
 		followed nothing on Ctrl+Z: its "=" and its positions stayed as they were, and the panel's right-click then met
-		"the list was out of date"). kTrue when the story's AGGREGATE change counter (KCMStoryRow::fAllCount - the
-		aggregate, because the text counter does not see a mark) is not the one the row was compared at AND it went back
-		below it or came back to a value the row WAS compared at (fComparedAt) - or when a "=" record's state no longer
-		matches where its followers are placed (KCM's write or its put-back undone or done again). ⚠Plain typing moves the
-		counter to new values and is answered kFalse: the row is not compared on every keystroke. (The typing right after an
-		Undo passes through values the row was compared at and is answered kTrue - fAllCount says why that is harmless.) */
+		"the list was out of date"). kTrue when the story's AGGREGATE change counter came back (KCMCounterHistory) - or when
+		a "=" record's state no longer matches where its followers are placed (KCM's write or its put-back undone or done
+		again). ⚠Plain typing moves the counter to new values and is answered kFalse: the row is not compared on every
+		keystroke. (The typing right after an Undo is answered kTrue - KCMCounterHistory says why that is harmless.) */
 	bool16 NeedsCompareAgain(int32 nth, IDataBase* targetDB);
 
 	// ⛔GetRowComparedHistory / SetRowComparedHistory went on 2026-10-11 with their one caller, the PDF report's

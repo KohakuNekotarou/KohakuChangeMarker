@@ -987,28 +987,21 @@ private:
 	}
 
 	/** THE "=" RECORD OF ONE CHANGE WRITTEN WITH ITS COPY - Restore from Source's text road and Apply's words road: this
-		change alone, standing at `nowStart`, with the words the write took out (`words`) and the copy Restore from Copy
-		pastes back (`copies`, one); then the row compared again, and the sentence - `said`, and what the copy lets the
-		reader do. Called once the step was kept (KeptOrNot). */
-	void RecordOneWithCopy(int32 nth, const KCMStoryChange& live, TextIndex nowStart, const WideString& words,
-						   const UIDRef& target, const std::vector<KCMRecordCopy>& copies, int32 focusId, const char* said,
-						   PMString& outMessage)
+		change alone (`record` - its place, the words the write took out and the copy Restore from Copy pastes back); then the
+		row compared again, and the sentence - `said`, and what the copy lets the reader do. Called once the step was kept
+		(KeptOrNot). */
+	void RecordOneWithCopy(int32 nth, const KCMEqualWrite& record, const UIDRef& target, const char* said, PMString& outMessage)
 	{
-		std::vector<KCMStoryChange> group(1, live);
-		std::vector<TextIndex> nowStarts(1, nowStart);
-		std::vector<WideString> wordsBefore(1, words);
-		std::vector<int32> focusIds(1, focusId);
-		KCMStoryList::AddEqualGroup(nth, group, nowStarts, wordsBefore,
-									   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone, &copies,
-									   &focusIds);
+		KCMStoryList::AddEqualGroup(nth, std::vector<KCMEqualWrite>(1, record),
+									KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone);
 		this->RefreshRow(nth);
 		outMessage = KCMSentence(said);
-		if (copies[0].fWhyNot == kKCMCopyKept)
+		if (record.fCopy.fWhyNot == kKCMCopyKept)
 			outMessage.Append(" - right-click it: Restore from Copy, or Ctrl+Z");
 		else
 		{
 			outMessage.Append(" - Ctrl+Z takes it back (no copy was kept: ");
-			outMessage.Append(CopyWhyNotWords(copies[0].fWhyNot));
+			outMessage.Append(CopyWhyNotWords(record.fCopy.fWhyNot));
 			outMessage.Append(")");
 		}
 	}
@@ -1101,19 +1094,18 @@ private:
 				&& outRow.fStoryUID != kInvalidUID) ? kTrue : kFalse;
 	}
 
-	/** Whether row `nth`'s story has moved since the row was last compared - the aggregate counter (any attribute kind asks
-		it - KCMStoryDiffRun::CountForKind) against the one the row was compared at (fAllCount): an edit KCM was not told of,
-		plain typing above all (the import tidy S10 - RestoreChangeFromCopy asks it before it refuses). kFalse for
-		a row never compared, a Removed one, a row standing for a file, or no armed Target. */
+	/** Whether row `nth`'s story has moved since the row was last compared - the aggregate counter against the one the row was
+		compared at (KCMStoryRow::fCompared): an edit KCM was not told of, plain typing above all (the import tidy S10 -
+		RestoreChangeFromCopy asks it before it refuses). kFalse for a row never compared, a Removed one, a row standing for a
+		file, or no armed Target. */
 	bool16 ChangedSinceCompared(int32 nth)
 	{
 		IDataBase* const targetDB = KCMArmedTargetDB();
 		const KCMStoryRow* const row = KCMStoryList::GetRow(nth);
 		if (targetDB == nil || !KCMIsDocDBOpen(targetDB) || row == nil || row->fStoryUID == kInvalidUID
-			|| (row->fKinds & kKCMStoryKindRemoved) != 0 || row->fComparedAt.empty())
+			|| (row->fKinds & kKCMStoryKindRemoved) != 0 || row->fCompared.fSeen.empty())
 			return kFalse;
-		return (KCMStoryDiffRun::CountForKind(UIDRef(targetDB, row->fStoryUID), kKCMStoryAttrRuby) != row->fAllCount)
-			   ? kTrue : kFalse;
+		return (KCMStoryDiffRun::CountAllChanges(UIDRef(targetDB, row->fStoryUID)) != row->fCompared.fLast) ? kTrue : kFalse;
 	}
 
 	/** Compares row `nth` again and says whether change `which` is still `before`: the same kind, the same
@@ -1889,8 +1881,12 @@ public:
 
 		// THE TARGET'S OWN WORDS COPIED FIRST, for Restore from Copy (before the sequence - it writes the store only) - over
 		// the range the write will cover, which the record then puts back over as well (KCMRecordCopy::fShift).
-		std::vector<KCMRecordCopy> copies(1, this->TakeApplyCopy(target, tFrom + shift, tTo + shift, targetWords));
-		copies[0].fShift = shift;
+		KCMEqualWrite record;
+		record.fLive = live;
+		record.fNowStart = tFrom;
+		record.fLiveWords = targetWords;
+		record.fCopy = this->TakeApplyCopy(target, tFrom + shift, tTo + shift, targetWords);
+		record.fCopy.fShift = shift;
 
 		IAbortableCmdSeq* sequence = this->BeginStep("Restore from Source");	// (a part of the batch's step inside one)
 		if (this->StepNotBegun(sequence, outMessage))
@@ -1898,6 +1894,7 @@ public:
 		// THE RECORD'S FOCUS, INSIDE THE STEP AND BEFORE THE WRITE (KCMStoryList's FocusBeforeWrite): on the
 		//   words the copy is about to take out, then on the Source's put in.
 		const int32 focusId = KCMStoryList::FocusBeforeWrite(nth, live, tFrom, tTo);
+		record.fFocusId = focusId;
 		// An empty Source range is a deletion: its place on the Source side does not matter (CopyOver deletes).
 		const TextIndex fromStart = (sTo > sFrom) ? sFrom + shift : sFrom;
 		const TextIndex fromEnd = (sTo > sFrom) ? sTo + shift : sFrom;
@@ -1929,7 +1926,7 @@ public:
 			return -1;
 		}
 		// THE "=" RECORD - this change alone, with the Target's copy: Restore from Copy puts the Target's own words back.
-		this->RecordOneWithCopy(nth, live, tFrom, targetWords, target, copies, focusId, "restored from the Source", outMessage);
+		this->RecordOneWithCopy(nth, record, target, "restored from the Source", outMessage);
 		return 1;
 	}
 
@@ -2294,7 +2291,11 @@ private:
 			return this->ApplyWords(nth, which, targetDB, row, outMessage, road);
 
 		// THE COPY, before the sequence (it writes the store only).
-		std::vector<KCMRecordCopy> copies(1, this->TakeApplyCopy(target, live.fTargetStart, live.fTargetEnd, liveWords));
+		KCMEqualWrite record;
+		record.fLive = live;
+		record.fNowStart = live.fTargetStart;
+		record.fLiveWords = liveWords;
+		record.fCopy = this->TakeApplyCopy(target, live.fTargetStart, live.fTargetEnd, liveWords);
 
 		IAbortableCmdSeq* sequence = this->BeginStep("Apply This Change");	// (a part of the batch's step inside one)
 		if (this->StepNotBegun(sequence, outMessage))
@@ -2303,6 +2304,7 @@ private:
 		//   document's words the write is about to take out, then on the files' put in - the step's Undo puts it back on
 		//   the first, its Redo on the second.
 		const int32 focusId = KCMStoryList::FocusBeforeWrite(nth, live, live.fTargetStart, live.fTargetEnd);
+		record.fFocusId = focusId;
 		ErrorCode wrote = kFailure;
 		{
 			InterfacePtr<ITextModel> tModel(target, UseDefaultIID());
@@ -2339,7 +2341,7 @@ private:
 			return -1;
 		}
 		// THE "=" RECORD - this change alone, with its copy.
-		this->RecordOneWithCopy(nth, live, live.fTargetStart, liveWords, target, copies, focusId, "applied (1 write)", outMessage);
+		this->RecordOneWithCopy(nth, record, target, "applied (1 write)", outMessage);
 		return 1;
 	}
 
@@ -2443,36 +2445,37 @@ private:
 			sLo = std::min(sLo, group[i].fSourceStart);
 			sHi = std::max(sHi, group[i].fSourceEnd);
 		}
-		std::vector<WideString> liveWords;
+		// ONE ENTRY PER ROW OF THE GROUP: what its "=" record is made of, filled in as the write goes.
+		std::vector<KCMEqualWrite> writes(group.size());
 		{
 			IDataBase::SaveRestoreModifiedState guard(targetDB);
 			InterfacePtr<ITextModel> tModel(target, UseDefaultIID());
 			for (size_t i = 0; i < group.size(); ++i)
 			{
-				WideString words;
-				KCMTextWords::WordsAt(tModel, group[i].fTargetStart, group[i].fTargetEnd - group[i].fTargetStart, words);
-				liveWords.push_back(words);
+				writes[i].fLive = group[i];
+				writes[i].fNowStart = tLo + (group[i].fSourceStart - sLo);
+				KCMTextWords::WordsAt(tModel, group[i].fTargetStart, group[i].fTargetEnd - group[i].fTargetStart, writes[i].fLiveWords);
+				// THE COPIES RESTORE FROM COPY PASTES BACK (design 11-3): the rows of a paragraph's road keep none (several
+				//   changes went in as one write), nor do paragraphs put in at one place together. A whole paragraph that goes
+				//   in alone is below.
+				writes[i].fCopy.fWhyNot = (road != nil || !live.fWholeParagraph) ? kKCMCopyParagraphRoad : kKCMCopyGroup;
 			}
 		}
-		// THE COPIES RESTORE FROM COPY PASTES BACK (design 11-3), taken before the sequence (they write the store only):
-		//   a whole paragraph that goes in alone keeps what it takes out - nothing, when it puts one in - and, when it
-		//   goes in with the break first or comes out from the return before it, the formatting of the paragraph before
-		//   it, whose ending return the write changes. The rows of a paragraph's road keep none (several changes went in
-		//   as one write), nor do paragraphs put in at one place together.
-		std::vector<KCMRecordCopy> copies(group.size());
-		for (size_t i = 0; i < copies.size(); ++i)
-			copies[i].fWhyNot = (road != nil || !live.fWholeParagraph) ? kKCMCopyParagraphRoad : kKCMCopyGroup;
+		// A whole paragraph that goes in alone keeps what it takes out - nothing, when it puts one in - and, when it goes in
+		//   with the break first or comes out from the return before it, the formatting of the paragraph before it, whose
+		//   ending return the write changes. Before the sequence (it writes the store only).
 		if (road == nil && live.fWholeParagraph && group.size() == 1)
 		{
-			copies[0] = this->TakeApplyCopy(target, group[0].fTargetStart, group[0].fTargetEnd, liveWords[0]);
-			if (copies[0].fWhyNot == kKCMCopyKept && group[0].fBreakAt == kKCMBreakLeads)
+			KCMRecordCopy& copy = writes[0].fCopy;
+			copy = this->TakeApplyCopy(target, group[0].fTargetStart, group[0].fTargetEnd, writes[0].fLiveWords);
+			if (copy.fWhyNot == kKCMCopyKept && group[0].fBreakAt == kKCMBreakLeads)
 			{
 				IDataBase::SaveRestoreModifiedState guard(targetDB);
 				InterfacePtr<ITextModel> tModel(target, UseDefaultIID());
-				if (!KeepParagraph(tModel, group[0].fTargetStart, copies[0]))
+				if (!KeepParagraph(tModel, group[0].fTargetStart, copy))
 				{
-					copies[0] = KCMRecordCopy();
-					copies[0].fWhyNot = kKCMCopyFailed;
+					copy = KCMRecordCopy();
+					copy.fWhyNot = kKCMCopyFailed;
 				}
 			}
 		}
@@ -2482,9 +2485,8 @@ private:
 			return -1;
 		// THE RECORDS' FOCI, INSIDE THE STEP AND BEFORE THE WRITE (KCMStoryList's FocusBeforeWrite): each row of
 		//   the group on its own words as they stand now; after the write, each on its own share of the Source's.
-		std::vector<int32> focusIds;
 		for (size_t i = 0; i < group.size(); ++i)
-			focusIds.push_back(KCMStoryList::FocusBeforeWrite(nth, group[i], group[i].fTargetStart, group[i].fTargetEnd));
+			writes[i].fFocusId = KCMStoryList::FocusBeforeWrite(nth, group[i], group[i].fTargetStart, group[i].fTargetEnd);
 		// UNSIGNED AND UNTRACKED (design 11-2, the author: "if it is tracked, change it without tracking").
 		int32 done = KCMApplyParagraphPlan(target, now, plan, outMessage);
 		// THE "=" RECORDS, WHEN THE PLACE READS AS THE SOURCE'S. A record whose place does not would be Stale and shown as
@@ -2496,13 +2498,15 @@ private:
 		const bool16 same = (done > 0)
 			? this->PlaceReadsAsSource(target, row.fSourceStoryUID, tLo, tLo + (sHi - sLo), whole, kKCMStoryAttrNone)
 			: kFalse;
-		std::vector<TextIndex> nowStarts;
-		for (size_t i = 0; i < group.size(); ++i)
-			nowStarts.push_back(tLo + (group[i].fSourceStart - sLo));
 		if (same)
 		{
+			std::vector<int32> focusIds;
 			for (size_t i = 0; i < group.size(); ++i)
-				KCMStoryList::FocusAfterWrite(focusIds[i], nowStarts[i], nowStarts[i] + (group[i].fSourceEnd - group[i].fSourceStart));
+			{
+				KCMStoryList::FocusAfterWrite(writes[i].fFocusId, writes[i].fNowStart,
+											  writes[i].fNowStart + (group[i].fSourceEnd - group[i].fSourceStart));
+				focusIds.push_back(writes[i].fFocusId);
+			}
 			// (the other records at the group's place where the list's order puts them - AddEqualGroup's rule, the whole write
 			//  as one: PlaceFociAtWriteEdge)
 			TextIndex tHi = group[0].fTargetEnd;
@@ -2517,8 +2521,8 @@ private:
 		if (done <= 0 || !same)
 		{
 			// (no records made: the foci made for them go; a record's own stays with it)
-			for (size_t i = 0; i < focusIds.size(); ++i)
-				KCMStoryList::LetWriteFocus(nth, focusIds[i]);
+			for (size_t i = 0; i < writes.size(); ++i)
+				KCMStoryList::LetWriteFocus(nth, writes[i].fFocusId);
 		}
 		if (done <= 0)
 		{
@@ -2526,9 +2530,7 @@ private:
 			return -1;
 		}
 		if (same)
-			KCMStoryList::AddEqualGroup(nth, group, nowStarts, liveWords,
-										   KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone,
-										   &copies, &focusIds);
+			KCMStoryList::AddEqualGroup(nth, writes, KCMStoryDiffRun::CountForKind(target, kKCMStoryAttrNone), kKCMStoryAttrNone);
 		this->RefreshRow(nth);
 
 		outMessage = KCMSentence("applied (");
@@ -2565,7 +2567,7 @@ private:
 		}
 		if (!same)
 			outMessage.Append(" - the place does not read exactly as the imported text; the row shows what still differs");
-		outMessage.Append((same && copies.size() == 1 && copies[0].fWhyNot == kKCMCopyKept)
+		outMessage.Append((same && writes.size() == 1 && writes[0].fCopy.fWhyNot == kKCMCopyKept)
 						  ? " - right-click it: Restore from Copy, or Ctrl+Z" : " - Ctrl+Z takes it back");
 		return done;
 	}
@@ -2746,8 +2748,7 @@ private:
 		//   BEFORE the pour, become its "=" records after it (KCMStoryList::RecordPour). A row whose story is not poured keeps
 		//   its records as they are: nothing wrote over them.
 		std::vector<int32> pouredRows;
-		std::vector< std::vector<KCMStoryChange> > pouredLives;
-		std::vector< std::vector<WideString> > pouredWords;
+		std::vector< std::vector<KCMPouredChange> > pouredChanges;
 		for (int32 r = 0; r < KCMStoryList::GetRowCount(); ++r)
 		{
 			if (oneRow >= 0 && r != oneRow)
@@ -2760,8 +2761,7 @@ private:
 				continue;
 			std::vector<KCMStoryChange> lives;
 			KCMStoryList::LiveChanges(r, lives);
-			std::vector<KCMStoryChange> going;
-			std::vector<WideString> words;
+			std::vector<KCMPouredChange> going;
 			{
 				IDataBase::SaveRestoreModifiedState guard(targetDB);
 				InterfacePtr<ITextModel> tModel(UIDRef(targetDB, row.fStoryUID), UseDefaultIID());
@@ -2769,16 +2769,15 @@ private:
 				{
 					if (lives[i].fWhat == KCMStoryChange::kRefused)
 						continue;
-					WideString w;
+					KCMPouredChange change;
+					change.fLive = lives[i];
 					if (tModel != nil && lives[i].fTargetEnd > lives[i].fTargetStart)
-						KCMTextWords::WordsAt(tModel, lives[i].fTargetStart, lives[i].fTargetEnd - lives[i].fTargetStart, w);
-					going.push_back(lives[i]);
-					words.push_back(w);
+						KCMTextWords::WordsAt(tModel, lives[i].fTargetStart, lives[i].fTargetEnd - lives[i].fTargetStart, change.fLiveWords);
+					going.push_back(change);
 				}
 			}
 			pouredRows.push_back(r);
-			pouredLives.push_back(going);
-			pouredWords.push_back(words);
+			pouredChanges.push_back(going);
 		}
 
 		KCMPourOptions options;
@@ -2799,16 +2798,13 @@ private:
 				if (!this->PairedTargetRow(pouredRows[i], rowDB, row))
 					continue;
 				const UIDRef target(targetDB, row.fStoryUID);
-				std::vector<uint32> counters;
-				std::vector<int32> kinds;
-				for (size_t k = 0; k < pouredLives[i].size(); ++k)
+				for (size_t k = 0; k < pouredChanges[i].size(); ++k)
 				{
-					const KCMStoryChange& c = pouredLives[i][k];
-					const int32 kind = (c.fWhat == KCMStoryChange::kAttr) ? c.fAttrKind : kKCMStoryAttrNone;
-					kinds.push_back(kind);
-					counters.push_back(KCMStoryDiffRun::CountForKind(target, kind));
+					KCMPouredChange& c = pouredChanges[i][k];
+					c.fCounterKind = (c.fLive.fWhat == KCMStoryChange::kAttr) ? c.fLive.fAttrKind : kKCMStoryAttrNone;
+					c.fCounter = KCMStoryDiffRun::CountForKind(target, c.fCounterKind);
 				}
-				KCMStoryList::RecordPour(pouredRows[i], pouredLives[i], pouredWords[i], counters, kinds);
+				KCMStoryList::RecordPour(pouredRows[i], pouredChanges[i]);
 			}
 		}
 		// THE UNDO FOLLOWER ATTACHED AGAIN (measured on the application: after "Apply All Changes in This Story" an
