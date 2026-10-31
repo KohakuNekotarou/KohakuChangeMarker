@@ -17,6 +17,7 @@
 #include "PMRect.h"
 #include "PMString.h"
 #include "SnapshotUtilsEx.h"
+#include "TextChar.h"			// kTextChar_LF
 #include "AGMImageAccessor.h"
 #include "K2SmartPtr.h"			// K2::scoped_ptr -- the snapshot and its accessor, freed on every exit
 
@@ -272,8 +273,8 @@ bool16 KCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTar
 		return kFalse;
 	PMPoint inner(mx, my);
 	mPB.Inverse().Transform(&inner);
-	PMPoint hSpreadPt(inner.X(), inner.Y());
-	::InnerToSpreadMatrix(hGeo).Transform(&hSpreadPt);
+	PMPoint hSpreadPt = inner;
+	::TransformInnerPointToSpread(hGeo, &hSpreadPt);
 
 	uint8 cH[4];
 	if (!KCMReadCmykPixel(UIDRef(hoverDB, hPageUID), hSpreadPt, cH))
@@ -316,8 +317,8 @@ bool16 KCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTar
 	InterfacePtr<IGeometry> oGeo(otherDB, oPageUID, UseDefaultIID());
 	if (oGeo == nil)
 		return kFalse;
-	PMPoint oSpreadPt(inner.X(), inner.Y());
-	::InnerToSpreadMatrix(oGeo).Transform(&oSpreadPt);
+	PMPoint oSpreadPt = inner;
+	::TransformInnerPointToSpread(oGeo, &oSpreadPt);
 
 	uint8 cX[4];
 	if (!KCMReadCmykPixel(UIDRef(otherDB, oPageUID), oSpreadPt, cX))
@@ -334,7 +335,7 @@ bool16 KCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTar
 	// outCursor = the two rows of numbers only; the bitmap cursor draws the "C M Y K" heading itself.
 	outCursor.SetTranslatable(kFalse);
 	KCMAppendCmyk(outCursor, cH); outCursor.Append(hoverLabel);
-	outCursor.AppendW(UTF32TextChar(0x0A));	// newline: on to the second line
+	outCursor.AppendW(UTF32TextChar(kTextChar_LF));	// newline: on to the second line
 	KCMAppendCmyk(outCursor, cX); outCursor.Append(otherLabel);
 
 	// outPanel = each value with its own heading letter (KCMAppendCmykLabeled), plus the t/s.
@@ -343,7 +344,7 @@ bool16 KCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTar
 	// letter to each value cannot come apart, whatever the font's widths are.
 	outPanel.SetTranslatable(kFalse);
 	KCMAppendCmykLabeled(outPanel, cH); outPanel.Append(hoverLabel);
-	outPanel.AppendW(UTF32TextChar(0x0A));
+	outPanel.AppendW(UTF32TextChar(kTextChar_LF));
 	KCMAppendCmykLabeled(outPanel, cX); outPanel.Append(otherLabel);
 	return kTrue;
 }

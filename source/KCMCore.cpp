@@ -28,6 +28,7 @@
 #include "IBoolData.h"				// reading a spread's hidden state (IID_IHIDESPREADBOOLDATA)
 #include "SpreadID.h"				// IID_IHIDESPREADBOOLDATA (an IBoolData on kSpreadBoss; confirmed in the docs' boss list)
 #include "PMString.h"
+#include "TextChar.h"				// kTextChar_LF
 #include "PMRect.h"
 #include "PMPoint.h"				// the point passed to PMRect::PointIn (included explicitly rather than indirectly)
 #include "IGeometryFacade.h"		// GetItemBounds -- a page's rectangle in pasteboard coordinates (worked example: SnapTracker.cpp:610-616)
@@ -984,13 +985,13 @@ ErrorCode KCMDoMarkChangesDoc(IDataBase* targetDB, IDataBase* sourceDB, PMString
 		// Say both that it was cancelled and that the marks are gone, so the reason the frames
 		// disappeared is visible.
 		report.Append("comparison cancelled");
-		report.AppendW(UTF32TextChar(0x0A));	// newline -> second line
+		report.AppendW(UTF32TextChar(kTextChar_LF));	// newline -> second line
 		report.Append("marks cleared");
 	}
 	else
 	{
 		report.Append("marks start");
-		report.AppendW(UTF32TextChar(0x0A));	// newline -> second line
+		report.AppendW(UTF32TextChar(kTextChar_LF));	// newline -> second line
 
 		// Report only what was actually counted. "pages compared=100 changed=0" is not false in a
 		// mode that rasterised nothing, but it READS as "100 pages were compared and did not

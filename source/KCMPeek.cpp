@@ -71,6 +71,7 @@
 #include "KCMStoryMarker.h"        // KCMStoryMarker::Shutdown (the Story mode's marks are never drawn again)
 #include "KCMBookCompare.h"        // KCMClearBookResultText (the book comparison's result text)
 #include "KCMHideUnchanged.h"      // KCMResetHideUnchanged and the getters for the hidden documents
+#include "KCMSentence.h"           // KCMSentence - the progress bar's words, not keys
 #include "KCMPeek.h"
 
 //========================================================================================
@@ -324,8 +325,7 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 	//   (KCMConstants.h says why it is time and not a page count); until then the rasterisation is
 	//   kept from putting up bars of its own.
 	const int32 compareCount = (int32)toCompareT.size();
-	PMString barTitle(compareCount == 1 ? "Refreshing 1 page..." : "Refreshing pages...");
-	barTitle.SetTranslatable(kFalse);
+	PMString barTitle = KCMSentence(compareCount == 1 ? "Refreshing 1 page..." : "Refreshing pages...");
 	KCMDeferredProgressBar progress(barTitle, compareCount);
 
 	int32 changedCount = 0;
@@ -336,11 +336,10 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 	std::set<UID> touchedTargetPages, touchedSourcePages;
 	for (size_t i = 0; i < toCompareT.size(); ++i)
 	{
-		PMString item("Page ");
+		PMString item = KCMSentence("Page ");	// not a key: it carries numbers (Append keeps the mark)
 		item.AppendNumber((int32)(i + 1));
 		item.Append(" / ");
 		item.AppendNumber(compareCount);
-		item.SetTranslatable(kFalse);	// it holds numbers, so it is not a translatable string
 		progress.Step((int32)i, item);	// i pages are done; this is also where the bar first appears, once the delay has passed
 
 		const UID tUID = toCompareT[i];

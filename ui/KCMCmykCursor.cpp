@@ -29,6 +29,7 @@
 #include "IControlView.h"
 #include "PMReal.h"
 #include "PMString.h"
+#include "TextChar.h"				// kTextChar_LF
 
 // The custom bitmap cursor (Alt + left draws the CMYK on the cursor itself):
 // (ICursorUtils.h arrives through KCMCheckGlyph.h ---- no symbol of it is used directly here, so the
@@ -101,7 +102,7 @@ static bool16                                sCmykDragThrottleStarted = kFalse;
 //   RevealEnd (always nil outside a press) is used instead.
 static IPMFont* sCmykCursorFont = nil;
 
-// Split at LF (0x0A) into at most two lines.
+// Split at the line feed into at most two lines.
 static void KCMSplitTwoLines(const PMString& src, PMString& line1, PMString& line2)
 {
 	line1.Clear(); line1.SetTranslatable(kFalse);
@@ -111,7 +112,7 @@ static void KCMSplitTwoLines(const PMString& src, PMString& line1, PMString& lin
 	bool16 second = kFalse;
 	for (int32 i = 0; i < n; ++i)
 	{
-		if (buf[i] == 0x000A) { second = kTrue; continue; }
+		if (buf[i] == kTextChar_LF) { second = kTrue; continue; }
 		if (!second) line1.AppendW(UTF32TextChar(buf[i]));
 		else         line2.AppendW(UTF32TextChar(buf[i]));
 	}
@@ -448,7 +449,7 @@ static void KCMBuildCmykNoValue(PMString& out, bool16 hoverIsTarget)
 	out.Clear();
 	out.SetTranslatable(kFalse);
 	out.Append(hoverIsTarget ? "--- --- --- --- t" : "--- --- --- --- s");	// t/s, the same short labels KCMColorSampler.cpp uses
-	out.AppendW(UTF32TextChar(0x0A));	// the newline that starts the second line
+	out.AppendW(UTF32TextChar(kTextChar_LF));	// the newline that starts the second line
 	out.Append(hoverIsTarget ? "--- --- --- --- s" : "--- --- --- --- t");
 }
 
@@ -459,7 +460,7 @@ static void KCMBuildCmykNoValuePanel(PMString& out, bool16 hoverIsTarget)
 	out.Clear();
 	out.SetTranslatable(kFalse);
 	out.Append(hoverIsTarget ? "C--- M--- Y--- K--- t" : "C--- M--- Y--- K--- s");
-	out.AppendW(UTF32TextChar(0x0A));
+	out.AppendW(UTF32TextChar(kTextChar_LF));
 	out.Append(hoverIsTarget ? "C--- M--- Y--- K--- s" : "C--- M--- Y--- K--- t");
 }
 
