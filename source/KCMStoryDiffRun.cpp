@@ -44,6 +44,7 @@
 #include "KCMParaText.h"	// KCMParaAttrs and the pure functions over paragraphs (Join / IndexInStory / SplitRunAtPlaces / SpansDiffer)
 #include "KCMParaPairing.h"	// which paragraph goes with which, when a run holds more on one side (the import pours by it too)
 #include "KCMProgressBar.h"	// KCMDeferredProgressBar - the progress bar and Cancel of Run, shown after kKCMProgressBarDelayMs
+#include "KCMSentence.h"	// the bar's fixed words
 #include "KCMStoryDiffRun.h"
 #include "KCMTableShape.h"	// KCMReadTableShapes / KCMTableShapesDiffer - the Table row (2026-09-19 night)
 #include "KCMTableSnippet.h"	// KCMReadTableIdsInStory / KCMExportStoryInx - the Source's tables, by their own ids
@@ -310,31 +311,16 @@ struct RunSide
 	}
 };
 
-/* SetDocumentText
-   One field of a change, filled from text that came out of a document.
-
-   **THE TWO CALLS BELONG TOGETHER AND WERE WRITTEN APART.** Text out of a document is not a
-   translation key: without SetTranslatable(kFalse) it can be looked up in the string tables and
-   come back as something else entirely (memory menu-string-translation-traps). Every field here
-   holds document text -- the context pieces most of all, being the ones most likely to be a
-   short common word a table has an entry for -- so the two calls are one act, and were a column
-   of six SetUTF8String followed by a column of six SetTranslatable, then eight and eight. A
-   field added to either column and not the other is a fault nothing would report.
-*/
-void SetDocumentText(PMString& out, const std::string& utf8)
-{
-	out.SetUTF8String(utf8);
-	out.SetTranslatable(kFalse);
-}
-
 /* SetExcerptPieces
    One side of a change, cut into its three pieces and stored in the row's fields.
 
    **CUTTING AND STORING ARE ONE ACT.** They stood as ten lines written out twice - once for a text
-   change, once for an attribute one - which is the argument SetDocumentText already made one size
-   down: apart, a piece added to the cut and forgotten in the store is a fault nothing reports.
-   @warning the CONTEXT pieces are document text too, and are the likeliest of the three to be a
-    short common word the string tables have an entry for.
+   change, once for an attribute one: apart, a piece added to the cut and forgotten in the store is
+   a fault nothing reports.
+   @warning Text out of a document is not a translation key: left translatable it can be looked up in
+    the string tables and come back as something else (memory menu-string-translation-traps), the
+    CONTEXT pieces most of all, being the likeliest to be a short common word a table has an entry
+    for. SetUTF8String is what marks it, every field of a change (PMString.h, at its declaration).
 
    @param from/count name the CHANGE, in code points, within text.
 */
@@ -345,9 +331,9 @@ void SetExcerptPieces(PMString& outPre, PMString& outMid, PMString& outPost,
 	std::string pre, mid, post;
 	Slice(text, bytes, from, count, pre, mid, post);
 
-	SetDocumentText(outPre, pre);
-	SetDocumentText(outMid, mid);
-	SetDocumentText(outPost, post);
+	outPre.SetUTF8String(pre);
+	outMid.SetUTF8String(mid);
+	outPost.SetUTF8String(post);
 }
 
 /* (⛔SliceHoldsObjectCharacter and MarkWriteBlocks stood here and went on 2026-09-21 with the
@@ -696,14 +682,14 @@ void BuildLayers(ParaSide& side, bool16 changedIsWarichu, int32 start, int32 len
 	{
 		std::string pre, mid, post;
 		Slice(side.fText, side.Bytes(), plan.fHole.fFrom, plan.fHole.fTo - plan.fHole.fFrom, pre, mid, post);
-		SetDocumentText(out.fBottomPre, pre);
-		SetDocumentText(out.fBottomPost, post);
+		out.fBottomPre.SetUTF8String(pre);
+		out.fBottomPost.SetUTF8String(post);
 	}
 
 	auto piece = [&](int32 from, int32 to) -> PMString
 	{
 		PMString s;
-		SetDocumentText(s, MarkUpBreaks(KCMParaText::SliceCodePoints(side.fText, from, to - from)));
+		s.SetUTF8String(MarkUpBreaks(KCMParaText::SliceCodePoints(side.fText, from, to - from)));
 		return s;
 	};
 
@@ -718,9 +704,7 @@ void BuildLayers(ParaSide& side, bool16 changedIsWarichu, int32 start, int32 len
 
 			const bool16 bar = (static_cast<int32>(h) == plan.fChangedPiece && plan.fChangedPieceIsBar)
 							   ? kTrue : kFalse;
-			out.fUpperPieces.push_back(bar ? PMString() : piece(plan.fUpperHoles[h].fFrom, plan.fUpperHoles[h].fTo));
-			if (bar)
-				out.fUpperPieces.back().SetTranslatable(kFalse);
+			out.fUpperPieces.push_back(bar ? piece(0, 0) : piece(plan.fUpperHoles[h].fFrom, plan.fUpperHoles[h].fTo));
 		}
 		out.fMiddleParts.push_back(piece(at, plan.fMiddle.fTo));
 	}
@@ -788,8 +772,8 @@ void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 					 source.fText, source.Bytes(), sStart, sCount);
 
 	// The readings go through the same door as the base text: they are document text too.
-	SetDocumentText(change.fRuby, newRuby);
-	SetDocumentText(change.fOtherRuby, oldRuby);
+	change.fRuby.SetUTF8String(newRuby);
+	change.fOtherRuby.SetUTF8String(oldRuby);
 
 	// ★HOW THE RUBY IS SET, carried beside the reading rather than worked out from it -- the two
 	//   settings can produce identical readings, which is the whole reason the panel needed telling
@@ -1744,7 +1728,7 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 				words += first;
 			}
 		}
-		SetDocumentText(table.fText, words);
+		table.fText.SetUTF8String(words);
 		// The other side, for the message area: Task Start's shape and first words.
 		std::string other = haveS ? KCMTableShapeAlone(sShapes[sI]) : std::string();
 		const std::string otherFirst = haveS ? FirstTableWords(sAt, sourceParas, sourceAttrs) : std::string();
@@ -1753,7 +1737,7 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 			other += " ";
 			other += otherFirst;
 		}
-		SetDocumentText(table.fOtherText, other);
+		table.fOtherText.SetUTF8String(other);
 
 		// ★★A TABLE ADDED OR TAKEN AWAY TOGETHER WITH THE PARAGRAPH IT STANDS IN IS ONE ROW (2026-09-25). The import puts
 		//   a table Word added into a paragraph of its own - a return first, then the table (KCMStorySyncApply's
@@ -2130,8 +2114,7 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 	// **The bar, with its Cancel, appears after kKCMProgressBarDelayMs** (2026-09-05, the user's
 	//   call: "a document can hold an enormous number of stories"). Until then this loop had no bar
 	//   at all -- the Pixel mode's was tied to a page count, and this mode rasterises no page.
-	PMString barTitle("Comparing stories...");
-	barTitle.SetTranslatable(kFalse);
+	const PMString barTitle = KCMSentence("Comparing stories...");
 	// ★A stepper, not a bar of its own: an import covers the whole of its work - this loop included -
 	//   with ONE bar, and two bars alive at once is the thing KCMProgressBar.h forbids.
 	KCMProgressStepper progress(barTitle, pairedCount);
@@ -2154,11 +2137,10 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 		if ((row->fKinds & kKCMStoryKindUnpaired) != 0)
 			continue;
 
-		PMString item("Story ");
+		PMString item = KCMSentence("Story ");	// not a key: it carries numbers (Append keeps the mark)
 		item.AppendNumber(done + 1);
 		item.Append(" / ");
 		item.AppendNumber(pairedCount);
-		item.SetTranslatable(kFalse);	// it holds numbers, so it is not a translatable string
 		progress.Step(done, item);		// `done` stories are read; this is also where the bar first appears, once the delay has passed
 		KCM_DIAG_SLOW("story-diff-slow", 200);	// test builds only: the bar and its Cancel within reach (KCMDiag.h)
 

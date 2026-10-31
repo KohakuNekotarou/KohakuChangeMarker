@@ -28,12 +28,12 @@
 #include "redlineiterator.h"
 
 #include <algorithm>
-#include <string>
 
 // Project includes:
 #include "KCMCore.h"				// KCMIsDocDBOpen - neither document is trusted to be open
 #include "KCMDiag.h"				// KCM_DIAG_LOG - test builds only (nothing in a shipping .pln)
 #include "KCMProgressBar.h"			// KCMProgressStepper - the bar after kKCMProgressBarDelayMs, as the Story diff has
+#include "KCMSentence.h"			// the bar's fixed words
 #include "KCMOversetPoint.h"		// KCMIsTextIndexOverset
 #include "KCMStoryList.h"			// KCMStoryList::ReadRowForStory
 #include "KCMStoryKinds.h"
@@ -164,24 +164,16 @@ int32 AuthorIndex(std::vector<KCMTrackAuthor>& authors, const PMString& name)
 	return static_cast<int32>(authors.size() - 1);
 }
 
-std::u16string SortKey(const PMString& s)
-{
-	WideString w(s);
-	int32 n = 0;
-	const UTF16TextChar* b = w.GrabUTF16Buffer(&n);
-	return (b != nil) ? std::u16string(reinterpret_cast<const char16_t*>(b), static_cast<size_t>(n)) : std::u16string();
-}
-
-// Every tracked-change record db holds, a note's too - the follower's count (RecordsMovedSinceRead). (It counted the
+// Every tracked-change record of the stories Build reads, a note's too - the follower's count (RecordsMovedSinceRead). (It counted the
 // records a copy kept although every change was rejected, as well, until the copy went on 2026-10-27.)
 int32 CountRecords(IDataBase* db)
 {
 	InterfacePtr<IStoryList> stories(db, db->GetRootUID(), UseDefaultIID());
-	const int32 count = (stories != nil) ? stories->GetAllTextModelCount() : 0;
+	const int32 count = (stories != nil) ? stories->GetUserAccessibleStoryCount() : 0;
 	int32 n = 0;
 	for (int32 i = 0; i < count; ++i)
 	{
-		InterfacePtr<ITextModel> model(stories->GetNthTextModelUID(i), UseDefaultIID());
+		InterfacePtr<ITextModel> model(stories->GetNthUserAccessibleStoryUID(i), UseDefaultIID());
 		InterfacePtr<IRedlineDataStrand> redline(model != nil ? QueryRedline(model) : nil);
 		RedlineIterator* it = (redline != nil) ? redline->NewRedlineIterator(0) : nil;
 		if (it == nil)
@@ -218,10 +210,9 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 	IDataBase::SaveRestoreModifiedState dirtyGuard(targetDB);	// KCMIsTextIndexOverset composes
 	Utils<ITrackChangeUtils> utils;
 	InterfacePtr<IStoryList> stories(targetDB, targetDB->GetRootUID(), UseDefaultIID());
-	const int32 count = (stories != nil) ? stories->GetAllTextModelCount() : 0;
+	const int32 count = (stories != nil) ? stories->GetUserAccessibleStoryCount() : 0;
 
-	PMString barTitle("Reading tracked changes...");
-	barTitle.SetTranslatable(kFalse);
+	const PMString barTitle = KCMSentence("Reading tracked changes...");
 	KCMProgressStepper progress(barTitle, count);
 	int32 otherRecords = 0;
 	int32 targetRecords = 0;			// every record read, a note's too - CountRecords' count (RecordsMovedSinceRead)
@@ -229,15 +220,14 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 
 	for (int32 s = 0; s < count; ++s)
 	{
-		PMString item("Story ");
+		PMString item = KCMSentence("Story ");	// not a key: it carries numbers (Append keeps the mark)
 		item.AppendNumber(s + 1);
 		item.Append(" / ");
 		item.AppendNumber(count);
-		item.SetTranslatable(kFalse);
 		progress.Step(s, item);
 		KCM_DIAG_SLOW("track-read-slow", 200);	// test builds only: the bar and its Cancel within reach (KCMDiag.h)
 
-		const UIDRef storyRef = stories->GetNthTextModelUID(s);
+		const UIDRef storyRef = stories->GetNthUserAccessibleStoryUID(s);
 		InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
 		InterfacePtr<IRedlineDataStrand> redline(model != nil ? QueryRedline(model) : nil);
 		RedlineIterator* it = (redline != nil) ? redline->NewRedlineIterator(0) : nil;
@@ -441,7 +431,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 	for (size_t i = 0; i < authors.size(); ++i)
 		if (hasRow[i])
 			order.push_back(static_cast<int32>(i));
-	std::sort(order.begin(), order.end(), [&](int32 x, int32 y) { return SortKey(authors[x].fName) < SortKey(authors[y].fName); });
+	std::sort(order.begin(), order.end(), [&](int32 x, int32 y) { return authors[x].fName < authors[y].fName; });
 	std::vector<int32> newIndex(authors.size(), -1);
 	std::vector<KCMTrackAuthor> kept;
 	for (size_t i = 0; i < order.size(); ++i)

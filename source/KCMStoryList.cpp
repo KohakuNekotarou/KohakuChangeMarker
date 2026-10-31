@@ -2598,8 +2598,7 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 		}
 	}
 
-	out.SetUTF8String(s);
-	out.SetTranslatable(kFalse);	// document text rides in here - see SetDocumentText's note
+	out.SetUTF8String(s);	// document text rides in here: the call marks it not translatable (PMString.h)
 }
 #endif // KCM_DIAG
 
