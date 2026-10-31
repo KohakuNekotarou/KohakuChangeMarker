@@ -1242,22 +1242,25 @@ void KCMDoClearMarks(IDataBase* db)
 	//    1 -> 1, `kXPC_RemovedSomeXP` 1 -> 0) -- which is why KCMSetItemXPState() takes the
 	//    direction as a parameter.)
 
-	// The Story Edits list is forgotten as well. Left until the next comparison, it would list rows
-	// pointing into two documents that are no longer being compared -- **and those rows can be
-	// clicked and jumped to.**
-	// The heading loses its count and goes back to "Story Edits"; the wording is decided by
-	// KCMUpdateStorySectionLabel from the armed state, so the model need only say that the list
-	// changed.
+	// The comparison's lists are forgotten as well. The heading loses its count and goes back to "Story
+	// Edits"; the wording is decided by KCMUpdateStorySectionLabel from the armed state, so the model need
+	// only say that the list changed.
+	KCMForgetComparisonLists();
+
+	KCMNotify(kKCMStoryEditsRebuiltMessage);
+}
+
+void KCMForgetComparisonLists()
+{
+	// The Story Edits list. Left until the next comparison, it would list rows pointing into two documents
+	// that are no longer being compared -- **and those rows can be clicked and jumped to.**
 	KCMStoryList::Clear();
 	KCMTrackList::Clear();		// the Track mode's rows, and their counter history
-
 	// The Resources list goes for the same reason and at the same moment. Kept, it would describe
 	// definitions in two documents nobody is comparing any more - and unlike the Story rows it
 	// carries the two versions' VALUES, so it would go on showing "was 17.0079pt" about a pairing
 	// that no longer exists.
 	KCMResourceStore::Clear();
-
-	KCMNotify(kKCMStoryEditsRebuiltMessage);
 }
 
 void KCMDoSetPrintMarks(bool16 printFlag, bool16 opacity25Flag, IDataBase* db)

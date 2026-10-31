@@ -997,18 +997,18 @@ void KCMHandleDocsClosed()
 		//   What does have to go, the ticks of the document that actually closed, is taken by
 		//   KCMPageCheckSweepClosedDocs further down this same function, which runs whether a
 		//   comparison was involved or not.
-		// The Story Edits list goes as well: its rows hold story and page UIDs of the Target, which
+		// The comparison's lists go as well: their rows hold story and page UIDs of the Target, which
 		//   point at nothing once that document has closed. The panel's tree and heading are
 		//   rebuilt from the real state by the UI, so throwing the state away is all that is needed
 		//   here -- safe while quitting, being an empty of a vector with no dereference.
+		//   Through Stop's own door: a list emptied here and not there, or there and not here, is a list
+		//   left standing (live 2026-10-05: closing the copy left all eleven Track rows after the
+		//   comparison had stopped).
 		// @warning **do not re-decide here whether what closed was one of the compared documents.**
 		//   A closed document's UIDRef and IDataBase* cannot establish identity, their addresses
 		//   being reused ([[uidref-reuse-after-close]]). comparisonDocClosed above already answered
 		//   that through FindDocByDataBase, so this rides on its answer.
-		KCMStoryList::Clear();
-		KCMTrackList::Clear();			// the Track mode's rows hold the same Target UIDs (live 2026-10-05: closing the copy
-										//  left all eleven standing after the comparison had stopped)
-		KCMResourceStore::Clear();		// same reason, same moment - see KCMDoClearMarks
+		KCMForgetComparisonLists();
 		// The traversal's anchor is forgotten too. Stop does that, and this "clean-up as Stop
 		//   would" was the one route that did not: a closed document's page UID left as the anchor
 		//   can happen to match a UID in the next document and start the traversal partway through.

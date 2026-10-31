@@ -195,6 +195,11 @@ void		KCMInvalidateDocs(IDataBase* first, IDataBase* second, IDataBase* third = 
 // Discard the whole overlay (and the cached images of the older version) and redraw db.
 void		KCMDoClearMarks(IDataBase* db);
 
+// Throw away the lists a comparison built (the Story Edits, Track and Resources rows). The door both
+// roads that end a comparison use: Stop (KCMDoClearMarks) and a compared document closing
+// (KCMHandleDocsClosed). State only: nothing is dereferenced, and nobody is told.
+void		KCMForgetComparisonLists();
+
 // Whether marks are printed (and therefore also shown on screen at all times), and which frame
 // opacity is chosen. opacity25Flag: kTrue = 25%, kFalse = 75%. The choice applies to the tool's
 // left-hold display, the always-on display while printing is on, and the printed output alike.
