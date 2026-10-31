@@ -86,7 +86,7 @@ namespace KCMTrackList
 	int32	GetTotalChangeCount();
 	int32	GetOtherRecordCount();
 	/** The Undo / Redo rule of KCMStoryList::NeedsCompareAgain (the counter below where it was read, or back at a value it was
-		read at - plain typing makes new values) for every story in the counter history - the listed ones and those that have lost their rows
+		read at - plain typing makes new values, but for the typing right after an Undo: KCMStoryRow::fAllCount) for every story in the counter history - the listed ones and those that have lost their rows
 		(2026-10-25: the Undo follower is told by the document now, which does not say which story). */
 	bool16	AnyNeedsReadAgain(IDataBase* targetDB);
 	/** After a read: every listed story's counter goes into its history - and every story's already in it (2026-10-25:

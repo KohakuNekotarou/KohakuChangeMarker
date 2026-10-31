@@ -409,7 +409,7 @@ bool16 KCMStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoint&
 	Where ONE character of a story sits on the pasteboard -- what a jump to a change needs, as
 	against KCMStoryStartPoint above, which answers where the whole story begins.
 
-	**PORTED FROM KBSJump.cpp.** KBS's own copy says "ported from KESCLFindInDoc", so this is the
+	**PORTED FROM KFC's KFCJump.cpp.** KFC's own copy says "ported from KESCLFindInDoc", so this is the
 	  third plug-in in this family to carry the same recipe, and the two before it have already
 	  paid for the corrections written into it -- the overset test, and the recompose. The shape is
 	  theirs on purpose: GetFirstWaxLine -> QueryRunByTextOffset -> GetEscapementAt ->
@@ -448,9 +448,9 @@ bool16 KCMStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoint&
    is scrolled to a point that belongs to a different spread. The target path did exactly that
    while it resolved the frame BEFORE the point composed.
    Both go through here, and the caller of either composes before it asks anything else.
-   KBS says the same thing from the other end: GetFirstChunkPasteboardRect assumes its caller
-   has already recomposed, "and so is the overset test the caller made, so both have to be
-   looking at the same one".
+   KFC says the same thing from the other end (KFCJump.cpp): GetFirstChunkPasteboardRect assumes
+   its caller has already recomposed, "and so is the overset test the caller made before choosing
+   to come here, so both have to be looking at the same one".
    @warning **COMPOSING DIRTIES THE DOCUMENT** -- every caller holds a
     IDataBase::SaveRestoreModifiedState.
 */
@@ -724,7 +724,7 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
 	//   correctly in vertical text -- KCMStoryMarker.cpp.)
 	const PMMatrix toPasteboard = waxRun->GetToPasteboardMatrix();
 
-	// Up and down from the baseline, as fractions of the line height - the proportions KBS settled
+	// Up and down from the baseline, as fractions of the line height - the proportions KFC settled
 	// on. The midpoint of the two is what gets centred, so that the line, and not its baseline,
 	// lands in the middle of the window.
 	const PMReal lineHeight = waxLine->GetLineHeight();
@@ -1245,7 +1245,7 @@ bool16 LiveWordsHere(const KCMStoryRow& row, const KCMEqualRecord& r, IDataBase*
 {
 	outSourceToo = kFalse;
 	const int32 len = r.fLive.fTargetEnd - r.fLive.fTargetStart;
-	if (!r.fHasLiveWords || len <= 0 || len != static_cast<int32>(r.fLiveWords.Length()))
+	if (!r.fHasLiveWords || len <= 0 || len != r.fLiveWords.CharCount())
 		return kFalse;
 	IDataBase::SaveRestoreModifiedState guard(targetDB);
 	InterfacePtr<ITextModel> model(UIDRef(targetDB, row.fStoryUID), UseDefaultIID());
@@ -1816,6 +1816,8 @@ bool16 KCMStoryList::NeedsCompareAgain(int32 nth, IDataBase* targetDB)
 	//   next read).
 	if (now == row.fAllCount)
 		return kFalse;
+	// (The typing right after an Undo answers kTrue too - it passes through values the row was compared at: one
+	//  comparison more, KCMStoryRow::fAllCount.)
 	if (now < row.fAllCount
 		|| std::find(row.fComparedAt.begin(), row.fComparedAt.end(), now) != row.fComparedAt.end())
 		return kTrue;
@@ -2416,7 +2418,7 @@ void KCMStoryList::ShutdownCleanup()
 	// Assigning a fresh vector releases the storage too, not just the contents, so the static
 	// destructor at DLL unload finds nothing left to do. clear() would leave the rows' PMStrings
 	// holding their buffers -- the very thing this call exists to prevent
-	// (KBSResultModel::ShutdownCleanup does it the same way, and says why).
+	// (KFCResultModel::ShutdownCleanup does it the same way, and says why).
 	// ★The records' foci first (2026-10-26) - each let go while the session is whole (a closed document's were let go at
 	//  its kBeforeCloseDoc; one that is left is dropped untouched - KCMRecordFoci's Let says why).
 	KCMRecordFoci::LetAll();

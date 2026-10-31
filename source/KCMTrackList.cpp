@@ -57,7 +57,8 @@ void GetStoryUIDs(std::vector<UID>& out)
 
 /** The Undo / Redo rule of KCMStoryList::NeedsCompareAgain, for one story: its aggregate change counter
 	(ITextModel::GetChangeCount) went below the value it was read at, or came back to one it was read at.
-	Plain typing makes new values and answers kFalse. */
+	Plain typing makes new values and answers kFalse. (The typing right after an Undo passes through values it was read at
+	and answers kTrue: one reading more - KCMStoryRow::fAllCount.) */
 bool16 NeedsReadAgain(UID storyUID, IDataBase* targetDB)
 {
 	std::map<UID, CounterHistory>::const_iterator it = gHistory.find(storyUID);

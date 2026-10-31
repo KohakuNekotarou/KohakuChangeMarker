@@ -58,6 +58,11 @@
 //    - the counters are persisted in the file and wind back on Undo, so they are a version
 //      number for the story's state rather than a count of edits. "Edited and then undone" reads
 //      as unchanged, so no false row appears.
+//  @warning **A VERSION NUMBER THAT IS NOT UNIQUE.** The edit after an Undo goes on from the value the Undo came back to
+//    (KFC measured it - memory text-change-counters: a write 6 -> 10, Ctrl+Z 6, four characters typed 10), and two
+//    histories that have parted count on their own. So two different states can read one number: a story undone past
+//    the Source's state and typed in again, two documents edited as often since they parted, two documents built
+//    separately by the same steps. A number that differs proves a change; one that agrees does not prove there was none.
 //  **THE TWO HEADINGS, ABOVE AND BELOW, ARE HOW THIS IS QUOTED -- NOT LINE NUMBERS.** Several
 //  files lean on these two paragraphs. Every one of them cited a line range once, and every one
 //  of those had rotted by nine to eleven lines: a single insertion into this comment moved the
@@ -77,11 +82,14 @@
 //      is a tool for comparing two versions after the fact;
 //    - it lives inside ONE story's own history and does not span two documents, which is the
 //      entire problem here;
-//    - it tracks insertions, deletions and moves (MarkInsertChanges / MarkDeleteChanges /
-//      MarkMoveChanges) and NOT formatting -- so it cannot answer the one thing this file exists
-//      to answer beyond the pixels: were it the words, or their attributes?
+//    - it records insertions and deletions (a move is a pair of them) and NOT formatting - a record's
+//      type is kInsert or kDelete, "kApply not used" (VOSRedline.h, at RedlineChangeType) -- so it cannot
+//      answer the one thing this file exists to answer beyond the pixels: were it the words, or their
+//      attributes?
 //  Recorded here so the question is not re-opened from scratch the next time somebody notices
-//  that InDesign already has a "what changed" feature.
+//  that InDesign already has a "what changed" feature. (Compare with Tracked Changes - KCMTrackRead -
+//  lists those records when a document has them: what was recorded, with no Source and no comparison.
+//  The three reasons are why the Story comparison is not built on them.)
 //
 //  **THIS FILE KEEPS NO STATE.** Both functions fill a vector the caller owns. Nothing has to be
 //  cleared at shutdown, and nothing survives between comparisons.
@@ -196,9 +204,12 @@ namespace KCMStoryEdits
 		rules that combination out, and having already decided the story changed, saying "something"
 		beats saying nothing.
 
-		Note that when the two versions are NOT related by a save-as -- a version built by copying
-		into a new document, say -- none of the UIDs will line up and every target story is reported
-		as added. That is deliberate and needs no special case: the caller shows what it is given.
+		@warning **TWO DOCUMENTS THAT ARE NOT VERSIONS OF EACH OTHER ARE NOT TOLD APART HERE.** A document hands its UIDs
+		out in order from small numbers, so two built separately can hold different stories at one UID (measured: eight
+		stories built by the same steps in two documents all lined up, every counter at 7, and no row came out though
+		their words differed - the warning under "WHY TWO VERSIONS"). Only the stories that do not line up are reported
+		as added and removed (and then perhaps paired by place - KCMStoryPairByPlace). No special case: the caller shows
+		what it is given.
 
 		@param source the older version's reading.
 		@param target the newer version's reading.

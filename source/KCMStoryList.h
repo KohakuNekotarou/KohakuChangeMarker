@@ -11,17 +11,16 @@
 //  about trees or widgets -- the Story Edits tree reads this and only this.
 //
 //  **THE LIST IS A FILE-STATIC GLOBAL, NOT A BOSS.** It is built by one comparison and thrown
-//  away by the next, so there is nothing to persist and nobody to share it with. KBS keeps its
-//  result list exactly this way (KBSResultModel's gChapters). The one obligation that comes with
+//  away by the next, so there is nothing to persist and nobody to share it with. KFC keeps its
+//  result list exactly this way (KFCResultModel's gChapters). The one obligation that comes with
 //  it: ShutdownCleanup() has to empty it during a controlled shutdown, because these rows hold
 //  PMStrings, and nothing of ours should still be holding storage when the DLL unloads.
 //
 //  @warning **there is no central list of such statics, and looking for one is the mistake.**
 //   Each module empties its own, in its own ShutdownCleanup, and the shutdown service calls them
-//   one by one (KCMPeek.cpp). KBS learned it the hard way -- five of its statics were found
-//   still holding storage into DLL unload, one discovery at a time -- and states the rule in as
-//   many words: the list is checked against the STATICS, not against the file
-//   (KBSReplaceConfirmDialog::ShutdownCleanup). A new static here means a new line HERE.
+//   one by one (KCMPeek.cpp). KFC learned it the hard way -- five of its statics were found
+//   still holding storage into DLL unload, one discovery at a time: the list is checked against
+//   the STATICS, not against the file. A new static here means a new line HERE.
 //
 //========================================================================================
 
@@ -124,7 +123,7 @@ struct KCMStoryChange
 		2026-08-20 (the OLDER text for a deletion), which had been withdrawn.
 
 		**THREE PIECES SO THE ROW CAN DRAW THE CHANGE AT FULL STRENGTH AND FADE THE CONTEXT** --
-		the way a KBS hit row draws its match. Concatenated they are one plain string again.
+		the way a KFC hit row draws its match. Concatenated they are one plain string again.
 
 		**THE SPLIT IS MADE WHERE THE INFORMATION IS.** Which characters were the change is known in
 		code points, inside a string that has already been cut at both ends and had its break
@@ -534,9 +533,12 @@ struct KCMStoryRow
 
 	/** ★The story's AGGREGATE change counter (ITextModel::GetChangeCount) when fChanges were built, and every value it
 		has had at a comparison of this row (2026-09-25). The counter goes back on an Undo and forward again on a Redo,
-		to exactly the values it had; plain typing makes new ones. So "the story is back at a value it was compared at,
-		or below the last one" is an Undo or a Redo, and that is when the row is compared again on its own
-		(KCMStoryList::NeedsCompareAgain, KCMStoryFollowObserver). ⚠The aggregate and not the text
+		to exactly the values it had; plain typing makes new ones - except right after an Undo, when it goes on from the
+		value the Undo came back to, through values the undone edits had (KCMStoryStamp.h, "A VERSION NUMBER THAT IS NOT
+		UNIQUE"). So "the story is back at a value it was compared at, or below the last one" is an Undo, a Redo or that
+		typing, and that is when the row is compared again on its own (KCMStoryList::NeedsCompareAgain,
+		KCMStoryFollowObserver): a comparison says what stands now, so the typing costs one more, never a wrong list.
+		⚠The aggregate and not the text
 		counter: a ruby or a kenten does not move the text counter (KCMStoryDiffRun::CountForKind says so, measured). */
 	uint32				fAllCount;
 	std::vector<uint32>	fComparedAt;
@@ -642,9 +644,9 @@ struct KCMStoryRow
 	under a new name carries the UIDs across (KCMStoryStamp.h, "WHY TWO VERSIONS CAN BE MATCHED
 	AT ALL").
 
-	@warning for two documents that are NOT versions of each other a UID means nothing in common,
-	 and the rows simply come out as "Added" -- the same reading as everywhere else in this
-	 feature. Report it plainly; do not try to detect it.
+	@warning for two documents that are NOT versions of each other a UID means nothing in common - and
+	 it can still be the same number (KCMStoryEdits::Compare's warning), and this then answers with the frame
+	 of an unrelated story. Nothing here tells the two cases apart.
 
 	@param db which document to ask.
 	@param storyUID the story. Anything that is not a placed story answers kInvalidUID.
@@ -1039,7 +1041,8 @@ namespace KCMStoryList
 		aggregate, because the text counter does not see a mark) is not the one the row was compared at AND it went back
 		below it or came back to a value the row WAS compared at (fComparedAt) - or when a "=" record's state no longer
 		matches where its followers are placed (KCM's write or its put-back undone or done again). ⚠Plain typing moves the
-		counter to new values and is answered kFalse: the row is not compared on every keystroke. */
+		counter to new values and is answered kFalse: the row is not compared on every keystroke. (The typing right after an
+		Undo passes through values the row was compared at and is answered kTrue - fAllCount says why that is harmless.) */
 	bool16 NeedsCompareAgain(int32 nth, IDataBase* targetDB);
 
 	// ⛔GetRowComparedHistory / SetRowComparedHistory went on 2026-10-11 with their one caller, the PDF report's
@@ -1116,8 +1119,8 @@ namespace KCMStoryList
 		 honest half-answer.
 
 		@warning **fKinds is not touched either:** it comes from the two documents' change counters
-		 rather than from the target's text, and those only ever move forward (KCMStoryStamp.h) --
-		 re-reading them would cost a walk of both documents to produce the same answer.
+		 rather than from the target's text, and says why the comparison listed the row (KCMStoryStamp.h).
+		 What differs now is the diff's to say; re-reading the counters would cost a walk of both documents.
 
 		@param nth the row. Out of range does nothing.
 		@param targetDB the newer document. nil does nothing.
@@ -1140,7 +1143,7 @@ namespace KCMStoryList
 		(ui/KCMStoryCellView), so nothing outside this plug-in can see what a row says: not the
 		reading over a ruby row, not the "Mono"/"Group" word, not a footnote's number. Checking the
 		footnote work that day meant PHOTOGRAPHING the panel and reading the picture, once per
-		measurement - the single biggest cost of the day. KBS reached the same answer first
+		measurement - the single biggest cost of the day. KFC reached the same answer first
 		(app.kfcResults), and its reason is the one that matters here too: **a count proves
 		nothing.** "2 changes" is true of the right answer and of several wrong ones.
 

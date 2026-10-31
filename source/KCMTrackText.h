@@ -53,8 +53,9 @@ namespace KCMTrackText
 		return s;
 	}
 
-	/** A record's time as the OS's short date and the local time with seconds - the shape of KFC's KFCShowChanges.cpp
-		(RunLabel). Empty when the time cannot be read. */
+	/** A record's time as the OS's short date and the local time with seconds - the shape KFC's Show Changes list had (the
+		list has gone): the SDK's time strings stop at the minute, so the time is built from GetTime. Empty when the time
+		cannot be read. */
 	inline PMString TimeLabel(uint64 t)
 	{
 		const IDTime when(t);
