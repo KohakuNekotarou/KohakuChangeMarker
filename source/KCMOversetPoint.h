@@ -20,7 +20,7 @@
 //  ⚠**THE "+" POINT IS NOT A PUBLIC API.** There is no interface that hands out the indicator's
 //  position; it is worked out as the OUTPORT - the bottom-right corner, in PARCEL-LOCAL
 //  coordinates, of the last parcel of the thread that still has a frame - and transformed
-//  parcel -> frame inner -> pasteboard. KBS's KBSOversetLocator computes it the same way.
+//  parcel -> frame inner -> pasteboard. KFC's KFCOversetLocator computes it the same way.
 //
 //  ⚠★★**DO NOT ADD A BRANCH ON WRITING DIRECTION.** The corner is taken in parcel-local
 //  coordinates and GetParcelToFrameMatrix carries the direction, so (Right, Bottom) lands at the
