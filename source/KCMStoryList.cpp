@@ -421,8 +421,7 @@ bool16 KCMStoryStartPoint(IDataBase* db, UID storyUID, UID& outFrame, PBPMPoint&
 	  asks where a character was PUT, which is nothing but a result of composition: read without
 	  composing and the answer is wherever that character stood before the last edit.
 	  The recipe is the SDK's (IFrameList::GetFirstDamagedFrameIndex() != -1 ->
-	  IFrameListComposer::RecomposeThruLastFrame, as SnpInspectTextModel.cpp spells it); KCM already
-	  writes it the same way where it asks about overset (KCMOversetScan.cpp).
+	  IFrameListComposer::RecomposeThruLastFrame, as SnpInspectTextModel.cpp spells it).
 	  @warning **COMPOSING DIRTIES THE DOCUMENT**, so the caller must hold a
 	    IDataBase::SaveRestoreModifiedState. That is a change of contract for the jump path, which
 	    measured itself clean while nothing on it touched the model -- and its own comment says to
@@ -482,10 +481,9 @@ static void KCMRecomposeIfDamaged(IFrameList* frameList)
    ⚠**This crossing alone did NOT stop the crash** - the second crash, with it in place, died at
      the same instruction. QueryFrameContaining's own contract (IFrameList.h:120-125) admits an
      index in any thread and COMPOSES up to it, and that composition is what died; what stopped
-     it was leaving that call for the parcel route (KCMStoryFrameAt, which has asked the place's own
-     parcel, not its anchor's, since 2026-10-31). What is left of this crossing is KCMStoryPointAt's
-     second try: when a cell's or a note's own wax has no line for the character, the body's has one
-     for its anchor.
+     it was leaving that call for the parcel route (KCMStoryFrameAt, which asks the place's own
+     parcel, not its anchor's). What is left of this crossing is KCMStoryPointAt's second try: when a
+     cell's or a note's own wax has no line for the character, the body's has one for its anchor.
 
    @return the body index, or -1 when the index cannot be placed in the body at all (a thread whose
     dictionary answers "not anchored" while not being the body's own).
@@ -611,11 +609,10 @@ UID KCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index, bool16 caret)
 	//   than this function wants: it wants to know which frame a position is in, and the
 	//   parcel list answers exactly that - the same route KCMStoryStartPoint has always taken, and
 	//   the one the story rows' jump survived the same table on.
-	// ★★THE PLACE'S OWN PARCEL, NOT ITS ANCHOR'S (2026-10-31, measured; until then a cell or a note was asked as the anchor
-	//   of its table or its reference): a table over two pages has its anchor on the first, so a row on the second named
-	//   the first page's frame - for the reach, too - and a cell pushed out with its row was "in" the frame its table
-	//   starts in, where the row's OV said it was nowhere. The row's OV and this are one question now.
-	// ★The caret alone leans left (KCMPlaceColumn): until then any character did, and the first overset one read as placed.
+	// THE PLACE'S OWN PARCEL, NOT ITS ANCHOR'S (measured): a table over two pages has its anchor on the first, so asked
+	//   by the anchor a row on the second names the first page's frame - for the reach, too - and a cell pushed out
+	//   with its row is "in" the frame its table starts in, where the row's OV says it is nowhere. The row's OV and
+	//   this are one question (KCMPlaceColumn).
 	const UID columnUID = KCMPlaceColumn(textModel, index, caret);
 	if (columnUID == kInvalidUID)
 		return kInvalidUID;		// overset, or placed nowhere - the caller keeps its own fallback

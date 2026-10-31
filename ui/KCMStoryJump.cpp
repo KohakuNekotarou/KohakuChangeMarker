@@ -260,11 +260,10 @@ void ActivateDocument(IDataBase* db)
 /** Bring a range from the comparison into the story AS IT STANDS NOW.
 
 	★The diff ran against the story as it was when the comparison did, and the reader may have
-	edited it since - a stale end would be refused by the selection suite, and a stale start would
-	select the wrong words silently.
-	⚠★★A PLACE PAST THE STORY'S END IS THE CARET BEFORE ITS CLOSING RETURN (2026-10-31, measured twice). A range may END at
-	TotalLength - Select All's own range takes the return - but a caret asked for THERE brought InDesign down inside
-	SetTextSelection (TEXT EDITOR.RPLN+0x5EE05; KCM M7's OP-14: the story cut short after the comparison, the row pressed).
+	edited it since: a stale start selects the wrong words silently.
+	⚠A PLACE PAST THE STORY'S END IS THE CARET BEFORE ITS CLOSING RETURN. A range may END at TotalLength - Select All's
+	own range takes the return - but a caret asked for THERE brought InDesign down inside SetTextSelection (measured
+	twice, TEXT EDITOR.RPLN+0x5EE05: the story cut short after the comparison, the row pressed - overset-place, OP-14).
 	(⛔A NEGATIVE `to` meant "to the end of the story" until 2026-10-25 - the whole-story double click's, gone that day.)
 */
 void ClampToStory(ITextModel* model, TextIndex& from, TextIndex& to)
@@ -689,9 +688,9 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	// ⚠The caret is still placed at the change itself further down: its position is correct even
 	//   when it is invisible, and it is what makes the selection right if the frame is later
 	//   made big enough. What changes here is only where the WINDOW goes.
-	// ★NOT GATED ON THE ROW'S OV (it was until 2026-10-31): the row's word is what the comparison saw (MarkOverset), and a
-	//   frame made smaller since left the press on page 1 with nothing said. A frame this asked of the composition is the
-	//   answer; none is overset - or placed nowhere, and then the walk below finds no "+" either.
+	// NOT GATED ON THE ROW'S OV: that word is what the comparison saw (MarkOverset), and behind such a gate a frame
+	//   made smaller since leaves the press on page 1 with nothing said (measured). A frame asked of the composition
+	//   above is the answer; none is overset - or placed nowhere, and then the walk below finds no "+" either.
 	PBPMPoint oversetPb;
 	bool16 wentToOverset = kFalse;
 	if (frameUID == kInvalidUID)

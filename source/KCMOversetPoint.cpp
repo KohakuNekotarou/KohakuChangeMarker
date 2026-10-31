@@ -2,9 +2,7 @@
 //
 //  KCMOversetPoint.cpp
 //
-//  The reasoning is in the header. This is the walk, restored from the Find Overset feature
-//  retired on 2026-09-08 (commit 3e98956, KCMOversetScan.cpp) - the two computations only, not
-//  the scan, the thumbnails, or the Prev/Next cycle that used them.
+//  The reasoning is in the header.
 //
 //========================================================================================
 
@@ -99,11 +97,12 @@ bool16 LastPlacedOutport(ITextModel* textModel, TextIndex pos, UID& outFrame, PB
    The composition up to a place brought up to date before it is read: the parcels answer from the last composition, and
    text edited since - a restore this plug-in has just written, a person's typing - is composed only when something asks.
    THE OFFICIAL SHAPE (SnpTextModelHelper::QueryParcelContaining; the guide, sol-03 "Recomposing text"): the parcel list
-   the place is read from, when it has damage, its composer, only as far as the place. ⛔NOT the frame list's composer with
-   a cell's or a note's TextIndex - that takes the primary thread's alone (ITextParcelListComposer.h, and
-   IFrameList::QueryFrameContaining with a cell's index brought InDesign down, KCMStoryList.cpp's KCMPrimaryIndexOf).
-   ★THE TEXT A CELL'S TABLE STANDS IN COMES FIRST: which frame a row is in, and whether it was pushed out, is decided there,
-   so a place outside the body has the frame list composed as a whole before its own thread is.
+   the place is read from, when it has damage, its composer, only as far as the place - its index "MUST be part of the
+   TextStoryThread mapped to the ParcelList" (ITextParcelListComposer.h). NOT the frame list with a cell's or a note's
+   TextIndex: IFrameList::QueryFrameContaining with a cell's index brought InDesign down (KCMStoryList.cpp's
+   KCMPrimaryIndexOf).
+   THE TEXT A CELL'S TABLE STANDS IN COMES FIRST: which frame a row is in, and whether it was pushed out, is decided
+   there, so a place outside the body has the frame list composed as a whole before its own thread is.
 */
 void ComposeThrough(ITextModel* textModel, ITextParcelList* tpl, TextIndex pos)
 {

@@ -1329,7 +1329,7 @@ bool ChangeIsBefore(const KCMStoryChange& x, const KCMStoryChange& y)
    it; asked from the cell drawing it would be one per change per repaint, and worse, a "read-only"
    call in a draw path is how this SDK gets talked into recomposing.)
    ⚠**SO IT SAYS WHAT WAS TRUE AT THE COMPARISON.** A frame made smaller, or text typed above the
-   change, moves the edge without touching this row (measured 2026-10-31) - the ID column keeps its
+   change, moves the edge without touching this row (measured) - the ID column keeps its
    word until the next Refresh. The press does not rely on it: KCMStoryJumpToChange asks again.
 
    ⚠**THE TARGET SIDE ONLY.** A change's fTargetStart names the newer document, which is the one
