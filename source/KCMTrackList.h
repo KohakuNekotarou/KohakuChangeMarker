@@ -4,13 +4,15 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  THE TRACK CHANGES MODE'S LIST (design docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md).
+//  THE LIST OF COMPARE WITH TRACKED CHANGES - the Track mode's (designs
+//  docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md,
+//  docs/superpowers/specs/2026-10-27-kcm-track-records-only-design.md).
 //  Authors -> rows (one story under one author) -> changes. The rows of one author are CONSECUTIVE, so the
 //  tree's author level is a range of row indices (KCMTrackAuthor::fFirstRow / fRowCount).
 //
 //  A FILE-STATIC LIST, LIKE KCMStoryList's, and for the same reasons: built by one comparison, thrown away by
 //   the next, nothing to persist. ShutdownCleanup empties it (the shutdown service calls it - KCMPeek.cpp).
-//  WHY NOT KCMStoryList ITSELF: that list carries the import's "!" rows and the taken-back records, whose
+//  WHY NOT KCMStoryList ITSELF: that list carries the import's "!" rows and the "=" records, whose
 //   index space every reader of it relies on. The facade switches between the two lists by mode
 //   (KCMFacades.cpp) - one question, one place.
 //
@@ -74,8 +76,7 @@ struct KCMTrackAuthor
 namespace KCMTrackList
 {
 	/** Replace the list. The counter history (AnyNeedsReadAgain) is KEPT: a re-read after an undo has to be able to
-		recognise the next one. otherRecords is the number the report line says. (A second number - the records a copy
-		kept although every change was rejected - went on 2026-10-27 with the copy.) */
+		recognise the next one. otherRecords is the number the report line says. */
 	void	Set(const std::vector<KCMTrackAuthor>& authors, const std::vector<KCMTrackRow>& rows, int32 otherRecords);
 	/** Empty the list AND the counter history (Stop, a closed document). */
 	void	Clear();
@@ -89,12 +90,12 @@ namespace KCMTrackList
 		listed ones and those that have lost their rows (the Undo follower is told by the document now, which does
 		not say which story). */
 	bool16	AnyNeedsReadAgain(IDataBase* targetDB);
-	/** After a read: every listed story's counter goes into its history - and every story's already in it (2026-10-25:
-		a story whose rows all went must still recognise the Undo that brings them back). */
+	/** After a read: every listed story's counter goes into its history - and every story's already in it (a
+		story whose rows all went must still recognise the Undo that brings them back). */
 	void	NoteStoryCounters(IDataBase* targetDB);
 	/** After a read: how many tracked-change records the Target had (KCMTrackRead::Build counts them as it reads), and
-		that number back (-1 = not read since Clear). An accept changes no text and moves no counter (measured
-		2026-10-25), so the records are what tells an accept, a reject and their Undo and Redo
+		that number back (-1 = not read since Clear). An accept changes no text and moves no counter (measured),
+		so the records are what tells an accept, a reject and their Undo and Redo
 		(KCMTrackRead::RecordsMovedSinceRead). */
 	void	NoteRecordCount(int32 records);
 	int32	GetRecordCountAtRead();

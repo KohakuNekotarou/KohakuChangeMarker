@@ -4,7 +4,7 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  See KCMPlaceReach.h. The bodies are KFC's (model/KFCPageItemFacts.cpp - KFC 1.4's), copied rather than shared: the
+//  See KCMPlaceReach.h. The bodies began as KFC's (model/KFCPageItemFacts.cpp), copied rather than shared: the
 //  two plug-ins are separate products, and each keeps its own copy of what it reads.
 //
 //========================================================================================
@@ -45,7 +45,7 @@ namespace
 {
 
 // THE LAYER OF AN ITEM PLACED IN TEXT - an inline or anchored frame, and the text frame column inside one - IS ITS ANCHOR'S
-// (KFC's AnchorLayerUID and its reasoning: an inline's hierarchy answers kInvalidUID for its layer). Up to the kInlineBoss the
+// (an inline's hierarchy answers kInvalidUID for its layer). Up to the kInlineBoss the
 // item hangs from, then the frame its anchor composes into; out again while that frame is itself in text. kInvalidUID when
 // the item does not hang in text, or its anchor stands in overset text.
 UID AnchorLayerUID(IDataBase* db, UID item)
@@ -97,8 +97,8 @@ IDocumentLayer* QueryDocLayerOf(IDataBase* db, IHierarchy* frameHier)
 	return docLayer.forget();
 }
 
-// Hidden: its layer hidden, or the item itself (Object > Hide) - both asked, as spellpanel's DetermineIfTextIsHidden and
-// Find/Change ask them.
+// Hidden: its layer hidden, or the item itself (Object > Hide) - both asked, as spellpanel's DetermineIfTextIsHidden
+// asks them.
 bool IsFrameHidden(IDataBase* db, UID frameUID)
 {
 	InterfacePtr<IHierarchy> frameHier(db, frameUID, UseDefaultIID());

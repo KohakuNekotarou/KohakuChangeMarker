@@ -87,7 +87,7 @@ typedef KCMStoryAtPlace<UID, UID, Place> StoryAtPlace;
 		top-left corner. Through one matrix (the item's inner to the pasteboard, then the pasteboard to the page's inner),
 		so a rotated frame is boxed tight, as the script boxes it.
 		fOnPath: kTrue for words on a path (the column is the path's - ITOPFrameData), kFalse for words inside a
-		frame. ONE FRAME CAN CARRY ONE STORY OF EACH (the final review - tests-place.ps1 P20): both stand at
+		frame. ONE FRAME CAN CARRY ONE STORY OF EACH (suite place-pair, P20): both stand at
 		the frame's box, so with the box alone they were two equal places on the page and neither paired. The pairing tells
 		them apart by this: inside pairs with inside, on the path with on the path.
 	@return kFalse when the story is not there, sits in no frame, its first frame is on no page (the pasteboard), or the

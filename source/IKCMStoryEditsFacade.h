@@ -95,41 +95,42 @@ public:
 			IT IS HOW AN EMPTY CHILD LIST IS READ. GetChangeCount answers 0 for two unrelated
 			reasons - the story could not be compared, or it was compared and the words agree -
 			and only the second is worth telling the reader about. kTrue with no children is that
-			case, and the row draws "None" for it.
-			@warning it does NOT mean the story is unchanged: the change counters moved, or there
-			would be no row (KCMStoryStamp.h). It means the WORDS come out the same. */
+			case, and the row's sign says "=" for it.
+			@warning it does NOT mean the story is unchanged: something differed, or there
+			would be no row (KCMStoryEdits::Compare). It means the WORDS come out the same. */
 		bool16		fTextCompared;
 
 		/** WHICH KIND OF ATTRIBUTE this row's children found a difference in, when they found one.
 			**0 = none; 1 = ruby; 2 = kenten; 3 = footnote; 4 = endnote; 5 = warichu; 6 = tate-chu-yoko; 7 = an object placed in the text.**
 
-			A NUMBER RATHER THAN A FLAG, so that a second attribute costs one more value here and
-			one more label - not another field and another branch everywhere (kenten, the author's call,
-			came back through this same number). **A value must never be renumbered once it has shipped.**
+			⚠THE PANEL DOES NOT SHOW IT: a row's column is a sign (= + - ≠), and KindLabel
+			(ui/KCMStoryTreeWidgetMgr.cpp) takes this, fAttrKindCount and fHasTextChange and does not read them
+			(KCMStoryRow::fAttrKind).
 
-			@warning NOT DERIVED FROM fKinds, which comes from the two documents' CHANGE COUNTERS
-			and is deliberately left alone by a row refresh ("read it again and it says the same").
-			This one comes from the DIFF - it is only known after the two versions were compared -
-			so mixing it into fKinds would break that promise. */
+			A NUMBER RATHER THAN A FLAG, so that another attribute costs one more value here and
+			one more label - not another field and another branch everywhere. **A value must never be renumbered once it
+			has shipped.**
+
+			@warning NOT DERIVED FROM fKinds, which comes from the comparison of the two documents' stamps
+			(KCMStoryEdits::Compare) and is deliberately left alone by a row refresh.
+			This one comes from the DIFF - it is only known after the two versions were compared. */
 		int32		fAttrKind;
 
-		/** HOW MANY DIFFERENT attribute kinds the children found. fAttrKind names the first; this is
-			what lets the row say "Ruby+" when another kind moved as well (the author's ask), the same '+'
-			the row already puts after "Text" when a second counter moved. The UI reads Row by value, so
+		/** HOW MANY DIFFERENT attribute kinds the children found. fAttrKind names the first; this says whether
+			there were more. The UI reads Row by value, so
 			both halves are built together whenever this struct changes (the rule at the head of
 			IKCMCompareFacade.h). */
 		int32		fAttrKindCount;
 
 		/** Whether the diff found a change in the WORDS, as opposed to in something over them.
 
-			**THE COLUMN ASKS THIS RATHER THAN fKinds**. A footnote or endnote marker
+			**WHAT WAS FOUND, NOT WHAT fKinds SAYS**. A footnote or endnote marker
 			is a CHARACTER, so adding one moves the document's own text counter - and fKinds, which
 			comes from those counters, then says "the words changed" for an edit whose only visible
 			difference is a note. The diff knows better: it takes the marker out of the text and
-			reports it as an attribute. Ruby and kenten never showed this up because neither is a
-			character, so the two answers happened to agree.
-			⚠MEANINGLESS UNLESS fTextCompared IS kTrue - it is the diff's answer, and in the pixel
-			 mode nobody diffed anything. **Added at the END of the struct**, as fAttrKindCount was
+			reports it as an attribute.
+			⚠MEANINGLESS UNLESS fTextCompared IS kTrue - it is the diff's answer, and for a row nobody
+			 diffed there is none. **Added at the END of the struct**, as fAttrKindCount was
 			 and for the same reason. */
 		bool16		fHasTextChange;
 

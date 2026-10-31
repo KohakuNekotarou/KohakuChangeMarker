@@ -114,9 +114,9 @@ void KCMStoryEdits::CollectStamps(IDataBase* db, std::vector<KCMStoryStamp>& out
 #endif
 }
 
-// One row of the answer. The three places below build it identically and differ only in which uid
-// and which kinds go in, so a field added to KCMStoryDiff is added here once rather than in three
-// places that have to be found first.
+// One row of the answer. The places below build it identically and differ only in which uid
+// and which kinds go in, so a field added to KCMStoryDiff is added here once rather than in each of
+// them, which would have to be found first.
 static void AppendDiff(std::vector<KCMStoryDiff>& out, UID storyUID, uint32 kinds, UID sourceStoryUID)
 {
 	KCMStoryDiff row;
@@ -136,7 +136,7 @@ void KCMStoryEdits::Compare(const std::vector<KCMStoryStamp>& source,
 
 	// Matched by UID rather than by walking both lists in step. The two versions can hold different
 	// numbers of stories, and a story added to the newer version is inserted part-way through the
-	// enumeration rather than appended (measured 2026-08-08), so position says nothing.
+	// enumeration rather than appended (measured), so position says nothing.
 	std::map<UID, KCMStoryStamp> sourceByUID;
 	for (std::vector<KCMStoryStamp>::const_iterator it = source.begin(); it != source.end(); ++it)
 		sourceByUID[it->fStoryUID] = *it;
@@ -152,11 +152,8 @@ void KCMStoryEdits::Compare(const std::vector<KCMStoryStamp>& source,
 			continue;
 		}
 
-		// Whether the story is reported is still the aggregate counter's call. See the header: the
-		// sub-counters name what moved, they are not the test.
-		// (Until 2026-09-19 the fourth, Import, mode declined this sieve: its words went into the
-		//  COPY, so no counter of the document moved. An import puts its words into the document
-		//  now, and the counters answer for it like for any other edit.)
+		// An aggregate counter that differs reports the story; one that agrees leaves it to the prints below. See the
+		// header: the sub-counters name what moved, they are not the test.
 		if (found->second.fChangeCount == it->fChangeCount)
 		{
 			// ONE COUNT - BUT THE WORDS MAY DIFFER: the count is not a unique version number (KCMStoryStamp::fTextPrint). Listed as

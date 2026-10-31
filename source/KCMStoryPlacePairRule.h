@@ -11,12 +11,12 @@
 //  pasted story and the one it replaced came out as two rows - Added and Removed - and what had
 //  changed inside was never compared. This rule gives the two one row.
 //
-//  ONLY EXACTLY THE SAME PLACE AND SIZE (the author: "位置とサイズだけでいいかな、
-//  一先ずは" / "ジオメトリックバウンドというのがまったくおなじならでいいかな"). What "the same" means
+//  ONLY EXACTLY THE SAME PLACE AND SIZE (the author: "position and size will do, for now" / "when the
+//  geometric bounds are exactly the same"). What "the same" means
 //  is the caller's `equal` - in the plug-in PMRect's ==, which is InDesign's own (each side within
 //  kPMRealEpsilon); no tolerance of this file's own.
-//  ONLY ONE TO ONE, BOTH WAYS (the author's call on 2026-10-26, the page rule's thinking of
-//  2026-09-13): a target with two equal sources, or a source with two equal targets, pairs with
+//  ONLY ONE TO ONE, BOTH WAYS (the author's call, the page rule's thinking):
+//  a target with two equal sources, or a source with two equal targets, pairs with
 //  nothing - a wrong pair would compare two different stories and show a difference that is not
 //  there, while two rows left unpaired only fail to show one.
 //  ONLY ON THE SAME PAGE: the caller hands the Target's pages in already turned into the Source

@@ -720,7 +720,7 @@ public:
 		out.fPageUID	= row->fPageUID;
 		out.fTextCompared = row->fTextCompared;
 		out.fAttrKind	= static_cast<int32>(row->fAttrKind);	// 0 = none, 1 = ruby, 2 = kenten, 3 = footnote, 4 = endnote, 5 = warichu, 6 = tate-chu-yoko, 7 = object
-		out.fAttrKindCount = row->fAttrKindCount;				// how many DIFFERENT kinds - "Ruby+" when > 1
+		out.fAttrKindCount = row->fAttrKindCount;				// how many DIFFERENT kinds
 		out.fHasTextChange = row->fHasTextChange;				// what the DIFF found, not what the counters said
 		out.fSourceStoryUID = row->fSourceStoryUID;				// the Source story it compares against
 		return kTrue;

@@ -2,7 +2,7 @@
 //
 //  Owner: KohakuNekotarou
 //
-//  Kohaku Change Marker (KCM) - the Track Changes mode's list. See KCMTrackList.h.
+//  Kohaku Change Marker (KCM) - the list of Compare with Tracked Changes. See KCMTrackList.h.
 //
 //========================================================================================
 
@@ -137,9 +137,9 @@ void KCMTrackList::NoteStoryCounters(IDataBase* targetDB)
 	if (targetDB == nil)
 		return;
 	// The listed stories AND every story noted before: a story that has lost all its rows - every change
-	// in it rejected - keeps its place in the history, and its counter is read now too. Read only for the listed ones
-	// (until 2026-10-25), it stayed at the value from before the reject, and the reject's Undo, which takes the counter
-	// back to exactly that value, read as "nothing moved" (tests-track-ar.ps1 AR-8: Reject All Changes in Document, then
+	// in it rejected - keeps its place in the history, and its counter is read now too. Read only for the listed ones,
+	// it stays at the value from before the reject, and the reject's Undo, which takes the counter
+	// back to exactly that value, reads as "nothing moved" (suite track-ar, AR-8: Reject All Changes in Document, then
 	// Ctrl+Z - the list stayed empty).
 	for (size_t i = 0; i < gList.fRows.size(); ++i)
 		gList.fHistory[gList.fRows[i].fRow.fStoryUID];		// (a listed story new to the history gets its place)
@@ -162,7 +162,6 @@ void KCMTrackList::RowsAsTsv(PMString& out)
 {
 	out.clear();
 	out.SetTranslatable(kFalse);
-	// (The heading's notRejectedInCopy went on 2026-10-27 with the copy; its pairs are read by name.)
 	out.Append("#track\totherRecords\t");
 	out.AppendNumber(gList.fOtherRecords);
 	out.Append("\n");

@@ -45,8 +45,8 @@ void		KCMCollectMasterPageUIDs(IDataBase* db, std::vector<UID>& out);
 // KCM has several hidden-spread tests, but they all ask it while walking an ISpreadList; asking
 // **from a page UID** is this one's job, and it exists so that another copy is not written inline
 // ([[one-question-one-place]]).
-// Used because a hidden page appears neither on screen nor in a PDF, so it is left out of output
-// that names pages (Export Changed Pages). The test reads an IBoolData on kSpreadBoss
+// Asked by Prev / Next (ui/KCMChangeNav.cpp): a hidden page appears neither on screen nor in a PDF, and the
+// status line marks it "(Hide)". The test reads an IBoolData on kSpreadBoss
 // (IID_IHIDESPREADBOOLDATA, kTrue = hidden) -- the same read Hide Unchanged uses.
 bool16		KCMIsPageOnHiddenSpread(IDataBase* db, UID pageUID);
 

@@ -7,13 +7,13 @@
 //  Reads every user story's change counters out of a document, and matches two documents'
 //  readings by story UID, so the panel can say which stories changed -- and in what way.
 //
-//  KCM compares PIXELS, so on its own it can only say "this page looks different". What this
+//  A comparison of pixels can only say "this page looks different". What this
 //  file adds is what kind of change it was: the words, their formatting, or something attached to
 //  the story such as a table.
 //
 //  **NOTHING IN THE SDK READS THESE COUNTERS, WHICH IS WHY SO MUCH BELOW IS MEASURED RATHER THAN
-//  CITED.** GetChangeCount and its three companions have no call site anywhere in source/open or
-//  source/sdksamples (counted again 2026-08-30), so there is no worked example to follow and no
+//  CITED.** GetChangeCount and its three companions have no call site in Adobe's code (source/open, the
+//  SDK's samples), so there is no worked example to follow and no
 //  Adobe code to compare against -- only what the headers promise and what this plug-in measured
 //  for itself. Adobe does point AT them, though: the deprecated HasChanged() just above them says
 //  "our direction is to remove this InCopy 'special' and make them use the new change counters"
@@ -21,8 +21,8 @@
 //
 //  ALL FOUR COUNTERS ARE READ, and they answer two different questions:
 //
-//    - GetChangeCount() -- the "all changes" counter -- decides whether the story is reported at
-//      all. It has to be this one rather than any single sub-counter, because which sub-counter
+//    - GetChangeCount() -- the "all changes" counter -- reports the story when the two readings
+//      differ. It has to be this one rather than any single sub-counter, because which sub-counter
 //      an edit lands on cannot be predicted from the headers. Measured: a table stroke moved
 //      Attr, not Other, even though ITextModel gives exactly that edit as its example of what
 //      Other is for ("a change to a Table stroke does represent an effective change to the
@@ -34,7 +34,7 @@
 //      one comparison (work/kescm-storytest/make-kinds-docs.jsx): a table cell's fill, merging
 //      cells, column width, applying a table style, an inline's fill, an inline's size, a
 //      footnote, a condition, a hyperlink. SEVEN of them reported "Attr" alone -- and since the
-//      label names the FIRST kind that moved in the order Text, Attr, Other, "Attr" alone proves
+//      label then named the FIRST kind that moved in the order Text, Attr, Other, "Attr" alone proves
 //      Other did not move. (The two that read "Text+" -- merging cells, adding a footnote -- keep
 //      their second kind hidden behind the "+".) All nine WERE listed, which is the point: the
 //      aggregate caught every one of them.
@@ -64,16 +64,14 @@
 //    the Source's state and typed in again, two documents edited as often since they parted, two documents built
 //    separately by the same steps. A number that differs proves a change; one that agrees does not prove there was none -
 //    so the words are asked as well when it agrees (KCMStoryStamp::fTextPrint).
-//  **THE TWO HEADINGS, ABOVE AND BELOW, ARE HOW THIS IS QUOTED -- NOT LINE NUMBERS.** Several
-//  files lean on these two paragraphs. Every one of them cited a line range once, and every one
-//  of those had rotted by nine to eleven lines: a single insertion into this comment moved the
-//  lot at once, and only the reference written on the day of the split had ever been re-counted.
+//  **THE HEADINGS HERE ARE HOW THIS IS QUOTED -- NOT LINE NUMBERS.** Several files lean on them.
 //  Quote the heading; it survives an edit above it. To find who is leaning on a heading, grep
 //  for its words -- and note that a quotation wrapped across two lines only answers to part of
 //  it, so grep for a fragment rather than the whole heading.
 //
-//  **READING COUNTERS COMPOSES NOTHING.** So no SaveRestoreModifiedState guard is needed here --
-//  the same note KESCL's CaptureDocStamp carries (KESCLFindInDoc.cpp).
+//  **READING COUNTERS COMPOSES NOTHING.** So they need no SaveRestoreModifiedState guard. The words'
+//  and the marks' reading beside them composes nothing either; it holds one (CollectStamps), because reading
+//  them must not dirty a document.
 //
 //  **WHY NOT TRACK CHANGES?** InCopy's track-changes feature answers a question that LOOKS like
 //  this one: ITrackChangeUtils::StoryHasChanges(UIDRef) is literally "did this story change?",
@@ -106,7 +104,7 @@
 
 // The two kinds enums the counters are reported in. THEY LIVE IN THEIR OWN HEADER because
 // IKCMStoryEditsFacade carries them across to the UI, and a header the UI includes must not also
-// put the three KCMStoryEdits functions BELOW within its reach -- they are model-side and cannot
+// put the KCMStoryEdits functions BELOW within its reach -- they are model-side and cannot
 // be linked from there.
 #include "KCMStoryKinds.h"	// KCMStoryChangeKind / KCMStoryAttrKind / kKCMStoryKindUnpaired
 
@@ -116,7 +114,7 @@ class IDataBase;
 struct KCMStoryStamp
 {
 	UID		fStoryUID;
-	uint32	fChangeCount;	// the all-changes counter - this alone decides whether a row appears
+	uint32	fChangeCount;	// the all-changes counter - a row when the two readings differ
 	uint32	fTextCount;
 	uint32	fAttrCount;
 	uint32	fOtherCount;
@@ -157,13 +155,12 @@ struct KCMStoryDiff
 	/** The story's UID IN THE DOCUMENT THAT HOLDS IT, and which document that is depends on fKinds:
 		the target for every row except a Removed one, which exists only in the source.
 
-		@warning **every row used to exist in the target, and that was the whole feature's premise.**
-		  Removed rows broke it deliberately -- see the Compare contract below and
+		@warning **a Removed row's UID is a Source UID** -- see the Compare contract below and
 		  docs/superpowers/specs/2026-08-21-kescm-removed-story-rows-design.md.
 		**NO SECOND FIELD NAMING THE DOCUMENT:** fKinds already carries the answer, and a second
 		field could disagree with it. */
 	UID		fStoryUID;
-	uint32	fKinds;		// OR of KCMStoryChangeKind - what the row names
+	uint32	fKinds;		// OR of KCMStoryChangeKind
 
 	/** THE SOURCE STORY THIS ROW COMPARES AGAINST (stories paired by place): the same uid as fStoryUID
 		for a story paired by UID and for a Removed one (whose fStoryUID is the Source's already), the Source's own
@@ -211,9 +208,7 @@ namespace KCMStoryEdits
 		(removed). Only stories that read the same produce nothing.
 
 		@warning **a removed row's fStoryUID is a SOURCE uid**; every other row's is a target uid.
-		  Callers tell them apart by kKCMStoryKindRemoved. Removed rows were dropped altogether while
-		  a row could only aim the target window; the panel now aims the SOURCE window at these, so
-		  that reason is gone.
+		  Callers tell them apart by kKCMStoryKindRemoved; the panel aims the SOURCE window at these.
 
 		Each row's fKinds says which of the three sub-counters moved. A row whose aggregate moved
 		while no sub-counter did is reported as Other rather than dropped: nothing in the header
