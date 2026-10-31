@@ -6,20 +6,20 @@
 //  Removed story of the Source, when the first frame of each stands at EXACTLY the same place on
 //  corresponding pages.
 //
-//  ★WHY (2026-10-26, the author): "a frame copied from a past document gets a new UID - brought
+//  WHY (the author): "a frame copied from a past document gets a new UID - brought
 //  over and put in the same place". The Story mode pairs stories by UID (KCMStoryStamp.h), so the
 //  pasted story and the one it replaced came out as two rows - Added and Removed - and what had
 //  changed inside was never compared. This rule gives the two one row.
 //
-//  ★ONLY EXACTLY THE SAME PLACE AND SIZE (2026-10-25, the author: "位置とサイズだけでいいかな、
+//  ONLY EXACTLY THE SAME PLACE AND SIZE (the author: "位置とサイズだけでいいかな、
 //  一先ずは" / "ジオメトリックバウンドというのがまったくおなじならでいいかな"). What "the same" means
 //  is the caller's `equal` - in the plug-in PMRect's ==, which is InDesign's own (each side within
 //  kPMRealEpsilon); no tolerance of this file's own.
-//  ★ONLY ONE TO ONE, BOTH WAYS (the author's call on 2026-10-26, the page rule's thinking of
+//  ONLY ONE TO ONE, BOTH WAYS (the author's call on 2026-10-26, the page rule's thinking of
 //  2026-09-13): a target with two equal sources, or a source with two equal targets, pairs with
 //  nothing - a wrong pair would compare two different stories and show a difference that is not
 //  there, while two rows left unpaired only fail to show one.
-//  ★ONLY ON THE SAME PAGE: the caller hands the Target's pages in already turned into the Source
+//  ONLY ON THE SAME PAGE: the caller hands the Target's pages in already turned into the Source
 //  pages they are compared against (the page pairing - KCMPageMap.h), so "the same page" here is
 //  the plain equality of two Source pages.
 //

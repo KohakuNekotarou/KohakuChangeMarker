@@ -4,7 +4,7 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  WHETHER A CLICK CAN SELECT A PLACE IN THE TARGET (2026-10-24 night - docs/superpowers/specs/2026-10-24-kcm-list-like-
+//  WHETHER A CLICK CAN SELECT A PLACE IN THE TARGET (docs/superpowers/specs/2026-10-24-kcm-list-like-
 //  kfc-design.md section 1-2, the author: "the hidden and locked cases too - select the way KFC does"). Find/Change's own
 //  Find Next is the model, as it is KFC's (KFCJump.cpp, NotSelected): a LOCKED place is not selected - the jump's flash
 //  points at it instead; a HIDDEN one is selected with nothing of it showing; one on a HIDDEN SPREAD is neither shown nor
@@ -35,7 +35,7 @@
 int32 KCMPlaceReach(const UIDRef& story, TextIndex from, TextIndex to);
 
 /** Whether the page item `frame` of `db` is hidden: its layer not visible, or the item itself hidden (Object > Hide) - the
-	two questions KCMPlaceReach asks for kReachHidden, here for a frame named by its UID (2026-10-25: Export Pages to Word
+	two questions KCMPlaceReach asks for kReachHidden, here for a frame named by its UID (Export Pages to Word
 	leaves a hidden frame out of its page). */
 bool16 KCMIsFrameHidden(IDataBase* db, UID frame);
 

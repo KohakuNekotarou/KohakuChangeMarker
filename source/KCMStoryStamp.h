@@ -121,8 +121,8 @@ struct KCMStoryStamp
 	uint32	fAttrCount;
 	uint32	fOtherCount;
 
-	/** ★(2026-10-27) The prints of every object placed in the story, folded into one number - 0 when it holds none
-		(KCMObjectsPrintOfStory, KCMObjectPrint.h). ★THE SECOND TEST, ASKED ONLY WHEN THE COUNTERS AGREE: an edit to an
+	/** The prints of every object placed in the story, folded into one number - 0 when it holds none
+		(KCMObjectsPrintOfStory, KCMObjectPrint.h). THE SECOND TEST, ASKED ONLY WHEN THE COUNTERS AGREE: an edit to an
 		object itself - a MathML, a fill, a QR code made anew - does not move the story's counters (it changes the object,
 		not the text), so a story whose words stayed while an object in it changed had no row at all. Filled by
 		CollectStamps only - ReadStamp is the script properties' reading too, and they say nothing about objects. */
@@ -165,7 +165,7 @@ struct KCMStoryDiff
 	UID		fStoryUID;
 	uint32	fKinds;		// OR of KCMStoryChangeKind - what the row names
 
-	/** ★THE SOURCE STORY THIS ROW COMPARES AGAINST (2026-10-26, stories paired by place): the same uid as fStoryUID
+	/** THE SOURCE STORY THIS ROW COMPARES AGAINST (stories paired by place): the same uid as fStoryUID
 		for a story paired by UID and for a Removed one (whose fStoryUID is the Source's already), the Source's own
 		story for a row paired by the place of its first frame (kKCMStoryKindByPosition - its fStoryUID is the
 		Target's new one), kInvalidUID for an Added one. Written by Compare and by the place pairing

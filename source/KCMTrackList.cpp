@@ -34,7 +34,7 @@ struct TrackListState
 	int32								fOtherRecords;
 	std::map<UID, KCMCounterHistory>	fHistory;
 	// The Target's tracked-change records when the list was last read (KCMTrackRead::Build): what an accept or a reject is
-	// told by, since it may move no counter (2026-10-25 - NoteRecordCount). -1 = not read since Clear.
+	// told by, since it may move no counter (NoteRecordCount). -1 = not read since Clear.
 	int32								fRecordsAtRead;
 	TrackListState() : fOtherRecords(0), fRecordsAtRead(-1) {}
 };
@@ -136,7 +136,7 @@ void KCMTrackList::NoteStoryCounters(IDataBase* targetDB)
 {
 	if (targetDB == nil)
 		return;
-	// The listed stories AND every story noted before (2026-10-25): a story that has lost all its rows - every change
+	// The listed stories AND every story noted before: a story that has lost all its rows - every change
 	// in it rejected - keeps its place in the history, and its counter is read now too. Read only for the listed ones
 	// (until 2026-10-25), it stayed at the value from before the reject, and the reject's Undo, which takes the counter
 	// back to exactly that value, read as "nothing moved" (tests-track-ar.ps1 AR-8: Reject All Changes in Document, then

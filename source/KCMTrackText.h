@@ -4,9 +4,9 @@
 //
 //  Kohaku Change Marker (KCM) - a tracked change's words: its sign, its kind, its time, its author's name.
 //
-//  ONE PLACE FOR BOTH HALVES (2026-10-27): the panel (ui/KCMTrackLabels.cpp forwards here - the row's sign, the message
+//  ONE PLACE FOR BOTH HALVES: the panel (ui/KCMTrackLabels.cpp forwards here - the row's sign, the message
 //   area's heading, the author row) and the Before/After report's Tracked Changes table (KCMReport.cpp). They lived in the
-//   UI half (2026-10-05) until the report - a model file - needed the same words. Header-only, because the UI half
+//   UI half until the report - a model file - needed the same words. Header-only, because the UI half
 //   compiles no model .cpp.
 //
 //========================================================================================
@@ -68,7 +68,7 @@ namespace KCMTrackText
 		return label;
 	}
 
-	/** An author's name for the list: "(no name)" when the record holds none - or only spaces (2026-10-25, the author's
+	/** An author's name for the list: "(no name)" when the record holds none - or only spaces (the author's
 		answer to Review Focus 2: InDesign refuses an empty user name but takes " ", and the author row drew as a colour
 		square with nothing after it). White space of any width counts as nothing - UnicodeClass's answer, with the
 		ideographic space named because it answers false for that one (memory indesign-special-text-characters); anything

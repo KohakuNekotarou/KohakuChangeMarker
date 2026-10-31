@@ -21,7 +21,7 @@
 
 // Project includes:
 #include "KCMDiag.h"		// KCM_DIAG_LOG - what the reading took (test builds only)
-#include "KCMObjectPrint.h"	// KCMObjectsPrintOfStory - the objects placed in a story, for the second test (2026-10-27)
+#include "KCMObjectPrint.h"	// KCMObjectsPrintOfStory - the objects placed in a story, for the second test
 #include "KCMStoryStamp.h"
 #include "KCMTextRead.h"	// MarksPrint - what stands over the words, for the second test
 

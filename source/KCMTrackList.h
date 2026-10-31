@@ -4,13 +4,13 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  THE TRACK CHANGES MODE'S LIST (2026-10-05, design docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md).
+//  THE TRACK CHANGES MODE'S LIST (design docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md).
 //  Authors -> rows (one story under one author) -> changes. The rows of one author are CONSECUTIVE, so the
 //  tree's author level is a range of row indices (KCMTrackAuthor::fFirstRow / fRowCount).
 //
-//  ★A FILE-STATIC LIST, LIKE KCMStoryList's, and for the same reasons: built by one comparison, thrown away by
+//  A FILE-STATIC LIST, LIKE KCMStoryList's, and for the same reasons: built by one comparison, thrown away by
 //   the next, nothing to persist. ShutdownCleanup empties it (the shutdown service calls it - KCMPeek.cpp).
-//  ★WHY NOT KCMStoryList ITSELF: that list carries the import's "!" rows and the taken-back records, whose
+//  WHY NOT KCMStoryList ITSELF: that list carries the import's "!" rows and the taken-back records, whose
 //   index space every reader of it relies on. The facade switches between the two lists by mode
 //   (KCMFacades.cpp) - one question, one place.
 //
@@ -27,7 +27,7 @@
 
 class IDataBase;
 
-/** One record a change was made of, as KCMTrackRead copied it out of the iterator (2026-10-25): what Accept and Reject
+/** One record a change was made of, as KCMTrackRead copied it out of the iterator: what Accept and Reject
 	find it again by in its story (KCMTrackResolve) - with the author's name, which the change carries by index. */
 struct KCMTrackRecordRef
 {
@@ -47,7 +47,7 @@ struct KCMTrackChange
 	bool16			fHasColour;		// kFalse = InDesign draws this author on white: the Mark colour stands in
 	uint8			fR, fG, fB;
 	bool16			fHidden;		// in hidden conditional text
-	std::vector<KCMTrackRecordRef>	fRecords;	// the insertion and / or the deletion it was made of (2026-10-25)
+	std::vector<KCMTrackRecordRef>	fRecords;	// the insertion and / or the deletion it was made of
 	KCMTrackChange() : fAuthor(-1), fKind(0), fTime(0), fHasColour(kFalse), fR(0), fG(0), fB(0),
 					   fHidden(kFalse) {}
 };
@@ -86,7 +86,7 @@ namespace KCMTrackList
 	int32	GetTotalChangeCount();
 	int32	GetOtherRecordCount();
 	/** The Undo / Redo rule of KCMStoryList::NeedsCompareAgain (KCMCounterHistory) for every story in the counter history - the
-		listed ones and those that have lost their rows (2026-10-25: the Undo follower is told by the document now, which does
+		listed ones and those that have lost their rows (the Undo follower is told by the document now, which does
 		not say which story). */
 	bool16	AnyNeedsReadAgain(IDataBase* targetDB);
 	/** After a read: every listed story's counter goes into its history - and every story's already in it (2026-10-25:

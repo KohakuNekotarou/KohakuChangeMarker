@@ -87,7 +87,7 @@ typedef KCMStoryAtPlace<UID, UID, Place> StoryAtPlace;
 		top-left corner. Through one matrix (the item's inner to the pasteboard, then the pasteboard to the page's inner),
 		so a rotated frame is boxed tight, as the script boxes it.
 		fOnPath: kTrue for words on a path (the column is the path's - ITOPFrameData), kFalse for words inside a
-		frame. ★ONE FRAME CAN CARRY ONE STORY OF EACH (2026-10-26, the final review - tests-place.ps1 P20): both stand at
+		frame. ONE FRAME CAN CARRY ONE STORY OF EACH (the final review - tests-place.ps1 P20): both stand at
 		the frame's box, so with the box alone they were two equal places on the page and neither paired. The pairing tells
 		them apart by this: inside pairs with inside, on the path with on the path.
 	@return kFalse when the story is not there, sits in no frame, its first frame is on no page (the pasteboard), or the
@@ -120,7 +120,7 @@ bool16 KCMStoryPlaceKey(IDataBase* db, UID storyUID, UID& outPage, Place& outPla
 	if (holderGeo == nil || pageGeo == nil)
 		return kFalse;
 
-	// ★THE ITEM'S INNER COORDINATES TO THE PAGE'S, IN ONE MATRIX - the SDK's own recipe for "an item's box in page
+	// THE ITEM'S INNER COORDINATES TO THE PAGE'S, IN ONE MATRIX - the SDK's own recipe for "an item's box in page
 	//   coordinates" (chmlfilter/CHMLFiltHelper.cpp: InnerToPasteboardMatrix of the item, then the page's, inverted -
 	//   PostConcat is "this first, then that", as spellpanel's PrivateSpellingUtils.cpp composes it), handed to
 	//   GetPathBoundingBox so that the path itself is boxed after the turn: a rotated frame comes out tight, the way the

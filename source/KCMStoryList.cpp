@@ -15,12 +15,12 @@
 #include "IComposeScanner.h"
 #include "IFrameList.h"
 #include "IFrameListComposer.h"	// RecomposeThruLastFrame - the wax read below is a RESULT of composition
-#include "IHierarchy.h"			// GetParentUID - a text column's frame is its parent (2026-08-22)
+#include "IHierarchy.h"			// GetParentUID - a text column's frame is its parent
 #include "IPageList.h"
 #include "IParcelList.h"		// GetFirstParcelKey / GetNextParcelKey / GetParcelFrameUID
 #include "ITextModel.h"
 #include "ITextParcelList.h"	// QueryTextParcelList - the parcels a story flows through
-#include "ITextStoryThread.h"		// QueryStoryThread's answer: which thread (body, cell, footnote) holds an index (2026-09-12)
+#include "ITextStoryThread.h"		// QueryStoryThread's answer: which thread (body, cell, footnote) holds an index
 #include "IWaxGlyphs.h"			// GetEscapementAt - how far into the run one character sits
 #include "IWaxIterator.h"		// GetFirstWaxLine - the line a TextIndex was composed onto
 #include "IWaxLine.h"
@@ -31,7 +31,7 @@
 #include "K2SmartPtr.h"			// K2::scoped_ptr - what NewReadOnlyWaxIterator hands back has to be deleted
 #include "PMMatrix.h"
 #include "TextChar.h"			// kTextChar_Space - the boundary the readability test draws its line at; kTextChar_Table / kTextChar_TableContinued - a table's own characters
-#include "TextIterator.h"		// the character under a caret - is it a table's own (2026-09-24)
+#include "TextIterator.h"		// the character under a caret - is it a table's own
 #include "UnicodeClass.h"		// IsWhiteSpace
 #include "WideString.h"
 
@@ -51,12 +51,12 @@
 #include "KCMStoryList.h"
 #include "KCMStoryRowFilter.h"	// KCMStoryRowHasContentChange - which rows belong in the list
 #include "KCMStoryTextImport.h"	// KCMImportRefusals - what the last import could not put in, put back as rows on every Build
-#include "KCMTaskStartClone.h"	// KCMIsImportPair - ...of the import's own pair (2026-10-27)
-#include "KCMEqualOrder.h"	// the "=" records' slot, shift and merged order (stage 2 C, 2026-09-24)
+#include "KCMTaskStartClone.h"	// KCMIsImportPair - ...of the import's own pair
+#include "KCMEqualOrder.h"	// the "=" records' slot, shift and merged order (stage 2 C)
 #include "KCMRestoreAttr.h"		// KCMAttrMarksSame - an attribute record's "=" is a comparison of the marks
 #include "KCMStoryDiffRun.h"	// CountForKind - the counter a record's state is read from
 #include "KCMTextWords.h"		// WordsAt - a record's "=" is a comparison of the characters
-#include "KCMRecordFoci.h"		// a record's text focus - where it is after a hand edit and its Undo (2026-10-26)
+#include "KCMRecordFoci.h"		// a record's text focus - where it is after a hand edit and its Undo
 #include "KCMThreadSafety.h"	// KCMIsMainThread - the foci are asked on the main thread only
 #include "KCMDiag.h"			// KCM_DIAG_LOG - "FOCUS follow / carry" (the test build's trace)
 
@@ -86,7 +86,7 @@ namespace
 // is not the lock but the REASON -- and the condition under which the reason stops holding.
 std::vector<KCMStoryRow> gRows;
 
-// ★THE PAIR THE LIST WAS LAST BUILT FOR (2026-10-26): Build carries the "=" records over only when it is built again for
+// THE PAIR THE LIST WAS LAST BUILT FOR: Build carries the "=" records over only when it is built again for
 //   the same two databases (Refresh Comparison). Compared, never read through. ⚠Pointers can be reused once a database is
 //   gone - which is why Clear forgets them, and every road on which a compared database goes clears the list first (a
 //   compared document closing, the lent Source released - both through Stop or KCMPeek's close sweep).
@@ -116,7 +116,7 @@ IDataBase* gBuiltSource = nil;
 // ending in "..." would be shortened again around it.
 const int32 kRowTextSafetyLimit = 2000;
 
-// ★★THE SIGN A TABLE LEAVES IN A STORY ROW (2026-09-19, the user: "a picture that says table at a
+// THE SIGN A TABLE LEAVES IN A STORY ROW (the user: "a picture that says table at a
 // glance"): SQUARE WITH ORTHOGONAL CROSSHATCH FILL, U+25A6 - a square ruled into a grid.
 // Until today the anchor read as a GAP (`a b` for a-table-b), which said nothing about what stood
 // there; the child rows, cut by KCMTextRead, still read `ab`, because there the table's characters
@@ -125,11 +125,11 @@ const int32 kRowTextSafetyLimit = 2000;
 //   read the same to an English reader, and has to come from a font the palette is sure to have
 //   on either locale. It is a code point rather than a literal because it is not in CP932: a
 //   literal would fail to build here, which is the safe way round (cpp-japanese-needs-bom).
-// ⚠★**U+229E (SQUARED PLUS) WAS TRIED FIRST AND TURNED DOWN ON SIGHT** (the same evening): in the
+// ⚠**U+229E (SQUARED PLUS) WAS TRIED FIRST AND TURNED DOWN ON SIGHT** (the same evening): in the
 //   palette font its plus does not touch the square, and a box with a loose plus in it is what
 //   InDesign draws for OVERSET text - the one thing a row in this list must not seem to say.
 //   Measured, not guessed: it was built, looked at in the panel, and replaced.
-// ★KIDMCP's twin (KIDMCPRuby.cpp, Readable) stands `#` in the same place for the same reason -
+// KIDMCP's twin (KIDMCPRuby.cpp, Readable) stands `#` in the same place for the same reason -
 //   one character per position; this list shows it to a person, so it gets the picture.
 const UTF32TextChar kKCMTableSign(0x25A6);
 
@@ -149,7 +149,7 @@ RowChar RowCharOf(const UTF32TextChar& ch)
 	// characters into the control range -- which is what IsK2SpecificChar is for: "the low-ascii
 	// characters that have meaning to InDesign ... standard values like tab, carriage return and
 	// special ones like IndentToHere, Table" (TextChar.h, at its declaration).
-	// ★The table's two characters are not words, and FirstReadableText asks about them BEFORE
+	// The table's two characters are not words, and FirstReadableText asks about them BEFORE
 	//   it asks this: the anchor becomes the table sign (kKCMTableSign), the per-row continuation
 	//   nothing at all. This test is only reached by what is left.
 	//
@@ -201,7 +201,7 @@ RowChar RowCharOf(const UTF32TextChar& ch)
 	characters anyway. Filtering also steps around the snippet's edge case, where span-1 eats a real
 	character in the last paragraph of a story that ends without a CR.
 
-	★★**A TABLE STANDS IN THE ROW AS A SIGN** (2026-09-19, kKCMTableSign), where its anchor stands
+	**A TABLE STANDS IN THE ROW AS A SIGN** (kKCMTableSign), where its anchor stands
 	in the text: `a-table-b` reads as `a▦b`, with nothing between - the anchor IS the gap, so it
 	spends no space of its own. The continuation characters behind it (one per further row) are
 	dropped without leaving a gap either; a table is one sign however many rows it has.
@@ -229,7 +229,7 @@ PMString FirstReadableText(ITextModel* model)
 	const TextIndex bodyEnd = model->GetPrimaryStoryThreadSpan();
 	TextIndex pos = 0;
 
-	// ★Both outlive one paragraph on purpose: a table sign met in a paragraph with no words is
+	// Both outlive one paragraph on purpose: a table sign met in a paragraph with no words is
 	//   carried into the next, and so is the gap its paragraph break leaves (see the header).
 	WideString kept;
 	bool16 pendingGap = kFalse;
@@ -348,7 +348,7 @@ PMString FirstReadableText(ITextModel* model)
 */
 bool RowIsBefore(const KCMStoryRow& a, const KCMStoryRow& b)
 {
-	// ★★**BEFORE EVERYTHING: WHAT AN IMPORT COULD NOT PUT IN** (2026-09-19, the user: "the ! rows at
+	// **BEFORE EVERYTHING: WHAT AN IMPORT COULD NOT PUT IN** (the user: "the ! rows at
 	//   the top of the Story Edits list"). A reader who has just imported wants to know first what
 	//   did NOT go in; the rows that did are the ordinary comparison and follow in their own order.
 	const bool aRefused = (a.fKinds & kKCMStoryKindRefused) != 0;
@@ -498,7 +498,7 @@ static void KCMRecomposeIfDamaged(IFrameList* frameList)
    already in the body, and otherwise the ANCHOR of the table (or footnote) whose thread holds it -
    climbing out of nested tables until the body is reached.
 
-   ⚠★★★**WRITTEN THE NIGHT INDESIGN CRASHED ON A TABLE** (2026-09-12, measured on the live
+   ⚠**WRITTEN THE NIGHT INDESIGN CRASHED ON A TABLE** (measured on the live
    application). The user added a table to the newer document, the comparison listed each new
    cell as an inserted paragraph, and a click on one of those rows jumped to it: KCMStoryFrameAt
    handed the cell's TextIndex to IFrameList::QueryFrameContaining, and the call died inside
@@ -615,7 +615,7 @@ UID KCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index, bool16 caret)
 	//   being kept out is an index from ANOTHER length: the diff measured the older document as it
 	//   was, and it may have been edited since.
 
-	// ★A CARET IN FRONT OF A TABLE IS THE CHARACTER BEFORE THE TABLE (2026-09-24, the header on
+	// A CARET IN FRONT OF A TABLE IS THE CHARACTER BEFORE THE TABLE (the header on
 	//   `caret`) - the one KCMStoryPointAt answers for, so that the spread this names and the point
 	//   that one names are of one place. Only for a caret: a row pointing AT the table hands in the
 	//   same index for a CHARACTER and keeps the table's own parcel.
@@ -632,7 +632,7 @@ UID KCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index, bool16 caret)
 
 	KCMRecomposeIfDamaged(frameList);
 
-	// ★★★**THE PARCEL ROUTE, NOT IFrameList::QueryFrameContaining** (2026-09-12). InDesign died
+	// **THE PARCEL ROUTE, NOT IFrameList::QueryFrameContaining**. InDesign died
 	//   twice inside TEXT.RPLN under this function, both times on the first row of a table the user
 	//   had just added, and both times at the same instruction. QueryFrameContaining's contract
 	//   (IFrameList.h:120-125) admits an index in any thread and COMPOSES up to it, which is more
@@ -666,8 +666,8 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
 		return kFalse;		// see the @param note above: neither caller can clamp this for us.
 							// `>`, not `>=` -- the reason is written out in KCMStoryFrameAt.
 
-	// ★A CARET IN FRONT OF A TABLE IS ANSWERED AS THE FAR EDGE OF THE CHARACTER BEFORE THE TABLE
-	//   (2026-09-24 - the header on KCMCaretOnTableChars says what was measured). Only for a caret:
+	// A CARET IN FRONT OF A TABLE IS ANSWERED AS THE FAR EDGE OF THE CHARACTER BEFORE THE TABLE
+	//   (the header on KCMCaretOnTableChars says what was measured). Only for a caret:
 	//   the same index handed in for a CHARACTER - a row pointing at the table itself - keeps the
 	//   table's corner, which the candidates below answer with.
 	bool16 farEdge = kFalse;
@@ -694,7 +694,7 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
 	if (waxIter == nil)
 		return kFalse;
 
-	// ★TWO PLACES ARE TRIED, THE CHARACTER'S OWN FIRST (recheck of 2026-09-12). A cell's or a
+	// TWO PLACES ARE TRIED, THE CHARACTER'S OWN FIRST (recheck of 2026-09-12). A cell's or a
 	//   footnote's characters are composed into wax of their own, and that wax answers where the
 	//   character really stands - inside the table, which is where the reader wants the window.
 	//   Only when the wax has no line for it is the index crossed to its ANCHOR in the body
@@ -906,7 +906,7 @@ bool16 KCMStoryList::ReadRowForStory(IDataBase* db, UID storyUID, KCMStoryRow& o
 }
 
 /* LetFociOf
-	Every record's focus on `row` let go (2026-10-26 - KCMRecordFoci) - the records are going, or are no longer placed by
+	Every record's focus on `row` let go (KCMRecordFoci) - the records are going, or are no longer placed by
 	them. The numbers are cleared with them, so nothing asks for a focus that is gone.
 */
 static void LetFociOf(KCMStoryRow& row)
@@ -922,11 +922,11 @@ static void LetFociOf(KCMStoryRow& row)
 }
 
 /* PutBackCarried
-	★The records Build took off the list it threw away (`carried` - one entry per story: its Target and Source story, the
+	The records Build took off the list it threw away (`carried` - one entry per story: its Target and Source story, the
 	position-pairing bit, its records), put on the new row of the same two stories - or on a row made for them when the
 	comparison made none (the story's counters agree, or no counter moved: KCM's own writes can bring a story back to
 	where its counters started). A story the document no longer reads has its records' foci let go.
-	★★A PAIR BY PLACE THAT DID NOT COME BACK KEEPS ITS PAIRING ON THE STORY'S OWN ROW (2026-10-27, the re-inspection's M8 -
+	A PAIR BY PLACE THAT DID NOT COME BACK KEEPS ITS PAIRING ON THE STORY'S OWN ROW (the re-inspection's M8 -
 	  measured: a row paired by place with a "=" in it, its frame moved 1pt, Refresh Comparison - and the pasted story stood
 	  twice, as an Added row and as a row made here against its old Source story, with that story listed Removed besides).
 	  The design's own step (docs/superpowers/specs/2026-10-26-kcm-equal-follow-focus-design.md 7) puts the records back on
@@ -1016,7 +1016,7 @@ static int32 AddRefusalRow(IDataBase* targetDB, UID storyUID, const PMString& te
 	// ⚠A Removed row of the same uid is NOT that row: it lives in the Source, and a refusal is about
 	//   the Target's story (the file was named after it). ⚠Nor is a row standing for a file
 	//   (kInvalidUID): two files with no story are two rows.
-	// ★★BY THE ROW'S SOURCE STORY (2026-10-26): the uid a refusal names is the import copy's story - the one the file was
+	// BY THE ROW'S SOURCE STORY: the uid a refusal names is the import copy's story - the one the file was
 	//   named after - and the row that compares against it may be a Target story of another uid (a row paired by place,
 	//   KCMStoryRow::fSourceStoryUID). For every other row the two uids are one.
 	for (size_t i = 0; i < gRows.size(); ++i)
@@ -1034,7 +1034,7 @@ static int32 AddRefusalRow(IDataBase* targetDB, UID storyUID, const PMString& te
 	row.fKinds = kKCMStoryKindRefused;
 	if (!KCMStoryList::ReadRowForStory(targetDB, storyUID, row))
 	{
-		// ★★NO SUCH STORY IN THE DOCUMENT - or the uid names something that is not one (ReadRowFromDocument
+		// NO SUCH STORY IN THE DOCUMENT - or the uid names something that is not one (ReadRowFromDocument
 		//   asks for ITextModel): the row stands for the FILE. **Its uid is kInvalidUID from here on**,
 		//   the value every reader of this list passes over (the diff, the marks, the jump), so that a number
 		//   that names nothing here - or a swatch, or a page - is never handed to the document as a
@@ -1070,7 +1070,7 @@ static void AddRefusalChange(int32 nth, const PMString& kind, const PMString& wh
 void KCMStoryList::Build(IDataBase* targetDB, IDataBase* sourceDB,
                            const std::vector<KCMStoryDiff>& diffs)
 {
-	// ★★THE "=" RECORDS OF THE SAME PAIR, TAKEN OFF THE LIST BEFORE IT GOES (2026-10-26 - the header says when and why):
+	// THE "=" RECORDS OF THE SAME PAIR, TAKEN OFF THE LIST BEFORE IT GOES (the header says when and why):
 	//   per story, its Target and Source story and the records - their foci, copies and counters with them. Any other list's
 	//   records go with it, foci let go. A Removed row's story is the Source's: KCM writes none, so none has records.
 	std::vector<KCMStoryRow> carried;
@@ -1106,12 +1106,12 @@ void KCMStoryList::Build(IDataBase* targetDB, IDataBase* sourceDB,
 	//     the same thing that happens to a story whose ITextModel cannot be read.
 	AddRowsFromDocument(sourceDB, diffs, kTrue, gRows);
 
-	// ★★WHAT THE LAST IMPORT COULD NOT PUT IN (2026-09-19): a row for each such story - the one the
+	// WHAT THE LAST IMPORT COULD NOT PUT IN: a row for each such story - the one the
 	//   comparison built, or one made here when no counter moved - and a child per refusal.
 	//   ⚠Refilled on EVERY build, because the list starts empty each time; the material lives with
 	//    the origin (KCMImportRefusals) and is not the list's own. A story refused twice gets one row and two children:
 	//    AddRefusalRow finds the row the first refusal made.
-	//   ★★ONLY FOR THE IMPORT'S OWN PAIR (2026-10-27 - the pre-exchange plan's Review Focus 2): the refusals say what the
+	//   ONLY FOR THE IMPORT'S OWN PAIR (the pre-exchange plan's Review Focus 2): the refusals say what the
 	//    files could not put into the document the import's copy was taken from. With the copy kept as the Source and
 	//    another document chosen as the Target, both "!" rows of an import into matrix.indd were listed against that other
 	//    document (import-target-only IT-2). Asked, not cleared: choosing the import's document again brings them back.
@@ -1130,7 +1130,7 @@ void KCMStoryList::Build(IDataBase* targetDB, IDataBase* sourceDB,
 		}
 	}
 
-	// ★AND THE CARRIED RECORDS PUT BACK (2026-10-26), on the rows just made - after the refusals, whose rows they may join.
+	// AND THE CARRIED RECORDS PUT BACK, on the rows just made - after the refusals, whose rows they may join.
 	PutBackCarried(targetDB, carried);
 
 	std::sort(gRows.begin(), gRows.end(), RowIsBefore);
@@ -1140,7 +1140,7 @@ void KCMStoryList::Build(IDataBase* targetDB, IDataBase* sourceDB,
 */
 void KCMStoryList::Clear()
 {
-	// Every record's focus goes with the list (2026-10-26) - and the pair it was built for, so that nothing is carried
+	// Every record's focus goes with the list - and the pair it was built for, so that nothing is carried
 	// into a list built afterwards (Build). A fresh vector rather than clear(), which keeps the storage: ShutdownCleanup comes
 	// here too, and nothing may be left for the static destructor at DLL unload (memory plugin-teardown-robustness).
 	KCMRecordFoci::LetAll();
@@ -1167,7 +1167,7 @@ const KCMStoryRow* KCMStoryList::GetRow(int32 nth)
 }
 
 /* RowTextForTypesetting
-	★★THE PALETTE DRAWS THE SIGN; INDESIGN'S COMPOSER DOES NOT (measured 2026-09-19, the first
+	THE PALETTE DRAWS THE SIGN; INDESIGN'S COMPOSER DOES NOT (measured 2026-09-19, the first
 	report exported with the sign in it): the report document is set in the document's default
 	font, and U+25A6 is not in Minion, Kozuka or the other fonts a default is likely to be, so
 	every sign came out as the notdef box - a box with a cross through it, which is exactly the
@@ -1212,11 +1212,11 @@ void KCMStoryList::SetRowComparedAt(int32 nth, uint32 allCount)
 //  a new record belonged, with the caret tie rule the panel was shown); AddReplacedChangeAt;
 //  ShiftOnePlace and ShiftReplacedChanges, which slid the records a later write in the same story
 //  had moved - including the mark spans a Table row's jump aimed at; and MergedSlots, which fed the
-//  two ascending lists to KCMStoryRowMerge. ★**KCMStoryRowMerge went with them** - it had no other
+//  two ascending lists to KCMStoryRowMerge. **KCMStoryRowMerge went with them** - it had no other
 //  caller - and with it the offline test that covered the tie rules.)
 
 
-// ---- the "=" records: the places KCM wrote as the Source's (2026-09-24, stage 2 C) -----------------------
+// ---- the "=" records: the places KCM wrote as the Source's (stage 2 C) -----------------------
 namespace
 {
 
@@ -1236,9 +1236,9 @@ IDataBase* OpenArmedSource()
 
 /** Whether a Standing record's place in the Target reads as the Source's: the characters at [fNowStart, fNowEnd)
 	against the Source's at the change's Source range, and for an attribute record the marks of its kind over them
-	(KCMAttrMarksSame). ★THE "=" IS THIS COMPARISON (KCMEqualRecord says why); a Source that is not open cannot
+	(KCMAttrMarksSame). THE "=" IS THIS COMPARISON (KCMEqualRecord says why); a Source that is not open cannot
 	be read, and then the counters' answer is left to stand (kTrue).
-	★AT A PLACE THE CALLER NAMES (2026-10-26, the import tidy S10): [nowStart, nowEnd) is where the Source's words are looked
+	AT A PLACE THE CALLER NAMES (the import tidy S10): [nowStart, nowEnd) is where the Source's words are looked
 	 for - the record's own place (RecordReadsAsSource), or a place FollowRecords is trying for it. */
 bool16 RecordReadsAsSourceAt(const KCMStoryRow& row, const KCMEqualRecord& r, IDataBase* targetDB,
 							 TextIndex nowStart, TextIndex nowEnd)
@@ -1247,7 +1247,7 @@ bool16 RecordReadsAsSourceAt(const KCMStoryRow& row, const KCMEqualRecord& r, ID
 	if (sourceDB == nil)
 		return kTrue;
 	const UIDRef target(targetDB, row.fStoryUID);
-	const UIDRef source(sourceDB, row.fSourceStoryUID);	// the row's Source story (2026-10-26 - another uid for a row paired by place)
+	const UIDRef source(sourceDB, row.fSourceStoryUID);	// the row's Source story (another uid for a row paired by place)
 	const int32 len = nowEnd - nowStart;
 	const int32 sLen = r.fLive.fSourceEnd - r.fLive.fSourceStart;
 	if (len != sLen)
@@ -1289,7 +1289,7 @@ bool16 LiveWordsHere(const KCMStoryRow& row, const KCMEqualRecord& r, IDataBase*
 	WideString words;
 	if (!KCMTextWords::WordsAt(model, r.fLive.fTargetStart, len, words) || words != r.fLiveWords)
 		return kFalse;
-	// ★★NOT EVIDENCE WHEN THE SOURCE READS THE SAME THERE (re-check 2026-09-25): a paragraph on one side only that
+	// NOT EVIDENCE WHEN THE SOURCE READS THE SAME THERE (re-check 2026-09-25): a paragraph on one side only that
 	//   repeats the one after it (a paragraph copied) leaves, once written as the Source's, THAT paragraph at the live
 	//   range - the very words the write took out - and a write standing was read as undone the moment it was made, its
 	//   "=" lost (measured then with a reject of a paragraph Word had added). A put-back and an undone put-back read
@@ -1308,7 +1308,7 @@ bool16 LiveWordsHere(const KCMStoryRow& row, const KCMEqualRecord& r, IDataBase*
 }
 
 /** A record's state now - the story's counter of its kind, read at this moment, CHECKED AGAINST THE DOCUMENT
-	(2026-09-25): the Source's words (or marks) at the record's place, and the words KCM's write took out at its live
+: the Source's words (or marks) at the record's place, and the words KCM's write took out at its live
 	range. Standing by the counter with those words back is an undone write; PutBack by the counter with the Source's
 	back and those words gone is an undone put-back (both after ANOTHER write moved the counter - KCMEqualRecord::
 	fLiveWords); Standing whose place does not read as the Source's is Stale. The readings are cached against the
@@ -1322,7 +1322,7 @@ KCMEqualState StateNow(const KCMStoryRow& row, const KCMEqualRecord& r, IDataBas
 	const KCMEqualState byCounter = KCMEqualStateOf(r, counterNow);
 	if (byCounter == kKCMEqualUndone)
 		return byCounter;
-	// ★★THE DOCUMENT CHECKS THE COUNTERS (2026-09-25 - KCMEqualRecord::fLiveWords says what they could not tell apart).
+	// THE DOCUMENT CHECKS THE COUNTERS (KCMEqualRecord::fLiveWords says what they could not tell apart).
 	//   One reading per counter value, kept with the "=" reading (a record that moved is read again: ShiftRecordsFrom).
 	if (!r.fChecked || r.fCheckedAt != counterNow)
 	{
@@ -1350,7 +1350,7 @@ KCMEqualState StateNow(const KCMStoryRow& row, const KCMEqualRecord& r, IDataBas
 }
 
 /** kTrue when `c` is the twin of the record's live change: the same what, kind and live range - AND THE SAME SOURCE
-	RANGE (2026-09-25): two whole paragraphs the Source has one after the other and the Target has not stand at one
+	RANGE: two whole paragraphs the Source has one after the other and the Target has not stand at one
 	Target caret, and one write records both; without the Source's range the second AddEqual took the first record for
 	its twin and overwrote it (measured then with a group reject: one "=" for two paragraphs). The Source document does
 	not change, so its range is the same in every state the record passes through. */
@@ -1376,7 +1376,7 @@ void PlaceAt(KCMEqualRecord& r, TextIndex head)
 	r.fLive.fTargetEnd = head + liveLen;
 }
 
-/** ★★THE RECORDS' HEADS FROM THEIR FOCI (2026-10-26 - KCMEqualRecord::fFocusId): every record whose focus follows is
+/** THE RECORDS' HEADS FROM THEIR FOCI (KCMEqualRecord::fFocusId): every record whose focus follows is
 	placed at the focus's start (PlaceAt), and fFollowed says which. ⚠Read again only when the story has moved since the
 	last reading or KCM touched a focus (KCMStoryRow::fFociSyncedAt / fFociSynced) - the panel reads one row many times
 	over. A focus that is gone is forgotten (fFocusId = 0); a lost one is kept, unfollowed, for FollowRecords to let go and
@@ -1481,23 +1481,23 @@ void ShiftRecordsFrom(KCMStoryRow& row, size_t from, int32 writeAt, int32 remove
 
 /** The live changes and the records as ONE list in text order (KCMMergeEqual), each record placed where it
 	stands NOW - the Source's words while it is Standing, its live range otherwise.
-	★AND THE LATER RECORDS RECONCILED FIRST (KCMEqualRecord::fPlacedForSource): a record whose state has
+	AND THE LATER RECORDS RECONCILED FIRST (KCMEqualRecord::fPlacedForSource): a record whose state has
 	  changed since its followers were last placed - an undo, a redo, an undo of a redo, none of them a write of
 	  KCM's own - slides them by the two lengths that place holds, so that every record answers for where its
 	  words really stand. Done on every read because the state is read on every read. */
 void MergedOrder(KCMStoryRow& row, std::vector<KCMMergedRef>& out)
 {
-	// ★★THE FOCI FIRST (2026-10-26): a followed record stands where its focus says - a hand edit before it, an Undo and a
+	// THE FOCI FIRST: a followed record stands where its focus says - a hand edit before it, an Undo and a
 	//   Redo already counted in - and the reconcile below leaves it where it is (ShiftRecordsFrom skips it). The rest are
 	//   reconciled as before.
 	SyncFoci(row);
 	IDataBase* const db = OpenArmedTarget();
-	// ★A STALE RECORD IS KEPT BUT SITS THIS READ OUT (2026-09-24 night): its place no longer reads as the Source's,
+	// A STALE RECORD IS KEPT BUT SITS THIS READ OUT: its place no longer reads as the Source's,
 	//   so there is no "=" to show and no length to reconcile its followers by - the live comparison says what
 	//   stands there. ⚠NOT ERASED: the "=" is a comparison, and the reading is made again whenever the story's
 	//   counter moves - so an undo of the hand edit that made it stale reads as the Source's again and the "="
 	//   comes back (first written as an erase; measured the same night to lose the "=" for good on Ctrl+Z).
-	// ★★IN TEXT ORDER, EACH STATE READ ONLY AFTER THE RECORDS BEFORE IT HAVE SLID IT (2026-09-25). The states were all
+	// IN TEXT ORDER, EACH STATE READ ONLY AFTER THE RECORDS BEFORE IT HAVE SLID IT. The states were all
 	//   read first and the slides made after, so a record standing after one that had just changed state was read at
 	//   its OLD place - measured with Reject and Redo from Word: two paragraphs taken back together, the first redone, and
 	//   the second's words were looked for ten characters too far on, read as not the Source's, and its "=" left the
@@ -1527,7 +1527,7 @@ void MergedOrder(KCMStoryRow& row, std::vector<KCMMergedRef>& out)
 			continue;
 		const KCMEqualRecord& r = row.fEqual[i];
 		const bool16 standing = r.fPlacedForSource;		// reconciled above: the state as it was read a moment ago
-		// ★A FOLLOWED RECORD'S TWIN IS LOOKED FOR WHERE THE LAST COMPARISON FOUND IT (2026-10-26 - fComparedLiveStart): the
+		// A FOLLOWED RECORD'S TWIN IS LOOKED FOR WHERE THE LAST COMPARISON FOUND IT (fComparedLiveStart): the
 		//   record has moved with a hand edit before it, the live changes have not (they move when the row is compared).
 		const bool16 compared = (r.fFollowed && r.fComparedLiveStart >= 0) ? kTrue : kFalse;
 		recs.push_back(KCMEqualSpan(standing ? r.fNowStart : r.fLive.fTargetStart,
@@ -1559,10 +1559,10 @@ void ShiftRecordsFrom(KCMStoryRow& row, size_t from, int32 writeAt, int32 remove
 	KCMShiftEqualFrom(live, from, writeAt, removed, inserted);
 	for (size_t i = from; i < row.fEqual.size(); ++i)
 	{
-		// ★A FOLLOWED RECORD IS NOT SLID (2026-10-26): InDesign moved its focus with the write itself, and SyncFoci reads it.
+		// A FOLLOWED RECORD IS NOT SLID: InDesign moved its focus with the write itself, and SyncFoci reads it.
 		if (row.fEqual[i].fFollowed || (skip != nil && (*skip)[i]))
 			continue;
-		// ★A RECORD THAT MOVED HAS ITS "=" READ AGAIN (2026-09-25): the reading is cached against the story's counter,
+		// A RECORD THAT MOVED HAS ITS "=" READ AGAIN: the reading is cached against the story's counter,
 		//   and a reading made at the old place - by the prune that runs before any reconcile - would otherwise stand
 		//   for the new one at the same counter.
 		if (row.fEqual[i].fNowStart != now[i].fStart || row.fEqual[i].fNowEnd != now[i].fEnd)
@@ -1599,7 +1599,7 @@ const KCMStoryChange* KCMStoryList::GetMergedChange(int32 nth, int32 which)
 
 	KCMStoryRow& row = gRows[nth];
 
-	// ★THE REFUSALS COME FIRST (2026-09-19): what an import could not put in, before the changes it
+	// THE REFUSALS COME FIRST: what an import could not put in, before the changes it
 	//   did. They take the first fRefusals.size() indices, and the rest count from there.
 	if (which < static_cast<int32>(row.fRefusals.size()))
 		return &row.fRefusals[which];
@@ -1610,7 +1610,7 @@ const KCMStoryChange* KCMStoryList::GetMergedChange(int32 nth, int32 which)
 	if (row.fEqual.empty())
 		return (which < static_cast<int32>(row.fChanges.size())) ? &row.fChanges[static_cast<size_t>(which)] : nil;
 
-	// ★★THE THIRD LIST IS BACK (2026-09-24, stage 2 C): the "=" records (the places KCM wrote), merged with the live
+	// THE THIRD LIST IS BACK (stage 2 C): the "=" records (the places KCM wrote), merged with the live
 	//   ones in TEXT order - a record shown "=" stands where the Source's words are, one shown live stands for
 	//   its twin (which is hidden). (It stood here from 2026-09-15 to 2026-09-21 for the changes taken IN.)
 	std::vector<KCMMergedRef> order;
@@ -1702,12 +1702,12 @@ void KCMStoryList::AddEqual(int32 nth, const KCMStoryChange& live, TextIndex now
 	KCMStoryRow& row = gRows[nth];
 	const int32 removed = live.fTargetEnd - live.fTargetStart;
 	const int32 inserted = nowEnd - nowStart;
-	// ★THE FOCI READ AFTER THE WRITE (2026-10-26 - AddEqualGroup says why).
+	// THE FOCI READ AFTER THE WRITE (AddEqualGroup says why).
 	row.fFociSynced = kFalse;
 	SyncFoci(row);
 
 	// A twin already on record (written, undone or put back, written again): the same record, updated - never a second one.
-	// ★Found by its focus first (2026-10-26 - FindRecord says why), then by its live change.
+	// Found by its focus first (FindRecord says why), then by its live change.
 	KCMEqualRecord* const twin = FindRecord(row, live, focusId);
 	if (twin != nil)
 	{
@@ -1723,7 +1723,7 @@ void KCMStoryList::AddEqual(int32 nth, const KCMStoryChange& live, TextIndex now
 		return;
 	}
 
-	// ★ITS SLOT IS DECIDED BY THE LIVE START (KCMEqualOrder.h): after every record standing at or before it.
+	// ITS SLOT IS DECIDED BY THE LIVE START (KCMEqualOrder.h): after every record standing at or before it.
 	const size_t slot = SlotFor(row, live.fTargetStart);
 	KCMEqualRecord rec;
 	WriteRecord(rec, live, nowStart, nowEnd, counter, counterKind);
@@ -1742,7 +1742,7 @@ void KCMStoryList::AddEqualGroup(int32 nth, const std::vector<KCMEqualWrite>& wr
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || writes.empty())
 		return;
 	KCMStoryRow& row = gRows[nth];
-	// ★THE FOCI READ AFTER THE WRITE (2026-10-26): a followed record already stands where the write left it - read, it
+	// THE FOCI READ AFTER THE WRITE: a followed record already stands where the write left it - read, it
 	//   takes its place in the slot order below, and step 2 does not slide it again.
 	row.fFociSynced = kFalse;
 	SyncFoci(row);
@@ -1759,7 +1759,7 @@ void KCMStoryList::AddEqualGroup(int32 nth, const std::vector<KCMEqualWrite>& wr
 	}
 
 	// 1. the records that ARE the group's rows already (written, undone, written again) - found by their live twin
-	//    (★by the focus the write gave them first - 2026-10-26, FindRecord says why)
+	//    (by the focus the write gave them first - 2026-10-26, FindRecord says why)
 	std::vector<int32> twinOf(writes.size(), -1);
 	std::vector<bool16> isMember(row.fEqual.size(), kFalse);
 	for (size_t k = 0; k < writes.size(); ++k)
@@ -1835,7 +1835,7 @@ bool16 KCMStoryList::NeedsCompareAgain(int32 nth, IDataBase* targetDB)
 	if (row.fCompared.fSeen.empty())
 		return kFalse;			// never compared (the Pixel mode, or not read yet): nothing to follow
 	const uint32 now = KCMStoryDiffRun::CountAllChanges(UIDRef(targetDB, row.fStoryUID));
-	// ★Where the row was last compared: nothing to do - a KCM write compares its row itself, and its own
+	// Where the row was last compared: nothing to do - a KCM write compares its row itself, and its own
 	//   notification arrives here afterwards (re-check 2026-09-25: the record test below, asked here too, compared the
 	//   row a second time after every put-back - then Redo from Word's - whose record is only re-placed when the list is
 	//   next read).
@@ -1845,7 +1845,7 @@ bool16 KCMStoryList::NeedsCompareAgain(int32 nth, IDataBase* targetDB)
 		return kTrue;
 	// The counter moved somewhere it has not been compared at: plain typing - or a Redo, should it ever not come back
 	// to the very value it had. A "=" record whose state no longer matches its placing says which.
-	// ★Read where the foci say first (2026-10-26): typing before a followed "=" has moved it, and it still reads "=" there -
+	// Read where the foci say first: typing before a followed "=" has moved it, and it still reads "=" there -
 	//  plain typing, as before, compares nothing.
 	SyncFoci(row);
 	for (size_t i = 0; i < row.fEqual.size(); ++i)
@@ -1866,7 +1866,7 @@ bool16 KCMStoryList::EqualStanding(int32 nth, const KCMStoryChange& live, IDataB
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
 		return kFalse;
 	KCMStoryRow& row = gRows[nth];
-	SyncFoci(row);		// (2026-10-26 - a followed record is read where its focus is)
+	SyncFoci(row);		// (a followed record is read where its focus is)
 	for (size_t i = 0; i < row.fEqual.size(); ++i)
 	{
 		if (IsTwin(row.fEqual[i], live))
@@ -1882,7 +1882,7 @@ void KCMStoryList::MarkPutBack(int32 nth, const KCMEqualRecord& record, uint32 c
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
 		return;
 	KCMStoryRow& row = gRows[nth];
-	// ★By its focus first (2026-10-26 - FindRecord says why): the record's own number travels on the copy the caller holds.
+	// By its focus first (FindRecord says why): the record's own number travels on the copy the caller holds.
 	KCMEqualRecord* const found = FindRecord(row, record.fLive, record.fFocusId);
 	if (found == nil)
 	{
@@ -1895,10 +1895,10 @@ void KCMStoryList::MarkPutBack(int32 nth, const KCMEqualRecord& record, uint32 c
 	r.fComparedLiveEnd = -1;
 	if (focusId != 0)
 		TakeFocus(row, r, focusId);	// placed inside Restore from Copy's step - its own, or one made for it
-	// ★fNowStart / fNowEnd STAY: they are where the Source's words stand WHILE THE RECORD IS STANDING, and an
+	// fNowStart / fNowEnd STAY: they are where the Source's words stand WHILE THE RECORD IS STANDING, and an
 	//   undo of this put-back makes it standing again with nothing else to say where that is (measured 2026-09-24
 	//   with Redo from Word: overwritten here, the second redo was refused as "edited since"). Which range is shown or acted on is
-	//   the state's to choose (GetMergedChange), not this write's. ★NOR ARE THE FOLLOWERS SLID HERE: the
+	//   the state's to choose (GetMergedChange), not this write's. NOR ARE THE FOLLOWERS SLID HERE: the
 	//   reconcile in MergedOrder does it on the next read, by the state - the same road an undo takes.
 }
 
@@ -1909,7 +1909,7 @@ void KCMStoryList::PruneEqual(int32 nth, IDataBase* targetDB)
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
 		return;
 	KCMStoryRow& row = gRows[nth];
-	SyncFoci(row);		// (2026-10-26 - a followed record is read where its focus is)
+	SyncFoci(row);		// (a followed record is read where its focus is)
 	size_t i = 0;
 	while (i < row.fEqual.size())
 	{
@@ -1924,7 +1924,7 @@ void KCMStoryList::PruneEqual(int32 nth, IDataBase* targetDB)
 			++i;
 		else
 		{
-			// ★Its focus goes with it (2026-10-26).
+			// Its focus goes with it.
 			if (r.fFocusId != 0)
 				KCMRecordFoci::Let(r.fFocusId);
 			row.fEqual.erase(row.fEqual.begin() + static_cast<std::ptrdiff_t>(i));
@@ -1943,7 +1943,7 @@ bool16 KCMStoryList::CaretReadsAsSource(IDataBase* targetDB, UID story, UID sour
 	IDataBase::SaveRestoreModifiedState targetGuard(targetDB);		// reading must not dirty either document
 	IDataBase::SaveRestoreModifiedState sourceGuard(sourceDB);
 	InterfacePtr<ITextModel> tModel(UIDRef(targetDB, story), UseDefaultIID());
-	InterfacePtr<ITextModel> sModel(UIDRef(sourceDB, sourceStory), UseDefaultIID());	// the row's Source story (2026-10-26)
+	InterfacePtr<ITextModel> sModel(UIDRef(sourceDB, sourceStory), UseDefaultIID());	// the row's Source story
 	if (tModel == nil || sModel == nil || at < 0 || sourceAt < 0)
 		return kFalse;
 	const int32 kSide = 2;
@@ -2004,7 +2004,7 @@ void KCMStoryList::FollowRecords(int32 nth, IDataBase* targetDB)
 	if (row.fEqual.empty() || row.fStoryUID == kInvalidUID)
 		return;
 
-	// ★★THE FOCI READ FIRST, WHATEVER THE COUNTER SAYS (2026-10-26 - KCMEqualRecord::fFocusId): this comparison decides.
+	// THE FOCI READ FIRST, WHATEVER THE COUNTER SAYS (KCMEqualRecord::fFocusId): this comparison decides.
 	row.fFociSynced = kFalse;
 	SyncFoci(row);
 
@@ -2018,12 +2018,12 @@ void KCMStoryList::FollowRecords(int32 nth, IDataBase* targetDB)
 		const TextIndex sourceLen = r.fLive.fSourceEnd - r.fLive.fSourceStart;
 		const TextIndex liveLen = r.fLive.fTargetEnd - r.fLive.fTargetStart;
 
-		// 0. ★★A RECORD WHOSE FOCUS FOLLOWS STANDS WHERE ITS FOCUS IS (2026-10-26): InDesign moved the focus with every edit
+		// 0. A RECORD WHOSE FOCUS FOLLOWS STANDS WHERE ITS FOCUS IS: InDesign moved the focus with every edit
 		//    before it and put it back with every Undo and Redo, so nothing is looked for - least of all the same words
 		//    somewhere else: a place that does not read as the Source's was edited there, and reads Stale until that edit is
-		//    undone. ★ONE THING IS ASKED OF ONE SHOWN LIVE (undone, or put back): its twin as this comparison found it - the
+		//    undone. ONE THING IS ASKED OF ONE SHOWN LIVE (undone, or put back): its twin as this comparison found it - the
 		//    diff may set repeated characters a place on, and the twin is how the record hides its own change (MergedOrder)
-		//    and stays (PruneEqual) - ★and a focus made inside its write's step is not told when a step older than that one
+		//    and stays (PruneEqual) - and a focus made inside its write's step is not told when a step older than that one
 		//    is undone (KCMRecordFocus.h, measured 2026-10-26): it stands where the write left it, one edit off, and only
 		//    a record shown live can be standing there. Moved onto the twin outside a step: an Undo then reads back the
 		//    step's own snapshot, which is where InDesign kept the words.
@@ -2051,7 +2051,7 @@ void KCMStoryList::FollowRecords(int32 nth, IDataBase* targetDB)
 		}
 
 		// 1. ITS CHANGE IS LIVE AGAIN (LiveTwinOf): the write was undone or put back, and that change says where it stands -
-		//    the live range its own, the Source's words' place at its start. ★Its focus made there, on the live words.
+		//    the live range its own, the Source's words' place at its start. Its focus made there, on the live words.
 		const KCMStoryChange* const twin = LiveTwinOf(row, r, targetDB);
 		if (twin != nil)
 		{
@@ -2071,7 +2071,7 @@ void KCMStoryList::FollowRecords(int32 nth, IDataBase* targetDB)
 		//    place - the first that reads as the Source's is taken. A caret ("=" of a deletion: no words of its own) is read
 		//    by what stands on either side of it (CaretReadsAsSource). None reads = left where it was: it reads Stale, as
 		//    before this, and an undo of the hand edit may bring its "=" back.
-		//    ★★THE PRESENT PLACE FIRST WHEN THE MAP NAMES IT (measured 2026-10-26, the apply matrix's WDD-apply-1-0): two
+		//    THE PRESENT PLACE FIRST WHEN THE MAP NAMES IT (measured 2026-10-26, the apply matrix's WDD-apply-1-0): two
 		//     paragraphs the Source has not, both at ONE Source caret, the second put in (its "=" a caret after the first) -
 		//     the map names both sides of the first ({8, 18}), and a caret read by its surroundings agreed with the WRONG one
 		//     (8: "st" + a return, as at the Source's end), so the record was moved off its right place (18) and the next
@@ -2111,17 +2111,17 @@ void KCMStoryList::FollowRecords(int32 nth, IDataBase* targetDB)
 			r.fNowEnd = t + sourceLen;
 			r.fLive.fTargetStart = t;			// where its change would stand, undone (AddEqualGroup's convention)
 			r.fLive.fTargetEnd = t + liveLen;
-			// ★its focus made on the Source's words it was found standing as (2026-10-26) - not on a place none reads at
+			// its focus made on the Source's words it was found standing as - not on a place none reads at
 			r.fFocusId = KCMRecordFoci::Make(targetDB, row.fStoryUID, t, t + sourceLen);
 			r.fFollowed = (r.fFocusId != 0) ? kTrue : kFalse;
 			break;
 		}
 	}
 
-	// ★THE PLACES ARE THIS COMPARISON'S: every record not Stale is placed for what its state says stands there, so the
+	// THE PLACES ARE THIS COMPARISON'S: every record not Stale is placed for what its state says stands there, so the
 	//   reconcile in MergedOrder has nothing left to slide (it slides the followers of a record whose state changed since
-	//   they were last placed - and they were all placed just now, from the document). ★And where each live twin stands
-	//   now (2026-10-26 - fComparedLiveStart: what a followed record shown live hides until the row is compared again).
+	//   they were last placed - and they were all placed just now, from the document). And where each live twin stands
+	//   now (fComparedLiveStart: what a followed record shown live hides until the row is compared again).
 	for (size_t i = 0; i < row.fEqual.size(); ++i)
 	{
 		KCMEqualRecord& r = row.fEqual[i];
@@ -2145,7 +2145,7 @@ void KCMStoryList::RecordPour(int32 nth, const std::vector<KCMPouredChange>& cha
 		return;
 	KCMStoryRow& row = gRows[nth];
 
-	// 1. the records already there: kept, their copies let go (the header says why) - ★and their foci (2026-10-26): the
+	// 1. the records already there: kept, their copies let go (the header says why) - and their foci: the
 	//    pour wrote the story over, and the compare right after places every record and gives it a focus again
 	LetFociOf(row);
 	for (size_t i = 0; i < row.fEqual.size(); ++i)
@@ -2186,7 +2186,7 @@ void KCMStoryList::RecordPour(int32 nth, const std::vector<KCMPouredChange>& cha
 	}
 }
 
-// ---- the foci of a write's records, placed inside its step (2026-10-26 - the header's section says why) ----------------
+// ---- the foci of a write's records, placed inside its step (the header's section says why) ----------------
 
 /* FocusBeforeWrite
 */
@@ -2347,7 +2347,7 @@ void KCMStoryList::SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& c
 
 	// **WHICH ATTRIBUTE THE ROW SHOULD NAME**, worked out here rather than asked for later: the
 	//   row is drawn many times and the children are walked once.
-	// **FIRST ONE NAMES THE ROW, AND THE COUNT SAYS WHETHER THERE WERE MORE** (2026-09-03, user's
+	// **FIRST ONE NAMES THE ROW, AND THE COUNT SAYS WHETHER THERE WERE MORE** (user's
 	//   ask: "Ruby+" / "Kenten+" when both moved). The second half is exactly the "one more fact on
 	//   the row" this comment used to say a "Ruby+" would need - how many kinds were seen - and it
 	//   is worked out in the same walk, so the two cannot disagree about which children exist.
@@ -2359,7 +2359,7 @@ void KCMStoryList::SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& c
 	//   fields with a KIND rather than a reading, and every such test called it a ruby.
 	gRows[nth].fAttrKind = kKCMStoryAttrNone;
 	gRows[nth].fAttrKindCount = 0;
-	// ★**AND WHETHER THE WORDS THEMSELVES MOVED** - worked out in the same walk, for the reason on
+	// **AND WHETHER THE WORDS THEMSELVES MOVED** - worked out in the same walk, for the reason on
 	//   KCMStoryRow::fHasTextChange: a note's marker is a character, so the change counters answer
 	//   "the text changed" for an edit whose only visible difference is a note. What the column
 	//   needs is what the DIFF found.
@@ -2376,7 +2376,7 @@ void KCMStoryList::SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& c
 		if (changes[i].fWhat != KCMStoryChange::kAttr ||
 			changes[i].fAttrKind == kKCMStoryAttrNone)
 		{
-			// ★A table's row counts as the words having changed (2026-09-19 night): its cells' text
+			// A table's row counts as the words having changed: its cells' text
 			//   changes were folded into it, and the row's Change column must not fall back to "Attr".
 			if (changes[i].fWhat == KCMStoryChange::kText || changes[i].fWhat == KCMStoryChange::kTable)
 				gRows[nth].fHasTextChange = kTrue;
@@ -2404,7 +2404,7 @@ void KCMStoryList::SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& c
 */
 static bool RowIsSettingOnly(const KCMStoryRow& row)
 {
-	// ★A row holding "=" records is kept (2026-10-26 - the header says why): they are what KCM put in.
+	// A row holding "=" records is kept (the header says why): they are what KCM put in.
 	if (!row.fEqual.empty())
 		return false;
 	return KCMStoryRowHasContentChange(row.fKinds, row.fTextCompared,
@@ -2485,8 +2485,8 @@ std::string KindsWord(uint32 kinds)
 	if (kinds & kKCMStoryKindText)    s += (s.empty() ? "" : ",") + std::string("Text");
 	if (kinds & kKCMStoryKindAttr)    s += (s.empty() ? "" : ",") + std::string("Attr");
 	if (kinds & kKCMStoryKindOther)   s += (s.empty() ? "" : ",") + std::string("Other");
-	if (kinds & kKCMStoryKindRefused) s += (s.empty() ? "" : ",") + std::string("Refused");	// an import could not fill it (2026-09-19)
-	if (kinds & kKCMStoryKindByPosition) s += (s.empty() ? "" : ",") + std::string("ByPosition");	// paired by its first frame's place (2026-10-26)
+	if (kinds & kKCMStoryKindRefused) s += (s.empty() ? "" : ",") + std::string("Refused");	// an import could not fill it
+	if (kinds & kKCMStoryKindByPosition) s += (s.empty() ? "" : ",") + std::string("ByPosition");	// paired by its first frame's place
 	return s.empty() ? std::string("-") : s;
 }
 
@@ -2503,7 +2503,7 @@ std::string AttrWord(int32 attrKind)
 		case kKCMStoryAttrEndnote:	return "Endnote";
 		case kKCMStoryAttrWarichu:	return "Warichu";
 		case kKCMStoryAttrTcy:		return "TCY";		// the tagged-text name for it (TTImportExportAttrId.h)
-		case kKCMStoryAttrObject:	return "Object";	// an object placed in the text whose content changed (2026-10-27)
+		case kKCMStoryAttrObject:	return "Object";	// an object placed in the text whose content changed
 		default:					return "Attr" + Num(attrKind);
 	}
 }
@@ -2522,7 +2522,7 @@ std::string ChangeKindWord(int32 kind)
 
 /** The three facts about a row that the Change column's rule reads, beside the counters.
 
-	★**hasText IS THE ONE THAT MATTERS MOST HERE** (2026-09-08): the column names an attribute only
+	**hasText IS THE ONE THAT MATTERS MOST HERE**: the column names an attribute only
 	when the DIFF found no text change, and a note's marker is a character, so the counters and the
 	diff disagree exactly where footnotes are involved. Printing both is what lets a reader see
 	which of the two the column obeyed.
@@ -2530,7 +2530,7 @@ std::string ChangeKindWord(int32 kind)
 /** How a ruby is SET, for the row that reports one - "Mono" or "Group", the two words the panel
 	draws on the upper line.
 
-	★★★**IT NEEDS A COLUMN OF ITS OWN, and finding that out is what this port is for** (2026-09-08).
+	**IT NEEDS A COLUMN OF ITS OWN, and finding that out is what this port is for**.
 	The first version of RowsAsTsv printed the READING in `value` and stopped there, so a
 	mono-to-group change - where both readings are identical and only the setting moved - came out
 	as `Ruby replace こはく 琥珀`: two rows that differ in nothing. The panel shows the difference
@@ -2566,7 +2566,7 @@ std::string PlaceWord(int32 place)
 	}
 }
 
-/** The columns every line carries after `text` (2026-09-19 night), or "-" for each where a line has
+/** The columns every line carries after `text`, or "-" for each where a line has
 	nothing to say (a story row, a refusal). Listed once so that the header, the parent line and the
 	change line cannot disagree about how many there are. */
 const int32 kTrailingColumns = 8;	// state whole place tstart tend sstart send other
@@ -2597,14 +2597,14 @@ std::string FlagsWord(const KCMStoryRow& row)
 */
 void KCMStoryList::RowsAsTsv(PMString& out)
 {
-	// ★`focus` after suid (2026-10-26 evening - KCMEqualRecord::fFocusId): a "=" row's focus - followed / lost / none - and
+	// `focus` after suid (KCMEqualRecord::fFocusId): a "=" row's focus - followed / lost / none - and
 	//  "-" for every other line. Last again, for suid's reason: a reader counting columns from the left reads what it read.
-	// ★`every` after focus (2026-10-26 night - EveryChangeEqual): a story row's "1" when it reads "=" itself - every change
+	// `every` after focus (EveryChangeEqual): a story row's "1" when it reads "=" itself - every change
 	//  under it a "=" that stands, no "!" - and "0" when not; "-" on every other line. Last, for the same reason.
 	std::string s = "row\tchange\tuid\tkinds\tflags\tattr\tkind\tset\tvalue\ttext"
-					"\tstate\twhole\tplace\ttstart\ttend\tsstart\tsend\tother\tsuid\tfocus\tevery\r\n";	// suid LAST (2026-10-26 - the header says why)
+					"\tstate\twhole\tplace\ttstart\ttend\tsstart\tsend\tother\tsuid\tfocus\tevery\r\n";	// suid LAST (the header says why)
 
-	// ★THE SHOWN RANGES COME THROUGH THE FACADE (2026-09-19 night), because that is the ONE place a whole
+	// THE SHOWN RANGES COME THROUGH THE FACADE, because that is the ONE place a whole
 	//   paragraph's break is cut off them (KCMFacades' GetChange, KCMShownSpan): what a test reads here is
 	//   what the marks and the jump (and its selection) use, not the model's write range.
 	//   ⚠Guarded: the facade lives on kUtilsBoss, which can be gone during teardown (the same test
@@ -2619,7 +2619,7 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 
 		// The PARENT line: what the story row itself says.
 		s += Num(nth) + "\t-\t"
-		   + ((row.fStoryUID == kInvalidUID) ? std::string("-") : Num(static_cast<int32>(row.fStoryUID.Get())))	// "-": a row standing for a file (2026-09-19)
+		   + ((row.fStoryUID == kInvalidUID) ? std::string("-") : Num(static_cast<int32>(row.fStoryUID.Get())))	// "-": a row standing for a file
 		   + "\t" + KindsWord(row.fKinds)
 		   + "\t" + FlagsWord(row)
 		   + "\t" + AttrWord(static_cast<int32>(row.fAttrKind))
@@ -2627,7 +2627,7 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 		   + "\t" + ((row.fSourceStoryUID == kInvalidUID) ? std::string("-") : Num(static_cast<int32>(row.fSourceStoryUID.Get())))
 		   + "\t-\t" + (EveryChangeEqual(nth) ? "1" : "0") + "\r\n";
 
-		// ★One line per CHILD, IN THE PANEL'S OWN INDEX SPACE (2026-09-19 night): the refusals first, then
+		// One line per CHILD, IN THE PANEL'S OWN INDEX SPACE: the refusals first, then
 		//   the live changes and the ones already taken in, merged in text order - exactly the numbers
 		//   kcmTakeInChange / kcmUndoRestore count in and the tree draws. ⚠Until then this printed the
 		//   live changes alone, so after a take-in its `change` column and the panel's rows disagreed.
@@ -2671,7 +2671,7 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 			   + "\t" + Field(c.fRuby)
 			   + "\t" + Field(c.fText)
 			   + "\t" + state
-			   + "\t" + ((c.fWhat == KCMStoryChange::kTable) ? "3" : (c.fWholeParagraph ? "1" : "0"))	// 3 = a TABLE (2026-09-19 night; 2, a whole cell, lived one evening)
+			   + "\t" + ((c.fWhat == KCMStoryChange::kTable) ? "3" : (c.fWholeParagraph ? "1" : "0"))	// 3 = a TABLE (2, a whole cell, lived one evening)
 			   + "\t" + PlaceWord(c.fPlace)
 			   + "\t" + (haveShown ? Num(shown.fTargetStart) : std::string("-"))
 			   + "\t" + (haveShown ? Num(shown.fTargetEnd) : std::string("-"))
