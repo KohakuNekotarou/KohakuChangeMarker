@@ -22,7 +22,6 @@
 #include "PersistUtils.h"			// ::GetClass
 #include "TablesID.h"				// kTextCellContentBoss
 #include "TextChar.h"
-#include "TextIterator.h"
 #include "Utils.h"
 #include "VOSRedline.h"
 #include "WideString.h"
@@ -38,6 +37,7 @@
 #include "KCMOversetPoint.h"		// KCMIsTextIndexOverset
 #include "KCMStoryList.h"			// KCMStoryList::ReadRowForStory
 #include "KCMStoryKinds.h"
+#include "KCMTextWords.h"			// WordsAt
 #include "KCMTrackList.h"
 #include "KCMTrackPlan.h"
 #include "KCMTrackRead.h"
@@ -58,7 +58,8 @@ ClassID ThreadClassAt(ITextModel* model, TextIndex at)
 	return (thread != nil) ? ::GetClass(thread) : kInvalidClass;
 }
 
-// Where hidden conditional text comes back to (KFCTrackChange::HiddenTextAnchor, the same climb).
+// Where hidden conditional text comes back to - the climb KFC's track code made (KFCTrackChange::HiddenTextAnchor,
+// out of KFC since its 809fd58).
 TextIndex HiddenTextAnchor(ITextModel* model, TextIndex at)
 {
 	TextIndex anchor = kInvalidTextIndex;
@@ -124,11 +125,7 @@ WideString Shown(const WideString& raw, int32 maxCodePoints, bool16 ellipsisAtEn
 WideString ReadRaw(ITextModel* model, TextIndex from, TextIndex to)
 {
 	WideString w;
-	if (to <= from)
-		return w;
-	TextIterator it(model, from);
-	for (TextIndex i = from; i < to && !it.IsNull(); ++i, ++it)
-		w.Append((*it).GetValue());
+	KCMTextWords::WordsAt(model, from, to - from, w);		// a range outside the story reads as nothing
 	return w;
 }
 
@@ -140,7 +137,7 @@ PMString ToPM(const WideString& w)
 }
 
 // The deleted text - ITrackChangeUtils::GetDeletedText first, the iterator's description when it reads
-// nothing (KFCTrackChange's ReadDeletedText).
+// nothing (as KFCTrackChange's ReadDeletedText did, out of KFC since its 809fd58).
 WideString DeletedText(ITextModel* model, Utils<ITrackChangeUtils>& utils, RedlineIterator* it, TextIndex at)
 {
 	WideString text;

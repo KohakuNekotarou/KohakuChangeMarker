@@ -27,9 +27,9 @@
 //  *** THE TEXT IS KCMTextRead's TEXT. *** Para::fText is a paragraph exactly as ReadStory reports
 //  it, invisible characters included. Turning U+FFFC into something a file can hold is the
 //  WRITER's business and turning it back is the READER's; nothing upstream or downstream has to
-//  know those characters were ever markup. The four characters ReadStory takes OUT (U+0016 and
-//  U+0017 for tables, U+0004 and U+0005 for note references) are not in fText either - the tables
-//  carry their own places, and a note's reference is carried separately (Para says why).
+//  know those characters were ever markup. The characters ReadStory takes OUT (U+0016 and U+0017
+//  for tables, U+0004 for a note's reference) are not in fText either - the tables carry their
+//  own places, and a note's reference is carried separately (Para says why).
 //
 //========================================================================================
 

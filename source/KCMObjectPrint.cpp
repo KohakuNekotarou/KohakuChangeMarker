@@ -66,7 +66,6 @@ bool PrintObject(IDataBase* db, UID uid, Print& print)
 	if (persist == nil)
 		return false;
 	KCMMemXferBytes bytes;
-	try
 	{
 		// takeOwnership and recycleBoss both kFalse: the bytes live on this frame (StreamUtil.h).
 		InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamWrite(&bytes, kFalse, kFalse));
@@ -75,10 +74,7 @@ bool PrintObject(IDataBase* db, UID uid, Print& print)
 		persist->SaveAll(stream, kFalse);
 		stream->Flush();
 	}
-	catch (...)
-	{
-		return false;		// a buffer that could not grow (KCMMemXferBytes.h): no print rather than part of one
-	}
+	// A buffer that could not grow (KCMMemXferBytes::Write) holds part of the object: no print rather than a print of that part.
 	if (bytes.GetStreamState() == kStreamStateFailure)
 		return false;
 	if (bytes.GetData() != nil && bytes.GetSize() > 0)

@@ -12,6 +12,7 @@
 
 // General includes:
 #include <cstring>
+#include <new>		// std::bad_alloc - a buffer that cannot grow (Write)
 
 // Project includes:
 #include "KCMMemXferBytes.h"
@@ -54,6 +55,8 @@ uint32 KCMMemXferBytes::Read(void* buffer, uint32 num)
 /* Write
    Seeking past the end and then writing is legal for a stream, so the gap is zero-filled
    rather than refused - resize() does that for us.
+   NO EXCEPTION LEAVES HERE (the head of KCMMemXferBytes.h): a buffer that cannot grow is a failed write -
+   nothing transferred, the stream failed.
 */
 uint32 KCMMemXferBytes::Write(void* buffer, uint32 num)
 {
@@ -62,7 +65,17 @@ uint32 KCMMemXferBytes::Write(void* buffer, uint32 num)
 
 	const uint32 end = fPosition + num;
 	if (end > fBuffer.size())
-		fBuffer.resize(end, 0);
+	{
+		try
+		{
+			fBuffer.resize(end, 0);
+		}
+		catch (const std::bad_alloc&)
+		{
+			fStreamState = kStreamStateFailure;
+			return 0;
+		}
+	}
 
 	std::memcpy(&fBuffer[fPosition], buffer, num);
 	fPosition = end;
@@ -118,6 +131,15 @@ void KCMMemXferBytes::SetEndOfStream()
 {
 	if (fPosition < fBuffer.size())
 		fBuffer.resize(fPosition);
+}
+
+/* Clear
+*/
+void KCMMemXferBytes::Clear()
+{
+	fBuffer.clear();
+	fPosition = 0;
+	fStreamState = kStreamStateGood;
 }
 
 /* GetData

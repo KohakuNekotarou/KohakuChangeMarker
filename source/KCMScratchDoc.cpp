@@ -159,6 +159,11 @@ bool16 KCMScratchDoc::ImportSnippet(const std::string& snippet, std::vector<UIDR
 	// (KCMPdfSpike.cpp, removed before shipping on 2026-10-02; in git at 5720208).
 	KCMMemXferBytes bytes;
 	FillBytes(snippet, bytes);
+	if (bytes.GetStreamState() == kStreamStateFailure)		// a buffer that could not grow (KCMMemXferBytes::Write)
+	{
+		whyNot = KCMSentence("no memory for the snippet");
+		return kFalse;
+	}
 	InterfacePtr<IPMStream> read(StreamUtil::CreateMemoryStreamRead(&bytes, kFalse, kFalse));
 	if (read == nil)
 	{

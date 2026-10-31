@@ -915,8 +915,7 @@ bool16 KCMExportStoryInx(IDataBase* db, UID storyUID, KCMMemXferBytes& out, bool
 			if (roots.size() < 2)
 				break;							// there was no second road to fall back to
 			roots.resize(1);					// the story alone - the call S17.8 measured
-			out.Seek(0, kSeekFromStart);		// and empty what the failed attempt wrote
-			out.SetEndOfStream();
+			out.Clear();						// and empty what the failed attempt wrote
 		}
 		InterfacePtr<IPMStream> stream(StreamUtil::CreateMemoryStreamWrite(&out, kFalse, kFalse));
 		if (stream == nil)
@@ -939,7 +938,8 @@ bool16 KCMExportStoryInx(IDataBase* db, UID storyUID, KCMMemXferBytes& out, bool
 			inx->EndExportSession();
 		}
 		stream->Flush();
-		if (err == kSuccess && out.GetSize() > 0)
+		// A buffer that could not grow (KCMMemXferBytes::Write) holds part of the story, and the export need not say so.
+		if (err == kSuccess && out.GetSize() > 0 && out.GetStreamState() != kStreamStateFailure)
 			return kTrue;
 	}
 	return kFalse;

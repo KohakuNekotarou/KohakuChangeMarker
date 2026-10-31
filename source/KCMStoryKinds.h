@@ -109,7 +109,7 @@ enum KCMStoryAttrKind
 								// sitting over a place - and because the alternative (a text change
 								// of one invisible character) is what the panel used to show: a "□"
 								// nobody could read.
-	kKCMStoryAttrEndnote = 4,	// the same for an ENDNOTE (U+0005). ⚠**ITS TEXT LIVES IN ANOTHER
+	kKCMStoryAttrEndnote = 4,	// the same for an ENDNOTE (U+0004 too). ⚠**ITS TEXT LIVES IN ANOTHER
 								// STORY** (kEndnoteStoryBoss - measured: adding one makes
 								// app.documents[0].stories go from 1 to 2), so only the marker is
 								// reported here; the note's own words arrive as a story row of their

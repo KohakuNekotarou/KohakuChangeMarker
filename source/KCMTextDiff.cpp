@@ -5,7 +5,7 @@
 //  Kohaku Change Marker (KCM)
 //
 //  See KCMTextDiff.h for where the method comes from, why nothing is borrowed from git, and
-//  the warning about the second copy of this file that still lives in KohakuTest.
+//  the second copy of this file, in KIDMCP.
 //
 //  The shape of the search, in one paragraph: walk the edit graph from (0,0) to (n,m), where
 //  moving right consumes one baseline element (a deletion) and moving down consumes one target

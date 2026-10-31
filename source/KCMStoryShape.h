@@ -72,7 +72,7 @@ struct Para
 		  file, which the reader can already edit. What was missing is any sign IN THE BODY of where
 		  the note hangs, so the writer puts a locked placeholder at each of these offsets.
 		⚠**THE MARKER IS NOT IN fText** - KCMTextRead takes it out, as it does a footnote's - so
-		 these offsets are the only record of it, and nothing here ever writes U+0005 into the text.
+		 these offsets are the only record of it, and nothing here ever writes one into the text.
 		⚠**TAKEN FROM THE OWNED ITEMS, NOT FROM THE ATTRIBUTE SPANS.** A span sits on the character
 		 BEFORE its marker, so a note at the very start of a paragraph has no span at all
 		 (KCMTextRead says so outright) - and that note would be the one nobody could find. */

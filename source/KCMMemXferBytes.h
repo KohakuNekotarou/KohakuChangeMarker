@@ -17,22 +17,13 @@
 //  the buffer grows by itself, and with the written bytes handed out directly - reading them back
 //  through a second stream, the way the samples do, buys nothing when the caller wants the bytes.
 //
-//  @warning **THIS std::vector IS WHERE KCM'S TWO MEMORY POLICIES MEET, AND WHICH ONE APPLIES
-//   HERE HAS NOT BEEN DECIDED.**
-//     - The drawing side allocates with new (std::nothrow) and holds the result in
-//       K2::scoped_array, on the stated grounds that MSVC's ordinary new does not return nil but
-//       THROWS, and an exception crossing an event boundary brings InDesign down. The 2026-08-27
-//       conversion wrote that down as a requirement rather than a habit, and said in as many words
-//       that std::vector cannot stand in for it.
-//     - The Story-diff engine this file belongs to is built on std containers throughout, and
-//       deliberately: not touching the SDK is what lets it be compiled and tested outside
-//       InDesign. KCM has no try/catch anywhere, so a bad_alloc raised by the resize below would
-//       leave through the menu handler that started the comparison.
-//   What makes the two defensible side by side is SIZE -- the drawing buffers are whole CMYK pages
-//   (tens of MB), this one holds one story's XML -- but that is an argument, not a measurement,
-//   and the 2026-08-27 pass never considered this file at all.
-//   **If the argument is accepted, say so here. If it is not, the fix is a K2::scoped_array with
-//   the same manual resize both Adobe samples write.**
+//  ⚠**NO EXCEPTION LEAVES Write.** std::vector grows by throwing, and this buffer is written from
+//   inside InDesign's own exporter and IPMPersist::SaveAll: an exception crossing InDesign's code
+//   takes the application down (memory k2-scoped-ptr-and-array - the drawing side's whole CMYK
+//   pages are new (std::nothrow) in a K2::scoped_array on the same grounds). A buffer that cannot
+//   grow is a failed write: nothing transferred, and the stream stays failed - Seek does not clear
+//   it. ⇒ **WHOEVER KEEPS THE BYTES READS GetStreamState AFTER THE LAST WRITE**: part of a story
+//   comes out of an export that says nothing. (KFC's and KIDMCP's copies of this class do the same.)
 //
 //========================================================================================
 
@@ -56,7 +47,9 @@ public:
 	*/
 	virtual uint32 Read(void* buffer, uint32 num);
 
-	/** See IXferBytes::Write. Grows the buffer as needed, so a caller never has to size it. */
+	/** See IXferBytes::Write. Grows the buffer as needed, so a caller never has to size it. A buffer that
+		cannot grow transfers nothing and fails the stream (the head of this file).
+	*/
 	virtual uint32 Write(void* buffer, uint32 num);
 
 	/** See IXferBytes::Seek. Seeking past the end is allowed and does not grow the buffer -
@@ -72,6 +65,9 @@ public:
 
 	/** See IXferBytes::SetEndOfStream. Truncates to the current position. */
 	virtual void SetEndOfStream();
+
+	/** Back to nothing written, a failed write forgotten - a second attempt on the same buffer. */
+	void Clear();
 
 	/** The bytes written so far. Not null-terminated - always pair it with GetSize().
 		@return pointer to the first byte, or nil when nothing has been written.

@@ -119,7 +119,7 @@ struct KCMParaAttrs
 		the way ruby is shown").
 
 		⚠**THEY ARE NOT ATTRIBUTES AND THAT IS THE POINT.** A reference is a CHARACTER standing in
-		 the text (U+0004 for a footnote, U+0005 for an endnote), not something laid over one. Read
+		 the text (U+0004, a footnote's and an endnote's alike), not something laid over one. Read
 		 as text it is invisible, so the panel showed a "□" and the reader could not tell what had
 		 happened - which is exactly what the user reported. Carried here, the difference comes out
 		 as one attribute change with the note's NUMBER above the words, the way the page prints it.
@@ -130,7 +130,7 @@ struct KCMParaAttrs
 
 		⚠★★★**THE SPAN SITS ON THE CHARACTER BEFORE THE MARKER**, one character long: the marker's
 		 own place is fStart + fLen, never fStart. It has to be that way - ReadStory TAKES the
-		 marker out of the text (U+0004 / U+0005 are not in fText), so a span standing where it
+		 marker out of the text (U+0004 is not in fText), so a span standing where it
 		 stood would measure no characters at all and TakeAttrFor drops a span whose text length
 		 comes out 0. It is also where the page puts the number: at the top right of the word the
 		 note hangs off.
@@ -1031,8 +1031,9 @@ inline void SplitRunAtPlaces(const std::vector<KCMParaAttrs>& sourceAttrs,
 	  text holds none of these). Deleting one is refused too - InDesign takes the object with the
 	  character, so a restore would delete a table or a frame the reader added.
 
-	★**A LIST, NOT A RANGE, AND EACH ENTRY IS ONE OF TextChar.h's.** Footnote/endnote reference
-	  (0004/0005), table anchor and row continuation (0016/0017), page number and every text
+	★**A LIST, NOT A RANGE, AND EACH ENTRY IS ONE OF TextChar.h's.** Footnote and endnote reference
+	  (0004 for both; 0005 is only TextChar.h's name for the second), table anchor and row
+	  continuation (0016/0017), page number and every text
 	  variable (0018 - measured to be the one code they all share in a document), section name
 	  (0019), the non-Roman special glyph (001A), the XML tag and note anchor mark (FEFF), an
 	  anchored object (FFFC) and the index marker (E02C).

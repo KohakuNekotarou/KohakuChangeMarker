@@ -12,16 +12,10 @@
 //  came back as one change rather than two. The record is
 //  docs/ai-notes/kt-story-diff-experiment-2026-08-17.md.
 //
-//  ⚠★★**THE TWO COPIES HAVE DIVERGED, AND THIS IS THE LIVE ONE.** Measured 2026-09-04: 27 KB
-//   here against 11 KB there, and every one of the differences is an improvement made on this
-//   side -- the linear-space search (FindMiddleSnake), MergeNearbyChanges' "strictly shorter"
-//   rule, and AlignChangeBoundaries. **KT's copy is the August implementation, still compiled and
-//   still used by KT/KTStoryDiff.cpp.**
-//   ⇒ **Read this file first.** A fault found here does not need carrying over there; a fault
-//     found there may well be one this file has already fixed.
-//   ⚠**The old instruction "fix BOTH" is withdrawn**: it was written when the two were the same
-//     file, and following it now would mean porting three separate improvements backwards into an
-//     experiment. ⬜Whether KT's copy should be retired instead is undecided (2026-09-04).
+//  ⚠**THE OTHER COPY IS KIDMCP's KIDMCPTextDiff, AND THIS ONE IS THE MASTER.** A change made here is
+//   made there in the same piece of work: work/kidmcp-textdiff-sync.py compares the two with the
+//   names substituted and the comments taken out, and fails when they differ. (KT's copy went with
+//   KT's experiments on 2026-10-05.)
 //
 //  Written from the published method -- Eugene W. Myers, "An O(ND) Difference Algorithm and Its
 //  Variations", Algorithmica 1(2), 1986 -- and not from anybody's source. An algorithm is not

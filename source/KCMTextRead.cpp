@@ -560,7 +560,8 @@ void ScanBoolAttribute(ITextModel* model, ClassID attribute, std::vector<AttrRun
 
    ★★★WHY THEY TRAVEL WITH RUBY AND KENTEN (2026-09-08, user's request: "the page shows a 1 above
    the character - show it in the row the way ruby is shown"). A reference is a CHARACTER, not an
-   attribute: U+0004 (footnote) or U+0005 (endnote), standing in the text. Read as text it draws
+   attribute: U+0004, a footnote's and an endnote's alike (only what the text owns there tells the
+   two apart, which is why this walks the owned items), standing in the text. Read as text it draws
    nothing, so the row showed a "□" where a note had been added and the reader could not tell what
    had happened. Reported as a span with the NUMBER as its value, the row draws that number over
    the marker exactly as it draws a reading over its base text -- which is what the page does too.
@@ -1036,9 +1037,11 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 			//   the document - and the story was then refused with no differences at all, whether
 			//   the edit was in the body or in the note (work/kcm-selftest/footnote/README.md).
 			//
-			//   ⚠NUMBERED IN THE ORDER THE THREADS COME OUT, which is TextIndex order. Unlike
-			//    tables there is no nesting to reorder (a footnote inside a footnote is not a
-			//    thing), so no equivalent of EarlierBlock is needed.
+			//   ⚠NUMBERED IN THE ORDER THE THREADS COME OUT, which is TextIndex order, with no
+			//    equivalent of EarlierBlock. ⚠A FOOTNOTE INSIDE A FOOTNOTE CAN BE MADE: the DOM allows it,
+			//    and deleting the outer one takes the inner with it
+			//    (docs/ai-notes/kcm-word-footnote-add-delete-probe-2026-09-22.md). The order its thread
+			//    comes out in has not been measured.
 			//
 			// ★★★**...AND SINCE 2026-09-19 THE THREAD IS ASKED WHAT IT IS, because the warning above
 			//   came true.** An InDesign NOTE is exactly "a shape this walk has never met": its words
@@ -1116,11 +1119,13 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 				continue;
 			}
 
-			// ★★★A NOTE'S MARKER IS A POSITION, NOT TEXT (2026-09-08). U+0004 and U+0005 draw
-			//   nothing at all, so read as text they put a "□" in the row and the reader was shown a
-			//   one-character change nobody could identify - which is what the user reported. They
-			//   are reported as SPANS instead, carrying the number the page prints (ScanNotes), and
-			//   the same treatment the table's own characters get keeps the two counts in step.
+			// ★★★A NOTE'S MARKER IS A POSITION, NOT TEXT (2026-09-08). U+0004 - a footnote's and an
+			//   endnote's alike; kTextChar_EndnoteMarker is a name in TextChar.h that the body does not
+			//   hold, and the test below names it at no cost - draws nothing at all, so read as text it
+			//   put a "□" in the row and the reader was shown a one-character change nobody could
+			//   identify - which is what the user reported. They are reported as SPANS instead, carrying
+			//   the number the page prints (ScanNotes), and the same treatment the table's own
+			//   characters get keeps the two counts in step.
 			//   ⚠**AND THAT IS WHY THEY HAVE TO COME OUT OF THE TEXT.** Left in, the paragraph
 			//     holding a new note counts as a paragraph whose WORDS changed, and an attribute
 			//     found in such a paragraph is dropped unless its characters survive on both sides
