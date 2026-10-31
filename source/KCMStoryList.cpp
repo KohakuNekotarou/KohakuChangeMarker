@@ -18,7 +18,6 @@
 #include "IHierarchy.h"			// GetParentUID - a text column's frame is its parent (2026-08-22)
 #include "IPageList.h"
 #include "IParcelList.h"		// GetFirstParcelKey / GetNextParcelKey / GetParcelFrameUID
-#include "ITextFrameColumn.h"	// what QueryFrameContaining hands back (2026-08-22)
 #include "ITextModel.h"
 #include "ITextParcelList.h"	// QueryTextParcelList - the parcels a story flows through
 #include "ITextStoryThread.h"		// QueryStoryThread's answer: which thread (body, cell, footnote) holds an index (2026-09-12)
@@ -38,13 +37,14 @@
 
 #include <algorithm>			// std::sort, std::remove_if
 #include <set>				// the foci the list holds (LetStrayFoci)
-#include <sstream>			// the reading port's number formatting (RowsAsTsv)
 #include <string>
 #include <vector>
 
 // Project includes:
+#ifdef KCM_DIAG
 #include "IKCMStoryEditsFacade.h"	// RowsAsTsv reads the SHOWN ranges through the facade's GetChange - the one place that cuts a paragraph break off them
 #include "Utils.h"
+#endif
 #include "KCMCore.h"			// KCMFramePageUID - shared with the overset scan since 2026-08-09
 #include "KCMOversetPoint.h"	// KCMParcelCornerOnPasteboard - a parcel's corner, for where a story begins
 #include "KCMStoryList.h"
@@ -754,13 +754,9 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
    counters, not from the target's text (KCMStoryStamp.h), so it is not the target document's to
    answer. Nor is fPageIndex -- see RefreshRowFromDocument for why a refresh must not touch it.
 */
-static bool16 ReadRowFromDocument(IDataBase* db, KCMStoryRow& row, UID storyInDb)
+static bool16 ReadRowFromDocument(IDataBase* db, KCMStoryRow& row)
 {
-	// storyInDb is the uid the story has IN db. ⛔It is row.fStoryUID for EVERY row since 2026-09-21:
-	// a Removed one read from a REHYDRATED Task Start copy used to need translating, those uids
-	// being freshly handed out by the import (KCMOriginToSourceUID, retired with the origin), and a
-	// copy saved to a file carries the originals.
-	InterfacePtr<ITextModel> model(db, storyInDb, UseDefaultIID());
+	InterfacePtr<ITextModel> model(db, row.fStoryUID, UseDefaultIID());
 	if (model == nil)
 		return kFalse;	// a story that cannot be read cannot be shown, or jumped to later
 
@@ -777,10 +773,45 @@ static bool16 ReadRowFromDocument(IDataBase* db, KCMStoryRow& row, UID storyInDb
 	//   @warning the page is NOT how the older version's window gets aimed -- that goes by story
 	//   UID, because the same story can sit somewhere else entirely over there (KCMGotoStoryFrame).
 	//   Why reading this composes nothing: KCMStoryFirstFrameUID.
-	row.fFrameUID = KCMStoryFirstFrameUID(db, storyInDb);
+	row.fFrameUID = KCMStoryFirstFrameUID(db, row.fStoryUID);
 	row.fPageUID = (row.fFrameUID != kInvalidUID) ? KCMFramePageUID(db, row.fFrameUID)
 												  : kInvalidUID;
 	return kTrue;
+}
+
+/* SetPageIndex
+	A row's sort key, from the page ReadRowFromDocument found - left as it is (kMaxInt32) when it found none.
+
+	A story on a MASTER PAGE keeps kMaxInt32 and sorts to the END, which is what is wanted:
+	it is a real edit, but it belongs after the pages. IPageList::GetPageIndex counts pages
+	within the pub and a master is not one of them, so the index cannot come back as a
+	position among them.
+
+	**MEASURED, AND MEASURED SO IT COULD HAVE COME OUT THE OTHER WAY.** The first attempt
+	built its stories in page order, which made story UID order and page order AGREE -- and
+	RowIsBefore breaks a tie by UID, so rows carrying kMaxInt32 would have come out in that
+	same order either way. The second pair built them in reverse (master first, so the master
+	story holds the LOWEST uid) and the panel listed page 1, then page 3, then the master --
+	the exact opposite of UID order.
+	@warning what is NOT distinguished: whether GetPageIndex answered negative or
+	KCMFramePageUID never produced a page UID at all. Both land here as kMaxInt32, and the row
+	goes to the end either way.
+
+	**AND THE SECOND ARGUMENT IS LEFT AT ITS DEFAULT ON PURPOSE:** includePagesOfHiddenSpread
+	defaults to kTrue, so a page whose spread is hidden still counts. **That is what keeps Hide
+	Unchanged from renumbering this list** -- hide two spreads and the rows keep the positions
+	they had. It is the same property the comparison's own page walk depends on: IPageList
+	includes the pages of hidden spreads and enumerates them in the same order as the spread
+	walk it replaced. @warning passing kFalse here would reorder the panel every time a spread
+	is hidden.
+*/
+static void SetPageIndex(KCMStoryRow& row, IPageList* pageList)
+{
+	if (row.fPageUID == kInvalidUID || pageList == nil)
+		return;
+	const int32 idx = pageList->GetPageIndex(row.fPageUID);
+	if (idx >= 0)
+		row.fPageIndex = idx;
 }
 
 /* AddRowsFromDocument
@@ -817,42 +848,10 @@ static void AddRowsFromDocument(IDataBase* db, const std::vector<KCMStoryDiff>& 
 		row.fStoryUID = it->fStoryUID;
 		row.fKinds = it->fKinds;
 		row.fSourceStoryUID = it->fSourceStoryUID;	// the Source story it compares against - written by the diff alone
-		// ⛔The uid translation went on 2026-09-21. A Task Start copy was REHYDRATED then and its
-		//   stories carried numbers the import had handed out; a copy saved to a file carries the
-		//   originals, so a Removed row is read under the uid it already holds.
-		const UID storyInDb = row.fStoryUID;
-		if (!ReadRowFromDocument(db, row, storyInDb))
+		if (!ReadRowFromDocument(db, row))
 			continue;
 
-		if (row.fPageUID != kInvalidUID && pageList != nil)
-		{
-			// A story on a MASTER PAGE keeps kMaxInt32 and sorts to the END, which is what is wanted:
-			// it is a real edit, but it belongs after the pages. IPageList::GetPageIndex counts pages
-			// within the pub and a master is not one of them, so the index cannot come back as a
-			// position among them.
-			//
-			// **MEASURED, AND MEASURED SO IT COULD HAVE COME OUT THE OTHER WAY.** The first attempt
-			// built its stories in page order, which made story UID order and page order AGREE -- and
-			// RowIsBefore breaks a tie by UID, so rows carrying kMaxInt32 would have come out in that
-			// same order either way. The second pair built them in reverse (master first, so the master
-			// story holds the LOWEST uid) and the panel listed page 1, then page 3, then the master --
-			// the exact opposite of UID order.
-			// @warning what is NOT distinguished: whether GetPageIndex answered negative or
-			// KCMFramePageUID never produced a page UID at all. Both land here as kMaxInt32, and the row
-			// goes to the end either way.
-			//
-			// **AND THE SECOND ARGUMENT IS LEFT AT ITS DEFAULT ON PURPOSE:** includePagesOfHiddenSpread
-			// defaults to kTrue, so a page whose spread is hidden still counts. **That is what keeps Hide
-			// Unchanged from renumbering this list** -- hide two spreads and the rows keep the positions
-			// they had. It is the same property the comparison's own page walk depends on: IPageList
-			// includes the pages of hidden spreads and enumerates them in the same order as the spread
-			// walk it replaced. @warning passing kFalse here would reorder the panel every time a spread
-			// is hidden.
-			const int32 idx = pageList->GetPageIndex(row.fPageUID);
-			if (idx >= 0)
-				row.fPageIndex = idx;
-		}
-
+		SetPageIndex(row, pageList);
 		rows.push_back(row);
 	}
 }
@@ -864,16 +863,11 @@ bool16 KCMStoryList::ReadRowForStory(IDataBase* db, UID storyUID, KCMStoryRow& o
 	if (db == nil || storyUID == kInvalidUID)
 		return kFalse;
 	out.fStoryUID = storyUID;
-	if (!ReadRowFromDocument(db, out, storyUID))
+	if (!ReadRowFromDocument(db, out))
 		return kFalse;
 	out.fPageIndex = kMaxInt32;
-	if (out.fPageUID != kInvalidUID)
-	{
-		InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
-		const int32 idx = (pageList != nil) ? pageList->GetPageIndex(out.fPageUID) : -1;
-		if (idx >= 0)
-			out.fPageIndex = idx;	// the same index AddRowsFromDocument stores, hidden spreads included
-	}
+	InterfacePtr<IPageList> pageList(db, db->GetRootUID(), UseDefaultIID());
+	SetPageIndex(out, pageList);
 	return kTrue;
 }
 
@@ -935,7 +929,6 @@ static void PutBackCarried(IDataBase* targetDB, std::vector<KCMStoryRow>& carrie
 			else if (r.fSourceStoryUID != kInvalidUID && r.fSourceStoryUID == from.fSourceStoryUID)
 				sourceTaken = kTrue;
 		}
-		bool16 made = kFalse;
 		if (at < 0 && byPlace && own >= 0 && gRows[static_cast<size_t>(own)].fSourceStoryUID == kInvalidUID && !sourceTaken)
 		{
 			KCMStoryRow& lone = gRows[static_cast<size_t>(own)];
@@ -960,7 +953,6 @@ static void PutBackCarried(IDataBase* targetDB, std::vector<KCMStoryRow>& carrie
 			}
 			gRows.push_back(row);
 			at = static_cast<int32>(gRows.size()) - 1;
-			made = kTrue;
 		}
 		// The Source story of a pair by place is the row's Source now, so its Removed row goes (the header above says why).
 		for (size_t i = 0; byPlace && i < gRows.size(); ++i)
@@ -972,12 +964,71 @@ static void PutBackCarried(IDataBase* targetDB, std::vector<KCMStoryRow>& carrie
 				--at;
 			break;
 		}
-		KCM_DIAG_LOG("FOCUS carry story=%d records=%d%s", (int)from.fStoryUID.Get(), (int)from.fEqual.size(),
-					 made ? " (a row made for them)" : "");
-		(void)made;
+		KCM_DIAG_LOG("FOCUS carry story=%d records=%d", (int)from.fStoryUID.Get(), (int)from.fEqual.size());
 		gRows[static_cast<size_t>(at)].fEqual.swap(from.fEqual);
 		gRows[static_cast<size_t>(at)].fFociSynced = kFalse;
 	}
+}
+
+/* AddRefusalRow
+	Mark the row of `storyUID` as one an import could not fill (kKCMStoryKindRefused), making the
+	row when the comparison built none - the story's counter did not move because nothing went in.
+	Before the sort: the index it answers with, for AddRefusalChange, is only good until then.
+*/
+static int32 AddRefusalRow(IDataBase* targetDB, UID storyUID, const PMString& textWhenNoStory)
+{
+	// The comparison's own row for this story, when it built one: a story that took some of the
+	// words and refused others has moved its counter, and is in the list already.
+	// ⚠A Removed row of the same uid is NOT that row: it lives in the Source, and a refusal is about
+	//   the Target's story (the file was named after it). ⚠Nor is a row standing for a file
+	//   (kInvalidUID): two files with no story are two rows.
+	// ★★BY THE ROW'S SOURCE STORY (2026-10-26): the uid a refusal names is the import copy's story - the one the file was
+	//   named after - and the row that compares against it may be a Target story of another uid (a row paired by place,
+	//   KCMStoryRow::fSourceStoryUID). For every other row the two uids are one.
+	for (size_t i = 0; i < gRows.size(); ++i)
+	{
+		if (gRows[i].fSourceStoryUID != kInvalidUID && gRows[i].fSourceStoryUID == storyUID
+			&& (gRows[i].fKinds & kKCMStoryKindRemoved) == 0)
+		{
+			gRows[i].fKinds |= kKCMStoryKindRefused;
+			return static_cast<int32>(i);
+		}
+	}
+
+	KCMStoryRow row;
+	row.fSourceStoryUID = storyUID;		// the copy's story of the same uid - what the diff compares it with
+	row.fKinds = kKCMStoryKindRefused;
+	if (!KCMStoryList::ReadRowForStory(targetDB, storyUID, row))
+	{
+		// ★★NO SUCH STORY IN THE DOCUMENT - or the uid names something that is not one (ReadRowFromDocument
+		//   asks for ITextModel): the row stands for the FILE. **Its uid is kInvalidUID from here on**,
+		//   the value every reader of this list passes over (the diff, the marks, the jump), so that a number
+		//   that names nothing here - or a swatch, or a page - is never handed to the document as a
+		//   story. The file's own uid is in the text, for the reader.
+		row.fStoryUID = kInvalidUID;
+		row.fSourceStoryUID = kInvalidUID;
+		row.fText = textWhenNoStory;
+		row.fText.SetTranslatable(kFalse);
+		row.fFrameUID = kInvalidUID;
+		row.fPageUID = kInvalidUID;
+	}
+	gRows.push_back(row);
+	return static_cast<int32>(gRows.size()) - 1;
+}
+
+/* AddRefusalChange
+	One refusal under row `nth`: `kind` for the ID column, `whereAndWhy` for the text cell. By index rather than by uid,
+	because a row standing for a file has no uid.
+*/
+static void AddRefusalChange(int32 nth, const PMString& kind, const PMString& whereAndWhy)
+{
+	KCMStoryChange c;
+	c.fWhat = KCMStoryChange::kRefused;
+	c.fTextPre = kind;
+	c.fTextPre.SetTranslatable(kFalse);
+	c.fText = whereAndWhy;
+	c.fText.SetTranslatable(kFalse);
+	gRows[nth].fRefusals.push_back(c);
 }
 
 /* Build
@@ -1112,15 +1163,8 @@ PMString KCMStoryList::RowTextForTypesetting(const PMString& rowText)
 	return out;
 }
 
-/* SetRowChanges
+/* SetRowComparedAt
 */
-void KCMStoryList::SetRowTargetTextCount(int32 nth, uint32 count)
-{
-	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
-		return;
-	gRows[nth].fTargetTextCount = count;
-}
-
 void KCMStoryList::SetRowComparedAt(int32 nth, uint32 allCount)
 {
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
@@ -1140,79 +1184,6 @@ void KCMStoryList::SetRowComparedAt(int32 nth, uint32 allCount)
 // (⛔AddReplacedChange and ClearReplacedChanges stood here and went on 2026-09-21 with the restore.
 //  They kept, in fReplacedStart order, the changes the reader had taken in - the records that let a
 //  row stay in the list after a write, so that an undo had something to come back to.)
-
-/* AddRefusalRow
-*/
-int32 KCMStoryList::AddRefusalRow(IDataBase* targetDB, UID storyUID, const PMString& textWhenNoStory)
-{
-	// The comparison's own row for this story, when it built one: a story that took some of the
-	// words and refused others has moved its counter, and is in the list already.
-	// ⚠A Removed row of the same uid is NOT that row: it lives in the Source, and a refusal is about
-	//   the Target's story (the file was named after it). ⚠Nor is a row standing for a file
-	//   (kInvalidUID): two files with no story are two rows.
-	// ★★BY THE ROW'S SOURCE STORY (2026-10-26): the uid a refusal names is the import copy's story - the one the file was
-	//   named after - and the row that compares against it may be a Target story of another uid (a row paired by place,
-	//   KCMStoryRow::fSourceStoryUID). For every other row the two uids are one.
-	for (size_t i = 0; i < gRows.size(); ++i)
-	{
-		if (gRows[i].fSourceStoryUID != kInvalidUID && gRows[i].fSourceStoryUID == storyUID
-			&& (gRows[i].fKinds & kKCMStoryKindRemoved) == 0)
-		{
-			gRows[i].fKinds |= kKCMStoryKindRefused;
-			return static_cast<int32>(i);
-		}
-	}
-
-	KCMStoryRow row;
-	row.fStoryUID = storyUID;
-	row.fSourceStoryUID = storyUID;		// the copy's story of the same uid - what the diff compares it with
-	row.fKinds = kKCMStoryKindRefused;
-	if (targetDB != nil && ReadRowFromDocument(targetDB, row, storyUID))
-	{
-		// The same page lookup AddRowsFromDocument makes, for the same reason (a master-page story
-		// keeps kMaxInt32 and sorts to the end of its group).
-		InterfacePtr<IPageList> pageList(targetDB, targetDB->GetRootUID(), UseDefaultIID());
-		if (row.fPageUID != kInvalidUID && pageList != nil)
-		{
-			const int32 idx = pageList->GetPageIndex(row.fPageUID);
-			if (idx >= 0)
-				row.fPageIndex = idx;
-		}
-	}
-	else
-	{
-		// ★★NO SUCH STORY IN THE DOCUMENT - or the uid names something that is not one (ReadRowFromDocument
-		//   asks for ITextModel): the row stands for the FILE. **Its uid is kInvalidUID from here on**,
-		//   the value every reader of this list passes over (the header says which), so that a number
-		//   that names nothing here - or a swatch, or a page - is never handed to the document as a
-		//   story. The file's own uid is in the text, for the reader.
-		row.fStoryUID = kInvalidUID;
-		row.fSourceStoryUID = kInvalidUID;
-		row.fText = textWhenNoStory;
-		row.fText.SetTranslatable(kFalse);
-		row.fFrameUID = kInvalidUID;
-		row.fPageUID = kInvalidUID;
-	}
-	gRows.push_back(row);
-	return static_cast<int32>(gRows.size()) - 1;
-}
-
-/* AddRefusalChange
-*/
-void KCMStoryList::AddRefusalChange(int32 nth, const PMString& kind, const PMString& whereAndWhy)
-{
-	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
-		return;
-
-	KCMStoryChange c;
-	c.fWhat = KCMStoryChange::kRefused;
-	c.fTextPre = kind;
-	c.fTextPre.SetTranslatable(kFalse);
-	c.fText = whereAndWhy;
-	c.fText.SetTranslatable(kFalse);
-	// (⛔It also said "nothing here can be written back", which the menu asked first, until 2026-09-21.)
-	gRows[nth].fRefusals.push_back(c);
-}
 
 // (⛔**FIVE MORE WENT ON 2026-09-21**, all of them the restore's bookkeeping: ReplacedSlotFor (where
 //  a new record belonged, with the caret tie rule the panel was shown); AddReplacedChangeAt;
@@ -1405,6 +1376,44 @@ void SyncFoci(KCMStoryRow& row)
 	row.fFociSynced = kTrue;
 }
 
+/** Where a record whose words begin at `at` goes among the row's records (KCMEqualOrder.h's slot rule). */
+size_t SlotFor(const KCMStoryRow& row, TextIndex at)
+{
+	std::vector<int32> starts;
+	for (size_t i = 0; i < row.fEqual.size(); ++i)
+		starts.push_back(row.fEqual[i].fNowStart);
+	return KCMEqualSlotFor(starts, at);
+}
+
+/** What one write of KCM's says of a record, new or a twin written again: `live` the change it replaced, [nowStart, nowEnd)
+	where the Source's words now stand, `counter` the story's counter right after the write. */
+void WriteRecord(KCMEqualRecord& r, const KCMStoryChange& live, TextIndex nowStart, TextIndex nowEnd, uint32 counter, int32 counterKind)
+{
+	r.fLive = live;
+	r.fNowStart = nowStart;
+	r.fNowEnd = nowEnd;
+	r.fWrittenAt = counter;
+	r.fPutBackAt = 0;
+	r.fCounterKind = counterKind;
+	r.fChecked = kFalse;
+	r.fComparedLiveStart = -1;		// the comparison right after the write says where its twin stands now
+	r.fComparedLiveEnd = -1;
+}
+
+/** The row's live changes as the spans the merge and the map from the Source take: with the Source's ranges, so that a record
+	shown live hides its own twin, not another paragraph's row that happens to stand at the same Target caret (KCMEqualSpan). */
+std::vector<KCMEqualSpan> LiveSpans(const KCMStoryRow& row)
+{
+	std::vector<KCMEqualSpan> spans;
+	for (size_t i = 0; i < row.fChanges.size(); ++i)
+	{
+		const KCMStoryChange& c = row.fChanges[i];
+		spans.push_back(KCMEqualSpan(c.fTargetStart, c.fTargetEnd, static_cast<int32>(c.fWhat), static_cast<int32>(c.fKind), kFalse,
+									 c.fSourceStart, c.fSourceEnd));
+	}
+	return spans;
+}
+
 /** The record of `row` holding focus `focusId` (non-zero), else the one whose live change is the twin of `live` - or
 	nil. By the number first: a followed record's ranges move with the focus, a number does not. */
 KCMEqualRecord* FindRecord(KCMStoryRow& row, const KCMStoryChange& live, int32 focusId)
@@ -1430,7 +1439,8 @@ void TakeFocus(KCMStoryRow& row, KCMEqualRecord& r, int32 focusId)
 	row.fFociSynced = kFalse;
 }
 
-void ShiftRecordsFrom(KCMStoryRow& row, size_t from, int32 writeAt, int32 removed, int32 inserted);
+void ShiftRecordsFrom(KCMStoryRow& row, size_t from, int32 writeAt, int32 removed, int32 inserted,
+					  const std::vector<bool16>* skip = nil);
 
 /** The live changes and the records as ONE list in text order (KCMMergeEqual), each record placed where it
 	stands NOW - the Source's words while it is Standing, its live range otherwise.
@@ -1471,13 +1481,7 @@ void MergedOrder(KCMStoryRow& row, std::vector<KCMMergedRef>& out)
 		r.fPlacedForSource = standing;
 	}
 
-	// ★WITH THE SOURCE'S RANGES (2026-09-25 - KCMEqualSpan says why): a record shown live hides its own twin, not
-	//  another paragraph's row that happens to stand at the same Target caret.
-	std::vector<KCMEqualSpan> live;
-	for (size_t i = 0; i < row.fChanges.size(); ++i)
-		live.push_back(KCMEqualSpan(row.fChanges[i].fTargetStart, row.fChanges[i].fTargetEnd,
-									   static_cast<int32>(row.fChanges[i].fWhat), static_cast<int32>(row.fChanges[i].fKind), kFalse,
-									   row.fChanges[i].fSourceStart, row.fChanges[i].fSourceEnd));
+	const std::vector<KCMEqualSpan> live = LiveSpans(row);
 	std::vector<KCMEqualSpan> recs;
 	std::vector<int32> recIndex;		// recs[k] is row.fEqual[recIndex[k]] - the stale ones are left out
 	for (size_t i = 0; i < row.fEqual.size(); ++i)
@@ -1504,8 +1508,9 @@ void MergedOrder(KCMStoryRow& row, std::vector<KCMMergedRef>& out)
 }
 
 /** Slide the records from index `from` on - their place now AND their live range, since the live diff's
-	positions move by the same write and the twins have to keep matching. */
-void ShiftRecordsFrom(KCMStoryRow& row, size_t from, int32 writeAt, int32 removed, int32 inserted)
+	positions move by the same write and the twins have to keep matching. `skip`, when given, says of each record of the
+	row that it stays where it is. */
+void ShiftRecordsFrom(KCMStoryRow& row, size_t from, int32 writeAt, int32 removed, int32 inserted, const std::vector<bool16>* skip)
 {
 	std::vector<KCMEqualSpan> now, live;
 	for (size_t i = 0; i < row.fEqual.size(); ++i)
@@ -1518,7 +1523,7 @@ void ShiftRecordsFrom(KCMStoryRow& row, size_t from, int32 writeAt, int32 remove
 	for (size_t i = from; i < row.fEqual.size(); ++i)
 	{
 		// ★A FOLLOWED RECORD IS NOT SLID (2026-10-26): InDesign moved its focus with the write itself, and SyncFoci reads it.
-		if (row.fEqual[i].fFollowed)
+		if (row.fEqual[i].fFollowed || (skip != nil && (*skip)[i]))
 			continue;
 		// ★A RECORD THAT MOVED HAS ITS "=" READ AGAIN (2026-09-25): the reading is cached against the story's counter,
 		//   and a reading made at the old place - by the prune that runs before any reconcile - would otherwise stand
@@ -1541,6 +1546,8 @@ int32 KCMStoryList::GetMergedChangeCount(int32 nth)
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
 		return 0;
 	KCMStoryRow& row = gRows[nth];
+	if (row.fEqual.empty())
+		return static_cast<int32>(row.fRefusals.size() + row.fChanges.size());
 	std::vector<KCMMergedRef> order;
 	MergedOrder(row, order);
 	return static_cast<int32>(row.fRefusals.size() + order.size());
@@ -1560,6 +1567,11 @@ const KCMStoryChange* KCMStoryList::GetMergedChange(int32 nth, int32 which)
 	if (which < static_cast<int32>(row.fRefusals.size()))
 		return &row.fRefusals[which];
 	which -= static_cast<int32>(row.fRefusals.size());
+
+	// NO RECORDS, NOTHING TO MERGE: the list is the live changes. Whoever walks a row asks this of each of its changes (the
+	//   marks, the panel), and building the merge each time made that the square of the row's length.
+	if (row.fEqual.empty())
+		return (which < static_cast<int32>(row.fChanges.size())) ? &row.fChanges[static_cast<size_t>(which)] : nil;
 
 	// ★★THE THIRD LIST IS BACK (2026-09-24, stage 2 C): the "=" records (the places KCM wrote), merged with the live
 	//   ones in TEXT order - a record shown "=" stands where the Source's words are, one shown live stands for
@@ -1588,7 +1600,7 @@ const KCMEqualRecord* KCMStoryList::EqualAt(int32 nth, int32 which)
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()) || which < 0)
 		return nil;
 	KCMStoryRow& row = gRows[nth];
-	if (which < static_cast<int32>(row.fRefusals.size()))
+	if (which < static_cast<int32>(row.fRefusals.size()) || row.fEqual.empty())
 		return nil;
 	which -= static_cast<int32>(row.fRefusals.size());
 	std::vector<KCMMergedRef> order;
@@ -1624,8 +1636,8 @@ bool16 KCMStoryList::EveryChangeEqual(int32 nth)
 	if (nth < 0 || nth >= static_cast<int32>(gRows.size()))
 		return kFalse;
 	KCMStoryRow& row = gRows[nth];
-	if (!row.fRefusals.empty())
-		return kFalse;			// a "!" keeps the row's own sign
+	if (!row.fRefusals.empty() || row.fEqual.empty())
+		return kFalse;			// a "!" keeps the row's own sign; no record, no "="
 	std::vector<KCMMergedRef> order;
 	MergedOrder(row, order);	// every record reconciled against the armed Target, as GetMergedChange reads them
 	if (order.empty())
@@ -1664,15 +1676,7 @@ void KCMStoryList::AddEqual(int32 nth, const KCMStoryChange& live, TextIndex now
 	{
 		KCMEqualRecord& r = *twin;
 		const size_t i = static_cast<size_t>(twin - &row.fEqual[0]);
-		r.fLive = live;
-		r.fNowStart = nowStart;
-		r.fNowEnd = nowEnd;
-		r.fWrittenAt = counter;
-		r.fPutBackAt = 0;
-		r.fCounterKind = counterKind;
-		r.fChecked = kFalse;
-		r.fComparedLiveStart = -1;		// the comparison right after the write says where its twin stands now
-		r.fComparedLiveEnd = -1;
+		WriteRecord(r, live, nowStart, nowEnd, counter, counterKind);
 		// The followers were placed for the live words (a Standing record is never written again); this write
 		// put the Source's back, and MergedOrder's reconcile would do the same slide on the next read.
 		if (!r.fPlacedForSource)
@@ -1683,17 +1687,9 @@ void KCMStoryList::AddEqual(int32 nth, const KCMStoryChange& live, TextIndex now
 	}
 
 	// ★ITS SLOT IS DECIDED BY THE LIVE START (KCMEqualOrder.h): after every record standing at or before it.
-	std::vector<int32> starts;
-	for (size_t i = 0; i < row.fEqual.size(); ++i)
-		starts.push_back(row.fEqual[i].fNowStart);
-	const size_t slot = KCMEqualSlotFor(starts, live.fTargetStart);
+	const size_t slot = SlotFor(row, live.fTargetStart);
 	KCMEqualRecord rec;
-	rec.fLive = live;
-	rec.fNowStart = nowStart;
-	rec.fNowEnd = nowEnd;
-	rec.fWrittenAt = counter;
-	rec.fPutBackAt = 0;
-	rec.fCounterKind = counterKind;
+	WriteRecord(rec, live, nowStart, nowEnd, counter, counterKind);
 	rec.fPlacedForSource = kTrue;		// the followers are slid for the Source's words right here
 	rec.fFocusId = focusId;				// placed inside the write's step (FocusBeforeWrite / FocusAfterWrite)
 	rec.fFollowed = (focusId != 0) ? kTrue : kFalse;
@@ -1760,28 +1756,7 @@ void KCMStoryList::AddEqualGroup(int32 nth, const std::vector<KCMStoryChange>& l
 	// 2. every OTHER record slides once, by the whole write - never by one row of it after another, and never a row of
 	//    the group by another row of it (measured 2026-09-25: rejected, undone, rejected again, the second paragraph's
 	//    record was slid by the first's share and no longer knew its own live change - a second record was made beside it)
-	{
-		std::vector<KCMEqualSpan> now, live;
-		for (size_t i = 0; i < row.fEqual.size(); ++i)
-		{
-			now.push_back(KCMEqualSpan(row.fEqual[i].fNowStart, row.fEqual[i].fNowEnd));
-			live.push_back(KCMEqualSpan(row.fEqual[i].fLive.fTargetStart, row.fEqual[i].fLive.fTargetEnd));
-		}
-		KCMShiftEqualFrom(now, 0, tLo, tHi - tLo, sHi - sLo);
-		KCMShiftEqualFrom(live, 0, tLo, tHi - tLo, sHi - sLo);
-		for (size_t i = 0; i < row.fEqual.size(); ++i)
-		{
-			if (isMember[i] || row.fEqual[i].fFollowed)		// (a followed one: InDesign moved its focus with the write)
-				continue;
-			KCMEqualRecord& r = row.fEqual[i];
-			if (r.fNowStart != now[i].fStart || r.fNowEnd != now[i].fEnd)
-				r.fChecked = kFalse;
-			r.fNowStart = now[i].fStart;
-			r.fNowEnd = now[i].fEnd;
-			r.fLive.fTargetStart = live[i].fStart;
-			r.fLive.fTargetEnd = live[i].fEnd;
-		}
-	}
+	ShiftRecordsFrom(row, 0, tLo, tHi - tLo, sHi - sLo, &isMember);
 
 	// 3. each row of the group at its own share of the Source's range, its live range where its change would stand
 	//    with the rest of the group written (where its Source words are now) - the place Restore from Copy of that row
@@ -1796,29 +1771,16 @@ void KCMStoryList::AddEqualGroup(int32 nth, const std::vector<KCMStoryChange>& l
 		if (twinOf[k] >= 0)
 		{
 			KCMEqualRecord& r = row.fEqual[static_cast<size_t>(twinOf[k])];
-			r.fLive = placed;
-			r.fNowStart = nowStarts[k];
-			r.fNowEnd = nowEnd;
-			r.fWrittenAt = counter;
-			r.fPutBackAt = 0;
-			r.fCounterKind = counterKind;
+			WriteRecord(r, placed, nowStarts[k], nowEnd, counter, counterKind);
 			r.fPlacedForSource = kTrue;
-			r.fChecked = kFalse;
 			r.fLiveWords = liveWords[k];
 			r.fHasLiveWords = kTrue;
 			r.fCopy = (copies != nil) ? (*copies)[k] : KCMRecordCopy();	// a new write, a new copy (or none)
-			r.fComparedLiveStart = -1;		// the comparison right after the write says where its twin stands now
-			r.fComparedLiveEnd = -1;
 			TakeFocus(row, r, (focusIds != nil) ? (*focusIds)[k] : 0);
 			continue;
 		}
 		KCMEqualRecord rec;
-		rec.fLive = placed;
-		rec.fNowStart = nowStarts[k];
-		rec.fNowEnd = nowEnd;
-		rec.fWrittenAt = counter;
-		rec.fPutBackAt = 0;
-		rec.fCounterKind = counterKind;
+		WriteRecord(rec, placed, nowStarts[k], nowEnd, counter, counterKind);
 		rec.fPlacedForSource = kTrue;
 		rec.fLiveWords = liveWords[k];
 		rec.fHasLiveWords = kTrue;
@@ -1826,26 +1788,13 @@ void KCMStoryList::AddEqualGroup(int32 nth, const std::vector<KCMStoryChange>& l
 			rec.fCopy = (*copies)[k];
 		rec.fFocusId = (focusIds != nil) ? (*focusIds)[k] : 0;	// placed inside the write's step (FocusAfterWrite)
 		rec.fFollowed = (rec.fFocusId != 0) ? kTrue : kFalse;
-		std::vector<int32> starts;
-		for (size_t i = 0; i < row.fEqual.size(); ++i)
-			starts.push_back(row.fEqual[i].fNowStart);
-		const size_t slot = KCMEqualSlotFor(starts, nowStarts[k]);
+		const size_t slot = SlotFor(row, nowStarts[k]);
 		row.fEqual.insert(row.fEqual.begin() + static_cast<std::ptrdiff_t>(slot), rec);
 		for (size_t j = 0; j < twinOf.size(); ++j)		// a twin index at or after the slot moved down by one
 			if (twinOf[j] >= static_cast<int32>(slot))
 				++twinOf[j];
 	}
 	row.fFociSynced = kFalse;
-}
-
-/* RowOfTargetStory
-*/
-int32 KCMStoryList::RowOfTargetStory(UID storyUID)
-{
-	for (size_t i = 0; i < gRows.size(); ++i)
-		if (gRows[i].fStoryUID == storyUID && (gRows[i].fKinds & kKCMStoryKindRemoved) == 0)
-			return static_cast<int32>(i);
-	return -1;
 }
 
 /* NeedsCompareAgain
@@ -1916,20 +1865,17 @@ void KCMStoryList::MarkPutBack(int32 nth, const KCMEqualRecord& record, uint32 c
 		LetWriteFocus(nth, focusId);
 		return;
 	}
-	{
-		KCMEqualRecord& r = *found;
-		r.fPutBackAt = counter;
-		r.fComparedLiveStart = -1;		// the comparison right after the put-back says where its twin stands
-		r.fComparedLiveEnd = -1;
-		if (focusId != 0)
-			TakeFocus(row, r, focusId);	// placed inside Restore from Copy's step - its own, or one made for it
-		// ★fNowStart / fNowEnd STAY: they are where the Source's words stand WHILE THE RECORD IS STANDING, and an
-		//   undo of this put-back makes it standing again with nothing else to say where that is (measured 2026-09-24
-		//   with Redo from Word: overwritten here, the second redo was refused as "edited since"). Which range is shown or acted on is
-		//   the state's to choose (GetMergedChange), not this write's. ★NOR ARE THE FOLLOWERS SLID HERE: the
-		//   reconcile in MergedOrder does it on the next read, by the state - the same road an undo takes.
-		return;
-	}
+	KCMEqualRecord& r = *found;
+	r.fPutBackAt = counter;
+	r.fComparedLiveStart = -1;		// the comparison right after the put-back says where its twin stands
+	r.fComparedLiveEnd = -1;
+	if (focusId != 0)
+		TakeFocus(row, r, focusId);	// placed inside Restore from Copy's step - its own, or one made for it
+	// ★fNowStart / fNowEnd STAY: they are where the Source's words stand WHILE THE RECORD IS STANDING, and an
+	//   undo of this put-back makes it standing again with nothing else to say where that is (measured 2026-09-24
+	//   with Redo from Word: overwritten here, the second redo was refused as "edited since"). Which range is shown or acted on is
+	//   the state's to choose (GetMergedChange), not this write's. ★NOR ARE THE FOLLOWERS SLID HERE: the
+	//   reconcile in MergedOrder does it on the next read, by the state - the same road an undo takes.
 }
 
 /* PruneEqual
@@ -2040,13 +1986,7 @@ void KCMStoryList::FollowRecords(int32 nth, IDataBase* targetDB)
 
 	// The row's live changes as the comparison just found them - the map from the Source's positions to the Target's
 	// (KCMSourceToTargetCandidates). A Standing record is not among them: its place reads as the Source's.
-	std::vector<KCMEqualSpan> lives;
-	for (size_t k = 0; k < row.fChanges.size(); ++k)
-	{
-		const KCMStoryChange& c = row.fChanges[k];
-		lives.push_back(KCMEqualSpan(c.fTargetStart, c.fTargetEnd, static_cast<int32>(c.fWhat), static_cast<int32>(c.fKind),
-									 kFalse, c.fSourceStart, c.fSourceEnd));
-	}
+	const std::vector<KCMEqualSpan> lives = LiveSpans(row);
 
 	for (size_t i = 0; i < row.fEqual.size(); ++i)
 	{
@@ -2204,12 +2144,7 @@ void KCMStoryList::RecordPour(int32 nth, const std::vector<KCMStoryChange>& live
 		placed.fTargetStart = live.fSourceStart;
 		placed.fTargetEnd = live.fSourceStart + (live.fTargetEnd - live.fTargetStart);
 		KCMEqualRecord rec;
-		rec.fLive = placed;
-		rec.fNowStart = live.fSourceStart;
-		rec.fNowEnd = live.fSourceEnd;
-		rec.fWrittenAt = counters[k];
-		rec.fPutBackAt = 0;
-		rec.fCounterKind = counterKinds[k];
+		WriteRecord(rec, placed, live.fSourceStart, live.fSourceEnd, counters[k], counterKinds[k]);
 		rec.fPlacedForSource = kTrue;
 		rec.fLiveWords = liveWords[k];
 		rec.fHasLiveWords = kTrue;
@@ -2224,10 +2159,7 @@ void KCMStoryList::RecordPour(int32 nth, const std::vector<KCMStoryChange>& live
 		}
 		if (updated)
 			continue;
-		std::vector<int32> starts;
-		for (size_t i = 0; i < row.fEqual.size(); ++i)
-			starts.push_back(row.fEqual[i].fNowStart);
-		const size_t slot = KCMEqualSlotFor(starts, rec.fNowStart);
+		const size_t slot = SlotFor(row, rec.fNowStart);
 		row.fEqual.insert(row.fEqual.begin() + static_cast<std::ptrdiff_t>(slot), rec);
 	}
 }
@@ -2326,12 +2258,7 @@ void KCMStoryList::PlaceFociAtWriteEdge(int32 nth, const std::vector<int32>& wri
 		if (w != nil)
 			firstShifted = static_cast<size_t>(w - &row.fEqual[0]) + 1;
 		else
-		{
-			std::vector<int32> starts;
-			for (size_t i = 0; i < row.fEqual.size(); ++i)
-				starts.push_back(row.fEqual[i].fNowStart);
-			firstShifted = KCMEqualSlotFor(starts, writeAt);
-		}
+			firstShifted = SlotFor(row, writeAt);
 	}
 	for (size_t j = 0; j < row.fEqual.size(); ++j)
 	{
@@ -2479,7 +2406,7 @@ void KCMStoryList::RefreshRowFromDocument(int32 nth, IDataBase* targetDB)
 	// A story that has since been deleted answers kFalse and the row keeps what it had. That is the
 	// same rule the whole feature follows: a row the comparison found must not vanish because
 	// something about it could not be worked out a second time.
-	(void)ReadRowFromDocument(targetDB, gRows[nth], gRows[nth].fStoryUID);
+	(void)ReadRowFromDocument(targetDB, gRows[nth]);
 }
 
 /* ShutdownCleanup
@@ -2498,6 +2425,7 @@ void KCMStoryList::ShutdownCleanup()
 	gBuiltSource = nil;
 }
 
+#ifdef KCM_DIAG
 //----------------------------------------------------------------------------------------
 // RowsAsTsv -- the reading port. See the header for why it exists.
 //----------------------------------------------------------------------------------------
@@ -2525,9 +2453,7 @@ std::string Field(const PMString& value)
 
 std::string Num(int32 n)
 {
-	std::ostringstream s;
-	s << n;
-	return s.str();
+	return std::to_string(n);
 }
 
 /** Which change counters moved, as words - the raw material of the panel's Change column.
@@ -2743,5 +2669,6 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 	out.SetUTF8String(s);
 	out.SetTranslatable(kFalse);	// document text rides in here - see SetDocumentText's note
 }
+#endif // KCM_DIAG
 
 // End, KCMStoryList.cpp.

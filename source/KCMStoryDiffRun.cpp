@@ -2283,7 +2283,6 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 			//   none, and both return at once for it.
 			KCMStoryList::FollowRecords(i, targetDB);
 			KCMStoryList::PruneEqual(i, targetDB);
-			KCMStoryList::SetRowTargetTextCount(i, KCMStoryDiffRun::TextCountOf(UIDRef(targetDB, row->fStoryUID)));
 			// the state it was compared at, for the list to follow an Undo / Redo (KCMStoryFollowObserver - 2026-09-25)
 			KCMStoryList::SetRowComparedAt(i, KCMStoryDiffRun::CountForKind(UIDRef(targetDB, row->fStoryUID), kKCMStoryAttrRuby));
 			total += static_cast<int32>(changes.size());
@@ -2311,12 +2310,6 @@ int32 KCMStoryDiffRun::Run(IDataBase* targetDB, IDataBase* sourceDB, bool16* out
 // RunOne
 //----------------------------------------------------------------------------------------
 
-uint32 KCMStoryDiffRun::TextCountOf(const UIDRef& story)
-{
-	InterfacePtr<ITextModel> model(story, UseDefaultIID());
-	return (model != nil) ? model->GetTextChangeCount() : 0;
-}
-
 // (⛔**StillReplaced AND DropUndoneReplaced WENT ON 2026-09-21** with the restore. The first asked
 //  whether a change the reader had taken in was STANDING as taken in - by comparing the story's
 //  counter with the one recorded at the write (">=", not "==", measured on the application: a
@@ -2331,11 +2324,10 @@ uint32 KCMStoryDiffRun::CountForKind(const UIDRef& story, int32 kind)
 	// The header carries the measurement and the reasoning. Here: words are measured by the text
 	// counter, anything laid OVER the words by the aggregate - because the text counter does not
 	// move for a ruby or a kenten, so it can tell neither that one went in nor that it came out.
-	if (kind == kKCMStoryAttrNone)
-		return KCMStoryDiffRun::TextCountOf(story);
-
 	InterfacePtr<ITextModel> model(story, UseDefaultIID());
-	return (model != nil) ? static_cast<uint32>(model->GetChangeCount()) : 0;
+	if (model == nil)
+		return 0;
+	return static_cast<uint32>((kind == kKCMStoryAttrNone) ? model->GetTextChangeCount() : model->GetChangeCount());
 }
 
 int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 rowIndex)
@@ -2416,7 +2408,6 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	//   diff now finds nothing; one undone or put back has its twin among the changes just attached and is dropped, so
 	//   that the change is not shown twice.
 	KCMStoryList::PruneEqual(rowIndex, targetDB);
-	KCMStoryList::SetRowTargetTextCount(rowIndex, KCMStoryDiffRun::TextCountOf(UIDRef(targetDB, storyUID)));
 	// the state it was compared at, for the list to follow an Undo / Redo (KCMStoryFollowObserver - 2026-09-25)
 	KCMStoryList::SetRowComparedAt(rowIndex, KCMStoryDiffRun::CountForKind(UIDRef(targetDB, storyUID), kKCMStoryAttrRuby));
 	// ★THE SWEEP (2026-10-26 - KCMStoryList.h says why): a focus no record holds any more, let go.

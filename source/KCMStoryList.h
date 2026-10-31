@@ -30,7 +30,6 @@
 
 #include "PMString.h"
 #include "PMPoint.h"	// PBPMPoint - where a story begins, for the jump
-#include "UIDRef.h"
 #include "WideString.h"	// KCMEqualRecord::fLiveWords - the words KCM's write took out (2026-09-25)
 // (⛔WideString.h was included for KCMStoryChange::fBeforeRaw - the characters themselves rather
 //  than a quote of them - which went with the restore on 2026-09-21.)
@@ -533,17 +532,11 @@ struct KCMStoryRow
 		never disappear because the detail could not be worked out. */
 	std::vector<KCMStoryChange> fChanges;
 
-	/** The Target story's text change counter (ITextModel::GetTextChangeCount) at the moment
-		fChanges were built. 0 until the diff runs.
-		(⛔The restore read it to refuse writing into a story whose counter had moved since - the
-		 change's positions name the text as it was then. It went on 2026-09-21.) */
-	uint32		fTargetTextCount;
-
 	/** ★The story's AGGREGATE change counter (ITextModel::GetChangeCount) when fChanges were built, and every value it
 		has had at a comparison of this row (2026-09-25). The counter goes back on an Undo and forward again on a Redo,
 		to exactly the values it had; plain typing makes new ones. So "the story is back at a value it was compared at,
 		or below the last one" is an Undo or a Redo, and that is when the row is compared again on its own
-		(KCMStoryList::NeedsCompareAgain, KCMStoryFollowObserver). ⚠The aggregate and not fTargetTextCount's text
+		(KCMStoryList::NeedsCompareAgain, KCMStoryFollowObserver). ⚠The aggregate and not the text
 		counter: a ruby or a kenten does not move the text counter (KCMStoryDiffRun::CountForKind says so, measured). */
 	uint32				fAllCount;
 	std::vector<uint32>	fComparedAt;
@@ -636,7 +629,7 @@ struct KCMStoryRow
 	KCMStoryRow()
 		: fStoryUID(kInvalidUID), fSourceStoryUID(kInvalidUID), fKinds(kKCMStoryKindNone), fFrameUID(kInvalidUID),
 		  fPageUID(kInvalidUID), fPageIndex(kMaxInt32), fTextCompared(kFalse),
-		  fAttrKind(kKCMStoryAttrNone), fAttrKindCount(0), fHasTextChange(kFalse), fTargetTextCount(0), fAllCount(0),
+		  fAttrKind(kKCMStoryAttrNone), fAttrKindCount(0), fHasTextChange(kFalse), fAllCount(0),
 		  fFociSyncedAt(0), fFociSynced(kFalse) {}
 };
 
@@ -851,10 +844,6 @@ namespace KCMStoryList
 	*/
 	void SetRowChanges(int32 nth, const std::vector<KCMStoryChange>& changes, bool16 textCompared);
 
-	/** Record the Target story's text change counter for row nth (KCMStoryRow::fTargetTextCount),
-		read by the caller at the moment it attached the row's changes. Out-of-range nth is ignored. */
-	void SetRowTargetTextCount(int32 nth, uint32 count);
-
 	/** Record the story's aggregate change counter for row nth at the moment its changes were attached
 		(KCMStoryRow::fAllCount / fComparedAt - 2026-09-25). Out-of-range nth is ignored. */
 	void SetRowComparedAt(int32 nth, uint32 allCount);
@@ -863,26 +852,6 @@ namespace KCMStoryList
 	//  ReplacedSlotFor, AddReplacedChangeAt, ReplacedSlotOfMerged, RemoveReplacedChangeAt,
 	//  ClearReplacedChanges and ShiftReplacedChanges. They kept the row's record of what the reader
 	//  had taken in - in reading order, slid along by later writes in the same story.)
-
-	/** Mark the row of `storyUID` as one an import could not fill (kKCMStoryKindRefused), making the
-		row when the comparison built none - the story's counter did not move because nothing went in.
-		★The row is found BY ITS SOURCE STORY (fSourceStoryUID, 2026-10-26): `storyUID` is the import copy's story, and a
-		  row paired by place compares a Target story of another uid against it.
-
-		★**CALLED FROM Build AND NOWHERE ELSE** (2026-09-19): the list starts empty on every build,
-		  so the "!" rows are put back each time from KCMImportRefusals. ⚠Before the sort.
-		★★**A STORY THE DOCUMENT DOES NOT HOLD** (a file named after a uid that is not there, or names
-		  something that is not a story) gets a row that stands for the FILE: `textWhenNoStory` in the
-		  text cell, no frame, no page - **and fStoryUID = kInvalidUID**. That is the one value every
-		  reader of this list already passes over (the diff, the marks, the jump), so a uid that names
-		  nothing - or a different object - is never handed to the document.
-		@return the row's index, for AddRefusalChange. */
-	int32 AddRefusalRow(IDataBase* targetDB, UID storyUID, const PMString& textWhenNoStory);
-
-	/** One refusal under row `nth`: `kind` for the ID column, `whereAndWhy` for the text cell.
-		By index rather than by uid, because a row standing for a file has no uid. Out of range does
-		nothing. ⚠Before the sort, like AddRefusalRow: the index is only good until then. */
-	void AddRefusalChange(int32 nth, const PMString& kind, const PMString& whereAndWhy);
 
 	// ---- the "=" records: the places KCM wrote as the Source's (2026-09-24, stage 2 C - design section 15) ------
 
@@ -1064,9 +1033,6 @@ namespace KCMStoryList
 	void RecordPour(int32 nth, const std::vector<KCMStoryChange>& lives, const std::vector<WideString>& liveWords,
 					const std::vector<uint32>& counters, const std::vector<int32>& counterKinds);
 
-	/** The row of the Target's story `storyUID` (a row standing for a story only the Source has is not one), or -1. */
-	int32 RowOfTargetStory(UID storyUID);
-
 	/** ★Whether row `nth` has to be compared again because an Undo or a Redo moved its story (2026-09-25 - the list
 		followed nothing on Ctrl+Z: its "=" and its positions stayed as they were, and the panel's right-click then met
 		"the list was out of date"). kTrue when the story's AGGREGATE change counter (KCMStoryRow::fAllCount - the
@@ -1167,7 +1133,8 @@ namespace KCMStoryList
 	/** Empty the list during a controlled shutdown. See the file comment for why this exists. */
 	void ShutdownCleanup();
 
-	/** The whole list as tab-separated text, for app.kcmStoryRows.
+#ifdef KCM_DIAG
+	/** The whole list as tab-separated text, for app.kcmStoryRows (a test build's door, so a test build's code).
 
 		★★★**WHY A READING PORT AT ALL** (2026-09-08). The list's cells are DRAWN BY HAND
 		(ui/KCMStoryCellView), so nothing outside this plug-in can see what a row says: not the
@@ -1204,6 +1171,7 @@ namespace KCMStoryList
 		`uid` for a row paired by place, whose kinds say `ByPosition`), `-` on every other line. At the end so that the
 		readers that count columns from the left read what they always read. */
 	void RowsAsTsv(PMString& out);
+#endif // KCM_DIAG
 }
 
 #endif // __KCMStoryList_h__

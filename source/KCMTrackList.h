@@ -20,7 +20,6 @@
 #define __KCMTrackList_h__
 
 #include "PMString.h"
-#include "UIDRef.h"
 
 #include <vector>
 
@@ -86,13 +85,8 @@ namespace KCMTrackList
 	const KCMTrackAuthor*	GetAuthor(int32 a);
 	int32	GetTotalChangeCount();
 	int32	GetOtherRecordCount();
-	/** Every story the list names, once each. */
-	void	GetStoryUIDs(std::vector<UID>& out);
-	/** The Undo / Redo rule of KCMStoryList::NeedsCompareAgain, for one story: its aggregate change counter
-		(ITextModel::GetChangeCount) went below the value it was read at, or came back to one it was read at.
-		Plain typing makes new values and answers kFalse. */
-	bool16	NeedsReadAgain(UID storyUID, IDataBase* targetDB);
-	/** NeedsReadAgain for every story in the counter history - the listed ones and those that have lost their rows
+	/** The Undo / Redo rule of KCMStoryList::NeedsCompareAgain (the counter below where it was read, or back at a value it was
+		read at - plain typing makes new values) for every story in the counter history - the listed ones and those that have lost their rows
 		(2026-10-25: the Undo follower is told by the document now, which does not say which story). */
 	bool16	AnyNeedsReadAgain(IDataBase* targetDB);
 	/** After a read: every listed story's counter goes into its history - and every story's already in it (2026-10-25:
@@ -104,8 +98,10 @@ namespace KCMTrackList
 		(KCMTrackRead::RecordsMovedSinceRead). */
 	void	NoteRecordCount(int32 records);
 	int32	GetRecordCountAtRead();
-	/** The list as TSV for app.kcmStoryRows in the Track mode. */
+#ifdef KCM_DIAG
+	/** The list as TSV for app.kcmStoryRows in the Track mode (a test build's door, so a test build's code). */
 	void	RowsAsTsv(PMString& out);
+#endif
 	void	ShutdownCleanup();
 }
 

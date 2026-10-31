@@ -9,16 +9,19 @@
 #include "VCPlugInHeaders.h"
 
 #include "ITextModel.h"
+#ifdef KCM_DIAG
 #include "TextChar.h"			// kTextChar_Tab / _CR / _LF
 #include "WideString.h"
-#include "UIDRef.h"
+#endif
 
 #include <algorithm>
 #include <map>
 
 #include "KCMDiag.h"			// KCM_DIAG_LOG - test builds only (nothing in a shipping .pln)
 #include "KCMTrackList.h"
+#ifdef KCM_DIAG
 #include "KCMTrackPlan.h"		// KCMTrackChangeKind - the kind words
+#endif
 
 namespace
 {
@@ -43,6 +46,35 @@ uint32 CounterOf(IDataBase* db, UID story)
 	return (model != nil) ? model->GetChangeCount() : 0;
 }
 
+/** Every story the list names, once each. */
+void GetStoryUIDs(std::vector<UID>& out)
+{
+	out.clear();
+	for (size_t i = 0; i < gRows.size(); ++i)
+		if (std::find(out.begin(), out.end(), gRows[i].fRow.fStoryUID) == out.end())
+			out.push_back(gRows[i].fRow.fStoryUID);
+}
+
+/** The Undo / Redo rule of KCMStoryList::NeedsCompareAgain, for one story: its aggregate change counter
+	(ITextModel::GetChangeCount) went below the value it was read at, or came back to one it was read at.
+	Plain typing makes new values and answers kFalse. */
+bool16 NeedsReadAgain(UID storyUID, IDataBase* targetDB)
+{
+	std::map<UID, CounterHistory>::const_iterator it = gHistory.find(storyUID);
+	if (it == gHistory.end() || targetDB == nil)
+		return kFalse;
+	const uint32 now = CounterOf(targetDB, storyUID);
+	KCM_DIAG_LOG("track counters: story %u now %u last read at %u, %d value(s) read", (unsigned)storyUID.Get(), (unsigned)now,
+				 (unsigned)it->second.fLast, (int)it->second.fSeen.size());
+	if (now == it->second.fLast)
+		return kFalse;
+	if (now < it->second.fLast)
+		return kTrue;										// went back: an undo
+	return (std::find(it->second.fSeen.begin(), it->second.fSeen.end(), now) != it->second.fSeen.end())
+		? kTrue : kFalse;									// came back to a value read before: a redo
+}
+
+#ifdef KCM_DIAG
 const char* KindWord(int32 kind)
 {
 	switch (kind)
@@ -82,6 +114,7 @@ void AppendCell(PMString& out, const PMString& s)
 	c.SetTranslatable(kFalse);
 	out.Append(c);
 }
+#endif // KCM_DIAG
 }	// namespace
 
 void KCMTrackList::Set(const std::vector<KCMTrackAuthor>& authors, const std::vector<KCMTrackRow>& rows, int32 otherRecords)
@@ -120,30 +153,6 @@ int32 KCMTrackList::GetTotalChangeCount()
 	for (size_t i = 0; i < gRows.size(); ++i)
 		n += static_cast<int32>(gRows[i].fChanges.size());
 	return n;
-}
-
-void KCMTrackList::GetStoryUIDs(std::vector<UID>& out)
-{
-	out.clear();
-	for (size_t i = 0; i < gRows.size(); ++i)
-		if (std::find(out.begin(), out.end(), gRows[i].fRow.fStoryUID) == out.end())
-			out.push_back(gRows[i].fRow.fStoryUID);
-}
-
-bool16 KCMTrackList::NeedsReadAgain(UID storyUID, IDataBase* targetDB)
-{
-	std::map<UID, CounterHistory>::const_iterator it = gHistory.find(storyUID);
-	if (it == gHistory.end() || targetDB == nil)
-		return kFalse;
-	const uint32 now = CounterOf(targetDB, storyUID);
-	KCM_DIAG_LOG("track counters: story %u now %u last read at %u, %d value(s) read", (unsigned)storyUID.Get(), (unsigned)now,
-				 (unsigned)it->second.fLast, (int)it->second.fSeen.size());
-	if (now == it->second.fLast)
-		return kFalse;
-	if (now < it->second.fLast)
-		return kTrue;										// went back: an undo
-	return (std::find(it->second.fSeen.begin(), it->second.fSeen.end(), now) != it->second.fSeen.end())
-		? kTrue : kFalse;									// came back to a value read before: a redo
 }
 
 bool16 KCMTrackList::AnyNeedsReadAgain(IDataBase* targetDB)
@@ -187,6 +196,7 @@ int32 KCMTrackList::GetRecordCountAtRead()
 	return gRecordsAtRead;
 }
 
+#ifdef KCM_DIAG
 void KCMTrackList::RowsAsTsv(PMString& out)
 {
 	out.Clear();
@@ -233,6 +243,7 @@ void KCMTrackList::RowsAsTsv(PMString& out)
 		}
 	}
 }
+#endif // KCM_DIAG
 
 void KCMTrackList::ShutdownCleanup()
 {

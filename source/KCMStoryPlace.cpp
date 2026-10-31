@@ -18,6 +18,7 @@
 
 // General includes:
 #include "PMMatrix.h"
+#include "PMRect.h"
 #include "TransformUtils.h"		// ::InnerToPasteboardMatrix
 #include "Utils.h"
 
@@ -29,7 +30,7 @@
 // Project includes:
 #include "KCMCore.h"				// KCMFramePageUID - the page a Story row names
 #include "KCMDiag.h"				// KCM_DIAG_LOG / the place-pair-off switch (test builds only)
-#include "KCMPageMap.h"			// KCMBuildPairing / KCMBuildMasterPairing - the corresponding pages
+#include "KCMPageMap.h"			// KCMBuildFullPairingMap - the corresponding pages
 #include "KCMStoryPlacePairRule.h"	// the rule
 #include "KCMStoryPlace.h"
 
@@ -46,7 +47,7 @@ struct Place
 
 /** "Exactly the same place and size", standing there the same way: PMRect's own == (each side within kPMRealEpsilon -
 	PMRect.h, PMReal.h) and the same fOnPath - a frame's own words and the words on its path share the frame's box
-	(KCMStoryPlaceKey, KCMStoryPlace.h). */
+	(KCMStoryPlaceKey). */
 struct SamePlace
 {
 	bool operator()(const Place& a, const Place& b) const { return (a.fOnPath == b.fOnPath && a.fBox == b.fBox) ? true : false; }
@@ -73,10 +74,23 @@ UID HolderOf(ITextFrameColumn* column, bool16& outOnPath)
 	return (spline != nil) ? ::GetUID(spline) : kInvalidUID;
 }
 
-}	// anonymous namespace
+/** Where a story's first frame stands: the page it is on, its box on that page, and whether the story runs ON the
+	frame's path or inside it.
 
-/* KCMStoryPlaceKey
-*/
+	@param db the document that holds the story.
+	@param storyUID the story.
+	@param outPage [out] the page of the story's first text column (KCMFramePageUID - the page a Story row names).
+	@param outBox [out] the box of the item that holds that column - the frame the reader sees, found by the SDK's two
+		steps (ITOPFrameData::GetMainSplineItemUID for text on a path, else ITextUtils::QuerySplineFromTextFrame) - as its
+		PATH bounds (no stroke - the script's geometricBounds) in the page's own coordinates, measured from the page's
+		top-left corner. Through one matrix (the item's inner to the pasteboard, then the pasteboard to the page's inner),
+		so a rotated frame is boxed tight, as the script boxes it.
+	@param outOnPath [out] kTrue for words on a path (the column is the path's - ITOPFrameData), kFalse for words inside a
+		frame. ★ONE FRAME CAN CARRY ONE STORY OF EACH (2026-10-26, the final review - tests-place.ps1 P20): both stand at
+		the frame's box, so with the box alone they were two equal places on the page and neither paired. The pairing tells
+		them apart by this: inside pairs with inside, on the path with on the path.
+	@return kFalse when the story is not there, sits in no frame, its first frame is on no page (the pasteboard), or the
+		geometry cannot be read. The outs are left alone then. */
 bool16 KCMStoryPlaceKey(IDataBase* db, UID storyUID, UID& outPage, PMRect& outBox, bool16& outOnPath)
 {
 	if (db == nil || storyUID == kInvalidUID)
@@ -125,6 +139,19 @@ bool16 KCMStoryPlaceKey(IDataBase* db, UID storyUID, UID& outPage, PMRect& outBo
 	return kTrue;
 }
 
+/** KCMStoryPlaceKey with the trace line place-pair reads (`side` = target / source). */
+bool16 PlaceOf(IDataBase* db, UID story, const char* side, UID& outPage, Place& outPlace)
+{
+	if (!KCMStoryPlaceKey(db, story, outPage, outPlace.fBox, outPlace.fOnPath))
+		return kFalse;
+	KCM_DIAG_LOG("place key %s story=%u page=%u box=%.6f,%.6f,%.6f,%.6f path=%d", side, static_cast<unsigned>(story.Get()),
+				 static_cast<unsigned>(outPage.Get()), ::ToDouble(outPlace.fBox.Left()), ::ToDouble(outPlace.fBox.Top()),
+				 ::ToDouble(outPlace.fBox.Right()), ::ToDouble(outPlace.fBox.Bottom()), outPlace.fOnPath ? 1 : 0);
+	return kTrue;
+}
+
+}	// anonymous namespace
+
 /* KCMStoryPairByPlace
 */
 void KCMStoryPairByPlace(IDataBase* targetDB, IDataBase* sourceDB, std::vector<KCMStoryDiff>& diffs)
@@ -165,11 +192,8 @@ void KCMStoryPairByPlace(IDataBase* targetDB, IDataBase* sourceDB, std::vector<K
 		const UID story = diffs[added[k]].fStoryUID;
 		UID page = kInvalidUID;
 		Place place;
-		if (!KCMStoryPlaceKey(targetDB, story, page, place.fBox, place.fOnPath))
+		if (!PlaceOf(targetDB, story, "target", page, place))
 			continue;
-		KCM_DIAG_LOG("place key target story=%u page=%u box=%.6f,%.6f,%.6f,%.6f path=%d", static_cast<unsigned>(story.Get()),
-					 static_cast<unsigned>(page.Get()), ::ToDouble(place.fBox.Left()), ::ToDouble(place.fBox.Top()),
-					 ::ToDouble(place.fBox.Right()), ::ToDouble(place.fBox.Bottom()), place.fOnPath ? 1 : 0);
 		const std::map<UID, UID>::const_iterator partner = toSource.find(page);
 		if (partner == toSource.end())
 			continue;							// its page is compared against nothing: no place to pair on
@@ -182,11 +206,8 @@ void KCMStoryPairByPlace(IDataBase* targetDB, IDataBase* sourceDB, std::vector<K
 		const UID story = diffs[removed[k]].fStoryUID;	// a Removed diff names the SOURCE's story
 		UID page = kInvalidUID;
 		Place place;
-		if (!KCMStoryPlaceKey(sourceDB, story, page, place.fBox, place.fOnPath))
+		if (!PlaceOf(sourceDB, story, "source", page, place))
 			continue;
-		KCM_DIAG_LOG("place key source story=%u page=%u box=%.6f,%.6f,%.6f,%.6f path=%d", static_cast<unsigned>(story.Get()),
-					 static_cast<unsigned>(page.Get()), ::ToDouble(place.fBox.Left()), ::ToDouble(place.fBox.Top()),
-					 ::ToDouble(place.fBox.Right()), ::ToDouble(place.fBox.Bottom()), place.fOnPath ? 1 : 0);
 		sIds.push_back(story);
 		sPages.push_back(page);
 		sPlaces.push_back(place);
@@ -215,16 +236,8 @@ void KCMStoryPairByPlace(IDataBase* targetDB, IDataBase* sourceDB, std::vector<K
 		}
 		joined.insert(pairs[p].second);
 	}
-	std::vector<KCMStoryDiff> kept;
-	kept.reserve(diffs.size());
-	for (size_t i = 0; i < diffs.size(); ++i)
-	{
-		const bool16 goes = ((diffs[i].fKinds & kKCMStoryKindRemoved) != 0 && joined.count(diffs[i].fStoryUID) > 0)
-							? kTrue : kFalse;
-		if (!goes)
-			kept.push_back(diffs[i]);
-	}
-	diffs.swap(kept);
+	diffs.erase(std::remove_if(diffs.begin(), diffs.end(), [&joined](const KCMStoryDiff& d)
+		{ return (d.fKinds & kKCMStoryKindRemoved) != 0 && joined.count(d.fStoryUID) > 0; }), diffs.end());
 }
 
 // End, KCMStoryPlace.cpp.

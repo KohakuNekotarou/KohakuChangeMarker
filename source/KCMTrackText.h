@@ -37,8 +37,8 @@ namespace KCMTrackText
 	{
 		switch (kind)
 		{
-			case kKCMTrackInsert:	{ PMString s("+"); s.SetTranslatable(kFalse); return s; }
-			case kKCMTrackDelete:	{ PMString s("-"); s.SetTranslatable(kFalse); return s; }
+			case kKCMTrackInsert:	return FromUtf16(u"+", 1);
+			case kKCMTrackDelete:	return FromUtf16(u"-", 1);
 			case kKCMTrackMove:		return FromUtf16(u"\u00BB", 1);
 			default:				return FromUtf16(u"\u2260", 1);
 		}
