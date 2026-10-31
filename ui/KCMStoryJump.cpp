@@ -262,14 +262,18 @@ void ActivateDocument(IDataBase* db)
 	★The diff ran against the story as it was when the comparison did, and the reader may have
 	edited it since - a stale end would be refused by the selection suite, and a stale start would
 	select the wrong words silently.
+	⚠★★A PLACE PAST THE STORY'S END IS THE CARET BEFORE ITS CLOSING RETURN (2026-10-31, measured twice). A range may END at
+	TotalLength - Select All's own range takes the return - but a caret asked for THERE brought InDesign down inside
+	SetTextSelection (TEXT EDITOR.RPLN+0x5EE05; KCM M7's OP-14: the story cut short after the comparison, the row pressed).
 	(⛔A NEGATIVE `to` meant "to the end of the story" until 2026-10-25 - the whole-story double click's, gone that day.)
 */
 void ClampToStory(ITextModel* model, TextIndex& from, TextIndex& to)
 {
 	const TextIndex total = model->TotalLength();
+	const TextIndex lastCaret = (total > 0) ? (total - 1) : 0;
 	if (from < 0) from = 0;
 	if (to > total) to = total;
-	if (from > total) from = total;
+	if (from > lastCaret) from = to = lastCaret;
 	if (to < from) to = from;
 }
 
@@ -679,14 +683,18 @@ bool16 KCMStoryJumpToChange(int32 rowIndex, int32 changeIndex)
 	// ⇒ The overflow indicator is the one thing on the page that IS about this text. The model
 	//   works out where it is (KCMOversetPoint.cpp, restored from the retired Find Overset), and
 	//   the frame that shows it becomes the frame this jump goes to.
-	// ⚠**THE "+" OF A TABLE CELL PUSHED OUT WITH ITS ROW IS THE TABLE'S, NOT THE CELL'S** - the
-	//   walk climbs the anchors, which is also what InDesign's own preflight reports.
+	// ⚠**THE "+" OF A TABLE CELL PUSHED OUT WITH ITS ROW IS THE TABLE'S, NOT THE CELL'S**, and a
+	//   footnote's whose reference is overset is its reference's - the walk climbs the anchors,
+	//   which is also what InDesign's own preflight reports.
 	// ⚠The caret is still placed at the change itself further down: its position is correct even
 	//   when it is invisible, and it is what makes the selection right if the frame is later
 	//   made big enough. What changes here is only where the WINDOW goes.
+	// ★NOT GATED ON THE ROW'S OV (it was until 2026-10-31): the row's word is what the comparison saw (MarkOverset), and a
+	//   frame made smaller since left the press on page 1 with nothing said. A frame this asked of the composition is the
+	//   answer; none is overset - or placed nowhere, and then the walk below finds no "+" either.
 	PBPMPoint oversetPb;
 	bool16 wentToOverset = kFalse;
-	if (frameUID == kInvalidUID && change.fOverset)
+	if (frameUID == kInvalidUID)
 	{
 		UID plusFrame = kInvalidUID;
 		if (Utils<IKCMStoryEditsFacade>()->GetOversetPoint(db, row.fStoryUID, from, plusFrame, oversetPb)

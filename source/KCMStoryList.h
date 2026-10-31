@@ -215,8 +215,9 @@ struct KCMStoryChange
 		★**DECIDED ONCE, WHEN THE DIFF MAKES THE CHANGE**, and not asked again while the panel
 		draws. The question costs a parcel-list lookup, the row is drawn many times over, and a
 		"read-only" call that recomposes is a trap this SDK sets more than once
-		([[text-composition-damage-and-recompose]]). Every path that rebuilds a row runs the diff,
-		so the answer cannot go stale while the row stands.
+		([[text-composition-damage-and-recompose]]). Every path that rebuilds a row runs the diff.
+		⚠**SO IT IS WHAT THE COMPARISON SAW**, for the row's word alone: a frame made smaller since
+		moves the edge without rebuilding a row (MarkOverset), and the press asks the composition again.
 		⚠**A REPLACED change keeps the answer it had when it was taken in.** Writing different
 		words can in principle push a line over the edge; the row would then say OV a moment
 		later than it might. Refreshing the row settles it, and that is the same door everything

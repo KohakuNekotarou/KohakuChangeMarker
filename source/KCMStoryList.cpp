@@ -22,7 +22,6 @@
 #include "ITextModel.h"
 #include "ITextParcelList.h"	// QueryTextParcelList - the parcels a story flows through
 #include "ITextStoryThread.h"		// QueryStoryThread's answer: which thread (body, cell, footnote) holds an index (2026-09-12)
-#include "ITextStoryThreadDict.h"	// GetAnchorTextRange - where a table or footnote is anchored in the thread above it
 #include "IWaxGlyphs.h"			// GetEscapementAt - how far into the run one character sits
 #include "IWaxIterator.h"		// GetFirstWaxLine - the line a TextIndex was composed onto
 #include "IWaxLine.h"
@@ -32,7 +31,6 @@
 // General includes:
 #include "K2SmartPtr.h"			// K2::scoped_ptr - what NewWaxIterator hands back has to be deleted
 #include "PMMatrix.h"
-#include "RangeData.h"			// Text::StoryRange - what GetAnchorTextRange answers with
 #include "TextChar.h"			// kTextChar_Space - the boundary the readability test draws its line at; kTextChar_Table / kTextChar_TableContinued - a table's own characters
 #include "TextIterator.h"		// the character under a caret - is it a table's own (2026-09-24)
 #include "UnicodeClass.h"		// IsWhiteSpace
@@ -484,10 +482,10 @@ static void KCMRecomposeIfDamaged(IFrameList* frameList)
    ⚠**This crossing alone did NOT stop the crash** - the second crash, with it in place, died at
      the same instruction. QueryFrameContaining's own contract (IFrameList.h:120-125) admits an
      index in any thread and COMPOSES up to it, and that composition is what died; what stopped
-     it was leaving that call for the parcel route (KCMStoryFrameAt). This crossing is kept
-     because KCMStoryPointAt's wax reading is of the body, and the two readings must be of one
-     place: what the reader is sent to is the frame that holds the TABLE (its anchor character in
-     the body), which is where the cell is drawn.
+     it was leaving that call for the parcel route (KCMStoryFrameAt, which has asked the place's own
+     parcel, not its anchor's, since 2026-10-31). What is left of this crossing is KCMStoryPointAt's
+     second try: when a cell's or a note's own wax has no line for the character, the body's has one
+     for its anchor.
 
    @return the body index, or -1 when the index cannot be placed in the body at all (a thread whose
     dictionary answers "not anchored" while not being the body's own).
@@ -497,13 +495,10 @@ static TextIndex KCMPrimaryIndexOf(ITextModel* textModel, TextIndex index)
 	if (textModel == nil)
 		return -1;
 
-	// Bounded rather than while(true): a dictionary that anchors into its own thread would
-	// otherwise spin, and sixteen levels of nested tables is more than a document holds.
-	for (int32 depth = 0; depth < 16; ++depth)
+	for (int32 depth = 0; depth < kKCMThreadClimbLimit; ++depth)
 	{
 		// The body is [0, GetPrimaryStoryThreadSpan) - an index there is its own answer, and so
-		// is the caret position at its very end when the story has no threads beyond it
-		// (KCMStoryFrameAt's `>` test admits TotalLength for exactly that case).
+		// is the caret position at its very end when the story has no threads beyond it.
 		if (index < textModel->GetPrimaryStoryThreadSpan())
 			return index;
 
@@ -511,18 +506,10 @@ static TextIndex KCMPrimaryIndexOf(ITextModel* textModel, TextIndex index)
 		if (thread == nil)
 			return index;			// nothing claims it (the end-of-story caret) - as before
 
-		InterfacePtr<ITextStoryThreadDict> dict(::GetDataBase(textModel), thread->GetDictUID(), UseDefaultIID());
-		if (dict == nil)
-			return -1;
-
-		// ITextStoryThreadDict.h:86 - the body's own dictionary answers "not anchored"; a table's
-		// or a footnote's answers the range of its anchor character in the thread above it.
-		bool16 anchored = kFalse;
-		const Text::StoryRange anchor = dict->GetAnchorTextRange(&anchored);
-		if (!anchored)
+		TextIndex up = index;
+		if (!KCMThreadAnchorAt(textModel, index, up))
 			return (thread->GetDictUID() == ::GetUID(textModel)) ? index : -1;
-
-		index = anchor.Start(nil);	// RangeData::Start takes an optional Lean* out-parameter (RangeData.h:67)
+		index = up;
 	}
 	return -1;
 }
@@ -595,16 +582,11 @@ UID KCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index, bool16 caret)
 	if (textModel == nil || index > textModel->TotalLength())
 		return kInvalidUID;		// no such story here, or no such position in it any more
 
-	// @warning **THE TEST IS `>` AND NOT `>=`, DELIBERATELY.** TotalLength is a valid TextIndex --
-	//   it is where the caret stands after the last character, and a deletion at the very end of a
-	//   story is reported at exactly that position. Refusing it would send those rows to the story's
-	//   beginning instead of to the frame the edit is in. What is being kept out is an index from
-	//   ANOTHER length: the diff measured the older document as it was, and it may have been edited
-	//   since.
+	// @warning **THE TEST IS `>` AND NOT `>=`, DELIBERATELY.** TotalLength is the caret's place after
+	//   the story's closing return (KCMPlaceColumn answers it as the character before it). What is
+	//   being kept out is an index from ANOTHER length: the diff measured the older document as it
+	//   was, and it may have been edited since.
 
-	// ★A cell's or a footnote's index is asked as the index of its ANCHOR in the body, so that the
-	//   two readings of the composition (this and KCMStoryPointAt) are of one place, and that place
-	//   is one the body's wax can answer for (KCMPrimaryIndexOf, 2026-09-12).
 	// ★A CARET IN FRONT OF A TABLE IS THE CHARACTER BEFORE THE TABLE (2026-09-24, the header on
 	//   `caret`) - the one KCMStoryPointAt answers for, so that the spread this names and the point
 	//   that one names are of one place. Only for a caret: a row pointing AT the table hands in the
@@ -616,10 +598,6 @@ UID KCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index, bool16 caret)
 			index = after - 1;
 	}
 
-	index = KCMPrimaryIndexOf(textModel, index);
-	if (index < 0)
-		return kInvalidUID;
-
 	InterfacePtr<IFrameList> frameList(textModel->QueryFrameList());
 	if (frameList == nil || frameList->GetFrameCount() == 0)
 		return kInvalidUID;		// a real story placed in no frame: nowhere to go
@@ -630,36 +608,19 @@ UID KCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index, bool16 caret)
 	//   twice inside TEXT.RPLN under this function, both times on the first row of a table the user
 	//   had just added, and both times at the same instruction. QueryFrameContaining's contract
 	//   (IFrameList.h:120-125) admits an index in any thread and COMPOSES up to it, which is more
-	//   than this function wants: it wants to know which frame a body position is in, and the
+	//   than this function wants: it wants to know which frame a position is in, and the
 	//   parcel list answers exactly that - the same route KCMStoryStartPoint has always taken, and
-	//   the one the story rows' jump survived the same table on. ★Measured after the change
-	//   (2026-09-12, live): 24 changes walked with Next, 16 of them cells of the table that had
-	//   crashed the old route twice, and a breadcrumb probe (since removed) showed each cell index
-	//   crossing to its anchor and the parcel answering.
-	InterfacePtr<ITextParcelList> tpl(textModel->QueryTextParcelList(index));
-	if (tpl == nil)
-		return kInvalidUID;
-	InterfacePtr<IParcelList> pl(tpl, UseDefaultIID());
-	if (pl == nil)
-		return kInvalidUID;
-
-	// ★THE END OF THE STORY LEANS LEFT. A deletion at the very end is reported AT TotalLength -
-	//   the caret's place after the last character - which no parcel contains; the old route's `>`
-	//   test above admits it for exactly that row, and QueryFrameContaining used to answer for it.
-	//   GetParcelContainingLeanLeft is the parcel list's own word for "the parcel of the character
-	//   before this position" (ITextParcelList.h:92-94), so that row still lands in its frame
-	//   rather than falling back to the story's first (found in the recheck of 2026-09-12, after
-	//   the parcel route went in).
-	ParcelKey key = tpl->GetParcelContaining(index);
-	if (!key.IsValid() && index > 0)
-		key = tpl->GetParcelContainingLeanLeft(index);
-	if (!key.IsValid())
+	//   the one the story rows' jump survived the same table on.
+	// ★★THE PLACE'S OWN PARCEL, NOT ITS ANCHOR'S (2026-10-31, measured; until then a cell or a note was asked as the anchor
+	//   of its table or its reference): a table over two pages has its anchor on the first, so a row on the second named
+	//   the first page's frame - for the reach, too - and a cell pushed out with its row was "in" the frame its table
+	//   starts in, where the row's OV said it was nowhere. The row's OV and this are one question now.
+	// ★The caret alone leans left (KCMPlaceColumn): until then any character did, and the first overset one read as placed.
+	const UID columnUID = KCMPlaceColumn(textModel, index, caret);
+	if (columnUID == kInvalidUID)
 		return kInvalidUID;		// overset, or placed nowhere - the caller keeps its own fallback
 
 	// The parcel's page item is the text COLUMN; the frame the reader sees is its parent.
-	const UID columnUID = pl->GetParcelFrameUID(key);
-	if (columnUID == kInvalidUID)
-		return kInvalidUID;
 
 	InterfacePtr<IHierarchy> columnHierarchy(db, columnUID, UseDefaultIID());
 	if (columnHierarchy == nil)
@@ -708,8 +669,7 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
 	//   footnote's characters are composed into wax of their own, and that wax answers where the
 	//   character really stands - inside the table, which is where the reader wants the window.
 	//   Only when the wax has no line for it is the index crossed to its ANCHOR in the body
-	//   (KCMPrimaryIndexOf - the frame KCMStoryFrameAt named holds that anchor, so the point still
-	//   lands in the same frame). ⚠Trying the anchor FIRST would be a quiet regression: the anchor's
+	//   (KCMPrimaryIndexOf). ⚠Trying the anchor FIRST would be a quiet regression: the anchor's
 	//   own wax is THE TABLE FRAME'S LINE - a run with no glyphs whose origin is the table's top-left
 	//   corner (measured 2026-09-24; until then this sentence said the anchor has no wax at all, citing
 	//   a memory that never said so) - so the window would land on the table's corner instead of

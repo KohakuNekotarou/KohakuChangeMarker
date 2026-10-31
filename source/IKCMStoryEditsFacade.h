@@ -449,8 +449,9 @@ public:
 		@param at the TextIndex the change starts at.
 		@param outFrame the frame showing the "+".
 		@param outPb the "+" itself, in pasteboard coordinates.
-		@return kFalse when nothing of the thread, or of any table it sits in, is placed at all -
-			the caller then does what it did before (the story's first frame). */
+		@return kFalse when nothing of the thread, or of any thread it hangs from (a table, a
+			footnote's reference), is placed at all - the caller then does what it did before (the
+			story's first frame). */
 	virtual bool16	GetOversetPoint(IDataBase* db, UID storyUID, TextIndex at,
 									UID& outFrame, PBPMPoint& outPb) = 0;
 

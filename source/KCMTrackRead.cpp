@@ -35,7 +35,8 @@
 #include "KCMCore.h"				// KCMIsDocDBOpen - neither document is trusted to be open
 #include "KCMDiag.h"				// KCM_DIAG_LOG - test builds only (nothing in a shipping .pln)
 #include "KCMProgressBar.h"			// KCMProgressStepper - the bar after kKCMProgressBarDelayMs, as the Story diff has
-#include "KCMStoryList.h"			// KCMStoryList::ReadRowForStory, KCMStoryFrameAt
+#include "KCMOversetPoint.h"		// KCMIsTextIndexOverset
+#include "KCMStoryList.h"			// KCMStoryList::ReadRowForStory
 #include "KCMStoryKinds.h"
 #include "KCMTrackList.h"
 #include "KCMTrackPlan.h"
@@ -219,7 +220,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 		return 0;
 	}
 
-	IDataBase::SaveRestoreModifiedState dirtyGuard(targetDB);	// KCMStoryFrameAt composes (the overset test)
+	IDataBase::SaveRestoreModifiedState dirtyGuard(targetDB);	// KCMIsTextIndexOverset composes
 	Utils<ITrackChangeUtils> utils;
 	InterfacePtr<IStoryList> stories(targetDB, targetDB->GetRootUID(), UseDefaultIID());
 	const int32 count = (stories != nil) ? stories->GetAllTextModelCount() : 0;
@@ -415,7 +416,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 				sc.fOtherText.SetTranslatable(kFalse);
 				sc.fOtherTextPost = sc.fTextPost;
 				// Overset: a change composed into no frame (the jump then goes to the "+").
-				sc.fOverset = (!p.fHidden && KCMStoryFrameAt(targetDB, storyRef.GetUID(), from, to <= from) == kInvalidUID) ? kTrue : kFalse;
+				sc.fOverset = (!p.fHidden && KCMIsTextIndexOverset(model, from, (to <= from) ? kTrue : kFalse)) ? kTrue : kFalse;
 				// No place in an original: a Track listing has no Source.
 				sc.fSourceStart = sc.fSourceEnd = 0;
 				row.fChanges.push_back(ch);

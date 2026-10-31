@@ -1324,10 +1324,13 @@ bool ChangeIsBefore(const KCMStoryChange& x, const KCMStoryChange& y)
    Says of each change whether the text it names is composed anywhere the reader can see it.
 
    ★**ONE PASS, HERE, RATHER THAN A QUESTION THE PANEL ASKS WHILE IT DRAWS.** The list is drawn
-   many times over between comparisons and the answer cannot change in between: every road that
-   rebuilds a row runs the diff, and the diff runs this. (The cost is a parcel-list lookup per
-   change; asked from the cell drawing it would be one per change per repaint, and worse, a
-   "read-only" call in a draw path is how this SDK gets talked into recomposing.)
+   many times over between comparisons, and every road that rebuilds a row runs the diff, and the
+   diff runs this. (The cost is a parcel-list lookup per change, and composing what is damaged up to
+   it; asked from the cell drawing it would be one per change per repaint, and worse, a "read-only"
+   call in a draw path is how this SDK gets talked into recomposing.)
+   ⚠**SO IT SAYS WHAT WAS TRUE AT THE COMPARISON.** A frame made smaller, or text typed above the
+   change, moves the edge without touching this row (measured 2026-10-31) - the ID column keeps its
+   word until the next Refresh. The press does not rely on it: KCMStoryJumpToChange asks again.
 
    ⚠**THE TARGET SIDE ONLY.** A change's fTargetStart names the newer document, which is the one
    with frames on screen; the older side is a task-start copy with no window at all for a
@@ -1350,7 +1353,7 @@ void MarkOverset(IDataBase* targetDB, UID storyUID, std::vector<KCMStoryChange>&
 		TextIndex from = changes[i].fTargetStart;
 		TextIndex to = changes[i].fTargetEnd;
 		KCMShownSpan(changes[i].fBreakAt, from, to);
-		changes[i].fOverset = KCMIsTextIndexOverset(model, from);
+		changes[i].fOverset = KCMIsTextIndexOverset(model, from, (to <= from) ? kTrue : kFalse);
 	}
 }
 
