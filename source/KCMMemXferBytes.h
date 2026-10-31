@@ -50,7 +50,6 @@ class KCMMemXferBytes : public IXferBytes
 {
 public:
 	KCMMemXferBytes();
-	virtual ~KCMMemXferBytes();
 
 	/** See IXferBytes::Read. Reads what is left from the current position; a request for more
 		than that transfers what there is and leaves the stream at end-of-stream.

@@ -66,7 +66,6 @@
 #include "KCMStoryList.h"          // KCMStoryList::ShutdownCleanup (letting go of the rows' PMStrings)
 #include "KCMTrackList.h"          // KCMTrackList::ShutdownCleanup - the Track mode's rows, the same rule
 #include "KCMStoryTextImport.h"    // KCMClearImportRefusals - what the last import could not put in (PMStrings again)
-#include "KCMSourceCache.h"        // KCMSourceCacheClear - the Source side's text cache
 #include "KCMCopyStore.h"          // KCMCopyStore::ShutdownCleanup - the copies Restore from Copy pastes back
 #include "KCMResourceStore.h"      // the Resources list, emptied on the same routes
 #include "KCMStoryMarker.h"        // KCMStoryMarker::Shutdown (the Story mode's marks are never drawn again)
@@ -685,8 +684,6 @@ void KCMPeekStartup::Shutdown()
 	KCMResourceStore::ShutdownCleanup();	// and the Resources list's values, and why it has none
 	// What the last import could not put in - PMStrings again, the same rule.
 	KCMClearImportRefusals();
-	// The Source side's text cache (KCMSourceCache.h): maps of strings, the same rule. It only empties a container.
-	KCMSourceCacheClear();
 	// The copy stores Apply This Change filled for Restore from Copy (KCMCopyStore.h) - each holds a data
 	// exchange controller and its scrap database, let go (Cleanup, Release) while the session is whole. The records name
 	// copies by number only, so the order against KCMStoryList::ShutdownCleanup above does not matter.

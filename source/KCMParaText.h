@@ -700,11 +700,10 @@ struct LayerPlan
 	@param changedIsWarichu kTrue for a warichu change, kFalse for a tate-chu-yoko.
 	@param warichu / tcy this side's paragraph's spans of each kind, in order.
 	@param start / len the change's range on this side, in the paragraph's code points.
-	@param present whether this side carries the mark.
-	@param paraLen the paragraph's length in code points. */
+	@param present whether this side carries the mark. */
 inline void PlanLayers(bool16 changedIsWarichu, const KCMAttrSpanList& warichu,
 					   const KCMAttrSpanList& tcy, int32 start, int32 len, bool16 present,
-					   int32 paraLen, LayerPlan& out)
+					   LayerPlan& out)
 {
 	out = LayerPlan();
 	const KCMAttrSpanList& own = changedIsWarichu ? warichu : tcy;
@@ -1060,56 +1059,6 @@ inline bool16 IsObjectCharacter(int32 cp)
 		default:
 			return kFalse;
 	}
-}
-
-/** kTrue when the words of one run may be written back across it: the two sides stand in the same
-	PLACES (see ParaRegion), or neither side involves a place other than the body.
-
-	★★**MEASURED 2026-09-16: A DELETED TABLE'S CELL "RESTORED" INTO NOWHERE.** The table was gone,
-	  so its cells' paragraphs had no paragraph of their own on the target side; the change's
-	  position fell back to the end of the story, "Restored 2 character(s)" was reported, and
-	  neither the DOM nor a snippet export could find the words afterwards. The cell cannot be put
-	  back by writing text - the table is an object - so the change is not offered.
-	★**A FOOTNOTE IS A PLACE THE SAME WAY**, and a deleted footnote's paragraphs have the same
-	  nowhere to go.
-
-	@param aStart/aCount the run on the SOURCE side, in paragraphs.
-	@param bStart/bCount the run on the TARGET side. ⚠**WHEN bCount IS 0 the words would go in at
-		the start of paragraph bStart**, so that paragraph's place is what they would land in, and
-		it is compared: a body paragraph deleted just before a table's cells would otherwise be
-		written into the first cell. ⚠aCount 0 is NOT treated the same way - restoring an insertion
-		deletes the target's words where they stand, and nothing lands anywhere.
-	@return kFalse only when a cell or a footnote is involved and the places disagree. The body
-		against the body is not this function's question, and answers kTrue. */
-inline bool16 WordsCanBeWrittenAcross(const std::vector<KCMParaAttrs>& sourceAttrs,
-									  int32 aStart, int32 aCount,
-									  const std::vector<KCMParaAttrs>& targetAttrs,
-									  int32 bStart, int32 bCount)
-{
-	std::vector<ParaRegion> aRegions;
-	std::vector<ParaRegion> bRegions;
-	ParagraphRegions(sourceAttrs, aStart, aCount, aRegions);
-	if (bCount == 0 && aCount > 0 && bStart >= 0 && static_cast<size_t>(bStart) < targetAttrs.size())
-		ParagraphRegions(targetAttrs, bStart, 1, bRegions);		// where the words would land
-	else
-		ParagraphRegions(targetAttrs, bStart, bCount, bRegions);
-
-	bool16 containerInvolved = kFalse;
-	for (size_t i = 0; i < aRegions.size() && !containerInvolved; ++i)
-		if (aRegions[i].fTable != KCMParaAttrs::kNotACell || aRegions[i].fFootnote != KCMParaAttrs::kNotAFootnote)
-			containerInvolved = kTrue;
-	for (size_t i = 0; i < bRegions.size() && !containerInvolved; ++i)
-		if (bRegions[i].fTable != KCMParaAttrs::kNotACell || bRegions[i].fFootnote != KCMParaAttrs::kNotAFootnote)
-			containerInvolved = kTrue;
-	if (!containerInvolved)
-		return kTrue;
-
-	if (aRegions.size() != bRegions.size())
-		return kFalse;
-	for (size_t i = 0; i < aRegions.size(); ++i)
-		if (!aRegions[i].SamePlaceAs(bRegions[i]))
-			return kFalse;
-	return kTrue;
 }
 
 /** Where an offset into that joined string lands in the document, as a TextIndex.

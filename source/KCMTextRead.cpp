@@ -43,7 +43,6 @@
 #include "WideString.h"
 
 #include <algorithm>
-#include <sstream>		// the kenten kind table's "unknown" spelling
 
 // Project includes:
 #include "KCMObjectPrint.h"		// KCMObjectPrintOf - an object placed in the text, its fingerprint (2026-10-27)
@@ -368,9 +367,49 @@ std::string KentenKindName(int16 kind)
 		default:									break;
 	}
 
-	std::ostringstream unknown;
-	unknown << "Kind" << kind;
-	return unknown.str();
+	return "Kind" + std::to_string(kind);
+}
+
+/* WalkCharAttrRuns
+   The walk every character attribute here is read by (kenten, warichu, tate-chu-yoko). An attribute has no runs of its own, so the
+   walk is told where to stop by the strand the attributes SIT ON (kCharAttrStrandBoss), and `visit` asks the scanner over each
+   stretch - visit(scanner, at, length).
+
+   ⚠BOTH ARE ASKED, AND THE SHORTER ONE WINS. A kenten can come from a character style or from a local override, so a walk that
+    stepped by only one of them would step straight over a change in the other.
+*/
+template <typename Visit>
+void WalkCharAttrRuns(ITextModel* model, Visit visit)
+{
+	InterfacePtr<IAttributeStrand> strand(
+		(IAttributeStrand*)model->QueryStrand(kCharAttrStrandBoss, IID_IATTRIBUTESTRAND));
+	if (strand == nil)
+		return;
+
+	InterfacePtr<IComposeScanner> scanner(model, UseDefaultIID());
+	if (scanner == nil)
+		return;
+
+	const TextIndex total = model->TotalLength();
+	for (TextIndex i = 0; i < total; )
+	{
+		int32 styleLen = 0;
+		int32 overrideLen = 0;
+		strand->GetStyleUID(i, &styleLen);
+		strand->GetLocalOverrides(i, &overrideLen);
+
+		int32 len = styleLen;
+		if (overrideLen > 0 && (len <= 0 || overrideLen < len))
+			len = overrideLen;
+		if (len <= 0)
+			break;					// the strand has nothing further to say - the official stop
+		if (i + len > total)
+			len = static_cast<int32>(total - i);
+
+		visit(static_cast<IComposeScanner*>(scanner), i, len);
+
+		i += len;
+	}
 }
 
 /* ScanKenten
@@ -402,34 +441,8 @@ std::string KentenKindName(int16 kind)
 */
 void ScanKenten(ITextModel* model, std::vector<AttrRun>& out)
 {
-	InterfacePtr<IAttributeStrand> strand(
-		(IAttributeStrand*)model->QueryStrand(kCharAttrStrandBoss, IID_IATTRIBUTESTRAND));
-	if (strand == nil)
-		return;
-
-	InterfacePtr<IComposeScanner> scanner(model, UseDefaultIID());
-	if (scanner == nil)
-		return;
-
-	const TextIndex total = model->TotalLength();
-	for (TextIndex i = 0; i < total; )
+	WalkCharAttrRuns(model, [&out](IComposeScanner* scanner, TextIndex i, int32 len)
 	{
-		// ⚠BOTH ARE ASKED, AND THE SHORTER ONE WINS. A kenten can come from a character style or
-		//   from a local override, so a walk that stepped by only one of them would step straight
-		//   over a change in the other.
-		int32 styleLen = 0;
-		int32 overrideLen = 0;
-		strand->GetStyleUID(i, &styleLen);
-		strand->GetLocalOverrides(i, &overrideLen);
-
-		int32 len = styleLen;
-		if (overrideLen > 0 && (len <= 0 || overrideLen < len))
-			len = overrideLen;
-		if (len <= 0)
-			break;					// the strand has nothing further to say - the official stop
-		if (i + len > total)
-			len = static_cast<int32>(total - i);
-
 		const TextIndex end = i + len;
 
 		InterfacePtr<const IAttrReport> kindAttr(
@@ -491,9 +504,7 @@ void ScanKenten(ITextModel* model, std::vector<AttrRun>& out)
 				out.push_back(run);		// fGroup stays kFalse - kenten has no group/mono
 			}
 		}
-
-		i += len;
-	}
+	});
 }
 
 /* ScanBoolAttribute
@@ -521,31 +532,8 @@ void ScanKenten(ITextModel* model, std::vector<AttrRun>& out)
 */
 void ScanBoolAttribute(ITextModel* model, ClassID attribute, std::vector<AttrRun>& out)
 {
-	InterfacePtr<IAttributeStrand> strand(
-		(IAttributeStrand*)model->QueryStrand(kCharAttrStrandBoss, IID_IATTRIBUTESTRAND));
-	if (strand == nil)
-		return;
-
-	InterfacePtr<IComposeScanner> scanner(model, UseDefaultIID());
-	if (scanner == nil)
-		return;
-
-	const TextIndex total = model->TotalLength();
-	for (TextIndex i = 0; i < total; )
+	WalkCharAttrRuns(model, [attribute, &out](IComposeScanner* scanner, TextIndex i, int32 len)
 	{
-		int32 styleLen = 0;
-		int32 overrideLen = 0;
-		strand->GetStyleUID(i, &styleLen);
-		strand->GetLocalOverrides(i, &overrideLen);
-
-		int32 len = styleLen;
-		if (overrideLen > 0 && (len <= 0 || overrideLen < len))
-			len = overrideLen;
-		if (len <= 0)
-			break;
-		if (i + len > total)
-			len = static_cast<int32>(total - i);
-
 		InterfacePtr<const IAttrReport> report(scanner->QueryAttributeAt(i, i + len, attribute));
 		InterfacePtr<const ITextAttrBoolean> on(report, UseDefaultIID());
 
@@ -564,9 +552,7 @@ void ScanBoolAttribute(ITextModel* model, ClassID attribute, std::vector<AttrRun
 				out.push_back(run);
 			}
 		}
-
-		i += len;
-	}
+	});
 }
 
 /* ScanNotes
@@ -869,12 +855,7 @@ void ClosePara(std::vector<std::string>& outParas,
 	for (int32 k = 0; k < leadingAnchors; ++k)
 		attrs.fTableAnchorsAt.push_back(0);
 	for (size_t k = 0; k < anchors.size(); ++k)
-	{
-		int32 before = 0;
-		while (before < static_cast<int32>(uncounted.size()) && uncounted[static_cast<size_t>(before)] < anchors[k])
-			++before;
-		attrs.fTableAnchorsAt.push_back(static_cast<int32>(anchors[k] - paraStart) - before);
-	}
+		attrs.fTableAnchorsAt.push_back(static_cast<int32>(anchors[k] - paraStart) - CountUncounted(uncounted, anchors[k]));
 
 	// ⚠ONE CURSOR EACH - see AttrWalk, which is where they live now.
 	// ★**THE NOTE MARKERS GO THROUGH THE SAME DOOR** as ruby and kenten (2026-09-08), so a marker

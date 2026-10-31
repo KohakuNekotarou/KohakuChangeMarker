@@ -67,7 +67,6 @@
 #define __KCMTextRead_h__
 
 #include "BaseType.h"		// int32, bool16
-#include "OMTypes.h"		// nil. @warning BaseType.h does NOT define it (the same note as KCMParaText.h)
 
 #include <string>
 #include <vector>

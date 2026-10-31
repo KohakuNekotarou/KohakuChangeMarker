@@ -42,8 +42,6 @@ public:
 	/** Does this position stand in text the page does not set? */
 	bool16 Contains(TextIndex at) const;
 
-	bool16 IsEmpty() const { return fRanges.empty() ? kTrue : kFalse; }
-
 private:
 	std::vector<std::pair<TextIndex, TextIndex> > fRanges;	// [start, end)
 };

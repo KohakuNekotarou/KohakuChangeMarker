@@ -24,12 +24,6 @@ KCMMemXferBytes::KCMMemXferBytes()
 {
 }
 
-/* Destructor
-*/
-KCMMemXferBytes::~KCMMemXferBytes()
-{
-}
-
 /* Read
 */
 uint32 KCMMemXferBytes::Read(void* buffer, uint32 num)

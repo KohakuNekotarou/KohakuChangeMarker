@@ -18,11 +18,10 @@
 //  (KCMStoryStamp.h, "READING COUNTERS COMPOSES NOTHING"). A document with three edited stories does
 //  three comparisons however long it is.
 //
-//  @warning **A STORY THAT CANNOT BE COMPARED KEEPS ITS ROW AND LOSES ITS DETAIL.** Three things
-//   end that way -- the story has no partner in the older document (it was added), the edit
-//   distance runs past KCMTextDiff's limit, or the length check below fails. In every one of
-//   them the row still appears in the panel, with no children. A story that the counters say
-//   changed must never vanish because the detail could not be worked out.
+//  @warning **A STORY THAT CANNOT BE COMPARED KEEPS ITS ROW AND LOSES ITS DETAIL.** Two things end
+//   that way -- the story has no partner in the older document (it was added), or it cannot be
+//   read. In either the row still appears in the panel, with no children. A story that the
+//   counters say changed must never vanish because the detail could not be worked out.
 //
 //========================================================================================
 

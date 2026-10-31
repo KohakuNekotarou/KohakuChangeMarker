@@ -94,21 +94,7 @@ bool16 KCMSkippedText::Build(ITextModel* model)
 		}
 	}
 
-	// ---- 3. where each footnote's reference stands (the thread IS the reference's boss) --------------
-	std::map<UID, TextIndex> refAt;
-	{
-		Utils<ITextUtils> textUtils;
-		OwnedItemDataList owned;
-		if (textUtils != nil && total > 0)
-			textUtils->CollectOwnedItems(model, 0, total - 1, &owned);
-		for (int32 k = 0; k < static_cast<int32>(owned.size()); ++k)
-		{
-			if (owned[k].fClassID == kFootnoteReferenceBoss)
-				refAt[owned[k].fUID] = owned[k].fAt;
-		}
-	}
-
-	// ---- 4. the seed: a thread that is not the body, not a table's cell and not a footnote ------------
+	// ---- 3. the seed: a thread that is not the body, not a table's cell and not a footnote ------------
 	//   The same test KCMTextRead applies to step over it, stated in terms of what it is NOT - the body
 	//   is the thread that starts at zero, a cell lies in a table's block, a footnote is its own class.
 	for (size_t i = 0; i < threads.size(); ++i)
@@ -121,6 +107,22 @@ bool16 KCMSkippedText::Build(ITextModel* model)
 			inTable = (t.fStart >= tables[k].fBlockStart && t.fStart < tables[k].fBlockEnd) ? kTrue : kFalse;
 		if (!inTable)
 			fRanges.push_back(std::make_pair(t.fStart, t.fEnd));
+	}
+	if (fRanges.empty())
+		return kTrue;		// nothing skipped, so nothing stands in it: almost every story stops here
+
+	// ---- 4. where each footnote's reference stands (the thread IS the reference's boss) --------------
+	std::map<UID, TextIndex> refAt;
+	{
+		Utils<ITextUtils> textUtils;
+		OwnedItemDataList owned;
+		if (textUtils != nil && total > 0)
+			textUtils->CollectOwnedItems(model, 0, total - 1, &owned);
+		for (int32 k = 0; k < static_cast<int32>(owned.size()); ++k)
+		{
+			if (owned[k].fClassID == kFootnoteReferenceBoss)
+				refAt[owned[k].fUID] = owned[k].fAt;
+		}
 	}
 
 	// ---- 5. and what stands inside, until nothing more is added --------------------------------------

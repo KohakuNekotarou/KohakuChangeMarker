@@ -179,8 +179,6 @@ std::u16string SortKey(const PMString& s)
 // records a copy kept although every change was rejected, as well, until the copy went on 2026-10-27.)
 int32 CountRecords(IDataBase* db)
 {
-	if (db == nil)
-		return 0;
 	InterfacePtr<IStoryList> stories(db, db->GetRootUID(), UseDefaultIID());
 	const int32 count = (stories != nil) ? stories->GetAllTextModelCount() : 0;
 	int32 n = 0;
@@ -296,10 +294,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 			}
 			WideString del;
 			if (r.fKind == kKCMTrackRecDelete)
-			{
 				del = DeletedText(model, utils, it, at);
-				r.fLen = del.CharCount();
-			}
 			else
 				r.fLen = len;
 			recs.push_back(r);
@@ -440,17 +435,22 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 		}
 	}
 
-	// Authors by name; their rows consecutive, by page then story; colours onto each change.
-	std::vector<int32> order(authors.size());
-	for (size_t i = 0; i < order.size(); ++i)
-		order[i] = static_cast<int32>(i);
+	// The authors with a row (one whose only records were left out has none), by name; their rows consecutive, by page
+	// then story; colours onto each change.
+	std::vector<bool16> hasRow(authors.size(), kFalse);
+	for (size_t r = 0; r < rows.size(); ++r)
+		hasRow[static_cast<size_t>(rows[r].fAuthor)] = kTrue;
+	std::vector<int32> order;
+	for (size_t i = 0; i < authors.size(); ++i)
+		if (hasRow[i])
+			order.push_back(static_cast<int32>(i));
 	std::sort(order.begin(), order.end(), [&](int32 x, int32 y) { return SortKey(authors[x].fName) < SortKey(authors[y].fName); });
-	std::vector<int32> newIndex(authors.size());
-	std::vector<KCMTrackAuthor> sorted;
+	std::vector<int32> newIndex(authors.size(), -1);
+	std::vector<KCMTrackAuthor> kept;
 	for (size_t i = 0; i < order.size(); ++i)
 	{
 		newIndex[static_cast<size_t>(order[i])] = static_cast<int32>(i);
-		sorted.push_back(authors[static_cast<size_t>(order[i])]);
+		kept.push_back(authors[static_cast<size_t>(order[i])]);
 	}
 	for (size_t r = 0; r < rows.size(); ++r)
 	{
@@ -464,16 +464,10 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 		if (x.fRow.fPageIndex != y.fRow.fPageIndex) return x.fRow.fPageIndex < y.fRow.fPageIndex;
 		return x.fRow.fStoryUID.Get() < y.fRow.fStoryUID.Get();
 	});
-	for (size_t a = 0; a < sorted.size(); ++a)
-	{
-		sorted[a].fFirstRow = 0;
-		sorted[a].fRowCount = 0;
-		sorted[a].fChangeCount = 0;
-	}
 	int32 total = 0;
 	for (size_t r = 0; r < rows.size(); ++r)
 	{
-		KCMTrackAuthor& au = sorted[static_cast<size_t>(rows[r].fAuthor)];
+		KCMTrackAuthor& au = kept[static_cast<size_t>(rows[r].fAuthor)];
 		if (au.fRowCount == 0)
 			au.fFirstRow = static_cast<int32>(r);
 		++au.fRowCount;
@@ -485,21 +479,6 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 			ch.fHasColour = au.fHasColour;
 			ch.fR = au.fR; ch.fG = au.fG; ch.fB = au.fB;
 		}
-	}
-	// Drop authors with no row (their only records were left out).
-	std::vector<KCMTrackAuthor> kept;
-	std::vector<int32> remap(sorted.size(), -1);
-	for (size_t a = 0; a < sorted.size(); ++a)
-		if (sorted[a].fRowCount > 0)
-		{
-			remap[a] = static_cast<int32>(kept.size());
-			kept.push_back(sorted[a]);
-		}
-	for (size_t r = 0; r < rows.size(); ++r)
-	{
-		rows[r].fAuthor = remap[static_cast<size_t>(rows[r].fAuthor)];
-		for (size_t c = 0; c < rows[r].fChanges.size(); ++c)
-			rows[r].fChanges[c].fAuthor = rows[r].fAuthor;
 	}
 
 	KCMTrackList::Set(kept, rows, otherRecords);

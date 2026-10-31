@@ -436,7 +436,7 @@ bool16 BoxOfFrame(IDataBase* db, UID frameUID, const PMMatrix& spreadToPage, con
 		KCMStoryShape::Story settled = piece;
 		KCMStoryDocx::SettleForThisFormat(settled);
 		if (read.fBoxes.size() != 1 || !read.fBoxes[0].fWhyNot.empty()
-			|| !KCMStoryShape::Same(settled, read.fBoxes[0].fBox.fContent, why, kTrue))
+			|| !KCMStoryShape::Same(settled, read.fBoxes[0].fBox.fContent, why))
 		{
 			tally.Refuse("frame", frameUID, read.fBoxes.empty() ? std::string("the box does not read back")
 								 : (!read.fBoxes[0].fWhyNot.empty() ? read.fBoxes[0].fWhyNot : "the box does not read back as written (" + why + ")"));

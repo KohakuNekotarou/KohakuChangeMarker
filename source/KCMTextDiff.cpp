@@ -24,9 +24,6 @@
 
 #include "VCPlugInHeaders.h"
 
-// General includes:
-#include <map>
-
 // Project includes:
 #include "KCMTextDiff.h"
 
@@ -83,10 +80,6 @@ namespace
 	//   different the two texts are: 50,000 characters against 50,000 costs under a megabyte.
 	//   The time stays O((N+M)*D) with a constant factor of roughly two, which is the trade that
 	//   was wanted: slower is acceptable, wrong is not, and neither is eating memory.
-	//
-	// @warning **the ceiling still exists, but it now guards TIME, not memory.** It is raised to
-	//   a value no real document reaches (see KCMTextDiff.h); it is kept only so that a
-	//   pathological pair cannot spin forever.
 
 	/* FrontierRows
 	   The two rows the divide-and-conquer search works on, allocated ONCE for the whole run and
@@ -94,26 +87,22 @@ namespace
 	   back into the inner loop.
 	     forward[offset + k] - how far the forward search has reached on diagonal k
 	     reverse[offset + k] - the same for the search that starts at the far end
-	   `budget` is what is left of the edit distance the caller allowed; it is spent by each
-	   middle snake and, when it runs out, `gaveUp` is set and every level unwinds.
+	   `gaveUp` is set by the guard at the end of FindMiddleSnake, and every level then unwinds.
 	*/
 	struct FrontierRows
 	{
 		std::vector<int32> forward;
 		std::vector<int32> reverse;
 		int32              offset;
-		int32              budget;
 		bool16             gaveUp;
 	};
 
 	/* FindMiddleSnake
 	   Runs the two frontiers forward until they overlap, and reports the snake they met on:
 	   (outX,outY) is where it starts and (outU,outV) is where it ends, both in this section's own
-	   coordinates. outD is the edit distance of the whole section.
+	   coordinates.
 
-	   **It cannot fail to find one** -- the frontiers must meet by d = (n+m+1)/2 -- so there is
-	     no "not found" path. What it can do is cost more than the caller allowed, which is the
-	     budget check at the top of each step.
+	   **It cannot fail to find one** -- the frontiers must meet by d = (n+m+1)/2.
 
 	   @warning **the reverse search runs in its own coordinates** (x' counted from the far end),
 	     and its diagonal k' corresponds to the forward diagonal delta-k'. Every conversion
@@ -121,7 +110,7 @@ namespace
 	     one of them backwards produces a plausible-looking diff that is subtly wrong.
 	*/
 	void FindMiddleSnake(const int32* a, int32 n, const int32* b, int32 m, FrontierRows& rows,
-						 int32& outX, int32& outY, int32& outU, int32& outV, int32& outD)
+						 int32& outX, int32& outY, int32& outU, int32& outV)
 	{
 		const int32 offset = rows.offset;
 		const int32 delta  = n - m;
@@ -152,14 +141,6 @@ namespace
 
 		for (int32 d = 0; d <= maxD; ++d)
 		{
-			if (rows.budget >= 0 && d * 2 > rows.budget)
-			{
-				rows.gaveUp = kTrue;
-				outX = outY = outU = outV = 0;
-				outD = 0;
-				return;
-			}
-
 			// ---- forward one step ----
 			for (int32 k = -d; k <= d; k += 2)
 			{
@@ -187,7 +168,6 @@ namespace
 					{
 						outX = snakeX; outY = snakeY;
 						outU = x;      outV = y;
-						outD = 2 * d - 1;
 						return;
 					}
 				}
@@ -221,7 +201,6 @@ namespace
 						// the far end, so its END is the snake's START and vice versa.
 						outX = n - x;      outY = m - y;
 						outU = n - snakeX; outV = m - snakeY;
-						outD = 2 * d;
 						return;
 					}
 				}
@@ -232,7 +211,6 @@ namespace
 		// asserted, so that a future change to the loop bound cannot turn into a wrong answer.
 		rows.gaveUp = kTrue;
 		outX = outY = outU = outV = 0;
-		outD = 0;
 	}
 
 	/* SearchSection
@@ -278,13 +256,10 @@ namespace
 			return;
 		}
 
-		int32 x = 0, y = 0, u = 0, v = 0, d = 0;
-		FindMiddleSnake(a, n, b, m, rows, x, y, u, v, d);
+		int32 x = 0, y = 0, u = 0, v = 0;
+		FindMiddleSnake(a, n, b, m, rows, x, y, u, v);
 		if (rows.gaveUp)
 			return;
-
-		if (rows.budget >= 0)
-			rows.budget -= d;
 
 		SearchSection(a,     aOfs,     x,     b,     bOfs,     y,     rows, changes);
 		SearchSection(a + u, aOfs + u, n - u, b + v, bOfs + v, m - v, rows, changes);
@@ -296,13 +271,10 @@ namespace
 	   the caller shifts back by the head length.
 	*/
 	bool16 MyersSearch(const int32* a, int32 n, const int32* b, int32 m,
-					   std::vector<Change>& changes, int32 maxEdits)
+					   std::vector<Change>& changes)
 	{
-		if (n == 0 && m == 0)
-			return kTrue;
-
-		// One side empty is the whole answer already, and the general search would only arrive
-		// at the same place after n+m steps.
+		// One side empty is the whole answer already, and the general search would only allocate
+		// its rows to arrive at the same place.
 		if (n == 0)
 		{
 			Append(changes, 0, 0, 0, m);
@@ -330,7 +302,6 @@ namespace
 		rows.offset = 2 * (n + m) + 3;
 		rows.forward.assign(2 * rows.offset + 1, 0);
 		rows.reverse.assign(2 * rows.offset + 1, 0);
-		rows.budget = (maxEdits > 0) ? maxEdits : -1;	// <=0 means no ceiling (see the header)
 		rows.gaveUp = kFalse;
 
 		SearchSection(a, 0, n, b, 0, m, rows, changes);
@@ -517,7 +488,7 @@ namespace
 /* Diff
 */
 bool16 KCMTextDiff::Diff(const std::vector<int32>& a, const std::vector<int32>& b,
-						std::vector<Change>& changes, int32 maxEdits)
+						std::vector<Change>& changes)
 {
 	changes.clear();
 
@@ -541,17 +512,13 @@ bool16 KCMTextDiff::Diff(const std::vector<int32>& a, const std::vector<int32>& 
 	if (aMiddle == 0 && bMiddle == 0)
 		return kTrue;		// identical
 
-	std::vector<Change> middle;
-	const bool16 ok = MyersSearch(aMiddle > 0 ? &a[head] : nil, aMiddle,
-								  bMiddle > 0 ? &b[head] : nil, bMiddle,
-								  middle, maxEdits);
-	if (!ok)
+	if (!MyersSearch(aMiddle > 0 ? &a[head] : nil, aMiddle,
+					 bMiddle > 0 ? &b[head] : nil, bMiddle,
+					 changes))
 		return kFalse;
 
 	// The section that was searched sits `head` elements into both sequences, so every position
-	// comes back shifted by it. **The list is taken over rather than copied**: it was built here and
-	// nobody else has seen it.
-	changes.swap(middle);
+	// comes back shifted by it.
 	for (size_t i = 0; i < changes.size(); ++i)
 	{
 		changes[i].aStart += head;
@@ -561,11 +528,17 @@ bool16 KCMTextDiff::Diff(const std::vector<int32>& a, const std::vector<int32>& 
 	return kTrue;
 }
 
-/* DiffInPieces
+namespace
+{
+
+/*	DiffPieceByPiece
+	What DiffInPieces and DiffCharacters share: both sequences cut at their marks, `diffPiece` asked for the changes of one
+	pair of pieces, and its answer brought back in whole-sequence counts. On any failure `changes` comes back empty.
 */
-bool16 KCMTextDiff::DiffInPieces(const std::vector<int32>& a, const std::vector<int32>& aCuts,
-								 const std::vector<int32>& b, const std::vector<int32>& bCuts,
-								 std::vector<Change>& changes, int32 maxEdits)
+template <typename DiffPiece>
+bool16 DiffPieceByPiece(const std::vector<int32>& a, const std::vector<int32>& aCuts,
+						const std::vector<int32>& b, const std::vector<int32>& bCuts,
+						std::vector<Change>& changes, DiffPiece diffPiece)
 {
 	changes.clear();
 	if (aCuts.size() != bCuts.size())
@@ -584,7 +557,7 @@ bool16 KCMTextDiff::DiffInPieces(const std::vector<int32>& a, const std::vector<
 		const std::vector<int32> pa(a.begin() + aFrom, a.begin() + aTo);
 		const std::vector<int32> pb(b.begin() + bFrom, b.begin() + bTo);
 		std::vector<Change> piece;
-		if (!Diff(pa, pb, piece, maxEdits))
+		if (!diffPiece(pa, pb, piece))
 		{
 			changes.clear();
 			return kFalse;
@@ -602,51 +575,36 @@ bool16 KCMTextDiff::DiffInPieces(const std::vector<int32>& a, const std::vector<
 	return kTrue;
 }
 
+}	// anonymous namespace
+
+/* DiffInPieces
+*/
+bool16 KCMTextDiff::DiffInPieces(const std::vector<int32>& a, const std::vector<int32>& aCuts,
+								 const std::vector<int32>& b, const std::vector<int32>& bCuts,
+								 std::vector<Change>& changes)
+{
+	return DiffPieceByPiece(a, aCuts, b, bCuts, changes, Diff);
+}
+
 /* DiffCharacters
 */
 bool16 KCMTextDiff::DiffCharacters(const std::vector<int32>& a, const std::vector<int32>& aMarks,
 								   const std::vector<int32>& b, const std::vector<int32>& bMarks,
 								   std::vector<Change>& changes, int32 doNotSwallow, bool16 widenWords)
 {
-	changes.clear();
-	if (aMarks.size() != bMarks.size())
-		return kFalse;
-	int32 aFrom = 0;
-	int32 bFrom = 0;
-	for (size_t k = 0; k <= aMarks.size(); ++k)
-	{
-		const int32 aTo = (k < aMarks.size()) ? aMarks[k] : static_cast<int32>(a.size());
-		const int32 bTo = (k < bMarks.size()) ? bMarks[k] : static_cast<int32>(b.size());
-		if (aTo < aFrom || bTo < bFrom || aTo > static_cast<int32>(a.size()) || bTo > static_cast<int32>(b.size()))
+	// ★EACH STEP INSIDE THE PIECE - the merge and the slide too, not the diff alone (the header says why).
+	return DiffPieceByPiece(a, aMarks, b, bMarks, changes,
+		[doNotSwallow, widenWords](const std::vector<int32>& pa, const std::vector<int32>& pb, std::vector<Change>& piece) -> bool16
 		{
-			changes.clear();
-			return kFalse;
-		}
-		// ★EACH STEP INSIDE THE PIECE - the merge and the slide too, not the diff alone (the header says why).
-		const std::vector<int32> pa(a.begin() + aFrom, a.begin() + aTo);
-		const std::vector<int32> pb(b.begin() + bFrom, b.begin() + bTo);
-		std::vector<Change> piece;
-		if (!Diff(pa, pb, piece))
-		{
-			changes.clear();
-			return kFalse;
-		}
-		if (!piece.empty())
-		{
-			MergeNearbyChanges(piece, &pa, doNotSwallow);
-			AlignChangeBoundaries(pa, pb, piece, widenWords);
-		}
-		for (size_t c = 0; c < piece.size(); ++c)
-		{
-			Change x = piece[c];
-			x.aStart += aFrom;
-			x.bStart += bFrom;
-			changes.push_back(x);
-		}
-		aFrom = aTo;
-		bFrom = bTo;
-	}
-	return kTrue;
+			if (!Diff(pa, pb, piece))
+				return kFalse;
+			if (!piece.empty())
+			{
+				MergeNearbyChanges(piece, &pa, doNotSwallow);
+				AlignChangeBoundaries(pa, pb, piece, widenWords);
+			}
+			return kTrue;
+		});
 }
 
 /* MergeNearbyChanges
@@ -766,31 +724,17 @@ void KCMTextDiff::MergeNearbyChanges(std::vector<Change>& changes,
 /* Tokenize
 */
 void KCMTextDiff::Tokenize(const std::vector<std::string>& strings,
-						  std::vector<std::string>& table, std::vector<int32>& tokens)
+						  std::map<std::string, int32>& table, std::vector<int32>& tokens)
 {
 	tokens.clear();
 	tokens.reserve(strings.size());
 
-	// A map from the strings already numbered, rebuilt from the table so that a caller can pass
-	// the same table to two calls and have the numbering agree across them.
-	std::map<std::string, int32> index;
-	for (size_t i = 0; i < table.size(); ++i)
-		index[table[i]] = static_cast<int32>(i);
-
 	for (size_t i = 0; i < strings.size(); ++i)
 	{
-		std::map<std::string, int32>::const_iterator found = index.find(strings[i]);
-		if (found != index.end())
-		{
-			tokens.push_back(found->second);
-		}
-		else
-		{
-			const int32 token = static_cast<int32>(table.size());
-			table.push_back(strings[i]);
-			index[strings[i]] = token;
-			tokens.push_back(token);
-		}
+		std::map<std::string, int32>::iterator at = table.lower_bound(strings[i]);
+		if (at == table.end() || at->first != strings[i])
+			at = table.insert(at, std::make_pair(strings[i], static_cast<int32>(table.size())));
+		tokens.push_back(at->second);
 	}
 }
 
@@ -987,20 +931,7 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 		std::vector<Change> joined;
 		joined.reserve(changes.size());
 		for (size_t i = 0; i < changes.size(); ++i)
-		{
-			const Change& c = changes[i];
-			if (!joined.empty())
-			{
-				Change& last = joined.back();
-				if (last.aStart + last.aCount == c.aStart && last.bStart + last.bCount == c.bStart)
-				{
-					last.aCount += c.aCount;
-					last.bCount += c.bCount;
-					continue;
-				}
-			}
-			joined.push_back(c);
-		}
+			Append(joined, changes[i].aStart, changes[i].aCount, changes[i].bStart, changes[i].bCount);
 		changes.swap(joined);
 	}
 }

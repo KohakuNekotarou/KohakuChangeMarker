@@ -235,7 +235,6 @@
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMParagraphStyle.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryTextImport.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryAttrPour.cpp" />
-    <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMSourceCache.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryTextExport.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMStoryShape.cpp" />
     <ClCompile Include="..\..\..\source\sdksamples\KCM\source\KCMDocxPackage.cpp" />
@@ -351,7 +350,6 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMParaPairing.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryTextImport.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryAttrPour.h" />
-    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMSourceCache.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryTextExport.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMStoryShape.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMDocxPackage.h" />

@@ -7,8 +7,7 @@
 //  READING THE TRACKED CHANGES (2026-10-05, design section 3). Every story's records - main text, table
 //  cells, hidden conditional text; not notes; a footnote's are never made (InDesign records nothing there,
 //  KFC measured) - copied out of the iterator (the same walk as KIDMCP's track_changes, KIDMCPTrackChanges.cpp),
-//  put together by KCMTrackPlan.h, given their words, their author's colour and their place in the original,
-//  and handed to KCMTrackList.
+//  put together by KCMTrackPlan.h, given their words and their author's colour, and handed to KCMTrackList.
 //  ★THE COLOUR IS READ HERE, ON THE MAIN THREAD, ONCE (ITrackChangeUtils::GetTrackedChangeBGColor): which
 //   plug-in implements that utility is not known, so a background export cannot be trusted to call it. The
 //   marks draw the value (design 6-1).

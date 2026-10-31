@@ -31,8 +31,6 @@
 // Interface includes:
 #include "IDataBase.h"		// SaveRestoreModifiedState - see Run()
 #include "ITextModel.h"
-#include "TextIterator.h"		// AppendToStringAndIncrement - the Source story's raw text, read once
-#include "WideString.h"
 
 // General includes:
 #include "PMString.h"
@@ -47,8 +45,6 @@
 #include "KCMParaPairing.h"	// which paragraph goes with which, when a run holds more on one side (the import pours by it too)
 #include "KCMProgressBar.h"	// KCMDeferredProgressBar - the progress bar and Cancel of Run, shown after kKCMProgressBarDelayMs
 #include "KCMStoryDiffRun.h"
-#include "KCMCore.h"			// KCMArmedTargetDB / KCMIsDocDBOpen - which document a replaced change is measured against
-#include "KCMSourceCache.h"	// the Source side, read once per origin instead of once per press
 #include "KCMTableShape.h"	// KCMReadTableShapes / KCMTableShapesDiffer - the Table row (2026-09-19 night)
 #include "KCMTableSnippet.h"	// KCMReadTableIdsInStory / KCMExportStoryInx - the Source's tables, by their own ids
 #include "KCMTaskStartClone.h"	// KCMIsImportClone - a Source that is a clone of the Target pairs its tables by their uids (2026-10-27)
@@ -58,7 +54,6 @@
 //  on 2026-09-21 - KCMStorySnapshot as a whole file, having had no other reader.)
 #include "KCMTextRead.h"		// the reader: paragraphs, their positions and their attributes, straight from the text model
 #include "KCMStoryList.h"
-#include "KCMStoryStamp.h"	// kKCMStoryKindAdded - which rows have no partner to compare against
 #include "KCMTextDiff.h"
 #include "KCMOversetPoint.h"	// KCMIsTextIndexOverset - is this change's text composed anywhere
 #include "KCMDiag.h"			// KCM_DIAG_SLOW - test builds only (nothing in a shipping .pln)
@@ -164,7 +159,6 @@ std::string MarkUpBreaks(const std::string& utf8)
    cut in code points - Truncate / Remove / GetUTF32TextChar, UnicodeSavvyString.h).
 
    @param from/count name the CHANGE, in code points, within text.
-   @param context how many code points to keep on each side. 0 = the change alone.
    @param outPre [out] what stands before the change, with a leading ellipsis when the text was
       cut there. Empty when the change begins the text.
    @param outMid [out] the changed characters themselves -- what the row draws at full strength.
@@ -172,7 +166,7 @@ std::string MarkUpBreaks(const std::string& utf8)
    @param outPost [out] what stands after it, with a trailing ellipsis on the same terms as outPre.
 */
 void Slice(const std::string& text, const std::vector<int32>& byteOffsets,
-		   int32 from, int32 count, int32 context,
+		   int32 from, int32 count,
 		   std::string& outPre, std::string& outMid, std::string& outPost)
 {
 	outPre.clear();
@@ -185,7 +179,7 @@ void Slice(const std::string& text, const std::vector<int32>& byteOffsets,
 
 	// A DELETION HAS count == 0 ON THE SIDE THAT LOST IT, and it still has a place -- the words
 	//   that closed up over it. So an empty range is not refused here; only an empty RESULT is.
-	int32 first = from - context;
+	int32 first = from - kContextCodePoints;
 	if (first < 0)
 		first = 0;
 	int32 midFrom = (from < total) ? from : total;
@@ -194,7 +188,7 @@ void Slice(const std::string& text, const std::vector<int32>& byteOffsets,
 		midTo = total;
 	if (midTo < midFrom)
 		midTo = midFrom;
-	int32 last = from + count + context;	// exclusive
+	int32 last = from + count + kContextCodePoints;	// exclusive
 	if (last > total)
 		last = total;
 	if (last < midTo)
@@ -294,14 +288,13 @@ struct RunSide
 	const std::vector<int32>*			fStarts;	// one document position per paragraph
 	const std::vector<KCMParaAttrs>*	fAttrs;		// only fUncountedAt is read - see Index
 	int32								fStart;		// first paragraph of the run
-	int32								fCount;		// how many it covers
-	int32								fBase;		// where the run begins, as a TextIndex
+	int32								fCount;		// how many it covers - never 0: a run on one side only is AddWholeParagraphs'
 	std::vector<int32>					fObjects;	// the run's tables and note references, in the joined text's count
 
 	RunSide(const std::vector<std::string>& paragraphs, const std::vector<int32>& starts,
-			const std::vector<KCMParaAttrs>& attrs, int32 start, int32 count, int32 base)
+			const std::vector<KCMParaAttrs>& attrs, int32 start, int32 count)
 		: fParagraphs(&paragraphs), fStarts(&starts), fAttrs(&attrs),
-		  fStart(start), fCount(count), fBase(base)
+		  fStart(start), fCount(count)
 	{
 		KCMParaText::RunObjectOffsets(paragraphs, attrs, start, count, fObjects);
 	}
@@ -313,7 +306,7 @@ struct RunSide
 	int32 Index(int32 joinedOffset) const
 	{
 		return KCMParaText::IndexInStory(*fParagraphs, *fStarts, *fAttrs,
-											fStart, fCount, fBase, joinedOffset);
+											fStart, fCount, (*fStarts)[fStart], joinedOffset);
 	}
 };
 
@@ -350,7 +343,7 @@ void SetExcerptPieces(PMString& outPre, PMString& outMid, PMString& outPost,
 					  int32 from, int32 count)
 {
 	std::string pre, mid, post;
-	Slice(text, bytes, from, count, kContextCodePoints, pre, mid, post);
+	Slice(text, bytes, from, count, pre, mid, post);
 
 	SetDocumentText(outPre, pre);
 	SetDocumentText(outMid, mid);
@@ -513,7 +506,12 @@ void AddWholeParagraphs(std::vector<KCMStoryChange>& out, const KCMTextDiff::Cha
 	const bool16 adds = (run.aCount > 0) ? kTrue : kFalse;
 	const int32 first = adds ? run.aStart : run.bStart;
 	const int32 count = adds ? run.aCount : run.bCount;
+	const std::vector<std::string>& ownParas = adds ? sourceParas : targetParas;
+	const std::vector<int32>& ownStarts = adds ? sourceStarts : targetStarts;
 	const std::vector<KCMParaAttrs>& ownAttrs = adds ? sourceAttrs : targetAttrs;
+	const std::vector<std::string>& otherParas = adds ? targetParas : sourceParas;
+	const std::vector<int32>& otherStarts = adds ? targetStarts : sourceStarts;
+	const std::vector<KCMParaAttrs>& otherAttrs = adds ? targetAttrs : sourceAttrs;
 
 	const int32 sourceSize = static_cast<int32>(sourceParas.size());
 	const int32 targetSize = static_cast<int32>(targetParas.size());
@@ -531,6 +529,27 @@ void AddWholeParagraphs(std::vector<KCMStoryChange>& out, const KCMTextDiff::Cha
 	// (⛔"...and can they be placed at all" was reported to the caller here until 2026-09-21. The two
 	//  answers above are still what decides WHERE the caret of a one-sided paragraph goes.)
 
+	// The side that lacks them: one caret for all of them (the head says why), and the paragraph it stands in, for the
+	// rows' context.
+	int32 caret = 0;
+	int32 otherFrom = 0;
+	std::string otherText;
+	if (afterReturn)
+	{
+		const int32 before = adds ? run.bStart - 1 : run.aStart - 1;
+		caret = KCMParaText::ParagraphReturn(otherParas, otherStarts, otherAttrs, before);
+		otherText = otherParas[static_cast<size_t>(before)];
+		otherFrom = KCMParaText::CountCodePoints(otherText);
+	}
+	else if (beforeNext)
+	{
+		const int32 next = adds ? nextB : nextA;
+		caret = KCMParaText::ParagraphLineStart(otherStarts, otherAttrs, next);
+		otherText = otherParas[static_cast<size_t>(next)];
+	}
+	std::vector<int32> otherBytes;
+	KCMTextDiff::ToCodePoints(otherText, nil, &otherBytes);
+
 	for (int32 k = 0; k < count; ++k)
 	{
 		const int32 p = first + k;
@@ -543,49 +562,27 @@ void AddWholeParagraphs(std::vector<KCMStoryChange>& out, const KCMTextDiff::Cha
 		//   back off them for everything the reader sees (KCMStoryList.h, KCMShownSpan).
 		change.fBreakAt = afterReturn ? kKCMBreakLeads : (beforeNext ? kKCMBreakTrails : kKCMBreakNone);
 
-		// The side that holds the paragraph: its range. The side that lacks it: the caret.
+		// The side that holds the paragraph: its range.
 		int32 ownStart = 0;
-		int32 ownEnd = 0;
-		int32 caret = 0;
-		const std::vector<std::string>& ownParas = adds ? sourceParas : targetParas;
-		const std::vector<int32>& ownStarts = adds ? sourceStarts : targetStarts;
-		const std::vector<std::string>& otherParas = adds ? targetParas : sourceParas;
-		const std::vector<int32>& otherStarts = adds ? targetStarts : sourceStarts;
-		const std::vector<KCMParaAttrs>& otherAttrs = adds ? targetAttrs : sourceAttrs;
-		const int32 otherBefore = adds ? run.bStart - 1 : run.aStart - 1;
-		const int32 otherNext = adds ? nextB : nextA;
-		std::string otherText;			// the paragraph the caret stands in, for the row's context
-		int32 otherFrom = 0;
+		int32 ownEnd = KCMParaText::ParagraphReturn(ownParas, ownStarts, ownAttrs, p);
 		if (afterReturn)
-		{
 			ownStart = KCMParaText::ParagraphReturn(ownParas, ownStarts, ownAttrs, p - 1);
-			ownEnd = KCMParaText::ParagraphReturn(ownParas, ownStarts, ownAttrs, p);
-			caret = KCMParaText::ParagraphReturn(otherParas, otherStarts, otherAttrs, otherBefore);
-			otherText = otherParas[static_cast<size_t>(otherBefore)];
-			otherFrom = KCMParaText::CountCodePoints(otherText);
-		}
 		else if (beforeNext)
 		{
 			ownStart = KCMParaText::ParagraphLineStart(ownStarts, ownAttrs, p);
-			ownEnd = KCMParaText::ParagraphReturn(ownParas, ownStarts, ownAttrs, p) + 1;
-			caret = KCMParaText::ParagraphLineStart(otherStarts, otherAttrs, otherNext);
-			otherText = otherParas[static_cast<size_t>(otherNext)];
-			otherFrom = 0;
+			++ownEnd;
 		}
 		else
 		{
 			// Nowhere to put it: shown all the same (it was marked as not writable until 2026-09-21).
 			ownStart = ownStarts[static_cast<size_t>(p)];
-			ownEnd = KCMParaText::ParagraphReturn(ownParas, ownStarts, ownAttrs, p);
 			caret = ownStart;
 		}
 
 		const std::string& ownText = ownParas[static_cast<size_t>(p)];
 		std::vector<int32> ownBytes;
-		std::vector<int32> otherBytes;
 		KCMTextDiff::ToCodePoints(ownText, nil, &ownBytes);
-		KCMTextDiff::ToCodePoints(otherText, nil, &otherBytes);
-		const int32 ownLength = KCMParaText::CountCodePoints(ownText);
+		const int32 ownLength = static_cast<int32>(ownBytes.size());
 
 		if (adds)
 		{
@@ -683,10 +680,9 @@ void BuildLayers(ParaSide& side, bool16 changedIsWarichu, int32 start, int32 len
 {
 	out = KCMStoryLayers();
 
-	const std::vector<int32>& bytes = side.Bytes();
 	KCMParaText::LayerPlan plan;
 	KCMParaText::PlanLayers(changedIsWarichu, side.fAttrs.fWarichu, side.fAttrs.fTcy,
-							start, len, present, static_cast<int32>(bytes.size()), plan);
+							start, len, present, plan);
 	if (plan.fCount < 2)
 		return;
 
@@ -699,8 +695,7 @@ void BuildLayers(ParaSide& side, bool16 changedIsWarichu, int32 start, int32 len
 	if (plan.fShowsText)
 	{
 		std::string pre, mid, post;
-		Slice(side.fText, bytes, plan.fHole.fFrom, plan.fHole.fTo - plan.fHole.fFrom, kContextCodePoints,
-			  pre, mid, post);
+		Slice(side.fText, side.Bytes(), plan.fHole.fFrom, plan.fHole.fTo - plan.fHole.fFrom, pre, mid, post);
 		SetDocumentText(out.fBottomPre, pre);
 		SetDocumentText(out.fBottomPost, post);
 	}
@@ -1181,12 +1176,6 @@ void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChange
 	//   second consequence was found.
 	auto compareParagraphPair = [&](int32 ai, int32 bi, bool16 textDiffered)
 	{
-		if (ai < 0 || bi < 0 ||
-			ai >= static_cast<int32>(sourceAttrs.size())  || bi >= static_cast<int32>(targetAttrs.size()) ||
-			ai >= static_cast<int32>(sourceParas.size())  || bi >= static_cast<int32>(targetParas.size()) ||
-			ai >= static_cast<int32>(sourceStarts.size()) || bi >= static_cast<int32>(targetStarts.size()))
-			return;
-
 		// The two paragraphs, each as ONE thing: its text, its base, the crossing into the
 		//   document's count, and a byte table built only if something below asks for it (see
 		//   ParaSide). A paragraph whose marks did not move asks for nothing.
@@ -1295,9 +1284,7 @@ void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChange
 					//   moved - and its marks then stand where they stood, which is the unchanged paragraph's case.
 					const int32 ai = paragraphChanges[c].aStart + k;
 					const int32 bi = paragraphChanges[c].bStart + k;
-					const bool16 wordsDiffer = (ai >= 0 && bi >= 0 && ai < static_cast<int32>(sourceParas.size())
-												&& bi < static_cast<int32>(targetParas.size())
-												&& sourceParas[static_cast<size_t>(ai)] == targetParas[static_cast<size_t>(bi)])
+					const bool16 wordsDiffer = (sourceParas[static_cast<size_t>(ai)] == targetParas[static_cast<size_t>(bi)])
 											   ? kFalse : kTrue;
 					compareParagraphPair(ai, bi, wordsDiffer);
 				}
@@ -1357,6 +1344,17 @@ void MarkOverset(IDataBase* targetDB, UID storyUID, std::vector<KCMStoryChange>&
 	}
 }
 
+/* ParagraphIndexAt
+   The paragraph whose start is the last one at or before `at`. -1 before the first paragraph. */
+int32 ParagraphIndexAt(const std::vector<int32>& starts, TextIndex at)
+{
+	int32 which = -1;
+	for (size_t i = 0; i < starts.size(); ++i)
+		if (starts[i] <= at)
+			which = static_cast<int32>(i);
+	return which;
+}
+
 /* MarkPlaces
    Says of each change where its words stand - the body, a cell, a footnote - for the ID column
    (2026-09-19, the user: "Cell Text" for a change inside a cell, "Text" for an ordinary one).
@@ -1372,29 +1370,12 @@ void MarkPlaces(const std::vector<KCMParaAttrs>& targetAttrs, const std::vector<
 {
 	for (size_t c = 0; c < changes.size(); ++c)
 	{
-		int32 which = -1;
-		for (size_t i = 0; i < targetStarts.size() && i < targetAttrs.size(); ++i)
-		{
-			if (targetStarts[i] <= changes[c].fTargetStart)
-				which = static_cast<int32>(i);
-		}
+		const int32 which = ParagraphIndexAt(targetStarts, changes[c].fTargetStart);
 		if (which < 0)
 			continue;			// before the first paragraph: the body's default stands
 		const KCMParaAttrs& a = targetAttrs[static_cast<size_t>(which)];
 		changes[c].fPlace = a.IsCell() ? kKCMPlaceCell : (a.IsFootnote() ? kKCMPlaceNote : kKCMPlaceBody);
 	}
-}
-
-/* ParagraphIndexAt
-   The paragraph whose start is the last one at or before `at` - the same walk MarkPlaces makes.
-   -1 before the first paragraph. */
-int32 ParagraphIndexAt(const std::vector<int32>& starts, TextIndex at)
-{
-	int32 which = -1;
-	for (size_t i = 0; i < starts.size(); ++i)
-		if (starts[i] <= at)
-			which = static_cast<int32>(i);
-	return which;
 }
 
 /* ParaIsCellOfTable
@@ -1432,6 +1413,22 @@ std::string AllTableWords(int32 ordinal, const std::vector<std::string>& paras, 
 	return all;
 }
 
+/* IdsNameOneTableEach
+   Every id there and no two alike: what the pairing by id rests on. A missing or repeated id means the ids were not read the
+   way the pairing assumes, and the position is then the better answer. */
+bool16 IdsNameOneTableEach(const std::vector<UID>& ids)
+{
+	for (size_t i = 0; i < ids.size(); ++i)
+	{
+		if (ids[i] == kInvalidUID)
+			return kFalse;
+		for (size_t j = i + 1; j < ids.size(); ++j)
+			if (ids[i] == ids[j])
+				return kFalse;
+	}
+	return kTrue;
+}
+
 /* FoldTableChanges
    ★★★A TABLE WHOSE SHAPE DIFFERS FROM TASK START'S BECOMES ONE CHANGE (2026-09-19 night, the user:
    "fold every change of that table - rows, columns, merged cells, and the words inside - into one row,
@@ -1444,9 +1441,7 @@ std::string AllTableWords(int32 ordinal, const std::vector<std::string>& paras, 
    ⚠TABLES ARE PAIRED BY ORDINAL - the numbering KCMTextRead gives the cells, in the order the tables'
     cell blocks begin - which is exact when tables were added or removed at the END of the story and
     merely noisy when one was added in the middle (every table after it then pairs with the wrong one
-    and comes out as ≠). The spec accepts that: nothing is named falsely, there are just more rows.
-   ⚠THE SOURCE'S SHAPES come from the source model when it is open, and from what was kept beside its
-    text otherwise (KCMSourceCache) - a re-diff after a restore has no copy to ask. */
+    and comes out as ≠). The spec accepts that: nothing is named falsely, there are just more rows. */
 void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 					  ITextModel* targetModel, ITextModel* sourceModel,
 					  const std::vector<std::string>& targetParas, const std::vector<KCMParaAttrs>& targetAttrs,
@@ -1455,14 +1450,7 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 					  const std::vector<int32>& sourceStarts, bool16 pairedByPlace)
 {
 	std::vector<KCMTableShape> tShapes, sShapes;
-	if (targetModel == nil || !KCMReadTableShapes(targetModel, tShapes))
-		return;
-	if (sourceModel != nil)
-	{
-		if (!KCMReadTableShapes(sourceModel, sShapes))
-			return;
-	}
-	else if (!KCMSourceCacheGetTableShapes(targetStoryUID, sShapes))
+	if (!KCMReadTableShapes(targetModel, tShapes) || !KCMReadTableShapes(sourceModel, sShapes))
 		return;
 
 	// (⛔**THE STORY'S OWN INX IS NO LONGER KEPT** (2026-09-21). It was exported here, at most once per
@@ -1495,9 +1483,9 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		//   Target's uid handed to the Source names some other story there, or none. The tables pair by their ORDER instead,
 		//   the fall-back this has always had for a Source that is another document: the copy holds the same tables in the
 		//   same order, so a cell edited in one of them is one "Table ≠" row (design 3-3), not a Table − and a Table +.
-		IDataBase* const sourceDB = (sourceModel != nil) ? ::GetDataBase(sourceModel) : nil;
+		IDataBase* const sourceDB = ::GetDataBase(sourceModel);
 		KCMMemXferBytes sourceInx;
-		if (!pairedByPlace && sourceDB != nil
+		if (!pairedByPlace
 			&& KCMExportStoryInx(sourceDB, targetStoryUID, sourceInx)
 			&& KCMReadTableIdsInStory(sourceInx.GetData(), sourceInx.GetSize(), targetStoryUID, sIds)
 			&& sIds.size() == sShapes.size() && !sIds.empty())
@@ -1508,15 +1496,7 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 			//   is checked: an id that is missing, or one that appears twice, means the text was not
 			//   read the way this assumes - and the pairing falls back to the position rather than
 			//   naming the wrong table with great confidence.
-			byId = kTrue;
-			for (size_t i = 0; i < sIds.size() && byId; ++i)
-			{
-				if (sIds[i] == kInvalidUID)
-					byId = kFalse;
-				for (size_t j = i + 1; j < sIds.size() && byId; ++j)
-					if (sIds[i] == sIds[j])
-						byId = kFalse;
-			}
+			byId = IdsNameOneTableEach(sIds);
 		}
 		// ★★AND FROM THE COPY ITSELF WHEN ITS INX CANNOT BE HAD (2026-10-27 night - the per-row Apply of tables, design
 		//   docs/superpowers/specs/2026-10-27-kcm-apply-tables-notes-per-row-design.md §5-1): a database CLONE - an import's
@@ -1525,21 +1505,13 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		//   after it pair with the wrong partners ("3×2 -> 2×2", measured on the import matrix's A55). A clone holds the
 		//   Target's own uids, and KCMReadTableShapes has read each table's dictionary uid from it already - the very id
 		//   the INX would have named. The same checks as above: a missing or repeated uid falls back to the position.
-		if (!byId && !pairedByPlace && sourceDB != nil && sourceDB != ::GetDataBase(targetModel)
+		if (!byId && !pairedByPlace && sourceDB != ::GetDataBase(targetModel)
 			&& (KCMIsImportClone(sourceDB) || KCMIsExternalSource(sourceDB)) && !sShapes.empty())
 		{
 			sIds.clear();
 			for (size_t j = 0; j < sShapes.size(); ++j)
 				sIds.push_back(sShapes[j].fDictUID);
-			byId = kTrue;
-			for (size_t i = 0; i < sIds.size() && byId; ++i)
-			{
-				if (sIds[i] == kInvalidUID)
-					byId = kFalse;
-				for (size_t j = i + 1; j < sIds.size() && byId; ++j)
-					if (sIds[i] == sIds[j])
-						byId = kFalse;
-			}
+			byId = IdsNameOneTableEach(sIds);
 		}
 	}
 
@@ -1626,9 +1598,7 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 			continue;					// the same shape: the cell rows stay as the diff made them
 
 		// ⚠**THE TWO SIDES NUMBER THEIR TABLES SEPARATELY** now that they are paired by id: the cells
-		//   of this table are the ones whose own side's ordinal is this side's index.
-		const int32 tOrdinal = haveT ? tAt : -1;
-		const int32 sOrdinal = haveS ? sAt : -1;
+		//   of this table are the ones whose own side's ordinal is this side's index (tAt, sAt).
 		KCMStoryChange table;
 		table.fWhat = KCMStoryChange::kTable;
 		table.fPlace = kKCMPlaceCell;
@@ -1650,9 +1620,8 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		{
 			table.fSourceStart = sShapes[sI].fAnchorStart;
 			table.fSourceEnd = sShapes[sI].fAnchorEnd;
-			// ★THE SOURCE'S OWN ID (2026-09-25, "Match the Source"): the dictionary uid in the Source document - a
-			//   shape from the cache carries kInvalidUID, and the match item is greyed by that.
-			table.fSourceTableUID = (sourceModel != nil) ? sShapes[sI].fDictUID : kInvalidUID;
+			// ★THE SOURCE'S OWN ID (2026-09-25, "Match the Source"): the dictionary uid in the Source document.
+			table.fSourceTableUID = sShapes[sI].fDictUID;
 		}
 
 		// The cell-level changes of THIS table come out; what they say about paired cells stays.
@@ -1680,10 +1649,9 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 			const bool16 sideS = (ch.fKind != KCMStoryChange::kInsert) ? kTrue : kFalse;
 			const int32 tPara = sideT ? ParagraphIndexAt(targetStarts, tFrom) : -1;
 			const int32 sPara = sideS ? ParagraphIndexAt(sourceStarts, sFrom) : -1;
-			const bool16 tHolds = ParaIsCellOfTable(targetAttrs, tPara, tOrdinal);
-			const bool16 sHolds = ParaIsCellOfTable(sourceAttrs, sPara, sOrdinal);
-			const bool16 inTable = (haveT && tHolds) || (haveS && sHolds);
-			if (!inTable)
+			const bool16 tHolds = ParaIsCellOfTable(targetAttrs, tPara, tAt);
+			const bool16 sHolds = ParaIsCellOfTable(sourceAttrs, sPara, sAt);
+			if (!tHolds && !sHolds)
 			{
 				kept.push_back(ch);
 				continue;
@@ -1729,25 +1697,7 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 			for (size_t i = 0; i < tShapes[tI].fCells.size(); ++i)
 			{
 				const KCMTableCellPlace& cell = tShapes[tI].fCells[i];
-				bool16 mark = !haveS;
-				if (haveS)
-				{
-					const KCMTableCellPlace* const partner = KCMTableCellAt(sShapes[sI], cell.fRow, cell.fCol);
-					mark = (partner == nil) ? kTrue : kFalse;
-					if (!mark)
-					{
-						// The merge at this address on each side (1x1 when not listed).
-						int32 tr = 1, tc = 1, sr = 1, sc = 1;
-						for (size_t m = 0; m < tShapes[tI].fMerges.size(); ++m)
-							if (tShapes[tI].fMerges[m].fRow == cell.fRow && tShapes[tI].fMerges[m].fCol == cell.fCol)
-							{ tr = tShapes[tI].fMerges[m].fRowSpan; tc = tShapes[tI].fMerges[m].fColSpan; }
-						for (size_t m = 0; m < sShapes[sI].fMerges.size(); ++m)
-							if (sShapes[sI].fMerges[m].fRow == cell.fRow && sShapes[sI].fMerges[m].fCol == cell.fCol)
-							{ sr = sShapes[sI].fMerges[m].fRowSpan; sc = sShapes[sI].fMerges[m].fColSpan; }
-						mark = (tr != sr || tc != sc) ? kTrue : kFalse;
-					}
-				}
-				if (mark)
+				if (!haveS || !KCMTableCellSame(tShapes[tI], sShapes[sI], cell.fRow, cell.fCol))
 					table.fMarkSpans.push_back(KCMTextSpan(cell.fStart, cell.fEnd));
 			}
 		}
@@ -1763,8 +1713,8 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 			//   would have said the real reason, so even the refusal was misleading.
 			//   ★The anchor stood in the BODY, and the body agrees on both sides unless it was edited
 			//   too - and an edit there is a row of its own.
-			TextIndex at = haveS ? sShapes[sI].fAnchorStart : 0;
-			const TextIndex total = (targetModel != nil) ? targetModel->TotalLength() : at;
+			TextIndex at = sShapes[sI].fAnchorStart;
+			const TextIndex total = targetModel->TotalLength();
 			if (at > total)
 				at = total;
 			if (at < 0)
@@ -1786,8 +1736,8 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		std::string words = table.fShapeWord;
 		if (haveS)
 		{
-			const std::string first = haveT ? FirstTableWords(tOrdinal, targetParas, targetAttrs)
-											: FirstTableWords(sOrdinal, sourceParas, sourceAttrs);
+			const std::string first = haveT ? FirstTableWords(tAt, targetParas, targetAttrs)
+											: FirstTableWords(sAt, sourceParas, sourceAttrs);
 			if (!first.empty())
 			{
 				words += " ";
@@ -1797,7 +1747,7 @@ void FoldTableChanges(std::vector<KCMStoryChange>& out, UID targetStoryUID,
 		SetDocumentText(table.fText, words);
 		// The other side, for the message area: Task Start's shape and first words.
 		std::string other = haveS ? KCMTableShapeAlone(sShapes[sI]) : std::string();
-		const std::string otherFirst = haveS ? FirstTableWords(sOrdinal, sourceParas, sourceAttrs) : std::string();
+		const std::string otherFirst = haveS ? FirstTableWords(sAt, sourceParas, sourceAttrs) : std::string();
 		if (!otherFirst.empty())
 		{
 			other += " ";
@@ -1883,53 +1833,16 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory, boo
 	std::vector<int32> targetStarts;
 	std::vector<int32> sourceStarts;
 
-	// ⚠**THE FIRST OF THE TWO REMAINING WAYS TO DECLINE**, and it means one thing only: the story
-	//   could not be opened at all. **An empty story is not a failure** (KCMTextRead.h).
+	// ⚠**THE ONE REMAINING WAY TO DECLINE**, and it means one thing only: the story could not be
+	//   opened at all. **An empty story is not a failure** (KCMTextRead.h).
 	// ★THE OBJECTS PLACED IN THE TEXT ARE READ TOO (2026-10-27 - KCMObjectPrint.h), on both sides - but not for a story
 	//   paired by place: its objects were made anew with new UIDs, and a fingerprint holds UIDs, so every object would
 	//   differ (the plan's call for 2.0.0: docs/superpowers/plans/2026-10-27-kcm-story-object-changes.md).
 	const bool16 withObjects = pairedByPlace ? kFalse : kTrue;
 	if (!KCMTextRead::ReadStory(targetStory, targetParas, targetAttrs, targetStarts, withObjects))
 		return kFalse;
-
-	// ★★★**THE SOURCE IS READ ONCE PER ORIGIN, NOT ONCE PER PRESS** (2026-09-16, the user: "it is
-	//   too heavy to work with"). Against a Task Start - or an Import, which uses the same slot -
-	//   the Source is a byte string rebuilt into a whole document for the occasion, and every
-	//   change taken in was rebuilding it again. It cannot change while it is held, so what was
-	//   read from it is kept (KCMSourceCache says when that is allowed and when it is dropped).
-	// ⚠**THE TARGET IS NEVER CACHED**: it is the reader's own document and they are editing it.
-	//   That is the whole asymmetry, and it is why only one of the two reads above moved.
-	if (!KCMSourceCacheGet(targetStory.GetUID(), sourceParas, sourceAttrs, sourceStarts))
-	{
-		if (!KCMTextRead::ReadStory(sourceStory, sourceParas, sourceAttrs, sourceStarts, withObjects))
-			return kFalse;
-
-		// ★**THE RAW TEXT IS TAKEN IN THE SAME BREATH**, from the same API the restore used
-		//   used to call on every press - so what the write puts in is the document's own
-		//   characters and not a re-assembly of the paragraphs above (KCMSourceCache.h says what
-		//   re-assembling them would get wrong, and it is the paragraph break itself).
-		WideString raw;
-		InterfacePtr<ITextModel> sourceModel(sourceStory, UseDefaultIID());
-		if (sourceModel != nil)
-		{
-			const TextIndex total = sourceModel->TotalLength();
-			if (total > 0)
-			{
-				TextIterator iter(sourceModel, 0);
-				iter.AppendToStringAndIncrement(&raw, total);
-			}
-		}
-		KCMSourceCachePut(targetStory.GetUID(), sourceParas, sourceAttrs, sourceStarts, raw);
-
-		// ★AND THE SOURCE'S TABLES, FOR THE SAME REASON (2026-09-20): the Table row compares shapes on
-		//   every re-diff, and the copy is not there to be asked then.
-		if (sourceModel != nil)
-		{
-			std::vector<KCMTableShape> sourceTables;
-			if (KCMReadTableShapes(sourceModel, sourceTables))
-				KCMSourceCachePutTableShapes(targetStory.GetUID(), sourceTables);
-		}
-	}
+	if (!KCMTextRead::ReadStory(sourceStory, sourceParas, sourceAttrs, sourceStarts, withObjects))
+		return kFalse;
 
 	// **ONE TABLE FOR BOTH SEQUENCES.** Numbering them from separate tables would give equal
 	//   paragraphs different tokens, and every paragraph would look changed.
@@ -1945,7 +1858,7 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory, boo
 	for (size_t p = 0; p < targetParas.size(); ++p)
 		targetKeys.push_back(KCMParaText::ParagraphKey(targetParas[p],
 													   KCMParaText::AttrsOfParagraph(targetAttrs, static_cast<int32>(p))));
-	std::vector<std::string> table;
+	std::map<std::string, int32> table;
 	std::vector<int32> sourceTokens;
 	std::vector<int32> targetTokens;
 	KCMTextDiff::Tokenize(sourceKeys, table, sourceTokens);
@@ -1953,7 +1866,7 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory, boo
 
 	std::vector<KCMTextDiff::Change> paragraphChanges;
 	if (!KCMTextDiff::Diff(sourceTokens, targetTokens, paragraphChanges))
-		return kFalse;		// too different to place - the row stays, the detail does not
+		return kFalse;		// (a guard that cannot fire - KCMTextDiff.h) the row stays, the detail does not
 
 	// **ONE ROW PER PLACE, NOT ONE PER RUN.** A CELL IS A PARAGRAPH, so two edits that happened
 	//   to land in adjacent paragraphs come back as ONE run even when one of them is body text
@@ -2050,20 +1963,11 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory, boo
 		paragraphChanges.swap(expanded);
 	}
 
-	// Where each story ends, for a run that covers no paragraph of its own (an insertion past the
-	//   last one). ★**ASKED OF THE DOCUMENT.** The total used to be added up from what the snippet
-	//   said, with a set of counters that existed only because the positions came from somewhere
-	//   other than the model. Nothing counts any more, so nothing has to be reconciled.
-	InterfacePtr<ITextModel> targetModel(targetStory, UseDefaultIID());
-	InterfacePtr<ITextModel> sourceModel(sourceStory, UseDefaultIID());
-	const int32 targetComputed = (targetModel != nil) ? targetModel->TotalLength() : 0;
-	const int32 sourceComputed = (sourceModel != nil) ? sourceModel->TotalLength() : 0;
-
-	// ⚠★★★**THERE ARE TWO WAYS TO DECLINE, AND BOTH CARRY A REASON.** A story is either
-	//   unreadable (ReadStory, above) or too different to place (KCMTextDiff::Diff, further up).
+	// ⚠★★★**ONE WAY TO DECLINE IS LEFT, AND IT CARRIES A REASON**: a story that cannot be read
+	//   (ReadStory, above - KCMTextDiff::Diff has no limit to refuse by).
 	//   The XML route had five, and carried none of them back; a row with no children then meant
 	//   "nothing to show" or "I could not look" and nobody could tell which. ⇒ **A row that shows
-	//   nothing now means one of two known things** - which was the point of the migration as much
+	//   nothing now means a known thing** - which was the point of the migration as much
 	//   as the footnote was.
 	//   ★The old route, the checks that reconciled it (ComputedLength / LengthAgrees /
 	//     KCMStoryCellBases) and the parallel run that measured the switch were removed on
@@ -2090,17 +1994,10 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory, boo
 		const std::string sourceText = KCMParaText::JoinParagraphs(sourceParas, change.aStart, change.aCount);
 		const std::string targetText = KCMParaText::JoinParagraphs(targetParas, change.bStart, change.bCount);
 
-		// Where this run starts on each side. A run with no paragraphs of its own sits where the
-		// next surviving paragraph begins.
-		const int32 tBase = (change.bStart < static_cast<int32>(targetStarts.size()))
-							? targetStarts[change.bStart] : targetComputed;
-		const int32 sBase = (change.aStart < static_cast<int32>(sourceStarts.size()))
-							? sourceStarts[change.aStart] : sourceComputed;
-
 		// The run itself, so that a position inside it can be asked for rather than added up -- see
 		//   RunSide. Built once here because both callers of Add below need the same two.
-		const RunSide tRun(targetParas, targetStarts, targetAttrs, change.bStart, change.bCount, tBase);
-		const RunSide sRun(sourceParas, sourceStarts, sourceAttrs, change.aStart, change.aCount, sBase);
+		const RunSide tRun(targetParas, targetStarts, targetAttrs, change.bStart, change.bCount);
+		const RunSide sRun(sourceParas, sourceStarts, sourceAttrs, change.aStart, change.aCount);
 
 		std::vector<int32> sourceCodePoints;
 		std::vector<int32> targetCodePoints;
@@ -2186,6 +2083,8 @@ bool16 CompareOneStory(const UIDRef& targetStory, const UIDRef& sourceStory, boo
 	MarkPlaces(targetAttrs, targetStarts, out);		// the body, a cell or a note - for the ID column
 
 	// ★★A TABLE WHOSE SHAPE CHANGED IS ONE ROW (2026-09-19 night): its cell changes fold into it.
+	InterfacePtr<ITextModel> targetModel(targetStory, UseDefaultIID());
+	InterfacePtr<ITextModel> sourceModel(sourceStory, UseDefaultIID());
 	FoldTableChanges(out, targetStory.GetUID(), targetModel, sourceModel,
 					 targetParas, targetAttrs, targetStarts, sourceParas, sourceAttrs, sourceStarts, pairedByPlace);
 	std::stable_sort(out.begin(), out.end(), ChangeIsBefore);
@@ -2338,12 +2237,7 @@ uint32 KCMStoryDiffRun::CountAllChanges(const UIDRef& story)
 
 int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 rowIndex)
 {
-	// ★★**A nil SOURCE IS ALLOWED WHEN THE STORY IS ALREADY KEPT** (2026-09-16). Comparing one
-	//   story again after a write no longer needs the origin rebuilt into a document: what the
-	//   Source side says was read when the comparison was set up and cannot have changed since
-	//   (KCMSourceCache.h). The caller passes nil to say "I did not open one", and only a story
-	//   nobody has read yet refuses here.
-	if (targetDB == nil)
+	if (targetDB == nil || sourceDB == nil)
 		return -1;
 
 	// **THE UID IS COPIED OUT BEFORE ANYTHING ELSE HAPPENS.** GetRow hands back a pointer into
@@ -2358,10 +2252,6 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	const bool16 unpaired = ((row->fKinds & kKCMStoryKindUnpaired) != 0);
 	row = nil;
 
-	// Nothing open and nothing kept: there is no older side to compare against at all.
-	if (sourceDB == nil && !KCMSourceCacheHas(storyUID))
-		return -1;
-
 	// A story with no partner has nothing to be compared against - the same judgement Run reads
 	// rather than makes again. The menu greys the item for these rows, so this is the second line
 	// of defence. Both kinds (added AND removed); for a removed row the uid above belongs to the
@@ -2370,12 +2260,8 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 		return -1;
 
 	// See the header: the same guard Run takes, and the only one on this path.
-	// ⚠**THE SOURCE'S GUARD ONLY EXISTS WHEN THE SOURCE DOES.** With the story kept there is no
-	//   Source document to leave dirty - and handing a nil database to a guard that exists to
-	//   write its modified flag back is not a thing to find out about at run time.
 	IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
-	K2::scoped_ptr<IDataBase::SaveRestoreModifiedState> sourceDirtyGuard(
-		(sourceDB != nil) ? new (std::nothrow) IDataBase::SaveRestoreModifiedState(sourceDB) : nil);
+	IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
 
 	// **THE ROW ITSELF IS RE-READ FIRST.** The row quotes the story's opening words, and points
 	//   at the frame a click scrolls to -- both read from the document when the comparison ran.
@@ -2386,22 +2272,13 @@ int32 KCMStoryDiffRun::RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 ro
 	//     than half-writing it, and the diff below is what reports the failure.
 	KCMStoryList::RefreshRowFromDocument(rowIndex, targetDB);
 
-	// ⚠**THE SOURCE'S UIDRef IS ONLY BUILT WHEN THERE IS A SOURCE.** With the story kept,
-	//   CompareOneStory never opens it - the cache answers first - so an invalid ref is the honest
-	//   thing to hand it, and the uid translator is not asked about a database that is not there.
-	const UIDRef sourceRef = (sourceDB != nil)
-		? UIDRef(sourceDB, sourceStoryUID)	// ⛔the uid translation went with the origin (2026-09-21); the row's Source story since 2026-10-26
-		: UIDRef(nil, kInvalidUID);
-
 	std::vector<KCMStoryChange> changes;
-	const bool16 compared = CompareOneStory(UIDRef(targetDB, storyUID), sourceRef, pairedByPlace, changes);
+	const bool16 compared = CompareOneStory(UIDRef(targetDB, storyUID), UIDRef(sourceDB, sourceStoryUID), pairedByPlace, changes);
 
 	// **WRITTEN EITHER WAY, INCLUDING EMPTY.** What stands under the row after a refresh is what
 	//   the documents say now, and "nothing" is a perfectly good thing for them to say -- the row
 	//   shows it as "None" (KCMStoryRow::fTextCompared), which is how the reader tells "I have
 	//   just repaired this" apart from "this was never looked at".
-	if (!compared)
-		changes.clear();
 	MarkOverset(targetDB, storyUID, changes);
 	KCMStoryList::SetRowChanges(rowIndex, changes, compared);
 	// ★★THE "=" RECORDS FOLLOW EDITS MADE OUTSIDE KCM (2026-10-26, the import tidy S10): each is placed again from the

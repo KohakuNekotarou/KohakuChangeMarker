@@ -43,7 +43,6 @@
 #include "KCMTextDiff.h"		// ToCodePoints - one UTF-8 walk, owned in one place
 
 #include <algorithm>
-#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -303,9 +302,7 @@ namespace
 /** A number as text, for the places a difference has to be named. */
 std::string Num(size_t n)
 {
-	char buf[32];
-	std::snprintf(buf, sizeof(buf), "%u", static_cast<unsigned int>(n));
-	return std::string(buf);
+	return std::to_string(n);
 }
 
 bool16 SameSpans(const KCMAttrSpanList& a, const KCMAttrSpanList& b, const std::string& where,
@@ -333,8 +330,7 @@ bool16 SameSpans(const KCMAttrSpanList& a, const KCMAttrSpanList& b, const std::
 	return kTrue;
 }
 
-/** Where the footnotes' references stand, compared only when the caller's format carries them
-	(KCMStoryShape.h, Same's withNoteRefs says when the places are compared). */
+/** Where the footnotes' references stand. */
 bool16 SameNoteRefs(const std::vector<NoteRef>& a, const std::vector<NoteRef>& b,
 					const std::string& where, std::string& outWhy)
 {
@@ -355,7 +351,7 @@ bool16 SameNoteRefs(const std::vector<NoteRef>& a, const std::vector<NoteRef>& b
 }
 
 bool16 SameParas(const std::vector<Para>& a, const std::vector<Para>& b, const std::string& where,
-				 bool16 withNoteRefs, std::string& outWhy)
+				 std::string& outWhy)
 {
 	if (a.size() != b.size())
 	{
@@ -378,11 +374,9 @@ bool16 SameParas(const std::vector<Para>& a, const std::vector<Para>& b, const s
 			return kFalse;
 		if (!SameSpans(a[i].fWarichu, b[i].fWarichu, here, "warichu", outWhy))
 			return kFalse;
-		if (withNoteRefs && !SameNoteRefs(a[i].fNoteRefs, b[i].fNoteRefs, here, outWhy))
+		if (!SameNoteRefs(a[i].fNoteRefs, b[i].fNoteRefs, here, outWhy))
 			return kFalse;
-		// ★**THE ENDNOTE MARKS TRAVEL WITH THE REFERENCES** and are compared on the same terms: a
-		//   format that cannot carry where a note hangs cannot be asked whether it still does.
-		if (withNoteRefs && a[i].fEndnoteAt != b[i].fEndnoteAt)
+		if (a[i].fEndnoteAt != b[i].fEndnoteAt)
 		{
 			outWhy = here + ": " + Num(a[i].fEndnoteAt.size()) + " endnote mark(s) became "
 					 + Num(b[i].fEndnoteAt.size());
@@ -396,7 +390,7 @@ bool16 SameParas(const std::vector<Para>& a, const std::vector<Para>& b, const s
 
 }	// anonymous namespace
 
-bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNoteRefs)
+bool16 Same(const Story& a, const Story& b, std::string& outWhy)
 {
 	outWhy.clear();
 
@@ -406,7 +400,7 @@ bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNote
 		return kFalse;
 	}
 
-	if (!SameParas(a.fBody, b.fBody, "the body", withNoteRefs, outWhy))
+	if (!SameParas(a.fBody, b.fBody, "the body", outWhy))
 		return kFalse;
 
 	if (a.fNotes.size() != b.fNotes.size())
@@ -416,7 +410,7 @@ bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNote
 	}
 	for (size_t n = 0; n < a.fNotes.size(); ++n)
 	{
-		if (!SameParas(a.fNotes[n], b.fNotes[n], "note " + Num(n + 1), withNoteRefs, outWhy))
+		if (!SameParas(a.fNotes[n], b.fNotes[n], "note " + Num(n + 1), outWhy))
 			return kFalse;
 	}
 
@@ -469,7 +463,7 @@ bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNote
 					outWhy = cell + ": its span changed";
 					return kFalse;
 				}
-				if (!SameParas(p.fParas, q.fParas, cell, withNoteRefs, outWhy))
+				if (!SameParas(p.fParas, q.fParas, cell, outWhy))
 					return kFalse;
 			}
 		}

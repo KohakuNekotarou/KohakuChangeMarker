@@ -40,10 +40,7 @@ namespace KCMStoryShape
 /** Where one footnote's reference stands in a paragraph (2026-09-19).
 
 	★★**THE .docx FORMAT CARRIES THIS.** Word cannot hold a footnote without its reference standing
-	  in the body, so KCMStoryDocx writes it. ⚠It is compared only when asked for (Same's
-	  withNoteRefs): the HTML spelling, which carried no such thing, was the reason that switch is
-	  there, and it is kept because a caller that has no places to compare still has to be able to
-	  ask whether two stories agree about everything else.
+	  in the body, so KCMStoryDocx writes it.
 	fAt counts fText's code points, 0 to the paragraph's length: the reference stands BEFORE the
 	character at fAt, and at the length it ends the paragraph. fNote indexes Story::fNotes. */
 struct NoteRef
@@ -209,10 +206,8 @@ void CollectKentenValues(const Story& s, std::vector<std::string>& inOutSeen);
 	  rather than after somebody has spent a day editing it.
 	★**AND IT IS THE HARNESS'S CHECK TOO**: Read(Write(x)) == x is the property the round trip
 	  exists to keep, and this is that sentence as a function.
-	@param outWhy where the first difference is, in words a status line can show.
-	@param withNoteRefs kTrue compares Para::fNoteRefs as well. ★**KCMStoryDocx's own check passes
-	  kTrue**, because that format carries where a reference stands. */
-bool16 Same(const Story& a, const Story& b, std::string& outWhy, bool16 withNoteRefs = kFalse);
+	@param outWhy where the first difference is, in words a status line can show. */
+bool16 Same(const Story& a, const Story& b, std::string& outWhy);
 
 }	// namespace KCMStoryShape
 

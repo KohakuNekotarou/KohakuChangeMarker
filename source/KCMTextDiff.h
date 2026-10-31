@@ -44,6 +44,7 @@
 #ifndef __KCMTextDiff_h__
 #define __KCMTextDiff_h__
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -69,38 +70,27 @@ namespace KCMTextDiff
 		Change() : aStart(0), aCount(0), bStart(0), bCount(0) {}
 	};
 
-	/** Compares two token sequences.
+	/** Compares two token sequences. **There is no ceiling on the edit distance**: slower is acceptable
+		here, wrong is not.
 		@param a IN the baseline sequence.
 		@param b IN the target sequence.
 		@param changes OUT the runs of difference, in order. Emptied first.
-		@param maxEdits IN an optional ceiling on the edit distance. **0 -- the default -- means no
-		ceiling, and that is what every caller uses**: slower is acceptable here, wrong is not.
 
-		**Why there used to be one, and why there need not be now.** The search once kept one row
-		per step so that the path could be walked back, which costs O(D^2) MEMORY -- about 31 MB at
-		the old ceiling of 2000, and four times that for every doubling. The ceiling was the only
-		thing holding that number down, and the price was that any story needing more edits than
-		the ceiling got no detail at all. The search now runs in LINEAR SPACE (Myers' own
-		divide-and-conquer refinement), so distance costs time and not memory: **50,000 tokens
-		against 50,000 unrelated ones needs 3.2 MB.**
-		★The figure is worth being able to re-derive rather than trust: the search keeps TWO rows of
-		4*(N+M)+7 int32s, so 50,000 + 50,000 gives 400,007 entries each, 1.6 MB a row and 3.2 MB the
-		pair. ⚠**This line said 1.6 MB until 2026-09-04** -- one row's worth, written as though it
-		were both.
+		The search runs in LINEAR SPACE (Myers' own divide-and-conquer refinement), so distance costs
+		time and not memory: **50,000 tokens against 50,000 unrelated ones needs 3.2 MB** - it keeps TWO
+		rows of 4*(N+M)+7 int32s, so 400,007 entries each, 1.6 MB a row and 3.2 MB the pair.
 
-		@warning what a ceiling would still buy is a bound on TIME, which is O((N+M)*D). Measured
-		 in work/textdiff-test: 8,000 vs 8,000 with one percent changed = **1 ms**; 3,000 vs 3,000
-		 sharing nothing = **84 ms**; 50,000 vs 50,000 sharing nothing = **24 s**. Only the last is
-		 uncomfortable, and it is a shape real text does not take -- two versions of a document
-		 share most of their characters even when every sentence was rewritten.
+		@warning the time is O((N+M)*D). Measured in work/textdiff-test: 8,000 vs 8,000 with one percent
+		 changed = **1 ms**; 3,000 vs 3,000 sharing nothing = **84 ms**; 50,000 vs 50,000 sharing nothing
+		 = **24 s**. Only the last is uncomfortable, and it is a shape real text does not take -- two
+		 versions of a document share most of their characters even when every sentence was rewritten.
 
-		@return kTrue if the comparison completed, kFalse if it hit maxEdits -- in which case
-		changes is left empty and the caller should treat the whole sequence as changed.
-		With the default there is no ceiling to hit, so kFalse cannot happen; the callers still
-		check, because that is the contract and not an accident of today's default.
+		@return kTrue if the comparison completed. kFalse only from a guard that cannot fire
+		(FindMiddleSnake, "Unreachable"): changes is then left empty and the caller should treat the
+		whole sequence as changed.
 	*/
 	bool16 Diff(const std::vector<int32>& a, const std::vector<int32>& b,
-				std::vector<Change>& changes, int32 maxEdits = 0);
+				std::vector<Change>& changes);
 
 	/** The changes between a and b, found piece by piece where fixed marks cut them (2026-09-24, S3b):
 		a's piece k is [aCuts[k-1], aCuts[k]) and it is diffed only against b's piece k. The changes come
@@ -109,10 +99,10 @@ namespace KCMTextDiff
 		a paragraph needs, since its anchor cannot move ("ab[T]cd" and "abcd[T]" are the same text).
 		aCuts and bCuts must be the same size, ascending; no marks is a plain Diff.
 		@return kFalse when the cut counts differ, a cut is out of order or out of range, or a piece's
-		Diff hits maxEdits - and then changes is empty. */
+		Diff does not complete - and then changes is empty. */
 	bool16 DiffInPieces(const std::vector<int32>& a, const std::vector<int32>& aCuts,
 						const std::vector<int32>& b, const std::vector<int32>& bCuts,
-						std::vector<Change>& changes, int32 maxEdits = 0);
+						std::vector<Change>& changes);
 
 	/** The Story comparison's character pass, in one place (2026-10-26, the import matrix's X06/Y06): Diff, then
 		MergeNearbyChanges (never swallowing `doNotSwallow`), then AlignChangeBoundaries (`widenWords`) - each of the three
@@ -265,7 +255,7 @@ namespace KCMTextDiff
 		@param tokens OUT one token per string.
 	*/
 	void Tokenize(const std::vector<std::string>& strings,
-				  std::vector<std::string>& table, std::vector<int32>& tokens);
+				  std::map<std::string, int32>& table, std::vector<int32>& tokens);
 
 	/** Splits UTF-8 into code points, one token each.
 

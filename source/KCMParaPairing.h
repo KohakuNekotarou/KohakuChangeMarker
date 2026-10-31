@@ -127,7 +127,7 @@ inline void Pair(const std::vector<std::string>& doc, const std::vector<std::str
 {
 	out.clear();
 
-	std::vector<std::string> table;
+	std::map<std::string, int32> table;
 	std::vector<int32> a;
 	std::vector<int32> b;
 	KCMTextDiff::Tokenize(doc, table, a);

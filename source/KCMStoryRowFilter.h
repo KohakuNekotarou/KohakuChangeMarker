@@ -87,13 +87,12 @@
 	  arrived here as well, until that mode stopped keeping a story list.)
 	  ⚠**THIS USED TO NAME TWO MORE REASONS AND NEITHER EXISTS** (measured 2026-09-08): the length
 	    check went with the XML route on 2026-09-03, and "the edit distance ran past the limit"
-	    cannot happen -- KCMTextDiff::Diff takes a ceiling and KCM never passes one (maxEdits
-	    defaults to 0, meaning none), so the only other way out of it is a guard whose own comment
-	    calls itself unreachable. In both, "the Text counter moved" is real
+	    cannot happen -- KCMTextDiff::Diff has no limit, so the only other way out of it is a guard
+	    whose own comment calls itself unreachable. In both, "the Text counter moved" is real
 	  evidence that characters were inserted, removed or replaced, and it is evidence nobody else
 	  is offering.
 	  @warning Attr or Other alone is dropped here -- and in the story mode that costs the ruby of
-	    a story too large to diff. That is the trade the pixel mode made above while it kept a
+	    a story that could not be read. That is the trade the pixel mode made above while it kept a
 	    list, arrived at from the other direction.
 */
 inline bool16 KCMStoryRowHasContentChange(uint32 kinds, bool16 textCompared, int32 changeCount)

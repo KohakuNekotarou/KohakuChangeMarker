@@ -774,7 +774,7 @@ bool16 KCMExportStoryText(IDataBase* db, const IDFile& parent, const UIDList& on
 				KCMStoryDocx::SettleForThisFormat(settled);
 				KCMStoryDocx::ReadResult back;
 				sound = KCMStoryDocx::Read(parts, back, why)
-						&& KCMStoryShape::Same(settled, back.fAfter, why, kTrue);
+						&& KCMStoryShape::Same(settled, back.fAfter, why);
 			}
 			if (!sound)
 			{

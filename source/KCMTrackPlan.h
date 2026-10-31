@@ -9,15 +9,10 @@
 //
 //  From InDesign's records (copied out by KCMTrackRead) to the rows the list shows: an insertion and the
 //  deletion that touches it, by the SAME author, are one replacement (a word typed over, KFC's replace);
-//  moved text is a row of its own and never pairs; kApply / kUnknown are left out and counted. And where
-//  each change stands in the ORIGINAL - the text with every record taken back, which is what the copy
-//  "Compare with Tracked Changes..." saved - so that the Source window could be taken to it.
-//  ⚠THAT LAST PART HAS NO READER SINCE 2026-10-27 (no copy is made - KCMTrackStart.h): fOrigFrom / fOrigTo are still
-//   computed and tested here, and left for the waste-removal pass (the author's rule: a feature's session stops there).
+//  moved text is a row of its own and never pairs; kApply / kUnknown are left out and counted.
 //
 //  ★HEADER-ONLY AND FREE OF THE SDK EXCEPT FOR BaseType.h, WHICH IS WHAT MAKES IT TESTABLE: the test is
-//   work\kcm-track-test (a stub BaseType.h, and an oracle that REBUILDS the original text from the records
-//   rather than repeating the formula below).
+//   work\kcm-track-test (a stub BaseType.h).
 //
 //========================================================================================
 
@@ -38,7 +33,7 @@ struct KCMTrackRecord
 	int32		fKind;		// KCMTrackRecordKind
 	bool16		fMoved;		// an insertion InDesign calls moved text (VOSRedlineChange::GetIsMovedText)
 	TextIndex	fAt;		// an insertion's first character; a deletion's anchor
-	int32		fLen;		// an insertion's length; for a deletion, its deleted text's length (code points)
+	int32		fLen;		// an insertion's length
 	int32		fAuthor;	// an index into the reader's author table - only compared here
 	uint64		fTime;		// VOSRedlineChange::GetTimeStamp
 	bool16		fHidden;	// stands in hidden conditional text: its positions are in that thread
@@ -58,44 +53,15 @@ struct KCMTrackPlanned
 	int32		fDelRec;	// index into the records, -1 when none
 	TextIndex	fFrom;		// Target: the inserted characters [fFrom, fTo); a deletion alone: fFrom == fTo == its anchor
 	TextIndex	fTo;
-	TextIndex	fOrigFrom;	// the original: [fOrigFrom, fOrigTo) holds the deleted characters; an insertion alone is a caret
-	TextIndex	fOrigTo;
 	bool16		fHidden;
 	KCMTrackPlanned() : fKind(kKCMTrackInsert), fAuthor(-1), fTime(0), fInsRec(-1), fDelRec(-1),
-						fFrom(0), fTo(0), fOrigFrom(0), fOrigTo(0), fHidden(kFalse) {}
+						fFrom(0), fTo(0), fHidden(kFalse) {}
 };
 
 /** True for a colour InDesign uses for "this author has no colour of their own" - the galley's white. */
 inline bool16 KCMTrackColourIsWhite(double r, double g, double b)
 {
 	return (r >= 0.99 && g >= 0.99 && b >= 0.99) ? kTrue : kFalse;
-}
-
-/** Where a change that starts at Target position p begins in the original. Inserted characters before p
-	are not there; a deletion anchored before p, or AT p with a lower record index than `ownRec`, has put its
-	characters back in front of p. Hidden records stand in another thread and move nothing here. */
-inline TextIndex KCMTrackOriginalIndex(const std::vector<KCMTrackRecord>& recs, TextIndex p, int32 ownRec)
-{
-	int32 shift = 0;
-	for (size_t i = 0; i < recs.size(); ++i)
-	{
-		const KCMTrackRecord& r = recs[i];
-		if (r.fHidden || static_cast<int32>(i) == ownRec)
-			continue;
-		if (r.fKind == kKCMTrackRecInsert)
-		{
-			const TextIndex end = r.fAt + r.fLen;
-			const TextIndex upTo = (end < p) ? end : p;
-			if (upTo > r.fAt)
-				shift -= (upTo - r.fAt);
-		}
-		else if (r.fKind == kKCMTrackRecDelete)
-		{
-			if (r.fAt < p || (r.fAt == p && static_cast<int32>(i) < ownRec))
-				shift += r.fLen;
-		}
-	}
-	return p + shift;
 }
 
 namespace KCMTrackPlanDetail
@@ -189,20 +155,6 @@ inline void KCMPlanTrackChanges(const std::vector<KCMTrackRecord>& recs, std::ve
 			p.fTo = r.fAt;
 		}
 		out.push_back(p);
-	}
-
-	// Where each stands in the original.
-	for (size_t k = 0; k < out.size(); ++k)
-	{
-		KCMTrackPlanned& p = out[k];
-		if (p.fHidden)
-		{
-			p.fOrigFrom = p.fOrigTo = 0;
-			continue;
-		}
-		const int32 own = (p.fDelRec >= 0) ? p.fDelRec : p.fInsRec;
-		p.fOrigFrom = KCMTrackOriginalIndex(recs, p.fFrom, own);
-		p.fOrigTo = p.fOrigFrom + ((p.fDelRec >= 0) ? recs[p.fDelRec].fLen : 0);
 	}
 
 	std::sort(out.begin(), out.end(), KCMTrackPlanDetail::IsBefore);
