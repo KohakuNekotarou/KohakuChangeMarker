@@ -17,10 +17,13 @@
 //  fell back to the story's first frame and said nothing (measured on the application, 2026-09-15:
 //  the caret was placed correctly, parentTextFrames was 0, and the window moved to page 1).
 //
-//  ⚠**THE "+" POINT IS NOT A PUBLIC API.** There is no interface that hands out the indicator's
-//  position; it is worked out as the OUTPORT - the bottom-right corner, in PARCEL-LOCAL
-//  coordinates, of the last parcel of the thread that still has a frame - and transformed
-//  parcel -> frame inner -> pasteboard. KFC's KFCOversetLocator computes it the same way.
+//  ⚠**THE "+" POINT IS WORKED OUT HERE, NOT ASKED FOR.** It is taken as the OUTPORT - the bottom-right
+//  corner, in PARCEL-LOCAL coordinates, of the last parcel of the thread that still has a frame - and
+//  transformed parcel -> frame inner -> pasteboard. KFC's KFCOversetLocator computes it the same way.
+//  ⚠A public question does exist for a text frame (this said "not a public API" until 2026-10-31):
+//  InDesign's own handle drawing takes the point it draws the "+" at from
+//  IPageItemUtils::GetTextFrameHandlePositions (CHandleShape::DrawTextFrameHandles). Not yet compared
+//  with this walk on the application; nothing was found for a table cell's red dot.
 //
 //  ⚠★★**DO NOT ADD A BRANCH ON WRITING DIRECTION.** The corner is taken in parcel-local
 //  coordinates and GetParcelToFrameMatrix carries the direction, so (Right, Bottom) lands at the
