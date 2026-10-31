@@ -69,7 +69,7 @@ void	KCMClearReportComparison(IDataBase* targetDB, IDataBase* sourceDB);
 // **IT IS THE START PROCEDURE, NOT A SECOND ONE.** It runs KCMStartComparisonOn with the ARMED
 // pair, so a refresh and a start cannot come to disagree about what starting means
 // ([[one-question-one-place]]). Nothing here has to stop first: arming is idempotent
-// (KCMDoArmMousePeek only assigns, and skips its cache drop when the pair is unchanged), and
+// (KCMDoArmMousePeek only assigns), the comparison itself drops the peek's pictures, and
 // re-comparing an armed pair is what the register toggle already does (KCMPageMap.cpp).
 //
 // ⚠**A FULL COMPARISON, NEVER THE INCREMENTAL ONE.** KCMDoMarkChangesDoc's allowIncremental reuses

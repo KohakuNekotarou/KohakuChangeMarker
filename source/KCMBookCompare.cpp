@@ -41,6 +41,7 @@
 #include "KCMBookChapterModes.h"	// the story and resources judgements - the other two of the three
 #include "KCMBookCompare.h"
 #include "KCMBookPair.h"			// KCMBuildChapterPairing
+#include "KCMCmykRaster.h"			// the two terms a raster whose numbers are read is asked for on
 #include "KCMConstants.h"			// kKCMResolution / kKCMHiResMul / kKCMCmykThr / kKCMChapterProgressSpan
 #include "KCMCore.h"				// KCMCollectPageUIDs - the same page walk the document comparison uses
 #include "KCMDrawEventHandler.h"	// KCMRasterizingGuard - do not draw marks into our own raster
@@ -376,11 +377,11 @@ ErrorCode PageDiffers(const UIDRef& targetPage, const UIDRef& sourcePage, bool16
 	//     non-printing -- a working note, an instruction to the printer -- is NOT a change. The
 	//     mark states that the PRINTED result changed. The argument is documented on
 	//     SnapshotUtilsEx::Draw, which also warns that it does NOT affect non-printing LAYERS.
-	//     Arguments 5-7 are the defaults spelled out, because the 8th cannot be reached without
-	//     them: kXPHigh (lowering it would hide changes to shadows, feathers and blends), no abort
-	//     callback (cancellation is checked at page boundaries, see KCMCore.cpp), and no viewport
-	//     attribute map (pVPAttrMap, SnapshotUtilsEx.h:251), so nothing about baseline grids,
-	//     layers or the flattener is overridden for the snapshot.
+	//     Arguments 5-6 are the defaults spelled out, because the 7th and 8th cannot be reached
+	//     without them: kXPHigh (lowering it would hide changes to shadows, feathers and blends),
+	//     no abort callback (cancellation is checked at page boundaries, see KCMCore.cpp).
+	//   - simulateOverprint and the attribute map (KCMCmykRaster.h), or the numbers depend on
+	//     whether anything else on the spread holds transparency
 	const PMReal hiRes = kKCMResolution * kKCMHiResMul;
 
 	// nothrow throughout, as in the document comparison: the ordinary new throws instead of
@@ -392,9 +393,9 @@ ErrorCode PageDiffers(const UIDRef& targetPage, const UIDRef& sourcePage, bool16
 	//   accessor before the snapshot it came from, which is what the four hand-written deletes at
 	//   the end of this function used to spell out.
 	K2::scoped_ptr<SnapshotUtilsEx>  snapT(new (std::nothrow) SnapshotUtilsEx(targetPage, 1.0, 1.0, hiRes, hiRes, 0.0,
-	                                                                         SnapshotUtilsEx::kCsCMYK, kFalse));
+	                                                                         SnapshotUtilsEx::kCsCMYK, kFalse, kKCMCmykRasterSimulateOverprint));
 	K2::scoped_ptr<SnapshotUtilsEx>  snapS(new (std::nothrow) SnapshotUtilsEx(sourcePage, 1.0, 1.0, hiRes, hiRes, 0.0,
-	                                                                         SnapshotUtilsEx::kCsCMYK, kFalse));
+	                                                                         SnapshotUtilsEx::kCsCMYK, kFalse, kKCMCmykRasterSimulateOverprint));
 	K2::scoped_ptr<AGMImageAccessor> accT;
 	K2::scoped_ptr<AGMImageAccessor> accS;
 	ErrorCode                        status = kFailure;
@@ -405,10 +406,11 @@ ErrorCode PageDiffers(const UIDRef& targetPage, const UIDRef& sourcePage, bool16
 		ErrorCode drewS = kFailure;
 		{
 			KCMRasterizingGuard rg;	// a re-entrant draw event must not paint marks into our raster
+			KCMCmykRasterAttrs attrs;
 			drewT = snapT->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
-			                    SnapshotUtils::kXPHigh, nil, nil, kFalse);
+			                    SnapshotUtils::kXPHigh, nil, &attrs.map, kFalse);
 			drewS = snapS->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
-			                    SnapshotUtils::kXPHigh, nil, nil, kFalse);
+			                    SnapshotUtils::kXPHigh, nil, &attrs.map, kFalse);
 		}
 
 		accT.reset((drewT == kSuccess) ? snapT->CreateAGMImageAccessor() : nil);

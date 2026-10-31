@@ -164,6 +164,9 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookResult.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMCmykRaster.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMColorSampler.h">
       <Filter>Header Files</Filter>
     </ClInclude>

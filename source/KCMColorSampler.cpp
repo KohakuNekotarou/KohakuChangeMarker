@@ -33,6 +33,7 @@
 //   KCMColorSampler.h).
 #include "KCMPageMap.h"            // KCMMapTargetToSource / KCMBuildPairing (the exclusion pairing)
 #include "KCMColorSampler.h"
+#include "KCMCmykRaster.h"			// the two terms a raster whose numbers are read is asked for on
 #include "KCMDiag.h"				// KCM_DIAG_LOG - a sample, timed (test builds only)
 #ifdef KCM_DIAG
 #include <chrono>					// steady_clock - the sample's time
@@ -92,6 +93,12 @@ void KCMSampleCmykEndDrag()
 	sDrag = KCMDragPairing();
 }
 
+// A CMYK raster's 8-bit value (0..255) as a percentage, rounded: 255 -> 100, 0 -> 0, 128 -> 50.
+static inline int32 KCMPct(uint8 v)
+{
+	return ((int32)v * 100 + 127) / 255;
+}
+
 // Rasterise a tiny area of pageRef's page around spreadPt (that page's spread coordinates) in
 // CMYK at high dpi, and read the raw C, M, Y, K of the centre pixel (0..255) into out[4]. The
 // accessor and the snapshot are destroyed immediately: holding neither across a draw is what
@@ -126,7 +133,7 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 	// Snapshot first, accessor second: scoped_ptrs go down in reverse declaration order, so the
 	// accessor is destroyed before the snapshot it came from.
 	K2::scoped_ptr<SnapshotUtilsEx> snap(new (std::nothrow) SnapshotUtilsEx(clip, PMMatrix(), pageRef, 1.0, 1.0,
-		kKCMSampleDpi, 72.0, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse));
+		kKCMSampleDpi, 72.0, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse, kKCMCmykRasterSimulateOverprint));
 	if (snap.get() == nil)
 		return kFalse;	// nothrow: out of memory costs one sample, nothing more (as in KCMDrawEventHandler)
 	// Proxy drawing (fullRes=kFalse), the same as the frame comparison uses, so no placed image is
@@ -166,7 +173,9 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 	ErrorCode drew;
 	{
 		KCMRasterizingGuard rg;	// RAII: no marks are drawn into this Draw by re-entry
-		drew = snap->Draw(IShape::kPreviewMode, kFalse /*fullRes*/, 0.0 /*greek off*/, kFalse /*AA off*/);
+		KCMCmykRasterAttrs attrs;
+		drew = snap->Draw(IShape::kPreviewMode, kFalse /*fullRes*/, 0.0 /*greek off*/, kFalse /*AA off*/,
+		                  SnapshotUtils::kXPHigh, nil, &attrs.map);
 	}
 	K2::scoped_ptr<AGMImageAccessor> acc((drew == kSuccess) ? snap->CreateAGMImageAccessor() : nil);
 
@@ -188,20 +197,19 @@ static bool16 KCMReadCmykPixel(const UIDRef& pageRef, const PMPoint& spreadPt, u
 	}
 	// (acc and snap are freed by their scoped_ptrs -- the accessor first.)
 #ifdef KCM_DIAG
-	KCM_DIAG_LOG("CMYK-SAMPLE ms=%lld ok=%d",
+	KCM_DIAG_LOG("CMYK-SAMPLE ms=%lld ok=%d cmyk=%d %d %d %d",
 	             (long long)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - sampleStart).count(),
-	             ok ? 1 : 0);
+	             ok ? 1 : 0, KCMPct(out[0]), KCMPct(out[1]), KCMPct(out[2]), KCMPct(out[3]));
 #endif
 	return ok;
 }
 
 // Append a CMYK raster's 8-bit value (0..255) as the percentage CMYK is really expressed in (0..100),
-// rounded: 255 -> 100, 0 -> 0, 128 -> 50 ((v*100+127)/255 does the rounding), in exactly three digits,
-// zero-padded. This is what lines the Target's and the Source's C/M/Y/K up vertically. AppendNumber
-// does not zero-pad, hence the digit-by-digit output.
+// in exactly three digits, zero-padded. This is what lines the Target's and the Source's C/M/Y/K up
+// vertically. AppendNumber does not zero-pad, hence the digit-by-digit output.
 static void KCMAppendPct3(PMString& s, uint8 v)
 {
-	const int32 pct = ((int32)v * 100 + 127) / 255;
+	const int32 pct = KCMPct(v);
 	s.AppendNumber(pct / 100);
 	s.AppendNumber((pct / 10) % 10);
 	s.AppendNumber(pct % 10);
@@ -270,11 +278,8 @@ bool16 KCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTar
 	InterfacePtr<IGeometry> hGeo(hoverDB, hPageUID, UseDefaultIID());
 	if (hGeo == nil)
 		return kFalse;
-	PMMatrix mPB = ::InnerToPasteboardMatrix(hGeo);
-	if (mPB.IsSingular())
-		return kFalse;
 	PMPoint inner(mx, my);
-	mPB.Inverse().Transform(&inner);
+	::TransformPasteboardPointToInner(hGeo, &inner);
 	PMPoint hSpreadPt = inner;
 	::TransformInnerPointToSpread(hGeo, &hSpreadPt);
 

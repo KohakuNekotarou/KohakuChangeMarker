@@ -73,6 +73,7 @@
 #include "KCMBookCompare.h"        // KCMClearBookResultText (the book comparison's result text)
 #include "KCMHideUnchanged.h"      // KCMResetHideUnchanged and the getters for the hidden documents
 #include "KCMSentence.h"           // KCMSentence - the progress bar's words, not keys
+#include "KCMDiag.h"				// KCM_DIAG_LOG - when the peek's pictures are taken (test builds only)
 #include "KCMPeek.h"
 
 //========================================================================================
@@ -200,13 +201,18 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 			return;
 	}
 
-	// Is the whole spread already cached (same database, every page present in sOrigImages)? Then
-	// it is reused as it stands.
+	// Is the whole spread already cached (same database, every page with its picture in sOrigImages or
+	// known to have none to take)? Then it is reused as it stands.
+	// **A page with no counterpart never has a picture**, so asking after the pictures alone sent a
+	//   spread holding one back to rasterising on every press (measured 2026-10-31: 3 presses, 3 times).
 	bool16 cached = (KCMDrawEventHandler::sOrigDB == targetDB);
 	for (int32 p = 0; p < np && cached; ++p)
-		if (KCMDrawEventHandler::sOrigImages.find(spread->GetNthPageUID(p)) ==
-		    KCMDrawEventHandler::sOrigImages.end())
+	{
+		const UID pageUID = spread->GetNthPageUID(p);
+		if (KCMDrawEventHandler::sOrigImages.find(pageUID) == KCMDrawEventHandler::sOrigImages.end() &&
+		    KCMDrawEventHandler::sOrigPartnerless.find(pageUID) == KCMDrawEventHandler::sOrigPartnerless.end())
 			cached = kFalse;
+	}
 	// A changed zoom means the cached resolution no longer matches, so it is rebuilt. Within 2% it
 	// is close enough to reuse.
 	if (cached && KCMDrawEventHandler::sOrigScale > 0)
@@ -229,6 +235,7 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 		//     which is the common case -- does not construct them.
 		IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
 		IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
+		KCM_DIAG_LOG("PEEK-PICTURES np=%d", (int)np);
 
 		// New page -> old page comes from the exclusion pairing (registered pages, which have no
 		// counterpart, left out and the rest matched by UID - KCMPageMap.h). It is only needed in this branch,
@@ -248,12 +255,16 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 			//   one-spread copy by itself; the branch went on 2026-09-21 and left a bare block.
 			std::map<UID, UID>::const_iterator mi = targetToSource.find(tPageUID);
 			if (mi == targetToSource.end())
+			{
+				KCMDrawEventHandler::sOrigPartnerless.insert(tPageUID);
 				continue;
+			}
 			const UID sPageUID = mi->second;
 			UIDRef tRef(targetDB, tPageUID);
 			UIDRef sRef(sourceDB, sPageUID);
-			KCMDrawEventHandler::MakeOrigImage(tRef, sRef, peekDpi);	// a page that fails is simply not laid over
+			KCMDrawEventHandler::MakeOrigImage(tRef, sRef, peekDpi);	// a page that fails is simply not laid over (and is tried again at the next press)
 		}
+		KCM_DIAG_LOG("PEEK-PICTURES-DONE");
 	}
 
 	KCMDrawEventHandler::sShowOriginal = kTrue;
@@ -780,10 +791,8 @@ void KCMPeekStartup::Shutdown()
 
 void KCMDoArmMousePeek(IDataBase* targetDB, IDataBase* sourceDB)
 {
-	// A different pair means the cached older-version images are of the wrong document.
-	if (sPeekSourceDB != sourceDB || sPeekTargetDB != targetDB)
-		KCMDrawEventHandler::DropAllOrig();
-
+	// The peek's pictures are not looked at here: arming only ever follows a comparison, and the
+	//   comparison has just dropped them (KCMDoMarkChangesDoc).
 	// Dropping the sync caches (KCMViewSync) and resetting the peek's gesture state
 	//   (KCMPeekGesture) are not done here: both are UI state. Arming is immediately followed by
 	//   KCMStartComparisonFor sending kKCMMarksRebuiltMessage, and the UI resets its own state on

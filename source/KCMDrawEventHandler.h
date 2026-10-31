@@ -328,6 +328,8 @@ public:
 	// on they are blitted opaquely over that db's pages.
 	static std::map<UID, KCMOrigImage*> sOrigImages;	// page UID (new) -> the older picture
 	static IDataBase* sOrigDB;							// the single document those pictures belong to (switching db rebuilds them)
+	static std::set<UID> sOrigPartnerless;				// the pages of that spread with no counterpart: no picture to take, and known, so
+														// that a spread holding one is not rasterised again on every press
 	static bool16 sShowOriginal;						// whether the peek is shown (default off)
 	static PMReal sOrigScale;							// the content->window scale (zoom x device scale) the pictures were
 														// rasterised at, so a later peek can tell the zoom has changed and
@@ -429,6 +431,7 @@ public:
 		for (std::map<UID, KCMOrigImage*>::iterator it = sOrigImages.begin(); it != sOrigImages.end(); ++it)
 			delete it->second;
 		sOrigImages.clear();
+		sOrigPartnerless.clear();
 		sOrigDB = nil;
 		sShowOriginal = kFalse;
 		sOrigScale = 0.0;

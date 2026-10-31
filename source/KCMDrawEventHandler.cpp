@@ -36,6 +36,7 @@
 #include "IXPManager.h"				// GetDocumentBlendingSpace / ReleaseBlendingSpace (the PDF export's transparency group)
 #include "IViewPortAttributes.h"		// asking the port for kPDFExportVPAttr / kPDFIsFlattenerTargetVPAttr
 #include "OutPrvID.h"					// kSepPrvOPPEnabledVPAttr -- is overprint preview on
+#include "KCMCmykRaster.h"			// the two terms a raster whose numbers are read is asked for on
 #include "EPSID.h"						// kBuildingDLforPlacedINDDVPAttr -- is this a page placed from another .indd
 #include "PDFID.h"					// those two ViewPortAttr IDs (PDFID.h:1543-1544)
 #include "K2SmartPtr.h"				// K2::scoped_array / K2::scoped_ptr -- the SDK's own scoped ownership, so that
@@ -99,6 +100,7 @@ IDataBase* KCMDrawEventHandler::sOverflowCacheSrcDB = nil;			// and the sSrcDB
 IDThreading::ThreadLocal<bool16> KCMDrawEventHandler::tl_Rasterizing(kFalse);	// kTrue only while WE are rasterising (re-entrancy guard)
 std::map<UID, KCMOrigImage*> KCMDrawEventHandler::sOrigImages;
 IDataBase* KCMDrawEventHandler::sOrigDB = nil;
+std::set<UID> KCMDrawEventHandler::sOrigPartnerless;
 bool16 KCMDrawEventHandler::sShowOriginal = kFalse;	// default hidden
 PMReal KCMDrawEventHandler::sOrigScale = 0.0;	// the zoom scale the pictures were rasterised at (0 = not set)
 PMReal KCMDrawEventHandler::sPeekOpacity = 1.0;	// default opaque (Shift peek). Shift+Alt peek sets 0.5
@@ -358,6 +360,9 @@ struct KCMPageRaster
 // The comparison is always four-channel CMYK, rasterised opaque (small CMYK differences are
 // rounded away by a conversion to RGB). The displayed ring is composited separately as ARGB,
 // so the comparison raster does not need an alpha channel (addTransparencyAlpha = kFalse).
+// ★**simulateOverprint and the attribute map are what make the numbers the same whatever else is on
+//   the spread** (KCMCmykRaster.h): without them, one drop shadow added to a page marked every placed
+//   image beside it as changed.
 // Rasterise with ANTI-ALIASING OFF (4th argument enableAntiAliasing = kFalse). It removes the
 //   grey halo at edges, and with it the banding that a sub-pixel shift would otherwise register
 //   as a difference. **Target and source must always use the same AA setting** -- with one of
@@ -386,22 +391,22 @@ struct KCMPageRaster
 //   the printed result is identical**. KCM's marks mean "the printed result changed"
 //   (SnapshotUtilsEx.h:241-242).
 //   @warning as that header states, it does NOT affect a LAYER's non-printing setting.
-//   @warning arguments 5-7 are the defaults spelled out, only because the 8th cannot be reached
-//     otherwise: transparencyQuality = kXPHigh (do not lower it, or changes to shadows, feathers
-//     and blends stop being detected), abortCheck = nil (cancelling is checked at page
-//     boundaries, in KCMCore.cpp), pVPAttrMap = nil.
+//   @warning arguments 5-6 are the defaults spelled out, only because the 7th and 8th cannot be
+//     reached otherwise: transparencyQuality = kXPHigh (do not lower it, or changes to shadows,
+//     feathers and blends stop being detected), abortCheck = nil (cancelling is checked at page
+//     boundaries, in KCMCore.cpp).
 //   **Target and source must use the same value.**
 //========================================================================================
 static bool16 KCMRasteriseForComparison(const UIDRef& pageRef, const PMReal& hiRes, KCMPageRaster& out)
 {
-	out.snap.reset(new (std::nothrow) SnapshotUtilsEx(pageRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse));
+	out.snap.reset(new (std::nothrow) SnapshotUtilsEx(pageRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse, kKCMCmykRasterSimulateOverprint));
 	if (out.snap.get() == nil)
 		return kFalse;
 	ErrorCode drew;
 	{
 		KCMRasterizingGuard rg;	// a re-entrant draw during this Draw must not paint marks into our own raster
-		drew = out.snap->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
-		                      SnapshotUtils::kXPHigh, nil, nil, kFalse);
+		KCMCmykRasterAttrs attrs;
+		drew = out.snap->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse, SnapshotUtils::kXPHigh, nil, &attrs.map, kFalse);
 	}
 	out.acc.reset((drew == kSuccess) ? out.snap->CreateAGMImageAccessor() : nil);
 	return kTrue;

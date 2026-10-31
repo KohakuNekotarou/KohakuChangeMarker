@@ -372,6 +372,7 @@
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookModeNames.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookPair.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMBookResult.h" />
+    <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMCmykRaster.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMColorSampler.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMConstants.h" />
     <ClInclude Include="..\..\..\source\sdksamples\KCM\source\KCMCore.h" />
