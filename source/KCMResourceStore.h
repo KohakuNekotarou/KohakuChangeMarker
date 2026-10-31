@@ -69,6 +69,10 @@ namespace KCMResourceStore
 	/** Throws the held result away. Idempotent. Called when the comparison stops. */
 	void	Clear();
 
+	/** The controlled shutdown (the shutdown service in KCMPeek.cpp): Clear, and the storage goes as well - nothing of
+	    ours should still be holding any when the DLL unloads. */
+	void	ShutdownCleanup();
+
 	/** kTrue while a result is held (a rebuild succeeded and nothing cleared it since). The PDF
 	    report asks this to decide whether to rebuild for itself and clear afterwards. */
 	bool16	HasResult();

@@ -49,18 +49,22 @@
 // **The direction is fixed when the button goes down**: press in the Target window and it maps
 //   target -> source, press in the Source window and it maps source -> target. The reference
 //   window cannot change mid-press, because the hovered document is pinned at press time.
+// One value: Begin and End both start from a fresh one, and a press with no pair leaves it empty (the
+//   two nil, which no sample in comparison mode can match). Main thread only, under the tool's press.
 //----------------------------------------------------------------------------------------
-static bool16              sDragCacheActive  = kFalse;
-static IDataBase*          sDragCacheHoverDB = nil;	// compared against, never dereferenced
-static IDataBase*          sDragCacheOtherDB = nil;
-static std::map<UID, UID>  sDragCacheH2O;			// hover page -> other page
+struct KCMDragPairing
+{
+	IDataBase*			hoverDB;		// compared against, never dereferenced
+	IDataBase*			otherDB;
+	std::map<UID, UID>	hoverToOther;
+
+	KCMDragPairing() : hoverDB(nil), otherDB(nil) {}
+};
+static KCMDragPairing sDrag;
 
 void KCMSampleCmykBeginDrag(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTarget)
 {
-	sDragCacheH2O.clear();
-	sDragCacheHoverDB = hoverDB;
-	sDragCacheOtherDB = otherDB;
-	sDragCacheActive  = kFalse;
+	sDrag = KCMDragPairing();
 	if (hoverDB == nil || otherDB == nil)
 		return;
 
@@ -76,18 +80,16 @@ void KCMSampleCmykBeginDrag(IDataBase* hoverDB, IDataBase* otherDB, bool16 hover
 	KCMBuildFullPairing(targetDB, sourceDB, pairT, pairS);
 	for (size_t k = 0; k < pairT.size() && k < pairS.size(); ++k)
 	{
-		if (hoverIsTarget) sDragCacheH2O[pairT[k]] = pairS[k];
-		else               sDragCacheH2O[pairS[k]] = pairT[k];
+		if (hoverIsTarget) sDrag.hoverToOther[pairT[k]] = pairS[k];
+		else               sDrag.hoverToOther[pairS[k]] = pairT[k];
 	}
-	sDragCacheActive = kTrue;
+	sDrag.hoverDB = hoverDB;
+	sDrag.otherDB = otherDB;
 }
 
 void KCMSampleCmykEndDrag()
 {
-	sDragCacheActive  = kFalse;
-	sDragCacheHoverDB = nil;
-	sDragCacheOtherDB = nil;
-	sDragCacheH2O.clear();
+	sDrag = KCMDragPairing();
 }
 
 // Rasterise a tiny area of pageRef's page around spreadPt (that page's spread coordinates) in
@@ -297,10 +299,10 @@ bool16 KCMSampleCmykAt(IDataBase* hoverDB, IDataBase* otherDB, bool16 hoverIsTar
 	//      press time answers instead. A page that is not in the pairing -- registered, or past the
 	//      end -- has no counterpart and no value. ----
 	UID oPageUID;
-	if (sDragCacheActive && hoverDB == sDragCacheHoverDB && otherDB == sDragCacheOtherDB)
+	if (hoverDB == sDrag.hoverDB && otherDB == sDrag.otherDB)
 	{
-		std::map<UID, UID>::const_iterator it = sDragCacheH2O.find(hPageUID);
-		if (it == sDragCacheH2O.end())
+		std::map<UID, UID>::const_iterator it = sDrag.hoverToOther.find(hPageUID);
+		if (it == sDrag.hoverToOther.end())
 			return kFalse;
 		oPageUID = it->second;
 	}

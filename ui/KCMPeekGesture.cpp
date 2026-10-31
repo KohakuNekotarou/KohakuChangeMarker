@@ -6,7 +6,7 @@
 //  beginning and ending the reveal and the peeks, working out which document window the mouse is
 //  over, and the UI clean-up that follows a batch document close.
 //
-//  ★The armed state (sPeekArmed / sPeekTargetDB / sPeekSourceDB) stays on the model side in
+//  ★The armed state (sPeekTargetDB / sPeekSourceDB) stays on the model side in
 //    KCMPeek.cpp, so it is read from here **through IKCMCompareFacade** (IsArmed /
 //    GetArmedTargetDB / GetArmedSourceDB).
 //    ⚠**Free functions of the same name still exist on the model side** (KCMCore.h declares

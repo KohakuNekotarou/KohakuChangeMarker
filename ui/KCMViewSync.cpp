@@ -6,7 +6,7 @@
 //  (Sync Layout Views), the one-shot action (Align Other Views to Active), and the observer that
 //  subscribes to the panoramas.
 //
-//  ★The armed state (sPeekArmed / sPeekTargetDB / sPeekSourceDB) stays on the model side in
+//  ★The armed state (sPeekTargetDB / sPeekSourceDB) stays on the model side in
 //    KCMPeek.cpp, so it is read from here **through IKCMCompareFacade** (IsArmed /
 //    GetArmedTargetDB / GetArmedSourceDB).
 //    ⚠**Free functions of the same name still exist on the model side** -- KCMCore.h declares

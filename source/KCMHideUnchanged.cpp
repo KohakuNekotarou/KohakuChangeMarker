@@ -455,7 +455,7 @@ static bool16 KCMRestoreHiddenList(IDataBase*& db, std::vector<UID>& list, bool1
 		if (!alive.empty() && KCMProcessHideSpreadCmd(db, alive, kFalse /*unhide*/) != kSuccess)
 			failed = kTrue;
 	}
-	list.clear();
+	list = std::vector<UID>();	// a fresh vector releases the storage: this is the shutdown's road too
 	db = nil;
 	return failed;
 }

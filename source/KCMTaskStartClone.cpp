@@ -84,9 +84,9 @@ void Forget(IDataBase* clone)
 {
 	gClone = nil;
 	gSource = nil;
-	gDefs.clear();
+	gDefs = KCMResourceList();		// fresh values: clear() and Clear() keep the storage (the shutdown rule, as below)
 	gHaveDefs = kFalse;
-	gDefsWhyNot.Clear();
+	gDefsWhyNot = PMString();
 	// ★THE IMPORT'S "!" ROWS GO WITH ITS COPY (2026-10-26 evening - the full test's run 1026d): their material lives as long
 	//   as the import's origin does (KCMStoryList::Build reads it on every build) and was kept past it - a Story comparison
 	//   of two other documents started later listed the last import's refusal first (place-pair after page-tables-notes;

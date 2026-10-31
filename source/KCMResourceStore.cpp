@@ -260,6 +260,15 @@ void KCMResourceStore::Clear()
 	gAttrCache.clear();
 }
 
+void KCMResourceStore::ShutdownCleanup()
+{
+	KCMResourceStore::Clear();
+	// Fresh values: the clear() and the Clear() above keep the storage (memory plugin-teardown-robustness).
+	gChanges = KCMResourceChangeList();
+	gAttrCache = std::vector<KCMAttrChange>();
+	gWhyNot = PMString();
+}
+
 int32 KCMResourceStore::GetChangeCount()
 {
 	return static_cast<int32>(gChanges.size());

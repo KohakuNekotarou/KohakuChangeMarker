@@ -34,9 +34,10 @@
 #include "PMReal.h"
 
 // The progress bar of the partial re-comparison:
-#include "KCMProgressBar.h"		// KCMDeferredProgressBar (progress and Cancel for a large Refresh; it appears after kKCMProgressBarDelayMs)
+#include "KCMProgressBar.h"		// KCMProgressStepper (progress and Cancel for a large Refresh; it appears after kKCMProgressBarDelayMs)
 #include "ErrorUtils.h"				// PMSetGlobalErrorCode (no error is carried past a cancellation)
 
+#include <atomic>		// the armed pair: an export's background thread reads it with no lock
 #include <map>
 #include <set>			// the touched pages, sent with the notification so thumbnails purge per UID
 #include <vector>
@@ -81,17 +82,19 @@
 //   through KCMDoArmMousePeek (KCMCore.h), which the panel's Start button calls. The tracker
 //   entry points (KCMTrackerRevealBegin/End in KCMPeekGesture.cpp) read that armed state.
 //========================================================================================
-static IDataBase* sPeekTargetDB = nil;	// the document on display (newer). Checked for still being open before use.
-static IDataBase* sPeekSourceDB = nil;	// the older document laid over it while peeking.
-static bool16     sPeekArmed    = kFalse;
+// A Target here is what "armed" means: there is no armed state without one (KCMStartComparisonOn, the one road
+// to KCMDoArmMousePeek, refuses a nil Target). A Track listing has no Source.
+// std::atomic: the main thread alone writes them, and the Story marks' print test reads them with no lock on an
+// export's background thread (KCMStoryMarkBuild.cpp).
+static std::atomic<IDataBase*> sPeekTargetDB(nil);	// the document on display (newer). Checked for still being open before use.
+static std::atomic<IDataBase*> sPeekSourceDB(nil);	// the older document laid over it while peeking.
 
-// Nothing armed and nothing held: the three above, and the held-down flags the drawing reads (back to
+// Nothing armed and nothing held: the two above, and the held-down flags the drawing reads (back to
 // hidden: while armed the frames still only show under a press). Every road that ends a comparison
 // comes through here - Stop (KCMDoDisarmMousePeek), a compared document closing, shutdown - and arming
 // starts from it, in case a held-down flag was left standing.
 static void KCMForgetArmedState()
 {
-	sPeekArmed = kFalse;
 	sPeekTargetDB = nil;
 	sPeekSourceDB = nil;
 	KCMDrawEventHandler::sMarksTempHidden = kFalse;
@@ -268,18 +271,25 @@ void KCMPeekShowAt(IDataBase* targetDB, IDataBase* sourceDB,
 //     next peek
 //   - the ticks are pruned, and the layout, the scrollbar map and the Pages panel thumbnails are
 //     brought up to date
-//   outProcessed comes back with how many pages were really re-compared (pages skipped for having
-//   no counterpart are not counted) and outChanged with how many of those differed. The return
-//   says whether at least one page was processed.
-//   A large enough selection brings up a progress bar with Cancel. On cancellation outCancelled is
+//   A large enough selection brings up a progress bar with Cancel. On cancellation `cancelled` is
 //     set and **what has been updated so far is kept** -- unlike Start's comparison, nothing is
 //     thrown away; the reasoning is in the loop below. The follow-up work (pruning the ticks,
 //     redrawing, the thumbnails) happens even then.
-static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
-                                         const std::vector<UID>& targetPages,
-                                         int32& outProcessed, int32& outChanged, bool16& outCancelled,
-                                         int32& outFailed)
+struct KCMRefreshTally
 {
+	int32	pages;		// how many were really re-compared: no counterpart = not counted, a cancelled run counts what it got through (no pages = nothing was eligible)
+	int32	changed;	// how many of those differed
+	int32	failed;		// how many could not be compared
+	bool16	cancelled;	// the bar's Cancel stopped it
+
+	KCMRefreshTally() : pages(0), changed(0), failed(0), cancelled(kFalse) {}
+};
+
+static KCMRefreshTally KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
+                                                  const std::vector<UID>& targetPages)
+{
+	KCMRefreshTally tally;
+
 	// Rasterising can trigger the lazy recomposition of an uncomposed story, and composing dirties
 	//   the document. As on the Start route (KCMDoMarkChangesDoc): clean on the way in, clean on
 	//   the way out.
@@ -319,21 +329,20 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 	// progress bar with a total of zero, and skips the follow-up work below (pruning the ticks,
 	// redrawing, the thumbnails), which is the "nothing happens" this used to do.
 	if (toCompareT.empty())
-		return kFalse;
+		return tally;
 
+	// The touched pages are **the pages whose picture this operation can change**. They travel on
+	//   the notification at the end so the UI rebuilds those thumbnails and no others.
+	std::set<UID> touchedTargetPages, touchedSourcePages;
 	// The progress bar with its Cancel appears once the job has run for kKCMProgressBarDelayMs
 	//   (KCMConstants.h says why it is time and not a page count); until then the rasterisation is
 	//   kept from putting up bars of its own.
 	const int32 compareCount = (int32)toCompareT.size();
 	PMString barTitle = KCMSentence(compareCount == 1 ? "Refreshing 1 page..." : "Refreshing pages...");
-	KCMDeferredProgressBar progress(barTitle, compareCount);
-
-	int32 changedCount = 0;
-	int32 failedCount = 0;
-	bool16 cancelled = kFalse;
-	// The touched pages are **the pages whose picture this operation can change**. They travel on
-	//   the notification at the end so the UI rebuilds those thumbnails and no others.
-	std::set<UID> touchedTargetPages, touchedSourcePages;
+	// A stepper, and for the loop's length alone: two bars must not live at once, and the redraw and
+	//   the notification below run with this one gone (KCMProgressBar.h; KCMCore.cpp, the same shape).
+	{
+	KCMProgressStepper progress(barTitle, compareCount);
 	for (size_t i = 0; i < toCompareT.size(); ++i)
 	{
 		PMString item = KCMSentence("Page ");	// not a key: it carries numbers (Append keeps the mark)
@@ -355,7 +364,7 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 			//   changed == kFalse as "no longer different" and calling DropOneEntry would let a
 			//   temporary failure silently erase a correct ring. The old ring stays and the page is
 			//   counted as failed for the status line.
-			++failedCount;
+			++tally.failed;
 			// **It is removed from the previous pairing, though.** The Start route does the same
 			//   thing in the same place, and for the same reason: left in, the next incremental
 			//   re-comparison decides "the pair is unchanged, reuse the previous result", never
@@ -369,7 +378,7 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 			KCMDrawEventHandler::sPrevPairTargetToSource.erase(tUID);
 		}
 		else if (changed)
-			++changedCount;
+			++tally.changed;
 		else
 		{
 			// No longer different, so any ring left over from before has to go. The shared helper
@@ -388,10 +397,11 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 		//   produce what Start could: a whole document half compared and half not.
 		if (progress.WasCancelled())
 		{
-			cancelled = kTrue;
+			tally.cancelled = kTrue;
 			ErrorUtils::PMSetGlobalErrorCode(kSuccess);	// carry no error out of the cancellation
 			break;
 		}
+	}
 	}
 
 	// **A page that failed to rasterise must not leave an error behind either**, the same as the
@@ -399,13 +409,13 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 	//   Of the two kinds of failure only the second can set one -- a page-size mismatch rasterises
 	//   fine, while a failed SnapshotUtilsEx::Draw or an allocation failure happens inside the SDK
 	//   where there is no way to find out -- so this errs towards the side that cannot be measured.
-	//   Clearing it is safe because the failures are reported in full: they come back in outFailed
+	//   Clearing it is safe because the failures are reported in full: they come back in the tally
 	//   and reach the status line as "failed=N", so nothing depends on the error state carrying
 	//   them. Left set, it would take down the clean-up that follows (pruning the ticks, the work
 	//   the UI does on the notification) and whatever command the caller issues next -- see
 	//   ProcessCommand in CmdUtils.h on protective shutdown, and a command sequence would roll back
 	//   entirely.
-	if (failedCount > 0)
+	if (tally.failed > 0)
 		ErrorUtils::PMSetGlobalErrorCode(kSuccess);
 
 	// The older-version images are stale now; the next peek rebuilds them at the current zoom.
@@ -448,11 +458,8 @@ static bool16 KCMRefreshComparisonCore(IDataBase* targetDB, IDataBase* sourceDB,
 	// The reported count is how many pages actually reached MakeEntry or DropOneEntry: selected
 	// pages that dropped out for having no counterpart are not counted, and a cancelled run reports
 	// what it got through. That is what keeps "refreshed N" in the status line honest.
-	outProcessed = (int32)touchedTargetPages.size();
-	outChanged = changedCount;
-	outCancelled = cancelled;
-	outFailed = failedCount;
-	return kTrue;
+	tally.pages = (int32)touchedTargetPages.size();
+	return tally;
 }
 
 // The two documents of a RUNNING PIXEL comparison, or kFalse (leaving both out arguments nil).
@@ -523,9 +530,8 @@ bool16 KCMRefreshComparisonForSelectedPages(const UIDList& selection, int32* out
 
 	// The core is driven by Target pages, and the Target is the frontmost document here, so the
 	// selection can be handed straight over.
-	int32 processed = 0, changed = 0, failed = 0;
-	bool16 cancelled = kFalse;
-	if (!KCMRefreshComparisonCore(targetDB, sourceDB, selPages, processed, changed, cancelled, failed))
+	const KCMRefreshTally tally = KCMRefreshComparisonCore(targetDB, sourceDB, selPages);
+	if (tally.pages == 0)
 		return kFalse;
 
 	// (Prev/Next's position readout and the enabling of its buttons ride on the
@@ -536,10 +542,10 @@ bool16 KCMRefreshComparisonForSelectedPages(const UIDList& selection, int32* out
 	//   pages that were not). This item works in the Pixel mode only (KCMQueryPixelComparePair), and the Pixel
 	//   mode keeps no story list any more, so there is nothing here for it to rebuild.
 
-	if (outPages)     *outPages = processed;
-	if (outChanged)   *outChanged = changed;
-	if (outCancelled) *outCancelled = cancelled;
-	if (outFailed)    *outFailed = failed;
+	if (outPages)     *outPages = tally.pages;
+	if (outChanged)   *outChanged = tally.changed;
+	if (outCancelled) *outCancelled = tally.cancelled;
+	if (outFailed)    *outFailed = tally.failed;
 	return kTrue;
 }
 
@@ -579,7 +585,7 @@ bool16 KCMRefreshComparisonAvailable()
 //   sPeek* cleared included -- and kFalse comes back.
 bool16 KCMArmedDocsAlive()
 {
-	if (!sPeekArmed || sPeekTargetDB == nil)
+	if (sPeekTargetDB == nil)
 		return kFalse;
 	// ⛔An armed ORIGIN pair had no Source database at all (its copy was closed after the
 	//   comparison), so only the Target was asked about. An armed pair with no Source is dead now -
@@ -694,7 +700,7 @@ void KCMPeekStartup::Shutdown()
 	KCMPageCheckClearAllDocs();			// the ticks
 	KCMResetHideUnchanged(kFalse);		// the Hide Unchanged record (kFalse: the documents are not touched at all)
 	KCMInvalidatePageNumberMarkerRects();	// the page-number exclusion rectangles
-	// The hover -> other pairing cached while Alt + left is held (sDragCacheH2O in
+	// The hover -> other pairing cached while Alt + left is held (sDrag in
 	//   KCMColorSampler.cpp).
 	//   @warning what used to empty it was the UI's KCMCmykShutdown -> EndColorDrag, **behind a nil
 	//     check** (kUtilsBoss may already be gone during shutdown), so **it could simply not
@@ -707,6 +713,7 @@ void KCMPeekStartup::Shutdown()
 	//   rows, so it is safe during shutdown.
 	KCMStoryList::ShutdownCleanup();
 	KCMTrackList::ShutdownCleanup();	// the Track Changes mode's rows hold PMStrings too (2026-10-05)
+	KCMResourceStore::ShutdownCleanup();	// and the Resources list's values, and why it has none
 	// What the last import could not put in (2026-09-19) - PMStrings again, the same rule.
 	KCMClearImportRefusals();
 	// The Source text kept from the origin (2026-09-16). **Its rule is the same one**: a std::map
@@ -784,7 +791,6 @@ void KCMDoArmMousePeek(IDataBase* targetDB, IDataBase* sourceDB)
 	KCMForgetArmedState();
 	sPeekTargetDB = targetDB;
 	sPeekSourceDB = sourceDB;
-	sPeekArmed = kTrue;
 }
 
 void KCMDoDisarmMousePeek(IDataBase* db)
@@ -815,7 +821,7 @@ void KCMDoDisarmMousePeek(IDataBase* db)
 //  ("added=1" and no "/", 2026-09-13).)
 
 // The state accessors the panel reads: an armed peek is what "a comparison is running" means.
-bool16     KCMIsArmed()        { return sPeekArmed; }
+bool16     KCMIsArmed()        { return (sPeekTargetDB != nil) ? kTrue : kFalse; }
 IDataBase* KCMArmedTargetDB()  { return sPeekTargetDB; }
 IDataBase* KCMArmedSourceDB()  { return sPeekSourceDB; }
 
@@ -944,9 +950,8 @@ void KCMHandleDocsClosed()
 		(KCMDrawEventHandler::sDB     != nil && !KCMIsDbAlive(docList, KCMDrawEventHandler::sDB))     ||
 		(KCMDrawEventHandler::sOrigDB != nil && !KCMIsDbAlive(docList, KCMDrawEventHandler::sOrigDB)) ||
 		(KCMDrawEventHandler::sSrcDB  != nil && !KCMIsDbAlive(docList, KCMDrawEventHandler::sSrcDB))  ||
-		(sPeekArmed &&
-		 ((sPeekTargetDB != nil && !KCMIsDbAlive(docList, sPeekTargetDB)) ||
-		  (sPeekSourceDB != nil && !KCMIsDbAlive(docList, sPeekSourceDB))));
+		(sPeekTargetDB != nil && !KCMIsDbAlive(docList, sPeekTargetDB)) ||
+		(sPeekSourceDB != nil && !KCMIsDbAlive(docList, sPeekSourceDB));
 
 	// The surviving databases are declared outside the block below because the notification at the
 	//   end of the function carries them too.
@@ -968,13 +973,10 @@ void KCMHandleDocsClosed()
 			survivorOrigDB = KCMDrawEventHandler::sOrigDB;
 		if (KCMIsDbAlive(docList, KCMDrawEventHandler::sSrcDB))
 			survivorSrcDB = KCMDrawEventHandler::sSrcDB;
-		if (sPeekArmed)
-		{
-			if (survivorTargetDB == nil && KCMIsDbAlive(docList, sPeekTargetDB))
-				survivorTargetDB = sPeekTargetDB;
-			if (survivorOrigDB == nil && KCMIsDbAlive(docList, sPeekSourceDB))
-				survivorOrigDB = sPeekSourceDB;
-		}
+		if (survivorTargetDB == nil && KCMIsDbAlive(docList, sPeekTargetDB))
+			survivorTargetDB = sPeekTargetDB;
+		if (survivorOrigDB == nil && KCMIsDbAlive(docList, sPeekSourceDB))
+			survivorOrigDB = sPeekSourceDB;
 
 		// The full clean-up, exactly as the Stop button performs it.
 		KCMDrawEventHandler::DropAll();		// sDB = nil, the mark entries destroyed
