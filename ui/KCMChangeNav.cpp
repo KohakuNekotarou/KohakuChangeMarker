@@ -838,9 +838,9 @@ static void KCMSyncCompanionViews(IDataBase* navDB, UID pageUID)
 // WHAT IS AIMED AT IS WHERE THE TEXT BEGINS, not the centre of the frame (the user's decision):
 // in a tall frame the centre is somewhere in the middle of the text, and what is worth reading is
 // the beginning. The point comes from IKCMStoryEditsFacade::GetStoryStartPoint (backed by
-// KCMStoryStartPoint in KCMStoryList.cpp), which is the mirror image of KCMLastPlacedOutport, the
-// one that puts up the overset "+": it goes through the same three coordinate systems in the same
-// order.
+// KCMStoryStartPoint in KCMStoryList.cpp), which is the mirror image of the walk to the overset "+"
+// (KCMFindOversetOutport): the two share the step through the three coordinate systems
+// (KCMParcelCornerOnPasteboard).
 // Getting to the point works exactly as the overset one does: BRING THE SPREAD UP FIRST, then
 // scroll to the pasteboard point -- scrolling to a pasteboard point assumes the view is already
 // showing that point's spread (see KCMEnsureSpreadInView above).

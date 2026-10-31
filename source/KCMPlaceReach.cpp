@@ -174,7 +174,7 @@ int32 KCMPlaceReach(const UIDRef& story, TextIndex from, TextIndex to)
 		InterfacePtr<ITextModel> model(story, UseDefaultIID());
 		UID plus = kInvalidUID;
 		PBPMPoint pb;
-		if (model != nil && KCMFindOversetOutport(model, db, from, plus, pb))
+		if (KCMFindOversetOutport(model, from, plus, pb))
 			frame = plus;
 	}
 	if (frame == kInvalidUID || !db->IsValidUID(frame))

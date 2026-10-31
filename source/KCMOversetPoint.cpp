@@ -36,14 +36,14 @@ namespace
    parcel with a frame. ITextParcelList is what the text model hands out, IParcelList is the one
    that can be walked (a nil one stays nil).
 */
-bool16 LastPlacedOutport(ITextModel* textModel, IDataBase* db, TextIndex pos,
-						 UID& outFrame, PBPMPoint& outPb)
+bool16 LastPlacedOutport(ITextModel* textModel, TextIndex pos, UID& outFrame, PBPMPoint& outPb)
 {
 	InterfacePtr<ITextParcelList> tpl(textModel->QueryTextParcelList(pos));
 	InterfacePtr<IParcelList> pl(tpl, UseDefaultIID());
 	if (pl == nil)
 		return kFalse;
 
+	IDataBase* const db = ::GetDataBase(textModel);
 	for (ParcelKey k = pl->GetLastParcelKey(); k.IsValid(); k = pl->GetPreviousParcelKey(k))
 		if (KCMParcelCornerOnPasteboard(pl, k, db, kTrue /*outport*/, outFrame, outPb))
 			return kTrue;
@@ -106,12 +106,11 @@ bool16 KCMIsTextIndexOverset(ITextModel* textModel, TextIndex pos)
 	return (pl->GetParcelFrameUID(key) == kInvalidUID) ? kTrue : kFalse;
 }
 
-bool16 KCMFindOversetOutport(ITextModel* textModel, IDataBase* db, TextIndex pos,
-							 UID& outFrame, PBPMPoint& outPb)
+bool16 KCMFindOversetOutport(ITextModel* textModel, TextIndex pos, UID& outFrame, PBPMPoint& outPb)
 {
-	if (textModel == nil || db == nil)
+	if (textModel == nil)
 		return kFalse;
-	if (LastPlacedOutport(textModel, db, pos, outFrame, outPb))
+	if (LastPlacedOutport(textModel, pos, outFrame, outPb))
 		return kTrue;
 
 	// Nothing of this thread is placed. A table cell pushed out of its frame along with its row is
@@ -127,7 +126,7 @@ bool16 KCMFindOversetOutport(ITextModel* textModel, IDataBase* db, TextIndex pos
 		if (up == cur)
 			break;	// no progress
 		cur = up;
-		if (LastPlacedOutport(textModel, db, cur, outFrame, outPb))
+		if (LastPlacedOutport(textModel, cur, outFrame, outPb))
 			return kTrue;
 	}
 	return kFalse;

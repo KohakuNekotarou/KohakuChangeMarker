@@ -73,8 +73,7 @@ bool16 KCMIsTextIndexOverset(ITextModel* textModel, TextIndex pos);
 	@return kFalse when no parcel of the thread, or of any ancestor, is placed at all. The caller
 		should then do whatever it did before (for the Story Edits jump: fall back to the story's
 		first frame). */
-bool16 KCMFindOversetOutport(ITextModel* textModel, IDataBase* db, TextIndex pos,
-							 UID& outFrame, PBPMPoint& outPb);
+bool16 KCMFindOversetOutport(ITextModel* textModel, TextIndex pos, UID& outFrame, PBPMPoint& outPb);
 
 /** Where one corner of a parcel stands on the pasteboard, and the frame the parcel is in - the step
 	the walk above and the walk to a story's start (KCMStoryStartPoint) both take.

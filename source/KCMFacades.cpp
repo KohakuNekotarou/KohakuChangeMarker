@@ -1342,7 +1342,7 @@ public:
 		InterfacePtr<ITextModel> model(UIDRef(db, storyUID), UseDefaultIID());
 		if (model == nil)
 			return kFalse;
-		return KCMFindOversetOutport(model, db, at, outFrame, outPb);
+		return KCMFindOversetOutport(model, at, outFrame, outPb);
 	}
 	virtual UID		GetFirstFrameUID(IDataBase* db, UID storyUID)
 					{ return KCMStoryFirstFrameUID(db, storyUID); }
