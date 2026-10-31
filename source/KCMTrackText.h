@@ -15,42 +15,34 @@
 
 #include "IDTime.h"
 #include "PMString.h"
+#include "TextChar.h"			// kTextChar_IdeographicSpace
+#include "UnicodeClass.h"		// IsWhiteSpace - what a name with nothing to show is made of
 #include "WideString.h"			// IDTime::DateToString
 
 #include "KCMTrackPlan.h"		// KCMTrackChangeKind
 
 namespace KCMTrackText
 {
-	/** A PMString of n UTF-16 units, untranslatable. */
-	inline PMString FromUtf16(const char16_t* s, int32 n)
-	{
-		PMString p;
-		p.SetXString(reinterpret_cast<const UTF16TextChar*>(s), n);
-		p.SetTranslatable(kFalse);
-		return p;
-	}
-
 	/** The Delta column's sign: NOT EQUAL TO (U+2260) a replacement, "+" an insertion, "-" a deletion, the right-pointing
-		double angle quotation mark (U+00BB) a move. The two outside ASCII are written as UTF-16 escapes, and this file
-		stays ASCII (cpp-japanese-needs-bom: a narrow literal of them builds and draws as something else). */
+		double angle quotation mark (U+00BB) a move. The two outside ASCII are written as escapes, and this file stays
+		ASCII (cpp-japanese-needs-bom: a narrow literal of them builds and draws as something else). L"": a string that
+		is not a key (PMString.h, at the constructor: "Calling Translate on this string will do nothing"). */
 	inline PMString KindSign(int32 kind)
 	{
 		switch (kind)
 		{
-			case kKCMTrackInsert:	return FromUtf16(u"+", 1);
-			case kKCMTrackDelete:	return FromUtf16(u"-", 1);
-			case kKCMTrackMove:		return FromUtf16(u"\u00BB", 1);
-			default:				return FromUtf16(u"\u2260", 1);
+			case kKCMTrackInsert:	return PMString(L"+");
+			case kKCMTrackDelete:	return PMString(L"-");
+			case kKCMTrackMove:		return PMString(L"\u00BB");
+			default:				return PMString(L"\u2260");
 		}
 	}
 
 	/** The message area's word: Replaced / Inserted / Deleted / Moved. */
 	inline PMString KindWord(int32 kind)
 	{
-		PMString s((kind == kKCMTrackInsert) ? "Inserted" : (kind == kKCMTrackDelete) ? "Deleted"
-				 : (kind == kKCMTrackMove) ? "Moved" : "Replaced");
-		s.SetTranslatable(kFalse);
-		return s;
+		return PMString((kind == kKCMTrackInsert) ? L"Inserted" : (kind == kKCMTrackDelete) ? L"Deleted"
+						: (kind == kKCMTrackMove) ? L"Moved" : L"Replaced");
 	}
 
 	/** A record's time as the OS's short date and the local time with seconds - the shape KFC's Show Changes list had (the
@@ -78,8 +70,9 @@ namespace KCMTrackText
 
 	/** An author's name for the list: "(no name)" when the record holds none - or only spaces (2026-10-25, the author's
 		answer to Review Focus 2: InDesign refuses an empty user name but takes " ", and the author row drew as a colour
-		square with nothing after it). Spaces, tabs, no-break and ideographic spaces count as nothing; anything else is a
-		name and is shown as written. */
+		square with nothing after it). White space of any width counts as nothing - UnicodeClass's answer, with the
+		ideographic space named because it answers false for that one (memory indesign-special-text-characters); anything
+		else is a name and is shown as written. */
 	inline PMString AuthorName(const PMString& name)
 	{
 		bool16 visible = kFalse;
@@ -87,9 +80,9 @@ namespace KCMTrackText
 		for (WideString::const_iterator it = w.begin(); it != w.end() && !visible; ++it)
 		{
 			const UniCodePoint c = *it;
-			visible = (c != 0x0020 && c != 0x0009 && c != 0x00A0 && c != 0x3000) ? kTrue : kFalse;
+			visible = (UnicodeClass::IsWhiteSpace(UTF32TextChar(c)) || c == kTextChar_IdeographicSpace) ? kFalse : kTrue;
 		}
-		PMString s = visible ? name : PMString("(no name)");
+		PMString s = visible ? name : PMString(L"(no name)");
 		s.SetTranslatable(kFalse);
 		return s;
 	}

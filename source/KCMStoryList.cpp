@@ -28,7 +28,7 @@
 #include "IWaxStrand.h"
 
 // General includes:
-#include "K2SmartPtr.h"			// K2::scoped_ptr - what NewWaxIterator hands back has to be deleted
+#include "K2SmartPtr.h"			// K2::scoped_ptr - what NewReadOnlyWaxIterator hands back has to be deleted
 #include "PMMatrix.h"
 #include "TextChar.h"			// kTextChar_Space - the boundary the readability test draws its line at; kTextChar_Table / kTextChar_TableContinued - a table's own characters
 #include "TextIterator.h"		// the character under a caret - is it a table's own (2026-09-24)
@@ -658,7 +658,9 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
 	InterfacePtr<IFrameList> frameList(waxStrand, UseDefaultIID());
 	KCMRecomposeIfDamaged(frameList);
 
-	K2::scoped_ptr<IWaxIterator> waxIter(waxStrand->NewWaxIterator());
+	// A READ-ONLY iterator: this changes no wax and applies nothing (IWaxStrand.h, at NewReadOnlyWaxIterator; the product's
+	// spellpanel/PrivateSpellingUtils.cpp reads lines this way, the snippets with the other).
+	K2::scoped_ptr<const IWaxIterator> waxIter(waxStrand->NewReadOnlyWaxIterator());
 	if (waxIter == nil)
 		return kFalse;
 
@@ -674,7 +676,7 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
 	// ⚠Neither reading COMPOSES anything beyond the RecomposeIfDamaged above: the wax iterator
 	//   reads what is there, which is the difference from the QueryFrameContaining that crashed.
 	TextIndex candidates[2] = { index, KCMPrimaryIndexOf(textModel, index) };
-	IWaxLine* waxLine = nil;
+	const IWaxLine* waxLine = nil;
 	InterfacePtr<IWaxRun> waxRun;
 	int32 glyphOffset = -1;
 	for (int32 c = 0; c < 2 && waxRun == nil; ++c)
@@ -684,7 +686,9 @@ bool16 KCMStoryPointAt(IDataBase* db, UID storyUID, TextIndex index, PBPMPoint& 
 
 		int32 offsetInLine = 0;
 		waxLine = waxIter->GetFirstWaxLine(candidates[c], &offsetInLine);
-		if (waxLine == nil)
+		// (IsDestroyed: the strand can still hand out a line the composer has discarded - the product tests before it touches
+		//  one, PrivateSpellingUtils.cpp, citing a bug.)
+		if (waxLine == nil || waxLine->IsDestroyed())
 			continue;			// overset, or not placed at all - there is no "where" to answer with
 
 		// Which run holds that character, and how far into the run it is. The escapement is
@@ -2533,9 +2537,9 @@ std::string RubySetting(const KCMStoryChange& c)
 		return "-";
 
 	std::string s;
-	s += c.fOtherRuby.IsEmpty() ? "-" : (c.fOtherRubyGroup ? "Group" : "Mono");
+	s += c.fOtherRuby.empty() ? "-" : (c.fOtherRubyGroup ? "Group" : "Mono");
 	s += ">";
-	s += c.fRuby.IsEmpty() ? "-" : (c.fRubyGroup ? "Group" : "Mono");
+	s += c.fRuby.empty() ? "-" : (c.fRubyGroup ? "Group" : "Mono");
 	return s;
 }
 

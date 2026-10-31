@@ -200,7 +200,7 @@ int32 KCMTrackList::GetRecordCountAtRead()
 #ifdef KCM_DIAG
 void KCMTrackList::RowsAsTsv(PMString& out)
 {
-	out.Clear();
+	out.clear();
 	out.SetTranslatable(kFalse);
 	// (The heading's notRejectedInCopy went on 2026-10-27 with the copy; its pairs are read by name.)
 	out.Append("#track\totherRecords\t");
