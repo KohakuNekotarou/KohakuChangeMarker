@@ -47,6 +47,7 @@
 #endif
 #include "KCMCore.h"			// KCMFramePageUID - shared with the overset scan since 2026-08-09
 #include "KCMOversetPoint.h"	// KCMParcelCornerOnPasteboard - a parcel's corner, for where a story begins
+#include "KCMSkippedText.h"		// the threads the page does not set - what a row's words are not read from
 #include "KCMStoryList.h"
 #include "KCMStoryRowFilter.h"	// KCMStoryRowHasContentChange - which rows belong in the list
 #include "KCMStoryTextImport.h"	// KCMImportRefusals - what the last import could not put in, put back as rows on every Build
@@ -132,11 +133,13 @@ const int32 kRowTextSafetyLimit = 2000;
 //   one character per position; this list shows it to a person, so it gets the picture.
 const UTF32TextChar kKCMTableSign(0x25A6);
 
-/* IsReadable
-	Is this character worth putting in a row? Only characters a reader would recognise as the story's
-	opening words qualify.
+/** What a character is in a row: one of the story's opening words, a gap between them, or nothing at all. */
+enum RowChar { kRowWord, kRowGap, kRowNothing };
+
+/* RowCharOf
+	Only characters a reader would recognise as the story's opening words are words.
 */
-bool16 IsReadable(const UTF32TextChar& ch)
+RowChar RowCharOf(const UTF32TextChar& ch)
 {
 	const uint32 v = ch.GetValue();
 
@@ -146,7 +149,7 @@ bool16 IsReadable(const UTF32TextChar& ch)
 	// characters into the control range -- which is what IsK2SpecificChar is for: "the low-ascii
 	// characters that have meaning to InDesign ... standard values like tab, carriage return and
 	// special ones like IndentToHere, Table" (TextChar.h, at its declaration).
-	// ★The table's two characters are not readable, and FirstReadableText asks about them BEFORE
+	// ★The table's two characters are not words, and FirstReadableText asks about them BEFORE
 	//   it asks this: the anchor becomes the table sign (kKCMTableSign), the per-row continuation
 	//   nothing at all. This test is only reached by what is left.
 	//
@@ -155,16 +158,23 @@ bool16 IsReadable(const UTF32TextChar& ch)
 	// exists to drop. The SDK has no predicate for what is wanted here, which is why the boundary
 	// is spelled out rather than borrowed.
 	if (v < kTextChar_Space)
-		return kFalse;
+		return kRowGap;
 
 	if (v == kTextChar_ObjectReplacementCharacter)
-		return kFalse;			// an inline graphic is not text
+		return kRowGap;			// an inline graphic is not text
 
-	// Spaces of every width, the ideographic one included -- a paragraph of them says nothing.
-	if (UnicodeClass::IsWhiteSpace(ch))
-		return kFalse;
+	// MARKS TAKE NO ROOM, IN THIS ORDER (measured - story-row-text; KFC's StoryLeadText found both): a note's anchor (U+FEFF)
+	//   read as the row's first word, and a row of nothing but one read as a blank row - and before white space, because
+	//   IsWhiteSpace answers yes to the zero-width space too, which stood as a gap inside a word.
+	if (v == kTextChar_IndexMarker || UnicodeClass::IsIgnoredCharacter(ch, UnicodeClass::kIgnoreSpellingIgnorable))
+		return kRowNothing;
 
-	return kTrue;
+	// Spaces of every width - the ideographic one named, because IsWhiteSpace answers no to it (measured): a Japanese
+	// paragraph's indent opened the row, and a paragraph of nothing else named the story with a blank.
+	if (UnicodeClass::IsWhiteSpace(ch) || v == kTextChar_IdeographicSpace)
+		return kRowGap;
+
+	return kRowWord;
 }
 
 /* FirstReadableText
@@ -179,6 +189,9 @@ bool16 IsReadable(const UTF32TextChar& ch)
 	 story threads for table cells" (ITextModel.h, the two declarations next to one another). That
 	 FOOTNOTES sit there too is measured, not documented: a document whose only overset was a
 	 footnote reported its one stop here.
+	**BUT NOT INTO THE THREADS THE PAGE DOES NOT SET** (measured - story-row-text): every word of a story deleted under Track
+	Changes, and the row named the story by the words that had gone; a note's words and a hidden condition's stand the same
+	way (KCMSkippedText - the one object every reader asks). Such a body has no words, and the row says none.
 
 	**Where this parts company with the official example.** SnpCreateCrossReference.cpp does the
 	same job and copies span-1 characters so that the paragraph's CR is left behind. Here the whole
@@ -213,6 +226,7 @@ PMString FirstReadableText(ITextModel* model)
 		return out;
 
 	const TextIndex total = model->TotalLength();
+	const TextIndex bodyEnd = model->GetPrimaryStoryThreadSpan();
 	TextIndex pos = 0;
 
 	// ★Both outlive one paragraph on purpose: a table sign met in a paragraph with no words is
@@ -220,6 +234,10 @@ PMString FirstReadableText(ITextModel* model)
 	WideString kept;
 	bool16 pendingGap = kFalse;
 	int32 wordsKept = 0;		// readable characters in `kept` - the signs are not counted
+
+	// What the page does not set, read only when the scan goes past the body: nearly every story stops in its first paragraph.
+	KCMSkippedText skipped;
+	bool16 skippedRead = kFalse;
 
 	while (pos < total)
 	{
@@ -245,15 +263,24 @@ PMString FirstReadableText(ITextModel* model)
 		WideString para;
 		scanner->CopyText(paraStart, span, &para);
 
+		if (!skippedRead && paraStart + span > bodyEnd)
+		{
+			skipped.Build(model);
+			skippedRead = kTrue;
+		}
+
 		const int32 charCount = para.CharCount();
 
 		for (int32 i = 0; i < charCount && kept.CharCount() < kRowTextSafetyLimit; ++i)
 		{
+			if (skippedRead && skipped.Contains(paraStart + i))
+				continue;
+
 			const UTF32TextChar ch = para.GetChar(i);
 			const uint32 v = ch.GetValue();
 
 			// A table: its anchor becomes the sign, its per-row continuations become nothing. Asked
-			// before IsReadable, which would turn either into a gap. A gap already owed is paid
+			// before RowCharOf, which would turn either into a gap. A gap already owed is paid
 			// first, so `a<tab><table>b` keeps the tab's space in front of the sign.
 			if (v == kTextChar_Table)
 			{
@@ -268,9 +295,12 @@ PMString FirstReadableText(ITextModel* model)
 			if (v == kTextChar_TableContinued)
 				continue;
 
-			if (!IsReadable(ch))
+			const RowChar what = RowCharOf(ch);
+			if (what == kRowNothing)
+				continue;
+			if (what == kRowGap)
 			{
-				// An unreadable character becomes at most one space, and only between readable ones:
+				// A gap becomes at most one space, and only between readable characters:
 				// leading runs are dropped because nothing has been kept yet, and trailing runs
 				// because the gap is never spent. A tab between two columns of text reads as a gap,
 				// which is what it looks like on the page.

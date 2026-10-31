@@ -11,14 +11,23 @@
 #include "VCPlugInHeaders.h"
 
 // Interface includes:
+#include "IComposeScanner.h"	// CopyText - the words, for the words' test
 #include "IDataBase.h"
 #include "IStoryList.h"
 #include "ITextModel.h"
 
+// General includes:
+#include "WideString.h"
+
 // Project includes:
+#include "KCMDiag.h"		// KCM_DIAG_LOG - what the reading took (test builds only)
 #include "KCMObjectPrint.h"	// KCMObjectsPrintOfStory - the objects placed in a story, for the second test (2026-10-27)
 #include "KCMStoryStamp.h"
+#include "KCMTextRead.h"	// MarksPrint - what stands over the words, for the second test
 
+#ifdef KCM_DIAG
+#include <chrono>
+#endif
 #include <map>
 #include <set>		// which story UIDs the target holds - see the Removed sweep in Compare
 
@@ -38,6 +47,32 @@ bool16 KCMStoryEdits::ReadStamp(const UIDRef& storyRef, KCMStoryStamp& out)
 	return kTrue;
 }
 
+/* TextPrintOf
+	The story's whole text as one number (KCMStoryStamp::fTextPrint): FNV-1a over the code points of every thread of its model, in
+	blocks. Walked by iterator, not by WideString::GetChar: a block is long, and a position has to be counted out where a
+	surrogate stands. 0 = it could not be read, on either side alike.
+*/
+static uint64 TextPrintOf(ITextModel* model)
+{
+	InterfacePtr<IComposeScanner> scanner(model, UseDefaultIID());
+	if (scanner == nil)
+		return 0;
+	const int32 kBlock = 65536;
+	const int32 total = model->TotalLength();
+	uint64 print = 14695981039346656037ULL;
+	for (int32 at = 0; at < total; at += kBlock)
+	{
+		WideString block;
+		scanner->CopyText(at, (total - at < kBlock) ? (total - at) : kBlock, &block);
+		for (WideString::const_iterator it = block.begin(); it != block.end(); ++it)
+		{
+			print ^= static_cast<uint64>(*it);
+			print *= 1099511628211ULL;
+		}
+	}
+	return print;
+}
+
 /* CollectStamps
 */
 void KCMStoryEdits::CollectStamps(IDataBase* db, std::vector<KCMStoryStamp>& out)
@@ -50,6 +85,12 @@ void KCMStoryEdits::CollectStamps(IDataBase* db, std::vector<KCMStoryStamp>& out
 	if (storyList == nil)
 		return;
 
+	// (The counters compose nothing and read no words; the words' test does read - and reading must not dirty a document.)
+	IDataBase::SaveRestoreModifiedState guard(db);
+#ifdef KCM_DIAG
+	const std::chrono::steady_clock::time_point began = std::chrono::steady_clock::now();
+#endif
+
 	const int32 storyCount = storyList->GetUserAccessibleStoryCount();
 	for (int32 i = 0; i < storyCount; ++i)
 	{
@@ -59,12 +100,18 @@ void KCMStoryEdits::CollectStamps(IDataBase* db, std::vector<KCMStoryStamp>& out
 		const UIDRef storyRef = storyList->GetNthUserAccessibleStoryUID(i);
 		if (ReadStamp(storyRef, stamp))
 		{
-			// ★(2026-10-27) the objects placed in it, for the second test in Compare (KCMStoryStamp::fObjectsPrint)
+			// its objects, its words and its marks, for the second test in Compare (KCMStoryStamp's three prints)
 			InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
 			stamp.fObjectsPrint = KCMObjectsPrintOfStory(model);
+			stamp.fTextPrint = TextPrintOf(model);
+			stamp.fMarksPrint = KCMTextRead::MarksPrint(model);
 			out.push_back(stamp);	// a story that cannot be read contributes nothing to either side
 		}
 	}
+#ifdef KCM_DIAG
+	KCM_DIAG_LOG("stamps %d stories, %d ms", (int)storyCount,
+				 (int)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - began).count());
+#endif
 }
 
 // One row of the answer. The three places below build it identically and differ only in which uid
@@ -112,12 +159,20 @@ void KCMStoryEdits::Compare(const std::vector<KCMStoryStamp>& source,
 		//  now, and the counters answer for it like for any other edit.)
 		if (found->second.fChangeCount == it->fChangeCount)
 		{
-			// ★(2026-10-27) THE WORDS READ THE SAME - but an object placed in them may not: an edit to the object itself
-			//   moves no counter of the story (KCMStoryStamp::fObjectsPrint). Such a story is listed as an attribute
-			//   change; its rows are the Object rows the comparison finds (KCMStoryDiffRun's CompareParagraphObjects).
-			if (found->second.fObjectsPrint != it->fObjectsPrint)
-				AppendDiff(out, it->fStoryUID, kKCMStoryKindAttr, it->fStoryUID);
-			continue;	// text AND attributes AND everything else read the same
+			// ONE COUNT - BUT THE WORDS MAY DIFFER: the count is not a unique version number (KCMStoryStamp::fTextPrint). Listed as
+			//   a text change; the comparison finds where, and a story whose difference it does not read (only the deleted words
+			//   Track Changes keeps) drops out as any row with nothing found does.
+			// AND AN OBJECT PLACED IN THEM MAY NOT READ THE SAME: an edit to the object itself moves no counter of the story
+			//   (KCMStoryStamp::fObjectsPrint). Listed as an attribute change; its rows are the Object rows the comparison
+			//   finds (KCMStoryDiffRun's CompareParagraphObjects).
+			uint32 kinds = kKCMStoryKindNone;
+			if (found->second.fTextPrint != it->fTextPrint)
+				kinds |= kKCMStoryKindText;
+			if (found->second.fMarksPrint != it->fMarksPrint || found->second.fObjectsPrint != it->fObjectsPrint)
+				kinds |= kKCMStoryKindAttr;
+			if (kinds != kKCMStoryKindNone)
+				AppendDiff(out, it->fStoryUID, kinds, it->fStoryUID);
+			continue;
 		}
 
 		uint32 kinds = kKCMStoryKindNone;

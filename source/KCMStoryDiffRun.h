@@ -11,12 +11,12 @@
 //  ones that changed", by matching ITextModel's change counters (KCMStoryStamp). This file
 //  answers the next question - WHERE, and what the words were - by diffing the text itself.
 //
-//  **IT ONLY LOOKS AT STORIES THE COUNTERS ALREADY FLAGGED.** KCMStoryList holds those and
-//  nothing else, and this walks that list rather than the document. That is what makes the mode
-//  usable on a real book chapter: exporting and diffing every story would cost time proportional
-//  to the document, and reading the counters costs nothing (KCMStoryStamp.h, "READING COUNTERS
-//  COMPOSES NOTHING"). A document with three edited stories does three comparisons however long
-//  it is.
+//  **IT ONLY LOOKS AT STORIES THE COUNTERS ALREADY FLAGGED** (or the words' print, where the counters
+//  agree - KCMStoryStamp::fTextPrint). KCMStoryList holds those and nothing else, and this walks that
+//  list rather than the document. That is what makes the mode usable on a real book chapter: diffing
+//  every story would cost time proportional to the document, and reading the counters costs nothing
+//  (KCMStoryStamp.h, "READING COUNTERS COMPOSES NOTHING"). A document with three edited stories does
+//  three comparisons however long it is.
 //
 //  @warning **A STORY THAT CANNOT BE COMPARED KEEPS ITS ROW AND LOSES ITS DETAIL.** Three things
 //   end that way -- the story has no partner in the older document (it was added), the edit
@@ -95,11 +95,10 @@ namespace KCMStoryDiffRun
 		rewritten -- one line of the panel showing two different moments.
 
 		@warning what is still NOT re-read is fKinds, and that is deliberate rather than the same
-		 oversight: the kinds come from the two documents' change COUNTERS, which move forward as
-		 a story is edited and never come back (KCMStoryStamp.h, "WHY TWO VERSIONS CAN BE MATCHED
-		 AT ALL"). Re-reading them costs a walk of both documents to produce the answer they
-		 already gave. Nor is the row's place in the list: see RefreshRowFromDocument for why one
-		 row's sort key must not be updated while the sequence keeps its old order.
+		 oversight: the kinds come from the two documents' change COUNTERS and say why the comparison
+		 listed the row (KCMStoryStamp.h); what differs now is the diff's to say, and re-reading them
+		 costs a walk of both documents. Nor is the row's place in the list: see RefreshRowFromDocument
+		 for why one row's sort key must not be updated while the sequence keeps its old order.
 
 		Either way the row STAYS. A row that vanished because its text was repaired would be
 		claiming the story is untouched when the counters say otherwise. Refreshing means "what

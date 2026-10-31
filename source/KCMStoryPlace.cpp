@@ -34,6 +34,26 @@
 #include "KCMStoryPlacePairRule.h"	// the rule
 #include "KCMStoryPlace.h"
 
+/* KCMColumnHolder
+*/
+UID KCMColumnHolder(ITextFrameColumn* column, bool16& outOnPath)
+{
+	outOnPath = kFalse;
+	if (column == nil)
+		return kInvalidUID;
+	InterfacePtr<ITOPFrameData> onPath(column, UseDefaultIID());
+	if (onPath != nil)
+	{
+		outOnPath = kTrue;
+		return onPath->GetMainSplineItemUID();
+	}
+	Utils<ITextUtils> textUtils;
+	if (!textUtils)
+		return kInvalidUID;
+	InterfacePtr<IHierarchy> spline(textUtils->QuerySplineFromTextFrame(column));
+	return (spline != nil) ? ::GetUID(spline) : kInvalidUID;
+}
+
 namespace
 {
 
@@ -54,27 +74,6 @@ struct SamePlace
 };
 
 typedef KCMStoryAtPlace<UID, UID, Place> StoryAtPlace;
-
-/** The frame the reader sees for a text column: the SDK's two steps (SDKLayoutHelper::GetGraphicFrameRef - the same
-	pair KCMRingAdornment's story labels and KFC's FrameOwner ask): a column of text on a path names the path itself
-	(outOnPath kTrue), any other column is handed to QuerySplineFromTextFrame. kInvalidUID when neither answers. */
-UID HolderOf(ITextFrameColumn* column, bool16& outOnPath)
-{
-	outOnPath = kFalse;
-	if (column == nil)
-		return kInvalidUID;
-	InterfacePtr<ITOPFrameData> onPath(column, UseDefaultIID());
-	if (onPath != nil)
-	{
-		outOnPath = kTrue;
-		return onPath->GetMainSplineItemUID();
-	}
-	Utils<ITextUtils> textUtils;
-	if (!textUtils)
-		return kInvalidUID;
-	InterfacePtr<IHierarchy> spline(textUtils->QuerySplineFromTextFrame(column));
-	return (spline != nil) ? ::GetUID(spline) : kInvalidUID;
-}
 
 /** Where a story's first frame stands: the page it is on, its box on that page, and whether the story runs ON the
 	frame's path or inside it.
@@ -113,7 +112,7 @@ bool16 KCMStoryPlaceKey(IDataBase* db, UID storyUID, UID& outPage, Place& outPla
 		return kFalse;							// the pasteboard
 
 	bool16 onPath = kFalse;
-	const UID holder = HolderOf(column, onPath);
+	const UID holder = KCMColumnHolder(column, onPath);
 	if (holder == kInvalidUID)
 		return kFalse;
 	InterfacePtr<IGeometry> holderGeo(db, holder, UseDefaultIID());

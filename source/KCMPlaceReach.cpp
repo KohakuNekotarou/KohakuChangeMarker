@@ -21,10 +21,12 @@
 #include "ILayoutUtils.h"				// QueryOutermostParentFor
 #include "ILockPosition.h"
 #include "IOwnedItem.h"					// GetFrameRef - the frame an inline's anchor is composed into
+#include "IPageItemLockFacade.h"		// IsAnyAncestorLocked
 #include "IPageItemVisibilityFacade.h"
 #include "IPasteboardUtils.h"			// QuerySpread - the spread an item stands on
 #include "ISpread.h"
 #include "ISpreadLayer.h"
+#include "ITextFrameColumn.h"			// what a place's frame hangs over
 #include "ITextModel.h"
 
 // General includes:
@@ -36,6 +38,7 @@
 #include "IKCMStoryEditsFacade.h"		// the kReach* bits
 #include "KCMOversetPoint.h"			// KCMFindOversetOutport - the frame that carries an overset place's "+"
 #include "KCMStoryList.h"				// KCMStoryFrameAt - the frame a place composes into
+#include "KCMStoryPlace.h"				// KCMColumnHolder - the item the reader sees
 #include "KCMPlaceReach.h"
 
 namespace
@@ -107,33 +110,39 @@ bool IsFrameHidden(IDataBase* db, UID frameUID)
 	return Utils<Facade::IPageItemVisibilityFacade>()->IsHidden(UIDRef(db, frameUID)) != kFalse;
 }
 
-bool IsFrameOnLockedLayer(IDataBase* db, UID frameUID)
+// THE ITEM THE READER SEES (KCMColumnHolder) for what a place's frame is named by: a text column (the overset walk's) or the
+// multi-column item over it (KCMStoryFrameAt's). THE LOCK AND THE HIDING LIVE ON THIS ONE (measured - reach-kinds): a path's own
+// lock and Object > Hide read as nothing through its text's column, which does not hang under the path. `frame` itself when
+// none answers.
+UID SeenItem(IDataBase* db, UID frame)
 {
-	InterfacePtr<IHierarchy> frameHier(db, frameUID, UseDefaultIID());
-	if (frameHier == nil)
-		return false;
-	InterfacePtr<IDocumentLayer> docLayer(QueryDocLayerOf(db, frameHier));
-	return docLayer != nil && docLayer->IsLocked();
+	InterfacePtr<ITextFrameColumn> own(db, frame, UseDefaultIID());
+	InterfacePtr<IHierarchy> multi(db, frame, UseDefaultIID());
+	InterfacePtr<IHierarchy> child((own == nil && multi != nil && multi->GetChildCount() > 0) ? multi->QueryChild(0) : nil);
+	InterfacePtr<ITextFrameColumn> under(child, UseDefaultIID());
+	bool16 onPath = kFalse;
+	const UID seen = KCMColumnHolder((own != nil) ? own.get() : under.get(), onPath);
+	return (seen != kInvalidUID) ? seen : frame;
 }
 
-// The item's own two locks (Object > Lock; InCopy's insert lock), asked of the frame the text composes into AND of its
-// outermost parent - the UID a parcel names is not the page item the lock lives on (KFC measured: locking a frame left its
-// text selectable until the outermost parent was asked too), and a frame inside a locked group answers by its group.
-bool IsPageItemLockedForEdit(IDataBase* db, UID frameUID)
+// Locked: the item's own two locks (Object > Lock; InCopy's insert lock) and its outermost parent's insert lock, and every
+// ancestor's lock, the layer included - IsAnyAncestorLocked, which does not count the item itself (measured) and reaches through
+// an inline's anchor to the frame it stands in and that frame's layer. (A frame locked inside an unlocked group is not a case:
+// the DOM refuses it, and CanLock answers no.)
+bool IsItemLockedForEdit(IDataBase* db, UID item)
 {
-	InterfacePtr<ILockPosition> lockPos(db, frameUID, UseDefaultIID());
+	InterfacePtr<ILockPosition> lockPos(db, item, UseDefaultIID());
 	if (lockPos != nil && lockPos->IsPageItemLocked(kFalse))
 		return true;
-	InterfacePtr<IItemLockData> lockData(db, frameUID, UseDefaultIID());
+	InterfacePtr<IItemLockData> lockData(db, item, UseDefaultIID());
 	if (lockData != nil && lockData->GetInsertLock())
 		return true;
-	InterfacePtr<IHierarchy> hier(db, frameUID, UseDefaultIID());
+	Utils<Facade::IPageItemLockFacade> locks;
+	if (locks && locks->IsAnyAncestorLocked(UIDRef(db, item)))
+		return true;
+	InterfacePtr<IHierarchy> hier(db, item, UseDefaultIID());
 	if (hier == nil)
 		return false;
-	InterfacePtr<ILockPosition> outerLockPos(static_cast<ILockPosition*>(
-		Utils<ILayoutUtils>()->QueryOutermostParentFor(hier, IID_ILOCKPOSITION)));
-	if (outerLockPos != nil && outerLockPos->IsPageItemLocked(kFalse))
-		return true;
 	InterfacePtr<IItemLockData> outerLockData(static_cast<IItemLockData*>(
 		Utils<ILayoutUtils>()->QueryOutermostParentFor(hier, IID_IITEMLOCKDATA)));
 	return outerLockData != nil && outerLockData->GetInsertLock();
@@ -180,9 +189,10 @@ int32 KCMPlaceReach(const UIDRef& story, TextIndex from, TextIndex to)
 	if (frame == kInvalidUID || !db->IsValidUID(frame))
 		return reach;		// placed nowhere: nothing more to tell
 
-	if (IsPageItemLockedForEdit(db, frame) || IsFrameOnLockedLayer(db, frame))
+	const UID seen = SeenItem(db, frame);
+	if (IsItemLockedForEdit(db, seen))
 		reach |= IKCMStoryEditsFacade::kReachLocked;
-	if (IsFrameHidden(db, frame))
+	if (IsFrameHidden(db, seen))
 		reach |= IKCMStoryEditsFacade::kReachHidden;
 	if (IsSpreadOfHidden(db, frame))
 		reach |= IKCMStoryEditsFacade::kReachHiddenSpread;

@@ -62,7 +62,8 @@
 //    (KFC measured it - memory text-change-counters: a write 6 -> 10, Ctrl+Z 6, four characters typed 10), and two
 //    histories that have parted count on their own. So two different states can read one number: a story undone past
 //    the Source's state and typed in again, two documents edited as often since they parted, two documents built
-//    separately by the same steps. A number that differs proves a change; one that agrees does not prove there was none.
+//    separately by the same steps. A number that differs proves a change; one that agrees does not prove there was none -
+//    so the words are asked as well when it agrees (KCMStoryStamp::fTextPrint).
 //  **THE TWO HEADINGS, ABOVE AND BELOW, ARE HOW THIS IS QUOTED -- NOT LINE NUMBERS.** Several
 //  files lean on these two paragraphs. Every one of them cited a line range once, and every one
 //  of those had rotted by nine to eleven lines: a single insertion into this comment moved the
@@ -127,8 +128,22 @@ struct KCMStoryStamp
 		CollectStamps only - ReadStamp is the script properties' reading too, and they say nothing about objects. */
 	uint64	fObjectsPrint;
 
+	/** The story's whole text as one number - every thread of its model. THE WORDS' TEST, ASKED ONLY WHEN THE
+		COUNTERS AGREE: a number that agrees does not prove there was no change ("A VERSION NUMBER THAT IS NOT UNIQUE" above) -
+		measured, story-versions: Ctrl+Z past a Task Start and one other edit, or the same story edited once in each of two copies
+		of a file, read one count with other words and had no row at all. ⚠What it costs, measured: 4 ms for 980,000 characters
+		in 201 stories - reading words is not comparing them. Filled by CollectStamps only, as fObjectsPrint is. */
+	uint64	fTextPrint;
+
+	/** What stands over the words as one number (KCMTextRead::MarksPrint) - asked with fTextPrint and for the same reason: a ruby
+		or a kenten is not in the text, and two histories that set different ones after as many edits read one count (the same
+		suite). ⚠The whole of CollectStamps with it, measured: 75 to 95 ms a document at those 980,000 characters with 2,000
+		attribute runs. Filled by CollectStamps only. */
+	uint64	fMarksPrint;
+
 	KCMStoryStamp()
-		: fStoryUID(kInvalidUID), fChangeCount(0), fTextCount(0), fAttrCount(0), fOtherCount(0), fObjectsPrint(0) {}
+		: fStoryUID(kInvalidUID), fChangeCount(0), fTextCount(0), fAttrCount(0), fOtherCount(0), fObjectsPrint(0), fTextPrint(0),
+		  fMarksPrint(0) {}
 };
 
 /** One row of the comparison: a story that differs between the two versions, and how.
@@ -190,9 +205,10 @@ namespace KCMStoryEdits
 
 	/** Match two readings by story UID and report the stories that differ, with the kinds that moved.
 
-		A row is produced in three cases: the same UID reads a different all-changes counter, the
-		target holds a UID the source does not (added), and the SOURCE holds a UID the target does
-		not (removed). Only stories that read the same produce nothing.
+		A row is produced in four cases: the same UID reads a different all-changes counter; it reads
+		the same one but other words, marks or objects (fTextPrint, fMarksPrint, fObjectsPrint); the
+		target holds a UID the source does not (added); and the SOURCE holds a UID the target does not
+		(removed). Only stories that read the same produce nothing.
 
 		@warning **a removed row's fStoryUID is a SOURCE uid**; every other row's is a target uid.
 		  Callers tell them apart by kKCMStoryKindRemoved. Removed rows were dropped altogether while
@@ -206,10 +222,9 @@ namespace KCMStoryEdits
 
 		@warning **TWO DOCUMENTS THAT ARE NOT VERSIONS OF EACH OTHER ARE NOT TOLD APART HERE.** A document hands its UIDs
 		out in order from small numbers, so two built separately can hold different stories at one UID (measured: eight
-		stories built by the same steps in two documents all lined up, every counter at 7, and no row came out though
-		their words differed - the warning under "WHY TWO VERSIONS"). Only the stories that do not line up are reported
-		as added and removed (and then perhaps paired by place - KCMStoryPairByPlace). No special case: the caller shows
-		what it is given.
+		stories built by the same steps in two documents all lined up, every counter at 7). They are compared as what the
+		UIDs say they are, the words' test included. Only the stories that do not line up are reported as added and removed
+		(and then perhaps paired by place - KCMStoryPairByPlace). No special case: the caller shows what it is given.
 
 		@param source the older version's reading.
 		@param target the newer version's reading.

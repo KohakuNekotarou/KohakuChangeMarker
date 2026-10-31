@@ -26,6 +26,12 @@
 #include "KCMStoryStamp.h"	// KCMStoryDiff
 
 class IDataBase;
+class ITextFrameColumn;
+
+/** The item the reader sees for a text column: the SDK's two steps (SDKLayoutHelper::GetGraphicFrameRef - the same pair
+	KCMRingAdornment's story labels and KFC's FrameOwner ask): a column of text on a path names the path itself (outOnPath
+	kTrue), any other column is handed to ITextUtils::QuerySplineFromTextFrame. kInvalidUID when neither answers. */
+UID KCMColumnHolder(ITextFrameColumn* column, bool16& outOnPath);
 
 /** Pair the Added (Target) and Removed (Source) diffs whose first frames stand at exactly the same place and size on
 	corresponding pages, one to one both ways, and make each pair ONE diff: the Added one keeps the Target's story in

@@ -908,6 +908,32 @@ void ClosePara(std::vector<std::string>& outParas,
 }	// anonymous namespace
 
 //----------------------------------------------------------------------------------------
+uint64 KCMTextRead::MarksPrint(ITextModel* model)
+{
+	if (model == nil)
+		return 0;
+	std::vector<AttrRun> runs[4];
+	ScanRuby(model, runs[0]);
+	ScanKenten(model, runs[1]);
+	ScanBoolAttribute(model, kTAWarichuAttrBoss, runs[2]);
+	ScanBoolAttribute(model, kTATatechuyokoAttrBoss, runs[3]);
+	uint64 print = 14695981039346656037ULL;		// FNV-1a, as the words' print is
+	const auto fold = [&print](uint64 value) { print ^= value; print *= 1099511628211ULL; };
+	for (int32 kind = 0; kind < 4; ++kind)
+	{
+		fold(static_cast<uint64>(kind));
+		for (size_t r = 0; r < runs[kind].size(); ++r)
+		{
+			fold(static_cast<uint64>(runs[kind][r].fAt));
+			fold(static_cast<uint64>(runs[kind][r].fLen));
+			for (size_t c = 0; c < runs[kind][r].fValue.size(); ++c)
+				fold(static_cast<unsigned char>(runs[kind][r].fValue[c]));
+		}
+	}
+	return print;
+}
+
+//----------------------------------------------------------------------------------------
 bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 							  std::vector<std::string>& outParas,
 							  std::vector<KCMParaAttrs>& outAttrs,
