@@ -15,7 +15,7 @@
 #ifndef __KCMDrawEventHandler_h__
 #define __KCMDrawEventHandler_h__
 
-#include <atomic>        // the switches below: the main thread writes them, the drawing reads them on any thread
+#include <atomic>        // the switches, documents and opacities below: the main thread writes them, the drawing reads them on any thread
 #include <map>
 #include <set>
 #include <vector>
@@ -119,8 +119,10 @@ struct KCMOrigImage
 //       Handled by taking **KCMMarkStateLock** everywhere the mark state is touched: DropAll,
 //       DropOneEntry, MakeEntry's replacement, both drawing loops in DrawSpreadMarks, and
 //       RebuildOverflowCache's swap. The "am I rasterising" flag is THREAD-LOCAL (tl_Rasterizing).
-//       The bool16 switches (sPrintMarks and the rest) are std::atomic: each is one value that the main
-//       thread writes and the drawing reads with no lock, so the lock would have nothing to keep together.
+//       The switches (sPrintMarks and the rest), the documents (sDB, sSrcDB, sOrigDB, the two the overflow cache
+//       was built for) and the two opacities are std::atomic: each is one value that the main thread writes and
+//       the drawing reads with no lock, so the lock would have nothing to keep together. (sOrigScale is not: it
+//       is the main thread's alone.)
 //       @warning the condition to protect is **"the main thread writes it and the background
 //       thread reads it while drawing"**. Count that condition for every new piece of shared
 //       state, its writers included -- protecting only the discarding side is not enough.
@@ -156,7 +158,7 @@ public:
 	// @warning a background thread is handed a **clone with a different pointer**, so this must
 	// never be compared as a raw pointer there: the drawing side asks
 	// `KCMIsSameDoc(db, sDB)` (see (1) at the head of this file).
-	static IDataBase* sDB;
+	static std::atomic<IDataBase*> sDB;
 	// The master switch for showing the marks (the rings and everything drawn with them). The data
 	// (sEntries) is not touched; only the display is. Default kFalse (hidden): it goes kTrue while
 	// the tool's left button is held and back to kFalse on release, and nothing is drawn while it
@@ -172,7 +174,7 @@ public:
 	//       1.0 only when both are off.
 	//       The one function that decides is KCMBaseScreenOpacity in KCMPeek.cpp -- ask it rather
 	//       than restating it.
-	static PMReal sMarkScreenOpacity;
+	static std::atomic<PMReal> sMarkScreenOpacity;
 	// Whether the change marks (rings) also go into print and PDF (KCMDoSetPrintMarks).
 	// Default kFalse (screen only). While it is on they are also shown on screen at all times,
 	// regardless of the tool's left button (WYSIWYG). Held independently of the mark data.
@@ -230,7 +232,7 @@ public:
 	static std::atomic<bool16> sTgtMarksOn;
 	// The Source document's db. Set when a comparison runs (KCMDoMarkChangesDoc / MakeEntry) and
 	// put back to nil by DropAll.
-	static IDataBase* sSrcDB;
+	static std::atomic<IDataBase*> sSrcDB;
 	// Source page UID -> Target page UID. The comparison pairs flattened page numbers, so when a
 	// Source spread is drawn, going through this table and then sEntries puts the same ring image
 	// over the Source page. MakeEntry records it as it registers the entry.
@@ -257,8 +259,8 @@ public:
 	// are until the next Start or re-comparison -- the same behaviour the rings have.
 	static std::set<UID> sOverflowT;
 	static std::set<UID> sOverflowS;
-	static IDataBase* sOverflowCacheDB;
-	static IDataBase* sOverflowCacheSrcDB;
+	static std::atomic<IDataBase*> sOverflowCacheDB;
+	static std::atomic<IDataBase*> sOverflowCacheSrcDB;
 	// The original-page-number badge (the flyout's "Show Original Page Numbers"). Default kFalse.
 	// While it is on, and under the same visibility rule as the rings (always-on while sPrintMarks
 	// is on, or during the tool's left hold with sMarksVisible), the number a page had BEFORE the
@@ -331,14 +333,14 @@ public:
 	// The pages peeked at have their older picture kept in sOrigImages, and while sShowOriginal is
 	// on they are blitted opaquely over that db's pages.
 	static std::map<UID, KCMOrigImage*> sOrigImages;	// page UID (new) -> the older picture
-	static IDataBase* sOrigDB;							// the single document those pictures belong to (switching db rebuilds them)
+	static std::atomic<IDataBase*> sOrigDB;							// the single document those pictures belong to (switching db rebuilds them)
 	static std::set<UID> sOrigPartnerless;				// the pages of that spread with no counterpart: no picture to take, and known, so
 														// that a spread holding one is not rasterised again on every press
 	static std::atomic<bool16> sShowOriginal;						// whether the peek is shown (default off)
 	static PMReal sOrigScale;							// the content->window scale (zoom x device scale) the pictures were
 														// rasterised at, so a later peek can tell the zoom has changed and
 														// rebuild them. 0 = not set
-	static PMReal sPeekOpacity;							// the peek's opacity: Shift+left = 1.0 (opaque),
+	static std::atomic<PMReal> sPeekOpacity;							// the peek's opacity: Shift+left = 1.0 (opaque),
 														// Shift+Alt+left = 0.5. Read by the drawing block
 
 	// (Messages go to the panel's status line (KCMSetStatus); there is no toast. The removed toast

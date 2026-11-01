@@ -75,9 +75,9 @@
 #include "KCMDrawEventHandler.h"
 
 std::map<UID, KCMOverlayEntry*> KCMDrawEventHandler::sEntries;
-IDataBase* KCMDrawEventHandler::sDB = nil;
+std::atomic<IDataBase*> KCMDrawEventHandler::sDB(nil);
 std::atomic<bool16> KCMDrawEventHandler::sMarksVisible(kFalse);	// default hidden; the marks appear while the tool's left button is held (the master toggle)
-PMReal KCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// default opaque. While the button is held, or while printing is on, this is the chosen 25%/75%
+std::atomic<PMReal> KCMDrawEventHandler::sMarkScreenOpacity(PMReal(1.0));	// default opaque. While the button is held, or while printing is on, this is the chosen 25%/75%
 std::atomic<bool16> KCMDrawEventHandler::sPrintMarks(kFalse);	// default screen only (nothing goes into print or PDF)
 std::atomic<bool16> KCMDrawEventHandler::sMarkOpacity25(kTrue);	// default 25%, matching the panel's default radio. kFalse = 75%
 std::atomic<bool16> KCMDrawEventHandler::sMarkColorCyan(kFalse);	// default red. kTrue = cyan
@@ -88,22 +88,22 @@ std::atomic<bool16> KCMDrawEventHandler::sReportExport(kFalse);	// the report's 
 std::atomic<bool16> KCMDrawEventHandler::sSrcMarksPressed(kFalse);	// kTrue only while the button is held over the Source window. It records "pressed", not "hidden" -- the drawing XORs it with sSrcMarksOn (see the declaration)
 std::atomic<bool16> KCMDrawEventHandler::sSrcMarksOn(kFalse);	// default off (the flyout's "Always Show Marks on Source"). Start does not touch it: the setting is saved in the panel state and restored at start-up, so a Start that overwrote it would wipe the reader's choice
 std::atomic<bool16> KCMDrawEventHandler::sTgtMarksOn(kFalse);	// the Target counterpart. Screen only -- print and PDF are decided by sPrintMarks. Start does not touch it either
-IDataBase* KCMDrawEventHandler::sSrcDB = nil;
+std::atomic<IDataBase*> KCMDrawEventHandler::sSrcDB(nil);
 std::map<UID, UID> KCMDrawEventHandler::sSrcPageToTarget;
 std::map<UID, UID> KCMDrawEventHandler::sPrevPairTargetToSource;	// the last comparison's pairing, for the register toggle's differential re-comparison
 std::set<UID> KCMDrawEventHandler::sOverflowT;					// the overflow ("/") pages, Target side
 std::set<UID> KCMDrawEventHandler::sOverflowS;					// and Source side
-IDataBase* KCMDrawEventHandler::sOverflowCacheDB = nil;			// the sDB those two were built for
-IDataBase* KCMDrawEventHandler::sOverflowCacheSrcDB = nil;			// and the sSrcDB
+std::atomic<IDataBase*> KCMDrawEventHandler::sOverflowCacheDB(nil);			// the sDB those two were built for
+std::atomic<IDataBase*> KCMDrawEventHandler::sOverflowCacheSrcDB(nil);			// and the sSrcDB
 // Thread-local. The initial value kFalse means "kFalse the first time any thread reads it".
 // What breaks if this is a plain static is written at the declaration (KCMDrawEventHandler.h).
 IDThreading::ThreadLocal<bool16> KCMDrawEventHandler::tl_Rasterizing(kFalse);	// kTrue only while WE are rasterising (re-entrancy guard)
 std::map<UID, KCMOrigImage*> KCMDrawEventHandler::sOrigImages;
-IDataBase* KCMDrawEventHandler::sOrigDB = nil;
+std::atomic<IDataBase*> KCMDrawEventHandler::sOrigDB(nil);
 std::set<UID> KCMDrawEventHandler::sOrigPartnerless;
 std::atomic<bool16> KCMDrawEventHandler::sShowOriginal(kFalse);	// default hidden
 PMReal KCMDrawEventHandler::sOrigScale = 0.0;	// the zoom scale the pictures were rasterised at (0 = not set)
-PMReal KCMDrawEventHandler::sPeekOpacity = 1.0;	// default opaque (Shift peek). Shift+Alt peek sets 0.5
+std::atomic<PMReal> KCMDrawEventHandler::sPeekOpacity(PMReal(1.0));	// default opaque (Shift peek). Shift+Alt peek sets 0.5
 
 // How far inside the page rectangle to clip, in points. Facing pages meet at the spine with no
 // gap, so clipping exactly at the page rectangle puts the outermost pixel of a frame or slash on
@@ -163,8 +163,8 @@ void KCMDrawEventHandler::RebuildOverflowCache()
 	//      are built locally and swapped in.
 	// A useful side effect: a draw that arrives mid-rebuild sees **the previous sets rather than
 	// empty ones** (a bare clear would make the "/" marks flicker out). swap is O(1) and cannot throw.
-	sOverflowCacheDB    = sDB;
-	sOverflowCacheSrcDB = sSrcDB;
+	sOverflowCacheDB    = sDB.load();
+	sOverflowCacheSrcDB = sSrcDB.load();
 	std::set<UID> newT, newS;
 	if (sDB != nil && sSrcDB != nil)
 	{
