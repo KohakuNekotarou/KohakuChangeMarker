@@ -13,12 +13,9 @@
 //  each edit distance D in turn, record how far each diagonal k = x - y has reached; the first
 //  D that reaches (n,m) is the answer.
 //
-//  @warning **the answer is turned back into a list of edits WITHOUT keeping the path.** It
-//  used to keep every step's row and walk back, which is simple and costs O(D^2) memory -- and
-//  that memory was the reason the search had to give up past 2000 edits. It now searches from
-//  both ends until the frontiers meet and recurses on the two halves (Myers' section 4b'),
-//  refinement), which keeps only two rows: **O(N+M) memory, no ceiling**. See the block above
-//  FrontierRows.
+//  @warning **the answer is turned back into a list of edits WITHOUT keeping the path.** It searches from
+//  both ends until the frontiers meet and recurses on the two halves (Myers' section 4b), which keeps only
+//  two rows: **O(N+M) memory, no ceiling**. See the block above FrontierRows.
 //
 //========================================================================================
 
@@ -64,22 +61,15 @@ namespace
 	// The search, in linear space.
 	//------------------------------------------------------------------------------------
 	//
-	// **WHY THIS REPLACED THE STRAIGHTFORWARD VERSION.** The obvious way to turn "the distance
-	//   is D" into "here are the D edits" is to keep every step's row and walk the path back
-	//   afterwards. It is correct, but it costs **O(D^2) memory**: D+1 rows of 2D+3 integers.
-	//   At the old ceiling of D=2000 that is about 31 MB, and raising the ceiling squares it
-	//   (D=10,000 -> ~800 MB). **The ceiling was not a policy, it was the only thing standing
-	//   between the plug-in and that number**, and every story that needed more edits than the
-	//   ceiling got NO detail at all (the paragraph pass returned kFalse) or a coarse one (the
-	//   character pass fell back to "this whole run changed").
-	//
-	// **The fix is Myers' own refinement (section 4b of the 1986 paper): divide and conquer.**
-	//   Search from both ends at once until the two frontiers meet; the place they meet -- the
-	//   "middle snake" -- splits the problem into two smaller ones that are solved the same way.
-	//   Nothing but the two frontier rows is ever kept, so the memory is **O(N+M)** no matter how
-	//   different the two texts are: 50,000 characters against 50,000 costs under a megabyte.
-	//   The time stays O((N+M)*D) with a constant factor of roughly two, which is the trade that
-	//   was wanted: slower is acceptable, wrong is not, and neither is eating memory.
+	// **WHY NOT THE STRAIGHTFORWARD VERSION.** Keeping every step's row and walking the path back costs **O(D^2)
+	//   memory** (D=10,000 -> ~800 MB), which needs a ceiling, and every story past a ceiling gets no detail or a
+	//   coarse one.
+	// **Myers' own refinement (section 4b of the 1986 paper): divide and conquer.** Search from both ends at once until
+	//   the two frontiers meet; the place they meet -- the "middle snake" -- splits the problem into two smaller ones
+	//   that are solved the same way. Nothing but the two frontier rows is ever kept, so the memory is **O(N+M)** no
+	//   matter how
+	//   different the two texts are. The time stays O((N+M)*D) with a constant factor of roughly two, which is the
+	//   trade that was wanted: slower is acceptable, wrong is not, and neither is eating memory.
 
 	/* FrontierRows
 	   The two rows the divide-and-conquer search works on, allocated ONCE for the whole run and
@@ -126,9 +116,8 @@ namespace
 		//   diagonal k = 0 takes its start from vf[offset + 1] (and vr likewise), and that entry
 		//   must be 0. Every other read -- the two neighbours a step reads, and the OTHER row at
 		//   delta-k in the overlap test -- is guarded by a range test that only admits diagonals
-		//   the previous step of THIS call has already written (⚠this line said until 2026-09-12
-		//   that the overlap test could read as far as |delta| + maxD; it cannot, the range test
-		//   sits in front of it). The whole span is cleared anyway, at O(n+m) a call, so that a
+		//   the previous step of THIS call has already written. The whole span is cleared anyway, at O(n+m) a call, so
+		//   that a
 		//   future widening of one of those reads can never pick up a stale value from a sibling
 		//   section and turn into a plausible-looking wrong diff. The rows are sized 2*(n+m)+3
 		//   either side at the top level, so this stays inside them.
@@ -294,10 +283,7 @@ namespace
 		//   reach (n+m) + (n+m)/2 when one side is much longer than the other. 2*(n+m)+3 covers
 		//   that with room to spare and is still O(N+M). **Each row is 2*offset+1 = 4*(N+M)+7
 		//   int32s**, so 50,000 against 50,000 is 400,007 entries -- 1.6 MB a row, **3.2 MB for the
-		//   pair** -- against the 31 MB the old row-per-step search needed at D=2000.
-		//   ⚠**This said 1.6 MB "for both rows together" until 2026-09-04**: one row's worth,
-		//     written as though it covered both. The arithmetic is spelled out so the next reader
-		//     can re-derive it instead of trusting a number.
+		//   pair**.
 		FrontierRows rows;
 		rows.offset = 2 * (n + m) + 3;
 		rows.forward.assign(2 * rows.offset + 1, 0);
@@ -343,7 +329,7 @@ namespace
 	ScriptClass ScriptOf(int32 cp)
 	{
 		// (the second line: InDesign's Insert White Space - no-break, en, em, thin, hair and the rest, measured against the application's
-		//  own UnicodeClass 2026-11-01; zero-width ones are not gaps)
+		//  own UnicodeClass; zero-width ones are not gaps)
 		if (cp == 0x0020 || cp == 0x0009 || cp == 0x000A || cp == 0x000D || cp == 0x3000 ||
 			cp == 0x00A0 || (cp >= 0x2000 && cp <= 0x200A) || cp == 0x202F || cp == 0x205F)
 			return kScriptSpace;
@@ -359,7 +345,7 @@ namespace
 		if ((cp >= '0' && cp <= '9') || (cp >= 0xFF10 && cp <= 0xFF19))
 			return kScriptDigit;
 
-		// **Accented letters are Latin too**. Until then only ASCII and the fullwidth
+		// **Accented letters are Latin too**. With only ASCII and the fullwidth
 		//   forms counted, so "café" -> "cafés" widened to nothing (é was "other", so the word
 		//   stopped there) and "Müller" -> "Möller" quoted ü -> ö with the rest of the name drawn
 		//   in the context colour -- exactly the seam the Latin widening exists to remove, in
@@ -379,11 +365,12 @@ namespace
 			return kScriptKatakana;
 
 		// **The supplementary planes count as Han too** (U+20000 and above: extensions B through G
-		//   and the compatibility supplement). ⚠They were missing until 2026-09-04, which filed
+		//   and the compatibility supplement). ⚠Without them this files
 		//   characters like 𠮟 -- a character of the Japanese standard set, not an exotic one -- as
 		//   "other", and a boundary next to one scored as though no script changed there.
 		//   One range covers the lot rather than several: the gaps between the extensions are
-		//   unassigned, so calling them Han costs nothing. (To 323AF, extension H - measured 2026-11-01 with the rest of this table against
+		//   unassigned, so calling them Han costs nothing. (To 323AF, extension H - measured with the rest of this
+		//   table against
 		//   the application's UnicodeClass, over every code point: the radicals, and the ones the punctuation range below would claim -
 		//   々〆〇, the Hangzhou numerals, the iteration marks - were filed as something else, so "二〇二四年" had a break at each 〇.)
 		if ((cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3400 && cp <= 0x4DBF) ||
@@ -427,7 +414,7 @@ namespace
 	/** Is this a character that a WORD is made of - one that is drawn together with its
 		neighbours and must not be cut from them? Latin letters and digits, and nothing else.
 
-		**Digits joined the letters on 2026-09-12.** "2024" -> "2025" used to quote "4" -> "5" and
+		**Digits are with the letters.** "2024" -> "2025" as "4" -> "5" would
 		draw "202" in the context colour, which is the seam the widening exists to remove; and
 		"10月" -> "11月" read as 0 -> 1. A number is drawn as one piece exactly as a word is.
 		Letters and digits are ONE class here although BoundaryScore keeps them apart: "H2O",
@@ -707,9 +694,6 @@ void KCMTextDiff::MergeNearbyChanges(std::vector<Change>& changes,
 			//     (1 < 2). A one-character gap between two one-character edits is the only shape
 			//     that <= caught and < does not, and it is precisely the shape that should not be
 			//     caught: there is nothing to say those two edits are one.
-			//   @warning the header said BOTH things at once -- "no longer than EACH" in one sentence
-			//     and "shorter than both" in the next, and the implementation followed the first. Two
-			//     spellings of one rule in one place is how it survived being read.
 			// ⚠**AND NEVER ACROSS A PARAGRAPH BREAK**. A break is one character, so
 			//   it is the shortest gap there is and this rule would always swallow it - which
 			//   makes three rewritten lines one change covering both breaks, and writing that
@@ -870,7 +854,7 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 		//   every step of the walk hands one common character from one side of the run to the other.
 		changes[i] = best;
 
-		// ***** AND THEN, ONLY INSIDE A LATIN WORD (LETTERS OR DIGITS), THE RUN IS WIDENED. *****
+		// AND THEN, ONLY INSIDE A LATIN WORD (LETTERS OR DIGITS), THE RUN IS WIDENED.
 		//
 		// **A CHANGE MUST NOT SPLIT A WORD**. "OLDWORD" -> "NEWWORD" leaves Myers
 		//   with the common tail "WORD", so the change is OLD -> NEW and the word is drawn in two
@@ -898,8 +882,8 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 		//   end of both ranges, so the change still rebuilds `b` from `a` exactly. The offline test
 		//   checks that invariant on every case (work/textdiff-test/align-test.cpp).
 		//
-		// **"Latin" here means IsWordChar: Latin letters AND digits** (the block above
-		//   predates that and says "Latin" throughout - read it as "word characters"). The test is
+		// **"Latin" here means IsWordChar: Latin letters AND digits** (the block above says "Latin" throughout - read
+		//   it as "word characters"). The test is
 		//   WordContinues on EITHER side: the character being absorbed has to be a word character
 		//   (it is the same on both sides), and the word has to go on past it on at least one side.
 		//   Either side, because at the end of an insertion only the side that has the run can show
@@ -937,10 +921,10 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 		}
 	}
 
-	// ***** AND FINALLY, CHANGES THAT NOW TOUCH BECOME ONE. *****
+	// AND FINALLY, CHANGES THAT NOW TOUCH BECOME ONE.
 	//
-	// ⚠**THE CONTRACT IN THE HEADER SAYS RUNS NEVER TOUCH, AND UNTIL 2026-09-12 THIS FUNCTION
-	//   BROKE IT.** A run may rotate or widen right up to the wall of its neighbour (the bounds
+	// ⚠**THE CONTRACT IN THE HEADER SAYS RUNS NEVER TOUCH.** A run may rotate or widen right up to the wall of its
+	// neighbour (the bounds
 	//   above allow `end == hiA`), and when it gets there the unchanged run between the two is
 	//   gone. MEASURED in work/textdiff-test before this was written: of 20,000 random pairs,
 	//   5,798 came out with two changes touching. The plain case is one Latin word edited in two

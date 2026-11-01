@@ -7,8 +7,8 @@
 //  WHAT THIS IS FOR. The Story mode compares a story's words and the marks over them, and an object placed in the text
 //  stands in the words as one anchor character (U+FFFC) - the same character whatever the object holds. So a math
 //  object's MathML, an inline picture's fill, a QR code made anew, or a group's colours could change and the Story mode
-//  listed nothing (measured 2026-10-27, docs/ai-notes/kcm-mathml-story-live-2026-10-27.md; only the Pixel mode saw it).
-//  The author: "can you show it? into 2.0 if you can". The design is
+//  listed nothing (measured: docs/ai-notes/kcm-mathml-story-live-2026-10-27.md; only the Pixel mode saw it). The design
+//  is
 //  docs/superpowers/specs/2026-10-27-kcm-story-object-changes-design.md.
 //
 //  THE FINGERPRINT IS KFC 1.4.0's (model/KFCObjectSearch.cpp, Fingerprint - memory page-item-version-by-saveall): the

@@ -189,8 +189,7 @@ int32 AuthorIndex(std::vector<KCMTrackAuthor>& authors, const PMString& name)
 	return static_cast<int32>(authors.size() - 1);
 }
 
-// Every tracked-change record of the stories Build reads, a note's too - the follower's count (RecordsMovedSinceRead). (It counted the
-// records a copy kept although every change was rejected, as well, until the copy went on 2026-10-27.)
+// Every tracked-change record of the stories Build reads, a note's too - the follower's count (RecordsMovedSinceRead).
 int32 CountRecords(IDataBase* db)
 {
 	InterfacePtr<IStoryList> stories(db, db->GetRootUID(), UseDefaultIID());
@@ -220,7 +219,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 		*outCancelled = kFalse;
 	std::vector<KCMTrackAuthor> authors;
 	std::vector<KCMTrackRow> rows;
-	// THE TARGET ASKED FOR AGAIN, NOT TRUSTED (re-check 2026-10-05): a caller hands over the armed pointer, and the
+	// THE TARGET ASKED FOR AGAIN, NOT TRUSTED: a caller hands over the armed pointer, and the
 	//   Target may have been closed since - a closed database is never dereferenced (KCMIsDocDBOpen compares pointers
 	//   only). A Target that is gone leaves an empty list.
 	if (targetDB == nil || !KCMIsDocDBOpen(targetDB))
@@ -377,7 +376,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 				sc.fTargetStart = from;
 				sc.fTargetEnd = to;
 				// The words: 14 code points either side, the change cut at 300 - and INSIDE THE CHANGE'S OWN STORY THREAD
-				//   (the body, one table cell, the text it comes back to), its terminator left out. Live 2026-10-05: read
+				//   (the body, one table cell, the text it comes back to), its terminator left out. Measured: read
 				//   across threads, a cell's row showed the words outside the table and the cells' terminators, and a
 				//   hidden change's row ran on into the hidden text stored after the story's end.
 				TextIndex threadStart = 0;
@@ -489,7 +488,7 @@ bool16 KCMTrackRead::StillRecorded(IDataBase* targetDB, UID storyUID, const KCMT
 	if (it.get() == nil)
 		return kFalse;
 	const int32 wantKind = (change.fKind == kKCMTrackDelete) ? VOSRedlineChange::kDelete : VOSRedlineChange::kInsert;
-	// AND THE AUTHOR (live 2026-10-05): stamps are not unique per operation - two separate edits by two authors carried
+	// AND THE AUTHOR: stamps are not unique per operation - two separate edits by two authors carried
 	//   one stamp in the probe material (docs/ai-notes/kcm-track-probe-2026-10-05.md).
 	const KCMTrackAuthor* const author = KCMTrackList::GetAuthor(change.fAuthor);
 	bool16 found = kFalse;

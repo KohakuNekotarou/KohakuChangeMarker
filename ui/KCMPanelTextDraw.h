@@ -239,7 +239,7 @@ inline PMReal KCMRubyX(const PMReal& baseX, const PMReal& baseW, const PMReal& r
 
 	★**NOTHING IS ADDED TO ANY STRING.** The bar is DRAWN; the placeholder below only reserves the
 	room, so nothing measured, selected or copied ever gains a character - the rule
-	KCMStoryDiffRun's MarkUpBreaks states for its ¶ and ⚓.
+	KCMParaText::ShownCodePoint states for its ¶ and ⚓ (display only).
 	★★SHARED BY THE TWO WIDGETS for the reason this header exists: the change ROW draws one side and
 	the MESSAGE AREA the other, and a bar that looked different in the two would read as two things.
 

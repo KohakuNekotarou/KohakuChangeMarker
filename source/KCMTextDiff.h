@@ -14,8 +14,7 @@
 //
 //  ⚠**THE OTHER COPY IS KIDMCP's KIDMCPTextDiff, AND THIS ONE IS THE MASTER.** A change made here is
 //   made there in the same piece of work: work/kidmcp-textdiff-sync.py compares the two with the
-//   names substituted and the comments taken out, and fails when they differ. (KT's copy went with
-//   KT's experiments on 2026-10-05.)
+//   names substituted and the comments taken out, and fails when they differ.
 //
 //  Written from the published method -- Eugene W. Myers, "An O(ND) Difference Algorithm and Its
 //  Variations", Algorithmica 1(2), 1986 -- and not from anybody's source. An algorithm is not
@@ -127,13 +126,10 @@ namespace KCMTextDiff
 		and make them one. Requiring it to be shorter than both, rather than than the larger of
 		them, is what stops a long edit from dragging unrelated neighbours into itself.
 
-		@warning **"strictly" is the whole of a bug.** This sentence once said "no longer than",
-		 the next one said "shorter than both", and the code followed the first -- so a gap the
-		 SAME size as its neighbours was swallowed. In English that is rare; in Japanese it is the
-		 ordinary sentence, because one character is one word's worth of meaning:
-		 琥珀猫太郎 -> 琥あ珀犬太郎 arrived as a single change reading "珀猫" -> "あ珀犬" instead
-		 of "あ was inserted" and "猫 became 犬". Nothing that this rule exists for is lost by the
-		 strictness -- those gaps are genuinely smaller than the edits around them.
+		@warning **STRICTLY, NOT "no longer than".** A gap the SAME size as its neighbours is rare in
+		 English and the ordinary sentence in Japanese, where one character is one word's worth of meaning:
+		 with "no longer than", 琥珀猫太郎 -> 琥あ珀犬太郎 arrives as a single change reading "珀猫" -> "あ珀犬"
+		 instead of "あ was inserted" and "猫 became 犬".
 
 		The idea is taken from that library's behaviour, not its code -- the algorithm is written
 		here from the description above.
@@ -197,7 +193,7 @@ namespace KCMTextDiff
 		cannot reproduce the shaping of the whole word**, so the seam shows as a gap or an overlap.
 		The change is stuck at a boundary **this file's own scoring calls the worst there is**:
 		BoundaryScore returns 0 for a break inside one script class. The score could say the
-		position was bad; until now nothing could act on it. So once the change is placed,
+		position was bad. So once the change is placed,
 		identical characters are absorbed at either end while the boundary falls inside Latin.
 		@warning **THIS ONE GROWS THE COUNTS** -- both of them, by the same amount, absorbing only
 		 characters that are IDENTICAL on both sides, so the change still rebuilds `b` from `a`
@@ -212,7 +208,7 @@ namespace KCMTextDiff
 		 inside a WORD. "Latin" means **Latin letters (ASCII, fullwidth, and the accented ones of
 		 Latin-1 and Latin Extended) AND digits**: "café" -> "cafés", "Müller" ->
 		 "Möller", "2024" -> "2025" and "iPhone15" -> "iPhone16" are each one word to a reader, and
-		 each used to be quoted as the one or two characters Myers found.
+		 each would be quoted as the one or two characters Myers found.
 
 		@warning FOR CHARACTERS, NOT FOR PARAGRAPHS -- the same restriction MergeNearbyChanges
 		 carries, and for a plainer reason: the tokens of a paragraph diff are numbers standing for
@@ -268,11 +264,7 @@ namespace KCMTextDiff
 		@param byteOffsets OUT optional; for each code point, where it starts in utf8. Pass nil
 		when only the comparison is wanted.
 
-		**BOTH ANSWERS ARE OPTIONAL, and the first one became so on 2026-09-04.** It was a
-		reference, so a caller that wanted only the byte offsets - three of them, in
-		KCMStoryDiffRun - had to hand over a vector, watch it be filled, and drop it. Cutting an
-		excerpt needs the byte boundaries and nothing else, and a paragraph carrying ruby was
-		walked for a list nobody read up to six times over.
+		**BOTH ANSWERS ARE OPTIONAL**: cutting an excerpt needs the byte boundaries and nothing else.
 		@warning nil for both is legal and does nothing, which is the honest answer to being asked
 		 for nothing.
 	*/

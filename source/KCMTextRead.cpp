@@ -6,9 +6,7 @@
 //
 //  The walk follows SnpInspectTextModel's InspectStoryThreads for its shape: QueryStoryThread
 //  hands back one thread at a time, and `position + span` steps to the next one. That single loop
-//  covers the body, every table cell and every footnote - which was the whole reason for the
-//  migration away from the snippet XML (gone since 2026-09-03), whose parser had to know each of
-//  those shapes by name and went silent on the ones it did not.
+//  covers the body, every table cell and every footnote.
 //
 //========================================================================================
 
@@ -52,9 +50,7 @@ namespace
 /* CellPlace
    Where one cell's text begins, and which cell it is.
 
-   THE DOCUMENT IS ASKED, NOT COUNTED - GetTextStart() on the cell's own thread. That was the whole
-   difference from the XML route, which counted down the snippet and then had to check the total
-   against the model (and refused the story when they disagreed).
+   THE DOCUMENT IS ASKED, NOT COUNTED - GetTextStart() on the cell's own thread.
 */
 struct CellPlace
 {
@@ -135,14 +131,11 @@ void AppendWide(std::string& out, const WideString& w)
 
    NOT A GUESS - THE SDK NAMES THE CHARACTER: kTextChar_FootnoteMarker is U+0004
    (TextChar.h:37), and a footnote's first character carries it AS ITS RUBY READING. Measured
-   2026-09-01 on work/kcm-selftest/footnote: the character at DOM index 7 is 'F' (the start of the
+   on work/kcm-selftest/footnote: the character at DOM index 7 is 'F' (the start of the
    note's own text) and its rubyString is [0004] and nothing else - so the reader below produced a
    ruby span standing over the marker, reported by the dump as `[+5 ruby:2+1]`.
 
-   ⚠THE OLD ROUTE NEVER SAW THIS, AND NOT BY LUCK. A <Footnote> carries no base text in the
-    snippet, so the parser made no span at all - and the panel has always agreed with that.
-    **A reading nobody can read is not a change anybody can make**, so reporting one would be a
-    regression this migration introduced rather than a fault it uncovered.
+   **A reading nobody can read is not a change anybody can make.**
 
    ⚠ONLY WHEN IT IS THE WHOLE READING. A real reading that happened to contain the character
     alongside others is not this case, and is left alone.
@@ -168,14 +161,10 @@ bool16 IsFootnoteMarkerOnly(const WideString& w)
     @warning the header calls that count "the distance from position to the end of the STRAND"
       (IRubyStrand.h:50), but the official walk treats it as the distance to the end of the RUN and
       steps by it - which is the only reading under which its loop terminates anywhere but the end
-      of the story. The snippet is followed here, and the parallel run of the migration (gone with
-      the old route) measured it right on every ruby pair.
+      of the story. The snippet is followed here, and measured right on every ruby pair.
 
-   ⚠THE WHOLE STORY, NOT JUST THE BODY - unlike KIDMCP's reader of the same shape, which stops at
-    the body because it compares cells as little stories of their own. Here the cells' text is read
-    in the same walk as the body (see ReadStory), so their ruby has to arrive with it or the two
-    routes would disagree on every cell that carries one. KCM READ IT BEFORE, so dropping it would
-    be a regression rather than a gap.
+   ⚠THE WHOLE STORY, NOT JUST THE BODY: the cells' text is read in the same walk as the body (see
+    ReadStory), so their ruby has to arrive with it.
 
    ⚠AN EMPTY READING IS NO RUBY. Not a defensive check - the SDK's own rule, stated in the same
     snippet: when the string comes back empty the ruby is off, whatever the strand says.
@@ -224,8 +213,7 @@ void ScanRuby(ITextModel* model, std::vector<AttrRun>& out)
 
 			if (!run.fValue.empty())
 			{
-				// MONO OR GROUP IS READ, NOT INFERRED. The old route decided it from whether the
-				//   XML carried a RubyType attribute; the document states it outright.
+				// MONO OR GROUP IS READ, NOT INFERRED: the document states it outright.
 				//   ⚠kTAMojiRubyBoss IS kTrue FOR MONO (SnpRubyDataSettings::fMojiRuby) and
 				//    KCMAttrSpan::fGroup is kTrue for GROUP - **the two are opposite**, and its
 				//    ABSENCE means mono, which is InDesign's own default and not "unknown".
@@ -291,16 +279,12 @@ std::string KentenValue(int16 kind, const ITextAttrInt16* customChar)
 	if (kind != IKentenStyle::Kenten_Custom)
 		return value;
 
-	// THE CHARACTER ITSELF, NOT ITS NUMBER (corrected 2026-09-01 after the panel was
-	//   seen showing "Custom:0:8251" to a reader). The value has two readers - the
-	//   comparison, which only needs two custom marks to differ when the glyphs differ,
-	//   and the panel, which has to SHOW one. A number satisfies the first and fails
-	//   the second, and the failure is the same shape as the one this feature was
-	//   withdrawn for in August: something internal drawn where a person looks.
+	// THE CHARACTER ITSELF, NOT ITS NUMBER. The value has two readers - the comparison, which only
+	//   needs two custom marks to differ when the glyphs differ, and the panel, which has to SHOW one.
 	// ⚠BMP ONLY, and that is the SDK's limit rather than this line's: the attribute is
 	//   an int16 (SnpPerformTextAttrKenten's fCustomCharacter), so a glyph outside the
 	//   basic plane cannot be named as a custom kenten at all.
-	// ⚠THE CHARACTER SET ATTRIBUTE IS DELIBERATELY NOT READ. Measured 2026-09-01: the
+	// ⚠THE CHARACTER SET ATTRIBUTE IS DELIBERATELY NOT READ. Measured: the
 	//   code came back 8251 = U+203B for a mark entered as 'kome', with
 	//   kTAKentenCharacterSetBoss reading 0 - which the C++ enum calls kShiftJIS while
 	//   the scripting DOM calls the same setting CHARACTER_INPUT. The two disagree, so
@@ -310,10 +294,6 @@ std::string KentenValue(int16 kind, const ITextAttrInt16* customChar)
 	//   would compare correctly and could show the wrong glyph.
 	if (customChar != nil && customChar->Get() != 0)
 	{
-		// THE SHARED ENCODER, not a fourth copy of the UTF-8 cases - this file already calls
-		//   AppendUtf8 for every character of every paragraph it reads. ⚠The four-byte case
-		//   cannot arise here (the attribute is an int16, per the BMP warning above), which is
-		//   why writing three of them by hand looked like the whole set.
 		value += ":";
 		KCMParaText::AppendUtf8(value, static_cast<int32>(static_cast<uint16>(customChar->Get())));
 	}
@@ -338,21 +318,21 @@ void AppendMarkRun(std::vector<AttrRun>& out, TextIndex at, int32 len, const std
 
 /* ScanCharMarks
    Every stretch of KENTEN, of the manual WARICHU (kTAWarichuAttrBoss) and of TATE-CHU-YOKO (kTATatechuyokoAttrBoss) in the story, in
-   reading order (kenten 2026-09-01, the other two 2026-09-16, user's requests).
+   reading order.
 
    THESE ARE NOT STRANDS - THEY ARE CHARACTER ATTRIBUTES, and that is the whole difference from ScanRuby above: ruby's strand knows
    where its own runs end; an attribute has no runs of its own. **The walk is the SDK's own for exactly this**, TextAttributeRunIterator
    ("each range of text that has one consistent set of values" - SnpInspectTextModel.cpp, TKIPanelWidgetObserver.cpp), one walk for
    the four attributes.
-   ⚠**WHAT IT REPLACED READ THE WRONG VALUE** (measured 2026-11-01). The walk stepped by the character strand's style and override
-    boundaries and took the value at each run's head for the whole run - true of a mark from a character style or an override, and
-    false of one from a PARAGRAPH STYLE, which draws no boundary there: a kenten put on the second paragraph by its style was not
-    reported at all, and one taken off the first was reported over all three. The Pixel mode saw them, of course.
+   ⚠**NOT THE CHARACTER STRAND'S STYLE AND OVERRIDE BOUNDARIES WITH THE VALUE AT EACH RUN'S HEAD** (measured): that is
+    true of a mark from a character style or an override, and false of one from a PARAGRAPH STYLE, which draws no
+    boundary there - a kenten put on
+    the second paragraph by its style was not reported at all, and one taken off the first was reported over all three.
 
    ⚠OFF IS A VALUE, NOT AN ABSENCE. Turning a mark off writes Kenten_None or kFalse into the attribute rather than removing it
     (SnpPerformTextAttrKenten; SnpPerformTextAttrWarichu.cpp:280, the tate-chu-yoko snippet's :318), so such a stretch carries no mark and must
     produce no span - otherwise every character in a document that once had one anywhere would come back "marked".
-   MEASURED 2026-09-16 (a script on a scratch document): one character can carry BOTH a warichu and a tate-chu-yoko - inside each
+   Measured (a script on a scratch document): one character can carry BOTH a warichu and a tate-chu-yoko - inside each
     other, in either order of applying them - which is why they are lists of their own.
    ⚠**THE VALUE WRITTEN FOR THOSE TWO IS A PLACEHOLDER.** A span's value is the characters it covers, and those are only known in the
     paragraph's own count - ClosePara replaces it (KCMParaText::SetSpanValuesToText). It is not empty only so that nothing between
@@ -418,7 +398,7 @@ void ScanCharMarks(ITextModel* model, std::vector<AttrRun>& outKenten, std::vect
    wrong about a number.
 
    ⚠**THE WHOLE STORY, NOT THE PRIMARY THREAD** - and that is a deliberate departure from the
-    snippets, which both ask for GetPrimaryStoryThreadSpan(). MEASURED 2026-09-08
+    snippets, which both ask for GetPrimaryStoryThreadSpan(). MEASURED
     (work/kcm-selftest/footnote2/cellfoot): a footnote inside a TABLE CELL is not in the primary
     thread, so with the snippets' range its marker was collected by nobody - while ReadStory, which
     walks every thread, had already taken that marker OUT of the text. The row then showed the note's
@@ -492,11 +472,7 @@ void ScanObjects(IDataBase* db, const OwnedItemDataList& owned, const KCMSkipped
 
 /* CountUncounted
    How many of a paragraph's uncounted positions stand before `at` -- the whole of the difference
-   between the model's count and the text's, at one point.
-
-   ⚠**THE BLOCK THAT USED TO STAND HERE IS TakeAttrFor's**, and had sat on this function since the
-    file was written: it describes a cursor and a clipping rule that are nowhere in these five
-    lines. Moved down to what it is about.
+      between the model's count and the text's, at one point.
 */
 int32 CountUncounted(const std::vector<TextIndex>& uncounted, TextIndex at)
 {
@@ -551,26 +527,23 @@ void TakeAttrFor(MarkRuns& marks, TextIndex paraStart, TextIndex paraEnd,
 		const TextIndex to = (runEnd < paraEnd) ? runEnd : paraEnd;
 		if (to > from)
 		{
-			// ⚠THE DISTANCE IS NOT THE OFFSET. KCMAttrSpan counts "the first character of the
-			//   BASE TEXT, within its paragraph", and the base text is what the paragraph SHOWS -
-			//   so every position the model counts but does not show has to come back out again.
-			//   MEASURED 2026-09-01: a table CAN stand in the middle of a paragraph -
-			//   "あい[0016]うえ" came back as ONE paragraph of six characters
-			//   (work/kcm-selftest/midtable) - which is the case the rest of the diff assumes away
-			//   (KCMStoryDiffRun, at RunSide: "a table's own character ... sits exactly at a
-			//   paragraph boundary"). IT IS NOT ALWAYS TRUE, and without this the reading over
-			//   う would be reported as standing over え.
-			//   ⚠THE LENGTH IS CORRECTED TOO, not just the start: a run reaching across the
-			//    table's character covers one FEWER character of text than of model.
-			//   ⚠**AND THE LENGTH CAN COME OUT 0.** The guard above (`to > from`) is in the MODEL's
-			//    count while the length here is in the TEXT's, so a run standing over NOTHING BUT
-			//    uncounted positions passes the first and measures nothing in the second. Not
-			//    hypothetical: a ruby can be applied to a table's own anchor, and InDesign keeps it there
-			//    although it draws nowhere ([[indesign-special-text-characters]]). MEASURED 2026-09-08 -
-			//    work/kcm-selftest/anchorruby put one there and KCM reported `edits=1` for a change that
-			//    is on no character anybody can see.
-			//    ⇒ **A span over no text is not a span**, which is the rule the reader already applies to
-			//      an empty reading (KCMParaText.h, "AN EMPTY RUBY STRING IS NO RUBY").
+			// ⚠THE DISTANCE IS NOT THE OFFSET. KCMAttrSpan counts "the first character of the BASE TEXT, within its
+			//   paragraph", and the base text is what the paragraph SHOWS - so every position the model counts but does
+			//   not show has to come back out again. A table CAN stand in the middle of a paragraph: "あい[0016]うえ" is
+			//   ONE paragraph of six characters (measured: work/kcm-selftest/midtable), and without this the reading
+			//   over う would be reported as standing over え.
+			//   ⚠THE LENGTH IS CORRECTED TOO: a run reaching across the table's character covers one FEWER character of
+			//    text than of model.
+			//   ⚠**AND THE LENGTH CAN COME OUT 0.** The guard above (`to > from`) is in the MODEL's count while the
+			//    length here is in the TEXT's, so a run standing over NOTHING BUT uncounted positions passes the first
+			//    and measures nothing
+			//    in the second: a ruby can be applied to a table's own anchor, and InDesign keeps it there although it
+			//    draws nowhere (memory indesign-special-text-characters; measured: work/kcm-selftest/anchorruby
+			//    reported `edits=1` for
+			//    a change on no character anybody can see).
+			//    ⇒ **A span over no text is not a span**, the rule the reader applies to an empty reading
+			//    (KCMParaText.h,
+			//      "AN EMPTY RUBY STRING IS NO RUBY").
 			const int32 skipBefore = CountUncounted(uncounted, from);
 			const int32 textLen = static_cast<int32>(to - from)
 								  - (CountUncounted(uncounted, to) - skipBefore);
@@ -584,10 +557,7 @@ void TakeAttrFor(MarkRuns& marks, TextIndex paraStart, TextIndex paraEnd,
 /* StoryMarks
    Every kind of mark over a story.
 
-   **IT IS A STRUCT BECAUSE THE THIRD AND FOURTH KINDS ARRIVED**. ClosePara took a list and a cursor per kind as
-   separate arguments - two kinds were four of its nine - and footnotes and endnotes would have made thirteen, which is the
-   count AddAttrChange had reached before ParaSide was made for exactly this reason (KCMStoryDiffRun.cpp). A further kind now
-   costs a field here and one line in ReadStory, not two arguments at every call site.
+   A further kind costs a field here and one line in ReadStory.
 */
 struct StoryMarks
 {
@@ -622,9 +592,10 @@ struct ParaBeingRead
    THE SPAN SITS ON A CHARACTER BESIDE THE MARKER, NOT ON THE MARKER, and it has to: the marker is taken out of the text
    (ReadStory), and a span over no text is not a span. THE ONE BEFORE IT, which is where the page puts the number: at the top right of the
    word the note hangs off - counted past what the text leaves out, so a marker right after a table stands on the word before the table.
-   A MARKER WITH NO CHARACTER BEFORE IT - the paragraph begins with it - SITS ON THE PARAGRAPH'S FIRST. Until then its span
-   clipped away, written down as unconfirmed since 09-08 and measured now: a footnote at a paragraph's start was reported by its words
-   alone, and an endnote there, whose words live in another story, not at all.
+   A MARKER WITH NO CHARACTER BEFORE IT - the paragraph begins with it - SITS ON THE PARAGRAPH'S FIRST: without that a
+   footnote at a paragraph's start is reported by its words alone, and an endnote there, whose words live in another
+   story, not at all
+   (measured).
    ⚠A paragraph with no character at all has nothing to sit on: the note's own words are what is left to report it.
    ⚠THE CURSOR WALKS FORWARD WITH THE PARAGRAPHS, as TakeAttrFor's does; a marker belongs to one paragraph, so it moves past each.
 */
@@ -651,8 +622,7 @@ void TakeNotesFor(MarkRuns& marks, const ParaBeingRead& para, TextIndex paraEnd,
 
    IT IS ONE FUNCTION BECAUSE A PARAGRAPH ENDS IN TWO PLACES - at its carriage return, and at the
    end of a thread that has none - and a paragraph closed one way but not the other would carry its
-   ruby only sometimes. That is the kind of fault the parallel run would report as a single
-   disagreement in one story out of a hundred.
+   ruby only sometimes.
 */
 void ClosePara(std::vector<std::string>& outParas,
 			   std::vector<KCMParaAttrs>& outAttrs,
@@ -678,9 +648,9 @@ void ClosePara(std::vector<std::string>& outParas,
 	//   - and everything downstream eventually has to ask the DOCUMENT about one of those positions
 	//   (a mark, a jump, a selection). That crossing was made by adding the offset to the
 	//   paragraph's start, which is right only while the paragraph holds nothing but its text;
-	//   measured 2026-09-04, the midtable pair's one reported change selected the table's anchor
+	//   measured: the midtable pair's one reported change selected the table's anchor
 	//   rather than the character after it. Recording them here is what lets
-	//   KCMParaText::ModelOffsetInParagraph put it back, in the two places that need it.
+	//   KCMParaText::ModelOffsetInParagraph put it back.
 	//   ⚠**THE k-th ONE HAS k BEFORE IT**, so its place in the text is its model position less the
 	//    paragraph's start and less the ones already met. They arrive in order, which is what makes
 	//    that subtraction the whole of the conversion.
@@ -697,10 +667,8 @@ void ClosePara(std::vector<std::string>& outParas,
 	for (size_t k = 0; k < para.fAnchors.size(); ++k)
 		attrs.fTableAnchorsAt.push_back(static_cast<int32>(para.fAnchors[k] - para.fStart) - CountUncounted(para.fUncounted, para.fAnchors[k]));
 
-	// **THE NOTE MARKERS GO THROUGH THE SAME DOOR** as ruby and kenten, so a marker
-	//   inside a paragraph that also holds a table is shifted into the text's own count by the
-	//   very same arithmetic. Written separately it would have been a second place to get that
-	//   crossing wrong.
+	// THE COUNT IS CROSSED IN ONE PLACE, CountUncounted, for what stands over a character (TakeAttrFor) and for a
+	//   note's marker, which stands beside one (TakeNotesFor).
 	TakeAttrFor(marks.fRuby, para.fStart, paraEnd, para.fUncounted, attrs.fRuby);
 	TakeAttrFor(marks.fKenten, para.fStart, paraEnd, para.fUncounted, attrs.fKenten);
 	TakeNotesFor(marks.fFootnote, para, paraEnd, attrs.fFootnote);
@@ -753,9 +721,8 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 							  bool16 withObjects,
 							  std::vector<KCMTableShape>* outTables)
 {
-	// **EMPTIED FIRST, ALL THREE.** A caller may hand in vectors that already hold something (the
-	// migration's parallel run handed in the other route's answer), and a reader that appended
-	// would silently report a doubled list.
+	// **EMPTIED FIRST, ALL THREE.** A caller may hand in vectors that already hold something, and a
+	// reader that appended would silently report a doubled list.
 	outParas.clear();
 	outAttrs.clear();
 	outStarts.clear();
@@ -775,10 +742,8 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 	std::vector<CellPlace> cells;
 	CellsOfTables(tables, cells);
 
-	// THE RUBY IS READ IN THE SAME BREATH AS THE TEXT. A comparison is a photograph of one moment,
-	//   and text from one instant beside ruby from another puts two moments in one row - the rule
-	//   KCMParaText.h states, kept here. The rule is "one moment", not "one source": this file's
-	//   text comes from the model, so its ruby does too.
+	// THE RUBY IS READ IN THE SAME BREATH AS THE TEXT: a comparison is a photograph of one moment, and text from one
+	//   instant beside ruby from another puts two moments in one row.
 	//   ⚠NOTHING MAY RUN BETWEEN THIS AND THE WALK BELOW. No command, no recompose, no second
 	//    document - anything that edits the story between them would date one against the other.
 	StoryMarks marks;
@@ -813,8 +778,7 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 	// ONE LOOP FOR THE BODY, THE CELLS AND THE FOOTNOTES. QueryStoryThread hands back the
 	//   thread containing a position together with where it starts and how long it is; stepping by
 	//   `position + span` walks them all in TextIndex order. Nothing here has to know what shapes a
-	//   story can contain - which is precisely what the XML route could not manage, since it has to
-	//   recognise every element by name and goes silent on the ones it does not (<Footnote>).
+	//   story can contain.
 	TextIndex position = 0;
 	while (position < total)
 	{
@@ -848,44 +812,22 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 		}
 		else if (position != 0)
 		{
-			// A THREAD THAT IS NEITHER THE BODY NOR A CELL IS A FOOTNOTE (or an endnote), and
-			//   THE BODY IS THE ONE THAT STARTS AT ZERO - every other thread of a story hangs off
-			//   something standing in it. ⚠That is the whole of the test, and it is worth saying
-			//   plainly: a shape this walk has never met would be counted as a footnote here.
-			//   The three footnote pairs (work/kcm-selftest/footnote) proved the shape it does
-			//   meet; ⚠nothing prints the place of every paragraph any more (the parallel run did,
-			//   and went with the old route on 2026-09-03), so an unmet shape would show up only as
-			//   a row cut in an odd place.
-			//
-			//   THEY ARE READ AS PARAGRAPHS LIKE ANY OTHERS AND KEEP THEIR REAL TextIndex, which
-			//   is what the XML route could never do: IDMS and .icml both put a footnote's text in
-			//   the MIDDLE of the body, while the text model keeps it past the end. Measured
-			//   2026-08-31: the old parser produced "BBFOOTBB" - a string that exists nowhere in
-			//   the document - and the story was then refused with no differences at all, whether
-			//   the edit was in the body or in the note (work/kcm-selftest/footnote/README.md).
-			//
-			//   ⚠NUMBERED IN THE ORDER THE THREADS COME OUT, which is TextIndex order, with no
-			//    equivalent of EarlierBlock. ⚠A FOOTNOTE INSIDE A FOOTNOTE CAN BE MADE: the DOM allows it,
-			//    and deleting the outer one takes the inner with it
-			//    (docs/ai-notes/kcm-word-footnote-add-delete-probe-2026-09-22.md). The order its thread
-			//    comes out in has not been measured.
-			//
-			// **...AND SINCE 2026-09-19 THE THREAD IS ASKED WHAT IT IS, because the warning above
-			//   came true.** An InDesign NOTE is exactly "a shape this walk has never met": its words
-			//   are a story thread of their own (kNoteDataBoss), so the note was counted as a
-			//   footnote. Measured on allin.indd (one footnote, one note): two "footnotes" - the HTML
-			//   export wrote the note out as one, silently, and the .docx export, which refuses a
-			//   footnote nothing refers to, was the first thing to say so.
-			//   A footnote's thread IS its reference (kFootnoteReferenceBoss aggregates
-			//   ITextStoryThread - docs/ai-notes/iid-boss-dictionary.md), so the thread's own class
-			//   answers the question. Everything else that hangs a thread off the body - a note,
-			//   text deleted under Track Changes (kDeletedTextBoss), hidden conditional text
-			//   (kHiddenTextBoss / kHidTxtModelBoss) - is NOT the story's text as the page sets it,
-			//   and is stepped over: none of its paragraphs is reported. The character it hangs
-			//   off stays where it is in the body, invisible, as it always was.
-			//   ⚠WHAT THIS CHANGES FOR THE COMPARISON: an edit inside a NOTE used to come out as a
-			//    row (labelled as a footnote's); it no longer comes out at all. A note does not
-			//    print, and what the marks point at is what changed on the page.
+			// A THREAD THAT IS NEITHER THE BODY NOR A CELL HANGS OFF SOMETHING STANDING IN THE STORY - the body is the
+			//   one that starts at zero - AND THE THREAD IS ASKED WHAT IT IS. A footnote's thread IS its reference
+			//   (kFootnoteReferenceBoss aggregates ITextStoryThread - docs/ai-notes/iid-boss-dictionary.md), so the
+			//   thread's own class answers. Everything else that hangs a thread off the body - a note, text deleted
+			//   under Track Changes
+			//   (kDeletedTextBoss), hidden conditional text (kHiddenTextBoss / kHidTxtModelBoss) - is NOT the story's
+			//   text as the page sets it, and is stepped over: none of its paragraphs is reported, and the character it
+			//   hangs off stays where
+			//   it is in the body, invisible. An edit inside a NOTE makes no row: a note does not print.
+			//   A FOOTNOTE'S PARAGRAPHS ARE READ LIKE ANY OTHERS AND KEEP THEIR REAL TextIndex: IDMS and .icml put a
+			//   footnote's text in the MIDDLE of the body, the text model keeps it past the end.
+			//   ⚠NUMBERED IN THE ORDER THE THREADS COME OUT, which is TextIndex order. A footnote inside a footnote can
+			//   be made
+			//    (deleting the outer one takes the inner with it -
+			//    docs/ai-notes/kcm-word-footnote-add-delete-probe-2026-09-22.md);
+			//    each is a row of its own (the suite story-notes, SM-F).
 			if (::GetClass(thread) != kFootnoteReferenceBoss)
 			{
 				position = threadEnd;
@@ -903,20 +845,17 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 			//   integer on its own. GetValue() is the way out of it.
 			const int32 cp = static_cast<int32>((*iter).GetValue());
 
-			// A TABLE'S OWN CHARACTERS ARE NOT TEXT, BUT THEY ARE POSITIONS. The model holds
-			//   kTextChar_Table for the anchor plus one kTextChar_TableContinued per row after the
-			//   first; they are not text, so they are not put into the paragraph (the panel would
-			//   show them as a gap, and the diff would count them as characters that changed).
-			//   They still move the index, and a paragraph standing behind one starts AFTER it.
-			//   ⚠THEY DO NOT ALWAYS SIT AT A PARAGRAPH BOUNDARY, whatever the rest of the diff
-			//     assumes (KCMStoryDiffRun, at RunSide). MEASURED 2026-09-01: inserting a table at
-			//     the third insertion point of "あいうえ" leaves ONE paragraph reading
-			//     [3042 3044 **0016** 3046 3048 000d] - the character stands BETWEEN two of the
-			//     paragraph's own (work/kcm-selftest/midtable). ⇒ every position inside such a
-			//     paragraph is one further along in the model than in its text, which is why the
-			//     ones met here are recorded rather than merely stepped over.
-			//     @warning the OLD route refuses a story shaped like this outright (measured:
-			//       "stories changed=0 edits=0"), so nothing downstream has ever had to face one.
+			// A TABLE'S OWN CHARACTERS ARE NOT TEXT, BUT THEY ARE POSITIONS. The model holds kTextChar_Table for the
+			//   anchor plus one kTextChar_TableContinued per body row after the first (header and footer rows have
+			//   none); they are not
+			//   text, so they are not put into the paragraph (the panel would show them as a gap, and the diff would
+			//   count them as characters that changed). They still move the index, and a paragraph standing behind one
+			//   starts AFTER it.
+			//   ⚠THEY DO NOT ALWAYS SIT AT A PARAGRAPH BOUNDARY. Measured: inserting a table at the third insertion
+			//     point of "あいうえ" leaves ONE paragraph reading [3042 3044 **0016** 3046 3048 000d]
+			//     (work/kcm-selftest/midtable)
+			//     ⇒ every position inside such a paragraph is one further along in the model than in its text, which is
+			//     why the ones met here are recorded rather than merely stepped over.
 			if (cp == kTextChar_Table || cp == kTextChar_TableContinued)
 			{
 				// The ANCHOR is the table's place (KCMParaAttrs::fTableAnchorsAt); a continuation is one more row of it.

@@ -4,7 +4,7 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  THE TRACK CHANGES MODE'S ARITHMETIC (design
+//  THE TRACKED CHANGES LISTING'S ARITHMETIC (design
 //  docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md section 3).
 //
 //  From InDesign's records (copied out by KCMTrackRead) to the rows the list shows: an insertion and the
@@ -58,7 +58,7 @@ struct KCMTrackPlanned
 						fFrom(0), fTo(0), fHidden(kFalse) {}
 };
 
-/** True for a colour InDesign uses for "this author has no colour of their own" - the galley's white. */
+/** True for the colour InDesign paints a record on that has no colour of its own - the galley's white. */
 inline bool16 KCMTrackColourIsWhite(double r, double g, double b)
 {
 	return (r >= 0.99 && g >= 0.99 && b >= 0.99) ? kTrue : kFalse;

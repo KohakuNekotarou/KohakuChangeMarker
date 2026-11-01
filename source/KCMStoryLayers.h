@@ -5,7 +5,7 @@
 //  Kohaku Change Marker (KCM)
 //
 //  KCMStoryLayers.h - the LINES a warichu or tate-chu-yoko change is drawn on, as the strings the
-//  panel draws (the user's drawings):
+//  panel draws (the author's drawings):
 //
 //      +       12      34          <- line 2: one piece over each bar of line 1
 //          わり｜ちゅう｜のぶん       <- line 1: one piece over the bar of line 0
@@ -45,7 +45,7 @@ struct KCMStoryLayers
 	PMString	fBottomPost;
 
 	/** kTrue when line 1 is a bar alone - the mark is not on this side and nothing stands around it
-		(the user: "the two bars in the same place"). fMiddleParts is then empty. */
+		(the author: "the two bars in the same place"). fMiddleParts is then empty. */
 	bool16		fMiddleIsBar;
 
 	/** Line 1, split at its bars: one more part than there are bars. */
@@ -60,7 +60,7 @@ struct KCMStoryLayers
 	/** That piece is a bar: the mark is not on this side (its characters are hidden below it). */
 	bool16		fChangedPieceIsBar;
 
-	/** Whether line 0 - the paragraph - is drawn (the user: a tate-chu-yoko changing
+	/** Whether line 0 - the paragraph - is drawn (the author: a tate-chu-yoko changing
 		inside a warichu is "the warichu's line and the tate-chu-yoko's", the text left out, because
 		the ID column already says 割注). kFalse then: fCount is 2, the bottom line DRAWN is line 1,
 		and fBottomPre / fBottomPost are empty.

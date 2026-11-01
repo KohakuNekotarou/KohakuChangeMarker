@@ -25,8 +25,7 @@ struct KCMTrackChange;
 namespace KCMTrackRead
 {
 	/** Read targetDB's tracked changes into KCMTrackList, replacing what it held - only when the reading finishes. Each
-		change's Source range is (0,0): there is no Source (until then a copy "Compare with Tracked Changes..."
-		saved with every change rejected, read here to place each change in the original). Main thread.
+		change's Source range is (0,0): there is no Source. Main thread.
 		@return the number of changes; -1 when the progress bar's Cancel was pressed (*outCancelled kTrue) - the list is
 		then the one from before, and a caller with a listing up ends it (KCMStopForCancelledReread). */
 	int32	Build(IDataBase* targetDB, bool16* outCancelled);

@@ -6,11 +6,7 @@
 //  shares
 //
 //  WHAT THIS IS FOR. The reader exports a document's stories, edits them outside InDesign, and
-//  imports them again. WHAT travels is here; HOW it is spelt on disk is KCMStoryDocx. The two were
-//  one file until 2026-09-21, when the HTML spelling was retired on the user's word ("Word format
-//  only") and what stayed behind was this: the structs, the rule for which characters cannot be
-//  written as themselves, the short names a kenten kind travels under, and the comparison that
-//  says whether two readings of a story are the same.
+//  imports them again. WHAT travels is here; HOW it is spelt on disk is KCMStoryDocx.
 //
 //  *** EVERYTHING HERE IS A PURE FUNCTION. No SDK type, no document, no file. ***
 //  That is deliberate and it is why the format can be trusted: the writer and the reader are built
@@ -20,7 +16,7 @@
 //      Read(Write(x)) == x
 //
 //  A round trip that loses nothing is not something a comparison can be asked about afterwards - a
-//  document that comes back subtly different reads as "the user edited it". So it is settled here,
+//  document that comes back subtly different reads as "the reader edited it". So it is settled here,
 //  where a failure is a failing test rather than a wrong mark on somebody's page.
 //  (KCMXmlInject.h is the same shape for the same reason.)
 //
@@ -55,9 +51,9 @@ namespace
 /** The characters a class name may hold. The kenten names travel as class names, which is why
 	this rule lives beside them rather than beside any one file format.
 
-	**JAPANESE IS IN, SINCE 2026-09-22** (the user: "圏点は、日本人しかつかわないので"). The class is
-	  what a person READS and PICKS in Word's style gallery, and every byte of a UTF-8 character is
-	  0x80 or above - so letting those through is the whole change. What is still refused is the
+	**JAPANESE IS IN** (the author: kenten is used by Japanese readers only). The class is
+	what a person READS and PICKS in Word's style gallery, and every byte of a UTF-8 character is
+	0x80 or above. What is refused is the
 	  ASCII that a style name cannot hold, which includes the comma and the semicolon Word itself
 	  turns away. */
 bool16 IsClassChar(char c)
@@ -72,7 +68,7 @@ bool16 IsClassChar(char c)
 
 	**THE VALUE DOES NOT MOVE.** "BlackSesameDot" is KCM's own vocabulary - the panel's rows, the
 	  report and KCMTextRead all speak it - and it is the CLASS, the half a reader sees, that is
-	  written in the language of the people who use kenten (the user's call).
+	  written in the language of the people who use kenten (the author's call).
 	⚠**WRITTEN AS UTF-8 ESCAPES RATHER THAN AS CHARACTERS**: this project sets no /utf-8, so a
 	  literal would be compiled in the machine's ANSI codepage and land in a UTF-8 XML as mojibake -
 	  the failure that is invisible until somebody opens the file. The codebase spells non-ASCII
@@ -123,8 +119,7 @@ void CollectKenten(const std::vector<Para>& paras, std::vector<std::string>& see
 	**BECAUSE SOMEBODY WILL WRITE ONE.** A person editing in Word presses the emphasis-mark button
 	(KCMStoryDocx's reader meets it as <w:em w:val="comma">), and refusing it would teach nobody
 	anything: the file would come back with the words marked and the mark thrown away. So a mark with
-	no kind of ours is a kenten with InDesign's own default mark. (Until 2026-09-21 the same rule served
-	the HTML spelling's bare <em>; the spelling went, the rule stayed.)
+	no kind of ours is a kenten with InDesign's own default mark.
 	⚠A class of OURS that cannot be read is still refused - "圏点-カスタム-zz" is a mistake, not a
 	 request - and that is the difference: no class at all is a plain author, a broken one of ours
 	 is a broken one of ours.
@@ -137,10 +132,8 @@ bool16 KentenClassOf(const std::string& value, std::string& outClass)
 	if (value.empty())
 		return kFalse;
 
-	// "Custom:X" -> "カスタム-X", THE MARK ITSELF (the user's call). It was the code
-	//   point in hex until then, which only somebody who could look one up was able to write - and
-	//   the whole point of the class is that a person can type it into a style's name in Word and
-	//   make a mark this build has never seen.
+	// "Custom:X" -> "カスタム-X", THE MARK ITSELF (the author's call): a person can type it into a style's name in Word and
+	//   make a mark this build has never seen. (The code point in hex only somebody who could look one up could write.)
 	const size_t kCustomLen = 7;			// "Custom:"
 	if (value.size() > kCustomLen && value.compare(0, kCustomLen, "Custom:") == 0)
 	{
@@ -315,11 +308,9 @@ bool16 SameSpans(const KCMAttrSpanList& a, const KCMAttrSpanList& b, const std::
 	}
 	for (size_t k = 0; k < a.size(); ++k)
 	{
-		// ⚠**EVERYTHING IS COMPARED, THE KIND INCLUDED.** A reading over one character used to be
-		//  the one thing that could not survive the trip - mono and group are spelt the same way
-		//  there - and the check had to look away from it. It does not any more: both sides settle
-		//  a one-character reading as MONO before it is written (the user's rule), so
-		//  a difference here is a real one.
+		// ⚠**EVERYTHING IS COMPARED, THE KIND INCLUDED.** Both sides settle a one-character reading as MONO before it
+		//  is written (the author's rule: mono and group are spelt the same way there), so a difference here is a real
+		//  one.
 		if (a[k].fStart != b[k].fStart || a[k].fLen != b[k].fLen || a[k].fValue != b[k].fValue
 			|| a[k].fGroup != b[k].fGroup)
 		{

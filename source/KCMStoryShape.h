@@ -9,11 +9,8 @@
 //  it takes a Task Start first, puts the edits in, and lets the Story comparison show them one at
 //  a time. The design is docs/superpowers/specs/2026-09-19-kcm-story-docx-roundtrip-design.md.
 //
-//  **THIS HEADER IS THE "WHAT", KCMStoryDocx.h IS THE "HOW".** Until 2026-09-21 the two lived in
-//   KCMStoryHtml.h, because the HTML spelling came first and the structs were written for it. The
-//   HTML road was retired that day on the user's word ("Word format only"), and the structs -
-//   which never knew anything about HTML - moved here rather than into the .docx writer: a shape
-//   that belongs to one format is a shape the next format has to fight.
+//  **THIS HEADER IS THE "WHAT", KCMStoryDocx.h IS THE "HOW".** The structs know nothing about one
+//   format: a shape that belongs to one format is a shape the next format has to fight.
 //
 //  *** EVERYTHING HERE IS A PURE FUNCTION. No SDK type, no document, no file. ***
 //
@@ -66,7 +63,7 @@ struct Para
 	std::vector<NoteRef>	fNoteRefs;	// in order of fAt - see NoteRef
 	/** Where this paragraph's ENDNOTE markers stand, counted the same way NoteRef::fAt is.
 
-		**ONLY THE PLACE, NEVER THE WORDS** (the user's call: the reader editing in
+		**ONLY THE PLACE, NEVER THE WORDS** (the author's call: the reader editing in
 		  Word has to see that a note hangs here). An endnote's text is not this story's at
 		  all - it lives in a story of its own (see Story's warning) and is written out as its own
 		  file, which the reader can already edit. What was missing is any sign IN THE BODY of where
@@ -120,9 +117,6 @@ struct Cell
 	int32				fColSpan;
 	int32				fRowSpan;
 	std::vector<Para>	fParas;
-	// (⛔fNames - the cell's name, carried as a bookmark in a .docx - stood here from 2026-09-22 to
-	//  2026-09-23: the import compares a table's shape now, and names nothing. The measurements of how
-	//  Word treats a bookmark in a cell are in docs/ai-notes/kcm-word-table-lock-probe-2026-09-22.md.)
 
 	Cell() : fColSpan(1), fRowSpan(1) {}
 };
@@ -145,9 +139,8 @@ struct Row
 	  ⚠**fParaIndex IS RELATIVE TO WHATEVER HOLDS IT**: the body's paragraphs when fInTable is
 	   -1, and that cell's paragraphs otherwise.
 
-	**A TABLE'S ORDINAL IS ITS INDEX IN Story::fTables** and nothing else: a field that repeated it
-	  (fOrdinal) was written by every reader and read by nobody, and went on 2026-09-24 together with
-	  fSplitsPara, which said whether a table stood in the middle of a paragraph - fOffset says where. */
+	**A TABLE'S ORDINAL IS ITS INDEX IN Story::fTables** and nothing else; fOffset says whether it
+	stands in the middle of a paragraph. */
 struct Table
 {
 	int32				fParaIndex;
@@ -156,7 +149,6 @@ struct Table
 	int32				fInRow;		// which row of that table
 	int32				fInCell;	// and which cell of that row, in the order its cells run
 	std::vector<Row>	fRows;
-	// (⛔fName - the table's name - stood here from 2026-09-22 to 2026-09-23; see Cell.)
 
 	Table() : fParaIndex(0), fOffset(0), fInTable(-1), fInRow(0), fInCell(0) {}
 };
@@ -181,9 +173,8 @@ struct Story
 /** Every run of paragraphs the story holds, in document order: the body, then each cell of each
 	table (table order, then row, then cell), then - when `withNotes` - each footnote's own paragraphs.
 
-	**ONE WALK, STATED ONCE**. The same three nested loops stood in eight places across the
-	  writer, the reader, the comparison and the writing half; a place any of them forgot (a note's
-	  paragraphs, say) was a place its rule silently did not reach. Whoever needs the runs asks here. */
+	**ONE WALK, STATED ONCE**: a place that wrote the three nested loops itself and forgot one kind
+	(a note's paragraphs, say) would be a place its rule silently did not reach. Whoever needs the runs asks here. */
 void ParaRuns(Story& s, bool16 withNotes, std::vector< std::vector<Para>* >& out);
 void ParaRuns(const Story& s, bool16 withNotes, std::vector< const std::vector<Para>* >& out);
 

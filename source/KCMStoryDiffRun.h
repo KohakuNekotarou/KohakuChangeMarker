@@ -42,20 +42,9 @@ namespace KCMStoryDiffRun
 		Call this AFTER KCMStoryList::Build -- the rows have to exist, and they have to be in
 		their final order, because a change names its row by position.
 
-		**IT GUARDS THE MODIFIED FLAG ITSELF, and it has to** -- which was measured rather than
-		assumed. This is reached through KCMRebuildStoryEdits, and THAT has two callers, only one
-		of which is inside a guard:
-
-		    KCMCore.cpp   the full comparison     -> inside KCMDoMarkChangesDoc, which guards
-		    KCMPeek.cpp   Refresh Page Comparison -> KCMRefreshComparisonForSelectedPages, which
-		                                             does NOT
-
-		The second one sits past the end of KCMRefreshComparisonCore, whose guard covers only
-		itself. Reading the change counters needed no guard either way -- counters compose nothing
-		-- but exporting a snippet can compose, so the story diff would have left that path
-		dirtying documents it only read. Guarding here covers both callers, and a guard inside a
-		guard is harmless: each one restores the value it found, so the outer one restores the
-		same value.
+		**IT GUARDS THE MODIFIED FLAG ITSELF.** Reading a story can compose (asking for text that has
+		never been laid out lays it out), and composing sets the modified flag on a document this feature
+		only reads. A guard inside a guard is harmless: each one restores the value it found.
 
 		@param targetDB the newer document. nil does nothing.
 		@param sourceDB the older document. nil does nothing.
@@ -76,25 +65,19 @@ namespace KCMStoryDiffRun
 		document with the panel open, and the row keeps showing what differed when the comparison
 		ran -- this is how they bring one row up to date without re-running the whole comparison.
 
-		**IT WRITES AN EMPTY RESULT, WHICH IS THE ONE THING Run DOES NOT.** Run leaves a row's
-		previous detail alone when the story now compares equal, and it is right to: it is
-		filling in a list that was just built, so there is nothing there to preserve or destroy.
-		Here there is. A row whose text has been brought back into agreement must LOSE its
-		children, because that is the answer the reader asked for -- and leaving yesterday's
-		differences under a row that was explicitly refreshed would be showing them something
-		untrue about the document in front of them.
+		**AN EMPTY RESULT IS WRITTEN.** A row whose text has been brought back into agreement LOSES its
+		children: leaving the old differences under a row that was explicitly refreshed would be showing
+		the reader something untrue about the document in front of them.
 
-		The guard is the same one Run takes, and for the same reason (exporting a snippet can
-		compose). A guard inside a guard is harmless; this one is the only guard on this path.
+		The guard is the same one Run takes, and for the same reason; this one is the only guard on
+		this path.
 
 		**THE ROW IS RE-READ TOO** -- its opening words, the frame a click scrolls to, and that
-		frame's page (KCMStoryList::RefreshRowFromDocument). This was missing from the first build
-		and had to be reported before it was noticed: the row quotes the document, so a refresh
-		that re-read only the CHILDREN left the row quoting a sentence the reader had just
-		rewritten -- one line of the panel showing two different moments.
+		frame's page (KCMStoryList::RefreshRowFromDocument): the row quotes the document, so a refresh
+		that re-read only the CHILDREN would leave it quoting a sentence the reader has just rewritten.
 
-		@warning what is still NOT re-read is fKinds, and that is deliberate rather than the same
-		 oversight: the kinds come from the two documents' change COUNTERS and say why the comparison
+		@warning what is NOT re-read is fKinds, deliberately: the kinds come from the two documents'
+		change COUNTERS and say why the comparison
 		 listed the row (KCMStoryStamp.h); what differs now is the diff's to say, and re-reading them
 		 costs a walk of both documents. Nor is the row's place in the list: see RefreshRowFromDocument
 		 for why one row's sort key must not be updated while the sequence keeps its old order.
@@ -108,7 +91,7 @@ namespace KCMStoryDiffRun
 		@param rowIndex which row, in the order the list is in now.
 		@return how many differences are attached to the row after this, or **-1** when the story
 			could not be compared at all -- out of range, an added story (nothing on the older
-			side to compare against), or the diff refused it. The row keeps its place in every
+			side to compare against), or a story that cannot be read. The row keeps its place in every
 			one of those cases; only its detail is cleared.
 	*/
 	int32 RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 rowIndex);
@@ -116,23 +99,19 @@ namespace KCMStoryDiffRun
 	/** **THE COUNTER A CHANGE OF THIS KIND IS MEASURED BY** - the one question "which
 		instrument?", asked in one place.
 
-		A replaced change is drawn as replaced while the story has got at least as far as the
-		counter recorded when it was written, and an undo takes that counter back on its own -
-		which is the whole of KCM's undo handling for the Story Edits list. That works only while
-		the counter can SEE the write.
+		A "=" record stands while the story has got at least as far as the counter recorded when
+		it was written, and an undo takes that counter back on its own - which is the whole of KCM's
+		undo handling for the Story list. That works only while the counter can SEE the write.
 
-		⚠**AND THE TEXT COUNTER CANNOT SEE AN ATTRIBUTE.** Measured 2026-09-16 on a real document,
-		 taking in a ruby and undoing it: GetTextChangeCount answered **4, 4 and 4** across before,
-		 after and undone, while GetChangeCount answered **13, 14, 13**. A ruby or kenten row
-		 therefore stayed drawn as taken-in for ever - the reader's own report ("the document comes
-		 back, the panel does not"). It was never a missing signal: the panel was asking an
-		 instrument that had not moved.
+		⚠**AND THE TEXT COUNTER CANNOT SEE AN ATTRIBUTE.** Measured on a real document, writing a ruby and
+		 undoing it: GetTextChangeCount answered **4, 4 and 4** across before, after and undone, while
+		GetChangeCount answered **13, 14, 13**.
 
 		**THE AGGREGATE IS THE RIGHT ONE FOR ATTRIBUTES**, and KCMStoryStamp.h's essay says why
 		  in more detail than belongs here: which sub-counter an edit lands on cannot be predicted
 		  from the headers, and the aggregate is the only reading that cannot be wrong-footed.
 		⚠**WORDS KEEP THE TEXT COUNTER**, deliberately: the ">=" behaviour of the text path was
-		 measured on the application on 2026-09-15 and nothing here is trying to re-decide it.
+		 measured on the application and nothing here is trying to re-decide it.
 
 		@param kind kKCMStoryAttrNone for a change to the WORDS, else the attribute's kind.
 		@return 0 when the story cannot be opened. */
@@ -142,12 +121,6 @@ namespace KCMStoryDiffRun
 		change: has it moved since it was compared, did it come back (KCMCounterHistory). 0 when the story cannot be opened. */
 	uint32 CountAllChanges(const UIDRef& story);
 
-	// (⛔**StillReplaced and DropUndoneReplaced went on 2026-09-21** with the restore. The first was
-	//  "is this change the reader took in still standing as taken in", asked in ONE place by
-	//  everything that drew a row and everything that wrote - the two had had separate answers once,
-	//  and said different things the moment the reader pressed Ctrl+Z ([[one-question-one-place]]).
-	//  The second dropped the records an undo had taken back, keeping the ones still true, because
-	//  undo in InDesign is a stack. Nothing is taken in now.)
 }
 
 #endif // __KCMStoryDiffRun_h__
