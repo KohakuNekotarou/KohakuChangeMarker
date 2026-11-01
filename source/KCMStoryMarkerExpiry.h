@@ -9,15 +9,13 @@
 //  (ClearFlash). Nothing else should call it -- the standing marks have no clock at all.
 //
 //  **THIS PLUG-IN'S ONLY IDLE TASK BESIDES THE THUMBNAIL ONE**, and the justified exception to
-//  "avoid timers" ([[avoid-timers-and-idle-tasks]]): a mark has to expire on WALL-CLOCK time,
-//  which nothing else here needs.
+//  "avoid timers" (memory avoid-timers-and-idle-tasks): a mark has to expire on WALL-CLOCK time.
 //
 //  @warning **WHY NOT ICallbackTimer**, which this plug-in uses elsewhere. Its callback is a
 //   plain function pointer that nothing reference-counts -- its own header opens with six
 //   "Danger!"s saying the supplying plug-in must not be unloaded while that pointer is in the
 //   timer. A CIdleTask is an interface on a boss: it can be Released at shutdown and takes part
-//   in teardown like everything else. Ported from KFC's KFCMarkerExpiryIdleTask, which reached
-//   the same conclusion the same way (and which in turn took it from KESCL).
+//   in teardown like everything else. (Ported from KFC's KFCMarkerExpiryIdleTask.)
 //
 //========================================================================================
 

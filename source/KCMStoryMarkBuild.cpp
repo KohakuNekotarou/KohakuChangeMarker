@@ -4,15 +4,10 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  See KCMStoryMarkBuild.h for what this shows and why, and ui/KCMStoryPressMarks.h for the thin
-//  layer the UI still calls (this file was that layer's other half until the adornment moved to
-//  the model plug-in so that the marks could reach paper and PDF).
+//  See KCMStoryMarkBuild.h for what this shows and why (nothing is cached between refreshes), and
+//  ui/KCMStoryPressMarks.h for the thin layer the UI calls.
 //
-//  Everything here is a READ of the Story Edits list plus one call to the marker. Nothing is
-//  cached between refreshes: the list can be rebuilt by a comparison, a refresh or a row's own
-//  right-click menu at any moment, and a cache of ranges would go stale silently -- the marks
-//  would keep pointing at where the words used to be. Rebuilding costs a few thousand integers
-//  on a document with a few thousand edits, which is not worth being wrong for.
+//  Everything here is a READ of the Story Edits list plus one call to the marker.
 //
 //========================================================================================
 
@@ -47,12 +42,8 @@ KCMStoryPress gPress = kPressNone;
 // @warning **"IS WHAT IS ON SCREEN MINE" IS NEITHER REMEMBERED NOR ASKED HERE -- IT IS OWNED.**
 //   The marker keeps the standing set and the jump's flash apart, so this file takes down what
 //   it put up by name (ShowStanding) and cannot reach the other.
-//   The history is worth keeping because the same mistake is easy to make again: this file
-//     first kept its own flag for "did I put the current mark up", which was one fact written
-//     down in two places ([[one-question-one-place]]) and went stale the moment anything ELSE
-//     took the mark down -- the double click did exactly that (KCMStorySelectChange, gone 2026-10-25), after
-//     which this file still believed a standing mark was on screen (bug A2). Asking the marker
-//     fixed the staleness; separating the two sets removed the question.
+//   Do not keep a flag here for "did I put the current mark up": that is one fact written down in two places, and it
+//   goes stale the moment anything else takes the mark down.
 
 /* KCMStoryWholeTextEnd
    One past the last character a reader can see in this story - what an Added or Removed story is
@@ -97,9 +88,6 @@ void KCMStoryAddChange(IKCMStoryEditsFacade* edits, int32 n, int32 i, IDataBase*
 	IKCMStoryEditsFacade::Change change;
 	if (!edits->GetChange(n, i, change))
 		return;
-	// (⛔**A CHANGE THE READER HAD TAKEN IN WAS NOT MARKED** - its row stayed in the list, but
-	//  the marks say "the two versions differ HERE" and at that place they no longer did.
-	//  Nothing is taken in since the restore went on 2026-09-21.)
 
 	// **AND WHAT AN IMPORT COULD NOT PUT IN IS NOT A PLACE**: a "!" child names a
 	//   reason, not a range - its positions are zero - and a mark drawn from it would be a
@@ -107,15 +95,15 @@ void KCMStoryAddChange(IKCMStoryEditsFacade* edits, int32 n, int32 i, IDataBase*
 	if (change.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused)
 		return;
 
-	// A CHANGE THE READER TOOK BACK IS NOT MARKED (stage 2 C): the marks say "the two versions
+	// A CHANGE THE READER TOOK BACK IS NOT MARKED: the marks say "the two versions
 	//   differ HERE", and at that place they no longer do - the row says "=" for the same reason.
 	if (change.fReplaced)
 		return;
 
-	// A TABLE ROW MARKS ITS CHANGED CELLS, ONE SPAN EACH (the user: "the
-	//   changed cells should be marked" - even though the list shows one row). The spans are
-	//   Target coordinates, so only the Target's marks read them; the Source side lights the
-	//   table's anchor range below, as any change would.
+	// A TABLE ROW MARKS ITS CHANGED CELLS, ONE SPAN EACH (the author: "the changed cells should be marked" - even
+	//   though the list shows one row). The spans are Target coordinates, so only the Target's marks read them. The
+	//   Source side takes the table's anchor range below, as any change would, and that draws nothing: the anchor's
+	//   run has no glyphs (spec map SMK-26).
 	if (change.fWhat == IKCMStoryEditsFacade::Change::kWhatTable && !useSourceDocument)
 	{
 		for (int32 s = 0; s < change.fMarkSpanCount; ++s)
@@ -129,9 +117,8 @@ void KCMStoryAddChange(IKCMStoryEditsFacade* edits, int32 n, int32 i, IDataBase*
 		return;
 	}
 
-	// **AN INSERTION MARKS ITS PLACE ON THE SOURCE SIDE, AS A CARET.** It used to be skipped, because
-	//   the older side was said to hold nothing to point at -- true of characters, false of the
-	//   place. The range comes through EMPTY for one, like a deletion on the side it was deleted
+	// **AN INSERTION MARKS ITS PLACE ON THE SOURCE SIDE, AS A CARET.** The older side holds no characters for it, but
+	//   it holds the place. The range comes through EMPTY for one, like a deletion on the side it was deleted
 	//   from, and an empty range is a caret (KCMStoryMarker::CaretAt, which the jump's flash asks too).
 	const TextIndex from = useSourceDocument ? change.fSourceStart : change.fTargetStart;
 	const TextIndex to = useSourceDocument ? change.fSourceEnd : change.fTargetEnd;
@@ -158,9 +145,7 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 	// **HELD FOR THE WHOLE LOOP, NOT ASKED FOR PER ROW.** Every Utils<IFace>() written out is its
 	//   own Query off the Utils boss -- the constructor calls UtilsBoss::QueryUtils and the
 	//   destructor Releases (Utils.h:87-89) -- and this loop asks for a row, its change count and
-	//   every one of its changes. On a document with a few thousand edits that was a few thousand
-	//   Queries, and the whole of it runs again on every press and every refresh. Two other files
-	//   here already hold it across a loop (KCMStoryNav.cpp, KCMChangeNav.cpp).
+	//   every one of its changes, on every press and every refresh.
 	// @warning **THE TEST IS ON THE Utils OBJECT, BEFORE ANYTHING IS ASKED OF IT.** This can be reached
 	//   from a model notification during teardown, and QueryUtilInterface() has no test of its own.
 	Utils<IKCMStoryEditsFacade> edits;
@@ -186,26 +171,18 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 		//   that same uid for every row paired by UID (KCMStoryDiffRun::Run) - and the click selects with it (KCMStoryJump.cpp).
 		//   A row paired by place is the one exception, and the next block takes it.
 		//
-		// @warning **this used to ask "is this a removed row?" and require that to MATCH
-		//   useSourceDocument**, which quietly dropped every ORDINARY row from the source side -- found
-		//   by the reader at the running application, not by this file's own reasoning. Two things were
-		//   broken by it and both were invisible from here:
-		//     * holding the button over the older window marked nothing at all, unless a whole story
-		//       happened to have been deleted;
-		//     * a DELETION had nowhere left to be shown correctly -- the characters survive only in the
-		//       older version, so the source side is the ONLY side that can show one. What the reader
-		//       got instead was the target side's stand-in, which lit the character that closed up
-		//       over the gap.
-		//   The comment that stood here argued from "a uid means a different object in the other
-		//     document", which is true in general and false for this feature. **An argument that proves
-		//     too much is worth testing against what the neighbours actually do.**
+		// @warning **do not ask "is this a removed row?" and require that to MATCH useSourceDocument**: that drops
+		//   every ORDINARY row from the source side. Holding the button over the older window would mark nothing
+		//   unless a whole story had been deleted, and a DELETION would have nowhere to be shown: its characters
+		//   survive only in the older version, so the source side is the ONLY side that can show one.
+		//   ("A uid means a different object in the other document" is true in general and false for this feature.)
 		if ((row.fKinds & (useSourceDocument ? kKCMStoryKindAdded : kKCMStoryKindRemoved)) != 0)
 			continue;
 
 		// THE STORY ON THIS SIDE (stories paired by place): the Source side is the row's SOURCE story
 		//   (Row::fSourceStoryUID) - the same uid as fStoryUID for every row paired by UID and for a Removed one, but the
 		//   Source's own story for a row paired by the place of its first frame, whose fStoryUID is the Target's new story
-		//   and names something else (or nothing) over there. ⚠Every read below and the map's key are this story's.
+		//   and names something else (or nothing) over there. Every read below and the map's key are this story's.
 		// kInvalidUID passes over the row that stands for a file with no such story - and, on the Source side, every Track
 		//   row: a Track listing has no Source document, and its Source range is (0,0), the story's start.
 		const UID storyHere = useSourceDocument ? row.fSourceStoryUID : row.fStoryUID;
@@ -226,17 +203,16 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 		{
 			// **AN UNPAIRED STORY IS MARKED WHOLE.** An Added story has no partner in the older version
 			//   and a Removed one has none in the newer, so no text diff was ever run for either -- which
-			//   is why they arrive here with no changes at all (KCMStoryStamp.h, kKCMStoryKindUnpaired).
+			//   is why they arrive here with no changes at all (KCMStoryKinds.h, kKCMStoryKindUnpaired).
 			//   Every character of them is new, or gone, so every character is the answer to "what
 			//   changed".
-			// @warning **the other two reasons for an empty list are not this one**, and must not be
-			//   marked whole: the diff refused the story (it ran out, or the length check failed) or it
-			//   ran and the WORDS AGREE -- only formatting or a table moved. Lighting up the whole story
-			//   would claim to know something in the first case and would be plainly wrong in the second
-			//   (IKCMStoryEditsFacade.h names all three).
+			// @warning **the other two reasons for an empty list are not this one**, and must not be marked whole: the
+			//   story could not be read, or the diff ran and the WORDS AGREE -- only formatting or a table moved.
+			//   Lighting up the whole story would claim to know something in the first case and would be plainly wrong
+			//   in the second (IKCMStoryEditsFacade.h, at GetChangeCount).
 			// Asked as Unpaired rather than as Added, which is this plug-in's own rule: the two kinds
 			//   differ only in WHICH document holds the story, and that has already been settled by the
-			//   row filter above (KCMStoryStamp.h, at kKCMStoryKindUnpaired).
+			//   row filter above (KCMStoryKinds.h, at kKCMStoryKindUnpaired).
 			const TextIndex wholeEnd = KCMStoryWholeTextEnd(db, storyHere);
 			if (wholeEnd > 0)
 				ranges.push_back(KCMMarkRange(0, wholeEnd));
@@ -278,11 +254,9 @@ void KCMStoryMarkRefresh()
 		//   whole plug-in: **while the button is held, that window is the other way round** -- marks
 		//   that were off come on, and marks that were on go off, which is what lets the reader look at
 		//   the plain page underneath the ones they asked to keep.
-		//   So XOR for the toggles, where this was OR until "Hold to Hide Marks" was retired (that toggle used to own
-		//     the "hide while held" half, and its other half duplicated Always Show Marks on Target).
-		//   The Pixel mode's frames follow the same rule, but spelt out in two places rather than one,
-		//     because they are drawn by the draw event: the toggle puts them up (alwaysScreen in
-		//     KCMDrawEventHandler) and the press takes them down (sMarksTempHidden, set in
+		//   So XOR for the toggles.
+		//   The Pixel mode's frames follow the same rule, but spelt out in two places rather than one: the toggle puts
+		//     them up (alwaysScreen in KCMDrawEventHandler) and the press takes them down (sMarksTempHidden, set in
 		//     KCMPeekGesture). Here both halves are this one expression.
 		//   @warning a press is over ONE window, so the other window's toggle is left exactly as it is.
 		//   @warning real bools, made by == and != 0, so that != below is an XOR: bool16 is an integer type,
@@ -290,23 +264,19 @@ void KCMStoryMarkRefresh()
 		const bool pressTarget = (gPress == kPressOverTarget);
 		const bool pressSource = (gPress == kPressOverSource);
 		// **"Print comparison marks" ALSO PUTS THEM UP ON SCREEN**, and this is what makes printing
-		//   possible at all. The Pixel mode has always worked this way -- its wantMarks is
+		//   possible at all. The Pixel mode works this way -- its wantMarks is
 		//   `(sPrintMarks || sMarksVisible || ...)`, so turning the print toggle on shows the frames
 		//   permanently as well (KCMDrawEventHandler, where wantMarks is worked out). WYSIWYG: what
 		//   will come out is what you are looking at.
 		// @warning **it is also a necessity, not a choice.** What gets drawn onto paper is drawn from
 		//   this same set -- so "on paper but not on screen" would mean keeping a second set of ranges,
-		//   which is one question answered in two places ([[one-question-one-place]]). The screen and
+		//   which is one question answered in two places. The screen and
 		//   the page agree because there is only ever one answer to draw from.
-		// **BOTH SIDES READ THE PRINT TOGGLE, ON SCREEN AND ON PAPER** (the user's
-		//   call: "with Print ON they are printable AND permanently shown, print preview included").
+		// **BOTH SIDES READ THE PRINT TOGGLE, ON SCREEN AND ON PAPER** (the author's call: "with Print ON they are
+		//   printable AND permanently shown, print preview included").
 		//   So it is OR-ed outside the press: a press reverses what a toggle asks for, and cannot hide what Print is
 		//   showing - what the Pixel mode's frames do (srcWanted and wantMarks in KCMDrawEventHandler).
-		//   ⚠**THE PARAGRAPH THAT STOOD HERE SAID THE OPPOSITE** for the Source side, and cited
-		//     IKCMCompareFacade.h as the specification - the same citation that carried the stale
-		//     rule into the printing test further down this file. Both were corrected today.
-		//   So the two lines below are now the SAME SHAPE, which is the point: a reader can see at
-		//     a glance that the sides agree, instead of having to work out why they differ.
+		//   The two lines below are the SAME SHAPE on purpose: a reader can see at a glance that the sides agree.
 		const bool tgtToggled = (KCMDrawEventHandler::sTgtMarksOn != 0);
 		const bool srcToggled = (KCMDrawEventHandler::sSrcMarksOn != 0);
 		const bool printing = (KCMDrawEventHandler::sPrintMarks != 0);
@@ -326,8 +296,7 @@ void KCMStoryMarkSetPress(bool16 active, bool16 useSourceDocument)
 {
 	// @warning **a release that nobody pressed does nothing** -- it must not go and rebuild the
 	//   marks, because the button also comes up after gestures this file never heard the start of
-	//   (Pixel mode, the CMYK sampler, a peek). It is also what stops a release from taking down a
-	//   jump's marker.
+	//   (Pixel mode, the CMYK sampler, a peek).
 	if (!active && gPress == kPressNone)
 		return;
 
@@ -344,7 +313,7 @@ bool16 KCMStoryMarkPrintAllowedFor(IDataBase* db)
 	//   document, reads the one flag this tests first - so a pass it lets through can still be refused
 	//   here, and nothing it refuses could have been allowed here.
 	// @warning **read directly, not through the facade:** this runs on the export's background
-	//   thread, where a Query off kUtilsBoss per parcel is a cost with nothing to buy. The Pixel
+	//   thread, where a Query off kUtilsBoss per run is a cost with nothing to buy. The Pixel
 	//   side reads the same two flags the same way (KCMRingAdornment.cpp,
 	//   KCMMarksCouldBeTranslucent).
 	// @warning **KCMIsSameDoc, NOT ==:** an asynchronous export hands the drawing a CLONE of the
@@ -354,23 +323,9 @@ bool16 KCMStoryMarkPrintAllowedFor(IDataBase* db)
 	if (!KCMDrawEventHandler::sPrintMarks)
 		return kFalse;
 
-	// **THE OLDER DOCUMENT PRINTS ON "Print comparison marks" ALONE, LIKE THE NEWER ONE**
-	//   (the user: "with Print ON I want them in the output; Always Show is only ever
-	//   about the screen").
-	//   ⚠**MY FIRST ATTEMPT THAT DAY MADE IT `sSrcMarksOn && sPrintMarks`**, copied from the Pixel
-	//     side - which was itself the mirror fault of the one it had fixed the day before. A
-	//     display switch must not hold a veto over the output.
-	//   ⚠**IT USED TO TAKE sSrcMarksOn ALONE**, and the comment here defended that as deliberate,
-	//     citing IKCMCompareFacade.h as the specification. **The Pixel side had already stopped
-	//     doing it on 2026-09-07** (KCMDrawEventHandler.cpp, srcWanted -- spec map MK-14: a Source
-	//     document printed its frames while the reader had asked for no marks in the output). This
-	//     file's header says "THE RULE IS THE PIXEL MODE'S, WORD FOR WORD" - and it kept the word
-	//     the Pixel mode had retracted the day before.
-	//   **THE LESSON IS ABOUT THE CITATION, NOT THE RULE**: naming another file as the
-	//     specification does not subscribe you to its changes. Three places said the same stale
-	//     thing (this line, this file's header, IKCMCompareFacade.h at GetShowSourceMarks), and the
-	//     one actually edited on 09-07 was a fourth.
-	//   Screen behaviour is untouched, exactly as on the Pixel side.
+	// **THE OLDER DOCUMENT PRINTS ON "Print comparison marks" ALONE, LIKE THE NEWER ONE** (the author: "with Print ON I
+	//   want them in the output; Always Show is only ever about the screen"). A display switch must not hold a veto
+	//   over the output: do not add sSrcMarksOn here (KCMDrawEventHandler.cpp, srcWanted -- spec map MK-14).
 	return (KCMIsSameDoc(db, KCMArmedTargetDB()) || KCMIsSameDoc(db, KCMArmedSourceDB())) ? kTrue : kFalse;
 }
 

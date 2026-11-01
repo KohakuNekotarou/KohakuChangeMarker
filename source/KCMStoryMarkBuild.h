@@ -9,19 +9,17 @@
 //
 //  **THE ADORNMENT AND THIS HALF BOTH LIVE ON THE MODEL SIDE**, and the reason is the
 //  adornment's, not this file's: the UI's File > Export > PDF runs in the background and never
-//  hands a kUIPlugIn any drawing, so the marks could not reach paper or PDF while they lived
-//  over there. Once the adornment moved, this had to follow -- it is the half that reads
-//  IKCMStoryEditsFacade, and that list has always been the model's.
-//  It reads better on this side anyway: every input it consults (the two toggles, the print
-//    toggle, the comparison result, which documents are armed) is model state. The only thing
-//    it ever needed from the UI is whether the tool's button is down, which arrives through
-//    KCMStoryMarkSetPress.
+//  hands a kUIPlugIn any drawing, so the marks could not reach paper or PDF from over there. This half
+//  reads IKCMStoryEditsFacade, and that list is the model's.
+//  Every input it consults (the two toggles, the print toggle, the comparison result, which documents are armed)
+//  is model state. The only thing it needs from the UI is whether the tool's button is down, which arrives through
+//  KCMStoryMarkSetPress.
 //
 //  @warning **NOTHING IS CACHED BETWEEN REFRESHES.** The Story Edits list can be rebuilt by a
 //   comparison, a refresh or a row's own right-click menu at any moment, and a cache of ranges
 //   would go stale silently -- the marks would keep pointing at where the words used to be.
-//   Rebuilding costs a few thousand integers on a document with a few thousand edits, which is
-//   not worth being wrong for.
+//   Rebuilding reads every change of every row (GetChange copies its strings as well: by estimate a few milliseconds
+//   for a few thousand edits, not measured), which is not worth being wrong for.
 //
 //========================================================================================
 
@@ -59,25 +57,17 @@ void KCMStoryMarkSetPress(bool16 active, bool16 useSourceDocument);
 
 /** May this document's marks be drawn onto paper or into an exported PDF?
 
-	**THE RULE IS THE PIXEL MODE'S, AND IT IS SYMMETRICAL**: a document prints its
-	marks when ITS OWN switch is on AND "Print comparison marks" is on. The Target's own switch is
-	"Print comparison marks" itself, so it reads as one test there and two here.
-
-	⚠**IT WAS ASYMMETRIC UNTIL TODAY**, and the way that survived is worth more than the rule.
-	 This header said "WORD FOR WORD" and cited IKCMCompareFacade.h as the specification -- but the
-	 Pixel mode had already dropped the asymmetry on 2026-09-07 (spec map MK-14: a Source document
-	 printed its frames while the reader had asked for no marks in the output). **Quoting a file as
-	 the specification does not subscribe you to its edits.** Three places went on saying the old
-	 thing; the one that changed was a fourth.
+	**"Print comparison marks" ALONE DECIDES, FOR BOTH DOCUMENTS** - the Pixel mode's rule (spec map MK-14, SMK-18). The
+	"Always Show Marks" toggles are about the screen and hold no veto over the output.
 
 	@warning **IT IS ASKED FROM THE DRAWING PATH, ON BACKGROUND THREADS**, so it reads the state
-	 directly rather than querying a facade off kUtilsBoss -- a Query per parcel is not what this
+	 directly rather than querying a facade off kUtilsBoss -- a Query per run is not what this
 	 should cost. The Pixel side answers the same question the same way
 	 (KCMRingAdornment.cpp, KCMMarksCouldBeTranslucent).
 	@warning **which document is which is asked of the armed pair** (KCMArmedTargetDB /
 	 ...SourceDB), the same source the marks themselves were built from. Not
 	 KCMDrawEventHandler::sDB -- that is the PIXEL marks' document and a different variable; using
-	 it here would be two answers to one question ([[one-question-one-place]]).
+	 it here would be two answers to one question.
 
 	@param db the document being drawn - possibly a background thread's CLONE of it, which is why
 		the comparison inside is KCMIsSameDoc rather than ==.

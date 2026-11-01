@@ -1,7 +1,6 @@
 # 08. Story Edits の一覧 ― 行・ツリー・クリック・ナビ
 
-> コード地図での位置: ⚠**未登録**（`docs/ai-notes/kescm-file-map.md` に Story UI の11ファイル中
-> **10本が載っていない**＝2026-09-08 に検算）。実体は
+> コード地図のブロック＝U5（`docs/ai-notes/kescm-file-map-ui.md`）。実体は
 > `ui/KCMStoryTreeAdapter.cpp`（木の形）／`ui/KCMStoryNodeID.h`（節点）／
 > `ui/KCMStoryTreeWidgetMgr.cpp`（行に何を書くか）／`ui/KCMStoryCellView.cpp`（本文セルの自前描画）／
 > `ui/KCMStorySection.cpp`（開閉）／`ui/KCMStoryRowEH.cpp`（クリックの種類）／

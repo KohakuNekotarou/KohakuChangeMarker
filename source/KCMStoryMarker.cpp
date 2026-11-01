@@ -39,21 +39,17 @@
 #include "UIDRef.h"
 
 // Project includes:
-#include "KCMCore.h"			// KCMIsDocDBOpen / KCMInvalidateDB. Both were written out here
-									//   instead while this lived in the UI plug-in, which cannot call
-									//   into the model at all
+#include "KCMCore.h"			// KCMIsDocDBOpen / KCMInvalidateDB
 #include "KCMDrawEventHandler.h"	// SelectedMarkColor and SelectedMarkOpacity (the panel's choices) and
 									// KCMSetOutputColor (screen in RGB, paper in CMYK) -- all shared with
-									// the Pixel mode's frames -- and sPrintMarks.
+									// the Pixel mode's frames -- and sPrintMarks, tl_Rasterizing.
 #include "KCMExternalSource.h"	// KCMIsDbAlive - a document in the list, or the lent Source (ForgetClosedDocs)
-#include "KCMID.h"				// moved here from the UI plug-in with the adornment
+#include "KCMID.h"				// kKCMStoryMarkerAdornmentImpl
 #include "KCMStoryList.h"		// KCMCaretOnTableChars - a caret in front of a table stands after the character before it
 #include "KCMStoryMarkBuild.h"	// KCMStoryMarkPrintAllowedFor - may THIS document go on paper
 #include "KCMStoryMarker.h"
 #include "KCMStoryMarkerExpiry.h"
-#include "KCMThreadSafety.h"		// KCMIsSameDoc (the background's cloned DB) and the lock that
-									//   guards every static below. Both became necessary the moment this
-									//   file moved to the model plug-in -- see the note on the statics.
+#include "KCMThreadSafety.h"		// KCMIsSameDoc (the background's cloned DB) and the lock over what is drawn from
 
 namespace
 {
@@ -64,13 +60,10 @@ namespace
 //   document (it is not saved anywhere), to no panel (it shows with the panel closed) and to no
 //   boss (the adornment is created by the service registry, not by us).
 // @warning **THE ONE THAT IS DRAWN FROM IS WRITTEN ON THE MAIN THREAD AND READ ON BACKGROUND ONES**, which is the
-//   reason every write of it, and every read off the main thread, takes KCMMarkStateMutex(). (The two sets
-//   below it are the main thread's own.) This file used to live in the UI
-//   plug-in and this comment used to say "main thread only" -- true then, because a kUIPlugIn is
-//   never handed the drawing during an export. It moved to the model plug-in so that the marks
-//   could reach paper and PDF, and **a global text adornment is a SERVICE, which the registry
-//   resolves in every execution context including background threads** (KCM.fr spells this out).
-//   So the asynchronous PDF export draws these on its own thread.
+//   reason every write of it, and every read off the main thread, takes KCMMarkStateMutex(). (gStandingDocs and
+//   gFlashDocs are the main thread's own.) **A global text adornment is a SERVICE, which the registry resolves in
+//   every execution context including background threads** (KCM.fr spells this out), so the asynchronous PDF export
+//   draws these on its own thread.
 //   The lock is the same one the comparison marks use (KCMThreadSafety.h), because the two are
 //     never drawn at once -- Pixel mode has no washed characters and Story mode has no rings.
 //   @warning the drawing side must not take it on every wax run for nothing: gHasMark is tested
@@ -80,14 +73,13 @@ namespace
 //   own one set and never touch the other's; gMarkDocs is what comes out of putting them
 //   together under the per-document rule (KCMStoryMarkDocs.h), and it is the only one the
 //   drawing side ever looks at.
-//   Composing on the way IN rather than on the way out keeps the hot path exactly as it was: the
-//     adornment is asked about every run on every page being drawn, and it still reads one map.
-KCMStoryMarkDocs gStandingDocs;			// the "Show Marks on ..." toggles and a held button
+//   Composing on the way IN rather than on the way out keeps the hot path short: the
+//     adornment is asked about every run on every page being drawn, and it reads one map.
+KCMStoryMarkDocs gStandingDocs;			// the "Always Show Marks on ..." toggles, Print and a held button
 KCMStoryMarkDocs gFlashDocs;				// what the newest jump asked to point at
 
-// the fast path: !gMarkDocs.empty(), kept as a flag. std::atomic SINCE 2026-10-27 (KFC's marker made the same change,
-//   9ba1621): it is read unlocked on the export's thread, and a plain bool16 read that way is a data race in the language
-//   - it worked only because MSVC on x64 happens to forgive it. What it does is unchanged.
+// the fast path: !gMarkDocs.empty(), kept as a flag. std::atomic because it is read unlocked on the export's thread:
+//   a plain bool16 read that way is a data race in the language, which MSVC on x64 only happens to forgive.
 std::atomic<bool>  gHasMark(false);
 KCMStoryMarkDocs gMarkDocs;				// database -> story UID -> its ranges, each list merged.
 											// @warning **THE KEY CANNOT BE COMPARED WITH ==.** A
@@ -111,13 +103,10 @@ const double kAscentFraction  = 0.85;
 const double kDescentFraction = 0.10;
 
 // How wide the caret's bar is, as a fraction of the type size.
-// **WIDENED FROM 0.15** at the reader's request. At 10pt type that is 1.5pt -> 2.5pt. A deletion
-//   and an insertion seen from the older side are both drawn as this bar, and at 15% it read as
-//   a hairline rather than as a mark.
-// TWO PLACES USED TO WRITE THE SAME NUMBER. The caret and the stand-in for a zero-width range
-//   are answering one question -- "how thick does a bar have to be before it reads as *here*" --
-//   so keeping two copies of the answer guarantees they eventually disagree
-//   ([[one-question-one-place]]).
+// 0.25 AT THE AUTHOR'S REQUEST: at 0.15 (1.5pt at 10pt type) a deletion's bar, and an insertion's seen from the
+//   older side, read as a hairline rather than as a mark.
+// The caret, the stand-in for a zero-width range and the bar on a path all answer one question -- "how thick does a
+//   bar have to be before it reads as *here*".
 const double kCaretWidthFraction = 0.25;
 
 /* KCMStoryMarkerRangesFor
@@ -125,21 +114,19 @@ const double kCaretWidthFraction = 0.25;
 
    **THE DATABASE IS MATCHED BY FILE, NOT BY POINTER.** A background thread -- the asynchronous
    PDF export -- is handed a CLONED copy of the database, so its pointer never equals the one
-   that was stored when the marks went up, and `gMarkDocs.find(db)` (what stood here) would miss
-   every single time. The symptom would have been the worst kind: correct on screen, blank in the
-   exported file. KCMIsSameDoc() asks the file instead, and it is the same call the comparison
-   marks were converted to (KCMThreadSafety.h records the measurement).
+   that was stored when the marks went up, and `gMarkDocs.find(db)` would miss every single time: correct on
+   screen, blank in the exported file. KCMIsSameDoc() asks the file (the document ID for an unsaved one) instead, as
+   the comparison marks do (KCMThreadSafety.h records the measurement).
 
-   WALKING THE MAP COSTS NOTHING HERE. It holds at most two entries -- the armed target and the
-   armed source -- and on the main thread KCMIsSameDoc decides on its first line (same pointer),
-   so the screen path is exactly as fast as the find() it replaces.
+   WALKING THE MAP COSTS LITTLE HERE. It holds at most two entries -- the armed target and the armed source -- and on
+   the main thread the same pointer answers at once (the other entry, when it comes first, compares two files).
 
    @warning THE CALLER MUST HOLD KCMMarkStateMutex: the returned pointer points into gMarkDocs.
 
    @param runStart, runEnd the run's characters, as KCMStoryMarkerAskAboutRun worked them out. The
        whole marked span is tested against them on the first line, which is what refuses most
        runs before the Query below is ever reached.
-   @param forPrint kTrue when the drawing is going to paper or an export. The document is then
+   @param forPrint kTrue when the drawing is output (KCMStoryMarkerDrawIsOutput). The document is then
        asked whether its marks may go there at all -- and the question is asked HERE because this
        is where the database has just been worked out, so printing costs no extra lookup.
 */
@@ -158,10 +145,7 @@ const KCMMarkRangeList* KCMStoryMarkerRangesFor(const IWaxRun* waxRun, bool16 fo
 
 	const UIDRef modelRef = ::GetUIDRef(model);
 
-	// **MAY THIS DOCUMENT GO ON PAPER.** The answer used to be a flat "no" for every document --
-	//   the mark was born as a jump's pointer, which has no business being printed. Now it is per
-	//   document and per toggle, exactly as the Pixel mode's frames already were
-	//   (KCMStoryMarkBuild).
+	// **MAY THIS DOCUMENT GO ON PAPER.** Per document, as the Pixel mode's frames are (KCMStoryMarkBuild).
 	if (forPrint && !KCMStoryMarkPrintAllowedFor(modelRef.GetDataBase()))
 		return nil;
 
@@ -195,9 +179,8 @@ const KCMMarkRangeList* KCMStoryMarkerRangesFor(const IWaxRun* waxRun, bool16 fo
     has gone out of date only sends a run on to the lock, where the map answers. So testing it
     unlocked costs a run nothing and refuses almost all of them outright. Everything after it
     reads state the main thread rewrites.
-   @warning **the two questions below both wrote these lines out for themselves**, which put the order
-    the whole hot path rests on -- flag first, lock second -- in two places. Here it is in one, and
-    neither of them holds a lock or a pointer into gMarkDocs.
+   @warning **the order the whole hot path rests on -- flag first, lock second -- is here alone**: neither of the two
+    questions below holds a lock or a pointer into gMarkDocs.
 
    @param forPrint as KCMStoryMarkerRangesFor takes it.
    @param ask called as ask(ranges, runStart, runEnd), answering bool16. The list is only good until it returns.
@@ -239,7 +222,7 @@ bool16 KCMStoryMarkerFindRunRanges(const IWaxRun* waxRun, bool16 forPrint, KCMMa
 }
 
 /* KCMStoryMarkerRunIsMarked
-   The same question with no list built - what GetCouldDraw and GetIsActive want.
+   The same question with no list built - what GetCouldDraw wants.
 
    @warning kFalse = "not asked about printing". GetCouldDraw, which is what calls this, is handed
     no iShapeFlags at all -- so this can only answer the wider question "is this run marked
@@ -265,13 +248,9 @@ bool16 KCMStoryMarkerRunIsMarked(const IWaxRun* waxRun)
     hypothetical here: turning "Always Show Marks on Source" off leaves the target's marks up and
     has to wipe the source's.
 
-   @warning **the clock is not touched here, and that is deliberate.** It was a parameter of this
-    function until the two sets were separated, which meant every standing mark going up or
-    coming down had an opinion about the jump's clock. Both answers are wrong now that the two
-    can be on screen together in different windows: stopping it would leave a pointer up for
-    good, and starting it would hand the flash a fresh second every time a toggle moved. The
-    countdown belongs to the two calls that own the flash (ShowFlash / ClearFlash) and to nothing
-    else.
+   @warning **the clock is not touched here, and that is deliberate.** The two kinds can be on screen together in
+    different windows: stopping the clock for a standing mark would leave a pointer up for good, and starting it would
+    hand the flash a fresh second every time a toggle moved. The countdown belongs to ShowFlash and to nothing else.
 */
 void KCMStoryMarkerInstall()
 {
@@ -295,9 +274,8 @@ void KCMStoryMarkerInstall()
 
 	// @warning **REPAINTING HAPPENS OUTSIDE THE LOCK.** InvalidateViews walks the document's
 	//   windows and is free to take locks of its own; doing that while holding this one is the
-	//   shape a deadlock comes in. "Hold the lock only for the memory you are changing" is the
-	//   discipline KCMThreadSafety.h states. Reading gMarkDocs here needs none: this thread is the only
-	//   one that writes it.
+	//   shape a deadlock comes in (KCMThreadSafety.h: "Do not hold the lock through a long operation"). Reading
+	//   gMarkDocs here needs none: this thread is the only one that writes it.
 	// @warning the document is asked whether it is still open FIRST, because this runs while one is
 	//   being closed as well, and redrawing a database that is going away is a crash. The question
 	//   compares pointers, so it is safe to ask of a dead one.
@@ -328,7 +306,7 @@ void KCMStoryMarkerDropClosed(IDocumentList* docList, KCMStoryMarkDocs& docs)
 	}
 }
 
-/** One rectangle to fill, and what to fill it with (the Track mode colours each author). */
+/** One place to fill, and what to fill it with (the Track mode colours each author). */
 struct KCMMarkBox
 {
 	PMRect					fBox;		// what is filled; with fQuads, what they reach - the ink bounds read it either way
@@ -379,7 +357,7 @@ PMPolygon4 KCMStoryMarkerBarOf(const PMPolygon4& quad, bool after, const PMReal&
    **A STRAIGHT BOX CANNOT DO IT, AND NOT BECAUSE IT IS STRAIGHT.** Such a run's position stands at the path's own origin and each
    glyph carries its own matrix, so the x and y the rest of this file works from are not where the characters are: the box landed
    clear of the words (measured: the box at 0,-17 to 294,0, the words at 149,300). IWaxRunShape answers in the coordinates the run
-   draws in, one quadrilateral a character; it is what the product's own selection reads.
+   draws in, one quadrilateral a character (IWaxRunShape.h: "Used mostly for selection and highlighting").
 
    @param waxRun a run IsTOPRun answers kTrue for.
    @param charStart, charCount the characters, as offsets into the run.
@@ -436,53 +414,37 @@ bool16 KCMStoryMarkerDrawIsOutput(GraphicsData* gd, int32 iShapeFlags)
 // The adornment
 //----------------------------------------------------------------------------------------
 
-/** Lays a coloured wash under the marked characters. On screen always; on paper and in an
-	exported PDF when the document's toggle says so (KCMStoryMarkPrintAllowedFor). It was
-	"screen only" once, and an INVERSION before that -- both changes are recorded where they matter
-	(GetDrawPriority and Draw), and both are worth reading before changing the look again. */
+/** Lays a coloured wash under the marked characters: in a window as the toggles say, on paper and in an exported
+	PDF when "Print comparison marks" is on (KCMStoryMarkPrintAllowedFor). GetDrawPriority and Draw record why it is
+	not an inversion and where it has to sit; read them before changing the look. */
 class KCMStoryMarkerAdornment : public CPMUnknown<IGlobalTextAdornment>
 {
 public:
 	KCMStoryMarkerAdornment(IPMUnknown* boss) : CPMUnknown<IGlobalTextAdornment>(boss) {}
 
-	/** BACKGROUND, like a highlight -- and the comment that used to stand here called this exactly
-		right before it happened. It said the mark was in the FOREGROUND because it inverted what was
-		under it and the glyphs had to stay visible, and added: "a slab of colour would go in the
-		background pass instead, which is where the product puts its H&J and missing-glyph
-		highlights, and where this would go if the inversion turns out not to work".
-
-		**The inversion turned out not to work on paper, and the reason had nothing to do with which
-		pass it was in.** In an exported or printed page the text is drawn last, so a foreground
-		adornment lands under the glyphs out there anyway: the ground inverted and the glyphs did not
-		(measured: ground 255 -> 6, glyph core 0 -> 0 -- black on black). Being in the foreground
-		bought nothing on paper and cost the wash its natural place.
-		So it moved to the background pass, where the product's own highlights live, and the drawing
-		  became a coloured wash that the glyphs sit on top of -- the one thing that reads the same on
-		  screen and on paper. See Draw() for the whole measurement.
+	/** BACKGROUND, like a highlight: where the product puts its H&J and missing-glyph highlights, and a wash the
+		glyphs sit on top of is the one thing that reads the same on screen and on paper (Draw has the measurement).
 
 		The named constants for Adobe's own global adornments are in IGlobalTextAdornment.h; the
 		non-global ones (underline, strikethrough, paragraph shade, ruby, kenten -- and the text
 		itself) are at the foot of ITextAdornment.h.
 
-		@warning **AND THE NUMBER HAS TO BE NEGATIVE, WHICH COST A BUG.** The move above was first
-		 written as `kTAPassPriBackground + 0.50` -- the right pass by name and the wrong one by
-		 arithmetic:
+		@warning **THE NUMBER HAS TO BE NEGATIVE.** `kTAPassPriBackground + 0.50` is the right pass by name and the
+		 wrong one by arithmetic:
 		  * a priority is split in two, **the whole part being the PASS and the fraction the RUN**
 		    within it (TextDrawPriority.h says so at the head of the namespace), and the wax runs are
 		    walked once per distinct pass;
 		  * kPassBackground is **-16384** (DrawPassInfo.h), and GetPass() cuts the fraction off towards
-		    zero (TextDrawPriority.h). **Every one of Adobe's own background adornments, without
-		    exception, is written as kTAPassPriBackground + a NEGATIVE fraction** (eleven of them,
-		    -0.62 to -0.49), which stays in pass -16384; a POSITIVE one (-16383.50) is in pass -16383.
-		 So `+0.50` did not join them; it drew a whole pass AFTER all of them. Since the wash is
-		   opaque (no transparency, by design -- see Draw), it painted over paragraph shading,
+		    zero (TextDrawPriority.h). **Every one of Adobe's own background adornments is written as
+		    kTAPassPriBackground + a NEGATIVE fraction** (-0.62 to -0.49), which stays in pass -16384; a POSITIVE one
+		    (-16383.50) is in pass -16383, a whole pass AFTER all of them.
+		 The wash being opaque (no transparency, by design -- see Draw), `+ 0.50` paints over paragraph shading,
 		   paragraph borders and rules, underlines, and the product's own missing-font / missing-glyph
 		   / kinsoku / H&J highlights, in exactly the passage the reader was told to look at.
 		-0.585 puts it between kTAPriParagraphRuleBelow (-0.59) and kTAPriUnderline (-0.58): after the
 		  paragraph-level grounds, so the wash covers a paragraph shade the way a highlighter does, and
 		  before everything drawn ON the characters, so nothing the product draws is hidden.
-		The purpose of the move is untouched: any negative pass is still below the glyphs, which are
-		  drawn at kTAPassPriText + 0.50 (pass 0). */
+		Any negative pass is still below the glyphs, which are drawn at kTAPassPriText + 0.50 (pass 0). */
 	virtual Text::DrawPriority GetDrawPriority()
 		{ return Text::DrawPriority(Text::kTAPassPriBackground + -0.585); }
 
@@ -507,7 +469,7 @@ public:
 	}
 
 	/** The header excuses only an adornment that stays inside the run's text bounds and the line's
-		vertical selection bounds. This one promises neither: a caret flagged AFTER stands past the
+		vertical selection bounds. This one promises neither: a bar after its character (kCaretAfter) stands past the
 		end of the run, and the reach from ascent to descent comes from the type size, not from the
 		line. So the bounds are declared. */
 	virtual bool16 GetHasInkBounds() { return kTrue; }
@@ -521,11 +483,9 @@ public:
 	virtual void EndOfParcelDraw(GraphicsData*, int32, const IParcelShape*) {}
 
 private:
-	/** The rectangles to wash, in the coordinates the run reports its own position in - one per
-		marked range that falls in this run.
+	/** What to wash, in the coordinates the run draws in - one box per marked range that falls in this run.
 		None for a run with nothing marked, and for a run that cannot be measured - an inline graphic has
-		neither glyphs nor render data, which all four of these methods are warned about in
-		IGlobalTextAdornment.h. */
+		neither glyphs nor render data, as IGlobalTextAdornment.h warns of each method that takes them. */
 	static std::vector<KCMMarkBox> GetMarkBoxes(const IWaxRun* waxRun, const IWaxRenderData* renderData,
 												const IWaxGlyphs* waxGlyphs, bool16 forPrint);
 };
@@ -569,13 +529,11 @@ std::vector<KCMMarkBox> KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* wax
 		waxGlyphs->MapCharsToGlyphs(charStart, charCount, &glyphIndex, &glyphLength);
 		const auto mapsToNothing = [&]() { return glyphIndex < 0 || glyphLength <= 0 || glyphIndex >= glyphCount; };
 
-		// **A CARET WHOSE CHARACTER DRAWS NOTHING STANDS AFTER THE ONE BEFORE IT**.
-		//   A deletion at the end of a PARAGRAPH puts the caret in front of that paragraph's return,
-		//   and a return maps to no glyph - so the box was skipped and the bar never drawn. The
-		//   character before it is in this same run (a return ends the run it is in), and the end of
-		//   that character is the very place the reader would click. The end of the STORY is the
-		//   same case decided one step earlier, by the builder (KCMMarkRange::CaretAfter), because
-		//   there the caret's own character may not reach any run at all.
+		// **A CARET WHOSE CHARACTER DRAWS NOTHING STANDS AFTER THE ONE BEFORE IT.** A deletion at the end of a
+		//   PARAGRAPH puts the caret in front of that paragraph's return, and a return maps to no glyph. The
+		//   character before it is in this same run (a return ends the run it is in), and the end of that character
+		//   is the very place the reader would click. The end of the STORY is the same case decided one step
+		//   earlier (KCMStoryMarker::CaretAt), because there the caret's own character may not reach any run at all.
 		if (r->IsCaret() && mapsToNothing() && charStart > 0)
 		{
 			waxGlyphs->MapCharsToGlyphs(charStart - 1, 1, &glyphIndex, &glyphLength);
@@ -606,16 +564,11 @@ std::vector<KCMMarkBox> KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* wax
 		PMReal offset = (glyphIndex > 0) ? waxGlyphs->GetEscapementAt(glyphIndex - 1) : PMReal(0.0);
 		PMReal width = waxGlyphs->GetEscapementAt(glyphIndex + glyphLength - 1) - offset;
 
-		// **A DELETION IS A CARET, NOT AN INVERTED CHARACTER.** The characters are gone from this
-		//   side, so there is nothing here that IS the edit -- and inverting the character that closed
-		//   up over the gap says the wrong thing about it: deleting a whole paragraph lit the first
-		//   character of the NEXT one, and deleting the end of a story lit the final carriage return,
-		//   which draws nothing at all.
-		//   The range still covers one character so that it sorts and merges like any other
-		//     (KCMStoryMarkRanges.h), but what is DRAWN is a bar standing where the caret would stand
-		//     if you clicked in front of that character -- the same place the jump centres.
-		// A caret flagged AFTER stands at the far edge of its character instead (the end of the
-		//   story, or a character whose successor draws nothing - see above).
+		// **A CARET IS A BAR, NOT A MARKED CHARACTER** (KCMStoryMarkRanges.h, at kCaretBefore). The range covers one
+		//   character so that it sorts and merges like any other, but what is DRAWN is a bar standing where the caret
+		//   would stand if you clicked in front of that character -- the same place the jump centres.
+		// kCaretAfter stands at the far edge of its character instead (the end of the story, in front of a table, or a
+		//   character whose successor draws nothing - see above).
 		if (caretAfter)
 			offset += width;
 
@@ -642,12 +595,8 @@ bool16 KCMStoryMarkerAdornment::GetIsActive(const IParcelShape* /*parcelShape*/,
 	if (!gHasMark)
 		return kFalse;
 
-	// **ON PAPER NOW, WHERE THIS SAID "NEVER".** The old answer came from what the mark was when it
-	//   was written -- a pointer at something the reader had just asked to see, which has no
-	//   business being printed. It has been the Story mode's whole mark since the toggles and the
-	//   tool's button started using it, and a reader who turns "Print comparison marks" on means it.
-	//   The answer is now per document, decided by the same two toggles that decide the Pixel
-	//     mode's frames (KCMStoryMarkBuild).
+	// **ON PAPER WHEN THE READER SAYS SO.** A reader who turns "Print comparison marks" on means it: the answer is per
+	//   document, as the Pixel mode's frames are (KCMStoryMarkBuild).
 	// @warning **kPreviewMode IS LEFT TO Draw.** The flag is set for the screen's preview modes as well as for
 	//   a page's picture, and this pass has no GraphicsData to tell them apart (KCMStoryMarkerDrawIsOutput).
 	//   The header's "an adornment that does not draw when printing should not draw for this either" is about
@@ -659,12 +608,7 @@ bool16 KCMStoryMarkerAdornment::GetIsActive(const IParcelShape* /*parcelShape*/,
 	//   when it can be called. So refuse the whole pass only when NOTHING is printable; let Draw
 	//   decide per run, where the run's own database is at hand. The cost of being generous is a
 	//   Draw call that draws nothing; being strict here is not possible.
-	//   @warning **this said "IParcelShape is not an IPMUnknown" and that is simply false**
-	//     (IParcelShape.h: `class IParcelShape : public IPMUnknown`, and GetDataBase takes a
-	//     const IPMUnknown* -- PersistUtils.h -- so the call compiles). Whatever the first draft's
-	//     compiler refused, it was not that. **The conclusion was right and the reason was wrong**,
-	//     which is the worse of the two failures: a reason that does not hold stops warning anybody
-	//     the day it stops applying. The real reason is above, and it was in the header all along.
+	//   (The call itself compiles: IParcelShape is an IPMUnknown. It is the UID that may not be there.)
 	if (iShapeFlags & IShape::kPrinting)
 		return KCMDrawEventHandler::sPrintMarks;
 
@@ -698,17 +642,18 @@ void KCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const IW
 		return;
 
 	// **NOTHING GOES INTO KCM'S OWN PICTURES**, the rule of the Pixel mode's marks (DrawSpreadMarks) and for its
-	//   reasons. With Print on, this asked as a picture of the page and was allowed: a Pixel comparison started
-	//   from the Story mode found the wash as a change on a page where nothing shows (a space at a story's end),
-	//   the Alt read answered the wash's colour, and the Shift peek laid the older words over with their wash.
+	//   reasons. Such a picture asks as a picture of the page, and with Print on it would be allowed (measured): a
+	//   Pixel comparison started from the Story mode finds the wash as a change on a page where nothing shows (a space
+	//   at a story's end), the Alt read answers the wash's colour, and the Shift peek lays the older words over with
+	//   their wash.
 	if (KCMDrawEventHandler::tl_Rasterizing.Get())
 		return;
 
 	// THE PRINT DECISION IS MADE PER RUN, INSIDE GetMarkBoxes, because that is where the run's own
 	//   database has just been worked out. GetIsActive answered the same question for the parcel,
 	//   but Draw is reached by paths that do not consult it, so the flags are read again here.
-	// @warning the flags are no longer a flat refusal. They now select WHICH question is asked: on
-	//   screen every marked run draws; on paper only the documents whose toggle says so do.
+	// @warning the flags are not a refusal. They select WHICH question is asked: in a window every marked run draws;
+	//   in the output only what "Print comparison marks" allows (KCMStoryMarkerDrawIsOutput).
 	const bool16 forPrint = KCMStoryMarkerDrawIsOutput(gd, iShapeFlags);
 
 	const std::vector<KCMMarkBox> boxes = GetMarkBoxes(waxRun, renderData, waxGlyphs, forPrint);
@@ -722,18 +667,16 @@ void KCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const IW
 	AutoGSave autoGSave(gPort);
 
 	// **A COLOURED WASH BEHIND THE TEXT, NOT AN INVERSION** (after measuring the whole road).
-	//   Difference blending was the original design and it is right for the screen: it shows through
-	//   any ground and leaves the glyphs readable, because they invert along with the paper instead
-	//   of being covered by it. It cannot survive being printed, and the reason is neither the blend
-	//   nor the colour space:
+	//   Difference blending is right for the screen: it shows through any ground and leaves the glyphs
+	//   readable, because they invert along with the paper instead of being covered by it. It cannot survive
+	//   being printed, and the reason is neither the blend nor the colour space:
 	//   **In an exported or printed page the TEXT IS DRAWN LAST.** A text adornment painting in the
 	//     foreground pass lands UNDER the glyphs out there, so the ground inverts and the glyphs do
 	//     not -- measured: ground 255 -> 6, glyph core 0 -> 0. Black on black. The words that changed
 	//     become the only words that cannot be read, which is the opposite of the point.
-	//   @warning moving the paint to the background pass does not help: the glyphs were always on
-	//     top of it. Nor does painting in CMYK's maximum (0,0,0,1) instead of RGB's white -- that
-	//     corrects WHICH grounds invert, and never touches the glyphs. Both were built and measured
-	//     before this.
+	//   @warning moving the paint to the background pass does not help: the glyphs are on top of it either way. Nor
+	//     does painting in CMYK's maximum (0,0,0,1) instead of RGB's white -- that corrects WHICH grounds invert, and
+	//     never touches the glyphs. Both were built and measured.
 	//   So paint a wash BEHIND the text and let the glyphs keep their own colour. That is what the
 	//     product's own H&J highlight does, and it is the one drawing that reads the same on screen
 	//     and on paper.
@@ -744,32 +687,25 @@ void KCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const IW
 	// HOW STRONG -- the panel's "Marks opacity 25% / 75%", mixed from paper white towards the mark
 	//   colour, for both kinds of mark. Read here, at the moment of drawing, so that the radio cannot
 	//   reach one kind and miss the other.
-	// @warning **"full strength on paper" was tried and removed the same day.** It made sense while
-	//   the mark was an inversion, where 25% only nudged the ground and the printed page needed the
-	//   whole flip to be legible at all. A wash is the opposite: the strength IS the colour, and at
-	//   1.0 it prints as solid red over every changed word -- readable, but shouting.
-	//   The panel's choice is honoured everywhere. What the reader picked for the screen is what
-	//     comes out of the printer, which is the same promise the Pixel mode's frames make
-	//     (KCMDrawEventHandler::SelectedMarkOpacity is used by screen and output alike).
-	//   @warning and it was measured wrong at first: a PNG export counts as PRINTING (kPrinting is
-	//     set), so the "screen" shots taken with exportFile came out at 1.0 too and both radio
-	//     settings looked identical. A PNG is not the screen.
+	// @warning **not at full strength on paper.** The strength IS the colour, and at 1.0 a wash prints as solid red
+	//   over every changed word -- readable, but shouting. What the reader picked for the screen is what comes out of
+	//   the printer, the promise the Pixel mode's frames make (KCMDrawEventHandler::SelectedMarkOpacity serves screen
+	//   and output alike).
+	//   @warning a PNG export counts as PRINTING (kPrinting is set): a shot taken with exportFile is not the screen.
 	const int32 mix = ::ToInt32(KCMDrawEventHandler::SelectedMarkOpacity() * PMReal(100.0));
 
 	// WHICH COLOUR -- the panel's "Mark colour: Red / Cyan", read through the same accessor the
 	//   Pixel mode's rings use, so the two modes can never disagree about it - UNLESS THE BOX HAS A
 	//   COLOUR OF ITS OWN (the Track mode: the author's tracked-change colour). Every box of
-	//   the other modes has none, so what they draw does not change.
+	//   the other modes has none.
 	KCMMarkColour panelColour;
 	KCMDrawEventHandler::SelectedMarkColor(panelColour.fR, panelColour.fG, panelColour.fB);
 
 	// ONE FILL PER BOX, AND THEY CANNOT OVERLAP -- the ranges were merged before they were ever
 	//   installed (KCMStoryMarkRanges.h; ranges of two colours are cut, never laid over each other).
-	//   @warning with Difference an overlap punched a hole (two inversions cancel); a flat wash would
-	//   merely paint twice, but the merge is still what keeps the drawing cheap.
 	// SCREEN IN RGB, PAPER IN CMYK -- the same helper the Pixel mode's frames call, for the same
 	//   reason: KCM compares in CMYK, so a mark specified in RGB does not match its own frames on
-	//   output. The helper lives in KCMDrawEventHandler.cpp and was made non-static for this.
+	//   output.
 	const auto washed = [mix](uint8 channel) { return static_cast<uint8>(255 - (255 - channel) * mix / 100); };
 	for (std::vector<KCMMarkBox>::const_iterator b = boxes.begin(); b != boxes.end(); ++b)
 	{
@@ -822,8 +758,6 @@ void KCMStoryMarker::AddFlashRange(KCMStoryMarkDocs& docs, IDataBase* db, UID st
 
 	// **A DELETION HAS NO WIDTH on the side it was deleted from** -- the words are gone from there,
 	//   and what the jump is pointing at is the PLACE they used to be.
-	//   @warning it used to be widened to one character here, which inverted whatever had closed up
-	//     over the gap -- a different character claiming to be the edit.
 	//   The decision is made HERE and not inside the range list: what a zero-width range should
 	//     look like is about what the reader is being shown, and that list is numbers
 	//     (KCMStoryMarkRanges.h).
@@ -840,14 +774,8 @@ void KCMStoryMarker::ShowFlash(KCMStoryMarkDocs docs)
 	if (gShutdown)
 		return;
 
-	// **WHERE THE "A STANDING MARK WINS" TEST USED TO BE.** It stood here as a single early return:
-	//   while any toggle was on, or the tool's button was down, the jump said nothing at all. That
-	//   was right about the document the toggle was for and wrong about the other one, which had
-	//   nothing standing in it and was where the reader had just asked to be shown something (bug
-	//   A3).
-	//   The rule is now applied per document, once, in the composition -- so there is nothing to
-	//     decide here and no second place for it to be decided differently
-	//     ([[one-question-one-place]]).
+	// "A STANDING MARK WINS" IS NOT TESTED HERE: it is per document, once, in the composition (KCMComposeMarkDocs). An
+	//   early return here would silence the flash in the other document too (KCMStoryMarkDocs.h).
 	gFlashDocs.swap(docs);
 	KCMStoryMarkerInstall();
 
@@ -904,7 +832,7 @@ void KCMStoryMarker::Shutdown()
 {
 	// @warning the flag goes up FIRST: from here on nothing repaints, because the document the mark
 	//   was in may already be half torn down. Taking a mark down the ordinary way would go looking
-	//   for it. Same door, and the same reason, as KFC's marker shutdown.
+	//   for it.
 	{
 		// @warning **LOCKED LIKE EVERY OTHER WRITE.** Teardown is exactly when a background export may
 		//   still be walking gMarkDocs, and clearing a map out from under a reader is the crash this

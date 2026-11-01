@@ -311,8 +311,8 @@ public:
 
 	/** How many differences row nth holds.
 
-		0 is the answer for a story that could not be compared (added, too different, or a failed
-		length check); the row is still there. */
+		0 is the answer for a story with nothing to list: no partner in the other version (added, removed), one that
+		cannot be read, or one whose words agree. The row is still there. */
 	virtual int32	GetChangeCount(int32 nth) = 0;
 
 	/** Fill out with difference which of row nth. kFalse when either index is out of range,
@@ -351,7 +351,7 @@ public:
 
 		@param nth the row, in the order the list is in now.
 		@return how many differences the row has after this, or -1 when the story could not be
-			compared - out of range, an added story, or the diff refused it. Nothing is redrawn
+			compared - out of range, an added story, or a story that cannot be read. Nothing is redrawn
 			for a -1: the list is exactly as it was. */
 	virtual int32	RefreshRow(int32 nth) = 0;
 

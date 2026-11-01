@@ -3156,8 +3156,7 @@ void KCMStoryMarkFacade::ShowJumpFlash(IDataBase* db, UID storyUID,
 	// place it is exactly why the Source's story is handed in on its own. Believing it of every row is what once left the
 	// older window bare.
 	// @warning `db` is NOT always the target: a Removed story is read out of the older document,
-	// and then this test is what stops the same document being marked twice (which would invert
-	// twice and leave a hole - KCMStoryMarkRanges.h).
+	// and then this test is what stops the same document being marked twice.
 	// The test lives here rather than at the caller because "is the older window open" is a fact
 	// about the comparison, and the comparison is this side's (memory one-question-one-place).
 	IDataBase* const flashSourceDB = KCMArmedSourceDB();

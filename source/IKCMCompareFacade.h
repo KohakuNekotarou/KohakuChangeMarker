@@ -204,10 +204,7 @@ public:
 		Always Show only ever shows"). What reaches paper, a PDF or the print preview is decided by
 		**"Print comparison marks" alone, for BOTH documents** - and because that switch also puts
 		the marks up on screen, turning it on means "what you see is what will come out".
-		⇒ These two never grant output, and never withhold it.
-		⚠**THIS PARAGRAPH IS THE ONE OTHER FILES CITE** (KCMStoryMarkBuild takes it as the
-		 specification): if it changes, grep for GetShowSourceMarks and change the citations with it -
-		 **a citation does not follow its source.** */
+		⇒ These two never grant output, and never withhold it. */
 	virtual bool16		GetShowSourceMarks() = 0;
 	virtual void		SetShowSourceMarks(bool16 on) = 0;
 
@@ -219,9 +216,7 @@ public:
 		machinery, so each reads this for itself: the rings in KCMDrawEventHandler, the wash in
 		KCMStoryMarkBuild.
 		@warning **ON SCREEN ONLY.** What reaches paper or a PDF is decided by "Print comparison
-		 marks", for BOTH documents, and neither of these two switches may quietly override it.
-		⚠**KCMStoryMarkBuild cites this paragraph as the specification** (spec map MK-14): if it
-		 changes, change the citation with it - nothing warns you. */
+		 marks", for BOTH documents, and neither of these two switches may quietly override it. */
 	virtual bool16		GetShowTargetMarks() = 0;
 	virtual void		SetShowTargetMarks(bool16 on) = 0;
 

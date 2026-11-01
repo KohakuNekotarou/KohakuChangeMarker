@@ -7,26 +7,20 @@
 //  What is lit up, per document, and the one rule for putting two sets of it together.
 //
 //  **TWO KINDS OF MARK EXIST AND THEY MEET HERE.** A STANDING mark is what the "Always Show
-//  Marks on Target / Source" toggles and the tool's held button put up; a FLASH is the pointer
-//  a jump puts up for about a second (KCMStoryMarker). They are drawn by one adornment, which is
+//  Marks on Target / Source" toggles, "Print comparison marks" and the tool's held button put up; a FLASH
+//  is the pointer a jump puts up for about a second (KCMStoryMarker). They are drawn by one adornment, which is
 //  why they have to be reconciled before anything is drawn rather than while it is.
-//  @warning the rule below was written when that adornment INVERTED what was underneath
-//   (Difference blending), where two marks over the same characters cancelled out and left a
-//   hole exactly where both said "look here". **The drawing is now an opaque wash and that
-//   failure mode is gone** -- see the note on the rule itself for what still keeps it.
 //
 //  **THE RULE IS PER DOCUMENT, AND THAT IS THE WHOLE POINT OF THIS FILE:** in a document that
 //  has a standing mark, the standing mark is all there is; in a document that has none, the
 //  flash shows. Nothing is ever merged between the two.
 //    * The two can never fight over the same characters, because within one document only one
 //      of them is ever used -- the guarantee comes from the shape of the answer rather than from
-//      a check somebody has to remember to write. What that buys since the wash replaced the
-//      inversion is no longer "no hole" but "no ambiguity": a document showing every edit is not
-//      also pointing at one of them.
-//    * And the jump reaches the OTHER window. One flag used to answer for both documents ("is a
-//      standing mark showing?"), so turning "Always Show Marks on Target" on silenced the
-//      jump's flash in the SOURCE window too, where nothing was standing and the reader had just
-//      asked to be shown something (the bug logged as A3).
+//      a check somebody has to remember to write. What that buys is no ambiguity: a document
+//      showing every edit is not also pointing at one of them.
+//    * And the jump reaches the OTHER window: with "Always Show Marks on Target" on, the flash still goes up in the
+//      SOURCE window, where nothing is standing and the reader has just asked to be shown something. One flag for
+//      both documents ("is a standing mark showing?") would silence it.
 //
 //  **HEADER-ONLY AND FREE OF THE SDK EXCEPT FOR TWO TYPE NAMES (AND kMaxInt32), WHICH IS WHAT MAKES IT
 //  TESTABLE.** IDataBase is never dereferenced here -- it is an address used as a key -- and UID
@@ -52,8 +46,7 @@ typedef std::map<UID, KCMMarkRangeList> KCMStoryMarkMap;
 
 	**BOTH AT ONCE IS NOT A LUXURY** -- "Always Show Marks on Target" and "Always Show Marks on
 	Source" can be on together, and then the newer document's edits and the older one's have to be
-	up at the same time. @warning a press, by contrast, only ever marks the window it was made in;
-	it is the same structure holding one entry. */
+	up at the same time. */
 typedef std::map<IDataBase*, KCMStoryMarkMap> KCMStoryMarkDocs;
 
 /** Copy one document into the composed set, keeping only what would actually draw something.
@@ -62,8 +55,7 @@ typedef std::map<IDataBase*, KCMStoryMarkMap> KCMStoryMarkDocs;
 	range is left out, and a document all of whose stories were left out does not appear at all.
 	What the caller tests to decide "this document is spoken for" would otherwise be answered by
 	an entry that draws nothing.
-	@warning both halves of the composition below call this. They wrote the four lines out
-	 separately until it was pulled together, which is two places for one rule. */
+	Both halves of the composition below call this. */
 inline void KCMAddDrawableStories(KCMStoryMarkDocs& out, IDataBase* db,
 								   const KCMStoryMarkMap& from)
 {
@@ -130,10 +122,8 @@ struct KCMMarkSpan
 /** Put every story's list into the one shape the marker draws from (KCMMergeMarkRanges), and say how far
 	the whole set reaches.
 
-	@warning merging was once a matter of correctness (two Difference inversions over the same
-	 characters punched a hole); the wash is opaque and an overlap would merely paint twice, so
-	 what the merge buys now is the cost of drawing -- one fill per stretch instead of one per
-	 edit.
+	What the merge buys is the cost of drawing (one fill per stretch instead of one per edit) and the sorted,
+	non-overlapping list the binary searches rely on (KCMStoryMarkRanges.h).
 
 	@param docs [in,out] each list rewritten in place. What goes in may overlap and be in any order.
 	@return the span of what came out.

@@ -727,7 +727,7 @@ UID KCMStoryFrameAt(IDataBase* db, UID storyUID, TextIndex index, bool16 caret =
 	back (a caret whose character draws nothing) could not help, because the character before is in
 	another run. The place the reader means is AFTER the last character before the table: where the
 	words went in. The readers apply one rule: KCMStoryPointAt / KCMStoryFrameAt (the jump) and the caret
-	builders (KCMStoryMarkBuild, KCMStoryMarker::AddFlashRange).
+	builder (KCMStoryMarker::CaretAt).
 
 	@param at the caret's index.
 	@param outAfter [out] one past the last character before the table's characters - so that
