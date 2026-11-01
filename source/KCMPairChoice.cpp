@@ -226,14 +226,13 @@ bool16 KCMResolveComparisonPair(KCMPairEnd& outTarget, KCMPairEnd& outSource)
 
 	★**ASKED OF THE DOCUMENT LIST ITSELF** - IDocumentList::FindDoc(const IDFile&), "search to see
 	  if one (whatFile) is already open" (IDocumentList.h:64-69). It takes the IDFile, never the
-	  path string (one file can be spelled two ways), and it is how this plug-in's book comparison
-	  asks the same question (KCMBookCompare.cpp, ui/KCMBookOpen.cpp - and KBS's KBSBookScope.cpp).
+	  path string (one file can be spelled two ways). The book comparison asks here too
+	  (KCMBookCompare.cpp's OpenChapter).
 	  Until 2026-09-27 this walked GetNthDoc and compared each GetSysFile with FileUtils::IsEqual by
 	  hand: the same question answered a second way inside one plug-in (re-audit M16).
 	⚠**THE ANSWER IS STILL CHECKED** against the file asked for, with the same FileUtils::IsEqual:
 	  FindDoc's comparison rule is not published, and a lookup's answer trusted unchecked is how KBS
-	  once took the wrong chapter (api-official-examples.md, the FindDoc row). The book comparison
-	  checks the same way, by path (KCMBookCompare.cpp, DocumentLivesInFile).
+	  once took the wrong chapter (api-official-examples.md, the FindDoc row).
 */
 IDataBase* KCMOpenDocOnFile(const IDFile& file)
 {

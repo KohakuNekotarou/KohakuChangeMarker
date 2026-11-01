@@ -81,11 +81,10 @@ bool16 FileIsNamed(const IDFile& file)
 
 /** Does this open document live in that file?
 
-    ***** A document's identity is its FILE. ***** Same check, and the same reason, as
-    KCMBookCompare.cpp's: an answer about "the document for this file" that is not verified
-    against the file can put a DIFFERENT chapter in a chapter's place, and go on working. Written
-    out again rather than shared because that one lives in an anonymous namespace; two copies of six
-    lines is a smaller risk than a header that exports it.
+    ***** A document's identity is its FILE. ***** The check the model half's KCMOpenDocOnFile makes
+    (KCMPairChoice.cpp), and for its reason: an answer about "the document for this file" that is not
+    verified against the file can put a DIFFERENT chapter in a chapter's place, and go on working.
+    Written out again because that one is the model half's.
 
     ⚠ ASKING GetSysFile IS RIGHT HERE, THOUGH IT WAS WRONG SOMEWHERE ELSE. Bug recheck B9
     (2026-08-18) found KCMIsSameDoc identifying documents this way and failing for every UNSAVED

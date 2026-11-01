@@ -27,10 +27,10 @@
 // General includes:
 #include "PersistUtils.h"		// ::GetDataBase
 #include "SDKFileHelper.h"		// GetPath - so a blank file is refused rather than passed on
-#include "WideString.h"			// the UTF-16 route for a chapter name (see CollectChapters)
 
 // Project includes:
 #include "KCMBookPair.h"
+#include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 
 namespace
 {
@@ -65,9 +65,6 @@ struct ChapterEntry
 	    to say about this chapter", which is the one meaning it must never carry. */
 void CollectChapters(IBook* book, std::vector<ChapterEntry>& out)
 {
-	if (book == nil)
-		return;
-
 	InterfacePtr<IBookContentMgr> contentMgr(book, UseDefaultIID());
 	if (contentMgr == nil)
 		return;
@@ -80,7 +77,6 @@ void CollectChapters(IBook* book, std::vector<ChapterEntry>& out)
 	for (int32 i = 0; i < contentCount; ++i)
 	{
 		ChapterEntry entry;
-		entry.fName.SetTranslatable(kFalse);
 
 		// An entry is pushed for this position whatever happens below - see the header note. When
 		// the book has no readable content here, the entry stays as constructed (fHasFile kFalse),
@@ -92,14 +88,8 @@ void CollectChapters(IBook* book, std::vector<ChapterEntry>& out)
 			if (content != nil)
 			{
 				// The name is taken FIRST and unconditionally, because a chapter that cannot be
-				// opened still has to be named in the report. Via the UTF-16 buffer: the
-				// PMString(char*) conversions do not survive a Japanese chapter name (KBS arrived
-				// at the same route, KBSBookScope::ListBookChapters - GetShortName straight into
-				// GrabUTF16Buffer).
-				WideString shortName = content->GetShortName();
-				const UTF16TextChar* buf = shortName.GrabUTF16Buffer(nil);
-				if (buf != nil)
-					entry.fName.AppendW(buf);
+				// opened still has to be named in the report.
+				entry.fName = PMString(content->GetShortName());
 
 				// **The answer is checked, not assumed.** IBookContent::GetIDFile is
 				// documented as returning "kTrue if a file can be obtained", so a chapter
@@ -123,31 +113,14 @@ void CollectChapters(IBook* book, std::vector<ChapterEntry>& out)
 		// the one fact that is known even when nothing else about the chapter could be read.
 		if (entry.fName.IsEmpty())
 		{
-			entry.fName = PMString("(chapter ");
+			entry.fName = KCMSentence("(chapter ");
 			entry.fName.AppendNumber(i + 1);
 			entry.fName.Append(")");
-			entry.fName.SetTranslatable(kFalse);
 		}
+		entry.fName.SetTranslatable(kFalse);
 
 		out.push_back(entry);
 	}
-}
-
-/** The book's display name: IBook::GetBookTitleName().
-    That INCLUDES the .indb extension -- measured: an open book called new.indb reports
-    "new.indb", not "new".
-
-    **File-local.** Its one caller is the fallback in KCMBookDisplayPath, right below; nothing
-    outside this file has asked for a book's bare name since the panel and the dialog went over
-    to full paths. */
-PMString BookDisplayName(IBook* book)
-{
-	if (book == nil)
-		return PMString();
-
-	PMString name = book->GetBookTitleName();	// includes the .indb extension (measured)
-	name.SetTranslatable(kFalse);
-	return name;
 }
 
 /** The word for one BookContentStatus::State.
@@ -227,18 +200,12 @@ bool16 KCMResolveBookPair(const IDFile& panelBookFile, IBook*& outTarget, IBook*
 
 PMString KCMBookDisplayPath(IBook* book)
 {
-	if (book == nil)
-		return PMString();
-
 	// IBook::GetBookFileSpec names the book's own file -- no walk of the Book panel needed, and no
 	// second source of truth: this is the same book object the comparison is about to be handed.
-	const IDFile file = book->GetBookFileSpec();
-	SDKFileHelper helper(file);
-
+	SDKFileHelper helper(book->GetBookFileSpec());
 	PMString path = helper.GetPath();
 	if (path.IsEmpty())
-		return BookDisplayName(book);		// unsaved or unnamed - the title is all there is
-
+		path = book->GetBookTitleName();		// unsaved or unnamed - the title is all there is (it includes the .indb)
 	path.SetTranslatable(kFalse);
 	return path;
 }
@@ -289,11 +256,8 @@ void KCMBuildChapterPairing(IBook* target, IBook* source, std::vector<KCMChapter
 		    (!targetChapters[i].fHasFile || !sourceChapters[i].fHasFile))
 		{
 			result.fState = kKCMChapterFailed;
-			// "in the book" is what separates this from the other no-file reason: OpenChapter's says
-			// the CHAPTER named no file, this one says the BOOK does not. The verdict itself is not
-			// repeated here -- see KCMBookResult.h's fWhy.
-			result.fWhy   = PMString("no file in the book");
-			result.fWhy.SetTranslatable(kFalse);
+			// The verdict itself is not repeated here -- see KCMBookResult.h's fWhy.
+			result.fWhy   = KCMSentence("no file in the book");
 		}
 
 		out.push_back(result);
@@ -302,16 +266,10 @@ void KCMBuildChapterPairing(IBook* target, IBook* source, std::vector<KCMChapter
 
 PMString KCMChapterStatusText(IBook* book, int32 chapterIndex)
 {
-	PMString out;
-	out.SetTranslatable(kFalse);
-
-	if (book == nil || chapterIndex < 0)
-		return out;
-
 	InterfacePtr<IBookContentMgr> contentMgr(book, UseDefaultIID());
 	IDataBase* bookDB = ::GetDataBase(book);
 	if (contentMgr == nil || bookDB == nil)
-		return out;
+		return PMString();
 
 	// The index is the pairing's, and the pairing was built from this same list -- but it was
 	// built BEFORE the chapters were opened, and this runs after. A book edited in between would
@@ -319,15 +277,15 @@ PMString KCMChapterStatusText(IBook* book, int32 chapterIndex)
 	// than a wrong one. (Nothing in this plug-in edits a book; the caller is a failure path, which
 	// is exactly where an assumption is least worth making.)
 	if (chapterIndex >= contentMgr->GetContentCount())
-		return out;
+		return PMString();
 
 	const UID contentUID = contentMgr->GetNthContent(chapterIndex);
 	if (contentUID == kInvalidUID)
-		return out;
+		return PMString();
 
 	InterfacePtr<IBookContent> content(bookDB, contentUID, UseDefaultIID());
 	if (content == nil)
-		return out;
+		return PMString();
 
 	// Utils<IBookUtils> is kUtilsBoss - the same boss this plug-in already reaches for
 	// Utils<IDocumentCommands> and Utils<IDocumentUtils> in KCMBookCompare.cpp. All three are
@@ -343,10 +301,9 @@ PMString KCMChapterStatusText(IBook* book, int32 chapterIndex)
 	// prevents it is one comparison.
 	Utils<IBookUtils> bookUtils;
 	if (!bookUtils.Exists())
-		return out;
+		return PMString();
 
-	out.Append(StatusWord(bookUtils->GetBookContentStatus(content)));
-	return out;
+	return KCMSentence(StatusWord(bookUtils->GetBookContentStatus(content)));
 }
 
 // End, KCMBookPair.cpp.

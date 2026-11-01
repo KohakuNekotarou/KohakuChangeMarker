@@ -13,39 +13,33 @@
 #include "VCPlugInHeaders.h"
 
 // Interface includes:
-#include "IDataBase.h"			// GetSysFile - a document's identity is its FILE, never its UID
+#include "IDataBase.h"			// GetRootUID, SaveRestoreModifiedState
 #include "IDocFileHandler.h"	// Close / CanClose - the windowless, UI-suppressed close
-#include "IDocument.h"
 #include "IDocumentCommands.h"	// Open by file, windowless
-#include "IDocumentList.h"		// FindDoc - is this chapter already open?
 #include "IDocumentUtils.h"		// QueryDocFileHandler
 #include "IGlobalRecompose.h"	// ForceRecompositionToComplete - see RecomposeChapter
 #include "IOpenFileCmdData.h"	// kOpenDefault / kUseLockFile
-#include "IShape.h"				// kPreviewMode - the draw mode the comparison rasterises in
-#include "IApplication.h"			// QueryDocumentList - the open documents (ISession's is for internal use only)
-#include "ISession.h"
 
 // General includes:
-#include "AGMImageAccessor.h"	// the pixels a snapshot produced
+#include "AGMImageAccessor.h"	// the pixels of a raster
 #include "ErrorUtils.h"			// GlobalErrorStatePreserver - an open or a close that is allowed to
 								// fail must not poison the caller's next command
-#include "PersistUtils.h"		// ::GetUIDRef / ::GetDataBase
 #include "KCMSentence.h"		// KCMSentence - a fixed sentence, never a key
 #include "KCMProgressBar.h"	// KCMProgressBar - the progress and the cancel (see KCMCompareBooks); the bar is the UI half's
 #include "KCMDiag.h"			// KCM_DIAG_SLOW - test builds only (book-compare-slow)
-#include "SDKFileHelper.h"		// GetPath - documents are compared by their path
-#include "SnapshotUtilsEx.h"	// the rasteriser, on the SAME terms the document comparison uses
-#include "K2SmartPtr.h"			// K2::scoped_ptr -- the snapshots and accessors below, freed on every exit
+#include <algorithm>			// std::count_if - the summary line
 
 // Project includes:
 #include "KCMBookChapterModes.h"	// the story and resources judgements - the other two of the three
 #include "KCMBookCompare.h"
+#include "KCMBookModeNames.h"			// the three modes and KCMBookModesString
 #include "KCMBookPair.h"			// KCMBuildChapterPairing
-#include "KCMCmykRaster.h"			// the two terms a raster whose numbers are read is asked for on
+#include "KCMCmykRaster.h"			// KCMRasteriseForComparison - a page, as the document comparison draws it
 #include "KCMConstants.h"			// kKCMResolution / kKCMHiResMul / kKCMCmykThr / kKCMChapterProgressSpan
 #include "KCMCore.h"				// KCMCollectPageUIDs - the same page walk the document comparison uses
-#include "KCMDrawEventHandler.h"	// KCMRasterizingGuard - do not draw marks into our own raster
+#include "KCMDrawEventHandler.h"	// KCMXInRowRects and its neighbours - the folio areas' sieve
 #include "KCMPageNumberMarker.h"	// KCMGetPageNumberMarkerRects - the folio areas to skip
+#include "KCMPairChoice.h"			// KCMOpenDocOnFile - is this file open already
 
 namespace
 {
@@ -53,34 +47,6 @@ namespace
 /** The last comparison, as the text app.kcmBookResult hands back. Module-level so it survives
     whatever happens to any panel, and so a script can read it with nothing on screen. */
 PMString gBookResultText;
-
-/** Does this open document live in that file?
-
-    **A document's identity is its FILE.** Asked through IDataBase::GetSysFile. A document
-    that has never been saved has no file and can never be the chapter being looked for.
-
-    This check is not optional caution. KBS used to trust
-    IBookUtils::IsSourceDocumentAlreadyOpen, which hands back an INDEX into the document list,
-    and that put a DIFFERENT chapter's document in a chapter's place: measured, 4 book replaces
-    in 10 came back with a whole chapter's rows marked missing -- silently, because the call had
-    reported success. One string compare is the whole distance between that and a right
-    answer. */
-bool16 DocumentLivesInFile(IDocument* doc, const PMString& wantedPath)
-{
-	if (doc == nil)
-		return kFalse;
-
-	IDataBase* db = ::GetDataBase(doc);
-	if (db == nil)
-		return kFalse;
-
-	const IDFile* docFile = db->GetSysFile();
-	if (docFile == nil)
-		return kFalse;
-
-	SDKFileHelper helper(*docFile);
-	return (helper.GetPath() == wantedPath) ? kTrue : kFalse;
-}
 
 /** Open a chapter windowless, or rebind to it when it is already open.
 
@@ -99,38 +65,13 @@ bool16 OpenChapter(const IDFile& file, UIDRef& outDocRef, bool16& outWeOpened, P
 	outDocRef   = UIDRef::gNull;
 	outWeOpened = kFalse;
 
-	SDKFileHelper fileHelper(file);
-	const PMString wantedPath = fileHelper.GetPath();
-	if (wantedPath.empty())
+	// Open already - by the user, or by an earlier step of this same run? (The answer is checked against the file asked for,
+	// as files and not as path strings: KCMPairChoice.cpp says why.)
+	IDataBase* const openDB = KCMOpenDocOnFile(file);
+	if (openDB != nil)
 	{
-		// **THE VERDICT IS NOT REPEATED IN THE REASON.** (The user's call: "it already says
-		// Failed, so the row does not have to say the open failed too".) Every fWhy in this
-		// plug-in is shown NEXT TO the word "Failed" -- in the dialog's own state column, and as
-		// the second field of app.kcmBookResult -- so a reason that begins "could not be..." spends
-		// the row's width saying what is already on it. What is left here is the part only this
-		// line knows. See KCMBookResult.h's fWhy for the rule and for what it costs when it is
-		// broken.
-		outWhy = KCMSentence("no file");
-		return kFalse;
-	}
-
-	// Open already - by the user, or by an earlier step of this same run?
-	// Asked through the session's own lookup by file, and then CHECKED against the file asked for
-	// (see DocumentLivesInFile). Never report failure from here: "not already open" is the
-	// ordinary case, and the open below handles it.
-	{
-		ISession* session = GetExecutionContextSession();
-		InterfacePtr<IApplication> app(session != nil ? session->QueryApplication() : nil);
-		InterfacePtr<IDocumentList> docList(app != nil ? app->QueryDocumentList() : nil);
-		if (docList != nil)
-		{
-			IDocument* openDoc = docList->FindDoc(file);
-			if (DocumentLivesInFile(openDoc, wantedPath))
-			{
-				outDocRef = ::GetUIDRef(openDoc);
-				return kTrue;		// outWeOpened stays kFalse - not ours to close
-			}
-		}
+		outDocRef = UIDRef(openDB, openDB->GetRootUID());
+		return kTrue;		// outWeOpened stays kFalse - not ours to close
 	}
 
 	// The windowless, UI-suppressed open, by FILE (the book itself may be closed).
@@ -187,7 +128,7 @@ bool16 OpenChapter(const IDFile& file, UIDRef& outDocRef, bool16& outWeOpened, P
     are the ones CanClose already answers. */
 bool16 CloseChapter(const UIDRef& docRef, bool16 weOpened)
 {
-	if (!weOpened || docRef == UIDRef::gNull)
+	if (!weOpened)
 		return kTrue;		// nothing of ours to close
 
 	// The close is allowed to fail too, and for the same reason as the open: this runs BETWEEN
@@ -252,11 +193,7 @@ void CloseChapterPair(const UIDRef& targetRef, bool16 targetMine,
     where recomposing would re-enter. This path is a menu command, so it is safe here. */
 void RecomposeChapter(const UIDRef& docRef)
 {
-	InterfacePtr<IDocument> doc(docRef, UseDefaultIID());
-	if (doc == nil)
-		return;
-
-	InterfacePtr<IGlobalRecompose> recompose(doc, IID_IGLOBALRECOMPOSE);
+	InterfacePtr<IGlobalRecompose> recompose(docRef, IID_IGLOBALRECOMPOSE);
 	if (recompose != nil)
 		recompose->ForceRecompositionToComplete();
 }
@@ -312,9 +249,7 @@ ErrorCode ComparePages(AGMImageAccessor* accT, AGMImageAccessor* accS,
 	int32 exTop = 0, exBottom = 0, exLeft = 0, exRight = 0;
 	KCMFolioExcludeBBox(excludeRects, exTop, exBottom, exLeft, exRight);
 
-	const int   nch      = 4;					// CMYK
-	const int32 colorOff = 0;
-	const int   thr      = kKCMCmykThr;
+	const int nch = 4;					// CMYK
 
 	std::vector<const Int32Rect*> rowRects;
 	rowRects.reserve(excludeRects.size());
@@ -340,19 +275,16 @@ ErrorCode ComparePages(AGMImageAccessor* accT, AGMImageAccessor* accS,
 			if (rowHasExclude && x >= exLeft && x < exRight && KCMXInRowRects(x, rowRects))
 				continue;						// inside a folio: not a difference
 
-			const uint8* px = rowT + (size_t)x * bpp + colorOff;
-			const uint8* sx = rowS + (size_t)x * bpp + colorOff;
-			int cm = 0;
+			const uint8* px = rowT + (size_t)x * bpp;
+			const uint8* sx = rowS + (size_t)x * bpp;
 			for (int c = 0; c < nch; ++c)
 			{
 				const int d = (px[c] > sx[c]) ? px[c] - sx[c] : sx[c] - px[c];
-				if (d > cm)
-					cm = d;
-			}
-			if (cm > thr)
-			{
-				outDiffers = kTrue;
-				return kSuccess;				// **one pixel is the whole answer**
+				if (d > kKCMCmykThr)
+				{
+					outDiffers = kTrue;
+					return kSuccess;			// **one pixel is the whole answer**
+				}
 			}
 		}
 	}
@@ -365,65 +297,15 @@ ErrorCode PageDiffers(const UIDRef& targetPage, const UIDRef& sourcePage, bool16
 {
 	outDiffers = kFalse;
 
-	// **THE RASTERISING TERMS ARE COPIED FROM THE DOCUMENT COMPARISON, UNCHANGED.**
-	// 144dpi (kKCMResolution x kKCMHiResMul) / CMYK / opaque / AA OFF / greek 0.0 /
-	// fullResolutionGraphics = kFalse. Every one of them has a reason:
-	//   - the two sides MUST match, or every edge becomes a difference
-	//   - CMYK, because small CMYK differences vanish when rounded into RGB
-	//   - AA off, so sub-pixel shifts do not show up as grey fringes
-	//   - greek 0.0, or small type is drawn as a grey band with no glyphs and changes in it hide
-	//   - fullResolutionGraphics = kFalse, because kTrue makes the document dirty
-	//   - bDrawNonPrintingObjects = kFalse (the default is kTrue), so that moving an item marked
-	//     non-printing -- a working note, an instruction to the printer -- is NOT a change. The
-	//     mark states that the PRINTED result changed. The argument is documented on
-	//     SnapshotUtilsEx::Draw, which also warns that it does NOT affect non-printing LAYERS.
-	//     Arguments 5-6 are the defaults spelled out, because the 7th and 8th cannot be reached
-	//     without them: kXPHigh (lowering it would hide changes to shadows, feathers and blends),
-	//     no abort callback (cancellation is checked at page boundaries, see KCMCore.cpp).
-	//   - simulateOverprint and the attribute map (KCMCmykRaster.h), or the numbers depend on
-	//     whether anything else on the spread holds transparency
+	// **THE DOCUMENT COMPARISON'S RASTER, THE SAME FUNCTION** (KCMRasteriseForComparison says what each of its terms is and
+	//   why), so the two cannot come to read a page differently. An out-of-memory or a Draw that failed costs this one page.
 	const PMReal hiRes = kKCMResolution * kKCMHiResMul;
-
-	// nothrow throughout, as in the document comparison: the ordinary new throws instead of
-	// returning nil, and an exception crossing an event boundary crashes. With nothrow an OOM
-	// costs this one page. **K2::scoped_ptr, not std::vector or any throwing container** -- see
-	// KCMDrawEventHandler.cpp's MakeEntry for why nothrow is a requirement here and not a habit.
-	// @warning **the declaration order below is the release order.** scoped_ptrs go down in the
-	//   reverse of declaration, so snapshots-then-accessors gives accS, accT, snapS, snapT: each
-	//   accessor before the snapshot it came from, which is what the four hand-written deletes at
-	//   the end of this function used to spell out.
-	K2::scoped_ptr<SnapshotUtilsEx>  snapT(new (std::nothrow) SnapshotUtilsEx(targetPage, 1.0, 1.0, hiRes, hiRes, 0.0,
-	                                                                         SnapshotUtilsEx::kCsCMYK, kFalse, kKCMCmykRasterSimulateOverprint));
-	K2::scoped_ptr<SnapshotUtilsEx>  snapS(new (std::nothrow) SnapshotUtilsEx(sourcePage, 1.0, 1.0, hiRes, hiRes, 0.0,
-	                                                                         SnapshotUtilsEx::kCsCMYK, kFalse, kKCMCmykRasterSimulateOverprint));
-	K2::scoped_ptr<AGMImageAccessor> accT;
-	K2::scoped_ptr<AGMImageAccessor> accS;
-	ErrorCode                        status = kFailure;
-
-	if (snapT.get() != nil && snapS.get() != nil)
-	{
-		ErrorCode drewT = kFailure;
-		ErrorCode drewS = kFailure;
-		{
-			KCMRasterizingGuard rg;	// a re-entrant draw event must not paint marks into our raster
-			KCMCmykRasterAttrs attrs;
-			drewT = snapT->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
-			                    SnapshotUtils::kXPHigh, nil, &attrs.map, kFalse);
-			drewS = snapS->Draw(IShape::kPreviewMode, kFalse, 0.0, kFalse,
-			                    SnapshotUtils::kXPHigh, nil, &attrs.map, kFalse);
-		}
-
-		accT.reset((drewT == kSuccess) ? snapT->CreateAGMImageAccessor() : nil);
-		accS.reset((drewS == kSuccess) ? snapS->CreateAGMImageAccessor() : nil);
-
-		if (accT.get() != nil && accS.get() != nil)
-			status = ComparePages(accT.get(), accS.get(), targetPage, sourcePage, hiRes, outDiffers);
-	}
-
-	// **Released on EVERY path**, which is why they are scoped_ptrs: this function returns early the
-	// moment a difference is found, and a "delete at the end" shape would leak on that path. The
-	// release order is the declaration order reversed -- see the note where they are declared.
-	return status;
+	KCMPageRaster target, source;
+	if (!KCMRasteriseForComparison(targetPage, hiRes, target) || !KCMRasteriseForComparison(sourcePage, hiRes, source))
+		return kFailure;
+	if (target.acc.get() == nil || source.acc.get() == nil)
+		return kFailure;
+	return ComparePages(target.acc.get(), source.acc.get(), targetPage, sourcePage, hiRes, outDiffers);
 }
 
 /** The PIXEL judgement for one chapter: do the two chapters' pages differ?
@@ -460,7 +342,7 @@ KCMBookModeVerdict ComparePixels(IDataBase* targetDB, IDataBase* sourceDB,
 	{
 		// ★THE MODE IS NAMED IN THE REASON, since 2026-09-10. There are three of them now, and a
 		//   reason that does not say which one produced it sends the reader to the wrong half of
-		//   the comparison. It is still not the VERDICT repeated (see OpenChapter): "Failed" is on
+		//   the comparison. It is still not the VERDICT repeated (KCMBookResult.h's fWhy): "Failed" is on
 		//   the row already, "Pixel" is what only this line knows.
 		outWhy = KCMSentence("Pixel: no pages");
 		return kKCMBookVerdictUnjudged;
@@ -469,8 +351,6 @@ KCMBookModeVerdict ComparePixels(IDataBase* targetDB, IDataBase* sourceDB,
 	// (1)
 	if (targetPages.size() != sourcePages.size())
 		return kKCMBookVerdictChanged;
-
-	const int32 pageCount = (int32)targetPages.size();
 
 	for (size_t i = 0; i < targetPages.size(); ++i)
 	{
@@ -481,7 +361,7 @@ KCMBookModeVerdict ComparePixels(IDataBase* targetDB, IDataBase* sourceDB,
 		{
 			// Could not be compared. Reported as a failure, NEVER as "no change".
 			// **The page NUMBER is the whole reason**; "could not be compared" was the verdict said
-			//   twice (see the note in OpenChapter). @warning this is the reason that most needed the
+			//   twice (KCMBookResult.h's fWhy). @warning this is the reason that most needed the
 			//   room: it carries a NUMBER, and a number that loses its middle to an ellipsis does not
 			//   look damaged -- it looks like a different number (memory
 			//   ellipsis-in-status-line-breaks-numbers).
@@ -500,7 +380,7 @@ KCMBookModeVerdict ComparePixels(IDataBase* targetDB, IDataBase* sourceDB,
 		// ⚠**THE PHASE'S SHARE, NOT THE WHOLE CHAPTER'S** (2026-09-10). The pixels used to own the
 		//   chapter's entire span because they were the whole comparison; now they own
 		//   kKCMBookPixelPhaseTicks of it and the other two phases have the rest.
-		progress.SetPosition(baseTicks + (int32)((i + 1) * (size_t)kKCMBookPixelPhaseTicks / (size_t)pageCount));
+		progress.SetPosition(baseTicks + (int32)((i + 1) * (size_t)kKCMBookPixelPhaseTicks / targetPages.size()));
 
 		// **The cancel is asked at the PAGE BOUNDARY.** WasCancelled runs events, so it must not be
 		// called inside the rasterising or the pixel walk -- the same rule the document comparison
@@ -534,7 +414,6 @@ PMString ChapterPhaseText(const PMString& chapterName, const char* phase)
 	PMString out(chapterName);
 	out.Append(" - ");
 	out.Append(phase);
-	out.SetTranslatable(kFalse);
 	return out;
 }
 
@@ -590,8 +469,8 @@ KCMChapterState KCMChapterStateFromModes(const KCMChapterResult& chapter, bool16
 
 }	// anonymous namespace
 
-ErrorCode KCMCompareBooks(IBook* target, IBook* source,
-                            std::vector<KCMChapterResult>& outChapters, PMString& outReport)
+void KCMCompareBooks(IBook* target, IBook* source,
+                     std::vector<KCMChapterResult>& outChapters, PMString& outReport)
 {
 	KCMBuildChapterPairing(target, source, outChapters);
 
@@ -611,9 +490,7 @@ ErrorCode KCMCompareBooks(IBook* target, IBook* source,
 	// @warning kFalse does NOT mean "appear if it takes a while"; it means the bar never appears
 	// at all (measured, when a 100-page comparison showed nothing).
 	const int32 chapterCount = (int32)outChapters.size();
-	PMString barTitle(chapterCount == 1 ? "Comparing 1 chapter..." : "Comparing books...");
-	barTitle.SetTranslatable(kFalse);
-	KCMProgressBar progress(barTitle, 0, chapterCount * kKCMChapterProgressSpan, kTrue);
+	KCMProgressBar progress(KCMSentence(chapterCount == 1 ? "Comparing 1 chapter..." : "Comparing books..."), 0, chapterCount * kKCMChapterProgressSpan, kTrue);
 
 	// @warning **opening a chapter can raise a progress bar of its own.** Suppressing it has to
 	// happen HERE, before the loop -- KBS had this call after its chapters were already open and
@@ -687,110 +564,100 @@ ErrorCode KCMCompareBooks(IBook* target, IBook* source,
 		}
 
 		{
-			IDataBase* targetDB = targetRef.GetDataBase();
-			IDataBase* sourceDB = sourceRef.GetDataBase();
-			if (targetDB == nil || sourceDB == nil)
+			IDataBase* const targetDB = targetRef.GetDataBase();
+			IDataBase* const sourceDB = sourceRef.GetDataBase();
+
+			// **"Do not dirty the document" is not a promise never to touch it** -- it is "if it
+			// was clean going in, it is clean coming out". Composing and rasterising both touch
+			// it, so both chapters are wrapped. The guards are scoped so they have already
+			// restored by the time the chapter is closed below -- a document closed while still
+			// marked modified would prompt, and with kSuppressUI a prompt means silently losing
+			// what is in it.
+			IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
+			IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
+
+			// Compose BEFORE anything reads pixels - see RecomposeChapter.
+			RecomposeChapter(targetRef);
+			RecomposeChapter(sourceRef);
+
+			// ***** THREE JUDGEMENTS, IN THE ORDER THE USER ASKED FOR (2026-09-10). *****
+			//
+			// ★★**NO EARLY EXIT BETWEEN MODES**, and that is the cost of the feature rather
+			//   than an oversight: the Change column names EVERY mode that found something, so
+			//   a chapter whose pixels already differ still has to be asked the other two.
+			//   Inside a mode every early exit is still there - the first differing pixel, the
+			//   first differing story, the first differing definition.
+			// ★**THE PAIR IS OPENED ONCE FOR ALL THREE.** Walking the book three times would
+			//   open, compose and close every chapter three times, and opening is most of the
+			//   cost (BK-35: ~0.2s a chapter even on small ones).
+			bool16   chapterCancelled = kFalse;
+
+			progress.SetTaskText(ChapterPhaseText(chapter.fName, "Pixel"));
+			const KCMBookModeVerdict pixelVerdict =
+				ComparePixels(targetDB, sourceDB, progress, baseTicks, chapterCancelled, why);
+
+			// ⚠★★★**A CANCEL IS NOT AN UNJUDGED MODE** (2026-09-10, the user's call). The
+			//   Change column's '?' means "this was looked at and could not be judged" -- a page
+			//   that would not rasterise, an export that came back short -- so a reader who sees
+			//   one goes hunting for a broken chapter. A mode the reader THEMSELF stopped is
+			//   none of that. It would also contradict the cell beside it: the chapter's verdict
+			//   is NotCompared, whose whole meaning is that nothing was looked at, and the spec
+			//   map has the Change column empty on exactly those rows (BK-46).
+			//   ⇒ The cancel travels in chapterCancelled alone; this mode is simply not filed.
+			//   ★Pixel is the only phase that can end this way. The other two are asked about
+			//     the cancel AFTER they have answered, so what they file is a real answer.
+			if (!chapterCancelled)
+				RecordVerdict(chapter, kKCMBookModePixel, pixelVerdict, why);
+
+			// ⚠**A CANCEL STOPS THE PHASES THAT HAVE NOT RUN.** Running the other two after the
+			//   person asked to stop would make Cancel take about as long as finishing -- and
+			//   the resources phase, the one that would still be to come, is the expensive one.
+			//   ★**It does not reach back over the phases that HAVE run**: what they filed is a
+			//     real answer, and after the last of them there is nothing left to stop, which
+			//     is why the ask at the end of the Resources block sets the RUN's flag and not
+			//     this chapter's (2026-09-10).
+			if (!chapterCancelled)
 			{
-				chapter.fState = kKCMChapterFailed;
-				chapter.fWhy   = PMString("no database");		// the verdict is not repeated - see OpenChapter
-				chapter.fWhy.SetTranslatable(kFalse);
+				progress.SetPosition(baseTicks + kKCMBookPixelPhaseTicks);
+				progress.SetTaskText(ChapterPhaseText(chapter.fName, "Story"));
+				RecordVerdict(chapter, kKCMBookModeStory, KCMJudgeChapterStory(targetDB, sourceDB), PMString());
+
+				// Asked BETWEEN phases only. WasCancelled runs events, so it must not be called
+				// inside the rasterising, inside the pixel walk, or inside ExportINX - none of
+				// which has a safe point in the middle.
+				if (progress.WasCancelled(kFalse))
+					chapterCancelled = kTrue;
 			}
-			else
+
+			if (!chapterCancelled)
 			{
-				// **"Do not dirty the document" is not a promise never to touch it** -- it is "if it
-				// was clean going in, it is clean coming out". Composing and rasterising both touch
-				// it, so both chapters are wrapped. The guards are scoped so they have already
-				// restored by the time the chapter is closed below -- a document closed while still
-				// marked modified would prompt, and with kSuppressUI a prompt means silently losing
-				// what is in it.
-				IDataBase::SaveRestoreModifiedState targetDirtyGuard(targetDB);
-				IDataBase::SaveRestoreModifiedState sourceDirtyGuard(sourceDB);
+				progress.SetPosition(baseTicks + kKCMBookPixelPhaseTicks + kKCMBookStoryPhaseTicks);
+				progress.SetTaskText(ChapterPhaseText(chapter.fName, "Resources"));
+				RecordVerdict(chapter, kKCMBookModeResources,
+				              KCMJudgeChapterResources(targetDB, sourceDB, why), why);
 
-				// Compose BEFORE anything reads pixels - see RecomposeChapter.
-				RecomposeChapter(targetRef);
-				RecomposeChapter(sourceRef);
-
-				// ***** THREE JUDGEMENTS, IN THE ORDER THE USER ASKED FOR (2026-09-10). *****
-				//
-				// ★★**NO EARLY EXIT BETWEEN MODES**, and that is the cost of the feature rather
-				//   than an oversight: the Change column names EVERY mode that found something, so
-				//   a chapter whose pixels already differ still has to be asked the other two.
-				//   Inside a mode every early exit is still there - the first differing pixel, the
-				//   first differing story, the first differing definition.
-				// ★**THE PAIR IS OPENED ONCE FOR ALL THREE.** Walking the book three times would
-				//   open, compose and close every chapter three times, and opening is most of the
-				//   cost (BK-35: ~0.2s a chapter even on small ones).
-				PMString why;
-				bool16   chapterCancelled = kFalse;
-
-				progress.SetTaskText(ChapterPhaseText(chapter.fName, "Pixel"));
-				const KCMBookModeVerdict pixelVerdict =
-					ComparePixels(targetDB, sourceDB, progress, baseTicks, chapterCancelled, why);
-
-				// ⚠★★★**A CANCEL IS NOT AN UNJUDGED MODE** (2026-09-10, the user's call). The
-				//   Change column's '?' means "this was looked at and could not be judged" -- a page
-				//   that would not rasterise, an export that came back short -- so a reader who sees
-				//   one goes hunting for a broken chapter. A mode the reader THEMSELF stopped is
-				//   none of that. It would also contradict the cell beside it: the chapter's verdict
-				//   is NotCompared, whose whole meaning is that nothing was looked at, and the spec
-				//   map has the Change column empty on exactly those rows (BK-46).
-				//   ⇒ The cancel travels in chapterCancelled alone; this mode is simply not filed.
-				//   ★Pixel is the only phase that can end this way. The other two are asked about
-				//     the cancel AFTER they have answered, so what they file is a real answer.
-				if (!chapterCancelled)
-					RecordVerdict(chapter, kKCMBookModePixel, pixelVerdict, why);
-
-				// ⚠**A CANCEL STOPS THE PHASES THAT HAVE NOT RUN.** Running the other two after the
-				//   person asked to stop would make Cancel take about as long as finishing -- and
-				//   the resources phase, the one that would still be to come, is the expensive one.
-				//   ★**It does not reach back over the phases that HAVE run**: what they filed is a
-				//     real answer, and after the last of them there is nothing left to stop, which
-				//     is why the ask at the end of the Resources block sets the RUN's flag and not
-				//     this chapter's (2026-09-10).
-				if (!chapterCancelled)
-				{
-					progress.SetPosition(baseTicks + kKCMBookPixelPhaseTicks);
-					progress.SetTaskText(ChapterPhaseText(chapter.fName, "Story"));
-					RecordVerdict(chapter, kKCMBookModeStory,
-					              KCMJudgeChapterStory(targetDB, sourceDB, why), why);
-
-					// Asked BETWEEN phases only. WasCancelled runs events, so it must not be called
-					// inside the rasterising, inside the pixel walk, or inside ExportINX - none of
-					// which has a safe point in the middle.
-					if (progress.WasCancelled(kFalse))
-						chapterCancelled = kTrue;
-				}
-
-				if (!chapterCancelled)
-				{
-					progress.SetPosition(baseTicks + kKCMBookPixelPhaseTicks + kKCMBookStoryPhaseTicks);
-					progress.SetTaskText(ChapterPhaseText(chapter.fName, "Resources"));
-					RecordVerdict(chapter, kKCMBookModeResources,
-					              KCMJudgeChapterResources(targetDB, sourceDB, why), why);
-
-					// ⚠★★★**THE CHAPTER IS FINISHED, SO THIS CANCEL DOES NOT TOUCH ITS VERDICT**
-					//   (2026-09-10). Resources is the LAST of the three phases, so by the time this
-					//   is asked every mode has answered. Calling the chapter NotCompared here would
-					//   deny an answer that was fully arrived at -- BK-38's rule read backwards,
-					//   because "could not be processed" and "processed, and nothing had changed"
-					//   must not share a word in EITHER direction.
-					//   ★What this cancel stops is the RUN: no next chapter is opened. That is the
-					//     same shape as the ask after the loop, which says so in as many words
-					//     ("nothing was lost, but the user did press Cancel").
-					//   ⚠**It was `chapterCancelled` until 2026-09-10**, which took the verdict away
-					//     from a chapter all three modes had just finished judging. Pressing Cancel
-					//     during the Resources phase -- the phase that owns most of a chapter's time
-					//     -- was enough to produce it.
-					if (progress.WasCancelled(kFalse))
-						cancelled = kTrue;
-				}
-
-				// ★THE CHAPTER'S VERDICT IS DERIVED from the three modes, never stored twice - see
-				//   KCMBookResult.h's fChangedModes.
-				chapter.fState = KCMChapterStateFromModes(chapter, chapterCancelled);
-				if (chapterCancelled)
+				// ⚠★★★**THE CHAPTER IS FINISHED, SO THIS CANCEL DOES NOT TOUCH ITS VERDICT**
+				//   (2026-09-10). Resources is the LAST of the three phases, so by the time this
+				//   is asked every mode has answered. Calling the chapter NotCompared here would
+				//   deny an answer that was fully arrived at -- BK-38's rule read backwards,
+				//   because "could not be processed" and "processed, and nothing had changed"
+				//   must not share a word in EITHER direction.
+				//   ★What this cancel stops is the RUN: no next chapter is opened. That is the
+				//     same shape as the ask after the loop, which says so in as many words
+				//     ("nothing was lost, but the user did press Cancel").
+				//   ⚠**It was `chapterCancelled` until 2026-09-10**, which took the verdict away
+				//     from a chapter all three modes had just finished judging. Pressing Cancel
+				//     during the Resources phase -- the phase that owns most of a chapter's time
+				//     -- was enough to produce it.
+				if (progress.WasCancelled(kFalse))
 					cancelled = kTrue;
 			}
+
+			// ★THE CHAPTER'S VERDICT IS DERIVED from the three modes, never stored twice - see
+			//   KCMBookResult.h's fChangedModes.
+			chapter.fState = KCMChapterStateFromModes(chapter, chapterCancelled);
+			if (chapterCancelled)
+				cancelled = kTrue;
 		}
 
 		// **The chapters this run opened are closed even when it was cancelled.** Cancelling stops
@@ -824,21 +691,6 @@ ErrorCode KCMCompareBooks(IBook* target, IBook* source,
 		}
 	}
 
-	int32 changed = 0, unchanged = 0, added = 0, deleted = 0, failed = 0, notCompared = 0;
-	for (size_t i = 0; i < outChapters.size(); ++i)
-	{
-		switch (outChapters[i].fState)
-		{
-			case kKCMChapterChanged:		++changed;		break;
-			case kKCMChapterNoChange:		++unchanged;	break;
-			case kKCMChapterAdded:		++added;		break;
-			case kKCMChapterDeleted:		++deleted;		break;
-			case kKCMChapterFailed:		++failed;		break;
-			case kKCMChapterNotCompared:	++notCompared;	break;
-			default:										break;
-		}
-	}
-
 	// **The chapter COUNT is always stated, and it comes FIRST.** An empty list has to be
 	// readable as "every chapter was compared and none changed" rather than "nothing could be
 	// opened" -- conflating those two is the fault that took a day to find in KBS.
@@ -864,33 +716,38 @@ ErrorCode KCMCompareBooks(IBook* target, IBook* source,
 	//       open", whose parts add up to 5. It is listed here anyway because it is rare and has to
 	//       be said; the reading to keep is that the five VERDICTS before it account for every
 	//       chapter.
-	const int32 total = (int32)outChapters.size();
 	outReport = PMString();
-	outReport.AppendNumber(total);
-	outReport.Append(total == 1 ? " chapter" : " chapters");
+	outReport.AppendNumber(chapterCount);
+	outReport.Append(chapterCount == 1 ? " chapter" : " chapters");
 
-	struct { int32 count; const char* word; } parts[] =
+	bool16 firstPart = kTrue;
+	const auto appendCount = [&outReport, &firstPart](int32 count, const char* word)
 	{
-		{ changed,     " changed"     },
-		{ unchanged,   " unchanged"   },
-		{ added,       " added"       },
-		{ deleted,     " deleted"     },
+		if (count <= 0)
+			return;
+		outReport.Append(firstPart ? ": " : ", ");	// the colon arrives with the first count, so a
+		outReport.AppendNumber(count);				// book with no chapters ends at "0 chapters"
+		outReport.Append(word);
+		firstPart = kFalse;
+	};
+	const struct { KCMChapterState state; const char* word; } verdicts[] =
+	{
+		{ kKCMChapterChanged,     " changed"      },
+		{ kKCMChapterNoChange,    " unchanged"    },
+		{ kKCMChapterAdded,       " added"        },
+		{ kKCMChapterDeleted,     " deleted"      },
 		// Before "failed": with chapters left uncompared, "1 changed, 5 unchanged" describes a
 		// part of the book rather than the book.
-		{ notCompared, " not compared" },
-		{ failed,      " failed"      },
-		{ leftOpen,    " left open"   },
+		{ kKCMChapterNotCompared, " not compared" },
+		{ kKCMChapterFailed,      " failed"       },
 	};
-	bool16 firstPart = kTrue;
-	for (size_t p = 0; p < sizeof(parts) / sizeof(parts[0]); ++p)
+	for (const auto& verdict : verdicts)
 	{
-		if (parts[p].count <= 0)
-			continue;
-		outReport.Append(firstPart ? ": " : ", ");	// the colon arrives with the first count, so a
-		outReport.AppendNumber(parts[p].count);		// book with no chapters ends at "0 chapters"
-		outReport.Append(parts[p].word);
-		firstPart = kFalse;
+		const KCMChapterState state = verdict.state;
+		appendCount((int32)std::count_if(outChapters.begin(), outChapters.end(),
+			[state](const KCMChapterResult& chapter) { return chapter.fState == state; }), verdict.word);
 	}
+	appendCount(leftOpen, " left open");
 
 	// Last, and set off by a dash rather than a comma -- it qualifies the whole line instead of
 	// adding another count to it. Same shape the Refresh path uses ("refreshed 5 (changed 2) -
@@ -935,15 +792,11 @@ ErrorCode KCMCompareBooks(IBook* target, IBook* source,
 		// that stopped a Japanese font name being mangled in the Resources list.
 		PMString modes;
 		modes.SetUTF8String(KCMBookModesString(chapter.fChangedModes, chapter.fUnjudgedModes));
-		modes.SetTranslatable(kFalse);
 		gBookResultText.Append(modes);
 
 		gBookResultText.Append("\t");
-		if (!chapter.fWhy.IsEmpty())
-			gBookResultText.Append(chapter.fWhy);
+		gBookResultText.Append(chapter.fWhy);
 	}
-
-	return kSuccess;
 }
 
 void KCMGetBookResultText(PMString& out)

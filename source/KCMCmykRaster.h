@@ -37,8 +37,12 @@
 #ifndef __KCMCmykRaster_h__
 #define __KCMCmykRaster_h__
 
-#include "SnapshotUtilsEx.h"	// VPAttrMap
+#include "AGMImageAccessor.h"
 #include "ColorMgmtID.h"		// kCMSProofingEnabled
+#include "K2SmartPtr.h"
+#include "PMReal.h"
+#include "SnapshotUtilsEx.h"	// VPAttrMap
+#include "UIDRef.h"
 
 // The constructor's simulateOverprint, its last argument.
 const bool8 kKCMCmykRasterSimulateOverprint = kTrue;
@@ -51,5 +55,22 @@ struct KCMCmykRasterAttrs
 
 	KCMCmykRasterAttrs() { map[ClassID(kCMSProofingEnabled)] = 1.0; }
 };
+
+/** One page rasterised: the snapshot and the accessor that reads its pixels.
+
+	**THE ORDER OF THE TWO MEMBERS IS THE POINT.** An accessor has to be destroyed before the
+	snapshot it came from, and members go down in the reverse of their declaration order -- so
+	declaring snap first is what puts acc down first, at every exit of every function holding one. */
+struct KCMPageRaster
+{
+	K2::scoped_ptr<SnapshotUtilsEx>  snap;
+	K2::scoped_ptr<AGMImageAccessor> acc;	// nil when the Draw failed
+};
+
+/** A page as the comparisons read it: the one place that says on what terms, so the two pages of a pair, and the document
+	comparison and the book comparison, are rasterised alike by construction. What each term is and why is written where it
+	is defined (KCMDrawEventHandler.cpp).
+	@return kFalse when there was no memory for the snapshot. A Draw that failed answers kTrue with out.acc nil. */
+bool16 KCMRasteriseForComparison(const UIDRef& pageRef, const PMReal& hiRes, KCMPageRaster& out);
 
 #endif // __KCMCmykRaster_h__

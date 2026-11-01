@@ -89,19 +89,11 @@ public:
 		@param outChapters one entry per chapter pair, cleared first.
 		@param outReport the one-line summary. It always states how many chapters were looked at, so
 			"nothing listed" can never be read as "nothing could be opened".
-		@return kSuccess, ALWAYS - and the only caller ignores it on purpose. A chapter that could
-			not be opened or compared is not a failure of the run: it comes back as a VERDICT on that
-			chapter (Failed / NotCompared, with a reason), which is the whole point of the result
-			list, and a cancelled run is a normal ending too. The ErrorCode is here because that is
-			the shape a facade method takes (the gs-04 guide's rule that a facade method which
-			writes data returns one), not because there is a failure to report.
-			@warning that rule is about METHODS THAT WRITE DATA, and this one writes none: it opens
-			each chapter pair, reads them and closes them again. Keeping the ErrorCode is a choice
-			to look like the rest of the boundary, not a requirement - which is why the caller may
-			ignore it without a second thought.
-			@warning anything that ever DOES return a failure from here has to change KCMBookRun.cpp,
-			which today stores and shows the result without asking. */
-	virtual ErrorCode	CompareBooks(IBook* target, IBook* source,
+
+		A chapter that could not be opened or compared is not a failure of the run: it comes back as a
+		VERDICT on that chapter (Failed / NotCompared, with a reason), and a cancelled run is a normal
+		ending too, which is why this returns nothing. */
+	virtual void		CompareBooks(IBook* target, IBook* source,
 								std::vector<KCMChapterResult>& outChapters,
 								PMString& outReport) = 0;
 };

@@ -336,19 +336,6 @@ static void KCMDistTransform(const uint8* mask, int32 wt, int32 ht, uint8* out)
 // KCMDrawEventHandler.h because the book comparison (KCMBookCompare.cpp) needs the identical test.
 
 //========================================================================================
-// One page rasterised: the snapshot and the accessor that reads its pixels.
-//
-// **THE ORDER OF THE TWO MEMBERS IS THE POINT.** An accessor has to be destroyed before the
-//   snapshot it came from, and members go down in the reverse of their declaration order -- so
-//   declaring snap first is what puts acc down first, at every exit of every function holding one.
-//========================================================================================
-struct KCMPageRaster
-{
-	K2::scoped_ptr<SnapshotUtilsEx>  snap;
-	K2::scoped_ptr<AGMImageAccessor> acc;	// nil when the Draw failed
-};
-
-//========================================================================================
 // Rasterise one page for the COMPARISON. **Both pages of a pair come through here, and that is what
 // keeps them alike**: every argument below has to be the same for the Target and the Source, or
 // every edge in the document becomes a difference.
@@ -397,7 +384,7 @@ struct KCMPageRaster
 //     boundaries, in KCMCore.cpp).
 //   **Target and source must use the same value.**
 //========================================================================================
-static bool16 KCMRasteriseForComparison(const UIDRef& pageRef, const PMReal& hiRes, KCMPageRaster& out)
+bool16 KCMRasteriseForComparison(const UIDRef& pageRef, const PMReal& hiRes, KCMPageRaster& out)
 {
 	out.snap.reset(new (std::nothrow) SnapshotUtilsEx(pageRef, 1.0, 1.0, hiRes, hiRes, 0.0, SnapshotUtilsEx::kCsCMYK, kFalse, kKCMCmykRasterSimulateOverprint));
 	if (out.snap.get() == nil)

@@ -72,11 +72,10 @@ enum KCMBookModeVerdict
     ⇒ A book comparison means what it says only for two books split from one original. (Spec map
     BK-78 carries this, with the measurement.)
 
-    @param targetDB the newer chapter. nil is unjudged.
-    @param sourceDB the older chapter. nil is unjudged.
-    @param outWhy   on kKCMBookVerdictUnjudged, a short English reason beginning "Story: ".
-                    Cleared on every call, so a caller may reuse one string for all three modes. */
-KCMBookModeVerdict KCMJudgeChapterStory(IDataBase* targetDB, IDataBase* sourceDB, PMString& outWhy);
+    @param targetDB the newer chapter.
+    @param sourceDB the older chapter.
+    @return Changed or Unchanged: there is nothing here that cannot be read. */
+KCMBookModeVerdict KCMJudgeChapterStory(IDataBase* targetDB, IDataBase* sourceDB);
 
 /** Did the DEFINITIONS change between these two chapters -- styles, swatches, layers, preferences?
 
@@ -91,10 +90,9 @@ KCMBookModeVerdict KCMJudgeChapterStory(IDataBase* targetDB, IDataBase* sourceDB
     opened by IDocumentCommands::Open with showInWindow = kFalse and ARE session documents, so they
     pass; this is the run that tests it.
 
-    @param targetDB the newer chapter. nil is unjudged.
-    @param sourceDB the older chapter. nil is unjudged.
-    @param outWhy   on kKCMBookVerdictUnjudged, a short English reason beginning "Resources: ".
-                    Cleared on every call. */
+    @param targetDB the newer chapter.
+    @param sourceDB the older chapter.
+    @param outWhy   on kKCMBookVerdictUnjudged, a short English reason beginning "Resources: ". */
 KCMBookModeVerdict KCMJudgeChapterResources(IDataBase* targetDB, IDataBase* sourceDB, PMString& outWhy);
 
 #endif // __KCMBookChapterModes_h__

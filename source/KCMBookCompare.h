@@ -57,9 +57,9 @@ class IBook;
     outReport is the one-line summary for the status area, which always states how many chapters
     were looked at - so "nothing listed" can never be mistaken for "nothing could be opened".
     ⚠It counts VERDICTS, not modes: a chapter that changed in all three ways is one "changed". */
-ErrorCode KCMCompareBooks(IBook* target, IBook* source,
-                            std::vector<KCMChapterResult>& outChapters,
-                            PMString& outReport);
+void KCMCompareBooks(IBook* target, IBook* source,
+                     std::vector<KCMChapterResult>& outChapters,
+                     PMString& outReport);
 
 /** The last comparison as one block of text: one line per chapter, "name<TAB>state", and a failed
     chapter adds "<TAB>why". Empty until something has been compared.

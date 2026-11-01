@@ -3097,9 +3097,9 @@ public:
 	virtual PMString	GetBookDisplayPath(IBook* book)
 						{ return KCMBookDisplayPath(book); }
 
-	virtual ErrorCode	CompareBooks(IBook* target, IBook* source,
+	virtual void		CompareBooks(IBook* target, IBook* source,
 							std::vector<KCMChapterResult>& outChapters, PMString& outReport)
-						{ return KCMCompareBooks(target, source, outChapters, outReport); }
+						{ KCMCompareBooks(target, source, outChapters, outReport); }
 };
 
 CREATE_PMINTERFACE(KCMBookFacade, kKCMBookFacadeImpl)

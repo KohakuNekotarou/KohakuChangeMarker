@@ -25,11 +25,6 @@
 #include "IDFile.h"
 #include "PMString.h"
 
-#include "KCMBookModeNames.h"	// KCMBookCompareMode - what the two mode fields below hold, and
-								// KCMBookModesString, which spells them. ★A header with no SDK type
-								// in it, so both halves of the plug-in may include it and it can be
-								// checked outside InDesign (work/kcm-bookmodes-test).
-
 /** What the comparison concluded about one chapter. */
 enum KCMChapterState
 {
@@ -94,7 +89,7 @@ struct KCMChapterResult
 	    reason cannot, the answer is a shorter reason, not a wider dialog.** */
 	PMString			fWhy;
 
-	/** WHICH of the three comparisons found a difference -- an OR of KCMBookCompareMode.
+	/** WHICH of the three comparisons found a difference -- an OR of KCMBookCompareMode (KCMBookModeNames.h).
 
 	    ★**fState IS DERIVED FROM THIS, not stored alongside it.** Changed when this is non-zero;
 	    NotCompared when it is zero and the run was cancelled; Failed when it is zero and

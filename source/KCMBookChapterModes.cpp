@@ -17,36 +17,11 @@
 #include "KCMResourceDiff.h"		// KCMDiffResources / KCMResourceChangeList / KCMResourceDiffStats
 #include "KCMResourceParse.h"		// KCMResourceList
 #include "KCMResourceSnapshot.h"	// KCMReadResourceList
+#include "KCMSentence.h"			// KCMSentence - a fixed sentence, never a key
 #include "KCMStoryStamp.h"			// KCMStoryEdits::CollectStamps / ::Compare
 
-namespace
+KCMBookModeVerdict KCMJudgeChapterStory(IDataBase* targetDB, IDataBase* sourceDB)
 {
-
-/** A reason, marked untranslatable at the one place reasons are made.
-
-    ⚠**PMString HAS NO "do not translate" CONSTRUCTOR** -- the flag is set on the object. A reason
-    left translatable is handed to the built-in string table on its way to the screen, which is how
-    this plug-in once displayed "Source:" as a paragraph style name. */
-PMString Why(const char* text)
-{
-	PMString s(text);
-	s.SetTranslatable(kFalse);
-	return s;
-}
-
-}	// anonymous namespace
-
-KCMBookModeVerdict KCMJudgeChapterStory(IDataBase* targetDB, IDataBase* sourceDB, PMString& outWhy)
-{
-	outWhy.Clear();
-	outWhy.SetTranslatable(kFalse);
-
-	if (targetDB == nil || sourceDB == nil)
-	{
-		outWhy = Why("Story: no database");
-		return kKCMBookVerdictUnjudged;
-	}
-
 	// Reading the counters composes nothing and dirties nothing (KCMStoryStamp.h, "READING COUNTERS
 	// COMPOSES NOTHING"), so no SaveRestoreModifiedState guard is wanted here. The caller holds one
 	// around the whole chapter anyway, for the pixel work, which does compose.
@@ -68,30 +43,15 @@ KCMBookModeVerdict KCMJudgeChapterStory(IDataBase* targetDB, IDataBase* sourceDB
 
 KCMBookModeVerdict KCMJudgeChapterResources(IDataBase* targetDB, IDataBase* sourceDB, PMString& outWhy)
 {
-	outWhy.Clear();
-	outWhy.SetTranslatable(kFalse);
-
-	if (targetDB == nil || sourceDB == nil)
-	{
-		outWhy = Why("Resources: no database");
-		return kKCMBookVerdictUnjudged;
-	}
-
 	// KCMReadResourceList's reason already names the SIDE ("source: ..."), so "Resources: " is
 	// prefixed here -- one sentence, assembled in one place, saying which mode and then which side.
 	KCMResourceList sourceItems;
 	KCMResourceList targetItems;
 	PMString why;
 
-	if (!KCMReadResourceList(sourceDB, "source", sourceItems, why))
+	if (!KCMReadResourceList(sourceDB, "source", sourceItems, why) || !KCMReadResourceList(targetDB, "target", targetItems, why))
 	{
-		outWhy = Why("Resources: ");
-		outWhy.Append(why);
-		return kKCMBookVerdictUnjudged;
-	}
-	if (!KCMReadResourceList(targetDB, "target", targetItems, why))
-	{
-		outWhy = Why("Resources: ");
+		outWhy = KCMSentence("Resources: ");
 		outWhy.Append(why);
 		return kKCMBookVerdictUnjudged;
 	}
@@ -104,7 +64,7 @@ KCMBookModeVerdict KCMJudgeChapterResources(IDataBase* targetDB, IDataBase* sour
 	KCMResourceDiffStats stats;
 	if (!KCMDiffResources(sourceItems, targetItems, changes, stats))
 	{
-		outWhy = Why("Resources: out of memory while pairing");
+		outWhy = KCMSentence("Resources: out of memory while pairing");
 		return kKCMBookVerdictUnjudged;
 	}
 

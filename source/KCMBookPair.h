@@ -39,11 +39,6 @@ class IBook;
 	    exactly what the old model-side code refused to do. */
 bool16 KCMResolveBookPair(const IDFile& panelBookFile, IBook*& outTarget, IBook*& outSource);
 
-// **KCMBookDisplayName is not declared here either.** It has exactly ONE caller -- the fallback
-//   inside KCMBookDisplayPath, in the same .cpp -- and a header entry is a promise to callers
-//   who do not exist. The display it was written for went over to full paths. It is a
-//   file-local helper next to its caller instead.
-
 /** The book's FULL PATH, as the file system spells it.
 
 	    **Why the name is not enough.** Two books being compared are usually two versions of the
@@ -51,7 +46,7 @@ bool16 KCMResolveBookPair(const IDFile& panelBookFile, IBook*& outTarget, IBook*
 	    both read as "a.indb". The name alone therefore identifies the pair as ONE book twice over,
 	    which is the one thing the Target/Source lines exist to rule out (the user's call).
 
-    Falls back to the display name if the book cannot name a file, so a caller never has to handle
+    Falls back to the book's title if the book cannot name a file, so a caller never has to handle
     an empty string. */
 PMString KCMBookDisplayPath(IBook* book);
 
