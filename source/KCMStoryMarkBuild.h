@@ -49,6 +49,7 @@ void KCMStoryMarkRefresh();
 	round -- marks that were off come on, marks that were on go off -- and that XOR is applied
 	inside KCMStoryMarkRefresh. This call says only which window, and the caller does not have to
 	know what is currently showing there.
+	With "Print comparison marks" on, a press has nothing to turn round: what prints stands, as the Pixel mode's frames do.
 
 	@param active kTrue while the button is down.
 	@param useSourceDocument which window, when active. Ignored when active is kFalse, so that
