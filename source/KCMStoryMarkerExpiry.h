@@ -5,8 +5,8 @@
 //  Kohaku Change Marker (KCM)
 //
 //  One-shot timer that takes the jump marker back off the screen shortly after it appears.
-//  Driven by KCMStoryMarker: ShowFlash arms it, ClearFlash disarms it. Nothing else should
-//  call it -- the standing marks have no clock at all.
+//  Driven by KCMStoryMarker: ShowFlash arms it, and when it runs out it takes the flash down
+//  (ClearFlash). Nothing else should call it -- the standing marks have no clock at all.
 //
 //  **THIS PLUG-IN'S ONLY IDLE TASK BESIDES THE THUMBNAIL ONE**, and the justified exception to
 //  "avoid timers" ([[avoid-timers-and-idle-tasks]]): a mark has to expire on WALL-CLOCK time,
@@ -24,8 +24,8 @@
 #ifndef __KCMStoryMarkerExpiry_h__
 #define __KCMStoryMarkerExpiry_h__
 
-/** Jump-marker expiry timer. Go through KCMStoryMarker::ShowFlash / ClearFlash rather than
-    calling these directly, so that the mark and the countdown cannot disagree. */
+/** Jump-marker expiry timer. Go through KCMStoryMarker::ShowFlash rather than calling these
+    directly, so that the mark and the countdown cannot disagree. */
 namespace KCMStoryMarkerExpiry
 {
 	/** (Re)start the countdown to clearing the mark. Called every time a mark is shown, so an
@@ -35,7 +35,8 @@ namespace KCMStoryMarkerExpiry
 	/** Cancel the countdown. Safe to call when it is not running. */
 	void Stop();
 
-	/** Release the task for good (application shutdown). After this, Start() is a no-op. */
+	/** Release the task for good (application shutdown). KCMStoryMarker::Shutdown has stopped
+	    ShowFlash by then, so nothing starts it again. */
 	void Shutdown();
 }
 

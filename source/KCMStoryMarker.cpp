@@ -16,9 +16,7 @@
 #include "VCPlugInHeaders.h"
 
 // Interface includes:
-#include "IDocumentList.h"			// ForgetClosedDocs - which documents are still open (2026-09-12)
 #include "IGlobalTextAdornment.h"
-#include "IGraphicsContext.h"		// GraphicsData
 #include "IGraphicsPort.h"
 #include "IShape.h"					// kPrinting / kPreviewMode
 #include "ITextModel.h"				// which story a wax run belongs to
@@ -30,22 +28,19 @@
 // General includes:
 #include "AutoGSave.h"
 #include "CPMUnknown.h"
-#include "PMReal.h"		// the opacity, which is held in a static below. It reached this
-						//   file through KCMStoryMarker.h until now, whose own comment asked
-						//   for it to be moved to the .cpp that actually names one
+#include "GraphicsData.h"
+#include "PMReal.h"
 #include <atomic>		// gHasMark - read off the main thread without the lock (2026-10-27)
 #include <set>			// the documents to repaint when a mark moves between them
 #include "UIDRef.h"
-#include "Utils.h"
 
 // Project includes:
-#include "IKCMCompareFacade.h"	// GetSelectedMarkOpacity - what both kinds of mark are drawn at
 #include "KCMCore.h"			// KCMIsDocDBOpen / KCMInvalidateDB. Both were written out here
 									//   instead while this lived in the UI plug-in, which cannot call
 									//   into the model at all
-#include "KCMDrawEventHandler.h"	// SelectedMarkColor (the panel's red/cyan) and KCMSetOutputColor
-									// (screen in RGB, paper in CMYK) -- both shared with the Pixel
-									// mode's frames.
+#include "KCMDrawEventHandler.h"	// SelectedMarkColor and SelectedMarkOpacity (the panel's choices) and
+									// KCMSetOutputColor (screen in RGB, paper in CMYK) -- all shared with
+									// the Pixel mode's frames -- and sPrintMarks.
 #include "KCMExternalSource.h"	// KCMIsDbAlive - a document in the list, or the lent Source (ForgetClosedDocs)
 #include "KCMID.h"				// moved here from the UI plug-in with the adornment
 #include "KCMStoryList.h"		// KCMCaretOnTableChars - a caret in front of a table stands after the character before it (2026-09-24)
@@ -97,7 +92,6 @@ KCMStoryMarkDocs gMarkDocs;				// database -> story UID -> its ranges, each list
 											// the lookups below walk the map and ask KCMIsSameDoc()
 											// instead. Walking is free: there are at most two
 											// entries, the armed target and source.
-PMReal             gMarkOpacity(1.0);		// what both kinds are drawn at - the panel's radio
 bool16             gShutdown  = kFalse;
 
 // The whole marked span across every story, which is a free way to refuse most runs before
@@ -124,30 +118,6 @@ const double kDescentFraction = 0.10;
 //   ([[one-question-one-place]]).
 const double kCaretWidthFraction = 0.25;
 
-/* KCMStoryMarkerRepaint
-   Put the mark on screen, or take it off, now. Nothing else asks the views to redraw: a global
-   adornment is only consulted while text is being drawn, so a mark that nobody repaints for would
-   appear the next time the user happened to scroll.
-
-   @warning the document is asked whether it is still open FIRST, because this runs while one is
-    being closed as well: redrawing a database that is going away is exactly the crash KBS's
-    marker guards against with its own shutdown flag.
-   **BOTH QUESTIONS BELONG TO KCMCore.h**, and both were written out here instead: the first as a
-    Query for IKCMCompareFacade (which is what a kUIPlugIn has to do to reach the model at all),
-    the second as IDocument + ILayoutUtils::InvalidateViews. The marker is in the model plug-in
-    now, where each is one call -- and the second of them is shared with ten other callers, so
-    what "repaint a document" means is settled in one place.
-*/
-void KCMStoryMarkerRepaint(IDataBase* db)
-{
-	if (db == nil || gShutdown)
-		return;
-	if (!KCMIsDocDBOpen(db))
-		return;
-
-	KCMInvalidateDB(db);
-}
-
 /* KCMStoryMarkerRunSpan
    The characters this wax run covers, and kFalse when there is nothing to ask about it.
 
@@ -159,10 +129,10 @@ void KCMStoryMarkerRepaint(IDataBase* db)
         a Query and a binary search (2 and 3 are KCMStoryMarkerRangesFor, KCMStoryMarkRanges.h)
 
    @warning **gHasMark IS READ WITHOUT THE LOCK, WHICH IS WHY THIS STEP IS ITS OWN.** It is an
-    atomic flag the main thread only ever sets to true after the map is complete and to false
-    before emptying it, so testing it unlocked costs a run nothing and refuses almost all of
-    them outright. Everything after it reads state the main thread rewrites, so both callers
-    take the lock the moment this returns.
+    atomic flag the main thread only ever sets to true after the map is complete, and a true that
+    has gone out of date only sends a run on to the lock, where the map answers. So testing it
+    unlocked costs a run nothing and refuses almost all of them outright. Everything after it
+    reads state the main thread rewrites, so both callers take the lock the moment this returns.
    @warning **both of them wrote these lines out for themselves** until this was pulled out,
     which put the order the whole hot path rests on -- flag first, lock second -- in two places.
 */
@@ -248,8 +218,6 @@ const KCMMarkRangeList* KCMStoryMarkerRangesFor(const IWaxRun* waxRun, bool16 fo
 */
 bool16 KCMStoryMarkerFindRunRanges(const IWaxRun* waxRun, bool16 forPrint, KCMMarkRangeList& outRanges)
 {
-	outRanges.clear();
-
 	TextIndex runStart = 0;
 	TextIndex runEnd = 0;
 	if (!KCMStoryMarkerRunSpan(waxRun, runStart, runEnd))
@@ -287,7 +255,7 @@ bool16 KCMStoryMarkerRunIsMarked(const IWaxRun* waxRun)
 }
 
 /* KCMStoryMarkerSetDocs
-   Install a set of ranges as THE mark, replacing whatever was there. Merging happens here so that
+   Take a composed set over as THE mark, replacing whatever was there. Merging happens here so that
    no caller can hand in overlaps, and the span the fast path tests is worked out in the same pass.
    @warning merging was once a matter of correctness (two Difference inversions over the same
     characters punched a hole); the wash is opaque and an overlap would merely paint twice, so
@@ -295,79 +263,45 @@ bool16 KCMStoryMarkerRunIsMarked(const IWaxRun* waxRun)
     edit.
 
    @warning what arrives is the COMPOSED set, not what a caller asked for -- see the statics above.
+    It holds no document and no story without a range (KCMAddDrawableStories), and comes back
+    holding the old mark.
    @warning THE CALLER HOLDS KCMMarkStateMutex. There is exactly one caller
      (KCMStoryMarkerInstall) and it takes the lock around a wider stretch than this, so taking it
      again here would only make the recursion deeper for nothing.
 */
-void KCMStoryMarkerSetDocs(const KCMStoryMarkDocs& docs, const PMReal& opacity)
+void KCMStoryMarkerSetDocs(KCMStoryMarkDocs& composed)
 {
-	gHasMark = false;		// before the map is emptied, as the flag's contract says (the order was the other way round
-	gMarkDocs.clear();		//   until 2026-10-27 - harmless under the lock the caller holds, but not what the note promised)
-	gMarkOpacity = opacity;
-	gMarkLowest = 0;
+	gMarkDocs.swap(composed);
+	gMarkLowest = kMaxInt32;
 	gMarkHighest = 0;
 
-	bool16 first = kTrue;
-	for (KCMStoryMarkDocs::const_iterator doc = docs.begin(); doc != docs.end(); ++doc)
+	for (KCMStoryMarkDocs::iterator doc = gMarkDocs.begin(); doc != gMarkDocs.end(); ++doc)
 	{
-		if (doc->first == nil)
-			continue;
-
-		KCMStoryMarkMap kept;
-
-		for (KCMStoryMarkMap::const_iterator it = doc->second.begin(); it != doc->second.end(); ++it)
+		for (KCMStoryMarkMap::iterator story = doc->second.begin(); story != doc->second.end(); ++story)
 		{
-			if (it->first == kInvalidUID)
-				continue;
-
-			KCMMarkRangeList ranges = it->second;
+			KCMMarkRangeList& ranges = story->second;
 			KCMMergeMarkRanges(ranges);
 			if (ranges.empty())
-				continue;				// a story whose ranges were all empty is not a story to keep
+				continue;				// nothing but empty ranges: there is no first or last to read
 
-			if (first || ranges.front().fFrom < gMarkLowest)
+			if (ranges.front().fFrom < gMarkLowest)
 				gMarkLowest = ranges.front().fFrom;
-			if (first || ranges.back().fTo > gMarkHighest)
+			if (ranges.back().fTo > gMarkHighest)
 				gMarkHighest = ranges.back().fTo;
-			first = kFalse;
-
-			kept[it->first].swap(ranges);
 		}
-
-		if (!kept.empty())
-			gMarkDocs[doc->first].swap(kept);
 	}
 
-	if (!gMarkDocs.empty())
-		gHasMark = true;
-}
-
-/* MarkOpacityNow
-   What the marks are drawn at, as the panel's 25% / 75% radio has it.
-
-   **ONE PLACE ASKS, AND IT IS THIS ONE.** The jump's pointer used to pass a hard-coded 1.0
-   while the standing marks were handed the selected value by their caller -- so the same setting
-   reached one kind of mark and not the other, and a reader who chose 25% still got a solid flash
-   on every jump. Asking here rather than at each caller is what stops the two from drifting
-   again ([[one-question-one-place]]).
-
-   @warning **it is read when a mark is INSTALLED, not when one is DRAWN**, and the comment here
-    said the opposite once (measured: the value goes into gMarkOpacity and the drawing reads that
-    static). Nothing is wrong with it -- moving the radio makes the panel refresh the standing
-    marks, which comes straight back through here -- but a reader who believed the old sentence
-    would look for a bug that is not there, or write one relying on a re-read that does not
-    happen.
-*/
-PMReal MarkOpacityNow()
-{
-	InterfacePtr<IKCMCompareFacade> compare(Utils<IKCMCompareFacade>().QueryUtilInterface());
-	return (compare != nil) ? compare->GetSelectedMarkOpacity() : PMReal(1.0);
+	gHasMark = !gMarkDocs.empty();
 }
 
 /* KCMStoryMarkerInstall
    Work out what is on screen from the two sets, put it up, and repaint everything involved.
    Every public call ends here, so there is one place where the rule is applied and one place that
    repaints.
+
+   **THE REPAINT IS WHAT PUTS IT ON SCREEN, OR TAKES IT OFF.** Nothing else asks the views to redraw:
+   a global adornment is only consulted while text is being drawn, so a mark that nobody repaints
+   for would appear the next time the user happened to scroll.
 
    @warning **every document that was marked is repainted too**, not just the ones that still
     are, or a mark would stay on screen in a window nobody is looking at any more. That is not
@@ -386,10 +320,6 @@ void KCMStoryMarkerInstall()
 {
 	std::set<IDataBase*> toRepaint;
 
-	// ASKED BEFORE THE LOCK IS TAKEN. MarkOpacityNow() queries a facade off the Utils boss, and
-	//   holding a lock across a Query is how a short lock turns into a long one.
-	const PMReal opacity = MarkOpacityNow();
-
 	{
 		// @warning **THE LOCK COVERS THE REWRITE AND NOTHING ELSE.** gMarkDocs is read by the drawing
 		//   side on background threads (the asynchronous PDF export), so it may not be seen
@@ -402,7 +332,7 @@ void KCMStoryMarkerInstall()
 
 		KCMStoryMarkDocs composed;
 		KCMComposeMarkDocs(gStandingDocs, gFlashDocs, composed);
-		KCMStoryMarkerSetDocs(composed, opacity);
+		KCMStoryMarkerSetDocs(composed);
 
 		for (KCMStoryMarkDocs::const_iterator it = gMarkDocs.begin(); it != gMarkDocs.end(); ++it)
 			toRepaint.insert(it->first);
@@ -413,8 +343,28 @@ void KCMStoryMarkerInstall()
 	//   shape a deadlock comes in. The set of documents was collected above precisely so that this
 	//   loop needs nothing shared -- "hold the lock only for the memory you are changing" is the
 	//   discipline KCMThreadSafety.h states.
+	// @warning the document is asked whether it is still open FIRST, because this runs while one is
+	//   being closed as well, and redrawing a database that is going away is a crash. The question
+	//   compares pointers, so it is safe to ask of a dead one.
 	for (std::set<IDataBase*>::const_iterator db = toRepaint.begin(); db != toRepaint.end(); ++db)
-		KCMStoryMarkerRepaint(*db);
+	{
+		if (KCMIsDocDBOpen(*db))
+			KCMInvalidateDB(*db);
+	}
+}
+
+/* KCMStoryMarkerDropClosed
+   Take the documents that are no longer open out of one set. Pointer comparison only: the key of a
+   dead entry is freed memory, and KCMIsDbAlive compares addresses without touching what they point at. */
+void KCMStoryMarkerDropClosed(IDocumentList* docList, KCMStoryMarkDocs& docs)
+{
+	for (KCMStoryMarkDocs::iterator it = docs.begin(); it != docs.end(); )
+	{
+		if (KCMIsDbAlive(docList, it->first))
+			++it;
+		else
+			it = docs.erase(it);
+	}
 }
 
 /** One rectangle to fill, and what to fill it with (2026-10-05: the Track mode colours each author). */
@@ -439,7 +389,6 @@ class KCMStoryMarkerAdornment : public CPMUnknown<IGlobalTextAdornment>
 {
 public:
 	KCMStoryMarkerAdornment(IPMUnknown* boss) : CPMUnknown<IGlobalTextAdornment>(boss) {}
-	~KCMStoryMarkerAdornment() {}
 
 	/** BACKGROUND, like a highlight -- and the comment that used to stand here called this exactly
 		right before it happened. It said the mark was in the FOREGROUND because it inverted what was
@@ -525,8 +474,6 @@ bool16 KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWaxRe
 											   const IWaxGlyphs* waxGlyphs, bool16 forPrint,
 											   std::vector<KCMMarkBox>& outBoxes)
 {
-	outBoxes.clear();
-
 	if (waxRun == nil || renderData == nil || waxGlyphs == nil)
 		return kFalse;
 
@@ -550,8 +497,8 @@ bool16 KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWaxRe
 
 	for (KCMMarkRangeList::const_iterator r = runRanges.begin(); r != runRanges.end(); ++r)
 	{
-		const int32 charStart = static_cast<int32>(r->fFrom);
-		const int32 charCount = static_cast<int32>(r->fTo - r->fFrom);
+		const int32 charStart = r->fFrom;
+		const int32 charCount = r->fTo - r->fFrom;
 
 		// **CHARACTERS ARE NOT GLYPHS.** One character can be drawn by several glyphs and several
 		//   characters by one, so the range has to be mapped before any width is added up -- the same
@@ -561,6 +508,7 @@ bool16 KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWaxRe
 		int32 glyphLength = 0;
 		bool16 caretAfter = r->fCaretAfter;
 		waxGlyphs->MapCharsToGlyphs(charStart, charCount, &glyphIndex, &glyphLength);
+		const auto mapsToNothing = [&]() { return glyphIndex < 0 || glyphLength <= 0 || glyphIndex >= glyphCount; };
 
 		// ★**A CARET WHOSE CHARACTER DRAWS NOTHING STANDS AFTER THE ONE BEFORE IT** (2026-09-12).
 		//   A deletion at the end of a PARAGRAPH puts the caret in front of that paragraph's return,
@@ -569,16 +517,14 @@ bool16 KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWaxRe
 		//   that character is the very place the reader would click. The end of the STORY is the
 		//   same case decided one step earlier, by the builder (KCMMarkRange::CaretAfter), because
 		//   there the caret's own character may not reach any run at all.
-		if (r->fCaret && (glyphIndex < 0 || glyphLength <= 0 || glyphIndex >= glyphCount) && charStart > 0)
+		if (r->fCaret && mapsToNothing() && charStart > 0)
 		{
 			waxGlyphs->MapCharsToGlyphs(charStart - 1, 1, &glyphIndex, &glyphLength);
 			caretAfter = kTrue;
 		}
 
-		if (glyphIndex < 0 || glyphLength <= 0)
+		if (mapsToNothing())
 			continue;						// a range that maps to nothing skips this box, not the run
-		if (glyphIndex >= glyphCount)
-			continue;
 		if (glyphIndex + glyphLength > glyphCount)
 			glyphLength = glyphCount - glyphIndex;
 
@@ -589,42 +535,29 @@ bool16 KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWaxRe
 		PMReal offset = cumulative[glyphIndex];
 		PMReal width = cumulative[glyphIndex + glyphLength] - offset;
 
-		if (r->fCaret)
-		{
-			// **A DELETION IS A CARET, NOT AN INVERTED CHARACTER.** The characters are gone from this
-			//   side, so there is nothing here that IS the edit -- and inverting the character that closed
-			//   up over the gap says the wrong thing about it: deleting a whole paragraph lit the first
-			//   character of the NEXT one, and deleting the end of a story lit the final carriage return,
-			//   which draws nothing at all.
-			//   The range still covers one character so that it sorts and merges like any other
-			//     (KCMStoryMarkRanges.h), but what is DRAWN is a bar standing where the caret would stand
-			//     if you clicked in front of that character -- the same place the jump centres.
-			// ★A caret flagged AFTER stands at the far edge of its character instead (the end of the
-			//   story, or a character whose successor draws nothing - see above).
-			if (caretAfter)
-				offset += width;
+		// **A DELETION IS A CARET, NOT AN INVERTED CHARACTER.** The characters are gone from this
+		//   side, so there is nothing here that IS the edit -- and inverting the character that closed
+		//   up over the gap says the wrong thing about it: deleting a whole paragraph lit the first
+		//   character of the NEXT one, and deleting the end of a story lit the final carriage return,
+		//   which draws nothing at all.
+		//   The range still covers one character so that it sorts and merges like any other
+		//     (KCMStoryMarkRanges.h), but what is DRAWN is a bar standing where the caret would stand
+		//     if you clicked in front of that character -- the same place the jump centres.
+		// ★A caret flagged AFTER stands at the far edge of its character instead (the end of the
+		//   story, or a character whose successor draws nothing - see above).
+		if (r->fCaret && caretAfter)
+			offset += width;
+
+		// A ZERO-WIDTH RANGE STILL HAS A PLACE. It happens where the marked characters are drawn by
+		//   nothing at all -- and the reader still asked "where is it". A thin bar at the start of the
+		//   range answers that; an empty rectangle would answer nothing.
+		if (r->fCaret || width <= 0.0)
 			width = size * PMReal(kCaretWidthFraction);
-		}
-		else if (width <= 0.0)
-		{
-			// A ZERO-WIDTH RANGE STILL HAS A PLACE. It happens where the marked characters are drawn by
-			//   nothing at all -- and the reader still asked "where is it". A thin bar at the start of the
-			//   range answers that; an empty rectangle would answer nothing.
-			width = size * PMReal(kCaretWidthFraction);
-		}
 
 		const PMReal x = waxRun->GetXPosition() + offset;
-
-		PMRect box;
-		box.Left(x);
-		box.Right(x + width);
-		box.Top(y - size * PMReal(kAscentFraction));
-		box.Bottom(y + size * PMReal(kDescentFraction));
-		KCMMarkBox mb;
-		mb.fBox = box;
-		mb.fHasColour = r->fHasColour;
-		mb.fR = r->fR; mb.fG = r->fG; mb.fB = r->fB;
-		outBoxes.push_back(mb);
+		const KCMMarkBox box = { PMRect(x, y - size * PMReal(kAscentFraction), x + width, y + size * PMReal(kDescentFraction)),
+								 r->fHasColour, r->fR, r->fG, r->fB };
+		outBoxes.push_back(box);
 	}
 
 	return outBoxes.empty() ? kFalse : kTrue;
@@ -661,7 +594,7 @@ bool16 KCMStoryMarkerAdornment::GetIsActive(const IParcelShape* /*parcelShape*/,
 	//     which is the worse of the two failures: a reason that does not hold stops warning anybody
 	//     the day it stops applying. The real reason is above, and it was in the header all along.
 	if (iShapeFlags & (IShape::kPrinting | IShape::kPreviewMode))
-		return KCMStoryMarkPrintPossibleAtAll();
+		return KCMDrawEventHandler::sPrintMarks;
 
 	return kTrue;
 }
@@ -689,7 +622,7 @@ void KCMStoryMarkerAdornment::GetInkBounds(PMRect* inkBounds, const IWaxRun* wax
 void KCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const IWaxRun* waxRun,
 									 const IWaxRenderData* renderData, const IWaxGlyphs* waxGlyphs)
 {
-	if (gd == nil || !gHasMark)
+	if (gd == nil)
 		return;
 
 	// THE PRINT DECISION IS MADE PER RUN, INSIDE GetMarkBoxes, because that is where the run's own
@@ -702,26 +635,6 @@ void KCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const IW
 	std::vector<KCMMarkBox> boxes;
 	if (!GetMarkBoxes(waxRun, renderData, waxGlyphs, forPrint, boxes))
 		return;
-
-	// COPIED OUT UNDER THE LOCK, THEN USED WITHOUT IT. gMarkOpacity is a PMReal -- a struct, not a
-	//   word -- so a background thread reading it while the main thread writes a new one could see
-	//   neither value. The copy is taken here rather than at the top so that runs which draw
-	//   nothing (the overwhelming majority) never take the lock twice.
-	// @warning **"full strength on paper" was tried and removed the same day.** It made sense while
-	//   the mark was an inversion, where 25% only nudged the ground and the printed page needed the
-	//   whole flip to be legible at all. A wash is the opposite: the strength IS the colour, and at
-	//   1.0 it prints as solid red over every changed word -- readable, but shouting.
-	//   The panel's choice is honoured everywhere. What the reader picked for the screen is what
-	//     comes out of the printer, which is the same promise the Pixel mode's frames make
-	//     (KCMDrawEventHandler::SelectedMarkOpacity is used by screen and output alike).
-	//   @warning and it was measured wrong at first: a PNG export counts as PRINTING (kPrinting is
-	//     set), so the "screen" shots taken with exportFile came out at 1.0 too and both radio
-	//     settings looked identical. A PNG is not the screen.
-	PMReal opacity(1.0);
-	{
-		KCMMarkStateLock lock(KCMMarkStateMutex());
-		opacity = gMarkOpacity;
-	}
 
 	IGraphicsPort* gPort = gd->GetGraphicsPort();
 	if (gPort == nil)
@@ -750,13 +663,19 @@ void KCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const IW
 	//   longer has to declare transparency for the mark to survive, and PDF 1.3 behaves exactly like
 	//   1.4.
 	// HOW STRONG -- the panel's "Marks opacity 25% / 75%", mixed from paper white towards the mark
-	//   colour. @warning **both kinds of mark get the same strength**, the jump's flash included:
-	//   the value is read once by KCMStoryMarkerInstall (MarkOpacityNow) and every caller ends
-	//   there. A sentence here once said the jump "passes 1.0 and lands at the full colour", which
-	//   described the very bug that was fixed by moving the question to one place (see
-	//   MarkOpacityNow above, which says so).
-	const int32 pct = ::ToInt32(opacity * PMReal(100.0));
-	const int32 mix = (pct < 0) ? 0 : ((pct > 100) ? 100 : pct);
+	//   colour, for both kinds of mark. Read here, at the moment of drawing, so that the radio cannot
+	//   reach one kind and miss the other.
+	// @warning **"full strength on paper" was tried and removed the same day.** It made sense while
+	//   the mark was an inversion, where 25% only nudged the ground and the printed page needed the
+	//   whole flip to be legible at all. A wash is the opposite: the strength IS the colour, and at
+	//   1.0 it prints as solid red over every changed word -- readable, but shouting.
+	//   The panel's choice is honoured everywhere. What the reader picked for the screen is what
+	//     comes out of the printer, which is the same promise the Pixel mode's frames make
+	//     (KCMDrawEventHandler::SelectedMarkOpacity is used by screen and output alike).
+	//   @warning and it was measured wrong at first: a PNG export counts as PRINTING (kPrinting is
+	//     set), so the "screen" shots taken with exportFile came out at 1.0 too and both radio
+	//     settings looked identical. A PNG is not the screen.
+	const int32 mix = ::ToInt32(KCMDrawEventHandler::SelectedMarkOpacity() * PMReal(100.0));
 
 	// WHICH COLOUR -- the panel's "Mark colour: Red / Cyan", read through the same accessor the
 	//   Pixel mode's rings use, so the two modes can never disagree about it - UNLESS THE BOX HAS A
@@ -781,15 +700,29 @@ void KCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const IW
 		const uint8 wg = (uint8)(255 - (255 - baseG) * mix / 100);
 		const uint8 wb = (uint8)(255 - (255 - baseB) * mix / 100);
 		KCMSetOutputColor(gPort, wr, wg, wb, forPrint);
-		gPort->rectfill(b->fBox.Left(), b->fBox.Top(), b->fBox.Width(), b->fBox.Height());
+		gPort->rectfill(b->fBox);
 	}
-
-	gPort->newpath();
 }
 
 //----------------------------------------------------------------------------------------
 // The public face
 //----------------------------------------------------------------------------------------
+
+KCMMarkRange KCMStoryMarker::CaretAt(IDataBase* db, UID storyUID, TextIndex at)
+{
+	if (at > 0)
+	{
+		InterfacePtr<ITextModel> model(UIDRef(db, storyUID), UseDefaultIID());
+		if (model != nil && at >= model->TotalLength() - 1)
+			return KCMMarkRange::CaretAfter(at);
+	}
+
+	TextIndex afterTable = 0;
+	if (KCMCaretOnTableChars(db, storyUID, at, afterTable))
+		return KCMMarkRange::CaretAfter(afterTable);
+
+	return KCMMarkRange::Caret(at);
+}
 
 void KCMStoryMarker::AddFlashRange(KCMStoryMarkDocs& docs, IDataBase* db, UID storyUID,
 									TextIndex from, TextIndex to,
@@ -798,13 +731,8 @@ void KCMStoryMarker::AddFlashRange(KCMStoryMarkDocs& docs, IDataBase* db, UID st
 	if (db == nil || storyUID == kInvalidUID)
 		return;			// a window that is not open, or a story there is none of - nothing to add
 
-	if (to < from)
-		to = from;
-
 	// **A DELETION HAS NO WIDTH on the side it was deleted from** -- the words are gone from there,
-	//   and what the jump is pointing at is the PLACE they used to be. That place is shown as a
-	//   CARET, which is also what the standing marks do, so a jump and a press say the same thing
-	//   about the same deletion (KCMStoryMarkBuild).
+	//   and what the jump is pointing at is the PLACE they used to be.
 	//   @warning it used to be widened to one character here, which inverted whatever had closed up
 	//     over the gap -- a different character claiming to be the edit.
 	//   The decision is made HERE and not inside the range list: what a zero-width range should
@@ -814,41 +742,8 @@ void KCMStoryMarker::AddFlashRange(KCMStoryMarkDocs& docs, IDataBase* db, UID st
 	//   the newer document, so the range handed over for the older one is empty and comes out as the
 	//   caret standing where they went in -- which is exactly where the reader is looking. Nothing
 	//   here has to know which of the two cases it is.
-	// ★IN A COLOUR OF ITS OWN WHEN ONE IS GIVEN (2026-10-05, the Track mode's author colour) - every push below.
-	if (to > from)
-	{
-		const KCMMarkRange range(from, to);
-		docs[db][storyUID].push_back(hasColour ? range.WithColour(r, g, b) : range);
-		return;
-	}
-
-	// ★AT THE END OF THE STORY THE CARET STANDS AFTER THE LAST CHARACTER - the same rule, and the
-	//   same reason, as the standing marks (KCMStoryMarkBuild): a caret in front of the final
-	//   carriage return reaches no wax run and was never drawn (2026-09-12). The story's own end is
-	//   asked of the model here because this file has no row to ask it of; TotalLength counts that
-	//   final return, so the last visible character is one before it.
-	if (from > 0)
-	{
-		InterfacePtr<ITextModel> model(UIDRef(db, storyUID), UseDefaultIID());
-		if (model != nil && from >= model->TotalLength() - 1)
-		{
-			const KCMMarkRange range = KCMMarkRange::CaretAfter(from);
-			docs[db][storyUID].push_back(hasColour ? range.WithColour(r, g, b) : range);
-			return;
-		}
-	}
-	// ★AND IN FRONT OF A TABLE, AFTER THE LAST CHARACTER BEFORE THE TABLE - the same rule, and the
-	//   same reason, as the standing marks (KCMStoryMarkBuild; KCMCaretOnTableChars says what was
-	//   measured, 2026-09-24).
-	TextIndex afterTable = 0;
-	if (KCMCaretOnTableChars(db, storyUID, from, afterTable))
-	{
-		const KCMMarkRange range = KCMMarkRange::CaretAfter(afterTable);
-		docs[db][storyUID].push_back(hasColour ? range.WithColour(r, g, b) : range);
-		return;
-	}
-	const KCMMarkRange caret = KCMMarkRange::Caret(from);
-	docs[db][storyUID].push_back(hasColour ? caret.WithColour(r, g, b) : caret);
+	const KCMMarkRange range = (to > from) ? KCMMarkRange(from, to) : CaretAt(db, storyUID, from);
+	docs[db][storyUID].push_back(hasColour ? range.WithColour(r, g, b) : range);
 }
 
 void KCMStoryMarker::ShowFlash(const KCMStoryMarkDocs& docs)
@@ -897,62 +792,23 @@ void KCMStoryMarker::ClearFlash()
 		return;
 
 	gFlashDocs.clear();
-	KCMStoryMarkerExpiry::Stop();
 	KCMStoryMarkerInstall();		// repaints whatever went dark
-}
-
-void KCMStoryMarker::ClearStanding()
-{
-	if (gStandingDocs.empty())
-		return;
-
-	gStandingDocs.clear();
-	KCMStoryMarkerInstall();
 }
 
 void KCMStoryMarker::ForgetClosedDocs(IDocumentList* docList)
 {
-	if (docList == nil || gShutdown)
+	if (docList == nil)
 		return;
 
-	// ASKED BEFORE THE LOCK IS TAKEN, for the reason KCMStoryMarkerInstall gives.
-	const PMReal opacity = MarkOpacityNow();
-
-	std::set<IDataBase*> toRepaint;
-	{
-		KCMMarkStateLock lock(KCMMarkStateMutex());
-
-		// Drop the dead entries from both source sets. ⚠**Pointer comparison only** - the key of a
-		//   dead entry is freed memory, and FindDocByDataBase compares addresses without touching
-		//   what they point at.
-		bool16 dropped = kFalse;
-		for (KCMStoryMarkDocs::iterator it = gStandingDocs.begin(); it != gStandingDocs.end(); )
-		{
-			if (!KCMIsDbAlive(docList, it->first)) { gStandingDocs.erase(it++); dropped = kTrue; }
-			else ++it;
-		}
-		for (KCMStoryMarkDocs::iterator it = gFlashDocs.begin(); it != gFlashDocs.end(); )
-		{
-			if (!KCMIsDbAlive(docList, it->first)) { gFlashDocs.erase(it++); dropped = kTrue; }
-			else ++it;
-		}
-		if (!dropped)
-			return;
-
-		// The drawn map is rebuilt from what survives - the same composition Install performs -
-		//   and only the LIVE documents it names are repainted. ⚠Install itself would have repainted
-		//   every document in the old map, dead one included, which is the very dereference this
-		//   function exists to avoid.
-		KCMStoryMarkDocs composed;
-		KCMComposeMarkDocs(gStandingDocs, gFlashDocs, composed);
-		KCMStoryMarkerSetDocs(composed, opacity);
-
-		for (KCMStoryMarkDocs::const_iterator it = gMarkDocs.begin(); it != gMarkDocs.end(); ++it)
-			toRepaint.insert(it->first);
-	}
-
-	for (std::set<IDataBase*>::const_iterator db = toRepaint.begin(); db != toRepaint.end(); ++db)
-		KCMStoryMarkerRepaint(*db);		// outside the lock, as Install does
+	// All three sets lose the same documents, so the drawn map stays what composing the two others
+	//   would give (KCMComposeMarkDocs decides each document from its own entries alone) - which is
+	//   also why no window has anything to repaint. The span the fast path tests may now be wider
+	//   than what is left, which costs a run one more question and nothing else.
+	KCMMarkStateLock lock(KCMMarkStateMutex());
+	KCMStoryMarkerDropClosed(docList, gStandingDocs);
+	KCMStoryMarkerDropClosed(docList, gFlashDocs);
+	KCMStoryMarkerDropClosed(docList, gMarkDocs);
+	gHasMark = !gMarkDocs.empty();
 }
 
 void KCMStoryMarker::Shutdown()

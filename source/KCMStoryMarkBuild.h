@@ -84,22 +84,6 @@ void KCMStoryMarkSetPress(bool16 active, bool16 useSourceDocument);
 */
 bool16 KCMStoryMarkPrintAllowedFor(IDataBase* db);
 
-/** Is ANY document allowed to print its marks right now?
-
-	**A COARSER GATE FOR ONE CALLER THAT CANNOT ASK THE FINER QUESTION.** GetIsActive is handed an
-	IParcelShape, and **IParcelShape is not an IPMUnknown** -- there is no GetDataBase to call on
-	it (measured: the compiler refuses the cast outright). So the per-parcel answer cannot name a
-	document, and the best it can do is refuse the whole pass when nothing is printable at all.
-	Draw still asks the per-document question, from the run's own database, so nothing prints that
-	  should not. This only saves the text engine from calling Draw for a document that will refuse.
-
-	@warning **IT MUST STAY THE OR OF THE SAME TWO FLAGS the finer question reads.** If it ever
-	 grew a condition of its own, a mark could be refused here and allowed there, which reads as
-	 "printing works for some documents and not others" with nothing to point at
-	 ([[one-question-one-place]]).
-*/
-bool16 KCMStoryMarkPrintPossibleAtAll();
-
 #endif // __KCMStoryMarkBuild_h__
 
 // End, KCMStoryMarkBuild.h.

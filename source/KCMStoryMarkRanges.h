@@ -69,10 +69,7 @@ struct KCMMarkRange
 	bool16		fHasColour;
 	uint8		fR, fG, fB;
 
-	KCMMarkRange() : fFrom(0), fTo(0), fCaret(kFalse), fCaretAfter(kFalse), fHasColour(kFalse), fR(0), fG(0), fB(0) {}
-	KCMMarkRange(TextIndex from, TextIndex to)
-		: fFrom(from), fTo(to), fCaret(kFalse), fCaretAfter(kFalse), fHasColour(kFalse), fR(0), fG(0), fB(0) {}
-	KCMMarkRange(TextIndex from, TextIndex to, bool16 caret, bool16 caretAfter = kFalse)
+	KCMMarkRange(TextIndex from, TextIndex to, bool16 caret = kFalse, bool16 caretAfter = kFalse)
 		: fFrom(from), fTo(to), fCaret(caret), fCaretAfter(caretAfter), fHasColour(kFalse), fR(0), fG(0), fB(0) {}
 
 	/** This range in a colour of its own (the Track mode). */
@@ -241,8 +238,6 @@ inline void KCMIntersectMarkRanges(const KCMMarkRangeList& merged,
 									 KCMMarkRangeList& out)
 {
 	out.clear();
-	if (runEnd <= runStart || merged.empty())
-		return;
 
 	KCMMarkRangeList::const_iterator it =
 		std::lower_bound(merged.begin(), merged.end(), runStart, KCMMarkRangeEndsAtOrBefore);
@@ -269,7 +264,7 @@ inline void KCMIntersectMarkRanges(const KCMMarkRangeList& merged,
 inline bool16 KCMMarkRangesTouchRun(const KCMMarkRangeList& merged,
 									  TextIndex runStart, TextIndex runEnd)
 {
-	if (runEnd <= runStart || merged.empty())
+	if (runEnd <= runStart)
 		return kFalse;
 
 	KCMMarkRangeList::const_iterator it =

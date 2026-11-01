@@ -54,15 +54,10 @@
 #ifndef __KCMStoryMarker_h__
 #define __KCMStoryMarker_h__
 
-#include "BaseType.h"		// bool16, int32
-#include "TextID.h"			// TextIndex
-#include "UIDRef.h"			// UID
-
-#include "KCMStoryMarkDocs.h"		// KCMStoryMarkDocs, and the rule for putting two sets together
-
-class IDocumentList;
+#include "KCMStoryMarkDocs.h"		// KCMStoryMarkDocs, and the rule for putting two sets together (TextIndex, UID, uint8 come with it)
 
 class IDataBase;
+class IDocumentList;
 
 /** The mark. Two kinds of caller drive it, and they are exclusive PER DOCUMENT rather than
 	outright:
@@ -89,13 +84,32 @@ class IDataBase;
 	Everything goes through these calls so that the mark and its countdown cannot disagree. */
 namespace KCMStoryMarker
 {
+	/** The range that marks the gap at `at` in this story: a caret. A deletion has no width on the side
+		it was deleted from, and an insertion has none on the older side, so there is no character to
+		wash -- a thin bar stands where the words were, or went in. The jump's flash and the standing
+		marks both take it from here, so the two say the same thing about the same gap.
+
+		**IN FRONT OF THE NEXT CHARACTER, WHERE THERE IS ONE THAT DRAWS.** Two places have none:
+		  * the end of the story: the caret would stand on the final carriage return, which reaches no
+		    wax run (it draws nothing, and the last run may not even carry it), so deleting the last
+		    characters drew no bar at all. It stands after the last visible character instead, which is
+		    where a caret clicked there would stand. TotalLength counts that final return, so the last
+		    visible character is one before it.
+		  * in front of a table: a table's own characters are composed as the table frame's line, whose
+		    run has no glyphs, so a word typed in front of a table showed no bar on the Source. The
+		    drawing's own step back (a caret whose character draws nothing) cannot help, because the
+		    character before is in another run. It stands after the last character before the table
+		    (KCMCaretOnTableChars says what was measured).
+
+		@param db the document. Not nil.
+		@param storyUID which story. Not kInvalidUID.
+		@param at where the gap is.
+	*/
+	KCMMarkRange CaretAt(IDataBase* db, UID storyUID, TextIndex at);
+
 	/** Add one story's range to a set a jump is about to show.
 
-		**IT IS HERE RATHER THAN AT THE CALLER SO THAT A DELETION LOOKS THE SAME EVERYWHERE.** A range
-		that comes through empty is the place something was deleted from -- there is no character on
-		this side to wash -- and it is shown as a caret, exactly as the standing marks show one
-		(KCMStoryMarkBuild). A caller that built its own ranges would be the second place that
-		decision is made ([[one-question-one-place]]).
+		A range that comes through empty is a gap, and what marks it is CaretAt.
 
 		@param docs the set being built up. Ranges may be added in any order and may overlap.
 		@param db the document the story lives in. nil and kInvalidUID are ignored, so a caller may
@@ -121,7 +135,7 @@ namespace KCMStoryMarker
 	void ShowFlash(const KCMStoryMarkDocs& docs);
 
 	/** Light up every range in every document of the set, and DO NOT start a countdown - it stays
-		up until ClearStanding.
+		up until the next call replaces it.
 
 		**NO COUNTDOWN IS THE POINT.** This is what the "Show Marks on ..." toggles put on screen, and
 		what the tool's left button shows while it is held. What takes it down is a toggle going off
@@ -130,14 +144,12 @@ namespace KCMStoryMarker
 		Whatever was standing before is replaced. A jump's flash is left alone in any document this
 		does not claim, and hidden in the ones it does claim -- see the note above this namespace.
 
-		**WHAT TO DRAW AT IS NOT A PARAMETER**, and was one until the two were reconciled. The panel's
-		"Marks opacity 25% / 75%" reached the standing marks through their caller and never reached the
-		jump's flash at all, which passed a hard-coded 1.0 -- one setting, two answers. Both now ask
-		the same private function at the moment of drawing, so the radio cannot reach one and miss the
-		other ([[one-question-one-place]]).
+		**WHAT TO DRAW AT IS NOT A PARAMETER.** The drawing reads the panel's "Marks opacity" for itself,
+		for both kinds of mark, so the radio cannot reach one and miss the other.
 
 		@param docs the ranges, per document, per story. Merged here, so the caller may hand over
-			overlapping ranges in any order. An empty set takes the standing marks down.
+			overlapping ranges in any order. An empty set takes the standing marks down, and leaves a
+			jump's pointer alone.
 	*/
 	void ShowStanding(const KCMStoryMarkDocs& docs);
 
@@ -150,17 +162,8 @@ namespace KCMStoryMarker
 		way. */
 	void ClearFlash();
 
-	/** Take the standing marks down now, leaving a jump's pointer alone. Safe when there is none.
-
-		**ASK THE MARK, DO NOT REMEMBER IT.** KCMStoryPressMarks (the file that became
-		KCMStoryMarkBuild when the adornment moved to the model side) used to keep "did I put the
-		current mark up" in a static of its own and test it before clearing -- the same fact written
-		down twice ([[one-question-one-place]]), and the two drifted the moment anything else cleared
-		the mark. There is nothing to test now: this takes down what it owns and nothing else. */
-	void ClearStanding();
-
-	/** Forget every mark of a document that is no longer open - standing and flash alike - and
-		repaint only the documents that still are.
+	/** Forget every mark of a document that is no longer open - standing and flash alike. Nothing is
+		repainted: what an open document shows depends on its own entries alone.
 
 		⚠★★★**INDESIGN CRASHED WITHOUT THIS** (2026-09-12, the third crash of the night): the
 		marks' maps are keyed by IDataBase*, and nothing took a closed document's entry out of them

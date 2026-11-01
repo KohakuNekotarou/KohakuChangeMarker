@@ -336,10 +336,7 @@ void KCMLoadPanelStateIfPresent()
 	// ★**It is safe at startup**: `KCMDoSetMarkColor` (KCMCore.cpp) **returns immediately when the
 	//   value does not change**, and on the run where it does it only redraws the db it took from
 	//   `KCMActiveDoc()`. With no document open that is `KCMInvalidateDB(nil)`, which is harmless.
-	// ★**No follow-up is needed**: unlike the opacity, the colour is **re-read by
-	//   `SelectedMarkColor()` on every draw**, so nothing has to ask for `KCMStoryMarksRefresh()`.
-	//   (The full reason is at kKCMPopupColorRedActionID in KCMActionComponent.cpp.) ∴ unlike the
-	//   opacity above, one line does it.
+	// ★**No follow-up is needed**: the colour is **re-read by `SelectedMarkColor()` on every draw**.
 	compare->SetMarkColor(KCMJsonReadBool(text, "markColorCyan", compare->GetMarkColorCyan()));
 
 	KCMSetLayoutSync            (KCMJsonReadBool(text, "syncLayoutViews",         KCMGetLayoutSync()));

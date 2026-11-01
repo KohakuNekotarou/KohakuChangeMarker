@@ -366,12 +366,9 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 		// Flyout "Marks opacity 25% / 75%" (radio-like): set the opacity to whichever was chosen. The
 		// work is a free function on the model side (it keeps the print flag and changes only the
 		// opacity).
-		// ⚠★★**A Story colour ground carries the opacity it was created with baked in.** What the
-		//   model’s SetMarkOpacity25 repaints is the Pixel ring, which re-reads the current value on
-		//   every draw; the adornment keeps whatever value was put on it.
-		//   ⇒ **Ask for a rebuild whenever the setting changes.** ★The model cannot ask: it does not
-		//     know about a UI plug-in’s adornment (the dependency runs one way, UI -> model). ∴ the
-		//     call belongs here.
+		// ⚠★★**The refresh is what repaints the Story colour ground.** The ground reads the opacity as it
+		//   draws, but the model's SetMarkOpacity25 repaints the Pixel mode's documents and the active
+		//   one, and the refresh repaints every document a ground is on.
 		case kKCMPopupOpacity25ActionID:
 			Utils<IKCMCompareFacade>()->SetMarkOpacity25(kTrue);
 			KCMStoryMarksRefresh();
@@ -381,13 +378,9 @@ void KCMActionComponent::DoAction(IActiveContext* /*ac*/, ActionID actionID, GSy
 			KCMStoryMarksRefresh();
 			break;
 
-		// ★"Mark colour". ⚠**Unlike the opacity above, no rebuild is asked for here.** The opacity is
-		//   **carried by the mark as it was installed**, so changing it needs a rebuild; the colour is
-		//   **re-read by the Story side’s Draw on every paint** (SelectedMarkColor()), so the model’s
-		//   own repaint (KCMDoSetMarkColor) is enough to bring the new colour up.
-		//   ★Two settings that are both "changed" need different clean-up depending on where the value
-		//     is held ---- the Pixel ring image is a cache, so the model side drops that cache
-		//     (KCMCore.cpp).
+		// ★"Mark colour". The Story colour ground reads it as it draws (SelectedMarkColor()), so what the
+		//   model's own repaint (KCMDoSetMarkColor) reaches comes up in the new colour.
+		//   ★The Pixel ring image is a cache, so the model side drops that cache (KCMCore.cpp).
 		case kKCMPopupColorRedActionID:
 			Utils<IKCMCompareFacade>()->SetMarkColor(kFalse);
 			break;
