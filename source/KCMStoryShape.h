@@ -9,7 +9,7 @@
 //  it takes a Task Start first, puts the edits in, and lets the Story comparison show them one at
 //  a time. The design is docs/superpowers/specs/2026-09-19-kcm-story-docx-roundtrip-design.md.
 //
-//  ★**THIS HEADER IS THE "WHAT", KCMStoryDocx.h IS THE "HOW".** Until 2026-09-21 the two lived in
+//  **THIS HEADER IS THE "WHAT", KCMStoryDocx.h IS THE "HOW".** Until 2026-09-21 the two lived in
 //   KCMStoryHtml.h, because the HTML spelling came first and the structs were written for it. The
 //   HTML road was retired that day on the user's word ("Word format only"), and the structs -
 //   which never knew anything about HTML - moved here rather than into the .docx writer: a shape
@@ -37,9 +37,9 @@
 namespace KCMStoryShape
 {
 
-/** Where one footnote's reference stands in a paragraph (2026-09-19).
+/** Where one footnote's reference stands in a paragraph.
 
-	★★**THE .docx FORMAT CARRIES THIS.** Word cannot hold a footnote without its reference standing
+	**THE .docx FORMAT CARRIES THIS.** Word cannot hold a footnote without its reference standing
 	  in the body, so KCMStoryDocx writes it.
 	fAt counts fText's code points, 0 to the paragraph's length: the reference stands BEFORE the
 	character at fAt, and at the length it ends the paragraph. fNote indexes Story::fNotes. */
@@ -62,11 +62,11 @@ struct Para
 	KCMAttrSpanList		fRuby;		// as KCMParaAttrs::fRuby
 	KCMAttrSpanList		fKenten;	// as KCMParaAttrs::fKenten - fValue is the KIND's name
 	KCMAttrSpanList		fTcy;		// as KCMParaAttrs::fTcy - fValue is the characters it covers
-	KCMAttrSpanList		fWarichu;	// as KCMParaAttrs::fWarichu (2026-09-17) - the same, for a warichu
+	KCMAttrSpanList		fWarichu;	// as KCMParaAttrs::fWarichu - the same, for a warichu
 	std::vector<NoteRef>	fNoteRefs;	// in order of fAt - see NoteRef
 	/** Where this paragraph's ENDNOTE markers stand, counted the same way NoteRef::fAt is.
 
-		★★★**ONLY THE PLACE, NEVER THE WORDS** (2026-09-23, the user's call: the reader editing in
+		**ONLY THE PLACE, NEVER THE WORDS** (the user's call: the reader editing in
 		  Word has to see that a note hangs here). An endnote's text is not this story's at
 		  all - it lives in a story of its own (see Story's warning) and is written out as its own
 		  file, which the reader can already edit. What was missing is any sign IN THE BODY of where
@@ -79,7 +79,7 @@ struct Para
 	std::vector<int32>		fEndnoteAt;
 };
 
-/** The mark meant when a format names none. ★Kept as a value of its own rather than spelt into
+/** The mark meant when a format names none. Kept as a value of its own rather than spelt into
 	the reader: a file may well say "emphasis" without saying WHICH mark, and InDesign's own
 	default is the only answer that does not throw the reader's intention away. */
 extern const char* const kKentenDefaultValue;
@@ -138,14 +138,14 @@ struct Row
 
 /** One table: where it stands, and what is in it.
 
-	★★**A TABLE STANDS EITHER IN THE BODY OR IN ONE CELL OF ANOTHER TABLE** (2026-09-16). fInTable
+	**A TABLE STANDS EITHER IN THE BODY OR IN ONE CELL OF ANOTHER TABLE**. fInTable
 	  is -1 for the body, or the ordinal of the table whose cell holds this one; fInRow and
 	  fInCell then say which cell, counted the way that row's cells run - the same count
 	  ColumnsOfRow produces on the document's side, so a merged cell is one cell in both.
 	  ⚠**fParaIndex IS RELATIVE TO WHATEVER HOLDS IT**: the body's paragraphs when fInTable is
 	   -1, and that cell's paragraphs otherwise.
 
-	★**A TABLE'S ORDINAL IS ITS INDEX IN Story::fTables** and nothing else: a field that repeated it
+	**A TABLE'S ORDINAL IS ITS INDEX IN Story::fTables** and nothing else: a field that repeated it
 	  (fOrdinal) was written by every reader and read by nobody, and went on 2026-09-24 together with
 	  fSplitsPara, which said whether a table stood in the middle of a paragraph - fOffset says where. */
 struct Table
@@ -163,7 +163,7 @@ struct Table
 
 /** A whole story: its body, the tables standing in it, and its footnotes' own paragraphs.
 
-	★**A FOOTNOTE HOLDS ITS OWN PARAGRAPHS**, which carry nothing of their own, so adding one is
+	**A FOOTNOTE HOLDS ITS OWN PARAGRAPHS**, which carry nothing of their own, so adding one is
 	  copying a paragraph and a copied paragraph cannot end up in the wrong note. The ORDER of
 	  fNotes is the pairing: the first is note 1.
 	@warning an ENDNOTE's words are not here. They live in another story (kEndnoteStoryBoss) and
@@ -181,7 +181,7 @@ struct Story
 /** Every run of paragraphs the story holds, in document order: the body, then each cell of each
 	table (table order, then row, then cell), then - when `withNotes` - each footnote's own paragraphs.
 
-	★**ONE WALK, STATED ONCE** (2026-09-24). The same three nested loops stood in eight places across the
+	**ONE WALK, STATED ONCE**. The same three nested loops stood in eight places across the
 	  writer, the reader, the comparison and the writing half; a place any of them forgot (a note's
 	  paragraphs, say) was a place its rule silently did not reach. Whoever needs the runs asks here. */
 void ParaRuns(Story& s, bool16 withNotes, std::vector< std::vector<Para>* >& out);
@@ -200,11 +200,11 @@ void CollectKentenValues(const Story& s, std::vector<std::string>& inOutSeen);
 
 /** kTrue when the two stories are the same in every way this shape carries.
 
-	★★★**THIS IS WHAT LETS A WRITE CHECK ITSELF** (2026-09-16). The exporter writes a story, reads
+	**THIS IS WHAT LETS A WRITE CHECK ITSELF**. The exporter writes a story, reads
 	  the bytes straight back, and compares - all of it in memory, with no SDK type and no document
 	  anywhere near it - so a story the format cannot carry is refused BEFORE its file is written,
 	  rather than after somebody has spent a day editing it.
-	★**AND IT IS THE HARNESS'S CHECK TOO**: Read(Write(x)) == x is the property the round trip
+	**AND IT IS THE HARNESS'S CHECK TOO**: Read(Write(x)) == x is the property the round trip
 	  exists to keep, and this is that sentence as a function.
 	@param outWhy where the first difference is, in words a status line can show. */
 bool16 Same(const Story& a, const Story& b, std::string& outWhy);

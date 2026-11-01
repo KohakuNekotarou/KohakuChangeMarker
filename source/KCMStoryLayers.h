@@ -5,17 +5,17 @@
 //  Kohaku Change Marker (KCM)
 //
 //  KCMStoryLayers.h - the LINES a warichu or tate-chu-yoko change is drawn on, as the strings the
-//  panel draws (2026-09-16, the user's drawings):
+//  panel draws (the user's drawings):
 //
 //      +       12      34          <- line 2: one piece over each bar of line 1
 //          わり｜ちゅう｜のぶん       <- line 1: one piece over the bar of line 0
 //          琥珀｜猫太郎              <- line 0: the paragraph, with ONE bar
 //
-//  ★WHY THE MODEL HANDS OVER STRINGS AND NOT RANGES. Which characters go on which line is worked
+//  WHY THE MODEL HANDS OVER STRINGS AND NOT RANGES. Which characters go on which line is worked
 //   out from the paragraph's spans (KCMParaText::PlanLayers), and the UI half has neither the
 //   paragraph nor the spans. It gets the words already cut, the same way every change row gets its
 //   pre / mid / post (KCMStoryList.h) - so nothing on the UI side decides what a line says.
-//  ★WHY A FILE OF ITS OWN: both halves read it (the model fills it, the change row's cell and the
+//  WHY A FILE OF ITS OWN: both halves read it (the model fills it, the change row's cell and the
 //   message area draw it) and it needs PMString, which KCMStoryKinds.h deliberately does not.
 //
 //========================================================================================
@@ -60,7 +60,7 @@ struct KCMStoryLayers
 	/** That piece is a bar: the mark is not on this side (its characters are hidden below it). */
 	bool16		fChangedPieceIsBar;
 
-	/** ★Whether line 0 - the paragraph - is drawn (2026-09-16, the user: a tate-chu-yoko changing
+	/** Whether line 0 - the paragraph - is drawn (the user: a tate-chu-yoko changing
 		inside a warichu is "the warichu's line and the tate-chu-yoko's", the text left out, because
 		the ID column already says 割注). kFalse then: fCount is 2, the bottom line DRAWN is line 1,
 		and fBottomPre / fBottomPost are empty.

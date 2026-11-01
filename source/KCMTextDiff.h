@@ -86,7 +86,7 @@ namespace KCMTextDiff
 	bool16 Diff(const std::vector<int32>& a, const std::vector<int32>& b,
 				std::vector<Change>& changes);
 
-	/** The changes between a and b, found piece by piece where fixed marks cut them (2026-09-24, S3b):
+	/** The changes between a and b, found piece by piece where fixed marks cut them (S3b):
 		a's piece k is [aCuts[k-1], aCuts[k]) and it is diffed only against b's piece k. The changes come
 		back in whole-sequence counts, ascending. Words moved from one side of a mark to the other come
 		back as an insertion on one side and a deletion on the other - which is what a table standing in
@@ -98,10 +98,10 @@ namespace KCMTextDiff
 						const std::vector<int32>& b, const std::vector<int32>& bCuts,
 						std::vector<Change>& changes);
 
-	/** The Story comparison's character pass, in one place (2026-10-26, the import matrix's X06/Y06): Diff, then
+	/** The Story comparison's character pass, in one place (the import matrix's X06/Y06): Diff, then
 		MergeNearbyChanges (never swallowing `doNotSwallow`), then AlignChangeBoundaries (`widenWords`) - each of the three
 		inside one piece between fixed marks, the pieces cut the way DiffInPieces cuts them.
-		★★THE MARKS ARE THE TABLES STANDING IN THE RUN (KCMParaText::RunTableAnchors): a table's anchor cannot move, so
+		THE MARKS ARE THE TABLES STANDING IN THE RUN (KCMParaText::RunTableAnchors): a table's anchor cannot move, so
 		  "ab[T]cd" and "abcd[T]" differ by the words that crossed it - put in on one side of the table and taken out on
 		  the other. Merged or slid across a mark, the two would meet into one change holding the table.
 		aMarks and bMarks the same size, ascending, within their sequences; none is the whole sequence as one piece.
@@ -142,7 +142,7 @@ namespace KCMTextDiff
 		 paragraphs that nobody touched as changed, because "the gap between two changed paragraphs
 		 is short" says nothing about the paragraph sitting in that gap.
 
-		⚠★★★**AND A PARAGRAPH BREAK IS NEVER SWALLOWED** (2026-09-16, the user's report). A break is
+		⚠**AND A PARAGRAPH BREAK IS NEVER SWALLOWED** (the user's report). A break is
 		 ONE character, so it is exactly the "short gap" this rule exists to absorb - and absorbing
 		 it turns three rewritten lines into ONE change covering both breaks. Writing that change
 		 replaces the breaks themselves, and **a paragraph style lives on its paragraph**: measured
@@ -190,7 +190,7 @@ namespace KCMTextDiff
 		 and a Japanese sentence has neither. What it does have is the boundary between 漢字 and
 		 かな and 記号, which marks a word just as reliably.
 
-		**AND THEN, ONLY INSIDE A LATIN WORD, THE RUN IS WIDENED** (2026-09-10). Rotation alone
+		**AND THEN, ONLY INSIDE A LATIN WORD, THE RUN IS WIDENED**. Rotation alone
 		leaves "OLDWORD" -> "NEWWORD" as OLD -> NEW: Myers factors out the common tail "WORD", and
 		no rotation can swallow it back ('O' != 'W'). The word is then drawn in two pieces -- "OLD"
 		in the change colour, "WORD" in the context colour -- and **a word drawn in two draw calls
@@ -209,8 +209,8 @@ namespace KCMTextDiff
 		 space or punctuation would swallow whole sentences. That would destroy exactly what this
 		 file was measured on: a two-character Japanese edit selecting exactly those two characters.
 		 Latin runs are the only place where a boundary inside one script class is also a boundary
-		 inside a WORD. ★"Latin" means **Latin letters (ASCII, fullwidth, and the accented ones of
-		 Latin-1 and Latin Extended) AND digits** (2026-09-12): "café" -> "cafés", "Müller" ->
+		 inside a WORD. "Latin" means **Latin letters (ASCII, fullwidth, and the accented ones of
+		 Latin-1 and Latin Extended) AND digits**: "café" -> "cafés", "Müller" ->
 		 "Möller", "2024" -> "2025" and "iPhone15" -> "iPhone16" are each one word to a reader, and
 		 each used to be quoted as the one or two characters Myers found.
 
@@ -221,7 +221,7 @@ namespace KCMTextDiff
 		**NEIGHBOURS ARE NOT CROSSED.** A change may only rotate into the unchanged run on either
 		side of it, never into or past the change next door -- two changes that swapped places
 		would no longer be in reading order, and the row that quotes them walks them in order.
-		★**But they may be REACHED, and two that then touch are made one** (2026-09-12). A run may
+		**But they may be REACHED, and two that then touch are made one**. A run may
 		widen right up to its neighbour, and once no unchanged character is left between the two
 		they are one change by this file's own definition (Change: "never touch"). One Latin word
 		edited in two places -- "axb" -> "aaxc" -- comes back as the one word, not as "ax" -> "aax"
@@ -234,8 +234,8 @@ namespace KCMTextDiff
 			positions, and moves them together; the Latin widening moves the starts AND grows both
 			counts by the same amount; the final fold can reduce the NUMBER of entries, never the
 			characters they cover.
-		@param widenWords IN whether to do the Latin widening at all. ★**THE TWO PLUG-INS THAT SHARE
-			THIS ENGINE WANT OPPOSITE ANSWERS** (2026-09-12). KCM DRAWS the change, and a word drawn
+		@param widenWords IN whether to do the Latin widening at all. **THE TWO PLUG-INS THAT SHARE
+			THIS ENGINE WANT OPPOSITE ANSWERS**. KCM DRAWS the change, and a word drawn
 			in two pieces shows a seam, so it passes kTrue. KIDMCP PRINTS the change for a reader who
 			wants to know which characters moved -- "AA[-BB-]{+ZZ+}CC" says more to that reader than
 			"[-AABBCC-]{+AAZZCC+}", and its positions go straight into a script's itemByRange -- so it
@@ -268,7 +268,7 @@ namespace KCMTextDiff
 		@param byteOffsets OUT optional; for each code point, where it starts in utf8. Pass nil
 		when only the comparison is wanted.
 
-		★**BOTH ANSWERS ARE OPTIONAL, and the first one became so on 2026-09-04.** It was a
+		**BOTH ANSWERS ARE OPTIONAL, and the first one became so on 2026-09-04.** It was a
 		reference, so a caller that wanted only the byte offsets - three of them, in
 		KCMStoryDiffRun - had to hand over a vector, watch it be filled, and drop it. Cutting an
 		excerpt needs the byte boundaries and nothing else, and a paragraph carrying ruby was

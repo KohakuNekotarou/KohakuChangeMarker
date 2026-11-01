@@ -2,7 +2,7 @@
 //
 //  Owner: KohakuNekotarou
 //
-//  Kohaku Change Marker (KCM) - an object placed in text, as the Story mode compares it (2026-10-27).
+//  Kohaku Change Marker (KCM) - an object placed in text, as the Story mode compares it.
 //  KCMObjectPrint.h says what and why.
 //
 //========================================================================================
@@ -199,7 +199,7 @@ std::string QRWords(IDataBase* db, UID data)
 	return QREncoded(db, data);
 }
 
-/** What the object is, for a reader. ★A QR code's content is told (QRWords); a math object is an SVG item that carries its
+/** What the object is, for a reader. A QR code's content is told (QRWords); a math object is an SVG item that carries its
 	MathML (docs/ai-notes/kt-mathml-probe-2026-10-25.md) - told apart from a plain SVG only through the scripting DOM,
 	so both are named together. */
 std::string Describe(IDataBase* db, UID item)
@@ -245,14 +245,14 @@ bool16 KCMObjectPrintOf(IDataBase* db, UID inlineUID, std::string& outValue)
 	if (item == kInvalidUID)
 		return kFalse;
 
-	// ★READING ONLY: SaveAll with clearDirty kFalse writes nothing back, and the caller's comparison runs inside the
+	// READING ONLY: SaveAll with clearDirty kFalse writes nothing back, and the caller's comparison runs inside the
 	//   documents' SaveRestoreModifiedState (KCMStoryDiffRun::Run) - this adds a guard of its own for the stamp's call.
 	IDataBase::SaveRestoreModifiedState guard(db);
 	Print print;
 	if (!PrintTree(db, item, print))
 		return kFalse;
 	PrintAnchor(db, inlineUID, print);
-	// ★THE WHOLE CONTENT OF A QR CODE IS PART OF THE PRINT (2026-11-01): the words on the row stop at OneLine's cut, and the boss holding the
+	// THE WHOLE CONTENT OF A QR CODE IS PART OF THE PRINT: the words on the row stop at OneLine's cut, and the boss holding the
 	//   content is no child of the item - so two codes that differ past the cut, made in the same order, read as one. Measured: the print of
 	//   a mail code and of a URL made the same way came out the same.
 	const UID qrData = QRDataOf(db, item);

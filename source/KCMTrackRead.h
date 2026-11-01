@@ -4,11 +4,11 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  READING THE TRACKED CHANGES (2026-10-05, design section 3). Every story's records - main text, table
+//  READING THE TRACKED CHANGES (design section 3). Every story's records - main text, table
 //  cells, hidden conditional text; not notes; a footnote's are never made (InDesign records nothing there,
 //  KFC measured) - copied out of the iterator (the same walk as KIDMCP's track_changes, KIDMCPTrackChanges.cpp),
 //  put together by KCMTrackPlan.h, given their words and the colour each is painted on, and handed to KCMTrackList.
-//  ★THE COLOUR IS READ HERE, ON THE MAIN THREAD, WHEN THE LIST IS READ (ITrackChangeUtils::GetTrackedChangeBGColor,
+//  THE COLOUR IS READ HERE, ON THE MAIN THREAD, WHEN THE LIST IS READ (ITrackChangeUtils::GetTrackedChangeBGColor,
 //   record by record: the preferences choose it per kind): which plug-in implements that utility is not known, so
 //   a background export cannot be trusted to call it. The marks draw the value (design 6-1).
 //
@@ -25,7 +25,7 @@ struct KCMTrackChange;
 namespace KCMTrackRead
 {
 	/** Read targetDB's tracked changes into KCMTrackList, replacing what it held - only when the reading finishes. Each
-		change's Source range is (0,0): there is no Source (2026-10-27 - until then a copy "Compare with Tracked Changes..."
+		change's Source range is (0,0): there is no Source (until then a copy "Compare with Tracked Changes..."
 		saved with every change rejected, read here to place each change in the original). Main thread.
 		@return the number of changes; -1 when the progress bar's Cancel was pressed (*outCancelled kTrue) - the list is
 		then the one from before, and a caller with a listing up ends it (KCMStopForCancelledReread). */
@@ -35,7 +35,7 @@ namespace KCMTrackRead
 		An accept, a reject or an undo since the read leaves none. */
 	bool16	StillRecorded(IDataBase* targetDB, UID storyUID, const KCMTrackChange& change);
 
-	/** Has the Target's number of tracked-change records changed since Build last read it (2026-10-25 - the Undo
+	/** Has the Target's number of tracked-change records changed since Build last read it (the Undo
 		follower, KCMStoryFollowObserver.cpp)? Every record of every story is walked, so it is asked only when an accept
 		or a reject was notified - which may move no counter (an accept changes no text). kFalse when nothing was read. */
 	bool16	RecordsMovedSinceRead(IDataBase* targetDB);

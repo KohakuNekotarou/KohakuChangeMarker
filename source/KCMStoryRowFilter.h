@@ -75,7 +75,7 @@
 	  @warning not "the story is unchanged". The counters moved or the row would never have been
 	    built (KCMStoryStamp.h). What is being said is that the difference is not one of these.
 
-	**A ROW PAIRED BY PLACE THAT WAS NOT DIFFED IS KEPT** (2026-10-26, kKCMStoryKindByPosition). Its Added
+	**A ROW PAIRED BY PLACE THAT WAS NOT DIFFED IS KEPT** (kKCMStoryKindByPosition). Its Added
 	  and its Removed went into it, so dropping it would drop both - and it carries no counter bit to fall
 	  back on (the two stories' counters belong to two histories), so the next answer would always drop it.
 	  It stands the way an unpaired row stands: the spec map's "a story that could not be compared keeps its
@@ -97,7 +97,7 @@
 */
 inline bool16 KCMStoryRowHasContentChange(uint32 kinds, bool16 textCompared, int32 changeCount)
 {
-	// ★A row an import could not fill is kept as well (2026-09-19): its story's counter may not have
+	// A row an import could not fill is kept as well: its story's counter may not have
 	//   moved at all - nothing went in - and the row is there to say so, not to report a difference.
 	if ((kinds & (kKCMStoryKindUnpaired | kKCMStoryKindRefused)) != 0)
 		return kTrue;
@@ -105,7 +105,7 @@ inline bool16 KCMStoryRowHasContentChange(uint32 kinds, bool16 textCompared, int
 	if (textCompared)
 		return (changeCount > 0) ? kTrue : kFalse;
 
-	// ★Paired by place and not read (2026-10-26): kept - its two sides went into it (the header says why).
+	// Paired by place and not read: kept - its two sides went into it (the header says why).
 	if ((kinds & kKCMStoryKindByPosition) != 0)
 		return kTrue;
 

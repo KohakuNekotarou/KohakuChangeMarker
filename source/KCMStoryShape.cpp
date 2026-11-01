@@ -52,10 +52,10 @@ namespace KCMStoryShape
 namespace
 {
 
-/** The characters a class name may hold. ★The kenten names travel as class names, which is why
+/** The characters a class name may hold. The kenten names travel as class names, which is why
 	this rule lives beside them rather than beside any one file format.
 
-	★★**JAPANESE IS IN, SINCE 2026-09-22** (the user: "圏点は、日本人しかつかわないので"). The class is
+	**JAPANESE IS IN, SINCE 2026-09-22** (the user: "圏点は、日本人しかつかわないので"). The class is
 	  what a person READS and PICKS in Word's style gallery, and every byte of a UTF-8 character is
 	  0x80 or above - so letting those through is the whole change. What is still refused is the
 	  ASCII that a style name cannot hold, which includes the comma and the semicolon Word itself
@@ -70,13 +70,13 @@ bool16 IsClassChar(char c)
 
 /*	The class a built-in kenten kind travels under, and the kind a class names.
 
-	★★★**THE VALUE DOES NOT MOVE.** "BlackSesameDot" is KCM's own vocabulary - the panel's rows, the
+	**THE VALUE DOES NOT MOVE.** "BlackSesameDot" is KCM's own vocabulary - the panel's rows, the
 	  report and KCMTextRead all speak it - and it is the CLASS, the half a reader sees, that is
-	  written in the language of the people who use kenten (2026-09-22, the user's call).
-	⚠★★**WRITTEN AS UTF-8 ESCAPES RATHER THAN AS CHARACTERS**: this project sets no /utf-8, so a
+	  written in the language of the people who use kenten (the user's call).
+	⚠**WRITTEN AS UTF-8 ESCAPES RATHER THAN AS CHARACTERS**: this project sets no /utf-8, so a
 	  literal would be compiled in the machine's ANSI codepage and land in a UTF-8 XML as mojibake -
 	  the failure that is invisible until somebody opens the file. The codebase spells non-ASCII
-	  this way throughout (KCMStoryDiffRun's own marks). ★GENERATED, NOT TYPED: one wrong byte here
+	  this way throughout (KCMStoryDiffRun's own marks). GENERATED, NOT TYPED: one wrong byte here
 	  is a mark nobody can read and a story that will not come back.
 */
 struct KentenName { const char* fValue; const char* fClass; };
@@ -120,7 +120,7 @@ void CollectKenten(const std::vector<Para>& paras, std::vector<std::string>& see
 /*	kKentenDefaultValue
 	The mark meant when a file says "emphasis" without saying WHICH mark.
 
-	★★**BECAUSE SOMEBODY WILL WRITE ONE.** A person editing in Word presses the emphasis-mark button
+	**BECAUSE SOMEBODY WILL WRITE ONE.** A person editing in Word presses the emphasis-mark button
 	(KCMStoryDocx's reader meets it as <w:em w:val="comma">), and refusing it would teach nobody
 	anything: the file would come back with the words marked and the mark thrown away. So a mark with
 	no kind of ours is a kenten with InDesign's own default mark. (Until 2026-09-21 the same rule served
@@ -137,7 +137,7 @@ bool16 KentenClassOf(const std::string& value, std::string& outClass)
 	if (value.empty())
 		return kFalse;
 
-	// ★★"Custom:X" -> "カスタム-X", THE MARK ITSELF (2026-09-22, the user's call). It was the code
+	// "Custom:X" -> "カスタム-X", THE MARK ITSELF (the user's call). It was the code
 	//   point in hex until then, which only somebody who could look one up was able to write - and
 	//   the whole point of the class is that a person can type it into a style's name in Word and
 	//   make a mark this build has never seen.
@@ -170,7 +170,7 @@ bool16 KentenClassOf(const std::string& value, std::string& outClass)
 		}
 	}
 
-	// ★A KIND THIS BUILD HAS NEVER HEARD OF STILL TRAVELS, under its own name: KCMTextRead answers
+	// A KIND THIS BUILD HAS NEVER HEARD OF STILL TRAVELS, under its own name: KCMTextRead answers
 	//   "Kind7" for one, and carrying it untouched is what lets a newer InDesign's mark come back
 	//   from a round trip through an older one.
 	for (size_t i = 0; i < value.size(); ++i)
@@ -318,7 +318,7 @@ bool16 SameSpans(const KCMAttrSpanList& a, const KCMAttrSpanList& b, const std::
 		// ⚠**EVERYTHING IS COMPARED, THE KIND INCLUDED.** A reading over one character used to be
 		//  the one thing that could not survive the trip - mono and group are spelt the same way
 		//  there - and the check had to look away from it. It does not any more: both sides settle
-		//  a one-character reading as MONO before it is written (the user's rule, 2026-09-16), so
+		//  a one-character reading as MONO before it is written (the user's rule), so
 		//  a difference here is a real one.
 		if (a[k].fStart != b[k].fStart || a[k].fLen != b[k].fLen || a[k].fValue != b[k].fValue
 			|| a[k].fGroup != b[k].fGroup)

@@ -6,7 +6,7 @@
 //
 //  Reading one story's paragraphs, and WHERE EACH OF THEM STANDS, straight from the text model.
 //
-//  ★★★WHY THIS EXISTS: THE OLD ROUTE KEPT TWO SETS OF BOOKS. It read the text out of the snippet
+//  WHY THIS EXISTS: THE OLD ROUTE KEPT TWO SETS OF BOOKS. It read the text out of the snippet
 //  XML - the parser lived in what was then called KCMSnippetText.h - where a table's cells sit in
 //  the middle of the body, while the text model keeps them PAST THE END of it
 //  (ITableTextContent.h:41-44). Every position counted from the XML is therefore wrong after a
@@ -22,14 +22,14 @@
 //   Full record: work/kcm-selftest/footnote/README.md
 //
 //  ⇒ Reading 0..TotalLength() is the same question asked where the answer already lives.
-//  ★THE OLD ROUTE IS GONE (2026-09-03, plan Task 7): KCMStoryXml, KCMStoryCellBases, the XML
+//  THE OLD ROUTE IS GONE (plan Task 7): KCMStoryXml, KCMStoryCellBases, the XML
 //   parser that stood in KCMParaText.h and the parallel run that measured this reader against
 //   them - the header keeps only the shapes and the pure functions, which is what its name says now. The
 //   footnote fault above is what the switch was measured on (edits 0 -> 1 on the fn and fnonly
-//   pairs, 2026-09-01), and the design that decided it is
+//   pairs), and the design that decided it is
 //   docs/superpowers/specs/2026-08-31-kcm-story-direct-read-design.md.
 //
-//  ★THIS FILE IS THE ONLY PART OF THE STORY DIFF THAT TOUCHES THE SDK FOR ITS TEXT, deliberately:
+//  THIS FILE IS THE ONLY PART OF THE STORY DIFF THAT TOUCHES THE SDK FOR ITS TEXT, deliberately:
 //  the judgement stays in KCMTextDiff and KCMStoryDiffRun. Keep this one a reader - if a decision
 //  starts to form here, it belongs on the other side of that line.
 //
@@ -37,12 +37,12 @@
 //   IDataBase::SaveRestoreModifiedState for both sides (KCMStoryDiffRun's targetDirtyGuard and
 //   sourceDirtyGuard), and everything here runs inside them.
 //
-//  ★WHAT THIS FILE READS: the body, every table cell (nested tables included) and every footnote,
+//  WHAT THIS FILE READS: the body, every table cell (nested tables included) and every footnote,
 //   each as paragraphs with their PLACE (cell / footnote identity, KCMParaAttrs), and over all of
 //   it the RUBY (IRubyAttrStrand) and the KENTEN (kTAKentenKindBoss). The walk is over THREADS
 //   (ITextModel::QueryStoryThread), which is why the three kinds of place come out of one loop.
 //
-//  ★★★WHERE A POSITION INSIDE A PARAGRAPH COMES FROM, AND WHICH COUNT IT IS IN. A span's fStart
+//  WHERE A POSITION INSIDE A PARAGRAPH COMES FROM, AND WHICH COUNT IT IS IN. A span's fStart
 //   is the distance from the paragraph's own start IN THE TEXT'S COUNT - what the paragraph SHOWS,
 //   with a table's own characters left out - because that is the count the panel draws in and the
 //   count KCMAttrSpan declares ("the first character of the BASE TEXT, within its paragraph").
@@ -56,7 +56,7 @@
 //   ⇒ **The crossing is now a named thing**: this reader fills KCMParaAttrs::fUncountedAt, and
 //     KCMParaText::ModelOffsetInParagraph is the one function that goes from the text's count
 //     into the document's. IndexInStory and KCMStoryDiffRun's AddAttrChange both go through it.
-//   ★It is measured again, too, and outside InDesign: work/kescm-snippet-test builds the header
+//   It is measured again, too, and outside InDesign: work/kescm-snippet-test builds the header
 //    with a paragraph carrying a table and checks every offset across it, WITH a calibration case
 //    proving the naive answer would have differed. The parallel run that used to measure this went
 //    with the XML route in 2026-09-03; this replaces the part of it that mattered here.
@@ -90,12 +90,12 @@ namespace KCMTextRead
 		   span per ruby run over the paragraph and one fKenten span per stretch of one kind -
 		   ⚠the cells' and the footnotes' included - and fUncountedAt, the positions the document
 		   counts inside this paragraph and the text does not (a table standing in the middle of
-		   one). ★**fUncountedAt is almost always empty and must still be filled**: it is what
+		   one). **fUncountedAt is almost always empty and must still be filled**: it is what
 		   lets a caller cross back into the document's count, and an empty one reads as "the two
 		   counts agree", which is the right answer for every paragraph without a table inside it.
 	@param outStarts OUT the same length again: where each paragraph begins, as a TextIndex.
-		   ★NOT COUNTED - taken from the walk. That is the whole point of this file.
-	@param withObjects ★(2026-10-27) kTrue = fill KCMParaAttrs::fObject - one span per object placed in the text, its
+		   NOT COUNTED - taken from the walk. That is the whole point of this file.
+	@param withObjects kTrue = fill KCMParaAttrs::fObject - one span per object placed in the text, its
 		   fingerprint for a value (KCMObjectPrint.h). ⚠ONLY the Story mode's comparison of a pair that shares UIDs asks
 		   (KCMStoryDiffRun.cpp): a fingerprint is a SaveAll of every object, and no other reader needs one - so every other
 		   caller leaves fObject empty by leaving this out.

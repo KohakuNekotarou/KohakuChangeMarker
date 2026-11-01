@@ -113,8 +113,8 @@ namespace KCMStoryDiffRun
 	*/
 	int32 RunOne(IDataBase* targetDB, IDataBase* sourceDB, int32 rowIndex);
 
-	/** ★★★**THE COUNTER A CHANGE OF THIS KIND IS MEASURED BY** - the one question "which
-		instrument?", asked in one place (2026-09-16).
+	/** **THE COUNTER A CHANGE OF THIS KIND IS MEASURED BY** - the one question "which
+		instrument?", asked in one place.
 
 		A replaced change is drawn as replaced while the story has got at least as far as the
 		counter recorded when it was written, and an undo takes that counter back on its own -
@@ -128,7 +128,7 @@ namespace KCMStoryDiffRun
 		 back, the panel does not"). It was never a missing signal: the panel was asking an
 		 instrument that had not moved.
 
-		★**THE AGGREGATE IS THE RIGHT ONE FOR ATTRIBUTES**, and KCMStoryStamp.h's essay says why
+		**THE AGGREGATE IS THE RIGHT ONE FOR ATTRIBUTES**, and KCMStoryStamp.h's essay says why
 		  in more detail than belongs here: which sub-counter an edit lands on cannot be predicted
 		  from the headers, and the aggregate is the only reading that cannot be wrong-footed.
 		⚠**WORDS KEEP THE TEXT COUNTER**, deliberately: the ">=" behaviour of the text path was
@@ -147,7 +147,7 @@ namespace KCMStoryDiffRun
 	//  everything that drew a row and everything that wrote - the two had had separate answers once,
 	//  and said different things the moment the reader pressed Ctrl+Z ([[one-question-one-place]]).
 	//  The second dropped the records an undo had taken back, keeping the ones still true, because
-	//  undo in InDesign is a stack. ★Nothing is taken in now.)
+	//  undo in InDesign is a stack. Nothing is taken in now.)
 }
 
 #endif // __KCMStoryDiffRun_h__

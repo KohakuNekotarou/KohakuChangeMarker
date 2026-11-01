@@ -4,14 +4,14 @@
 //
 //  Kohaku Change Marker (KCM)
 //
-//  THE TRACK CHANGES MODE'S ARITHMETIC (2026-10-05, design
+//  THE TRACK CHANGES MODE'S ARITHMETIC (design
 //  docs/superpowers/specs/2026-10-05-kcm-track-changes-mode-design.md section 3).
 //
 //  From InDesign's records (copied out by KCMTrackRead) to the rows the list shows: an insertion and the
 //  deletion that touches it, by the SAME author, are one replacement (a word typed over, KFC's replace);
 //  moved text is a row of its own and never pairs; kApply / kUnknown are left out and counted.
 //
-//  ★HEADER-ONLY AND FREE OF THE SDK EXCEPT FOR BaseType.h, WHICH IS WHAT MAKES IT TESTABLE: the test is
+//  HEADER-ONLY AND FREE OF THE SDK EXCEPT FOR BaseType.h, WHICH IS WHAT MAKES IT TESTABLE: the test is
 //   work\kcm-track-test (a stub BaseType.h).
 //
 //========================================================================================
@@ -160,7 +160,7 @@ inline void KCMPlanTrackChanges(const std::vector<KCMTrackRecord>& recs, std::ve
 	std::sort(out.begin(), out.end(), KCMTrackPlanDetail::IsBefore);
 }
 
-/** A MOVE'S TWO HALVES (2026-10-25 - measured: Reject Change on the moved words alone left the story without them,
+/** A MOVE'S TWO HALVES (measured: Reject Change on the moved words alone left the story without them,
 	"one threetwo " -> "one three", until the deletion where they stood was rejected too). InDesign records a move as the moved
 	text's insertion and a deletion of the same text where it stood, one stamp and one author (the probe's U2,
 	kcm-track-probe-2026-10-05.md) - two rows, "»" and "-". outPartner gets, for each row, the row that is its other half, or -1.

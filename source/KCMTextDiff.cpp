@@ -122,7 +122,7 @@ namespace
 
 		// Clear what this call can touch. The rows are shared by every section of the recursion,
 		// so they hold whatever the previous section left behind.
-		// ★**What is actually read before it is written is ONE entry per row**: at d = 0 the single
+		// **What is actually read before it is written is ONE entry per row**: at d = 0 the single
 		//   diagonal k = 0 takes its start from vf[offset + 1] (and vr likewise), and that entry
 		//   must be 0. Every other read -- the two neighbours a step reads, and the OTHER row at
 		//   delta-k in the overlap test -- is guarded by a range test that only admits diagonals
@@ -359,7 +359,7 @@ namespace
 		if ((cp >= '0' && cp <= '9') || (cp >= 0xFF10 && cp <= 0xFF19))
 			return kScriptDigit;
 
-		// ★**Accented letters are Latin too** (2026-09-12). Until then only ASCII and the fullwidth
+		// **Accented letters are Latin too**. Until then only ASCII and the fullwidth
 		//   forms counted, so "café" -> "cafés" widened to nothing (é was "other", so the word
 		//   stopped there) and "Müller" -> "Möller" quoted ü -> ö with the rest of the name drawn
 		//   in the context colour -- exactly the seam the Latin widening exists to remove, in
@@ -378,7 +378,7 @@ namespace
 		if ((cp >= 0x30A1 && cp <= 0x30FF) || (cp >= 0xFF66 && cp <= 0xFF9F))	// (to FF9F: halfwidth voiced marks, which are part of the letter)
 			return kScriptKatakana;
 
-		// ★**The supplementary planes count as Han too** (U+20000 and above: extensions B through G
+		// **The supplementary planes count as Han too** (U+20000 and above: extensions B through G
 		//   and the compatibility supplement). ⚠They were missing until 2026-09-04, which filed
 		//   characters like 𠮟 -- a character of the Japanese standard set, not an exotic one -- as
 		//   "other", and a boundary next to one scored as though no script changed there.
@@ -427,12 +427,12 @@ namespace
 	/** Is this a character that a WORD is made of - one that is drawn together with its
 		neighbours and must not be cut from them? Latin letters and digits, and nothing else.
 
-		★**Digits joined the letters on 2026-09-12.** "2024" -> "2025" used to quote "4" -> "5" and
+		**Digits joined the letters on 2026-09-12.** "2024" -> "2025" used to quote "4" -> "5" and
 		draw "202" in the context colour, which is the seam the widening exists to remove; and
 		"10月" -> "11月" read as 0 -> 1. A number is drawn as one piece exactly as a word is.
-		★Letters and digits are ONE class here although BoundaryScore keeps them apart: "H2O",
+		Letters and digits are ONE class here although BoundaryScore keeps them apart: "H2O",
 		"iPhone15", "A4" are single words to a reader, and a change inside one is the whole word.
-		⚠★★**Kana and kanji are deliberately NOT here** - see the block above the widening loops.
+		⚠**Kana and kanji are deliberately NOT here** - see the block above the widening loops.
 	*/
 	bool16 IsWordChar(int32 cp)
 	{
@@ -606,7 +606,7 @@ bool16 KCMTextDiff::DiffCharacters(const std::vector<int32>& a, const std::vecto
 								   const std::vector<int32>& b, const std::vector<int32>& bMarks,
 								   std::vector<Change>& changes, int32 doNotSwallow, bool16 widenWords)
 {
-	// ★EACH STEP INSIDE THE PIECE - the merge and the slide too, not the diff alone (the header says why).
+	// EACH STEP INSIDE THE PIECE - the merge and the slide too, not the diff alone (the header says why).
 	return DiffPieceByPiece(a, aMarks, b, bMarks, changes,
 		[doNotSwallow, widenWords](const std::vector<int32>& pa, const std::vector<int32>& pb, std::vector<Change>& piece) -> bool16
 		{
@@ -634,7 +634,7 @@ namespace
 /*	GapHolds
 	Whether the unchanged run [from, to) of `tokens` holds `token`.
 
-	★**THE ONE PLACE THAT LOOKS INSIDE A GAP.** MergeNearbyChanges otherwise reasons about lengths
+	**THE ONE PLACE THAT LOOKS INSIDE A GAP.** MergeNearbyChanges otherwise reasons about lengths
 	alone, which is why a paragraph break - a gap of one - looked like every other short gap to it.
 */
 bool16 GapHolds(const std::vector<int32>* tokens, int32 token, int32 from, int32 to)
@@ -710,7 +710,7 @@ void KCMTextDiff::MergeNearbyChanges(std::vector<Change>& changes,
 			//   @warning the header said BOTH things at once -- "no longer than EACH" in one sentence
 			//     and "shorter than both" in the next, and the implementation followed the first. Two
 			//     spellings of one rule in one place is how it survived being read.
-			// ⚠★★★**AND NEVER ACROSS A PARAGRAPH BREAK** (2026-09-16). A break is one character, so
+			// ⚠**AND NEVER ACROSS A PARAGRAPH BREAK**. A break is one character, so
 			//   it is the shortest gap there is and this rule would always swallow it - which
 			//   makes three rewritten lines one change covering both breaks, and writing that
 			//   change back takes the breaks with it. A paragraph style lives on its paragraph:
@@ -787,7 +787,7 @@ void KCMTextDiff::ToCodePoints(const std::string& utf8, std::vector<int32>* code
 		++i;
 		for (int32 n = 0; n < extra && i < utf8.size(); ++n, ++i)
 		{
-			// ★**A CONTINUATION BYTE, OR THE SEQUENCE STOPS HERE.** Without this test a lead byte
+			// **A CONTINUATION BYTE, OR THE SEQUENCE STOPS HERE.** Without this test a lead byte
 			//   claiming three followers ate the next three bytes whatever they were, so ONE bad
 			//   byte cost up to FOUR characters -- while the comment below promised it would cost
 			//   one. Breaking leaves i on the offending byte, which the outer loop then reads as a
@@ -872,40 +872,40 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 
 		// ***** AND THEN, ONLY INSIDE A LATIN WORD (LETTERS OR DIGITS), THE RUN IS WIDENED. *****
 		//
-		// ★★★**A CHANGE MUST NOT SPLIT A WORD** (2026-09-10). "OLDWORD" -> "NEWWORD" leaves Myers
+		// **A CHANGE MUST NOT SPLIT A WORD**. "OLDWORD" -> "NEWWORD" leaves Myers
 		//   with the common tail "WORD", so the change is OLD -> NEW and the word is drawn in two
 		//   pieces: "OLD" in the change colour, "WORD" in the context colour. **A word drawn in two
 		//   draw calls cannot reproduce the shaping of the whole word**, so the seam shows - as a
 		//   gap here, and as an overlap in the panel the user reported it from. Widening to the
 		//   whole word removes the seam and reads better: "the word changed".
 		//
-		// ★★**THE ROTATION ABOVE COULD NEVER FIX THIS.** CanShiftLeft/Right only rotate, and a
+		// **THE ROTATION ABOVE COULD NEVER FIX THIS.** CanShiftLeft/Right only rotate, and a
 		//   rotation needs the swallowed character to equal the run's edge ('O' != 'W' here), so the
 		//   change is stuck at a boundary **this file's own scoring calls the worst there is**:
 		//   BoundaryScore returns 0 for a break inside one script class - "no break here at all".
 		//   The score could say the position was bad; nothing could act on it.
 		//
-		// ⚠★★★**LATIN ONLY, AND THAT IS THE WHOLE POINT.** Japanese has no spaces, so nearly every
+		// ⚠**LATIN ONLY, AND THAT IS THE WHOLE POINT.** Japanese has no spaces, so nearly every
 		//   edit inside it sits at a 0-scoring boundary too - and widening those to the nearest
 		//   space or punctuation would swallow whole sentences. That would destroy exactly what
 		//   this file was measured on: "a two-character Japanese edit selected exactly those two
 		//   characters" (the header). Latin runs are the only place where a boundary inside one
 		//   script class is also a boundary inside a WORD. **Digits count as Latin for this
-		//   purpose** (IsWordChar, 2026-09-12): a number is drawn as one piece exactly as a word is,
+		//   purpose** (IsWordChar): a number is drawn as one piece exactly as a word is,
 		//   and "2024" -> "2025" quoting "4" -> "5" showed the same seam.
 		//
 		// ⚠**LOSSLESS.** Only characters that are IDENTICAL on both sides are absorbed, at the same
 		//   end of both ranges, so the change still rebuilds `b` from `a` exactly. The offline test
 		//   checks that invariant on every case (work/textdiff-test/align-test.cpp).
 		//
-		// ★**"Latin" here means IsWordChar: Latin letters AND digits** (2026-09-12; the block above
+		// **"Latin" here means IsWordChar: Latin letters AND digits** (the block above
 		//   predates that and says "Latin" throughout - read it as "word characters"). The test is
 		//   WordContinues on EITHER side: the character being absorbed has to be a word character
 		//   (it is the same on both sides), and the word has to go on past it on at least one side.
 		//   Either side, because at the end of an insertion only the side that has the run can show
 		//   the word continuing ("OLDWORD" -> "OLDWORDS": the a side has nothing after D).
 		//
-		// ★**Only when the caller asked** (widenWords): KCM draws and wants whole words; KIDMCP
+		// **Only when the caller asked** (widenWords): KCM draws and wants whole words; KIDMCP
 		//   prints and wants the exact characters (the header says why). ⚠The fold below runs
 		//   regardless -- it is the contract, not a presentation choice.
 		if (widenWords)
@@ -914,7 +914,7 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 
 			// Left: absorb the character before the run while it is the same on both sides and a
 			// word runs through the boundary on at least one side.
-			// ★AND A CHANGE NEVER STARTS OR STOPS BETWEEN A CHARACTER AND WHAT SHAPES IT (2026-11-01, measured: only a kanji's variation
+			// AND A CHANGE NEVER STARTS OR STOPS BETWEEN A CHARACTER AND WHAT SHAPES IT (measured: only a kanji's variation
 			//   selector changed, and the row's change was the selector alone - a character that draws nothing, marked on nothing).
 			while (c.aStart > loA && c.bStart > loB
 				   && a[c.aStart - 1] == b[c.bStart - 1]
@@ -939,7 +939,7 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 
 	// ***** AND FINALLY, CHANGES THAT NOW TOUCH BECOME ONE. *****
 	//
-	// ⚠★★★**THE CONTRACT IN THE HEADER SAYS RUNS NEVER TOUCH, AND UNTIL 2026-09-12 THIS FUNCTION
+	// ⚠**THE CONTRACT IN THE HEADER SAYS RUNS NEVER TOUCH, AND UNTIL 2026-09-12 THIS FUNCTION
 	//   BROKE IT.** A run may rotate or widen right up to the wall of its neighbour (the bounds
 	//   above allow `end == hiA`), and when it gets there the unchanged run between the two is
 	//   gone. MEASURED in work/textdiff-test before this was written: of 20,000 random pairs,
@@ -947,7 +947,7 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 	//   places -- "axb" -> "aaxc" arrived as "ax" -> "aax" followed by "b" -> "c" -- and the panel
 	//   then quoted one word as two rows, drawn in two calls, which is the very seam the widening
 	//   was added to remove.
-	// ★**Why merge here and not by running MergeNearbyChanges again**: that rule swallows SHORT
+	// **Why merge here and not by running MergeNearbyChanges again**: that rule swallows SHORT
 	//   gaps by comparing sizes, and the sizes have just been changed by the widening, so re-running
 	//   it would merge pairs it had declined to merge a moment ago. A gap of ZERO is not a judgement
 	//   call -- Append() already merges touching edits inside the search for exactly this reason --

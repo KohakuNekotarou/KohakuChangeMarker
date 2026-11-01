@@ -12,7 +12,7 @@
 //  and it includes THIS FILE as it stands -- not a copy that can drift, the way KTTextDiff
 //  drifted from KCMTextDiff.
 //
-//  ★**IT WAS CALLED KCMSnippetText.h UNTIL 2026-09-04**, and the old name is worth knowing for
+//  **IT WAS CALLED KCMSnippetText.h UNTIL 2026-09-04**, and the old name is worth knowing for
 //  two reasons: the notes written before that date use it (they are records of their own time and
 //  were deliberately left alone), and it says what this header used to be. Until 2026-09-03 it
 //  ALSO held the parser that read a story's text, ruby and kenten out of the snippet XML (IDMS /
@@ -72,7 +72,7 @@ struct KCMAttrSpan
 		(measured 2026-09-08: the sentence above was briefly "corrected" into a wrong one on the
 		strength of exactly that hit -- [[investigate-with-tools-not-shell]], tell a DEFINITION from
 		a USE before counting).
-		★NOTHING HERE RESTS ON EITHER, since 2026-09-03: the setting is READ from the document
+		NOTHING HERE RESTS ON EITHER, since 2026-09-03: the setting is READ from the document
 		(kTAMojiRubyBoss in KCMTextRead.cpp), never inferred from an attribute being present.
 		@warning RUBY ONLY. Kenten has no such distinction -- it is per character by nature -- so
 		  its spans always leave this kFalse, and the comparison then never reports a difference
@@ -102,7 +102,7 @@ struct KCMParaAttrs
 {
 	KCMAttrSpanList	fRuby;
 
-	/** ★**READ AND REPORTED AGAIN SINCE 2026-09-01** (user's call). It was compared for a day in
+	/** **READ AND REPORTED AGAIN SINCE 2026-09-01** (user's call). It was compared for a day in
 		August, switched off, and switched back on in the one place that decides it -
 		KCMStoryDiffRun's AddAttributeChanges (called AddAttrOnlyChanges until 2026-09-01, when it
 		stopped being attr-ONLY - see there). **Keeping the reading through the months it was not
@@ -115,8 +115,8 @@ struct KCMParaAttrs
 		 draws it asks Change::fAttrKind first; see the note on KCMAttrSpan::fValue. */
 	KCMAttrSpanList	fKenten;
 
-	/** ★**FOOTNOTE AND ENDNOTE MARKERS, CARRIED AS IF THEY WERE MARKS OVER THE TEXT**
-		(2026-09-08, user's request: "the page shows a 1 above the character - show it in the row
+	/** **FOOTNOTE AND ENDNOTE MARKERS, CARRIED AS IF THEY WERE MARKS OVER THE TEXT**
+		(user's request: "the page shows a 1 above the character - show it in the row
 		the way ruby is shown").
 
 		⚠**THEY ARE NOT ATTRIBUTES AND THAT IS THE POINT.** A reference is a CHARACTER standing in
@@ -125,11 +125,11 @@ struct KCMParaAttrs
 		 happened - which is exactly what the user reported. Carried here, the difference comes out
 		 as one attribute change with the note's NUMBER above the words, the way the page prints it.
 
-		★**THE VALUE IS THE NUMBER InDesign ITSELF WOULD PRINT**, taken from IFootnoteNumber rather
+		**THE VALUE IS THE NUMBER InDesign ITSELF WOULD PRINT**, taken from IFootnoteNumber rather
 		 than counted here, so a document that restarts its numbering per page or per section still
 		 agrees with the row (KCMTextRead::ScanNotes).
 
-		⚠★★★**THE SPAN SITS ON A CHARACTER BESIDE THE MARKER**, one character long: the one before it, or - a marker the paragraph
+		⚠**THE SPAN SITS ON A CHARACTER BESIDE THE MARKER**, one character long: the one before it, or - a marker the paragraph
 		 BEGINS with has none - the paragraph's first (KCMTextRead's TakeNotesFor; measured 2026-11-01: a footnote at a paragraph's
 		 start was reported by its words alone, an endnote not at all). It has to be a character: ReadStory TAKES the marker out of
 		 the text (U+0004 is not in fText), and a span over no text is not a span - so a paragraph with no character has none. The
@@ -140,11 +140,11 @@ struct KCMParaAttrs
 	KCMAttrSpanList	fFootnote;
 	KCMAttrSpanList	fEndnote;
 
-	/** ★**WARICHU AND TATE-CHU-YOKO** (2026-09-16, user's request): the manual ON/OFF of each,
+	/** **WARICHU AND TATE-CHU-YOKO** (user's request): the manual ON/OFF of each,
 		kTAWarichuAttrBoss / kTATatechuyokoAttrBoss, character attributes (KCMTextRead's
 		ScanCharMarks). Measured the same day: one character can carry both - a tate-chu-yoko
 		inside a warichu, and the other way round - so they are two lists, not one.
-		★★**THE VALUE IS THE CHARACTERS THE SPAN COVERS**, not a flag. That is what the row lifts onto
+		**THE VALUE IS THE CHARACTERS THE SPAN COVERS**, not a flag. That is what the row lifts onto
 		 its own line, and it is what makes rewriting the words inside one a change of that kind as
 		 well as a change of the text.
 		 ⇒ **Filled from the paragraph's own text** (SetSpanValuesToText, in ClosePara), so a table's
@@ -152,7 +152,7 @@ struct KCMParaAttrs
 	KCMAttrSpanList	fWarichu;
 	KCMAttrSpanList	fTcy;
 
-	/** ★**AN OBJECT PLACED IN THE TEXT** (2026-10-27, the author: "can you show it? into 2.0 if you can"): a span of
+	/** **AN OBJECT PLACED IN THE TEXT** (the author: "can you show it? into 2.0 if you can"): a span of
 		one character on the object's anchor (U+FFFC, which the text counts), its value "<what it is>\t<fingerprint>"
 		(KCMObjectPrint.h). Two values that differ are a change of the object's CONTENT - a MathML, a fill, a QR code made
 		anew - while the anchor character, the same either way, says nothing.
@@ -177,7 +177,7 @@ struct KCMParaAttrs
 
 		Where the cell's text stands is not in here: the reader takes each paragraph's TextIndex
 		from the walk (ITextStoryThreadDict::QueryThread(GetGridID(GridAddress)) -> GetTextStart,
-		the road SnpIterTableUseDictHier calls the recommended one). ★The cells come AFTER the
+		the road SnpIterTableUseDictHier calls the recommended one). The cells come AFTER the
 		whole of the body in that order, as ITableTextContent.h states ("ALWAYS at greater
 		TextIndex than the Text Story Thread that the Table Model is anchored in").
 
@@ -191,13 +191,13 @@ struct KCMParaAttrs
 
 	/** Which footnote of the story this paragraph stands in, kNotAFootnote when it is not in one.
 
-		★A FOOTNOTE IS A PLACE, exactly as a cell is, and for the same reason IsCell() exists: the
+		A FOOTNOTE IS A PLACE, exactly as a cell is, and for the same reason IsCell() exists: the
 		text of a footnote paragraph and of a body paragraph are indistinguishable after the fact,
 		and SplitRunAtPlaces has to cut a run where the PLACE changes - otherwise one row spans a
 		body edit and a footnote edit and points at neither.
 		⚠A FOOTNOTE IS NOT A CELL. It has no table, no row and no column, so it gets a field of its
 		  own rather than a borrowed fTableOrdinal - and a paragraph is never both.
-		★Numbered in the order the threads come out (TextIndex order); a footnote is a thread that
+		Numbered in the order the threads come out (TextIndex order); a footnote is a thread that
 		  is neither the body nor a cell (KCMTextRead.cpp, ReadStory). The XML parser this replaced
 		  did not know <Footnote> at all and folded the note into the body, which is why a story
 		  with one was refused outright - the fault the direct read was measured on. */
@@ -208,7 +208,7 @@ struct KCMParaAttrs
 	/** The positions inside this paragraph that THE DOCUMENT COUNTS AND THE TEXT DOES NOT, given
 		in the text's own count and in order. Almost always empty.
 
-		★★★**WHY A PARAGRAPH NEEDS THIS AT ALL: A TABLE CAN STAND IN THE MIDDLE OF ONE.** The
+		**WHY A PARAGRAPH NEEDS THIS AT ALL: A TABLE CAN STAND IN THE MIDDLE OF ONE.** The
 		model holds kTextChar_Table for a table's anchor plus one kTextChar_TableContinued per row
 		after the first, and those are not text - the reader leaves them out of fText, or the panel
 		would show a gap and the diff would count them as characters that changed. Measured
@@ -234,7 +234,7 @@ struct KCMParaAttrs
 	std::vector<int32>	fUncountedAt;
 
 	/** How many of those positions stand BEFORE the paragraph's first character - a table or a note
-		reference the paragraph begins with (2026-09-17, the import matrix's A17).
+		reference the paragraph begins with (the import matrix's A17).
 		⚠**THEY ARE NOT IN fUncountedAt AND NOT IN THE PARAGRAPH'S START**: the reader moves the start
 		 past them (KCMTextRead), so ModelOffsetInParagraph never meets them and they stand directly
 		 BEHIND the start in the model. Only the pairing of objects across two versions asks for them
@@ -249,8 +249,8 @@ struct KCMParaAttrs
 
 	/** Where each TABLE stands in this paragraph - its anchor (kTextChar_Table) alone, one per table, not the row
 		continuations - as offsets in the text's own count, ascending; a table the paragraph BEGINS with stands at 0
-		(2026-10-26, the import matrix's X06/Y06).
-		★★**A TABLE'S PLACE IS PART OF THE PARAGRAPH.** "表の前の文 [table] 表の後の文" and "表の前の文表の後の文 [table]" read
+		(the import matrix's X06/Y06).
+		**A TABLE'S PLACE IS PART OF THE PARAGRAPH.** "表の前の文 [table] 表の後の文" and "表の前の文表の後の文 [table]" read
 		  the same words, and the paragraph diff took them for the same paragraph: words moved across a table came out
 		  as no change at all (ParagraphKey and RunTableAnchors are what read this - the import's own planner has asked
 		  the same question since 2026-09-24, KCMStorySync's ComparePara).
@@ -306,7 +306,7 @@ inline void AppendUtf8(std::string& out, int32 codePoint)
 /** The attributes of one paragraph of a list, or a paragraph that counts both ways the same when
 	the list does not reach it.
 
-	★**A LIST THAT FALLS SHORT IS ANSWERED, NOT REFUSED.** Every caller here already walks past
+	**A LIST THAT FALLS SHORT IS ANSWERED, NOT REFUSED.** Every caller here already walks past
 	indices that are out of range for the paragraphs themselves, and the answer wanted for a
 	paragraph nobody described is the one every ordinary paragraph gives: nothing uncounted.
 */
@@ -330,7 +330,7 @@ inline const KCMParaAttrs& AttrsOfParagraph(const std::vector<KCMParaAttrs>& att
 	 offset t sits after every uncounted position at or before t: the table's anchor comes between
 	 the two characters, so the one following it has moved along by one. `<=`, not `<`.
 
-	⚠★★**ONE NUMBER, TWO PLACES - AND THIS ANSWERS FOR THE START.** A range is named by two
+	⚠**ONE NUMBER, TWO PLACES - AND THIS ANSWERS FOR THE START.** A range is named by two
 	 offsets and the SAME offset means different things at its two ends: as a START, text offset 2
 	 of "あい[表]うえ" is う, which stands AFTER the table; as an END (exclusive), it is the place
 	 just past い, which is BEFORE it. No single answer is right for both, and this one is the
@@ -352,7 +352,7 @@ inline const KCMParaAttrs& AttrsOfParagraph(const std::vector<KCMParaAttrs>& att
 */
 inline int32 ModelOffsetInParagraph(const KCMParaAttrs& attrs, int32 textOffset)
 {
-	// ★A WALK, DELIBERATELY - the same decision KCMTextRead's CountUncounted made and for the same
+	// A WALK, DELIBERATELY - the same decision KCMTextRead's CountUncounted made and for the same
 	//   reason: a paragraph holds one of these per table standing inside it, which is almost always
 	//   none and never many, so anything cleverer would cost more to read than it saves to run.
 	int32 skipped = 0;
@@ -361,7 +361,7 @@ inline int32 ModelOffsetInParagraph(const KCMParaAttrs& attrs, int32 textOffset)
 	return textOffset + skipped;
 }
 
-/** One table standing in a paragraph, as the DOCUMENT has it (2026-09-17): the text offset it stands
+/** One table standing in a paragraph, as the DOCUMENT has it: the text offset it stands
 	at, and its anchor's model offset from the paragraph's start. ⚠**A table standing at the very start
 	of a paragraph has a NEGATIVE model offset**: the reader moves the paragraph's start past the
 	table's own characters (KCMTextRead), so the anchor is behind it. */
@@ -387,15 +387,15 @@ struct KCMObjectPiece
 
 /** Cut one text change where the objects standing in it are - tables and note references, the
 	characters the text leaves out (KCMParaAttrs::fUncountedAt) - pairing the k-th object of one version
-	with the k-th of the other (2026-09-17, the import matrix's G1 and G2).
+	with the k-th of the other (the import matrix's G1 and G2).
 
-	★★★**THE TEXT CANNOT SAY WHICH SIDE OF AN OBJECT THE WORDS ARE ON.** "表の前の文" [table] "表の後の文" is
+	**THE TEXT CANNOT SAY WHICH SIDE OF AN OBJECT THE WORDS ARE ON.** "表の前の文" [table] "表の後の文" is
 	  one paragraph reading "表の前の文表の後の文" with the table at offset 5, and words typed at the END of
 	  the first half and at the START of the second are one insertion at offset 5. Measured: `表の前の文追加`
 	  came back as `表の前の文` [table] `追加表の後の文`; `表の前の文章` + `後の文` (A30) put 章 behind the table.
-	  ★**THE OTHER VERSION KNOWS**: its own object stands at an offset of ITS text, so the words before
+	  **THE OTHER VERSION KNOWS**: its own object stands at an offset of ITS text, so the words before
 	  that offset belong before the object.
-	★★**AND A CHANGE ACROSS AN OBJECT IS SEVERAL CHANGES.** Deleting "文表" around a table is two
+	**AND A CHANGE ACROSS AN OBJECT IS SEVERAL CHANGES.** Deleting "文表" around a table is two
 	  deletions with the table left between them; taken as one, its range holds the table's anchor and
 	  the write is refused - rightly, since removing the anchor removes the table.
 
@@ -478,7 +478,7 @@ inline bool16 CutChangeAtObjects(const std::vector<int32>& aObjects, const std::
 /** How many of the objects standing exactly AT `textOffset` a position there must stay in front of,
 	when `objectsBefore` objects are to stand before it (a KCMObjectPiece's fObjectsBefore).
 
-	★A START is asked with ModelOffsetInParagraph / IndexInStory, which answer "after everything
+	A START is asked with ModelOffsetInParagraph / IndexInStory, which answer "after everything
 	  standing there"; this is how far to step back from that. 0 when nothing is known (-1), and never
 	  past the objects standing exactly there - the answer is clamped, so an inconsistent count cannot
 	  put a position inside the words before them.
@@ -507,7 +507,7 @@ inline int32 ObjectsToStepBack(const std::vector<int32>& objects, int32 textOffs
 /** A text range of one paragraph, [textStart, textStart + textLen), as a range of the document's count - for a
 	WRITE over those characters (a ruby, a kenten, a tate-chu-yoko, a warichu).
 
-	★★**THE END IS "JUST PAST THE LAST CHARACTER" - ModelOffsetInParagraph(last) + 1** (2026-09-25, the Word round trip
+	**THE END IS "JUST PAST THE LAST CHARACTER" - ModelOffsetInParagraph(last) + 1** (the Word round trip
 	  re-check, item 3). ModelOffsetInParagraph answers for a START, so asked for the end it took in whatever stood right
 	  after the range: a table's anchor and its rows, or a NOTE'S MARKER - a kenten put on the two characters in front
 	  of a footnote reference fell on the reference as well, and KCMTextRead, which does not count the marker, could
@@ -527,10 +527,10 @@ inline void ModelRangeInParagraph(const KCMParaAttrs& attrs, int32 textStart, in
 const int32 kObjectTable = 0;
 const int32 kObjectNote = 1;
 
-/** Where words put in at one text offset go among the objects standing EXACTLY there (2026-09-25, the Word round trip
+/** Where words put in at one text offset go among the objects standing EXACTLY there (the Word round trip
 	re-check, item 1).
 
-	★★**THE TEXT CANNOT SAY WHICH SIDE OF A NOTE'S REFERENCE NEW WORDS ARE ON, AND THE VERSION BEING WRITTEN CAN** - the
+	**THE TEXT CANNOT SAY WHICH SIDE OF A NOTE'S REFERENCE NEW WORDS ARE ON, AND THE VERSION BEING WRITTEN CAN** - the
 	  same thing CutChangeAtObjects says of a table. Word puts words typed where a reference stands IN FRONT of it
 	  (measured 2026-09-23), and the comparison plans it so (KCMStorySync's MapPastChangeAt); the writer put every
 	  insertion after everything standing there (ModelOffsetInParagraph), so "である¹" + "とされ" typed before the ¹ came
@@ -617,7 +617,7 @@ inline std::string SliceCodePoints(const std::string& utf8, int32 start, int32 l
 /** What a row shows for one character of a story's text: the code point to draw, or -1 for nothing. ONE TABLE FOR THE STORY ROWS AND
 	THE TRACK ROWS (KCMTrackRead's AppendShown) - and DISPLAY ONLY: what a comparison or a write works on keeps every character.
 
-	★**A CHARACTER THAT DRAWS NOTHING READS AS NOTHING HAVING HAPPENED**, so what can change gets a sign of its own, and it is decided
+	**A CHARACTER THAT DRAWS NOTHING READS AS NOTHING HAVING HAPPENED**, so what can change gets a sign of its own, and it is decided
 	  here, once (the excerpt reaches the reader on the row and in the message area). Measured on the panel 2026-11-01: a page
 	  number and a section name drew a box, and a tab sent the words after it past the cell's end.
 	  - a paragraph end, a forced line break: the marks InDesign itself draws with Show Hidden Characters on (a pilcrow, a return arrow)
@@ -676,7 +676,7 @@ inline std::string MarkUpForRow(const std::string& utf8)
 /** Give every span, as its value, the characters it covers in `paraText` - and drop a span that
 	covers none.
 
-	★**WHY A SPAN'S VALUE IS ITS OWN TEXT** is KCMParaAttrs::fWarichu's story. ★Dropping the one that
+	**WHY A SPAN'S VALUE IS ITS OWN TEXT** is KCMParaAttrs::fWarichu's story. Dropping the one that
 	  comes out empty keeps the rule the reader holds every kind to - no span has an empty value
 	  (this header's head, "AN EMPTY RUBY STRING IS NO RUBY") - and the comparison and the panel
 	  both rely on it. */
@@ -705,13 +705,13 @@ struct LayerRange
 };
 
 /** The lines of one side of a LAYERED change (warichu / tate-chu-yoko - KCMStoryKinds.h,
-	KCMAttrKindIsLayered), as ranges of the paragraph's code points (2026-09-16, the user's drawings):
+	KCMAttrKindIsLayered), as ranges of the paragraph's code points (the user's drawings):
 
 	    12      34          <- line 2: one PIECE over each hole of line 1
 	    わり｜ちゅう｜のぶん   <- line 1: ONE piece over the hole of line 0, with its own holes
 	    琥珀｜猫太郎          <- line 0: the paragraph, with ONE hole
 
-	★**LINE 0 HAS ONE HOLE, LINE 1 MAY HAVE SEVERAL** (the user: "there may be several
+	**LINE 0 HAS ONE HOLE, LINE 1 MAY HAVE SEVERAL** (the user: "there may be several
 	  tate-chu-yoko inside one warichu"). Only the layer this change stands in is lifted out of the
 	  paragraph; another warichu elsewhere in the same paragraph stays plain text in the context. */
 struct LayerPlan
@@ -728,7 +728,7 @@ struct LayerPlan
 	int32					fChangedPiece;	///< which piece of line 2 is the change; -1 when the change is line 1
 	bool16					fChangedPieceIsBar;	///< that piece is a bar: the mark is not on this side
 
-	/** ★★Whether line 0 (the paragraph) is drawn at all (2026-09-16, the user: "the ID column says
+	/** Whether line 0 (the paragraph) is drawn at all (the user: "the ID column says
 		割注, so a tate-chu-yoko changing inside a warichu needs no text line - the warichu's line and
 		the tate-chu-yoko's are enough; three lines only where three are needed"). kFalse exactly
 		when the change stands inside a layer of the other kind: the lines are then 1 and 2 alone,
@@ -743,11 +743,11 @@ struct LayerPlan
 
 /** Which lines one side of a warichu or tate-chu-yoko change is drawn on.
 
-	★**NESTING IS CONTAINMENT.** A span of the OTHER layered kind that contains the change is line 1
+	**NESTING IS CONTAINMENT.** A span of the OTHER layered kind that contains the change is line 1
 	  and the change stands over it on line 2, beside every other span of the change's own kind inside
 	  it; the spans of the other kind inside the change are line 2 over it. Over the SAME range the
 	  warichu is the outer one. Ranges that merely cross are not nested.
-	★**A SIDE WITHOUT THE MARK** draws a bar where the mark would stand, and the characters it covered
+	**A SIDE WITHOUT THE MARK** draws a bar where the mark would stand, and the characters it covered
 	  on the other side are hidden behind a bar below it - for both kinds (the user: "the two bars in
 	  the same place"; "deleted looks the same as tate-chu-yoko"). Nothing is lifted over that bar.
 	⚠A change with NO characters on this side (the words changed too) is a bar over a bar at `start`.
@@ -784,7 +784,7 @@ inline void PlanLayers(bool16 changedIsWarichu, const KCMAttrSpanList& warichu,
 	{
 		const int32 os = other[outer].fStart;
 		const int32 oe = other[outer].fStart + other[outer].fLen;
-		// ★TWO LINES, NOT THREE: the layer it stands in, and itself - the text line is left out (see
+		// TWO LINES, NOT THREE: the layer it stands in, and itself - the text line is left out (see
 		//   fShowsText). A change of the OUTER layer with this one inside it is the three-line case.
 		out.fCount = 2;
 		out.fShowsText = kFalse;
@@ -878,7 +878,7 @@ inline std::string MaskNested(const std::string& paraText, const KCMAttrSpan& ou
 /** kTrue when two versions of one warichu (or tate-chu-yoko) differ ONLY inside the layer standing in
 	it - so the change belongs to that inner layer and not to this one.
 
-	★**ONLY THE INNERMOST LAYER REPORTS A CHANGE OF ITS WORDS** (2026-09-16, the user's call): 77 -> 88
+	**ONLY THE INNERMOST LAYER REPORTS A CHANGE OF ITS WORDS** (the user's call): 77 -> 88
 	  inside a tate-chu-yoko inside a warichu is the text row and the tate-chu-yoko row. The warichu's
 	  own value changed too - it is its characters - and without this it would be a third row for the
 	  same keystroke. A warichu character OUTSIDE the tate-chu-yoko is still the warichu's. */
@@ -893,7 +893,7 @@ inline bool16 OnlyNestedDiffers(const std::string& textA, const KCMAttrSpan& out
 
 /** The character JoinParagraphs puts between two paragraphs of a run: a RETURN, which no paragraph holds - the reader closes a
 	paragraph at its return (KCMTextRead::ReadStory).
-	★**A FORCED LINE BREAK (U+000A) STANDS INSIDE ITS PARAGRAPH, AND THIS IS WHAT TELLS THE TWO APART.** The join used U+000A until
+	**A FORCED LINE BREAK (U+000A) STANDS INSIDE ITS PARAGRAPH, AND THIS IS WHAT TELLS THE TWO APART.** The join used U+000A until
 	2026-11-01, so a forced line break read as a paragraph end on the row (measured: "one two" -> "one" LF "two" drew a pilcrow) and
 	stopped a merge a paragraph end has to stop (KCMTextDiff::MergeNearbyChanges's doNotSwallow) although writing across one takes
 	no paragraph's style with it. */
@@ -937,7 +937,7 @@ inline std::string JoinParagraphs(const std::vector<std::string>& paragraphs, in
 	  edits of one character each).
 	@warning adjacent paragraphs in the same place STILL share a row -- that part is right, and a
 	  cell holding several paragraphs depends on it.
-	★Since the direct read the list is in TextIndex order - the whole body first, then every cell,
+	Since the direct read the list is in TextIndex order - the whole body first, then every cell,
 	  then every footnote - so the body is ONE run and the cut falls where the body ends. (The XML
 	  put the cells where the table stood, and the body appeared more than once.)
 */
@@ -1092,7 +1092,7 @@ inline void SplitRunAtPlaces(const std::vector<KCMParaAttrs>& sourceAttrs,
 /** kTrue when cp is a character InDesign hangs an OBJECT on - one that text commands cannot bring
 	back, because what they write is the character and the object lives somewhere else.
 
-	★★★**MEASURED 2026-09-16 (the night the user asked for this rule): writing one back gives the
+	**MEASURED 2026-09-16 (the night the user asked for this rule): writing one back gives the
 	  character ALONE.** A deleted anchored rectangle "restored" as X U+FFFC Y with no page item in
 	  the story; the comparison then answered "0 changes left", so nothing even said so.
 	⇒ Every write that puts words into the reader's document asks this of what goes in AND of what
@@ -1100,7 +1100,7 @@ inline void SplitRunAtPlaces(const std::vector<KCMParaAttrs>& sourceAttrs,
 	  text holds none of these). Deleting one is refused too - InDesign takes the object with the
 	  character, so a restore would delete a table or a frame the reader added.
 
-	★**A LIST, NOT A RANGE, AND EACH ENTRY IS ONE OF TextChar.h's.** Footnote and endnote reference
+	**A LIST, NOT A RANGE, AND EACH ENTRY IS ONE OF TextChar.h's.** Footnote and endnote reference
 	  (0004 for both; 0005 is only TextChar.h's name for the second), table anchor and row
 	  continuation (0016/0017), page number and every text
 	  variable (0018 - measured to be the one code they all share in a document), section name
@@ -1230,7 +1230,7 @@ inline int32 ParagraphLineStart(const std::vector<int32>& starts, const std::vec
 }
 
 /** Where paragraph `which`'s RETURN stands in the document: after its words and anything standing at
-	their end (2026-09-17 afternoon - a whole paragraph added or removed is cut at returns). */
+	their end (a whole paragraph added or removed is cut at returns). */
 inline int32 ParagraphReturn(const std::vector<std::string>& paragraphs, const std::vector<int32>& starts,
 							 const std::vector<KCMParaAttrs>& attrs, int32 which)
 {
@@ -1248,8 +1248,8 @@ inline bool16 ParagraphsSharePlace(const std::vector<KCMParaAttrs>& attrsA, int3
 }
 
 /** The objects standing inside a RUN of paragraphs - every paragraph's fUncountedAt - as offsets into
-	JoinParagraphs' answer, ascending (2026-09-17: what CutChangeAtObjects pairs across two versions).
-	★The ones a paragraph BEGINS with (fLeadingUncounted) are at its offset 0 and come first. They stand
+	JoinParagraphs' answer, ascending (what CutChangeAtObjects pairs across two versions).
+	The ones a paragraph BEGINS with (fLeadingUncounted) are at its offset 0 and come first. They stand
 	 behind the paragraph's start in the model, which is exactly where ObjectsToStepBack steps back to
 	 from IndexInStory's answer for that offset. */
 inline void RunObjectOffsets(const std::vector<std::string>& paragraphs,
@@ -1273,7 +1273,7 @@ inline void RunObjectOffsets(const std::vector<std::string>& paragraphs,
 }
 
 /** The TABLES standing inside a RUN of paragraphs - every paragraph's fTableAnchorsAt - as offsets into JoinParagraphs'
-	answer, ascending (2026-10-26, the import matrix's X06/Y06): the marks the character pass cuts at
+	answer, ascending (the import matrix's X06/Y06): the marks the character pass cuts at
 	(KCMTextDiff::DiffCharacters), one per table. */
 inline void RunTableAnchors(const std::vector<std::string>& paragraphs, const std::vector<KCMParaAttrs>& attrs,
 							int32 start, int32 count, std::vector<int32>& out)
@@ -1292,7 +1292,7 @@ inline void RunTableAnchors(const std::vector<std::string>& paragraphs, const st
 	}
 }
 
-/** What the paragraph diff compares a paragraph BY (2026-10-26, the import matrix's X06/Y06): its words - and, when a
+/** What the paragraph diff compares a paragraph BY (the import matrix's X06/Y06): its words - and, when a
 	table stands in it, where the tables stand (KCMParaAttrs::fTableAnchorsAt), so that the same words with a table moved
 	are another paragraph. A paragraph without a table is its words, exactly as before.
 	⚠The places follow a U+0000, which no paragraph's text holds: the words cannot run on into them. */
@@ -1325,7 +1325,7 @@ inline bool16 SpansDiffer(const KCMAttrSpanList& a, const KCMAttrSpanList& b)
 	{
 		if (a[i].fStart != b[i].fStart || a[i].fLen != b[i].fLen || a[i].fValue != b[i].fValue)
 			return kTrue;
-		// ★fGroup IS NOT COMPARED (2026-09-12, the user's decision: "mono turned into group is not
+		// fGroup IS NOT COMPARED (the user's decision: "mono turned into group is not
 		//   a change - take that judgement out"). It was one from 2026-09-08 to 2026-09-12, on the
 		//   reasoning that こ+はく and こはく are different typesetting; the user withdrew it. The
 		//   flag is still READ (KCMAttrSpan::fGroup) and still carried to the panel (fRubyGroup),
@@ -1414,7 +1414,7 @@ inline bool16 PlaceOfMarkAlone(const std::vector<KCMCharChange>& changes, const 
 /** What is to be said of the marks of one kind over two versions of a paragraph, in the order of their places in version B.
 	@param changes the character diff of the two; empty for a paragraph whose words are the same.
 
-	★★★**THE TEXT IS THE SUBJECT, THE MARKS ITS ATTENDANTS** (the author's rules, 2026-09-01), and what the character diff says of a mark's
+	**THE TEXT IS THE SUBJECT, THE MARKS ITS ATTENDANTS** (the author's rules), and what the character diff says of a mark's
 	  characters is what decides:
 	  - **the same mark over the same characters, wherever they now stand, is nothing** (rewrite the words before a ruby and it has merely moved -
 	    measured 2026-09-08: "one edit came out as three rows");
@@ -1424,12 +1424,12 @@ inline bool16 PlaceOfMarkAlone(const std::vector<KCMCharChange>& changes, const 
 	  - **a mark whose characters were REWRITTEN is one** ("when the kanji changes and the ruby is removed, I want two rows" - 琥珀 -> 真珠);
 	  - **a mark taken off characters that stay is one**, and its place in the other version is where they stand; off characters rewritten, the
 	    words that took their place.
-	★**ASKED OF THE DIFF SINCE 2026-11-01.** Until then a filter asked whether the characters could be found anywhere in the other paragraph and
+	**ASKED OF THE DIFF SINCE 2026-11-01.** Until then a filter asked whether the characters could be found anywhere in the other paragraph and
 	  told a rewrite from a deletion by the paragraph's length, and the marks were then paired by their offsets, which no longer name the same
 	  characters once the words have moved. Measured wrong four ways: 銀河 twice, the first deleted, reported the SECOND's reading removed; a reading changed
 	  behind words of another length came out removed and added; 琥珀 -> 真 with its reading gone lost the second row; 銀河 deleted with words typed
 	  elsewhere gained one.
-	★★**A MARK WHOSE FIRST CHARACTER STAYED CLAIMS ITS PARTNER FIRST, AND A MARK WITH NOTHING LEFT CLAIMS NONE.** The place a deleted character leaves is
+	**A MARK WHOSE FIRST CHARACTER STAYED CLAIMS ITS PARTNER FIRST, AND A MARK WITH NOTHING LEFT CLAIMS NONE.** The place a deleted character leaves is
 	  where what follows it now begins, so a word deleted right in front of another marked word stands on that word's mark - measured: 銀河鉄道 -> 鉄道, or the 琥
 	  of a mono ruby, was three rows for one deletion, the first reading "changed" into the second and the second "removed".
 	⚠The spans of two versions are each in their own count; a pair is found by carrying A's start across the diff. A first character that went
@@ -1499,7 +1499,7 @@ inline void PairMarksAcross(const std::vector<KCMCharChange>& changes, const KCM
 
 /** Do a mark of each version stand over the same characters: every character under the one that stayed in the other version stands under the
 	other, both ways? What came or went with the words is the text row's to say.
-	★**WHY A LENGTH DOES NOT ANSWER IT WHEN THE WORDS CHANGED** (measured 2026-11-01): one character deleted or typed inside five with one kenten made
+	**WHY A LENGTH DOES NOT ANSWER IT WHEN THE WORDS CHANGED** (measured 2026-11-01): one character deleted or typed inside five with one kenten made
 	the two spans differ in length, and a row of its own read BlackCircle against BlackCircle - nothing a reader could use, for one keystroke the text
 	row had already said. Over words that are the same it is exactly the length, which is the whole point there (琥珀 read as こ+はく against こはく). */
 inline bool16 MarksCoverSameCharacters(const std::vector<KCMCharChange>& changes, const KCMAttrSpan& a, const KCMAttrSpan& b)
@@ -1543,7 +1543,7 @@ inline int32 RowsOfMarks(const std::vector<KCMCharChange>& changes, const KCMAtt
 /** What has to be WRITTEN to turn one paragraph's attribute spans into another's: the spans to
 	take off (`outClear`) and the spans to put on (`outApply`).
 
-	★★★**A SPAN BOTH SIDES CARRY IS IN NEITHER LIST, AND THAT IS THE WHOLE REASON THIS EXISTS.** A
+	**A SPAN BOTH SIDES CARRY IS IN NEITHER LIST, AND THAT IS THE WHOLE REASON THIS EXISTS.** A
 	  reading is three attributes and its LOOK is twenty-seven more (KCMStoryRestore.cpp's
 	  ClearRuby names them); a kenten's kind is one attribute and its look is several. Taking the
 	  attributes off a paragraph and writing the incoming ones back would leave the reading right
@@ -1551,12 +1551,12 @@ inline int32 RowsOfMarks(const std::vector<KCMCharChange>& changes, const KCMAtt
 	  what the import exists NOT to do: the ruby and the kenten on the parts nobody edited have to
 	  be there afterwards, untouched (KCMStoryAttrPour.h says it at length).
 
-	★**THE ORDER IS ALL THE CLEARS AND THEN ALL THE APPLIES**, and the caller must keep it: two
+	**THE ORDER IS ALL THE CLEARS AND THEN ALL THE APPLIES**, and the caller must keep it: two
 	  spans can overlap - a reading that grew covers where the old one stood - and an apply that
 	  ran before the clear beside it would be wiped by it. Nothing has to be written back to front,
 	  though, the way text does: an attribute never changes how many characters there are.
 
-	⚠**fGroup IS NOT COMPARED**, exactly as SpansDiffer does not compare it (2026-09-12, the user's
+	⚠**fGroup IS NOT COMPARED**, exactly as SpansDiffer does not compare it (the user's
 	  decision: mono turned into group is not a change). An applied span carries whatever fGroup it
 	  came with, because a span being written has to say which it is.
 
@@ -1564,7 +1564,7 @@ inline int32 RowsOfMarks(const std::vector<KCMCharChange>& changes, const KCMAtt
 	  paragraph reading ねこ twice, with one of them since taken off, must not pair both of its
 	  spans against the one that is left.
 
-	★ORDER WITHIN A LIST IS NOT A DIFFERENCE HERE, though it is one to SpansDiffer above. That one
+	ORDER WITHIN A LIST IS NOT A DIFFERENCE HERE, though it is one to SpansDiffer above. That one
 	  answers "did anything change?"; this one answers "what do I write?", and for the same spans
 	  listed in another order the answer is: nothing.
 
@@ -1609,7 +1609,7 @@ inline void PlanSpanChanges(const KCMAttrSpanList& doc, const KCMAttrSpanList& f
 /**	Take out of `clearTcy` every stretch a warichu of the document covers, and answer how many were
 	taken out.
 
-	★★★**WORD CANNOT HOLD A TATE-CHU-YOKO INSIDE A WARICHU, AND SAYS NOTHING WHEN IT DROPS ONE**
+	**WORD CANNOT HOLD A TATE-CHU-YOKO INSIDE A WARICHU, AND SAYS NOTHING WHEN IT DROPS ONE**
 	  (measured against real Word 2007 on 2026-09-22 - the notes are in
 	  docs/ai-notes/kcm-tcy-word-roundtrip-2026-09-22.md). One run cannot wear w:combine and
 	  w:vert at once: opening and saving a story that has one is enough for w:vert to go, and it
@@ -1617,7 +1617,7 @@ inline void PlanSpanChanges(const KCMAttrSpanList& doc, const KCMAttrSpanList& f
 	  that there is no tate-chu-yoko there. Poured as it stands, that would take the reader's own
 	  tate-chu-yoko off a document nobody edited.
 
-	★**THE DIRECTION OF THE TEXT HAS NOTHING TO DO WITH IT.** The same paragraph written once
+	**THE DIRECTION OF THE TEXT HAS NOTHING TO DO WITH IT.** The same paragraph written once
 	  vertically and once horizontally, with nothing else different, loses it both ways. The one
 	  condition is standing on the same run as a warichu.
 

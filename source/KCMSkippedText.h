@@ -20,13 +20,13 @@ class ITextModel;
 	conditional text and notes - AND everything standing inside them: a footnote whose reference is
 	in there, a table whose anchor is in there, a table or a note inside THAT table, and so on down.
 
-	★★★WHY THIS EXISTS (measured 2026-09-24, work/kcm-table-spike/track4.jsx): KCMTextRead has always
+	WHY THIS EXISTS (measured 2026-09-24, work/kcm-table-spike/track4.jsx): KCMTextRead has always
 	  stepped over the deleted-text thread itself, but a footnote or a table deleted under Track
 	  Changes keeps its OWN thread (and is rebuilt under a new UID inside the deleted text), so the
 	  readers met it as a live footnote or table with no paragraph to stand in. The export refused the
 	  story ("a footnote's reference could not be placed", "1 table(s) became 0") - for any document
 	  whose owner deleted a footnote or a table with Track Changes on, not only after an import.
-	★★★EVERY READER ASKS THIS ONE OBJECT. The table walks number tables by position in their list
+	EVERY READER ASKS THIS ONE OBJECT. The table walks number tables by position in their list
 	  (fTableOrdinal, KCMTableRefsOfStory's index), so they have to drop exactly the same tables; one
 	  answer asked in seven places is what keeps the ordinals in step ([[one-question-one-place]]).
 	⚠AN ENDNOTE IS NOT DROPPED. Its words are a story of their own, and InDesign keeps SETTING them on
