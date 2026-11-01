@@ -11,8 +11,8 @@
 //    * Draw() is handed the waxRun, its render data and its glyphs -- there is nothing to look
 //      up and no coordinate system to convert into. Which characters a run covers comes from
 //      TextOrigin() + GetCharCount(); where a sub-range of them sits comes from
-//      MapCharsToGlyphs() + GetGlyphDrawPosition(), which is how the product's own spelling
-//      squiggle underlines one word.
+//      MapCharsToGlyphs() + GetEscapementAt(), which is how the product's own spelling squiggle
+//      finds one word (it adds the widths up itself).
 //    * So it follows vertical text, rotated frames and threaded columns for free. A marker worked
 //      out by hand as a rectangle in pasteboard coordinates has to be right on every one of those
 //      (KFC's was one, until it moved to this same mechanism).

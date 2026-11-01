@@ -492,13 +492,6 @@ bool16 KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWaxRe
 	if (glyphCount <= 0)
 		return kFalse;
 
-	// THE GLYPH WIDTHS ARE ADDED UP ONCE, not once per range. A press can mark several separate
-	//   edits inside a single wax run, and walking the glyphs again for each of them would make
-	//   the cost of a run grow with the number of edits in it.
-	std::vector<PMReal> cumulative(glyphCount + 1, PMReal(0.0));
-	for (int32 i = 0; i < glyphCount; ++i)
-		cumulative[i + 1] = cumulative[i] + waxGlyphs->GetWidthAt(i);
-
 	const PMReal y = waxRun->GetYPosition();				// the baseline
 	const PMReal size = renderData->GetFontMatrix().GetYScale();
 
@@ -535,12 +528,13 @@ bool16 KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* waxRun, const IWaxRe
 		if (glyphIndex + glyphLength > glyphCount)
 			glyphLength = glyphCount - glyphIndex;
 
-		// Where the range starts and how wide it is, read out of the running total above.
-		// @warning added up rather than taken from GetGlyphDrawPosition because a draw position is a
-		//   MATRIX -- it carries the glyph's own transform, and reading a translation out of it is
-		//   only the origin of that one glyph, not the end of the range.
-		PMReal offset = cumulative[glyphIndex];
-		PMReal width = cumulative[glyphIndex + glyphLength] - offset;
+		// Where the range starts and how wide it is: an escapement is the distance from the start of
+		//   the run THROUGH a glyph (IWaxGlyphs.h).
+		// @warning not from GetGlyphDrawPosition: a draw position is a MATRIX -- it carries the glyph's
+		//   own transform, and reading a translation out of it is only the origin of that one glyph,
+		//   not the end of the range.
+		PMReal offset = (glyphIndex > 0) ? waxGlyphs->GetEscapementAt(glyphIndex - 1) : PMReal(0.0);
+		PMReal width = waxGlyphs->GetEscapementAt(glyphIndex + glyphLength - 1) - offset;
 
 		// **A DELETION IS A CARET, NOT AN INVERTED CHARACTER.** The characters are gone from this
 		//   side, so there is nothing here that IS the edit -- and inverting the character that closed
