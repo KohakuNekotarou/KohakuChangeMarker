@@ -110,6 +110,11 @@ namespace KCMTextDiff
 						  const std::vector<int32>& b, const std::vector<int32>& bMarks,
 						  std::vector<Change>& changes, int32 doNotSwallow, bool16 widenWords);
 
+	/** Whether this code point shapes the character before it rather than standing on its own: a variation selector, a combining mark,
+		a kana voiced mark, an emoji modifier, a zero-width joiner (memory wrservices-unicode-facts). A cut between the two draws another
+		glyph, or nothing at all. */
+	bool16 IsClusterExtender(int32 cp);
+
 	/** Merges neighbouring changes that are separated by only a short unchanged run.
 
 		Myers returns the shortest edit script, which is not the same thing as the edit a person

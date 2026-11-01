@@ -14,15 +14,13 @@
 #include "ITextStoryThread.h"
 #include "ITextStoryThreadDict.h"
 #include "ITextStoryThreadDictHier.h"
-#include "ITextUtils.h"		// CollectOwnedItems - where each footnote's reference stands
+#include "ITextUtils.h"		// CollectStoryRanges - what stands inside a stretch of text
 
 // General includes:
 #include "PersistUtils.h"	// ::GetClass, ::GetUID, ::GetUIDRef, ::GetDataBase
 #include "RangeData.h"		// Text::StoryRange
 #include "TextID.h"			// kFootnoteReferenceBoss
 #include "Utils.h"
-
-#include <map>
 
 // Project includes:
 #include "KCMSkippedText.h"
@@ -35,12 +33,10 @@ struct Thread
 	TextIndex	fStart;
 	TextIndex	fEnd;
 	ClassID		fClass;
-	UID			fUID;
 };
 
 struct TableBlock
 {
-	TextIndex	fAnchor;		// where the table stands
 	TextIndex	fBlockStart;	// where its cells' threads are
 	TextIndex	fBlockEnd;
 };
@@ -66,12 +62,11 @@ bool16 KCMSkippedText::Build(ITextModel* model)
 		t.fStart = pos;
 		t.fEnd = pos + span;
 		t.fClass = ::GetClass(thread);
-		t.fUID = ::GetUID(thread);
 		threads.push_back(t);
 		pos += span;
 	}
 
-	// ---- 2. every table: where it stands, and where its cells are ------------------------------------
+	// ---- 2. every table: where its cells are ------------------------------------
 	//   The walk is the one every table reader here makes (SnpIterTableUseDictHier's): a dictionary is a
 	//   table exactly when an ITableModel can be got from it.
 	std::vector<TableBlock> tables;
@@ -87,7 +82,6 @@ bool16 KCMSkippedText::Build(ITextModel* model)
 				continue;
 			const Text::StoryRange block = dict->GetThreadBlockTextRange();
 			TableBlock t;
-			t.fAnchor = dict->GetAnchorTextRange().Start(nil);
 			t.fBlockStart = block.Start(nil);
 			t.fBlockEnd = block.End();
 			tables.push_back(t);
@@ -111,47 +105,20 @@ bool16 KCMSkippedText::Build(ITextModel* model)
 	if (fRanges.empty())
 		return kTrue;		// nothing skipped, so nothing stands in it: almost every story stops here
 
-	// ---- 4. where each footnote's reference stands (the thread IS the reference's boss) --------------
-	std::map<UID, TextIndex> refAt;
+	// ---- 4. and what stands inside: a table whose anchor is skipped takes its cells with it, a footnote -----
+	//   whose reference is skipped takes its words, to any depth. ITextUtils::CollectStoryRanges answers exactly that of a stretch of text
+	//   (the nested text in between its pieces). Measured against the rounds this replaced, thread by thread: tracked and conditional, footnotes
+	//   in cells, a table in a cell with a footnote of its own.
+	Utils<ITextUtils> textUtils;
+	if (textUtils != nil)
 	{
-		Utils<ITextUtils> textUtils;
-		OwnedItemDataList owned;
-		if (textUtils != nil && total > 0)
-			textUtils->CollectOwnedItems(model, 0, total - 1, &owned);
-		for (int32 k = 0; k < static_cast<int32>(owned.size()); ++k)
+		const std::vector<std::pair<TextIndex, TextIndex> > seeds(fRanges);
+		for (size_t i = 0; i < seeds.size(); ++i)
 		{
-			if (owned[k].fClassID == kFootnoteReferenceBoss)
-				refAt[owned[k].fUID] = owned[k].fAt;
-		}
-	}
-
-	// ---- 5. and what stands inside, until nothing more is added --------------------------------------
-	//   A table whose anchor is skipped takes its cells with it; a footnote whose reference is skipped
-	//   takes its words. Either can stand in the other, to any depth, so the rounds go on until one
-	//   adds nothing - each thing is added at most once, so they end.
-	std::vector<bool16> tableDone(tables.size(), kFalse);
-	std::vector<bool16> threadDone(threads.size(), kFalse);
-	for (bool16 grew = kTrue; grew; )
-	{
-		grew = kFalse;
-		for (size_t k = 0; k < tables.size(); ++k)
-		{
-			if (tableDone[k] || !Contains(tables[k].fAnchor))
-				continue;
-			fRanges.push_back(std::make_pair(tables[k].fBlockStart, tables[k].fBlockEnd));
-			tableDone[k] = kTrue;
-			grew = kTrue;
-		}
-		for (size_t i = 0; i < threads.size(); ++i)
-		{
-			if (threadDone[i] || threads[i].fClass != kFootnoteReferenceBoss)
-				continue;
-			std::map<UID, TextIndex>::const_iterator r = refAt.find(threads[i].fUID);
-			if (r == refAt.end() || !Contains(r->second))
-				continue;
-			fRanges.push_back(std::make_pair(threads[i].fStart, threads[i].fEnd));
-			threadDone[i] = kTrue;
-			grew = kTrue;
+			Text::StoryRangeList ranges;
+			textUtils->CollectStoryRanges(model, seeds[i].first, seeds[i].second - seeds[i].first, &ranges);
+			for (int32 r = 0; r < static_cast<int32>(ranges.size()); ++r)
+				fRanges.push_back(std::make_pair(ranges[r].Start(nil), ranges[r].End()));
 		}
 	}
 	return kTrue;

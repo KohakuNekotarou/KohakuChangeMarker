@@ -35,7 +35,8 @@
 #include "KCMDiag.h"				// KCM_DIAG_LOG - test builds only (nothing in a shipping .pln)
 #include "KCMProgressBar.h"			// KCMProgressStepper - the bar after kKCMProgressBarDelayMs, as the Story diff has
 #include "KCMSentence.h"			// the bar's fixed words
-#include "KCMOversetPoint.h"		// KCMIsTextIndexOverset
+#include "KCMOversetPoint.h"		// KCMChangeIsOverset
+#include "KCMParaText.h"			// ShownCodePoint - one table of what a row shows
 #include "KCMStoryList.h"			// KCMStoryList::ReadRowForStory
 #include "KCMStoryKinds.h"
 #include "KCMTextWords.h"			// WordsAt
@@ -79,8 +80,7 @@ TextIndex HiddenTextAnchor(ITextModel* model, TextIndex at)
 	return anchor;
 }
 
-// One character as the list shows it - KCMStoryDiffRun's MarkUpBreaks, on UTF-32: a paragraph end as ¶, a
-// forced line break as ↵, an anchored object as ⚓, a table as one ▦; other control characters are left out.
+// One character as the list shows it - KCMParaText::ShownCodePoint, a table as one ▦.
 void AppendShown(WideString& out, uint32 v, bool& inTable)
 {
 	if (v == kTextChar_Table || v == kTextChar_TableContinued)
@@ -91,14 +91,9 @@ void AppendShown(WideString& out, uint32 v, bool& inTable)
 		return;
 	}
 	inTable = false;
-	if (v == kTextChar_CR)
-		out.Append(0x00B6);
-	else if (v == kTextChar_LF)
-		out.Append(0x21B5);
-	else if (v == kTextChar_ObjectReplacementCharacter)
-		out.Append(0x2693);
-	else if (v >= 0x20 || v == kTextChar_Tab)
-		out.Append(v);
+	const int32 shown = KCMParaText::ShownCodePoint(static_cast<int32>(v));
+	if (shown >= 0)
+		out.Append(static_cast<uint32>(shown));
 }
 
 WideString Shown(const WideString& raw, int32 maxCodePoints, bool16 ellipsisAtEnd, bool16 ellipsisAtStart)
@@ -153,6 +148,35 @@ WideString DeletedText(ITextModel* model, Utils<ITrackChangeUtils>& utils, Redli
 	return text;
 }
 
+/** The colour InDesign paints one record on. Kept apart from KCMTrackRecord, which holds no SDK answer of this kind for KCMTrackPlan.h's
+	pure tests. */
+struct RecordColour
+{
+	bool16	fHas;		// kFalse = the galley's white: the Mark colour stands in
+	uint8	fR, fG, fB;
+	RecordColour() : fHas(kFalse), fR(0), fG(0), fB(0) {}
+};
+
+/** ASKED OF EACH RECORD, because it is the record's: the Track Changes preferences choose per kind between the author's colour and one of
+	their own - a deletion given its own colour read as the author's, on the author's other changes as well, when the first was asked for
+	all of them (measured). With the three choices at their default the answers are the author's colour. */
+RecordColour ColourOfRecord(IDataBase* db, Utils<ITrackChangeUtils>& utils, RedlineIterator* it)
+{
+	RecordColour out;
+	if (!utils)
+		return out;
+	const RealAGMColor c = utils->GetTrackedChangeBGColor(db, it);
+	const double r = ::ToDouble(c.red), g = ::ToDouble(c.green), b = ::ToDouble(c.blue);
+	if (!KCMTrackColourIsWhite(r, g, b))
+	{
+		out.fHas = kTrue;
+		out.fR = (uint8)(r * 255.0 + 0.5);
+		out.fG = (uint8)(g * 255.0 + 0.5);
+		out.fB = (uint8)(b * 255.0 + 0.5);
+	}
+	return out;
+}
+
 int32 AuthorIndex(std::vector<KCMTrackAuthor>& authors, const PMString& name)
 {
 	for (size_t i = 0; i < authors.size(); ++i)
@@ -205,7 +229,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 		return 0;
 	}
 
-	IDataBase::SaveRestoreModifiedState dirtyGuard(targetDB);	// KCMIsTextIndexOverset composes
+	IDataBase::SaveRestoreModifiedState dirtyGuard(targetDB);	// KCMChangeIsOverset composes
 	Utils<ITrackChangeUtils> utils;
 	InterfacePtr<IStoryList> stories(targetDB, targetDB->GetRootUID(), UseDefaultIID());
 	const int32 count = (stories != nil) ? stories->GetUserAccessibleStoryCount() : 0;
@@ -214,7 +238,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 	KCMProgressStepper progress(barTitle, count);
 	int32 otherRecords = 0;
 	int32 targetRecords = 0;			// every record read, a note's too - CountRecords' count (RecordsMovedSinceRead)
-	std::vector<bool16> colourAsked;	// per author: its colour has been asked (once - it is the author's)
+	std::vector<bool16> authorColoured;	// per author: the author's row has its colour
 
 	for (int32 s = 0; s < count; ++s)
 	{
@@ -234,6 +258,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 
 		std::vector<KCMTrackRecord> recs;
 		std::vector<WideString> deleted;
+		std::vector<RecordColour> colours;
 		for (bool16 more = kTrue; more; more = it->Increment(kFalse))
 		{
 			TextIndex at = 0;
@@ -255,24 +280,18 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 			r.fHidden = (thread == kHiddenTextBoss) ? kTrue : kFalse;
 			const int32 author = AuthorIndex(authors, record->GetUserName());
 			r.fAuthor = author;
-			if (colourAsked.size() < authors.size())
-				colourAsked.resize(authors.size(), kFalse);
-			// The colour is the AUTHOR's (memory track-change-author-colour): asked of the first record of each author.
-			if (!colourAsked[static_cast<size_t>(author)] && utils)
+			const RecordColour colour = ColourOfRecord(targetDB, utils, it.get());
+			if (authorColoured.size() < authors.size())
+				authorColoured.resize(authors.size(), kFalse);
+			// The author's own row: the colour of their first record (memory track-change-author-colour).
+			if (!authorColoured[static_cast<size_t>(author)])
 			{
-				colourAsked[static_cast<size_t>(author)] = kTrue;
+				authorColoured[static_cast<size_t>(author)] = kTrue;
 				KCMTrackAuthor& au = authors[static_cast<size_t>(author)];
-				const RealAGMColor c = utils->GetTrackedChangeBGColor(targetDB, it.get());
-				const double cr = ::ToDouble(c.red), cg = ::ToDouble(c.green), cb = ::ToDouble(c.blue);
-				if (!KCMTrackColourIsWhite(cr, cg, cb))
-				{
-					au.fHasColour = kTrue;
-					au.fR = (uint8)(cr * 255.0 + 0.5);
-					au.fG = (uint8)(cg * 255.0 + 0.5);
-					au.fB = (uint8)(cb * 255.0 + 0.5);
-				}
-				KCM_DIAG_LOG("track read: author %d colour %.3f %.3f %.3f -> %s", author, cr, cg, cb,
-							 au.fHasColour ? "own" : "white = the Mark colour");
+				au.fHasColour = colour.fHas;
+				au.fR = colour.fR; au.fG = colour.fG; au.fB = colour.fB;
+				KCM_DIAG_LOG("track read: author %d colour %d %d %d -> %s", author, (int)colour.fR, (int)colour.fG, (int)colour.fB,
+							 colour.fHas ? "own" : "white = the Mark colour");
 			}
 			WideString del;
 			if (r.fKind == kKCMTrackRecDelete)
@@ -281,6 +300,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 				r.fLen = len;
 			recs.push_back(r);
 			deleted.push_back(del);
+			colours.push_back(colour);
 		}
 		it.reset();		// not held over what follows: WasCancelled at the end of this loop pumps events
 		if (recs.empty())
@@ -317,6 +337,10 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 				ch.fKind = p.fKind;
 				ch.fTime = p.fTime;
 				ch.fHidden = p.fHidden;
+				// A replacement is shown by what it put in: the insertion's colour.
+				const RecordColour& colour = colours[static_cast<size_t>((p.fInsRec >= 0) ? p.fInsRec : p.fDelRec)];
+				ch.fHasColour = colour.fHas;
+				ch.fR = colour.fR; ch.fG = colour.fG; ch.fB = colour.fB;
 				// ★THE RECORDS IT WAS MADE OF (2026-10-25): Accept and Reject find them again by these (KCMTrackResolve) -
 				//   a replacement is two, the insertion and the deletion beside it; a move's row carries its other half's too.
 				const KCMTrackPlanned* const halves[2] = { &p, (partner[k] >= 0) ? &planned[static_cast<size_t>(partner[k])] : nil };
@@ -374,8 +398,8 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 				sc.fOtherText     = (p.fDelRec >= 0) ? ToPM(Shown(deleted[static_cast<size_t>(p.fDelRec)], kChangeCodePoints, kFalse, kFalse)) : PMString();
 				sc.fOtherText.SetTranslatable(kFalse);
 				sc.fOtherTextPost = sc.fTextPost;
-				// Overset: a change composed into no frame (the jump then goes to the "+").
-				sc.fOverset = (!p.fHidden && KCMIsTextIndexOverset(model, from, (to <= from) ? kTrue : kFalse)) ? kTrue : kFalse;
+				// Overset: a change that stands or runs past the frames (the jump goes to the "+" when it begins there).
+				sc.fOverset = (!p.fHidden && KCMChangeIsOverset(model, from, to)) ? kTrue : kFalse;
 				// No place in an original: a Track listing has no Source.
 				sc.fSourceStart = sc.fSourceEnd = 0;
 				row.fChanges.push_back(ch);
@@ -400,7 +424,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 	}
 
 	// The authors with a row (one whose only records were left out has none), by name; their rows consecutive, by page
-	// then story; colours onto each change.
+	// then story.
 	std::vector<bool16> hasRow(authors.size(), kFalse);
 	for (size_t r = 0; r < rows.size(); ++r)
 		hasRow[static_cast<size_t>(rows[r].fAuthor)] = kTrue;
@@ -437,12 +461,6 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 		++au.fRowCount;
 		au.fChangeCount += static_cast<int32>(rows[r].fChanges.size());
 		total += static_cast<int32>(rows[r].fChanges.size());
-		for (size_t c = 0; c < rows[r].fChanges.size(); ++c)
-		{
-			KCMTrackChange& ch = rows[r].fChanges[c];
-			ch.fHasColour = au.fHasColour;
-			ch.fR = au.fR; ch.fG = au.fG; ch.fB = au.fB;
-		}
 	}
 
 	KCMTrackList::Set(kept, rows, otherRecords);

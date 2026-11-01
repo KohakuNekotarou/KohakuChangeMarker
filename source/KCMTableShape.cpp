@@ -109,45 +109,40 @@ bool16 KCMReadTableShapes(ITextModel* model, const KCMSkippedText& skipped, std:
 		shape.fFooterStart = footer.start;
 		shape.fFooterCount = footer.count;
 
-		for (int32 r = rows.start; r < rows.start + rows.count; ++r)
+		// Each cell once, a merged one at its anchor (the iterator SnpIterTableUseDictHier.cpp walks. Measured the same cells in the same order
+		// as rows by columns with IsValid and IsAnchor: merges both ways, header and footer rows, a graphic cell, a table in a cell).
+		const ITableModel::const_iterator end(table->end());
+		for (ITableModel::const_iterator it(table->begin()); it != end; ++it)
 		{
-			for (int32 c = cols.start; c < cols.start + cols.count; ++c)
+			const GridAddress addr = *it;
+			const GridArea area = table->GetCellArea(addr);
+			const RowRange areaRows = area.GetRows();
+			const ColRange areaCols = area.GetCols();
+			const int32 rowSpan = (areaRows.count > 0) ? areaRows.count : 1;
+			const int32 colSpan = (areaCols.count > 0) ? areaCols.count : 1;
+			if (rowSpan != 1 || colSpan != 1)
 			{
-				const GridAddress addr(r, c);
-				// A merged cell is addressed by its anchor (ITableModel.h, at GridAddress): the covered addresses have
-				// no thread of their own.
-				if (!table->IsValid(addr) || !table->IsAnchor(addr))
-					continue;
-
-				const GridArea area = table->GetCellArea(addr);
-				const RowRange areaRows = area.GetRows();
-				const ColRange areaCols = area.GetCols();
-				const int32 rowSpan = (areaRows.count > 0) ? areaRows.count : 1;
-				const int32 colSpan = (areaCols.count > 0) ? areaCols.count : 1;
-				if (rowSpan != 1 || colSpan != 1)
-				{
-					KCMTableCellShape merge;
-					merge.fRow = r;
-					merge.fCol = c;
-					merge.fRowSpan = rowSpan;
-					merge.fColSpan = colSpan;
-					shape.fMerges.push_back(merge);
-				}
-
-				InterfacePtr<ITextStoryThread> thread(dict->QueryThread(table->GetGridID(addr)));
-				KCMTableCellPlace place;
-				place.fRow = r;
-				place.fCol = c;
-				if (thread == nil)
-				{
-					// a cell with no text of its own - a graphic cell (2026-09-25; KCMTableShape::fThreadless)
-					shape.fThreadless.push_back(place);
-					continue;
-				}
-				place.fStart = thread->GetTextStart();
-				place.fEnd = thread->GetTextEnd();
-				shape.fCells.push_back(place);
+				KCMTableCellShape merge;
+				merge.fRow = addr.row;
+				merge.fCol = addr.col;
+				merge.fRowSpan = rowSpan;
+				merge.fColSpan = colSpan;
+				shape.fMerges.push_back(merge);
 			}
+
+			InterfacePtr<ITextStoryThread> thread(dict->QueryThread(table->GetGridID(addr)));
+			KCMTableCellPlace place;
+			place.fRow = addr.row;
+			place.fCol = addr.col;
+			if (thread == nil)
+			{
+				// a cell with no text of its own - a graphic cell (2026-09-25; KCMTableShape::fThreadless)
+				shape.fThreadless.push_back(place);
+				continue;
+			}
+			place.fStart = thread->GetTextStart();
+			place.fEnd = thread->GetTextEnd();
+			shape.fCells.push_back(place);
 		}
 
 		found.push_back(std::make_pair(dict->GetThreadBlockTextRange().Start(nil), shape));

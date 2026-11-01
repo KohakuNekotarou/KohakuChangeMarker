@@ -829,10 +829,9 @@ ErrorCode KCMDrawEventHandler::MakeOrigImage(const UIDRef& targetRef, const UIDR
 //     design).
 //   The screen stays RGB. (The ring itself is a blit of an ARGB image and never comes through here
 //     at all.)
-//   ⚠**The cat paws and their words do not come through here**: KCMDrawOnePaw / KCMDrawPawWord set
-//     RGB directly, and a print or a PDF converts it - to CMYK values that differ by route (with and
-//     without transparency on the page; measured: work/note-scripts/2026-10-30-kcm-m3-defect/
-//     paw_pdf.ps1).
+//   The cat paws and their words come through here too: left in RGB, a print or a PDF converted them to
+//     CMYK values that differed by route, with and without transparency on the page (measured: the
+//     suite paw-pdf).
 //   The conversion is the standard formula (k = 1-max(r,g,b), c = (max-r)/max ...). KCM's colours
 //     are near-primary, so they map cleanly: red (255,0,0) -> C0 M100 Y100 K0, cyan (0,255,255) ->
 //     C100 M0 Y0 K0, green (0,200,0) -> C100 M0 Y100 K22, white -> all zero, black -> K100.
@@ -1627,7 +1626,7 @@ static void KCMPawShapePath(IGraphicsPort* gPort, const double outline[kKCMPawPo
 //========================================================================================
 static void KCMDrawPawWord(IGraphicsPort* gPort, const PMString& text,
 	const PMReal& cx, const PMReal& cy, const PMReal& s, const PMReal& reach,
-	uint8 cr, uint8 cg, uint8 cb)
+	uint8 cr, uint8 cg, uint8 cb, bool16 useCMYK)
 {
 	IPMFont* const font = KCMQueryMarkFont();
 	if (gPort == nil || font == nil || text.IsEmpty())
@@ -1702,7 +1701,7 @@ static void KCMDrawPawWord(IGraphicsPort* gPort, const PMString& text,
 	const bool16 halo = (kKCMPawTextHaloRatio > PMReal(0.0)) ? kTrue : kFalse;
 	if (halo)
 	{
-		gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
+		KCMSetOutputColor(gPort, 255, 255, 255, useCMYK);
 		gPort->setlinewidth(kKCMPawTextPt * kKCMPawTextHaloRatio);
 		// ⚠**ROUND JOINS, OR THE OUTLINE GROWS HORNS.** A port joins two stroke segments with a
 		//   MITRE by default, and a mitre at a sharp angle runs out to a point -- on a glyph, which
@@ -1728,7 +1727,7 @@ static void KCMDrawPawWord(IGraphicsPort* gPort, const PMString& text,
 	// PASS TWO: THE LETTERS, OVER THE OUTLINES.
 	//  ⚠TWO show CALLS PER LINE AT MOST, NEVER ONE WITH THE FLAGS COMBINED: measured in Kohaku
 	//    InDesign MCP, kFillText | kStrokeText drew the outline only and the letters came out hollow.
-	gPort->setrgbcolor(cr / PMReal(255.0), cg / PMReal(255.0), cb / PMReal(255.0));
+	KCMSetOutputColor(gPort, cr, cg, cb, useCMYK);
 	// The faux bold, when it is asked for -- currently off (kKCMPawTextBoldStroke is 0).
 	const bool16 bold = (kKCMPawTextBoldStroke > PMReal(0.0)) ? kTrue : kFalse;
 	for (size_t i = 0; i < lines.size(); ++i)
@@ -1773,14 +1772,14 @@ static PMReal KCMPawReachRight(const PMReal& cosA, const PMReal& sinA)
 // ONE PLACE DRAWS A PAW, and both the paws on the page and the one being placed come through it:
 //   the paw a drag shows is the paw the release puts down, because they are the same lines.
 //========================================================================================
-static void KCMDrawOnePaw(IGraphicsPort* gPort, const KCMPawStamp& paw, const PMRect& pr, const PMReal& s)
+static void KCMDrawOnePaw(IGraphicsPort* gPort, const KCMPawStamp& paw, const PMRect& pr, const PMReal& s, bool16 useCMYK)
 {
 	// THE COLOUR IS SET PER PAW, because it belongs to the stamp and not to the page: a red paw
 	//   and a blue one sit on one page at the same time, which is the whole reason for having two.
 	uint8 ir = 0, ig = 0, ib = 0, fr = 0, fg = 0, fb = 0;
 	KCMPawColours(paw.fColour, ir, ig, ib, fr, fg, fb);
 	// The SHAPE takes the softened shade; the word below takes the ink one.
-	gPort->setrgbcolor(fr / PMReal(255.0), fg / PMReal(255.0), fb / PMReal(255.0));
+	KCMSetOutputColor(gPort, fr, fg, fb, useCMYK);
 
 	// A stamp is stored as an offset from the PAGE'S TOP-LEFT. That is what lets it survive a
 	//   page being added or removed, AND what makes this addition right in spread coordinates
@@ -1807,12 +1806,12 @@ static void KCMDrawOnePaw(IGraphicsPort* gPort, const KCMPawStamp& paw, const PM
 		gPort->newpath();
 		for (int32 blob = 0; blob < kKCMPawOutlineCount; ++blob)
 			KCMPawShapePath(gPort, kKCMPawOutlines[blob], cx, cy, s, cosA, sinA);
-		gPort->setrgbcolor(PMReal(1.0), PMReal(1.0), PMReal(1.0));
+		KCMSetOutputColor(gPort, 255, 255, 255, useCMYK);
 		gPort->setlinewidth(s * kKCMPawHaloRatio);
 		gPort->setlinejoin(kPMRoundJoin);
 		gPort->setlinecap(kPMRoundCap);
 		gPort->stroke();
-		gPort->setrgbcolor(fr / PMReal(255.0), fg / PMReal(255.0), fb / PMReal(255.0));
+		KCMSetOutputColor(gPort, fr, fg, fb, useCMYK);
 	}
 
 	gPort->newpath();
@@ -1825,7 +1824,7 @@ static void KCMDrawOnePaw(IGraphicsPort* gPort, const KCMPawStamp& paw, const PM
 	//   white, the word is the colour itself (kKCMPawFillWhiteMix says why). Passing fr/fg/fb here
 	//   would look like a tidy-up and would undo the decision.
 	if (!paw.fText.IsEmpty())
-		KCMDrawPawWord(gPort, paw.fText, cx, cy, s, KCMPawReachRight(cosA, sinA), ir, ig, ib);
+		KCMDrawPawWord(gPort, paw.fText, cx, cy, s, KCMPawReachRight(cosA, sinA), ir, ig, ib, useCMYK);
 }
 
 //========================================================================================
@@ -1878,12 +1877,14 @@ static void KCMDrawPawStamps(IGraphicsPort* gPort, IDataBase* db, UID pageUID,
 	gPort->rectclip(pr);
 	gPort->setopacity(PMReal(1.0), kFalse);	// constant opacity, not shape alpha -- as every other mark here
 
+	// Print and PDF are painted in CMYK, the same values on every road (KCMSetOutputColor).
+	const bool16 useCMYK = (drawMode == kKCMDrawModePrint) ? kTrue : kFalse;
 	for (size_t i = 0; i < paws.size(); ++i)
-		KCMDrawOnePaw(gPort, paws[i], pr, s);
+		KCMDrawOnePaw(gPort, paws[i], pr, s, useCMYK);
 
 	// The one being placed goes on top: it is the newest, and that is where it lands on release.
 	if (havePlacing)
-		KCMDrawOnePaw(gPort, placing, pr, s);
+		KCMDrawOnePaw(gPort, placing, pr, s, useCMYK);
 }
 
 

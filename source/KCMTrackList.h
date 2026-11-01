@@ -46,7 +46,7 @@ struct KCMTrackChange
 	int32			fAuthor;		// index into the authors
 	int32			fKind;			// KCMTrackChangeKind (KCMTrackPlan.h)
 	uint64			fTime;
-	bool16			fHasColour;		// kFalse = InDesign draws this author on white: the Mark colour stands in
+	bool16			fHasColour;		// kFalse = InDesign draws this record on white: the Mark colour stands in
 	uint8			fR, fG, fB;
 	bool16			fHidden;		// in hidden conditional text
 	std::vector<KCMTrackRecordRef>	fRecords;	// the insertion and / or the deletion it was made of

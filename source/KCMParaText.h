@@ -36,6 +36,7 @@
 
 #include "BaseType.h"		// int32, bool16 (nothing else - this header does not even use nil)
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -108,7 +109,7 @@ struct KCMParaAttrs
 		reported is what made turning it back on one call**: had the reader stopped filling this,
 		the knowledge that five characters marked with one kind are ONE range - which cost a snippet
 		from the user to get right, and which is the opposite of ruby, where the same five come out
-		as five - would have had to be found a second time. (The reader is KCMTextRead::ScanKenten
+		as five - would have had to be found a second time. (The reader is KCMTextRead::ScanCharMarks
 		now, reading kTAKentenKindBoss off the character attribute strand; the rule is the same.)
 		@warning the value is a KIND ("BlackCircle"), never something a reader reads aloud. Whoever
 		 draws it asks Change::fAttrKind first; see the note on KCMAttrSpan::fValue. */
@@ -128,30 +129,20 @@ struct KCMParaAttrs
 		 than counted here, so a document that restarts its numbering per page or per section still
 		 agrees with the row (KCMTextRead::ScanNotes).
 
-		⚠★★★**THE SPAN SITS ON THE CHARACTER BEFORE THE MARKER**, one character long: the marker's
-		 own place is fStart + fLen, never fStart. It has to be that way - ReadStory TAKES the
-		 marker out of the text (U+0004 is not in fText), so a span standing where it
-		 stood would measure no characters at all and TakeAttrFor drops a span whose text length
-		 comes out 0. It is also where the page puts the number: at the top right of the word the
-		 note hangs off.
-		 ⇒ ★**ANYTHING PUTTING THE REFERENCE BACK INTO TEXT WANTS fStart + fLen** (the HTML round
-		   trip's <sup> among them). Reading fStart as the marker's place puts it one character early.
-		 ⚠A marker that is its paragraph's FIRST character has no such character before it: the span
-		  clips away and the note is NOT reported here at all. (Read from KCMTextRead.cpp on
-		  2026-09-15 - the code says so and says why; not separately measured on a document.)
-		 ⚠**THIS PARAGRAPH SAID THE OPPOSITE UNTIL 2026-09-15** - "the span is the marker itself, at
-		  the marker's own place" - while KCMTextRead::ScanNotes has read `run.fAt = owned[i].fAt - 1`
-		  all along, and the notes go through the very same TakeAttrFor as ruby with no correction
-		  anywhere. The header was the wrong one, which is why it is written out here rather than
-		  quietly replaced.
+		⚠★★★**THE SPAN SITS ON A CHARACTER BESIDE THE MARKER**, one character long: the one before it, or - a marker the paragraph
+		 BEGINS with has none - the paragraph's first (KCMTextRead's TakeNotesFor; measured 2026-11-01: a footnote at a paragraph's
+		 start was reported by its words alone, an endnote not at all). It has to be a character: ReadStory TAKES the marker out of
+		 the text (U+0004 is not in fText), and a span over no text is not a span - so a paragraph with no character has none. The
+		 one before is also where the page puts the number: at the top right of the word the note hangs off.
+		 ⚠Nothing reads the marker's PLACE from this - the exports take it from the owned items (KCMStoryTextExport.cpp).
 		@warning an ENDNOTE's own words are NOT here: they live in another story
 		 (kEndnoteStoryBoss), which arrives as a story row of its own. Only the marker is reported. */
 	KCMAttrSpanList	fFootnote;
 	KCMAttrSpanList	fEndnote;
 
 	/** ★**WARICHU AND TATE-CHU-YOKO** (2026-09-16, user's request): the manual ON/OFF of each,
-		kTAWarichuAttrBoss / kTATatechuyokoAttrBoss on the character strand (KCMTextRead's
-		ScanBoolAttribute). Measured the same day: one character can carry both - a tate-chu-yoko
+		kTAWarichuAttrBoss / kTATatechuyokoAttrBoss, character attributes (KCMTextRead's
+		ScanCharMarks). Measured the same day: one character can carry both - a tate-chu-yoko
 		inside a warichu, and the other way round - so they are two lists, not one.
 		★★**THE VALUE IS THE CHARACTERS THE SPAN COVERS**, not a flag. That is what the row lifts onto
 		 its own line, and it is what makes rewriting the words inside one a change of that kind as
@@ -618,6 +609,65 @@ inline std::string SliceCodePoints(const std::string& utf8, int32 start, int32 l
 	return (from == std::string::npos) ? std::string() : utf8.substr(from);
 }
 
+/** What a row shows for one character of a story's text: the code point to draw, or -1 for nothing. ONE TABLE FOR THE STORY ROWS AND
+	THE TRACK ROWS (KCMTrackRead's AppendShown) - and DISPLAY ONLY: what a comparison or a write works on keeps every character.
+
+	★**A CHARACTER THAT DRAWS NOTHING READS AS NOTHING HAVING HAPPENED**, so what can change gets a sign of its own, and it is decided
+	  here, once (the excerpt reaches the reader on the row and in the message area). Measured on the panel 2026-11-01: a page
+	  number and a section name drew a box, and a tab sent the words after it past the cell's end.
+	  - a paragraph end, a forced line break: the marks InDesign itself draws with Show Hidden Characters on (a pilcrow, a return arrow)
+	  - an anchored object: an anchor
+	  - a tab and a right indent tab: an arrow
+	  - a page number or a text variable (one code for all of them - memory indesign-special-text-characters), a section name: a sign
+	    that stands for what the page prints there
+	  - a glyph with no character of its own (the special glyphs): a box, which is what it is
+	⚠**THE MARKS THAT TAKE NO ROOM ON THE PAGE TAKE NONE HERE**, the same list as a story row's first words (KCMStoryList's RowCharOf):
+	 the XML tag's and a note's mark, an index marker, a discretionary hyphen, a zero-width space - and the other control
+	 characters InDesign stands in the text (the end of a nested style, indent to here), which draw nothing.
+	⚠A character of the private use area is left alone: that is where a gaiji font lives. */
+inline int32 ShownCodePoint(int32 cp)
+{
+	switch (cp)
+	{
+		case 0x000D:	return 0x00B6;		// PILCROW SIGN
+		case 0x000A:	return 0x21B5;		// DOWNWARDS ARROW WITH CORNER LEFTWARDS
+		case 0xFFFC:	return 0x2693;		// ANCHOR
+		case 0x0009:
+		case 0x0008:	return 0x2192;		// RIGHTWARDS ARROW
+		case 0x0018:	return 0x2116;		// NUMERO SIGN
+		case 0x0019:	return 0x00A7;		// SECTION SIGN
+		case 0x001A:
+		case 0xFFFD:	return 0x25A1;		// WHITE SQUARE
+		case 0xFEFF:
+		case 0xE02C:
+		case 0x00AD:
+		case 0x200B:	return -1;
+		default:		return (cp < 0x0020) ? -1 : cp;
+	}
+}
+
+/** A piece of a story's text as a row shows it (ShownCodePoint). DISPLAY ONLY: what comes out no longer matches the text it came from. */
+inline std::string MarkUpForRow(const std::string& utf8)
+{
+	std::string out;
+	out.reserve(utf8.size() + 8);
+	for (size_t i = 0; i < utf8.size(); )
+	{
+		const unsigned char lead = static_cast<unsigned char>(utf8[i]);
+		const size_t length = (lead < 0x80) ? 1 : ((lead & 0xE0) == 0xC0) ? 2 : ((lead & 0xF0) == 0xE0) ? 3 : ((lead & 0xF8) == 0xF0) ? 4 : 1;
+		int32 cp = (length == 1) ? lead : (length == 2) ? (lead & 0x1F) : (length == 3) ? (lead & 0x0F) : (lead & 0x07);
+		for (size_t k = 1; k < length && i + k < utf8.size(); ++k)
+			cp = (cp << 6) | (static_cast<unsigned char>(utf8[i + k]) & 0x3F);
+		const int32 shown = ShownCodePoint(cp);
+		if (shown == cp)
+			out.append(utf8, i, length);
+		else if (shown >= 0)
+			AppendUtf8(out, shown);
+		i += length;
+	}
+	return out;
+}
+
 /** Give every span, as its value, the characters it covers in `paraText` - and drop a span that
 	covers none.
 
@@ -836,6 +886,14 @@ inline bool16 OnlyNestedDiffers(const std::string& textA, const KCMAttrSpan& out
 			== MaskNested(textB, outerB, innerB, outerWinsTies)) ? kTrue : kFalse;
 }
 
+/** The character JoinParagraphs puts between two paragraphs of a run: a RETURN, which no paragraph holds - the reader closes a
+	paragraph at its return (KCMTextRead::ReadStory).
+	★**A FORCED LINE BREAK (U+000A) STANDS INSIDE ITS PARAGRAPH, AND THIS IS WHAT TELLS THE TWO APART.** The join used U+000A until
+	2026-11-01, so a forced line break read as a paragraph end on the row (measured: "one two" -> "one" LF "two" drew a pilcrow) and
+	stopped a merge a paragraph end has to stop (KCMTextDiff::MergeNearbyChanges's doNotSwallow) although writing across one takes
+	no paragraph's style with it. */
+const int32 kJoinedParagraphBreak = 0x000D;
+
 /** The text of a RUN of paragraphs, with the break characters put back.
 
 	**IT STANDS BESIDE IndexInStory ON PURPOSE.** The two are one convention seen from both ends
@@ -857,7 +915,7 @@ inline std::string JoinParagraphs(const std::vector<std::string>& paragraphs, in
 		if (index < 0 || index >= static_cast<int32>(paragraphs.size()))
 			continue;
 		if (i > 0)
-			out += "\n";
+			AppendUtf8(out, kJoinedParagraphBreak);
 		out += paragraphs[index];
 	}
 	return out;
@@ -1041,8 +1099,8 @@ inline void SplitRunAtPlaces(const std::vector<KCMParaAttrs>& sourceAttrs,
 	  (0004 for both; 0005 is only TextChar.h's name for the second), table anchor and row
 	  continuation (0016/0017), page number and every text
 	  variable (0018 - measured to be the one code they all share in a document), section name
-	  (0019), the non-Roman special glyph (001A), the XML tag and note anchor mark (FEFF), an
-	  anchored object (FFFC) and the index marker (E02C).
+	  (0019), the special glyphs (001A, FFFD - IsSpecialGlyphCharacter), the XML tag and note anchor mark
+	  (FEFF), an anchored object (FFFC) and the index marker (E02C).
 	⚠**NOT THE REST OF THE E0xx BAND.** Those are Find/Change wildcards that are never stored in a
 	 document (the variables among them measured as 0018 in the text), and the private use area is
 	 where a gaiji font lives - blocking it would refuse ordinary text.
@@ -1061,11 +1119,23 @@ inline bool16 IsObjectCharacter(int32 cp)
 		case 0x001A:	// kTextChar_NonRomanSpecialGlyph
 		case 0xFEFF:	// kTextChar_ZeroSpaceNoBreak - the XML tag's mark, and a note's anchor
 		case 0xFFFC:	// kTextChar_ObjectReplacementCharacter - an anchored object
+		case 0xFFFD:	// kTextChar_SpecialGlyph
 		case 0xE02C:	// kTextChar_IndexMarker
 			return kTrue;
 		default:
 			return kFalse;
 	}
+}
+
+/** kTrue when cp is the place holder of a glyph with no character of its own: the glyph is in the kTextAttrSpecialGlyphBoss on it
+	(SnpInsertGlyph.cpp's OPTION 5). Written back as text it comes back with no glyph (measured: U+FFFD alone) - and a COPY carries the
+	attribute and puts it back whole, with nothing to make anew under a new UID (measured), so this is the one object's character a copy
+	need not refuse.
+	⚠U+FFFD is TextChar.h's "an incoming character whose value is unrepresentable in Unicode" as well, which the list above would turn
+	away for nothing - but neither a story's contents nor an insertion point takes one (measured: the character is dropped). */
+inline bool16 IsSpecialGlyphCharacter(int32 cp)
+{
+	return (cp == 0x001A || cp == 0xFFFD) ? kTrue : kFalse;
 }
 
 /** Where an offset into that joined string lands in the document, as a TextIndex.
@@ -1257,6 +1327,152 @@ inline bool16 SpansDiffer(const KCMAttrSpanList& a, const KCMAttrSpanList& b)
 		//   because the row template once showed it - nothing judges by it any more.
 	}
 	return kFalse;
+}
+
+/** One run of a character diff of two versions of a paragraph: [fAStart, +fACount) of version A stands as [fBStart, +fBCount)
+	of version B, in code points. In order, and not touching (what KCMTextDiff::Diff answers). */
+struct KCMCharChange
+{
+	int32	fAStart;
+	int32	fACount;
+	int32	fBStart;
+	int32	fBCount;
+};
+
+/** What became of one character of version A in version B. */
+enum KCMCharFate
+{
+	kKCMCharSurvives,		///< it stands in B: outAt is where
+	kKCMCharRewritten,		///< other words stand in its place: outAt is where they begin
+	kKCMCharGone			///< nothing stands in its place: outAt is the place it left
+};
+
+inline KCMCharFate FateOfCharacter(const std::vector<KCMCharChange>& changes, int32 at, int32& outAt)
+{
+	int32 shift = 0;
+	for (size_t c = 0; c < changes.size(); ++c)
+	{
+		if (at < changes[c].fAStart)
+			break;
+		if (at < changes[c].fAStart + changes[c].fACount)
+		{
+			outAt = changes[c].fBStart;
+			return (changes[c].fBCount > 0) ? kKCMCharRewritten : kKCMCharGone;
+		}
+		shift = (changes[c].fBStart + changes[c].fBCount) - (changes[c].fAStart + changes[c].fACount);
+	}
+	outAt = at + shift;
+	return kKCMCharSurvives;
+}
+
+/** One mark of the two versions and what is to be said of it: a pair (both indices), or a mark one version alone has (the other
+	index -1), with the place its characters stand in the other version - 0 and 0 when no character of it does. */
+struct KCMMarkPair
+{
+	int32	fA;
+	int32	fB;
+	int32	fPlaceStart;
+	int32	fPlaceLen;
+
+	KCMMarkPair(int32 a, int32 b, int32 placeStart, int32 placeLen) : fA(a), fB(b), fPlaceStart(placeStart), fPlaceLen(placeLen) {}
+};
+
+/** A mark one version alone has: is it a change of its own, and where do its characters stand in the other version?
+	@return kFalse when it is not - every character of it is simply gone (the head of PairMarksAcross says why). */
+inline bool16 PlaceOfMarkAlone(const std::vector<KCMCharChange>& changes, const KCMAttrSpan& span, int32& outStart, int32& outLen)
+{
+	outStart = 0;
+	outLen = 0;
+	bool16 rewritten = kFalse;
+	bool16 survives = kFalse;
+	int32 last = 0;
+	for (int32 k = 0; k < span.fLen; ++k)
+	{
+		int32 at = 0;
+		const KCMCharFate fate = FateOfCharacter(changes, span.fStart + k, at);
+		if (fate == kKCMCharSurvives)
+		{
+			if (!survives)
+				outStart = at;
+			last = at;
+			survives = kTrue;
+		}
+		else if (fate == kKCMCharRewritten)
+			rewritten = kTrue;
+	}
+	if (survives)
+		outLen = last + 1 - outStart;
+	return (survives || rewritten) ? kTrue : kFalse;
+}
+
+/** What is to be said of the marks of one kind over two versions of a paragraph, in the order of their places in version B.
+	@param changes the character diff of the two; empty for a paragraph whose words are the same.
+
+	★★★**THE TEXT IS THE SUBJECT, THE MARKS ITS ATTENDANTS** (the author's rules, 2026-09-01), and what the character diff says of a mark's
+	  characters is what decides:
+	  - **the same mark over the same characters, wherever they now stand, is nothing** (rewrite the words before a ruby and it has merely moved -
+	    measured 2026-09-08: "one edit came out as three rows");
+	  - **a mark both versions have over the place is compared**, whether or not the characters under it changed ("when the ruby changes AND the
+	    kanji under it changes, report both");
+	  - **a mark whose characters are all simply GONE is no change of its own**: "the deletion row already says so" (銀河 deleted with its reading);
+	  - **a mark whose characters were REWRITTEN is one** ("when the kanji changes and the ruby is removed, I want two rows" - 琥珀 -> 真珠);
+	  - **a mark taken off characters that stay is one**, and its place in the other version is where they stand.
+	★**ASKED OF THE DIFF SINCE 2026-11-01.** Until then a filter asked whether the characters could be found anywhere in the other paragraph and
+	  told a rewrite from a deletion by the paragraph's length, and the marks were then paired by their offsets, which no longer name the same
+	  characters once the words have moved. Measured wrong four ways: 銀河 twice, the first deleted, reported the SECOND's reading removed; a reading changed
+	  behind words of another length came out removed and added; 琥珀 -> 真 with its reading gone lost the second row; 銀河 deleted with words typed
+	  elsewhere gained one.
+	⚠The spans of two versions are each in their own count; a pair is found by carrying A's start across the diff. A first character that went
+	 leaves the place it left, which is where a mark standing on what follows begins. */
+inline void PairMarksAcross(const std::vector<KCMCharChange>& changes, const KCMAttrSpanList& a, const KCMAttrSpanList& b,
+							std::vector<KCMMarkPair>& out)
+{
+	out.clear();
+	std::vector<char> taken(b.size(), 0);
+	for (size_t i = 0; i < a.size(); ++i)
+	{
+		int32 mapped = 0;
+		FateOfCharacter(changes, a[i].fStart, mapped);
+		int32 partner = -1;
+		for (size_t k = 0; k < b.size() && partner < 0; ++k)
+		{
+			if (taken[k] == 0 && b[k].fStart == mapped)
+				partner = static_cast<int32>(k);
+		}
+		if (partner >= 0)
+		{
+			taken[static_cast<size_t>(partner)] = 1;
+			out.push_back(KCMMarkPair(static_cast<int32>(i), partner, 0, 0));
+			continue;
+		}
+		int32 start = 0;
+		int32 len = 0;
+		if (PlaceOfMarkAlone(changes, a[i], start, len))
+			out.push_back(KCMMarkPair(static_cast<int32>(i), -1, start, len));
+	}
+
+	// The marks B alone has: the same question, asked the other way across the diff.
+	std::vector<KCMCharChange> reversed(changes);
+	for (size_t c = 0; c < reversed.size(); ++c)
+	{
+		std::swap(reversed[c].fAStart, reversed[c].fBStart);
+		std::swap(reversed[c].fACount, reversed[c].fBCount);
+	}
+	for (size_t k = 0; k < b.size(); ++k)
+	{
+		int32 start = 0;
+		int32 len = 0;
+		if (taken[k] == 0 && PlaceOfMarkAlone(reversed, b[k], start, len))
+			out.push_back(KCMMarkPair(-1, static_cast<int32>(k), start, len));
+	}
+
+	// In the order of their places in B; a mark with no place there comes first, where a change at the paragraph's start stands.
+	std::stable_sort(out.begin(), out.end(), [&b](const KCMMarkPair& x, const KCMMarkPair& y)
+	{
+		const int32 xAt = (x.fB >= 0) ? b[static_cast<size_t>(x.fB)].fStart : x.fPlaceStart;
+		const int32 yAt = (y.fB >= 0) ? b[static_cast<size_t>(y.fB)].fStart : y.fPlaceStart;
+		return xAt < yAt;
+	});
 }
 
 /** What has to be WRITTEN to turn one paragraph's attribute spans into another's: the spans to

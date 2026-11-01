@@ -213,6 +213,15 @@ bool16 KCMIsTextIndexOverset(ITextModel* textModel, TextIndex pos, bool16 caret)
 	return (AskPlace(textModel, pos, caret, column) && column == kInvalidUID) ? kTrue : kFalse;
 }
 
+bool16 KCMChangeIsOverset(ITextModel* textModel, TextIndex from, TextIndex to)
+{
+	if (to <= from)
+		return KCMIsTextIndexOverset(textModel, from, kTrue);
+	if (KCMIsTextIndexOverset(textModel, from, kFalse))
+		return kTrue;
+	return (to - 1 > from) ? KCMIsTextIndexOverset(textModel, to - 1, kFalse) : kFalse;
+}
+
 bool16 KCMFindOversetOutport(ITextModel* textModel, TextIndex pos, UID& outFrame, PBPMPoint& outPb)
 {
 	if (textModel == nil)

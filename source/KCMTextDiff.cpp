@@ -342,7 +342,10 @@ namespace
 
 	ScriptClass ScriptOf(int32 cp)
 	{
-		if (cp == 0x0020 || cp == 0x0009 || cp == 0x000A || cp == 0x000D || cp == 0x3000)
+		// (the second line: InDesign's Insert White Space - no-break, en, em, thin, hair and the rest, measured against the application's
+		//  own UnicodeClass 2026-11-01; zero-width ones are not gaps)
+		if (cp == 0x0020 || cp == 0x0009 || cp == 0x000A || cp == 0x000D || cp == 0x3000 ||
+			cp == 0x00A0 || (cp >= 0x2000 && cp <= 0x200A) || cp == 0x202F || cp == 0x205F)
 			return kScriptSpace;
 
 		// @warning **THE KATAKANA MIDDLE DOT HAS TO BE TAKEN OUT BEFORE THE KATAKANA RANGE CLAIMS
@@ -365,24 +368,28 @@ namespace
 		if ((cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z') ||
 			(cp >= 0xFF21 && cp <= 0xFF3A) || (cp >= 0xFF41 && cp <= 0xFF5A) ||
 			(cp >= 0x00C0 && cp <= 0x024F && cp != 0x00D7 && cp != 0x00F7) ||	// Latin-1 letters, Extended-A, Extended-B
-			(cp >= 0x1E00 && cp <= 0x1EFF))										// Latin Extended Additional
+			(cp >= 0x1E00 && cp <= 0x1EFF) ||									// Latin Extended Additional
+			(cp >= 0x0370 && cp <= 0x052F) || (cp >= 0x1F00 && cp <= 0x1FFF))	// Greek and Cyrillic: letters a word is made of (the name is short)
 			return kScriptLatin;
 
-		if (cp >= 0x3041 && cp <= 0x309F)
+		if ((cp >= 0x3041 && cp <= 0x309F) || (cp >= 0x3031 && cp <= 0x3035))	// (the second: the vertical kana repeat marks)
 			return kScriptHiragana;
 
-		if ((cp >= 0x30A1 && cp <= 0x30FF) || (cp >= 0xFF66 && cp <= 0xFF9D))
+		if ((cp >= 0x30A1 && cp <= 0x30FF) || (cp >= 0xFF66 && cp <= 0xFF9F))	// (to FF9F: halfwidth voiced marks, which are part of the letter)
 			return kScriptKatakana;
 
 		// ★**The supplementary planes count as Han too** (U+20000 and above: extensions B through G
 		//   and the compatibility supplement). ⚠They were missing until 2026-09-04, which filed
 		//   characters like 𠮟 -- a character of the Japanese standard set, not an exotic one -- as
 		//   "other", and a boundary next to one scored as though no script changed there.
-		//   One range covers the lot rather than six: the gaps between the extensions are
-		//   unassigned, so calling them Han costs nothing and the next extension is already in.
+		//   One range covers the lot rather than several: the gaps between the extensions are
+		//   unassigned, so calling them Han costs nothing. (To 323AF, extension H - measured 2026-11-01 with the rest of this table against
+		//   the application's UnicodeClass, over every code point: the radicals, and the ones the punctuation range below would claim -
+		//   々〆〇, the Hangzhou numerals, the iteration marks - were filed as something else, so "二〇二四年" had a break at each 〇.)
 		if ((cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3400 && cp <= 0x4DBF) ||
-			(cp >= 0xF900 && cp <= 0xFAFF) || cp == 0x3005 ||
-			(cp >= 0x20000 && cp <= 0x3134F))
+			(cp >= 0xF900 && cp <= 0xFAFF) || (cp >= 0x3005 && cp <= 0x3007) ||
+			(cp >= 0x3021 && cp <= 0x3029) || (cp >= 0x3038 && cp <= 0x303C) ||
+			(cp >= 0x2E80 && cp <= 0x2FD5) || (cp >= 0x20000 && cp <= 0x323AF))
 			return kScriptHan;
 
 		if ((cp >= 0x3001 && cp <= 0x303F) ||					// 、。「」【】ほか
@@ -390,7 +397,8 @@ namespace
 			(cp >= 0x005B && cp <= 0x0060) || (cp >= 0x007B && cp <= 0x007E) ||
 			(cp >= 0xFF01 && cp <= 0xFF0F) || (cp >= 0xFF1A && cp <= 0xFF20) ||
 			(cp >= 0xFF3B && cp <= 0xFF40) || (cp >= 0xFF5B && cp <= 0xFF64) ||
-			(cp >= 0x2010 && cp <= 0x201F) || (cp >= 0x2025 && cp <= 0x2027))
+			(cp >= 0x00A1 && cp <= 0x00BF) || cp == 0x00D7 || cp == 0x00F7 ||
+			(cp >= 0x2010 && cp <= 0x205E) || (cp >= 0x2190 && cp <= 0x2BFF))	// marks, arrows, operators, shapes: a reader sees a break at each
 			return kScriptPunct;
 
 		return kScriptOther;
@@ -430,6 +438,12 @@ namespace
 	{
 		const ScriptClass s = ScriptOf(cp);
 		return (s == kScriptLatin || s == kScriptDigit) ? kTrue : kFalse;
+	}
+
+	/** Does the run [start, start + count) of this side begin on something that shapes the character before it? */
+	bool16 BeginsOnExtender(const std::vector<int32>& seq, int32 start, int32 count)
+	{
+		return (count > 0 && KCMTextDiff::IsClusterExtender(seq[start])) ? kTrue : kFalse;
 	}
 
 	/** Does a word run straight through the gap just before `pos` - a word character on BOTH
@@ -789,6 +803,16 @@ void KCMTextDiff::ToCodePoints(const std::string& utf8, std::vector<int32>* code
 	}
 }
 
+/* IsClusterExtender
+*/
+bool16 KCMTextDiff::IsClusterExtender(int32 cp)
+{
+	return ((cp >= 0x0300 && cp <= 0x036F) || (cp >= 0x1AB0 && cp <= 0x1AFF) || (cp >= 0x1DC0 && cp <= 0x1DFF) ||
+			(cp >= 0x20D0 && cp <= 0x20FF) || cp == 0x3099 || cp == 0x309A ||
+			(cp >= 0xFE00 && cp <= 0xFE0F) || (cp >= 0xFE20 && cp <= 0xFE2F) || (cp >= 0xE0100 && cp <= 0xE01EF) ||
+			(cp >= 0x1F3FB && cp <= 0x1F3FF) || cp == 0x200D) ? kTrue : kFalse;
+}
+
 /* AlignChangeBoundaries
    See the header for why a change can sit in more than one place and why the choice matters.
 */
@@ -890,9 +914,12 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 
 			// Left: absorb the character before the run while it is the same on both sides and a
 			// word runs through the boundary on at least one side.
+			// ★AND A CHANGE NEVER STARTS OR STOPS BETWEEN A CHARACTER AND WHAT SHAPES IT (2026-11-01, measured: only a kanji's variation
+			//   selector changed, and the row's change was the selector alone - a character that draws nothing, marked on nothing).
 			while (c.aStart > loA && c.bStart > loB
 				   && a[c.aStart - 1] == b[c.bStart - 1]
-				   && (WordContinues(a, c.aStart) || WordContinues(b, c.bStart)))
+				   && (WordContinues(a, c.aStart) || WordContinues(b, c.bStart)
+					   || BeginsOnExtender(a, c.aStart, c.aCount) || BeginsOnExtender(b, c.bStart, c.bCount)))
 			{
 				--c.aStart; ++c.aCount;
 				--c.bStart; ++c.bCount;
@@ -901,7 +928,8 @@ void KCMTextDiff::AlignChangeBoundaries(const std::vector<int32>& a, const std::
 			// Right: the mirror image.
 			while (c.aStart + c.aCount < hiA && c.bStart + c.bCount < hiB
 				   && a[c.aStart + c.aCount] == b[c.bStart + c.bCount]
-				   && (WordContinues(a, c.aStart + c.aCount) || WordContinues(b, c.bStart + c.bCount)))
+				   && (WordContinues(a, c.aStart + c.aCount) || WordContinues(b, c.bStart + c.bCount)
+					   || KCMTextDiff::IsClusterExtender(a[c.aStart + c.aCount])))
 			{
 				++c.aCount;
 				++c.bCount;

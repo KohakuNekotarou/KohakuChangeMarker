@@ -18,6 +18,11 @@
 #include "IPMPersist.h"				// SaveAll - an object's own persistent bytes
 #include "IPMStream.h"
 #include "IQRCodeMetaData.h"		// GetEncodedString - a QR code's content
+#include "IQREmailData.h"			// a QR code's content by its kind, for the reader's word (KFC's KFCQRCodes::Read)
+#include "IQRHyperLinkData.h"
+#include "IQRPlainTextData.h"
+#include "IQRSmsData.h"				// IQRSMSData - the header's name is IQRSmsData.h
+#include "IQRvCardData.h"
 #include "ITextFrameColumn.h"		// a text frame's column - the composition, left out
 #include "ITextModel.h"
 #include "ITextUtils.h"				// CollectOwnedItems - the objects standing in a story
@@ -125,20 +130,76 @@ void PrintAnchor(IDataBase* db, UID inlineUID, Print& print)
 	print.AddNumber(anchored->GetLockPosition());
 }
 
-/** A reader's word for the object, flattened to one line and kept short. */
+/** A reader's word for the object, flattened to one line and kept short - cut BETWEEN characters: the bytes of one character cut in
+	two read as another (memory pmstring-from-utf8-bytes). */
 std::string OneLine(const std::string& s)
 {
 	std::string out;
-	for (size_t i = 0; i < s.size() && out.size() < 160; ++i)
+	for (size_t i = 0; i < s.size(); ++i)
 	{
 		const char c = s[i];
+		if (out.size() >= 160 && (static_cast<unsigned char>(c) & 0xC0) != 0x80)
+			break;
 		out += (c == '\t' || c == '\r' || c == '\n') ? ' ' : c;
 	}
 	return out;
 }
 
-/** What the object is, for a reader. ★A QR code's content is told (its EPS points at the boss holding it - the shape
-	KT's KTQRTab.cpp reads, IPersistUIDData under IID_IQRCODEDATAUID); a math object is an SVG item that carries its
+/** The boss holding the content of the QR code an item holds; kInvalidUID when it holds none. It is no child of the item (its EPS points
+	at it - the shape KT's KTQRTab.cpp reads, IPersistUIDData under IID_IQRCODEDATAUID), so PrintTree never reaches it. */
+UID QRDataOf(IDataBase* db, UID item)
+{
+	InterfacePtr<IHierarchy> hier(db, item, UseDefaultIID());
+	const int32 children = (hier != nil) ? hier->GetChildCount() : 0;
+	for (int32 i = 0; i < children; ++i)
+	{
+		const UID child = hier->GetChildUID(i);
+		if (db->GetClass(child) != kEPSItem)
+			continue;
+		InterfacePtr<IPersistUIDData> code(db, child, IID_IQRCODEDATAUID);
+		if (code != nil && code->GetUID() != kInvalidUID)
+			return code->GetUID();
+	}
+	return kInvalidUID;
+}
+
+/** The whole content of a QR code, as it is encoded. */
+std::string QREncoded(IDataBase* db, UID data)
+{
+	InterfacePtr<IQRCodeMetaData> content(db, data, UseDefaultIID());
+	return (content != nil) ? content->GetEncodedString().GetUTF8String() : std::string();
+}
+
+/** "<a><between><b>", with only what is there. */
+std::string Joined(const std::string& a, const char* between, const std::string& b)
+{
+	return (a.empty() || b.empty()) ? (a + b) : (a + between + b);
+}
+
+/** A QR code's content as a reader reads it: the kind is which interface answers (KFC's KFCQRCodes::Read), and the encoded string a mail
+	and a card begin with ("MATMSG:", "BEGIN:VCARD") says nothing to one. A card's other fields are left to the print. */
+std::string QRWords(IDataBase* db, UID data)
+{
+	const UIDRef ref(db, data);
+	InterfacePtr<IQRHyperLinkData> web(ref, UseDefaultIID());
+	if (web != nil)
+		return web->GetLink().GetUTF8String();
+	InterfacePtr<IQRPlainTextData> text(ref, UseDefaultIID());
+	if (text != nil)
+		return text->GetText().GetUTF8String();
+	InterfacePtr<IQRSMSData> sms(ref, UseDefaultIID());
+	if (sms != nil)
+		return Joined(sms->GetPhoneNumber().GetUTF8String(), ": ", sms->GetMessage().GetUTF8String());
+	InterfacePtr<IQREmailData> mail(ref, UseDefaultIID());
+	if (mail != nil)
+		return Joined(Joined(mail->GetAddress().GetUTF8String(), "  ", mail->GetSubject().GetUTF8String()), "  ", mail->GetMessage().GetUTF8String());
+	InterfacePtr<IQRvCardData> card(ref, UseDefaultIID());
+	if (card != nil)
+		return Joined(Joined(card->GetFirstName().GetUTF8String(), " ", card->GetLastName().GetUTF8String()), " / ", card->GetOrganization().GetUTF8String());
+	return QREncoded(db, data);
+}
+
+/** What the object is, for a reader. ★A QR code's content is told (QRWords); a math object is an SVG item that carries its
 	MathML (docs/ai-notes/kt-mathml-probe-2026-10-25.md) - told apart from a plain SVG only through the scripting DOM,
 	so both are named together. */
 std::string Describe(IDataBase* db, UID item)
@@ -150,18 +211,14 @@ std::string Describe(IDataBase* db, UID item)
 	for (int32 i = 0; i < children; ++i)
 	{
 		const UID child = hier->GetChildUID(i);
-		const ClassID kind = db->GetClass(child);
-		if (kind == kSVGItem)
+		if (db->GetClass(child) == kSVGItem)
 			return "SVG / MathML";
-		if (kind == kEPSItem)
-		{
-			InterfacePtr<IPersistUIDData> code(db, child, IID_IQRCODEDATAUID);
-			if (code != nil && code->GetUID() != kInvalidUID)
-			{
-				InterfacePtr<IQRCodeMetaData> content(db, code->GetUID(), UseDefaultIID());
-				return (content != nil) ? OneLine("QR: " + content->GetEncodedString().GetUTF8String()) : "QR";
-			}
-		}
+	}
+	const UID qr = QRDataOf(db, item);
+	if (qr != kInvalidUID)
+	{
+		const std::string words = QRWords(db, qr);
+		return words.empty() ? "QR" : OneLine("QR: " + words);
 	}
 	InterfacePtr<IGraphicFrameData> frame(db, item, UseDefaultIID());
 	if (frame != nil)
@@ -195,6 +252,16 @@ bool16 KCMObjectPrintOf(IDataBase* db, UID inlineUID, std::string& outValue)
 	if (!PrintTree(db, item, print))
 		return kFalse;
 	PrintAnchor(db, inlineUID, print);
+	// ★THE WHOLE CONTENT OF A QR CODE IS PART OF THE PRINT (2026-11-01): the words on the row stop at OneLine's cut, and the boss holding the
+	//   content is no child of the item - so two codes that differ past the cut, made in the same order, read as one. Measured: the print of
+	//   a mail code and of a URL made the same way came out the same.
+	const UID qrData = QRDataOf(db, item);
+	if (qrData != kInvalidUID)
+	{
+		const std::string qr = QREncoded(db, qrData);
+		if (!qr.empty())
+			print.Add(qr.data(), static_cast<uint32>(qr.size()));
+	}
 
 	char hex[24];
 	std::snprintf(hex, sizeof(hex), "%016llx", static_cast<unsigned long long>(print.Hash()));

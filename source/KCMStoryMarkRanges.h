@@ -63,7 +63,7 @@ struct KCMMarkRange
 		drawing side to stand the bar after it. Meaningless unless fCaret. */
 	bool16		fCaretAfter;
 
-	/** ★A COLOUR OF ITS OWN (2026-10-05, the Track mode: each change in its AUTHOR's tracked-change colour).
+	/** ★A COLOUR OF ITS OWN (2026-10-05, the Track mode: each change in the colour InDesign paints its record on, by default its AUTHOR's).
 		kFalse = the panel's Mark colour, which is every range of the other modes - so nothing they draw
 		changes. Ranges are fused only with ranges of the same colour (KCMMergeMarkRanges). */
 	bool16		fHasColour;

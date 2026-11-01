@@ -2382,7 +2382,7 @@ namespace
 
 /** One field, with the two characters that would break a TSV taken out.
 
-	⚠**THE TEXT PIECES ARE ALREADY MARKED UP** (KCMStoryDiffRun's MarkUpBreaks turns a paragraph
+	⚠**THE TEXT PIECES ARE ALREADY MARKED UP** (KCMParaText::MarkUpForRow turns a paragraph
 	 end into ¶ and a line break into ↵), so this catches what that does not reach: a reading, a
 	 kenten kind, and any field a future change adds. A tab inside a field would silently shift
 	 every column after it - the failure that reads as "the plug-in reported the wrong thing".
@@ -2524,8 +2524,10 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 	//  "-" for every other line. Last again, for suid's reason: a reader counting columns from the left reads what it read.
 	// `every` after focus (EveryChangeEqual): a story row's "1" when it reads "=" itself - every change
 	//  under it a "=" that stands, no "!" - and "0" when not; "-" on every other line. Last, for the same reason.
+	// `pre` `post` `opre` `opost` after every (2026-11-01): the words either side of the change, on a child's line alone - what the row
+	//  draws around `text` and the message area around `other`. Last, for the same reason.
 	std::string s = "row\tchange\tuid\tkinds\tflags\tattr\tkind\tset\tvalue\ttext"
-					"\tstate\twhole\tplace\ttstart\ttend\tsstart\tsend\tother\tsuid\tfocus\tevery\r\n";
+					"\tstate\twhole\tplace\ttstart\ttend\tsstart\tsend\tother\tsuid\tfocus\tevery\tpre\tpost\topre\topost\r\n";
 
 	// THE SHOWN RANGES COME THROUGH THE FACADE, because that is the ONE place a whole
 	//   paragraph's break is cut off them (KCMFacades' GetChange, KCMShownSpan): what a test reads here is
@@ -2594,7 +2596,8 @@ void KCMStoryList::RowsAsTsv(PMString& out)
 			   + "\t" + (haveShown ? Num(shown.fTargetEnd) : std::string("-"))
 			   + "\t" + (haveShown ? Num(shown.fSourceStart) : std::string("-"))
 			   + "\t" + (haveShown ? Num(shown.fSourceEnd) : std::string("-"))
-			   + "\t" + Field(c.fOtherText) + "\t-\t" + focus + "\t-\r\n";
+			   + "\t" + Field(c.fOtherText) + "\t-\t" + focus + "\t-"
+			   + "\t" + Field(c.fTextPre) + "\t" + Field(c.fTextPost) + "\t" + Field(c.fOtherTextPre) + "\t" + Field(c.fOtherTextPost) + "\r\n";
 		}
 	}
 

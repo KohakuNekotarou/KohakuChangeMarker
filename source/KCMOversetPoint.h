@@ -86,6 +86,13 @@ UID KCMPlaceColumn(ITextModel* textModel, TextIndex pos, bool16 caret);
 		simply carries no OV. */
 bool16 KCMIsTextIndexOverset(ITextModel* textModel, TextIndex pos, bool16 caret);
 
+/** Is a change's place [from, to) OVERSET - the row's OV? A gap when `to` is not past `from` (a deletion's place), otherwise its
+	first character or its last: a change that begins in a frame and runs out of it says so too (the author, 2026-11-01), while a press
+	on its row still goes where it begins.
+
+	@warning **THE CALLER MUST HOLD A IDataBase::SaveRestoreModifiedState** (KCMPlaceColumn). */
+bool16 KCMChangeIsOverset(ITextModel* textModel, TextIndex from, TextIndex to);
+
 /** Where the "+" of the overflowing thread at `pos` is drawn.
 
 	Walks the thread's parcels backwards from the end and takes the first one that still has a

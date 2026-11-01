@@ -45,8 +45,9 @@ inline bool16 SamePlace(const KCMParaAttrs& a, const KCMParaAttrs& b)
 			&& a.fFootnoteOrdinal == b.fFootnoteOrdinal) ? kTrue : kFalse;
 }
 
-/** The reading paragraph holding document position `at` - from its first character to just past its return, so a
-	caret on a paragraph's return belongs to that paragraph - or -1 when no paragraph does. */
+/** The reading paragraph holding document position `at` - from where it really begins (a note's reference it begins with
+	stands before its recorded start, and a row on that reference starts there: KCMParaText::ParagraphLineStart) to just past
+	its return, so a caret on a paragraph's return belongs to that paragraph - or -1 when no paragraph does. */
 inline int32 ParaAt(const std::vector<std::string>& paras, const std::vector<int32>& starts,
 					const std::vector<KCMParaAttrs>& attrs, int32 at)
 {
@@ -54,7 +55,7 @@ inline int32 ParaAt(const std::vector<std::string>& paras, const std::vector<int
 	{
 		const int32 end = starts[i]
 						  + KCMParaText::ModelOffsetInParagraph(attrs[i], KCMParaText::CountCodePoints(paras[i])) + 1;
-		if (at >= starts[i] && at < end)
+		if (at >= starts[i] - attrs[i].fLeadingUncounted && at < end)
 			return static_cast<int32>(i);
 	}
 	return -1;

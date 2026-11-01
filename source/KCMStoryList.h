@@ -190,7 +190,8 @@ struct KCMStoryChange
 		out from these by SetRowChanges. */
 	KCMStoryAttrKind fAttrKind;
 
-	/** Whether the text this change names is OVERSET - not composed into any frame.
+	/** Whether the text this change names is OVERSET - not composed into any frame: where it begins, or where it ends
+		(KCMChangeIsOverset).
 
 		**DECIDED ONCE, WHEN THE DIFF MAKES THE CHANGE**, and not asked again while the panel
 		draws. The question costs a parcel-list lookup, the row is drawn many times over, and a

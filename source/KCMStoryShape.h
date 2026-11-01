@@ -73,9 +73,9 @@ struct Para
 		  the note hangs, so the writer puts a locked placeholder at each of these offsets.
 		⚠**THE MARKER IS NOT IN fText** - KCMTextRead takes it out, as it does a footnote's - so
 		 these offsets are the only record of it, and nothing here ever writes one into the text.
-		⚠**TAKEN FROM THE OWNED ITEMS, NOT FROM THE ATTRIBUTE SPANS.** A span sits on the character
-		 BEFORE its marker, so a note at the very start of a paragraph has no span at all
-		 (KCMTextRead says so outright) - and that note would be the one nobody could find. */
+		⚠**TAKEN FROM THE OWNED ITEMS, NOT FROM THE ATTRIBUTE SPANS.** A span sits on a character beside
+		 its marker, so a note in a paragraph with no characters has no span at all (KCMTextRead's
+		 TakeNotesFor) - and that note would be the one nobody could find. */
 	std::vector<int32>		fEndnoteAt;
 };
 

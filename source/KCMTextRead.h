@@ -116,7 +116,7 @@ bool16 ReadStory(const UIDRef& storyRef,
 				 std::vector<KCMTableShape>* outTables = nil);
 
 /** What stands over a story's words as one number: its ruby, kenten, warichu and tate-chu-yoko runs, each with its place and
-	value - the four walks ReadStory reads them by, and no paragraph cut. KCMStoryEdits' second test
+	value - the walks ReadStory reads them by, and no paragraph cut. KCMStoryEdits' second test
 	(KCMStoryStamp::fMarksPrint). The setting of a ruby is not in it: mono against group is not a change (KCMStoryChange::fRubyGroup).
 	@return the print - the same number for the same marks; a nil model answers 0. */
 uint64 MarksPrint(ITextModel* model);

@@ -16,7 +16,6 @@
 
 // Interface includes:
 #include "IAttrReport.h"		// what QueryAttributeAt hands back
-#include "IAttributeStrand.h"	// kenten's run boundaries - see ScanKenten
 #include "IComposeScanner.h"	// the way to an attribute's value over a range
 #include "IFootnoteNumber.h"	// the number a note's marker PRINTS - asked for, never counted (ScanNotes)
 #include "IKentenStyle.h"		// IKentenStyle::KentenKind, and Kenten_None for "no kenten"
@@ -33,6 +32,7 @@
 #include "TextChar.h"		// kTextChar_CR / kTextChar_Table / kTextChar_TableContinued
 #include "TextID.h"			// kCharAttrStrandBoss (kenten's strand) and kFootnoteReferenceBoss / kEndnoteAnchorBoss (the note markers)
 #include "PersistUtils.h"	// ::GetClass - what a story thread hangs off (a footnote, or a note, or deleted text)
+#include "TextAttributeRunIterator.h"	// the stretches of text with one value of the character marks (ScanCharMarks)
 #include "Utils.h"			// Utils<ITextUtils> - the collector above
 #include "TextIterator.h"
 #include "UIDRef.h"
@@ -107,7 +107,7 @@ void CellsOfTables(const std::vector<KCMTableShape>& tables, std::vector<CellPla
 
    ⚠THE TWO ARE READ BY DIFFERENT MEANS AND MUST NOT BE MERGED INTO ONE SCAN. A strand answers
     "where does this run end"; an attribute has to be asked over a range that something else
-    decided. ScanRuby and ScanKenten are therefore separate walks that happen to fill one shape.
+    decided. ScanRuby and ScanCharMarks are therefore separate walks that happen to fill one shape.
 */
 struct AttrRun
 {
@@ -116,7 +116,7 @@ struct AttrRun
 	std::string	fValue;
 
 	/** ⚠RUBY ONLY. Kenten is one mark per character by nature and has no group/mono distinction,
-		so ScanKenten always leaves this kFalse - which is what KCMAttrSpan's own header says the
+		so ScanCharMarks always leaves this kFalse - which is what KCMAttrSpan's own header says the
 		comparison then relies on. */
 	bool16		fGroup;
 
@@ -277,189 +277,123 @@ std::string KentenKindName(int16 kind)
 	return "Kind" + std::to_string(kind);
 }
 
-/* WalkCharAttrRuns
-   The walk every character attribute here is read by (kenten, warichu, tate-chu-yoko). An attribute has no runs of its own, so the
-   walk is told where to stop by the strand the attributes SIT ON (kCharAttrStrandBoss), and `visit` asks the scanner over each
-   stretch - visit(scanner, at, length).
-
-   ⚠BOTH ARE ASKED, AND THE SHORTER ONE WINS. A kenten can come from a character style or from a local override, so a walk that
-    stepped by only one of them would step straight over a change in the other.
-*/
-template <typename Visit>
-void WalkCharAttrRuns(ITextModel* model, Visit visit)
-{
-	InterfacePtr<IAttributeStrand> strand(
-		(IAttributeStrand*)model->QueryStrand(kCharAttrStrandBoss, IID_IATTRIBUTESTRAND));
-	if (strand == nil)
-		return;
-
-	InterfacePtr<IComposeScanner> scanner(model, UseDefaultIID());
-	if (scanner == nil)
-		return;
-
-	const TextIndex total = model->TotalLength();
-	for (TextIndex i = 0; i < total; )
-	{
-		int32 styleLen = 0;
-		int32 overrideLen = 0;
-		strand->GetStyleUID(i, &styleLen);
-		strand->GetLocalOverrides(i, &overrideLen);
-
-		int32 len = styleLen;
-		if (overrideLen > 0 && (len <= 0 || overrideLen < len))
-			len = overrideLen;
-		if (len <= 0)
-			break;					// the strand has nothing further to say - the official stop
-		if (i + len > total)
-			len = static_cast<int32>(total - i);
-
-		visit(static_cast<IComposeScanner*>(scanner), i, len);
-
-		i += len;
-	}
-}
-
-/* ScanKenten
-   Every stretch of kenten in the story, in reading order.
-
-   ★★★KENTEN IS NOT A STRAND - IT IS A SET OF CHARACTER ATTRIBUTES, and that is the whole
-   difference from ScanRuby above. Ruby's strand knows where its own runs end (GetRubyRun answers
-   with a length); an attribute has no runs of its own, so the walk has to be told where to stop by
-   the strand the attributes SIT ON (kCharAttrStrandBoss). Its boundaries are where the character
-   style or the local overrides change - never in the middle of either - so an attribute asked over
-   one of them is answered for the whole of it.
-
-   ⚠THE BOUNDARIES ARE OVER-FINE, AND THAT IS WHY THE MERGE BELOW EXISTS. A style change with no
-    kenten in it still ends a run, so five characters marked with one kind can arrive as two runs.
-    The user's own snippet is what settled the rule this has to honour: **five characters marked
-    with one kind are ONE range**, where the same five with ruby are five (KCMParaText.h says so
-    and its test still proves it). Merging adjacent runs of equal value is what makes both routes
-    agree on that.
-
-   ⚠OFF IS A VALUE, NOT AN ABSENCE. Turning kenten off writes Kenten_None into the attribute rather
-    than removing it (SnpPerformTextAttrKenten does exactly that), so a run whose value is
-    Kenten_None carries no mark and must produce no span - otherwise every character in a document
-    that once had kenten anywhere would come back "marked".
+/* KentenValue
+   The value one stretch of kenten carries: its kind, and for a custom mark its character as well.
 
    ★CUSTOM CARRIES ITS CHARACTER INTO THE VALUE. Two custom marks are the same mark only if they
    use the same glyph, so the code and its character set ride along in the string ("Custom:2:9679").
    The panel shows only the "Custom" part; the rest is there so that swapping one custom glyph for
    another is reported as the change it is.
 */
-void ScanKenten(ITextModel* model, std::vector<AttrRun>& out)
+std::string KentenValue(int16 kind, const ITextAttrInt16* customChar)
 {
-	WalkCharAttrRuns(model, [&out](IComposeScanner* scanner, TextIndex i, int32 len)
+	std::string value = KentenKindName(kind);
+	if (kind != IKentenStyle::Kenten_Custom)
+		return value;
+
+	// ★THE CHARACTER ITSELF, NOT ITS NUMBER (corrected 2026-09-01 after the panel was
+	//   seen showing "Custom:0:8251" to a reader). The value has two readers - the
+	//   comparison, which only needs two custom marks to differ when the glyphs differ,
+	//   and the panel, which has to SHOW one. A number satisfies the first and fails
+	//   the second, and the failure is the same shape as the one this feature was
+	//   withdrawn for in August: something internal drawn where a person looks.
+	// ⚠BMP ONLY, and that is the SDK's limit rather than this line's: the attribute is
+	//   an int16 (SnpPerformTextAttrKenten's fCustomCharacter), so a glyph outside the
+	//   basic plane cannot be named as a custom kenten at all.
+	// ⚠THE CHARACTER SET ATTRIBUTE IS DELIBERATELY NOT READ. Measured 2026-09-01: the
+	//   code came back 8251 = U+203B for a mark entered as 'kome', with
+	//   kTAKentenCharacterSetBoss reading 0 - which the C++ enum calls kShiftJIS while
+	//   the scripting DOM calls the same setting CHARACTER_INPUT. The two disagree, so
+	//   the field cannot be used to decide how to read the code; the code was Unicode
+	//   in the one case that was measured, and that is what this assumes. **A mark
+	//   entered through the Shift-JIS or kuten boxes is therefore untested here** - it
+	//   would compare correctly and could show the wrong glyph.
+	if (customChar != nil && customChar->Get() != 0)
 	{
-		const TextIndex end = i + len;
-
-		InterfacePtr<const IAttrReport> kindAttr(
-			scanner->QueryAttributeAt(i, end, kTAKentenKindBoss));
-		InterfacePtr<const ITextAttrInt16> kind(kindAttr, UseDefaultIID());
-
-		if (kind != nil && kind->Get() != IKentenStyle::Kenten_None)
-		{
-			std::string value = KentenKindName(kind->Get());
-
-			if (kind->Get() == IKentenStyle::Kenten_Custom)
-			{
-				InterfacePtr<const IAttrReport> charAttr(
-					scanner->QueryAttributeAt(i, end, kTAKentenCharacterBoss));
-				InterfacePtr<const ITextAttrInt16> customChar(charAttr, UseDefaultIID());
-
-				// ★THE CHARACTER ITSELF, NOT ITS NUMBER (corrected 2026-09-01 after the panel was
-				//   seen showing "Custom:0:8251" to a reader). The value has two readers - the
-				//   comparison, which only needs two custom marks to differ when the glyphs differ,
-				//   and the panel, which has to SHOW one. A number satisfies the first and fails
-				//   the second, and the failure is the same shape as the one this feature was
-				//   withdrawn for in August: something internal drawn where a person looks.
-				// ⚠BMP ONLY, and that is the SDK's limit rather than this line's: the attribute is
-				//   an int16 (SnpPerformTextAttrKenten's fCustomCharacter), so a glyph outside the
-				//   basic plane cannot be named as a custom kenten at all.
-				// ⚠THE CHARACTER SET ATTRIBUTE IS DELIBERATELY NOT READ. Measured 2026-09-01: the
-				//   code came back 8251 = U+203B for a mark entered as 'kome', with
-				//   kTAKentenCharacterSetBoss reading 0 - which the C++ enum calls kShiftJIS while
-				//   the scripting DOM calls the same setting CHARACTER_INPUT. The two disagree, so
-				//   the field cannot be used to decide how to read the code; the code was Unicode
-				//   in the one case that was measured, and that is what this assumes. **A mark
-				//   entered through the Shift-JIS or kuten boxes is therefore untested here** - it
-				//   would compare correctly and could show the wrong glyph.
-				if (customChar != nil && customChar->Get() != 0)
-				{
-					// ★THE SHARED ENCODER, not a fourth copy of the UTF-8 cases - this file already calls
-					//   AppendUtf8 for every character of every paragraph it reads. ⚠The four-byte case
-					//   cannot arise here (the attribute is an int16, per the BMP warning above), which is
-					//   why writing three of them by hand looked like the whole set.
-					value += ":";
-					KCMParaText::AppendUtf8(value, static_cast<int32>(
-						static_cast<uint16>(customChar->Get())));
-				}
-			}
-
-			// ★MERGED WHERE THEY TOUCH - see the warning above. Compared by VALUE as well as by
-			//   position, so two different kinds meeting at a boundary stay two spans.
-			if (!out.empty() && out.back().fValue == value &&
-				out.back().fAt + out.back().fLen == i)
-			{
-				out.back().fLen += len;
-			}
-			else
-			{
-				AttrRun run;
-				run.fAt = i;
-				run.fLen = len;
-				run.fValue = value;
-				out.push_back(run);		// fGroup stays kFalse - kenten has no group/mono
-			}
-		}
-	});
+		// ★THE SHARED ENCODER, not a fourth copy of the UTF-8 cases - this file already calls
+		//   AppendUtf8 for every character of every paragraph it reads. ⚠The four-byte case
+		//   cannot arise here (the attribute is an int16, per the BMP warning above), which is
+		//   why writing three of them by hand looked like the whole set.
+		value += ":";
+		KCMParaText::AppendUtf8(value, static_cast<int32>(static_cast<uint16>(customChar->Get())));
+	}
+	return value;
 }
 
-/* ScanBoolAttribute
-   Every stretch of the story where one ON/OFF character attribute is ON, in reading order - the
-   manual WARICHU (kTAWarichuAttrBoss) and TATE-CHU-YOKO (kTATatechuyokoAttrBoss) (2026-09-16, user's
-   request).
-
-   ★ONE FUNCTION FOR BOTH, because they are the same shape: a bool16 on kCharAttrStrandBoss, read
-   by the official snippets the same way (SnpPerformTextAttrWarichu.cpp:302 /
-   SnpPerformTextAttrTateChuYoko.cpp:380, GetTextBool16Attribute over a range). The walk is
-   ScanKenten's, for ScanKenten's reasons: the attribute has no runs of its own, so it steps by the
-   strand's style and override boundaries (the shorter of the two), and those are over-fine, so
-   touching runs that are both ON are joined.
-   ⚠OFF IS A VALUE: taking either off writes kFalse (SnpPerformTextAttrWarichu.cpp:280, the
-    tate-chu-yoko snippet's :318), so kFalse produces no span - the same trap as Kenten_None.
-   ★MEASURED 2026-09-16 (a script on a scratch document): one character can carry BOTH - a
-    tate-chu-yoko inside a warichu reads true for both, in either order of applying them - which is
-    why they are two scans filling two lists rather than one.
-   ⚠**THE VALUE WRITTEN HERE IS A PLACEHOLDER.** A span's value is the characters it covers, and those
-    are only known in the paragraph's own count - ClosePara replaces it
-    (KCMParaText::SetSpanValuesToText). It is not empty only so that nothing between here and there
-    mistakes the run for "no value".
-   ⚠UNMEASURED: whether two warichu (or two tate-chu-yoko) set separately on touching characters are
-    one on the page. Joined here, the way the kenten walk joins.
-*/
-void ScanBoolAttribute(ITextModel* model, ClassID attribute, std::vector<AttrRun>& out)
+/** One stretch more of a mark: joined to the last when they touch and hold one value, so that five characters marked with
+	one kind are ONE range (the rule KCMParaAttrs::fKenten carries, the opposite of ruby) however the runs fall. */
+void AppendMarkRun(std::vector<AttrRun>& out, TextIndex at, int32 len, const std::string& value)
 {
-	WalkCharAttrRuns(model, [attribute, &out](IComposeScanner* scanner, TextIndex i, int32 len)
+	if (!out.empty() && out.back().fValue == value && out.back().fAt + out.back().fLen == at)
 	{
-		InterfacePtr<const IAttrReport> report(scanner->QueryAttributeAt(i, i + len, attribute));
-		InterfacePtr<const ITextAttrBoolean> on(report, UseDefaultIID());
+		out.back().fLen += len;
+		return;
+	}
+	AttrRun run;
+	run.fAt = at;
+	run.fLen = len;
+	run.fValue = value;
+	out.push_back(run);			// fGroup stays kFalse - neither kind has group/mono
+}
 
-		if (on != nil && on->Get() != kFalse)
+/* ScanCharMarks
+   Every stretch of KENTEN, of the manual WARICHU (kTAWarichuAttrBoss) and of TATE-CHU-YOKO (kTATatechuyokoAttrBoss) in the story, in
+   reading order (kenten 2026-09-01, the other two 2026-09-16, user's requests).
+
+   ★★★THESE ARE NOT STRANDS - THEY ARE CHARACTER ATTRIBUTES, and that is the whole difference from ScanRuby above: ruby's strand knows
+   where its own runs end; an attribute has no runs of its own. **The walk is the SDK's own for exactly this**, TextAttributeRunIterator
+   ("each range of text that has one consistent set of values" - SnpInspectTextModel.cpp, TKIPanelWidgetObserver.cpp), one walk for
+   the four attributes.
+   ⚠★★★**WHAT IT REPLACED READ THE WRONG VALUE** (measured 2026-11-01). The walk stepped by the character strand's style and override
+    boundaries and took the value at each run's head for the whole run - true of a mark from a character style or an override, and
+    false of one from a PARAGRAPH STYLE, which draws no boundary there: a kenten put on the second paragraph by its style was not
+    reported at all, and one taken off the first was reported over all three. The Pixel mode saw them, of course.
+
+   ⚠OFF IS A VALUE, NOT AN ABSENCE. Turning a mark off writes Kenten_None or kFalse into the attribute rather than removing it
+    (SnpPerformTextAttrKenten; SnpPerformTextAttrWarichu.cpp:280, the tate-chu-yoko snippet's :318), so such a stretch carries no mark and must
+    produce no span - otherwise every character in a document that once had one anywhere would come back "marked".
+   ★MEASURED 2026-09-16 (a script on a scratch document): one character can carry BOTH a warichu and a tate-chu-yoko - inside each
+    other, in either order of applying them - which is why they are lists of their own.
+   ⚠**THE VALUE WRITTEN FOR THOSE TWO IS A PLACEHOLDER.** A span's value is the characters it covers, and those are only known in the
+    paragraph's own count - ClosePara replaces it (KCMParaText::SetSpanValuesToText). It is not empty only so that nothing between
+    here and there mistakes the run for "no value".
+   ⚠UNMEASURED: whether two warichu (or two tate-chu-yoko) set separately on touching characters are one on the page. Joined here.
+*/
+void ScanCharMarks(ITextModel* model, std::vector<AttrRun>& outKenten, std::vector<AttrRun>& outWarichu, std::vector<AttrRun>& outTcy)
+{
+	const TextIndex total = model->TotalLength();
+	if (total <= 0)
+		return;
+
+	K2Vector<InDesign::TextRange> ranges;
+	ranges.push_back(InDesign::TextRange(model, 0, total));
+	K2Vector<ClassID> attributes;
+	attributes.push_back(kTAKentenKindBoss);
+	attributes.push_back(kTAKentenCharacterBoss);
+	attributes.push_back(kTAWarichuAttrBoss);
+	attributes.push_back(kTATatechuyokoAttrBoss);
+
+	for (TextAttributeRunIterator run(ranges.begin(), ranges.end(), attributes.begin(), attributes.end()); run; ++run)
+	{
+		const RangeData range = run.GetRunRange();
+		const TextIndex at = range.Start(nil);
+		const int32 len = range.Length();
+		if (len <= 0)
+			continue;
+
+		InterfacePtr<const ITextAttrInt16> kind(static_cast<const ITextAttrInt16*>(run->QueryByClassID(kTAKentenKindBoss, ITextAttrInt16::kDefaultIID)));
+		if (kind != nil && kind->Get() != IKentenStyle::Kenten_None)
 		{
-			if (!out.empty() && out.back().fAt + out.back().fLen == i)
-			{
-				out.back().fLen += len;
-			}
-			else
-			{
-				AttrRun run;
-				run.fAt = i;
-				run.fLen = len;
-				run.fValue = "on";		// the placeholder - see the head of this function
-				out.push_back(run);
-			}
+			InterfacePtr<const ITextAttrInt16> customChar(static_cast<const ITextAttrInt16*>(run->QueryByClassID(kTAKentenCharacterBoss, ITextAttrInt16::kDefaultIID)));
+			AppendMarkRun(outKenten, at, len, KentenValue(kind->Get(), customChar));
 		}
-	});
+		InterfacePtr<const ITextAttrBoolean> warichu(static_cast<const ITextAttrBoolean*>(run->QueryByClassID(kTAWarichuAttrBoss, ITextAttrBoolean::kDefaultIID)));
+		if (warichu != nil && warichu->Get() != kFalse)
+			AppendMarkRun(outWarichu, at, len, "on");
+		InterfacePtr<const ITextAttrBoolean> tcy(static_cast<const ITextAttrBoolean*>(run->QueryByClassID(kTATatechuyokoAttrBoss, ITextAttrBoolean::kDefaultIID)));
+		if (tcy != nil && tcy->Get() != kFalse)
+			AppendMarkRun(outTcy, at, len, "on");
+	}
 }
 
 /* ScanNotes
@@ -506,24 +440,9 @@ void ScanNotes(IDataBase* db, const OwnedItemDataList& owned, const KCMSkippedTe
 		if (skipped.Contains(owned[i].fAt))
 			continue;			// a marker in text the page does not set (KCMSkippedText.h)
 
-		// ★★★THE SPAN SITS ON THE CHARACTER BEFORE THE MARKER, NOT ON THE MARKER ITSELF, and it has
-		//   to: the marker is taken out of the text (ReadStory), so a span standing on it would
-		//   measure nothing and be dropped - the very rule that stops a ruby on a table's anchor
-		//   from being reported (TakeAttrFor). ★It is also where the page puts the number: at the
-		//   top right of the word the note hangs off.
-		//   ⚠A MARKER AT THE VERY START OF ITS PARAGRAPH HAS NO SUCH CHARACTER. Its span reaches
-		//    back past the paragraph's start, TakeAttrFor clips it away, and the note goes
-		//    unreported - written down in the chapter's unconfirmed list rather than guessed at.
-		// ⚠**THE TEST BELOW IS NOT THAT CASE**, and saying so is the point: it guards the START OF
-		//   THE STORY, where fAt - 1 would be a negative index. The paragraph case above needs no
-		//   guard at all - the span is built, and TakeAttrFor drops it when it clips to nothing.
-		//   (Written out because the two look alike and the comment above would otherwise read as
-		//   this line's explanation.)
-		if (owned[i].fAt <= 0)
-			continue;
-
+		// ★THE RUN STANDS ON THE MARKER. Which character the span sits on is the paragraph's to say (TakeNotesFor).
 		AttrRun run;
-		run.fAt = owned[i].fAt - 1;
+		run.fAt = owned[i].fAt;
 		run.fLen = 1;
 
 		// ★ASKED OF THE OBJECT, not of the settings: the settings say how numbering WORKS, this
@@ -696,6 +615,36 @@ struct ParaBeingRead
 	explicit ParaBeingRead(TextIndex at) : fLineStart(at), fStart(at), fLeadingAnchors(0) {}
 };
 
+/* TakeNotesFor
+   The note references standing in one paragraph, as spans of its text.
+
+   ★★★THE SPAN SITS ON A CHARACTER BESIDE THE MARKER, NOT ON THE MARKER, and it has to: the marker is taken out of the text
+   (ReadStory), and a span over no text is not a span. ★THE ONE BEFORE IT, which is where the page puts the number: at the top right of the
+   word the note hangs off - counted past what the text leaves out, so a marker right after a table stands on the word before the table.
+   ★★A MARKER WITH NO CHARACTER BEFORE IT - the paragraph begins with it - SITS ON THE PARAGRAPH'S FIRST (2026-11-01). Until then its span
+   clipped away, written down as unconfirmed since 09-08 and measured now: a footnote at a paragraph's start was reported by its words
+   alone, and an endnote there, whose words live in another story, not at all.
+   ⚠A paragraph with no character at all has nothing to sit on: the note's own words are what is left to report it.
+   ⚠THE CURSOR WALKS FORWARD WITH THE PARAGRAPHS, as TakeAttrFor's does; a marker belongs to one paragraph, so it moves past each.
+*/
+void TakeNotesFor(MarkRuns& marks, const ParaBeingRead& para, TextIndex paraEnd, KCMAttrSpanList& out)
+{
+	const std::vector<AttrRun>& runs = marks.fRuns;
+	size_t& cursor = marks.fNext;
+
+	while (cursor < runs.size() && runs[cursor].fAt < para.fLineStart)
+		++cursor;
+
+	for ( ; cursor < runs.size() && runs[cursor].fAt < paraEnd; ++cursor)
+	{
+		if (para.fText.empty())
+			continue;
+		const TextIndex marker = runs[cursor].fAt;
+		const int32 charsBefore = (marker < para.fStart) ? 0 : static_cast<int32>(marker - para.fStart) - CountUncounted(para.fUncounted, marker);
+		out.push_back(KCMAttrSpan((charsBefore > 0) ? charsBefore - 1 : 0, 1, runs[cursor].fValue, runs[cursor].fGroup));
+	}
+}
+
 /* ClosePara
    One finished paragraph: its text, where it stands, and everything riding over it.
 
@@ -751,8 +700,8 @@ void ClosePara(std::vector<std::string>& outParas,
 	//   crossing wrong.
 	TakeAttrFor(marks.fRuby, para.fStart, paraEnd, para.fUncounted, attrs.fRuby);
 	TakeAttrFor(marks.fKenten, para.fStart, paraEnd, para.fUncounted, attrs.fKenten);
-	TakeAttrFor(marks.fFootnote, para.fStart, paraEnd, para.fUncounted, attrs.fFootnote);
-	TakeAttrFor(marks.fEndnote, para.fStart, paraEnd, para.fUncounted, attrs.fEndnote);
+	TakeNotesFor(marks.fFootnote, para, paraEnd, attrs.fFootnote);
+	TakeNotesFor(marks.fEndnote, para, paraEnd, attrs.fEndnote);
 
 	// ★A WARICHU'S AND A TATE-CHU-YOKO'S VALUE IS ITS OWN CHARACTERS (2026-09-16), and they are only
 	//   known here, in the text's count that TakeAttrFor has just put the spans into.
@@ -776,9 +725,7 @@ uint64 KCMTextRead::MarksPrint(ITextModel* model)
 		return 0;
 	std::vector<AttrRun> runs[4];
 	ScanRuby(model, runs[0]);
-	ScanKenten(model, runs[1]);
-	ScanBoolAttribute(model, kTAWarichuAttrBoss, runs[2]);
-	ScanBoolAttribute(model, kTATatechuyokoAttrBoss, runs[3]);
+	ScanCharMarks(model, runs[1], runs[2], runs[3]);
 	uint64 print = 14695981039346656037ULL;		// FNV-1a, as the words' print is
 	const auto fold = [&print](uint64 value) { print ^= value; print *= 1099511628211ULL; };
 	for (int32 kind = 0; kind < 4; ++kind)
@@ -834,9 +781,9 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 	StoryMarks marks;
 	ScanRuby(model, marks.fRuby.fRuns);
 
-	// ★KENTEN COMES OFF THE SAME MOMENT, for the reason stated just above: a story read here and
+	// ★KENTEN, WARICHU AND TATE-CHU-YOKO COME OFF THE SAME MOMENT, for the reason stated just above: a story read here and
 	//   its emphasis marks read after some command ran would be two photographs in one row.
-	ScanKenten(model, marks.fKenten.fRuns);
+	ScanCharMarks(model, marks.fKenten.fRuns, marks.fWarichu.fRuns, marks.fTcy.fRuns);
 
 	// ★AND THE NOTE MARKERS, OFF THE SAME MOMENT AGAIN (2026-09-08). Their numbers are read here
 	//   too, so a row shows the number the page showed when the comparison ran - not the one the
@@ -848,10 +795,6 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 	IDataBase* const db = ::GetDataBase(model);
 	if (db != nil)
 		ScanNotes(db, owned, skipped, marks.fFootnote.fRuns, marks.fEndnote.fRuns);
-
-	// ★AND WARICHU AND TATE-CHU-YOKO (2026-09-16), off the same moment for the same reason.
-	ScanBoolAttribute(model, kTAWarichuAttrBoss, marks.fWarichu.fRuns);
-	ScanBoolAttribute(model, kTATatechuyokoAttrBoss, marks.fTcy.fRuns);
 
 	// ★AND THE OBJECTS PLACED IN THE TEXT (2026-10-27), off the same moment - but only when asked (the header says why).
 	if (withObjects && db != nil)
@@ -998,9 +941,9 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 			//   characters get keeps the two counts in step.
 			//   ⚠**AND THAT IS WHY THEY HAVE TO COME OUT OF THE TEXT.** Left in, the paragraph
 			//     holding a new note counts as a paragraph whose WORDS changed, and an attribute
-			//     found in such a paragraph is dropped unless its characters survive on both sides
-			//     (KCMStoryDiffRun's SpansWhoseTextSurvives) - a marker that has just been added
-			//     never does. The span would be built and then thrown away, and the row would say
+			//     found in such a paragraph says nothing of its own when its characters are gone
+			//     (KCMParaText::PairMarksAcross) - which is what a marker that has just been added
+			//     would read as. The span would be built and then thrown away, and the row would say
 			//     what it said before.
 			if (cp == kTextChar_FootnoteMarker || cp == kTextChar_EndnoteMarker)
 			{

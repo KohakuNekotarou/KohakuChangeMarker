@@ -123,6 +123,19 @@ bool16 HoldsObject(const WideString& words)
 	return kFalse;
 }
 
+/** kTrue when `words` hold an object's character with something behind it a copy would make anew (a glyph's place holder has nothing of
+	the kind: KCMParaText::IsSpecialGlyphCharacter). */
+bool16 HoldsObjectACopyWouldRemake(const WideString& words)
+{
+	for (int32 k = 0; k < words.CharCount(); ++k)
+	{
+		const int32 cp = static_cast<int32>(words.GetChar(k).GetValue());
+		if (KCMParaText::IsObjectCharacter(cp) && !KCMParaText::IsSpecialGlyphCharacter(cp))
+			return kTrue;
+	}
+	return kFalse;
+}
+
 /** kTrue when `words` hold a paragraph's return - a change that joins or splits paragraphs goes its paragraph's road. */
 bool16 HoldsReturn(const WideString& words)
 {
@@ -1837,11 +1850,16 @@ public:
 			IDataBase::SaveRestoreModifiedState sourceGuard(sourceDB);
 			InterfacePtr<ITextModel> tModel(target, UseDefaultIID());
 			InterfacePtr<ITextModel> sModel(source, UseDefaultIID());
-			if (!KCMCopyStore::InOneThread(tModel, tFrom, tTo) || !KCMCopyStore::InOneThread(sModel, sFrom, sTo)
+			// THE PLACE ON ONE SIDE ONLY (KCMStoryChange fBreakAt kKCMBreakNone - a footnote there with its reference, and not here): there is
+			//   nowhere to copy to, and the row's caret on the side without it is only where a press goes. Measured: a footnote's words written into
+			//   the middle of the body; the other way round they would leave an empty footnote.
+			if (live.fWholeParagraph && live.fBreakAt == kKCMBreakNone)
+				whyNot = "the place it stands in (a footnote or a cell) is on one side only - a copy of its words cannot bring the place";
+			else if (!KCMCopyStore::InOneThread(tModel, tFrom, tTo) || !KCMCopyStore::InOneThread(sModel, sFrom, sTo)
 				|| !KCMTextWords::WordsAt(tModel, tFrom, tTo - tFrom, targetWords)
 				|| !KCMTextWords::WordsAt(sModel, sFrom, sTo - sFrom, sourceWords))
 				whyNot = "its place could not be read as one stretch of one story thread";
-			else if (HoldsObject(targetWords) || HoldsObject(sourceWords))
+			else if (HoldsObjectACopyWouldRemake(targetWords) || HoldsObjectACopyWouldRemake(sourceWords))
 				whyNot = "its words hold an object (a table, a note, an anchored frame...) - copied, it would be made anew with a new UID";
 			else if (TouchesLink(tModel, tFrom, tTo) || TouchesLink(sModel, sFrom, sTo))
 				whyNot = "it touches a hyperlink or a cross-reference - a copy would make a second one";
@@ -2219,7 +2237,7 @@ private:
 	KCMRecordCopy TakeApplyCopy(const UIDRef& target, TextIndex from, TextIndex to, const WideString& words)
 	{
 		KCMRecordCopy out;
-		if (HoldsObject(words))
+		if (HoldsObjectACopyWouldRemake(words))
 		{
 			out.fWhyNot = kKCMCopyHoldsObject;
 			return out;
