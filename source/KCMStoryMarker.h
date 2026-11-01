@@ -16,6 +16,8 @@
 //    * So it follows vertical text, rotated frames and threaded columns for free. A marker worked
 //      out by hand as a rectangle in pasteboard coordinates has to be right on every one of those
 //      (KFC's was one, until it moved to this same mechanism).
+//    * Text on a path is the one case that is not free: its glyphs do not stand where its run does,
+//      and the run's shape is asked instead (KCMStoryMarkerBoxOnPath).
 //  **NOTHING IS ATTACHED TO ANYTHING.** A global adornment is drawn as if it were on every run;
 //  the document is not touched, nothing is saved into the .indd, and no recomposition is asked
 //  for (IGlobalTextAdornment.h says so where the interface itself is described). Its on/off

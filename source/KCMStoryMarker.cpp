@@ -24,13 +24,17 @@
 #include "IWaxLine.h"
 #include "IWaxRenderData.h"
 #include "IWaxRun.h"
+#include "IWaxRunShape.h"			// text on a path: where a run's characters really are
 
 // General includes:
 #include "AutoGSave.h"
 #include "CPMUnknown.h"
 #include "GraphicsData.h"
+#include "K2Vector.h"
+#include "PMPolygon4.h"
 #include "PMReal.h"
 #include <atomic>		// gHasMark - read off the main thread without the lock (2026-10-27)
+#include <cmath>		// std::sqrt - the direction a character on a path runs in
 #include <set>			// the documents to repaint when a mark moves between them
 #include "UIDRef.h"
 
@@ -327,9 +331,104 @@ void KCMStoryMarkerDropClosed(IDocumentList* docList, KCMStoryMarkDocs& docs)
 /** One rectangle to fill, and what to fill it with (2026-10-05: the Track mode colours each author). */
 struct KCMMarkBox
 {
-	PMRect			fBox;
-	KCMMarkColour	fColour;
+	PMRect					fBox;		// what is filled; with fQuads, what they reach - the ink bounds read it either way
+	KCMMarkColour			fColour;
+	K2Vector<PMPolygon4>	fQuads;		// text on a path only: what is filled instead, a quadrilateral a character
 };
+
+/* KCMStoryMarkerBarOf
+   The caret's bar on a character of text on a path: as tall as the character's quadrilateral, leaning the way it leans, standing
+   at the edge the caret is at and running on in the reading direction - what a bar is on a straight line, turned to the path.
+
+   The corners run with the text whichever way up it stands: 0 start and top, 1 end and top, 2 end and bottom, 3 start and bottom
+   (measured on the lower half of an oval, where the text reads upside down).
+
+   @param quad the character's quadrilateral, from IWaxRunShape::GetWaxBounds.
+   @param after the far edge of the character rather than the near one.
+   @param width how thick, along the text.
+*/
+PMPolygon4 KCMStoryMarkerBarOf(const PMPolygon4& quad, bool after, const PMReal& width)
+{
+	const PMPoint top = quad[after ? 1 : 0];
+	const PMPoint bottom = quad[after ? 2 : 3];
+
+	// A character with no width has no top edge to read the direction off: square to its side instead.
+	double dx = ::ToDouble(quad[1].X() - quad[0].X());
+	double dy = ::ToDouble(quad[1].Y() - quad[0].Y());
+	if (dx == 0.0 && dy == 0.0)
+	{
+		dx = ::ToDouble(quad[3].Y() - quad[0].Y());
+		dy = ::ToDouble(quad[0].X() - quad[3].X());
+	}
+	const double length = std::sqrt(dx * dx + dy * dy);
+	const double scale = (length > 0.0) ? ::ToDouble(width) / length : 0.0;
+	const PMReal alongX = dx * scale;
+	const PMReal alongY = dy * scale;
+
+	PMPolygon4 bar;
+	bar[0] = top;
+	bar[1] = PMPoint(top.X() + alongX, top.Y() + alongY);
+	bar[2] = PMPoint(bottom.X() + alongX, bottom.Y() + alongY);
+	bar[3] = bottom;
+	return bar;
+}
+
+/* KCMStoryMarkerBoxOnPath
+   One marked range of a run of text on a path.
+
+   **A STRAIGHT BOX CANNOT DO IT, AND NOT BECAUSE IT IS STRAIGHT.** Such a run's position stands at the path's own origin and each
+   glyph carries its own matrix, so the x and y the rest of this file works from are not where the characters are: the box landed
+   clear of the words (measured: the box at 0,-17 to 294,0, the words at 149,300). IWaxRunShape answers in the coordinates the run
+   draws in, one quadrilateral a character; it is what the product's own selection reads.
+
+   @param waxRun a run IsTOPRun answers kTrue for.
+   @param charStart, charCount the characters, as offsets into the run.
+   @param isCaret, caretAfter what stands there: the bar, at which edge of the character; or, not a caret, the wash.
+   @param barWidth how thick a bar is.
+   @param box [out] its quadrilaterals and what they reach.
+   @return kFalse when the run gives no shape for them, and there is nothing to draw.
+*/
+bool16 KCMStoryMarkerBoxOnPath(const IWaxRun* waxRun, int32 charStart, int32 charCount, bool16 isCaret, bool caretAfter,
+							   const PMReal& barWidth, KCMMarkBox& box)
+{
+	InterfacePtr<const IWaxRunShape> shape(waxRun, UseDefaultIID());
+	if (shape == nil)
+		return kFalse;
+
+	K2Vector<PMPolygon4> quads;
+	shape->GetWaxBounds(charStart, charCount, &quads);
+	if (quads.empty())
+		return kFalse;
+
+	if (isCaret)
+	{
+		const PMPolygon4 bar = KCMStoryMarkerBarOf(caretAfter ? quads.back() : quads.front(), caretAfter, barWidth);
+		quads.clear();
+		quads.push_back(bar);
+	}
+
+	box.fBox = quads.front().GetContainingRect();
+	for (K2Vector<PMPolygon4>::const_iterator q = quads.begin(); q != quads.end(); ++q)
+		box.fBox.Union(q->GetContainingRect());
+	box.fQuads.swap(quads);
+	return kTrue;
+}
+
+/* KCMStoryMarkerDrawIsOutput
+   Is this drawing the document's output - paper, a PDF, a picture of the page, a simulation of the sheet - rather than a window?
+   Output takes the marks only with "Print comparison marks" on; a window takes them as the toggles say (spec map SMK-18, SMK-19).
+
+   **kPreviewMode ALONE DOES NOT SAY.** The screen's Preview, Bleed and Slug modes set it, and those are still a window: Always Show
+   holds there, as it does for the Pixel mode's frames, whose test this is (KCMDrawEventHandler::DrawSpreadMarks: printing, isThumb,
+   oppHides). A picture of a page sets it with no view, and an overprint preview sets it over a simulation of the printed sheet, where
+   what will not print is not shown (spec map MK-15).
+*/
+bool16 KCMStoryMarkerDrawIsOutput(GraphicsData* gd, int32 iShapeFlags)
+{
+	if ((iShapeFlags & IShape::kPrinting) != 0 || KCMIsOverprintPreview(gd))
+		return kTrue;
+	return ((iShapeFlags & IShape::kPreviewMode) != 0 && gd->GetView() == nil) ? kTrue : kFalse;
+}
 
 }	// anonymous namespace
 
@@ -451,6 +550,7 @@ std::vector<KCMMarkBox> KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* wax
 
 	const PMReal y = waxRun->GetYPosition();				// the baseline
 	const PMReal size = renderData->GetFontMatrix().GetYScale();
+	const bool16 onPath = waxRun->IsTOPRun();
 
 	for (KCMMarkRangeList::const_iterator r = runRanges.begin(); r != runRanges.end(); ++r)
 	{
@@ -463,6 +563,8 @@ std::vector<KCMMarkBox> KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* wax
 		//   (DynamicSpellCheckAdornment.cpp, in its own drawing loop).
 		int32 glyphIndex = -1;
 		int32 glyphLength = 0;
+		int32 shapeStart = charStart;		// the characters a shape is asked for on a path
+		int32 shapeCount = charCount;
 		bool caretAfter = (r->fShape == KCMMarkRange::kCaretAfter);
 		waxGlyphs->MapCharsToGlyphs(charStart, charCount, &glyphIndex, &glyphLength);
 		const auto mapsToNothing = [&]() { return glyphIndex < 0 || glyphLength <= 0 || glyphIndex >= glyphCount; };
@@ -478,12 +580,23 @@ std::vector<KCMMarkBox> KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* wax
 		{
 			waxGlyphs->MapCharsToGlyphs(charStart - 1, 1, &glyphIndex, &glyphLength);
 			caretAfter = true;
+			shapeStart = charStart - 1;
+			shapeCount = 1;
 		}
 
 		if (mapsToNothing())
 			continue;						// a range that maps to nothing skips this box, not the run
 		if (glyphIndex + glyphLength > glyphCount)
 			glyphLength = glyphCount - glyphIndex;
+
+		if (onPath)
+		{
+			KCMMarkBox box;
+			box.fColour = r->fColour;
+			if (KCMStoryMarkerBoxOnPath(waxRun, shapeStart, shapeCount, r->IsCaret(), caretAfter, size * PMReal(kCaretWidthFraction), box))
+				boxes.push_back(box);
+			continue;
+		}
 
 		// Where the range starts and how wide it is: an escapement is the distance from the start of
 		//   the run THROUGH a glyph (IWaxGlyphs.h).
@@ -513,8 +626,9 @@ std::vector<KCMMarkBox> KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* wax
 			width = size * PMReal(kCaretWidthFraction);
 
 		const PMReal x = waxRun->GetXPosition() + offset;
-		const KCMMarkBox box = { PMRect(x, y - size * PMReal(kAscentFraction), x + width, y + size * PMReal(kDescentFraction)),
-								 r->fColour };
+		KCMMarkBox box;
+		box.fBox = PMRect(x, y - size * PMReal(kAscentFraction), x + width, y + size * PMReal(kDescentFraction));
+		box.fColour = r->fColour;
 		boxes.push_back(box);
 	}
 
@@ -534,10 +648,10 @@ bool16 KCMStoryMarkerAdornment::GetIsActive(const IParcelShape* /*parcelShape*/,
 	//   tool's button started using it, and a reader who turns "Print comparison marks" on means it.
 	//   The answer is now per document, decided by the same two toggles that decide the Pixel
 	//     mode's frames (KCMStoryMarkBuild).
-	// @warning **kPrinting AND kPreviewMode GET THE SAME ANSWER** -- the header is explicit that an
-	//   adornment which does not draw when printing must not draw for print preview either
-	//   (IGlobalTextAdornment.h, at GetIsActive). Asking one function keeps that true by
-	//   construction.
+	// @warning **kPreviewMode IS LEFT TO Draw.** The flag is set for the screen's preview modes as well as for
+	//   a page's picture, and this pass has no GraphicsData to tell them apart (KCMStoryMarkerDrawIsOutput).
+	//   The header's "an adornment that does not draw when printing should not draw for this either" is about
+	//   marks that never print; these print when the reader says so, and in a window the toggles decide.
 	// @warning **the answer here is coarser than the one Draw gives, and it has to be.**
 	//   This pass cannot name the document it is about: the header says of this very parameter
 	//   "the parcel this text is in. **It MAY NOT be a UID based object**"
@@ -551,7 +665,7 @@ bool16 KCMStoryMarkerAdornment::GetIsActive(const IParcelShape* /*parcelShape*/,
 	//     compiler refused, it was not that. **The conclusion was right and the reason was wrong**,
 	//     which is the worse of the two failures: a reason that does not hold stops warning anybody
 	//     the day it stops applying. The real reason is above, and it was in the header all along.
-	if (iShapeFlags & (IShape::kPrinting | IShape::kPreviewMode))
+	if (iShapeFlags & IShape::kPrinting)
 		return KCMDrawEventHandler::sPrintMarks;
 
 	return kTrue;
@@ -583,12 +697,19 @@ void KCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const IW
 	if (gd == nil)
 		return;
 
+	// **NOTHING GOES INTO KCM'S OWN PICTURES**, the rule of the Pixel mode's marks (DrawSpreadMarks) and for its
+	//   reasons. With Print on, this asked as a picture of the page and was allowed: a Pixel comparison started
+	//   from the Story mode found the wash as a change on a page where nothing shows (a space at a story's end),
+	//   the Alt read answered the wash's colour, and the Shift peek laid the older words over with their wash.
+	if (KCMDrawEventHandler::tl_Rasterizing.Get())
+		return;
+
 	// THE PRINT DECISION IS MADE PER RUN, INSIDE GetMarkBoxes, because that is where the run's own
 	//   database has just been worked out. GetIsActive answered the same question for the parcel,
 	//   but Draw is reached by paths that do not consult it, so the flags are read again here.
 	// @warning the flags are no longer a flat refusal. They now select WHICH question is asked: on
 	//   screen every marked run draws; on paper only the documents whose toggle says so do.
-	const bool16 forPrint = ((iShapeFlags & (IShape::kPrinting | IShape::kPreviewMode)) != 0) ? kTrue : kFalse;
+	const bool16 forPrint = KCMStoryMarkerDrawIsOutput(gd, iShapeFlags);
 
 	const std::vector<KCMMarkBox> boxes = GetMarkBoxes(waxRun, renderData, waxGlyphs, forPrint);
 	if (boxes.empty())
@@ -654,7 +775,22 @@ void KCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const IW
 	{
 		const KCMMarkColour& base = b->fColour.fHasOwn ? b->fColour : panelColour;
 		KCMSetOutputColor(gPort, washed(base.fR), washed(base.fG), washed(base.fB), forPrint);
-		gPort->rectfill(b->fBox);
+		if (b->fQuads.empty())
+		{
+			gPort->rectfill(b->fBox);
+			continue;
+		}
+		// Text on a path: a quadrilateral a character. They overlap where the path bends; the wash is opaque, so that shows nothing.
+		for (K2Vector<PMPolygon4>::const_iterator q = b->fQuads.begin(); q != b->fQuads.end(); ++q)
+		{
+			gPort->newpath();
+			gPort->moveto((*q)[0].X(), (*q)[0].Y());
+			gPort->lineto((*q)[1].X(), (*q)[1].Y());
+			gPort->lineto((*q)[2].X(), (*q)[2].Y());
+			gPort->lineto((*q)[3].X(), (*q)[3].Y());
+			gPort->closepath();
+			gPort->fill();
+		}
 	}
 }
 

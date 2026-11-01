@@ -278,14 +278,14 @@ void KCMStoryMarkRefresh()
 		//   whole plug-in: **while the button is held, that window is the other way round** -- marks
 		//   that were off come on, and marks that were on go off, which is what lets the reader look at
 		//   the plain page underneath the ones they asked to keep.
-		//   So XOR, where this was OR until "Hold to Hide Marks" was retired (that toggle used to own
+		//   So XOR for the toggles, where this was OR until "Hold to Hide Marks" was retired (that toggle used to own
 		//     the "hide while held" half, and its other half duplicated Always Show Marks on Target).
 		//   The Pixel mode's frames follow the same rule, but spelt out in two places rather than one,
 		//     because they are drawn by the draw event: the toggle puts them up (alwaysScreen in
 		//     KCMDrawEventHandler) and the press takes them down (sMarksTempHidden, set in
 		//     KCMPeekGesture). Here both halves are this one expression.
 		//   @warning a press is over ONE window, so the other window's toggle is left exactly as it is.
-		//   @warning real bools, made by == and ||, so that != below is an XOR: bool16 is an integer type,
+		//   @warning real bools, made by == and != 0, so that != below is an XOR: bool16 is an integer type,
 		//     and any non-zero truth other than kTrue would make a bare != answer the wrong way round.
 		const bool pressTarget = (gPress == kPressOverTarget);
 		const bool pressSource = (gPress == kPressOverSource);
@@ -300,17 +300,20 @@ void KCMStoryMarkRefresh()
 		//   the page agree because there is only ever one answer to draw from.
 		// ★★★**BOTH SIDES READ THE PRINT TOGGLE, ON SCREEN AND ON PAPER** (2026-09-08, the user's
 		//   call: "with Print ON they are printable AND permanently shown, print preview included").
+		//   So it is OR-ed outside the press: a press reverses what a toggle asks for, and cannot hide what Print is
+		//   showing - what the Pixel mode's frames do (srcWanted and wantMarks in KCMDrawEventHandler).
 		//   ⚠**THE PARAGRAPH THAT STOOD HERE SAID THE OPPOSITE** for the Source side, and cited
 		//     IKCMCompareFacade.h as the specification - the same citation that carried the stale
 		//     rule into the printing test further down this file. Both were corrected today.
 		//   ★So the two lines below are now the SAME SHAPE, which is the point: a reader can see at
 		//     a glance that the sides agree, instead of having to work out why they differ.
-		const bool tgtWanted = KCMDrawEventHandler::sTgtMarksOn || KCMDrawEventHandler::sPrintMarks;
-		const bool srcWanted = KCMDrawEventHandler::sSrcMarksOn || KCMDrawEventHandler::sPrintMarks;
+		const bool tgtToggled = (KCMDrawEventHandler::sTgtMarksOn != 0);
+		const bool srcToggled = (KCMDrawEventHandler::sSrcMarksOn != 0);
+		const bool printing = (KCMDrawEventHandler::sPrintMarks != 0);
 
-		if (tgtWanted != pressTarget)
+		if (printing || tgtToggled != pressTarget)
 			KCMStoryCollectRanges(KCMArmedTargetDB(), kFalse, docs);
-		if (srcWanted != pressSource)
+		if (printing || srcToggled != pressSource)
 			KCMStoryCollectRanges(KCMArmedSourceDB(), kTrue, docs);
 	}
 
