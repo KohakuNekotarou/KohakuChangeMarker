@@ -28,7 +28,7 @@
 //      jump's flash in the SOURCE window too, where nothing was standing and the reader had just
 //      asked to be shown something (the bug logged as A3).
 //
-//  **HEADER-ONLY AND FREE OF THE SDK EXCEPT FOR TWO TYPE NAMES, WHICH IS WHAT MAKES IT
+//  **HEADER-ONLY AND FREE OF THE SDK EXCEPT FOR TWO TYPE NAMES (AND kMaxInt32), WHICH IS WHAT MAKES IT
 //  TESTABLE.** IDataBase is never dereferenced here -- it is an address used as a key -- and UID
 //  only has to sort. The test outside InDesign is work\kescm-markranges-test, which includes
 //  this file as it stands rather than a copy that could drift.
@@ -108,6 +108,55 @@ inline void KCMComposeMarkDocs(const KCMStoryMarkDocs& standing, const KCMStoryM
 
 		KCMAddDrawableStories(out, doc->first, doc->second);
 	}
+}
+
+/** How far a set reaches: the whole marked span across every story of every document, which is a free
+	way to refuse most runs before asking any of them which story they belong to (that question costs a
+	Query). The span of nothing refuses every run, so there is no state in which it means nothing. */
+struct KCMMarkSpan
+{
+	TextIndex	fLowest;	// the first marked character anywhere
+	TextIndex	fHighest;	// one past the last
+
+	KCMMarkSpan() : fLowest(kMaxInt32), fHighest(0) {}
+
+	/** Do the characters [runStart, runEnd) lie wholly before or after everything that is marked? */
+	bool16 Misses(TextIndex runStart, TextIndex runEnd) const
+	{
+		return (runEnd <= fLowest || runStart >= fHighest) ? kTrue : kFalse;
+	}
+};
+
+/** Put every story's list into the one shape the marker draws from (KCMMergeMarkRanges), and say how far
+	the whole set reaches.
+
+	@warning merging was once a matter of correctness (two Difference inversions over the same
+	 characters punched a hole); the wash is opaque and an overlap would merely paint twice, so
+	 what the merge buys now is the cost of drawing -- one fill per stretch instead of one per
+	 edit.
+
+	@param docs [in,out] each list rewritten in place. What goes in may overlap and be in any order.
+	@return the span of what came out.
+*/
+inline KCMMarkSpan KCMMergeMarkDocs(KCMStoryMarkDocs& docs)
+{
+	KCMMarkSpan span;
+	for (KCMStoryMarkDocs::iterator doc = docs.begin(); doc != docs.end(); ++doc)
+	{
+		for (KCMStoryMarkMap::iterator story = doc->second.begin(); story != doc->second.end(); ++story)
+		{
+			KCMMarkRangeList& ranges = story->second;
+			KCMMergeMarkRanges(ranges);
+			if (ranges.empty())
+				continue;				// nothing but empty ranges: there is no first or last to read
+
+			if (ranges.front().fFrom < span.fLowest)
+				span.fLowest = ranges.front().fFrom;
+			if (ranges.back().fTo > span.fHighest)
+				span.fHighest = ranges.back().fTo;
+		}
+	}
+	return span;
 }
 
 #endif // __KCMStoryMarkDocs_h__

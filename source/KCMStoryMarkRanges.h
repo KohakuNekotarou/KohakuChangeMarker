@@ -37,67 +37,85 @@
 #include <algorithm>
 #include <vector>
 
+/** The colour a range is painted in.
+
+	★A COLOUR OF ITS OWN (2026-10-05, the Track mode: each change in the colour InDesign paints its record on, by default its AUTHOR's).
+	None of its own = the panel's Mark colour, which is every range of the other modes - so nothing they draw
+	changes. Ranges are fused only with ranges of the same colour (KCMMergeMarkRanges). */
+struct KCMMarkColour
+{
+	bool16	fHasOwn;		// kFalse = the panel's Mark colour, and the other three say nothing
+	uint8	fR, fG, fB;
+
+	KCMMarkColour() : fHasOwn(kFalse), fR(0), fG(0), fB(0) {}
+	KCMMarkColour(uint8 r, uint8 g, uint8 b) : fHasOwn(kTrue), fR(r), fG(g), fB(b) {}
+
+	/** Do two ranges paint the same colour? Two "Mark colour" ranges do; a colour of its own only matches itself. */
+	bool operator==(const KCMMarkColour& other) const
+	{
+		if (!fHasOwn || !other.fHasOwn)
+			return !fHasOwn && !other.fHasOwn;
+		return fR == other.fR && fG == other.fG && fB == other.fB;
+	}
+};
+
 /** One stretch of characters to light up, in one story. */
 struct KCMMarkRange
 {
 	TextIndex	fFrom;		// first character
 	TextIndex	fTo;		// one PAST the last -- an END, not a length, as RangeData::End() is against its Length()
 
-	/** **A CARET, NOT A STRETCH.** A DELETION has no width on the side it was deleted from --
-		there is no character there to mark -- and it was once shown by widening it to one character,
-		which lit up whatever had closed up over the gap. That is a different character saying "I am
-		the edit", and in the two cases the reader hit first it was plainly wrong: deleting a whole
-		paragraph lit the first character of the NEXT one, and deleting the end of a story lit the
-		story's final carriage return, which draws nothing at all.
-		A caret occupies [fFrom, fFrom+1) so that it sorts, merges and intersects exactly like any
-		  other range -- but the drawing side gives it a thin bar at the START of that character
-		  instead of washing the whole of it (KCMStoryMarker's GetMarkBoxes). Nothing else has to know. */
-	bool16		fCaret;
+	/** What is drawn for those characters. */
+	enum Shape
+	{
+		/** The characters are washed. */
+		kStretch,
 
-	/** **A CARET AT THE END OF ITS CHARACTER RATHER THAN THE START** (2026-09-12). A deletion at
-		the very END of a story has no character in front of it to stand before: what follows the
-		gap is the story's final carriage return, which draws nothing, and a range standing on it
-		reaches no wax run at all - so the bar was never drawn, and the reader saw a deletion with
-		no place (found on the live application: 「あe」→「あ」 showed no bar). Such a caret is
-		carried as [last, last+1) over the LAST VISIBLE character, with this flag telling the
-		drawing side to stand the bar after it. Meaningless unless fCaret. */
-	bool16		fCaretAfter;
+		/** **A CARET, NOT A STRETCH.** A DELETION has no width on the side it was deleted from --
+			there is no character there to mark -- and it was once shown by widening it to one character,
+			which lit up whatever had closed up over the gap. That is a different character saying "I am
+			the edit", and in the two cases the reader hit first it was plainly wrong: deleting a whole
+			paragraph lit the first character of the NEXT one, and deleting the end of a story lit the
+			story's final carriage return, which draws nothing at all.
+			A caret occupies [fFrom, fFrom+1) so that it sorts, merges and intersects exactly like any
+			  other range -- but the drawing side gives it a thin bar at the START of that character
+			  instead of washing the whole of it (KCMStoryMarker's GetMarkBoxes). Nothing else has to know. */
+		kCaretBefore,
 
-	/** ★A COLOUR OF ITS OWN (2026-10-05, the Track mode: each change in the colour InDesign paints its record on, by default its AUTHOR's).
-		kFalse = the panel's Mark colour, which is every range of the other modes - so nothing they draw
-		changes. Ranges are fused only with ranges of the same colour (KCMMergeMarkRanges). */
-	bool16		fHasColour;
-	uint8		fR, fG, fB;
+		/** **A CARET AT THE END OF ITS CHARACTER RATHER THAN THE START** (2026-09-12). A deletion at
+			the very END of a story has no character in front of it to stand before: what follows the
+			gap is the story's final carriage return, which draws nothing, and a range standing on it
+			reaches no wax run at all - so the bar was never drawn, and the reader saw a deletion with
+			no place (found on the live application: 「あe」→「あ」 showed no bar). Such a caret is
+			carried as [last, last+1) over the LAST VISIBLE character, and the drawing side stands the bar
+			after it. */
+		kCaretAfter
+	};
+	Shape		fShape;
 
-	KCMMarkRange(TextIndex from, TextIndex to, bool16 caret = kFalse, bool16 caretAfter = kFalse)
-		: fFrom(from), fTo(to), fCaret(caret), fCaretAfter(caretAfter), fHasColour(kFalse), fR(0), fG(0), fB(0) {}
+	KCMMarkColour	fColour;
 
-	/** This range in a colour of its own (the Track mode). */
-	KCMMarkRange WithColour(uint8 r, uint8 g, uint8 b) const
+	KCMMarkRange(TextIndex from, TextIndex to, Shape shape = kStretch) : fFrom(from), fTo(to), fShape(shape) {}
+
+	bool16 IsCaret() const { return (fShape != kStretch) ? kTrue : kFalse; }
+
+	/** This range in this colour (the Track mode's; a KCMMarkColour with none of its own is the Mark colour). */
+	KCMMarkRange WithColour(const KCMMarkColour& colour) const
 	{
 		KCMMarkRange c(*this);
-		c.fHasColour = kTrue;
-		c.fR = r; c.fG = g; c.fB = b;
+		c.fColour = colour;
 		return c;
 	}
 
 	/** The caret standing in front of character `at`. */
-	static KCMMarkRange Caret(TextIndex at) { return KCMMarkRange(at, at + 1, kTrue); }
+	static KCMMarkRange Caret(TextIndex at) { return KCMMarkRange(at, at + 1, kCaretBefore); }
 
 	/** The caret standing AFTER character `at - 1` - for a gap at `at` that nothing visible
 		follows (the end of the story). @warning `at` must be > 0; the caller checks. */
-	static KCMMarkRange CaretAfter(TextIndex at) { return KCMMarkRange(at - 1, at, kTrue, kTrue); }
+	static KCMMarkRange CaretAfter(TextIndex at) { return KCMMarkRange(at - 1, at, kCaretAfter); }
 };
 
 typedef std::vector<KCMMarkRange> KCMMarkRangeList;
-
-/** Do two ranges paint the same colour? Two "Mark colour" ranges do; a colour of its own only matches itself. */
-inline bool KCMMarkRangeSameColour(const KCMMarkRange& a, const KCMMarkRange& b)
-{
-	if (!a.fHasColour || !b.fHasColour)
-		return !a.fHasColour && !b.fHasColour;
-	return a.fR == b.fR && a.fG == b.fG && a.fB == b.fB;
-}
 
 /** Reading order, and a stable tie-break so that a merge of equal starts is deterministic. */
 inline bool KCMMarkRangeIsBefore(const KCMMarkRange& a, const KCMMarkRange& b)
@@ -120,7 +138,7 @@ inline bool KCMMarkRangeEndsAtOrBefore(const KCMMarkRange& r, TextIndex v)
 	here rather than being fused away.
 
 	**CARETS ARE KEPT APART FROM THE FUSING**, and there are two reasons:
-	  (1) fusing would lose the flag -- a caret swallowed into a neighbouring stretch would come
+	  (1) fusing would lose the shape -- a caret swallowed into a neighbouring stretch would come
 	    out the other side as an ordinary marked character, which is the very thing it replaced;
 	  (2) a caret that sits INSIDE a stretch is dropped, because that place is already lit.
 	    @warning this was correctness while the mark inverted (a second pass over the same pixels
@@ -139,7 +157,7 @@ inline void KCMMergeMarkRanges(KCMMarkRangeList& ranges)
 	{
 		if (it->fFrom >= it->fTo)
 			continue;
-		if (it->fCaret)
+		if (it->IsCaret())
 			carets.push_back(*it);
 		else
 			kept.push_back(*it);
@@ -158,7 +176,7 @@ inline void KCMMergeMarkRanges(KCMMarkRangeList& ranges)
 			merged.push_back(*it);
 			continue;
 		}
-		if (KCMMarkRangeSameColour(*it, merged.back()))
+		if (it->fColour == merged.back().fColour)
 		{
 			if (it->fTo > merged.back().fTo)
 				merged.back().fTo = it->fTo;
@@ -210,7 +228,7 @@ inline void KCMMergeMarkRanges(KCMMarkRangeList& ranges)
 		//   character, [i, i+1). For it to overlap a stretch, that stretch would have to contain i --
 		//   and every such caret was just dropped by the test above. A stretch beginning at i+1 only
 		//   TOUCHES it, which this list allows between a caret and its neighbour (they are not fused,
-		//   deliberately: fusing would lose the flag).
+		//   deliberately: fusing would lose the shape).
 		//   @warning a clipping pass was written here first and removed: it could never fire, and the
 		//     one thing it could do was turn [i, i+1) into an empty range that the intersect below
 		//     drops.
@@ -246,12 +264,12 @@ inline void KCMIntersectMarkRanges(const KCMMarkRangeList& merged,
 	{
 		const TextIndex from = (it->fFrom > runStart) ? it->fFrom : runStart;
 		const TextIndex to   = (it->fTo   < runEnd)   ? it->fTo   : runEnd;
-		// @warning the caret flag travels with the piece. A caret clipped by a run boundary keeps its
-		//   flag, which is right: the bar belongs at the START of its character, and that is the end
-		//   the run containing it sees.
+		// @warning the shape travels with the piece. A caret clipped by a run boundary stays a caret,
+		//   which is right: the bar belongs at the START of its character, and that is the end the run
+		//   containing it sees.
 		if (from < to)
 		{
-			KCMMarkRange piece(*it);		// the flags AND the colour travel with the piece
+			KCMMarkRange piece(*it);		// the shape AND the colour travel with the piece
 			piece.fFrom = from - runStart;
 			piece.fTo = to - runStart;
 			out.push_back(piece);

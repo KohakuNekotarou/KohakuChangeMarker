@@ -24,6 +24,7 @@
 // General includes:
 #include "UIDRef.h"
 #include "Utils.h"
+#include <utility>						// std::move - the set goes over to the marker
 
 // Project includes:
 #include "IKCMStoryEditsFacade.h"		// the rows and their changes - what is marked
@@ -40,8 +41,8 @@ namespace
 
 // Is the tool's button down, and over which window? @warning NOT "is anything showing" -- the
 // toggles can be holding marks up with no button down at all.
-bool16 gPressActive = kFalse;
-bool16 gPressUseSource = kFalse;
+enum KCMStoryPress { kPressNone, kPressOverTarget, kPressOverSource };
+KCMStoryPress gPress = kPressNone;
 
 // @warning **"IS WHAT IS ON SCREEN MINE" IS NEITHER REMEMBERED NOR ASKED HERE -- IT IS OWNED.**
 //   The marker keeps the standing set and the jump's flash apart, so this file takes down what
@@ -64,13 +65,12 @@ bool16 gPressUseSource = kFalse;
    The rest of what TotalLength counts IS wanted: it includes the text of embedded tables, and in
    a story that is entirely new the table's words are new as well.
 
-   @return kFalse for a story that is not there or holds nothing but that final return.
+   @return 0 for a story that is not there or holds nothing but that final return.
 */
-bool16 KCMStoryWholeTextEnd(IDataBase* db, UID storyUID, TextIndex& outEnd)
+TextIndex KCMStoryWholeTextEnd(IDataBase* db, UID storyUID)
 {
 	InterfacePtr<ITextModel> model(UIDRef(db, storyUID), UseDefaultIID());
-	outEnd = (model != nil) ? model->TotalLength() - 1 : 0;
-	return (outEnd > 0) ? kTrue : kFalse;
+	return (model != nil) ? model->TotalLength() - 1 : 0;
 }
 
 /* A range in the Track mode's author colour, when the change has one (2026-10-05); otherwise as it was - every other
@@ -79,8 +79,67 @@ KCMMarkRange KCMTrackColoured(IKCMStoryEditsFacade* edits, int32 n, int32 i, con
 {
 	IKCMStoryEditsFacade::TrackChange tc;
 	if (edits->GetTrackChange(n, i, tc) && tc.fHasColour)
-		return range.WithColour(tc.fR, tc.fG, tc.fB);
+		return range.WithColour(KCMMarkColour(tc.fR, tc.fG, tc.fB));
 	return range;
+}
+
+/* KCMStoryAddChange
+   What one change of a row marks in the document being asked for, added to the row's list. Nothing, for a change that is
+   not a place there.
+
+   @param edits, n, i which change: row n, change i.
+   @param db, storyHere, useSourceDocument the document being marked, the row's story in it, and which of the two it is.
+   @param ranges [in,out] the row's list so far.
+*/
+void KCMStoryAddChange(IKCMStoryEditsFacade* edits, int32 n, int32 i, IDataBase* db, UID storyHere, bool16 useSourceDocument,
+					   KCMMarkRangeList& ranges)
+{
+	IKCMStoryEditsFacade::Change change;
+	if (!edits->GetChange(n, i, change))
+		return;
+	// (⛔**A CHANGE THE READER HAD TAKEN IN WAS NOT MARKED** - its row stayed in the list, but
+	//  the marks say "the two versions differ HERE" and at that place they no longer did.
+	//  Nothing is taken in since the restore went on 2026-09-21.)
+
+	// ★**AND WHAT AN IMPORT COULD NOT PUT IN IS NOT A PLACE** (2026-09-19): a "!" child names a
+	//   reason, not a range - its positions are zero - and a mark drawn from it would be a
+	//   caret at the start of the story pointing at nothing.
+	if (change.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused)
+		return;
+
+	// ★A CHANGE THE READER TOOK BACK IS NOT MARKED (2026-09-24, stage 2 C): the marks say "the two versions
+	//   differ HERE", and at that place they no longer do - the row says "=" for the same reason.
+	if (change.fReplaced)
+		return;
+
+	// ★★A TABLE ROW MARKS ITS CHANGED CELLS, ONE SPAN EACH (2026-09-19 night, the user: "the
+	//   changed cells should be marked" - even though the list shows one row). The spans are
+	//   Target coordinates, so only the Target's marks read them; the Source side lights the
+	//   table's anchor range below, as any change would.
+	if (change.fWhat == IKCMStoryEditsFacade::Change::kWhatTable && !useSourceDocument)
+	{
+		for (int32 s = 0; s < change.fMarkSpanCount; ++s)
+		{
+			TextIndex a = 0;
+			TextIndex b = 0;
+			if (!edits->GetChangeMarkSpan(n, i, s, a, b))
+				continue;
+			ranges.push_back((b > a) ? KCMMarkRange(a, b) : KCMMarkRange::Caret(a));
+		}
+		return;
+	}
+
+	// **AN INSERTION MARKS ITS PLACE ON THE SOURCE SIDE, AS A CARET.** It used to be skipped, because
+	//   the older side was said to hold nothing to point at -- true of characters, false of the
+	//   place. The range comes through EMPTY for one, like a deletion on the side it was deleted
+	//   from, and an empty range is a caret (KCMStoryMarker::CaretAt, which the jump's flash asks too).
+	const TextIndex from = useSourceDocument ? change.fSourceStart : change.fTargetStart;
+	const TextIndex to = useSourceDocument ? change.fSourceEnd : change.fTargetEnd;
+	if (to < from)
+		return;
+
+	ranges.push_back(KCMTrackColoured(edits, n, i, (to > from) ? KCMMarkRange(from, to)
+																 : KCMStoryMarker::CaretAt(db, storyHere, from)));
 }
 
 /* KCMStoryCollectRanges
@@ -157,7 +216,13 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 
 		KCMMarkRangeList ranges;
 
-		if (changeCount <= 0)
+		if (changeCount > 0)
+		{
+			ranges.reserve(changeCount);
+			for (int32 i = 0; i < changeCount; ++i)
+				KCMStoryAddChange(edits, n, i, db, storyHere, useSourceDocument, ranges);
+		}
+		else if ((row.fKinds & kKCMStoryKindUnpaired) != 0)
 		{
 			// **AN UNPAIRED STORY IS MARKED WHOLE.** An Added story has no partner in the older version
 			//   and a Removed one has none in the newer, so no text diff was ever run for either -- which
@@ -172,66 +237,9 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 			// Asked as Unpaired rather than as Added, which is this plug-in's own rule: the two kinds
 			//   differ only in WHICH document holds the story, and that has already been settled by the
 			//   row filter above (KCMStoryStamp.h, at kKCMStoryKindUnpaired).
-			if ((row.fKinds & kKCMStoryKindUnpaired) == 0)
-				continue;
-
-			TextIndex wholeEnd = 0;
-			if (!KCMStoryWholeTextEnd(db, storyHere, wholeEnd))
-				continue;
-
-			ranges.push_back(KCMMarkRange(0, wholeEnd));
-		}
-		else
-			ranges.reserve(changeCount);
-
-		for (int32 i = 0; i < changeCount; ++i)		// no changes = not entered; the whole range is already in
-		{
-			IKCMStoryEditsFacade::Change change;
-			if (!edits->GetChange(n, i, change))
-				continue;
-			// (⛔**A CHANGE THE READER HAD TAKEN IN WAS NOT MARKED** - its row stayed in the list, but
-			//  the marks say "the two versions differ HERE" and at that place they no longer did.
-			//  Nothing is taken in since the restore went on 2026-09-21.)
-
-			// ★**AND WHAT AN IMPORT COULD NOT PUT IN IS NOT A PLACE** (2026-09-19): a "!" child names a
-			//   reason, not a range - its positions are zero - and a mark drawn from it would be a
-			//   caret at the start of the story pointing at nothing.
-			if (change.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused)
-				continue;
-
-			// ★A CHANGE THE READER TOOK BACK IS NOT MARKED (2026-09-24, stage 2 C): the marks say "the two versions
-			//   differ HERE", and at that place they no longer do - the row says "=" for the same reason.
-			if (change.fReplaced)
-				continue;
-
-			// ★★A TABLE ROW MARKS ITS CHANGED CELLS, ONE SPAN EACH (2026-09-19 night, the user: "the
-			//   changed cells should be marked" - even though the list shows one row). The spans are
-			//   Target coordinates, so only the Target's marks read them; the Source side lights the
-			//   table's anchor range below, as any change would.
-			if (change.fWhat == IKCMStoryEditsFacade::Change::kWhatTable && !useSourceDocument)
-			{
-				for (int32 s = 0; s < change.fMarkSpanCount; ++s)
-				{
-					TextIndex a = 0;
-					TextIndex b = 0;
-					if (!edits->GetChangeMarkSpan(n, i, s, a, b))
-						continue;
-					ranges.push_back((b > a) ? KCMMarkRange(a, b) : KCMMarkRange::Caret(a));
-				}
-				continue;
-			}
-
-			// **AN INSERTION MARKS ITS PLACE ON THE SOURCE SIDE, AS A CARET.** It used to be skipped, because
-			//   the older side was said to hold nothing to point at -- true of characters, false of the
-			//   place. The range comes through EMPTY for one, like a deletion on the side it was deleted
-			//   from, and an empty range is a caret (KCMStoryMarker::CaretAt, which the jump's flash asks too).
-			const TextIndex from = useSourceDocument ? change.fSourceStart : change.fTargetStart;
-			const TextIndex to = useSourceDocument ? change.fSourceEnd : change.fTargetEnd;
-			if (to < from)
-				continue;
-
-			ranges.push_back(KCMTrackColoured(edits, n, i, (to > from) ? KCMMarkRange(from, to)
-																		 : KCMStoryMarker::CaretAt(db, storyHere, from)));
+			const TextIndex wholeEnd = KCMStoryWholeTextEnd(db, storyHere);
+			if (wholeEnd > 0)
+				ranges.push_back(KCMMarkRange(0, wholeEnd));
 		}
 
 		if (!ranges.empty())
@@ -277,10 +285,10 @@ void KCMStoryMarkRefresh()
 		//     KCMDrawEventHandler) and the press takes them down (sMarksTempHidden, set in
 		//     KCMPeekGesture). Here both halves are this one expression.
 		//   @warning a press is over ONE window, so the other window's toggle is left exactly as it is.
-		//   @warning real bools, made by || and &&, so that != below is an XOR: bool16 is an integer type,
+		//   @warning real bools, made by == and ||, so that != below is an XOR: bool16 is an integer type,
 		//     and any non-zero truth other than kTrue would make a bare != answer the wrong way round.
-		const bool pressTarget = gPressActive && !gPressUseSource;
-		const bool pressSource = gPressActive && gPressUseSource;
+		const bool pressTarget = (gPress == kPressOverTarget);
+		const bool pressSource = (gPress == kPressOverSource);
 		// **"Print comparison marks" ALSO PUTS THEM UP ON SCREEN**, and this is what makes printing
 		//   possible at all. The Pixel mode has always worked this way -- its wantMarks is
 		//   `(sPrintMarks || sMarksVisible || ...)`, so turning the print toggle on shows the frames
@@ -308,7 +316,7 @@ void KCMStoryMarkRefresh()
 
 	// An empty set takes the standing marks down. A jump's pointer may be on screen and it is not ours
 	//   to clear -- this call names which of the two kinds it is about (KCMStoryMarker.h).
-	KCMStoryMarker::ShowStanding(docs);
+	KCMStoryMarker::ShowStanding(std::move(docs));
 }
 
 void KCMStoryMarkSetPress(bool16 active, bool16 useSourceDocument)
@@ -317,15 +325,12 @@ void KCMStoryMarkSetPress(bool16 active, bool16 useSourceDocument)
 	//   marks, because the button also comes up after gestures this file never heard the start of
 	//   (Pixel mode, the CMYK sampler, a peek). It is also what stops a release from taking down a
 	//   jump's marker.
-	if (!active && !gPressActive)
+	if (!active && gPress == kPressNone)
 		return;
 
-	gPressActive = active;
-
 	// WHICH WINDOW IS ONLY RECORDED ON THE WAY DOWN. A release does not carry the answer -- the
-	//   cursor may have left the window by then -- so the press keeps its own.
-	if (active)
-		gPressUseSource = useSourceDocument;
+	//   cursor may have left the window by then -- and has no need of it.
+	gPress = !active ? kPressNone : (useSourceDocument ? kPressOverSource : kPressOverTarget);
 
 	KCMStoryMarkRefresh();
 }

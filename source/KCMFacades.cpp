@@ -97,7 +97,7 @@
 #include "KCMPlaceReach.h"			// GetChangePlaceReach - locks and hidden, KFC's landing rules
 #include "KCMDiag.h"				// KCM_DIAG_FAULT("batch-fail") - a batch's roll-back, measured (test builds only)
 #include <set>						// the rows a batch touched
-#include <utility>					// std::pair - a batch's (row, change)
+#include <utility>					// std::pair - a batch's (row, change); std::move - a flash goes over to the marker
 
 namespace
 {
@@ -3168,7 +3168,7 @@ void KCMStoryMarkFacade::ShowJumpFlash(IDataBase* db, UID storyUID,
 		KCMStoryMarker::AddFlashRange(flash, flashSourceDB, sourceStoryUID, sourceFrom, sourceTo);
 	}
 
-	KCMStoryMarker::ShowFlash(flash);
+	KCMStoryMarker::ShowFlash(std::move(flash));
 }
 
 /* ShowJumpFlash in the Track mode's author colour, in the Target alone: a Track listing has no Source. */
@@ -3177,8 +3177,8 @@ void KCMStoryMarkFacade::ShowJumpFlashColoured(IDataBase* db, UID storyUID,
 												bool16 hasColour, uint8 r, uint8 g, uint8 b)
 {
 	KCMStoryMarkDocs flash;
-	KCMStoryMarker::AddFlashRange(flash, db, storyUID, from, to, hasColour, r, g, b);
-	KCMStoryMarker::ShowFlash(flash);
+	KCMStoryMarker::AddFlashRange(flash, db, storyUID, from, to, hasColour ? KCMMarkColour(r, g, b) : KCMMarkColour());
+	KCMStoryMarker::ShowFlash(std::move(flash));
 }
 
 // End of KCMFacades.cpp.

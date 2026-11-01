@@ -76,18 +76,18 @@
 
 std::map<UID, KCMOverlayEntry*> KCMDrawEventHandler::sEntries;
 IDataBase* KCMDrawEventHandler::sDB = nil;
-bool16 KCMDrawEventHandler::sMarksVisible = kFalse;	// default hidden; the marks appear while the tool's left button is held (the master toggle)
+std::atomic<bool16> KCMDrawEventHandler::sMarksVisible(kFalse);	// default hidden; the marks appear while the tool's left button is held (the master toggle)
 PMReal KCMDrawEventHandler::sMarkScreenOpacity = 1.0;	// default opaque. While the button is held, or while printing is on, this is the chosen 25%/75%
-bool16 KCMDrawEventHandler::sPrintMarks = kFalse;	// default screen only (nothing goes into print or PDF)
-bool16 KCMDrawEventHandler::sMarkOpacity25 = kTrue;	// default 25%, matching the panel's default radio. kFalse = 75%
-bool16 KCMDrawEventHandler::sMarkColorCyan = kFalse;	// default red. kTrue = cyan
-bool16 KCMDrawEventHandler::sShowOldNumbers = kFalse;	// default off (the flyout's "Show Original Page Numbers")
-bool16 KCMDrawEventHandler::sMarksTempHidden = kFalse;	// with "Always Show Marks on Target" on, kTrue only while the tool's left button is held over the Target window
-bool16 KCMDrawEventHandler::sRingFrameOff = kFalse;	// the report's switch (the header); off = the page frame is part of every ring image
-bool16 KCMDrawEventHandler::sReportExport = kFalse;	// the report's other switch (the header): its exports are running
-bool16 KCMDrawEventHandler::sSrcMarksPressed = kFalse;	// kTrue only while the button is held over the Source window. It records "pressed", not "hidden" -- the drawing XORs it with sSrcMarksOn (see the declaration)
-bool16 KCMDrawEventHandler::sSrcMarksOn = kFalse;	// default off (the flyout's "Always Show Marks on Source"). Start does not touch it: the setting is saved in the panel state and restored at start-up, so a Start that overwrote it would wipe the reader's choice
-bool16 KCMDrawEventHandler::sTgtMarksOn = kFalse;	// the Target counterpart. Screen only -- print and PDF are decided by sPrintMarks. Start does not touch it either
+std::atomic<bool16> KCMDrawEventHandler::sPrintMarks(kFalse);	// default screen only (nothing goes into print or PDF)
+std::atomic<bool16> KCMDrawEventHandler::sMarkOpacity25(kTrue);	// default 25%, matching the panel's default radio. kFalse = 75%
+std::atomic<bool16> KCMDrawEventHandler::sMarkColorCyan(kFalse);	// default red. kTrue = cyan
+std::atomic<bool16> KCMDrawEventHandler::sShowOldNumbers(kFalse);	// default off (the flyout's "Show Original Page Numbers")
+std::atomic<bool16> KCMDrawEventHandler::sMarksTempHidden(kFalse);	// with "Always Show Marks on Target" on, kTrue only while the tool's left button is held over the Target window
+std::atomic<bool16> KCMDrawEventHandler::sRingFrameOff(kFalse);	// the report's switch (the header); off = the page frame is part of every ring image
+std::atomic<bool16> KCMDrawEventHandler::sReportExport(kFalse);	// the report's other switch (the header): its exports are running
+std::atomic<bool16> KCMDrawEventHandler::sSrcMarksPressed(kFalse);	// kTrue only while the button is held over the Source window. It records "pressed", not "hidden" -- the drawing XORs it with sSrcMarksOn (see the declaration)
+std::atomic<bool16> KCMDrawEventHandler::sSrcMarksOn(kFalse);	// default off (the flyout's "Always Show Marks on Source"). Start does not touch it: the setting is saved in the panel state and restored at start-up, so a Start that overwrote it would wipe the reader's choice
+std::atomic<bool16> KCMDrawEventHandler::sTgtMarksOn(kFalse);	// the Target counterpart. Screen only -- print and PDF are decided by sPrintMarks. Start does not touch it either
 IDataBase* KCMDrawEventHandler::sSrcDB = nil;
 std::map<UID, UID> KCMDrawEventHandler::sSrcPageToTarget;
 std::map<UID, UID> KCMDrawEventHandler::sPrevPairTargetToSource;	// the last comparison's pairing, for the register toggle's differential re-comparison
@@ -101,7 +101,7 @@ IDThreading::ThreadLocal<bool16> KCMDrawEventHandler::tl_Rasterizing(kFalse);	//
 std::map<UID, KCMOrigImage*> KCMDrawEventHandler::sOrigImages;
 IDataBase* KCMDrawEventHandler::sOrigDB = nil;
 std::set<UID> KCMDrawEventHandler::sOrigPartnerless;
-bool16 KCMDrawEventHandler::sShowOriginal = kFalse;	// default hidden
+std::atomic<bool16> KCMDrawEventHandler::sShowOriginal(kFalse);	// default hidden
 PMReal KCMDrawEventHandler::sOrigScale = 0.0;	// the zoom scale the pictures were rasterised at (0 = not set)
 PMReal KCMDrawEventHandler::sPeekOpacity = 1.0;	// default opaque (Shift peek). Shift+Alt peek sets 0.5
 

@@ -15,6 +15,7 @@
 #ifndef __KCMDrawEventHandler_h__
 #define __KCMDrawEventHandler_h__
 
+#include <atomic>        // the switches below: the main thread writes them, the drawing reads them on any thread
 #include <map>
 #include <set>
 #include <vector>
@@ -118,6 +119,8 @@ struct KCMOrigImage
 //       Handled by taking **KCMMarkStateLock** everywhere the mark state is touched: DropAll,
 //       DropOneEntry, MakeEntry's replacement, both drawing loops in DrawSpreadMarks, and
 //       RebuildOverflowCache's swap. The "am I rasterising" flag is THREAD-LOCAL (tl_Rasterizing).
+//       The bool16 switches (sPrintMarks and the rest) are std::atomic: each is one value that the main
+//       thread writes and the drawing reads with no lock, so the lock would have nothing to keep together.
 //       @warning the condition to protect is **"the main thread writes it and the background
 //       thread reads it while drawing"**. Count that condition for every new piece of shared
 //       state, its writers included -- protecting only the discarding side is not enough.
@@ -161,7 +164,7 @@ public:
 	// driven separately, by **Shift + left (opaque) and Shift+Alt + left (50%)**, held rather than
 	// clicked, and it works from either window (KCMPeekGesture.cpp). There is no double click
 	// anywhere in the peek.
-	static bool16 sMarksVisible;
+	static std::atomic<bool16> sMarksVisible;
 	// The EFFECTIVE opacity applied to the on-screen marks (the rings). Default 1.0.
 	//   - while the tool's left button is held = SelectedMarkOpacity() (the panel's 25%/75%)
 	//   - while shown permanently             = KCMBaseScreenOpacity() ⇒ **the selected 25%/75%
@@ -173,13 +176,13 @@ public:
 	// Whether the change marks (rings) also go into print and PDF (KCMDoSetPrintMarks).
 	// Default kFalse (screen only). While it is on they are also shown on screen at all times,
 	// regardless of the tool's left button (WYSIWYG). Held independently of the mark data.
-	static bool16 sPrintMarks;
+	static std::atomic<bool16> sPrintMarks;
 	// While kTrue, BuildRing leaves out the band along the page edge (the "page frame") and draws
 	// only the rings around the changed cells. Off by default; the Before/After report turns it on
 	// for the length of its Before export (the author's ask: the PDF without the frame around the
 	// page) and off again. Whoever flips it calls InvalidateRingCache() on both sides,
 	// because the ring images are cached per entry and rebuilt only when the radius changes.
-	static bool16 sRingFrameOff;
+	static std::atomic<bool16> sRingFrameOff;
 	// kTrue for the length of the Before/After report's two page exports (KCMReport.cpp), Before
 	// and After alike. Read by the story ID labels (KCMRingAdornment.cpp section 1.5): with their
 	// toggle on they go into the report's After side (the author's call; the Before side
@@ -187,7 +190,7 @@ public:
 	// or PDF takes them only with sPrintMarks. And by the ring itself (drawRings in
 	// DrawSpreadMarks): the report compares the pixels in every compare mode, so its
 	// rings are drawn whatever mode is chosen.
-	static bool16 sReportExport;
+	static std::atomic<bool16> sReportExport;
 	// Force every entry's ring image to be rebuilt on its next draw (lastRadius = -1, under the
 	// mark-state lock). Main thread only, like the other writers of sEntries' contents.
 	static void InvalidateRingCache();
@@ -196,7 +199,7 @@ public:
 	// The tool's left-hold display, the always-on display while printing is on
 	// (KCMBaseScreenOpacity) and the print/PDF output (KCMDrawRingForPrint) all read this choice
 	// through SelectedMarkOpacity(), so screen and print agree.
-	static bool16 sMarkOpacity25;
+	static std::atomic<bool16> sMarkOpacity25;
 	// The mark colour chosen by the flyout ("Mark colour: Red / Cyan"). kFalse = red (the
 	// default), kTrue = cyan.
 	// ⚠Never picked automatically from the ground (turning the mark cyan over reddish ground, read
@@ -204,7 +207,7 @@ public:
 	// ground at all**, so the two modes would decide colour differently, and an automatic change
 	// cannot be explained to the reader looking at it. The reader picks -- if a red mark is lost
 	// against red ground, choose cyan.
-	static bool16 sMarkColorCyan;
+	static std::atomic<bool16> sMarkColorCyan;
 	// "Always Show Marks on Source": the Source (older) document carries the same rings at all
 	// times, regardless of the tool's left button. Default kFalse.
 	// **Start does not touch it.** The setting is saved in the panel state and restored at
@@ -216,7 +219,7 @@ public:
 	//   Target side** (the author's decision through the spec map's MK-14). One setting, one
 	//   meaning: this toggle decides the SCREEN only -- were it to reach the output too, "Print
 	//   comparison marks: off" would not mean what it says for a Source document.
-	static bool16 sSrcMarksOn;
+	static std::atomic<bool16> sSrcMarksOn;
 	// "Always Show Marks on Target": the Target document's marks are shown **on screen** at all
 	// times, regardless of the tool's left button. The pair of the Source one above.
 	// In the Story compare mode the same toggle governs the inverted characters
@@ -224,7 +227,7 @@ public:
 	// @warning **screen only**, unlike the Source one: what comes out of the Target document is
 	// decided by "Print comparison marks" (sPrintMarks). If this affected the output too, that
 	// toggle would stop meaning anything.
-	static bool16 sTgtMarksOn;
+	static std::atomic<bool16> sTgtMarksOn;
 	// The Source document's db. Set when a comparison runs (KCMDoMarkChangesDoc / MakeEntry) and
 	// put back to nil by DropAll.
 	static IDataBase* sSrcDB;
@@ -263,7 +266,7 @@ public:
 	// hidden spread before it). With sPrintMarks on it goes into print and PDF too.
 	// Independent of the mark data (sEntries): it is drawn on any document's spread whose numbers
 	// have shifted (with nothing hidden the old number equals the current one and nothing is drawn).
-	static bool16 sShowOldNumbers;
+	static std::atomic<bool16> sShowOldNumbers;
 
 	// THE RULE, in one sentence: **while the button is held, everything is the other way round** --
 	// a toggle that is off shows while held, one that is on hides while held (sMarksTempHidden and
@@ -278,7 +281,7 @@ public:
 	// the marks only while held).
 	// It is raised only for a press over the Target window, so only the pressed window's frames
 	// are hidden -- the state is per window.
-	static bool16 sMarksTempHidden;
+	static std::atomic<bool16> sMarksTempHidden;
 	// kTrue only **while** the tool's left button is held over the Source layout window.
 	// @warning **this is not the Source counterpart of sMarksTempHidden.** That one remembers
 	//   "hidden"; this one remembers only "pressed", and what to show is decided by the drawing
@@ -292,7 +295,7 @@ public:
 	//   side can be one flag.**
 	// Printing always shows the Source frames, so this does not affect it (the drawing side gates
 	// on !printing).
-	static bool16 sSrcMarksPressed;
+	static std::atomic<bool16> sSrcMarksPressed;
 
 	// The chosen frame opacity (0.25 / 0.75). The single supplier for every route that draws a
 	// frame.
@@ -304,9 +307,10 @@ public:
 	// job (red -> C0 M100 Y100 K0, cyan -> C100 M0 Y0 K0).
 	static void SelectedMarkColor(uint8& r, uint8& g, uint8& b)
 	{
-		r = sMarkColorCyan ? kKCMRingAltR : kKCMRingR;
-		g = sMarkColorCyan ? kKCMRingAltG : kKCMRingG;
-		b = sMarkColorCyan ? kKCMRingAltB : kKCMRingB;
+		const bool16 cyan = sMarkColorCyan;		// read once: a flip between two reads would mix the two colours
+		r = cyan ? kKCMRingAltR : kKCMRingR;
+		g = cyan ? kKCMRingAltG : kKCMRingG;
+		b = cyan ? kKCMRingAltB : kKCMRingB;
 	}
 	// kTrue only while WE are rasterising (SnapshotUtilsEx::Draw inside MakeEntry / MakeOrigImage),
 	// so that a re-entrant draw paints no marks into our own raster. Relying on the kPreviewMode
@@ -330,7 +334,7 @@ public:
 	static IDataBase* sOrigDB;							// the single document those pictures belong to (switching db rebuilds them)
 	static std::set<UID> sOrigPartnerless;				// the pages of that spread with no counterpart: no picture to take, and known, so
 														// that a spread holding one is not rasterised again on every press
-	static bool16 sShowOriginal;						// whether the peek is shown (default off)
+	static std::atomic<bool16> sShowOriginal;						// whether the peek is shown (default off)
 	static PMReal sOrigScale;							// the content->window scale (zoom x device scale) the pictures were
 														// rasterised at, so a later peek can tell the zoom has changed and
 														// rebuild them. 0 = not set

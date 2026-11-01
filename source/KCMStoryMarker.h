@@ -117,12 +117,12 @@ namespace KCMStoryMarker
 		@param storyUID which story.
 		@param from first character to light up.
 		@param to one past the last. from == to is the caret case described above.
-		@param hasColour, r, g, b the Track mode's author colour (2026-10-05); kFalse = the Mark colour,
+		@param colour the Track mode's author colour (2026-10-05); none of its own = the Mark colour,
 			which is what every other caller wants.
 	*/
 	void AddFlashRange(KCMStoryMarkDocs& docs, IDataBase* db, UID storyUID,
 					   TextIndex from, TextIndex to,
-					   bool16 hasColour = kFalse, uint8 r = 0, uint8 g = 0, uint8 b = 0);
+					   const KCMMarkColour& colour = KCMMarkColour());
 
 	/** Show a jump's pointer, and start the countdown that takes it away.
 
@@ -131,8 +131,10 @@ namespace KCMStoryMarker
 
 		@warning it does not touch the standing marks -- a document that has one keeps it, and this
 		 shows in whatever documents do not.
+
+		@param docs the ranges, taken over rather than copied: hand a local set in with std::move.
 	*/
-	void ShowFlash(const KCMStoryMarkDocs& docs);
+	void ShowFlash(KCMStoryMarkDocs docs);
 
 	/** Light up every range in every document of the set, and DO NOT start a countdown - it stays
 		up until the next call replaces it.
@@ -149,9 +151,9 @@ namespace KCMStoryMarker
 
 		@param docs the ranges, per document, per story. Merged here, so the caller may hand over
 			overlapping ranges in any order. An empty set takes the standing marks down, and leaves a
-			jump's pointer alone.
+			jump's pointer alone. Taken over rather than copied: hand a local set in with std::move.
 	*/
-	void ShowStanding(const KCMStoryMarkDocs& docs);
+	void ShowStanding(KCMStoryMarkDocs docs);
 
 	/** Take a jump's pointer down now, leaving the standing marks alone. Safe when there is none.
 

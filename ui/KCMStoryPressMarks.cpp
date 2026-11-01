@@ -41,20 +41,22 @@
 //     IT (`if (compare != nil && compare->IsArmed() ...`). Going through a facade instead must not
 //     quietly drop that guard - the same protection the CMYK sampler's shutdown path keeps, and for
 //     the same reason (KCMPeek.cpp writes it down).
-//   ⚠`InterfacePtr<IXxx> p(Utils<IXxx>());` does not compile - most vexing parse - which is why
-//     every one of these says QueryUtilInterface() ([[utils-boss-facade-access]]).
+//   ⚠★★THE TEST IS ON THE Utils OBJECT, BEFORE ANYTHING IS ASKED OF IT (2026-11-02). These said
+//     `InterfacePtr<...> marks(Utils<...>().QueryUtilInterface()); if (marks != nil)`, and QueryUtilInterface
+//     has no test of its own - it AddRefs what it holds (Utils.h) - so the test stood behind the crash it
+//     was there to stop ([[utils-boss-facade-access]]).
 
 void KCMStoryMarksRefresh()
 {
-	InterfacePtr<IKCMStoryMarkFacade> marks(Utils<IKCMStoryMarkFacade>().QueryUtilInterface());
-	if (marks != nil)
+	Utils<IKCMStoryMarkFacade> marks;
+	if (marks)
 		marks->Refresh();
 }
 
 void KCMStoryPressMarksBegin(bool16 useSourceDocument)
 {
-	InterfacePtr<IKCMStoryMarkFacade> marks(Utils<IKCMStoryMarkFacade>().QueryUtilInterface());
-	if (marks != nil)
+	Utils<IKCMStoryMarkFacade> marks;
+	if (marks)
 		marks->SetPress(kTrue, useSourceDocument);
 }
 
@@ -63,8 +65,8 @@ void KCMStoryPressMarksEnd()
 	// ⚠No "was anything pressed" test here, and that is not an omission: the model keeps the press
 	//   state, so it is the only side that can answer, and it refuses a release it never saw a press
 	//   for. Testing here as well would be the same fact written down twice.
-	InterfacePtr<IKCMStoryMarkFacade> marks(Utils<IKCMStoryMarkFacade>().QueryUtilInterface());
-	if (marks != nil)
+	Utils<IKCMStoryMarkFacade> marks;
+	if (marks)
 		marks->SetPress(kFalse, kFalse);
 }
 
