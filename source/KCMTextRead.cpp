@@ -97,7 +97,7 @@ void CellsOfTables(const std::vector<KCMTableShape>& tables, std::vector<CellPla
 
    NEITHER OF THEM IS IN THE TEXT. Ruby rides a strand beside it (kRubyAttrStrandBoss) and
    kenten is a set of character ATTRIBUTES (kTAKenten*Boss on kCharAttrStrandBoss), so nothing the
-   walk above reads out of the characters can ever mention either: a story whose readings were
+   walk (ReadStory) reads out of the characters can ever mention either: a story whose readings were
    retyped, or whose emphasis marks were changed from sesame dots to bullseyes, comes back
    byte-for-byte identical as text. That is the whole reason this exists.
 
