@@ -342,7 +342,7 @@ public:
 		one row is being refreshed, not the order.
 
 		THE ROW STAYS, whatever comes of it. A story brought back into agreement comes out with
-		NO children and keeps its row, marked "None" - the panel is answering "what differs now",
+		NO children and keeps its row, marked "=" - the panel is answering "what differs now",
 		not "does this row still belong here". See KCMStoryDiffRun.h for why the change counters
 		cannot answer the second question anyway.
 
