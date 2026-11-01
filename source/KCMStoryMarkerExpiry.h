@@ -16,7 +16,7 @@
 //   plain function pointer that nothing reference-counts -- its own header opens with six
 //   "Danger!"s saying the supplying plug-in must not be unloaded while that pointer is in the
 //   timer. A CIdleTask is an interface on a boss: it can be Released at shutdown and takes part
-//   in teardown like everything else. Ported from KBS's KBSMarkerExpiryIdleTask, which reached
+//   in teardown like everything else. Ported from KFC's KFCMarkerExpiryIdleTask, which reached
 //   the same conclusion the same way (and which in turn took it from KESCL).
 //
 //========================================================================================

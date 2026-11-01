@@ -14,7 +14,7 @@
 //  "not running" would lead to. Calling UninstallTask when nothing is installed is free (it
 //  answers kEndOfTime for a task that was not there). So every entry point below simply
 //  uninstalls first and asks no questions -- the shape Adobe's own re-arming code uses
-//  (spellpanel/DynSpellCheckEventWatcher.cpp does it on every keystroke). KBS learned this the
+//  (spellpanel/DynSpellCheckEventWatcher.cpp does it on every keystroke). KFC learned this the
 //  hard way in its own audit; the flag it removed then is not being reintroduced here.
 //
 //========================================================================================
@@ -30,7 +30,7 @@
 #include "KCMStoryMarker.h"
 #include "KCMStoryMarkerExpiry.h"
 
-// How long the mark stays up. The same second KBS settled on: long enough to find with the eye,
+// How long the mark stays up. The same second KFC settled on: long enough to find with the eye,
 // short enough that it is plainly a pointer rather than a highlight the reader has to dismiss.
 static const uint32 kKCMStoryMarkerLifetimeMs = 1000;
 

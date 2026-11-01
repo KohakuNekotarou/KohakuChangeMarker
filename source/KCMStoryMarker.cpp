@@ -103,8 +103,8 @@ TextIndex  gMarkHighest = 0;
 // How far above and below the baseline the mark reaches, as a fraction of the type size --
 // roughly ascent and descent. @warning the two numbers come from the product's spelling
 // adornment, where the lines that used them are COMMENTED OUT (DynamicSpellCheckAdornment.cpp,
-// at the head of its GetInkBounds): it declares the glyph box instead. The split is ours; only
-// the figures are borrowed.
+// in its GetInkBounds): it declares a one-point strip under the baseline instead. The split is
+// ours; only the figures are borrowed.
 const double kAscentFraction  = 0.85;
 const double kDescentFraction = 0.10;
 
@@ -415,10 +415,10 @@ public:
 		  * a priority is split in two, **the whole part being the PASS and the fraction the RUN**
 		    within it (TextDrawPriority.h says so at the head of the namespace), and the wax runs are
 		    walked once per distinct pass;
-		  * kPassBackground is **-16384** (DrawPassInfo.h), so a POSITIVE fraction carries the whole
-		    part up to -16384 while **every one of Adobe's own background adornments, without
+		  * kPassBackground is **-16384** (DrawPassInfo.h), and GetPass() cuts the fraction off towards
+		    zero (TextDrawPriority.h). **Every one of Adobe's own background adornments, without
 		    exception, is written as kTAPassPriBackground + a NEGATIVE fraction** (eleven of them,
-		    -0.62 to -0.49) and therefore sits in pass -16385.
+		    -0.62 to -0.49), which stays in pass -16384; a POSITIVE one (-16383.50) is in pass -16383.
 		 So `+0.50` did not join them; it drew a whole pass AFTER all of them. Since the wash is
 		   opaque (no transparency, by design -- see Draw), it painted over paragraph shading,
 		   paragraph borders and rules, underlines, and the product's own missing-font / missing-glyph
@@ -436,18 +436,25 @@ public:
 							   const ITextOptions* textOptions,
 							   int32 iShapeFlags);
 
-	/** kTrue, WHERE KT's EXPERIMENT AND spellpanel BOTH ANSWER kFalse: they draw on every run, and
-		this draws on a handful of characters in one story. Answering the per-run question is what
-		stops the text engine calling Draw for every run in the document while a mark is up -- the
-		header's own example is the H&J adornment declining runs whose line holds no violation. */
+	/** kTrue, WHERE spellpanel ANSWERS kFalse: it draws on every run, and this draws on a handful of
+		characters in one story. Answering the per-run question is what stops the text engine calling
+		Draw for every run in the document while a mark is up -- the header's own example is the H&J
+		adornment declining runs whose line holds no violation.
+		@warning **it may also be what keeps this plug-in out of the reader's documents.** Measured:
+		 the adornments answering for every run (kFalse here, ink bounds on every run) had their
+		 ClassID recorded in the documents they saw, so a reader without the plug-in would get a
+		 Missing Plug-in warning; this one, answering per run, in none. Which of the two answers does
+		 it was not measured. */
 	virtual bool16 GetCheckCouldDraw() { return kTrue; }
 	virtual bool16 GetCouldDraw(const IWaxRun* waxRun, const IWaxRenderData*, const IWaxGlyphs*)
 	{
 		return KCMStoryMarkerRunIsMarked(waxRun);
 	}
 
-	/** The mark is taller than the glyphs' own ink (it reaches from ascent to descent), so the
-		bounds have to be declared or it would be clipped to them. */
+	/** The header excuses only an adornment that stays inside the run's text bounds and the line's
+		vertical selection bounds. This one promises neither: a caret flagged AFTER stands past the
+		end of the run, and the reach from ascent to descent comes from the type size, not from the
+		line. So the bounds are declared. */
 	virtual bool16 GetHasInkBounds() { return kTrue; }
 	virtual void GetInkBounds(PMRect* inkBounds, const IWaxRun* waxRun,
 							  const IWaxRenderData* renderData, const IWaxGlyphs* waxGlyphs);
@@ -815,7 +822,7 @@ void KCMStoryMarker::Shutdown()
 {
 	// @warning the flag goes up FIRST: from here on nothing repaints, because the document the mark
 	//   was in may already be half torn down. Taking a mark down the ordinary way would go looking
-	//   for it. Same door, and the same reason, as KBS's marker shutdown.
+	//   for it. Same door, and the same reason, as KFC's marker shutdown.
 	{
 		// @warning **LOCKED LIKE EVERY OTHER WRITE.** Teardown is exactly when a background export may
 		//   still be walking gMarkDocs, and clearing a map out from under a reader is the crash this

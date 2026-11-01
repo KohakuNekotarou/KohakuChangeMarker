@@ -13,9 +13,9 @@
 //      TextOrigin() + GetCharCount(); where a sub-range of them sits comes from
 //      MapCharsToGlyphs() + GetGlyphDrawPosition(), which is how the product's own spelling
 //      squiggle underlines one word.
-//    * So it follows vertical text, rotated frames and threaded columns for free. KBS's marker
-//      is a rectangle in pasteboard coordinates worked out by hand (KBSDrawEventHandler), which
-//      is the part that has to be right on every one of those.
+//    * So it follows vertical text, rotated frames and threaded columns for free. A marker worked
+//      out by hand as a rectangle in pasteboard coordinates has to be right on every one of those
+//      (KFC's was one, until it moved to this same mechanism).
 //  **NOTHING IS ATTACHED TO ANYTHING.** A global adornment is drawn as if it were on every run;
 //  the document is not touched, nothing is saved into the .indd, and no recomposition is asked
 //  for (IGlobalTextAdornment.h says so where the interface itself is described). Its on/off
@@ -23,7 +23,7 @@
 //
 //  **THE LOOK IS A HIGHLIGHTER:** an opaque wash in the mark colour, laid UNDER the glyphs, at
 //  the strength the panel's "Marks opacity" asks for.
-//  @warning **IT WAS AN INVERSION BEFORE THAT** -- Difference blending with white, KBS's look --
+//  @warning **IT WAS AN INVERSION BEFORE THAT** -- Difference blending with white, KFC's look --
 //   and that is worth knowing before anyone proposes it again, because it was tried the whole
 //   way down and cannot be printed:
 //    * Difference is a TRANSPARENCY effect, and a text adornment has no way to declare itself to
@@ -185,7 +185,7 @@ namespace KCMStoryMarker
 
 	/** Take everything down for good (application shutdown). After this, nothing shows again.
 
-		It exists for the same reason KBS's does: taking a mark down repaints the document it was
+		It exists for the same reason KFC's does: taking a mark down repaints the document it was
 		in, and by teardown time that document may be half gone. */
 	void Shutdown();
 }
