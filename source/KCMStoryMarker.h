@@ -119,7 +119,7 @@ namespace KCMStoryMarker
 		@param storyUID which story.
 		@param from first character to light up.
 		@param to one past the last. from == to is the caret case described above.
-		@param colour the Track mode's author colour (2026-10-05); none of its own = the Mark colour,
+		@param colour the Track mode's author colour; none of its own = the Mark colour,
 			which is what every other caller wants.
 	*/
 	void AddFlashRange(KCMStoryMarkDocs& docs, IDataBase* db, UID storyUID,
@@ -169,7 +169,7 @@ namespace KCMStoryMarker
 	/** Forget every mark of a document that is no longer open - standing and flash alike. Nothing is
 		repainted: what an open document shows depends on its own entries alone.
 
-		⚠★★★**INDESIGN CRASHED WITHOUT THIS** (2026-09-12, the third crash of the night): the
+		⚠**INDESIGN CRASHED WITHOUT THIS** (the third crash of the night): the
 		marks' maps are keyed by IDataBase*, and nothing took a closed document's entry out of them
 		until the UI's deferred rebuild came round. In between, composing ANY other document - a
 		new one being created, say - reached the adornment, which walked the map and asked

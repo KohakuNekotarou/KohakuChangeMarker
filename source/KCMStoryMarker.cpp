@@ -33,7 +33,7 @@
 #include "K2Vector.h"
 #include "PMPolygon4.h"
 #include "PMReal.h"
-#include <atomic>		// gHasMark - read off the main thread without the lock (2026-10-27)
+#include <atomic>		// gHasMark - read off the main thread without the lock
 #include <cmath>		// std::sqrt - the direction a character on a path runs in
 #include <set>			// the documents to repaint when a mark moves between them
 #include "UIDRef.h"
@@ -47,7 +47,7 @@
 									// the Pixel mode's frames -- and sPrintMarks.
 #include "KCMExternalSource.h"	// KCMIsDbAlive - a document in the list, or the lent Source (ForgetClosedDocs)
 #include "KCMID.h"				// moved here from the UI plug-in with the adornment
-#include "KCMStoryList.h"		// KCMCaretOnTableChars - a caret in front of a table stands after the character before it (2026-09-24)
+#include "KCMStoryList.h"		// KCMCaretOnTableChars - a caret in front of a table stands after the character before it
 #include "KCMStoryMarkBuild.h"	// KCMStoryMarkPrintAllowedFor - may THIS document go on paper
 #include "KCMStoryMarker.h"
 #include "KCMStoryMarkerExpiry.h"
@@ -85,7 +85,7 @@ namespace
 KCMStoryMarkDocs gStandingDocs;			// the "Show Marks on ..." toggles and a held button
 KCMStoryMarkDocs gFlashDocs;				// what the newest jump asked to point at
 
-// the fast path: !gMarkDocs.empty(), kept as a flag. ★std::atomic SINCE 2026-10-27 (KFC's marker made the same change,
+// the fast path: !gMarkDocs.empty(), kept as a flag. std::atomic SINCE 2026-10-27 (KFC's marker made the same change,
 //   9ba1621): it is read unlocked on the export's thread, and a plain bool16 read that way is a data race in the language
 //   - it worked only because MSVC on x64 happens to forgive it. What it does is unchanged.
 std::atomic<bool>  gHasMark(false);
@@ -328,7 +328,7 @@ void KCMStoryMarkerDropClosed(IDocumentList* docList, KCMStoryMarkDocs& docs)
 	}
 }
 
-/** One rectangle to fill, and what to fill it with (2026-10-05: the Track mode colours each author). */
+/** One rectangle to fill, and what to fill it with (the Track mode colours each author). */
 struct KCMMarkBox
 {
 	PMRect					fBox;		// what is filled; with fQuads, what they reach - the ink bounds read it either way
@@ -569,7 +569,7 @@ std::vector<KCMMarkBox> KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* wax
 		waxGlyphs->MapCharsToGlyphs(charStart, charCount, &glyphIndex, &glyphLength);
 		const auto mapsToNothing = [&]() { return glyphIndex < 0 || glyphLength <= 0 || glyphIndex >= glyphCount; };
 
-		// ★**A CARET WHOSE CHARACTER DRAWS NOTHING STANDS AFTER THE ONE BEFORE IT** (2026-09-12).
+		// **A CARET WHOSE CHARACTER DRAWS NOTHING STANDS AFTER THE ONE BEFORE IT**.
 		//   A deletion at the end of a PARAGRAPH puts the caret in front of that paragraph's return,
 		//   and a return maps to no glyph - so the box was skipped and the bar never drawn. The
 		//   character before it is in this same run (a return ends the run it is in), and the end of
@@ -614,7 +614,7 @@ std::vector<KCMMarkBox> KCMStoryMarkerAdornment::GetMarkBoxes(const IWaxRun* wax
 		//   The range still covers one character so that it sorts and merges like any other
 		//     (KCMStoryMarkRanges.h), but what is DRAWN is a bar standing where the caret would stand
 		//     if you clicked in front of that character -- the same place the jump centres.
-		// ★A caret flagged AFTER stands at the far edge of its character instead (the end of the
+		// A caret flagged AFTER stands at the far edge of its character instead (the end of the
 		//   story, or a character whose successor draws nothing - see above).
 		if (caretAfter)
 			offset += width;
@@ -758,7 +758,7 @@ void KCMStoryMarkerAdornment::Draw(GraphicsData* gd, int32 iShapeFlags, const IW
 
 	// WHICH COLOUR -- the panel's "Mark colour: Red / Cyan", read through the same accessor the
 	//   Pixel mode's rings use, so the two modes can never disagree about it - UNLESS THE BOX HAS A
-	//   COLOUR OF ITS OWN (2026-10-05, the Track mode: the author's tracked-change colour). Every box of
+	//   COLOUR OF ITS OWN (the Track mode: the author's tracked-change colour). Every box of
 	//   the other modes has none, so what they draw does not change.
 	KCMMarkColour panelColour;
 	KCMDrawEventHandler::SelectedMarkColor(panelColour.fR, panelColour.fG, panelColour.fB);

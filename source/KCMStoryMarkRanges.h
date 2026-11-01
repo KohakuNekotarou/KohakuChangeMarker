@@ -39,7 +39,7 @@
 
 /** The colour a range is painted in.
 
-	★A COLOUR OF ITS OWN (2026-10-05, the Track mode: each change in the colour InDesign paints its record on, by default its AUTHOR's).
+	A COLOUR OF ITS OWN (the Track mode: each change in the colour InDesign paints its record on, by default its AUTHOR's).
 	None of its own = the panel's Mark colour, which is every range of the other modes - so nothing they draw
 	changes. Ranges are fused only with ranges of the same colour (KCMMergeMarkRanges). */
 struct KCMMarkColour
@@ -82,7 +82,7 @@ struct KCMMarkRange
 			  instead of washing the whole of it (KCMStoryMarker's GetMarkBoxes). Nothing else has to know. */
 		kCaretBefore,
 
-		/** **A CARET AT THE END OF ITS CHARACTER RATHER THAN THE START** (2026-09-12). A deletion at
+		/** **A CARET AT THE END OF ITS CHARACTER RATHER THAN THE START**. A deletion at
 			the very END of a story has no character in front of it to stand before: what follows the
 			gap is the story's final carriage return, which draws nothing, and a range standing on it
 			reaches no wax run at all - so the bar was never drawn, and the reader saw a deletion with
@@ -182,7 +182,7 @@ inline void KCMMergeMarkRanges(KCMMarkRangeList& ranges)
 				merged.back().fTo = it->fTo;
 			continue;
 		}
-		// ★TWO COLOURS MEET (2026-10-05): the earlier one keeps its characters, and the later one is cut
+		// TWO COLOURS MEET: the earlier one keeps its characters, and the later one is cut
 		//   to start where the earlier ends - the list stays sorted and non-overlapping, which the binary
 		//   searches below rely on. A later range wholly inside the earlier is dropped.
 		if (it->fTo > merged.back().fTo)

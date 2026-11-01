@@ -73,7 +73,7 @@ TextIndex KCMStoryWholeTextEnd(IDataBase* db, UID storyUID)
 	return (model != nil) ? model->TotalLength() - 1 : 0;
 }
 
-/* A range in the Track mode's author colour, when the change has one (2026-10-05); otherwise as it was - every other
+/* A range in the Track mode's author colour, when the change has one; otherwise as it was - every other
    mode's GetTrackChange answers kFalse. */
 KCMMarkRange KCMTrackColoured(IKCMStoryEditsFacade* edits, int32 n, int32 i, const KCMMarkRange& range)
 {
@@ -101,18 +101,18 @@ void KCMStoryAddChange(IKCMStoryEditsFacade* edits, int32 n, int32 i, IDataBase*
 	//  the marks say "the two versions differ HERE" and at that place they no longer did.
 	//  Nothing is taken in since the restore went on 2026-09-21.)
 
-	// ★**AND WHAT AN IMPORT COULD NOT PUT IN IS NOT A PLACE** (2026-09-19): a "!" child names a
+	// **AND WHAT AN IMPORT COULD NOT PUT IN IS NOT A PLACE**: a "!" child names a
 	//   reason, not a range - its positions are zero - and a mark drawn from it would be a
 	//   caret at the start of the story pointing at nothing.
 	if (change.fWhat == IKCMStoryEditsFacade::Change::kWhatRefused)
 		return;
 
-	// ★A CHANGE THE READER TOOK BACK IS NOT MARKED (2026-09-24, stage 2 C): the marks say "the two versions
+	// A CHANGE THE READER TOOK BACK IS NOT MARKED (stage 2 C): the marks say "the two versions
 	//   differ HERE", and at that place they no longer do - the row says "=" for the same reason.
 	if (change.fReplaced)
 		return;
 
-	// ★★A TABLE ROW MARKS ITS CHANGED CELLS, ONE SPAN EACH (2026-09-19 night, the user: "the
+	// A TABLE ROW MARKS ITS CHANGED CELLS, ONE SPAN EACH (the user: "the
 	//   changed cells should be marked" - even though the list shows one row). The spans are
 	//   Target coordinates, so only the Target's marks read them; the Source side lights the
 	//   table's anchor range below, as any change would.
@@ -184,7 +184,7 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 		//   Two other places already ask exactly this way, which is the check that this is not a local
 		//   assumption: the diff reads the older side with the row's Source story - UIDRef(sourceDB, row->fSourceStoryUID),
 		//   that same uid for every row paired by UID (KCMStoryDiffRun::Run) - and the click selects with it (KCMStoryJump.cpp).
-		//   ★A row paired by place (2026-10-26) is the one exception, and the next block takes it.
+		//   A row paired by place is the one exception, and the next block takes it.
 		//
 		// @warning **this used to ask "is this a removed row?" and require that to MATCH
 		//   useSourceDocument**, which quietly dropped every ORDINARY row from the source side -- found
@@ -202,7 +202,7 @@ void KCMStoryCollectRanges(IDataBase* db, bool16 useSourceDocument, KCMStoryMark
 		if ((row.fKinds & (useSourceDocument ? kKCMStoryKindAdded : kKCMStoryKindRemoved)) != 0)
 			continue;
 
-		// ★★THE STORY ON THIS SIDE (2026-10-26, stories paired by place): the Source side is the row's SOURCE story
+		// THE STORY ON THIS SIDE (stories paired by place): the Source side is the row's SOURCE story
 		//   (Row::fSourceStoryUID) - the same uid as fStoryUID for every row paired by UID and for a Removed one, but the
 		//   Source's own story for a row paired by the place of its first frame, whose fStoryUID is the Target's new story
 		//   and names something else (or nothing) over there. ⚠Every read below and the map's key are this story's.
@@ -298,14 +298,14 @@ void KCMStoryMarkRefresh()
 		//   this same set -- so "on paper but not on screen" would mean keeping a second set of ranges,
 		//   which is one question answered in two places ([[one-question-one-place]]). The screen and
 		//   the page agree because there is only ever one answer to draw from.
-		// ★★★**BOTH SIDES READ THE PRINT TOGGLE, ON SCREEN AND ON PAPER** (2026-09-08, the user's
+		// **BOTH SIDES READ THE PRINT TOGGLE, ON SCREEN AND ON PAPER** (the user's
 		//   call: "with Print ON they are printable AND permanently shown, print preview included").
 		//   So it is OR-ed outside the press: a press reverses what a toggle asks for, and cannot hide what Print is
 		//   showing - what the Pixel mode's frames do (srcWanted and wantMarks in KCMDrawEventHandler).
 		//   ⚠**THE PARAGRAPH THAT STOOD HERE SAID THE OPPOSITE** for the Source side, and cited
 		//     IKCMCompareFacade.h as the specification - the same citation that carried the stale
 		//     rule into the printing test further down this file. Both were corrected today.
-		//   ★So the two lines below are now the SAME SHAPE, which is the point: a reader can see at
+		//   So the two lines below are now the SAME SHAPE, which is the point: a reader can see at
 		//     a glance that the sides agree, instead of having to work out why they differ.
 		const bool tgtToggled = (KCMDrawEventHandler::sTgtMarksOn != 0);
 		const bool srcToggled = (KCMDrawEventHandler::sSrcMarksOn != 0);
@@ -354,8 +354,8 @@ bool16 KCMStoryMarkPrintAllowedFor(IDataBase* db)
 	if (!KCMDrawEventHandler::sPrintMarks)
 		return kFalse;
 
-	// ★★★**THE OLDER DOCUMENT PRINTS ON "Print comparison marks" ALONE, LIKE THE NEWER ONE**
-	//   (2026-09-08, the user: "with Print ON I want them in the output; Always Show is only ever
+	// **THE OLDER DOCUMENT PRINTS ON "Print comparison marks" ALONE, LIKE THE NEWER ONE**
+	//   (the user: "with Print ON I want them in the output; Always Show is only ever
 	//   about the screen").
 	//   ⚠**MY FIRST ATTEMPT THAT DAY MADE IT `sSrcMarksOn && sPrintMarks`**, copied from the Pixel
 	//     side - which was itself the mirror fault of the one it had fixed the day before. A
@@ -366,11 +366,11 @@ bool16 KCMStoryMarkPrintAllowedFor(IDataBase* db)
 	//     document printed its frames while the reader had asked for no marks in the output). This
 	//     file's header says "THE RULE IS THE PIXEL MODE'S, WORD FOR WORD" - and it kept the word
 	//     the Pixel mode had retracted the day before.
-	//   ★★★**THE LESSON IS ABOUT THE CITATION, NOT THE RULE**: naming another file as the
+	//   **THE LESSON IS ABOUT THE CITATION, NOT THE RULE**: naming another file as the
 	//     specification does not subscribe you to its changes. Three places said the same stale
 	//     thing (this line, this file's header, IKCMCompareFacade.h at GetShowSourceMarks), and the
 	//     one actually edited on 09-07 was a fourth.
-	//   ★Screen behaviour is untouched, exactly as on the Pixel side.
+	//   Screen behaviour is untouched, exactly as on the Pixel side.
 	return (KCMIsSameDoc(db, KCMArmedTargetDB()) || KCMIsSameDoc(db, KCMArmedSourceDB())) ? kTrue : kFalse;
 }
 

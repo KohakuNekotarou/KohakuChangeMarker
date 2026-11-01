@@ -59,7 +59,7 @@ void KCMStoryMarkSetPress(bool16 active, bool16 useSourceDocument);
 
 /** May this document's marks be drawn onto paper or into an exported PDF?
 
-	**THE RULE IS THE PIXEL MODE'S, AND IT IS SYMMETRICAL** (2026-09-08): a document prints its
+	**THE RULE IS THE PIXEL MODE'S, AND IT IS SYMMETRICAL**: a document prints its
 	marks when ITS OWN switch is on AND "Print comparison marks" is on. The Target's own switch is
 	"Print comparison marks" itself, so it reads as one test there and two here.
 
