@@ -54,8 +54,7 @@ struct KCMAttrRestorePlan
 	Both sides are aligned by (tFrom - sFrom), the row's own pairing of the two documents.
 	@param targetPieces / sourcePieces every mark of the KIND in each story, in each document's own count.
 	@param tFrom, tTo / sFrom, sTo the row's ranges (Change::fTargetStart.. / fSourceStart..).
-	@return kFalse when a side is EMPTY (from == to): that is the diff saying the WORDS differ as well
-	  (CompareParagraphAttr's textDiffered), and no position over there names these characters. */
+	@return kFalse when a side is EMPTY (from == to): no position over there names these characters. */
 inline bool16 KCMPlanAttrRestore(const std::vector<KCMAttrPiece>& targetPieces,
 								 const std::vector<KCMAttrPiece>& sourcePieces,
 								 int32 tFrom, int32 tTo, int32 sFrom, int32 sTo,

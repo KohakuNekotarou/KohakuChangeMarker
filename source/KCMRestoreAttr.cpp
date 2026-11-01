@@ -175,9 +175,8 @@ bool16 KCMPlanRestoreAttrFromSource(const UIDRef& targetStory, const UIDRef& sou
 	std::vector<KCMAttrPiece> tPieces, sPieces;
 	CollectPieces(tAttrs, tStarts, kind, tPieces);
 	CollectPieces(sAttrs, sStarts, kind, sPieces);
-	// ★THE PLAN'S ONE REFUSAL IS AN EMPTY SIDE, and an empty side is the diff saying THE WORDS DIFFER AS WELL
-	//   (CompareParagraphAttr's textDiffered hands the other side the paragraph's start and no characters) - then no
-	//   position over there names these characters. One test, one message, one place.
+	// ★THE PLAN'S ONE REFUSAL IS AN EMPTY SIDE: then no position over there names these characters. One test, one message, one place.
+	//   (The words under a mark rewritten in the same edit come to the test below: the row's place is the words that took theirs.)
 	if (!KCMPlanAttrRestore(tPieces, sPieces, tFrom, tTo, sFrom, sTo, outJob.fPlan))
 	{
 		Refuse(outWhy, "the words of this paragraph differ as well - make the words the same first (their row: Restore from Source, or Apply This Change against imported text), then this");

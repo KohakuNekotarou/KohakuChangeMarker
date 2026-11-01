@@ -744,22 +744,22 @@ void AddAttrChange(KCMStoryChange::Kind kind, KCMStoryAttrKind attrKind,
 	//   re-read**: measured 2026-09-08, the commit that widened it (`cce0cc5`, 17 files) touched
 	//   neither this comment nor the call that leans on it.
 	//   ⇒ **The caller decides now.** For a span that exists on ONE side only, CompareParagraphAttr
-	//     hands the other side the place its characters stand there, read from a character diff of the two (PairMarksAcross), or
-	//     the PARAGRAPH'S START and no characters when none does - never a number from the other version.
+	//     hands the other side the place its characters stand there, or the words that took their place, read from a character
+	//     diff of the two (PairMarksAcross) - never a number from the other version.
 	//   MEASURED before the fix (work/kcm-selftest/attrpos): a ruby added to 銀河 at target index 3
 	//   selected 名な in the older document, because that is what stands at index 3 over there.
 	change.fSourceStart = source.ModelIndex(sStart);
 	change.fSourceEnd   = source.ModelIndex(sStart + sCount);
 
-	// ★A NOTE'S MARKER THE PARAGRAPH BEGINS WITH STANDS BEHIND THE PARAGRAPH'S START (KCMParaAttrs::fLeadingUncounted), where
+	// ★A NOTE'S MARKER THE PARAGRAPH BEGINS WITH STANDS BEHIND THE PARAGRAPH'S START (KCMParaAttrs::fLeadingNoteBack), where
 	//   ModelIndex does not go, and the range takes it in - as the range of a span standing before a marker takes that marker
 	//   in: what writes this row reads the range to learn that a marker is there (2026-11-01, a footnote at a paragraph's start).
 	if (attrKind == kKCMStoryAttrFootnote || attrKind == kKCMStoryAttrEndnote)
 	{
 		if (tStart == 0 && !tSpan.fValue.empty())
-			change.fTargetStart -= target.fAttrs.fLeadingUncounted;
+			change.fTargetStart -= target.fAttrs.fLeadingNoteBack;
 		if (sStart == 0 && !sSpan.fValue.empty())
-			change.fSourceStart -= source.fAttrs.fLeadingUncounted;
+			change.fSourceStart -= source.fAttrs.fLeadingNoteBack;
 	}
 
 	SetExcerptPieces(change.fTextPre, change.fText, change.fTextPost,
@@ -828,7 +828,7 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 			// ★fGroup is NOT part of "same" (2026-09-12, user's decision - KCMParaText.h's
 			//   SpansDiffer says it in full): a ruby re-set from mono to group over the same
 			//   reading is not reported.
-			if (s.fValue == t.fValue && s.fLen == t.fLen)
+			if (s.fValue == t.fValue && KCMParaText::MarksCoverSameCharacters(chars, s, t))
 				continue;
 
 			// ★★ONLY THE INNERMOST LAYER REPORTS A CHANGE OF ITS WORDS (2026-09-16, the user's call).
@@ -848,10 +848,9 @@ void CompareParagraphAttr(KCMStoryAttrKind attrKind,
 		}
 		else
 		{
-			// A mark one version alone has. The other version has the place its characters stand, and no value; where no character of
-			// it stands there, the paragraph's start and no characters - a PLACE but nothing to select, which is the shape a text
-			// insertion already uses (KCMStoryList.h, fSourceStart). @warning a ruby taken off: the characters are still there - it is the
-			// reading that is gone - so the range is a real one on both sides, unlike a text deletion.
+			// A mark one version alone has. The other version has the place its characters stand, or the words that took their place, and
+			// no value. @warning a ruby taken off: the characters are still there - it is the reading that is gone - so the range is a real
+			// one on both sides, unlike a text deletion.
 			const KCMAttrSpan place(pair.fPlaceStart, pair.fPlaceLen, std::string());
 			if (pair.fB >= 0)
 				AddAttrChange(KCMStoryChange::kInsert, attrKind, targetSpans[static_cast<size_t>(pair.fB)], place, target, source, out);
@@ -887,23 +886,52 @@ void CompareParagraphObjects(const KCMAttrSpanList& sourceSpans, const KCMAttrSp
 	}
 }
 
-/** The character diff of two versions of a paragraph (KCMParaText::PairMarksAcross). One that cannot be had leaves it empty: the guard that
-	cannot fire - KCMTextDiff.h. */
-void CharChangesOf(const std::string& sourceText, const std::string& targetText, std::vector<KCMParaText::KCMCharChange>& out)
+/** How many rows every kind of mark of a pair of paragraphs comes to across a character diff (KCMParaText::RowsOfMarks). */
+int32 RowsOfAllMarks(const std::vector<KCMParaText::KCMCharChange>& chars, const KCMParaAttrs& source, const KCMParaAttrs& target)
+{
+	return KCMParaText::RowsOfMarks(chars, source.fRuby, target.fRuby)
+		 + KCMParaText::RowsOfMarks(chars, source.fKenten, target.fKenten)
+		 + KCMParaText::RowsOfMarks(chars, source.fFootnote, target.fFootnote)
+		 + KCMParaText::RowsOfMarks(chars, source.fEndnote, target.fEndnote)
+		 + KCMParaText::RowsOfMarks(chars, source.fWarichu, target.fWarichu)
+		 + KCMParaText::RowsOfMarks(chars, source.fTcy, target.fTcy);
+}
+
+/** The character diff of two versions of a paragraph, as what becomes of each character (KCMParaText::PairMarksAcross). One that cannot be had leaves
+	it empty: the guard that cannot fire - KCMTextDiff.h.
+
+	★★**ONE EDIT CAN BE WRITTEN SEVERAL WAYS, AND THE TEXT ALONE CANNOT SAY WHICH WAS MADE** (measured 2026-11-02): 銀河と銀河 -> 銀河 is the first word gone
+	or the second. A mark on the words can: the search keeps what the two begin with, so with the reading on the second word it read that word as gone, and
+	the one left as having been given a reading nobody put on it. ⇒ **The way a reader would describe it (the slide the text rows take, KCMTextDiff::
+	AlignChangeBoundaries, widening nothing) and the way the search found it are both asked, and the one the marks have less to say about stands** - the
+	slide when they tie, so that the marks read as the text row does. */
+void CharChangesOf(const std::string& sourceText, const std::string& targetText, const KCMParaAttrs& sourceAttrs, const KCMParaAttrs& targetAttrs,
+				   std::vector<KCMParaText::KCMCharChange>& out)
 {
 	std::vector<int32> sourcePoints;
 	std::vector<int32> targetPoints;
 	KCMTextDiff::ToCodePoints(sourceText, &sourcePoints, nil);
 	KCMTextDiff::ToCodePoints(targetText, &targetPoints, nil);
-	std::vector<KCMTextDiff::Change> changes;
-	if (!KCMTextDiff::Diff(sourcePoints, targetPoints, changes))
+	std::vector<KCMTextDiff::Change> found;
+	if (!KCMTextDiff::Diff(sourcePoints, targetPoints, found))
 		return;
-	out.reserve(changes.size());
-	for (size_t c = 0; c < changes.size(); ++c)
+	std::vector<KCMTextDiff::Change> slid(found);
+	KCMTextDiff::AlignChangeBoundaries(sourcePoints, targetPoints, slid, kFalse);
+	const auto asChars = [](const std::vector<KCMTextDiff::Change>& changes)
 	{
-		const KCMParaText::KCMCharChange one = { changes[c].aStart, changes[c].aCount, changes[c].bStart, changes[c].bCount };
-		out.push_back(one);
-	}
+		std::vector<KCMParaText::KCMCharChange> chars;
+		chars.reserve(changes.size());
+		for (size_t c = 0; c < changes.size(); ++c)
+		{
+			const KCMParaText::KCMCharChange one = { changes[c].aStart, changes[c].aCount, changes[c].bStart, changes[c].bCount };
+			chars.push_back(one);
+		}
+		return chars;
+	};
+	const std::vector<KCMParaText::KCMCharChange> asFound = asChars(found);
+	out = asChars(slid);
+	if (RowsOfAllMarks(asFound, sourceAttrs, targetAttrs) < RowsOfAllMarks(out, sourceAttrs, targetAttrs))
+		out = asFound;
 }
 
 /* AddAttributeChanges
@@ -947,7 +975,7 @@ void AddAttributeChanges(const std::vector<KCMTextDiff::Change>& paragraphChange
 								|| !sourceAttrs.fWarichu.empty() || !targetAttrs.fWarichu.empty() || !sourceAttrs.fTcy.empty() || !targetAttrs.fTcy.empty()) ? kTrue : kFalse;
 		std::vector<KCMParaText::KCMCharChange> chars;
 		if (textDiffered && anyMark)
-			CharChangesOf(source.fText, target.fText, chars);
+			CharChangesOf(source.fText, target.fText, sourceAttrs, targetAttrs, chars);
 
 		// **EACH ATTRIBUTE IS COMPARED ON ITS OWN LIST**, and they cannot be merged into one pass:
 		//   two sets of spans are matched by position within their OWN kind.

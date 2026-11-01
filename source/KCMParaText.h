@@ -242,6 +242,11 @@ struct KCMParaAttrs
 		 on one side and none on the other, and could not be cut. */
 	int32				fLeadingUncounted;
 
+	/** How far behind the paragraph's start the first note reference it BEGINS with stands; 0 when it begins with none. What a row on that
+		reference takes in (KCMStoryDiffRun's AddAttrChange). ⚠**NOT fLeadingUncounted**, which counts a table as well: a footnote after the first
+		word behind a table the paragraph begins with sits on offset 0 too, and its row reached back over the table's anchor (measured 2026-11-02). */
+	int32				fLeadingNoteBack;
+
 	/** Where each TABLE stands in this paragraph - its anchor (kTextChar_Table) alone, one per table, not the row
 		continuations - as offsets in the text's own count, ascending; a table the paragraph BEGINS with stands at 0
 		(2026-10-26, the import matrix's X06/Y06).
@@ -255,7 +260,7 @@ struct KCMParaAttrs
 
 	KCMParaAttrs()
 		: fTableOrdinal(kNotACell), fCellRow(-1), fCellCol(-1),
-		  fFootnoteOrdinal(kNotAFootnote), fLeadingUncounted(0) {}
+		  fFootnoteOrdinal(kNotAFootnote), fLeadingUncounted(0), fLeadingNoteBack(0) {}
 
 	/** Whether this paragraph is a table cell.
 
@@ -1343,7 +1348,7 @@ struct KCMCharChange
 enum KCMCharFate
 {
 	kKCMCharSurvives,		///< it stands in B: outAt is where
-	kKCMCharRewritten,		///< other words stand in its place: outAt is where they begin
+	kKCMCharRewritten,		///< other words stand in its place: outAt is the character as many along among them, or the last of them
 	kKCMCharGone			///< nothing stands in its place: outAt is the place it left
 };
 
@@ -1356,8 +1361,14 @@ inline KCMCharFate FateOfCharacter(const std::vector<KCMCharChange>& changes, in
 			break;
 		if (at < changes[c].fAStart + changes[c].fACount)
 		{
-			outAt = changes[c].fBStart;
-			return (changes[c].fBCount > 0) ? kKCMCharRewritten : kKCMCharGone;
+			if (changes[c].fBCount <= 0)
+			{
+				outAt = changes[c].fBStart;
+				return kKCMCharGone;
+			}
+			const int32 along = at - changes[c].fAStart;
+			outAt = changes[c].fBStart + ((along < changes[c].fBCount) ? along : changes[c].fBCount - 1);
+			return kKCMCharRewritten;
 		}
 		shift = (changes[c].fBStart + changes[c].fBCount) - (changes[c].fAStart + changes[c].fACount);
 	}
@@ -1366,7 +1377,7 @@ inline KCMCharFate FateOfCharacter(const std::vector<KCMCharChange>& changes, in
 }
 
 /** One mark of the two versions and what is to be said of it: a pair (both indices), or a mark one version alone has (the other
-	index -1), with the place its characters stand in the other version - 0 and 0 when no character of it does. */
+	index -1), with the place its characters stand in the other version, or the words that took their place. */
 struct KCMMarkPair
 {
 	int32	fA;
@@ -1377,32 +1388,27 @@ struct KCMMarkPair
 	KCMMarkPair(int32 a, int32 b, int32 placeStart, int32 placeLen) : fA(a), fB(b), fPlaceStart(placeStart), fPlaceLen(placeLen) {}
 };
 
-/** A mark one version alone has: is it a change of its own, and where do its characters stand in the other version?
-	@return kFalse when it is not - every character of it is simply gone (the head of PairMarksAcross says why). */
+/** Where the characters of a mark stand in the other version, or the words that took their place.
+	@return kFalse when nothing does - every character of it is simply gone (the head of PairMarksAcross says why). */
 inline bool16 PlaceOfMarkAlone(const std::vector<KCMCharChange>& changes, const KCMAttrSpan& span, int32& outStart, int32& outLen)
 {
 	outStart = 0;
 	outLen = 0;
-	bool16 rewritten = kFalse;
-	bool16 survives = kFalse;
+	bool16 placed = kFalse;
 	int32 last = 0;
 	for (int32 k = 0; k < span.fLen; ++k)
 	{
 		int32 at = 0;
-		const KCMCharFate fate = FateOfCharacter(changes, span.fStart + k, at);
-		if (fate == kKCMCharSurvives)
-		{
-			if (!survives)
-				outStart = at;
-			last = at;
-			survives = kTrue;
-		}
-		else if (fate == kKCMCharRewritten)
-			rewritten = kTrue;
+		if (FateOfCharacter(changes, span.fStart + k, at) == kKCMCharGone)
+			continue;
+		if (!placed)
+			outStart = at;
+		last = at;
+		placed = kTrue;
 	}
-	if (survives)
+	if (placed)
 		outLen = last + 1 - outStart;
-	return (survives || rewritten) ? kTrue : kFalse;
+	return placed;
 }
 
 /** What is to be said of the marks of one kind over two versions of a paragraph, in the order of their places in version B.
@@ -1416,38 +1422,54 @@ inline bool16 PlaceOfMarkAlone(const std::vector<KCMCharChange>& changes, const 
 	    kanji under it changes, report both");
 	  - **a mark whose characters are all simply GONE is no change of its own**: "the deletion row already says so" (銀河 deleted with its reading);
 	  - **a mark whose characters were REWRITTEN is one** ("when the kanji changes and the ruby is removed, I want two rows" - 琥珀 -> 真珠);
-	  - **a mark taken off characters that stay is one**, and its place in the other version is where they stand.
+	  - **a mark taken off characters that stay is one**, and its place in the other version is where they stand; off characters rewritten, the
+	    words that took their place.
 	★**ASKED OF THE DIFF SINCE 2026-11-01.** Until then a filter asked whether the characters could be found anywhere in the other paragraph and
 	  told a rewrite from a deletion by the paragraph's length, and the marks were then paired by their offsets, which no longer name the same
 	  characters once the words have moved. Measured wrong four ways: 銀河 twice, the first deleted, reported the SECOND's reading removed; a reading changed
 	  behind words of another length came out removed and added; 琥珀 -> 真 with its reading gone lost the second row; 銀河 deleted with words typed
 	  elsewhere gained one.
+	★★**A MARK WHOSE FIRST CHARACTER STAYED CLAIMS ITS PARTNER FIRST, AND A MARK WITH NOTHING LEFT CLAIMS NONE.** The place a deleted character leaves is
+	  where what follows it now begins, so a word deleted right in front of another marked word stands on that word's mark - measured: 銀河鉄道 -> 鉄道, or the 琥
+	  of a mono ruby, was three rows for one deletion, the first reading "changed" into the second and the second "removed".
 	⚠The spans of two versions are each in their own count; a pair is found by carrying A's start across the diff. A first character that went
-	 leaves the place it left, which is where a mark standing on what follows begins. */
+	 leaves the place it left, which is where a mark standing on what follows begins; one rewritten stands as many along among the words that took its place,
+	 so that each reading of a mono ruby is compared with its own. */
 inline void PairMarksAcross(const std::vector<KCMCharChange>& changes, const KCMAttrSpanList& a, const KCMAttrSpanList& b,
 							std::vector<KCMMarkPair>& out)
 {
 	out.clear();
 	std::vector<char> taken(b.size(), 0);
+	const auto claim = [&](int32 place) -> int32
+	{
+		for (size_t k = 0; k < b.size(); ++k)
+		{
+			if (taken[k] == 0 && b[k].fStart == place)
+			{
+				taken[k] = 1;
+				return static_cast<int32>(k);
+			}
+		}
+		return -1;
+	};
+	std::vector<int32> partners(a.size(), -1);
 	for (size_t i = 0; i < a.size(); ++i)
 	{
 		int32 mapped = 0;
-		FateOfCharacter(changes, a[i].fStart, mapped);
-		int32 partner = -1;
-		for (size_t k = 0; k < b.size() && partner < 0; ++k)
-		{
-			if (taken[k] == 0 && b[k].fStart == mapped)
-				partner = static_cast<int32>(k);
-		}
-		if (partner >= 0)
-		{
-			taken[static_cast<size_t>(partner)] = 1;
-			out.push_back(KCMMarkPair(static_cast<int32>(i), partner, 0, 0));
-			continue;
-		}
+		if (FateOfCharacter(changes, a[i].fStart, mapped) == kKCMCharSurvives)
+			partners[i] = claim(mapped);
+	}
+	for (size_t i = 0; i < a.size(); ++i)
+	{
 		int32 start = 0;
 		int32 len = 0;
-		if (PlaceOfMarkAlone(changes, a[i], start, len))
+		const bool16 placed = PlaceOfMarkAlone(changes, a[i], start, len);
+		int32 mapped = 0;
+		if (placed && FateOfCharacter(changes, a[i].fStart, mapped) != kKCMCharSurvives)
+			partners[i] = claim(mapped);
+		if (partners[i] >= 0)
+			out.push_back(KCMMarkPair(static_cast<int32>(i), partners[i], 0, 0));
+		else if (placed)
 			out.push_back(KCMMarkPair(static_cast<int32>(i), -1, start, len));
 	}
 
@@ -1466,13 +1488,56 @@ inline void PairMarksAcross(const std::vector<KCMCharChange>& changes, const KCM
 			out.push_back(KCMMarkPair(-1, static_cast<int32>(k), start, len));
 	}
 
-	// In the order of their places in B; a mark with no place there comes first, where a change at the paragraph's start stands.
+	// In the order of their places in B.
 	std::stable_sort(out.begin(), out.end(), [&b](const KCMMarkPair& x, const KCMMarkPair& y)
 	{
 		const int32 xAt = (x.fB >= 0) ? b[static_cast<size_t>(x.fB)].fStart : x.fPlaceStart;
 		const int32 yAt = (y.fB >= 0) ? b[static_cast<size_t>(y.fB)].fStart : y.fPlaceStart;
 		return xAt < yAt;
 	});
+}
+
+/** Do a mark of each version stand over the same characters: every character under the one that stayed in the other version stands under the
+	other, both ways? What came or went with the words is the text row's to say.
+	★**WHY A LENGTH DOES NOT ANSWER IT WHEN THE WORDS CHANGED** (measured 2026-11-01): one character deleted or typed inside five with one kenten made
+	the two spans differ in length, and a row of its own read BlackCircle against BlackCircle - nothing a reader could use, for one keystroke the text
+	row had already said. Over words that are the same it is exactly the length, which is the whole point there (琥珀 read as こ+はく against こはく). */
+inline bool16 MarksCoverSameCharacters(const std::vector<KCMCharChange>& changes, const KCMAttrSpan& a, const KCMAttrSpan& b)
+{
+	const auto staysUnder = [](const std::vector<KCMCharChange>& across, const KCMAttrSpan& from, const KCMAttrSpan& over) -> bool16
+	{
+		for (int32 k = 0; k < from.fLen; ++k)
+		{
+			int32 at = 0;
+			if (FateOfCharacter(across, from.fStart + k, at) == kKCMCharSurvives && (at < over.fStart || at >= over.fStart + over.fLen))
+				return kFalse;
+		}
+		return kTrue;
+	};
+	std::vector<KCMCharChange> reversed(changes);
+	for (size_t c = 0; c < reversed.size(); ++c)
+	{
+		std::swap(reversed[c].fAStart, reversed[c].fBStart);
+		std::swap(reversed[c].fACount, reversed[c].fBCount);
+	}
+	return (staysUnder(changes, a, b) && staysUnder(reversed, b, a)) ? kTrue : kFalse;
+}
+
+/** How many rows the marks of one kind come to, read across this character diff: a mark one version alone has, and a pair not the same value over
+	the same characters. What chooses between two equally short diffs (KCMStoryDiffRun's CharChangesOf). */
+inline int32 RowsOfMarks(const std::vector<KCMCharChange>& changes, const KCMAttrSpanList& a, const KCMAttrSpanList& b)
+{
+	std::vector<KCMMarkPair> pairs;
+	PairMarksAcross(changes, a, b, pairs);
+	int32 rows = 0;
+	for (size_t p = 0; p < pairs.size(); ++p)
+	{
+		if (pairs[p].fA < 0 || pairs[p].fB < 0
+			|| a[static_cast<size_t>(pairs[p].fA)].fValue != b[static_cast<size_t>(pairs[p].fB)].fValue
+			|| !MarksCoverSameCharacters(changes, a[static_cast<size_t>(pairs[p].fA)], b[static_cast<size_t>(pairs[p].fB)]))
+			++rows;
+	}
+	return rows;
 }
 
 /** What has to be WRITTEN to turn one paragraph's attribute spans into another's: the spans to

@@ -17,10 +17,9 @@
 //   and leaves the warichu as it stands.
 //
 //  ★★**THE CHARACTERS UNDER THE MARK HAVE TO BE THE SOURCE'S** (design 14-1 item 4), or the mark is put over the
-//   wrong words in silence. Two tests, both before anything is written: an EMPTY side (the diff's way of saying the
-//   words of the paragraph differ as well - CompareParagraphAttr's textDiffered), and the characters of the window
-//   compared on both sides. A refusal writes nothing, and names the way out (fix the words first; against an
-//   import's copy, Apply the words' row first).
+//   wrong words in silence. Two tests, both before anything is written: an EMPTY side, and the characters of the window
+//   compared on both sides (a row over words rewritten in the same edit stops here). A refusal writes nothing, and names
+//   the way out (fix the words first; against an import's copy, Apply the words' row first).
 //
 //  ★**PLANNED FIRST, WRITTEN SECOND**, as two calls: the caller (the facade) begins its command sequence only once
 //   the plan has been made, so a refusal never lands an empty step on the undo stack.
@@ -49,7 +48,7 @@ struct KCMAttrRestoreJob
 
 /** Reads BOTH stories (KCMTextRead::ReadStory, under IDataBase::SaveRestoreModifiedState - nothing is written
 	here), plans the window (KCMPlanAttrRestore) and refuses when the characters under it are not the same on
-	both sides (design 14-1 item 4), when a side has no characters (the words differ as well), when the kind
+	both sides (design 14-1 item 4), when a side has no characters, when the kind
 	is not one that is written back, or when a Source kenten names a mark this build cannot write.
 	@return kTrue with outJob filled; kFalse with outWhy (non-translatable) and nothing to do. */
 bool16 KCMPlanRestoreAttrFromSource(const UIDRef& targetStory, const UIDRef& sourceStory, int32 kind,

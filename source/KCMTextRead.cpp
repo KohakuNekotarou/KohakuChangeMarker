@@ -611,8 +611,9 @@ struct ParaBeingRead
 	std::vector<TextIndex>	fUncounted;			// positions INSIDE it that the model counts and the text does not
 	std::vector<TextIndex>	fAnchors;			// the TABLES' anchors among them (KCMParaAttrs::fTableAnchorsAt)
 	int32					fLeadingAnchors;	// how many tables it begins with
+	TextIndex				fLeadingNote;		// where the first note reference it begins with stands; -1 when it begins with none
 
-	explicit ParaBeingRead(TextIndex at) : fLineStart(at), fStart(at), fLeadingAnchors(0) {}
+	explicit ParaBeingRead(TextIndex at) : fLineStart(at), fStart(at), fLeadingAnchors(0), fLeadingNote(-1) {}
 };
 
 /* TakeNotesFor
@@ -669,6 +670,8 @@ void ClosePara(std::vector<std::string>& outParas,
 	// ★The table or note reference the paragraph BEGINS with: the start was moved past them, so they are
 	//   the distance from where the paragraph really begins (2026-09-17 - KCMParaAttrs::fLeadingUncounted).
 	attrs.fLeadingUncounted = static_cast<int32>(para.fStart - para.fLineStart);
+	if (para.fLeadingNote >= 0)
+		attrs.fLeadingNoteBack = static_cast<int32>(para.fStart - para.fLeadingNote);
 
 	// ★★★**THE SKIPPED POSITIONS TRAVEL WITH THE PARAGRAPH, IN THE TEXT'S COUNT.** Everything this
 	//   file hands out is counted the way the panel reads it - the table's own characters left out
@@ -948,7 +951,11 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 			if (cp == kTextChar_FootnoteMarker || cp == kTextChar_EndnoteMarker)
 			{
 				if (para.fText.empty())
+				{
+					if (para.fLeadingNote < 0)
+						para.fLeadingNote = i;
 					para.fStart = i + 1;
+				}
 				else
 					para.fUncounted.push_back(i);
 				continue;
