@@ -1844,7 +1844,7 @@ void CutUnevenRuns(const StoryParas& source, const StoryParas& target,
 				piece.bCount = 1;
 				nextA = piece.aStart + 1;
 				nextB = piece.bStart + 1;
-				// (the KEYS: the same words with a table moved are still a change - see the paragraph diff above)
+				// (the KEYS: the same words with a table moved are still a change - see ParagraphKeys)
 				if (sourceKeys[static_cast<size_t>(piece.aStart)] == targetKeys[static_cast<size_t>(piece.bStart)])
 					continue;
 			}
