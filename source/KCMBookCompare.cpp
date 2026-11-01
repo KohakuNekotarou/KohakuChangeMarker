@@ -60,7 +60,7 @@ PMString gBookResultText;
     That is the right answer for "does this chapter differ from the other book right now", and
     the wrong one for "do the two books on disk differ"; nothing here can tell which the user
     meant. Saving the chapters first makes the two questions the same. */
-bool16 OpenChapter(const IDFile& file, UIDRef& outDocRef, bool16& outWeOpened, PMString& outWhy)
+bool16 OpenChapter(const IDFile& file, UIDRef& outDocRef, bool16& outWeOpened)
 {
 	outDocRef   = UIDRef::gNull;
 	outWeOpened = kFalse;
@@ -99,16 +99,7 @@ bool16 OpenChapter(const IDFile& file, UIDRef& outDocRef, bool16& outWeOpened, P
 	}
 
 	if (err != kSuccess || docRef == UIDRef::gNull)
-	{
-		// **THE FALLBACK, AND THE ONLY REASON THAT STILL NAMES THE FAILURE.** The caller replaces
-		// this with the BOOK's own word for the chapter ("missing", and the rest of
-		// KCMChapterStatusText's vocabulary) whenever the book has one -- that word is the thing
-		// worth reading, and it says the open failed by implication. This sentence is what is left
-		// when the book answers nothing at all, and then it is all the row would otherwise have
-		// (the user's call: keep a word for the empty case rather than an empty reason).
-		outWhy = KCMSentence("could not open");
 		return kFalse;
-	}
 
 	outWeOpened = kTrue;
 	outDocRef   = docRef;
@@ -528,10 +519,9 @@ void KCMCompareBooks(IBook* target, IBook* source,
 		UIDRef   sourceRef;
 		bool16   targetMine = kFalse;
 		bool16   sourceMine = kFalse;
-		PMString why;
 
-		if (!OpenChapter(chapter.fTargetFile, targetRef, targetMine, why) ||
-		    !OpenChapter(chapter.fSourceFile, sourceRef, sourceMine, why))
+		if (!OpenChapter(chapter.fTargetFile, targetRef, targetMine) ||
+		    !OpenChapter(chapter.fSourceFile, sourceRef, sourceMine))
 		{
 			// Whichever side did open has to be put back before moving on. (When the first open
 			// failed the second never ran, and closing a null UIDRef is a no-op.)
@@ -555,11 +545,12 @@ void KCMCompareBooks(IBook* target, IBook* source,
 			// KCMBookResult.h's fWhy, which is where the rule for every reason string lives.
 			const PMString statusWord =
 				KCMChapterStatusText((targetRef == UIDRef::gNull) ? target : source, (int32)i);
-			if (!statusWord.IsEmpty())
-				why = statusWord;
 
 			chapter.fState = kKCMChapterFailed;
-			chapter.fWhy   = why;
+			// **"could not open" IS THE FALLBACK, AND THE ONLY REASON THAT STILL NAMES THE FAILURE**: the book's word says the
+			// open failed by implication, and this is what is left when the book answers nothing at all (the user's call: keep
+			// a word for the empty case rather than an empty reason).
+			chapter.fWhy   = statusWord.IsEmpty() ? KCMSentence("could not open") : statusWord;
 			continue;
 		}
 
@@ -590,6 +581,7 @@ void KCMCompareBooks(IBook* target, IBook* source,
 			// ★**THE PAIR IS OPENED ONCE FOR ALL THREE.** Walking the book three times would
 			//   open, compose and close every chapter three times, and opening is most of the
 			//   cost (BK-35: ~0.2s a chapter even on small ones).
+			PMString why;
 			bool16   chapterCancelled = kFalse;
 
 			progress.SetTaskText(ChapterPhaseText(chapter.fName, "Pixel"));
