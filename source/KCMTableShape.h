@@ -19,8 +19,8 @@
 //  (work/kcm-tableshape-test, the shape of work/kescm-rowfilter-test). Only KCMReadTableShapes,
 //  in the .cpp, talks to the model.
 //
-//  ⚠THE ORDER OF THE TABLES IS KCMTextRead's: by the start of each table's block of cells, which
-//  is the order KCMParaAttrs::fTableOrdinal counts in - nested tables included. A shape's index in
+//  ⚠THE ORDER OF THE TABLES: by the start of each table's block of cells, which is the order
+//  KCMParaAttrs::fTableOrdinal counts in (KCMTextRead numbers the cells from this very list) - nested tables included. A shape's index in
 //  the list IS its ordinal on ONE side; pairing a table with the other side's is by that index
 //  (the spec accepts that a table added in the MIDDLE shifts the ones after it).
 //
@@ -191,10 +191,9 @@ inline bool16 KCMTableCellSame(const KCMTableShape& a, const KCMTableShape& b, i
 class ITextModel;
 class KCMSkippedText;
 
-/** Every table of the story, in KCMTextRead's order (by the start of its cells' block), with its
-    shape, its anchor range, its header rows and every anchor cell's thread range. A table standing in
-    text the page does not set (KCMSkippedText - deleted under Track Changes) is left out, as KCMTextRead
-    leaves it out, so index k here is table ordinal k there. kFalse when a dictionary or a table could not
+/** Every table of the story, by the start of its cells' block, with its shape, its anchor range, its header rows and
+    every anchor cell's thread range. A table standing in text the page does not set (KCMSkippedText - deleted under Track
+    Changes) is left out. KCMTextRead reads this list, so index k here is table ordinal k there. kFalse when a dictionary or a table could not
     be opened; a story with no tables answers kTrue with an empty list.
     ★The second form takes a KCMSkippedText the caller has already built for this story (the export
       builds one for its note references too), so that the story is not walked for it twice. */

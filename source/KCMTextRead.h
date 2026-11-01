@@ -75,6 +75,7 @@
 
 class ITextModel;
 class UIDRef;
+struct KCMTableShape;
 
 namespace KCMTextRead
 {
@@ -98,6 +99,8 @@ namespace KCMTextRead
 		   fingerprint for a value (KCMObjectPrint.h). ⚠ONLY the Story mode's comparison of a pair that shares UIDs asks
 		   (KCMStoryDiffRun.cpp): a fingerprint is a SaveAll of every object, and no other reader needs one - so every other
 		   caller leaves fObject empty by leaving this out.
+	@param outTables OUT optional: the story's tables as this read found them (KCMReadTableShapes) - a table's index in the
+		   list is the fTableOrdinal its cells carry.
 	@return kFalse only when the story cannot be opened at all. **An empty story is not a
 		   failure**: it answers kTrue with three empty vectors.
 
@@ -109,7 +112,8 @@ bool16 ReadStory(const UIDRef& storyRef,
 				 std::vector<std::string>& outParas,
 				 std::vector<KCMParaAttrs>& outAttrs,
 				 std::vector<int32>& outStarts,
-				 bool16 withObjects = kFalse);
+				 bool16 withObjects = kFalse,
+				 std::vector<KCMTableShape>* outTables = nil);
 
 /** What stands over a story's words as one number: its ruby, kenten, warichu and tate-chu-yoko runs, each with its place and
 	value - the four walks ReadStory reads them by, and no paragraph cut. KCMStoryEdits' second test

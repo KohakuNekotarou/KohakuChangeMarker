@@ -2,10 +2,10 @@
 //
 //  KCMTableShape.cpp -- the InDesign side of KCMTableShape.h: reading a story's tables.
 //
-//  ★THE WALK IS KCMTextRead's (BuildCellIndex), which is Adobe's own (SnpIterTableUseDictHier):
-//  a dictionary IS a table exactly when an ITableModel can be got from it, and the tables are put
-//  in the order their cell blocks begin, which is the order fTableOrdinal counts in. Keeping the
-//  same walk here is what lets a shape's fOrdinal name the same table the diff's cells name.
+//  ★THE ONE WALK OF A STORY'S TABLES, which is Adobe's own (SnpIterTableUseDictHier): a dictionary IS
+//  a table exactly when an ITableModel can be got from it, and the tables are put in the order their
+//  cell blocks begin, which is the order fTableOrdinal counts in. KCMTextRead numbers the cells from
+//  this list, which is what lets a shape's index name the same table the diff's cells name.
 //
 //  ⚠A MERGED CELL IS VISITED ONCE, AT ITS ANCHOR (IsAnchor); the covered addresses have no thread
 //  of their own. GetCellArea at the anchor says how far it reaches (KCMStoryTextExport.cpp reads
@@ -33,6 +33,15 @@
 namespace
 {
 
+/* EarlierBlock
+   **THE ORDER IS THE THREAD BLOCK'S, NOT THE ANCHOR'S**, and that is not a detail: a nested
+   table's anchor sits inside its parent's CELLS - past the whole body - so sorting by anchor puts
+   it after a second top-level table that is written before it. The SDK states the rule at
+   ITextStoryThreadDict::GetThreadBlockTextRange ("the location of the dictionary's thread block is
+   determined by the location of the dictionary's anchor relative to other dictionaries").
+   The index in this order is KCMParaAttrs::fTableOrdinal, which is what SplitRunAtPlaces tells cells
+   apart by, and two versions of one document have to number the same table the same way.
+*/
 bool EarlierBlock(const std::pair<TextIndex, KCMTableShape>& a, const std::pair<TextIndex, KCMTableShape>& b)
 {
 	return a.first < b.first;
@@ -105,6 +114,8 @@ bool16 KCMReadTableShapes(ITextModel* model, const KCMSkippedText& skipped, std:
 			for (int32 c = cols.start; c < cols.start + cols.count; ++c)
 			{
 				const GridAddress addr(r, c);
+				// A merged cell is addressed by its anchor (ITableModel.h, at GridAddress): the covered addresses have
+				// no thread of their own.
 				if (!table->IsValid(addr) || !table->IsAnchor(addr))
 					continue;
 

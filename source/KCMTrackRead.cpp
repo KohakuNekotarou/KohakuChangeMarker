@@ -19,6 +19,7 @@
 // General includes:
 #include "ConditionalTextID.h"		// kHiddenTextBoss
 #include "InCopySharedID.h"			// kRedlineStrandBoss, kNoteDataBoss
+#include "K2SmartPtr.h"				// the iterators and the records are the caller's to delete (redlineiterator.h)
 #include "PersistUtils.h"			// ::GetClass
 #include "TablesID.h"				// kTextCellContentBoss
 #include "TextChar.h"
@@ -175,18 +176,15 @@ int32 CountRecords(IDataBase* db)
 	{
 		InterfacePtr<ITextModel> model(stories->GetNthUserAccessibleStoryUID(i), UseDefaultIID());
 		InterfacePtr<IRedlineDataStrand> redline(model != nil ? QueryRedline(model) : nil);
-		RedlineIterator* it = (redline != nil) ? redline->NewRedlineIterator(0) : nil;
-		if (it == nil)
+		K2::scoped_ptr<RedlineIterator> it((redline != nil) ? redline->NewRedlineIterator(0) : nil);
+		if (it.get() == nil)
 			continue;
 		for (bool16 more = kTrue; more; more = it->Increment(kFalse))
 		{
-			const VOSRedlineChange* record = it->GetCurrentChangeRecord();
-			if (record == nil)
-				continue;
-			++n;
-			delete record;
+			K2::scoped_ptr<const VOSRedlineChange> record(it->GetCurrentChangeRecord());
+			if (record.get() != nil)
+				++n;
 		}
-		delete it;
 	}
 	return n;
 }
@@ -230,8 +228,8 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 		const UIDRef storyRef = stories->GetNthUserAccessibleStoryUID(s);
 		InterfacePtr<ITextModel> model(storyRef, UseDefaultIID());
 		InterfacePtr<IRedlineDataStrand> redline(model != nil ? QueryRedline(model) : nil);
-		RedlineIterator* it = (redline != nil) ? redline->NewRedlineIterator(0) : nil;
-		if (it == nil)
+		K2::scoped_ptr<RedlineIterator> it((redline != nil) ? redline->NewRedlineIterator(0) : nil);
+		if (it.get() == nil)
 			continue;
 
 		std::vector<KCMTrackRecord> recs;
@@ -240,16 +238,13 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 		{
 			TextIndex at = 0;
 			int32 len = 0;
-			const VOSRedlineChange* record = it->GetCurrentChangeRecord(&at, &len);
-			if (record == nil)
+			K2::scoped_ptr<const VOSRedlineChange> record(it->GetCurrentChangeRecord(&at, &len));
+			if (record.get() == nil)
 				continue;
 			++targetRecords;
 			const ClassID thread = ThreadClassAt(model, at);
 			if (thread == kNoteDataBoss)
-			{
-				delete record;			// a note's text is not the document's (design 3-2)
-				continue;
-			}
+				continue;				// a note's text is not the document's (design 3-2)
 			KCMTrackRecord r;
 			const VOSRedlineChange::RedlineChangeType type = record->GetChangeType();
 			r.fKind = (type == VOSRedlineChange::kInsert) ? kKCMTrackRecInsert
@@ -267,7 +262,7 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 			{
 				colourAsked[static_cast<size_t>(author)] = kTrue;
 				KCMTrackAuthor& au = authors[static_cast<size_t>(author)];
-				const RealAGMColor c = utils->GetTrackedChangeBGColor(targetDB, it);
+				const RealAGMColor c = utils->GetTrackedChangeBGColor(targetDB, it.get());
 				const double cr = ::ToDouble(c.red), cg = ::ToDouble(c.green), cb = ::ToDouble(c.blue);
 				if (!KCMTrackColourIsWhite(cr, cg, cb))
 				{
@@ -281,14 +276,13 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 			}
 			WideString del;
 			if (r.fKind == kKCMTrackRecDelete)
-				del = DeletedText(model, utils, it, at);
+				del = DeletedText(model, utils, it.get(), at);
 			else
 				r.fLen = len;
 			recs.push_back(r);
 			deleted.push_back(del);
-			delete record;				// the caller owns it (redlineiterator.h:137-138)
 		}
-		delete it;
+		it.reset();		// not held over what follows: WasCancelled at the end of this loop pumps events
 		if (recs.empty())
 			continue;
 
@@ -296,31 +290,14 @@ int32 KCMTrackRead::Build(IDataBase* targetDB, bool16* outCancelled)
 		int32 other = 0;
 		KCMPlanTrackChanges(recs, planned, other);
 
-		// ★A MOVE'S TWO HALVES (2026-10-25 - measured: Reject Change on the moved words alone left the story without them,
-		//   "one threetwo " -> "one three", until the deletion where they stood was rejected too). InDesign records a move as
-		//   the moved text's insertion and a deletion of the same text where it stood, one stamp and one author (the probe's
-		//   U2, kcm-track-probe-2026-10-05.md) - two rows here, "»" and "-". Each is given the other's records as well
-		//   (KCMTrackChange::fRecords below), so that accepting or rejecting either row does the whole move.
-		std::vector<int32> partner(planned.size(), -1);
-		for (size_t m = 0; m < planned.size(); ++m)
+		// A move's two rows: each is given the other's records as well (KCMTrackChange::fRecords below), so that accepting or
+		// rejecting either does the whole move.
+		std::vector<int32> partner;
+		KCMPairMoves(recs, planned, [&](int32 insRec, int32 delRec)
 		{
-			if (planned[m].fKind != kKCMTrackMove || planned[m].fInsRec < 0)
-				continue;
-			const KCMTrackRecord& ins = recs[static_cast<size_t>(planned[m].fInsRec)];
-			const WideString moved = ReadRaw(model, ins.fAt, ins.fAt + ins.fLen);
-			for (size_t d = 0; d < planned.size(); ++d)
-			{
-				if (planned[d].fKind != kKCMTrackDelete || planned[d].fDelRec < 0 || partner[d] >= 0)
-					continue;
-				const KCMTrackRecord& del = recs[static_cast<size_t>(planned[d].fDelRec)];
-				if (del.fAuthor != ins.fAuthor || del.fTime != ins.fTime || del.fHidden != ins.fHidden
-					|| deleted[static_cast<size_t>(planned[d].fDelRec)] != moved)
-					continue;
-				partner[m] = static_cast<int32>(d);
-				partner[d] = static_cast<int32>(m);
-				break;
-			}
-		}
+			const KCMTrackRecord& ins = recs[static_cast<size_t>(insRec)];
+			return deleted[static_cast<size_t>(delRec)] == ReadRaw(model, ins.fAt, ins.fAt + ins.fLen);
+		}, partner);
 		KCM_DIAG_LOG("track read: story %u records=%d planned=%d other=%d", (unsigned)storyRef.GetUID().Get(),
 					 (int)recs.size(), (int)planned.size(), (int)other);
 		otherRecords += other;
@@ -490,8 +467,8 @@ bool16 KCMTrackRead::StillRecorded(IDataBase* targetDB, UID storyUID, const KCMT
 {
 	InterfacePtr<ITextModel> model(targetDB, storyUID, UseDefaultIID());
 	InterfacePtr<IRedlineDataStrand> redline(model != nil ? QueryRedline(model) : nil);
-	RedlineIterator* it = (redline != nil) ? redline->NewRedlineIterator(0) : nil;
-	if (it == nil)
+	K2::scoped_ptr<RedlineIterator> it((redline != nil) ? redline->NewRedlineIterator(0) : nil);
+	if (it.get() == nil)
 		return kFalse;
 	const int32 wantKind = (change.fKind == kKCMTrackDelete) ? VOSRedlineChange::kDelete : VOSRedlineChange::kInsert;
 	// ★AND THE AUTHOR (live 2026-10-05): stamps are not unique per operation - two separate edits by two authors carried
@@ -500,14 +477,12 @@ bool16 KCMTrackRead::StillRecorded(IDataBase* targetDB, UID storyUID, const KCMT
 	bool16 found = kFalse;
 	for (bool16 more = kTrue; more && !found; more = it->Increment(kFalse))
 	{
-		const VOSRedlineChange* record = it->GetCurrentChangeRecord();
-		if (record == nil)
+		K2::scoped_ptr<const VOSRedlineChange> record(it->GetCurrentChangeRecord());
+		if (record.get() == nil)
 			continue;
 		found = (record->GetTimeStamp() == change.fTime && record->GetChangeType() == wantKind
 				 && (author == nil || record->GetUserName() == author->fName)) ? kTrue : kFalse;
-		delete record;
 	}
-	delete it;
 	KCM_DIAG_LOG("track still recorded: story %u time %llu kind %d -> %d", (unsigned)storyUID.Get(),
 				 (unsigned long long)change.fTime, (int)change.fKind, (int)found);
 	return found;

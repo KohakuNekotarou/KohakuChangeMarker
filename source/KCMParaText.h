@@ -191,7 +191,7 @@ struct KCMParaAttrs
 		TextIndex than the Text Story Thread that the Table Model is anchored in").
 
 		fTableOrdinal counts EVERY table in the order of its thread block, nested ones included -
-		  the order the document keeps them in (KCMTextRead.cpp, TableAt / EarlierBlock). */
+		  the order the document keeps them in (KCMTableShape.cpp, EarlierBlock). */
 	enum { kNotACell = -1 };
 
 	int32				fTableOrdinal;	// kNotACell, or 0.. = which table this cell belongs to
@@ -903,6 +903,27 @@ struct ParaRegion
 	}
 };
 
+/** The place one paragraph stands in, as a region of its own. A paragraph the list does not reach is in the body. */
+inline ParaRegion PlaceOfParagraph(const std::vector<KCMParaAttrs>& attrs, int32 i)
+{
+	ParaRegion here;
+	here.fStart = i;
+	here.fCount = 1;
+	if (i >= 0 && static_cast<size_t>(i) < attrs.size())
+	{
+		if (attrs[i].IsCell())
+		{
+			here.fTable = attrs[i].fTableOrdinal;
+			here.fRow = attrs[i].fCellRow;
+			here.fCol = attrs[i].fCellCol;
+		}
+		// ⚠NOT an `else`: the two are separate fields and a paragraph could in principle carry
+		//   both (a table inside a footnote). Asking them one at a time keeps that possible.
+		here.fFootnote = attrs[i].fFootnoteOrdinal;
+	}
+	return here;
+}
+
 /** The places a run of paragraphs passes through, in order. */
 inline void ParagraphRegions(const std::vector<KCMParaAttrs>& attrs, int32 start, int32 count,
 							 std::vector<ParaRegion>& out)
@@ -910,22 +931,7 @@ inline void ParagraphRegions(const std::vector<KCMParaAttrs>& attrs, int32 start
 	out.clear();
 	for (int32 i = start; i < start + count; ++i)
 	{
-		ParaRegion here;
-		here.fStart = i;
-		here.fCount = 1;
-		if (i >= 0 && static_cast<size_t>(i) < attrs.size())
-		{
-			if (attrs[i].IsCell())
-			{
-				here.fTable = attrs[i].fTableOrdinal;
-				here.fRow = attrs[i].fCellRow;
-				here.fCol = attrs[i].fCellCol;
-			}
-			// ⚠NOT an `else`: the two are separate fields and a paragraph could in principle carry
-			//   both (a table inside a footnote). Asking them one at a time keeps that possible.
-			here.fFootnote = attrs[i].fFootnoteOrdinal;
-		}
-
+		const ParaRegion here = PlaceOfParagraph(attrs, i);
 		if (!out.empty() && out.back().SamePlaceAs(here))
 			++out.back().fCount;
 		else
@@ -1086,9 +1092,8 @@ inline bool16 IsObjectCharacter(int32 cp)
 		`paragraphs` (or an empty one) is not an error: a paragraph it does not reach is taken to
 		count the two the same way, which is what every paragraph without a table inside it does.
 	@param start the first paragraph of the run.
-	@param count how many paragraphs the run covers.
-	@param base where to answer from when the run covers no paragraph of its own (an insertion
-		between two paragraphs): the caller's position for the next surviving paragraph.
+	@param count how many paragraphs the run covers - never 0: paragraphs on one side only do not come here
+		(KCMStoryDiffRun's AddWholeParagraphs), and such a run answers 0.
 	@param joinedOffset a position in JoinParagraphs' answer, in CODE POINTS, 0 .. its length.
 	@return the same position as a TextIndex into the story.
 
@@ -1101,7 +1106,7 @@ inline bool16 IsObjectCharacter(int32 cp)
 inline int32 IndexInStory(const std::vector<std::string>& paragraphs,
 						  const std::vector<int32>& starts,
 						  const std::vector<KCMParaAttrs>& attrs,
-						  int32 start, int32 count, int32 base, int32 joinedOffset)
+						  int32 start, int32 count, int32 joinedOffset)
 {
 	// **IT LOOKS EVERY PARAGRAPH UP INSTEAD OF ADDING UP THE HIDDEN CHARACTERS BETWEEN THEM.**
 	//   The old form walked from the run's base and, at each paragraph break, added the count of
@@ -1132,18 +1137,13 @@ inline int32 IndexInStory(const std::vector<std::string>& paragraphs,
 		joined += len + 1;		// the paragraph, and the one character JoinParagraphs puts after it
 	}
 
-	// Past the end of the run - or a run with no paragraphs of its own, which is how an insertion
-	// between two paragraphs arrives. The caller's base is where the next surviving paragraph
-	// begins, and that is the right answer for the empty case.
-	if (count > 0)
-	{
-		const int32 last = start + count - 1;
-		if (last >= 0 && last < static_cast<int32>(paragraphs.size())
-			&& last < static_cast<int32>(starts.size()))
-			return starts[last] + ModelOffsetInParagraph(AttrsOfParagraph(attrs, last),
-														 CountCodePoints(paragraphs[last]));
-	}
-	return base;
+	// Past the end of the run: the last paragraph's end.
+	const int32 last = start + count - 1;
+	if (count > 0 && last >= 0 && last < static_cast<int32>(paragraphs.size())
+		&& last < static_cast<int32>(starts.size()))
+		return starts[last] + ModelOffsetInParagraph(AttrsOfParagraph(attrs, last),
+													 CountCodePoints(paragraphs[last]));
+	return 0;
 }
 
 /** Where paragraph `which` really begins in the document - before a table or a note reference it starts
@@ -1169,11 +1169,7 @@ inline int32 ParagraphReturn(const std::vector<std::string>& paragraphs, const s
 inline bool16 ParagraphsSharePlace(const std::vector<KCMParaAttrs>& attrsA, int32 i,
 								   const std::vector<KCMParaAttrs>& attrsB, int32 j)
 {
-	std::vector<ParaRegion> a;
-	std::vector<ParaRegion> b;
-	ParagraphRegions(attrsA, i, 1, a);
-	ParagraphRegions(attrsB, j, 1, b);
-	return (a.size() == 1 && b.size() == 1 && a[0].SamePlaceAs(b[0])) ? kTrue : kFalse;
+	return PlaceOfParagraph(attrsA, i).SamePlaceAs(PlaceOfParagraph(attrsB, j));
 }
 
 /** The objects standing inside a RUN of paragraphs - every paragraph's fUncountedAt - as offsets into

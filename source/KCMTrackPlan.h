@@ -30,7 +30,7 @@ enum KCMTrackRecordKind { kKCMTrackRecInsert = 0, kKCMTrackRecDelete = 1, kKCMTr
 /** One record, as KCMTrackRead copies it out of the iterator. */
 struct KCMTrackRecord
 {
-	int32		fKind;		// KCMTrackRecordKind
+	KCMTrackRecordKind	fKind;
 	bool16		fMoved;		// an insertion InDesign calls moved text (VOSRedlineChange::GetIsMovedText)
 	TextIndex	fAt;		// an insertion's first character; a deletion's anchor
 	int32		fLen;		// an insertion's length
@@ -46,7 +46,7 @@ enum KCMTrackChangeKind { kKCMTrackReplace = 0, kKCMTrackInsert = 1, kKCMTrackDe
 /** One row of the Track list. */
 struct KCMTrackPlanned
 {
-	int32		fKind;		// KCMTrackChangeKind
+	KCMTrackChangeKind	fKind;
 	int32		fAuthor;
 	uint64		fTime;		// the insertion's; the deletion's when there is no insertion
 	int32		fInsRec;	// index into the records, -1 when none
@@ -158,6 +158,37 @@ inline void KCMPlanTrackChanges(const std::vector<KCMTrackRecord>& recs, std::ve
 	}
 
 	std::sort(out.begin(), out.end(), KCMTrackPlanDetail::IsBefore);
+}
+
+/** A MOVE'S TWO HALVES (2026-10-25 - measured: Reject Change on the moved words alone left the story without them,
+	"one threetwo " -> "one three", until the deletion where they stood was rejected too). InDesign records a move as the moved
+	text's insertion and a deletion of the same text where it stood, one stamp and one author (the probe's U2,
+	kcm-track-probe-2026-10-05.md) - two rows, "»" and "-". outPartner gets, for each row, the row that is its other half, or -1.
+	Each deletion is one move's at most.
+	@param sameWords sameWords(insRec, delRec): are the words these two records (indices into recs) stand for the same? */
+template <typename SameWords>
+inline void KCMPairMoves(const std::vector<KCMTrackRecord>& recs, const std::vector<KCMTrackPlanned>& planned,
+						 SameWords sameWords, std::vector<int32>& outPartner)
+{
+	outPartner.assign(planned.size(), -1);
+	for (size_t m = 0; m < planned.size(); ++m)
+	{
+		if (planned[m].fKind != kKCMTrackMove || planned[m].fInsRec < 0)
+			continue;
+		const KCMTrackRecord& ins = recs[static_cast<size_t>(planned[m].fInsRec)];
+		for (size_t d = 0; d < planned.size(); ++d)
+		{
+			if (planned[d].fKind != kKCMTrackDelete || planned[d].fDelRec < 0 || outPartner[d] >= 0)
+				continue;
+			const KCMTrackRecord& del = recs[static_cast<size_t>(planned[d].fDelRec)];
+			if (del.fAuthor != ins.fAuthor || del.fTime != ins.fTime || del.fHidden != ins.fHidden
+				|| !sameWords(planned[m].fInsRec, planned[d].fDelRec))
+				continue;
+			outPartner[m] = static_cast<int32>(d);
+			outPartner[d] = static_cast<int32>(m);
+			break;
+		}
+	}
 }
 
 #endif // __KCMTrackPlan_h__

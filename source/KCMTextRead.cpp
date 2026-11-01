@@ -21,19 +21,15 @@
 #include "IFootnoteNumber.h"	// the number a note's marker PRINTS - asked for, never counted (ScanNotes)
 #include "IKentenStyle.h"		// IKentenStyle::KentenKind, and Kenten_None for "no kenten"
 #include "IRubyStrand.h"		// IRubyAttrStrand - ⚠the file is IRubyStrand.h, the class is not
-#include "ITableModel.h"
 #include "ITextAttrBoolean.h"	// kTAMojiRubyBoss - mono against group; warichu and tate-chu-yoko on/off
 #include "ITextAttrInt16.h"	// kTAKentenKindBoss / kTAKentenCharacterBoss - both are int16
 #include "ITextAttrWideString.h"	// kTARubyStringBoss - the reading itself
 #include "ITextModel.h"
 #include "ITextStoryThread.h"
-#include "ITextStoryThreadDict.h"
-#include "ITextStoryThreadDictHier.h"
 #include "ITextUtils.h"		// CollectOwnedItems + OwnedItemDataList - how the SDK's own snippets find note markers
 
 // General includes:
 #include "CJKID.h"			// kRubyAttrStrandBoss, the two ruby attributes, and the kTAKenten* ones
-#include "TableTypes.h"		// GridAddress, RowRange, ColRange
 #include "TextChar.h"		// kTextChar_CR / kTextChar_Table / kTextChar_TableContinued
 #include "TextID.h"			// kCharAttrStrandBoss (kenten's strand) and kFootnoteReferenceBoss / kEndnoteAnchorBoss (the note markers)
 #include "PersistUtils.h"	// ::GetClass - what a story thread hangs off (a footnote, or a note, or deleted text)
@@ -47,34 +43,11 @@
 // Project includes:
 #include "KCMObjectPrint.h"		// KCMObjectPrintOf - an object placed in the text, its fingerprint (2026-10-27)
 #include "KCMSkippedText.h"
+#include "KCMTableShape.h"		// KCMReadTableShapes - where every cell of every table stands
 #include "KCMTextRead.h"
 
 namespace
 {
-
-/* TableAt
-   One table of the story: the dictionary that holds its cells, and where those cells begin.
-
-   **THE ORDER IS THE THREAD BLOCK'S, NOT THE ANCHOR'S**, and that is not a detail: a nested
-   table's anchor sits inside its parent's CELLS - past the whole body - so sorting by anchor puts
-   it after a second top-level table that is written before it. The SDK states the rule at
-   ITextStoryThreadDict::GetThreadBlockTextRange ("the location of the dictionary's thread block is
-   determined by the location of the dictionary's anchor relative to other dictionaries"), and it
-   is the order the XML was written in, which is the order the snippet route numbered tables in.
-   ⚠KCMStoryCellBases (the reconciler of that route, gone since 2026-09-03) learned this the hard
-    way; the rule is kept here because fTableOrdinal is what SplitRunAtPlaces tells cells apart by,
-    and two versions of one document have to number the same table the same way.
-*/
-struct TableAt
-{
-	UID			fDictUID;
-	TextIndex	fBlockStart;
-};
-
-bool16 EarlierBlock(const TableAt& a, const TableAt& b)
-{
-	return a.fBlockStart < b.fBlockStart;
-}
 
 /* CellPlace
    Where one cell's text begins, and which cell it is.
@@ -96,95 +69,29 @@ bool16 EarlierCell(const CellPlace& a, const CellPlace& b)
 	return a.fStart < b.fStart;
 }
 
-/* BuildCellIndex
-   Asks the document where every cell of every table starts, once per story.
-
-   @return kFalse when a dictionary or a table cannot be opened at all. **A story with no tables is
-	   not a failure**: it answers kTrue with an empty index.
-
-   @warning MERGED CELLS ARE VISITED ONCE. IsAnchor is what says so - a merged cell is addressed by
-	its anchor (ITableModel.h, at GridAddress), and the covered addresses have no thread of their
-	own. Walking them anyway would ask QueryThread for a cell that is not there.
-   ★A TABLE STANDING IN SKIPPED TEXT IS NOT INDEXED (2026-09-24) - a table deleted under Track
-	Changes, say. KCMSkippedText.h says why, and why every table walk drops the same ones.
+/* CellsOfTables
+   Where every cell of every table starts, sorted so that the walk below can find a thread's place with one pass rather than
+   a search per thread - out of KCMReadTableShapes' list, whose index IS the fTableOrdinal given here. ONE WALK OF THE TABLES:
+   as two, the claim that a table's place in one list is its number in the other rested on two pieces of code keeping the
+   same order and leaving out the same tables.
 */
-bool16 BuildCellIndex(ITextModel* model, const KCMSkippedText& skipped, std::vector<CellPlace>& out)
+void CellsOfTables(const std::vector<KCMTableShape>& tables, std::vector<CellPlace>& out)
 {
 	out.clear();
-
-	InterfacePtr<ITextStoryThreadDictHier> hier(model, UseDefaultIID());
-	if (hier == nil)
-		return kTrue;		// no dictionary hierarchy at all - nothing but a body
-
-	IDataBase* const db = ::GetDataBase(hier);
-	if (db == nil)
-		return kFalse;
-
-	// Collect the tables. The walk starts at the story's own dictionary (which is not a table) and
-	// follows the hierarchy; NextUID answers kInvalidUID when nothing follows. The shape is
-	// SnpIterTableUseDictHier's, the one Adobe calls recommended.
-	std::vector<TableAt> tables;
-	for (UID next = ::GetUIDRef(hier).GetUID(); next != kInvalidUID; next = hier->NextUID(next))
-	{
-		InterfacePtr<ITextStoryThreadDict> dict(db, next, UseDefaultIID());
-		if (dict == nil)
-			return kFalse;
-
-		InterfacePtr<ITableModel> table(dict, UseDefaultIID());
-		if (table == nil)
-			continue;		// the story's own dictionary - a dictionary IS a table exactly when
-							// an ITableModel can be got from it (SnpIterTableUseDictHier)
-		if (skipped.Contains(dict->GetAnchorTextRange().Start(nil)))
-			continue;		// not a table of the page (KCMSkippedText.h)
-
-		TableAt at;
-		at.fDictUID = next;
-		at.fBlockStart = dict->GetThreadBlockTextRange().Start(nil);
-		tables.push_back(at);
-	}
-
-	std::sort(tables.begin(), tables.end(), EarlierBlock);
-
 	for (size_t t = 0; t < tables.size(); ++t)
 	{
-		InterfacePtr<ITextStoryThreadDict> dict(db, tables[t].fDictUID, UseDefaultIID());
-		InterfacePtr<ITableModel> table(dict, UseDefaultIID());
-		if (dict == nil || table == nil)
-			return kFalse;
-
-		// ⚠GridAddress is (row, column) - TableTypes.h. RowRange/ColRange carry start and count;
-		//   `start + count` is used rather than End() so that this depends on the two fields the
-		//   header shows outright.
-		const RowRange rows = table->GetTotalRows();
-		const ColRange cols = table->GetTotalCols();
-
-		for (int32 r = rows.start; r < rows.start + rows.count; ++r)
+		for (size_t c = 0; c < tables[t].fCells.size(); ++c)
 		{
-			for (int32 c = cols.start; c < cols.start + cols.count; ++c)
-			{
-				const GridAddress addr(r, c);
-				if (!table->IsValid(addr) || !table->IsAnchor(addr))
-					continue;
-
-				InterfacePtr<ITextStoryThread> thread(dict->QueryThread(table->GetGridID(addr)));
-				if (thread == nil)
-					continue;
-
-				CellPlace place;
-				place.fStart = thread->GetTextStart();
-				place.fTable = static_cast<int32>(t);
-				place.fRow = r;
-				place.fCol = c;
-				out.push_back(place);
-			}
+			const KCMTableCellPlace& cell = tables[t].fCells[c];
+			CellPlace place;
+			place.fStart = cell.fStart;
+			place.fTable = static_cast<int32>(t);
+			place.fRow = cell.fRow;
+			place.fCol = cell.fCol;
+			out.push_back(place);
 		}
 	}
-
-	// Sorted so that the walk below can find a thread's place with one pass rather than a search
-	// per thread. (Both lists come out in TextIndex order anyway; the sort makes that a fact
-	// rather than an assumption about how the dictionaries were laid out.)
 	std::sort(out.begin(), out.end(), EarlierCell);
-	return kTrue;
 }
 
 /* AttrRun
@@ -582,29 +489,14 @@ void ScanBoolAttribute(ITextModel* model, ClassID attribute, std::vector<AttrRun
     thread, so with the snippets' range its marker was collected by nobody - while ReadStory, which
     walks every thread, had already taken that marker OUT of the text. The row then showed the note's
     words arriving and **nothing at all about the note**, which is worse than the "□" this whole
-    feature replaced. ⇒ the range is the model's own TotalLength.
+    feature replaced. ⇒ the range ReadStory collects `owned` over is the model's own TotalLength.
    ⚠A REFERENCE WHOSE NUMBER CANNOT BE READ still becomes a span, with "?" for its value: the
     marker IS there, and reporting nothing would be the one wrong answer (the same rule
     KentenKindName follows for a kind it does not know).
 */
-void ScanNotes(ITextModel* model, const KCMSkippedText& skipped, std::vector<AttrRun>& outFootnotes,
+void ScanNotes(IDataBase* db, const OwnedItemDataList& owned, const KCMSkippedText& skipped, std::vector<AttrRun>& outFootnotes,
 			   std::vector<AttrRun>& outEndnotes)
 {
-	Utils<ITextUtils> textUtils;
-	if (textUtils == nil)
-		return;
-
-	const int32 wholeStory = model->TotalLength();
-	if (wholeStory <= 0)
-		return;
-
-	OwnedItemDataList owned;
-	textUtils->CollectOwnedItems(model, 0, wholeStory - 1, &owned);
-
-	IDataBase* const db = ::GetDataBase(model);
-	if (db == nil)
-		return;
-
 	for (int32 i = 0; i < static_cast<int32>(owned.size()); ++i)
 	{
 		const bool16 isFootnote = (owned[i].fClassID == kFootnoteReferenceBoss) ? kTrue : kFalse;
@@ -660,23 +552,8 @@ void ScanNotes(ITextModel* model, const KCMSkippedText& skipped, std::vector<Att
    ⚠ONLY WHEN ReadStory IS ASKED (`withObjects`): a fingerprint is a SaveAll of the object and everything in it.
    ⚠An object whose bytes cannot be written becomes no span at all: nothing can be said about it either way.
 */
-void ScanObjects(ITextModel* model, const KCMSkippedText& skipped, std::vector<AttrRun>& out)
+void ScanObjects(IDataBase* db, const OwnedItemDataList& owned, const KCMSkippedText& skipped, std::vector<AttrRun>& out)
 {
-	Utils<ITextUtils> textUtils;
-	if (textUtils == nil)
-		return;
-
-	const int32 wholeStory = model->TotalLength();
-	if (wholeStory <= 0)
-		return;
-
-	OwnedItemDataList owned;
-	textUtils->CollectOwnedItems(model, 0, wholeStory - 1, &owned);
-
-	IDataBase* const db = ::GetDataBase(model);
-	if (db == nil)
-		return;
-
 	for (int32 i = 0; i < static_cast<int32>(owned.size()); ++i)
 	{
 		if (owned[i].fClassID != kInlineBoss)
@@ -713,6 +590,20 @@ int32 CountUncounted(const std::vector<TextIndex>& uncounted, TextIndex at)
 	return n;
 }
 
+/* MarkRuns
+   One kind of mark over a story: its runs in TextIndex order, and how far the walk has got through them.
+
+   ★**ONE CURSOR PER LIST, AND THEY CANNOT BE SHARED.** The lists are walked in step with the paragraphs but are not the same
+   length, so a shared cursor would drag one of them past its own runs.
+*/
+struct MarkRuns
+{
+	std::vector<AttrRun>	fRuns;
+	size_t					fNext;
+
+	MarkRuns() : fNext(0) {}
+};
+
 /* TakeAttrFor
    The ruby or kenten standing over one paragraph, in the paragraph's own count.
 
@@ -725,10 +616,12 @@ int32 CountUncounted(const std::vector<TextIndex>& uncounted, TextIndex at)
     says so), and the diff downstream cuts rows by them, so a span reaching past the end would put
     a mark on characters that are not there.
 */
-void TakeAttrFor(const std::vector<AttrRun>& runs, size_t& cursor,
-				 TextIndex paraStart, TextIndex paraEnd,
+void TakeAttrFor(MarkRuns& marks, TextIndex paraStart, TextIndex paraEnd,
 				 const std::vector<TextIndex>& uncounted, KCMAttrSpanList& out)
 {
+	const std::vector<AttrRun>& runs = marks.fRuns;
+	size_t& cursor = marks.fNext;
+
 	while (cursor < runs.size() && (runs[cursor].fAt + runs[cursor].fLen) <= paraStart)
 		++cursor;
 
@@ -769,6 +662,40 @@ void TakeAttrFor(const std::vector<AttrRun>& runs, size_t& cursor,
 	}
 }
 
+/* StoryMarks
+   Every kind of mark over a story.
+
+   ★**IT IS A STRUCT BECAUSE THE THIRD AND FOURTH KINDS ARRIVED** (2026-09-08). ClosePara took a list and a cursor per kind as
+   separate arguments - two kinds were four of its nine - and footnotes and endnotes would have made thirteen, which is the
+   count AddAttrChange had reached before ParaSide was made for exactly this reason (KCMStoryDiffRun.cpp). A further kind now
+   costs a field here and one line in ReadStory, not two arguments at every call site.
+*/
+struct StoryMarks
+{
+	MarkRuns	fRuby;
+	MarkRuns	fKenten;
+	MarkRuns	fFootnote;
+	MarkRuns	fEndnote;
+	MarkRuns	fWarichu;
+	MarkRuns	fTcy;
+	MarkRuns	fObject;	// ★(2026-10-27) objects placed in the text - empty unless ReadStory was asked
+};
+
+/* ParaBeingRead
+   The paragraph the walk is in the middle of: a new value for each paragraph, and for each thread.
+*/
+struct ParaBeingRead
+{
+	std::string				fText;
+	TextIndex				fLineStart;			// where the paragraph really begins, before anything it starts with
+	TextIndex				fStart;				// where its first character stands
+	std::vector<TextIndex>	fUncounted;			// positions INSIDE it that the model counts and the text does not
+	std::vector<TextIndex>	fAnchors;			// the TABLES' anchors among them (KCMParaAttrs::fTableAnchorsAt)
+	int32					fLeadingAnchors;	// how many tables it begins with
+
+	explicit ParaBeingRead(TextIndex at) : fLineStart(at), fStart(at), fLeadingAnchors(0) {}
+};
+
 /* ClosePara
    One finished paragraph: its text, where it stands, and everything riding over it.
 
@@ -777,62 +704,22 @@ void TakeAttrFor(const std::vector<AttrRun>& runs, size_t& cursor,
    ruby only sometimes. That is the kind of fault the parallel run would report as a single
    disagreement in one story out of a hundred.
 */
-/** Every kind of mark the walk carries, each with its own place in its own list.
-
-	★**ONE CURSOR PER LIST, AND THEY CANNOT BE SHARED.** The lists are walked in step with the
-	paragraphs but are not the same length, so a shared cursor would drag one of them past its
-	own runs.
-
-	★**IT IS A STRUCT BECAUSE THE THIRD AND FOURTH KINDS ARRIVED** (2026-09-08). ClosePara took a
-	list and a cursor per kind as separate arguments - two kinds were four of its nine - and
-	footnotes and endnotes would have made thirteen, which is the count AddAttrChange had reached
-	before ParaSide was made for exactly this reason (KCMStoryDiffRun.cpp). A fifth kind now costs
-	a field here and one line in ReadStory, not two arguments at every call site. */
-struct AttrWalk
-{
-	const std::vector<AttrRun>&	fRuby;
-	const std::vector<AttrRun>&	fKenten;
-	const std::vector<AttrRun>&	fFootnote;
-	const std::vector<AttrRun>&	fEndnote;
-	const std::vector<AttrRun>&	fWarichu;
-	const std::vector<AttrRun>&	fTcy;
-	const std::vector<AttrRun>&	fObject;	// ★(2026-10-27) objects placed in the text - empty unless ReadStory was asked
-
-	size_t	fRubyAt;
-	size_t	fKentenAt;
-	size_t	fFootnoteAt;
-	size_t	fEndnoteAt;
-	size_t	fWarichuAt;
-	size_t	fTcyAt;
-	size_t	fObjectAt;
-
-	AttrWalk(const std::vector<AttrRun>& ruby, const std::vector<AttrRun>& kenten,
-			 const std::vector<AttrRun>& footnote, const std::vector<AttrRun>& endnote,
-			 const std::vector<AttrRun>& warichu, const std::vector<AttrRun>& tcy,
-			 const std::vector<AttrRun>& object)
-		: fRuby(ruby), fKenten(kenten), fFootnote(footnote), fEndnote(endnote),
-		  fWarichu(warichu), fTcy(tcy), fObject(object),
-		  fRubyAt(0), fKentenAt(0), fFootnoteAt(0), fEndnoteAt(0), fWarichuAt(0), fTcyAt(0), fObjectAt(0) {}
-};
-
 void ClosePara(std::vector<std::string>& outParas,
 			   std::vector<KCMParaAttrs>& outAttrs,
 			   std::vector<int32>& outStarts,
-			   const std::string& text,
+			   const ParaBeingRead& para,
 			   const KCMParaAttrs& place,
-			   TextIndex lineStart, TextIndex paraStart, TextIndex paraEnd,
-			   AttrWalk& walk,
-			   std::vector<TextIndex>& uncounted,
-			   std::vector<TextIndex>& anchors, int32& leadingAnchors)
+			   TextIndex paraEnd,
+			   StoryMarks& marks)
 {
-	outParas.push_back(text);
-	outStarts.push_back(static_cast<int32>(paraStart));
+	outParas.push_back(para.fText);
+	outStarts.push_back(static_cast<int32>(para.fStart));
 
 	KCMParaAttrs attrs = place;		// the cell identity, which is the same for every paragraph here
 
 	// ★The table or note reference the paragraph BEGINS with: the start was moved past them, so they are
 	//   the distance from where the paragraph really begins (2026-09-17 - KCMParaAttrs::fLeadingUncounted).
-	attrs.fLeadingUncounted = static_cast<int32>(paraStart - lineStart);
+	attrs.fLeadingUncounted = static_cast<int32>(para.fStart - para.fLineStart);
 
 	// ★★★**THE SKIPPED POSITIONS TRAVEL WITH THE PARAGRAPH, IN THE TEXT'S COUNT.** Everything this
 	//   file hands out is counted the way the panel reads it - the table's own characters left out
@@ -845,46 +732,39 @@ void ClosePara(std::vector<std::string>& outParas,
 	//   ⚠**THE k-th ONE HAS k BEFORE IT**, so its place in the text is its model position less the
 	//    paragraph's start and less the ones already met. They arrive in order, which is what makes
 	//    that subtraction the whole of the conversion.
-	attrs.fUncountedAt.reserve(uncounted.size());
-	for (size_t k = 0; k < uncounted.size(); ++k)
-		attrs.fUncountedAt.push_back(static_cast<int32>(uncounted[k] - paraStart) -
+	attrs.fUncountedAt.reserve(para.fUncounted.size());
+	for (size_t k = 0; k < para.fUncounted.size(); ++k)
+		attrs.fUncountedAt.push_back(static_cast<int32>(para.fUncounted[k] - para.fStart) -
 									 static_cast<int32>(k));
 
 	// ★AND WHERE EACH TABLE STANDS, IN THE SAME COUNT (2026-10-26, the import matrix's X06 - KCMParaAttrs::fTableAnchorsAt):
 	//   the anchors alone. One the paragraph begins with stands at 0; one inside it is uncounted itself, so the positions
 	//   met before it come off exactly as they do for fUncountedAt.
-	for (int32 k = 0; k < leadingAnchors; ++k)
+	for (int32 k = 0; k < para.fLeadingAnchors; ++k)
 		attrs.fTableAnchorsAt.push_back(0);
-	for (size_t k = 0; k < anchors.size(); ++k)
-		attrs.fTableAnchorsAt.push_back(static_cast<int32>(anchors[k] - paraStart) - CountUncounted(uncounted, anchors[k]));
+	for (size_t k = 0; k < para.fAnchors.size(); ++k)
+		attrs.fTableAnchorsAt.push_back(static_cast<int32>(para.fAnchors[k] - para.fStart) - CountUncounted(para.fUncounted, para.fAnchors[k]));
 
-	// ⚠ONE CURSOR EACH - see AttrWalk, which is where they live now.
 	// ★**THE NOTE MARKERS GO THROUGH THE SAME DOOR** as ruby and kenten (2026-09-08), so a marker
 	//   inside a paragraph that also holds a table is shifted into the text's own count by the
 	//   very same arithmetic. Written separately it would have been a second place to get that
 	//   crossing wrong.
-	TakeAttrFor(walk.fRuby,     walk.fRubyAt,     paraStart, paraEnd, uncounted, attrs.fRuby);
-	TakeAttrFor(walk.fKenten,   walk.fKentenAt,   paraStart, paraEnd, uncounted, attrs.fKenten);
-	TakeAttrFor(walk.fFootnote, walk.fFootnoteAt, paraStart, paraEnd, uncounted, attrs.fFootnote);
-	TakeAttrFor(walk.fEndnote,  walk.fEndnoteAt,  paraStart, paraEnd, uncounted, attrs.fEndnote);
+	TakeAttrFor(marks.fRuby, para.fStart, paraEnd, para.fUncounted, attrs.fRuby);
+	TakeAttrFor(marks.fKenten, para.fStart, paraEnd, para.fUncounted, attrs.fKenten);
+	TakeAttrFor(marks.fFootnote, para.fStart, paraEnd, para.fUncounted, attrs.fFootnote);
+	TakeAttrFor(marks.fEndnote, para.fStart, paraEnd, para.fUncounted, attrs.fEndnote);
 
 	// ★A WARICHU'S AND A TATE-CHU-YOKO'S VALUE IS ITS OWN CHARACTERS (2026-09-16), and they are only
 	//   known here, in the text's count that TakeAttrFor has just put the spans into.
-	TakeAttrFor(walk.fWarichu,  walk.fWarichuAt,  paraStart, paraEnd, uncounted, attrs.fWarichu);
-	TakeAttrFor(walk.fTcy,      walk.fTcyAt,      paraStart, paraEnd, uncounted, attrs.fTcy);
-	KCMParaText::SetSpanValuesToText(attrs.fWarichu, text);
-	KCMParaText::SetSpanValuesToText(attrs.fTcy, text);
+	TakeAttrFor(marks.fWarichu, para.fStart, paraEnd, para.fUncounted, attrs.fWarichu);
+	TakeAttrFor(marks.fTcy, para.fStart, paraEnd, para.fUncounted, attrs.fTcy);
+	KCMParaText::SetSpanValuesToText(attrs.fWarichu, para.fText);
+	KCMParaText::SetSpanValuesToText(attrs.fTcy, para.fText);
 
 	// ★(2026-10-27) The objects placed in the paragraph, through the same door - their anchors are characters the text
 	//   counts, so the crossing is the one every other span takes.
-	TakeAttrFor(walk.fObject,   walk.fObjectAt,   paraStart, paraEnd, uncounted, attrs.fObject);
+	TakeAttrFor(marks.fObject, para.fStart, paraEnd, para.fUncounted, attrs.fObject);
 	outAttrs.push_back(attrs);
-
-	// ⚠EMPTIED HERE, WHERE THE PARAGRAPH ENDS, so that the two places a paragraph can close cannot
-	//   disagree about it - the same reason this function exists at all.
-	uncounted.clear();
-	anchors.clear();
-	leadingAnchors = 0;
 }
 
 }	// anonymous namespace
@@ -920,7 +800,8 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 							  std::vector<std::string>& outParas,
 							  std::vector<KCMParaAttrs>& outAttrs,
 							  std::vector<int32>& outStarts,
-							  bool16 withObjects)
+							  bool16 withObjects,
+							  std::vector<KCMTableShape>* outTables)
 {
 	// **EMPTIED FIRST, ALL THREE.** A caller may hand in vectors that already hold something (the
 	// migration's parallel run handed in the other route's answer), and a reader that appended
@@ -938,9 +819,11 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 	if (!skipped.Build(model))
 		return kFalse;
 
-	std::vector<CellPlace> cells;
-	if (!BuildCellIndex(model, skipped, cells))
+	std::vector<KCMTableShape> tables;
+	if (!KCMReadTableShapes(model, skipped, tables))
 		return kFalse;
+	std::vector<CellPlace> cells;
+	CellsOfTables(tables, cells);
 
 	// ★THE RUBY IS READ IN THE SAME BREATH AS THE TEXT. A comparison is a photograph of one moment,
 	//   and text from one instant beside ruby from another puts two moments in one row - the rule
@@ -948,33 +831,31 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 	//   text comes from the model, so its ruby does too.
 	//   ⚠NOTHING MAY RUN BETWEEN THIS AND THE WALK BELOW. No command, no recompose, no second
 	//    document - anything that edits the story between them would date one against the other.
-	std::vector<AttrRun> ruby;
-	ScanRuby(model, ruby);
+	StoryMarks marks;
+	ScanRuby(model, marks.fRuby.fRuns);
 
 	// ★KENTEN COMES OFF THE SAME MOMENT, for the reason stated just above: a story read here and
 	//   its emphasis marks read after some command ran would be two photographs in one row.
-	std::vector<AttrRun> kenten;
-	ScanKenten(model, kenten);
+	ScanKenten(model, marks.fKenten.fRuns);
 
 	// ★AND THE NOTE MARKERS, OFF THE SAME MOMENT AGAIN (2026-09-08). Their numbers are read here
 	//   too, so a row shows the number the page showed when the comparison ran - not the one the
 	//   document would print after the next edit.
-	std::vector<AttrRun> footnotes;
-	std::vector<AttrRun> endnotes;
-	ScanNotes(model, skipped, footnotes, endnotes);
+	OwnedItemDataList owned;
+	Utils<ITextUtils> textUtils;
+	if (textUtils && model->TotalLength() > 0)
+		textUtils->CollectOwnedItems(model, 0, model->TotalLength() - 1, &owned);
+	IDataBase* const db = ::GetDataBase(model);
+	if (db != nil)
+		ScanNotes(db, owned, skipped, marks.fFootnote.fRuns, marks.fEndnote.fRuns);
 
 	// ★AND WARICHU AND TATE-CHU-YOKO (2026-09-16), off the same moment for the same reason.
-	std::vector<AttrRun> warichu;
-	std::vector<AttrRun> tcy;
-	ScanBoolAttribute(model, kTAWarichuAttrBoss, warichu);
-	ScanBoolAttribute(model, kTATatechuyokoAttrBoss, tcy);
+	ScanBoolAttribute(model, kTAWarichuAttrBoss, marks.fWarichu.fRuns);
+	ScanBoolAttribute(model, kTATatechuyokoAttrBoss, marks.fTcy.fRuns);
 
 	// ★AND THE OBJECTS PLACED IN THE TEXT (2026-10-27), off the same moment - but only when asked (the header says why).
-	std::vector<AttrRun> objects;
-	if (withObjects)
-		ScanObjects(model, skipped, objects);
-
-	AttrWalk walk(ruby, kenten, footnotes, endnotes, warichu, tcy, objects);
+	if (withObjects && db != nil)
+		ScanObjects(db, owned, skipped, marks.fObject.fRuns);
 
 	const TextIndex total = model->TotalLength();
 	size_t nextCell = 0;
@@ -1067,18 +948,7 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 			place.fFootnoteOrdinal = nextFootnote++;
 		}
 
-		std::string text;
-		TextIndex lineStart = position;		// where the paragraph really begins, before anything it starts with
-		TextIndex paraStart = position;
-		bool16 paraHasCharacters = kFalse;
-
-		// Positions INSIDE the paragraph being built that the model counts and the text does not.
-		// ⚠It is cleared by ClosePara, not here, so that a paragraph ending either way clears it.
-		std::vector<TextIndex> uncounted;
-		// The TABLES' anchors among them, and how many the paragraph begins with (KCMParaAttrs::fTableAnchorsAt) - cleared
-		// by ClosePara with the rest.
-		std::vector<TextIndex> anchors;
-		int32 leadingAnchors = 0;
+		ParaBeingRead para(position);
 
 		TextIterator iter(model, position);
 		for (TextIndex i = position; i < threadEnd; ++i, ++iter)
@@ -1104,17 +974,17 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 			if (cp == kTextChar_Table || cp == kTextChar_TableContinued)
 			{
 				// ★The ANCHOR is the table's place (KCMParaAttrs::fTableAnchorsAt); a continuation is one more row of it.
-				if (!paraHasCharacters)
+				if (para.fText.empty())
 				{
-					paraStart = i + 1;
+					para.fStart = i + 1;
 					if (cp == kTextChar_Table)
-						++leadingAnchors;
+						++para.fLeadingAnchors;
 				}
 				else
 				{
-					uncounted.push_back(i);
+					para.fUncounted.push_back(i);
 					if (cp == kTextChar_Table)
-						anchors.push_back(i);
+						para.fAnchors.push_back(i);
 				}
 				continue;
 			}
@@ -1134,21 +1004,17 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 			//     what it said before.
 			if (cp == kTextChar_FootnoteMarker || cp == kTextChar_EndnoteMarker)
 			{
-				if (!paraHasCharacters)
-					paraStart = i + 1;
+				if (para.fText.empty())
+					para.fStart = i + 1;
 				else
-					uncounted.push_back(i);
+					para.fUncounted.push_back(i);
 				continue;
 			}
 
 			if (cp == kTextChar_CR)
 			{
-				ClosePara(outParas, outAttrs, outStarts, text, place, lineStart, paraStart, i,
-						  walk, uncounted, anchors, leadingAnchors);
-				text.clear();
-				lineStart = i + 1;
-				paraStart = i + 1;
-				paraHasCharacters = kFalse;
+				ClosePara(outParas, outAttrs, outStarts, para, place, i, marks);
+				para = ParaBeingRead(i + 1);
 				continue;
 			}
 
@@ -1157,21 +1023,21 @@ bool16 KCMTextRead::ReadStory(const UIDRef& storyRef,
 			//   downstream counts the same way. Encoding a character as two would put the two
 			//   counts out of step, and the comparison would quote the right words at the wrong
 			//   place.
-			KCMParaText::AppendUtf8(text, cp);
-			paraHasCharacters = kTrue;
+			KCMParaText::AppendUtf8(para.fText, cp);
 		}
 
 		// A thread always ends with a carriage return (ITextStoryThread's own contract, and
 		// SnpInspectTextModel checks for it as a corruption test), so the loop normally closes the
 		// last paragraph itself. This catches the one that does not - and an empty tail is NOT
 		// pushed, or every thread would end with a paragraph nobody wrote.
-		if (!text.empty())
-			ClosePara(outParas, outAttrs, outStarts, text, place, lineStart, paraStart, threadEnd,
-					  walk, uncounted, anchors, leadingAnchors);
+		if (!para.fText.empty())
+			ClosePara(outParas, outAttrs, outStarts, para, place, threadEnd, marks);
 
 		position = threadEnd;
 	}
 
+	if (outTables != nil)
+		outTables->swap(tables);
 	return kTrue;
 }
 
